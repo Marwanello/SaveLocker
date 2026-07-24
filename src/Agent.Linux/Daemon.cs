@@ -70,7 +70,8 @@ public sealed class Daemon : IAsyncDisposable
             pickFolder: null, // headless: no native dialog — the UI browses via /api/browse instead
             onRegistered: () => _engine = BuildEngine(),
             getUpdateResult: () => null, // self-update is Windows-only (installer-based)
-            browseRoots: SteamRoots.BrowseRoots());
+            browseRoots: SteamRoots.BrowseRoots(),
+            launchInfo: LinuxLaunchCommand);
         _apiServer.Start();
 
         _drainer = new OfflineQueueDrainer(_offlineQueue, _config, () => _engine, Notify);
@@ -103,6 +104,22 @@ public sealed class Daemon : IAsyncDisposable
         catch (OperationCanceledException) { /* SIGTERM / Ctrl-C */ }
 
         AgentLogger.Log("SaveLocker daemon stopping.");
+    }
+
+    /// <summary>
+    /// The Steam launch-options command for this device. We resolve the binary's real path from
+    /// <c>/proc/self/exe</c> rather than assuming <c>$HOME/.local/bin</c>: that is where install.sh
+    /// links <c>savelocker</c>, but the daemon may have been started from anywhere, and the full path
+    /// is required because Game Mode does not put <c>~/.local/bin</c> on PATH.
+    /// </summary>
+    private static LaunchCommandDto LinuxLaunchCommand()
+    {
+        string? exe = null;
+        try { exe = new FileInfo("/proc/self/exe").LinkTarget; } catch { /* fall back below */ }
+        if (string.IsNullOrEmpty(exe)) exe = Environment.ProcessPath;
+        return string.IsNullOrEmpty(exe)
+            ? new LaunchCommandDto(null, "Could not determine the installed path — see install.sh for the exact command.")
+            : new LaunchCommandDto($"{exe} run -- %command%", null);
     }
 
     /// <summary>

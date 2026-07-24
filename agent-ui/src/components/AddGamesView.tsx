@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, FolderOpen, Cloud } from 'lucide-react'
+import { RefreshCw, FolderOpen, FolderSearch, Cloud } from 'lucide-react'
 import type { Candidate } from '../types'
 import { api } from '../api'
+import { useFolderPicker } from '../useFolderPicker'
+import { PathBrowserModal } from './PathBrowserModal'
+import { LaunchSetupCard } from './LaunchSetupCard'
 
 interface Props {
   onEnrolled: () => void
@@ -22,6 +25,8 @@ export function AddGamesView({ onEnrolled }: Props) {
   const [scanning, setScanning] = useState(false)
   const [enrolling, setEnrolling] = useState(false)
   const [status, setStatus] = useState('')
+  const [enrolled, setEnrolled] = useState(false)
+  const picker = useFolderPicker()
 
   const scan = useCallback(async (force = false) => {
     setScanning(true)
@@ -47,27 +52,34 @@ export function AddGamesView({ onEnrolled }: Props) {
     })
   }
 
-  const setSaveFolder = async () => {
+  // The native dialog (Windows tray) also writes the candidate cache server-side; on a headless
+  // Deck it returns null and the browser opens inside the game's own Proton prefix. Either way the
+  // chosen path is persisted with api.candidateFolder and reflected in local state.
+  const pickFolderFor = (c: Candidate) => picker.pick({
+    name: c.name,
+    start: () => c.path || c.prefixPath || null,
+    nativePick: () => api.candidateFolderPick(c.id),
+    apply: async (path) => {
+      await api.candidateFolder(c.id, path)
+      setCandidates(prev => prev.map(x => x.id === c.id ? { ...x, path } : x))
+    },
+  })
+
+  const setSaveFolder = () => {
     const ids = [...checked]
     if (ids.length !== 1) return
-    const id = ids[0]!
-    // Uses combined endpoint: opens native dialog on C# side AND updates server cache.
-    const result = await api.candidateFolderPick(id)
-    if (result.path) {
-      setCandidates(prev => prev.map(c => c.id === id ? { ...c, path: result.path! } : c))
-    }
+    const c = candidates.find(x => x.id === ids[0])
+    if (c) void pickFolderFor(c)
   }
 
+  // Enrolling a game with no save folder is what produced the silent Deck failures — it lands a
+  // tracked game the archiver cannot back up. Named here so the block is actionable, not just off.
+  const missing = [...checked]
+    .map(id => candidates.find(c => c.id === id))
+    .filter((c): c is Candidate => !!c && !c.path)
+
   const enroll = async () => {
-    if (checked.size === 0) return
-    const missing = [...checked].filter(id => {
-      const c = candidates.find(c => c.id === id)
-      return c && !c.path
-    })
-    if (missing.length > 0) {
-      setStatus('Some selected games have no save folder. Select one and click "Set save folder…".')
-      return
-    }
+    if (checked.size === 0 || missing.length > 0) return
     setEnrolling(true)
     setStatus('Enrolling…')
     try {
@@ -76,6 +88,7 @@ export function AddGamesView({ onEnrolled }: Props) {
         `Enrolled ${result.enrolled} game(s).` +
         (result.skipped > 0 ? ` Skipped ${result.skipped} already tracked.` : '')
       )
+      if (result.enrolled > 0) setEnrolled(true)
       setChecked(new Set())
       onEnrolled()
       await scan(false)
@@ -88,6 +101,12 @@ export function AddGamesView({ onEnrolled }: Props) {
 
   const busy = scanning || enrolling
   const visible = hideSteamCloud ? candidates.filter(c => !c.hasSteamCloud) : candidates
+  const enrollBlocked = missing.length > 0
+  const footerStatus = status || (
+    enrollBlocked
+      ? `Set a save folder for: ${missing.map(c => c.name).join(', ')}`
+      : `Found ${visible.length} candidate(s).`
+  )
 
   return (
     <div style={{
@@ -108,7 +127,7 @@ export function AddGamesView({ onEnrolled }: Props) {
         <button
           style={{ ...BTN_BASE, opacity: checked.size !== 1 ? 0.45 : 1 }}
           disabled={busy || checked.size !== 1}
-          onClick={() => void setSaveFolder()}
+          onClick={() => setSaveFolder()}
         >
           <FolderOpen size={13} strokeWidth={1.75} color="#9CA3AF" />
           <span>Set save folder…</span>
@@ -173,7 +192,7 @@ export function AddGamesView({ onEnrolled }: Props) {
                   </span>
                 )}
               </div>
-              {c.path && (
+              {c.path ? (
                 <div style={{
                   color: '#9CA3AF', fontSize: 10, marginTop: 3,
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -181,31 +200,67 @@ export function AddGamesView({ onEnrolled }: Props) {
                 }}>
                   {c.path}
                 </div>
+              ) : (
+                // The per-row button is what a Deck user actually hits — the toolbar button needs
+                // a tick first, and this appears exactly on the rows that block enrollment.
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
+                  <span style={{ color: '#f4a60d', fontSize: 11 }}>No save folder set</span>
+                  <button
+                    onClick={() => void pickFolderFor(c)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      padding: '4px 9px', background: 'transparent',
+                      border: '1px solid #129271', borderRadius: 4,
+                      color: '#129271', fontSize: 11, fontWeight: 600,
+                      cursor: 'pointer', fontFamily: 'inherit',
+                    }}
+                  >
+                    <FolderSearch size={12} strokeWidth={1.75} />
+                    <span>Set save folder</span>
+                  </button>
+                </div>
               )}
             </div>
           </div>
         ))}
       </div>
 
+      {/* Launch setup appears once a game is enrolled — the "success state" (Linux only; the card
+          hides itself when there is no command, i.e. on Windows). */}
+      {enrolled && (
+        <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+          <LaunchSetupCard />
+        </div>
+      )}
+
       {/* Footer */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <span style={{ color: '#9CA3AF', fontSize: 12 }}>
-          {status || `Found ${visible.length} candidate(s).`}
+        <span style={{ color: enrollBlocked && !status ? '#f4a60d' : '#9CA3AF', fontSize: 12 }}>
+          {footerStatus}
         </span>
         <button
           onClick={() => void enroll()}
-          disabled={busy || checked.size === 0}
+          disabled={busy || checked.size === 0 || enrollBlocked}
           style={{
             padding: '7px 18px', background: '#129271', border: 'none', borderRadius: 5,
             color: '#fff', fontSize: 13, fontWeight: 600,
-            cursor: checked.size > 0 && !busy ? 'pointer' : 'default',
+            cursor: checked.size > 0 && !busy && !enrollBlocked ? 'pointer' : 'default',
             fontFamily: 'inherit', letterSpacing: '0.01em',
-            opacity: checked.size === 0 || busy ? 0.5 : 1,
+            opacity: checked.size === 0 || busy || enrollBlocked ? 0.5 : 1,
           }}
         >
           Enroll selected
         </button>
       </div>
+
+      {picker.browsing && (
+        <PathBrowserModal
+          gameName={picker.browsing.name}
+          initialPath={picker.browsing.start}
+          onConfirm={path => void picker.confirmBrowsed(path)}
+          onCancel={picker.cancel}
+        />
+      )}
     </div>
   )
 }

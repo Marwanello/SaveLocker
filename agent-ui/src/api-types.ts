@@ -496,6 +496,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/candidates/{id}/folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["FolderRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OkResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/browse": {
         parameters: {
             query?: never;
@@ -579,6 +629,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/launch-command": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LaunchCommandDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent-version": {
         parameters: {
             query?: never;
@@ -639,6 +724,7 @@ export interface components {
             leaseWarnings: components["schemas"]["LeaseWarningDto"][];
             /** Format: int32 */
             settleQuietSeconds: number | string;
+            platform: string;
         };
         AgentVersionDto: {
             currentVersion: string;
@@ -661,6 +747,7 @@ export interface components {
             source: string;
             hasSteamCloud: boolean;
             path: string;
+            prefixPath: null | string;
         };
         ConfigRequest: {
             serverUrl: null | string;
@@ -689,6 +776,10 @@ export interface components {
         };
         FolderResponse: {
             path: null | string;
+        };
+        LaunchCommandDto: {
+            command: null | string;
+            note: null | string;
         };
         LeaseWarningDto: {
             gameName: string;

@@ -20,6 +20,7 @@ public sealed class AgentApiServer : IDisposable
     private readonly Func<IReadOnlyList<ScanCandidate>, int[], Task<(int enrolled, int skipped)>> _enroll;
     private readonly IAutoStart _autoStart;
     private readonly Func<Task<string?>> _pickFolder;
+    private readonly Func<LaunchCommandDto> _launchInfo;
     private readonly PathBrowser _browser;
     private readonly Action? _onRegistered;
     private readonly Func<UpdateResult?> _getUpdateResult;
@@ -41,7 +42,8 @@ public sealed class AgentApiServer : IDisposable
         Func<Task<string?>>? pickFolder = null,
         Action? onRegistered = null,
         Func<UpdateResult?>? getUpdateResult = null,
-        IEnumerable<string>? browseRoots = null)
+        IEnumerable<string>? browseRoots = null,
+        Func<LaunchCommandDto>? launchInfo = null)
     {
         _browser = new PathBrowser(browseRoots);
         Port = port;
@@ -50,6 +52,7 @@ public sealed class AgentApiServer : IDisposable
         _enroll = enroll;
         _autoStart = autoStart;
         _pickFolder = pickFolder ?? (() => Task.FromResult<string?>(null));
+        _launchInfo = launchInfo ?? (() => new LaunchCommandDto(null, null));
         _onRegistered = onRegistered;
         _getUpdateResult = getUpdateResult ?? (() => null);
         _uiRoot = Path.Combine(AppContext.BaseDirectory, "agent-ui");
@@ -152,7 +155,8 @@ public sealed class AgentApiServer : IDisposable
                 _config.TotalSavesPushed,
                 lastSyncAgo,
                 warnings,
-                _config.SettleQuietSeconds);
+                _config.SettleQuietSeconds,
+                OperatingSystem.IsWindows() ? "Windows" : "Linux");
         }).Produces<AgentStateDto>();
 
         app.MapPost("/api/lease-warnings/dismiss", (DismissWarningRequest body) =>
@@ -259,6 +263,22 @@ public sealed class AgentApiServer : IDisposable
             return TypedResults.Ok(new FolderResponse(path));
         });
 
+        // Sets a browsed path onto a cached candidate. Mirrors POST /api/games/{id}/folder, but the
+        // candidate cache — not the tracked-games list — is what Add Games reads before enrollment.
+        app.MapPost("/api/candidates/{id:int}/folder", Results<Ok<OkResponse>, BadRequest<ErrorResponse>>
+            (int id, FolderRequest body) =>
+        {
+            if (_candidateCache is null || id < 0 || id >= _candidateCache.Count)
+                return TypedResults.BadRequest(new ErrorResponse("Invalid candidate id"));
+            if (body.Path is not null)
+            {
+                var list = _candidateCache.ToList();
+                list[id] = list[id] with { SuggestedSaveDir = body.Path };
+                _candidateCache = list;
+            }
+            return TypedResults.Ok(new OkResponse());
+        });
+
         // The Deck's replacement for a folder dialog. Rooted at $HOME + the host's Steam roots;
         // a path outside them is refused rather than described (see PathBrowser).
         app.MapGet("/api/browse", Results<Ok<BrowseListing>, BadRequest<ErrorResponse>>
@@ -287,6 +307,11 @@ public sealed class AgentApiServer : IDisposable
             return new SuggestedPathDto(
                 suggested is not null && Directory.Exists(suggested) ? suggested : null);
         }).Produces<SuggestedPathDto>();
+
+        // The Steam launch-options command, so a Deck user never has to go back to install.sh's
+        // one-time banner to find it. Linux resolves the real installed binary path; Windows returns
+        // nulls (the tray sets up sync through the installer) and the UI hides the card.
+        app.MapGet("/api/launch-command", () => _launchInfo()).Produces<LaunchCommandDto>();
 
         app.MapGet("/api/agent-version", () =>
         {
@@ -357,7 +382,28 @@ public sealed class AgentApiServer : IDisposable
             candidate.Name,
             candidate.Source.ToString(),
             candidate.HasSteamCloud,
-            candidate.SuggestedSaveDir ?? "")).ToArray();
+            candidate.SuggestedSaveDir ?? "",
+            PrefixStart(candidate.PrefixPath))).ToArray();
+
+    /// <summary>
+    /// Where the path browser should open when a candidate has no save-folder guess: the deepest
+    /// existing directory of <c>{prefix}/pfx/drive_c/users/steamuser</c>, falling back to the prefix
+    /// root, falling back to null. Computed here so the UI never builds Wine paths itself.
+    /// </summary>
+    private static string? PrefixStart(string? prefix)
+    {
+        if (string.IsNullOrWhiteSpace(prefix)) return null;
+
+        var deepest = Directory.Exists(prefix) ? prefix : null;
+        var probe = prefix;
+        foreach (var seg in new[] { "pfx", "drive_c", "users", "steamuser" })
+        {
+            probe = System.IO.Path.Combine(probe, seg);
+            if (!Directory.Exists(probe)) break;
+            deepest = probe;
+        }
+        return deepest;
+    }
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -413,8 +459,9 @@ public sealed record AgentStateDto(
     int SavesBacked,
     string LastSyncAgo,
     LeaseWarningDto[] LeaseWarnings,
-    int SettleQuietSeconds);
-public sealed record CandidateDto(int Id, string Name, string Source, bool HasSteamCloud, string Path);
+    int SettleQuietSeconds,
+    string Platform);
+public sealed record CandidateDto(int Id, string Name, string Source, bool HasSteamCloud, string Path, string? PrefixPath);
 public sealed record TrackedGameDto(Guid Id, string Name, string Path);
 public sealed record AgentConfigDto(
     string ServerUrl,
@@ -422,6 +469,7 @@ public sealed record AgentConfigDto(
     bool StartWithWindows,
     int SettleQuietSeconds);
 public sealed record AgentVersionDto(string CurrentVersion, string? LatestVersion, bool UpdateAvailable);
+public sealed record LaunchCommandDto(string? Command, string? Note);
 public sealed record EnrollRequest(int[]? Ids);
 public sealed record ConfigRequest(
     string? ServerUrl,

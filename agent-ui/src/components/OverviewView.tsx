@@ -1,6 +1,7 @@
 import { Cpu, AlertTriangle } from 'lucide-react'
 import type { AgentState, LeaseWarning } from '../types'
 import { api } from '../api'
+import { LaunchSetupCard } from './LaunchSetupCard'
 
 interface Props {
   state: AgentState | null
@@ -59,7 +60,7 @@ export function OverviewView({ state, onWarningDismissed }: Props) {
       <div style={{
         flex: 1, display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
-        gap: 18, padding: 24,
+        gap: 18, padding: 24, overflowY: 'auto',
       }}>
         <Cpu size={40} strokeWidth={1.75} color="#129271" />
         <div style={{ textAlign: 'center' }}>
@@ -75,6 +76,7 @@ export function OverviewView({ state, onWarningDismissed }: Props) {
           <StatCard value={String(state?.savesBacked ?? '…')} label="Saves Backed Up" color="#ECEFF1" />
           <StatCard value={state?.lastSyncAgo ?? '—'} label="Last Sync" color="#9CA3AF" />
         </div>
+        <LaunchSetupCard />
       </div>
     </div>
   )

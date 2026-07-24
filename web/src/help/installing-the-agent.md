@@ -140,6 +140,12 @@ Replace `deck` with your username if it differs. **Use the full path.** Game Mod
 `~/.local/bin` on `PATH`, so the short form `savelocker run -- %command%` silently prevents the
 game from launching — you get a black screen and the game never opens.
 
+> **You don't have to type this.** The agent UI shows a **Steam launch setup** card — on the
+> **Overview** tab, and again right after you enrol a game — with this exact command (resolved to
+> your real install path) and a **Copy** button. The command is identical for every game, so once
+> one game is set up you can copy it straight from that game's launch options into the next, and the
+> card is only really needed for the first game on the device.
+
 That is the whole integration. The agent pulls the latest save before the game starts, waits for it
 to exit, waits for the save to finish being written, and pushes it.
 

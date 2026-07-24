@@ -35,7 +35,8 @@ public sealed class LinuxGameScanner : IGameScanner
                     HasSteamCloud: false,          // non-Steam shortcuts have no Cloud, by definition
                     ManifestKey: save is null ? null : s.AppName,
                     InstallDir: s.StartDir,
-                    SteamAppId: s.AppId));
+                    SteamAppId: s.AppId,
+                    PrefixPath: prefix));
             }
         }
 
