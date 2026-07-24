@@ -152,7 +152,8 @@ public sealed class AgentApiServer : IDisposable
                 _config.TotalSavesPushed,
                 lastSyncAgo,
                 warnings,
-                _config.SettleQuietSeconds);
+                _config.SettleQuietSeconds,
+                OperatingSystem.IsWindows() ? "Windows" : "Linux");
         }).Produces<AgentStateDto>();
 
         app.MapPost("/api/lease-warnings/dismiss", (DismissWarningRequest body) =>
@@ -259,6 +260,22 @@ public sealed class AgentApiServer : IDisposable
             return TypedResults.Ok(new FolderResponse(path));
         });
 
+        // Sets a browsed path onto a cached candidate. Mirrors POST /api/games/{id}/folder, but the
+        // candidate cache — not the tracked-games list — is what Add Games reads before enrollment.
+        app.MapPost("/api/candidates/{id:int}/folder", Results<Ok<OkResponse>, BadRequest<ErrorResponse>>
+            (int id, FolderRequest body) =>
+        {
+            if (_candidateCache is null || id < 0 || id >= _candidateCache.Count)
+                return TypedResults.BadRequest(new ErrorResponse("Invalid candidate id"));
+            if (body.Path is not null)
+            {
+                var list = _candidateCache.ToList();
+                list[id] = list[id] with { SuggestedSaveDir = body.Path };
+                _candidateCache = list;
+            }
+            return TypedResults.Ok(new OkResponse());
+        });
+
         // The Deck's replacement for a folder dialog. Rooted at $HOME + the host's Steam roots;
         // a path outside them is refused rather than described (see PathBrowser).
         app.MapGet("/api/browse", Results<Ok<BrowseListing>, BadRequest<ErrorResponse>>
@@ -357,7 +374,28 @@ public sealed class AgentApiServer : IDisposable
             candidate.Name,
             candidate.Source.ToString(),
             candidate.HasSteamCloud,
-            candidate.SuggestedSaveDir ?? "")).ToArray();
+            candidate.SuggestedSaveDir ?? "",
+            PrefixStart(candidate.PrefixPath))).ToArray();
+
+    /// <summary>
+    /// Where the path browser should open when a candidate has no save-folder guess: the deepest
+    /// existing directory of <c>{prefix}/pfx/drive_c/users/steamuser</c>, falling back to the prefix
+    /// root, falling back to null. Computed here so the UI never builds Wine paths itself.
+    /// </summary>
+    private static string? PrefixStart(string? prefix)
+    {
+        if (string.IsNullOrWhiteSpace(prefix)) return null;
+
+        var deepest = Directory.Exists(prefix) ? prefix : null;
+        var probe = prefix;
+        foreach (var seg in new[] { "pfx", "drive_c", "users", "steamuser" })
+        {
+            probe = System.IO.Path.Combine(probe, seg);
+            if (!Directory.Exists(probe)) break;
+            deepest = probe;
+        }
+        return deepest;
+    }
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -413,8 +451,9 @@ public sealed record AgentStateDto(
     int SavesBacked,
     string LastSyncAgo,
     LeaseWarningDto[] LeaseWarnings,
-    int SettleQuietSeconds);
-public sealed record CandidateDto(int Id, string Name, string Source, bool HasSteamCloud, string Path);
+    int SettleQuietSeconds,
+    string Platform);
+public sealed record CandidateDto(int Id, string Name, string Source, bool HasSteamCloud, string Path, string? PrefixPath);
 public sealed record TrackedGameDto(Guid Id, string Name, string Path);
 public sealed record AgentConfigDto(
     string ServerUrl,

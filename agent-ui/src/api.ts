@@ -50,5 +50,6 @@ export const api = {
   suggestedPath: (id: string) => req<{ path: string | null }>(`/api/games/${id}/suggested-path`),
   folderPick: () => post<{ path: string | null }>('/api/folder-pick'),
   candidateFolderPick: (id: number) => post<{ path: string | null }>(`/api/candidates/${id}/folder-pick`),
+  candidateFolder: (id: number, path: string) => post(`/api/candidates/${id}/folder`, { path }),
   dismissLeaseWarning: (gameName: string) => post('/api/lease-warnings/dismiss', { gameName }),
 }

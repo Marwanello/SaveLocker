@@ -24,4 +24,10 @@ public sealed record ScanCandidate(
     string? ManifestKey = null,
     string? InstallDir = null,
     /// <summary>Unsigned Steam AppID for a non-Steam shortcut — the compatdata folder name.</summary>
-    string? SteamAppId = null);
+    string? SteamAppId = null,
+    /// <summary>
+    /// The game's Proton compatdata prefix, when discovery resolved one (Linux only; null on
+    /// Windows). Lets the path browser open inside the prefix instead of at $HOME when the
+    /// save-folder guess is null — the normal case for a game absent from the manifest.
+    /// </summary>
+    string? PrefixPath = null);

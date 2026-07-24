@@ -1,4 +1,4 @@
-# Local agent API security - 22 checks. Runs on BOTH Windows and Linux.
+# Local agent API security - 25 checks (up to 27 when a candidate is scanned). Runs on BOTH Windows and Linux.
 #
 # The agent's own API (AgentApiServer, shared by the Windows tray and the Linux daemon) manages this
 # machine: it rewrites config, enrolls games and re-registers against the server. It used to be
@@ -56,6 +56,21 @@ function Send($path, $token, $hostHeader, $origin) {
     if ($token)      { $req.Headers.Add("X-SaveLocker-Token", $token) }
     if ($hostHeader) { $req.Headers.Host = $hostHeader }
     if ($origin)     { $req.Headers.Add("Origin", $origin) }
+    try {
+        $res = $http.SendAsync($req).GetAwaiter().GetResult()
+        return @{ Status = [int]$res.StatusCode; Body = $res.Content.ReadAsStringAsync().GetAwaiter().GetResult() }
+    } catch {
+        return @{ Status = 0; Body = "" }
+    }
+}
+
+# POST with a JSON body. Same never-throws contract as Send.
+function SendPost($path, $token, $json) {
+    $req = New-Object System.Net.Http.HttpRequestMessage("POST", "$base$path")
+    if ($token) { $req.Headers.Add("X-SaveLocker-Token", $token) }
+    if ($null -ne $json) {
+        $req.Content = New-Object System.Net.Http.StringContent($json, [System.Text.Encoding]::UTF8, "application/json")
+    }
     try {
         $res = $http.SendAsync($req).GetAwaiter().GetResult()
         return @{ Status = [int]$res.StatusCode; Body = $res.Content.ReadAsStringAsync().GetAwaiter().GetResult() }
@@ -194,6 +209,56 @@ try {
         Remove-Item $linkPath -Recurse -Force -ErrorAction SilentlyContinue
     } else {
         Write-Host "SKIP: a symlink out of the roots is refused (could not create a link)"
+    }
+
+    # =================================================================================
+    # 6b. A SYMLINK INSIDE THE ROOTS IS NOW LISTED AND TRAVERSABLE
+    # Phase 1.2 loosened the display rule from "hide every link" to "hide only a link whose
+    # target escapes the roots" — a Wine prefix reaches its save folders through in-prefix links.
+    # Containment is unchanged (6 above still holds); this proves the loosening actually happened.
+    # =================================================================================
+    $insideDir  = Join-Path $homeDir ".savelocker-verify-inside"
+    $insideReal = Join-Path $insideDir "real"
+    $insideLink = Join-Path $insideDir "link"
+    Remove-Item $insideDir -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force $insideReal | Out-Null
+    New-Item -ItemType Directory -Force (Join-Path $insideReal "child") | Out-Null
+    $insideLinkMade = $false
+    try {
+        New-Item -ItemType SymbolicLink -Path $insideLink -Target $insideReal -ErrorAction Stop | Out-Null
+        $insideLinkMade = $true
+    } catch {
+        try { New-Item -ItemType Junction -Path $insideLink -Target $insideReal -ErrorAction Stop | Out-Null; $insideLinkMade = $true } catch { }
+    }
+    if ($insideLinkMade) {
+        $listing = Send "/api/browse?path=$([uri]::EscapeDataString($insideDir))" $token $null $null
+        Check "a link inside the roots is listed"     ($listing.Status -eq 200 -and $listing.Body -match '"link"')
+        $intoLink = Send "/api/browse?path=$([uri]::EscapeDataString($insideLink))" $token $null $null
+        Check "a link inside the roots is traversable" ($intoLink.Status -eq 200 -and $intoLink.Body -match '"child"')
+    } else {
+        Write-Host "SKIP: a link inside the roots is listed (could not create a link)"
+    }
+    Remove-Item $insideDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    # =================================================================================
+    # 8. THE CANDIDATE SAVE-FOLDER SETTER
+    # POST /api/candidates/{id}/folder is what Add Games writes a browsed path with (the candidate
+    # cache is not the tracked-games list). An out-of-range id must be rejected, not silently
+    # mutate anything; a valid id must actually stick. The positive leg needs a scanned candidate,
+    # absent on a bare CI box, so it skips cleanly when the scan finds nothing.
+    # =================================================================================
+    $badId = SendPost "/api/candidates/999999/folder" $token '{"path":"/tmp"}'
+    Check "an out-of-range candidate folder set is refused (400)" ($badId.Status -eq 400)
+
+    $cands = Send "/api/candidates" $token $null $null
+    if ($cands.Status -eq 200 -and $cands.Body -match '"id"\s*:\s*0\b') {
+        $wanted = if ($onWindows) { $env:USERPROFILE } else { $env:HOME }
+        $setOne = SendPost "/api/candidates/0/folder" $token (@{ path = $wanted } | ConvertTo-Json -Compress)
+        Check "a valid candidate folder set is accepted (200)" ($setOne.Status -eq 200)
+        $after = Send "/api/candidates" $token $null $null
+        Check "the candidate folder set sticks in the cache" ($after.Body.Contains(($wanted -replace '\\','\\')))
+    } else {
+        Write-Host "SKIP: a valid candidate folder set is accepted (no candidates scanned on this box)"
     }
 }
 finally {

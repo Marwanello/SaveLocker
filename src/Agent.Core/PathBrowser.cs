@@ -85,10 +85,12 @@ public sealed class PathBrowser
         {
             entries = new DirectoryInfo(full)
                 .EnumerateDirectories()
-                // Links are not followed here for the same reason the archive walk does not follow
-                // them (Gotchas.md): a Wine prefix is full of links pointing outside the tree, and
-                // following one would quietly hand back a listing from outside the roots.
-                .Where(d => !IsLink(d))
+                // A Wine prefix is full of links — My Documents, Application Data and friends under
+                // steamuser are links pointing back inside the prefix — so hiding every link would
+                // hide the save folders the browser exists to reach. Instead we hide only a link
+                // whose resolved target ESCAPES the roots: the containment guarantee is unchanged
+                // (a listing from outside the roots is still impossible), only the display loosens.
+                .Where(d => !IsEscapingLink(d))
                 .OrderBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase)
                 .Select(d => new BrowseEntry(d.Name, d.FullName))
                 .ToList();
@@ -145,6 +147,22 @@ public sealed class PathBrowser
     {
         try { return entry.LinkTarget is not null; }
         catch { return false; }
+    }
+
+    /// <summary>
+    /// True for a link whose resolved target lies outside every root. A non-link, or a link that
+    /// resolves back inside the roots, is not escaping and stays listed. A link we cannot resolve is
+    /// treated as escaping and hidden — the safe default.
+    /// </summary>
+    private bool IsEscapingLink(FileSystemInfo entry)
+    {
+        if (!IsLink(entry)) return false;
+        try
+        {
+            var real = RealPath(entry.FullName);
+            return !_roots.Any(r => IsUnder(real, r) || PathsEqual(real, r));
+        }
+        catch { return true; }
     }
 
     /// <summary>A root shows its full path — on a Deck "Home" and "primary" mean nothing useful.</summary>
