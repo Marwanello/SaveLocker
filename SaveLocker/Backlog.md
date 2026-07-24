@@ -7,16 +7,10 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md`
 
 ## High priority
 
-- **Deploy v0.3.4** — image is built and tagged. Pull on unRAID (`docker compose pull && docker compose up -d`). Back up `/data/savelocker.db` first — three migrations apply on start and rollback is not supported. See `CONTEXT.md` → NEXT ACTION for the full checklist.
-
-- **Ship v0.3.5 agent release** — the stale-parent fix (conflict 0.0) is in `main` but not released. The Windows tray is equally a long-lived host; Windows users are still on the buggy path. Release after the v0.3.4 deploy confirms.
-
 - **Device-verify fresh Windows installer enrollment.** The wizard shipped in v0.1.7; the upgrade path is well verified. The **fresh install** (clean box, no `%PROGRAMDATA%\SaveLocker`) has never been exercised. Scenarios archived in `logs/2026-07-14_installer-enrollment.md`:
   - Happy path: run installer, choose enrollment file → page shows server + machine name → install → machine appears online in Machines.
   - ACL trap: `icacls "%PROGRAMDATA%\SaveLocker"` — interactive user needs Modify.
   - Expired-token, skip, and `/SILENT /ENROLL="C:\path\policy.json"`.
-
-- **Code-signing** — installer + exe currently unsigned; SmartScreen warns on first run. Options: EV certificate or Azure Trusted Signing. *Explicitly deferred by the maintainer, 2026-07-18.*
 
 ## Medium priority
 

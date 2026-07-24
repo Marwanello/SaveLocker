@@ -4,7 +4,7 @@
 
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** main
 
-**Current released version:** **v0.3.4** (tagged 2026-07-23). Built, verified, and committed on `main` at `8d998e7`. ⏳ **Not yet deployed** — the console still runs the old image.
+**Current released version:** **v0.3.5** (to be tagged 2026-07-24). v0.3.4 is deployed on unRAID.
 
 Shipped-feature detail: `logs/shipped-2026-07.md` + `logs/sessions.md`. Open work: `Backlog.md`.
 
@@ -31,31 +31,24 @@ Shipped-feature detail: `logs/shipped-2026-07.md` + `logs/sessions.md`. Open wor
 | Deck path setup (agent UI browser, console inline edit, scan candidates) | ✅ done — v0.3.0 |
 | Console versioning + release notes + version skew warnings | ✅ done — v0.3.2 |
 | Conflict handling (Tiers 0–2, agent backoff, escalation, Keep both) | ✅ done — v0.3.4 |
-| **Deploy v0.3.4 to unRAID** | ⏳ **NEXT ACTION** |
+| Deploy v0.3.4 to unRAID | ✅ done 2026-07-24 |
+| **Release v0.3.5** | ⏳ **NEXT ACTION** |
 
 ---
 
-## ▶ NEXT ACTION: **Deploy v0.3.4**
+## ▶ NEXT ACTION: **Tag and publish v0.3.5**
 
-v0.3.4 is released and its image is stamped correctly (`ghcr.io/skorcherx/savelocker:latest` and `:0.3.4`, `SAVELOCKER_VERSION=0.3.4`). Nobody has pulled it yet.
-
-⚠️ **Copy `/data/savelocker.db` before pulling.** Three migrations apply on start and rolling back to 0.3.3 is not supported:
-- `20260723220958_AddConflictDedupe`
-- `20260723231500_AddConflictPolicy`
-- `20260724042148_AddProtectedSaveVersions`
+Release notes written at `web/src/releases/0.3.5.md` and registered in `index.ts`. Commit and tag:
 
 ```
-docker compose pull && docker compose up -d
+git tag v0.3.5 && git push origin v0.3.5
 ```
 
-⚠️ **v0.3.4 needed a manual image re-run** — `docker-publish.yml` did not trigger on tags, so the release shipped stamped `0.3.3+11.9ae9307`. Fixed (`tags: ['v*']`), but **confirm on the next release that a `docker-publish` run exists for the tag** — it is unconfirmed whether `paths-ignore` also filters tag pushes. `Gotchas.md` has the symptom and the manual recovery.
+⚠️ **Confirm `docker-publish` triggered on the tag** (not just the push) — see the v0.3.4 incident in `Gotchas.md`. If it didn't, re-trigger manually.
 
-### After deploy — verify
+After the release publishes: deploy on unRAID (`docker compose pull && docker compose up -d`) and upgrade agents (Windows auto-updates; Deck needs the new tarball + `install.sh`).
 
-After `docker compose up -d`, check:
-1. Console version chip shows `0.3.4` (green, not amber).
-2. Conflict handling: open conflicts show correctly, "Keep both" works, Overdue badge fires after 6 h.
-3. **Windows agents still have the stale-parent bug** (0.0) — ship a v0.3.5 agent release after deploy.
+Migration `20260724042148_AddProtectedSaveVersions` applies on server start. Rolling back to 0.3.4 after the migration is not supported.
 
 ---
 
