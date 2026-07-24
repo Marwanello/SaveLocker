@@ -30,6 +30,8 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md`
 
 ## Planned / future
 
+- **Linux add-game streamlining — Phase 3.** Phases 1–2 shipped in PR #24 (the dead "Set save folder" button, prefix-rooted browser, enrollment gating, and the copyable launch-command card). Phase 3 is the gamepad-native Game Mode UI (`savelocker ui`, SDL + Dear ImGui in the existing binary) so a Deck user never returns to Desktop Mode. Full design + rejected alternatives in `Linux-Agent-Streamline.md`. **Gated on a real Deck**: verify a stub window renders under gamescope (§3.3.1), Steam Input delivers a gamepad (§3.3.2), and the tarball size delta stays single-digit MB (§3.1) **before** writing any views — if any fails, re-cost.
+
 - **Registry-based saves** — the Ludusavi manifest has a `registry:` section; only `files:` paths are handled.
 - **Multi-directory saves** — some games list multiple save paths. The sync engine tracks one `SaveDirectory` per game; multi-dir support needs a schema change.
 - **File-count / newest-mtime delta in conflict UI** — would help disambiguate conflict options. The server does not store it; needs computing at upload time or deriving from the archive on demand. Not done; everything else in conflict Tier 1 is complete.

@@ -33,6 +33,8 @@ Shipped-feature detail: `logs/shipped-2026-07.md` + `logs/sessions.md`. Open wor
 | Conflict handling (Tiers 0–2, agent backoff, escalation, Keep both) | ✅ done — v0.3.4 |
 | Deploy v0.3.4 to unRAID | ✅ done 2026-07-24 |
 | **Release v0.3.5** | ⏳ **NEXT ACTION** |
+| Linux add-game streamline — Phases 1–2 (dead button, prefix browser, enroll gate, launch card) | ✅ done — PR #24, 2026-07-24 |
+| Linux add-game streamline — Phase 3 (gamepad-native `savelocker ui`) | ⏳ planned — gated on a Deck (`Backlog.md`) |
 
 ---
 
@@ -73,7 +75,7 @@ Migration `20260724042148_AddProtectedSaveVersions` applies on server start. Rol
 | Build installer | `.\installer\build-installer.ps1` |
 | Agent integration | `.\tests\run-agent-tests.ps1` (**45** on Windows / 43 on Linux). Needs server on :5179 — and `.verify/` cleared **in the same breath** (see `Gotchas.md`) |
 | Enrollment tests | `.\tests\run-enrollment-tests.ps1` (16 checks; needs :5179). Run **after** agent suite |
-| Local agent API security | `.\tests\run-local-api-tests.ps1` (**22** checks). Starts own daemon on **:5188** |
+| Local agent API security | `.\tests\run-local-api-tests.ps1` (**27** checks, +2 when a candidate is scanned). Starts own daemon on **:5188** |
 | Cross-process state | `.\tests\run-concurrency-tests.ps1` (17 checks; own server on **:5183**, own daemon on **:5189**) |
 | Health tests | `.\tests\run-health-tests.ps1` (19 checks). Starts own server on :5181 |
 | Hardening tests | `.\tests\run-hardening-tests.ps1` (14 on Linux / 13 on Windows; own server on :5182) |
