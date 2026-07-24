@@ -20,6 +20,7 @@ public sealed class AgentApiServer : IDisposable
     private readonly Func<IReadOnlyList<ScanCandidate>, int[], Task<(int enrolled, int skipped)>> _enroll;
     private readonly IAutoStart _autoStart;
     private readonly Func<Task<string?>> _pickFolder;
+    private readonly Func<LaunchCommandDto> _launchInfo;
     private readonly PathBrowser _browser;
     private readonly Action? _onRegistered;
     private readonly Func<UpdateResult?> _getUpdateResult;
@@ -41,7 +42,8 @@ public sealed class AgentApiServer : IDisposable
         Func<Task<string?>>? pickFolder = null,
         Action? onRegistered = null,
         Func<UpdateResult?>? getUpdateResult = null,
-        IEnumerable<string>? browseRoots = null)
+        IEnumerable<string>? browseRoots = null,
+        Func<LaunchCommandDto>? launchInfo = null)
     {
         _browser = new PathBrowser(browseRoots);
         Port = port;
@@ -50,6 +52,7 @@ public sealed class AgentApiServer : IDisposable
         _enroll = enroll;
         _autoStart = autoStart;
         _pickFolder = pickFolder ?? (() => Task.FromResult<string?>(null));
+        _launchInfo = launchInfo ?? (() => new LaunchCommandDto(null, null));
         _onRegistered = onRegistered;
         _getUpdateResult = getUpdateResult ?? (() => null);
         _uiRoot = Path.Combine(AppContext.BaseDirectory, "agent-ui");
@@ -305,6 +308,11 @@ public sealed class AgentApiServer : IDisposable
                 suggested is not null && Directory.Exists(suggested) ? suggested : null);
         }).Produces<SuggestedPathDto>();
 
+        // The Steam launch-options command, so a Deck user never has to go back to install.sh's
+        // one-time banner to find it. Linux resolves the real installed binary path; Windows returns
+        // nulls (the tray sets up sync through the installer) and the UI hides the card.
+        app.MapGet("/api/launch-command", () => _launchInfo()).Produces<LaunchCommandDto>();
+
         app.MapGet("/api/agent-version", () =>
         {
             var latest = _getUpdateResult() is UpdateResult.Available available
@@ -461,6 +469,7 @@ public sealed record AgentConfigDto(
     bool StartWithWindows,
     int SettleQuietSeconds);
 public sealed record AgentVersionDto(string CurrentVersion, string? LatestVersion, bool UpdateAvailable);
+public sealed record LaunchCommandDto(string? Command, string? Note);
 public sealed record EnrollRequest(int[]? Ids);
 public sealed record ConfigRequest(
     string? ServerUrl,

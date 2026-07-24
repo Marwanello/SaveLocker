@@ -4,6 +4,7 @@ import type { Candidate } from '../types'
 import { api } from '../api'
 import { useFolderPicker } from '../useFolderPicker'
 import { PathBrowserModal } from './PathBrowserModal'
+import { LaunchSetupCard } from './LaunchSetupCard'
 
 interface Props {
   onEnrolled: () => void
@@ -24,6 +25,7 @@ export function AddGamesView({ onEnrolled }: Props) {
   const [scanning, setScanning] = useState(false)
   const [enrolling, setEnrolling] = useState(false)
   const [status, setStatus] = useState('')
+  const [enrolled, setEnrolled] = useState(false)
   const picker = useFolderPicker()
 
   const scan = useCallback(async (force = false) => {
@@ -86,6 +88,7 @@ export function AddGamesView({ onEnrolled }: Props) {
         `Enrolled ${result.enrolled} game(s).` +
         (result.skipped > 0 ? ` Skipped ${result.skipped} already tracked.` : '')
       )
+      if (result.enrolled > 0) setEnrolled(true)
       setChecked(new Set())
       onEnrolled()
       await scan(false)
@@ -221,6 +224,14 @@ export function AddGamesView({ onEnrolled }: Props) {
           </div>
         ))}
       </div>
+
+      {/* Launch setup appears once a game is enrolled — the "success state" (Linux only; the card
+          hides itself when there is no command, i.e. on Windows). */}
+      {enrolled && (
+        <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+          <LaunchSetupCard />
+        </div>
+      )}
 
       {/* Footer */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>

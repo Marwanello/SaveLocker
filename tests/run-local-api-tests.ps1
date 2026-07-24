@@ -1,4 +1,4 @@
-# Local agent API security - 25 checks (up to 27 when a candidate is scanned). Runs on BOTH Windows and Linux.
+# Local agent API security - 26 checks (up to 27 when a candidate is scanned). Runs on BOTH Windows and Linux.
 #
 # The agent's own API (AgentApiServer, shared by the Windows tray and the Linux daemon) manages this
 # machine: it rewrites config, enrolls games and re-registers against the server. It used to be
@@ -260,6 +260,21 @@ try {
     } else {
         Write-Host "SKIP: a valid candidate folder set is accepted (no candidates scanned on this box)"
     }
+
+    # =================================================================================
+    # 9. THE STEAM LAUNCH COMMAND
+    # /api/launch-command puts install.sh's one-time banner in the UI. It is token-gated like
+    # everything else; on Linux it resolves the real installed path, and on Windows it returns a
+    # null command so the UI hides the card (the tray sets up sync through the installer instead).
+    # =================================================================================
+    $lcNoToken = Send "/api/launch-command" $null $null $null
+    Check "/api/launch-command needs the token"       ($lcNoToken.Status -eq 401)
+
+    # This harness always drives the Agent.Linux daemon (see header), so the endpoint is wired with
+    # the Linux resolver on either OS and always returns a command. The Windows tray, which passes no
+    # resolver and returns a null command, is not exercised here — its default is covered by types.
+    $lc = Send "/api/launch-command" $token $null $null
+    Check "launch-command resolves the run wrapper"   ($lc.Status -eq 200 -and $lc.Body -match 'run -- %command%')
 }
 finally {
     if ($daemonProc) { Stop-Process -Id $daemonProc.Id -Force -ErrorAction SilentlyContinue }
