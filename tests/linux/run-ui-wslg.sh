@@ -20,6 +20,11 @@
 #   bash tests/linux/run-ui-wslg.sh              # 1280x800, the Deck's native panel size
 #   bash tests/linux/run-ui-wslg.sh 1024x640     # other sizes, to sanity-check the layout scales
 #   bash tests/linux/run-ui-wslg.sh --no-build   # skip the build, just launch
+#
+# Navigation work: --nav-debug overlays the live nav cursor state (focused item, the child window
+# that owns it, and whether a focus request is armed). Combine with --nav to script presses and
+# --screenshot to capture where the cursor landed, e.g.
+#   bash tests/linux/run-ui-wslg.sh --fixtures --nav-debug --nav right,left --screenshot /tmp/x.png
 
 set -euo pipefail
 
@@ -37,6 +42,7 @@ while [ $# -gt 0 ]; do
     --fixtures)   FIXTURES=1 ;;
     --autoscan)   EXTRA="$EXTRA --autoscan" ;;
     --nav)        EXTRA="$EXTRA --nav ${2:?--nav needs a sequence, e.g. right,down,a}"; shift ;;
+    --nav-debug)  EXTRA="$EXTRA --nav-debug" ;;   # live focus/zone/request read-out, top right
     *x*)          SIZE="$1" ;;
     *) echo "Unknown argument '$1'. Usage: run-ui-wslg.sh [WxH] [--no-build] [--gallery] [--screenshot out.png]" >&2; exit 2 ;;
   esac

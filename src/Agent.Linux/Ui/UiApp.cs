@@ -60,7 +60,10 @@ sealed class UiApp
     // happened, which is how the change is detected without every caller having to announce it.
     private Screen _renderedScreen = Screen.Status;
     private float _screenFade = 1f;
-    private const float ScreenFadeSeconds = 0.16f;
+    // 0.30 s, up from 0.16. Ease-out cubic spends most of its time near full opacity, so at 160 ms the
+    // visible part of the transition was roughly 80 ms — it measured as working and went unnoticed on
+    // the Deck across a whole session, same failure as the focus ring's alpha-only pulse.
+    private const float ScreenFadeSeconds = 0.30f;
 
     /// <summary>Put the nav cursor on the rail on the first frame, so the D-pad works immediately.</summary>
     private bool _focusRailOnce = true;
@@ -76,8 +79,8 @@ sealed class UiApp
     // is just a spinner. The intent is held until a control appears rather than being swallowed.
     private int _pendingCrossFrames;
     private const int PendingCrossFrames = 1800;   // ~30 s; a cold scan can take a while
-    private bool _navLeftFired, _navRightFired;
-    private string? _focusWindow;
+    private bool _navLeftFired, _navRightFired, _navBackFired;
+    private int _strandedFrames;
 
     // Scripted navigation, for verification. Gamepad nav is the single hardest thing to test off a
     // Deck, and it is exactly where the bugs are — so `--nav right,down,a` replays presses through
@@ -136,8 +139,14 @@ sealed class UiApp
 
     public static int Run(AgentConfig config, string? sizeOverride = null, string? screenshotPath = null,
         bool gallery = false, string? startScreen = null, bool autoScan = false,
-        string? navScript = null)
+        string? navScript = null, bool navDebug = false)
     {
+        NavDebug.Enabled = navDebug;
+
+        // Printed before the window opens, so the probe result is readable even from a run that
+        // cannot open a display — which is how a self-contained publish gets checked on a Deck.
+        if (navDebug) Console.WriteLine("nav api: " + ImGuiInternal.Status);
+
         var app = new UiApp(config, ParseSize(sizeOverride), screenshotPath);
         if (gallery) app._screen = Screen.Gallery;
         else if (startScreen is not null)
@@ -337,6 +346,8 @@ sealed class UiApp
             }
         }
 
+        NavDebug.BeginFrame();
+        Widgets.BeginFrame();
         FeedImGuiNav();
 
         // SDL's error string is sticky — it is never cleared on success, only overwritten on the
@@ -365,12 +376,6 @@ sealed class UiApp
 
         var size = ImGui.GetIO().DisplaySize;
 
-        if (_focusWindow is not null)
-        {
-            ImGui.SetWindowFocus(_focusWindow);
-            _focusWindow = null;
-        }
-
         if (_screen == Screen.Gallery)
         {
             // The dev gallery takes the whole surface: it is taller than the shell's content area
@@ -387,11 +392,19 @@ sealed class UiApp
             DrawRail(size);
             DrawContent(size);
             DrawHintBar(size);
+            DrawSeparators(size);
         }
+
+        // Drawn before the request is aged and before the crossing is resolved, so the overlay shows
+        // the state that actually governed THIS frame's draw rather than next frame's.
+        NavDebug.Draw(new NavDebug.Frame(
+            _screen.ToString(), _focusZone.ToString(), _activeRailId, _bestContentId,
+            _pendingCrossFrames));
 
         // Anything left armed had no enabled widget to land on this frame; let it age out.
         Widgets.AgeFocusRequest();
 
+        RecoverStrandedCursor();
         ResolvePaneCrossing();
 
         ImGui.End();
@@ -436,10 +449,15 @@ sealed class UiApp
     /// control sits far lower — so it simply refuses the move. That is what made the UI feel like
     /// it needed A to "enter" a pane and B to leave it.
     ///
-    /// Right out of the rail is unconditional: the rail is one column, so Right can never mean
-    /// anything else. Left back to the rail is deferred by a frame and only applied if ImGui did
-    /// NOT move focus itself, so Left still steps through the content's own columns first and only
-    /// falls back to the rail once there is nothing further left to reach.
+    /// So both crossings are explicit and unconditional: the rail is one column, so Right out of it
+    /// can never mean anything else, and Left out of the content always returns to the rail entry for
+    /// the screen you are on. Each fires a focus request that <see cref="Widgets"/> serves through
+    /// igSetFocusID on the very next frame.
+    ///
+    /// Left is NOT deferred to see whether ImGui would move the cursor itself first. It was, so that
+    /// Left could step through a screen's own columns before leaving the pane — but no screen has
+    /// side-by-side focusable columns (the two-column layouts are text against controls), and the
+    /// deferral cost a frame on every press and left the request armed when it did not land.
     /// </summary>
     private void ResolvePaneCrossing()
     {
@@ -464,55 +482,99 @@ sealed class UiApp
             // Back to the rail entry for the screen you are on — never the nearest one by pixels.
             _focusZone = Zone.Rail;
             Widgets.RequestFocus(_activeRailId);
-            // Move the window focus too. A per-item request alone could not prise the cursor out of
-            // a deeply nested child (the tracked-games list sits three flattened children deep), so
-            // the hand-off landed from some screens and not others.
-            _focusWindow = "rail";
         }
 
-        _navLeftFired = _navRightFired = false;
+        // B has to be handled here now. It used to be ImGui's built-in NavCancel and nothing else,
+        // which worked only by accident: with the cursor app-placed, RecoverStrandedCursor puts back
+        // whatever NavCancel cleared, in the same frame. Owning it also fixes a hint bar that has
+        // been lying — on Set save folder the bar promises "Cancel", but NavCancel only ever moved the
+        // nav cursor and left the screen up; the on-screen Cancel button was the only way out.
+        if (_navBackFired)
+        {
+            // In the folder browser B means "up a directory", not "cancel". Inside a file tree that is
+            // what back reads as, and cancelling is already reachable two other ways (the Cancel
+            // button, or Left out to the rail) — so spending B on a third exit wasted it.
+            // At the roots there is nothing above to climb to, so back leaves the screen rather than
+            // becoming a dead button.
+            if (_screen == Screen.SetFolder)
+            {
+                bool canClimb = _listing is not null &&
+                                (_listing.Parent is not null || !string.IsNullOrEmpty(_listing.Path));
+                if (canClimb)
+                {
+                    _browsePath = _listing!.Parent ?? "";
+                }
+                else
+                {
+                    _screen = Screen.AddGame;
+                    _bestContentId = 0;
+                    _focusZone = Zone.Rail;
+                    Widgets.RequestFocus(_activeRailId);
+                }
+            }
+            else if (_focusZone == Zone.Content)
+            {
+                _focusZone = Zone.Rail;
+                Widgets.RequestFocus(_activeRailId);
+            }
+        }
+
+        _navLeftFired = _navRightFired = _navBackFired = false;
     }
 
     private void EnterContent()
     {
         _focusZone = Zone.Content;
         Widgets.RequestFocus(_bestContentId);
-        _focusWindow = "content";
     }
-
-    // ── Pane hand-off ────────────────────────────────────────────────────────────────────────
-
-    private bool _handoffActive;
-    private float _savedDisabledAlpha;
 
     /// <summary>
-    /// Disable the pane the cursor is leaving for the single frame of a hand-off.
+    /// Put the cursor back on a real control if no submitted item claimed it this frame.
     ///
-    /// SetKeyboardFocusHere cannot reliably take the cursor away from a widget in another flattened
-    /// child — that is why Left returned to the rail from some screens and not others. Disabled
-    /// items are skipped by navigation entirely, so with the source pane disabled ImGui has nowhere
-    /// to keep the cursor and the request lands. DisabledAlpha is pinned to 1 for the duration, so
-    /// nothing dims: the frame is visually identical.
+    /// A Deck has no pointer, so the focus ring IS the cursor: if ImGui leaves NavId on something no
+    /// widget answers for, the screen shows a highlight with nothing selected inside it and the D-pad
+    /// reads as dead. That is what the hint bar appearing "selectable, with no options in it"
+    /// actually was — a pane-sized highlight whose bottom edge sits on the hint bar, reported from
+    /// the Deck as a footer you could navigate to.
+    ///
+    /// This is an invariant rather than a patch for one cause: whatever strands the cursor — an item
+    /// that stopped being submitted, a list that emptied, a screen whose ids all changed — the cursor
+    /// belongs on a control, and there is now a primitive that can put it there.
     /// </summary>
-    private void BeginHandoffSource(bool isSource)
+    private void RecoverStrandedCursor()
     {
-        _handoffActive = isSource;
-        if (!isSource) return;
+        if (Widgets.CursorOnRealItem || Widgets.FocusRequestPending)
+        {
+            _strandedFrames = 0;
+            return;
+        }
 
-        var style = ImGui.GetStyle();
-        _savedDisabledAlpha = style.DisabledAlpha;
-        style.DisabledAlpha = 1f;
-        ImGui.BeginDisabled();
+        _strandedFrames++;
+
+        // Prefer where the cursor last legitimately was — but only once. If that item is gone rather
+        // than merely unfocused (browsing into another folder retires every row id, so this is a real
+        // path, not a theoretical one) then re-requesting it can never land, and retrying it forever
+        // would leave the cursor stranded while looking busy. Second attempt goes to the pane anchor,
+        // which is always a live id.
+        var target = _strandedFrames == 1 && Widgets.LastGoodId != 0
+            ? Widgets.LastGoodId
+            : _focusZone == Zone.Rail ? _activeRailId : _bestContentId;
+
+        Widgets.RequestFocus(target);
     }
 
-    private void EndHandoffSource()
-    {
-        if (!_handoffActive) return;
-        _handoffActive = false;
-
-        ImGui.EndDisabled();
-        ImGui.GetStyle().DisabledAlpha = _savedDisabledAlpha;
-    }
+    /// <summary>
+    /// Whether both panes must stay navigable so a hand-off can complete.
+    ///
+    /// Only the fallback needs this. <c>SetKeyboardFocusHere</c> can only move a cursor that is not
+    /// already inside a <c>NoNav</c> window, so suppressing the pane it is leaving strands it. That
+    /// concession is also the bug: while both panes are live, ImGui's geometric scoring can carry a
+    /// Down out of the content and onto "Quit". <c>igSetFocusID</c> needs no concession — it writes
+    /// the cursor's new home directly — so with the internal API each pane is navigable only while it
+    /// owns the cursor, which is what makes Up/Down unable to cross panes at all.
+    /// </summary>
+    private static bool BothPanesForHandoff =>
+        !ImGuiInternal.Available && Widgets.FocusRequestPending;
 
     private bool Connected => !string.IsNullOrEmpty(_config.ApiKey);
 
@@ -568,11 +630,6 @@ sealed class UiApp
         ImGui.EndChild();
         ImGui.PopStyleVar();
         ImGui.PopStyleColor();
-
-        var dl = ImGui.GetWindowDrawList();
-        dl.AddLine(new Vector2(0, Theme.Layout.HeaderHeight),
-                   new Vector2(size.X, Theme.Layout.HeaderHeight),
-                   ImGui.ColorConvertFloat4ToU32(Theme.Border), 1f);
     }
 
     /// <summary>The left rail of top-level destinations. Set save folder is a sub-flow of Add game,
@@ -583,19 +640,21 @@ sealed class UiApp
 
         ImGui.SetCursorPos(new Vector2(0, Theme.Layout.HeaderHeight));
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.BgCard);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(Theme.Space.Sm, Theme.Space.Md));
+        // Horizontal padding is FocusClearance, not Space.Sm: rail entries are full-width, so the
+        // padding is the only room their focus ring has.
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
+            new Vector2(Theme.Layout.FocusClearance, Theme.Space.Md));
         // Flattened so the rail is never a nav *container* — that is what drew a highlight around
         // the whole pane and produced the A-to-enter / B-to-leave feel. Navigable only while the
         // cursor lives here: without that gate both panes share one nav space and a Down inside the
         // content lands on a rail entry, which is why Down from "Scan for games" jumped to
         // "Add game" and left the discovered list unreachable.
         var railFlags = ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NavFlattened;
-        if (_focusZone != Zone.Rail && !Widgets.FocusRequestPending)
+        if (_focusZone != Zone.Rail && !BothPanesForHandoff)
             railFlags |= ImGuiWindowFlags.NoNav;
-        var railIsSource = _focusZone != Zone.Rail && Widgets.FocusRequestPending;
         ImGui.BeginChild("rail", new Vector2(Theme.Layout.RailWidth, height),
             ImGuiChildFlags.AlwaysUseWindowPadding, railFlags);
-        BeginHandoffSource(railIsSource);
+        NavDebug.PushScope("rail");
 
         var items = new (string Label, Icons.Glyph Icon, Screen Target, bool Active)[]
         {
@@ -626,16 +685,33 @@ sealed class UiApp
 
         if (Widgets.RailItem("Quit", Icons.X, false)) _window.Close();
 
-
-        EndHandoffSource();
+        NavDebug.PopScope();
         ImGui.EndChild();
+        NavDebug.NoteContainer("rail");
         ImGui.PopStyleVar();
         ImGui.PopStyleColor();
+    }
 
-        var dl = ImGui.GetWindowDrawList();
+    /// <summary>
+    /// The three shell separators, drawn on the FOREGROUND list after every pane is submitted.
+    ///
+    /// They used to be drawn on the root window's draw list as each pane was built, which put them
+    /// UNDER the panes: a child window's draw list merges after its parent's, and the rail and content
+    /// backgrounds both start at exactly y = HeaderHeight, so they painted over the header rule. It
+    /// survived only in the 1 px gutter at x = RailWidth — the "remnants at the tops of the vertical
+    /// lines" reported from the Deck. Drawing them last is what makes them continuous.
+    /// </summary>
+    private static void DrawSeparators(Vector2 size)
+    {
+        var dl = ImGui.GetForegroundDrawList();
+        var colour = ImGui.ColorConvertFloat4ToU32(Theme.Border);
+        var railBottom = size.Y - Theme.Layout.HintBarHeight;
+
+        dl.AddLine(new Vector2(0, Theme.Layout.HeaderHeight),
+                   new Vector2(size.X, Theme.Layout.HeaderHeight), colour, 1f);
         dl.AddLine(new Vector2(Theme.Layout.RailWidth, Theme.Layout.HeaderHeight),
-                   new Vector2(Theme.Layout.RailWidth, Theme.Layout.HeaderHeight + height),
-                   ImGui.ColorConvertFloat4ToU32(Theme.Border), 1f);
+                   new Vector2(Theme.Layout.RailWidth, railBottom), colour, 1f);
+        dl.AddLine(new Vector2(0, railBottom), new Vector2(size.X, railBottom), colour, 1f);
     }
 
     private void DrawContent(Vector2 size)
@@ -646,17 +722,13 @@ sealed class UiApp
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.BgGlobal);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
             new Vector2(Theme.Layout.Gutter, Theme.Layout.Gutter));
-        // Both panes stay navigable while a hand-off is in flight. Marking the source NoNav on the
-        // same frame strands the cursor: ImGui will not move focus out of a window it is told to
-        // ignore, so the request had nothing to take focus from and the press did nothing.
         var contentFlags = ImGuiWindowFlags.NavFlattened;
-        if (_focusZone != Zone.Content && !Widgets.FocusRequestPending)
+        if (_focusZone != Zone.Content && !BothPanesForHandoff)
             contentFlags |= ImGuiWindowFlags.NoNav;
-        var contentIsSource = _focusZone != Zone.Content && Widgets.FocusRequestPending;
         ImGui.BeginChild("content",
             new Vector2(size.X - Theme.Layout.RailWidth - 1f, height),
             ImGuiChildFlags.AlwaysUseWindowPadding, contentFlags);
-        BeginHandoffSource(contentIsSource);
+        NavDebug.PushScope("content");
 
         // Cross-fade on navigation. Without it a rail press swaps the entire right-hand two-thirds
         // of the screen between two frames, which reads as a glitch rather than a transition.
@@ -692,8 +764,9 @@ sealed class UiApp
         if (best != 0) _bestContentId = best;
 
         ImGui.PopStyleVar();
-        EndHandoffSource();
+        NavDebug.PopScope();
         ImGui.EndChild();
+        NavDebug.NoteContainer("content");
         ImGui.PopStyleVar();
         ImGui.PopStyleColor();
     }
@@ -735,10 +808,6 @@ sealed class UiApp
         ImGui.EndChild();
         ImGui.PopStyleVar();
         ImGui.PopStyleColor();
-
-        var dl = ImGui.GetWindowDrawList();
-        dl.AddLine(new Vector2(0, y), new Vector2(size.X, y),
-            ImGui.ColorConvertFloat4ToU32(Theme.Border), 1f);
     }
 
     private static string BuildVersion =>
@@ -978,8 +1047,13 @@ sealed class UiApp
         var barH = buttonH + Theme.Space.Sm + ImGui.GetStyle().ItemSpacing.Y * 2 + Theme.Space.Sm;
         var listH = MathF.Max(120f, ImGui.GetContentRegionAvail().Y - barH);
 
+        // AlwaysUseWindowPadding: a child without it gets ZERO padding, so these full-width rows would
+        // touch both edges and have their focus rings clipped (Theme.Layout.FocusClearance).
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
+            new Vector2(Theme.Layout.FocusClearance, Theme.Layout.FocusClearance));
         ImGui.BeginChild("candidates", new Vector2(0, listH),
-            ImGuiChildFlags.None, ImGuiWindowFlags.NavFlattened);
+            ImGuiChildFlags.AlwaysUseWindowPadding, ImGuiWindowFlags.NavFlattened);
+        NavDebug.PushScope("candidates");
         if (_candidates.Count > 0)
         {
             for (int i = 0; i < _candidates.Count; i++)
@@ -989,7 +1063,10 @@ sealed class UiApp
         {
             Widgets.Text("Scan to find games with Proton prefixes on this device.", Theme.TextMuted);
         }
+        NavDebug.PopScope();
         ImGui.EndChild();
+        NavDebug.NoteContainer("candidates");
+        ImGui.PopStyleVar();
 
         Widgets.Gap(Theme.Space.Sm);
 
@@ -1259,6 +1336,7 @@ sealed class UiApp
             _navQueue.Clear();
             _navLeftFired = fire.Contains(ImGuiKey.GamepadDpadLeft);
             _navRightFired = fire.Contains(ImGuiKey.GamepadDpadRight);
+            _navBackFired = fire.Contains(ImGuiKey.GamepadFaceRight);
         }
 
         // Release last frame's pulses, then press this frame's — a clean down/up per physical press.
@@ -1269,6 +1347,8 @@ sealed class UiApp
         foreach (var k in fire)
             io.AddKeyEvent(k, true);
         _navDownLastFrame = fire;
+
+        NavDebug.NoteKeys(fire);
     }
 
     /// <summary>

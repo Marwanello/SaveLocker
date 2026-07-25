@@ -51,9 +51,11 @@ v0.4.0 is tagged. Remaining:
 ⚠️ **Confirm both `docker-publish` and `release.yml` triggered on the tag** — see the v0.3.4 incident
 in `Gotchas.md`. If not, re-trigger manually.
 
-**Known issue shipped knowingly:** in `savelocker ui`, Left returns to the rail only from Overview;
-B works everywhere. Recorded as a stretch item in `Backlog.md` with the eight approaches already
-ruled out — read it before attempting a fix.
+**Deck UI navigation is fixed as of v0.4.1** — Left returns to the rail from every screen, Up/Down
+cannot cross panes, and B is a real Back. The old "Left only works from Overview" note was also
+understating it: Left was dead everywhere, including Overview. Full record in
+`logs/2026-07-25_deck-ui-navigation-fix.md`; the key finding is in `Gotchas.md` (ImGui.NET's managed
+binding omits the `imgui_internal` API its own native library exports).
 
 **The Deck UI now has a dev loop** — `tests/linux/run-ui-wslg.sh` runs it under WSLg with fixtures,
 scripted D-pad input and headless screenshots. See the quick-reference table.
