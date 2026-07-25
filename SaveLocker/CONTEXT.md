@@ -4,7 +4,7 @@
 
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** main
 
-**Current released version:** **v0.3.5** (to be tagged 2026-07-24). v0.3.4 is deployed on unRAID.
+**Current released version:** **v0.3.6** (tagged 2026-07-24). v0.3.4 is deployed on unRAID; 0.3.5 and 0.3.6 pending deploy.
 
 Shipped-feature detail: `logs/shipped-2026-07.md` + `logs/sessions.md`. Open work: `Backlog.md`.
 
@@ -34,23 +34,24 @@ Shipped-feature detail: `logs/shipped-2026-07.md` + `logs/sessions.md`. Open wor
 | Deploy v0.3.4 to unRAID | ✅ done 2026-07-24 |
 | **Release v0.3.5** | ⏳ **NEXT ACTION** |
 | Linux add-game streamline — Phases 1–2 (dead button, prefix browser, enroll gate, launch card) | ✅ done — PR #24, 2026-07-24 |
-| Linux add-game streamline — Phase 3 (gamepad-native `savelocker ui`) | ✅ built + all gates green on-device 2026-07-24; **PR #25** open (CI running) |
+| Linux add-game streamline — Phase 3 (gamepad-native `savelocker ui`) | ✅ done — shipped 2026-07-24 (PR #25 + artwork PR #26); design archived to `logs/2026-07-24_linux-agent-streamline.md` |
 
 ---
 
-## ▶ NEXT ACTION: **Tag and publish v0.3.5**
+## ▶ NEXT ACTION: **Deploy v0.3.6 and upgrade the Deck**
 
-Release notes written at `web/src/releases/0.3.5.md` and registered in `index.ts`. Commit and tag:
+v0.3.6 is tagged (Steam Deck Game Mode UI + enroll-path fix + bundled artwork). After the release
+workflows finish:
 
-```
-git tag v0.3.5 && git push origin v0.3.5
-```
+- **unRAID:** `docker compose pull && docker compose up -d` (no DB migration in 0.3.6 — rollback is safe).
+- **Windows agents:** auto-update.
+- **Steam Deck:** download the new tarball, re-run `install.sh`, then add SaveLocker to the library
+  (`Add a Non-Steam Game` → the `savelocker` binary, Launch Options `ui`) and set its artwork from
+  `~/.local/share/SaveLocker/artwork/`.
 
-⚠️ **Confirm `docker-publish` triggered on the tag** (not just the push) — see the v0.3.4 incident in `Gotchas.md`. If it didn't, re-trigger manually.
+⚠️ **Confirm both `docker-publish` and `release.yml` triggered on the tag** — see the v0.3.4 incident in `Gotchas.md`. If not, re-trigger manually.
 
-After the release publishes: deploy on unRAID (`docker compose pull && docker compose up -d`) and upgrade agents (Windows auto-updates; Deck needs the new tarball + `install.sh`).
-
-Migration `20260724042148_AddProtectedSaveVersions` applies on server start. Rolling back to 0.3.4 after the migration is not supported.
+v0.3.5 (conflict policy/escalation) is already tagged and carried migration `20260724042148_AddProtectedSaveVersions`; rolling back past **0.3.5** is not supported.
 
 ---
 

@@ -12,10 +12,16 @@ merged 2026-07-24, full CI green including `agent-tests-linux` and the cross-OS 
 - **§3.3.2:** with the **default** "Gamepad with Joystick Trackpad" template (no manual layout change),
   D-pad navigates and A activates. Required subscribing to Silk's `ButtonDown` — see `Gotchas.md`.
 
-Remaining Phase 3 work: write the four real views (Status / Add game / Set save folder / Launch
-setup) against `Agent.Core` in-process, the `install.sh` banner step, docs, and §3.3.3–3.3.5
-on-device acceptance (clipboard, idle power, full cold flow). **Written:** 2026-07-23; gates cleared
-2026-07-24. Linked from `Backlog.md`.
+**Phase 3 built and merged 2026-07-24** — PR #25 (the four views, enroll-path-to-server fix,
+`install.sh` banner, KB/docs, `Decisions.md` §2) + PR #26 (Steam Library artwork + its KB, which the
+#25 merge dropped via a GitHub PR-head lag — see `Gotchas.md`). On-device acceptance: §3.3.1
+(gamescope render), §3.3.2 (gamepad, default template), §3.3.3 (clipboard crosses into Steam), and
+§3.3.5 (full cold flow) all **confirmed on a real Deck**. §3.3.4 idle power: the loop is capped at
+30 fps (not event-idle), and the maintainer **accepted it** (2026-07-24) — the UI is opened for a few
+minutes to configure a game and then closed, so sustained idle draw is a non-issue. The
+reconcile-on-launch / "Stop tracking" gap found during testing is deferred to `Backlog.md`
+(maintainer's call, out of Phase 3 scope). **All Phase 3 work complete.** **Written:** 2026-07-23;
+gates cleared and shipped 2026-07-24.
 
 > [!note] What actually shipped vs. this plan (Phases 1–2)
 > - 1.1 folder-pick is shared via `agent-ui/src/useFolderPicker.ts`; the candidate setter is

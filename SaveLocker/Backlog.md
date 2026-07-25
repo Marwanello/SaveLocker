@@ -30,7 +30,7 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md`
 
 ## Planned / future
 
-- ~~**Linux add-game streamlining — Phase 3.**~~ **Built and verified on-device 2026-07-24** (PR #25). Gamepad-native `savelocker ui` (SDL + Dear ImGui in the existing binary): all three gates passed (renders under gamescope, Steam Input delivers a gamepad on the default template, ~8.8 MB delta), and the full cold flow (scan → prefix-rooted folder browse → enroll → path auto-reported to server → copy launch command → save syncs) works from Game Mode with no Desktop Mode round-trip. Design + rejected alternatives in `Linux-Agent-Streamline.md`; §2 amendment in `Decisions.md`.
+- ~~**Linux add-game streamlining — Phase 3.**~~ **Done — shipped 2026-07-24** (PR #25 + artwork PR #26). Gamepad-native `savelocker ui` (SDL + Dear ImGui in the existing binary), verified on a real Deck through the full cold flow. Archived design + rejected alternatives in `logs/2026-07-24_linux-agent-streamline.md`; §2 amendment in `Decisions.md`.
 
 - **Game Mode UI reflects a stale game list.** `savelocker ui` only *reads* local `config.json`; it never reconciles with the server (only the daemon does, every 20s — `CommandPoller.ReconcileGamesAsync`). So a game deleted in the console still shows in Game Mode until the daemon runs, and there is no in-UI way to untrack. Deferred 2026-07-24 (maintainer chose to keep Phase 3 lean). Fix when revisited: reconcile-on-launch (+ periodic) in `savelocker ui`, optionally a per-game "Stop tracking" that also deletes server-side so the daemon does not re-adopt it (`CommandPoller.cs:157`).
 
