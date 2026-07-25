@@ -72,6 +72,7 @@ sealed class UiApp
     private int _navScriptCooldown;
     private bool _navDiag = Environment.GetEnvironmentVariable("SAVELOCKER_NAV_DIAG") == "1";
     private const int NavScriptFrameGap = 6;   // ImGui needs a few frames to settle each move
+    private const int NavScriptStartFrame = 15;
 
     // Add-game state. The candidate list is a mutable copy so a browsed folder can be written back
     // onto a candidate before enrollment, exactly as AgentApiServer rewrites its _candidateCache.
@@ -307,7 +308,9 @@ sealed class UiApp
     private void OnRender(double delta)
     {
         // Feed one scripted press every few frames, through the same queue the pad writes to.
-        if (_navScript.Count > 0)
+        // Nothing is injected until focus has settled: SetKeyboardFocusHere resolves at the end of
+        // the first frame and overrides nav movement, so a press on frame 0 is simply eaten.
+        if (_navScript.Count > 0 && _framesRendered >= NavScriptStartFrame)
         {
             if (--_navScriptCooldown <= 0)
             {
