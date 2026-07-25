@@ -82,6 +82,7 @@ v0.3.5 (conflict policy/escalation) is already tagged and carried migration `202
 | Hardening tests | `.\tests\run-hardening-tests.ps1` (14 on Linux / 13 on Windows; own server on :5182) |
 | TOFU pin tests (TLS) | `.\tests\run-enrollment-tls-tests.ps1` (6 checks; own HTTPS server on :5443). Needs `dotnet dev-certs https --trust` |
 | Linux fake-game harness | `tests/linux/run-linux-tests.sh` (27 checks; starts own server) |
+| **Deck UI under WSLg** | `bash tests/linux/run-ui-wslg.sh [WxH] [--screenshot out.png]` — runs `savelocker ui` in a real window at the Deck's 1280×800. **Needs `-r linux-x64`** (the script does it) or SDL "isn't applicable" — see `Gotchas.md`. Validates layout/palette/type only; gamepad, gamescope and clipboard stay Deck-only |
 | Cross-OS round-trip | `tests/cross-os/crossos.ps1 -Leg author\|roundtrip\|confirm` |
 | Password-hash compat | `.\tests\verify-password-compat.ps1` |
 

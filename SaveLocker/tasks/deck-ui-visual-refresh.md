@@ -92,8 +92,11 @@ anywhere else in `Ui/`.** The seven ad-hoc `new Vector4(...)` calls currently in
 
 Console uses **Inter** (300–700) and **JetBrains Mono** (400/500). Both are SIL OFL — vendorable.
 
-- Vendor static TTFs to `src/Agent.Linux/Ui/Fonts/`. **Subset to Latin** (`pyftsubset`, Basic Latin +
-  Latin-1 Supplement + punctuation) — this is the difference between ~300 KB and ~40 KB per face.
+- Vendor static TTFs to `src/Agent.Linux/Ui/Fonts/`.
+  **✅ Done (Phase A):** Inter 4.1 statics (402 + 410 KB) and JetBrains Mono 2.304 (267 KB),
+  **unsubset**, ~1.05 MB total — inside the §0 budget, so `pyftsubset` and its `fonttools`
+  dependency were skipped. Subsetting to Latin would cut this to ~180 KB; worth doing if the budget
+  ever tightens, not worth a build-time dependency today.
 - Embed as assembly resources (`<EmbeddedResource>`), not loose files. No `install.sh` change, no
   path resolution, works identically from a dev build and an installed tarball.
 - ImGui bakes one atlas entry per (face, size). **Keep the scale short** — each bake costs atlas area:
@@ -251,6 +254,12 @@ Replace every literal colour in `UiApp.cs` with a token.
 
 **Gate:** existing four screens render unchanged in structure, but in Inter on the console palette.
 Screenshot it. This alone should kill most of the homebrew read.
+
+**✅ Phase A complete (2026-07-25).** Delivered: `Ui/Theme.cs`, vendored fonts, the WSLg loop, and
+`Ui/Screenshot.cs` — a built-in framebuffer→PNG capture (`ui --screenshot out.png`) added because no
+screenshot tool was available in WSL and `apt` needed sudo. It works identically on the Deck, so
+on-hardware appearance can be reviewed without photographing the panel. Three gotchas found and
+recorded in `Gotchas.md` (RID requirement, SDL's sticky error, WSL PATH quoting).
 
 ### Phase B — `Ui/Widgets.cs`
 `Card`, `PillButton` (primary/secondary/danger), `StatTile`, `ListRow` (icon + title + subtitle +
