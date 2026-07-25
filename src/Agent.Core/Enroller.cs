@@ -41,6 +41,15 @@ public static class Enroller
                 SaveDirectory = c.SuggestedSaveDir!,
                 SteamAppId = c.SteamAppId,
             });
+
+            // Report the chosen path to the server now, so it is authoritative from the start. The
+            // Windows tray gets away without this because its in-process CommandPoller reports the
+            // path on its next tick — but the Deck's `savelocker ui` is a separate process with no
+            // poller, so without this the console shows "not set" and a daemon reconcile (which
+            // resolves paths from the server) blanks the local path it was never told about, leaving
+            // the game unmapped and a Sync reporting "no matching mapped game on this machine".
+            try { await api.SetMachinePathAsync(game.Id, c.SuggestedSaveDir!); }
+            catch (Exception ex) { AgentLogger.LogException("Enroller.SetMachinePath", ex); }
             enrolled++;
         }
 
