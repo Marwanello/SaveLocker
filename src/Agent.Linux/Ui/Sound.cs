@@ -48,6 +48,19 @@ static class Sound
     /// <summary>Where the clips came from, for the Settings screen to be honest about.</summary>
     public static string Source { get; private set; } = "none";
 
+    /// <summary>Why audio is unavailable, if it is. Shown in Settings so the user is not left guessing.</summary>
+    public static string? Unavailable { get; private set; }
+
+    private static unsafe string SdlError(SdlApi sdl)
+    {
+        try
+        {
+            var raw = sdl.GetErrorS();
+            return string.IsNullOrWhiteSpace(raw) ? "no detail" : raw;
+        }
+        catch { return "no detail"; }
+    }
+
     public static void Init(bool muted)
     {
         Muted = muted;
@@ -62,7 +75,11 @@ static class Sound
             const uint SdlInitAudio = 0x00000010;
             if (sdl.InitSubSystem(SdlInitAudio) != 0)
             {
-                Console.Error.WriteLine("Interface sounds off: SDL audio unavailable.");
+                // Report SDL's reason. The usual cause on a stripped-down Linux box is that neither
+                // libpulse nor libasound is installed, so SDL has no backend to load — which is
+                // indistinguishable from "no sound card" unless the error is printed.
+                Console.Error.WriteLine($"Interface sounds off: SDL audio unavailable ({SdlError(sdl)}).");
+                Unavailable = "SDL audio backend unavailable";
                 return;
             }
 
@@ -95,7 +112,8 @@ static class Sound
         _device = sdl.OpenAudioDevice((byte*)null, 0, &desired, &obtained, 0);
         if (_device == 0)
         {
-            Console.Error.WriteLine("Interface sounds off: no audio device.");
+            Console.Error.WriteLine($"Interface sounds off: no audio device ({SdlError(sdl)}).");
+            Unavailable = "no audio output device";
             return false;
         }
 

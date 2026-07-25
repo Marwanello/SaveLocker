@@ -99,7 +99,8 @@ sealed class SettingsScreen
         Widgets.TextWrapped(
             Sound.Available
                 ? $"Navigation and selection feedback. Source: {Sound.Source}."
-                : "No audio device available on this machine, so nothing will play.",
+                : $"Unavailable on this machine ({Sound.Unavailable ?? "audio not started"}), "
+                  + "so nothing will play.",
             Theme.TextDim, Theme.Caption);
 
         Widgets.SectionHeader("Startup");
