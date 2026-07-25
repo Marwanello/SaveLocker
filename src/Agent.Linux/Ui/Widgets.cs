@@ -159,7 +159,7 @@ static class Widgets
 
         var lift = Tween(id, (hovered || focused ? 1f : 0f) + (active ? 0.6f : 0f));
 
-        var (baseFill, baseText, baseBorder) = kind switch
+        var (baseFill, baseText, borderColour) = kind switch
         {
             ButtonKind.Primary   => (Theme.AccentGreen, Theme.TextPrimary, Theme.AccentGreen),
             ButtonKind.Danger    => (Theme.Alpha(Theme.AccentAmber, 0.16f), Theme.AccentAmber, Theme.WarnBorder),
@@ -172,9 +172,18 @@ static class Widgets
             : Theme.Alpha(Theme.AccentGreen, 0.22f), lift * 0.6f);
         var text = enabled ? baseText : Theme.TextDim;
 
+        // A disabled Primary must lose its accent fill, not just dim its label — a full-green
+        // button with grey text still reads as pressable, and on a gamepad the user finds out only
+        // by pressing A and having nothing happen.
+        if (!enabled)
+        {
+            fill = Theme.BgTableHd;
+            borderColour = Theme.Border;
+        }
+
         var rounding = height / 2f;
         dl.AddRectFilled(min, max, U32(fill), rounding);
-        dl.AddRect(min, max, U32(Mix(baseBorder, Theme.AccentGreen, lift * 0.8f)), rounding,
+        dl.AddRect(min, max, U32(Mix(borderColour, Theme.AccentGreen, lift * 0.8f)), rounding,
             ImDrawFlags.None, 1f);
 
         // The focus ring: a second, offset outline so it reads even against a filled button.

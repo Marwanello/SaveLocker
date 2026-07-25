@@ -76,6 +76,7 @@ sealed class UiApp
     // Hard ceiling so a scan that never returns cannot hang an unattended capture forever.
     private const int ScreenshotMaxFrames = 600;
     private bool _autoScan;
+    private bool _pendingFolderScreen;
 
     private UiApp(AgentConfig config, Vector2D<int> size, string? screenshotPath)
     {
@@ -92,7 +93,12 @@ sealed class UiApp
     {
         var app = new UiApp(config, ParseSize(sizeOverride), screenshotPath);
         if (gallery) app._screen = Screen.Gallery;
-        else if (startScreen is not null) app._screen = ParseScreen(startScreen);
+        else if (startScreen is not null)
+        {
+            var target = ParseScreen(startScreen);
+            if (target == Screen.SetFolder) { app._screen = Screen.AddGame; app._pendingFolderScreen = true; }
+            else app._screen = target;
+        }
         app._autoScan = autoScan;
         return app.RunLoop();
     }
@@ -606,6 +612,14 @@ sealed class UiApp
             _selected.Clear();
             _addStatus = $"Found {_candidates.Count} game(s).";
             _scanTask = null;
+
+            // Dev affordance: `--screen folder` has nothing to browse until a scan has produced a
+            // candidate, so entering that screen is deferred until one exists.
+            if (_pendingFolderScreen && _candidates.Count > 0)
+            {
+                _pendingFolderScreen = false;
+                EnterSetFolder(0);
+            }
         }
         else if (_scanTask is { IsFaulted: true } faulted)
         {
