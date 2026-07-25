@@ -374,6 +374,9 @@ sealed class UiApp
             DrawHintBar(size);
         }
 
+        // Anything left armed had no enabled widget to land on this frame.
+        Widgets.DiscardUnclaimedFocusRequest();
+
         ResolvePaneCrossing();
 
         ImGui.End();

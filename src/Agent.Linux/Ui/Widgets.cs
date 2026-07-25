@@ -67,12 +67,23 @@ static class Widgets
 
     public static void FocusNextItem() => _focusNextItem = true;
 
-    private static void ClaimFocusRequest()
+    /// <param name="enabled">
+    /// A disabled widget must NOT claim the request: SetKeyboardFocusHere on a disabled item leaves
+    /// the cursor nowhere useful and ImGui falls back to highlighting the whole container, which is
+    /// exactly the "broken highlight" this work set out to remove.
+    /// </param>
+    private static void ClaimFocusRequest(bool enabled = true)
     {
-        if (!_focusNextItem) return;
+        if (!_focusNextItem || !enabled) return;
         _focusNextItem = false;
         ImGui.SetKeyboardFocusHere();
     }
+
+    /// <summary>
+    /// Drop a focus request nothing claimed this frame. Without this a request made on a screen with
+    /// no enabled controls would sit armed and hijack the first widget drawn on some later frame.
+    /// </summary>
+    public static void DiscardUnclaimedFocusRequest() => _focusNextItem = false;
 
     /// <summary>
     /// THE focus cursor. On a Deck this is the only pointer that exists, so it has to be
@@ -285,7 +296,7 @@ static class Widgets
             textSize.X + padX * 2 + (icon is null ? 0f : iconSize + Theme.Space.Sm));
         var height = textSize.Y + padY * 2;
 
-        ClaimFocusRequest();
+        ClaimFocusRequest(enabled);
         if (!enabled) ImGui.BeginDisabled();
         var pressed = ImGui.InvisibleButton(label, new Vector2(width, height));
         if (!enabled) ImGui.EndDisabled();
@@ -615,7 +626,7 @@ static class Widgets
         var width = ImGui.GetContentRegionAvail().X;
 
         ImGui.PushID(id);
-        ClaimFocusRequest();
+        ClaimFocusRequest(enabled);
         if (!enabled) ImGui.BeginDisabled();
         var pressed = ImGui.InvisibleButton("##row", new Vector2(width, height));
         if (!enabled) ImGui.EndDisabled();
@@ -698,7 +709,7 @@ static class Widgets
     {
         var box = ImGui.GetTextLineHeight() + 4f;
         ImGui.PushID(id);
-        ClaimFocusRequest();
+        ClaimFocusRequest(enabled);
         if (!enabled) ImGui.BeginDisabled();
         var pressed = ImGui.InvisibleButton("##check", new Vector2(box, box));
         if (!enabled) ImGui.EndDisabled();
