@@ -75,19 +75,35 @@ static class Icons
         Line(dl, p, s, c, w, 12, 5, 12, 19);
     };
 
-    /// <summary>A gear. lucide's is a single smooth path; this builds the teeth procedurally, which
-    /// reads identically at icon sizes and costs a loop instead of 40 hand-transcribed points.</summary>
+    /// <summary>
+    /// A gear. lucide's is a single hand-authored path; this generates the tooth ring procedurally.
+    /// The teeth must be a real closed outline — an earlier version radiated straight spokes from a
+    /// circle, which reads as a sun rather than a gear once it is drawn larger than ~24 px.
+    /// </summary>
     public static readonly Glyph Settings = (dl, p, s, c, w) =>
     {
         var centre = P(p, s, 12, 12);
-        dl.AddCircle(centre, 3.2f / 24f * s, c, 16, w);
-        for (int i = 0; i < 8; i++)
+        var rOut = 10.5f / 24f * s;
+        var rIn = 7.2f / 24f * s;
+        const int teeth = 7;
+        var span = MathF.Tau / teeth;
+
+        dl.PathClear();
+        for (int i = 0; i < teeth; i++)
         {
-            var a = i * MathF.PI / 4f;
-            var dir = new Vector2(MathF.Cos(a), MathF.Sin(a));
-            dl.AddLine(centre + dir * (6.2f / 24f * s), centre + dir * (9.6f / 24f * s), c, w);
+            var a = i * span - MathF.PI / 2f;
+            // Root, up the flank, across the tooth crown, back down: a trapezoid per tooth.
+            foreach (var (offset, radius) in new[]
+                     {
+                         (-span * 0.30f, rIn), (-span * 0.16f, rOut),
+                         (span * 0.16f, rOut), (span * 0.30f, rIn),
+                     })
+                dl.PathLineTo(centre + new Vector2(
+                    MathF.Cos(a + offset), MathF.Sin(a + offset)) * radius);
         }
-        dl.AddCircle(centre, 6.2f / 24f * s, c, 24, w * 0.75f);
+        dl.PathStroke(c, ImDrawFlags.Closed, w);
+
+        dl.AddCircle(centre, 3.4f / 24f * s, c, 20, w);
     };
 
     public static readonly Glyph Shield = (dl, p, s, c, w) =>
