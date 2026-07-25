@@ -167,6 +167,31 @@ to exit, waits for the save to finish being written, and pushes it.
   freely. A *native Linux* build writes a different format, and syncing that into a Windows install
   would corrupt it. So we don't.
 
+## Adding games from Game Mode — no Desktop Mode
+
+On a Steam Deck you don't need Desktop Mode to add a game. The agent ships a **gamepad-native app**,
+`savelocker ui`, that you launch from your Steam library like any game and drive entirely with the
+D-pad.
+
+**One-time setup (in Desktop Mode):**
+
+1. Steam → **Add a Non-Steam Game** → **Browse** → `~/.local/share/SaveLocker/savelocker`
+2. Open its **Properties → Launch Options** and set them to just: `ui`
+3. Rename the shortcut **SaveLocker**.
+
+That is the last Desktop Mode step you have to take. From then on, launch **SaveLocker** from your
+library in Game Mode:
+
+- **Add game** — scan for non-Steam games, tick one, and set its save folder from a browser that
+  opens **inside that game's own Proton prefix**, so you are not hunting the Windows file tree. A side
+  pane lists the files in each folder, so you can confirm the save is actually there before choosing
+  it. Enrollment is blocked until a save folder is set.
+- **Steam launch setup** — the `run -- %command%` launch command with a **Copy** button, ready to
+  paste into a game's launch options. It is identical for every game.
+
+The save folder you pick is reported to this console automatically — there is nothing to configure a
+second time here.
+
 ## Reaching the agent's own UI
 
 The daemon serves the same web UI the Windows tray shows, on port **5178**. In Desktop Mode, browse to

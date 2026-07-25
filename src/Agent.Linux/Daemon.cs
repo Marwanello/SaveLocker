@@ -112,7 +112,7 @@ public sealed class Daemon : IAsyncDisposable
     /// links <c>savelocker</c>, but the daemon may have been started from anywhere, and the full path
     /// is required because Game Mode does not put <c>~/.local/bin</c> on PATH.
     /// </summary>
-    private static LaunchCommandDto LinuxLaunchCommand()
+    internal static LaunchCommandDto LinuxLaunchCommand()
     {
         string? exe = null;
         try { exe = new FileInfo("/proc/self/exe").LinkTarget; } catch { /* fall back below */ }

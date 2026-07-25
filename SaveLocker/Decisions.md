@@ -93,6 +93,19 @@ In **Game Mode** (gamescope) there is no system tray and no desktop; a tray icon
 
 Consequence, and it is a design obligation rather than a nice-to-have: **a headless spoke cannot tell the user anything.** A conflict that raises a toast on Windows is *silent* on a Deck. The agent must therefore report health and errors to the server so the console can surface them ("Steam Deck: conflict on Hades, 2 days ago"). **The console is the Deck's UI.** This ships *with* the Linux agent, not after it.
 
+**Amendment (2026-07-24): Game Mode has no browser, so it gets a gamepad-native subset — `savelocker ui`.** The reasoning above ("Desktop Mode is just KDE with a browser") holds for Desktop Mode and is *why* the React UI stays the Desktop Mode and console surface. But **Game Mode has no browser at all** — reaching `localhost:5178` there meant installing a browser and adding it as a non-Steam shortcut. So the `savelocker ui` command (SDL + Dear ImGui, in the existing Linux binary) adds a **Game-Mode-only subset**: four screens (Status / Add game / Set save folder / Steam launch setup) that call `Agent.Core` **in-process** — no second API client, no duplicated sync logic. It is a *view*, not a second frontend; the React UI remains the only full frontend. All three on-device gates passed on a real Deck (renders under gamescope, Steam Input delivers a gamepad with the default template, tarball delta ~8.8 MB uncompressed). See `Linux-Agent-Streamline.md` §3 for the design and the rejected alternatives.
+
+> **Rejected alternatives (recorded so they do not resurface).** Full detail in `Linux-Agent-Streamline.md` §3.
+>
+> | Approach | Added size | Controller nav | Why rejected |
+> |---|---|---|---|
+> | Flatpak + WebKitGTK | 665 MB–1.5 GB installed | hand-built | Size — WebKitGTK ships only inside `org.gnome.Platform`; nothing else on a stock Deck shares that runtime. |
+> | Godot + C# | ~60–80 MB | good (built-in) | Godot needs ≤ net9 (net10 is only a 4.6 proposal) while `global.json` pins net10 — cannot reference `Agent.Core` in-process. New CI toolchain too. |
+> | Avalonia | ~20–30 MB | hand-built | Bigger *and* worse at the input model that matters — inherits the dead-D-pad problem. |
+> | `steam://openurl` | 0 | n/a | Game Mode does not open browser windows on a URL request. |
+>
+> **Chosen: SDL + Dear ImGui inside the existing binary** — smallest on the table (we already pay for the self-contained .NET runtime), zero host dependencies, one binary (`savelocker ui`, not a Deck-specific build — "Deck-specific" is a mode, not a build), and ImGui's gamepad navigation is a config flag, not a feature to build.
+
 ### 3. The Steam launch wrapper is the primary trigger — not process polling
 Users add `savelocker run %command%` to a game's Steam launch options. Steam then supplies `STEAM_COMPAT_DATA_PATH` and `SteamAppId` in the environment, which gives:
 - the **exact Wine prefix**, with no compatdata scanning or guessing, and

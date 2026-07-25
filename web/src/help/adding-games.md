@@ -28,6 +28,13 @@ Alternatively, use the **game scanning** feature: the agent can auto-detect save
 
 ### On Linux / Steam Deck
 
+**The easiest route on a Deck is the Game Mode app.** Add `~/.local/share/SaveLocker/savelocker` to
+Steam as a non-Steam game with the launch option `ui`, launch **SaveLocker** from your library, and
+add games with the D-pad — scan, tick a game, set its save folder from inside the game's own Proton
+prefix, and enrol, all without leaving Game Mode. Setup steps are under
+[Installing the agent](#help/installing-the-agent). The rest of this section covers the Desktop Mode
+web UI, which is still there if you prefer it.
+
 "Headless" means the Deck agent has no tray icon and no pop-ups — **not** that it has no UI. The daemon serves the same web UI the Windows tray shows on port **5178**. In Desktop Mode, browse to `http://localhost:5178` and use **Settings → Currently Tracked Games**, exactly as above. A game with no folder yet shows **No save folder set** and a **Set save path** button.
 
 Because there is no folder dialog on a Deck, that button opens a built-in folder browser instead. In Desktop Mode you drive it the way you drive anything else there: **the right stick (or a trackpad) moves the mouse cursor and the left stick scrolls** — point at a folder and click to open it. Rows are deliberately large enough to hit comfortably. **The D-pad does not work here** — SteamOS maps it to neither the cursor nor the arrow keys. If you have a keyboard attached, arrow keys move the selection, **Enter** or **right** enters a folder and **left**/**Backspace** goes up.

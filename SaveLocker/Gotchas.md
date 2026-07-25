@@ -2,6 +2,42 @@
 
 Traps that have already cost time. Read before touching builds, paths, or the running server.
 
+## Enroll must report the save path to the server, or a Deck-added game syncs nowhere
+Found 2026-07-24 testing `savelocker ui`. `Enroller.EnrollAsync` set the save path only in local
+`config.json`, never on the server. On **Windows this is masked** — the tray's in-process
+`CommandPoller` reports the path on its next 20 s tick (`CommandPoller.cs:145`). But the Deck's
+`savelocker ui` is a **separate process with no poller**, so the path was never reported: the console
+showed "not set", and a daemon reconcile (which resolves paths *from* the server) blanked the local
+path it was never told about — via the two-owner `config.json` race — leaving the game unmapped and a
+console **Sync** reporting *"no matching mapped game on this machine."* Fix: `Enroller.EnrollAsync`
+now calls `SetMachinePathAsync` right after `CreateGameAsync`, making the server authoritative from
+the start. **ImGui.NET text functions are printf — never pass dynamic text to `Text`/`TextWrapped`/
+`TextColored`/`TextDisabled`/`BulletText`**: a `%command%` in the launch string spewed a screenful of
+`?????` reading garbage varargs off the stack. Use `TextUnformatted` (wrapped in push/pop for colour
+or wrap). Both fixes are in the Phase 3 branch.
+
+## ImGui gamepad nav: drive it from ButtonDown events, edge-triggered, or it flickers/drops
+Found 2026-07-24 on the Deck. Feeding ImGui the *held* button state every frame let nav auto-repeat
+run away — a single D-pad press flickered focus between two items faster than a touch could land.
+Edge-triggering by polling `.Pressed` per frame then fixed the flicker but *dropped* quick taps: at
+30 fps a tap can begin and end inside one frame. The robust answer is to capture presses from the
+`ButtonDown` **event** (immune to frame timing), queue them, and replay each as a single-frame ImGui
+key pulse. Also suppress analog-stick nav (`AddKeyAnalogEvent(GamepadLStick*, false, 0)`) so a resting
+trackpad-joystick cannot nudge focus, and re-focus the first row when a folder listing changes or the
+cursor goes invisible. SDL leaves text input on by default, so `StopTextInput()` at startup stops
+gamescope popping the on-screen keyboard over a UI with no text fields.
+
+## Silk.NET gamepad buttons read stale-false unless something subscribes to ButtonDown
+Found 2026-07-24 building `savelocker ui` (Phase 3). On the Deck the analog sticks reported live
+X/Y through `IGamepad.Thumbsticks`, but every `IGamepad.Buttons[i].Pressed` stayed `false` and the
+D-pad/A/B did nothing — with a real gamepad present (`input.Gamepads.Count == 1`) and the default
+"Gamepad with Joystick Trackpad" template. The fix was **subscribing to `pad.ButtonDown`/`ButtonUp`**
+(and enumerating `input.Gamepads` at `Load` to hook them); once a subscriber exists, Silk processes
+the SDL button events and the per-frame `.Pressed` poll starts returning true. **No Steam controller-
+layout change was needed** — the default template passes buttons through fine. So: any code that
+polls gamepad buttons must also keep a ButtonDown subscription alive, or the poll is dead. Triggers
+(`IGamepad.Triggers`) reported no value on the Deck's virtual pad; the Game Mode UI does not use them.
+
 ## A one-machine conflict loop: the daemon pushes from state the launch wrapper superseded
 Found 2026-07-22/23 on a real Deck. Cost **75 conflicts and 2.66 GB on a retain-5 game**, and needed
 `curl` against the admin API to escape. Fix tracked as `tasks/0.0-agent-stale-parent.md`.

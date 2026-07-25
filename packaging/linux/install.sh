@@ -144,6 +144,18 @@ Installed. Next:
       compatibility tool" in its properties so Proton sets up a prefix. Without
       it, Proton never creates a prefix and there is nothing to sync.)
 
+  4. (Steam Deck, recommended) Add SaveLocker to your library so you can add
+     games from Game Mode with the D-pad -- no browser, no Desktop Mode:
+
+         Steam -> Add a Non-Steam Game -> Browse ->
+             ${HOME}/.local/share/SaveLocker/savelocker
+         Properties -> Launch Options:  ui
+         Rename it "SaveLocker"
+
+     Launch it from your library to scan for games, set a save folder from inside
+     the game's own Proton prefix, enroll, and copy the launch command from step 3.
+     This is the last Desktop Mode step you need to take.
+
   The agent runs headless -- there is no tray and no pop-ups on a Deck. It
   reports problems to the console, which is where you will see them.
 EOF
