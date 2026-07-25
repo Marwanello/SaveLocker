@@ -77,6 +77,10 @@ sealed class UiApp
     private const int ScreenshotMaxFrames = 600;
     private bool _autoScan;
     private bool _pendingFolderScreen;
+    private int _settleFrames;
+    // Frames to keep rendering after all work finishes, so a screen change made DURING a frame is
+    // actually drawn, and tweens land near their targets, before the framebuffer is read.
+    private const int ScreenshotSettleFrames = 12;
 
     private UiApp(AgentConfig config, Vector2D<int> size, string? screenshotPath)
     {
@@ -291,9 +295,12 @@ sealed class UiApp
         ImGui.End();
         _controller.Render();
 
-        var busy = _scanTask is { IsCompleted: false } || _enrollTask is { IsCompleted: false };
+        var busy = _scanTask is { IsCompleted: false } || _enrollTask is { IsCompleted: false }
+                   || _pendingFolderScreen;
+        _settleFrames = busy ? 0 : _settleFrames + 1;
+
         if (_screenshotPath is not null && ++_framesRendered >= ScreenshotWarmupFrames
-            && (!busy || _framesRendered >= ScreenshotMaxFrames))
+            && (_settleFrames >= ScreenshotSettleFrames || _framesRendered >= ScreenshotMaxFrames))
         {
             int code = 0;
             try
