@@ -417,12 +417,51 @@ WSLg-only rendering artifact as suspect until reproduced on hardware, and vice v
   end of Phase C and Phase E — WSLg reduces the number of Deck trips, it does not remove them.
 - **Size gate:** measure uncompressed tarball delta before and after. Must stay within the §0 budget
   and the overall single-digit-MB §3.1 gate.
+
+  **✅ Measured 2026-07-25** — clean A/B, both built in WSL Ubuntu 24.04 (same glibc as CI):
+
+  | | compressed | uncompressed |
+  |---|---|---|
+  | `main` (e2d9256) | 54,752,239 | 124,006,399 |
+  | `deck-ui-visual-refresh` | 55,331,108 | 125,195,375 |
+  | **delta** | **+565 KB** | **+1.13 MB** |
+
+  Inside the ≤1.5 MB budget, and it reconciles against what was added: fonts 1,079 KB + logo 9 KB +
+  ~100 KB of IL. ⚠️ Do **not** A/B against the `artifacts/linux/savelocker-9.9.9-ci-*` tarball dated
+  2026-07-23 — it predates Phase 3 and contains no ImGui or SDL at all, so it overstates the delta
+  by roughly 5 MB.
 - **Regression:** `bash tests/linux/run-linux-tests.sh` (27 checks) must still pass — the UI touches
   `Enroller` and `LinuxGameScanner`, which that suite covers.
 - **Headless check:** confirm `savelocker daemon` still starts on a box with no GL — the on-demand
   native-lib load must not have been broken by moving font/texture loading around.
 
 ---
+
+## 7.2 Interface sounds (added 2026-07-25, outside the original spec)
+
+`Ui/Sound.cs` + `Ui/Wav.cs`. Two sources, in order:
+
+1. **SteamOS's own Game Mode sounds**, read from the user's existing Steam install
+   (`{steamRoot}/steamui/sounds/deck_ui_*.wav`). These are **Valve's assets and are deliberately not
+   bundled** — reading files already on the machine is not redistribution. When present the UI
+   sounds like the rest of Game Mode, which is the point.
+2. **Synthesised oscillator blips** otherwise — zero bytes, no licensing question. Fallback is
+   **per cue**, so a renamed Valve file degrades one sound rather than all four.
+
+Playback rides the SDL already loaded for windowing and input: no new dependency. Mute is
+`AgentConfig.UiSoundsMuted`, toggled in Settings.
+
+Verified in WSLg (needed `libpulse0` installed — a stock WSL image has no audio backend at all,
+which SDL reports as a bare init failure):
+- SDL opens a 48 kHz stereo device ✅
+- no Steam present → `Source: synthesised` ✅
+- fixtures plant 44.1 kHz **mono** WAVs → `Source: SteamOS` ✅, which proves decode + resample +
+  channel fan-out. The fixture WAVs are written by Python's `wave` module so the test cannot pass by
+  sharing a bug with our own writer.
+- no audio backend → clear message, UI still starts ✅
+
+🔴 **Not verified: that it is audible, or that the cues fire on the right interactions.**
+Both need a person listening. First thing to check on device.
 
 ## 8. Docs to update on completion
 
