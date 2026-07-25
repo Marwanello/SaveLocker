@@ -5,6 +5,26 @@ Full commit detail in `git log`. Active backlog in `Backlog.md`.
 
 ---
 
+## 2026-07-25 — Deck UI navigation, fixed by reading the binding instead of ImGui
+
+Menu navigation had been the Deck UI's biggest obstacle across three sessions. The recorded blocker —
+"ImGui 1.90.8 exposes no public API to set the nav cursor directly" — was true of **ImGui.NET's
+managed assembly** and false of the `libcimgui.so` it ships, which exports the whole `imgui_internal`
+surface. Four `DllImport`s later, `igSetFocusID` places the cursor and the workarounds from the two
+previous attempts came out.
+
+Three reported symptoms turned out to be one mechanism: a focus request re-asserted for 45 frames,
+whose `SetKeyboardFocusHere` overrode nav movement and swallowed every press for ~0.75 s. Two of the
+three diagnoses written from source reading were wrong, and a debug overlay (`ui --nav-debug`) built
+first is what corrected them. Also fixed: focus rings clipped away inside zero-padding child windows
+(shipped in v0.4.0), a ring that pulsed too faintly to notice, separators drawn under the panes that
+covered them, a stepper whose horizontal +/− fought D-pad order, and B — which had never been
+implemented at all, only inherited from ImGui's incidental `NavCancel`.
+
+Shipped as v0.4.1. Full record: `logs/2026-07-25_deck-ui-navigation-fix.md`.
+
+---
+
 ## 2026-07-23 — the Octopath conflict storm, and everything it exposed
 
 One weekend of real play produced **75 open conflicts and 2.66 GB on a game set to retain 5**, and

@@ -28,31 +28,6 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md`
 
 - **Deferred: one state owner for the Linux agent** — wrapper→daemon IPC over a Unix socket, standalone fallback when no daemon is up. The locking in `Decisions.md` §8 makes the current two-owner model *correct*; IPC would make it *simple*. Worth doing before the state files grow further.
 
-## Stretch — Deck UI: Left-to-menu navigation
-
-**Symptom.** In `savelocker ui`, pressing Left returns the cursor to the left rail only from
-Overview. From Add game, Steam setup and Settings it does nothing; **B** works as the way back.
-Everything else about the navigation is correct: Right crosses into the content and lands on its
-topmost control, and Up/Down stay inside the pane they started in.
-
-**Why it is not a small fix.** The rail and the content are separate ImGui child windows.
-`SetKeyboardFocusHere` cannot reliably take the nav cursor away from a widget in a *different*
-flattened child, and ImGui 1.90.8 exposes no public API to set the nav cursor directly. Eight
-approaches were tried and measured (2026-07-25): re-asserting the request across frames, suppressing
-the source pane with `NoNav`, `SetWindowFocus` on the target, disabling the source pane for the
-hand-off frame, and upgrading ImGui.NET. Each either did nothing or traded one working case for
-another. Full record in `logs/2026-07-25_deck-ui-visual-refresh.md`.
-
-> ⚠️ **Do not retry the ImGui.NET upgrade expecting a fix.** 1.91.6.1 was tried and reverted. It
-> restores and runs fine (Silk.NET 2.22's controller is runtime-compatible, and the API renames are
-> mechanical), but it did **not** fix Left **and it broke the Right cross** that works on 1.90.8.
-
-**The approach worth trying.** Stop using child windows for the rail and the content: draw both
-directly in the root window with manual positioning. One nav scope, no flattening, so
-`SetKeyboardFocusHere` behaves as it does at start-up — the one case that has always worked. The
-cost is hand-rolling the clipping and scrolling the child windows currently provide free, which the
-discovered-games and tracked-games lists both need.
-
 ## Planned / future
 
 - ~~**Linux add-game streamlining — Phase 3.**~~ **Done — shipped 2026-07-24** (PR #25 + artwork PR #26). Gamepad-native `savelocker ui` (SDL + Dear ImGui in the existing binary), verified on a real Deck through the full cold flow. Archived design + rejected alternatives in `logs/2026-07-24_linux-agent-streamline.md`; §2 amendment in `Decisions.md`.

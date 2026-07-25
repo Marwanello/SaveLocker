@@ -568,3 +568,44 @@ content did not. The fix is that `Widgets.U32` multiplies the incoming alpha by
 
 **Any new hand-painted colour must go through `Widgets.U32`**, never
 `ImGui.ColorConvertFloat4ToU32` directly, or it will refuse to fade with everything around it.
+
+## ImGui.NET's binding omits the internal API its own native library exports
+`ImGui.NET.dll` binds only `igSetKeyboardFocusHere` / `igSetItemDefaultFocus` / `igSetWindowFocus`,
+so there appears to be no way to place the nav cursor directly. There is: the `libcimgui.so` the same
+package ships **exports the whole `imgui_internal` surface** — `igSetFocusID`, `igSetNavID`,
+`igFocusWindow`, `igFindWindowByName`, `igNavMoveRequestSubmit` and the rest — verified present in
+both 1.90.8.1 and 1.91.6.1. `[DllImport("cimgui")]` reaches them, reusing the already-loaded module.
+
+This cost two prior attempts at the Deck UI's navigation, which spent themselves working around a
+primitive that was there all along. `Ui/ImGuiInternal.cs` binds the four that are needed, behind a
+symbol probe that degrades to the old path rather than crashing if a future package drops them.
+
+**Related trap:** `SetKeyboardFocusHere` is a *tabbing* request and only acts inside the active focus
+scope (ocornut/imgui#7226). It cannot move the cursor out of a different child window, whatever you
+do around it. Use `igSetFocusID` immediately after the target item is submitted.
+
+## NavFlattened on a SCROLLING child is not supported, and fails per-screen
+Upstream documents `NavFlattened` as "only use on child that have no scrolling". Every flattened
+child in the Deck UI was a fixed-height scrolling one, which produced navigation that worked on some
+screens and not others — the signature of this bug, and the reason it looked like several unrelated
+faults instead of one.
+
+## A child window without Border or AlwaysUseWindowPadding has ZERO padding
+ImGui only applies `style.WindowPadding` to a child that has `ImGuiChildFlags.Border` or
+`AlwaysUseWindowPadding`. Without either, content starts flush against the child's edge — and the
+child clips its contents, so anything drawn *outside* a widget's rect is cut off.
+
+That silently clipped the Deck UI's focus rings: `Widgets.FocusRing` draws outside the widget, and
+`ListRow` / `CheckRow` size themselves to `GetContentRegionAvail().X`, so a full-width row in a
+zero-padding child touched both edges and lost its ring entirely. See
+`Theme.Layout.FocusClearance` — any container hosting focusable widgets must reserve it.
+
+## Do not upgrade ImGui.NET expecting a navigation fix
+1.91.6.1 was tried and reverted (2026-07-25). It restores and runs fine — Silk.NET 2.22's controller
+is runtime-compatible and the API renames are mechanical — but it did **not** fix the dead Left and it
+**broke the Right cross** that works on 1.90.8.
+
+This is not a blocker on anything: the Deck UI's navigation was fixed on **1.90.8.1**, using the
+internal API that package's own native library already exports (see above). Nothing outstanding needs
+a newer ImGui. If you upgrade for some other reason, re-run the nav matrix in
+`logs/2026-07-25_deck-ui-navigation-fix.md` — Right out of the rail is the case that regressed.
