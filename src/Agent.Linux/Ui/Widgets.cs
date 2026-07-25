@@ -59,6 +59,31 @@ static class Widgets
     internal static uint LastFocusedId => _lastFocused;
 
     /// <summary>
+    /// THE focus cursor. On a Deck this is the only pointer that exists, so it has to be
+    /// unmistakable and identical everywhere.
+    ///
+    /// The first version leaned on a tinted fill alone, which for a rail entry worked out to about
+    /// 7% alpha over the panel — technically present, invisible in practice, and reported from
+    /// hardware as "a broken highlight you only notice once you realise it is there". A solid
+    /// accent outline plus a soft outer glow is legible at arm's length and, unlike a fill, cannot
+    /// be confused with a widget's own selected/active state.
+    /// </summary>
+    public static void FocusRing(ImDrawListPtr dl, Vector2 min, Vector2 max, float rounding,
+        float strength = 1f)
+    {
+        if (strength <= 0.01f) return;
+
+        var pulse = 0.75f + 0.25f * MathF.Sin((float)ImGui.GetTime() * 4f);
+        var glow = Theme.Alpha(Theme.AccentGreen, 0.30f * strength * pulse);
+        var edge = Theme.Alpha(Theme.AccentGreen, strength);
+
+        dl.AddRect(min - new Vector2(4, 4), max + new Vector2(4, 4), U32(glow), rounding + 4f,
+            ImDrawFlags.None, 3f);
+        dl.AddRect(min - new Vector2(1, 1), max + new Vector2(1, 1), U32(edge), rounding + 1f,
+            ImDrawFlags.None, 2f);
+    }
+
+    /// <summary>
     /// Play the navigate cue when focus arrives on this item, and an activation cue when it fires.
     /// Every interactive widget calls this immediately after its <c>InvisibleButton</c>.
     /// </summary>
@@ -288,14 +313,7 @@ static class Widgets
         dl.AddRect(min, max, U32(Mix(borderColour, Theme.AccentGreen, lift * 0.8f)), rounding,
             ImDrawFlags.None, 1f);
 
-        // The focus ring: a second, offset outline so it reads even against a filled button.
-        if (focused)
-        {
-            var glow = 0.55f + 0.45f * MathF.Sin((float)ImGui.GetTime() * 3.5f);
-            dl.AddRect(min - new Vector2(3, 3), max + new Vector2(3, 3),
-                U32(Theme.Alpha(Theme.AccentGreen, 0.35f + 0.45f * glow)),
-                rounding + 3f, ImDrawFlags.None, 2f);
-        }
+        FocusRing(dl, min, max, rounding, focused ? 1f : 0f);
 
         var contentW = textSize.X + (icon is null ? 0f : iconSize + Theme.Space.Sm);
         var cursor = new Vector2(min.X + (width - contentW) / 2f, min.Y + padY);
@@ -469,6 +487,8 @@ static class Widgets
         if (lift > 0.01f)
             dl.AddRectFilled(min, ImGui.GetItemRectMax(),
                 U32(Theme.Alpha(Theme.AccentGreen, 0.18f * lift)), Theme.Rounding.Button);
+        FocusRing(dl, min, ImGui.GetItemRectMax(), Theme.Rounding.Button,
+            ImGui.IsItemFocused() ? 1f : 0f);
 
         Icons.DrawAt(dl, glyph, min + new Vector2(Theme.Space.Xs, Theme.Space.Xs), size,
             Mix(colour, Theme.AccentGreen, lift));
@@ -499,8 +519,8 @@ static class Widgets
         var track = Mix(Theme.BgTableHd, Theme.AccentGreen, t);
 
         dl.AddRectFilled(min, max, U32(track), height / 2f);
-        dl.AddRect(min, max, U32(focused ? Theme.AccentGreen : Theme.Border), height / 2f,
-            ImDrawFlags.None, focused ? 2f : 1f);
+        dl.AddRect(min, max, U32(Theme.Border), height / 2f, ImDrawFlags.None, 1f);
+        FocusRing(dl, min, max, height / 2f, focused ? 1f : 0f);
 
         var r = height / 2f - 3f;
         var cx = min.X + 3f + r + t * (width - height);
@@ -590,13 +610,14 @@ static class Widgets
 
         if (selected || lift > 0.01f)
         {
-            var bg = selected ? Theme.NavActiveBg : Theme.Alpha(Theme.AccentGreen, 0.10f * lift);
+            var bg = selected ? Theme.NavActiveBg : Theme.Alpha(Theme.AccentGreen, 0.16f * lift);
             dl.AddRectFilled(min, max, U32(bg), Theme.Rounding.Button);
         }
-        // A left accent bar on focus, matching the console sidebar's active-row treatment.
-        if (lift > 0.01f || selected)
-            dl.AddRectFilled(min, new Vector2(min.X + 3f, max.Y),
-                U32(Theme.Alpha(Theme.AccentGreen, selected ? 1f : lift)), 2f);
+        // A left accent bar marks selection, matching the console sidebar's active-row treatment.
+        if (selected)
+            dl.AddRectFilled(min, new Vector2(min.X + 3f, max.Y), U32(Theme.AccentGreen), 2f);
+
+        FocusRing(dl, min, max, Theme.Rounding.Button, lift);
 
         dl.AddLine(new Vector2(min.X, max.Y), new Vector2(max.X, max.Y), U32(Theme.BgRowSep), 1f);
 
@@ -672,8 +693,8 @@ static class Widgets
         var fill = Mix(Theme.BgTableHd, Theme.AccentGreen, t);
 
         dl.AddRectFilled(min, max, U32(enabled ? fill : Theme.BgRowSep), Theme.Rounding.Button);
-        dl.AddRect(min, max, U32(hot ? Theme.AccentGreen : Theme.Border), Theme.Rounding.Button,
-            ImDrawFlags.None, hot ? 2f : 1f);
+        dl.AddRect(min, max, U32(Theme.Border), Theme.Rounding.Button, ImDrawFlags.None, 1f);
+        FocusRing(dl, min, max, Theme.Rounding.Button, hot ? 1f : 0f);
 
         if (t > 0.05f)
             Icons.DrawAt(dl, Icons.Check, min + new Vector2(2, 2), box - 4f,
@@ -705,12 +726,16 @@ static class Widgets
         var on = Tween(ImGui.GetItemID() ^ 0x5A5Au, active ? 1f : 0f);
         Feedback(ImGui.GetItemID(), pressed);
 
-        var bg = Mix(Theme.Alpha(Theme.AccentGreen, 0f), Theme.NavActiveBg, MathF.Max(on, lift * 0.55f));
+        // Active (this is the current screen) and focused (the cursor is here) are DIFFERENT states
+        // and must look different: you can stand on "Settings" while still viewing "Overview".
+        var bg = Mix(Theme.Alpha(Theme.AccentGreen, 0f), Theme.NavActiveBg, MathF.Max(on, lift));
         dl.AddRectFilled(min, max, U32(bg), Theme.Rounding.Button);
 
-        if (on > 0.01f || lift > 0.01f)
+        if (on > 0.01f)
             dl.AddRectFilled(min, new Vector2(min.X + 3f, max.Y),
-                U32(Theme.Alpha(Theme.AccentGreen, MathF.Max(on, lift * 0.6f))), 2f);
+                U32(Theme.Alpha(Theme.AccentGreen, on)), 2f);
+
+        FocusRing(dl, min, max, Theme.Rounding.Button, lift);
 
         var tint = Mix(Theme.TextMuted, Theme.AccentGreen, MathF.Max(on, lift));
         var textCol = Mix(Theme.TextPrimary, Theme.AccentGreen, on);
