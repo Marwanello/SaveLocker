@@ -184,6 +184,7 @@ sealed class UiApp
         _window.Render += OnRender;
         _window.Closing += () =>
         {
+            Sound.Shutdown();
             _controller?.Dispose();
             _input?.Dispose();
             _gl?.Dispose();
@@ -203,6 +204,10 @@ sealed class UiApp
         _controller = new ImGuiController(_gl, _window, _input, null, Theme.LoadFonts);
         Theme.ApplyStyle();
         Art.Load(_gl);
+
+        // Never make noise during an unattended capture — it is scripted, and on a Deck it would
+        // fire into whatever the user is actually listening to.
+        if (_screenshotPath is null) Sound.Init(_config.UiSoundsMuted);
 
         var io = ImGui.GetIO();
         io.ConfigFlags |= ImGuiConfigFlags.NavEnableGamepad;

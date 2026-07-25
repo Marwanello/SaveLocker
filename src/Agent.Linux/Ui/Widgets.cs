@@ -48,6 +48,27 @@ static class Widgets
 
     private static Vector4 Mix(Vector4 a, Vector4 b, float t) => a + (b - a) * Math.Clamp(t, 0f, 1f);
 
+    // ── Audio feedback ───────────────────────────────────────────────────────────────────────
+
+    // ImGui exposes no public "nav focus changed" event, so focus movement is detected by watching
+    // which item reports itself focused. Only one item can be, so tracking the last one seen is
+    // enough — and it costs nothing on the frames where focus has not moved.
+    private static uint _lastFocused;
+
+    /// <summary>
+    /// Play the navigate cue when focus arrives on this item, and an activation cue when it fires.
+    /// Every interactive widget calls this immediately after its <c>InvisibleButton</c>.
+    /// </summary>
+    private static void Feedback(uint id, bool pressed, Sound.Cue activate = Sound.Cue.Activate)
+    {
+        if (ImGui.IsItemFocused() && id != _lastFocused)
+        {
+            _lastFocused = id;
+            Sound.Play(Sound.Cue.Navigate);
+        }
+        if (pressed) Sound.Play(activate);
+    }
+
     /// <summary>
     /// Colour to packed U32, honouring ImGui's global <c>style.Alpha</c>.
     ///
@@ -231,6 +252,8 @@ static class Widgets
         bool hovered = enabled && ImGui.IsItemHovered();
         bool active = enabled && ImGui.IsItemActive();
         bool focused = enabled && ImGui.IsItemFocused();
+
+        if (enabled) Feedback(id, pressed);
 
         var lift = Tween(id, (hovered || focused ? 1f : 0f) + (active ? 0.6f : 0f));
 
@@ -436,6 +459,7 @@ static class Widgets
 
         bool hot = ImGui.IsItemHovered() || ImGui.IsItemFocused();
         var lift = Tween(ImGui.GetItemID(), hot ? 1f : 0f);
+        Feedback(ImGui.GetItemID(), pressed, Sound.Cue.Back);
 
         if (lift > 0.01f)
             dl.AddRectFilled(min, ImGui.GetItemRectMax(),
@@ -463,6 +487,8 @@ static class Widgets
         var max = ImGui.GetItemRectMax();
         var dl = ImGui.GetWindowDrawList();
         bool focused = ImGui.IsItemFocused();
+
+        Feedback(ImGui.GetItemID(), pressed, Sound.Cue.Toggle);
 
         var t = Tween(ImGui.GetItemID(), value ? 1f : 0f, 18f);
         var track = Mix(Theme.BgTableHd, Theme.AccentGreen, t);
@@ -555,6 +581,7 @@ static class Widgets
 
         bool hot = enabled && (ImGui.IsItemHovered() || ImGui.IsItemFocused());
         var lift = Tween(ImGui.GetItemID(), hot ? 1f : 0f);
+        if (enabled) Feedback(ImGui.GetItemID(), pressed);
 
         if (selected || lift > 0.01f)
         {
@@ -634,6 +661,7 @@ static class Widgets
         var max = ImGui.GetItemRectMax();
         var dl = ImGui.GetWindowDrawList();
         bool hot = enabled && (ImGui.IsItemHovered() || ImGui.IsItemFocused());
+        if (enabled) Feedback(ImGui.GetItemID(), pressed, Sound.Cue.Toggle);
 
         var t = Tween(ImGui.GetItemID(), ticked ? 1f : 0f, 20f);
         var fill = Mix(Theme.BgTableHd, Theme.AccentGreen, t);
@@ -670,6 +698,7 @@ static class Widgets
         bool hot = ImGui.IsItemHovered() || ImGui.IsItemFocused();
         var lift = Tween(ImGui.GetItemID(), hot ? 1f : 0f);
         var on = Tween(ImGui.GetItemID() ^ 0x5A5Au, active ? 1f : 0f);
+        Feedback(ImGui.GetItemID(), pressed);
 
         var bg = Mix(Theme.Alpha(Theme.AccentGreen, 0f), Theme.NavActiveBg, MathF.Max(on, lift * 0.55f));
         dl.AddRectFilled(min, max, U32(bg), Theme.Rounding.Button);

@@ -19,6 +19,7 @@ sealed class SettingsScreen
 
     private int _settleSeconds;
     private bool _autoStartOn;
+    private bool _soundsOn;
     private bool _loaded;
     private string _status = "";
     private readonly HashSet<string> _toRemove = new();
@@ -37,6 +38,7 @@ sealed class SettingsScreen
     {
         if (_loaded) return;
         _settleSeconds = _config.SettleQuietSeconds;
+        _soundsOn = !_config.UiSoundsMuted;
         try { _autoStartOn = _autoStart.IsEnabled(); } catch { _autoStartOn = false; }
         _loaded = true;
     }
@@ -78,6 +80,27 @@ sealed class SettingsScreen
             _config.Save();
             _status = $"Settle gate set to {_settleSeconds}s.";
         }
+
+        Widgets.SectionHeader("Interface");
+
+        if (Widgets.Toggle("Interface sounds", ref _soundsOn))
+        {
+            Sound.Muted = !_soundsOn;
+            _config.UiSoundsMuted = !_soundsOn;
+            _config.Save();
+            _status = _soundsOn ? "Interface sounds on." : "Interface sounds muted.";
+
+            // The toggle's own click already fired inside Widgets.Toggle, while sounds were still
+            // muted — so switching them ON would otherwise be silent, which reads as "it didn't
+            // work". Confirm it here, now that the mute is lifted.
+            if (_soundsOn) Sound.Play(Sound.Cue.Toggle);
+        }
+
+        Widgets.TextWrapped(
+            Sound.Available
+                ? $"Navigation and selection feedback. Source: {Sound.Source}."
+                : "No audio device available on this machine, so nothing will play.",
+            Theme.TextDim, Theme.Caption);
 
         Widgets.SectionHeader("Startup");
         var was = _autoStartOn;
