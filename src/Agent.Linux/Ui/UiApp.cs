@@ -381,12 +381,6 @@ sealed class UiApp
         // Anything left armed had no enabled widget to land on this frame; let it age out.
         Widgets.AgeFocusRequest();
 
-        if (Environment.GetEnvironmentVariable("SAVELOCKER_NAV_DIAG") == "1"
-            && _framesRendered >= 26 && _framesRendered <= 36)
-            Console.WriteLine($"f{_framesRendered} railWant={_wantRailFocusFrames} " +
-                              $"railFocus={_railHasFocus} contentWant={_wantContentFocus} " +
-                              $"focus={Widgets.CurrentFocusId}");
-
         ResolvePaneCrossing();
 
         ImGui.End();
