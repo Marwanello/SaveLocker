@@ -77,6 +77,7 @@ sealed class UiApp
     private int _pendingCrossFrames;
     private const int PendingCrossFrames = 1800;   // ~30 s; a cold scan can take a while
     private bool _navLeftFired, _navRightFired;
+    private string? _focusWindow;
 
     // Scripted navigation, for verification. Gamepad nav is the single hardest thing to test off a
     // Deck, and it is exactly where the bugs are — so `--nav right,down,a` replays presses through
@@ -364,6 +365,12 @@ sealed class UiApp
 
         var size = ImGui.GetIO().DisplaySize;
 
+        if (_focusWindow is not null)
+        {
+            ImGui.SetWindowFocus(_focusWindow);
+            _focusWindow = null;
+        }
+
         if (_screen == Screen.Gallery)
         {
             // The dev gallery takes the whole surface: it is taller than the shell's content area
@@ -457,6 +464,10 @@ sealed class UiApp
             // Back to the rail entry for the screen you are on — never the nearest one by pixels.
             _focusZone = Zone.Rail;
             Widgets.RequestFocus(_activeRailId);
+            // Move the window focus too. A per-item request alone could not prise the cursor out of
+            // a deeply nested child (the tracked-games list sits three flattened children deep), so
+            // the hand-off landed from some screens and not others.
+            _focusWindow = "rail";
         }
 
         _navLeftFired = _navRightFired = false;
@@ -466,6 +477,7 @@ sealed class UiApp
     {
         _focusZone = Zone.Content;
         Widgets.RequestFocus(_bestContentId);
+        _focusWindow = "content";
     }
 
     private bool Connected => !string.IsNullOrEmpty(_config.ApiKey);
