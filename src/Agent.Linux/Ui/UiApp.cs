@@ -647,25 +647,31 @@ sealed class UiApp
             .Select(i => _candidates[i].Name)
             .ToList();
 
+        // The section header is drawn BEFORE the list height is measured: measuring first and then
+        // adding a header underflows the child by exactly the header's height, which clipped the
+        // action bar off the bottom of the screen.
+        Widgets.SectionHeader(_candidates.Count > 0
+            ? $"Discovered games ({_candidates.Count})"
+            : "Discovered games");
+
         // The action bar is pinned to the bottom so it never scrolls out of reach on a long list —
-        // on a gamepad, hunting for a submit button below the fold is the worst case.
-        var barH = ImGui.GetTextLineHeight() + Theme.Space.Sm * 2 + Theme.Space.Lg * 2;
+        // on a gamepad, hunting for a submit button below the fold is the worst case. The reserve
+        // covers the button, the gap above it, and ImGui's item spacing on both.
+        var buttonH = ImGui.GetTextLineHeight() + (Theme.Space.Sm + 2f) * 2;
+        var barH = buttonH + Theme.Space.Sm + ImGui.GetStyle().ItemSpacing.Y * 2 + Theme.Space.Sm;
         var listH = MathF.Max(120f, ImGui.GetContentRegionAvail().Y - barH);
 
+        ImGui.BeginChild("candidates", new Vector2(0, listH));
         if (_candidates.Count > 0)
         {
-            Widgets.SectionHeader($"Discovered games ({_candidates.Count})");
-            ImGui.BeginChild("candidates", new Vector2(0, listH));
             for (int i = 0; i < _candidates.Count; i++)
                 DrawCandidateRow(i);
-            ImGui.EndChild();
         }
         else
         {
-            ImGui.BeginChild("empty", new Vector2(0, listH));
             Widgets.Text("Scan to find games with Proton prefixes on this device.", Theme.TextMuted);
-            ImGui.EndChild();
         }
+        ImGui.EndChild();
 
         Widgets.Gap(Theme.Space.Sm);
 
