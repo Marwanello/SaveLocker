@@ -76,7 +76,7 @@ sealed class UiApp
     // Right pressed while the content had nothing focusable yet — a scan still running, so the pane
     // is just a spinner. The intent is held until a control appears rather than being swallowed.
     private int _pendingCrossFrames;
-    private const int PendingCrossFrames = 240;
+    private const int PendingCrossFrames = 1800;   // ~30 s; a cold scan can take a while
     private const int SuppressNavFrames = 3;
     private bool _navLeftFired, _navRightFired;
 
@@ -324,7 +324,12 @@ sealed class UiApp
         // Feed one scripted press every few frames, through the same queue the pad writes to.
         // Nothing is injected until focus has settled: SetKeyboardFocusHere resolves at the end of
         // the first frame and overrides nav movement, so a press on frame 0 is simply eaten.
-        if (_navScript.Count > 0 && _framesRendered >= NavScriptStartFrame)
+        // Wait for in-flight work before replaying: a real user presses Right after a scan has
+        // finished, not into a spinner, and a script that races the scan tests nothing useful.
+        var scriptReady = _framesRendered >= NavScriptStartFrame
+                          && _scanTask is not { IsCompleted: false }
+                          && _enrollTask is not { IsCompleted: false };
+        if (_navScript.Count > 0 && scriptReady)
         {
             if (--_navScriptCooldown <= 0)
             {
