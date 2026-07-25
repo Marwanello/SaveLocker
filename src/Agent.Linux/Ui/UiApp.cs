@@ -65,12 +65,21 @@ sealed class UiApp
     /// <summary>Put the nav cursor on the rail on the first frame, so the D-pad works immediately.</summary>
     private bool _focusRailOnce = true;
 
+    // Crossing between the rail and the content area, per the behaviour asked for on hardware:
+    // Right always leaves the rail for the content, and Left returns to the rail once there is
+    // nothing further left to reach inside the content.
+    private bool _railHasFocus = true;
+    private bool _wantContentFocus;
+    private bool _wantRailFocus;
+    private bool _leftPressPending;
+    private uint _focusBeforeLeft;
+    private bool _navLeftFired, _navRightFired;
+
     // Scripted navigation, for verification. Gamepad nav is the single hardest thing to test off a
     // Deck, and it is exactly where the bugs are — so `--nav right,down,a` replays presses through
     // the same queue a real pad feeds, and `--screenshot` then captures where the cursor landed.
     private readonly Queue<ImGuiKey> _navScript = new();
     private int _navScriptCooldown;
-    private bool _navDiag = Environment.GetEnvironmentVariable("SAVELOCKER_NAV_DIAG") == "1";
     private const int NavScriptFrameGap = 6;   // ImGui needs a few frames to settle each move
     private const int NavScriptStartFrame = 15;
 
@@ -331,18 +340,6 @@ sealed class UiApp
 
         _controller.Update((float)delta);
 
-        if (_navDiag)
-        {
-            var d = ImGui.GetIO();
-            if (ImGui.IsKeyPressed(ImGuiKey.GamepadDpadDown, false) ||
-                ImGui.IsKeyDown(ImGuiKey.GamepadDpadDown) ||
-                ImGui.IsKeyPressed(ImGuiKey.GamepadDpadRight, false) ||
-                ImGui.IsKeyDown(ImGuiKey.GamepadDpadRight))
-                Console.WriteLine($"frame {_framesRendered}: downPressed={ImGui.IsKeyPressed(ImGuiKey.GamepadDpadDown, false)} " +
-                                  $"downHeld={ImGui.IsKeyDown(ImGuiKey.GamepadDpadDown)} " +
-                                  $"rightPressed={ImGui.IsKeyPressed(ImGuiKey.GamepadDpadRight, false)} " +
-                                  $"navActive={d.NavActive}");
-        }
 
         _gl.ClearColor(Theme.BgGlobal.X, Theme.BgGlobal.Y, Theme.BgGlobal.Z, 1.0f);
         _gl.Clear((uint)ClearBufferMask.ColorBufferBit);
@@ -377,6 +374,8 @@ sealed class UiApp
             DrawHintBar(size);
         }
 
+        ResolvePaneCrossing();
+
         ImGui.End();
         _controller.Render();
 
@@ -389,11 +388,6 @@ sealed class UiApp
         if (_screenshotPath is not null && ++_framesRendered >= ScreenshotWarmupFrames
             && (_settleFrames >= ScreenshotSettleFrames || _framesRendered >= ScreenshotMaxFrames))
         {
-            var dio = ImGui.GetIO();
-            Console.WriteLine($"nav-diag: NavActive={dio.NavActive} NavVisible={dio.NavVisible} " +
-                              $"cfg={dio.ConfigFlags} backend={dio.BackendFlags} " +
-                              $"lastFocused={Widgets.LastFocusedId}");
-
             int code = 0;
             try
             {
@@ -414,6 +408,41 @@ sealed class UiApp
             Console.Out.Flush();
             Environment.Exit(code);
         }
+    }
+
+    /// <summary>
+    /// Move the cursor between the rail and the content area.
+    ///
+    /// ImGui scores directional nav purely on geometry, and the two panes routinely share no
+    /// vertical overlap — a rail entry near the top has nothing beside it when the content's first
+    /// control sits far lower — so it simply refuses the move. That is what made the UI feel like
+    /// it needed A to "enter" a pane and B to leave it.
+    ///
+    /// Right out of the rail is unconditional: the rail is one column, so Right can never mean
+    /// anything else. Left back to the rail is deferred by a frame and only applied if ImGui did
+    /// NOT move focus itself, so Left still steps through the content's own columns first and only
+    /// falls back to the rail once there is nothing further left to reach.
+    /// </summary>
+    private void ResolvePaneCrossing()
+    {
+        if (_leftPressPending)
+        {
+            _leftPressPending = false;
+            if (Widgets.CurrentFocusId == _focusBeforeLeft && !_railHasFocus)
+                _wantRailFocus = true;
+        }
+
+        if (_navRightFired && _railHasFocus)
+        {
+            _wantContentFocus = true;
+        }
+        else if (_navLeftFired && !_railHasFocus)
+        {
+            _leftPressPending = true;
+            _focusBeforeLeft = Widgets.CurrentFocusId;
+        }
+
+        _navLeftFired = _navRightFired = false;
     }
 
     private bool Connected => !string.IsNullOrEmpty(_config.ApiKey);
@@ -498,24 +527,30 @@ sealed class UiApp
             ("Settings", Icons.Settings, Screen.Settings, _screen == Screen.Settings),
         };
 
+        var railFocused = false;
         foreach (var (label, icon, target, active) in items)
         {
             // Land the cursor on the rail entry for the screen already being shown. Without an
             // initial nav target ImGui starts with nothing focused, so the first D-pad press only
             // picks a starting item and appears to do nothing.
-            if (_focusRailOnce && active)
+            if ((_focusRailOnce || _wantRailFocus) && active)
             {
                 _focusRailOnce = false;
+                _wantRailFocus = false;
                 ImGui.SetKeyboardFocusHere();
             }
             if (Widgets.RailItem(label, icon, active)) Go(target);
+            railFocused |= ImGui.IsItemFocused();
         }
 
         // Quit sits at the bottom, away from the destinations — it is not a place you go.
         var used = ImGui.GetCursorPosY();
         var spare = height - used - (ImGui.GetTextLineHeight() + Theme.Space.Md * 2) - Theme.Space.Md;
         if (spare > 0) ImGui.Dummy(new Vector2(0, spare));
+
         if (Widgets.RailItem("Quit", Icons.X, false)) _window.Close();
+        railFocused |= ImGui.IsItemFocused();
+        _railHasFocus = railFocused;
 
         ImGui.EndChild();
         ImGui.PopStyleVar();
@@ -555,6 +590,13 @@ sealed class UiApp
 
         ImGui.PushStyleVar(ImGuiStyleVar.Alpha, eased);
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + (1f - eased) * 12f);
+
+        // Whichever screen is showing, its first focusable widget takes the cursor.
+        if (_wantContentFocus)
+        {
+            _wantContentFocus = false;
+            Widgets.FocusNextItem();
+        }
 
         switch (_screen)
         {
@@ -1125,6 +1167,8 @@ sealed class UiApp
 
             fire = _navQueue.Distinct().ToArray();
             _navQueue.Clear();
+            _navLeftFired = fire.Contains(ImGuiKey.GamepadDpadLeft);
+            _navRightFired = fire.Contains(ImGuiKey.GamepadDpadRight);
         }
 
         // Release last frame's pulses, then press this frame's — a clean down/up per physical press.

@@ -55,8 +55,24 @@ static class Widgets
     // enough — and it costs nothing on the frames where focus has not moved.
     private static uint _lastFocused;
 
-    /// <summary>Which item last reported nav focus. Diagnostic only.</summary>
-    internal static uint LastFocusedId => _lastFocused;
+    /// <summary>The item that currently holds nav focus.</summary>
+    internal static uint CurrentFocusId => _lastFocused;
+
+    // Deliberate focus placement. ImGui scores directional nav geometrically, which cannot express
+    // "leave this pane and enter that one" when the two panes share no vertical overlap — the rail
+    // sits beside a content area whose first control may be hundreds of pixels lower. So the pane
+    // boundary is crossed explicitly: the caller asks for focus, and the next focusable widget
+    // drawn claims it, whichever screen happens to be showing.
+    private static bool _focusNextItem;
+
+    public static void FocusNextItem() => _focusNextItem = true;
+
+    private static void ClaimFocusRequest()
+    {
+        if (!_focusNextItem) return;
+        _focusNextItem = false;
+        ImGui.SetKeyboardFocusHere();
+    }
 
     /// <summary>
     /// THE focus cursor. On a Deck this is the only pointer that exists, so it has to be
@@ -269,6 +285,7 @@ static class Widgets
             textSize.X + padX * 2 + (icon is null ? 0f : iconSize + Theme.Space.Sm));
         var height = textSize.Y + padY * 2;
 
+        ClaimFocusRequest();
         if (!enabled) ImGui.BeginDisabled();
         var pressed = ImGui.InvisibleButton(label, new Vector2(width, height));
         if (!enabled) ImGui.EndDisabled();
@@ -476,6 +493,7 @@ static class Widgets
         if (size <= 0f) size = ImGui.GetTextLineHeight() + 6f;
         var box = size + Theme.Space.Sm;
 
+        ClaimFocusRequest();
         var pressed = ImGui.InvisibleButton(id, new Vector2(box, box));
         var min = ImGui.GetItemRectMin();
         var dl = ImGui.GetWindowDrawList();
@@ -505,6 +523,7 @@ static class Widgets
         var width = height * 1.9f;
 
         ImGui.PushID(label);
+        ClaimFocusRequest();
         var pressed = ImGui.InvisibleButton("##toggle", new Vector2(width, height));
         if (pressed) value = !value;
 
@@ -596,6 +615,7 @@ static class Widgets
         var width = ImGui.GetContentRegionAvail().X;
 
         ImGui.PushID(id);
+        ClaimFocusRequest();
         if (!enabled) ImGui.BeginDisabled();
         var pressed = ImGui.InvisibleButton("##row", new Vector2(width, height));
         if (!enabled) ImGui.EndDisabled();
@@ -678,6 +698,7 @@ static class Widgets
     {
         var box = ImGui.GetTextLineHeight() + 4f;
         ImGui.PushID(id);
+        ClaimFocusRequest();
         if (!enabled) ImGui.BeginDisabled();
         var pressed = ImGui.InvisibleButton("##check", new Vector2(box, box));
         if (!enabled) ImGui.EndDisabled();
@@ -715,6 +736,7 @@ static class Widgets
         var width = ImGui.GetContentRegionAvail().X;
 
         ImGui.PushID(label);
+        ClaimFocusRequest();
         var pressed = ImGui.InvisibleButton("##rail", new Vector2(width, height));
 
         var min = ImGui.GetItemRectMin();
