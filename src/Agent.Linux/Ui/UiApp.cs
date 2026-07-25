@@ -56,6 +56,12 @@ sealed class UiApp
 
     private Screen _screen = Screen.Status;
 
+    // Cross-fade state. _renderedScreen lags _screen by exactly the frame in which navigation
+    // happened, which is how the change is detected without every caller having to announce it.
+    private Screen _renderedScreen = Screen.Status;
+    private float _screenFade = 1f;
+    private const float ScreenFadeSeconds = 0.16f;
+
     // Add-game state. The candidate list is a mutable copy so a browsed folder can be written back
     // onto a candidate before enrollment, exactly as AgentApiServer rewrites its _candidateCache.
     private Task<IReadOnlyList<ScanCandidate>>? _scanTask;
@@ -89,7 +95,7 @@ sealed class UiApp
     private int _settleFrames;
     // Frames to keep rendering after all work finishes, so a screen change made DURING a frame is
     // actually drawn, and tweens land near their targets, before the framebuffer is read.
-    private const int ScreenshotSettleFrames = 12;
+    private const int ScreenshotSettleFrames = 20;
 
     private UiApp(AgentConfig config, Vector2D<int> size, string? screenshotPath)
     {
@@ -307,8 +313,10 @@ sealed class UiApp
         ImGui.End();
         _controller.Render();
 
+        // A mid-transition capture would be a dim, offset frame — the fade counts as work in
+        // progress for screenshot purposes.
         var busy = _scanTask is { IsCompleted: false } || _enrollTask is { IsCompleted: false }
-                   || _pendingFolderScreen;
+                   || _pendingFolderScreen || _screenFade < 1f;
         _settleFrames = busy ? 0 : _settleFrames + 1;
 
         if (_screenshotPath is not null && ++_framesRendered >= ScreenshotWarmupFrames
@@ -443,6 +451,23 @@ sealed class UiApp
             new Vector2(size.X - Theme.Layout.RailWidth - 1f, height),
             ImGuiChildFlags.AlwaysUseWindowPadding);
 
+        // Cross-fade on navigation. Without it a rail press swaps the entire right-hand two-thirds
+        // of the screen between two frames, which reads as a glitch rather than a transition.
+        // Ramp is time-based, not per-frame, so it is identical whatever the loop is doing.
+        if (_renderedScreen != _screen)
+        {
+            _renderedScreen = _screen;
+            _screenFade = 0f;
+        }
+        _screenFade = MathF.Min(1f, _screenFade + ImGui.GetIO().DeltaTime / ScreenFadeSeconds);
+
+        // Ease-out cubic: fast to mostly-visible, then settles. A linear fade reads as sluggish
+        // because the eye spends most of it watching the dim half.
+        var eased = 1f - MathF.Pow(1f - _screenFade, 3f);
+
+        ImGui.PushStyleVar(ImGuiStyleVar.Alpha, eased);
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + (1f - eased) * 12f);
+
         switch (_screen)
         {
             case Screen.Status: DrawStatus(); break;
@@ -452,6 +477,7 @@ sealed class UiApp
             case Screen.Settings: _settings.Draw(); break;
         }
 
+        ImGui.PopStyleVar();
         ImGui.EndChild();
         ImGui.PopStyleVar();
         ImGui.PopStyleColor();

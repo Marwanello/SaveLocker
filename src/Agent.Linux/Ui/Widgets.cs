@@ -26,10 +26,16 @@ static class Widgets
     /// Frame-rate independent: <paramref name="speed"/> is "fraction of the remaining distance per
     /// second", so the motion looks the same whether the loop runs at 30 or 60.
     /// </summary>
-    public static float Tween(uint id, float target, float speed = 14f)
+    /// <param name="initial">
+    /// Where the value starts the first time this id is seen. Left as NaN it starts AT the target,
+    /// so a widget does not animate in from nowhere on its first frame — which is what steady-state
+    /// hover and focus want. Pass 0 for something that should animate on appearance.
+    /// </param>
+    public static float Tween(uint id, float target, float speed = 14f, float initial = float.NaN)
     {
         var dt = ImGui.GetIO().DeltaTime;
-        if (!_tweens.TryGetValue(id, out var current)) current = target;
+        if (!_tweens.TryGetValue(id, out var current))
+            current = float.IsNaN(initial) ? target : initial;
 
         // 1 - e^(-speed*dt) is the exponential-decay form; a naive lerp(current, target, speed*dt)
         // overshoots and oscillates once dt gets large (a stalled frame, a window drag).
@@ -42,7 +48,16 @@ static class Widgets
 
     private static Vector4 Mix(Vector4 a, Vector4 b, float t) => a + (b - a) * Math.Clamp(t, 0f, 1f);
 
-    private static uint U32(Vector4 c) => ImGui.ColorConvertFloat4ToU32(c);
+    /// <summary>
+    /// Colour to packed U32, honouring ImGui's global <c>style.Alpha</c>.
+    ///
+    /// This matters more here than in a normal ImGui app: <c>PushStyleVar(ImGuiStyleVar.Alpha, …)</c>
+    /// is applied by ImGui's own widget code, but every widget in this file paints through
+    /// ImDrawList with explicit colours, which ImGui never touches. Without folding Alpha in here,
+    /// a fade would silently do nothing to the parts of the UI that are actually drawn by hand.
+    /// </summary>
+    internal static uint U32(Vector4 c) =>
+        ImGui.ColorConvertFloat4ToU32(c with { W = c.W * ImGui.GetStyle().Alpha });
 
     // ── Text ─────────────────────────────────────────────────────────────────────────────────
     // ImGui.NET's Text* helpers treat their argument as a printf FORMAT string, so any dynamic text
@@ -364,6 +379,13 @@ static class Widgets
         bool dismissed = false;
         ImGui.PushID(id);
 
+        // Animate in. A conflict banner appears without warning while the user is looking at
+        // something else, so it fades and settles downward rather than popping into place — the
+        // movement is what draws the eye to it.
+        var enter = Tween(ImGui.GetID("##enter"), 1f, 16f, initial: 0f);
+        ImGui.PushStyleVar(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * enter);
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() - (1f - enter) * 10f);
+
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Alpha(colour, 0.12f));
         ImGui.PushStyleColor(ImGuiCol.Border, Theme.Alpha(colour, 0.45f));
         ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, Theme.Rounding.Card);
@@ -397,6 +419,7 @@ static class Widgets
         ImGui.EndChild();
         ImGui.PopStyleVar(2);
         ImGui.PopStyleColor(2);
+        ImGui.PopStyleVar();   // enter alpha
         ImGui.PopID();
         return dismissed;
     }

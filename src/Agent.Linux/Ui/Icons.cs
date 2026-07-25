@@ -31,13 +31,13 @@ static class Icons
     {
         var dl = ImGui.GetWindowDrawList();
         var pos = ImGui.GetCursorScreenPos();
-        glyph(dl, pos, size, ImGui.ColorConvertFloat4ToU32(colour), MathF.Max(1f, size * StrokeRatio));
+        glyph(dl, pos, size, Widgets.U32(colour), MathF.Max(1f, size * StrokeRatio));
         ImGui.Dummy(new Vector2(size, size));
     }
 
     /// <summary>Draw at an explicit screen position, for painting inside a custom widget.</summary>
     public static void DrawAt(ImDrawListPtr dl, Glyph glyph, Vector2 pos, float size, Vector4 colour) =>
-        glyph(dl, pos, size, ImGui.ColorConvertFloat4ToU32(colour), MathF.Max(1f, size * StrokeRatio));
+        glyph(dl, pos, size, Widgets.U32(colour), MathF.Max(1f, size * StrokeRatio));
 
     private static void Poly(ImDrawListPtr dl, Vector2 pos, float size, uint col, float stroke,
         bool closed, params float[] xy)
@@ -214,6 +214,6 @@ static class Icons
             dl.PathLineTo(centre + new Vector2(
                 MathF.Cos(start + i / (float)segments * MathF.PI * 1.45f),
                 MathF.Sin(start + i / (float)segments * MathF.PI * 1.45f)) * radius);
-        dl.PathStroke(ImGui.ColorConvertFloat4ToU32(colour), ImDrawFlags.None, stroke);
+        dl.PathStroke(Widgets.U32(colour), ImDrawFlags.None, stroke);
     }
 }
