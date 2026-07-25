@@ -372,6 +372,11 @@ sealed class UiApp
         if (_screenshotPath is not null && ++_framesRendered >= ScreenshotWarmupFrames
             && (_settleFrames >= ScreenshotSettleFrames || _framesRendered >= ScreenshotMaxFrames))
         {
+            var dio = ImGui.GetIO();
+            Console.WriteLine($"nav-diag: NavActive={dio.NavActive} NavVisible={dio.NavVisible} " +
+                              $"cfg={dio.ConfigFlags} backend={dio.BackendFlags} " +
+                              $"lastFocused={Widgets.LastFocusedId}");
+
             int code = 0;
             try
             {

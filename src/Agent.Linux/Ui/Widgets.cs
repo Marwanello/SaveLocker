@@ -55,6 +55,9 @@ static class Widgets
     // enough — and it costs nothing on the frames where focus has not moved.
     private static uint _lastFocused;
 
+    /// <summary>Which item last reported nav focus. Diagnostic only.</summary>
+    internal static uint LastFocusedId => _lastFocused;
+
     /// <summary>
     /// Play the navigate cue when focus arrives on this item, and an activation cue when it fires.
     /// Every interactive widget calls this immediately after its <c>InvisibleButton</c>.
