@@ -63,9 +63,13 @@ static class Widgets
     // sits beside a content area whose first control may be hundreds of pixels lower. So the pane
     // boundary is crossed explicitly: the caller asks for focus, and the next focusable widget
     // drawn claims it, whichever screen happens to be showing.
-    private static bool _focusNextItem;
+    // A countdown rather than a flag: a request made while a screen is still loading (a scan in
+    // flight, so the content is a spinner) has nothing to land on yet. Holding it armed for a short
+    // window lets it take effect the moment a control appears, instead of the press being swallowed.
+    private static int _focusRequestFrames;
+    private const int FocusRequestLifetimeFrames = 45;
 
-    public static void FocusNextItem() => _focusNextItem = true;
+    public static void FocusNextItem() => _focusRequestFrames = FocusRequestLifetimeFrames;
 
     /// <param name="enabled">
     /// A disabled widget must NOT claim the request: SetKeyboardFocusHere on a disabled item leaves
@@ -74,16 +78,20 @@ static class Widgets
     /// </param>
     private static void ClaimFocusRequest(bool enabled = true)
     {
-        if (!_focusNextItem || !enabled) return;
-        _focusNextItem = false;
+        if (_focusRequestFrames <= 0 || !enabled) return;
+        _focusRequestFrames = 0;
         ImGui.SetKeyboardFocusHere();
     }
 
     /// <summary>
-    /// Drop a focus request nothing claimed this frame. Without this a request made on a screen with
-    /// no enabled controls would sit armed and hijack the first widget drawn on some later frame.
+    /// Age an unclaimed focus request by a frame, and drop it once its window has passed. Without an
+    /// expiry a request made on a screen with no enabled controls would sit armed indefinitely and
+    /// hijack the first widget drawn on some unrelated later frame.
     /// </summary>
-    public static void DiscardUnclaimedFocusRequest() => _focusNextItem = false;
+    public static void AgeFocusRequest()
+    {
+        if (_focusRequestFrames > 0) _focusRequestFrames--;
+    }
 
     /// <summary>
     /// THE focus cursor. On a Deck this is the only pointer that exists, so it has to be

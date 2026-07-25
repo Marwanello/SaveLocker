@@ -374,8 +374,8 @@ sealed class UiApp
             DrawHintBar(size);
         }
 
-        // Anything left armed had no enabled widget to land on this frame.
-        Widgets.DiscardUnclaimedFocusRequest();
+        // Anything left armed had no enabled widget to land on this frame; let it age out.
+        Widgets.AgeFocusRequest();
 
         ResolvePaneCrossing();
 
