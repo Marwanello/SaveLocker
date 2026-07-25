@@ -205,9 +205,10 @@ sealed class UiApp
         Theme.ApplyStyle();
         Art.Load(_gl);
 
-        // Never make noise during an unattended capture — it is scripted, and on a Deck it would
-        // fire into whatever the user is actually listening to.
-        if (_screenshotPath is null) Sound.Init(_config.UiSoundsMuted);
+        // A scripted capture must never make noise — on a Deck it would fire into whatever the user
+        // is actually listening to. It still opens the device, muted, so the Settings screen reports
+        // the real audio state in a screenshot rather than claiming there is no device.
+        Sound.Init(_config.UiSoundsMuted || _screenshotPath is not null);
 
         var io = ImGui.GetIO();
         io.ConfigFlags |= ImGuiConfigFlags.NavEnableGamepad;
