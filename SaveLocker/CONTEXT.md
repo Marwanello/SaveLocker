@@ -4,7 +4,7 @@
 
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** main
 
-**Current released version:** **v0.3.6** (tagged 2026-07-24, **deployed on unRAID** 2026-07-24). GHCR package `savelocker` is now **public** (see `Gotchas.md`).
+**Current released version:** **v0.4.0** (tagged 2026-07-25). GHCR package `savelocker` is **public** (see `Gotchas.md`).
 
 Shipped-feature detail: `logs/shipped-2026-07.md` + `logs/sessions.md`. Open work: `Backlog.md`.
 
@@ -32,28 +32,31 @@ Shipped-feature detail: `logs/shipped-2026-07.md` + `logs/sessions.md`. Open wor
 | Console versioning + release notes + version skew warnings | ✅ done — v0.3.2 |
 | Conflict handling (Tiers 0–2, agent backoff, escalation, Keep both) | ✅ done — v0.3.4 |
 | Deploy v0.3.4 to unRAID | ✅ done 2026-07-24 |
-| **Release v0.3.5** | ⏳ **NEXT ACTION** |
+| Deck Game Mode UI visual refresh (theme, widgets, 1280×800 shell, Settings, sounds) | ✅ done — v0.4.0, 2026-07-25 |
+| Durable lease warnings (`lease-warnings.json`) | ✅ done — fixed a real gap: Linux never surfaced them at all |
 | Linux add-game streamline — Phases 1–2 (dead button, prefix browser, enroll gate, launch card) | ✅ done — PR #24, 2026-07-24 |
 | Linux add-game streamline — Phase 3 (gamepad-native `savelocker ui`) | ✅ done — shipped 2026-07-24 (PR #25 + artwork PR #26); design archived to `logs/2026-07-24_linux-agent-streamline.md` |
 
 ---
 
-## ▶ NEXT ACTION: **Upgrade the Deck to the 0.3.6 release tarball (optional)**
+## ▶ NEXT ACTION: **Verify v0.4.0 on the Deck, then deploy to unRAID**
 
-v0.3.6 is tagged, released, and **deployed on unRAID (2026-07-24)**. Remaining:
+v0.4.0 is tagged. Remaining:
 
-- **unRAID:** ✅ done — running 0.3.6.
+- **Steam Deck:** the maintainer is testing the release build. Download the v0.4.0 tarball and
+  re-run `install.sh`.
+- **unRAID:** `docker compose pull && docker compose up -d` once CI has published.
 - **Windows agents:** auto-update.
-- **Steam Deck:** the Deck has been on `9.9.9-ci` dev builds (functionally identical code). To move it
-  onto the real release: download the new tarball, re-run `install.sh`, then add SaveLocker to the library
-  (`Add a Non-Steam Game` → the `savelocker` binary, Launch Options `ui`) and set its artwork from
-  `~/.local/share/SaveLocker/artwork/`.
 
-⚠️ **Confirm both `docker-publish` and `release.yml` triggered on the tag** — see the v0.3.4 incident in `Gotchas.md`. If not, re-trigger manually.
+⚠️ **Confirm both `docker-publish` and `release.yml` triggered on the tag** — see the v0.3.4 incident
+in `Gotchas.md`. If not, re-trigger manually.
 
-v0.3.5 (conflict policy/escalation) is already tagged and carried migration `20260724042148_AddProtectedSaveVersions`; rolling back past **0.3.5** is not supported.
+**Known issue shipped knowingly:** in `savelocker ui`, Left returns to the rail only from Overview;
+B works everywhere. Recorded as a stretch item in `Backlog.md` with the eight approaches already
+ruled out — read it before attempting a fix.
 
----
+**The Deck UI now has a dev loop** — `tests/linux/run-ui-wslg.sh` runs it under WSLg with fixtures,
+scripted D-pad input and headless screenshots. See the quick-reference table.
 
 ## Open
 
