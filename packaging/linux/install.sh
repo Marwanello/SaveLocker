@@ -156,6 +156,19 @@ Installed. Next:
      the game's own Proton prefix, enroll, and copy the launch command from step 3.
      This is the last Desktop Mode step you need to take.
 
+  5. (Optional) Replace the grey box with proper SaveLocker library art. The
+     images are bundled at:
+
+         ${HOME}/.local/share/SaveLocker/artwork/
+
+     In your library, right-click SaveLocker -> Manage -> Set Custom Artwork, and
+     set each of these (they are already sized for Steam):
+
+         capsule.png       the vertical grid tile (portrait)
+         capsule-wide.png  the wide/horizontal capsule
+         hero.png          the banner behind the game's header
+         logo.png          the logo shown on top of the banner
+
   The agent runs headless -- there is no tray and no pop-ups on a Deck. It
   reports problems to the console, which is where you will see them.
 EOF

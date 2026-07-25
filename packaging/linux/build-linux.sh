@@ -46,6 +46,13 @@ cp "${repo_root}/packaging/linux/install.sh" "${out}/SaveLocker/"
 cp "${repo_root}/packaging/linux/savelocker.service" "${out}/SaveLocker/"
 chmod +x "${out}/SaveLocker/install.sh" "${out}/SaveLocker/savelocker"
 
+# Steam Library artwork for the non-Steam shortcut, so a Deck user can replace the grey box with
+# proper cover art by hand (install.sh's banner explains where these land and how to apply them).
+if [ -d "${repo_root}/packaging/linux/artwork/dist" ]; then
+  mkdir -p "${out}/SaveLocker/artwork"
+  cp "${repo_root}/packaging/linux/artwork/dist/"*.png "${out}/SaveLocker/artwork/"
+fi
+
 tarball="${out}/savelocker-${version}-${rid}.tar.gz"
 tar -czf "${tarball}" -C "${out}" SaveLocker
 

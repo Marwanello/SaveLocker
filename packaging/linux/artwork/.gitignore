@@ -1,0 +1,2 @@
+# Master art stays local for re-export; only dist/ (resized, Steam-sized) ships and is tracked.
+/*.png
