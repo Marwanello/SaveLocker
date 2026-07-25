@@ -296,6 +296,23 @@ Launch setup becomes a mono-font command block with a real Copy pill.
 
 **Gate:** side-by-side screenshot against the agent UI. Same palette, same information hierarchy.
 
+**✅ Phase C complete (2026-07-25).** Shell is header + rail + content + hint bar; all four screens
+repainted. `Ui/Art.cs` added — a baseline PNG **decoder** (the encoder in `Screenshot.cs` only
+writes), so embedded artwork can become GL textures. Header mark is a 96 px re-export at
+`packaging/linux/artwork/dist/ui/logo-96.png`, linked from the csproj rather than copied so there is
+one master. This also unlocks the hero banner and per-game cover art later.
+
+⚠️ **ImGui child windows ignore `WindowPadding` unless they have a border or
+`ImGuiChildFlags.AlwaysUseWindowPadding`.** All four shell children rendered flush to the window
+edges — stat tiles ended exactly at 1280 px, the server chip and version string were clipped. This
+is the single easiest way to break this layout; check it first if content touches an edge.
+
+Dev-loop additions, all verified: `--screen <name>` opens any screen, `--fixtures` reuses the Linux
+harness's `make-fixtures.py` so **populated** screens render (a dev box has no Proton prefixes and no
+enrolment, so without it Add game and Set save folder only ever show empty/gated states — which is
+exactly where the layout bugs were), `--autoscan` starts the scan unattended, and capture now waits
+for pending work plus a settle window before reading the framebuffer.
+
 ### Phase D — content parity
 Settings screen, tracked-games list with remove, autostart toggle, settle-seconds stepper, version
 string, **and the `lease-warnings.json` store per the §4 decision** (daemon writer + both readers +

@@ -544,3 +544,14 @@ export PATH="$DOTNET_ROOT:$HOME/.local/bin:$PATH"   # correct
 
 Also: invoking `wsl ... bash /home/...` **from Git Bash** mangles the Linux path into
 `C:/Program Files/Git/home/...`. Drive WSL from PowerShell, or set `MSYS_NO_PATHCONV=1`.
+
+## ImGui child windows silently ignore WindowPadding
+`PushStyleVar(ImGuiStyleVar.WindowPadding, ...)` before `BeginChild` does **nothing** unless the
+child has a border or `ImGuiChildFlags.AlwaysUseWindowPadding`. Childs without a border default to
+zero padding regardless of the style stack.
+
+Symptom in the Deck UI: every shell region (header, rail, content, hint bar) rendered flush to the
+window edges — stat tiles ended exactly at 1280 px, the server chip and version string were clipped
+by a few characters. It looks like an off-by-one in the width maths, which is where the time goes.
+
+**If content is touching a window edge, check this flag before recomputing any widths.**
