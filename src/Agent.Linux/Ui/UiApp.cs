@@ -20,12 +20,21 @@ namespace SaveLocker.Agent.Linux.Ui;
 /// </summary>
 sealed class UiApp
 {
-    private enum Screen { Status, AddGame, SetFolder, LaunchSetup, Gallery }
+    private enum Screen { Status, AddGame, SetFolder, LaunchSetup, Settings, Gallery }
 
     private readonly AgentConfig _config;
     private readonly LinuxGameScanner _scanner;
     private readonly PathBrowser _browser;
     private readonly LaunchCommandDto _launch;
+    private readonly SettingsScreen _settings;
+    private readonly LeaseWarningStore _leaseWarnings;
+
+    // Warnings are re-read on a timer rather than every frame: the daemon and the launch wrapper
+    // write this file from other processes, so it has to be polled, but it changes at most twice
+    // per game launch and a per-frame read would hit the disk 60 times a second.
+    private IReadOnlyList<LeaseWarningStore.Entry> _warnings = Array.Empty<LeaseWarningStore.Entry>();
+    private long _warningsReadAt;
+    private const long WarningsPollMs = 2000;
 
     private IWindow _window = null!;
     private GL _gl = null!;
@@ -90,6 +99,8 @@ sealed class UiApp
         _scanner = new LinuxGameScanner(new Detection(config));
         _browser = new PathBrowser(SteamRoots.BrowseRoots());
         _launch = Daemon.LinuxLaunchCommand();
+        _settings = new SettingsScreen(config, new SystemdAutoStart());
+        _leaseWarnings = LeaseWarningStore.For(config);
     }
 
     public static int Run(AgentConfig config, string? sizeOverride = null, string? screenshotPath = null,
@@ -118,6 +129,7 @@ sealed class UiApp
         "add" or "addgame" => Screen.AddGame,
         "folder" or "setfolder" => Screen.SetFolder,
         "launch" or "launchsetup" or "steam" => Screen.LaunchSetup,
+        "settings" or "config" => Screen.Settings,
         "gallery" => Screen.Gallery,
         _ => Screen.Status,
     };
@@ -398,8 +410,10 @@ sealed class UiApp
         if (Widgets.RailItem("Overview", Icons.Monitor, _screen == Screen.Status)) Go(Screen.Status);
         if (Widgets.RailItem("Add game", Icons.Plus,
                 _screen is Screen.AddGame or Screen.SetFolder)) Go(Screen.AddGame);
-        if (Widgets.RailItem("Steam setup", Icons.Settings, _screen == Screen.LaunchSetup))
+        if (Widgets.RailItem("Steam setup", Icons.Monitor, _screen == Screen.LaunchSetup))
             Go(Screen.LaunchSetup);
+        if (Widgets.RailItem("Settings", Icons.Settings, _screen == Screen.Settings))
+            Go(Screen.Settings);
 
         // Quit sits at the bottom, away from the destinations — it is not a place you go.
         var used = ImGui.GetCursorPosY();
@@ -435,6 +449,7 @@ sealed class UiApp
             case Screen.AddGame: DrawAddGame(); break;
             case Screen.SetFolder: DrawSetFolder(); break;
             case Screen.LaunchSetup: DrawLaunchSetup(); break;
+            case Screen.Settings: _settings.Draw(); break;
         }
 
         ImGui.EndChild();
@@ -498,6 +513,8 @@ sealed class UiApp
 
     private void DrawStatus()
     {
+        DrawLeaseWarnings();
+
         if (!Connected)
         {
             Widgets.Banner("notenrolled", "This device is not enrolled",
@@ -567,6 +584,37 @@ sealed class UiApp
                 if (Widgets.PillButton("Steam setup", Widgets.ButtonKind.Secondary, Icons.Settings))
                     Go(Screen.LaunchSetup);
             });
+    }
+
+    /// <summary>
+    /// Conflict-risk banners, read from the shared store. Dismissal writes through so the same
+    /// warning does not reappear in the browser UI afterwards.
+    /// </summary>
+    private void DrawLeaseWarnings()
+    {
+        var now = Environment.TickCount64;
+        if (now - _warningsReadAt > WarningsPollMs || _warningsReadAt == 0)
+        {
+            _warnings = _leaseWarnings.Read();
+            _warningsReadAt = now;
+        }
+
+        if (_warnings.Count == 0) return;
+
+        foreach (var w in _warnings)
+        {
+            if (Widgets.Banner($"lease{w.GameName}", $"Save conflict risk - {w.GameName}",
+                    $"{w.HolderMachine} already has this game checked out. You launched without "
+                    + "pulling their latest save, so a conflict will likely appear in the console "
+                    + "when you exit.",
+                    Theme.AccentAmber, Icons.AlertTriangle, dismissible: true))
+            {
+                _leaseWarnings.Clear(w.GameName);
+                _warningsReadAt = 0;   // force a re-read next frame
+            }
+            Widgets.Gap(Theme.Space.Sm);
+        }
+        Widgets.Gap(Theme.Space.Sm);
     }
 
     /// <summary>A label/value pair, aligned into a column so a stack of them reads as a table.</summary>

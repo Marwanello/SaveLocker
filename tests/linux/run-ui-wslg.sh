@@ -106,15 +106,33 @@ if [ "$FIXTURES" -eq 1 ]; then
   export HOME="${HOME_DIR}"
   export XDG_DATA_HOME="${HOME_DIR}/.local/share"
 
+  # Tracked games and a lease warning are seeded too, so Overview's game list, the Settings
+  # screen's remove flow and the conflict banner all render populated rather than empty.
   CONFIG="$SCRATCH/ui-config.json"
   cat > "$CONFIG" <<JSON
 {
   "ServerUrl": "http://localhost:5179",
   "MachineName": "DECK-FIXTURE",
   "ApiKey": "fixture-key-not-a-real-credential",
-  "Games": [],
-  "TotalSavesPushed": 0
+  "SettleQuietSeconds": 10,
+  "TotalSavesPushed": 348,
+  "LastSyncTime": "$(date -u -d '4 minutes ago' +%Y-%m-%dT%H:%M:%SZ)",
+  "Games": [
+    { "Name": "Hollow Knight", "SaveDirectory": "$HOME/.local/share/Steam/steamapps/compatdata/367520/pfx/drive_c/users/steamuser/AppData/LocalLow/Team Cherry/Hollow Knight" },
+    { "Name": "Hades", "SaveDirectory": "" }
+  ]
 }
+JSON
+
+  # The store lives beside the config (AgentConfig.StateDir), same as the real agent.
+  cat > "$SCRATCH/lease-warnings.json" <<JSON
+[
+  {
+    "GameName": "Hollow Knight",
+    "HolderMachine": "WIDEBOY",
+    "RaisedAt": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
+  }
+]
 JSON
   echo "Fixtures in $SCRATCH (fake HOME=$HOME)"
 fi
