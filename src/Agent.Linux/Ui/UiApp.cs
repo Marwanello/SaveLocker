@@ -556,7 +556,8 @@ sealed class UiApp
         // content lands on a rail entry, which is why Down from "Scan for games" jumped to
         // "Add game" and left the discovered list unreachable.
         var railFlags = ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NavFlattened;
-        if (_focusZone != Zone.Rail) railFlags |= ImGuiWindowFlags.NoNav;
+        if (_focusZone != Zone.Rail && !Widgets.FocusRequestPending)
+            railFlags |= ImGuiWindowFlags.NoNav;
         ImGui.BeginChild("rail", new Vector2(Theme.Layout.RailWidth, height),
             ImGuiChildFlags.AlwaysUseWindowPadding, railFlags);
 
@@ -608,8 +609,12 @@ sealed class UiApp
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.BgGlobal);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
             new Vector2(Theme.Layout.Gutter, Theme.Layout.Gutter));
+        // Both panes stay navigable while a hand-off is in flight. Marking the source NoNav on the
+        // same frame strands the cursor: ImGui will not move focus out of a window it is told to
+        // ignore, so the request had nothing to take focus from and the press did nothing.
         var contentFlags = ImGuiWindowFlags.NavFlattened;
-        if (_focusZone != Zone.Content) contentFlags |= ImGuiWindowFlags.NoNav;
+        if (_focusZone != Zone.Content && !Widgets.FocusRequestPending)
+            contentFlags |= ImGuiWindowFlags.NoNav;
         ImGui.BeginChild("content",
             new Vector2(size.X - Theme.Layout.RailWidth - 1f, height),
             ImGuiChildFlags.AlwaysUseWindowPadding, contentFlags);
