@@ -70,7 +70,10 @@ sealed class UiApp
     // nothing further left to reach inside the content.
     private bool _railHasFocus = true;
     private bool _wantContentFocus;
-    private bool _wantRailFocus;
+    // Held for a few frames rather than fired once: a single SetKeyboardFocusHere issued while
+    // another pane holds the cursor does not always stick, so the request is re-asserted until the
+    // rail actually reports focus (or the budget runs out and we stop trying).
+    private int _wantRailFocusFrames;
     private bool _leftPressPending;
     private uint _focusBeforeLeft;
     private bool _navLeftFired, _navRightFired;
@@ -82,6 +85,7 @@ sealed class UiApp
     private int _navScriptCooldown;
     private const int NavScriptFrameGap = 6;   // ImGui needs a few frames to settle each move
     private const int NavScriptStartFrame = 15;
+    private const int RailFocusRequestFrames = 8;
 
     // Add-game state. The candidate list is a mutable copy so a browsed folder can be written back
     // onto a candidate before enrollment, exactly as AgentApiServer rewrites its _candidateCache.
@@ -428,17 +432,11 @@ sealed class UiApp
     /// </summary>
     private void ResolvePaneCrossing()
     {
-        var diag = Environment.GetEnvironmentVariable("SAVELOCKER_NAV_DIAG") == "1";
-        if (diag && (_navLeftFired || _navRightFired || _leftPressPending))
-            Console.WriteLine($"f{_framesRendered} L={_navLeftFired} R={_navRightFired} " +
-                              $"railFocus={_railHasFocus} pending={_leftPressPending} " +
-                              $"focus={Widgets.CurrentFocusId} before={_focusBeforeLeft}");
-
         if (_leftPressPending)
         {
             _leftPressPending = false;
             if (Widgets.CurrentFocusId == _focusBeforeLeft && !_railHasFocus)
-                _wantRailFocus = true;
+                _wantRailFocusFrames = RailFocusRequestFrames;
         }
 
         if (_navRightFired && _railHasFocus)
@@ -542,10 +540,9 @@ sealed class UiApp
             // Land the cursor on the rail entry for the screen already being shown. Without an
             // initial nav target ImGui starts with nothing focused, so the first D-pad press only
             // picks a starting item and appears to do nothing.
-            if ((_focusRailOnce || _wantRailFocus) && active)
+            if ((_focusRailOnce || _wantRailFocusFrames > 0) && active)
             {
                 _focusRailOnce = false;
-                _wantRailFocus = false;
                 ImGui.SetKeyboardFocusHere();
             }
             if (Widgets.RailItem(label, icon, active)) Go(target);
@@ -560,6 +557,12 @@ sealed class UiApp
         if (Widgets.RailItem("Quit", Icons.X, false)) _window.Close();
         railFocused |= ImGui.IsItemFocused();
         _railHasFocus = railFocused;
+
+        if (_wantRailFocusFrames > 0)
+        {
+            _wantRailFocusFrames--;
+            if (railFocused) _wantRailFocusFrames = 0;   // arrived
+        }
 
         ImGui.EndChild();
         ImGui.PopStyleVar();
