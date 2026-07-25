@@ -58,42 +58,84 @@ static class Widgets
     /// <summary>The item that currently holds nav focus.</summary>
     internal static uint CurrentFocusId => _lastFocused;
 
-    // Deliberate focus placement. ImGui scores directional nav geometrically, which cannot express
-    // "leave this pane and enter that one" when the two panes share no vertical overlap — the rail
-    // sits beside a content area whose first control may be hundreds of pixels lower. So the pane
-    // boundary is crossed explicitly: the caller asks for focus, and the next focusable widget
-    // drawn claims it, whichever screen happens to be showing.
-    // A countdown rather than a flag: a request made while a screen is still loading (a scan in
-    // flight, so the content is a spinner) has nothing to land on yet. Holding it armed for a short
-    // window lets it take effect the moment a control appears, instead of the press being swallowed.
-    private static int _focusRequestFrames;
+    // Crossing between panes is driven explicitly, not by ImGui's geometry.
+    //
+    // ImGui scores a directional move purely on position, so Left out of the content landed on
+    // whichever rail entry happened to sit nearest vertically -- "Scan for games" jumped to
+    // *Overview* -- and refused outright when no entry was close. Neither is what a rail means.
+    //
+    // Instead every enabled focusable item reports itself as it draws. That yields two things: the
+    // topmost-leftmost candidate in a pane (where Right should land) and the ability to focus one
+    // specific item by id (where Left should land: the entry for the screen you are on).
+    private static uint _focusTargetId;
+    private static int _focusTargetFrames;
     private const int FocusRequestLifetimeFrames = 45;
 
-    public static void FocusNextItem() => _focusRequestFrames = FocusRequestLifetimeFrames;
+    private static bool _scanning;
+    private static bool _haveBest;
+    private static uint _bestId;
+    private static Vector2 _bestPos;
 
-    /// <summary>True while a focus request is still looking for a widget to land on.</summary>
-    internal static bool FocusRequestPending => _focusRequestFrames > 0;
-
-    /// <param name="enabled">
-    /// A disabled widget must NOT claim the request: SetKeyboardFocusHere on a disabled item leaves
-    /// the cursor nowhere useful and ImGui falls back to highlighting the whole container, which is
-    /// exactly the "broken highlight" this work set out to remove.
-    /// </param>
-    private static void ClaimFocusRequest(bool enabled = true)
+    /// <summary>Start collecting focusable candidates. Pair with <see cref="EndFocusScan"/>.</summary>
+    public static void BeginFocusScan()
     {
-        if (_focusRequestFrames <= 0 || !enabled) return;
-        _focusRequestFrames = 0;
-        ImGui.SetKeyboardFocusHere();
+        _scanning = true;
+        _haveBest = false;
     }
 
+    /// <summary>The topmost (then leftmost) focusable item drawn during the scan; 0 if none.</summary>
+    public static uint EndFocusScan()
+    {
+        _scanning = false;
+        return _haveBest ? _bestId : 0u;
+    }
+
+    /// <summary>Ask a specific item to take focus as soon as it next draws.</summary>
+    public static void RequestFocus(uint id)
+    {
+        if (id == 0) return;
+        _focusTargetId = id;
+        _focusTargetFrames = FocusRequestLifetimeFrames;
+    }
+
+    internal static bool FocusRequestPending => _focusTargetFrames > 0;
+
     /// <summary>
-    /// Age an unclaimed focus request by a frame, and drop it once its window has passed. Without an
-    /// expiry a request made on a screen with no enabled controls would sit armed indefinitely and
-    /// hijack the first widget drawn on some unrelated later frame.
+    /// Called by every focusable widget immediately before it submits its item, with the id that
+    /// item will have.
     /// </summary>
+    /// <param name="enabled">
+    /// Disabled widgets pass false: focusing one leaves the cursor nowhere useful and ImGui falls
+    /// back to highlighting the container, which is the "broken highlight" this work removed.
+    /// </param>
+    private static void ClaimFocus(uint id, bool enabled = true)
+    {
+        if (!enabled) return;
+
+        if (_scanning)
+        {
+            var pos = ImGui.GetCursorScreenPos();
+            // Topmost wins; ties on the same visual row go to the leftmost.
+            if (!_haveBest || pos.Y < _bestPos.Y - 2f ||
+                (MathF.Abs(pos.Y - _bestPos.Y) <= 2f && pos.X < _bestPos.X))
+            {
+                _haveBest = true;
+                _bestId = id;
+                _bestPos = pos;
+            }
+        }
+
+        if (_focusTargetFrames > 0 && id == _focusTargetId)
+        {
+            _focusTargetFrames = 0;
+            ImGui.SetKeyboardFocusHere();
+        }
+    }
+
+    /// <summary>Age an unclaimed request so it cannot sit armed forever.</summary>
     public static void AgeFocusRequest()
     {
-        if (_focusRequestFrames > 0) _focusRequestFrames--;
+        if (_focusTargetFrames > 0) _focusTargetFrames--;
     }
 
     /// <summary>
@@ -307,7 +349,7 @@ static class Widgets
             textSize.X + padX * 2 + (icon is null ? 0f : iconSize + Theme.Space.Sm));
         var height = textSize.Y + padY * 2;
 
-        ClaimFocusRequest(enabled);
+        ClaimFocus(ImGui.GetID(label), enabled);
         if (!enabled) ImGui.BeginDisabled();
         var pressed = ImGui.InvisibleButton(label, new Vector2(width, height));
         if (!enabled) ImGui.EndDisabled();
@@ -515,7 +557,7 @@ static class Widgets
         if (size <= 0f) size = ImGui.GetTextLineHeight() + 6f;
         var box = size + Theme.Space.Sm;
 
-        ClaimFocusRequest();
+        ClaimFocus(ImGui.GetID(id));
         var pressed = ImGui.InvisibleButton(id, new Vector2(box, box));
         var min = ImGui.GetItemRectMin();
         var dl = ImGui.GetWindowDrawList();
@@ -545,7 +587,7 @@ static class Widgets
         var width = height * 1.9f;
 
         ImGui.PushID(label);
-        ClaimFocusRequest();
+        ClaimFocus(ImGui.GetID("##toggle"));
         var pressed = ImGui.InvisibleButton("##toggle", new Vector2(width, height));
         if (pressed) value = !value;
 
@@ -637,7 +679,7 @@ static class Widgets
         var width = ImGui.GetContentRegionAvail().X;
 
         ImGui.PushID(id);
-        ClaimFocusRequest(enabled);
+        ClaimFocus(ImGui.GetID("##row"), enabled);
         if (!enabled) ImGui.BeginDisabled();
         var pressed = ImGui.InvisibleButton("##row", new Vector2(width, height));
         if (!enabled) ImGui.EndDisabled();
@@ -720,7 +762,7 @@ static class Widgets
     {
         var box = ImGui.GetTextLineHeight() + 4f;
         ImGui.PushID(id);
-        ClaimFocusRequest(enabled);
+        ClaimFocus(ImGui.GetID("##check"), enabled);
         if (!enabled) ImGui.BeginDisabled();
         var pressed = ImGui.InvisibleButton("##check", new Vector2(box, box));
         if (!enabled) ImGui.EndDisabled();
@@ -751,16 +793,18 @@ static class Widgets
     /// A left-rail navigation row: icon, label, and the console sidebar's active treatment — tinted
     /// fill plus a 3 px accent bar down the leading edge (see <c>agent-ui/.../Sidebar.tsx</c>).
     /// </summary>
+    /// <summary>Id of the most recently drawn rail entry, so the caller can target it.</summary>
+    internal static uint LastRailItemId { get; private set; }
+
     public static bool RailItem(string label, Icons.Glyph icon, bool active)
     {
         var lineH = ImGui.GetTextLineHeight();
         var height = lineH + Theme.Space.Md * 2;
         var width = ImGui.GetContentRegionAvail().X;
 
-        // Deliberately does NOT call ClaimFocusRequest: focus requests are content-scoped, and the
-        // rail draws first every frame, so it would intercept a request meant for the other pane.
-        // The rail gets focus by explicit SetKeyboardFocusHere in UiApp instead.
         ImGui.PushID(label);
+        LastRailItemId = ImGui.GetID("##rail");
+        ClaimFocus(LastRailItemId);
         var pressed = ImGui.InvisibleButton("##rail", new Vector2(width, height));
 
         var min = ImGui.GetItemRectMin();

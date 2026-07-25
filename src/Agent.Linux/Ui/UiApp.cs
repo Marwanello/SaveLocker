@@ -69,13 +69,11 @@ sealed class UiApp
     // Right always leaves the rail for the content, and Left returns to the rail once there is
     // nothing further left to reach inside the content.
     private bool _railHasFocus = true;
-    private bool _wantContentFocus;
-    // Held for a few frames rather than fired once: a single SetKeyboardFocusHere issued while
-    // another pane holds the cursor does not always stick, so the request is re-asserted until the
-    // rail actually reports focus (or the budget runs out and we stop trying).
-    private int _wantRailFocusFrames;
-    private bool _leftPressPending;
-    private uint _focusBeforeLeft;
+    private uint _activeRailId;        // rail entry for the screen being shown
+    private uint _bestContentId;       // topmost-leftmost focusable control in the content pane
+    private int _suppressRailNavFrames;
+    private int _suppressContentNavFrames;
+    private const int SuppressNavFrames = 3;
     private bool _navLeftFired, _navRightFired;
 
     // Scripted navigation, for verification. Gamepad nav is the single hardest thing to test off a
@@ -85,7 +83,6 @@ sealed class UiApp
     private int _navScriptCooldown;
     private const int NavScriptFrameGap = 6;   // ImGui needs a few frames to settle each move
     private const int NavScriptStartFrame = 15;
-    private const int RailFocusRequestFrames = 8;
 
     // Add-game state. The candidate list is a mutable copy so a browsed folder can be written back
     // onto a candidate before enrollment, exactly as AgentApiServer rewrites its _candidateCache.
@@ -432,21 +429,20 @@ sealed class UiApp
     /// </summary>
     private void ResolvePaneCrossing()
     {
-        if (_leftPressPending)
-        {
-            _leftPressPending = false;
-            if (Widgets.CurrentFocusId == _focusBeforeLeft && !_railHasFocus)
-                _wantRailFocusFrames = RailFocusRequestFrames;
-        }
+        if (_suppressRailNavFrames > 0) _suppressRailNavFrames--;
+        if (_suppressContentNavFrames > 0) _suppressContentNavFrames--;
 
         if (_navRightFired && _railHasFocus)
         {
-            _wantContentFocus = true;
+            // Into the content, at its topmost control.
+            Widgets.RequestFocus(_bestContentId);
+            _suppressRailNavFrames = SuppressNavFrames;
         }
         else if (_navLeftFired && !_railHasFocus)
         {
-            _leftPressPending = true;
-            _focusBeforeLeft = Widgets.CurrentFocusId;
+            // Back to the rail entry for the screen you are on — never the nearest one by pixels.
+            Widgets.RequestFocus(_activeRailId);
+            _suppressContentNavFrames = SuppressNavFrames;
         }
 
         _navLeftFired = _navRightFired = false;
@@ -522,9 +518,14 @@ sealed class UiApp
         ImGui.SetCursorPos(new Vector2(0, Theme.Layout.HeaderHeight));
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.BgCard);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(Theme.Space.Sm, Theme.Space.Md));
+        // NOT NavFlattened. Flattened, the rail shared one nav space with the content, so a Down
+        // inside the content could land on a rail entry — pressing Down from "Scan for games" jumped
+        // to "Add game" and the discovered list became unreachable. Each pane now owns its nav, and
+        // crossing between them is handled explicitly in ResolvePaneCrossing.
+        var railFlags = ImGuiWindowFlags.NoScrollbar;
+        if (_suppressRailNavFrames > 0) railFlags |= ImGuiWindowFlags.NoNav;
         ImGui.BeginChild("rail", new Vector2(Theme.Layout.RailWidth, height),
-            ImGuiChildFlags.AlwaysUseWindowPadding,
-            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NavFlattened);
+            ImGuiChildFlags.AlwaysUseWindowPadding, railFlags);
 
         var items = new (string Label, Icons.Glyph Icon, Screen Target, bool Active)[]
         {
@@ -540,12 +541,13 @@ sealed class UiApp
             // Land the cursor on the rail entry for the screen already being shown. Without an
             // initial nav target ImGui starts with nothing focused, so the first D-pad press only
             // picks a starting item and appears to do nothing.
-            if ((_focusRailOnce || _wantRailFocusFrames > 0) && active)
+            if (_focusRailOnce && active)
             {
                 _focusRailOnce = false;
                 ImGui.SetKeyboardFocusHere();
             }
             if (Widgets.RailItem(label, icon, active)) Go(target);
+            if (active) _activeRailId = Widgets.LastRailItemId;
             railFocused |= ImGui.IsItemFocused();
         }
 
@@ -558,11 +560,6 @@ sealed class UiApp
         railFocused |= ImGui.IsItemFocused();
         _railHasFocus = railFocused;
 
-        if (_wantRailFocusFrames > 0)
-        {
-            _wantRailFocusFrames--;
-            if (railFocused) _wantRailFocusFrames = 0;   // arrived
-        }
 
         ImGui.EndChild();
         ImGui.PopStyleVar();
@@ -582,9 +579,13 @@ sealed class UiApp
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.BgGlobal);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
             new Vector2(Theme.Layout.Gutter, Theme.Layout.Gutter));
+        // Suppressing the OTHER pane's nav for a frame is what makes an explicit focus hand-off
+        // stick: SetKeyboardFocusHere alone loses to whatever already holds the cursor.
+        var contentFlags = ImGuiWindowFlags.NavFlattened;
+        if (_suppressContentNavFrames > 0) contentFlags |= ImGuiWindowFlags.NoNav;
         ImGui.BeginChild("content",
             new Vector2(size.X - Theme.Layout.RailWidth - 1f, height),
-            ImGuiChildFlags.AlwaysUseWindowPadding, ImGuiWindowFlags.NavFlattened);
+            ImGuiChildFlags.AlwaysUseWindowPadding, contentFlags);
 
         // Cross-fade on navigation. Without it a rail press swaps the entire right-hand two-thirds
         // of the screen between two frames, which reads as a glitch rather than a transition.
@@ -603,9 +604,9 @@ sealed class UiApp
         ImGui.PushStyleVar(ImGuiStyleVar.Alpha, eased);
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + (1f - eased) * 12f);
 
-        // Whichever screen is showing, its first focusable widget takes the cursor. Re-armed every
-        // frame while pending, so a press made during a scan lands once the results appear.
-        if (_wantContentFocus) Widgets.FocusNextItem();
+        // Collect this screen's focusable controls so Right can land on the visually topmost one
+        // rather than whichever happened to be drawn first.
+        Widgets.BeginFocusScan();
 
         switch (_screen)
         {
@@ -616,8 +617,8 @@ sealed class UiApp
             case Screen.Settings: _settings.Draw(); break;
         }
 
-        // Cleared once a content widget has taken it, or once the request has aged out.
-        _wantContentFocus = Widgets.FocusRequestPending;
+        var best = Widgets.EndFocusScan();
+        if (best != 0) _bestContentId = best;
 
         ImGui.PopStyleVar();
         ImGui.EndChild();
