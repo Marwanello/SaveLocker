@@ -1,11 +1,21 @@
 # Linux Agent — Streamlining the add-game flow
 
 **Status:** Phases 1 + 2 **done** — landed in PR #24 (branch `linux-agent-streamline-phase1`),
-merged 2026-07-24, full CI green including `agent-tests-linux` and the cross-OS chain. Phase 3
-(gamepad-native Game Mode UI) **not started** — a separate PR, gated on three on-device checks
-(§3.3.1 stub window under gamescope, §3.3.2 Steam Input delivering a gamepad, §3.1 tarball size
-delta) that need a real Deck. **Written:** 2026-07-23.
-Linked from `Backlog.md` now that Phase 3 is the scheduled remainder.
+merged 2026-07-24, full CI green including `agent-tests-linux` and the cross-OS chain.
+
+**Phase 3 — all three gates PASSED on-device 2026-07-24** (branch `linux-agent-streamline-phase3`):
+- **§3.1 size delta:** self-contained `linux-x64` publish grew **~8.8 MB** (uncompressed: `libSDL2`
+  2.1M + `libcimgui` 1.5M + Silk/ImGui managed DLLs; GL binds the Deck's system Mesa). Single-digit
+  MB — pass.
+- **§3.3.1:** the `savelocker ui` stub renders under gamescope and launches from the Steam library,
+  in both Game Mode and Desktop Mode.
+- **§3.3.2:** with the **default** "Gamepad with Joystick Trackpad" template (no manual layout change),
+  D-pad navigates and A activates. Required subscribing to Silk's `ButtonDown` — see `Gotchas.md`.
+
+Remaining Phase 3 work: write the four real views (Status / Add game / Set save folder / Launch
+setup) against `Agent.Core` in-process, the `install.sh` banner step, docs, and §3.3.3–3.3.5
+on-device acceptance (clipboard, idle power, full cold flow). **Written:** 2026-07-23; gates cleared
+2026-07-24. Linked from `Backlog.md`.
 
 > [!note] What actually shipped vs. this plan (Phases 1–2)
 > - 1.1 folder-pick is shared via `agent-ui/src/useFolderPicker.ts`; the candidate setter is
