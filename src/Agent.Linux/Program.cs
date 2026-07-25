@@ -47,6 +47,11 @@ static class Program
             case "doctor":
                 return await Doctor.RunAsync(config);
 
+            case "ui":
+                // Native SDL/GL/ImGui libs load only here, on demand — a headless `daemon` never
+                // touches a GPU (Linux-Agent-Streamline.md §3).
+                return Ui.UiApp.Run(config);
+
             case "autostart":
             {
                 var autoStart = new SystemdAutoStart();
@@ -156,6 +161,9 @@ static class Program
         Daemon
           daemon [--port <n>]                              Run headless; serves the agent UI on localhost:5178
           autostart --enable | --disable                   systemd --user unit
+
+        Game Mode
+          ui                                               Gamepad-native window for Steam Game Mode (Deck)
 
         Add this to a game's Steam launch options to sync it automatically:
           savelocker run -- %command%

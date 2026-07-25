@@ -108,6 +108,34 @@ public sealed class PathBrowser
         return new BrowseListing(full, parent, entries.ToArray());
     }
 
+    /// <summary>
+    /// File names directly in <paramref name="path"/> (not recursive), so a UI can show what a
+    /// folder contains and let the user confirm the save files are there before choosing it. Same
+    /// containment rule as <see cref="List"/>: null when the path is outside the roots or unreadable.
+    /// </summary>
+    public string[]? ListFiles(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return Array.Empty<string>();
+
+        string full;
+        try { full = RealPath(path); }
+        catch { return null; }
+
+        if (!_roots.Any(r => IsUnder(full, r) || PathsEqual(full, r))) return null;
+        if (!Directory.Exists(full)) return null;
+
+        try
+        {
+            return new DirectoryInfo(full)
+                .EnumerateFiles()
+                .OrderBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(f => f.Name)
+                .ToArray();
+        }
+        catch (UnauthorizedAccessException) { return null; }
+        catch (IOException) { return null; }
+    }
+
     /// <summary>True when <paramref name="path"/> is strictly inside <paramref name="root"/>.</summary>
     /// <remarks>
     /// The trailing separator is what stops <c>/home/deckard</c> from being accepted as a path under

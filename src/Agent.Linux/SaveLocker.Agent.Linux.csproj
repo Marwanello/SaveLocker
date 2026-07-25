@@ -8,6 +8,8 @@
     <RootNamespace>SaveLocker.Agent.Linux</RootNamespace>
     <!-- The command users type, and what the Steam launch-options wrapper is called. -->
     <AssemblyName>savelocker</AssemblyName>
+    <!-- The Game Mode UI copies the launch command to the system clipboard via SDL (byte*). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- SteamOS ships no .NET runtime, so releases must be published self-contained for
          linux-x64 (see packaging/linux/build-linux.sh). Deliberately not pinned here, so the
          project still builds and tests RID-agnostically on any dev box. -->
@@ -17,6 +19,17 @@
   <ItemGroup>
     <ProjectReference Include="..\Agent.Core\SaveLocker.Agent.Core.csproj" />
     <ProjectReference Include="..\Shared\SaveLocker.Shared.csproj" />
+  </ItemGroup>
+
+  <!-- Game Mode UI (`savelocker ui`, Phase 3). SDL windowing + OpenGL + Dear ImGui via Silk.NET.
+       SDL is prioritised so the window is a gamescope-native client and Steam Input can deliver a
+       gamepad (Linux-Agent-Streamline.md §3). Native libs (SDL, cimgui) load on demand, so
+       `savelocker daemon` on a headless box never touches SDL or a GPU. -->
+  <ItemGroup>
+    <PackageReference Include="Silk.NET.Windowing.Sdl" Version="2.22.0" />
+    <PackageReference Include="Silk.NET.Input.Sdl" Version="2.22.0" />
+    <PackageReference Include="Silk.NET.OpenGL" Version="2.22.0" />
+    <PackageReference Include="Silk.NET.OpenGL.Extensions.ImGui" Version="2.22.0" />
   </ItemGroup>
 
   <!-- The daemon serves the same React agent UI as the tray (Decisions.md §2): it is the
