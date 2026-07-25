@@ -547,6 +547,75 @@ static class Widgets
         return pressed;
     }
 
+    /// <summary>
+    /// A left-rail navigation row: icon, label, and the console sidebar's active treatment — tinted
+    /// fill plus a 3 px accent bar down the leading edge (see <c>agent-ui/.../Sidebar.tsx</c>).
+    /// </summary>
+    public static bool RailItem(string label, Icons.Glyph icon, bool active)
+    {
+        var lineH = ImGui.GetTextLineHeight();
+        var height = lineH + Theme.Space.Md * 2;
+        var width = ImGui.GetContentRegionAvail().X;
+
+        ImGui.PushID(label);
+        var pressed = ImGui.InvisibleButton("##rail", new Vector2(width, height));
+
+        var min = ImGui.GetItemRectMin();
+        var max = ImGui.GetItemRectMax();
+        var dl = ImGui.GetWindowDrawList();
+
+        bool hot = ImGui.IsItemHovered() || ImGui.IsItemFocused();
+        var lift = Tween(ImGui.GetItemID(), hot ? 1f : 0f);
+        var on = Tween(ImGui.GetItemID() ^ 0x5A5Au, active ? 1f : 0f);
+
+        var bg = Mix(Theme.Alpha(Theme.AccentGreen, 0f), Theme.NavActiveBg, MathF.Max(on, lift * 0.55f));
+        dl.AddRectFilled(min, max, U32(bg), Theme.Rounding.Button);
+
+        if (on > 0.01f || lift > 0.01f)
+            dl.AddRectFilled(min, new Vector2(min.X + 3f, max.Y),
+                U32(Theme.Alpha(Theme.AccentGreen, MathF.Max(on, lift * 0.6f))), 2f);
+
+        var tint = Mix(Theme.TextMuted, Theme.AccentGreen, MathF.Max(on, lift));
+        var textCol = Mix(Theme.TextPrimary, Theme.AccentGreen, on);
+
+        var x = min.X + Theme.Space.Md;
+        Icons.DrawAt(dl, icon, new Vector2(x, min.Y + (height - lineH) / 2f), lineH, tint);
+
+        var font = active ? Theme.BodyStrong : Theme.Body;
+        Theme.PushFont(font);
+        dl.AddText(new Vector2(x + lineH + Theme.Space.Md, min.Y + (height - lineH) / 2f),
+            U32(textCol), label);
+        Theme.PopFont(font);
+
+        ImGui.PopID();
+        return pressed;
+    }
+
+    /// <summary>
+    /// A gamepad button hint — the filled glyph plus its action, as the hint bar renders them.
+    /// A Deck user has no other affordance telling them what A and B do on this screen.
+    /// </summary>
+    public static void GamepadHint(string button, string action)
+    {
+        var dl = ImGui.GetWindowDrawList();
+        var pos = ImGui.GetCursorScreenPos();
+        var r = ImGui.GetTextLineHeight() * 0.55f;
+        var centre = pos + new Vector2(r, ImGui.GetTextLineHeight() / 2f);
+
+        dl.AddCircleFilled(centre, r, U32(Theme.BgTableHd), 20);
+        dl.AddCircle(centre, r, U32(Theme.Border), 20, 1f);
+
+        Theme.PushFont(Theme.Caption);
+        var bs = ImGui.CalcTextSize(button);
+        dl.AddText(centre - bs / 2f, U32(Theme.TextPrimary), button);
+        Theme.PopFont(Theme.Caption);
+
+        ImGui.Dummy(new Vector2(r * 2, ImGui.GetTextLineHeight()));
+        ImGui.SameLine(0, Theme.Space.Sm);
+        ImGui.AlignTextToFramePadding();
+        Text(action, Theme.TextMuted, Theme.Caption);
+    }
+
     // ── Layout ───────────────────────────────────────────────────────────────────────────────
 
     /// <summary>

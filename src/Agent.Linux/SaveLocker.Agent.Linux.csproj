@@ -32,6 +32,14 @@
     <EmbeddedResource Include="Ui\Fonts\JetBrainsMono-Regular.ttf" />
   </ItemGroup>
 
+  <!-- UI-sized re-export of the Steam artwork. Linked from packaging/ rather than copied so there
+       is one master: the full-size dist/ assets are ~2.1 MB and are for the Steam library, not the
+       UI. Must stay 8-bit RGBA, non-interlaced — that is all Ui/Art.cs decodes. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\packaging\linux\artwork\dist\ui\logo-96.png"
+                      LogicalName="SaveLocker.Agent.Linux.Ui.Art.logo-96.png" />
+  </ItemGroup>
+
   <!-- Game Mode UI (`savelocker ui`, Phase 3). SDL windowing + OpenGL + Dear ImGui via Silk.NET.
        SDL is prioritised so the window is a gamescope-native client and Steam Input can deliver a
        gamepad (Linux-Agent-Streamline.md §3). Native libs (SDL, cimgui) load on demand, so
