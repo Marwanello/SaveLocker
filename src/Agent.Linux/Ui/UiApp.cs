@@ -302,12 +302,15 @@ sealed class UiApp
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
             new Vector2(Theme.Layout.Gutter, Theme.Space.Sm));
         ImGui.BeginChild("header", new Vector2(size.X, Theme.Layout.HeaderHeight),
-            ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar);
+            ImGuiChildFlags.AlwaysUseWindowPadding, ImGuiWindowFlags.NoScrollbar);
 
-        const float markH = 38f;
+        // Vertical centring is measured inside the child's content box, so the padding pushed above
+        // is already accounted for — do not subtract it again.
+        const float markH = 40f;
         if (Art.Logo.Ok)
         {
-            ImGui.SetCursorPosY((Theme.Layout.HeaderHeight - markH) / 2f - Theme.Space.Sm);
+            var inner = Theme.Layout.HeaderHeight - Theme.Space.Sm * 2;
+            ImGui.SetCursorPosY(Theme.Space.Sm + MathF.Max(0f, (inner - markH) / 2f));
             ImGui.Image(Art.Logo.Id, new Vector2(Art.Logo.WidthAt(markH), markH));
             ImGui.SameLine(0, Theme.Space.Md);
         }
@@ -355,7 +358,7 @@ sealed class UiApp
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.BgCard);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(Theme.Space.Sm, Theme.Space.Md));
         ImGui.BeginChild("rail", new Vector2(Theme.Layout.RailWidth, height),
-            ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar);
+            ImGuiChildFlags.AlwaysUseWindowPadding, ImGuiWindowFlags.NoScrollbar);
 
         if (Widgets.RailItem("Overview", Icons.Monitor, _screen == Screen.Status)) Go(Screen.Status);
         if (Widgets.RailItem("Add game", Icons.Plus,
@@ -388,7 +391,8 @@ sealed class UiApp
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
             new Vector2(Theme.Layout.Gutter, Theme.Layout.Gutter));
         ImGui.BeginChild("content",
-            new Vector2(size.X - Theme.Layout.RailWidth - 1f, height), ImGuiChildFlags.None);
+            new Vector2(size.X - Theme.Layout.RailWidth - 1f, height),
+            ImGuiChildFlags.AlwaysUseWindowPadding);
 
         switch (_screen)
         {
@@ -416,7 +420,7 @@ sealed class UiApp
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
             new Vector2(Theme.Layout.Gutter, Theme.Space.Sm + 2f));
         ImGui.BeginChild("hints", new Vector2(size.X, Theme.Layout.HintBarHeight),
-            ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar);
+            ImGuiChildFlags.AlwaysUseWindowPadding, ImGuiWindowFlags.NoScrollbar);
 
         Widgets.GamepadHint("A", "Select");
         ImGui.SameLine(0, Theme.Space.Lg);
