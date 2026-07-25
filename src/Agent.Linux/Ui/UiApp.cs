@@ -476,7 +476,7 @@ sealed class UiApp
         ImGui.SameLine(0, Theme.Space.Lg);
         Widgets.GamepadHint("B", _screen == Screen.SetFolder ? "Cancel" : "Back");
         ImGui.SameLine(0, Theme.Space.Lg);
-        Widgets.GamepadHint("D", "Move");
+        Widgets.GamepadHintIcon(Icons.Dpad, "Move");
 
         var version = $"SaveLocker {BuildVersion}";
         Theme.PushFont(Theme.Caption);

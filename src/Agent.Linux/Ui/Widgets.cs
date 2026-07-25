@@ -672,8 +672,8 @@ static class Widgets
     }
 
     /// <summary>
-    /// A gamepad button hint — the filled glyph plus its action, as the hint bar renders them.
-    /// A Deck user has no other affordance telling them what A and B do on this screen.
+    /// A face-button hint — a lettered circle plus its action, matching how A/B/X/Y are moulded on
+    /// the hardware. A Deck user has no other affordance telling them what the buttons do here.
     /// </summary>
     public static void GamepadHint(string button, string action)
     {
@@ -690,7 +690,29 @@ static class Widgets
         dl.AddText(centre - bs / 2f, U32(Theme.TextPrimary), button);
         Theme.PopFont(Theme.Caption);
 
-        ImGui.Dummy(new Vector2(r * 2, ImGui.GetTextLineHeight()));
+        HintLabel(r * 2, action);
+    }
+
+    /// <summary>
+    /// A hint for a control that is a shape rather than a letter — the D-pad above all. Drawing it
+    /// as a circled "D" was wrong: there is no D button on a Deck.
+    /// </summary>
+    public static void GamepadHintIcon(Icons.Glyph glyph, string action)
+    {
+        var dl = ImGui.GetWindowDrawList();
+        var pos = ImGui.GetCursorScreenPos();
+        var lineH = ImGui.GetTextLineHeight();
+
+        // Sized to the face-button circle's diameter so the row reads as one set of controls.
+        var size = lineH * 1.1f;
+        Icons.DrawAt(dl, glyph, pos + new Vector2(0, (lineH - size) / 2f), size, Theme.TextPrimary);
+
+        HintLabel(size, action);
+    }
+
+    private static void HintLabel(float glyphWidth, string action)
+    {
+        ImGui.Dummy(new Vector2(glyphWidth, ImGui.GetTextLineHeight()));
         ImGui.SameLine(0, Theme.Space.Sm);
         ImGui.AlignTextToFramePadding();
         Text(action, Theme.TextMuted, Theme.Caption);

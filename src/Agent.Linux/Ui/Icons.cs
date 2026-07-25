@@ -157,6 +157,15 @@ static class Icons
     public static readonly Glyph ChevronLeft = (dl, p, s, c, w) =>
         Poly(dl, p, s, c, w, false, 15, 5, 8, 12, 15, 19);
 
+    /// <summary>
+    /// A D-pad: an equal-armed cross. The face buttons are drawn as lettered circles because that is
+    /// what A/B/X/Y look like on the hardware, but there is no "D" button on a Deck — the direction
+    /// control is a cross, so it gets a shape rather than a letter.
+    /// </summary>
+    public static readonly Glyph Dpad = (dl, p, s, c, w) =>
+        Poly(dl, p, s, c, w, true,
+            9, 3, 15, 3, 15, 9, 21, 9, 21, 15, 15, 15, 15, 21, 9, 21, 9, 15, 3, 15, 3, 9, 9, 9);
+
     public static readonly Glyph ChevronUp = (dl, p, s, c, w) =>
         Poly(dl, p, s, c, w, false, 5, 15, 12, 8, 19, 15);
 
