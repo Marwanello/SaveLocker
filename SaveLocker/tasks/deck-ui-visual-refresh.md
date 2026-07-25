@@ -322,6 +322,28 @@ string, **and the `lease-warnings.json` store per the §4 decision** (daemon wri
 raised on machine A appears on the Deck UI, is dismissed there, and does not reappear in the agent
 UI at `localhost:5178`.
 
+**✅ Phase D complete (2026-07-25).** `Ui/SettingsScreen.cs` + `Agent.Core/LeaseWarningStore.cs`.
+Every ❌ in §4 is now ✅. Connection fields are read-only (no keyboard in Game Mode) and point at
+Desktop Mode; settle-seconds is a stepper, auto-start a toggle that reflects what systemd actually
+did rather than what was asked, and game removal marks rows and needs a second press — on a gamepad
+an accidental A is easy and untracking is not recoverable from that screen.
+
+> 🔴 **The lease-warning work was larger than "surface it in the UI".** `ProtonRun.cs:56` called
+> `OnGameLaunchAsync` and **discarded its result**. On Linux the launch wrapper is a separate,
+> short-lived process from the daemon, so a warning it raised reached no UI at all — the only trace
+> was an `Alert` line in a console log that Game Mode never displays. **A Deck user who launched a
+> game another machine had checked out was never told, anywhere.** The store fixes the feature, not
+> just its presentation, and the same file now backs the Windows agent UI so a daemon restart no
+> longer drops an unseen conflict notice.
+
+Two layout defects the fixture screenshots caught, both now fixed in `Widgets`:
+- **`ImDrawList.AddText` neither wraps nor clips.** A long save path ran straight off the window.
+  `ListRow` measures its trailing furniture first and elides into the remainder; **subtitles elide in
+  the middle**, because the leaf folder identifies the game and the `compatdata/pfx/drive_c` middle
+  does not. Any hand-painted widget drawing variable-length text needs this.
+- A wrapped banner body claimed the full width, pushing the dismiss button out of the banner
+  entirely. Reserve the control's width before wrapping, not after.
+
 ### Phase E — motion
 A tween helper keyed by `ImGuiID` (`float Tween(id, target, speed)`), lerped on frame delta. Apply
 to: nav row active-fill, button hover/press scale, screen cross-fade, scan spinner, banner slide-in.

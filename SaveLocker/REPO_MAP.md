@@ -53,6 +53,10 @@ SaveLocker/
 │   │   ├── UpdateChecker.cs             # Polls /api/agent/latest, downloads installer
 │   │   ├── OfflineQueue.cs              # JSON retry queue: …\SaveLocker\offline-queue.json
 │   │   ├── OfflineQueueDrainer.cs       # 30 s timer drains queue when server reachable
+│   │   ├── LeaseWarningStore.cs         # Durable "another machine has this checked out". On DISK
+│   │   │                               #   because the Linux launch wrapper is a separate,
+│   │   │                               #   short-lived process from the daemon — held in memory,
+│   │   │                               #   its warnings reached no UI at all. 24 h expiry.
 │   │   ├── AgentLogger.cs               # Rolling agent.log
 │   │   ├── AgentCli.cs                  # Shared one-shot commands (register/push/pull/status/…)
 │   │   ├── CliArgs.cs                   # Minimal command-line parser
@@ -95,6 +99,8 @@ SaveLocker/
 │           ├── Icons.cs                 # lucide-equivalent glyphs as vector paths — no atlas
 │           ├── Gallery.cs               # `ui --gallery`: every widget in every state (dev only)
 │           ├── Screenshot.cs            # `ui --screenshot`: framebuffer → PNG, hand-rolled encoder
+│           ├── SettingsScreen.cs        # Settings: read-only connection, settle stepper,
+│           │                             #   autostart toggle, remove tracked games
 │           └── Fonts/                   # Inter + JetBrains Mono (embedded, SIL OFL)
 │
 ├── web/                                 # React admin dashboard
@@ -207,6 +213,7 @@ Dashboard     →  GET  /api/overview            →  SyncService  →  GameStat
 | Agent config | `%PROGRAMDATA%\SaveLocker\config.json` |
 | Agent log | `%PROGRAMDATA%\SaveLocker\agent.log` |
 | Offline queue | `%PROGRAMDATA%\SaveLocker\offline-queue.json` |
+| Lease warnings | `%PROGRAMDATA%\SaveLocker\lease-warnings.json` (beside the config it belongs to; `--config` moves it) |
 | Server DB (dev) | `src/Server/localstate/savelocker.db` |
 | Server DB (Docker) | `/data/savelocker.db` (or `localgamesync.db` on existing deployments) |
 | Archives (Docker) | `/data/archives/` |
