@@ -25,12 +25,15 @@ set -euo pipefail
 
 SIZE="1280x800"
 BUILD=1
-for arg in "$@"; do
-  case "$arg" in
-    --no-build) BUILD=0 ;;
-    *x*)        SIZE="$arg" ;;
-    *) echo "Unknown argument '$arg'. Usage: run-ui-wslg.sh [WxH] [--no-build]" >&2; exit 2 ;;
+SHOT=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --no-build)   BUILD=0 ;;
+    --screenshot) SHOT="${2:?--screenshot needs a path}"; shift ;;
+    *x*)          SIZE="$1" ;;
+    *) echo "Unknown argument '$1'. Usage: run-ui-wslg.sh [WxH] [--no-build] [--screenshot out.png]" >&2; exit 2 ;;
   esac
+  shift
 done
 
 # dotnet is not on a non-interactive PATH in this WSL image (CONTEXT.md).
@@ -62,11 +65,19 @@ cd "$REPO_ROOT"
 
 if [ "$BUILD" -eq 1 ]; then
   # --no-incremental: stale DLL reuse has masked changes in this repo before (CONTEXT.md).
-  echo "Building savelocker (--no-incremental)..."
-  dotnet build src/Agent.Linux/SaveLocker.Agent.Linux.csproj --no-incremental -v quiet --nologo
+  #
+  # -r linux-x64 is REQUIRED, not an optimisation. The csproj is deliberately RID-agnostic so it
+  # builds anywhere, but a RID-agnostic build does not map runtimes/linux-x64/native into
+  # deps.json, so the host never resolves the bundled libSDL2 — and Silk reports that as the
+  # thoroughly misleading "Couldn't find a suitable window platform. (SdlPlatform - not
+  # applicable)", which reads like a missing display rather than a missing native library.
+  # --no-self-contained keeps this a fast dev build; releases publish self-contained.
+  echo "Building savelocker for linux-x64 (--no-incremental)..."
+  dotnet build src/Agent.Linux/SaveLocker.Agent.Linux.csproj \
+    -r linux-x64 --no-self-contained --no-incremental -v quiet --nologo
 fi
 
-BIN="$REPO_ROOT/src/Agent.Linux/bin/Debug/net10.0/savelocker"
+BIN="$REPO_ROOT/src/Agent.Linux/bin/Debug/net10.0/linux-x64/savelocker"
 if [ ! -x "$BIN" ]; then
   echo "Built binary not found at $BIN" >&2
   exit 1
@@ -75,6 +86,12 @@ fi
 # Use a scratch config so a dev run cannot touch a real enrolled agent's state.
 CONFIG="${SAVELOCKER_UI_TEST_CONFIG:-$REPO_ROOT/.wslg-ui/config.json}"
 mkdir -p "$(dirname "$CONFIG")"
+
+if [ -n "$SHOT" ]; then
+  # Capture-and-exit: no window to interact with, so this works unattended.
+  echo "Capturing $SIZE screenshot to $SHOT"
+  exec "$BIN" ui --size "$SIZE" --config "$CONFIG" --screenshot "$SHOT"
+fi
 
 echo "Launching UI at $SIZE  (config: $CONFIG)"
 echo "Keyboard nav mirrors gamepad nav: arrows move focus, Enter activates, Escape backs out."
