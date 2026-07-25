@@ -134,6 +134,27 @@ JSON
   }
 ]
 JSON
+  # Plant fake SteamOS UI sounds so Ui/Wav.cs actually runs. Deliberately 44100 Hz MONO 16-bit,
+  # while the audio device is opened at 48000 Hz stereo — that forces the decoder through both the
+  # resample and the channel fan-out paths on every fixture run. Written with Python's `wave`
+  # module, an implementation independent of ours, so the test cannot pass by sharing our bugs.
+  SOUNDS="$HOME/.local/share/Steam/steamui/sounds"
+  mkdir -p "$SOUNDS" "$HOME/.local/share/Steam/userdata"   # userdata/ is what marks a Steam root
+  python3 - "$SOUNDS" <<'PY'
+import math, struct, sys, wave, os
+out = sys.argv[1]
+for name, hz in [("deck_ui_navigation", 1000), ("deck_ui_default_activation", 700),
+                 ("deck_ui_hide_modal", 500), ("deck_ui_switch_toggle_on", 850)]:
+    rate, secs = 44100, 0.04
+    with wave.open(os.path.join(out, name + ".wav"), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
+        frames = int(rate * secs)
+        w.writeframes(b"".join(
+            struct.pack("<h", int(math.sin(2 * math.pi * hz * i / rate)
+                                  * math.exp(-5 * i / frames) * 12000))
+            for i in range(frames)))
+PY
+
   echo "Fixtures in $SCRATCH (fake HOME=$HOME)"
 fi
 
