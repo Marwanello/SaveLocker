@@ -26,12 +26,14 @@ set -euo pipefail
 SIZE="1280x800"
 BUILD=1
 SHOT=""
+EXTRA=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-build)   BUILD=0 ;;
     --screenshot) SHOT="${2:?--screenshot needs a path}"; shift ;;
+    --gallery)    EXTRA="--gallery" ;;   # every widget in every state, the Phase B gate
     *x*)          SIZE="$1" ;;
-    *) echo "Unknown argument '$1'. Usage: run-ui-wslg.sh [WxH] [--no-build] [--screenshot out.png]" >&2; exit 2 ;;
+    *) echo "Unknown argument '$1'. Usage: run-ui-wslg.sh [WxH] [--no-build] [--gallery] [--screenshot out.png]" >&2; exit 2 ;;
   esac
   shift
 done
@@ -90,9 +92,9 @@ mkdir -p "$(dirname "$CONFIG")"
 if [ -n "$SHOT" ]; then
   # Capture-and-exit: no window to interact with, so this works unattended.
   echo "Capturing $SIZE screenshot to $SHOT"
-  exec "$BIN" ui --size "$SIZE" --config "$CONFIG" --screenshot "$SHOT"
+  exec "$BIN" ui --size "$SIZE" --config "$CONFIG" --screenshot "$SHOT" $EXTRA
 fi
 
 echo "Launching UI at $SIZE  (config: $CONFIG)"
 echo "Keyboard nav mirrors gamepad nav: arrows move focus, Enter activates, Escape backs out."
-exec "$BIN" ui --size "$SIZE" --config "$CONFIG"
+exec "$BIN" ui --size "$SIZE" --config "$CONFIG" $EXTRA

@@ -52,7 +52,8 @@ static class Program
                 // touches a GPU (Linux-Agent-Streamline.md §3).
                 return Ui.UiApp.Run(config,
                     opts.GetValueOrDefault("size"),
-                    opts.GetValueOrDefault("screenshot"));
+                    opts.GetValueOrDefault("screenshot"),
+                    opts.ContainsKey("gallery"));
 
             case "autostart":
             {
