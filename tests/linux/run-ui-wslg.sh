@@ -36,6 +36,7 @@ while [ $# -gt 0 ]; do
     --screen)     EXTRA="$EXTRA --screen ${2:?--screen needs a name}"; shift ;;
     --fixtures)   FIXTURES=1 ;;
     --autoscan)   EXTRA="$EXTRA --autoscan" ;;
+    --nav)        EXTRA="$EXTRA --nav ${2:?--nav needs a sequence, e.g. right,down,a}"; shift ;;
     *x*)          SIZE="$1" ;;
     *) echo "Unknown argument '$1'. Usage: run-ui-wslg.sh [WxH] [--no-build] [--gallery] [--screenshot out.png]" >&2; exit 2 ;;
   esac

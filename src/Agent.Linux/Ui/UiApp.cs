@@ -62,6 +62,16 @@ sealed class UiApp
     private float _screenFade = 1f;
     private const float ScreenFadeSeconds = 0.16f;
 
+    /// <summary>Put the nav cursor on the rail on the first frame, so the D-pad works immediately.</summary>
+    private bool _focusRailOnce = true;
+
+    // Scripted navigation, for verification. Gamepad nav is the single hardest thing to test off a
+    // Deck, and it is exactly where the bugs are — so `--nav right,down,a` replays presses through
+    // the same queue a real pad feeds, and `--screenshot` then captures where the cursor landed.
+    private readonly Queue<ImGuiKey> _navScript = new();
+    private int _navScriptCooldown;
+    private const int NavScriptFrameGap = 6;   // ImGui needs a few frames to settle each move
+
     // Add-game state. The candidate list is a mutable copy so a browsed folder can be written back
     // onto a candidate before enrollment, exactly as AgentApiServer rewrites its _candidateCache.
     private Task<IReadOnlyList<ScanCandidate>>? _scanTask;
@@ -110,7 +120,8 @@ sealed class UiApp
     }
 
     public static int Run(AgentConfig config, string? sizeOverride = null, string? screenshotPath = null,
-        bool gallery = false, string? startScreen = null, bool autoScan = false)
+        bool gallery = false, string? startScreen = null, bool autoScan = false,
+        string? navScript = null)
     {
         var app = new UiApp(config, ParseSize(sizeOverride), screenshotPath);
         if (gallery) app._screen = Screen.Gallery;
@@ -121,6 +132,7 @@ sealed class UiApp
             else app._screen = target;
         }
         app._autoScan = autoScan;
+        foreach (var key in ParseNavScript(navScript)) app._navScript.Enqueue(key);
         return app.RunLoop();
     }
 
@@ -139,6 +151,28 @@ sealed class UiApp
         "gallery" => Screen.Gallery,
         _ => Screen.Status,
     };
+
+    /// <summary>Turn "right,down,a" into the nav keys a gamepad would have produced.</summary>
+    private static IEnumerable<ImGuiKey> ParseNavScript(string? script)
+    {
+        if (string.IsNullOrWhiteSpace(script)) yield break;
+        foreach (var raw in script.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var token = raw.Trim().ToLowerInvariant();
+            var key = token switch
+            {
+                "up" or "u" => ImGuiKey.GamepadDpadUp,
+                "down" or "d" => ImGuiKey.GamepadDpadDown,
+                "left" or "l" => ImGuiKey.GamepadDpadLeft,
+                "right" or "r" => ImGuiKey.GamepadDpadRight,
+                "a" => ImGuiKey.GamepadFaceDown,
+                "b" => ImGuiKey.GamepadFaceRight,
+                _ => (ImGuiKey?)null,
+            };
+            if (key is null) Console.Error.WriteLine($"Ignoring unknown --nav step '{token}'.");
+            else yield return key.Value;
+        }
+    }
 
     /// <summary>
     /// Window size, defaulting to the Deck's native 1280x800. The override exists so the same binary
@@ -271,6 +305,16 @@ sealed class UiApp
 
     private void OnRender(double delta)
     {
+        // Feed one scripted press every few frames, through the same queue the pad writes to.
+        if (_navScript.Count > 0)
+        {
+            if (--_navScriptCooldown <= 0)
+            {
+                _navScriptCooldown = NavScriptFrameGap;
+                lock (_navLock) _navQueue.Add(_navScript.Dequeue());
+            }
+        }
+
         FeedImGuiNav();
 
         // SDL's error string is sticky — it is never cleared on success, only overwritten on the
@@ -322,7 +366,7 @@ sealed class UiApp
         // A mid-transition capture would be a dim, offset frame — the fade counts as work in
         // progress for screenshot purposes.
         var busy = _scanTask is { IsCompleted: false } || _enrollTask is { IsCompleted: false }
-                   || _pendingFolderScreen || _screenFade < 1f;
+                   || _pendingFolderScreen || _screenFade < 1f || _navScript.Count > 0;
         _settleFrames = busy ? 0 : _settleFrames + 1;
 
         if (_screenshotPath is not null && ++_framesRendered >= ScreenshotWarmupFrames
@@ -363,7 +407,9 @@ sealed class UiApp
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
             new Vector2(Theme.Layout.Gutter, Theme.Space.Sm));
         ImGui.BeginChild("header", new Vector2(size.X, Theme.Layout.HeaderHeight),
-            ImGuiChildFlags.AlwaysUseWindowPadding, ImGuiWindowFlags.NoScrollbar);
+            ImGuiChildFlags.AlwaysUseWindowPadding,
+            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
+            ImGuiWindowFlags.NoNav);
 
         // Vertical centring is measured inside the child's content box, so the padding pushed above
         // is already accounted for — do not subtract it again.
@@ -419,15 +465,29 @@ sealed class UiApp
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.BgCard);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(Theme.Space.Sm, Theme.Space.Md));
         ImGui.BeginChild("rail", new Vector2(Theme.Layout.RailWidth, height),
-            ImGuiChildFlags.AlwaysUseWindowPadding, ImGuiWindowFlags.NoScrollbar);
+            ImGuiChildFlags.AlwaysUseWindowPadding,
+            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NavFlattened);
 
-        if (Widgets.RailItem("Overview", Icons.Monitor, _screen == Screen.Status)) Go(Screen.Status);
-        if (Widgets.RailItem("Add game", Icons.Plus,
-                _screen is Screen.AddGame or Screen.SetFolder)) Go(Screen.AddGame);
-        if (Widgets.RailItem("Steam setup", Icons.Monitor, _screen == Screen.LaunchSetup))
-            Go(Screen.LaunchSetup);
-        if (Widgets.RailItem("Settings", Icons.Settings, _screen == Screen.Settings))
-            Go(Screen.Settings);
+        var items = new (string Label, Icons.Glyph Icon, Screen Target, bool Active)[]
+        {
+            ("Overview", Icons.Monitor, Screen.Status, _screen == Screen.Status),
+            ("Add game", Icons.Plus, Screen.AddGame, _screen is Screen.AddGame or Screen.SetFolder),
+            ("Steam setup", Icons.HardDrive, Screen.LaunchSetup, _screen == Screen.LaunchSetup),
+            ("Settings", Icons.Settings, Screen.Settings, _screen == Screen.Settings),
+        };
+
+        foreach (var (label, icon, target, active) in items)
+        {
+            // Land the cursor on the rail entry for the screen already being shown. Without an
+            // initial nav target ImGui starts with nothing focused, so the first D-pad press only
+            // picks a starting item and appears to do nothing.
+            if (_focusRailOnce && active)
+            {
+                _focusRailOnce = false;
+                ImGui.SetKeyboardFocusHere();
+            }
+            if (Widgets.RailItem(label, icon, active)) Go(target);
+        }
 
         // Quit sits at the bottom, away from the destinations — it is not a place you go.
         var used = ImGui.GetCursorPosY();
@@ -455,7 +515,7 @@ sealed class UiApp
             new Vector2(Theme.Layout.Gutter, Theme.Layout.Gutter));
         ImGui.BeginChild("content",
             new Vector2(size.X - Theme.Layout.RailWidth - 1f, height),
-            ImGuiChildFlags.AlwaysUseWindowPadding);
+            ImGuiChildFlags.AlwaysUseWindowPadding, ImGuiWindowFlags.NavFlattened);
 
         // Cross-fade on navigation. Without it a rail press swaps the entire right-hand two-thirds
         // of the screen between two frames, which reads as a glitch rather than a transition.
@@ -502,7 +562,9 @@ sealed class UiApp
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
             new Vector2(Theme.Layout.Gutter, Theme.Space.Sm + 2f));
         ImGui.BeginChild("hints", new Vector2(size.X, Theme.Layout.HintBarHeight),
-            ImGuiChildFlags.AlwaysUseWindowPadding, ImGuiWindowFlags.NoScrollbar);
+            ImGuiChildFlags.AlwaysUseWindowPadding,
+            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
+            ImGuiWindowFlags.NoNav);
 
         Widgets.GamepadHint("A", "Select");
         ImGui.SameLine(0, Theme.Space.Lg);
@@ -762,7 +824,8 @@ sealed class UiApp
         var barH = buttonH + Theme.Space.Sm + ImGui.GetStyle().ItemSpacing.Y * 2 + Theme.Space.Sm;
         var listH = MathF.Max(120f, ImGui.GetContentRegionAvail().Y - barH);
 
-        ImGui.BeginChild("candidates", new Vector2(0, listH));
+        ImGui.BeginChild("candidates", new Vector2(0, listH),
+            ImGuiChildFlags.None, ImGuiWindowFlags.NavFlattened);
         if (_candidates.Count > 0)
         {
             for (int i = 0; i < _candidates.Count; i++)

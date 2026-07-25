@@ -207,7 +207,8 @@ static class Widgets
         ImGui.PushStyleColor(ImGuiCol.Border, border ?? Theme.Border);
         ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, Theme.Rounding.Card);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(Theme.Space.Lg, Theme.Space.Md));
-        ImGui.BeginChild(id, size, ImGuiChildFlags.Border | ImGuiChildFlags.AutoResizeY);
+        ImGui.BeginChild(id, size, ImGuiChildFlags.Border | ImGuiChildFlags.AutoResizeY,
+            ImGuiWindowFlags.NavFlattened);
     }
 
     public static void EndCard()
@@ -413,7 +414,8 @@ static class Widgets
         ImGui.PushStyleColor(ImGuiCol.Border, Theme.Alpha(colour, 0.45f));
         ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, Theme.Rounding.Card);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(Theme.Space.Md, Theme.Space.Md));
-        ImGui.BeginChild("banner", new Vector2(0, 0), ImGuiChildFlags.Border | ImGuiChildFlags.AutoResizeY);
+        ImGui.BeginChild("banner", new Vector2(0, 0),
+            ImGuiChildFlags.Border | ImGuiChildFlags.AutoResizeY, ImGuiWindowFlags.NavFlattened);
 
         if (icon is not null)
         {
@@ -785,13 +787,15 @@ static class Widgets
         var h = height > 0f ? height : avail.Y;
 
         ImGui.PushID(id);
-        ImGui.BeginChild("l", new Vector2(leftW, h), ImGuiChildFlags.None);
+        ImGui.BeginChild("l", new Vector2(leftW, h), ImGuiChildFlags.None,
+            ImGuiWindowFlags.NavFlattened);
         left();
         ImGui.EndChild();
 
         ImGui.SameLine(0, gutter);
 
-        ImGui.BeginChild("r", new Vector2(0, h), ImGuiChildFlags.None);
+        ImGui.BeginChild("r", new Vector2(0, h), ImGuiChildFlags.None,
+            ImGuiWindowFlags.NavFlattened);
         right();
         ImGui.EndChild();
         ImGui.PopID();
