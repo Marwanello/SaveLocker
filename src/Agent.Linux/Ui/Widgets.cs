@@ -125,11 +125,11 @@ static class Widgets
             }
         }
 
+        // Re-asserted every frame until the item reports focus (see Feedback). A single
+        // SetKeyboardFocusHere does not reliably win against a cursor that is already placed
+        // elsewhere, so clearing the request on the first attempt silently dropped the hand-off.
         if (_focusTargetFrames > 0 && id == _focusTargetId)
-        {
-            _focusTargetFrames = 0;
             ImGui.SetKeyboardFocusHere();
-        }
     }
 
     /// <summary>Age an unclaimed request so it cannot sit armed forever.</summary>
@@ -169,6 +169,10 @@ static class Widgets
     /// </summary>
     private static void Feedback(uint id, bool pressed, Sound.Cue activate = Sound.Cue.Activate)
     {
+        // The hand-off has landed: stop re-asserting it.
+        if (_focusTargetFrames > 0 && id == _focusTargetId && ImGui.IsItemFocused())
+            _focusTargetFrames = 0;
+
         if (ImGui.IsItemFocused() && id != _lastFocused)
         {
             _lastFocused = id;
