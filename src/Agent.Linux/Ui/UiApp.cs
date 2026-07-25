@@ -594,12 +594,9 @@ sealed class UiApp
         ImGui.PushStyleVar(ImGuiStyleVar.Alpha, eased);
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + (1f - eased) * 12f);
 
-        // Whichever screen is showing, its first focusable widget takes the cursor.
-        if (_wantContentFocus)
-        {
-            _wantContentFocus = false;
-            Widgets.FocusNextItem();
-        }
+        // Whichever screen is showing, its first focusable widget takes the cursor. Re-armed every
+        // frame while pending, so a press made during a scan lands once the results appear.
+        if (_wantContentFocus) Widgets.FocusNextItem();
 
         switch (_screen)
         {
@@ -609,6 +606,9 @@ sealed class UiApp
             case Screen.LaunchSetup: DrawLaunchSetup(); break;
             case Screen.Settings: _settings.Draw(); break;
         }
+
+        // Cleared once a content widget has taken it, or once the request has aged out.
+        _wantContentFocus = Widgets.FocusRequestPending;
 
         ImGui.PopStyleVar();
         ImGui.EndChild();

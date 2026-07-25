@@ -71,6 +71,9 @@ static class Widgets
 
     public static void FocusNextItem() => _focusRequestFrames = FocusRequestLifetimeFrames;
 
+    /// <summary>True while a focus request is still looking for a widget to land on.</summary>
+    internal static bool FocusRequestPending => _focusRequestFrames > 0;
+
     /// <param name="enabled">
     /// A disabled widget must NOT claim the request: SetKeyboardFocusHere on a disabled item leaves
     /// the cursor nowhere useful and ImGui falls back to highlighting the whole container, which is
@@ -754,8 +757,10 @@ static class Widgets
         var height = lineH + Theme.Space.Md * 2;
         var width = ImGui.GetContentRegionAvail().X;
 
+        // Deliberately does NOT call ClaimFocusRequest: focus requests are content-scoped, and the
+        // rail draws first every frame, so it would intercept a request meant for the other pane.
+        // The rail gets focus by explicit SetKeyboardFocusHere in UiApp instead.
         ImGui.PushID(label);
-        ClaimFocusRequest();
         var pressed = ImGui.InvisibleButton("##rail", new Vector2(width, height));
 
         var min = ImGui.GetItemRectMin();
