@@ -34,7 +34,7 @@ Shipped-feature detail: `logs/shipped-2026-07.md` + `logs/sessions.md`. Open wor
 | Deploy v0.3.4 to unRAID | ✅ done 2026-07-24 |
 | **Release v0.3.5** | ⏳ **NEXT ACTION** |
 | Linux add-game streamline — Phases 1–2 (dead button, prefix browser, enroll gate, launch card) | ✅ done — PR #24, 2026-07-24 |
-| Linux add-game streamline — Phase 3 (gamepad-native `savelocker ui`) | ✅ built + all gates green on-device 2026-07-24; branch `linux-agent-streamline-phase3`, **PR pending** |
+| Linux add-game streamline — Phase 3 (gamepad-native `savelocker ui`) | ✅ built + all gates green on-device 2026-07-24; **PR #25** open (CI running) |
 
 ---
 
