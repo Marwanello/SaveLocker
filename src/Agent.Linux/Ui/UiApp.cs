@@ -428,6 +428,12 @@ sealed class UiApp
     /// </summary>
     private void ResolvePaneCrossing()
     {
+        var diag = Environment.GetEnvironmentVariable("SAVELOCKER_NAV_DIAG") == "1";
+        if (diag && (_navLeftFired || _navRightFired || _leftPressPending))
+            Console.WriteLine($"f{_framesRendered} L={_navLeftFired} R={_navRightFired} " +
+                              $"railFocus={_railHasFocus} pending={_leftPressPending} " +
+                              $"focus={Widgets.CurrentFocusId} before={_focusBeforeLeft}");
+
         if (_leftPressPending)
         {
             _leftPressPending = false;
