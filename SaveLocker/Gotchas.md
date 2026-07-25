@@ -555,3 +555,16 @@ window edges — stat tiles ended exactly at 1280 px, the server chip and versio
 by a few characters. It looks like an off-by-one in the width maths, which is where the time goes.
 
 **If content is touching a window edge, check this flag before recomputing any widths.**
+
+## ImGui's style.Alpha does not reach hand-painted widgets
+`PushStyleVar(ImGuiStyleVar.Alpha, x)` is applied by ImGui *inside its own widget code*, via
+`GetColorU32`. Anything drawn straight onto an `ImDrawList` with an explicit packed colour bypasses
+that entirely.
+
+The Deck UI paints almost every widget by hand (`Ui/Widgets.cs`, `Ui/Icons.cs`), so a fade applied
+this way silently did nothing to the parts of the screen that matter — the chrome dimmed, the
+content did not. The fix is that `Widgets.U32` multiplies the incoming alpha by
+`ImGui.GetStyle().Alpha`.
+
+**Any new hand-painted colour must go through `Widgets.U32`**, never
+`ImGui.ColorConvertFloat4ToU32` directly, or it will refuse to fade with everything around it.

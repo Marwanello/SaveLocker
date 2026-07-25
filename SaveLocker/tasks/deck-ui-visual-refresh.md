@@ -355,6 +355,27 @@ do not add tween-aware pacing.
 **Gate:** on the Deck — animations are smooth at 60, and no thermal or drain surprise over a
 realistic ~15 minute configuration session.
 
+**✅ Phase E built (2026-07-25) — motion is UNVERIFIED IN MOTION, see below.**
+Most of Phase E had already landed: the tween helper was wired into every interactive widget in
+Phase B, and the 60 fps cap in Phase A. This added the screen cross-fade (ease-out cubic, 160 ms)
+and the banner entrance (fade + settle down).
+
+⚠️ **The enabling fix, and the trap for anyone adding animation here: `PushStyleVar(Alpha)` does
+nothing to hand-painted widgets.** ImGui applies `style.Alpha` inside its *own* widget code, but
+everything in `Widgets.cs` paints through `ImDrawList` with explicit colours ImGui never touches — so
+a fade would silently be a no-op across the majority of this UI. `Widgets.U32` now folds `Alpha` in,
+and `Icons` routes through it. **Any new hand-painted colour must go through `Widgets.U32`**, not
+`ImGui.ColorConvertFloat4ToU32`, or it will not fade with everything else.
+
+Screenshot capture treats an in-progress fade as busy, so an unattended capture cannot land on a
+dim, offset frame — verified: steady-state captures are full opacity and complete in ~2.5 s, which
+also proves the ramp reaches 1 rather than stalling.
+
+🔴 **What is NOT verified: the animations as animations.** A settled screenshot cannot show a
+transition, and the WSLg loop is capture-based. The fade is verified to *terminate* and not to
+regress steady state; whether it *feels* right is a judgement that needs someone watching it, either
+interactively under WSLg or on the Deck. Treat this as the first thing to eyeball on device.
+
 ---
 
 ## 7. Verification
