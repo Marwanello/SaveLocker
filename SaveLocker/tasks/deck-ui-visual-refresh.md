@@ -266,12 +266,29 @@ recorded in `Gotchas.md` (RID requirement, SDL's sticky error, WSL PATH quoting)
 trailing), `Toggle`, `Stepper`, `Badge`, `Banner`, `SectionHeader`, `TwoColumn`, and the icon atlas.
 Painted with `ImDrawList` over `InvisibleButton` where ImGui's stock widget can't carry the look.
 
-**Icons:** the agent UI uses `lucide-react` (SVG, not a font). For exact parity, pre-rasterize the
-~12 needed glyphs (`Monitor`, `Plus`, `Settings`, `Shield`, `Server`, `Cpu`, `AlertTriangle`,
-`Folder`, `Check`, `X`, `ChevronLeft`, `ChevronRight`) into **one packed PNG atlas at 2× (48 px)**,
-check it in, embed it, draw with UV rects. Do not add a runtime SVG rasterizer.
+**Icons — plan superseded.** The spec called for pre-rasterizing lucide SVGs into a packed PNG atlas.
+**Rejected during Phase B:** no SVG rasterizer is available in this environment (`apt` needs sudo),
+and a bitmap atlas is the worse artifact anyway — it bakes one resolution, and this UI draws the same
+glyph from 14 px to 40 px.
+
+**Shipped instead: `Ui/Icons.cs` draws them as `ImDrawList` vector paths** on lucide's own 24×24
+grid, so the shapes stay readable against the upstream SVGs. No image assets, no build tooling, and
+they re-tessellate per frame at whatever size is asked for. 15 glyphs plus an animated spinner.
+
+⚠️ Icons must be drawn as **closed outlines, not radiating strokes**. The first gear radiated spokes
+from a circle and read as a *sun* above ~24 px. Check every glyph at 40 px in the gallery, not just
+at 24 — that is what the size strip at the bottom of the icon section is for.
 
 **Gate:** a scratch gallery screen showing every widget in every state.
+
+**✅ Phase B complete (2026-07-25).** `Ui/Icons.cs`, `Ui/Widgets.cs`, `Ui/Gallery.cs`.
+Widgets are painted over `InvisibleButton` rather than styling ImGui's stock controls — that keeps
+full gamepad-nav participation (focus, activation, clipping) while allowing any appearance. The
+tween helper is keyed by ImGui item ID and uses exponential decay (`1 - e^(-speed·dt)`) rather than
+a naive lerp, which overshoots and oscillates when a frame stalls.
+
+Gallery is reachable with `ui --gallery` and pairs with `--screenshot`, so a theme change can be
+reviewed against the whole vocabulary in one capture. It is a dev surface; nothing links to it.
 
 ### Phase C — repaint the four screens into the 1280×800 shell
 Header + rail + content + hint bar. Status becomes stat tiles + hero banner. Add game becomes cards.

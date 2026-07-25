@@ -84,7 +84,18 @@ SaveLocker/
 │       ├── LinuxGameScanner.cs          # IGameScanner: shortcuts.vdf; in-prefix + portable saves
 │       ├── SteamRoots.cs                # Native + Flatpak Steam roots; compatdata lookup
 │       ├── Doctor.cs                    # Diagnoses the whole chain (the only UI a Deck has)
-│       └── SystemdAutoStart.cs          # IAutoStart: systemd --user unit
+│       ├── SystemdAutoStart.cs          # IAutoStart: systemd --user unit
+│       └── Ui/                          # `savelocker ui` — Game Mode surface (SDL + GL + ImGui)
+│           ├── UiApp.cs                 # Window, gamepad nav glue, the four screens
+│           ├── Theme.cs                 # THE source of truth for colour/type/metrics. Palette is
+│           │                            #   lifted from web/src/index.css so console + agent UI +
+│           │                            #   Deck stay in lockstep. No literal colour lives elsewhere
+│           ├── Widgets.cs               # Component set, painted over InvisibleButton to keep
+│           │                            #   gamepad nav while looking nothing like stock ImGui
+│           ├── Icons.cs                 # lucide-equivalent glyphs as vector paths — no atlas
+│           ├── Gallery.cs               # `ui --gallery`: every widget in every state (dev only)
+│           ├── Screenshot.cs            # `ui --screenshot`: framebuffer → PNG, hand-rolled encoder
+│           └── Fonts/                   # Inter + JetBrains Mono (embedded, SIL OFL)
 │
 ├── web/                                 # React admin dashboard
 │   │                                   # Stack: Vite 8, React 19, TypeScript, Tailwind v4
