@@ -58,11 +58,71 @@ static class Widgets
         if (font.HasValue) Theme.PopFont(font.Value);
     }
 
-    public static void TextWrapped(string s, Vector4? colour = null, ImFontPtr? font = null)
+    /// <summary>
+    /// Wrapped text. <paramref name="wrapPosX"/> is a window-local X to wrap at; 0 means the
+    /// window's right edge. Pass an explicit value when something else has to sit to the right of
+    /// the text, or the text claims the full width and pushes it off screen.
+    /// </summary>
+    public static void TextWrapped(string s, Vector4? colour = null, ImFontPtr? font = null,
+        float wrapPosX = 0f)
     {
-        ImGui.PushTextWrapPos(0f);
+        ImGui.PushTextWrapPos(wrapPosX);
         Text(s, colour, font);
         ImGui.PopTextWrapPos();
+    }
+
+    /// <summary>
+    /// Shorten <paramref name="s"/> to fit <paramref name="maxWidth"/>, adding an ellipsis.
+    /// ImDrawList's AddText neither wraps nor clips, so every hand-painted widget drawing
+    /// variable-length text must do this itself or the text runs off the edge of the window.
+    ///
+    /// <paramref name="middle"/> elides the centre rather than the tail, which is what save paths
+    /// want: the leaf folder identifies the game, the long compatdata/pfx/drive_c middle does not.
+    /// </summary>
+    public static string Elide(string s, float maxWidth, bool middle = false)
+    {
+        if (string.IsNullOrEmpty(s) || maxWidth <= 0f) return "";
+        if (ImGui.CalcTextSize(s).X <= maxWidth) return s;
+
+        const string Ellipsis = "...";
+        var ellipsisW = ImGui.CalcTextSize(Ellipsis).X;
+        if (ellipsisW > maxWidth) return "";
+
+        if (!middle)
+        {
+            var keep = FitCount(s, maxWidth - ellipsisW);
+            return keep <= 0 ? Ellipsis : s[..keep] + Ellipsis;
+        }
+
+        // Split the budget: the tail is the informative half, so it gets the larger share.
+        var budget = maxWidth - ellipsisW;
+        var tailKeep = FitCountFromEnd(s, budget * 0.6f);
+        var headBudget = budget - (tailKeep > 0 ? ImGui.CalcTextSize(s[^tailKeep..]).X : 0f);
+        var headKeep = FitCount(s, headBudget);
+        if (headKeep <= 0 && tailKeep <= 0) return Ellipsis;
+        return s[..Math.Max(0, headKeep)] + Ellipsis + s[^Math.Max(0, tailKeep)..];
+    }
+
+    private static int FitCount(string s, float width)
+    {
+        int lo = 0, hi = s.Length;
+        while (lo < hi)
+        {
+            var mid = (lo + hi + 1) / 2;
+            if (ImGui.CalcTextSize(s[..mid]).X <= width) lo = mid; else hi = mid - 1;
+        }
+        return lo;
+    }
+
+    private static int FitCountFromEnd(string s, float width)
+    {
+        int lo = 0, hi = s.Length;
+        while (lo < hi)
+        {
+            var mid = (lo + hi + 1) / 2;
+            if (ImGui.CalcTextSize(s[^mid..]).X <= width) lo = mid; else hi = mid - 1;
+        }
+        return lo;
     }
 
     /// <summary>A small uppercase tracked label, matching the console's "AGENT STATUS" treatment.</summary>
@@ -316,17 +376,21 @@ static class Widgets
             ImGui.SameLine(0, Theme.Space.Sm + 2f);
         }
 
+        // Reserve the dismiss button's width BEFORE the body wraps: text wrapping to the window
+        // edge leaves nothing for the button, which then wraps out of the banner entirely.
+        var reserve = dismissible ? ImGui.GetTextLineHeight() + Theme.Space.Lg : 0f;
+        var wrapX = ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - reserve;
+
         ImGui.BeginGroup();
         Text(title, colour, Theme.BodyStrong);
-        TextWrapped(body, Theme.TextPrimary);
+        TextWrapped(body, Theme.TextPrimary, wrapPosX: wrapX);
         ImGui.EndGroup();
 
         if (dismissible)
         {
             ImGui.SameLine();
             var avail = ImGui.GetContentRegionAvail().X;
-            if (avail > 30f) ImGui.Dummy(new Vector2(avail - 30f, 0));
-            ImGui.SameLine();
+            if (avail > reserve) { ImGui.Dummy(new Vector2(avail - reserve, 0)); ImGui.SameLine(); }
             if (IconButton("dismiss", Icons.X, Theme.TextMuted)) dismissed = true;
         }
 
@@ -489,18 +553,8 @@ static class Widgets
             x += lineH + Theme.Space.Md;
         }
 
-        var textY = subtitle is null ? min.Y + (height - lineH) / 2f : min.Y + Theme.Space.Md;
-        Theme.PushFont(Theme.BodyStrong);
-        dl.AddText(new Vector2(x, textY), U32(enabled ? Theme.TextPrimary : Theme.TextDim), title);
-        Theme.PopFont(Theme.BodyStrong);
-
-        if (subtitle is not null)
-        {
-            Theme.PushFont(Theme.Caption);
-            dl.AddText(new Vector2(x, textY + lineH + Theme.Space.Xs), U32(Theme.TextMuted), subtitle);
-            Theme.PopFont(Theme.Caption);
-        }
-
+        // The right-hand furniture is measured first: the text budget is whatever it leaves, and
+        // AddText does not clip, so an un-elided save path simply runs off the window.
         var rightEdge = max.X - Theme.Space.Md;
         if (chevron)
         {
@@ -516,6 +570,23 @@ static class Widgets
             var ts = ImGui.CalcTextSize(trailing);
             dl.AddText(new Vector2(rightEdge - ts.X, min.Y + (height - ts.Y) / 2f),
                 U32(trailingColour ?? Theme.TextMuted), trailing);
+            rightEdge -= ts.X + Theme.Space.Md;
+            Theme.PopFont(Theme.Caption);
+        }
+
+        var budget = MathF.Max(0f, rightEdge - x);
+        var textY = subtitle is null ? min.Y + (height - lineH) / 2f : min.Y + Theme.Space.Md;
+
+        Theme.PushFont(Theme.BodyStrong);
+        dl.AddText(new Vector2(x, textY), U32(enabled ? Theme.TextPrimary : Theme.TextDim),
+            Elide(title, budget));
+        Theme.PopFont(Theme.BodyStrong);
+
+        if (subtitle is not null)
+        {
+            Theme.PushFont(Theme.Caption);
+            dl.AddText(new Vector2(x, textY + lineH + Theme.Space.Xs), U32(Theme.TextMuted),
+                Elide(subtitle, budget, middle: true));
             Theme.PopFont(Theme.Caption);
         }
 
