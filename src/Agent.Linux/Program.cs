@@ -50,7 +50,7 @@ static class Program
             case "ui":
                 // Native SDL/GL/ImGui libs load only here, on demand — a headless `daemon` never
                 // touches a GPU (Linux-Agent-Streamline.md §3).
-                return Ui.UiApp.Run(config);
+                return Ui.UiApp.Run(config, opts.GetValueOrDefault("size"));
 
             case "autostart":
             {
@@ -163,7 +163,8 @@ static class Program
           autostart --enable | --disable                   systemd --user unit
 
         Game Mode
-          ui                                               Gamepad-native window for Steam Game Mode (Deck)
+          ui [--size WxH]                                  Gamepad-native window for Steam Game Mode (Deck)
+                                                           --size is for testing the layout off-device (default 1280x800)
 
         Add this to a game's Steam launch options to sync it automatically:
           savelocker run -- %command%
