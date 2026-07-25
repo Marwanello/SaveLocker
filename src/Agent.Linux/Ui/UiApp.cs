@@ -65,19 +65,17 @@ sealed class UiApp
     /// <summary>Put the nav cursor on the rail on the first frame, so the D-pad works immediately.</summary>
     private bool _focusRailOnce = true;
 
-    // Crossing between the rail and the content area, per the behaviour asked for on hardware:
-    // Right always leaves the rail for the content, and Left returns to the rail once there is
-    // nothing further left to reach inside the content.
-    private bool _railHasFocus = true;
+    // Which pane owns the cursor. Only that pane is navigable, so a directional move can never
+    // wander across the boundary by accident; crossing panes is always deliberate.
+    private enum Zone { Rail, Content }
+    private Zone _focusZone = Zone.Rail;
+
     private uint _activeRailId;        // rail entry for the screen being shown
     private uint _bestContentId;       // topmost-leftmost focusable control in the content pane
-    private int _suppressRailNavFrames;
-    private int _suppressContentNavFrames;
     // Right pressed while the content had nothing focusable yet — a scan still running, so the pane
     // is just a spinner. The intent is held until a control appears rather than being swallowed.
     private int _pendingCrossFrames;
     private const int PendingCrossFrames = 1800;   // ~30 s; a cold scan can take a while
-    private const int SuppressNavFrames = 3;
     private bool _navLeftFired, _navRightFired;
 
     // Scripted navigation, for verification. Gamepad nav is the single hardest thing to test off a
@@ -438,44 +436,36 @@ sealed class UiApp
     /// </summary>
     private void ResolvePaneCrossing()
     {
-        if (_suppressRailNavFrames > 0) _suppressRailNavFrames--;
-        if (_suppressContentNavFrames > 0) _suppressContentNavFrames--;
-
-        // A cross that had nowhere to land completes as soon as the content has a control, unless
-        // the user has since moved the cursor themselves.
+        // A cross that had nowhere to land completes as soon as the content has a control.
         if (_pendingCrossFrames > 0)
         {
             _pendingCrossFrames--;
-            if (_bestContentId != 0 && _railHasFocus)
-            {
-                _pendingCrossFrames = 0;
-                Widgets.RequestFocus(_bestContentId);
-                _suppressRailNavFrames = SuppressNavFrames;
-            }
-            if (_navLeftFired || _navRightFired) _pendingCrossFrames = 0;
-        }
-
-        if (_navRightFired && _railHasFocus)
-        {
-            // Into the content, at its topmost control.
             if (_bestContentId != 0)
             {
-                Widgets.RequestFocus(_bestContentId);
-                _suppressRailNavFrames = SuppressNavFrames;
-            }
-            else
-            {
-                _pendingCrossFrames = PendingCrossFrames;
+                _pendingCrossFrames = 0;
+                EnterContent();
             }
         }
-        else if (_navLeftFired && !_railHasFocus)
+
+        if (_navRightFired && _focusZone == Zone.Rail)
+        {
+            if (_bestContentId != 0) EnterContent();
+            else _pendingCrossFrames = PendingCrossFrames;   // scan still running
+        }
+        else if (_navLeftFired && _focusZone == Zone.Content)
         {
             // Back to the rail entry for the screen you are on — never the nearest one by pixels.
+            _focusZone = Zone.Rail;
             Widgets.RequestFocus(_activeRailId);
-            _suppressContentNavFrames = SuppressNavFrames;
         }
 
         _navLeftFired = _navRightFired = false;
+    }
+
+    private void EnterContent()
+    {
+        _focusZone = Zone.Content;
+        Widgets.RequestFocus(_bestContentId);
     }
 
     private bool Connected => !string.IsNullOrEmpty(_config.ApiKey);
@@ -548,12 +538,13 @@ sealed class UiApp
         ImGui.SetCursorPos(new Vector2(0, Theme.Layout.HeaderHeight));
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.BgCard);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(Theme.Space.Sm, Theme.Space.Md));
-        // NOT NavFlattened. Flattened, the rail shared one nav space with the content, so a Down
-        // inside the content could land on a rail entry — pressing Down from "Scan for games" jumped
-        // to "Add game" and the discovered list became unreachable. Each pane now owns its nav, and
-        // crossing between them is handled explicitly in ResolvePaneCrossing.
-        var railFlags = ImGuiWindowFlags.NoScrollbar;
-        if (_suppressRailNavFrames > 0) railFlags |= ImGuiWindowFlags.NoNav;
+        // Flattened so the rail is never a nav *container* — that is what drew a highlight around
+        // the whole pane and produced the A-to-enter / B-to-leave feel. Navigable only while the
+        // cursor lives here: without that gate both panes share one nav space and a Down inside the
+        // content lands on a rail entry, which is why Down from "Scan for games" jumped to
+        // "Add game" and left the discovered list unreachable.
+        var railFlags = ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NavFlattened;
+        if (_focusZone != Zone.Rail) railFlags |= ImGuiWindowFlags.NoNav;
         ImGui.BeginChild("rail", new Vector2(Theme.Layout.RailWidth, height),
             ImGuiChildFlags.AlwaysUseWindowPadding, railFlags);
 
@@ -565,7 +556,6 @@ sealed class UiApp
             ("Settings", Icons.Settings, Screen.Settings, _screen == Screen.Settings),
         };
 
-        var railFocused = false;
         foreach (var (label, icon, target, active) in items)
         {
             // Land the cursor on the rail entry for the screen already being shown. Without an
@@ -578,7 +568,6 @@ sealed class UiApp
             }
             if (Widgets.RailItem(label, icon, active)) Go(target);
             if (active) _activeRailId = Widgets.LastRailItemId;
-            railFocused |= ImGui.IsItemFocused();
         }
 
         // Quit sits at the bottom, away from the destinations — it is not a place you go.
@@ -587,8 +576,6 @@ sealed class UiApp
         if (spare > 0) ImGui.Dummy(new Vector2(0, spare));
 
         if (Widgets.RailItem("Quit", Icons.X, false)) _window.Close();
-        railFocused |= ImGui.IsItemFocused();
-        _railHasFocus = railFocused;
 
 
         ImGui.EndChild();
@@ -609,10 +596,8 @@ sealed class UiApp
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.BgGlobal);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
             new Vector2(Theme.Layout.Gutter, Theme.Layout.Gutter));
-        // Suppressing the OTHER pane's nav for a frame is what makes an explicit focus hand-off
-        // stick: SetKeyboardFocusHere alone loses to whatever already holds the cursor.
         var contentFlags = ImGuiWindowFlags.NavFlattened;
-        if (_suppressContentNavFrames > 0) contentFlags |= ImGuiWindowFlags.NoNav;
+        if (_focusZone != Zone.Content) contentFlags |= ImGuiWindowFlags.NoNav;
         ImGui.BeginChild("content",
             new Vector2(size.X - Theme.Layout.RailWidth - 1f, height),
             ImGuiChildFlags.AlwaysUseWindowPadding, contentFlags);
@@ -710,6 +695,11 @@ sealed class UiApp
         if (_screen == target) return;
         _screen = target;
         _copyResult = "";
+        // The new screen's content has not been measured yet, and the cursor stays on the rail
+        // entry the user just activated.
+        _focusZone = Zone.Rail;
+        _bestContentId = 0;
+        _pendingCrossFrames = 0;
     }
 
     private void DrawStatus()
