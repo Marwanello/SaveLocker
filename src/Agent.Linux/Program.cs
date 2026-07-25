@@ -56,7 +56,8 @@ static class Program
                     opts.ContainsKey("gallery"),
                     opts.GetValueOrDefault("screen"),
                     opts.ContainsKey("autoscan"),
-                    opts.GetValueOrDefault("nav"));
+                    opts.GetValueOrDefault("nav"),
+                    opts.ContainsKey("nav-debug"));
 
             case "autostart":
             {
@@ -172,6 +173,7 @@ static class Program
           ui [--size WxH] [--screenshot <file.png>]        Gamepad-native window for Steam Game Mode (Deck)
                                                            --size tests the layout off-device (default 1280x800)
                                                            --screenshot captures a PNG and exits
+                                                           --nav-debug overlays the live nav cursor state
 
         Add this to a game's Steam launch options to sync it automatically:
           savelocker run -- %command%

@@ -145,8 +145,13 @@ sealed class SettingsScreen
         var avail = ImGui.GetContentRegionAvail().Y;
         var barH = ImGui.GetTextLineHeight() + (Theme.Space.Sm + 2f) * 2
                    + ImGui.GetStyle().ItemSpacing.Y * 2 + Theme.Space.Sm;
+        // AlwaysUseWindowPadding: without it this child has ZERO padding and the rows' focus rings are
+        // clipped at both edges (Theme.Layout.FocusClearance).
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
+            new Vector2(Theme.Layout.FocusClearance, Theme.Layout.FocusClearance));
         ImGui.BeginChild("games", new Vector2(0, MathF.Max(120f, avail - barH)),
-            ImGuiChildFlags.None, ImGuiWindowFlags.NavFlattened);
+            ImGuiChildFlags.AlwaysUseWindowPadding, ImGuiWindowFlags.NavFlattened);
+        NavDebug.PushScope("games");
 
         foreach (var g in _config.Games.ToList())
         {
@@ -168,7 +173,10 @@ sealed class SettingsScreen
             }
         }
 
+        NavDebug.PopScope();
         ImGui.EndChild();
+        NavDebug.NoteContainer("games");
+        ImGui.PopStyleVar();
         Widgets.Gap(Theme.Space.Sm);
 
         var label = _toRemove.Count > 0 ? $"Remove {_toRemove.Count} selected" : "Remove selected";

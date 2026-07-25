@@ -81,6 +81,21 @@ static class Theme
         public const float HeaderHeight = 64f;
         public const float HintBarHeight = 44f;
         public const float Gutter = 24f;
+
+        /// <summary>
+        /// Clear space every focusable widget needs on all four sides for its focus ring, which is
+        /// drawn OUTSIDE the widget's rect (see <see cref="Widgets.FocusRing"/>).
+        ///
+        /// This is a contract, not a suggestion. A child window clips its contents, and ImGui gives a
+        /// child WindowPadding only when it has Border or AlwaysUseWindowPadding — a child with
+        /// neither has ZERO padding, so a full-width row inside it touches both edges and its ring is
+        /// clipped away entirely. That shipped in v0.4.0 and was reported from the Deck as rings
+        /// getting cut off near the pane boundaries.
+        ///
+        /// Any child window hosting focusable widgets must therefore reserve at least this much
+        /// padding, and any change to the ring's geometry must be reflected here.
+        /// </summary>
+        public const float FocusClearance = 10f;
     }
 
     // ── Fonts ────────────────────────────────────────────────────────────────────────────────

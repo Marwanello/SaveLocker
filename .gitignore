@@ -54,3 +54,6 @@ artifacts/
 
 # WSLg dev-run scratch config for `savelocker ui` (tests/linux/run-ui-wslg.sh)
 .wslg-ui/
+
+# ImGui writes this beside the working directory when `savelocker ui` exits.
+imgui.ini

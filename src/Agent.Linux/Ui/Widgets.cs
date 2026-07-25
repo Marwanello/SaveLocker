@@ -95,10 +95,31 @@ static class Widgets
     {
         if (id == 0) return;
         _focusTargetId = id;
-        _focusTargetFrames = FocusRequestLifetimeFrames;
+        // igSetFocusID places the cursor outright, so the request either lands on the next frame or
+        // was never going to. Re-asserting it across frames is what made a failed hand-off swallow
+        // every D-pad press for three quarters of a second (Deck-UI task 2.2).
+        _focusTargetFrames = ImGuiInternal.Available ? 1 : FocusRequestLifetimeFrames;
     }
 
     internal static bool FocusRequestPending => _focusTargetFrames > 0;
+
+    // Exposed for --nav-debug only. A request that stays armed is the signature of a hand-off that
+    // never landed, and it is not otherwise observable from outside this file.
+    internal static uint FocusTargetId => _focusTargetId;
+    internal static int FocusRequestFrames => _focusTargetFrames;
+
+    // "Is the cursor on a real control?" — the invariant a gamepad UI lives or dies by. ImGui can
+    // leave NavId pointing at something no submitted item answers for, and then the screen shows a
+    // highlight with nothing selected in it and the D-pad appears dead. Tracked here because this is
+    // the one place every focusable widget passes through.
+    private static bool _reportedThisFrame;
+    private static uint _lastGoodId;
+
+    internal static bool CursorOnRealItem => _reportedThisFrame;
+    internal static uint LastGoodId => _lastGoodId;
+
+    /// <summary>Reset the per-frame focus bookkeeping. Call once, before the frame is drawn.</summary>
+    public static void BeginFrame() => _reportedThisFrame = false;
 
     /// <summary>
     /// Called by every focusable widget immediately before it submits its item, with the id that
@@ -125,10 +146,11 @@ static class Widgets
             }
         }
 
-        // Re-asserted every frame until the item reports focus (see Feedback). A single
-        // SetKeyboardFocusHere does not reliably win against a cursor that is already placed
-        // elsewhere, so clearing the request on the first attempt silently dropped the hand-off.
-        if (_focusTargetFrames > 0 && id == _focusTargetId)
+        // The request is served AFTER the item is submitted, in Feedback: igSetFocusID derives the
+        // nav rect from the last item, so it has nothing to work with before the item exists.
+        // Only the fallback acts here, because SetKeyboardFocusHere is the opposite — it applies to
+        // the item about to be submitted.
+        if (_focusTargetFrames > 0 && id == _focusTargetId && !ImGuiInternal.Available)
             ImGui.SetKeyboardFocusHere();
     }
 
@@ -147,18 +169,35 @@ static class Widgets
     /// hardware as "a broken highlight you only notice once you realise it is there". A solid
     /// accent outline plus a soft outer glow is legible at arm's length and, unlike a fill, cannot
     /// be confused with a widget's own selected/active state.
+    ///
+    /// The glow BREATHES BY SIZE, not only by opacity. The first version pulsed alpha alone over
+    /// 0.15–0.30 on a 3 px band, which measured as present and read as absent — the maintainer had
+    /// never noticed it on the Deck until asked to look for it. Moving the band in and out is far more
+    /// legible at arm's length than the same energy spent on opacity.
+    ///
+    /// ⚠️ The outermost extent is <c>GlowSpreadMax + GlowThickness / 2</c> and MUST stay within
+    /// <see cref="Theme.Layout.FocusClearance"/>, which is what every container reserves for it.
+    /// Growing these without raising that constant silently clips the ring inside child windows.
     /// </summary>
+    private const float GlowSpreadMin = 4f;
+    private const float GlowSpreadMax = 8f;
+    private const float GlowThickness = 4f;
+
     public static void FocusRing(ImDrawListPtr dl, Vector2 min, Vector2 max, float rounding,
         float strength = 1f)
     {
         if (strength <= 0.01f) return;
 
-        var pulse = 0.75f + 0.25f * MathF.Sin((float)ImGui.GetTime() * 4f);
-        var glow = Theme.Alpha(Theme.AccentGreen, 0.30f * strength * pulse);
+        // 0..1 over ~2 s. Slower than the old 4 rad/s: a fast pulse on a wider band reads as a
+        // flicker rather than as breathing.
+        var breathe = 0.5f + 0.5f * MathF.Sin((float)ImGui.GetTime() * 3.2f);
+        var spread = GlowSpreadMin + (GlowSpreadMax - GlowSpreadMin) * breathe;
+
+        var glow = Theme.Alpha(Theme.AccentGreen, (0.40f + 0.30f * breathe) * strength);
         var edge = Theme.Alpha(Theme.AccentGreen, strength);
 
-        dl.AddRect(min - new Vector2(4, 4), max + new Vector2(4, 4), U32(glow), rounding + 4f,
-            ImDrawFlags.None, 3f);
+        dl.AddRect(min - new Vector2(spread, spread), max + new Vector2(spread, spread), U32(glow),
+            rounding + spread, ImDrawFlags.None, GlowThickness);
         dl.AddRect(min - new Vector2(1, 1), max + new Vector2(1, 1), U32(edge), rounding + 1f,
             ImDrawFlags.None, 2f);
     }
@@ -167,11 +206,25 @@ static class Widgets
     /// Play the navigate cue when focus arrives on this item, and an activation cue when it fires.
     /// Every interactive widget calls this immediately after its <c>InvisibleButton</c>.
     /// </summary>
-    private static void Feedback(uint id, bool pressed, Sound.Cue activate = Sound.Cue.Activate)
+    private static void Feedback(uint id, bool pressed, Sound.Cue activate = Sound.Cue.Activate,
+        string label = "")
     {
-        // The hand-off has landed: stop re-asserting it.
-        if (_focusTargetFrames > 0 && id == _focusTargetId && ImGui.IsItemFocused())
-            _focusTargetFrames = 0;
+        // Serve a pending hand-off. The item exists now, which is exactly what igSetFocusID needs:
+        // it sets NavId/NavWindow and takes the nav rect from this item, with none of
+        // SetKeyboardFocusHere's focus-scope restriction (ocornut/imgui#7226) — so the cursor
+        // crosses out of another child, which is the whole bug.
+        if (_focusTargetFrames > 0 && id == _focusTargetId)
+        {
+            if (ImGuiInternal.FocusLastItem(id)) _focusTargetFrames = 0;
+            else if (ImGui.IsItemFocused()) _focusTargetFrames = 0;   // fallback: it landed on its own
+        }
+
+        if (ImGui.IsItemFocused())
+        {
+            _reportedThisFrame = true;
+            _lastGoodId = id;
+            NavDebug.NoteFocused(id, label);
+        }
 
         if (ImGui.IsItemFocused() && id != _lastFocused)
         {
@@ -321,10 +374,12 @@ static class Widgets
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(Theme.Space.Lg, Theme.Space.Md));
         ImGui.BeginChild(id, size, ImGuiChildFlags.Border | ImGuiChildFlags.AutoResizeY,
             ImGuiWindowFlags.NavFlattened);
+        NavDebug.PushScope($"card:{id}");
     }
 
     public static void EndCard()
     {
+        NavDebug.PopScope();
         ImGui.EndChild();
         ImGui.PopStyleVar(2);
         ImGui.PopStyleColor(2);
@@ -367,7 +422,7 @@ static class Widgets
         bool active = enabled && ImGui.IsItemActive();
         bool focused = enabled && ImGui.IsItemFocused();
 
-        if (enabled) Feedback(id, pressed);
+        if (enabled) Feedback(id, pressed, label: label);
 
         var lift = Tween(id, (hovered || focused ? 1f : 0f) + (active ? 0.6f : 0f));
 
@@ -522,6 +577,7 @@ static class Widgets
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(Theme.Space.Md, Theme.Space.Md));
         ImGui.BeginChild("banner", new Vector2(0, 0),
             ImGuiChildFlags.Border | ImGuiChildFlags.AutoResizeY, ImGuiWindowFlags.NavFlattened);
+        NavDebug.PushScope("banner");
 
         if (icon is not null)
         {
@@ -547,6 +603,7 @@ static class Widgets
             if (IconButton("dismiss", Icons.X, Theme.TextMuted)) dismissed = true;
         }
 
+        NavDebug.PopScope();
         ImGui.EndChild();
         ImGui.PopStyleVar(2);
         ImGui.PopStyleColor(2);
@@ -568,7 +625,7 @@ static class Widgets
 
         bool hot = ImGui.IsItemHovered() || ImGui.IsItemFocused();
         var lift = Tween(ImGui.GetItemID(), hot ? 1f : 0f);
-        Feedback(ImGui.GetItemID(), pressed, Sound.Cue.Back);
+        Feedback(ImGui.GetItemID(), pressed, Sound.Cue.Back, $"icon:{id}");
 
         if (lift > 0.01f)
             dl.AddRectFilled(min, ImGui.GetItemRectMax(),
@@ -600,7 +657,7 @@ static class Widgets
         var dl = ImGui.GetWindowDrawList();
         bool focused = ImGui.IsItemFocused();
 
-        Feedback(ImGui.GetItemID(), pressed, Sound.Cue.Toggle);
+        Feedback(ImGui.GetItemID(), pressed, Sound.Cue.Toggle, $"toggle:{label}");
 
         var t = Tween(ImGui.GetItemID(), value ? 1f : 0f, 18f);
         var track = Mix(Theme.BgTableHd, Theme.AccentGreen, t);
@@ -622,46 +679,70 @@ static class Widgets
     }
 
     /// <summary>
-    /// A minus/value/plus stepper. This is how a number gets edited without a text field — Game Mode
-    /// has no keyboard, and <c>UiApp</c> deliberately suppresses the on-screen one.
+    /// A value with a stacked +/− pair. This is how a number gets edited without a text field — Game
+    /// Mode has no keyboard, and <c>UiApp</c> deliberately suppresses the on-screen one.
+    ///
+    /// THE PAIR IS VERTICAL ON PURPOSE, and it used to be horizontal. Everything here is driven by a
+    /// D-pad, so a control's visual arrangement has to match the direction that reaches it. Side by
+    /// side, ImGui's geometric nav scored "+" as the way down from the control above, so Down landed on
+    /// "+", another Down skipped past "−" entirely to the next control, and Up then came back to "−" —
+    /// reported from the Deck as clunky, and the kind of thing that teaches a user not to trust the
+    /// D-pad. Left/Right could not rescue it either: Left is the pane crossing.
+    ///
+    /// Stacked, Up/Down walks +, −, then onward, in the order they appear on screen. "+" on top also
+    /// matches what an up/down pair implies: up is more.
     /// </summary>
     public static bool Stepper(string label, ref int value, int min, int max, int step = 1)
     {
         bool changed = false;
         ImGui.PushID(label);
 
+        const float boxW = 88f;
+        var origin = ImGui.GetCursorPos();
+        var originScreen = ImGui.GetCursorScreenPos();
+
+        // Gap matches ItemSpacing.Y so the two buttons sit as one control, and is wide enough that the
+        // focused one's ring does not overlap its neighbour (Theme.Layout.FocusClearance).
+        var gap = MathF.Max(ImGui.GetStyle().ItemSpacing.Y, Theme.Layout.FocusClearance);
+        var columnX = origin.X + boxW + Theme.Space.Sm;
+
+        ImGui.SetCursorPos(new Vector2(columnX, origin.Y));
+        if (PillButton("+", ButtonKind.Secondary, minWidth: 52f, enabled: value < max))
+        {
+            value = Math.Min(max, value + step);
+            changed = true;
+        }
+        var buttonSize = ImGui.GetItemRectSize();
+
+        ImGui.SetCursorPos(new Vector2(columnX, origin.Y + buttonSize.Y + gap));
         if (PillButton("-", ButtonKind.Secondary, minWidth: 52f, enabled: value > min))
         {
             value = Math.Max(min, value - step);
             changed = true;
         }
 
-        ImGui.SameLine(0, Theme.Space.Sm);
-
-        var boxW = 88f;
-        var boxH = ImGui.GetItemRectSize().Y;
+        // The value box spans both rows, to the left of the pair.
+        var boxH = buttonSize.Y * 2 + gap;
         var dl = ImGui.GetWindowDrawList();
-        var bmin = ImGui.GetCursorScreenPos();
-        dl.AddRectFilled(bmin, bmin + new Vector2(boxW, boxH), U32(Theme.BgTableHd), Theme.Rounding.Button);
-        dl.AddRect(bmin, bmin + new Vector2(boxW, boxH), U32(Theme.Border), Theme.Rounding.Button,
-            ImDrawFlags.None, 1f);
+        dl.AddRectFilled(originScreen, originScreen + new Vector2(boxW, boxH), U32(Theme.BgTableHd),
+            Theme.Rounding.Button);
+        dl.AddRect(originScreen, originScreen + new Vector2(boxW, boxH), U32(Theme.Border),
+            Theme.Rounding.Button, ImDrawFlags.None, 1f);
 
         Theme.PushFont(Theme.BodyStrong);
         var text = value.ToString();
         var ts = ImGui.CalcTextSize(text);
-        dl.AddText(bmin + new Vector2((boxW - ts.X) / 2f, (boxH - ts.Y) / 2f), U32(Theme.TextPrimary), text);
+        dl.AddText(originScreen + new Vector2((boxW - ts.X) / 2f, (boxH - ts.Y) / 2f),
+            U32(Theme.TextPrimary), text);
         Theme.PopFont(Theme.BodyStrong);
-        ImGui.Dummy(new Vector2(boxW, boxH));
 
-        ImGui.SameLine(0, Theme.Space.Sm);
-        if (PillButton("+", ButtonKind.Secondary, minWidth: 52f, enabled: value < max))
-        {
-            value = Math.Min(max, value + step);
-            changed = true;
-        }
+        // Claim the whole block for layout, so whatever follows clears both rows rather than
+        // overlapping the lower button.
+        ImGui.SetCursorPos(origin);
+        ImGui.Dummy(new Vector2(boxW + Theme.Space.Sm + buttonSize.X, boxH));
 
         ImGui.SameLine(0, Theme.Space.Md);
-        ImGui.AlignTextToFramePadding();
+        ImGui.SetCursorPosY(origin.Y + (boxH - ImGui.GetTextLineHeight()) / 2f);
         Text(label, Theme.TextMuted);
         ImGui.PopID();
 
@@ -694,7 +775,7 @@ static class Widgets
 
         bool hot = enabled && (ImGui.IsItemHovered() || ImGui.IsItemFocused());
         var lift = Tween(ImGui.GetItemID(), hot ? 1f : 0f);
-        if (enabled) Feedback(ImGui.GetItemID(), pressed);
+        if (enabled) Feedback(ImGui.GetItemID(), pressed, label: $"row:{title}");
 
         if (selected || lift > 0.01f)
         {
@@ -776,7 +857,7 @@ static class Widgets
         var max = ImGui.GetItemRectMax();
         var dl = ImGui.GetWindowDrawList();
         bool hot = enabled && (ImGui.IsItemHovered() || ImGui.IsItemFocused());
-        if (enabled) Feedback(ImGui.GetItemID(), pressed, Sound.Cue.Toggle);
+        if (enabled) Feedback(ImGui.GetItemID(), pressed, Sound.Cue.Toggle, $"check:{id}");
 
         var t = Tween(ImGui.GetItemID(), ticked ? 1f : 0f, 20f);
         var fill = Mix(Theme.BgTableHd, Theme.AccentGreen, t);
@@ -818,7 +899,7 @@ static class Widgets
         bool hot = ImGui.IsItemHovered() || ImGui.IsItemFocused();
         var lift = Tween(ImGui.GetItemID(), hot ? 1f : 0f);
         var on = Tween(ImGui.GetItemID() ^ 0x5A5Au, active ? 1f : 0f);
-        Feedback(ImGui.GetItemID(), pressed);
+        Feedback(ImGui.GetItemID(), pressed, label: $"rail:{label}");
 
         // Active (this is the current screen) and focused (the cursor is here) are DIFFERENT states
         // and must look different: you can stand on "Settings" while still viewing "Overview".
@@ -855,15 +936,37 @@ static class Widgets
     {
         var dl = ImGui.GetWindowDrawList();
         var pos = ImGui.GetCursorScreenPos();
-        var r = ImGui.GetTextLineHeight() * 0.55f;
-        var centre = pos + new Vector2(r, ImGui.GetTextLineHeight() / 2f);
+        var lineH = ImGui.GetTextLineHeight();
+        var r = lineH * 0.55f;
+
+        Theme.PushFont(Theme.Caption);
+        var ink = GlyphInkCentre(Theme.Caption, button);
+
+        Vector2 textPos, centre;
+        if (ink is { } inkCentre)
+        {
+            // Order matters. Round the TEXT to whole pixels first — a fractional origin resamples the
+            // glyph and reads as smeared at this size — and then centre the circle on where the ink
+            // ACTUALLY landed. Centring both independently on the same nominal point is what left the
+            // "A" about a pixel left of centre: only the glyph got rounded, so the two disagreed by up
+            // to half a pixel each way. Deriving one from the other makes them concentric by
+            // construction, at any font size.
+            textPos = new Vector2(MathF.Round(pos.X + r - inkCentre.X),
+                                  MathF.Round(pos.Y + lineH / 2f - inkCentre.Y));
+            centre = textPos + inkCentre;
+        }
+        else
+        {
+            // Unbaked font or a multi-character label: the advance-width approximation is all there is.
+            var size = ImGui.CalcTextSize(button);
+            centre = pos + new Vector2(r, lineH / 2f);
+            textPos = new Vector2(MathF.Round(centre.X - size.X / 2f),
+                                  MathF.Round(centre.Y - size.Y / 2f));
+        }
 
         dl.AddCircleFilled(centre, r, U32(Theme.BgTableHd), 20);
         dl.AddCircle(centre, r, U32(Theme.Border), 20, 1f);
-
-        Theme.PushFont(Theme.Caption);
-        var bs = ImGui.CalcTextSize(button);
-        dl.AddText(centre - bs / 2f, U32(Theme.TextPrimary), button);
+        dl.AddText(textPos, U32(Theme.TextPrimary), button);
         Theme.PopFont(Theme.Caption);
 
         HintLabel(r * 2, action);
@@ -884,6 +987,24 @@ static class Widgets
         Icons.DrawAt(dl, glyph, pos + new Vector2(0, (lineH - size) / 2f), size, Theme.TextPrimary);
 
         HintLabel(size, action);
+    }
+
+    /// <summary>
+    /// A single glyph's INK-box centre, in pixels relative to the text draw origin; null when there is
+    /// no glyph to measure (unbaked font, or a label that is not one character).
+    ///
+    /// <c>CalcTextSize</c> cannot answer this: it returns the ADVANCE width, which includes the side
+    /// bearings, and for "A" and "B" the right bearing is the larger — so centring on the advance
+    /// pushes the visible letter left, which is how these hint letters came to sit off centre.
+    /// </summary>
+    private static unsafe Vector2? GlyphInkCentre(ImFontPtr font, string text)
+    {
+        if (font.NativePtr is null || text.Length != 1) return null;
+
+        var glyph = font.FindGlyph(text[0]);
+        if (glyph.NativePtr is null) return null;
+
+        return new Vector2((glyph.X0 + glyph.X1) / 2f, (glyph.Y0 + glyph.Y1) / 2f);
     }
 
     private static void HintLabel(float glyphWidth, string action)
@@ -908,19 +1029,32 @@ static class Widgets
         var leftW = (avail.X - gutter) * leftFraction;
         var h = height > 0f ? height : avail.Y;
 
+        // AlwaysUseWindowPadding is load-bearing, not cosmetic: without it ImGui gives these children
+        // ZERO padding, their full-width rows touch both edges, and the focus ring is clipped away.
+        // See Theme.Layout.FocusClearance.
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
+            new Vector2(Theme.Layout.FocusClearance, Theme.Layout.FocusClearance));
+
         ImGui.PushID(id);
-        ImGui.BeginChild("l", new Vector2(leftW, h), ImGuiChildFlags.None,
+        ImGui.BeginChild("l", new Vector2(leftW, h), ImGuiChildFlags.AlwaysUseWindowPadding,
             ImGuiWindowFlags.NavFlattened);
+        NavDebug.PushScope($"{id}.l");
         left();
+        NavDebug.PopScope();
         ImGui.EndChild();
+        NavDebug.NoteContainer($"{id}.l");
 
         ImGui.SameLine(0, gutter);
 
-        ImGui.BeginChild("r", new Vector2(0, h), ImGuiChildFlags.None,
+        ImGui.BeginChild("r", new Vector2(0, h), ImGuiChildFlags.AlwaysUseWindowPadding,
             ImGuiWindowFlags.NavFlattened);
+        NavDebug.PushScope($"{id}.r");
         right();
+        NavDebug.PopScope();
         ImGui.EndChild();
+        NavDebug.NoteContainer($"{id}.r");
         ImGui.PopID();
+        ImGui.PopStyleVar();
     }
 
     /// <summary>Vertical space, in theme units rather than magic numbers at the call site.</summary>
