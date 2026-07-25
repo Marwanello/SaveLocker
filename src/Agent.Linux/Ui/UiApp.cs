@@ -85,12 +85,28 @@ sealed class UiApp
     }
 
     public static int Run(AgentConfig config, string? sizeOverride = null, string? screenshotPath = null,
-        bool gallery = false)
+        bool gallery = false, string? startScreen = null)
     {
         var app = new UiApp(config, ParseSize(sizeOverride), screenshotPath);
         if (gallery) app._screen = Screen.Gallery;
+        else if (startScreen is not null) app._screen = ParseScreen(startScreen);
         return app.RunLoop();
     }
+
+    /// <summary>
+    /// Which screen to open on. A development affordance: paired with <c>--screenshot</c> it captures
+    /// any screen unattended, so a layout change can be reviewed across the whole UI without a person
+    /// driving it. Not something a user has any reason to pass.
+    /// </summary>
+    private static Screen ParseScreen(string name) => name.ToLowerInvariant() switch
+    {
+        "status" or "overview" => Screen.Status,
+        "add" or "addgame" => Screen.AddGame,
+        "folder" or "setfolder" => Screen.SetFolder,
+        "launch" or "launchsetup" or "steam" => Screen.LaunchSetup,
+        "gallery" => Screen.Gallery,
+        _ => Screen.Status,
+    };
 
     /// <summary>
     /// Window size, defaulting to the Deck's native 1280x800. The override exists so the same binary

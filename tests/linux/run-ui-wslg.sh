@@ -31,7 +31,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --no-build)   BUILD=0 ;;
     --screenshot) SHOT="${2:?--screenshot needs a path}"; shift ;;
-    --gallery)    EXTRA="--gallery" ;;   # every widget in every state, the Phase B gate
+    --gallery)    EXTRA="$EXTRA --gallery" ;;   # every widget in every state, the Phase B gate
+    --screen)     EXTRA="$EXTRA --screen ${2:?--screen needs a name}"; shift ;;
     *x*)          SIZE="$1" ;;
     *) echo "Unknown argument '$1'. Usage: run-ui-wslg.sh [WxH] [--no-build] [--gallery] [--screenshot out.png]" >&2; exit 2 ;;
   esac

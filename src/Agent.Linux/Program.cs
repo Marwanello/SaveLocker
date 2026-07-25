@@ -53,7 +53,8 @@ static class Program
                 return Ui.UiApp.Run(config,
                     opts.GetValueOrDefault("size"),
                     opts.GetValueOrDefault("screenshot"),
-                    opts.ContainsKey("gallery"));
+                    opts.ContainsKey("gallery"),
+                    opts.GetValueOrDefault("screen"));
 
             case "autostart":
             {
