@@ -2,6 +2,24 @@
 
 Traps that have already cost time. Read before touching builds, paths, or the running server.
 
+## GHCR pull denied on unRAID after a release — private package + a login wiped on reboot
+Found 2026-07-24 deploying v0.3.6. `docker compose pull` on unRAID failed with
+`denied: denied` on `ghcr.io/v2/skorcherx/savelocker/manifests/latest`. The package was **private**,
+and the `docker login ghcr.io` credential (in `/root/.docker/config.json`, on tmpfs) is **wiped on
+every unRAID reboot** — so the login that let 0.3.4 pull was gone, and **watchtower had silently
+stopped auto-updating** for the same reason (which is why "no update" showed up first).
+Two compounding traps:
+1. `docker login ghcr.io` needs a **PAT with `read:packages`** as the password — **never** the GitHub
+   account password. With 2FA on, the password is always rejected ("bad password").
+2. After flipping the package to **public**, a pull can *still* return `denied` because a stale/broken
+   `ghcr.io` entry in `config.json` makes Docker send bad auth instead of pulling anonymously —
+   clear it with `docker logout ghcr.io`, then pull.
+**Fix chosen: the package is now public.** The image is built from the public repo and bakes no
+secrets (only version/commit/built-at build args; admin password + API keys are runtime `/data`
+state), so anonymous pulls and watchtower work across reboots with zero credential upkeep. unRAID's
+Docker-tab "check for updates" is also unreliable for **compose-managed** containers — use
+`docker compose pull` (or the Compose Manager "Update Stack"), not the per-container indicator.
+
 ## Enroll must report the save path to the server, or a Deck-added game syncs nowhere
 Found 2026-07-24 testing `savelocker ui`. `Enroller.EnrollAsync` set the save path only in local
 `config.json`, never on the server. On **Windows this is masked** — the tray's in-process

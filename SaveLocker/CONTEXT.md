@@ -4,7 +4,7 @@
 
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** main
 
-**Current released version:** **v0.3.6** (tagged 2026-07-24). v0.3.4 is deployed on unRAID; 0.3.5 and 0.3.6 pending deploy.
+**Current released version:** **v0.3.6** (tagged 2026-07-24, **deployed on unRAID** 2026-07-24). GHCR package `savelocker` is now **public** (see `Gotchas.md`).
 
 Shipped-feature detail: `logs/shipped-2026-07.md` + `logs/sessions.md`. Open work: `Backlog.md`.
 
@@ -38,14 +38,14 @@ Shipped-feature detail: `logs/shipped-2026-07.md` + `logs/sessions.md`. Open wor
 
 ---
 
-## ▶ NEXT ACTION: **Deploy v0.3.6 and upgrade the Deck**
+## ▶ NEXT ACTION: **Upgrade the Deck to the 0.3.6 release tarball (optional)**
 
-v0.3.6 is tagged (Steam Deck Game Mode UI + enroll-path fix + bundled artwork). After the release
-workflows finish:
+v0.3.6 is tagged, released, and **deployed on unRAID (2026-07-24)**. Remaining:
 
-- **unRAID:** `docker compose pull && docker compose up -d` (no DB migration in 0.3.6 — rollback is safe).
+- **unRAID:** ✅ done — running 0.3.6.
 - **Windows agents:** auto-update.
-- **Steam Deck:** download the new tarball, re-run `install.sh`, then add SaveLocker to the library
+- **Steam Deck:** the Deck has been on `9.9.9-ci` dev builds (functionally identical code). To move it
+  onto the real release: download the new tarball, re-run `install.sh`, then add SaveLocker to the library
   (`Add a Non-Steam Game` → the `savelocker` binary, Launch Options `ui`) and set its artwork from
   `~/.local/share/SaveLocker/artwork/`.
 
