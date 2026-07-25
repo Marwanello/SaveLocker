@@ -21,6 +21,25 @@
     <ProjectReference Include="..\Shared\SaveLocker.Shared.csproj" />
   </ItemGroup>
 
+  <!-- Inter + JetBrains Mono, the same faces the console and the React agent UI use, so all three
+       surfaces share a typeface as well as a palette. Embedded rather than shipped loose: no
+       install.sh change, no path resolution, and a dev build behaves like an installed one.
+       Both are SIL OFL 1.1 — the licence files sit alongside and must stay with them.
+       ~1.05 MB. Subsetting to Latin would cut that to ~180 KB; not done yet, see the task file. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Ui\Fonts\Inter-Regular.ttf" />
+    <EmbeddedResource Include="Ui\Fonts\Inter-SemiBold.ttf" />
+    <EmbeddedResource Include="Ui\Fonts\JetBrainsMono-Regular.ttf" />
+  </ItemGroup>
+
+  <!-- UI-sized re-export of the Steam artwork. Linked from packaging/ rather than copied so there
+       is one master: the full-size dist/ assets are ~2.1 MB and are for the Steam library, not the
+       UI. Must stay 8-bit RGBA, non-interlaced — that is all Ui/Art.cs decodes. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\packaging\linux\artwork\dist\ui\logo-96.png"
+                      LogicalName="SaveLocker.Agent.Linux.Ui.Art.logo-96.png" />
+  </ItemGroup>
+
   <!-- Game Mode UI (`savelocker ui`, Phase 3). SDL windowing + OpenGL + Dear ImGui via Silk.NET.
        SDL is prioritised so the window is a gamescope-native client and Steam Input can deliver a
        gamepad (Linux-Agent-Streamline.md §3). Native libs (SDL, cimgui) load on demand, so

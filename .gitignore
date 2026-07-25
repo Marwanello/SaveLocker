@@ -51,3 +51,6 @@ artifacts/
 .verify-harden/
 .verify-localapi/
 .verify-concurrency/
+
+# WSLg dev-run scratch config for `savelocker ui` (tests/linux/run-ui-wslg.sh)
+.wslg-ui/

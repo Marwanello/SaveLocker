@@ -95,6 +95,14 @@ Consequence, and it is a design obligation rather than a nice-to-have: **a headl
 
 **Amendment (2026-07-24): Game Mode has no browser, so it gets a gamepad-native subset — `savelocker ui`.** The reasoning above ("Desktop Mode is just KDE with a browser") holds for Desktop Mode and is *why* the React UI stays the Desktop Mode and console surface. But **Game Mode has no browser at all** — reaching `localhost:5178` there meant installing a browser and adding it as a non-Steam shortcut. So the `savelocker ui` command (SDL + Dear ImGui, in the existing Linux binary) adds a **Game-Mode-only subset**: four screens (Status / Add game / Set save folder / Steam launch setup) that call `Agent.Core` **in-process** — no second API client, no duplicated sync logic. It is a *view*, not a second frontend; the React UI remains the only full frontend. All three on-device gates passed on a real Deck (renders under gamescope, Steam Input delivers a gamepad with the default template, tarball delta ~8.8 MB uncompressed). See `logs/2026-07-24_linux-agent-streamline.md` §3 for the design and the rejected alternatives.
 
+**Amendment (2026-07-25): the Game Mode UI is themed to the console palette, and lease warnings are persisted.** Two things settled during the visual refresh (`tasks/deck-ui-visual-refresh.md`):
+
+1. *"ImGui will never look like the React UI"* is withdrawn. It was true of stock ImGui, not of the toolkit: `Ui/Theme.cs` carries the console's exact `web/src/index.css` palette and Inter/JetBrains Mono, `Ui/Widgets.cs` paints components over `InvisibleButton` (keeping gamepad nav while looking nothing like a debug panel), and `Ui/Icons.cs` draws the lucide glyph set as vector paths. Content parity with `agent-ui` is a stated goal, layout parity is not — 1280×800 held at arm's length is a different medium from a desktop window.
+
+2. **The 30 fps cap is relaxed to 60.** It was a battery measure; this is a configuration surface used for minutes, not a game running for hours, with no 3D engine behind it. VSync remains what actually bounds the loop.
+
+3. **Lease warnings move from `AgentApiServer`'s memory to `lease-warnings.json` beside the config.** This preserves the in-process rule — the alternative was an HTTP call from `savelocker ui` to `localhost:5178`, making the view a second API client. It also fixed a real defect rather than only a presentational one: `ProtonRun` discarded the result of `OnGameLaunchAsync`, and because the Linux launch wrapper is a separate short-lived process from the daemon, a Deck user who launched a game another machine had checked out was never warned anywhere. Entries expire after 24 h.
+
 > **Rejected alternatives (recorded so they do not resurface).** Full detail in `logs/2026-07-24_linux-agent-streamline.md` §3.
 >
 > | Approach | Added size | Controller nav | Why rejected |

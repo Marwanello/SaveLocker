@@ -26,7 +26,10 @@ public sealed class AgentApiServer : IDisposable
     private readonly Func<UpdateResult?> _getUpdateResult;
     private readonly string _uiRoot;
     private readonly LocalAuth _auth;
-    private readonly Dictionary<string, string> _leaseWarnings = new();
+    // Lease warnings are persisted, not held in memory: the Linux launch wrapper is a separate
+    // short-lived process from the daemon, so a warning it raises can only reach a UI through
+    // shared state on disk. See LeaseWarningStore.
+    private readonly LeaseWarningStore _leaseWarnings;
 
     private IReadOnlyList<ScanCandidate>? _candidateCache;
     private WebApplication? _app;
@@ -57,17 +60,13 @@ public sealed class AgentApiServer : IDisposable
         _getUpdateResult = getUpdateResult ?? (() => null);
         _uiRoot = Path.Combine(AppContext.BaseDirectory, "agent-ui");
         _auth = LocalAuth.LoadOrCreate(config.ConfigPath);
+        _leaseWarnings = LeaseWarningStore.For(config);
     }
 
-    public void AddLeaseWarning(string gameName, string holderMachine)
-    {
-        lock (_leaseWarnings) _leaseWarnings[gameName] = holderMachine;
-    }
+    public void AddLeaseWarning(string gameName, string holderMachine) =>
+        _leaseWarnings.Add(gameName, holderMachine);
 
-    public void ClearLeaseWarning(string gameName)
-    {
-        lock (_leaseWarnings) _leaseWarnings.Remove(gameName);
-    }
+    public void ClearLeaseWarning(string gameName) => _leaseWarnings.Clear(gameName);
 
     public void Start()
     {
@@ -137,9 +136,9 @@ public sealed class AgentApiServer : IDisposable
     {
         app.MapGet("/api/state", () =>
         {
-            LeaseWarningDto[] warnings;
-            lock (_leaseWarnings)
-                warnings = _leaseWarnings.Select(kv => new LeaseWarningDto(kv.Key, kv.Value)).ToArray();
+            var warnings = _leaseWarnings.Read()
+                .Select(e => new LeaseWarningDto(e.GameName, e.HolderMachine))
+                .ToArray();
 
             var lastSyncAgo = _config.LastSyncTime.HasValue
                 ? FormatAgo(DateTime.UtcNow - _config.LastSyncTime.Value)

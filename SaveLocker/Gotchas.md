@@ -497,3 +497,74 @@ the failure was possible.
 - Corollary for this project: **the agent has a state the server never sees** (a running process, a
   populated `$HOME`, a stale Proton prefix). CI exercises the wire protocol well and the agent's
   *environment* poorly. Real hardware is still finding things CI cannot.
+
+## `savelocker ui` needs an explicit RID, or SDL "isn't applicable"
+`SaveLocker.Agent.Linux.csproj` is deliberately **RID-agnostic** so it builds and tests on any dev
+box. But a RID-agnostic build does **not** map `runtimes/linux-x64/native/` into `deps.json`, so the
+host never resolves the bundled `libSDL2-2.0.so` — even though the file is sitting right there in
+the output directory.
+
+Silk reports that as:
+
+```
+System.PlatformNotSupportedException: Couldn't find a suitable window platform.
+  (SdlPlatform - not applicable)
+```
+
+which reads like *"no display"* and sends you hunting X11/Wayland packages that are already
+installed. It actually means *"the native library never loaded"*.
+
+- **Dev runs must pass `-r linux-x64 --no-self-contained`.** `tests/linux/run-ui-wslg.sh` does.
+- Releases are unaffected: `packaging/linux/build-linux.sh` publishes self-contained for linux-x64,
+  which resolves natives correctly. This bites **only** the dev loop.
+
+## SDL's error string is sticky, and Silk reads it after a void call
+`SDL_GetError()` is never cleared on success — only overwritten by the next failure. Silk's
+`SdlContext.FramebufferSize` calls `SDL_GL_GetDrawableSize` (which returns `void`) and then decides
+whether it failed by reading `SDL_GetError`. So **any stale error from an earlier harmless probe**
+surfaces as a fatal, entirely unrelated exception on the first rendered frame:
+
+```
+Silk.NET.SDL.SdlException: That operation is not supported
+   at Silk.NET.SDL.SdlContext.get_FramebufferSize()
+   at ImGuiController.Update(Single deltaSeconds)
+```
+
+`UiApp.OnRender` clears it every frame before `_controller.Update`. Surfaced under WSLg; the Deck
+happened not to leave an error behind, which is exactly why it went unnoticed through Phase 3.
+
+## WSL interop injects the Windows PATH — quote it or the shell breaks
+Inside WSL, `$PATH` inherits the Windows PATH, which is full of spaces and parentheses
+(`/mnt/c/Program Files (x86)/...`). An unquoted re-export is a syntax error:
+
+```sh
+export PATH=$DOTNET_ROOT:$HOME/.local/bin:$PATH     # bash: syntax error near unexpected token `('
+export PATH="$DOTNET_ROOT:$HOME/.local/bin:$PATH"   # correct
+```
+
+Also: invoking `wsl ... bash /home/...` **from Git Bash** mangles the Linux path into
+`C:/Program Files/Git/home/...`. Drive WSL from PowerShell, or set `MSYS_NO_PATHCONV=1`.
+
+## ImGui child windows silently ignore WindowPadding
+`PushStyleVar(ImGuiStyleVar.WindowPadding, ...)` before `BeginChild` does **nothing** unless the
+child has a border or `ImGuiChildFlags.AlwaysUseWindowPadding`. Childs without a border default to
+zero padding regardless of the style stack.
+
+Symptom in the Deck UI: every shell region (header, rail, content, hint bar) rendered flush to the
+window edges — stat tiles ended exactly at 1280 px, the server chip and version string were clipped
+by a few characters. It looks like an off-by-one in the width maths, which is where the time goes.
+
+**If content is touching a window edge, check this flag before recomputing any widths.**
+
+## ImGui's style.Alpha does not reach hand-painted widgets
+`PushStyleVar(ImGuiStyleVar.Alpha, x)` is applied by ImGui *inside its own widget code*, via
+`GetColorU32`. Anything drawn straight onto an `ImDrawList` with an explicit packed colour bypasses
+that entirely.
+
+The Deck UI paints almost every widget by hand (`Ui/Widgets.cs`, `Ui/Icons.cs`), so a fade applied
+this way silently did nothing to the parts of the screen that matter — the chrome dimmed, the
+content did not. The fix is that `Widgets.U32` multiplies the incoming alpha by
+`ImGui.GetStyle().Alpha`.
+
+**Any new hand-painted colour must go through `Widgets.U32`**, never
+`ImGui.ColorConvertFloat4ToU32` directly, or it will refuse to fade with everything around it.

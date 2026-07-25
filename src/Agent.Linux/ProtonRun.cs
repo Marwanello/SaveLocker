@@ -53,7 +53,15 @@ public static class ProtonRun
 
         if (game is not null)
         {
-            try { await engine.OnGameLaunchAsync(game); }
+            try
+            {
+                // The result was previously discarded, so a Deck user who launched a game another
+                // machine had checked out got no warning anywhere: this process is not the daemon,
+                // and Game Mode never shows the console. Persist it so both UIs can surface it.
+                var (granted, holder) = await engine.OnGameLaunchAsync(game);
+                if (!granted && holder is not null)
+                    LeaseWarningStore.For(config).Add(game.Name, holder);
+            }
             catch (Exception ex) { Log($"pre-launch sync failed, launching anyway: {ex.Message}"); }
         }
         else
@@ -68,6 +76,9 @@ public static class ProtonRun
         {
             // The settle gate runs here: the game's process is gone, but its save may still be
             // flushing. OnGameExitAsync waits for quiet before it archives.
+            // The checkout is over, so the warning is no longer true whatever happened to the sync.
+            LeaseWarningStore.For(config).Clear(game.Name);
+
             try { await engine.OnGameExitAsync(game); }
             catch (Exception ex) { Log($"post-exit sync failed: {ex.Message}"); }
         }

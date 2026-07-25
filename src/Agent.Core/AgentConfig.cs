@@ -42,6 +42,9 @@ public sealed class AgentConfig
     /// never goes quiet can't block syncing forever.</summary>
     public int SettleMaxWaitSeconds { get; set; } = 120;
 
+    /// <summary>Mute the Game Mode UI's interface sounds (`savelocker ui`). Nothing else uses audio.</summary>
+    public bool UiSoundsMuted { get; set; }
+
     [JsonIgnore] public string ConfigPath { get; private set; } = DefaultConfigPath;
 
     /// <summary>
