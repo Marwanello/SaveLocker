@@ -70,6 +70,7 @@ sealed class UiApp
     // the same queue a real pad feeds, and `--screenshot` then captures where the cursor landed.
     private readonly Queue<ImGuiKey> _navScript = new();
     private int _navScriptCooldown;
+    private bool _navDiag = Environment.GetEnvironmentVariable("SAVELOCKER_NAV_DIAG") == "1";
     private const int NavScriptFrameGap = 6;   // ImGui needs a few frames to settle each move
 
     // Add-game state. The candidate list is a mutable copy so a browsed folder can be written back
@@ -326,6 +327,19 @@ sealed class UiApp
         try { SdlApi.GetApi().ClearError(); } catch { /* best-effort */ }
 
         _controller.Update((float)delta);
+
+        if (_navDiag)
+        {
+            var d = ImGui.GetIO();
+            if (ImGui.IsKeyPressed(ImGuiKey.GamepadDpadDown, false) ||
+                ImGui.IsKeyDown(ImGuiKey.GamepadDpadDown) ||
+                ImGui.IsKeyPressed(ImGuiKey.GamepadDpadRight, false) ||
+                ImGui.IsKeyDown(ImGuiKey.GamepadDpadRight))
+                Console.WriteLine($"frame {_framesRendered}: downPressed={ImGui.IsKeyPressed(ImGuiKey.GamepadDpadDown, false)} " +
+                                  $"downHeld={ImGui.IsKeyDown(ImGuiKey.GamepadDpadDown)} " +
+                                  $"rightPressed={ImGui.IsKeyPressed(ImGuiKey.GamepadDpadRight, false)} " +
+                                  $"navActive={d.NavActive}");
+        }
 
         _gl.ClearColor(Theme.BgGlobal.X, Theme.BgGlobal.Y, Theme.BgGlobal.Z, 1.0f);
         _gl.Clear((uint)ClearBufferMask.ColorBufferBit);
