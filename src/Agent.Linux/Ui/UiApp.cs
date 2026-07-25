@@ -73,6 +73,10 @@ sealed class UiApp
     private uint _bestContentId;       // topmost-leftmost focusable control in the content pane
     private int _suppressRailNavFrames;
     private int _suppressContentNavFrames;
+    // Right pressed while the content had nothing focusable yet — a scan still running, so the pane
+    // is just a spinner. The intent is held until a control appears rather than being swallowed.
+    private int _pendingCrossFrames;
+    private const int PendingCrossFrames = 240;
     private const int SuppressNavFrames = 3;
     private bool _navLeftFired, _navRightFired;
 
@@ -432,11 +436,32 @@ sealed class UiApp
         if (_suppressRailNavFrames > 0) _suppressRailNavFrames--;
         if (_suppressContentNavFrames > 0) _suppressContentNavFrames--;
 
+        // A cross that had nowhere to land completes as soon as the content has a control, unless
+        // the user has since moved the cursor themselves.
+        if (_pendingCrossFrames > 0)
+        {
+            _pendingCrossFrames--;
+            if (_bestContentId != 0 && _railHasFocus)
+            {
+                _pendingCrossFrames = 0;
+                Widgets.RequestFocus(_bestContentId);
+                _suppressRailNavFrames = SuppressNavFrames;
+            }
+            if (_navLeftFired || _navRightFired) _pendingCrossFrames = 0;
+        }
+
         if (_navRightFired && _railHasFocus)
         {
             // Into the content, at its topmost control.
-            Widgets.RequestFocus(_bestContentId);
-            _suppressRailNavFrames = SuppressNavFrames;
+            if (_bestContentId != 0)
+            {
+                Widgets.RequestFocus(_bestContentId);
+                _suppressRailNavFrames = SuppressNavFrames;
+            }
+            else
+            {
+                _pendingCrossFrames = PendingCrossFrames;
+            }
         }
         else if (_navLeftFired && !_railHasFocus)
         {
