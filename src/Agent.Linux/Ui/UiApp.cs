@@ -480,6 +480,40 @@ sealed class UiApp
         _focusWindow = "content";
     }
 
+    // ── Pane hand-off ────────────────────────────────────────────────────────────────────────
+
+    private bool _handoffActive;
+    private float _savedDisabledAlpha;
+
+    /// <summary>
+    /// Disable the pane the cursor is leaving for the single frame of a hand-off.
+    ///
+    /// SetKeyboardFocusHere cannot reliably take the cursor away from a widget in another flattened
+    /// child — that is why Left returned to the rail from some screens and not others. Disabled
+    /// items are skipped by navigation entirely, so with the source pane disabled ImGui has nowhere
+    /// to keep the cursor and the request lands. DisabledAlpha is pinned to 1 for the duration, so
+    /// nothing dims: the frame is visually identical.
+    /// </summary>
+    private void BeginHandoffSource(bool isSource)
+    {
+        _handoffActive = isSource;
+        if (!isSource) return;
+
+        var style = ImGui.GetStyle();
+        _savedDisabledAlpha = style.DisabledAlpha;
+        style.DisabledAlpha = 1f;
+        ImGui.BeginDisabled();
+    }
+
+    private void EndHandoffSource()
+    {
+        if (!_handoffActive) return;
+        _handoffActive = false;
+
+        ImGui.EndDisabled();
+        ImGui.GetStyle().DisabledAlpha = _savedDisabledAlpha;
+    }
+
     private bool Connected => !string.IsNullOrEmpty(_config.ApiKey);
 
     /// <summary>
@@ -555,11 +589,13 @@ sealed class UiApp
         // cursor lives here: without that gate both panes share one nav space and a Down inside the
         // content lands on a rail entry, which is why Down from "Scan for games" jumped to
         // "Add game" and left the discovered list unreachable.
-        var railFlags = ImGuiWindowFlags.NoScrollbar;
+        var railFlags = ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NavFlattened;
         if (_focusZone != Zone.Rail && !Widgets.FocusRequestPending)
             railFlags |= ImGuiWindowFlags.NoNav;
+        var railIsSource = _focusZone != Zone.Rail && Widgets.FocusRequestPending;
         ImGui.BeginChild("rail", new Vector2(Theme.Layout.RailWidth, height),
-            ImGuiChildFlags.AlwaysUseWindowPadding | ImGuiChildFlags.NavFlattened, railFlags);
+            ImGuiChildFlags.AlwaysUseWindowPadding, railFlags);
+        BeginHandoffSource(railIsSource);
 
         var items = new (string Label, Icons.Glyph Icon, Screen Target, bool Active)[]
         {
@@ -591,6 +627,7 @@ sealed class UiApp
         if (Widgets.RailItem("Quit", Icons.X, false)) _window.Close();
 
 
+        EndHandoffSource();
         ImGui.EndChild();
         ImGui.PopStyleVar();
         ImGui.PopStyleColor();
@@ -612,12 +649,14 @@ sealed class UiApp
         // Both panes stay navigable while a hand-off is in flight. Marking the source NoNav on the
         // same frame strands the cursor: ImGui will not move focus out of a window it is told to
         // ignore, so the request had nothing to take focus from and the press did nothing.
-        var contentFlags = ImGuiWindowFlags.None;
+        var contentFlags = ImGuiWindowFlags.NavFlattened;
         if (_focusZone != Zone.Content && !Widgets.FocusRequestPending)
             contentFlags |= ImGuiWindowFlags.NoNav;
+        var contentIsSource = _focusZone != Zone.Content && Widgets.FocusRequestPending;
         ImGui.BeginChild("content",
             new Vector2(size.X - Theme.Layout.RailWidth - 1f, height),
-            ImGuiChildFlags.AlwaysUseWindowPadding | ImGuiChildFlags.NavFlattened, contentFlags);
+            ImGuiChildFlags.AlwaysUseWindowPadding, contentFlags);
+        BeginHandoffSource(contentIsSource);
 
         // Cross-fade on navigation. Without it a rail press swaps the entire right-hand two-thirds
         // of the screen between two frames, which reads as a glitch rather than a transition.
@@ -653,6 +692,7 @@ sealed class UiApp
         if (best != 0) _bestContentId = best;
 
         ImGui.PopStyleVar();
+        EndHandoffSource();
         ImGui.EndChild();
         ImGui.PopStyleVar();
         ImGui.PopStyleColor();
@@ -938,7 +978,8 @@ sealed class UiApp
         var barH = buttonH + Theme.Space.Sm + ImGui.GetStyle().ItemSpacing.Y * 2 + Theme.Space.Sm;
         var listH = MathF.Max(120f, ImGui.GetContentRegionAvail().Y - barH);
 
-        ImGui.BeginChild("candidates", new Vector2(0, listH), ImGuiChildFlags.NavFlattened);
+        ImGui.BeginChild("candidates", new Vector2(0, listH),
+            ImGuiChildFlags.None, ImGuiWindowFlags.NavFlattened);
         if (_candidates.Count > 0)
         {
             for (int i = 0; i < _candidates.Count; i++)

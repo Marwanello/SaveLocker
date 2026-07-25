@@ -146,7 +146,7 @@ sealed class SettingsScreen
         var barH = ImGui.GetTextLineHeight() + (Theme.Space.Sm + 2f) * 2
                    + ImGui.GetStyle().ItemSpacing.Y * 2 + Theme.Space.Sm;
         ImGui.BeginChild("games", new Vector2(0, MathF.Max(120f, avail - barH)),
-            ImGuiChildFlags.NavFlattened);
+            ImGuiChildFlags.None, ImGuiWindowFlags.NavFlattened);
 
         foreach (var g in _config.Games.ToList())
         {
