@@ -54,7 +54,8 @@ static class Program
                     opts.GetValueOrDefault("size"),
                     opts.GetValueOrDefault("screenshot"),
                     opts.ContainsKey("gallery"),
-                    opts.GetValueOrDefault("screen"));
+                    opts.GetValueOrDefault("screen"),
+                    opts.ContainsKey("autoscan"));
 
             case "autostart":
             {

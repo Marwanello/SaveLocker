@@ -73,6 +73,9 @@ sealed class UiApp
     private readonly string? _screenshotPath;
     private int _framesRendered;
     private const int ScreenshotWarmupFrames = 5;
+    // Hard ceiling so a scan that never returns cannot hang an unattended capture forever.
+    private const int ScreenshotMaxFrames = 600;
+    private bool _autoScan;
 
     private UiApp(AgentConfig config, Vector2D<int> size, string? screenshotPath)
     {
@@ -85,11 +88,12 @@ sealed class UiApp
     }
 
     public static int Run(AgentConfig config, string? sizeOverride = null, string? screenshotPath = null,
-        bool gallery = false, string? startScreen = null)
+        bool gallery = false, string? startScreen = null, bool autoScan = false)
     {
         var app = new UiApp(config, ParseSize(sizeOverride), screenshotPath);
         if (gallery) app._screen = Screen.Gallery;
         else if (startScreen is not null) app._screen = ParseScreen(startScreen);
+        app._autoScan = autoScan;
         return app.RunLoop();
     }
 
@@ -281,7 +285,9 @@ sealed class UiApp
         ImGui.End();
         _controller.Render();
 
-        if (_screenshotPath is not null && ++_framesRendered >= ScreenshotWarmupFrames)
+        var busy = _scanTask is { IsCompleted: false } || _enrollTask is { IsCompleted: false };
+        if (_screenshotPath is not null && ++_framesRendered >= ScreenshotWarmupFrames
+            && (!busy || _framesRendered >= ScreenshotMaxFrames))
         {
             int code = 0;
             try
@@ -567,6 +573,14 @@ sealed class UiApp
                 + "Desktop Mode, then return here.",
                 Theme.AccentAmber, Icons.AlertTriangle);
             return;
+        }
+
+        // Dev affordance: start the scan without a button press, so an unattended capture can show
+        // the populated candidate list rather than the empty state.
+        if (_autoScan && _scanTask is null && _candidates.Count == 0)
+        {
+            _autoScan = false;
+            _scanTask = _scanner.ScanAsync();
         }
 
         bool scanning = _scanTask is { IsCompleted: false };

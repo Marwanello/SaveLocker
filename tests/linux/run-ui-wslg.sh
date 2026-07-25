@@ -27,12 +27,15 @@ SIZE="1280x800"
 BUILD=1
 SHOT=""
 EXTRA=""
+FIXTURES=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-build)   BUILD=0 ;;
     --screenshot) SHOT="${2:?--screenshot needs a path}"; shift ;;
     --gallery)    EXTRA="$EXTRA --gallery" ;;   # every widget in every state, the Phase B gate
     --screen)     EXTRA="$EXTRA --screen ${2:?--screen needs a name}"; shift ;;
+    --fixtures)   FIXTURES=1 ;;
+    --autoscan)   EXTRA="$EXTRA --autoscan" ;;
     *x*)          SIZE="$1" ;;
     *) echo "Unknown argument '$1'. Usage: run-ui-wslg.sh [WxH] [--no-build] [--gallery] [--screenshot out.png]" >&2; exit 2 ;;
   esac
@@ -89,6 +92,32 @@ fi
 # Use a scratch config so a dev run cannot touch a real enrolled agent's state.
 CONFIG="${SAVELOCKER_UI_TEST_CONFIG:-$REPO_ROOT/.wslg-ui/config.json}"
 mkdir -p "$(dirname "$CONFIG")"
+
+if [ "$FIXTURES" -eq 1 ]; then
+  # Reuse the Linux harness's fake-game fixtures so the POPULATED screens can be reviewed. Without
+  # this, a dev box has no Proton prefixes and no enrolment, so Add game and Set save folder only
+  # ever render their empty and gated states — which is exactly where layout bugs hide.
+  #
+  # The API key is a placeholder: nothing here talks to a server, it only opens the enrolment gate
+  # so the candidate list renders. Never point --fixtures at a real config.
+  SCRATCH="$REPO_ROOT/.wslg-ui/fixtures"
+  rm -rf "$SCRATCH"; mkdir -p "$SCRATCH"
+  eval "$(python3 "$REPO_ROOT/tests/linux/make-fixtures.py" "$SCRATCH")"
+  export HOME="${HOME_DIR}"
+  export XDG_DATA_HOME="${HOME_DIR}/.local/share"
+
+  CONFIG="$SCRATCH/ui-config.json"
+  cat > "$CONFIG" <<JSON
+{
+  "ServerUrl": "http://localhost:5179",
+  "MachineName": "DECK-FIXTURE",
+  "ApiKey": "fixture-key-not-a-real-credential",
+  "Games": [],
+  "TotalSavesPushed": 0
+}
+JSON
+  echo "Fixtures in $SCRATCH (fake HOME=$HOME)"
+fi
 
 if [ -n "$SHOT" ]; then
   # Capture-and-exit: no window to interact with, so this works unattended.
