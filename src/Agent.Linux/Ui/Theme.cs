@@ -259,10 +259,9 @@ static class Theme
         c[(int)ImGuiCol.ScrollbarGrabHovered]  = TextDim;
         c[(int)ImGuiCol.ScrollbarGrabActive]   = AccentGreen;
 
-        // ImGui.NET 1.90.8 predates the TabSelected/NavCursor renames — these are the old names.
         c[(int)ImGuiCol.Tab]                   = BgTableHd;
         c[(int)ImGuiCol.TabHovered]            = Alpha(AccentGreen, 0.22f);
-        c[(int)ImGuiCol.TabActive]             = NavActiveBg;
+        c[(int)ImGuiCol.TabSelected]           = NavActiveBg;
 
         c[(int)ImGuiCol.TableHeaderBg]         = BgTableHd;
         c[(int)ImGuiCol.TableBorderStrong]     = Border;
@@ -272,7 +271,7 @@ static class Theme
 
         // The gamepad focus ring is the ONLY cursor a Deck user has — there is no mouse pointer to
         // fall back on. Make it unmistakable: full-strength accent, thicker than ImGui's hairline.
-        c[(int)ImGuiCol.NavHighlight]          = AccentGreen;
+        c[(int)ImGuiCol.NavCursor]             = AccentGreen;
         c[(int)ImGuiCol.NavWindowingHighlight] = AccentGreen;
         c[(int)ImGuiCol.NavWindowingDimBg]     = Alpha(BgGlobal, 0.6f);
         c[(int)ImGuiCol.ModalWindowDimBg]      = Alpha(BgGlobal, 0.75f);

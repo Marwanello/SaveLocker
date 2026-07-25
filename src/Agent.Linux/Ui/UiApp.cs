@@ -589,12 +589,12 @@ sealed class UiApp
         // cursor lives here: without that gate both panes share one nav space and a Down inside the
         // content lands on a rail entry, which is why Down from "Scan for games" jumped to
         // "Add game" and left the discovered list unreachable.
-        var railFlags = ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NavFlattened;
+        var railFlags = ImGuiWindowFlags.NoScrollbar;
         if (_focusZone != Zone.Rail && !Widgets.FocusRequestPending)
             railFlags |= ImGuiWindowFlags.NoNav;
         var railIsSource = _focusZone != Zone.Rail && Widgets.FocusRequestPending;
         ImGui.BeginChild("rail", new Vector2(Theme.Layout.RailWidth, height),
-            ImGuiChildFlags.AlwaysUseWindowPadding, railFlags);
+            ImGuiChildFlags.AlwaysUseWindowPadding | ImGuiChildFlags.NavFlattened, railFlags);
         BeginHandoffSource(railIsSource);
 
         var items = new (string Label, Icons.Glyph Icon, Screen Target, bool Active)[]
@@ -649,13 +649,13 @@ sealed class UiApp
         // Both panes stay navigable while a hand-off is in flight. Marking the source NoNav on the
         // same frame strands the cursor: ImGui will not move focus out of a window it is told to
         // ignore, so the request had nothing to take focus from and the press did nothing.
-        var contentFlags = ImGuiWindowFlags.NavFlattened;
+        var contentFlags = ImGuiWindowFlags.None;
         if (_focusZone != Zone.Content && !Widgets.FocusRequestPending)
             contentFlags |= ImGuiWindowFlags.NoNav;
         var contentIsSource = _focusZone != Zone.Content && Widgets.FocusRequestPending;
         ImGui.BeginChild("content",
             new Vector2(size.X - Theme.Layout.RailWidth - 1f, height),
-            ImGuiChildFlags.AlwaysUseWindowPadding, contentFlags);
+            ImGuiChildFlags.AlwaysUseWindowPadding | ImGuiChildFlags.NavFlattened, contentFlags);
         BeginHandoffSource(contentIsSource);
 
         // Cross-fade on navigation. Without it a rail press swaps the entire right-hand two-thirds
@@ -978,8 +978,7 @@ sealed class UiApp
         var barH = buttonH + Theme.Space.Sm + ImGui.GetStyle().ItemSpacing.Y * 2 + Theme.Space.Sm;
         var listH = MathF.Max(120f, ImGui.GetContentRegionAvail().Y - barH);
 
-        ImGui.BeginChild("candidates", new Vector2(0, listH),
-            ImGuiChildFlags.None, ImGuiWindowFlags.NavFlattened);
+        ImGui.BeginChild("candidates", new Vector2(0, listH), ImGuiChildFlags.NavFlattened);
         if (_candidates.Count > 0)
         {
             for (int i = 0; i < _candidates.Count; i++)
