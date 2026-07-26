@@ -7,6 +7,12 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md`
 
 ## High priority
 
+- **Linux agent bug bounty.** Fix the 2026-07-26 review findings before the next Linux release:
+  server-change split brain, removed-game resurrection, non-durable local untracking, stale folder
+  watchers, partial/concurrent enrollment, stale Game Mode config writes, false systemd success,
+  and misleading `doctor` output. Full bounded task and verification gates:
+  `tasks/LinuxAgent-BugBounty.md`.
+
 - **Device-verify fresh Windows installer enrollment.** The wizard shipped in v0.1.7; the upgrade path is well verified. The **fresh install** (clean box, no `%PROGRAMDATA%\SaveLocker`) has never been exercised. Scenarios archived in `logs/2026-07-14_installer-enrollment.md`:
   - Happy path: run installer, choose enrollment file → page shows server + machine name → install → machine appears online in Machines.
   - ACL trap: `icacls "%PROGRAMDATA%\SaveLocker"` — interactive user needs Modify.

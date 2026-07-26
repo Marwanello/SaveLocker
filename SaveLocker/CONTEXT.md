@@ -62,6 +62,10 @@ scripted D-pad input and headless screenshots. See the quick-reference table.
 
 ## Open
 
+- **Linux agent bug bounty** — static review found 2 P1, 6 P2, and 1 P3 issue covering
+  split-brain server changes, durable untracking, watcher refresh, enrollment durability/threading,
+  stale Game Mode config writes, systemd failure reporting, and `doctor` diagnostics. Execute
+  `tasks/LinuxAgent-BugBounty.md` as one bounded task.
 - **Fresh Windows installer enrollment** — the wizard shipped in v0.1.7 and the upgrade path is verified. The **fresh install** (clean box, no `%PROGRAMDATA%\SaveLocker`) has never been exercised. Scenarios in `logs/2026-07-14_installer-enrollment.md`. ACL trap: verify `icacls "%PROGRAMDATA%\SaveLocker"` gives the interactive user Modify.
 - **Code-sign the exe** — SmartScreen warns for unsigned installers. Explicitly deferred by the maintainer.
 - ⚠️ **`%PROGRAMDATA%\SaveLocker` ACLs on a multi-user Windows box.** `api-token` and `config.json` are readable by other local users. See `Backlog.md`, medium priority.
