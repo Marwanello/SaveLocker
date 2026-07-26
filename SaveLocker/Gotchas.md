@@ -1,619 +1,147 @@
-# Gotchas
-
-Traps that have already cost time. Read before touching builds, paths, or the running server.
-
-## GHCR pull denied on unRAID after a release — private package + a login wiped on reboot
-Found 2026-07-24 deploying v0.3.6. `docker compose pull` on unRAID failed with
-`denied: denied` on `ghcr.io/v2/skorcherx/savelocker/manifests/latest`. The package was **private**,
-and the `docker login ghcr.io` credential (in `/root/.docker/config.json`, on tmpfs) is **wiped on
-every unRAID reboot** — so the login that let 0.3.4 pull was gone, and **watchtower had silently
-stopped auto-updating** for the same reason (which is why "no update" showed up first).
-Two compounding traps:
-1. `docker login ghcr.io` needs a **PAT with `read:packages`** as the password — **never** the GitHub
-   account password. With 2FA on, the password is always rejected ("bad password").
-2. After flipping the package to **public**, a pull can *still* return `denied` because a stale/broken
-   `ghcr.io` entry in `config.json` makes Docker send bad auth instead of pulling anonymously —
-   clear it with `docker logout ghcr.io`, then pull.
-**Fix chosen: the package is now public.** The image is built from the public repo and bakes no
-secrets (only version/commit/built-at build args; admin password + API keys are runtime `/data`
-state), so anonymous pulls and watchtower work across reboots with zero credential upkeep. unRAID's
-Docker-tab "check for updates" is also unreliable for **compose-managed** containers — use
-`docker compose pull` (or the Compose Manager "Update Stack"), not the per-container indicator.
-
-## Enroll must report the save path to the server, or a Deck-added game syncs nowhere
-Found 2026-07-24 testing `savelocker ui`. `Enroller.EnrollAsync` set the save path only in local
-`config.json`, never on the server. On **Windows this is masked** — the tray's in-process
-`CommandPoller` reports the path on its next 20 s tick (`CommandPoller.cs:145`). But the Deck's
-`savelocker ui` is a **separate process with no poller**, so the path was never reported: the console
-showed "not set", and a daemon reconcile (which resolves paths *from* the server) blanked the local
-path it was never told about — via the two-owner `config.json` race — leaving the game unmapped and a
-console **Sync** reporting *"no matching mapped game on this machine."* Fix: `Enroller.EnrollAsync`
-now calls `SetMachinePathAsync` right after `CreateGameAsync`, making the server authoritative from
-the start. **ImGui.NET text functions are printf — never pass dynamic text to `Text`/`TextWrapped`/
-`TextColored`/`TextDisabled`/`BulletText`**: a `%command%` in the launch string spewed a screenful of
-`?????` reading garbage varargs off the stack. Use `TextUnformatted` (wrapped in push/pop for colour
-or wrap). Both fixes are in the Phase 3 branch.
-
-## ImGui gamepad nav: drive it from ButtonDown events, edge-triggered, or it flickers/drops
-Found 2026-07-24 on the Deck. Feeding ImGui the *held* button state every frame let nav auto-repeat
-run away — a single D-pad press flickered focus between two items faster than a touch could land.
-Edge-triggering by polling `.Pressed` per frame then fixed the flicker but *dropped* quick taps: at
-30 fps a tap can begin and end inside one frame. The robust answer is to capture presses from the
-`ButtonDown` **event** (immune to frame timing), queue them, and replay each as a single-frame ImGui
-key pulse. Also suppress analog-stick nav (`AddKeyAnalogEvent(GamepadLStick*, false, 0)`) so a resting
-trackpad-joystick cannot nudge focus, and re-focus the first row when a folder listing changes or the
-cursor goes invisible. SDL leaves text input on by default, so `StopTextInput()` at startup stops
-gamescope popping the on-screen keyboard over a UI with no text fields.
-
-## Silk.NET gamepad buttons read stale-false unless something subscribes to ButtonDown
-Found 2026-07-24 building `savelocker ui` (Phase 3). On the Deck the analog sticks reported live
-X/Y through `IGamepad.Thumbsticks`, but every `IGamepad.Buttons[i].Pressed` stayed `false` and the
-D-pad/A/B did nothing — with a real gamepad present (`input.Gamepads.Count == 1`) and the default
-"Gamepad with Joystick Trackpad" template. The fix was **subscribing to `pad.ButtonDown`/`ButtonUp`**
-(and enumerating `input.Gamepads` at `Load` to hook them); once a subscriber exists, Silk processes
-the SDL button events and the per-frame `.Pressed` poll starts returning true. **No Steam controller-
-layout change was needed** — the default template passes buttons through fine. So: any code that
-polls gamepad buttons must also keep a ButtonDown subscription alive, or the poll is dead. Triggers
-(`IGamepad.Triggers`) reported no value on the Deck's virtual pad; the Game Mode UI does not use them.
-
-## A one-machine conflict loop: the daemon pushes from state the launch wrapper superseded
-Found 2026-07-22/23 on a real Deck. Cost **75 conflicts and 2.66 GB on a retain-5 game**, and needed
-`curl` against the admin API to escape. Fix tracked as `tasks/0.0-agent-stale-parent.md`.
-
-**`config.json` has two owners.** `ProtonRun` loads it per Steam launch (always fresh); the daemon
-loads it once at boot — `Daemon.cs:118` captures `TrackedGame` refs out of `_config.Games` and nothing
-calls `AgentConfig.Load` again. After the wrapper pushes on exit, the daemon's folder watcher pushes
-with the superseded parent, and the server correctly records a conflict. `SyncEngine.cs:178` does not
-advance the pointer on conflict **by design**, so the daemon never recovers: it conflicts on *every*
-save until restarted.
-- **This looks exactly like the two-machine divergence in `CONTEXT.md`, but there is only one machine.**
-  `AgentConfig.SaveGameSyncState` says so in its own doc comment — and fixed only the **write** side.
-  `Decisions.md` §8 closed half the door. Nothing re-reads before *using* the parent.
-- ⚠️ **`CommandPoller.cs:179` called the full `_config.Save()`**, which was documented as unsafe for
-  per-game sync state. On a game-list change it wrote the daemon's stale `LastKnownVersionId` for
-  every game over the file, rewinding what the wrapper just wrote — so the **wrapper** then conflicted
-  too. The §8 lost-update, reintroduced via a path the fix never covered.
-  - **`changed` is edge-triggered, not level-triggered** — all five paths that set it assign the value
-    that makes their own next comparison equal, so it is `false` in steady state. **An idle sample
-    measures 0 and reads as "this cannot happen."** It flips precisely when a *human is editing in the
-    console* (save path, game added/removed, globs), so the corruption lands mid-repair — which is
-    exactly when it struck during the incident.
-- **Diagnostic:** interleaved `pushed new version` (wrapper) and `CONFLICT` (daemon) in `agent.log` for
-  the same game, on a single-machine fleet. Prune appearing to work *sometimes* is the same tell —
-  only the wrapper's fast-forwarding pushes reach `PruneVersionsAsync`.
-- **Workaround if it recurs:** `systemctl --user stop savelocker.service`. Saves still sync — the
-  wrapper drives pull-on-launch and push-on-exit (`Daemon.cs:8`) and does not need the daemon. Costs
-  heartbeats, remote commands, the agent UI and queue draining.
-- ✅ **FIXED 2026-07-23** (`tasks/0.0-agent-stale-parent.md`), in two parts. `SyncEngine` now calls
-  `AgentConfig.RefreshGameSyncState` inside the per-game lock before push and pull; and **`Save()` is
-  safe by construction** — it preserves per-game sync bookkeeping from disk, so `SaveGameSyncState`
-  is its only writer. `CommandPoller` needed no edit.
-  - **Why the primitive changed rather than the caller:** all 17 `Save()` call sites write settings or
-    the game list, none intends to write sync state. A rule that 17 callers must remember is not a
-    rule — and one of them had already forgotten it.
-- **Rule:** any long-lived process holding `AgentConfig` in memory must re-read per-game sync state
-  under the lock **before** using it, not merely before writing it. `run-concurrency-tests.ps1` was
-  written specifically for cross-process state and **all 12 of its checks covered only the write
-  race** — which is how a reader that went stale survived it. Now 17, with checks 6 and 7 covering
-  the read path and the poll path; both verified to FAIL against pre-fix code.
-
-## Two admin actions that read as "fix this" but only edit a row
-Same incident. Both are correct as implemented; both mislead.
-- **Resolving a conflict tells the agent nothing.** `ResolveConflictAsync` writes `HeadVersionId` and
-  stamps the flag. The agent's parent advances only on a successful push or a **pull**
-  (`SyncEngine.cs:165` / `:280`), so a machine resolved-for in the console stays stuck and conflicts
-  again on its next save. Recorded at `CONTEXT.md:332`; tracked as backlog item 0.4.
-- **A guarded pull is the repair, and it is safe.** When local content already matches the head,
-  `PullAsync` short-circuits at `SyncEngine.cs:240` **before** any file write and before the
-  unpushed-changes guard, repairing `LastKnownVersionId` as a side effect. ⚠️ Use the CLI —
-  `savelocker pull` defaults to `force: false` (`AgentCli.cs:266`), whereas the **console's Pull button
-  sends `force: true`** (`GameDetail.tsx:370`), which bypasses the guard at `SyncEngine.cs:255`.
-
-## A tagged release gets an UNSTAMPED image — the image build ran before the tag existed
-Hit on v0.3.4 (2026-07-23). `docker-publish.yml` triggered on **push to `main` only**, so the image
-was built by the merge that *preceded* the tag. `git describe` could not see a tag that did not yet
-exist, and `:latest` shipped stamped **`0.3.3+11.9ae9307`** — an amber "dev build" chip on a machine
-actually running the release. That is precisely the question the console-versioning work exists to
-answer ("is the fix deployed?"), so it fails in the least useful way possible.
-- **The code was correct** — same commit as the tag. Only the *version stamp* was wrong, which makes
-  it easy to miss: nothing is broken, the console just lies about which release it is.
-- **Fix:** `tags: ['v*']` added to the trigger. ⚠️ **Unconfirmed whether `paths-ignore` also filters
-  tag pushes** — verify on the next release that a `docker-publish` run exists for the tag.
-- **Manual recovery, if it recurs:** re-run the last `docker-publish` run *after* pushing the tag. A
-  re-run does a fresh checkout, so `git describe` then returns `v<x>-0-g<sha>` and the derivation's
-  `if ahead = 0 then version = tag` branch stamps it cleanly. Verified: the re-run produced
-  `SAVELOCKER_VERSION=0.3.4` and pushed `:latest` + `:0.3.4`.
-- **Same class as the documented `fetch-depth: 0` trap:** CI version derivation depends on git state,
-  and when that state is wrong it fails **quietly** — a plausible-looking number, not an error.
-
-## `Invoke-RestMethod` does not unroll a JSON array the same way on 5.1 and pwsh 7
-Cost two debugging rounds on 2026-07-23 while testing backlog 0.4, and both rounds blamed the server.
-**Windows PowerShell 5.1 hands a JSON array back as a SINGLE item**, so `@(Invoke-RestMethod ...)`
-wraps it instead of flattening it: `.Count` reads **1**, every `Where-Object` downstream matches
-nothing, and the assertion fails exactly as if the server had returned nothing at all.
-- **The tell** is `ConvertTo-Json` on the result showing `{"value":[...],"Count":2}` — a nested array,
-  not a list of objects. If a filter over an API list mysteriously matches zero rows, dump the raw
-  payload *before* touching the server code.
-- **Fix — go through `ConvertFrom-Json`,** which unrolls identically on both hosts:
-  `function JsonArray($url) { @((Invoke-WebRequest $url -UseBasicParsing).Content | ConvertFrom-Json) }`
-- **This is not cosmetic:** the suites run on Windows PowerShell 5.1 locally *and* pwsh 7 on Linux and
-  in CI, so a script that passes on one host can silently assert nothing on the other.
-- ⚠️ Single-object endpoints are unaffected, which is why the rest of the suite never hit it. It bites
-  only on list endpoints — `/api/conflicts`, `/api/commands`, `/api/games/{id}/versions`.
-
-## `NoChange` returns before the prune call — a force-push can look like a broken fix
-`UploadAsync` returns at `SyncService.cs:410` when the content hash already matches the head, which is
-**above** both the force check and `PruneVersionsAsync` (`:459`). So "force-push to trigger retention"
-does nothing at all when no gameplay happened since, and reads as the retention fix having failed.
-Retention only runs on a push that actually carries new content.
-
-## Inno `NextButtonClick` fires in `/SILENT` — returning False ABORTS the silent install
-Cost the fleet's auto-update between v0.1.6 and v0.1.7 (2026-07-14). The agent auto-updates by running
-the installer with **`/SILENT`** (`TrayApp.cs`). The installer-enrollment wizard page validated its
-input in `NextButtonClick` and returned `False` (plus a `MsgBox`) when no enrollment file was chosen.
-In silent mode Inno **still calls `NextButtonClick`** even though the page is never shown, and there
-`False` doesn't "stay on the page" — there is no page — it **terminates Setup**. The abort happens
-during page navigation, *before* the install step, so files are not replaced; but `TrayApp` has
-already exited to release its mutex, so the agent is left **stopped** until the next login (the Run-key
-auto-start) brings it back. Not bricked, but every machine that attempted the update went dark.
-- **Fix:** `if WizardSilent then exit;` at the top of `NextButtonClick` — never validate or prompt in
-  silent mode. Also `ShouldSkipPage` hides the enroll page entirely on an already-enrolled machine, so
-  interactive upgrades don't demand a file either.
-- **Rule:** any installer `[Code]` that can block navigation or show UI must guard on `WizardSilent`.
-  The agent's most load-bearing behaviour (silent auto-update) exercises exactly that path.
-
-## Stale incremental builds (most common)
-`dotnet build` sometimes did **not** recompile the Server after edits — a stale DLL got reused and masked changes (e.g. new endpoints 404'd at runtime).
-- **Always build with `--no-incremental`** and stop the running agent/server first (they lock the DLLs).
-- Confirm the DLL's `LastWriteTime` is newer than the edited source.
-
-## Windows folder case-collision (data loss!)
-Windows is **case-insensitive**: `src/Server/Data/` (entity source) and a runtime `src/Server/data/` (SQLite dir) are the **same directory**. A `Remove-Item data -Recurse` once deleted `Data/Entities.cs` + `Data/AppDbContext.cs`.
-- **Fixed:** dev storage moved to `localstate/` (see `src/Server/appsettings.Development.json`) so no `data/` is ever created in the project. Never name a runtime/output dir the same (case-insensitively) as a code folder.
-
-## dotnet not on shell PATH
-Installed via winget; machine PATH is updated but **open shells don't see it**.
-Prepend `"$env:ProgramFiles\dotnet"` to `$env:Path` or open a new shell.
-
-## Agent CLI output
-The agent is a WinExe (GUI subsystem). Launching the installed `.exe` from PowerShell or CMD shows **no stdout/stderr**. Two workarounds:
-- **Redirect to file:** `"C:\Program Files\SaveLocker Agent\SaveLocker.Agent.exe" <cmd> > C:\temp\sl.txt 2>&1`
-- **Read the log** (preferred): `%PROGRAMDATA%\SaveLocker\agent.log` — rolling 1 MB, keeps one `.old`. Tail it with the `log` CLI sub-command: `SaveLocker.Agent.exe log > C:\temp\sl.txt 2>&1`
-
-## `FileVersionInfo` returns NULL on Linux — the agent reported a fake version for its whole life
-Fixed 2026-07-14. `UpdateChecker.CurrentVersion` read the exe's **Win32 version resource** via `FileVersionInfo.GetVersionInfo(Environment.ProcessPath)`. The published `savelocker` is a **native ELF apphost**, which has no such resource: `FileVersion` is `null`, so it silently fell back to the hard-coded `new Version(0, 1, 0)`.
-- Consequence: **every Steam Deck reported `v0.1.0` to the console forever**, whatever it was actually running — and Phase 5's heartbeat sends that version to the dashboard, so it was a lie in the UI, not just a cosmetic default.
-- **Fix:** try the version resource first (unchanged on Windows, where it is proven), then fall back to the managed **`AssemblyFileVersion` attribute**, which is the value the Win32 resource is generated from and is readable on every platform.
-- `savelocker doctor` now prints the version, which is how this is verified end-to-end in CI: `package-linux` installs the tarball and greps for the version it stamped.
-
-## Shell scripts must be LF — a CRLF `install.sh` breaks every Deck
-There was **no `.gitattributes`** until 2026-07-14; Git happened to store `packaging/linux/*.sh` as LF, by luck rather than rule. A `.sh` committed with CRLF from a Windows checkout fails on Linux with `bad interpreter: /usr/bin/env bash^M`, and systemd refuses to parse a CRLF unit file.
-- `.gitattributes` now pins `*.sh` and `*.service` to `eol=lf`.
-- Note the Windows **working tree** is still CRLF (that is correct, and Git converts on commit) — so **copying a `.sh` straight from `E:\` into WSL gives you a CRLF file that bash rejects.** Strip it (`sed -i 's/\r$//'`) when hand-copying for a local test. CI checks out LF and is unaffected.
-
-## Never skip files by `FileAttributes.ReparsePoint` — OneDrive placeholders are reparse points too
-The archiver must not follow symlinks (see below). The obvious implementation — skip any entry with `FileAttributes.ReparsePoint` — is **a silent data-loss bug**: OneDrive **files-on-demand placeholders are also reparse points**, so that check would quietly stop archiving every save in a OneDrive folder, and the user would never be told.
-- **Use `FileSystemInfo.LinkTarget is not null`** (`SaveArchive.IsLink`). It is non-null only for the *symlink* and *junction* reparse tags — exactly the set we mean — and null for cloud placeholders.
-- `tests/run-hardening-tests.ps1` guards this ("ordinary nested files still sync"), but the real OneDrive case cannot be reproduced in the harness. Do not "simplify" that check.
-
-## `Directory.EnumerateFiles(..., AllDirectories)` FOLLOWS symlinks — and the restore pass DELETES
-Fixed 2026-07-14 (Phase 6). The default recursive enumeration follows symlinks and junctions, and a Wine prefix is full of them. Two consequences, the second far worse than the first:
-- **Archive:** a save folder containing a link to `$HOME` or `/etc` pulls that target **into the archive** and uploads it.
-- **Restore (the data-loss one):** `RestoreArchive` deletes target files that are absent from the archive. Walking through a link, it **deletes files outside the save folder entirely.** The pre-fix harness run confirmed this for real — it deleted a file in a sibling directory.
-- **Fix:** `SaveArchive.EnumerateFilesNoFollow` / `EnumerateDirsNoFollow` — a manual walk that skips links rather than descending into them. Links are never archived, never restored, and never deleted.
-- Windows is affected too, via **junctions** (which need no elevation to create — which is why the harness uses them there).
-
-## OneDrive save paths and RestoreArchive
-If a game's save folder is inside an OneDrive-managed tree (`C:\Users\<name>\OneDrive\…`), `Directory.Move` fails with **"Access to the path '…' is denied"** — OneDrive's reparse points block the rename even when OneDrive is not running.
-- **Fixed (2026-06-23):** `SaveArchive.RestoreArchive` accepts an optional `stagingRoot`; `SyncEngine` passes `_tempDir` (`C:\ProgramData\SaveLocker\tmp`) so staging lives outside the OneDrive tree. Restore is file-by-file copy rather than directory rename.
-
-## WebView2 sizing at high DPI (WinForms)
-`Form.ClientSize` units are **physical pixels** even when `DeviceDpi > 96`. WebView2 divides by `devicePixelRatio` (= DeviceDpi ÷ 96) to get CSS pixels. At 150% DPI (`DeviceDpi = 144`), `ClientSize = new Size(900, 600)` produces only **600×400 CSS px** — the React layout overflowed.
-- **Fix in `AgentWindow` constructor:**
-  ```csharp
-  var dpiScale = DeviceDpi / 96f;
-  ClientSize = new Size((int)(900 * dpiScale), (int)(600 * dpiScale));
-  ```
-- `Application.SetHighDpiMode(HighDpiMode.PerMonitorV2)` does **not** change the physical-pixel coordinate behaviour here — the scale factor must be applied explicitly.
-
-## FolderBrowserDialog silently returns Cancel from agent API server
-`AgentApiServer` handles HTTP requests on ThreadPool (MTA) threads. `FolderBrowserDialog.ShowDialog()` called on an MTA thread returns `DialogResult.Cancel` immediately without showing anything. `SynchronizationContext.Post()` doesn't work either because `SynchronizationContext.Current` is **null** when `TrayApp` constructs — `Application.Run` hasn't installed the `WindowsFormsSynchronizationContext` yet.
-- **Fixed (2026-06-25):** `ShowFolderPickerAsync` spawns a **dedicated STA thread** per call, parents the dialog to `Application.OpenForms[0]`, resolves a `TaskCompletionSource<string?>` when dismissed.
-
-## EF Core version
-On **net10.0** since 2026-07-13; EF Core tracks the framework at **10.0.x**. (The old rule — "pin EF
-Core to 9.0.x, 10.x requires net10" — is gone: the upgrade removed its reason. See
-`Decisions.md → Runtime: .NET 10 LTS`.)
-
-## The SDK is pinned in `global.json` — bump it and the Dockerfile together
-`dotnet build` silently uses the **newest SDK installed** unless a `global.json` pins it. The CI
-runners preinstall a newer SDK than we target, so before the pin, CI was building the net9.0 targets
-with **SDK 10.0.301** while the dev box used 9.0.315. It worked — but a toolchain that silently
-differs between CI and dev is exactly the sort of thing that makes a real bug unreproducible.
-- `global.json` uses `rollForward: latestFeature`: any `10.0.x` SDK is accepted, but it will never
-  roll forward to 11. A box with only the wrong major now fails **loudly**, which is the point.
-- The Dockerfile **copies `global.json` in**, so the container is held to the same pin. Bump the pin
-  and the `sdk:`/`aspnet:` image tags **together**, or the Docker build fails (loudly — by design).
-
-## SQLitePCLRaw is pinned to 3.x on purpose — do not "simplify" it away
-`Microsoft.Data.Sqlite.Core` resolves the SQLitePCLRaw **2.1.11** family, whose native lib bundles a
-SQLite vulnerable to **CVE-2025-6965** (NU1903 High — memory corruption when aggregate terms exceed
-the available columns). There is **no patched 2.x release**: the fix needs SQLite ≥ 3.50.2, which
-only ships in the **3.x** line. `SaveLocker.Server.csproj` therefore pins
-`SQLitePCLRaw.bundle_e_sqlite3` directly to lift the whole family (core / provider / config / lib).
-- Removing that pin silently reintroduces the CVE — EF Core still resolves 2.1.11 on its own.
-- The major bump is safe: the v3 notes state *"there are no code changes in SQLitePCLRaw.core"*, so
-  the API `Microsoft.Data.Sqlite` compiles against is unchanged. The v3 breaking changes are the
-  removal of classic Xamarin support and of bundles we do not use (`bundle_green`, `bundle_zetetic`…).
-- **In v3 the LIB package version tracks SQLite's own version** — which is why it reads `3.53.x`
-  rather than `3.0.x`. Do not "fix" that apparent mismatch.
-- Verify the fix by asking the engine, not by reading a package number:
-  `SELECT sqlite_version()` must be **≥ 3.50.2** (it is 3.50.4).
-- Drop the pin only once EF Core resolves 3.x by itself.
-
-## PBKDF2 parameters are part of the on-disk format
-`Tokens.HashPassword` stores `v1:{salt}:{hash}` — the iteration count, salt size, hash size and
-algorithm are all implied by that `v1` tag, not recorded in it. **Changing any of them invalidates
-every stored password**, and the failure only appears in production on the one machine that already
-has an admin password set. If they ever must move, bump the version tag and keep a `v1` verification
-path. `tests/verify-password-compat.ps1` guards this: it makes a server built from an older ref hash
-a password, then asserts the current code still verifies it (and still rejects a wrong one).
-
-## Dev server port
-`dotnet run` honours the launch profile (port 5179) unless you pass `--no-launch-profile` and set `ASPNETCORE_URLS` yourself.
-
-## PowerShell + native stderr
-Under `$ErrorActionPreference="Stop"`, a native command writing to stderr (e.g. an expected CONFLICT warning) terminates the script. Test scripts use `Continue` and parse output text instead.
-
-## Installing the .NET SDK in WSL (Ubuntu 24.04)
-Use the install script, not apt: `bash <(curl -fsSL https://dot.net/v1/dotnet-install.sh) --channel 10.0 --install-dir "$HOME/.dotnet"`, then export `DOTNET_ROOT` + `PATH` in `~/.bashrc`. No root needed, and it avoids the known packages.microsoft.com ↔ Ubuntu-archive conflict on 24.04.
-- **Historical (net9 era, now moot):** `apt install dotnet-sdk-9.0` used to fail with `Unable to locate package` — .NET 9 shipped *between* Ubuntu LTS releases and never landed in the 24.04 archive, which offered only `dotnet-sdk-8.0` and `dotnet-sdk-10.0`. The old rule "do not install dotnet-sdk-10.0" is **dead**: net10 is now the target. Ubuntu is still the right distro (`Decisions.md` §6: CI parity + older glibc).
-- Both SDKs can coexist; `global.json` decides which one is actually used.
-- **Do not** install `dotnet-sdk-10.0` just because apt offers it — the solution targets `net9.0` and EF Core is pinned to 9.0.x to stay off net10.
-- The install script **does not resolve dependencies**; .NET needs `libicu` (present by default on Ubuntu 24.04, but check on a minimal image).
-
-## PowerShell escapes with a backtick, not a backslash (cost a mis-installed SDK)
-Running WSL commands from PowerShell, `"...\$HOME..."` does **not** escape `$HOME` — backslash is not PowerShell's escape character. PowerShell expands its *own* `$HOME` (`C:\Users\<you>`), eats the backslashes, and bash receives `C:Usersskorc`. This silently installed a .NET SDK into a junk folder **inside the repo** on the Windows drive, with a colon in its name that Windows itself cannot easily delete.
-- **Fix:** pass the command in a **single-quoted** PowerShell string so `$VAR` reaches bash untouched, or (best) write a `.sh` file and run `wsl -- bash /mnt/c/path/to/script.sh`. Avoid inline quoting gymnastics entirely.
-
-## Integration suite: clear the server DB and `.verify/` TOGETHER
-`tests/run-agent-tests.ps1` re-runs against whatever state both sides already hold — the server's DB **and** `.verify/` (the agents' configs *and their save folders*). The two must be reset **as a pair**. Clearing either one alone produces confident, plausible failures that have nothing to do with your change:
-
-| What you cleared | What breaks | Why |
-|---|---|---|
-| `.verify/` only | "PC initial push" reports **CONFLICT**, ~4 fail | Agents lost their version lineage; the server kept its head. |
-| Server DB only | "Laptop pull restores save" is **BLOCKED**, ~3 fail | `.verify/laptop_save` still holds files from the last run, so the pull correctly refuses to overwrite what looks like un-pushed local progress. |
-
-- **Do:** stop the server, delete `src/Server/localstate/savelocker.db*` **and** `src/Server/localstate/archives/` **and** `.verify/`, restart the server, then run.
-- ⚠️ **Pointing the server at an isolated `Storage__DbPath` counts as "cleared the server DB"** and
-  hits row 2 above. That habit is correct for `run-enrollment-tests.ps1` (whose docs call for it) and
-  actively wrong here on its own — it resets one half of a pair. Walked into again on 2026-07-19: an
-  isolated DB with a stale `.verify/` gave exactly the 3 predicted failures, and they were briefly
-  mistaken for a pre-existing bug in the pull path. Removing `.verify/` gave 10/10 with no code change.
-- The suite does **not** wipe `.verify/` itself, unlike `.verify-health/` and friends, and that is
-  deliberate: wiping it alone against a persistent dev DB triggers row 1 instead. It also shares
-  `.verify/` with the two enrollment suites.
-- Ordering matters when chaining suites: run `run-agent-tests.ps1` (which wants a fresh DB) **before** `run-enrollment-tests.ps1` (which adds a game and a machine to it).
-- The suite also needs `%APPDATA%\LGSTestGame` to exist for the detection check; the script now creates it itself (2026-07-12).
-- ⚠️ **Start the server with `ASPNETCORE_ENVIRONMENT=Development`, or it does not read
-  `appsettings.Development.json` at all** and opens the production `Storage:DbPath` — `/data/savelocker.db`,
-  i.e. `E:\data\...` on Windows — instead of `src/Server/localstate`. Walked into on 2026-07-26 by
-  launching the built DLL directly (`dotnet src/Server/bin/.../SaveLocker.Server.dll`) rather than
-  `cd src/Server && dotnet run`, which sets the variable via `launchSettings.json`. That stray DB then
-  held a `__EFMigrationsLock` from an earlier killed process, so the server sat in migration **forever**
-  — it never listened, and every server-dependent check failed as though the agent were broken. The
-  log tell is `INSERT OR IGNORE INTO "__EFMigrationsLock"` repeating on an exponential backoff.
-
-## `dotnet ef` tools must match the EF runtime major — or `migrations remove` eats the WRONG migration
-The tool is installed globally and does **not** track the project. With `dotnet-ef` **9.x** against EF Core **10.x** (2026-07-14):
-- `migrations add` "succeeds" but writes a model snapshot the runtime rejects. The server then refuses to boot with **`PendingModelChangesWarning`** — the new migration exists, yet the model "has pending changes".
-- The recovery reflex, `dotnet ef migrations remove`, then **deleted a different, already-committed migration** (`AddEnrollmentTokens`) instead of the one just added, leaving its table uncreated. Every enrollment endpoint began returning **500 `no such table: EnrollmentTokens`** — a failure that looks nothing like its cause.
-- **Fix:** `dotnet tool update --global dotnet-ef --version "10.*"` **first**. Then `git status src/Server/Migrations/` before and after any `migrations remove` — if a file you did not create shows as deleted, restore it (`git checkout --`) and regenerate yours on top.
-
-## Running the server DLL directly ignores `launchSettings.json`
-`dotnet run` reads `Properties/launchSettings.json`; **`dotnet bin/.../SaveLocker.Server.dll` does not.** Launching the DLL therefore binds Kestrel's default **:5000** (not :5179) and loads the **Production** config (`Storage:DbPath = /data/savelocker.db`, not `localstate/`). The symptom is a test suite whose every check fails on "connection refused" while a server is plainly running.
-- A script that starts the server itself must pass both explicitly: `ASPNETCORE_URLS`, and either `ASPNETCORE_ENVIRONMENT=Development` or the `Storage__*` variables. This is what CI already does.
-- A test that needs to **restart** the server must **own** it (its own port + state dir, as `run-health-tests.ps1` does). You cannot correctly restart a server someone else started: its storage path is not knowable from the outside, and guessing it silently brings the server back on an **empty database**.
-
-## PowerShell `.Count` on a single object can hit a DTO field named `count`
-`AgentEventDto` has a `count` field (the dedupe counter). Property lookup is case-insensitive, so `$events.Count` on a **single** result returns **the event's dedupe count**, not the number of events — an assertion that then measures the wrong number and can pass while proving nothing.
-- Always force a real collection: `@($x | Where-Object {...}).Length`.
-
-## A green pin/TLS test can be green because it never connected
-Verifying TOFU pinning taught this twice (2026-07-13). Plain **http has no server identity to pin**, so an http harness can only assert the agent records *nothing* — every interesting pin assertion passes **vacuously**. And on an https harness, a `status` run against a server with **no games** iterates an empty list, makes **no HTTP request**, completes **no TLS handshake**, and the pin check passes without ever running.
-- **Rule:** a test of a connection-time behaviour must assert that a connection actually happened. Give the fixture server a game, and prove the negative case fails (tamper the pin and require the warning).
-- `tests/run-enrollment-tls-tests.ps1` needs a trusted dev certificate (`dotnet dev-certs https --trust`), which is why it is a local check and not a CI job.
-
-## `CommonApplicationData` is `/usr/share` on Linux (agent state)
-`Environment.SpecialFolder.CommonApplicationData` is `%PROGRAMDATA%` on Windows but **`/usr/share`** on Linux — not user-writable, and on SteamOS it is the **immutable rootfs, wiped on every update**. `AgentConfig.DefaultDir` used it, so the config, log and offline queue would have gone somewhere that either fails to write or silently vanishes on update.
-- **Fixed (2026-07-12):** `DefaultDir` branches — `%PROGRAMDATA%\SaveLocker` on Windows, `$XDG_DATA_HOME` (or `~/.local/share`) `/SaveLocker` on Linux. Never install or store state under `/usr` (`Decisions.md` §5).
-
-## `FileShare` is not enforced on Linux (settle gate)
-`FileShare.Read` denying writers is a **Windows kernel semantic**. On Linux the open simply succeeds, so a lock probe written that way returns "nothing is locked" **on every check** — the settle gate would silently degrade to fingerprint-only and could archive a half-written save while a game is still flushing.
-- **Fixed:** `FileLockProbe` walks `/proc/*/fd` for descriptors pointing into the save dir and reads `/proc/<pid>/fdinfo/<fd>` `flags` (**octal**; low 2 bits = access mode, `O_WRONLY=1`/`O_RDWR=2`) — what `lsof` does. Where it cannot answer it returns `Unavailable`, which the gate **logs**; it never reports a fictitious all-clear.
-- `tests/linux/run-linux-tests.sh` pins this with a writer that writes once and then holds the descriptor open in silence: the fingerprint goes quiet at once, so a broken probe settles in ~3 s and a working one waits the full 8 s.
-
-## Steam shortcut AppIDs: signed in the VDF, unsigned on disk
-Steam stores a non-Steam shortcut's generated AppID as a **signed** int32 in `shortcuts.vdf`, but names its prefix directory `compatdata/<unsigned>/`. Using the signed value makes **every** Proton prefix lookup miss silently (it looks for `-1234567890`, the folder is `3060399406`).
-- `SteamShortcuts.CompatDataId()` is the single place that converts; the Linux harness fixture uses a deliberately negative AppID so a regression fails the suite.
-
-## `VAR=x out="$(cmd)"` does not export VAR (bash)
-A prefix assignment only applies to a **command**; `A=1 out=$(cmd)` is two plain assignments, so `cmd` runs *without* `A` in its environment. This silently defeated the launch-wrapper tests, which exist precisely to check that `STEAM_COMPAT_DATA_PATH` / `SteamAppId` reach the agent.
-- **Fix:** `export` them, run, then `unset`.
-
-## git refuses to read the Windows repo from WSL
-`git fetch /mnt/e/Projects/SaveLocker` from inside WSL fails with **`detected dubious ownership`** (the DrvFs files appear owned by another user).
-- **Fix:** `git config --global --add safe.directory /mnt/e/Projects/SaveLocker/.git`. Fetching *source* across the mount is fine — but the **build and test must still run on ext4** (`~/SaveLocker`), never from `/mnt/*`.
-
-## Never `Path.Combine` a path you are about to persist (archives unreachable cross-OS)
-`ArchiveStore.RelativePath` built the store path with `Path.Combine` — and that string is **saved in the DB** as `SaveVersion.ArchivePath`. A **Windows-hosted** server therefore wrote `gameid\versionid.zip`. On Linux a backslash is a legal *filename character*, not a separator, so the lookup misses, `DownloadVersionAsync` returns null, `/download` 404s, and the agent reports **"server has no saves yet; nothing to pull"** — while `status` cheerfully shows a head. It is silent and it looks exactly like data loss.
-- Production was accidentally safe (the server only ever runs in Docker/Linux, so it is self-consistent), but **the dev workflow runs the server on Windows** — so a DB or backup moved from a Windows-hosted server to the Docker one has unreachable archives.
-- **Fixed (2026-07-13):** the persisted path is always `/`-separated (built by interpolation, never `Path.Combine`); `FullPath` accepts either separator so older Windows-written rows still resolve. Found by the Phase 3 cross-OS round-trip.
-- **Rule:** `Path.Combine` is for touching *this* machine's filesystem *now*. Anything that outlives the process — DB column, JSON config, wire DTO — gets a canonical `/`.
-
-## The server-readiness probe must hit an unauthenticated route
-`GET /api/games` looks like the obvious "is it up?" probe but it is an **agent** route: without `X-Api-Key` it answers **401**, so a `curl -sf` / `Invoke-RestMethod` readiness loop never sees success and silently burns its entire timeout (60 s per run in `tests/linux/run-linux-tests.sh`) before carrying on anyway.
-- Use **`/api/admin/status`** — the only route with no auth filter on it.
-
-## A leaked test server poisons every later run
-If a harness spawns the server and then throws *before* the handle reaches its `finally`, the process keeps running — still holding the port **and the state directory**. The next run's `Remove-Item -Force` on the state dir fails silently (files locked), its own server cannot bind, and its readiness probe succeeds **against the stale server**. Every assertion then runs against another run's state, and the resulting conflict looks like a cross-OS hash bug.
-- `crossos.ps1` now kills what it spawned on the timeout path, refuses to start when the port is already in use, and refuses to proceed if it cannot clear the state dir. Prefer failing loudly over asserting against someone else's server.
-
-## `Copy-Item -Recurse src dst` copies *into* dst when dst exists
-It does not overwrite the destination tree — it nests a copy inside it. A leftover target from a previous run silently accumulates (`local-save/expected/...`), and the test then archives and pushes the polluted tree.
-- Always `Remove-Item -Recurse -Force $dst` first.
-
-## Docker DB path on existing deployments
-The server Docker image defaults to `/data/savelocker.db` but existing deployments that were created before the rename may have `/data/localgamesync.db`. If the server fails to find the DB, either rename the file on the unRAID share or set the `Storage__DbPath` env var.
-
-## The agent's local API is a *management* API — don't treat loopback as authentication
-`AgentApiServer` (shared by the Windows tray and the Linux daemon) can re-point this machine at
-another server, re-register it, and change what it syncs. It originally shipped unauthenticated with
-`AllowAnyOrigin`, and returned the machine's server API key from `/api/state` and `/api/config`.
-"It only listens on localhost" is **not** a defence: every process running as that user can reach it,
-and so can any web page the user has open — a page can POST to `http://localhost:5178`, and a DNS
-rebind makes the socket loopback while the `Host` header still says `evil.com`.
-- **Fixed 2026-07-18** (`Decisions.md` §7): 32-byte token in `{configDir}/api-token` (0600) required
-  on every `/api/*` call, Host + Origin validated, no CORS policy at all, key never serialized.
-- **`--lan` was withdrawn.** It bound all of the above to every interface. It now *exits non-zero*
-  rather than being ignored — a silently-accepted flag would leave someone believing they still had
-  remote access. Remote access is an SSH tunnel: `ssh -L 5178:localhost:5178 <user>@<host>`.
-- ⚠️ **Don't "fix" the UI by re-adding CORS.** The bundled UI is same-origin; if it cannot call the
-  API, the cause is a missing token, not a missing CORS header. The token arrives by being injected
-  into `index.html` at serve time — so `index.html` must never be served as a plain static file
-  (the guard rewrites `/index.html` to `/` for exactly this reason).
-- Under `vite dev` the page comes from Vite, not the agent, so the placeholder is never replaced;
-  `vite.config.ts` reads the token off disk and injects the header in the proxy instead.
-
-## The agent is two processes — in-process locks and whole-file writes are not enough
-Autorun keeps the **daemon** alive while Steam starts **`savelocker run -- %command%`** as a second
-process (on Windows: the tray, plus any CLI command). They share `config.json`, `offline-queue.json`,
-`health-events.json` and the temp archive dir. A `SemaphoreSlim` or `lock` does **nothing** here.
-- **The symptom is a conflict, not a crash.** A daemon that loaded `config.json` at startup and later
-  calls `Save()` writes its **stale** copy back, erasing the `LastKnownVersionId` the other process
-  just recorded. The next push presents a stale parent, the server rejects it, and the machine
-  **conflicts with itself** — identical in the dashboard to the genuine two-machine divergence, so it
-  is easy to misdiagnose for a long time. Fixed 2026-07-18 (`Decisions.md` §8).
-- **Use `SaveGameSyncState`, not `Save()`, for per-game sync fields.** It re-reads under the lock and
-  merges. `Save()` is still last-writer-wins and that is fine only for settings a human edits.
-- ⚠️ **Take BOTH locks.** `AgentStateLock` is a `flock`, owned by the *process* — two threads in one
-  process both acquire it and neither blocks. The in-process semaphore is still required. Removing
-  either one leaves a real hole.
-- ⚠️ **A lock timeout deliberately proceeds rather than throwing.** A lock file left by a crashed
-  process must not be able to block syncing forever. Do not "harden" this into a hard failure.
-- **Never give a temp archive a fixed name.** `{gameId}-push.zip` was shared by every process; the
-  first push to finish deleted the other's archive mid-upload. Names carry PID + GUID now.
-- **State lives beside its config file**, not in `AgentConfig.DefaultDir`. With `--config` those
-  differ, and a process resolving the wrong one keeps a private queue nobody ever drains.
-
-## A concurrency test that races identical short-lived processes proves nothing
-The first version of `run-concurrency-tests.ps1` launched four `push` processes at once and asserted
-config integrity. It passed **against the broken code**: process startup dominates, so the write
-windows never overlapped. The damage needs the real shape — a **long-lived process holding state it
-loaded minutes ago** (the daemon) versus a short-lived one. Ordering is then enforced by waiting on
-observable state instead of hoping for a race.
-- Same trap in the queue check: asserting on a game the daemon *watches* proves nothing, because its
-  folder watcher already pulled that game into the daemon's memory. The discriminating case is a game
-  **only** the other process ever touches.
-- **Rule: revert the fix and confirm the test fails.** Both traps above were caught that way, and
-  only that way.
-
-## `dotnet` and `pwsh` look "not installed" in WSL from a non-interactive shell
-`wsl -d Ubuntu-24.04 -- bash -lc 'dotnet --version'` reports **command not found** even though the SDK
-is installed, because `~/.dotnet` and `~/.local/bin` are only added to PATH by the interactive
-profile. It is easy to conclude from this that WSL is unprovisioned and to fall back to
-Windows-only testing — which silently skips every Linux-specific behaviour (`flock`, `0600` modes,
-the launch wrapper, the whole `tests/linux/` harness).
-- Always `export DOTNET_ROOT=$HOME/.dotnet; export PATH=$HOME/.dotnet:$HOME/.local/bin:$PATH` first.
-- Quoting through `wsl.exe -- bash -lc '...'` mangles nested `$( )`. Pipe a heredoc to `bash -s` instead.
-
-## A dirty dev DB fails the enrollment suite in a way that looks like a code regression
-Starting the server without isolated storage and then running `run-enrollment-tests.ps1` gives
-**12/16 failures**, beginning at "mint returns a raw token" — which reads as broken enrollment code.
-It is leftover state (an already-redeemed token, an admin password set by an earlier run).
-- Always give a test server its own `Storage__DbPath` and `Storage__ArchiveRoot`, the way
-  `run-health-tests.ps1` and `run-hardening-tests.ps1` already do. With a clean DB: 16/16.
-
-## A test whose setup silently fails passes VACUOUSLY — assert the setup too
-The new write-through-link and zip-bomb checks in `run-hardening-tests.ps1` all passed on the first
-run **while testing nothing**. The `Invoke-RestMethod` upload that plants the hostile archive was
-404ing inside a bare `catch { }`, so the server had no archive, the pull answered *"server has no
-saves yet"*, and every "the outside file was not overwritten" assertion was trivially true.
-- **The 404 cause:** resolving the game id by matching `name` against `/api/games` returned **two**
-  ids, so `"$server/api/games/$id/upload"` interpolated an array and the route did not match. Take
-  the id from the agent's own `config.json` (`.Games[0].GameId`) — that is the id the agent will
-  actually pull, so upload and pull cannot disagree.
-- **The rule:** every fixture step that must succeed gets its own `Check`. "The hostile archive
-  reached the server" is now an assertion, not an assumption.
-- **And still revert the fix to confirm the test fails.** These checks flip 7 results against pre-fix
-  code, including the one that matters: the file outside the save folder IS overwritten.
-
-## `dotnet build a.csproj b.csproj` does not build both
-Passing two project paths to one `dotnet build` silently does not do what it looks like — the second
-is not built. In WSL this left a **17-minute-stale `SaveLocker.Shared.dll`** in the agent's output,
-so the hardening suite ran against the OLD archive code and reported 7 failures that had already been
-fixed. It reads exactly like the fix not working on Linux.
-- Build each project in its own `dotnet build` invocation, and when a result is surprising, check the
-  output DLL's timestamp before debugging the code.
-
-## The vault can point at a task file that no longer exists
-`CONTEXT.md` and `Backlog.md` both named `tasks/linux-kb-articles.md` as the next action for days
-after that file was **deleted** (in `ff2c375`), and both listed articles — `deck-supported-games`,
-the four §4 edits — that had **already shipped**. Starting from either doc would have meant
-rewriting finished work.
-- **Check the filesystem before trusting a task pointer.** `ls web/src/help/` answered in one command
-  what the vault got wrong in two files.
-- A deleted task file is recoverable and worth recovering: `git log --all -- <path>` then
-  `git show <commit>:<path>`. That is what established the real remaining scope here.
-- The same class of staleness put `v0.1.7` in `CONTEXT.md` while `v0.1.8` was tagged. **This vault
-  drifts; verify claims against the repo.**
-
-## `npm run gen:api` in `agent-ui/` targets a REAL running agent
-`agent-ui/package.json` hardcodes `openapi-typescript http://localhost:5178/openapi/v1.json`, and
-**:5178 is the port an installed agent already listens on.** On a machine where SaveLocker is
-installed (i.e. the maintainer's), regenerating agent-UI types silently reads the contract from the
-*installed release build* instead of the dev build you just compiled.
-- The symptom is not an error. The new schemas are simply **absent** from `src/api-types.ts`, and
-  `tsc` then fails on the types you expected to exist — which looks like the endpoint being wrong.
-- The local-API test suite already avoids this by using **:5188**; do the same here. Start the dev
-  daemon on a free port and generate against it:
-  ```
-  dotnet src/Agent.Linux/bin/Debug/net10.0/savelocker.dll daemon --port 5190 --config <scratch>/config.json
-  cd agent-ui && npx openapi-typescript http://localhost:5190/openapi/v1.json -o src/api-types.ts
-  ```
-- Before believing a regeneration, grep the output for a symbol you just added.
-- Related: a running agent/daemon also **locks the build output DLLs**. `MSB3027 … locked by ".NET
-  Host (<pid>)"` means a daemon you started for verification is still alive.
-
-## A test suite that passes may never enter the state where the bug lives
-Three of the four bugs found in one afternoon on a real Deck (v0.3.0) were invisible to a **green**
-test suite, each for the same structural reason: the suite never put the system in the state where
-the failure was possible.
-
-| Bug | The state the suite never entered |
-|---|---|
-| `savelocker status` 401s | The server had **no admin password**, and `AdminPasswordFilter` passes everything through in that state. The command called an admin route with a machine key and passed anyway. |
-| `install.sh` kills the agent (SIGBUS) and exits 0 | Installs went into a **throwaway HOME with nothing running**. The failure needs a *running* daemon holding the files. |
-| 3 agent-suite checks "fail" | `.verify/` was reused while the server DB was fresh — the [documented pairing](#integration-suite-clear-the-server-db-and-verify-together) above. The inverse of the same blind spot: state that *was* carried over. |
-
-- **Ask what state the suite never creates.** "No admin password", "nothing running", "empty
-  directory" and "first run" are the usual suspects — all of them are the *easy* setup, which is
-  exactly why they end up hardcoded into a harness.
-- Every one of these was fixed with a test that **enters that state**: set a password and re-run;
-  install over a live daemon; reset both halves of the state pair. Each was verified to FAIL against
-  the pre-fix code — a regression test that never failed proves nothing.
-- Corollary for this project: **the agent has a state the server never sees** (a running process, a
-  populated `$HOME`, a stale Proton prefix). CI exercises the wire protocol well and the agent's
-  *environment* poorly. Real hardware is still finding things CI cannot.
-
-## `savelocker ui` needs an explicit RID, or SDL "isn't applicable"
-`SaveLocker.Agent.Linux.csproj` is deliberately **RID-agnostic** so it builds and tests on any dev
-box. But a RID-agnostic build does **not** map `runtimes/linux-x64/native/` into `deps.json`, so the
-host never resolves the bundled `libSDL2-2.0.so` — even though the file is sitting right there in
-the output directory.
-
-Silk reports that as:
-
-```
-System.PlatformNotSupportedException: Couldn't find a suitable window platform.
-  (SdlPlatform - not applicable)
-```
-
-which reads like *"no display"* and sends you hunting X11/Wayland packages that are already
-installed. It actually means *"the native library never loaded"*.
-
-- **Dev runs must pass `-r linux-x64 --no-self-contained`.** `tests/linux/run-ui-wslg.sh` does.
-- Releases are unaffected: `packaging/linux/build-linux.sh` publishes self-contained for linux-x64,
-  which resolves natives correctly. This bites **only** the dev loop.
-
-## SDL's error string is sticky, and Silk reads it after a void call
-`SDL_GetError()` is never cleared on success — only overwritten by the next failure. Silk's
-`SdlContext.FramebufferSize` calls `SDL_GL_GetDrawableSize` (which returns `void`) and then decides
-whether it failed by reading `SDL_GetError`. So **any stale error from an earlier harmless probe**
-surfaces as a fatal, entirely unrelated exception on the first rendered frame:
-
-```
-Silk.NET.SDL.SdlException: That operation is not supported
-   at Silk.NET.SDL.SdlContext.get_FramebufferSize()
-   at ImGuiController.Update(Single deltaSeconds)
-```
-
-`UiApp.OnRender` clears it every frame before `_controller.Update`. Surfaced under WSLg; the Deck
-happened not to leave an error behind, which is exactly why it went unnoticed through Phase 3.
-
-## WSL interop injects the Windows PATH — quote it or the shell breaks
-Inside WSL, `$PATH` inherits the Windows PATH, which is full of spaces and parentheses
-(`/mnt/c/Program Files (x86)/...`). An unquoted re-export is a syntax error:
-
-```sh
-export PATH=$DOTNET_ROOT:$HOME/.local/bin:$PATH     # bash: syntax error near unexpected token `('
-export PATH="$DOTNET_ROOT:$HOME/.local/bin:$PATH"   # correct
-```
-
-Also: invoking `wsl ... bash /home/...` **from Git Bash** mangles the Linux path into
-`C:/Program Files/Git/home/...`. Drive WSL from PowerShell, or set `MSYS_NO_PATHCONV=1`.
-
-## ImGui child windows silently ignore WindowPadding
-`PushStyleVar(ImGuiStyleVar.WindowPadding, ...)` before `BeginChild` does **nothing** unless the
-child has a border or `ImGuiChildFlags.AlwaysUseWindowPadding`. Childs without a border default to
-zero padding regardless of the style stack.
-
-Symptom in the Deck UI: every shell region (header, rail, content, hint bar) rendered flush to the
-window edges — stat tiles ended exactly at 1280 px, the server chip and version string were clipped
-by a few characters. It looks like an off-by-one in the width maths, which is where the time goes.
-
-**If content is touching a window edge, check this flag before recomputing any widths.**
-
-## ImGui's style.Alpha does not reach hand-painted widgets
-`PushStyleVar(ImGuiStyleVar.Alpha, x)` is applied by ImGui *inside its own widget code*, via
-`GetColorU32`. Anything drawn straight onto an `ImDrawList` with an explicit packed colour bypasses
-that entirely.
-
-The Deck UI paints almost every widget by hand (`Ui/Widgets.cs`, `Ui/Icons.cs`), so a fade applied
-this way silently did nothing to the parts of the screen that matter — the chrome dimmed, the
-content did not. The fix is that `Widgets.U32` multiplies the incoming alpha by
-`ImGui.GetStyle().Alpha`.
-
-**Any new hand-painted colour must go through `Widgets.U32`**, never
-`ImGui.ColorConvertFloat4ToU32` directly, or it will refuse to fade with everything around it.
-
-## ImGui.NET's binding omits the internal API its own native library exports
-`ImGui.NET.dll` binds only `igSetKeyboardFocusHere` / `igSetItemDefaultFocus` / `igSetWindowFocus`,
-so there appears to be no way to place the nav cursor directly. There is: the `libcimgui.so` the same
-package ships **exports the whole `imgui_internal` surface** — `igSetFocusID`, `igSetNavID`,
-`igFocusWindow`, `igFindWindowByName`, `igNavMoveRequestSubmit` and the rest — verified present in
-both 1.90.8.1 and 1.91.6.1. `[DllImport("cimgui")]` reaches them, reusing the already-loaded module.
-
-This cost two prior attempts at the Deck UI's navigation, which spent themselves working around a
-primitive that was there all along. `Ui/ImGuiInternal.cs` binds the four that are needed, behind a
-symbol probe that degrades to the old path rather than crashing if a future package drops them.
-
-**Related trap:** `SetKeyboardFocusHere` is a *tabbing* request and only acts inside the active focus
-scope (ocornut/imgui#7226). It cannot move the cursor out of a different child window, whatever you
-do around it. Use `igSetFocusID` immediately after the target item is submitted.
-
-## NavFlattened on a SCROLLING child is not supported, and fails per-screen
-Upstream documents `NavFlattened` as "only use on child that have no scrolling". Every flattened
-child in the Deck UI was a fixed-height scrolling one, which produced navigation that worked on some
-screens and not others — the signature of this bug, and the reason it looked like several unrelated
-faults instead of one.
-
-## A child window without Border or AlwaysUseWindowPadding has ZERO padding
-ImGui only applies `style.WindowPadding` to a child that has `ImGuiChildFlags.Border` or
-`AlwaysUseWindowPadding`. Without either, content starts flush against the child's edge — and the
-child clips its contents, so anything drawn *outside* a widget's rect is cut off.
-
-That silently clipped the Deck UI's focus rings: `Widgets.FocusRing` draws outside the widget, and
-`ListRow` / `CheckRow` size themselves to `GetContentRegionAvail().X`, so a full-width row in a
-zero-padding child touched both edges and lost its ring entirely. See
-`Theme.Layout.FocusClearance` — any container hosting focusable widgets must reserve it.
-
-## Do not upgrade ImGui.NET expecting a navigation fix
-1.91.6.1 was tried and reverted (2026-07-25). It restores and runs fine — Silk.NET 2.22's controller
-is runtime-compatible and the API renames are mechanical — but it did **not** fix the dead Left and it
-**broke the Right cross** that works on 1.90.8.
-
-This is not a blocker on anything: the Deck UI's navigation was fixed on **1.90.8.1**, using the
-internal API that package's own native library already exports (see above). Nothing outstanding needs
-a newer ImGui. If you upgrade for some other reason, re-run the nav matrix in
-`logs/2026-07-25_deck-ui-navigation-fix.md` — Right out of the rail is the case that regressed.
+﻿# Gotchas
+
+Operating traps for Claude/an AI working this repo — not a history of bugs already shipped and
+fixed. If it's a one-time incident with no recurring workflow risk, it belongs in `logs/`, not
+here.
+
+## Builds
+- **Always `--no-incremental`.** Stale DLL reuse has masked changes before (new endpoints 404
+  at runtime). Stop the running agent/server first — they lock the DLLs.
+- **`dotnet build a.csproj b.csproj` does not build both** — the second is silently skipped.
+  Build each project in its own invocation. If a fix "doesn't seem to apply," check the output
+  DLL's timestamp before debugging the code.
+- **The SDK is pinned in `global.json`** (`rollForward: latestFeature`) — `dotnet build` silently
+  uses the newest installed SDK otherwise. Bump the pin and the Dockerfile's `sdk:`/`aspnet:` tags
+  **together**, or the Docker build fails (loudly, by design).
+- **`SQLitePCLRaw.bundle_e_sqlite3` is pinned to 3.x on purpose** (CVE-2025-6965 in the 2.x the
+  EF Core package resolves by default). Do not "simplify" the pin away. Drop it only once EF Core
+  resolves 3.x by itself.
+- **`dotnet-ef` must match the EF Core major.** A stale global tool can write a migration the
+  runtime rejects, and `migrations remove` as a recovery reflex can delete the *wrong* (already
+  committed) migration. `dotnet tool update --global dotnet-ef --version "10.*"` first; check
+  `git status src/Server/Migrations/` before and after any `migrations remove`.
+- **PBKDF2 params (`Tokens.HashPassword`) are part of the on-disk format**, not recorded in it —
+  changing iteration count/salt/hash size invalidates every stored password. `tests/verify-password-compat.ps1`
+  guards this; keep a `v1` verification path if it ever moves.
+
+## Paths
+- **Dev storage is `localstate/`, never `data/`** — Windows is case-insensitive, so
+  `src/Server/Data/` (source) and a runtime `data/` collide. `Remove-Item data -Recurse` once
+  deleted `Entities.cs`/`AppDbContext.cs`.
+- **`dotnet` may be missing from an open shell** right after a winget install — open a new shell,
+  or prepend `"$env:ProgramFiles\dotnet"` to `$env:Path`.
+- **The agent is a WinExe** — launching the installed `.exe` from a shell shows no stdout/stderr.
+  Redirect to a file, or read `%PROGRAMDATA%\SaveLocker\agent.log` (`SaveLocker.Agent.exe log`
+  tails it).
+- **`npm run gen:api` in `agent-ui/` hardcodes `:5178`** — the port an *installed* agent already
+  listens on. On the maintainer's own machine this silently regenerates types from the installed
+  release build, not the dev build just compiled. Start a dev daemon on a free port (e.g. 5190)
+  and generate against that; grep the output for a symbol you just added before trusting it. A
+  running daemon also locks the build output DLLs (`MSB3027 … locked by ".NET Host (pid)"`).
+
+## PowerShell / shell quoting
+- **PowerShell escapes with a backtick, not a backslash.** `"...\$HOME..."` does not escape
+  `$HOME` in PowerShell — it expands PowerShell's own `$HOME`, backslashes get eaten, and bash
+  receives garbage. Pass WSL commands in a **single-quoted** PowerShell string, or write a `.sh`
+  file and run it — never hand-quote a multi-token command inline.
+- **`Invoke-RestMethod` does not unroll a JSON array the same way on 5.1 vs pwsh 7.** Windows
+  PowerShell 5.1 hands back a JSON array as a single wrapped item — `.Count` reads 1, every filter
+  matches nothing. Go through `ConvertFrom-Json` instead, which unrolls identically on both hosts.
+  If a list-endpoint filter mysteriously matches zero rows, dump the raw payload before touching
+  server code.
+- **`$x.Count` on a single object can silently read a DTO field named `count`** (property lookup
+  is case-insensitive). Force a real collection: `@($x | Where-Object {...}).Length`.
+- **Under `$ErrorActionPreference="Stop"`, native stderr terminates the script** — an expected
+  warning (e.g. a CONFLICT message) aborts a test run. Use `Continue` and parse output text.
+- **`Copy-Item -Recurse src dst` copies *into* dst when dst exists** rather than overwriting —
+  always `Remove-Item -Recurse -Force $dst` first.
+- **`VAR=x cmd` (bash) does not export `VAR`** to `cmd` unless exported — a prefix assignment
+  applies only to a bare command, not to `A=1 out=$(cmd)`. `export` it, run, `unset`.
+- **WSL inherits the Windows `PATH`**, full of unquoted spaces/parens — re-exporting it unquoted
+  is a bash syntax error. Always quote: `export PATH="$DOTNET_ROOT:$HOME/.local/bin:$PATH"`.
+  Driving WSL from Git Bash also mangles Linux paths — drive it from PowerShell, or set
+  `MSYS_NO_PATHCONV=1`.
+- **`git fetch /mnt/e/...` from WSL fails with "dubious ownership.**"
+  `git config --global --add safe.directory /mnt/e/Projects/SaveLocker/.git` fixes fetching the
+  source — but build/test must still run on ext4 (`~/SaveLocker`), never `/mnt/*`.
+
+## WSL environment
+- **`dotnet`/`pwsh` look uninstalled from a non-interactive shell** (`wsl -d ... -- bash -lc`) —
+  only the interactive profile adds `~/.dotnet`/`~/.local/bin` to PATH. Export both explicitly
+  first; don't conclude WSL is unprovisioned and fall back to Windows-only testing (which skips
+  every Linux-specific behavior).
+- **Shell scripts must be LF.** Copying a `.sh` from the Windows working tree (CRLF) straight into
+  WSL gives bash `bad interpreter: ...^M`. `.gitattributes` pins `*.sh`/`*.service` to `eol=lf` for
+  committed files — strip `\r` by hand (`sed -i 's/\r$//'`) when hand-copying for a local test.
+- **`savelocker ui` needs an explicit RID** (`-r linux-x64 --no-self-contained`) in dev, or Silk
+  reports `SdlPlatform - not applicable`, which reads like "no display" but means the native
+  `libSDL2` never got mapped into `deps.json`. `tests/linux/run-ui-wslg.sh` already does this.
+  Releases (self-contained publish) are unaffected.
+
+## Testing
+- **Clear the server DB and `.verify/` together**, never one alone — `run-agent-tests.ps1` reuses
+  whatever state both sides hold. Clearing only one produces confident, unrelated-looking
+  failures (stale save files vs. lost version lineage). Isolating just the server's `Storage__DbPath`
+  counts as "cleared the DB half" — still hits the same trap if `.verify/` is stale.
+- **Give every test server its own `Storage__DbPath`/`Storage__ArchiveRoot`.** A dirty dev DB
+  fails `run-enrollment-tests.ps1` in a way that reads like broken enrollment code (12/16
+  failures starting at "mint returns a raw token").
+- **Running the server DLL directly ignores `launchSettings.json`** — binds `:5000` in
+  Production config instead of `:5179`/Development. A script that starts its own server must pass
+  `ASPNETCORE_URLS` and `ASPNETCORE_ENVIRONMENT`/`Storage__*` explicitly; a test that restarts a
+  server must own it (its own port + state dir).
+- **The readiness probe must hit an unauthenticated route** — `/api/games` 401s without an API
+  key, so a naive `curl -sf` loop burns its whole timeout. Use `/api/admin/status`.
+- **A leaked test server (thrown before its `finally`) poisons every later run** — it keeps the
+  port and state dir, the next run's cleanup fails silently, and its probe succeeds against the
+  *stale* server. Prefer failing loudly (refuse to start if the port's in use or the state dir
+  won't clear) over asserting against someone else's server.
+- **A test whose setup silently fails passes vacuously.** Wrap only the truly optional step in
+  `try/catch`; give every "this must succeed" fixture step its own assertion. When a bug is fixed,
+  **revert the fix and confirm the test actually fails** — that's the only proof it tests anything.
+- **A green test may never enter the state where the bug lives.** "No admin password set,"
+  "nothing running," "first run," "empty directory" are the easy setups a harness defaults to —
+  and exactly the states real bugs hide outside of. Ask what state the suite never creates.
+- **A concurrency test racing identical short-lived processes proves nothing** — process startup
+  dominates and write windows never overlap. The discriminating shape is a long-lived process
+  holding stale in-memory state vs. a short-lived one; order by waiting on observable state, not
+  by hoping for a race.
+
+## ImGui / Deck UI (`Ui/*`, `savelocker ui`)
+- Drive gamepad nav from **`ButtonDown` events**, edge-triggered and queued — feeding held-button
+  state every frame causes runaway auto-repeat; naive per-frame `.Pressed` polling drops fast taps.
+- **Silk's per-frame `.Pressed` poll stays false unless something subscribes to `ButtonDown`/`ButtonUp`** —
+  subscribe (even a no-op handler) or the poll is dead, even with a gamepad correctly detected.
+- **ImGui.NET's binding omits the `imgui_internal` API** its own native `libcimgui`/`cimgui.dll`
+  already exports (`igSetFocusID`, `igSetNavID`, `igFocusWindow`, …) — `[DllImport("cimgui")]`
+  reaches them directly rather than needing a workaround. `SetKeyboardFocusHere` is tab-scoped and
+  cannot move focus out of a different child window; use `igSetFocusID` instead.
+- **`NavFlattened` does not support a scrolling child** (upstream-documented) — symptom is nav
+  that works on some screens and not others, which reads like several unrelated bugs.
+- **A child window needs `Border` or `AlwaysUseWindowPadding`**, or `WindowPadding` is silently
+  zero and content drawn outside a widget's rect (e.g. focus rings) gets clipped at the edge.
+- **`style.Alpha` only reaches ImGui's own widgets**, not anything drawn straight onto an
+  `ImDrawList` with a packed color. Hand-painted widgets must route through a helper
+  (`Widgets.U32`) that multiplies by `ImGui.GetStyle().Alpha`, or fades do nothing to them.
+- **`SDL_GetError()` is sticky** — never cleared on success. A void SDL call that checks the
+  error string afterward (e.g. `SDL_GL_GetDrawableSize`) can surface a stale, unrelated error as a
+  fatal exception. Clear it every frame before use.
+- **Don't upgrade ImGui.NET expecting a nav fix** — 1.91.6.1 was tried and reverted 2026-07-25;
+  it didn't fix dead-Left and broke the working Right-cross. The nav fix lives in the internal-API
+  binding above, on 1.90.8.1, and needs no newer package.
+
+## Test harness
+- **Start the dev server with `ASPNETCORE_ENVIRONMENT=Development`**, or it never reads
+  `appsettings.Development.json` and opens `/data/savelocker.db` (i.e. `E:\data\...`) instead of
+  `src/Server/localstate`. That stray DB carries a stale `__EFMigrationsLock`, so the server hangs
+  in migration forever, and every server-dependent check in `run-agent-tests.ps1` fails as though
+  the agent were broken. `cd src/Server && dotnet run` gets this right; running the built DLL
+  directly does not.
+- **`run-agent-tests.ps1` is not idempotent against a dirty server DB.** It uses fixed game names
+  (`SyncGame`), so a second run inherits the first run's versions and conflicts and fails ~16
+  checks. Point the server at a throwaway `Storage__DbPath` for a clean run.
+
+## Vault hygiene
+- **A vault doc can point at a task file, or a version, that no longer exists.** Check the
+  filesystem/`git tag -l` before trusting a pointer in `CONTEXT.md`/`Backlog.md` — this vault has
+  drifted before (a deleted task still listed as next action; a stale version number).
