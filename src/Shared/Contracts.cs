@@ -184,7 +184,10 @@ public enum CommandStatus
 {
     /// <summary>Queued, not yet handed to the agent.</summary>
     Pending,
-    /// <summary>Handed to the agent on a poll; awaiting its result.</summary>
+    /// <summary>
+    /// Handed to the agent on a poll; awaiting its result. This is a <b>lease</b>, not a terminal
+    /// state — once it expires unacknowledged the command becomes claimable again.
+    /// </summary>
     Dispatched,
     Done,
     Failed
@@ -203,7 +206,12 @@ public record AgentCommandDto(
     CommandStatus Status,
     DateTime CreatedAt,
     DateTime? CompletedAt,
-    string? Result);
+    string? Result,
+    /// <summary>How many times this command has been handed to an agent. &gt;1 means an earlier
+    /// claim was never acknowledged and the command was reclaimed.</summary>
+    int ClaimCount = 0,
+    /// <summary>When the current claim stops being exclusive; null unless awaiting a result.</summary>
+    DateTime? LeaseExpiresAt = null);
 
 public record CommandResultRequest(CommandStatus Status, string? Result);
 

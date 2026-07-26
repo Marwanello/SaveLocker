@@ -43,7 +43,7 @@ public static class Mapping
 
     public static AgentCommandDto ToDto(this AgentCommand c) =>
         new(c.Id, c.MachineId, c.Machine?.Name, c.GameId, c.Type, c.Force,
-            c.Status, c.CreatedAt, c.CompletedAt, c.Result);
+            c.Status, c.CreatedAt, c.CompletedAt, c.Result, c.ClaimCount, c.LeaseExpiresAt);
 
     public static ConflictDto ToDto(this ConflictFlag c, bool escalated = false) =>
         new(c.Id, c.GameId, c.VersionAId, c.VersionBId, c.Status, c.CreatedAt,

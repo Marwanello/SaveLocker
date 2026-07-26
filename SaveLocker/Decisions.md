@@ -86,6 +86,14 @@ session can judge an edge case, not to reopen the choice.
   save root (the root itself is followed — it's user-chosen; paths *inside* the archive are not).
   Size caps (100k entries / 2 GB), checked against both declared and actual bytes. A refused
   restore is reported to the console as an event.
+- **Command delivery is at-least-once, under a visibility lease.** A claimed `AgentCommand` is
+  Dispatched with a `LeaseExpiresAt` + `ClaimToken`, written by one atomic UPDATE so two pollers
+  sharing a machine identity cannot both receive it; when the lease expires unacknowledged the
+  command is claimable again (`ClaimCount` records the redelivery, and a reclaim is audited).
+  At-most-once was the old behaviour and it silently lost any command whose agent died between the
+  poll and the result. Retrying is safe for every type — Pull re-reads the head, Push re-hashes and
+  the server answers `NoChange` on identical content, Sync is both, Scan only reads — so a lost
+  request is the worse failure. Terminal states stick: a late duplicate result is a no-op.
 - **Conflict pressure caps at 3 rejected payloads**, then further pushes report the condition
   without re-uploading. 6-hour overdue threshold surfaces stale conflicts to a connected agent.
   "Keep both" doesn't create two heads — the chosen snapshot becomes Latest, both conflicting

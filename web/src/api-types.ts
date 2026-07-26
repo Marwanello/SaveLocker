@@ -2277,6 +2277,13 @@ export interface components {
             /** Format: date-time */
             completedAt: null | string;
             result: null | string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            claimCount: number;
+            /** Format: date-time */
+            leaseExpiresAt?: null | string;
         };
         /** @enum {unknown} */
         AgentCommandType: "Pull" | "Push" | "Sync" | "Scan";

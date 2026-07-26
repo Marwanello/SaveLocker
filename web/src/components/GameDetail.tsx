@@ -15,6 +15,19 @@ const fmtSize = (n: number) =>
     : n < 1024 * 1024 ? (n / 1024).toFixed(1) + ' KB'
       : (n / (1024 * 1024)).toFixed(2) + ' MB';
 
+/**
+ * What a command with no result yet is actually waiting for. "Dispatched" used to be a dead end in
+ * the UI as much as in the data: an agent that never answered left the row saying nothing forever.
+ * Delivery is leased now, so the honest answer is either "an agent has it" or "its claim lapsed and
+ * the next poll takes it again".
+ */
+const commandWaitText = (c: Command) => {
+  if (c.status === 'Pending') return 'awaiting next poll…';
+  if (c.status !== 'Dispatched') return '—';
+  const lapsed = c.leaseExpiresAt && new Date(asUtc(c.leaseExpiresAt)) < new Date();
+  return lapsed ? 'no reply — will be retried on the next poll' : 'running on the agent…';
+};
+
 interface Props {
   summary: GameSummary;
   machines: Machine[];
@@ -686,9 +699,12 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                         ? <span style={{ color: '#f4a60d' }}>Failed</span>
                         : <span style={{ color: '#8b9aaa' }}>{c.status}</span>
                     }
+                    {c.claimCount > 1 && (
+                      <span style={{ color: '#f4a60d', fontWeight: 400 }}> · retried ×{c.claimCount}</span>
+                    )}
                   </td>
                   <td style={{ padding: '11px 18px', fontSize: 11.5, color: '#8b9aaa', maxWidth: 340, wordBreak: 'break-word', lineHeight: 1.6 }}>
-                    {c.result || (c.status === 'Pending' ? 'awaiting next poll…' : '—')}
+                    {c.result || commandWaitText(c)}
                   </td>
                 </tr>
               ))}

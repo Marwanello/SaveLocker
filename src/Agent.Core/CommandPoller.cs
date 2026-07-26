@@ -340,17 +340,24 @@ public sealed class CommandPoller : IDisposable
         var commands = await _api().GetAgentCommandsAsync();
         foreach (var cmd in commands)
         {
+            string result;
             try
             {
-                var result = await ExecuteAsync(cmd);
-                await _api().ReportCommandAsync(cmd.Id, CommandStatus.Done, result);
-                _notify(result);
+                result = await ExecuteAsync(cmd);
             }
             catch (Exception ex)
             {
                 await SafeReportFailure(cmd.Id, ex.Message);
                 _notify($"{cmd.Type} (from dashboard) failed: {ex.Message}");
+                continue;
             }
+
+            // Separate from the execution try/catch on purpose: the work is already done, so a
+            // report that cannot be delivered must not be turned into "the command failed". The
+            // server reclaims it when the lease expires and it runs again harmlessly.
+            try { await _api().ReportCommandAsync(cmd.Id, CommandStatus.Done, result); }
+            catch (Exception ex) { AgentLogger.LogException("CommandPoller.ReportSuccess", ex); }
+            _notify(result);
         }
     }
 
@@ -422,10 +429,17 @@ public sealed class CommandPoller : IDisposable
             !string.IsNullOrEmpty(g.SaveDirectory) &&
             (gameId is null || g.GameId == gameId));
 
+    /// <summary>
+    /// Report a failure without letting the report itself become the failure. If this cannot reach
+    /// the server the command keeps its claim until the server's visibility lease expires, and is
+    /// then handed out again — the server treats delivery as at-least-once, so an unacknowledged
+    /// command comes back rather than being lost. Re-running any command type is safe (see
+    /// <c>SyncService.DequeueCommandsAsync</c>).
+    /// </summary>
     private async Task SafeReportFailure(Guid commandId, string message)
     {
         try { await _api().ReportCommandAsync(commandId, CommandStatus.Failed, message); }
-        catch { /* will be retried implicitly only if still pending; ignore */ }
+        catch (Exception ex) { AgentLogger.LogException("CommandPoller.SafeReportFailure", ex); }
     }
 
     public void Dispose() => _timer.Dispose();

@@ -291,13 +291,116 @@ try {
         (@(Invoke-Sqlite "SELECT on_delete FROM pragma_foreign_key_list('SaveVersions') WHERE [table] = 'Machines'")[0] -eq "SET NULL")
     $unnamed = @(Invoke-Sqlite "SELECT COUNT(*) FROM SaveVersions WHERE MachineName = ''")[0]
     Check "every version can name its uploader"         ($unnamed -eq "0")
+
+    # =====================================================================================
+    # CS-02: command delivery is crash-safe and single-claim
+    # =====================================================================================
+    # Driven straight through the HTTP API with a machine key rather than through the agent: the
+    # failures being reproduced are "the agent never came back" and "two pollers claimed at once",
+    # neither of which a cooperating agent process can be made to perform on cue.
+    Write-Host ""
+    Write-Host "==== CS-02: a claimed command must not be lost or double-claimed ===="
+
+    # Own database, and a lease short enough to wait out. LeaseMinutes is config, so this is the
+    # real expiry path, not a test-only shortcut.
+    $env:Storage__DbPath        = Join-Path $scratch "commands.db"
+    $env:Commands__LeaseMinutes = "0.05"          # 3 seconds
+    $leaseWait = 5
+    $srv = Start-TestServer $serverDll "commands"
+
+    $reg = Invoke-RestMethod "$url/api/machines/register" -Method Post -ContentType "application/json" `
+        -Body (@{ name = "CmdPC-$stamp" } | ConvertTo-Json)
+    $agentHdr = @{ "X-Api-Key" = $reg.apiKey }
+    $cmdGame  = Invoke-RestMethod "$url/api/games" -Method Post -ContentType "application/json" `
+        -Body (@{ name = "CmdGame-$stamp" } | ConvertTo-Json)
+
+    function Queue-Command($type) {
+        return Invoke-RestMethod "$url/api/commands" -Method Post -ContentType "application/json" `
+            -Body (@{ machineId = $reg.machineId; gameId = $cmdGame.id; type = $type; force = $false } | ConvertTo-Json)
+    }
+    function Claim-Commands {
+        return @(((Invoke-WebRequest "$url/api/agent/commands" -Headers $agentHdr -UseBasicParsing).Content | ConvertFrom-Json))
+    }
+    function Report-Command($id, $status, $result) {
+        Invoke-RestMethod "$url/api/agent/commands/$id/result" -Method Post -Headers $agentHdr `
+            -ContentType "application/json" -Body (@{ status = $status; result = $result } | ConvertTo-Json)
+    }
+    function Admin-Command($id) {
+        return @(Get-Json "/api/commands" | Where-Object { $_.id -eq $id })[0]
+    }
+
+    # ---- 1. Crash after the GET, before execution ----
+    $c1 = Queue-Command "Pull"
+    $claim1 = Claim-Commands
+    Check "a queued command is delivered"            (@($claim1 | Where-Object { $_.id -eq $c1.id }).Count -eq 1)
+    Check "delivery records the first claim"         ((Admin-Command $c1.id).claimCount -eq 1)
+
+    # The agent has it and has not answered: a second poll inside the lease must not run it twice.
+    Check "an in-flight command is not re-delivered"  (@(Claim-Commands | Where-Object { $_.id -eq $c1.id }).Count -eq 0)
+
+    Start-Sleep -Seconds $leaseWait
+    $reclaim = Claim-Commands
+    Check "an unacknowledged command comes back after its lease" (@($reclaim | Where-Object { $_.id -eq $c1.id }).Count -eq 1)
+    $c1After = Admin-Command $c1.id
+    Check "the reclaim is visible in the command list"           ($c1After.claimCount -eq 2)
+    Check "the reclaimed command is still not Done/Failed"       ($c1After.status -eq "Dispatched")
+    Check "the reclaim is audited" `
+        (@(Get-Json "/api/audit?limit=200" | Where-Object { $_.action -eq "command.reclaim" }).Count -ge 1)
+
+    # ---- 2. Execution succeeded but the result POST was lost ----
+    # The retry runs the command again (safe for every type) and reports it. Reporting twice must be
+    # a no-op, not a reopened command.
+    Report-Command $c1.id "Done" "pulled 1 game" | Out-Null
+    $done = Admin-Command $c1.id
+    Check "reporting a reclaimed command completes it" ($done.status -eq "Done")
+    Check "completion clears the lease"                ($null -eq $done.leaseExpiresAt)
+
+    $lateOk = $false
+    try { Report-Command $c1.id "Failed" "late duplicate report" | Out-Null; $lateOk = $true } catch { }
+    $stillDone = Admin-Command $c1.id
+    Check "a late duplicate report is accepted"         $lateOk
+    Check "a late report does not reopen a done command" ($stillDone.status -eq "Done" -and $stillDone.result -eq "pulled 1 game")
+
+    Start-Sleep -Seconds $leaseWait
+    Check "a completed command never comes back"        (@(Claim-Commands | Where-Object { $_.id -eq $c1.id }).Count -eq 0)
+
+    # ---- 3. Two simultaneous polls with one machine identity ----
+    # Both jobs spin until a shared wall-clock instant so the two GETs really do overlap; a
+    # sequential pair would pass even against the old read-then-update.
+    $c2 = Queue-Command "Push"
+    $startAt = (Get-Date).AddSeconds(3).ToUniversalTime().Ticks
+    $racer = {
+        param($u, $key, $at)
+        while ([DateTime]::UtcNow.Ticks -lt $at) { }
+        try {
+            ((Invoke-WebRequest "$u/api/agent/commands" -Headers @{ "X-Api-Key" = $key } -UseBasicParsing).Content)
+        } catch { "ERROR: $($_.Exception.Message)" }
+    }
+    $jobs = 1..2 | ForEach-Object { Start-Job -ScriptBlock $racer -ArgumentList $url, $reg.apiKey, $startAt }
+    $bodies = $jobs | Wait-Job -Timeout 60 | Receive-Job
+    $jobs | Remove-Job -Force
+    $winners = @($bodies | Where-Object { $_ -like "*$($c2.id)*" })
+    Check "two simultaneous polls: no request errored"  (@($bodies | Where-Object { $_ -like "ERROR:*" }).Count -eq 0)
+    Check "two simultaneous polls: exactly one claim"   ($winners.Count -eq 1)
+    Check "the raced command was claimed exactly once"  ((Admin-Command $c2.id).claimCount -eq 1)
+
+    # ---- 4. Explicit failure is terminal ----
+    Report-Command $c2.id "Failed" "disk full" | Out-Null
+    $failed = Admin-Command $c2.id
+    Check "an explicit failure is recorded"             ($failed.status -eq "Failed" -and $failed.result -eq "disk full")
+    Start-Sleep -Seconds $leaseWait
+    Check "a failed command is not retried forever"     (@(Claim-Commands | Where-Object { $_.id -eq $c2.id }).Count -eq 0)
+
+    Stop-TestServer $srv
 }
 finally {
     foreach ($p in $script:servers) { Stop-TestServer $p }
     git worktree remove --force $oldWt 2>&1 | Out-Null
     git worktree prune
     Remove-Item Env:ASPNETCORE_URLS, Env:Storage__DbPath, Env:Storage__ArchiveRoot, `
-        Env:Backup__Enabled, Env:Logging__EventLog__LogLevel__Default -ErrorAction SilentlyContinue
+        Env:Backup__Enabled, Env:Logging__EventLog__LogLevel__Default, Env:Commands__LeaseMinutes `
+        -ErrorAction SilentlyContinue
+    Get-Job -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host ""

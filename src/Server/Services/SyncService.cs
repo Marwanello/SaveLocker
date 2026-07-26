@@ -15,6 +15,12 @@ public sealed class SyncService
     private readonly ConflictEscalationPolicy _conflictEscalation;
     private readonly TimeSpan _leaseDuration = TimeSpan.FromHours(6);
     private readonly int _retainPerGame;
+    /// <summary>
+    /// How long a claimed command stays invisible to other claims. It has to outlast a real
+    /// execution — a Sync of a large save can run for minutes — while still being short enough that
+    /// a crashed agent's command comes back on its own.
+    /// </summary>
+    private readonly TimeSpan _commandLease;
 
     public SyncService(
         AppDbContext db,
@@ -26,6 +32,8 @@ public sealed class SyncService
         _store = store;
         _conflictEscalation = conflictEscalation;
         _retainPerGame = config.GetValue<int?>("Storage:RetainVersionsPerGame") ?? 10;
+        _commandLease = TimeSpan.FromMinutes(
+            config.GetValue<double?>("Commands:LeaseMinutes") ?? 10);
     }
 
     // ----- Machines -----
@@ -902,33 +910,77 @@ public sealed class SyncService
     }
 
     /// <summary>
-    /// Agent: claim this machine's pending commands, marking them Dispatched so a
-    /// later poll won't run them again before a result is reported.
+    /// Agent: claim this machine's due commands under a <b>visibility lease</b>.
+    /// <para>
+    /// Delivery is at-least-once, not at-most-once. A command is due when it is Pending, or when it
+    /// is Dispatched and its lease has run out unacknowledged — an agent that dies between the poll
+    /// and the result no longer takes the command with it. Completed and failed commands are
+    /// terminal and never reappear.
+    /// </para>
+    /// <para>
+    /// The claim is one atomic UPDATE stamped with a fresh <see cref="AgentCommand.ClaimToken"/>,
+    /// then a read of exactly the rows carrying that token. The old read-then-update could hand the
+    /// same command to two processes polling with one machine identity.
+    /// </para>
+    /// <para>
+    /// Re-delivery is safe for every command type, which is why at-least-once is the right trade
+    /// here: <c>Pull</c> re-reads the current head and either no-ops or reports blocked, <c>Push</c>
+    /// re-hashes the local save and the server answers <c>NoChange</c> when the content already
+    /// matches the head (so a retry cannot manufacture a duplicate version), <c>Sync</c> is those
+    /// two in order, and <c>Scan</c> only reads. No retry turns a safe command into a destructive
+    /// one; losing a requested sync silently, which is what the old code did, is the worse failure.
+    /// </para>
     /// </summary>
     public async Task<List<AgentCommand>> DequeueCommandsAsync(Guid machineId)
     {
-        var pending = await _db.AgentCommands
-            .Where(c => c.MachineId == machineId && c.Status == CommandStatus.Pending)
+        var now = DateTime.UtcNow;
+        var token = Guid.NewGuid();
+
+        var claimed = await _db.AgentCommands
+            .Where(c => c.MachineId == machineId
+                        && (c.Status == CommandStatus.Pending
+                            || (c.Status == CommandStatus.Dispatched
+                                && c.LeaseExpiresAt != null
+                                && c.LeaseExpiresAt < now)))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.Status, CommandStatus.Dispatched)
+                .SetProperty(c => c.DispatchedAt, now)
+                .SetProperty(c => c.LeaseExpiresAt, now + _commandLease)
+                .SetProperty(c => c.ClaimToken, token)
+                .SetProperty(c => c.ClaimCount, c => c.ClaimCount + 1));
+
+        if (claimed == 0) return new List<AgentCommand>();
+
+        var commands = await _db.AgentCommands
+            .Where(c => c.ClaimToken == token)
             .OrderBy(c => c.CreatedAt)
             .ToListAsync();
 
-        foreach (var c in pending)
-        {
-            c.Status = CommandStatus.Dispatched;
-            c.DispatchedAt = DateTime.UtcNow;
-        }
-        if (pending.Count > 0) await _db.SaveChangesAsync();
-        return pending;
+        // A reclaim is the interesting event: it means an earlier delivery was never answered.
+        foreach (var c in commands.Where(c => c.ClaimCount > 1))
+            await Audit(machineId, c.GameId, "command.reclaim",
+                $"{c.Type}: lease expired, delivery #{c.ClaimCount}");
+        await _db.SaveChangesAsync();
+
+        return commands;
     }
 
-    /// <summary>Agent: report a command's outcome.</summary>
+    /// <summary>
+    /// Agent: report a command's outcome. Terminal states stick — a duplicate or late result for a
+    /// command already completed is accepted as a no-op rather than reopening it, so an agent
+    /// retrying a lost POST does not have to reason about what happened server-side.
+    /// </summary>
     public async Task<bool> CompleteCommandAsync(Guid commandId, Guid machineId, CommandStatus status, string? result)
     {
         var cmd = await _db.AgentCommands.FindAsync(commandId);
         if (cmd is null || cmd.MachineId != machineId) return false;
+        if (cmd.Status is CommandStatus.Done or CommandStatus.Failed) return true;
+
         cmd.Status = status == CommandStatus.Failed ? CommandStatus.Failed : CommandStatus.Done;
         cmd.Result = result;
         cmd.CompletedAt = DateTime.UtcNow;
+        cmd.LeaseExpiresAt = null;
+        cmd.ClaimToken = null;
         await Audit(machineId, cmd.GameId, "command.complete", $"{cmd.Type}: {status}");
         await _db.SaveChangesAsync();
         return true;

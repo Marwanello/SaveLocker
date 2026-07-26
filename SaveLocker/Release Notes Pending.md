@@ -88,7 +88,7 @@ one code change, not two.
 
 **Branch:** `linux-agent-bugbounty` (the console fixes are landing on the same branch, not pushed)
 **Source:** `tasks/Console-BugBounty.md` — 13 findings (1 P0, 6 P1, 3 P2, 3 P3)
-**Fixed so far:** the machine-deletion data loss (P0) — `a761f3f`
+**Fixed so far:** the machine-deletion data loss (P0) — `a761f3f`; lost dashboard commands (P1)
 
 **This section changes the server, so the console must be redeployed** (`docker compose pull &&
 docker compose up -d`). The Linux section above explicitly says it does not; do not merge the two
@@ -108,6 +108,12 @@ table. Take the usual backup before upgrading (`/data/backups/` holds the nightl
   totals dropped by the same amount. Existing history is preserved by the upgrade; anything already
   lost this way cannot be recovered from the database, though the archive files themselves were never
   deleted.
+- **A Pull, Push, Sync or Scan sent from the dashboard no longer goes missing.** If the machine
+  dropped off between picking the job up and finishing it — a reboot, a crash, the network going
+  away mid-report — the job sat in "Dispatched" forever and nothing ever ran it or said so. Jobs are
+  now handed out on a time limit: one that is not confirmed goes back in the queue and the next
+  check-in picks it up. The dashboard shows "retried ×2" when that happens, and says whether a job
+  is running on the machine or waiting to be handed out again.
 - **Saves uploaded by a machine you later removed still say who made them.** They are listed as
   "<machine> (deleted)" rather than a blank name, and they stay downloadable, keep their protected
   flag, and can still be chosen when resolving a conflict.

@@ -103,8 +103,8 @@ when the GitHub release is newer than the hosted installer.
 ## Agent command channel (agent-auth)
 Polling model: agent makes outbound requests (~20 s). Each poll also reconciles the game list (adopt new server games, drop deleted ones).
 - `POST /api/agent/games` `{ name, manifestKey?, suggestedSaveDir? }` → `GameDto` — agent enrollment (agent-auth; no admin password required).
-- `GET /api/agent/commands` → `AgentCommandDto[]` — pending commands for the calling machine; claiming them flips each to `Dispatched`.
-- `POST /api/agent/commands/{id}/result` `{ status, result }` → 200 / 404.
+- `GET /api/agent/commands` → `AgentCommandDto[]` — claims the calling machine's due commands under a **visibility lease** (`Commands:LeaseMinutes`, default 10). Due = `Pending`, or `Dispatched` with an expired lease. One atomic claim, so two pollers on one machine identity cannot both get a command; `claimCount > 1` means an earlier delivery went unanswered. Delivery is at-least-once — see `Decisions.md`.
+- `POST /api/agent/commands/{id}/result` `{ status, result }` → 200 / 404. Idempotent: a late or duplicate report for an already-completed command returns 200 without reopening it.
 - `POST /api/agent/path/{gameId}?value={path}` → 200. Agent reports the locally resolved save path.
 - `POST /api/commands` `{ machineId, gameId?, type, force }` → `AgentCommandDto` (dashboard queues a command; `type` = `Pull|Push|Sync|Scan`). *(admin)*
 - `GET /api/commands` → recent `AgentCommandDto[]` (dashboard activity log). *(admin)*
