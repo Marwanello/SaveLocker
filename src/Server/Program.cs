@@ -168,6 +168,10 @@ using (var scope = app.Services.CreateScope())
     db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
 }
 
+// Anything still staged is an upload that died with the process that started it. Swept once at
+// startup, with an age floor so a restart cannot delete an upload another process has in flight.
+app.Services.GetRequiredService<ArchiveStore>().SweepIncoming(TimeSpan.FromHours(1));
+
 // OpenAPI JSON at /openapi/v1.json + a Swagger UI explorer at /swagger.
 app.MapOpenApi();
 app.UseSwaggerUI(o => o.SwaggerEndpoint("/openapi/v1.json", "SaveLocker API v1"));
@@ -286,8 +290,17 @@ agent.MapPost("/games/{id:guid}/upload", async (
         sizeCap.MaxRequestBodySize = (long)(cfg.GetValue<int?>("Storage:MaxUploadMb") ?? 200) * 1024 * 1024;
 
     var machine = http.CurrentMachine();
-    var result = await sync.UploadAsync(id, machine.Id, parent, hash, http.Request.Body, force ?? false, ct);
-    return Results.Ok(result);
+    try
+    {
+        var result = await sync.UploadAsync(id, machine.Id, parent, hash, http.Request.Body, force ?? false, ct);
+        return Results.Ok(result);
+    }
+    catch (ArchiveTooLargeException ex)
+    {
+        // 413, not the 500 an unhandled throw would produce: the agent has to be able to tell
+        // "this save is too big for the configured limit" from "the server is broken".
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status413PayloadTooLarge);
+    }
 }).Produces<UploadResult>();
 
 agent.MapGet("/games/{id:guid}/download", async (Guid id, HttpContext http, SyncService sync) =>

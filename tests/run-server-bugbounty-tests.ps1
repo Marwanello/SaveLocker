@@ -392,14 +392,151 @@ try {
     Check "a failed command is not retried forever"     (@(Claim-Commands | Where-Object { $_.id -eq $c2.id }).Count -eq 0)
 
     Stop-TestServer $srv
+
+    # =====================================================================================
+    # CS-03: archive ingestion is transactional at the filesystem boundary
+    # =====================================================================================
+    # Every check here is about what is left BEHIND after something goes wrong: a truncated archive
+    # at a real version path, a file no row names, or a row whose file is gone. The last one is the
+    # only unrecoverable direction, so it is the one the ordering has to rule out.
+    Write-Host ""
+    Write-Host "==== CS-03: no half-ingested archives, in either direction ===="
+
+    $env:Storage__DbPath        = Join-Path $scratch "uploads.db"
+    $env:Storage__ArchiveRoot   = Join-Path $scratch "upload-archives"
+    $env:Storage__MaxUploadMb   = "1"
+    Remove-Item Env:Commands__LeaseMinutes -ErrorAction SilentlyContinue
+    $archRoot = $env:Storage__ArchiveRoot
+    New-Item -ItemType Directory -Force $archRoot | Out-Null
+
+    $srv = Start-TestServer $serverDll "uploads"
+
+    $ureg = Invoke-RestMethod "$url/api/machines/register" -Method Post -ContentType "application/json" `
+        -Body (@{ name = "UpPC-$stamp" } | ConvertTo-Json)
+    $uhdr = @{ "X-Api-Key" = $ureg.apiKey }
+    $ugame = Invoke-RestMethod "$url/api/games" -Method Post -ContentType "application/json" `
+        -Body (@{ name = "UpGame-$stamp" } | ConvertTo-Json)
+
+    function Staged { @(Get-ChildItem (Join-Path $archRoot ".incoming") -Filter *.part -ErrorAction SilentlyContinue) }
+    function ArchiveFiles { @(Get-ChildItem $archRoot -Recurse -Filter *.zip -ErrorAction SilentlyContinue) }
+    function UploadVersions { @(Get-Json "/api/games/$($ugame.id)/versions") }
+
+    # A real (tiny) archive, so the success path is proven with the same helper as the failures.
+    $goodZip = Join-Path $scratch "good.zip"
+    $zipSrc  = Join-Path $scratch "zipsrc"; New-Item -ItemType Directory -Force $zipSrc | Out-Null
+    "hello" | Set-Content (Join-Path $zipSrc "save.dat") -Encoding utf8
+    Compress-Archive -Path (Join-Path $zipSrc "*") -DestinationPath $goodZip -Force
+
+    function Post-Upload($path, $hash, $parent) {
+        # Returns the HTTP status code, whether it succeeded or not. A parent is passed on the happy
+        # path so a second upload fast-forwards instead of opening a conflict, which would make the
+        # version undeletable for reasons that have nothing to do with this section.
+        $q = "hash=$hash"
+        if ($parent) { $q += "&parent=$parent" }
+        try {
+            $r = Invoke-WebRequest "$url/api/games/$($ugame.id)/upload?$q" -Method Post `
+                -Headers $uhdr -InFile $path -ContentType "application/octet-stream" -UseBasicParsing
+            return [int]$r.StatusCode
+        } catch {
+            if ($_.Exception.Response) { return [int]$_.Exception.Response.StatusCode }
+            return -1
+        }
+    }
+
+    # ---- 1. The success path still works, and leaves nothing staged ----
+    Check "a normal upload is accepted"          ((Post-Upload $goodZip "hash-good-1") -eq 200)
+    Check "the upload produced one version"      (@(UploadVersions).Count -eq 1)
+    Check "a completed upload stages nothing"    (@(Staged).Count -eq 0)
+    Check "the archive is at its final path"     (@(ArchiveFiles).Count -eq 1)
+
+    # ---- 2. Oversized body: refused as 413, and nothing is left of it ----
+    $bigFile = Join-Path $scratch "too-big.bin"
+    $fs = [System.IO.File]::Create($bigFile)
+    $fs.SetLength(3MB); $fs.Close()
+    $status = Post-Upload $bigFile "hash-oversized"
+    Check "an oversized upload is refused with 413" ($status -eq 413)
+    Check "the oversized upload created no version" (@(UploadVersions).Count -eq 1)
+    Check "the oversized upload left nothing staged" (@(Staged).Count -eq 0)
+    Check "the oversized upload published no archive" (@(ArchiveFiles).Count -eq 1)
+
+    # ---- 3. Client disconnects mid-body ----
+    # Raw socket on purpose: it declares a Content-Length it never delivers and then vanishes, which
+    # is what a killed agent or a dropped tunnel actually looks like. Invoke-WebRequest cannot.
+    # ::new, not New-Object Type(a,b) — that form passes ONE array argument, finds no ctor, and the
+    # whole disconnect test then passes vacuously because no request was ever made.
+    $client = [System.Net.Sockets.TcpClient]::new("127.0.0.1", $Port)
+    $stream = $client.GetStream()
+    $head = "POST /api/games/$($ugame.id)/upload?hash=hash-truncated HTTP/1.1`r`n" +
+            "Host: localhost:$Port`r`nX-Api-Key: $($ureg.apiKey)`r`n" +
+            "Content-Type: application/octet-stream`r`nContent-Length: 900000`r`n`r`n"
+    $headBytes = [System.Text.Encoding]::ASCII.GetBytes($head)
+    $stream.Write($headBytes, 0, $headBytes.Length)
+    $stream.Write((New-Object byte[] -ArgumentList 4096), 0, 4096)      # a fraction of what was promised
+    $stream.Flush()
+    Start-Sleep -Milliseconds 500
+    $client.Close()                                       # and gone
+    Start-Sleep -Seconds 2
+
+    # The pre-fix server leaves a 4096-byte "archive" at a real version path here, with no row.
+    Check "a disconnected upload created no version"  (@(UploadVersions).Count -eq 1)
+    Check "a disconnected upload left nothing staged" (@(Staged).Count -eq 0)
+    Check "a disconnected upload published no archive" (@(ArchiveFiles).Count -eq 1)
+    Check "the server survived the disconnect" `
+        ((Invoke-WebRequest "$url/api/admin/status" -UseBasicParsing).StatusCode -eq 200)
+
+    # ---- 4. Deleting a version whose archive cannot be removed ----
+    # The file is held open with no sharing, so File.Delete fails for real. The row must still go
+    # (the admin asked for it) and the undeleted file must be recorded, not silently forgotten.
+    $v1 = @(UploadVersions)[0]
+    Check "the second upload fast-forwards, not conflicts" `
+        ((Post-Upload $goodZip "hash-good-2" $v1.id) -eq 200)
+    $victim = @(UploadVersions) | Where-Object { $_.contentHash -eq "hash-good-1" }
+    $victimPath = (ArchiveFiles | Where-Object { $_.Name -like "*$($victim.id.Replace('-',''))*" }).FullName
+    Check "the version to delete has an archive on disk" ($null -ne $victimPath)
+
+    $held = [System.IO.File]::Open($victimPath, 'Open', 'Read', 'None')
+    try {
+        $delOk = $false
+        try { Invoke-RestMethod "$url/api/games/$($ugame.id)/versions/$($victim.id)" -Method Delete | Out-Null; $delOk = $true } catch { }
+        Check "deleting a version succeeds even if its file is locked" $delOk
+        Check "the version row is gone"                 (@(UploadVersions | Where-Object { $_.id -eq $victim.id }).Count -eq 0)
+        Check "the undeletable archive is audited as orphaned" `
+            (@(Get-Json "/api/audit?limit=200" | Where-Object { $_.action -eq "archive.orphaned" }).Count -ge 1)
+    } finally { $held.Close() }
+
+    # ---- 5. No live version may point at a missing archive ----
+    # The invariant the ordering exists to protect, checked across everything above.
+    $dangling = 0
+    foreach ($v in UploadVersions) {
+        try { Invoke-WebRequest "$url/api/games/$($ugame.id)/versions/$($v.id)/download" -OutFile (Join-Path $scratch "chk.zip") -UseBasicParsing | Out-Null }
+        catch { $dangling++ }
+    }
+    Check "every surviving version still downloads" ($dangling -eq 0)
+
+    # ---- 6. Stale staging files are swept on startup ----
+    $incoming = Join-Path $archRoot ".incoming"
+    New-Item -ItemType Directory -Force $incoming | Out-Null
+    $stale = Join-Path $incoming "00000000000000000000000000000000-dead.part"
+    $fresh = Join-Path $incoming "11111111111111111111111111111111-live.part"
+    "abandoned" | Set-Content $stale -Encoding utf8
+    "in flight" | Set-Content $fresh -Encoding utf8
+    (Get-Item $stale).LastWriteTimeUtc = (Get-Date).ToUniversalTime().AddHours(-4)
+
+    Stop-TestServer $srv
+    $srv = Start-TestServer $serverDll "uploads2"
+
+    Check "startup sweeps an abandoned staging file"     (-not (Test-Path $stale))
+    Check "startup leaves a recent staging file alone"   (Test-Path $fresh)
+
+    Stop-TestServer $srv
 }
 finally {
     foreach ($p in $script:servers) { Stop-TestServer $p }
     git worktree remove --force $oldWt 2>&1 | Out-Null
     git worktree prune
     Remove-Item Env:ASPNETCORE_URLS, Env:Storage__DbPath, Env:Storage__ArchiveRoot, `
-        Env:Backup__Enabled, Env:Logging__EventLog__LogLevel__Default, Env:Commands__LeaseMinutes `
-        -ErrorAction SilentlyContinue
+        Env:Backup__Enabled, Env:Logging__EventLog__LogLevel__Default, Env:Commands__LeaseMinutes, `
+        Env:Storage__MaxUploadMb -ErrorAction SilentlyContinue
     Get-Job -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
 }
 

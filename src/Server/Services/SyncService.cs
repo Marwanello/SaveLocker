@@ -21,6 +21,8 @@ public sealed class SyncService
     /// a crashed agent's command comes back on its own.
     /// </summary>
     private readonly TimeSpan _commandLease;
+    /// <summary>The documented save-upload cap, enforced while copying rather than only by Kestrel.</summary>
+    private readonly long _maxUploadBytes;
 
     public SyncService(
         AppDbContext db,
@@ -34,6 +36,7 @@ public sealed class SyncService
         _retainPerGame = config.GetValue<int?>("Storage:RetainVersionsPerGame") ?? 10;
         _commandLease = TimeSpan.FromMinutes(
             config.GetValue<double?>("Commands:LeaseMinutes") ?? 10);
+        _maxUploadBytes = (long)(config.GetValue<int?>("Storage:MaxUploadMb") ?? 200) * 1024 * 1024;
     }
 
     // ----- Machines -----
@@ -284,7 +287,6 @@ public sealed class SyncService
         if (game is null) return false;
 
         var versions = await _db.SaveVersions.Where(v => v.GameId == gameId).ToListAsync();
-        foreach (var v in versions) _store.Delete(v.ArchivePath);
         _db.SaveVersions.RemoveRange(versions);
         _db.Leases.RemoveRange(await _db.Leases.Where(l => l.GameId == gameId).ToListAsync());
         _db.Conflicts.RemoveRange(await _db.Conflicts.Where(c => c.GameId == gameId).ToListAsync());
@@ -295,6 +297,14 @@ public sealed class SyncService
         _db.Games.Remove(game);
         await Audit(null, gameId, "game.delete", game.Name);
         await _db.SaveChangesAsync();
+        // The game row is gone, so the audit below can no longer reference it — pass no game id.
+        var orphans = versions.Where(v => !_store.TryDelete(v.ArchivePath)).ToList();
+        if (orphans.Count > 0)
+        {
+            await Audit(null, null, "archive.orphaned",
+                $"{orphans.Count} archive file(s) left after deleting '{game.Name}'");
+            await _db.SaveChangesAsync();
+        }
         return true;
     }
 
@@ -452,7 +462,31 @@ public sealed class SyncService
         // Persist the incoming archive as a new version regardless of outcome,
         // so the admin can choose it during conflict resolution.
         var versionId = Guid.NewGuid();
-        var (rel, size) = await _store.SaveAsync(gameId, versionId, archive, ct);
+        var (rel, size) = await _store.SaveAsync(gameId, versionId, archive, _maxUploadBytes, ct);
+
+        try
+        {
+            return await IngestAsync(game, versionId, rel, size, machineId, parentVersionId,
+                contentHash, serverHead, diverged, force, ct);
+        }
+        catch
+        {
+            // The archive is published but nothing indexes it. Remove it rather than leave a file
+            // no row can ever name — the inverse of the state the staged write prevents.
+            _store.TryDelete(rel);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// The database half of an upload, split out so a failure anywhere in it can un-publish the
+    /// archive that was just written. Every exit path here has already been paid for on disk.
+    /// </summary>
+    private async Task<UploadResult> IngestAsync(
+        Game game, Guid versionId, string rel, long size, Guid machineId, Guid? parentVersionId,
+        string contentHash, SaveVersion? serverHead, bool diverged, bool force, CancellationToken ct)
+    {
+        var gameId = game.Id;
 
         var version = new SaveVersion
         {
@@ -578,12 +612,37 @@ public sealed class SyncService
             .ToListAsync(ct);
         foreach (var c in openConflicts) { protectedIds.Add(c.VersionAId); protectedIds.Add(c.VersionBId); }
 
+        var pruned = new List<SaveVersion>();
         foreach (var old in versions.Skip(limit))
         {
             if (old.Protected || protectedIds.Contains(old.Id)) continue;
-            _store.Delete(old.ArchivePath);
             _db.SaveVersions.Remove(old);
+            pruned.Add(old);
         }
+        if (pruned.Count == 0) return;
+
+        // Rows first, files second — see ReleaseArchivesAsync.
+        await _db.SaveChangesAsync(ct);
+        await ReleaseArchivesAsync(gameId, pruned, ct);
+    }
+
+    /// <summary>
+    /// Delete the archives behind rows that have <b>already been removed</b> from the database.
+    /// <para>
+    /// The order is the point. Files-first leaves a live <c>SaveVersion</c> whose archive is gone if
+    /// anything fails in between — a save the console still offers and cannot produce, which is
+    /// unrecoverable from the user's side. Rows-first leaves at worst an orphaned file: wasted space,
+    /// recoverable, and audited here as cleanup debt rather than silently ignored.
+    /// </para>
+    /// </summary>
+    private async Task ReleaseArchivesAsync(Guid gameId, IEnumerable<SaveVersion> removed, CancellationToken ct)
+    {
+        var orphans = removed.Where(v => !_store.TryDelete(v.ArchivePath)).ToList();
+        if (orphans.Count == 0) return;
+
+        await Audit(null, gameId, "archive.orphaned",
+            $"{orphans.Count} archive file(s) could not be deleted: " +
+            string.Join(", ", orphans.Take(5).Select(v => v.ArchivePath)));
         await _db.SaveChangesAsync(ct);
     }
 
@@ -652,10 +711,10 @@ public sealed class SyncService
             (c.VersionAId == versionId || c.VersionBId == versionId));
         if (inConflict) return (false, "Cannot delete a version that is part of an open conflict.");
 
-        _store.Delete(version.ArchivePath);
         _db.SaveVersions.Remove(version);
         await Audit(null, gameId, "version.delete", versionId.ToString());
         await _db.SaveChangesAsync();
+        await ReleaseArchivesAsync(gameId, new[] { version }, default);
         return (true, null);
     }
 

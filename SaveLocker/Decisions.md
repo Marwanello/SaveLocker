@@ -86,6 +86,13 @@ session can judge an edge case, not to reopen the choice.
   save root (the root itself is followed — it's user-chosen; paths *inside* the archive are not).
   Size caps (100k entries / 2 GB), checked against both declared and actual bytes. A refused
   restore is reported to the console as an event.
+- **An archive is staged, then published; rows are deleted before files.** Uploads land in
+  `{ArchiveRoot}/.incoming/*.part` (same volume, so the publish is one rename) and are size-capped
+  while copying, not on declared length — a disconnect used to leave a truncated archive sitting at
+  the exact path a `SaveVersion` row would name. Deletion runs the other way round: commit the DB,
+  then delete the file, because an orphaned file is wasted space while a live row whose archive is
+  gone is a save the console offers and cannot produce. Failed deletes are audited as
+  `archive.orphaned` rather than ignored; staging is swept at startup (1 h age floor).
 - **Command delivery is at-least-once, under a visibility lease.** A claimed `AgentCommand` is
   Dispatched with a `LeaseExpiresAt` + `ClaimToken`, written by one atomic UPDATE so two pollers
   sharing a machine identity cannot both receive it; when the lease expires unacknowledged the

@@ -41,7 +41,7 @@ Server endpoints (`src/Server/Program.cs`).
 - `DELETE /api/games/{id}/lease/force` → 204 (admin force-release).
 
 ## Sync
-- `POST /api/games/{id}/upload?hash={h}&parent={versionId?}&force={bool?}` body = zip → `UploadResult { status: Created|NoChange|Conflict, version, conflict }`.
+- `POST /api/games/{id}/upload?hash={h}&parent={versionId?}&force={bool?}` body = zip → `UploadResult { status: Created|NoChange|Conflict, version, conflict }`. **413** if the body exceeds `Storage:MaxUploadMb` (default 200), counted while copying rather than from the declared length. The archive is staged and published atomically, so a refused or interrupted upload leaves no version and no file.
 - `GET /api/games/{id}/download` → head zip; response headers `X-Version-Id`, `X-Content-Hash`.
 - `GET /api/versions/{versionId}/download` → that version's zip.
 

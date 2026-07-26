@@ -88,7 +88,8 @@ one code change, not two.
 
 **Branch:** `linux-agent-bugbounty` (the console fixes are landing on the same branch, not pushed)
 **Source:** `tasks/Console-BugBounty.md` — 13 findings (1 P0, 6 P1, 3 P2, 3 P3)
-**Fixed so far:** the machine-deletion data loss (P0) — `a761f3f`; lost dashboard commands (P1)
+**Fixed so far:** the machine-deletion data loss (P0) — `a761f3f`; lost dashboard commands (P1) —
+`d46dcd6`; half-written save archives (P1)
 
 **This section changes the server, so the console must be redeployed** (`docker compose pull &&
 docker compose up -d`). The Linux section above explicitly says it does not; do not merge the two
@@ -114,6 +115,15 @@ table. Take the usual backup before upgrading (`/data/backups/` holds the nightl
   now handed out on a time limit: one that is not confirmed goes back in the queue and the next
   check-in picks it up. The dashboard shows "retried ×2" when that happens, and says whether a job
   is running on the machine or waiting to be handed out again.
+- **An interrupted upload no longer leaves a broken save on the server.** If a machine lost its
+  connection part-way through sending a save, the incomplete file was written straight to the place a
+  real save lives, and repeated failures quietly filled the disk. Saves are now assembled aside and
+  only put in place once complete, so what the server keeps is either a whole save or nothing.
+- **A save that is too large is refused clearly.** It now comes back as "too large" against the
+  configured limit rather than a generic server error, so the agent can say something useful.
+- **Deleting a save version cannot leave the server offering one it no longer has.** The record and
+  the file are removed in an order that cannot strand the record, and a file the server fails to
+  delete is written to the audit log instead of being forgotten.
 - **Saves uploaded by a machine you later removed still say who made them.** They are listed as
   "<machine> (deleted)" rather than a blank name, and they stay downloadable, keep their protected
   flag, and can still be chosen when resolving a conflict.
