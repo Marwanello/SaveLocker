@@ -27,10 +27,13 @@ see [[Gotchas]].
 ## Open work
 
 See [[Backlog]] for the prioritized list. Highlights:
-- **Linux agent bug bounty** — all 9 findings now have code fixes and the Windows suites are green.
-  Remaining: run the Linux suites in WSL (`run-linux-tests.sh`, now 40 checks, carries the unrun
-  LA-08/LA-09 checks), add regression tests for LA-04/05/06/07, and do the Deck verification. See
-  `tasks/LinuxAgent-BugBounty.md` → Progress.
+- **Linux agent bug bounty** — all 9 findings now have code fixes and the Windows suites are green,
+  on branch `linux-agent-bugbounty` (**not pushed**). Remaining: run the Linux suites in WSL
+  (`run-linux-tests.sh`, now 40 checks, carries the unrun LA-08/LA-09 checks), add regression tests
+  for LA-04/05/06/07, and do the Deck verification. See `tasks/LinuxAgent-BugBounty.md` → Progress.
+  User-facing notes are drafted in [[Release Notes Pending]].
+- **Console and Windows agent bug bounties** — `tasks/Console-BugBounty.md` and
+  `tasks/WinAgent-BugBounty.md`, both not started. Expected to ship with or near the Linux fixes.
 - **Fresh Windows installer enrollment** on a clean box (no `%PROGRAMDATA%\SaveLocker`) has never
   been exercised — see `logs/2026-07-14_installer-enrollment.md`.
 - **`%PROGRAMDATA%\SaveLocker` ACLs** on a multi-user Windows box — `api-token`/`config.json` are
@@ -52,4 +55,5 @@ See [[Backlog]] for the prioritized list. Highlights:
 | Dev build & run commands, test suites | [[Build and Run]] |
 | Agent CLI | `web/src/help/cli-reference.md` (KB article) |
 | Active backlog | [[Backlog]] |
+| Draft notes for the next release | [[Release Notes Pending]] |
 | Session history | `logs/sessions.md` |
