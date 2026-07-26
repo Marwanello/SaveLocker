@@ -2607,7 +2607,7 @@ export interface components {
             /** Format: uuid */
             gameId: string;
             /** Format: uuid */
-            machineId: string;
+            machineId: null | string;
             machineName: string;
             /** Format: date-time */
             createdAt: string;

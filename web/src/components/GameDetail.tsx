@@ -64,6 +64,9 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
   // Latest version per machine (for Machines table "Last upload" column)
   const latestByMachine: Record<string, Version> = {};
   for (const v of versions) {
+    // A version whose uploader has been deleted keeps its name but has no machine to key on —
+    // it is history, not a live contributor.
+    if (!v.machineId) continue;
     if (!latestByMachine[v.machineId]) latestByMachine[v.machineId] = v;
   }
 

@@ -106,6 +106,17 @@ public sealed class SyncService
             g.ConflictPolicy = ConflictPolicy.Manual;
         }
 
+        // Detach this machine's history explicitly rather than leaning on ON DELETE SET NULL: the
+        // FK only fires when SQLite's foreign_keys pragma is on, and a version left pointing at a
+        // machine that no longer exists is exactly the dangling state this finding was about.
+        // Snapshotting the name here is the last chance to name the uploader at all.
+        var history = await _db.SaveVersions.Where(v => v.MachineId == machineId).ToListAsync();
+        foreach (var v in history)
+        {
+            if (string.IsNullOrEmpty(v.MachineName)) v.MachineName = machine.Name;
+            v.MachineId = null;
+        }
+
         _db.Machines.Remove(machine);
         await Audit(null, null, "machine.delete", machine.Name);
         await _db.SaveChangesAsync();
@@ -440,6 +451,8 @@ public sealed class SyncService
             Id = versionId,
             GameId = gameId,
             MachineId = machineId,
+            MachineName = await _db.Machines.Where(m => m.Id == machineId)
+                .Select(m => m.Name).FirstOrDefaultAsync(ct) ?? "",
             CreatedAt = DateTime.UtcNow,
             ContentHash = contentHash,
             Size = size,
@@ -809,14 +822,17 @@ public sealed class SyncService
     {
         var versionIds = new[] { conflict.VersionAId, conflict.VersionBId };
 
-        // Joined against Machines on purpose: DeleteMachineAsync keeps a deleted machine's versions
-        // as history, so a version's MachineId can name a machine that no longer exists — and
-        // queueing a command for it would violate the foreign key.
-        var machineIds = await (
-            from v in _db.SaveVersions
-            join m in _db.Machines on v.MachineId equals m.Id
-            where versionIds.Contains(v.Id)
-            select v.MachineId).Distinct().ToListAsync();
+        // Filtered against Machines on purpose: DeleteMachineAsync keeps a deleted machine's
+        // versions as history with a null MachineId, and a version written before that behaviour
+        // existed can still name a machine that is gone — queueing a command for either would
+        // violate the foreign key.
+        var machineIds = await _db.SaveVersions
+            .Where(v => versionIds.Contains(v.Id)
+                        && v.MachineId != null
+                        && _db.Machines.Any(m => m.Id == v.MachineId))
+            .Select(v => v.MachineId!.Value)
+            .Distinct()
+            .ToListAsync();
 
         foreach (var machineId in machineIds)
         {
@@ -929,8 +945,8 @@ public sealed class SyncService
 
     private async Task LoadMachine(SaveVersion v, CancellationToken ct)
     {
-        if (v.Machine is null)
-            v.Machine = await _db.Machines.FindAsync(new object?[] { v.MachineId }, ct);
+        if (v.Machine is null && v.MachineId is not null)
+            v.Machine = await _db.Machines.FindAsync(new object?[] { v.MachineId.Value }, ct);
     }
 
     public async Task<List<AuditEntryDto>> GetAuditLogAsync(int limit = 200)

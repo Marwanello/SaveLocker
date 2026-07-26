@@ -64,8 +64,16 @@ public class SaveVersion
     public Guid GameId { get; set; }
     public Game? Game { get; set; }
 
-    public Guid MachineId { get; set; }
+    /// <summary>The machine that uploaded this snapshot, or null once that machine has been
+    /// deleted. Nullable on purpose: a version outlives its uploader (see
+    /// <see cref="MachineName"/>), and a cascade here would destroy save history the console
+    /// promises to keep.</summary>
+    public Guid? MachineId { get; set; }
     public Machine? Machine { get; set; }
+
+    /// <summary>The uploader's name captured at upload time. The only thing left to name the
+    /// uploader once <see cref="MachineId"/> has been nulled by a machine deletion.</summary>
+    public string MachineName { get; set; } = "";
 
     public DateTime CreatedAt { get; set; }
     /// <summary>Stable hash of the save directory contents.</summary>

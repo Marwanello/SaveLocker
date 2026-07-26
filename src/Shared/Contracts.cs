@@ -100,7 +100,9 @@ public record LeaseAcquireResponse(bool Granted, LeaseDto Lease);
 public record SaveVersionDto(
     Guid Id,
     Guid GameId,
-    Guid MachineId,
+    /// <summary>Null once the uploading machine has been deleted; <see cref="MachineName"/> still
+    /// names it.</summary>
+    Guid? MachineId,
     string MachineName,
     DateTime CreatedAt,
     string ContentHash,

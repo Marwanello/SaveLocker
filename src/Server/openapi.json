@@ -2985,7 +2985,10 @@
             "format": "uuid"
           },
           "machineId": {
-            "type": "string",
+            "type": [
+              "null",
+              "string"
+            ],
             "format": "uuid"
           },
           "machineName": {
