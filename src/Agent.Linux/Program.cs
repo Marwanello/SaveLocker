@@ -64,7 +64,11 @@ static class Program
                 var autoStart = new SystemdAutoStart();
                 if (opts.ContainsKey("disable"))
                 {
-                    autoStart.SetEnabled(false);
+                    if (!autoStart.SetEnabled(false))
+                    {
+                        Console.Error.WriteLine("Could not disable auto-start (is systemd --user available?). See the agent log.");
+                        return 1;
+                    }
                     Console.WriteLine("Auto-start disabled.");
                 }
                 else if (opts.ContainsKey("enable"))

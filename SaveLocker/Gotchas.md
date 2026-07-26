@@ -295,6 +295,14 @@ Running WSL commands from PowerShell, `"...\$HOME..."` does **not** escape `$HOM
   `.verify/` with the two enrollment suites.
 - Ordering matters when chaining suites: run `run-agent-tests.ps1` (which wants a fresh DB) **before** `run-enrollment-tests.ps1` (which adds a game and a machine to it).
 - The suite also needs `%APPDATA%\LGSTestGame` to exist for the detection check; the script now creates it itself (2026-07-12).
+- ⚠️ **Start the server with `ASPNETCORE_ENVIRONMENT=Development`, or it does not read
+  `appsettings.Development.json` at all** and opens the production `Storage:DbPath` — `/data/savelocker.db`,
+  i.e. `E:\data\...` on Windows — instead of `src/Server/localstate`. Walked into on 2026-07-26 by
+  launching the built DLL directly (`dotnet src/Server/bin/.../SaveLocker.Server.dll`) rather than
+  `cd src/Server && dotnet run`, which sets the variable via `launchSettings.json`. That stray DB then
+  held a `__EFMigrationsLock` from an earlier killed process, so the server sat in migration **forever**
+  — it never listened, and every server-dependent check failed as though the agent were broken. The
+  log tell is `INSERT OR IGNORE INTO "__EFMigrationsLock"` repeating on an exponential backoff.
 
 ## `dotnet ef` tools must match the EF runtime major — or `migrations remove` eats the WRONG migration
 The tool is installed globally and does **not** track the project. With `dotnet-ef` **9.x** against EF Core **10.x** (2026-07-14):

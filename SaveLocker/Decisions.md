@@ -174,6 +174,20 @@ The agent is **not one process**. Autorun keeps the daemon alive while Steam sta
 
 **State belongs beside the config file it came from**, not in the machine default — with `--config` those diverge, and each process would keep a private queue while believing it shared one.
 
+- **Untracking a game is a per-machine opt-out, not a local delete** (added 2026-07-26).
+  `AgentConfig.UntrackedGameIds` records that this machine does not sync a server game; the game stays
+  on the server for the rest of the fleet. A plain `Games.RemoveAll` does not stick — the game is still
+  on the server, so the daemon's next reconcile adopts it back, and any stale in-memory writer rewrites
+  the entry. So the opt-out is enforced **in the primitive**, for the same reason as the bullet above:
+  `Save()` drops anything on the list, `SaveGameSyncState` never re-adds an entry absent from disk, and
+  `CommandPoller` skips adoption. `add-game` and enrollment clear it — explicitly adding a game back is
+  the only thing that means "track this here again". Untrack from the CLI with `remove-game --name`.
+- **Connection-affecting config changes must rebuild the host's `SyncEngine`** (added 2026-07-26).
+  `SyncEngine` caches an `ApiClient` (base URL + key + pin). `CommandPoller` builds a fresh client per
+  tick, so changing the server URL moved control traffic immediately while watcher pushes and queue
+  drains kept hitting the old host — split-brain, with no error anywhere. `AgentApiServer` fires
+  `onConnectionChanged` **before the settings response returns**; both hosts rebuild there.
+
 The long-term shape is **one owner**: wrapper→daemon IPC over a Unix socket, standalone only when no daemon is up. The locking above makes two owners *correct*; IPC would make it *simple*. Deferred, not rejected.
 
 ### 9. A pulled archive is hostile input, and the restore is written that way

@@ -8,6 +8,9 @@
 #   * the launch wrapper: pull on launch, supervise the child, settle, push on exit
 #   * the settle gate waiting out a game that flushes after it exits
 #   * the /proc lock probe seeing a held write descriptor
+#   * doctor's diagnostics: the right state root under --config, and an unenrolled machine
+#     reported as an enrolment problem rather than a network one
+#   * autostart reporting systemctl's real exit status
 #
 # MUST be run from a Linux filesystem (~/), never /mnt/c: DrvFs breaks inotify, permissions,
 # case-sensitivity and locking, so a green run there would be a fiction.
@@ -135,6 +138,25 @@ check "doctor reports no problems"        "${doctor_rc}"
 check "doctor finds the Steam root"       "$(contains "${out}" "${STEAM_ROOT}")"
 check "doctor resolves the Proton prefix" "$(contains "${out}" "${PREFIX}")"
 check "doctor confirms the /proc lock probe" "$(contains "${out}" "available (/proc)")"
+
+# doctor must describe the state root it is ACTUALLY using. ${deck_cfg} is deliberately outside
+# AgentConfig.DefaultDir, and doctor used to print (and probe) the default regardless - declaring
+# the wrong directory healthy while the one in use might be missing or read-only.
+state_dir_line="$(grep -F '  state dir: ' <<<"${out}")"
+check "doctor reports the --config state dir" "$(contains "${state_dir_line}" "${scratch}")"
+check "doctor does not report the default state dir instead"   "$(grep -qF "${HOME}/.local/share/SaveLocker" <<<"${state_dir_line}" && echo 1 || echo 0)"
+
+# An unenrolled agent gets a correct 401 from an authenticated route. Calling it with no key and
+# then labelling the refusal "server unreachable" sent people to debug a network that was fine.
+unenrolled_cfg="${scratch}/unenrolled-config.json"
+python3 - "${unenrolled_cfg}" "${server_url}" <<'PY2'
+import json,sys
+json.dump({"ServerUrl": sys.argv[2], "MachineName": "Unenrolled", "Games": []}, open(sys.argv[1], "w"))
+PY2
+out="$(agent doctor --config "${unenrolled_cfg}")"
+check "doctor says an unenrolled machine is NOT a connectivity failure"   "$(grep -q 'server unreachable' <<<"${out}" && echo 1 || echo 0)"
+check "doctor names enrolment as the actual problem"   "$(contains "${out}" "not enrolled")"
+check "doctor still reports the server as reachable"   "$(contains "${out}" "server reachable")"
 
 # ── The launch wrapper: pull, run the game, settle, push ─────────────────────────────────────
 # Seed a save so there is something to push, and prove the wrapper returns the GAME's exit code.
@@ -273,6 +295,32 @@ check "no temp archives leaked" "$([ "${leftover_tmp}" = "0" ] && echo 0 || echo
 
 kill "${daemon_pid}" 2>/dev/null
 wait "${daemon_pid}" 2>/dev/null
+
+# ---------------------------------------------------------------------------
+# autostart must report the REAL outcome (LA-08)
+# ---------------------------------------------------------------------------
+# `disable` used to throw away systemctl's exit code and print "Auto-start disabled." no matter
+# what. The failure is not hypothetical on a Deck: reached over SSH without a login session there
+# is no user bus, systemctl fails, and the agent cheerfully said the service was off while it kept
+# running. A stub systemctl that exits non-zero reproduces exactly that, without needing to break
+# the real one. It must come FIRST on PATH but must not hide dotnet.
+fake_bin="${scratch}/fakebin"
+mkdir -p "${fake_bin}"
+cat >"${fake_bin}/systemctl" <<'STUB'
+#!/usr/bin/env bash
+echo "Failed to connect to bus: No medium found" >&2
+exit 1
+STUB
+chmod +x "${fake_bin}/systemctl"
+
+# The unit file must exist, or SetEnabled never reaches systemctl at all.
+mkdir -p "${HOME}/.config/systemd/user"
+touch "${HOME}/.config/systemd/user/savelocker.service"
+
+out="$(PATH="${fake_bin}:${PATH}" agent autostart --disable)"
+autostart_rc=$?
+check "autostart --disable fails loudly when systemctl fails"   "$([ "${autostart_rc}" != "0" ] && echo 0 || echo 1)"
+check "autostart --disable does not claim success"   "$(grep -q 'Auto-start disabled' <<<"${out}" && echo 1 || echo 0)"
 
 echo
 echo "==== LINUX AGENT RESULT: ${pass} passed, ${fail} failed ===="

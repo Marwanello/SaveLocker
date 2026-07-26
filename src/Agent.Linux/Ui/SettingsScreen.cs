@@ -76,8 +76,10 @@ sealed class SettingsScreen
 
         if (Widgets.Stepper("seconds", ref _settleSeconds, 0, 120, 1))
         {
-            _config.SettleQuietSeconds = _settleSeconds;
-            _config.Save();
+            // UpdateSettings, not Save: this process loaded config.json when the UI opened and has
+            // never reloaded it, so a whole-object write would put a stale game list back on disk.
+            var seconds = _settleSeconds;
+            _config.UpdateSettings(c => c.SettleQuietSeconds = seconds);
             _status = $"Settle gate set to {_settleSeconds}s.";
         }
 
@@ -86,8 +88,8 @@ sealed class SettingsScreen
         if (Widgets.Toggle("Interface sounds", ref _soundsOn))
         {
             Sound.Muted = !_soundsOn;
-            _config.UiSoundsMuted = !_soundsOn;
-            _config.Save();
+            var muted = !_soundsOn;
+            _config.UpdateSettings(c => c.UiSoundsMuted = muted);
             _status = _soundsOn ? "Interface sounds on." : "Interface sounds muted.";
 
             // The toggle's own click already fired inside Widgets.Toggle, while sounds were still
@@ -183,8 +185,12 @@ sealed class SettingsScreen
         if (Widgets.PillButton(label, Widgets.ButtonKind.Danger, Icons.Trash,
                 enabled: _toRemove.Count > 0))
         {
-            var removed = _config.Games.RemoveAll(g => _toRemove.Contains(g.Name));
-            _config.Save();
+            // SetTracked, not RemoveAll + Save: a plain local delete does not stick. The game is
+            // still on the server, so the running daemon's next reconcile adopts it right back —
+            // and this screen would have told the user it was removed.
+            var doomed = _config.Games.Where(g => _toRemove.Contains(g.Name)).Select(g => g.GameId).ToList();
+            foreach (var id in doomed) _config.SetTracked(id, tracked: false);
+            var removed = doomed.Count;
             _status = $"Removed {removed} game(s) from this device.";
             _toRemove.Clear();
         }

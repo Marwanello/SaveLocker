@@ -99,8 +99,10 @@ public sealed class CommandPoller : IDisposable
         var serverById = serverGames.ToDictionary(g => g.Id);
         var changed = false;
 
-        // Drop local games that were deleted on the server.
-        var removed = _config.Games.RemoveAll(g => !serverById.ContainsKey(g.GameId));
+        // Drop local games that were deleted on the server. Copy-on-write for the same reason as
+        // enrollment: this runs on a timer thread while a UI thread enumerates the same list.
+        var removed = 0;
+        _config.MutateGames(list => removed = list.RemoveAll(g => !serverById.ContainsKey(g.GameId)));
         if (removed > 0)
         {
             changed = true;
@@ -154,20 +156,23 @@ public sealed class CommandPoller : IDisposable
                 continue;
             }
 
-            // Adopt a server game not tracked here yet.
+            // Adopt a server game not tracked here yet — unless this machine opted out of it. The
+            // game is still on the server for the rest of the fleet; this box just said no.
+            if (_config.IsUntracked(sg.Id)) continue;
+
             var dir = await ResolveSaveDirAsync(sg);
             // If we resolved via detection (not from the server path), report it back.
             if (dir is not null && string.IsNullOrWhiteSpace(sg.MachineSavePath))
                 ReportPathAsync(sg.Id, dir);
 
-            _config.Games.Add(new TrackedGame
+            _config.MutateGames(list => list.Add(new TrackedGame
             {
                 GameId = sg.Id,
                 Name = sg.Name,
                 ManifestKey = sg.ManifestKey,
                 SaveDirectory = dir ?? "",
                 ExcludeGlobs = (sg.ExcludeGlobs ?? Array.Empty<string>()).ToList()
-            });
+            }));
             changed = true;
             _notify(dir is null
                 ? $"'{sg.Name}' was added on the server — set its save folder in Settings…"

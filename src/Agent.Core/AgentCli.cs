@@ -14,8 +14,8 @@ public static class AgentCli
     /// <summary>Commands handled here. A host checks this before falling through to its own.</summary>
     public static bool Handles(string command) => command is
         "register" or "enroll" or "trust" or "set-server" or "whoami" or "search" or "scan" or
-        "resolve" or "add-game" or "list" or "status" or "push" or "pull" or "refresh-manifest" or
-        "log" or "hash";
+        "resolve" or "add-game" or "remove-game" or "list" or "status" or "push" or "pull" or
+        "refresh-manifest" or "log" or "hash";
 
     /// <summary>Run one command. Returns the process exit code.</summary>
     public static async Task<int> RunAsync(
@@ -205,9 +205,26 @@ public static class AgentCli
                         tracked.ProcessNames = proc
                             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                             .ToList();
-                    if (existing is null) config.Games.Add(tracked);
+                    // Clears any per-machine opt-out as well as adding the entry — explicitly adding
+                    // a game back is the one action that means "track this here again".
+                    config.SetTracked(game.Id, tracked: true, entry: tracked);
                     config.Save();
                     Console.WriteLine($"Tracking '{name}' -> {dir}");
+                    break;
+                }
+
+                case "remove-game":
+                {
+                    var name = opts.GetValueOrDefault("name")
+                               ?? throw new ArgumentException("--name is required.");
+                    var target = config.FindGame(name)
+                                 ?? throw new InvalidOperationException($"'{name}' is not tracked here.");
+
+                    // Per-machine opt-out, not a plain delete: the game stays on the server for the
+                    // rest of the fleet, and the opt-out is what stops a running daemon's reconcile
+                    // adopting it straight back.
+                    config.SetTracked(target.GameId, tracked: false);
+                    Console.WriteLine($"No longer tracking '{target.Name}' on this machine. It is still on the server.");
                     break;
                 }
 

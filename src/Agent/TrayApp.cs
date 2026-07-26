@@ -39,7 +39,8 @@ internal sealed class TrayContext : ApplicationContext
     private readonly OfflineQueueDrainer _drainer;
     private AgentWindow? _window;
     private ProcessWatcher _processWatcher;
-    private SyncEngine _engine = null!;
+    // Rebuilt from an API request thread; read from watcher/poller threads. See Daemon._engine.
+    private volatile SyncEngine _engine = null!;
 
     private UpdateChecker? _updateChecker;
     private readonly System.Threading.Timer _updateTimer;
@@ -85,9 +86,10 @@ internal sealed class TrayContext : ApplicationContext
             enroll: EnrollAsync,
             autoStart: new AutoStart(),
             pickFolder: FolderPicker.ShowAsync,
-            onRegistered: RebuildEngine,
+            onConnectionChanged: RebuildEngine,
             getUpdateResult: () => LastUpdateResult,
-            browseRoots: GameScanner.BrowseRoots());
+            browseRoots: GameScanner.BrowseRoots(),
+            onGamesChanged: () => _ui.Post(_ => { RebuildMenu(); StartFolderWatchers(); }, null));
         _apiServer.Start();
 
         _commandPoller = new CommandPoller(

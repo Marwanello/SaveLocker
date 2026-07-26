@@ -62,10 +62,10 @@ scripted D-pad input and headless screenshots. See the quick-reference table.
 
 ## Open
 
-- **Linux agent bug bounty** — static review found 2 P1, 6 P2, and 1 P3 issue covering
-  split-brain server changes, durable untracking, watcher refresh, enrollment durability/threading,
-  stale Game Mode config writes, systemd failure reporting, and `doctor` diagnostics. Execute
-  `tasks/LinuxAgent-BugBounty.md` as one bounded task.
+- **Linux agent bug bounty** — all 9 findings now have code fixes and every Windows suite is green
+  (2026-07-26). Remaining: run the Linux suites in WSL (`run-linux-tests.sh` is now 40 checks and
+  carries the unrun LA-08/LA-09 checks), add regression tests for LA-04/05/06/07, and do the Deck
+  verification. See `tasks/LinuxAgent-BugBounty.md` → Progress.
 - **Fresh Windows installer enrollment** — the wizard shipped in v0.1.7 and the upgrade path is verified. The **fresh install** (clean box, no `%PROGRAMDATA%\SaveLocker`) has never been exercised. Scenarios in `logs/2026-07-14_installer-enrollment.md`. ACL trap: verify `icacls "%PROGRAMDATA%\SaveLocker"` gives the interactive user Modify.
 - **Code-sign the exe** — SmartScreen warns for unsigned installers. Explicitly deferred by the maintainer.
 - ⚠️ **`%PROGRAMDATA%\SaveLocker` ACLs on a multi-user Windows box.** `api-token` and `config.json` are readable by other local users. See `Backlog.md`, medium priority.
@@ -85,12 +85,12 @@ scripted D-pad input and headless screenshots. See the quick-reference table.
 | Build installer | `.\installer\build-installer.ps1` |
 | Agent integration | `.\tests\run-agent-tests.ps1` (**45** on Windows / 43 on Linux). Needs server on :5179 — and `.verify/` cleared **in the same breath** (see `Gotchas.md`) |
 | Enrollment tests | `.\tests\run-enrollment-tests.ps1` (16 checks; needs :5179). Run **after** agent suite |
-| Local agent API security | `.\tests\run-local-api-tests.ps1` (**27** checks, +2 when a candidate is scanned). Starts own daemon on **:5188** |
-| Cross-process state | `.\tests\run-concurrency-tests.ps1` (17 checks; own server on **:5183**, own daemon on **:5189**) |
+| Local agent API security | `.\tests\run-local-api-tests.ps1` (**30** checks, +1 when a candidate is scanned). Starts own daemon on **:5188** |
+| Cross-process state | `.\tests\run-concurrency-tests.ps1` (23 checks; own server on **:5183**, own daemon on **:5189**) |
 | Health tests | `.\tests\run-health-tests.ps1` (19 checks). Starts own server on :5181 |
 | Hardening tests | `.\tests\run-hardening-tests.ps1` (14 on Linux / 13 on Windows; own server on :5182) |
 | TOFU pin tests (TLS) | `.\tests\run-enrollment-tls-tests.ps1` (6 checks; own HTTPS server on :5443). Needs `dotnet dev-certs https --trust` |
-| Linux fake-game harness | `tests/linux/run-linux-tests.sh` (27 checks; starts own server) |
+| Linux fake-game harness | `tests/linux/run-linux-tests.sh` (40 checks; starts own server) |
 | **Deck UI under WSLg** | `bash tests/linux/run-ui-wslg.sh [WxH] [flags]` — runs `savelocker ui` in a real window at the Deck's 1280×800. **Needs `-r linux-x64`** (the script does it) or SDL "isn't applicable" — see `Gotchas.md`. Validates layout/palette/type only; gamepad, gamescope and clipboard stay Deck-only |
 | ↳ Deck UI flags | `--screenshot out.png` (capture + exit), `--screen status\|add\|folder\|launch`, `--gallery` (every widget in every state), `--fixtures` (fake games, so **populated** screens render), `--autoscan`, `--no-build`. Combine: `--fixtures --autoscan --screen folder --screenshot x.png` |
 | Cross-OS round-trip | `tests/cross-os/crossos.ps1 -Leg author\|roundtrip\|confirm` |

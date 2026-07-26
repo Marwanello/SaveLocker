@@ -33,7 +33,11 @@ public static class Enroller
             if (string.IsNullOrEmpty(c.SuggestedSaveDir)) { skipped++; continue; }
 
             var game = await api.CreateGameAsync(new CreateGameRequest(c.Name, c.ManifestKey, null));
-            config.Games.Add(new TrackedGame
+            // Persisted per candidate, not once at the end: a later candidate that fails — or a UI
+            // window closed mid-batch — must not lose the games already created on the server, along
+            // with their Steam AppIDs. SetTracked also clears any per-machine opt-out, so re-adding
+            // a game removed here earlier actually re-adds it.
+            config.SetTracked(game.Id, tracked: true, entry: new TrackedGame
             {
                 GameId = game.Id,
                 Name = game.Name,
@@ -53,7 +57,6 @@ public static class Enroller
             enrolled++;
         }
 
-        if (enrolled > 0) config.Save();
         return (enrolled, skipped);
     }
 }

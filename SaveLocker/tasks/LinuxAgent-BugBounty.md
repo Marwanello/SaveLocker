@@ -53,6 +53,49 @@ Do not close LA-03 or LA-07 by merely refreshing the displayed list.
 
 ---
 
+## Progress (2026-07-26)
+
+**All nine findings have a code fix.** Ownership model for LA-02/LA-03: **per-machine opt-out**
+(`AgentConfig.UntrackedGameIds`) — recorded in `Decisions.md` along with the LA-01 rule. No server
+API changed, so no `api-types.ts` / `openapi.json` regeneration was needed.
+
+| ID | Fix | Regression test |
+|---|---|---|
+| LA-01 | `onConnectionChanged` fires from `/api/config`; both hosts rebuild the engine; `_engine` volatile | `run-local-api-tests.ps1` §10 — **verified failing pre-fix** |
+| LA-02 | `SaveGameSyncState` no longer re-adds an entry absent from disk | `run-concurrency-tests.ps1` §8 — **verified failing pre-fix** |
+| LA-03 | Opt-out list; enforced in `Save()`, honoured by reconcile; new `remove-game` CLI | `run-concurrency-tests.ps1` §8 |
+| LA-04 | folder/remove endpoints fire `onGamesChanged`; the path is reported to the server immediately | none yet — see below |
+| LA-05 | `Enroller` persists each candidate via `SetTracked` before starting the next | none yet — see below |
+| LA-06 | `AgentConfig.MutateGames` publishes the game list copy-on-write; used by `SetTracked`, `Save` and `CommandPoller` | none yet — see below |
+| LA-07 | `AgentConfig.UpdateSettings` merges a scalar onto fresh on-disk state; both UI toggles use it | none yet — see below |
+| LA-08 | `disable` returns systemctl's exit code; both streams drained concurrently; CLI exits non-zero | `run-linux-tests.sh` — **not yet run** (Linux only) |
+| LA-09 | `doctor` uses `config.StateDir`; reachable / unenrolled / authenticated are three distinct outcomes | `run-linux-tests.sh` — **not yet run** (Linux only) |
+
+### Still open
+
+- **Run the Linux suites.** `run-linux-tests.sh` (now 40 checks) and `run-ui-wslg.sh` have not been
+  executed — they need WSL on the ext4 clone. The LA-08 and LA-09 checks are unverified until then.
+- **Regression tests for LA-04, LA-05, LA-06.** All three need either a daemon integration test or
+  a live render loop.
+- **LA-07 has no regression test, and cannot get a useful one from PowerShell.** The stale writer
+  has to be a process that loads `config.json` and *then* waits — that is `savelocker ui`, which
+  needs WSLg. A CLI process always loads the config after the daemon's change, so a two-process
+  PowerShell test passes against the pre-fix code too. (One was written, confirmed to pass for the
+  wrong reason, and removed.) Put it in the WSLg UI harness.
+- **Deck verification** — all five scenarios in the Verification section below.
+
+### Harness notes (cost real time this session)
+
+- The dev server must be started with `ASPNETCORE_ENVIRONMENT=Development`, or it ignores
+  `appsettings.Development.json` and opens `/data/savelocker.db` instead of `src/Server/localstate`.
+  It then hangs forever on a stale `__EFMigrationsLock` in that stray DB, and every server-dependent
+  check fails in a way that looks like an agent bug.
+- `run-agent-tests.ps1` is **not idempotent against a dirty server DB** — it uses fixed game names
+  (`SyncGame`), so a second run against the same database inherits the first run's versions and
+  conflicts and fails ~16 checks. Point the server at a throwaway `Storage__DbPath`.
+
+---
+
 ## Execution order
 
 Implement only the work below, then run the verification section and stop.

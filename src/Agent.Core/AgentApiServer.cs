@@ -22,7 +22,11 @@ public sealed class AgentApiServer : IDisposable
     private readonly Func<Task<string?>> _pickFolder;
     private readonly Func<LaunchCommandDto> _launchInfo;
     private readonly PathBrowser _browser;
-    private readonly Action? _onRegistered;
+    private readonly Action? _onConnectionChanged;
+    // Invoked after the tracked-game list or a save folder changed AND was durably written, so the
+    // host can rebuild its folder watchers. Ordering matters: watchers must be rebuilt from the
+    // config that is on disk, never from one a concurrent write is about to supersede.
+    private readonly Action? _onGamesChanged;
     private readonly Func<UpdateResult?> _getUpdateResult;
     private readonly string _uiRoot;
     private readonly LocalAuth _auth;
@@ -43,10 +47,11 @@ public sealed class AgentApiServer : IDisposable
         Func<IReadOnlyList<ScanCandidate>, int[], Task<(int enrolled, int skipped)>> enroll,
         IAutoStart autoStart,
         Func<Task<string?>>? pickFolder = null,
-        Action? onRegistered = null,
+        Action? onConnectionChanged = null,
         Func<UpdateResult?>? getUpdateResult = null,
         IEnumerable<string>? browseRoots = null,
-        Func<LaunchCommandDto>? launchInfo = null)
+        Func<LaunchCommandDto>? launchInfo = null,
+        Action? onGamesChanged = null)
     {
         _browser = new PathBrowser(browseRoots);
         Port = port;
@@ -56,7 +61,8 @@ public sealed class AgentApiServer : IDisposable
         _autoStart = autoStart;
         _pickFolder = pickFolder ?? (() => Task.FromResult<string?>(null));
         _launchInfo = launchInfo ?? (() => new LaunchCommandDto(null, null));
-        _onRegistered = onRegistered;
+        _onConnectionChanged = onConnectionChanged;
+        _onGamesChanged = onGamesChanged;
         _getUpdateResult = getUpdateResult ?? (() => null);
         _uiRoot = Path.Combine(AppContext.BaseDirectory, "agent-ui");
         _auth = LocalAuth.LoadOrCreate(config.ConfigPath);
@@ -188,6 +194,12 @@ public sealed class AgentApiServer : IDisposable
 
         app.MapPost("/api/config", (ConfigRequest body) =>
         {
+            // A host caches an ApiClient (base URL + key + pin) inside its SyncEngine. Changing any
+            // of that here without telling the host leaves the daemon split-brained: the poller
+            // rebuilds its client every tick and talks to the NEW server while watcher pushes and
+            // queue drains keep hitting the OLD one. Track the change, then hand it back below.
+            var before = (_config.ServerUrl, _config.MachineName);
+
             if (!string.IsNullOrWhiteSpace(body.ServerUrl))
                 _config.ServerUrl = body.ServerUrl.Trim().TrimEnd('/');
             if (!string.IsNullOrWhiteSpace(body.MachineName))
@@ -195,6 +207,12 @@ public sealed class AgentApiServer : IDisposable
             if (body.SettleQuietSeconds.HasValue)
                 _config.SettleQuietSeconds = Math.Clamp(body.SettleQuietSeconds.Value, 0, 300);
             _config.Save();
+
+            // Rebuild before the response returns, so no request that starts after the caller sees
+            // 200 can still be addressed to the previous server.
+            if (before != (_config.ServerUrl, _config.MachineName))
+                _onConnectionChanged?.Invoke();
+
             if (body.StartWithWindows.HasValue)
                 _autoStart.SetEnabled(body.StartWithWindows.Value);
             return new OkResponse();
@@ -210,7 +228,7 @@ public sealed class AgentApiServer : IDisposable
                 _config.ApiKey = reg.ApiKey;
                 _config.MachineId = reg.MachineId;
                 _config.Save();
-                _onRegistered?.Invoke();
+                _onConnectionChanged?.Invoke();
                 // The key itself is never returned — it is written to config and used from there.
                 // Nothing in the UI needs its value, and echoing it only creates a way to exfiltrate it.
                 return TypedResults.Ok(new RegisterResponse(_config.MachineName));
@@ -225,20 +243,35 @@ public sealed class AgentApiServer : IDisposable
             .Select(g => new TrackedGameDto(g.GameId, g.Name, g.SaveDirectory))
             .ToArray()).Produces<TrackedGameDto[]>();
 
+        // Untracks the game on THIS machine only. It stays on the server for the rest of the fleet;
+        // the opt-out is what stops the poller adopting it straight back.
         app.MapPost("/api/games/{id:guid}/remove", (Guid id) =>
         {
-            _config.Games.RemoveAll(g => g.GameId == id);
-            _config.Save();
+            _config.SetTracked(id, tracked: false);
+            _onGamesChanged?.Invoke();
             return new OkResponse();
         }).Produces<OkResponse>();
 
-        app.MapPost("/api/games/{id:guid}/folder", (Guid id, FolderRequest body) =>
+        app.MapPost("/api/games/{id:guid}/folder", async (Guid id, FolderRequest body) =>
         {
             var game = _config.Games.FirstOrDefault(g => g.GameId == id);
             if (game is not null && body.Path is not null)
             {
                 game.SaveDirectory = body.Path;
+                // Save first: watchers must be built from the config that is on disk, never from
+                // one a concurrent write is about to supersede.
                 _config.Save();
+                _onGamesChanged?.Invoke();
+
+                // Tell the server now rather than letting the next poll notice. The server's stored
+                // path is the highest authority in reconcile, so until it hears about this one it
+                // keeps handing back the old value — and on a machine with no in-process poller
+                // (the Deck's `savelocker ui`) it never hears about it at all.
+                if (!string.IsNullOrEmpty(_config.ApiKey))
+                {
+                    try { await ApiClient.For(_config).SetMachinePathAsync(id, body.Path); }
+                    catch (Exception ex) { AgentLogger.LogException("AgentApiServer.SetMachinePath", ex); }
+                }
             }
             return new OkResponse();
         }).Produces<OkResponse>();

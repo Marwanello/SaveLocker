@@ -24,10 +24,14 @@ public static class Doctor
         // less useful — and it is the first thing to ask for in a bug report.
         Info("version", UpdateChecker.CurrentVersion.ToString());
         Info("config", config.ConfigPath);
-        Info("state dir", AgentConfig.DefaultDir);
-        Info("log", AgentLogger.LogPath);
-        Check("state dir is writable", IsWritable(AgentConfig.DefaultDir),
-            $"cannot write to {AgentConfig.DefaultDir} — the agent cannot save its config or queue.");
+        // config.StateDir, not AgentConfig.DefaultDir: with --config the two differ, and reporting
+        // (or probing) the default is worse than saying nothing — it declares the wrong directory
+        // healthy while the one actually in use may be missing or read-only. The log genuinely does
+        // stay in the default directory, so it is labelled rather than silently moved.
+        Info("state dir", config.StateDir);
+        Info("log", $"{AgentLogger.LogPath} (always the default state dir)");
+        Check("state dir is writable", IsWritable(config.StateDir),
+            $"cannot write to {config.StateDir} — the agent cannot save its config or queue.");
 
         Console.WriteLine();
         Section("Server");
@@ -161,16 +165,40 @@ public static class Doctor
 
     private static async Task CheckServerAsync(AgentConfig config)
     {
+        var api = ApiClient.For(config);
+
+        // Three outcomes, not two. Calling an authenticated route with no key and then reporting the
+        // resulting 401 as "server unreachable" sent every unenrolled Deck owner to debug their
+        // network, when the server was fine and the machine simply had not registered.
+        var status = await api.ProbeAsync("/api/games");
+        if (status is null)
+        {
+            Problem($"server unreachable at {config.ServerUrl} — nothing answered. " +
+                    "Check the URL, that the server is running, and this device's network.");
+            return;
+        }
+
+        Check("server reachable", true, "");
+
+        if (status == System.Net.HttpStatusCode.Unauthorized || status == System.Net.HttpStatusCode.Forbidden)
+        {
+            Problem(string.IsNullOrEmpty(config.ApiKey)
+                ? "the server is reachable, but this machine is not enrolled. " +
+                  "Run: savelocker enroll --file <token file>"
+                : "the server is reachable, but it rejected this machine's API key. " +
+                  "Re-enroll this device, or check that its machine record still exists.");
+            return;
+        }
+
         try
         {
-            var api = ApiClient.For(config);
             var games = await api.ListGamesAsync();
-            Check("server reachable", true, "");
+            Check("authenticated", true, "");
             Info("games on server", games.Count.ToString());
         }
         catch (Exception ex)
         {
-            Problem($"server unreachable at {config.ServerUrl}: {ex.Message}");
+            Problem($"server answered {(int)status} but the game list could not be read: {ex.Message}");
         }
     }
 

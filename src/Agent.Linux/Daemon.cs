@@ -23,7 +23,9 @@ public sealed class Daemon : IAsyncDisposable
     private AgentApiServer? _apiServer;
     private CommandPoller? _commandPoller;
     private OfflineQueueDrainer? _drainer;
-    private SyncEngine _engine;
+    // Written from an API request thread (server URL change, registration), read from watcher,
+    // poller and drainer threads — the publish has to be visible to all of them.
+    private volatile SyncEngine _engine;
 
     /// <summary>
     /// <paramref name="apiPort"/> is overridable so a test harness can run a daemon alongside the
@@ -68,10 +70,11 @@ public sealed class Daemon : IAsyncDisposable
             },
             autoStart: new SystemdAutoStart(),
             pickFolder: null, // headless: no native dialog — the UI browses via /api/browse instead
-            onRegistered: () => _engine = BuildEngine(),
+            onConnectionChanged: () => _engine = BuildEngine(),
             getUpdateResult: () => null, // self-update is Windows-only (installer-based)
             browseRoots: SteamRoots.BrowseRoots(),
-            launchInfo: LinuxLaunchCommand);
+            launchInfo: LinuxLaunchCommand,
+            onGamesChanged: StartFolderWatchers);
         _apiServer.Start();
 
         _drainer = new OfflineQueueDrainer(_offlineQueue, _config, () => _engine, Notify);
