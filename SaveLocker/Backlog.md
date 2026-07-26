@@ -19,14 +19,18 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md`
   and misleading `doctor` output. Full bounded task and verification gates:
   `tasks/LinuxAgent-BugBounty.md`.
 
+- **Windows agent bug bounty.** Fix the 2026-07-26 review findings before the next Windows release:
+  live-game restores, unsafe save roots, readable machine credentials, non-transactional server
+  changes, an unverified/stale update channel, orphaned lease renewal, unlocked sync after lock
+  timeout, missing process mappings, and WinForms/state thread-ownership defects. Full bounded task
+  and verification gates: `tasks/WinAgent-BugBounty.md`.
+
 - **Device-verify fresh Windows installer enrollment.** The wizard shipped in v0.1.7; the upgrade path is well verified. The **fresh install** (clean box, no `%PROGRAMDATA%\SaveLocker`) has never been exercised. Scenarios archived in `logs/2026-07-14_installer-enrollment.md`:
   - Happy path: run installer, choose enrollment file → page shows server + machine name → install → machine appears online in Machines.
   - ACL trap: `icacls "%PROGRAMDATA%\SaveLocker"` — interactive user needs Modify.
   - Expired-token, skip, and `/SILENT /ENROLL="C:\path\policy.json"`.
 
 ## Medium priority
-
-- **Windows: `%PROGRAMDATA%\SaveLocker` ACLs on a multi-user box.** The local API token (`api-token`) and `config.json` (machine key) both inherit the ACL set by the installer — another local user may be able to read them. Fix: tighten the directory ACL to the enrolling user + SYSTEM, or move mutable per-user state out of the machine-wide directory. `run-local-api-tests.ps1` only asserts the file exists on Windows — give it a real ACL assertion once the model is decided.
 
 - **Linux agent secret permissions and state layout.** `config.json` contains a long-lived machine key; file privacy depends on the launching shell's umask. Enforce `0700` on private state directories and `0600` on config, queue, health, and log files in code, including CLI enrollment paths. Consider separating immutable app files from mutable XDG config/state so upgrades cannot overlap the executable tree.
 
