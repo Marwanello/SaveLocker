@@ -53,6 +53,13 @@ Server endpoints (`src/Server/Program.cs`).
   chosen version becomes Latest and both conflict snapshots are protected from retention.
 - `POST /api/games/{id}/rollback?version={versionId}` → 200 / 400.
 - `POST /api/games/{id}/set-latest?version={versionId}` → 200 / 400. Same head-pointer move as rollback; backs the **"Set as Latest"** dashboard action + initial-sync wizard.
+
+Every head change the *server* decides — the two above, `conflicts/{id}/resolve`, and an automatic
+`NewestWins`/`PreferMachine` upload — queues a deduplicated **unforced** `Pull` for each live machine
+that syncs the game (mapped save path or uploaded version), skipping the uploader that already
+learned the new head from its own upload response. Rollback and Set as Latest additionally supersede
+any open conflict that **offers the chosen version** (audited as `conflict.resolve_superseded`);
+conflicts between two other versions stay open. An ordinary push queues nothing. See `Decisions.md`.
 - `POST /api/games/{id}/retain?value={n?}` → 200 / 404. Set per-game version retention limit (null = global default).
 - `DELETE /api/games/{id}/versions/{versionId}` → 200 / 404 / 400. Refuses if it is the head or referenced by an open conflict.
 - `POST /api/games/{id}/versions/{versionId}/protected?value={bool}` → 200 / 404. Protect or

@@ -86,6 +86,23 @@ session can judge an edge case, not to reopen the choice.
   save root (the root itself is followed — it's user-chosen; paths *inside* the archive are not).
   Size caps (100k entries / 2 GB), checked against both declared and actual bytes. A refused
   restore is reported to the console as an event.
+- **Every server-authoritative head change fans out; an ordinary push does not.** One code path
+  (`SetHeadAndPropagateAsync`) moves `HeadVersionId`. Where the *server* decided — automatic conflict
+  policy, manual resolution, rollback, Set as Latest — it queues a deduplicated **unforced** Pull for
+  every live machine that syncs the game (mapped save path or uploaded version), skipping the
+  uploader that already learned the head from its own response. An agent's parent advances only on
+  its own push or pull, so without this the fleet stays on the old parent and re-conflicts on its
+  next save — the console said resolved while the machines disagreed. An ordinary push deliberately
+  does **not** fan out: the other machines are not displaced by a decision, and a command arriving
+  mid-session is the failure the lease and settle gate exist to prevent. Unforced is the safety
+  property: unsynced local work reports *blocked* rather than being overwritten (only the console's
+  own Pull button forces).
+- **Set as Latest / rollback supersedes the conflicts it decides, and only those.** A conflict
+  offering the chosen version is resolved in its favour — leaving it open makes the console insist
+  the version it was just told to trust is unresolved. A conflict between two *other* versions stays
+  open: the admin has said nothing about it, its machine is still stuck, and closing it would also
+  disarm the rule that resolution may not rewind a newer Latest. Each supersession is audited as
+  `conflict.resolve_superseded`.
 - **An archive is staged, then published; rows are deleted before files.** Uploads land in
   `{ArchiveRoot}/.incoming/*.part` (same volume, so the publish is one rename) and are size-capped
   while copying, not on declared length — a disconnect used to leave a truncated archive sitting at

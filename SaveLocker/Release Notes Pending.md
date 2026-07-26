@@ -89,7 +89,8 @@ one code change, not two.
 **Branch:** `linux-agent-bugbounty` (the console fixes are landing on the same branch, not pushed)
 **Source:** `tasks/Console-BugBounty.md` — 13 findings (1 P0, 6 P1, 3 P2, 3 P3)
 **Fixed so far:** the machine-deletion data loss (P0) — `a761f3f`; lost dashboard commands (P1) —
-`d46dcd6`; half-written save archives (P1)
+`d46dcd6`; half-written save archives (P1) — `32ffe8e`; head changes that never reached the
+machines (P1)
 
 **This section changes the server, so the console must be redeployed** (`docker compose pull &&
 docker compose up -d`). The Linux section above explicitly says it does not; do not merge the two
@@ -115,6 +116,15 @@ table. Take the usual backup before upgrading (`/data/backups/` holds the nightl
   now handed out on a time limit: one that is not confirmed goes back in the queue and the next
   check-in picks it up. The dashboard shows "retried ×2" when that happens, and says whether a job
   is running on the machine or waiting to be handed out again.
+- **"Set as Latest" now actually reaches your machines.** It promised every machine would pull the
+  chosen save and then told none of them: the choice was recorded on the server and the machines
+  carried on from the save they already had, hitting a conflict on their very next save. The same
+  gap applied to rollback and to the automatic conflict settings ("newest wins" / "always prefer this
+  machine") — the machine that lost was never told it had lost. All of them now queue a sync for
+  every machine that syncs that game. As everywhere else, that sync will not overwrite local changes
+  you have not pushed: those machines report the pull as blocked so you can decide.
+- **Choosing a Latest clears the argument it settles.** Open conflicts on that game are marked
+  resolved in its favour, instead of the console continuing to flag the very save you just chose.
 - **An interrupted upload no longer leaves a broken save on the server.** If a machine lost its
   connection part-way through sending a save, the incomplete file was written straight to the place a
   real save lives, and repeated failures quietly filled the disk. Saves are now assembled aside and

@@ -190,7 +190,15 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
   }
 
   async function handleSetLatest(versionId: string) {
-    if (!confirm('Set this version as Latest? Every machine will pull it on next sync.')) return;
+    // Says what actually happens now: a pull is queued for every machine that syncs this game, and
+    // it is unforced, so a machine holding unsynced local work reports blocked rather than losing it.
+    if (!confirm(
+      'Set this version as Latest?\n\n' +
+      'A pull is queued for every machine that syncs this game. Any machine with local changes it ' +
+      'has not pushed yet will report the pull as blocked instead of overwriting them.\n\n' +
+      'If this version is one of the options in an open conflict, that conflict is marked resolved ' +
+      'in its favour.'
+    )) return;
     try {
       await api.setLatest(game.id, versionId);
       const vs = await api.versions(game.id);

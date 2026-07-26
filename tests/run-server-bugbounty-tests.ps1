@@ -529,6 +529,141 @@ try {
     Check "startup leaves a recent staging file alone"   (Test-Path $fresh)
 
     Stop-TestServer $srv
+
+    # =====================================================================================
+    # CS-04: every authoritative head change reaches the fleet
+    # =====================================================================================
+    # Two real agents, because the failure is not "the pointer is wrong" — the pointer was always
+    # right. It is that a machine's PARENT is not repaired, which only shows up as a conflict on that
+    # machine's next push. So each case ends by pushing and checking it was accepted.
+    Write-Host ""
+    Write-Host "==== CS-04: a server-side head change must reach every machine ===="
+
+    $env:Storage__DbPath      = Join-Path $scratch "heads.db"
+    $env:Storage__ArchiveRoot = Join-Path $scratch "head-archives"
+    Remove-Item Env:Storage__MaxUploadMb -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force $env:Storage__ArchiveRoot | Out-Null
+    $srv = Start-TestServer $serverDll "heads"
+
+    $hpcName  = "HeadPC-$stamp"
+    $hlapName = "HeadLap-$stamp"
+    $hdeckName = "HeadDeck-$stamp"
+    $hgameName = "HeadGame-$stamp"
+    $hpcCfg   = Join-Path $scratch "hpc.json"
+    $hlapCfg  = Join-Path $scratch "hlap.json"
+    $hpcSave  = Join-Path $scratch "hpc_save";  New-Item -ItemType Directory -Force $hpcSave  | Out-Null
+    $hlapSave = Join-Path $scratch "hlap_save"; New-Item -ItemType Directory -Force $hlapSave | Out-Null
+    foreach ($c in @($hpcCfg, $hlapCfg)) {
+        @{ ServerUrl = $url; Games = @() } | ConvertTo-Json | Set-Content -Path $c -Encoding utf8
+    }
+
+    Agent register --name $hpcName  --config $hpcCfg  | Out-Null
+    Agent register --name $hlapName --config $hlapCfg | Out-Null
+    $deckReg = Invoke-RestMethod "$url/api/machines/register" -Method Post -ContentType "application/json" `
+        -Body (@{ name = $hdeckName } | ConvertTo-Json)
+
+    "head v1" | Set-Content (Join-Path $hpcSave "save.dat") -Encoding utf8
+    Agent add-game --name $hgameName --dir $hpcSave  --config $hpcCfg  | Out-Null
+    Agent add-game --name $hgameName --dir $hlapSave --config $hlapCfg | Out-Null
+    Agent push $hgameName --config $hpcCfg | Out-Null          # v1 becomes head
+    Agent pull $hgameName --config $hlapCfg | Out-Null         # laptop is current on v1
+
+    $hgame = ((Get-Json "/api/overview") | Where-Object { $_.game.name -eq $hgameName }).game
+    $hpc   = (Get-Json "/api/machines") | Where-Object { $_.name -eq $hpcName }
+    $hlap  = (Get-Json "/api/machines") | Where-Object { $_.name -eq $hlapName }
+
+    # A third machine that syncs this game but has never uploaded: a Deck an admin has configured
+    # and nothing more. It is displaced by a head change exactly like the other two.
+    Invoke-RestMethod "$url/api/games/$($hgame.id)/paths/$($deckReg.machineId)?value=$([uri]::EscapeDataString((Join-Path $scratch 'hdeck_save')))" -Method Post | Out-Null
+
+    function PendingPulls($machineId) {
+        @(Get-Json "/api/commands" | Where-Object {
+            $_.machineId -eq $machineId -and $_.gameId -eq $hgame.id -and
+            $_.type -eq "Pull" -and $_.status -eq "Pending" })
+    }
+
+    # ---- 1. An automatic conflict policy must tell the machines it displaced ----
+    Invoke-RestMethod "$url/api/games/$($hgame.id)/conflict-policy" -Method Post -ContentType "application/json" `
+        -Body (@{ policy = "NewestWins" } | ConvertTo-Json) | Out-Null
+
+    "laptop v2"  | Set-Content (Join-Path $hlapSave "save.dat") -Encoding utf8
+    Agent push $hgameName --config $hlapCfg | Out-Null          # fast-forward: head = laptop v2
+
+    "pc v3 (stale parent)" | Set-Content (Join-Path $hpcSave "save.dat") -Encoding utf8
+    $autoPush = Agent push $hgameName --config $hpcCfg          # diverges; NewestWins hands it to PC
+    Check "NewestWins accepted the divergent push"  (-not ("$autoPush" -match "CONFLICT"))
+    Check "the policy advanced the head to the winner" `
+        ((Get-Json "/api/games/$($hgame.id)/state").head.machineName -eq $hpcName)
+
+    Check "the displaced machine is told to pull"     (@(PendingPulls $hlap.id).Count -eq 1)
+    Check "the displaced Deck is told to pull"        (@(PendingPulls $deckReg.machineId).Count -eq 1)
+    Check "the winning uploader gets no redundant pull" (@(PendingPulls $hpc.id).Count -eq 0)
+    Check "the queued pull is UNFORCED"              (@(PendingPulls $hlap.id)[0].force -eq $false)
+
+    # The point of the whole finding: the displaced machine repairs its parent, so its next save is
+    # accepted instead of opening a conflict.
+    Agent pull $hgameName --config $hlapCfg | Out-Null
+    "laptop v4 after repair" | Set-Content (Join-Path $hlapSave "save.dat") -Encoding utf8
+    $repaired = Agent push $hgameName --config $hlapCfg
+    Check "the displaced machine's next push does not conflict" (-not ("$repaired" -match "CONFLICT"))
+
+    # ---- 2. Set as Latest must do what the console promises ----
+    # Back to Manual so the laptop's stale push opens a real conflict to be superseded.
+    Invoke-RestMethod "$url/api/games/$($hgame.id)/conflict-policy" -Method Post -ContentType "application/json" `
+        -Body (@{ policy = "Manual" } | ConvertTo-Json) | Out-Null
+
+    Agent pull $hgameName --config $hpcCfg | Out-Null           # PC current again
+    "pc v5"  | Set-Content (Join-Path $hpcSave "save.dat") -Encoding utf8
+    Agent push $hgameName --config $hpcCfg | Out-Null           # head = pc v5
+    "laptop divergent v6" | Set-Content (Join-Path $hlapSave "save.dat") -Encoding utf8
+    Agent push $hgameName --config $hlapCfg | Out-Null           # CONFLICT (manual)
+
+    Check "a manual conflict is open before Set as Latest" `
+        ((Get-Json "/api/games/$($hgame.id)/state").hasOpenConflict -eq $true)
+
+    # Drain every queued pull first, so the assertions below measure what Set as Latest itself
+    # queued rather than leftovers from section 1. Claiming is how an agent drains, so that is how
+    # this drains: each machine's own key, straight through the agent endpoint.
+    $keys = @{
+        $hpc.id             = (Get-Content $hpcCfg  -Raw | ConvertFrom-Json).ApiKey
+        $hlap.id            = (Get-Content $hlapCfg -Raw | ConvertFrom-Json).ApiKey
+        $deckReg.machineId  = $deckReg.apiKey
+    }
+    foreach ($m in $keys.Keys) {
+        Invoke-WebRequest "$url/api/agent/commands" -Headers @{ "X-Api-Key" = $keys[$m] } -UseBasicParsing | Out-Null
+    }
+    Check "the queue is drained before measuring Set as Latest" `
+        (@(PendingPulls $hlap.id).Count -eq 0 -and @(PendingPulls $hpc.id).Count -eq 0 -and @(PendingPulls $deckReg.machineId).Count -eq 0)
+
+    # First a version the conflict does NOT offer: the disagreement is not the admin's to close, and
+    # leaving it open is what keeps the "resolution may not rewind a newer Latest" guard reachable.
+    $conf = @(Get-Json "/api/conflicts" | Where-Object { $_.gameId -eq $hgame.id })[0]
+    $unrelated = @(Get-Json "/api/games/$($hgame.id)/versions" |
+        Where-Object { $_.id -ne $conf.versionAId -and $_.id -ne $conf.versionBId })[0]
+    Invoke-RestMethod "$url/api/games/$($hgame.id)/set-latest?version=$($unrelated.id)" -Method Post | Out-Null
+    Check "a conflict the chosen version is not part of stays open" `
+        ((Get-Json "/api/games/$($hgame.id)/state").hasOpenConflict -eq $true)
+
+    # Now the version the conflict actually offers.
+    $target = @(Get-Json "/api/games/$($hgame.id)/versions" | Where-Object { $_.id -eq $conf.versionBId })[0]
+    Invoke-RestMethod "$url/api/games/$($hgame.id)/set-latest?version=$($target.id)" -Method Post | Out-Null
+
+    Check "Set as Latest moved the head"              ((Get-Json "/api/games/$($hgame.id)/state").head.id -eq $target.id)
+    Check "Set as Latest closed the conflict it decides" ((Get-Json "/api/games/$($hgame.id)/state").hasOpenConflict -eq $false)
+    Check "superseding a conflict is audited" `
+        (@(Get-Json "/api/audit?limit=200" | Where-Object { $_.action -eq "conflict.resolve_superseded" }).Count -ge 1)
+    Check "Set as Latest queues a pull for every machine that syncs the game" `
+        (@(PendingPulls $hlap.id).Count -eq 1 -and @(PendingPulls $hpc.id).Count -eq 1 -and @(PendingPulls $deckReg.machineId).Count -eq 1)
+    Check "Set as Latest queues UNFORCED pulls" `
+        (@(@(PendingPulls $hlap.id) + @(PendingPulls $hpc.id) | Where-Object { $_.force }).Count -eq 0)
+
+    # ---- 3. Deduplication: a second head change must not stack a pull per click ----
+    $target2 = @(Get-Json "/api/games/$($hgame.id)/versions")[0]
+    Invoke-RestMethod "$url/api/games/$($hgame.id)/set-latest?version=$($target2.id)" -Method Post | Out-Null
+    Check "a second head change does not stack pulls" `
+        (@(PendingPulls $hlap.id).Count -eq 1 -and @(PendingPulls $hpc.id).Count -eq 1)
+
+    Stop-TestServer $srv
 }
 finally {
     foreach ($p in $script:servers) { Stop-TestServer $p }

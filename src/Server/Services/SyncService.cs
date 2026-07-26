@@ -515,10 +515,13 @@ public sealed class SyncService
             if (autoWins)
             {
                 // Policy says the incoming version wins — advance head without creating a conflict.
-                game.HeadVersionId = versionId;
-                await Audit(machineId, gameId, "upload.auto_resolved",
-                    $"policy={game.ConflictPolicy} {contentHash}");
-                await _db.SaveChangesAsync(ct);
+                // The machines this just displaced have to be told: the policy decided against their
+                // parent, and nothing in their own sync loop would reveal that until their next push
+                // was rejected. Propagating here is the difference between a policy that resolves
+                // conflicts and one that merely hides the first of them.
+                await SetHeadAndPropagateAsync(game, versionId, "upload.auto_resolved",
+                    $"policy={game.ConflictPolicy} {contentHash}",
+                    propagate: true, exceptMachineId: machineId, ct);
                 await PruneVersionsAsync(gameId, ct);
                 await LoadMachine(version, ct);
                 return new UploadResult(UploadStatus.Created, version.ToDto(), null);
@@ -577,10 +580,10 @@ public sealed class SyncService
             return new UploadResult(UploadStatus.Conflict, version.ToDto(), conflict.ToDto());
         }
 
-        // Fast-forward (or forced overwrite).
-        game.HeadVersionId = versionId;
-        await Audit(machineId, gameId, force ? "upload.force" : "upload.create", contentHash);
-        await _db.SaveChangesAsync(ct);
+        // Fast-forward (or forced overwrite). No fan-out: see SetHeadAndPropagateAsync's `propagate`.
+        await SetHeadAndPropagateAsync(game, versionId,
+            force ? "upload.force" : "upload.create", contentHash,
+            propagate: false, exceptMachineId: machineId, ct);
 
         await PruneVersionsAsync(gameId, ct);
 
@@ -833,15 +836,15 @@ public sealed class SyncService
             foreach (var version in versions) version.Protected = true;
         }
 
-        game.HeadVersionId = winningVersionId;
         conflict.Status = ConflictStatus.Resolved;
         conflict.ResolvedVersionId = winningVersionId;
         conflict.ResolvedBy = resolvedBy;
         conflict.ResolvedAt = DateTime.UtcNow;
-        await Audit(null, conflict.GameId,
+        // Propagation is queued below rather than here, for the ordering reason spelled out there.
+        await SetHeadAndPropagateAsync(game, winningVersionId,
             keepBoth ? "conflict.resolve_keep_both" : "conflict.resolve",
-            winningVersionId.ToString());
-        await _db.SaveChangesAsync();
+            winningVersionId.ToString(),
+            propagate: false, exceptMachineId: null, CancellationToken.None);
 
         // ORDER MATTERS, and the obvious order is wrong. Queue the pulls FIRST: resolving unpins
         // both of the conflict's versions, so pruning here can legitimately delete the losing one —
@@ -885,37 +888,13 @@ public sealed class SyncService
     /// </list>
     /// </para>
     /// </summary>
-    private async Task QueueResolutionPullsAsync(ConflictFlag conflict)
-    {
-        var versionIds = new[] { conflict.VersionAId, conflict.VersionBId };
-
-        // Filtered against Machines on purpose: DeleteMachineAsync keeps a deleted machine's
-        // versions as history with a null MachineId, and a version written before that behaviour
-        // existed can still name a machine that is gone — queueing a command for either would
-        // violate the foreign key.
-        var machineIds = await _db.SaveVersions
-            .Where(v => versionIds.Contains(v.Id)
-                        && v.MachineId != null
-                        && _db.Machines.Any(m => m.Id == v.MachineId))
-            .Select(v => v.MachineId!.Value)
-            .Distinct()
-            .ToListAsync();
-
-        foreach (var machineId in machineIds)
-        {
-            // An admin clearing several conflicts in a row must not queue a pull per click. One pull
-            // brings the agent to the current head regardless of how many were resolved.
-            var alreadyQueued = await _db.AgentCommands.AnyAsync(c =>
-                c.MachineId == machineId &&
-                c.GameId == conflict.GameId &&
-                c.Type == AgentCommandType.Pull &&
-                c.Status == CommandStatus.Pending);
-            if (alreadyQueued) continue;
-
-            await EnqueueCommandAsync(new EnqueueCommandRequest(
-                machineId, conflict.GameId, AgentCommandType.Pull, Force: false));
-        }
-    }
+    private Task QueueResolutionPullsAsync(ConflictFlag conflict) =>
+        // Every live machine that syncs the game, not just the conflict's two: the same head change
+        // displaces a third machine sitting on the old parent exactly as much as it displaces the
+        // loser. QueueHeadPullsAsync already dedupes and already skips machines that are gone —
+        // DeleteMachineAsync keeps a deleted machine's versions as history with a null MachineId,
+        // and queueing a command for one would violate the foreign key.
+        QueueHeadPullsAsync(conflict.GameId, exceptMachineId: null, CancellationToken.None);
 
     /// <summary>Admin: move the head pointer to an earlier version (rollback).</summary>
     public Task<bool> RollbackAsync(Guid gameId, Guid versionId, string by) =>
@@ -929,16 +908,123 @@ public sealed class SyncService
     public Task<bool> SetAsLatestAsync(Guid gameId, Guid versionId, string by) =>
         SetHeadAsync(gameId, versionId, "set_latest", by);
 
+    /// <summary>
+    /// The admin head move behind both rollback and Set as Latest.
+    /// <para>
+    /// Both used to be a pointer write and nothing else, while the console promised every machine
+    /// would pull the chosen save. Nothing told them: an agent's parent advances only on its own
+    /// push or pull, so the fleet stayed on the previous head and conflicted on its next save.
+    /// </para>
+    /// </summary>
     private async Task<bool> SetHeadAsync(Guid gameId, Guid versionId, string action, string by)
     {
         var game = await _db.Games.FindAsync(gameId);
         var version = await _db.SaveVersions.FindAsync(versionId);
         if (game is null || version is null || version.GameId != gameId) return false;
 
-        game.HeadVersionId = versionId;
-        await Audit(null, gameId, action, $"{versionId} by {by}");
-        await _db.SaveChangesAsync();
+        // Close the conflicts this choice actually decides — the ones offering the chosen version.
+        // Leaving those open would have the console insist the very version it was just told to
+        // trust is unresolved. Conflicts between two OTHER versions stay open on purpose: the admin
+        // has said nothing about them, their machine is still stuck, and closing them here would
+        // also disarm the guard that refuses to resolve a conflict in a way that rewinds a newer
+        // Latest (run-agent-tests covers exactly that sequence). Audited one by one, so this is
+        // visible rather than a quiet side effect of clicking Set as Latest.
+        var superseded = await _db.Conflicts
+            .Where(c => c.GameId == gameId && c.Status == ConflictStatus.Open
+                        && (c.VersionAId == versionId || c.VersionBId == versionId))
+            .ToListAsync();
+        foreach (var c in superseded)
+        {
+            c.Status = ConflictStatus.Resolved;
+            c.ResolvedVersionId = versionId;
+            c.ResolvedBy = by;
+            c.ResolvedAt = DateTime.UtcNow;
+            await Audit(c.MachineId, gameId, "conflict.resolve_superseded",
+                $"{action} to {versionId} by {by}");
+        }
+
+        await SetHeadAndPropagateAsync(game, versionId, action, $"{versionId} by {by}",
+            propagate: true, exceptMachineId: null, CancellationToken.None);
         return true;
+    }
+
+    /// <summary>
+    /// The one place <see cref="Game.HeadVersionId"/> moves. Upload, automatic conflict policy,
+    /// manual resolution, rollback and Set as Latest all come through here, so "who gets told about
+    /// a new head" is one rule rather than four that drifted apart.
+    /// </summary>
+    /// <param name="propagate">
+    /// Whether to queue pulls for the game's other machines. False for an ordinary push: the
+    /// uploader learns the new head from its own upload response, and every other machine is
+    /// deliberately left to discover it through its normal pre-launch pull. Fanning commands out on
+    /// every save would mean a pull arriving while a game is running, which is the failure the
+    /// lease and settle gate exist to avoid. It is true where the server made a decision the fleet
+    /// could not otherwise learn: an automatic conflict policy, a manual resolution, or an admin
+    /// naming Latest.
+    /// </param>
+    /// <param name="exceptMachineId">
+    /// The machine that already knows — the uploader whose own response carried the new head. A
+    /// redundant command for it would be a no-op pull, but it would also be noise in the console's
+    /// command list at exactly the moment an admin is trying to read it.
+    /// </param>
+    private async Task SetHeadAndPropagateAsync(
+        Game game, Guid newHeadId, string action, string detail,
+        bool propagate, Guid? exceptMachineId, CancellationToken ct)
+    {
+        game.HeadVersionId = newHeadId;
+        await Audit(exceptMachineId, game.Id, action, detail);
+        await _db.SaveChangesAsync(ct);
+
+        if (propagate) await QueueHeadPullsAsync(game.Id, exceptMachineId, ct);
+    }
+
+    /// <summary>
+    /// Queue a deduplicated, <b>unforced</b> Pull for every live machine that syncs this game, so a
+    /// server-authoritative head change actually reaches the fleet.
+    /// <para>
+    /// Unforced is the safety property, and it is deliberate (see
+    /// <see cref="QueueResolutionPullsAsync"/>): a machine that is already current no-ops, a machine
+    /// with nothing unpushed takes the new head, and a machine carrying unsynced local work reports
+    /// <b>blocked</b> instead of having that work destroyed. The console's own Pull button is the
+    /// forced one, because there a human is asking for exactly that.
+    /// </para>
+    /// </summary>
+    private async Task QueueHeadPullsAsync(Guid gameId, Guid? exceptMachineId, CancellationToken ct)
+    {
+        // "Syncs this game" = has a mapped save folder for it, or has uploaded a version of it.
+        // Two queries and a set rather than a Union: this has to survive a version whose machine
+        // was deleted (MachineId is null) without dragging that case through the translation.
+        var candidates = new HashSet<Guid>(
+            await _db.MachineSavePaths.Where(p => p.GameId == gameId)
+                .Select(p => p.MachineId).ToListAsync(ct));
+        foreach (var id in await _db.SaveVersions
+                     .Where(v => v.GameId == gameId && v.MachineId != null)
+                     .Select(v => v.MachineId!.Value).Distinct().ToListAsync(ct))
+            candidates.Add(id);
+
+        if (exceptMachineId is { } skip) candidates.Remove(skip);
+        if (candidates.Count == 0) return;
+
+        // Only machines that still exist: a command for a deleted one violates the foreign key.
+        var live = await _db.Machines
+            .Where(m => candidates.Contains(m.Id))
+            .Select(m => m.Id)
+            .ToListAsync(ct);
+
+        foreach (var machineId in live)
+        {
+            // One pull brings an agent to the current head no matter how many head changes it
+            // missed, so a pending pull is already the whole answer.
+            var alreadyQueued = await _db.AgentCommands.AnyAsync(c =>
+                c.MachineId == machineId &&
+                c.GameId == gameId &&
+                c.Type == AgentCommandType.Pull &&
+                c.Status == CommandStatus.Pending, ct);
+            if (alreadyQueued) continue;
+
+            await EnqueueCommandAsync(new EnqueueCommandRequest(
+                machineId, gameId, AgentCommandType.Pull, Force: false));
+        }
     }
 
     public async Task<List<SaveVersion>> ListVersionsAsync(Guid gameId) =>
