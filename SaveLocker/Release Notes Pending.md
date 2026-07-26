@@ -84,12 +84,41 @@ the server-address fix, the durable game removal, the crash-on-add fix, and the 
 save-folder watching. Decide at tag time whether to describe those once or per platform — they are
 one code change, not two.
 
-## Console / server — not started
+## Console / server — in progress
 
-**Source:** `tasks/Console-BugBounty.md`
+**Branch:** `linux-agent-bugbounty` (the console fixes are landing on the same branch, not pushed)
+**Source:** `tasks/Console-BugBounty.md` — 13 findings (1 P0, 6 P1, 3 P2, 3 P3)
+**Fixed so far:** the machine-deletion data loss (P0) — `a761f3f`
 
-If anything here changes the server, the release notes must say the console needs redeploying —
-the Linux section above explicitly says it does not.
+**This section changes the server, so the console must be redeployed** (`docker compose pull &&
+docker compose up -d`). The Linux section above explicitly says it does not; do not merge the two
+into one "no redeploy needed" statement at tag time.
+
+**There is a database migration.** It runs automatically on first start and rebuilds the save-version
+table. Take the usual backup before upgrading (`/data/backups/` holds the nightly ones).
+
+### Draft notes
+
+#### Fixed
+
+- **Removing a machine no longer deletes its saves.** The confirmation dialog promised the version
+  history would be kept, and it was not: removing a machine silently destroyed every save version
+  that machine had uploaded. If one of them was the current Latest, the game was left with no Latest
+  at all — its stored saves still on the server's disk, but nothing left to reach them with. Storage
+  totals dropped by the same amount. Existing history is preserved by the upgrade; anything already
+  lost this way cannot be recovered from the database, though the archive files themselves were never
+  deleted.
+- **Saves uploaded by a machine you later removed still say who made them.** They are listed as
+  "<machine> (deleted)" rather than a blank name, and they stay downloadable, keep their protected
+  flag, and can still be chosen when resolving a conflict.
+
+### Not yet verified — do not publish these bullets without it
+
+- The deployment-shaped check through the real HTTPS tunnel (`tasks/Console-BugBounty.md` →
+  Verification) has not been run; it is only needed once the proxy-URL finding lands.
+
+Windows suites green at time of writing: server bug bounty 27, agent 45, concurrency 23, health 19,
+enrollment 18.
 
 ---
 
@@ -97,3 +126,6 @@ the Linux section above explicitly says it does not.
 
 Last released: **v0.4.1**. These are fixes only, no new capability, so v0.4.2 fits unless the
 Console or Windows bounties turn up something user-visible enough to warrant v0.5.0.
+
+The console bounty carries a schema migration, which argues for v0.5.0 on its own: it is the first
+release where downgrading the container is not a clean rollback.
