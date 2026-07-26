@@ -7,6 +7,12 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md`
 
 ## High priority
 
+- **Console / server bug bounty — critical data-preservation fix first.** Deleting a machine currently
+  cascades through every save version it uploaded despite the console promising those versions are
+  kept. The review also found lost remote commands, non-atomic archive/installer writes, stale-head
+  propagation gaps, a lease race, proxy-broken enrollment/update URLs, and console state defects.
+  Full bounded task and verification gates: `tasks/Console-BugBounty.md`.
+
 - **Linux agent bug bounty.** Fix the 2026-07-26 review findings before the next Linux release:
   server-change split brain, removed-game resurrection, non-durable local untracking, stale folder
   watchers, partial/concurrent enrollment, stale Game Mode config writes, false systemd success,
