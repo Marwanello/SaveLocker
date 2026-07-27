@@ -91,7 +91,7 @@ one code change, not two.
 **Fixed so far:** the machine-deletion data loss (P0) — `a761f3f`; lost dashboard commands (P1) —
 `d46dcd6`; half-written save archives (P1) — `32ffe8e`; head changes that never reached the
 machines (P1) — `7f4fa4a`; the two-machine launch race (P1) — `7e12fc5`; unusable enrollment URLs (P1, scoped to
-LAN — see the task file) — `312ed77`; unbounded and non-atomic installer uploads (P1+P2)
+LAN — see the task file) — `312ed77`; unbounded and non-atomic installer uploads (P1+P2) — `60ed218`; credentials consumed before use (P2)
 
 **This section changes the server, so the console must be redeployed** (`docker compose pull &&
 docker compose up -d`). The Linux section above explicitly says it does not; do not merge the two
@@ -117,6 +117,13 @@ table. Take the usual backup before upgrading (`/data/backups/` holds the nightl
   now handed out on a time limit: one that is not confirmed goes back in the queue and the next
   check-in picks it up. The dashboard shows "retried ×2" when that happens, and says whether a job
   is running on the machine or waiting to be handed out again.
+- **A bad SteamGridDB key no longer wipes out your working one.** The key was saved first and
+  checked afterwards, and the console said "saved" either way — so a mistyped or truncated paste
+  quietly replaced a key that worked, and the only way back was to find the original again. It is now
+  checked before anything is stored: a key that fails is rejected with the reason, your existing key
+  is untouched, and what you pasted stays in the box so you can fix it. The check itself was also
+  wrong: it asked SteamGridDB a question that does not need an API key, so *any* text passed
+  "verified". It now asks something that genuinely requires the key.
 - **Uploading an agent installer can no longer break the update channel.** Any file was accepted,
   whatever it was: uploading a text file by mistake replaced the working installer and left every
   machine being offered *that* as an update. Uploads are now checked before anything is replaced —
@@ -125,6 +132,10 @@ table. Take the usual backup before upgrading (`/data/backups/` holds the nightl
   serving. There is also a real size limit again (200 MB, configurable): the limit had been removed
   outright rather than raised, so a large upload could fill the disk, and that endpoint is open until
   you set an admin password.
+- **An enrollment file is never used up without handing back a key.** Setting up a new machine
+  spent the single-use token first and issued its key second, so a failure in between left the file
+  dead and the machine still not enrolled — with nothing to do but create another. Both halves now
+  succeed or fail together. Two machines racing the same file still produce exactly one enrolment.
 - **Enrollment files can no longer be created with an address the new machine cannot use.** If you
   opened the console on the server itself — at `localhost` — the file told the new machine to sync
   with *itself*, and the only sign was enrollment failing for reasons that pointed nowhere. The

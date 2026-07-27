@@ -123,6 +123,17 @@ session can judge an edge case, not to reopen the choice.
   open: the admin has said nothing about it, its machine is still stuck, and closing it would also
   disarm the rule that resolution may not rewind a newer Latest. Each supersession is audited as
   `conflict.resolve_superseded`.
+- **A credential is only consumed once the thing it buys has been issued.** The SteamGridDB key is
+  verified *before* it replaces the stored one, and a rejection is a 4xx — it used to store first,
+  ask second, and answer 200 with `{ ok: false }`, so a typo overwrote a working key while the
+  console reported success. Enrollment burns its single-use token and issues the machine key inside
+  **one transaction**; anything that throws rolls the burn back, so a file is never spent for
+  nothing. The single-winner guarantee is unchanged: the burn is still a conditional `UPDATE`, and
+  a second redeemer matches zero rows.
+- **The SteamGridDB probe must hit an authenticated endpoint.** `search/autocomplete` is served
+  *without* a key — it returned 200 with real Celeste data for 25 characters of nonsense, so
+  "API key verified" only ever meant the site was reachable. `grids/game/{id}` answers 401 without
+  a valid key, which is the question being asked.
 - **The hosted installer is staged, published, then the old one is removed — under one gate.**
   `AgentInstallerService` is a singleton holding a `SemaphoreSlim` that manual upload, manual GitHub
   fetch, the background poller and delete all pass through; the fetch holds it across its

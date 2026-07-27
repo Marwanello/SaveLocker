@@ -20,6 +20,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
   const skew = fleetSkew(build?.version, health);
   const [copiedBuild, setCopiedBuild] = useState(false);
   const [sgdbInput, setSgdbInput] = useState('');
+  const [savingKey, setSavingKey] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -100,15 +101,26 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
     () => Object.fromEntries(games.map(s => [s.game.id, s.game.retainVersions?.toString() ?? '']))
   );
 
+  /**
+   * The input is cleared and the view refreshed only after the server confirms the key was stored.
+   * It used to do both unconditionally: a rejected key wiped what you had just pasted and the
+   * panel refreshed into "configured", so a typo looked exactly like success — while the previously
+   * working key had already been overwritten. The server verifies before storing now, and answers
+   * 4xx on rejection, which `api.saveSgdbKey` turns into a throw carrying the server's explanation.
+   */
   async function handleSaveKey() {
     const v = sgdbInput.trim();
     if (!v) { alert('Paste a SteamGridDB API key first.'); return; }
+    setSavingKey(true);
     try {
       const res = await api.saveSgdbKey(v);
       setSgdbInput('');
       alert(res.message || 'Saved.');
       onRefresh();
-    } catch (e) { alert('Could not save key: ' + (e as Error).message); }
+    } catch (e) {
+      // Input deliberately retained: the paste is the thing worth keeping when this fails.
+      alert('Key not saved: ' + (e as Error).message);
+    } finally { setSavingKey(false); }
   }
 
   async function handleClearKey() {
@@ -268,9 +280,10 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
             />
             <button
               onClick={handleSaveKey}
-              style={{ padding: '6px 14px', background: '#129271', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+              disabled={savingKey}
+              style={{ padding: '6px 14px', background: '#129271', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: savingKey ? 'not-allowed' : 'pointer', opacity: savingKey ? 0.5 : 1, whiteSpace: 'nowrap' }}
             >
-              Save key
+              {savingKey ? 'Verifying…' : 'Save key'}
             </button>
             {settings.steamGridDbConfigured && (
               <button

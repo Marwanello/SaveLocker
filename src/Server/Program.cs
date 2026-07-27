@@ -468,13 +468,35 @@ admin.MapGet("/settings", async (SettingsService settings) =>
     Results.Ok(await settings.GetServerSettingsDtoAsync()))
     .Produces<ServerSettingsDto>();
 
+// Verify FIRST, store only on success. The old order stored the key and then asked SteamGridDB
+// about it, answering 200 with { ok: false } either way — so a typo silently replaced a working
+// key, and the console (which ignored `ok`) reported it as configured. A rejected key must leave
+// the working one exactly where it was.
 admin.MapPost("/settings/steamgriddb-key", async (
-    SetSteamGridDbKeyRequest req, SettingsService settings, ArtService art) =>
+    SetSteamGridDbKeyRequest req, SettingsService settings, ArtService art, CancellationToken ct) =>
 {
-    await settings.SetAsync(SettingsService.SteamGridDbApiKey, req.ApiKey);
     if (string.IsNullOrWhiteSpace(req.ApiKey))
+    {
+        await settings.SetAsync(SettingsService.SteamGridDbApiKey, null, ct);
         return Results.Ok(new { ok = true, message = "SteamGridDB API key cleared." });
-    var (ok, message) = await art.VerifyKeyAsync();
+    }
+
+    var (ok, message) = await art.VerifyCandidateKeyAsync(req.ApiKey, ct);
+    if (!ok)
+    {
+        // 400, not 200-with-a-flag: a caller that only checks the status code must not conclude
+        // this worked. The console used to be exactly that caller.
+        var configured = !string.IsNullOrWhiteSpace(
+            await settings.GetEffectiveAsync(SettingsService.SteamGridDbApiKey, ct));
+        return Results.BadRequest(new
+        {
+            ok = false,
+            message,
+            keptExistingKey = configured,
+        });
+    }
+
+    await settings.SetAsync(SettingsService.SteamGridDbApiKey, req.ApiKey, ct);
     return Results.Ok(new { ok, message });
 });
 

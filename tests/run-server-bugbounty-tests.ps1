@@ -992,6 +992,98 @@ try {
 
     Remove-Item Env:Storage__AgentInstallerRoot, Env:AgentUpdate__MaxInstallerMb -ErrorAction SilentlyContinue
     Stop-TestServer $srv
+
+    # =====================================================================================
+    # CS-09 + CS-10: don't consume a credential you did not end up using
+    # =====================================================================================
+    # Two shapes of the same mistake: write first, find out afterwards. A SteamGridDB key was stored
+    # before it was checked, and an enrollment token was burnt before the machine key it buys was
+    # issued.
+    Write-Host ""
+    Write-Host "==== CS-09/10: settings and enrollment commit only on success ===="
+
+    $env:Storage__DbPath = Join-Path $scratch "settings.db"
+    # Seeded through configuration rather than the API, because the API now verifies before storing
+    # and this box has no valid SteamGridDB key. GetEffectiveAsync falls back to config, so this is
+    # a genuine "working key already in place" for the purposes of the check below.
+    $env:SteamGridDb__ApiKey = "config-key-that-already-works"
+    $srv = Start-TestServer $serverDll "settings"
+
+    function Settings { Get-Json "/api/settings" }
+    function SaveSgdbKey($key) {
+        try {
+            $r = Invoke-WebRequest "$url/api/settings/steamgriddb-key" -Method Post -ContentType "application/json" `
+                -Body (@{ apiKey = $key } | ConvertTo-Json) -UseBasicParsing
+            return @{ code = [int]$r.StatusCode; body = ($r.Content | ConvertFrom-Json) }
+        } catch {
+            $resp = $_.Exception.Response
+            $text = if ($resp) { (New-Object System.IO.StreamReader($resp.GetResponseStream())).ReadToEnd() } else { "" }
+            return @{ code = if ($resp) { [int]$resp.StatusCode } else { -1 }; body = ($text | ConvertFrom-Json -ErrorAction SilentlyContinue) }
+        }
+    }
+
+    Check "the seeded key is reported as configured"  ((Settings).steamGridDbConfigured -eq $true)
+
+    # A bogus key. Whether SteamGridDB rejects it or this box cannot reach SteamGridDB at all, the
+    # observable requirement is identical and is the point of the finding: do not store it, and do
+    # not report success.
+    $rejected = SaveSgdbKey "definitely-not-a-real-steamgriddb-key"
+    Check "a key that fails verification is not a 200"  ($rejected.code -ge 400)
+    Check "the failure says why"                        (-not [string]::IsNullOrWhiteSpace($rejected.body.message))
+    Check "the working key is still configured"         ((Settings).steamGridDbConfigured -eq $true)
+    Check "the working key still comes from config"     ((Settings).steamGridDbFromConfig -eq $true)
+
+    # Clearing is not a verification path and must still work.
+    $cleared = SaveSgdbKey $null
+    Check "clearing the key succeeds"                   ($cleared.code -eq 200 -and $cleared.body.ok -eq $true)
+
+    # ---- CS-10: one policy, two agents, at the same instant ----
+    $mint = Invoke-RestMethod "$url/api/admin/enrollments" -Method Post -ContentType "application/json" `
+        -Body (@{ machineName = "RaceDeck-$stamp"; ttlMinutes = 15; serverUrl = $url } | ConvertTo-Json)
+
+    $redeemer = {
+        param($u, $token, $at)
+        while ([DateTime]::UtcNow.Ticks -lt $at) { }
+        try {
+            $r = Invoke-WebRequest "$u/api/enroll" -Method Post -ContentType "application/json" `
+                -Body (@{ token = $token } | ConvertTo-Json) -UseBasicParsing
+            "$([int]$r.StatusCode)|$($r.Content)"
+        } catch {
+            $code = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { -1 }
+            "$code|"
+        }
+    }
+    $at = (Get-Date).AddSeconds(3).ToUniversalTime().Ticks
+    $rjobs = @(
+        (Start-Job -ScriptBlock $redeemer -ArgumentList $url, $mint.policy.token, $at),
+        (Start-Job -ScriptBlock $redeemer -ArgumentList $url, $mint.policy.token, $at)
+    )
+    $rres = $rjobs | Wait-Job -Timeout 90 | Receive-Job
+    $rjobs | Remove-Job -Force
+
+    $rcodes = @($rres | ForEach-Object { ($_ -split '\|', 2)[0] })
+    $keys = @($rres | ForEach-Object { ($_ -split '\|', 2)[1] } |
+        Where-Object { $_ } | ForEach-Object { ($_ | ConvertFrom-Json).apiKey } | Where-Object { $_ })
+
+    Check "simultaneous redeem: exactly one succeeds"   (@($rcodes | Where-Object { $_ -eq "200" }).Count -eq 1)
+    Check "simultaneous redeem: exactly one machine key" ($keys.Count -eq 1)
+    Check "simultaneous redeem: the loser is refused"   (@($rcodes | Where-Object { $_ -ne "200" }).Count -eq 1)
+    Check "the race created ONE machine"                (@(Get-Json "/api/machines" | Where-Object { $_.name -eq "RaceDeck-$stamp" }).Count -eq 1)
+
+    # The winner's key must actually work — a token spent for a key that does not authenticate is
+    # the failure this section exists to rule out.
+    $worked = $false
+    try {
+        Invoke-WebRequest "$url/api/games" -Headers @{ "X-Api-Key" = $keys[0] } -UseBasicParsing | Out-Null
+        $worked = $true
+    } catch { }
+    Check "the issued key authenticates"                $worked
+
+    $spent = @(Get-Json "/api/admin/enrollments" | Where-Object { $_.id -eq $mint.id })[0]
+    Check "the spent token records who spent it"        ($spent.redeemedByMachineName -eq "RaceDeck-$stamp")
+
+    Remove-Item Env:SteamGridDb__ApiKey -ErrorAction SilentlyContinue
+    Stop-TestServer $srv
 }
 finally {
     foreach ($p in $script:servers) { Stop-TestServer $p }
@@ -1000,7 +1092,7 @@ finally {
     Remove-Item Env:ASPNETCORE_URLS, Env:Storage__DbPath, Env:Storage__ArchiveRoot, `
         Env:Backup__Enabled, Env:Logging__EventLog__LogLevel__Default, Env:Commands__LeaseMinutes, `
         Env:Storage__MaxUploadMb, Env:Server__PublicBaseUrl, Env:Storage__AgentInstallerRoot, `
-        Env:AgentUpdate__MaxInstallerMb -ErrorAction SilentlyContinue
+        Env:AgentUpdate__MaxInstallerMb, Env:SteamGridDb__ApiKey -ErrorAction SilentlyContinue
     Get-Job -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
 }
 

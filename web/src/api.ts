@@ -87,8 +87,21 @@ export const api = {
     fetch(`/api/machines/${machineId}`, { method: 'DELETE', headers: headers() })
       .then(res => { if (!res.ok) throw new Error(`${res.status}`); }),
 
-  saveSgdbKey: (key: string | null) =>
-    request<{ message?: string }>('/settings/steamgriddb-key', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey: key }) }),
+  // Not `request()`: a rejected key answers 4xx with a structured body, and the useful part is the
+  // server's explanation ("SteamGridDB rejected the key", "could not reach SteamGridDB") rather
+  // than a status line with raw JSON glued to it.
+  saveSgdbKey: async (key: string | null) => {
+    const res = await fetch('/api/settings/steamgriddb-key', {
+      method: 'POST',
+      headers: headers({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ apiKey: key }),
+    });
+    const body = await res.json().catch(() => null) as { ok?: boolean; message?: string } | null;
+    if (!res.ok || body?.ok === false) {
+      throw new Error(body?.message || `${res.status} ${res.statusText}`);
+    }
+    return body ?? {};
+  },
 
   setAutoFetchHours: (hours: number) =>
     request<{ autoFetchHours: number }>('/settings/agent-update-auto-fetch', {

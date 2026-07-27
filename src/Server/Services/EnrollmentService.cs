@@ -178,14 +178,24 @@ public sealed class EnrollmentService
         if (string.IsNullOrWhiteSpace(name))
             return (null, "No machine name: this token was not minted for a machine, so the agent must supply one.");
 
-        // Burn the token before issuing anything, conditionally on it still being unspent, so two
-        // agents racing the same file cannot both come away with a key. ExecuteUpdate is its own
-        // transaction; a zero row count means the other one won.
+        // Spending the token and issuing the key are ONE transaction. The burn used to stand on its
+        // own, so a failure in registration or in the writes below left the file spent and the agent
+        // keyless — a single-use credential consumed for nothing, and the admin's only route back
+        // was to mint another. Anything that throws before the commit rolls the burn back and the
+        // file stays usable.
+        await using var tx = await _db.Database.BeginTransactionAsync();
+
+        // Conditional on the token still being unspent, so two agents racing the same file cannot
+        // both come away with a key: the second UPDATE re-evaluates the predicate against the row
+        // the first one committed and matches nothing.
         var burnt = await _db.EnrollmentTokens
             .Where(t => t.Id == token.Id && t.RedeemedAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(t => t.RedeemedAt, DateTime.UtcNow));
         if (burnt == 0)
+        {
+            await tx.RollbackAsync();
             return (null, "This enrollment file has already been used. Mint a new one from the console.");
+        }
 
         // Registering an existing name ROTATES its key. That is the intended re-enrollment path (a
         // wiped Deck gets a fresh file and comes back as itself) and it is authorised by the token,
@@ -198,6 +208,7 @@ public sealed class EnrollmentService
 
         _db.AuditLogs.Add(NewAudit("enrollment.redeem", name, reg.MachineId));
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return (new RedeemEnrollmentResponse(reg.MachineId, reg.ApiKey, name), null);
     }
