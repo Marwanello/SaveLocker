@@ -770,7 +770,11 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
 
                   // Never reported at all is its own state, and a meaningful one: a machine that was
                   // enrolled but whose agent has never run looks nothing like one that went offline.
-                  const status = !h
+                  // The health API returns a row for EVERY machine on purpose, so `!h` was never
+                  // true and this branch was unreachable — a freshly enrolled agent rendered as
+                  // "offline since —", which reads as a machine that has stopped rather than one
+                  // that has not started. The absent heartbeat is the thing to test.
+                  const status = !h || !h.lastHeartbeat
                     ? { text: 'never reported', color: '#556070' }
                     : h.online
                       ? { text: 'online', color: '#129271' }

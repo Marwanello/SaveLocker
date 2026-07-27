@@ -78,6 +78,18 @@ here.
   `libSDL2` never got mapped into `deps.json`. `tests/linux/run-ui-wslg.sh` already does this.
   Releases (self-contained publish) are unaffected.
 
+## Web console
+- **`@import` must precede every other rule.** `@import "tailwindcss"` expands into generated CSS,
+  so anything imported after it is silently discarded by the browser — the Google Fonts line sat
+  there for months, the console rendered in fallback fonts, and the production build warned about it
+  on every run. Keep plain `@import url(...)` lines **above** the Tailwind import.
+- **The health API returns a row for every machine**, so a missing row is not how you detect "never
+  reported" — test `lastHeartbeat == null`. Checking for the absent row made that state unreachable
+  and newly enrolled agents rendered as "offline since —".
+- **Hash routing has one parser** (`viewFromHash` in `App.tsx`), used at startup *and* on
+  `hashchange`. A `hashchange` handler that knows about only some views leaves Back/Forward changing
+  the address bar without changing the page.
+
 ## Testing
 - **Clear the server DB and `.verify/` together**, never one alone — `run-agent-tests.ps1` reuses
   whatever state both sides hold. Clearing only one produces confident, unrelated-looking

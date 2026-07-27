@@ -91,7 +91,7 @@ one code change, not two.
 **Fixed so far:** the machine-deletion data loss (P0) — `a761f3f`; lost dashboard commands (P1) —
 `d46dcd6`; half-written save archives (P1) — `32ffe8e`; head changes that never reached the
 machines (P1) — `7f4fa4a`; the two-machine launch race (P1) — `7e12fc5`; unusable enrollment URLs (P1, scoped to
-LAN — see the task file) — `312ed77`; unbounded and non-atomic installer uploads (P1+P2) — `60ed218`; credentials consumed before use (P2)
+LAN — see the task file) — `312ed77`; unbounded and non-atomic installer uploads (P1+P2) — `60ed218`; credentials consumed before use (P2) — `400a4fa`; console state and navigation (P3)
 
 **This section changes the server, so the console must be redeployed** (`docker compose pull &&
 docker compose up -d`). The Linux section above explicitly says it does not; do not merge the two
@@ -117,6 +117,13 @@ table. Take the usual backup before upgrading (`/data/backups/` holds the nightl
   now handed out on a time limit: one that is not confirmed goes back in the queue and the next
   check-in picks it up. The dashboard shows "retried ×2" when that happens, and says whether a job
   is running on the machine or waiting to be handed out again.
+- **A machine that has never checked in says so.** A newly enrolled agent that had not run yet was
+  listed as "offline since —", which reads as a machine that stopped rather than one that never
+  started. It now says **never reported**.
+- **Browser Back and Forward work again.** Moving between Games, Configuration and Audit Log changed
+  the address bar but left the previous page on screen; only Help and What's New responded.
+- **The console uses the fonts it was designed with.** A stylesheet ordering mistake meant the browser
+  discarded the font import and fell back to system fonts everywhere.
 - **A bad SteamGridDB key no longer wipes out your working one.** The key was saved first and
   checked afterwards, and the console said "saved" either way — so a mistyped or truncated paste
   quietly replaced a key that worked, and the only way back was to find the original again. It is now

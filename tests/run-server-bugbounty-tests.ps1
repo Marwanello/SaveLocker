@@ -1082,6 +1082,34 @@ try {
     $spent = @(Get-Json "/api/admin/enrollments" | Where-Object { $_.id -eq $mint.id })[0]
     Check "the spent token records who spent it"        ($spent.redeemedByMachineName -eq "RaceDeck-$stamp")
 
+    # =====================================================================================
+    # CS-11: a machine that has never checked in is its own state
+    # =====================================================================================
+    # The fix is in the console, which cannot be reached from here. What IS checkable — and what the
+    # console's rendering now depends on — is the server contract underneath it: health returns a row
+    # for every machine, and lastHeartbeat is null for one that has never reported. The console used
+    # to test for a missing ROW, which the server never produces, so "never reported" was dead code
+    # and a freshly enrolled agent read as "offline since —".
+    Write-Host ""
+    Write-Host "==== CS-11: the never-reported contract ===="
+
+    $silent = Invoke-RestMethod "$url/api/machines/register" -Method Post -ContentType "application/json" `
+        -Body (@{ name = "SilentDeck-$stamp" } | ConvertTo-Json)
+    $health = @(Get-Json "/api/admin/health" | Where-Object { $_.machineName -eq "SilentDeck-$stamp" })
+
+    Check "health returns a row for a machine that never reported" ($health.Count -eq 1)
+    Check "its lastHeartbeat is null, not a date"                  ($null -eq $health[0].lastHeartbeat)
+    Check "it is not reported as online"                           ($health[0].online -eq $false)
+
+    # And a machine that HAS reported must still be distinguishable, or the console would call
+    # everything "never reported" instead.
+    Invoke-RestMethod "$url/api/agent/health" -Method Post -Headers @{ "X-Api-Key" = $silent.apiKey } `
+        -ContentType "application/json" `
+        -Body (@{ agentVersion = "9.9.9"; platform = "Linux"; trackedGames = 0; unmappedGames = 0; offlineQueueDepth = 0 } | ConvertTo-Json) | Out-Null
+    $afterBeat = @(Get-Json "/api/admin/health" | Where-Object { $_.machineName -eq "SilentDeck-$stamp" })[0]
+    Check "once it reports, lastHeartbeat is set"                  ($null -ne $afterBeat.lastHeartbeat)
+    Check "and it is online"                                       ($afterBeat.online -eq $true)
+
     Remove-Item Env:SteamGridDb__ApiKey -ErrorAction SilentlyContinue
     Stop-TestServer $srv
 }

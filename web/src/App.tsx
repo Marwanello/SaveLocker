@@ -20,7 +20,13 @@ interface AppData {
   health: AgentHealth[];
 }
 
-function getInitialView(): View {
+/**
+ * The one place a URL becomes a view. Used at startup AND on every `hashchange`, which is the whole
+ * point: the listener used to handle only #help and #whats-new, so pressing Back from Configuration
+ * to Games changed the address bar and left the page showing Configuration. Any hash the parser does
+ * not recognise is Games, which is also what an empty hash means.
+ */
+function viewFromHash(): View {
   if (location.hash === '#config') return 'config';
   if (location.hash === '#audit') return 'audit';
   if (location.hash.startsWith('#help')) return 'help';
@@ -29,7 +35,7 @@ function getInitialView(): View {
 }
 
 export default function App() {
-  const [view, setView] = useState<View>(getInitialView);
+  const [view, setView] = useState<View>(viewFromHash);
   const [data, setData] = useState<AppData | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -71,10 +77,7 @@ export default function App() {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    function onHash() {
-      if (location.hash.startsWith('#help')) setView('help');
-      else if (location.hash.startsWith('#whats-new')) setView('whats-new');
-    }
+    function onHash() { setView(viewFromHash()); }
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
