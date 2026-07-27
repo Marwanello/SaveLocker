@@ -350,46 +350,98 @@ public sealed class SyncService
 
     // ----- Leases -----
 
+    /// <summary>
+    /// The game's lease if one is currently held, otherwise null.
+    /// <para>
+    /// Deliberately a pure read. It used to DELETE an expired row as a side effect, which made
+    /// <c>GET /api/overview</c> a write: two dashboard requests landing together both loaded the same
+    /// expired lease and both tried to remove it, and the loser got a concurrency exception on a
+    /// plain read. An expired row is simply treated as absent — acquisition takes it over in place
+    /// and <see cref="SweepExpiredLeasesAsync"/> collects it.
+    /// </para>
+    /// </summary>
     public async Task<Lease?> ActiveLeaseAsync(Guid gameId)
     {
         var lease = await _db.Leases.Include(l => l.Machine)
             .FirstOrDefaultAsync(l => l.GameId == gameId);
-        if (lease is null) return null;
-        if (lease.ExpiresAt < DateTime.UtcNow)
-        {
-            _db.Leases.Remove(lease);
-            await _db.SaveChangesAsync();
-            return null;
-        }
-        return lease;
+        return lease is null || lease.ExpiresAt < DateTime.UtcNow ? null : lease;
     }
 
+    /// <summary>
+    /// Take the game's lease, or report who holds it.
+    /// <para>
+    /// There is a unique index on <c>Lease.GameId</c>, and this used to read, decide, then insert.
+    /// Two machines launching the same game at the same moment both saw no lease and both inserted;
+    /// one got a database exception and the caller got a 500 — at precisely the moment lease-based
+    /// conflict prevention is the thing being relied on. Both steps below are atomic, and losing the
+    /// race is an ordinary <c>Granted=false</c> answer, not an error.
+    /// </para>
+    /// </summary>
     public async Task<LeaseAcquireResponse> AcquireLeaseAsync(Guid gameId, Guid machineId)
     {
-        var current = await ActiveLeaseAsync(gameId);
-        if (current is not null && current.MachineId != machineId)
-            return new LeaseAcquireResponse(false, current.ToDto(gameId));
+        var now = DateTime.UtcNow;
+        var expires = now.Add(_leaseDuration);
 
-        if (current is null)
+        // 1. Take over the existing row if it is already mine or has expired. The predicate is
+        //    re-evaluated by the database as the UPDATE runs, so a row someone else just claimed no
+        //    longer matches and this affects nothing.
+        var claimed = await _db.Leases
+            .Where(l => l.GameId == gameId && (l.MachineId == machineId || l.ExpiresAt < now))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(l => l.MachineId, machineId)
+                .SetProperty(l => l.AcquiredAt, now)
+                .SetProperty(l => l.ExpiresAt, expires));
+
+        if (claimed == 0)
         {
-            current = new Lease { Id = Guid.NewGuid(), GameId = gameId, MachineId = machineId };
-            _db.Leases.Add(current);
+            // 2. Nothing to take over: either there is no lease at all, or someone else holds a live
+            //    one. Let the unique index be the arbiter rather than a check that can go stale
+            //    between reading and writing.
+            var fresh = new Lease
+            {
+                Id = Guid.NewGuid(),
+                GameId = gameId,
+                MachineId = machineId,
+                AcquiredAt = now,
+                ExpiresAt = expires
+            };
+            _db.Leases.Add(fresh);
+            try
+            {
+                await _db.SaveChangesAsync();
+                claimed = 1;
+            }
+            catch (DbUpdateException)
+            {
+                // Lost the race. Detach explicitly: a failed Add stays tracked, and the audit write
+                // below would otherwise retry the same doomed insert.
+                _db.Entry(fresh).State = EntityState.Detached;
+            }
         }
-        current.AcquiredAt = DateTime.UtcNow;
-        current.ExpiresAt = DateTime.UtcNow.Add(_leaseDuration);
-        await Audit(machineId, gameId, "lease.acquire", null);
-        await _db.SaveChangesAsync();
 
-        current = await _db.Leases.Include(l => l.Machine).FirstAsync(l => l.GameId == gameId);
-        return new LeaseAcquireResponse(true, current.ToDto(gameId));
+        var holder = await _db.Leases.Include(l => l.Machine)
+            .FirstOrDefaultAsync(l => l.GameId == gameId);
+
+        // Re-checked against the row that actually exists rather than trusting the step above: it is
+        // the holder on disk that decides, and it may have changed hands again in between.
+        var granted = claimed > 0 && holder is not null && holder.MachineId == machineId;
+        if (granted)
+        {
+            await Audit(machineId, gameId, "lease.acquire", null);
+            await _db.SaveChangesAsync();
+        }
+
+        return new LeaseAcquireResponse(granted, holder.ToDto(gameId));
     }
 
     public async Task ReleaseLeaseAsync(Guid gameId, Guid machineId)
     {
-        var lease = await _db.Leases.FirstOrDefaultAsync(l => l.GameId == gameId);
-        if (lease is not null && lease.MachineId == machineId)
+        // Conditional delete: only the holder can release, decided by the database in one statement.
+        var removed = await _db.Leases
+            .Where(l => l.GameId == gameId && l.MachineId == machineId)
+            .ExecuteDeleteAsync();
+        if (removed > 0)
         {
-            _db.Leases.Remove(lease);
             await Audit(machineId, gameId, "lease.release", null);
             await _db.SaveChangesAsync();
         }
@@ -397,9 +449,12 @@ public sealed class SyncService
 
     public async Task<bool> RenewLeaseAsync(Guid gameId, Guid machineId)
     {
-        var lease = await _db.Leases.FirstOrDefaultAsync(l => l.GameId == gameId);
-        if (lease is null || lease.MachineId != machineId) return false;
-        lease.ExpiresAt = DateTime.UtcNow.Add(_leaseDuration);
+        var expires = DateTime.UtcNow.Add(_leaseDuration);
+        var renewed = await _db.Leases
+            .Where(l => l.GameId == gameId && l.MachineId == machineId)
+            .ExecuteUpdateAsync(s => s.SetProperty(l => l.ExpiresAt, expires));
+        if (renewed == 0) return false;
+
         await Audit(machineId, gameId, "lease.renew", null);
         await _db.SaveChangesAsync();
         return true;
@@ -408,10 +463,11 @@ public sealed class SyncService
     /// <summary>Admin: force-release a stuck lease regardless of holder.</summary>
     public async Task ForceReleaseLeaseAsync(Guid gameId)
     {
-        var lease = await _db.Leases.FirstOrDefaultAsync(l => l.GameId == gameId);
-        if (lease is not null)
+        // Same one-statement delete as the other lease paths: two admins clicking at once must not
+        // turn the second click into a concurrency exception.
+        var removed = await _db.Leases.Where(l => l.GameId == gameId).ExecuteDeleteAsync();
+        if (removed > 0)
         {
-            _db.Leases.Remove(lease);
             await Audit(null, gameId, "lease.force_release", null);
             await _db.SaveChangesAsync();
         }
@@ -423,13 +479,12 @@ public sealed class SyncService
     /// </summary>
     public async Task<int> SweepExpiredLeasesAsync()
     {
-        var expired = await _db.Leases
-            .Where(l => l.ExpiresAt < DateTime.UtcNow)
-            .ToListAsync();
-        if (expired.Count == 0) return 0;
-        _db.Leases.RemoveRange(expired);
-        await _db.SaveChangesAsync();
-        return expired.Count;
+        // One conditional DELETE rather than load-then-remove. Loading first opens a window in which
+        // a machine renews a lease the sweeper has already decided to delete, and the sweeper then
+        // deletes the live one by primary key — the game's checkout silently disappearing mid-session
+        // for no reason anyone could see afterwards.
+        var now = DateTime.UtcNow;
+        return await _db.Leases.Where(l => l.ExpiresAt < now).ExecuteDeleteAsync();
     }
 
     // ----- Upload (conflict-aware) -----

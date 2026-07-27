@@ -90,7 +90,7 @@ one code change, not two.
 **Source:** `tasks/Console-BugBounty.md` — 13 findings (1 P0, 6 P1, 3 P2, 3 P3)
 **Fixed so far:** the machine-deletion data loss (P0) — `a761f3f`; lost dashboard commands (P1) —
 `d46dcd6`; half-written save archives (P1) — `32ffe8e`; head changes that never reached the
-machines (P1)
+machines (P1) — `7f4fa4a`; the two-machine launch race (P1)
 
 **This section changes the server, so the console must be redeployed** (`docker compose pull &&
 docker compose up -d`). The Linux section above explicitly says it does not; do not merge the two
@@ -116,6 +116,11 @@ table. Take the usual backup before upgrading (`/data/backups/` holds the nightl
   now handed out on a time limit: one that is not confirmed goes back in the queue and the next
   check-in picks it up. The dashboard shows "retried ×2" when that happens, and says whether a job
   is running on the machine or waiting to be handed out again.
+- **Launching the same game on two machines at once no longer errors.** Whichever one got there
+  first takes the checkout; the other is now told who holds it, which is what it was always supposed
+  to say. Previously one of the two got a server error instead — at exactly the moment the checkout
+  is the thing protecting your save. Ending a session also releases the checkout reliably, and an
+  expired one can no longer be cleaned up out from under a machine that has just renewed it.
 - **"Set as Latest" now actually reaches your machines.** It promised every machine would pull the
   chosen save and then told none of them: the choice was recorded on the server and the machines
   carried on from the save they already had, hitting a conflict on their very next save. The same

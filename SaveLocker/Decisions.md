@@ -86,6 +86,15 @@ session can judge an edge case, not to reopen the choice.
   save root (the root itself is followed — it's user-chosen; paths *inside* the archive are not).
   Size caps (100k entries / 2 GB), checked against both declared and actual bytes. A refused
   restore is reported to the console as an event.
+- **Lease writes are single statements; losing a race is an answer, not an error.** Acquisition is a
+  conditional `UPDATE` (take over a row that is mine or expired) falling back to an `INSERT` whose
+  unique `GameId` index arbitrates — the losing caller catches the constraint violation and returns
+  `Granted=false` with the holder's lease. Read-then-insert gave one of two simultaneous launches a
+  500 at exactly the moment leasing is the thing being relied on. Release, renew, force-release and
+  the expiry sweep are conditional statements for the same reason, and the sweep can no longer
+  delete a lease renewed since it was selected. `ActiveLeaseAsync` is a pure read: it used to delete
+  expired rows, which made `GET /api/overview` a write that two parallel dashboard requests could
+  collide on.
 - **Every server-authoritative head change fans out; an ordinary push does not.** One code path
   (`SetHeadAndPropagateAsync`) moves `HeadVersionId`. Where the *server* decided — automatic conflict
   policy, manual resolution, rollback, Set as Latest — it queues a deduplicated **unforced** Pull for

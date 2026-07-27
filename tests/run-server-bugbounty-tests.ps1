@@ -663,6 +663,98 @@ try {
     Check "a second head change does not stack pulls" `
         (@(PendingPulls $hlap.id).Count -eq 1 -and @(PendingPulls $hpc.id).Count -eq 1)
 
+    # =====================================================================================
+    # CS-05: lease acquisition is atomic
+    # =====================================================================================
+    # Reuses the CS-04 server: two registered machines and a game are exactly the fixture needed.
+    # The failure is a read-then-insert against a unique index, so the test has to make both
+    # requests overlap; a sequential pair passes against the broken code.
+    Write-Host ""
+    Write-Host "==== CS-05: two machines launching at once ===="
+
+    $lkeys = @{
+        pc  = (Get-Content $hpcCfg  -Raw | ConvertFrom-Json).ApiKey
+        lap = (Get-Content $hlapCfg -Raw | ConvertFrom-Json).ApiKey
+    }
+    function LeaseState { Get-Json "/api/games/$($hgame.id)/state" }
+    function ForceRelease { Invoke-RestMethod "$url/api/games/$($hgame.id)/lease/force" -Method Delete | Out-Null }
+
+    $leaseRacer = {
+        param($u, $gameId, $key, $at)
+        while ([DateTime]::UtcNow.Ticks -lt $at) { }
+        try {
+            $r = Invoke-WebRequest "$u/api/games/$gameId/lease" -Method Post -Headers @{ "X-Api-Key" = $key } -UseBasicParsing
+            "$([int]$r.StatusCode)|$($r.Content)"
+        } catch {
+            $code = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { -1 }
+            "$code|ERROR $($_.Exception.Message)"
+        }
+    }
+
+    ForceRelease
+    $at = (Get-Date).AddSeconds(3).ToUniversalTime().Ticks
+    $ljobs = @(
+        (Start-Job -ScriptBlock $leaseRacer -ArgumentList $url, $hgame.id, $lkeys.pc,  $at),
+        (Start-Job -ScriptBlock $leaseRacer -ArgumentList $url, $hgame.id, $lkeys.lap, $at)
+    )
+    $results = $ljobs | Wait-Job -Timeout 60 | Receive-Job
+    $ljobs | Remove-Job -Force
+
+    $codes   = @($results | ForEach-Object { ($_ -split '\|', 2)[0] })
+    $bodies  = @($results | ForEach-Object { ($_ -split '\|', 2)[1] })
+    $granted = @($bodies | Where-Object { $_ -notlike "ERROR*" } | ForEach-Object { ($_ | ConvertFrom-Json).granted })
+
+    Check "simultaneous acquire: both requests answered 200"  (@($codes | Where-Object { $_ -ne "200" }).Count -eq 0)
+    Check "simultaneous acquire: neither hit a server error"  (@($bodies | Where-Object { $_ -like "ERROR*" }).Count -eq 0)
+    Check "simultaneous acquire: exactly one winner"          (@($granted | Where-Object { $_ -eq $true }).Count -eq 1)
+    Check "simultaneous acquire: the loser is told no"        (@($granted | Where-Object { $_ -eq $false }).Count -eq 1)
+
+    # The loser must be handed the WINNER's lease, not an empty one: that string is what the launch
+    # wrapper shows the user as "checked out on <machine>".
+    $loserBody = @($bodies | Where-Object { $_ -notlike "ERROR*" -and ($_ | ConvertFrom-Json).granted -eq $false })[0]
+    $loserLease = ($loserBody | ConvertFrom-Json).lease
+    # holderMachineName, not machineName: naming it wrong yields $null, which silently makes the
+    # holder lookup below pick a machine at random and turns two later checks into coin flips.
+    Check "the loser is told who holds it" `
+        ($loserLease.holderMachineName -in @($hpcName, $hlapName) -and
+         $loserLease.holderMachineName -eq (LeaseState).lease.holderMachineName)
+
+    # ---- Re-acquiring your own live lease is a renewal, not a refusal ----
+    $holderName = (LeaseState).lease.holderMachineName
+    Check "the game reports a live holder"                   ($holderName -in @($hpcName, $hlapName))
+    $holderKey = if ($holderName -eq $hpcName) { $lkeys.pc } else { $lkeys.lap }
+    $again = Invoke-RestMethod "$url/api/games/$($hgame.id)/lease" -Method Post -Headers @{ "X-Api-Key" = $holderKey }
+    Check "the holder re-acquiring its own lease is granted"  ($again.granted -eq $true)
+
+    # ---- The other machine is still refused while it is live ----
+    $otherKey = if ($holderKey -eq $lkeys.pc) { $lkeys.lap } else { $lkeys.pc }
+    $refused = Invoke-RestMethod "$url/api/games/$($hgame.id)/lease" -Method Post -Headers @{ "X-Api-Key" = $otherKey }
+    Check "a live lease refuses the other machine"           ($refused.granted -eq $false)
+
+    # ---- A released lease is immediately takeable ----
+    Invoke-RestMethod "$url/api/games/$($hgame.id)/lease" -Method Delete -Headers @{ "X-Api-Key" = $holderKey } | Out-Null
+    $afterRelease = Invoke-RestMethod "$url/api/games/$($hgame.id)/lease" -Method Post -Headers @{ "X-Api-Key" = $otherKey }
+    Check "the other machine takes the lease once released"  ($afterRelease.granted -eq $true)
+
+    # ---- Reading the game must not be a write ----
+    # GET /state used to delete an expired lease as a side effect, so two parallel reads could
+    # collide on the same row. Hammer it and require every read to succeed.
+    ForceRelease
+    $readJobs = 1..4 | ForEach-Object {
+        Start-Job -ScriptBlock {
+            param($u, $gameId, $at)
+            while ([DateTime]::UtcNow.Ticks -lt $at) { }
+            $bad = 0
+            foreach ($i in 1..10) {
+                try { Invoke-WebRequest "$u/api/games/$gameId/state" -UseBasicParsing | Out-Null } catch { $bad++ }
+            }
+            $bad
+        } -ArgumentList $url, $hgame.id, ((Get-Date).AddSeconds(3).ToUniversalTime().Ticks)
+    }
+    $readFailures = ($readJobs | Wait-Job -Timeout 90 | Receive-Job | Measure-Object -Sum).Sum
+    $readJobs | Remove-Job -Force
+    Check "parallel reads of a game never fail"              ($readFailures -eq 0)
+
     Stop-TestServer $srv
 }
 finally {

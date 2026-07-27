@@ -35,7 +35,7 @@ Server endpoints (`src/Server/Program.cs`).
 - `POST /api/settings/agent-update-auto-fetch` body `{ hours }` → `{ autoFetchHours }`. Sets the GitHub installer polling interval; `0` disables it. The server applies a console change within one minute and immediately polls when enabling or changing the interval.
 
 ## Leases
-- `POST /api/games/{id}/lease` → `LeaseAcquireResponse { granted, lease }`. *(agent)*
+- `POST /api/games/{id}/lease` → `LeaseAcquireResponse { granted, lease }`. *(agent)* Atomic: simultaneous callers get exactly one `granted: true`, and every other caller gets `granted: false` carrying the **holder's** lease — never an error. Re-acquiring your own live lease renews it. An expired lease is taken over in place.
 - `POST /api/games/{id}/lease/renew` → 200 / 409. Renews the lease held by the calling machine; `SyncEngine` calls this on a 3 h timer during long play sessions. *(agent)*
 - `DELETE /api/games/{id}/lease` → 204 (release own lease). *(agent)*
 - `DELETE /api/games/{id}/lease/force` → 204 (admin force-release).
