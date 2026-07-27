@@ -5,6 +5,37 @@ Full commit detail in `git log`. Active backlog in `Backlog.md`.
 
 ---
 
+## 2026-07-27 — Console / server bug bounty: all 13 findings, one commit each
+
+The P0 was real and worse in practice than on paper: deleting a machine cascaded through every save
+version it had uploaded, taking a game's Latest with it — 3 versions to 1, head nulled, archives
+still on disk with nothing left to reach them. `SaveVersion.MachineId` is nullable now, with a name
+snapshot so history can still say who made it.
+
+The rest clustered into one theme: **decide first, commit second**. Command delivery marked a job
+Dispatched and never looked again, so a crashed agent took the job with it (now a visibility lease).
+Archive and installer uploads wrote straight to their final path, so a disconnect left a truncated
+file where a real one belonged (now staged and renamed). A SteamGridDB key was stored and then
+checked. An enrollment token was burnt and then redeemed. Lease acquisition read, decided, inserted —
+and gave one of two simultaneous launches a 500, six times out of six.
+
+Every finding was reproduced against the pre-fix build before being fixed, which paid for itself
+twice: it caught three checks that were passing **vacuously** (a socket built with
+`New-Object Type(a,b)`, which never connects), and it turned up a defect the review had not:
+the SteamGridDB "verification" probed a public endpoint, so 25 characters of nonsense verified fine.
+
+Two fixes were narrowed after an existing suite objected — Set-as-Latest closing conflicts it had no
+business closing, and a loopback enrollment URL refusal that broke the same-box setup both
+enrollment suites rely on. In both cases the suite was right and the first design was too broad.
+
+CS-06 was scoped down by the maintainer: no tunnel, no HTTPS, LAN-only, so the forwarded-header half
+guards a topology that does not exist. What survived is the part that bites on a plain LAN.
+
+New harness `tests/run-server-bugbounty-tests.ps1`, 145 checks. Archived write-up, including what is
+deliberately untested and why: `logs/2026-07-27_console-bugbounty.md`.
+
+---
+
 ## 2026-07-25 — Deck UI navigation, fixed by reading the binding instead of ImGui
 
 Menu navigation had been the Deck UI's biggest obstacle across three sessions. The recorded blocker —

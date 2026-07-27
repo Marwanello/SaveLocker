@@ -7,17 +7,21 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md`
 
 ## High priority
 
-- **Console / server bug bounty — critical data-preservation fix first.** Deleting a machine currently
-  cascades through every save version it uploaded despite the console promising those versions are
-  kept. The review also found lost remote commands, non-atomic archive/installer writes, stale-head
-  propagation gaps, a lease race, proxy-broken enrollment/update URLs, and console state defects.
-  Full bounded task and verification gates: `tasks/Console-BugBounty.md`.
-
 - **Linux agent bug bounty.** Fix the 2026-07-26 review findings before the next Linux release:
   server-change split brain, removed-game resurrection, non-durable local untracking, stale folder
   watchers, partial/concurrent enrollment, stale Game Mode config writes, false systemd success,
   and misleading `doctor` output. Full bounded task and verification gates:
   `tasks/LinuxAgent-BugBounty.md`.
+
+- **~~Console / server bug bounty~~ — DONE 2026-07-27.** All 13 findings fixed on
+  `linux-agent-bugbounty` (not pushed), one commit each, with a new 145-check harness
+  (`tests/run-server-bugbounty-tests.ps1`). Archived: `logs/2026-07-27_console-bugbounty.md`.
+  **Two follow-ups it leaves behind**, neither blocking:
+  - the manual LAN enrollment-URL check on the real deployment (see that log → Verification);
+  - the console loads Inter and JetBrains Mono from Google Fonts at runtime, so on a LAN box with no
+    internet it still renders in fallback fonts. CS-13 fixed the import being *discarded*, not the
+    dependency. Self-hosting needs woff2 subsets for five Inter weights; the Deck UI already vendors
+    TTF Regular/SemiBold in `src/Agent.Linux/Ui/Fonts/` (SIL OFL).
 
 - **Windows agent bug bounty.** Fix the 2026-07-26 review findings before the next Windows release:
   live-game restores, unsafe save roots, readable machine credentials, non-transactional server

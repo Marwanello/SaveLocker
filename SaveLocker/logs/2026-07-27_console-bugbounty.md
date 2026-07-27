@@ -1,4 +1,43 @@
-# Task — Console / Server Bug Bounty
+# Task — Console / Server Bug Bounty — **COMPLETE 2026-07-27**
+
+All 13 findings fixed, one commit each, on `linux-agent-bugbounty` (**not pushed**):
+
+| ID | Commit | ID | Commit |
+|---|---|---|---|
+| CS-01 | `a761f3f` (+ notes `c8db787`) | CS-07 + CS-08 | `60ed218` |
+| CS-02 | `d46dcd6` | CS-09 + CS-10 | `400a4fa` |
+| CS-03 | `32ffe8e` | CS-11 + CS-12 + CS-13 | `99648cb` |
+| CS-04 | `7f4fa4a` | | |
+| CS-05 | `7e12fc5` | | |
+| CS-06 | `312ed77` (**scoped** — see §6) | | |
+
+`tests/run-server-bugbounty-tests.ps1` is new: **145 checks, all green**. Every finding except the
+ones noted below was reproduced against the pre-fix build at `961ad35` before being fixed.
+
+**Two things this task changed its mind about, both because an existing suite objected:**
+- **CS-04** first closed *every* open conflict on Set as Latest, which broke six `run-agent-tests`
+  checks that deliberately cover Set-as-Latest-then-resolve. Narrowed to conflicts that offer the
+  chosen version, so the "resolution may not rewind a newer Latest" guard stays armed.
+- **CS-06** first refused *any* loopback enrollment URL, which broke `run-enrollment-tests` (14/18)
+  and `run-enrollment-tls-tests` (0/6) — agent and server on one box is a real setup. Narrowed to
+  *inferred* loopback; a stated one is honoured, and both suites now state their URL.
+
+**Found while fixing, not in the original review:** the SteamGridDB key "verification" probed
+`search/autocomplete`, which SteamGridDB serves **without a key** — 25 characters of nonsense
+returned 200 with real data, so it only ever proved the site was reachable. Now probes
+`grids/game/{id}`. (`curl` and `Invoke-WebRequest` get 401 there; that is Cloudflare rejecting their
+user agent, not the API rejecting the key. Do not use either to test this.)
+
+**Deliberately not covered by tests**, both by agreement rather than oversight:
+- an injected database failure mid-upload (CS-03) and mid-registration (CS-10). The rollback and the
+  transaction are what make them safe; testing them needs a fault-injection hook in production code.
+- CS-12 hash navigation and CS-13 the font import — there is no front-end test runner in `web/`.
+  Both were verified in the running console; CS-13 is also enforced by the build being warning-free.
+
+**Still outstanding:** the one manual LAN check in Verification below (mint an enrollment file from
+the real console at its LAN address and confirm `policy.serverUrl`), and the console redeploy.
+
+---
 
 **Created:** 2026-07-26
 **Target:** `src/Server/`, `web/`, and the agent command/update paths coupled to their APIs
