@@ -86,6 +86,17 @@ session can judge an edge case, not to reopen the choice.
   save root (the root itself is followed — it's user-chosen; paths *inside* the archive are not).
   Size caps (100k entries / 2 GB), checked against both declared and actual bytes. A refused
   restore is reported to the console as an event.
+- **LAN-only over plain HTTP. No tunnel, no TLS termination, no reverse proxy** (2026-07-27). The
+  payload is save files, not credentials or PII, and the earlier Cloudflare Tunnel plan is dropped.
+  So `X-Forwarded-*` is never read and no trusted-proxy configuration exists — there is nothing in
+  front to trust. The one URL the server hands to *other machines* (enrollment policy, hosted
+  installer link) comes from `PublicUrl.For`: `Server:PublicBaseUrl` if configured, else the request
+  origin. Minting is **refused when an inferred URL is loopback**, because a console opened at
+  `http://localhost:5080` on the server box otherwise mints a file telling the new machine to sync
+  with itself. A loopback URL that was *stated* — typed into the override, or put in
+  `Server:PublicBaseUrl` — is honoured: agent and server on one box is a real setup, and it is what
+  both enrollment suites do. `Server:PublicBaseUrl` is also the single knob to set if a proxy is
+  ever added.
 - **Lease writes are single statements; losing a race is an answer, not an error.** Acquisition is a
   conditional `UPDATE` (take over a row that is mine or expired) falling back to an `INSERT` whose
   unique `GameId` index arbitrates — the losing caller catches the constraint violation and returns

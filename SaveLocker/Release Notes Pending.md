@@ -90,7 +90,8 @@ one code change, not two.
 **Source:** `tasks/Console-BugBounty.md` — 13 findings (1 P0, 6 P1, 3 P2, 3 P3)
 **Fixed so far:** the machine-deletion data loss (P0) — `a761f3f`; lost dashboard commands (P1) —
 `d46dcd6`; half-written save archives (P1) — `32ffe8e`; head changes that never reached the
-machines (P1) — `7f4fa4a`; the two-machine launch race (P1)
+machines (P1) — `7f4fa4a`; the two-machine launch race (P1) — `7e12fc5`; unusable enrollment URLs (P1, scoped to
+LAN — see the task file)
 
 **This section changes the server, so the console must be redeployed** (`docker compose pull &&
 docker compose up -d`). The Linux section above explicitly says it does not; do not merge the two
@@ -116,6 +117,13 @@ table. Take the usual backup before upgrading (`/data/backups/` holds the nightl
   now handed out on a time limit: one that is not confirmed goes back in the queue and the next
   check-in picks it up. The dashboard shows "retried ×2" when that happens, and says whether a job
   is running on the machine or waiting to be handed out again.
+- **Enrollment files can no longer be created with an address the new machine cannot use.** If you
+  opened the console on the server itself — at `localhost` — the file told the new machine to sync
+  with *itself*, and the only sign was enrollment failing for reasons that pointed nowhere. The
+  console now shows the exact address the file will carry before you create it, refuses to create
+  one that cannot work, and rejects a mistyped address without spending the single-use token on it.
+  There is a new optional `Server:PublicBaseUrl` setting if you want to pin the address agents
+  should use regardless of how you reach the console.
 - **Launching the same game on two machines at once no longer errors.** Whichever one got there
   first takes the checkout; the other is now told who holds it, which is what it was always supposed
   to say. Previously one of the two got a server error instead — at exactly the moment the checkout

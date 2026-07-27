@@ -2112,6 +2112,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/enrollments/effective-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EffectiveServerUrl"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/enrollments/{id}": {
         parameters: {
             query?: never;
@@ -2478,6 +2513,11 @@ export interface components {
             manifestKey: null | string;
             customPathsJson: null | string;
             suggestedSaveDir?: null | string;
+        };
+        EffectiveServerUrl: {
+            url: string;
+            fromConfig: boolean;
+            isLoopback: boolean;
         };
         EnqueueCommandRequest: {
             /** Format: uuid */

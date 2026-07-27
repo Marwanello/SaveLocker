@@ -755,6 +755,67 @@ try {
     $readJobs | Remove-Job -Force
     Check "parallel reads of a game never fail"              ($readFailures -eq 0)
 
+    # =====================================================================================
+    # CS-06 (trimmed): the URL handed to agents must be one THEY can reach
+    # =====================================================================================
+    # Scoped deliberately. This deployment is LAN-only over plain HTTP with no reverse proxy and no
+    # tunnel, so the forwarded-header and HTTPS-scheme half of the finding has nothing to protect
+    # and is not implemented (Decisions.md). What survives is a real LAN failure: the console
+    # reached at localhost mints an enrollment file telling the new machine to sync with itself.
+    # This harness reaches the server at localhost, so it is already in that state.
+    Write-Host ""
+    Write-Host "==== CS-06: enrollment and update URLs an agent can actually reach ===="
+
+    function MintEnrollment($body) {
+        try {
+            $r = Invoke-WebRequest "$url/api/admin/enrollments" -Method Post -ContentType "application/json" `
+                -Body ($body | ConvertTo-Json) -UseBasicParsing
+            return @{ code = [int]$r.StatusCode; body = ($r.Content | ConvertFrom-Json) }
+        } catch {
+            return @{ code = [int]$_.Exception.Response.StatusCode; body = $null }
+        }
+    }
+    function EnrollmentCount { @(Get-Json "/api/admin/enrollments").Count }
+
+    $eff = Get-Json "/api/admin/enrollments/effective-url"
+    Check "the console reports the URL it would write"  ($eff.url -eq $url)
+    Check "a localhost origin is flagged as unusable"   ($eff.isLoopback -eq $true)
+
+    $tokensBefore = EnrollmentCount
+    $refused = MintEnrollment @{ machineName = "cs06-loopback"; ttlMinutes = 10 }
+    Check "minting is refused when the URL is loopback" ($refused.code -eq 400)
+    Check "the refused mint burnt no token"             ((EnrollmentCount) -eq $tokensBefore)
+
+    # A bad override must be caught BEFORE minting: the token is single-use and unrecoverable, so
+    # validating afterwards would cost the admin the token as well as the attempt.
+    $bad = MintEnrollment @{ machineName = "cs06-bad"; ttlMinutes = 10; serverUrl = "192.168.68.55:5080" }
+    Check "an override with no scheme is refused"       ($bad.code -eq 400)
+    Check "the refused override burnt no token"         ((EnrollmentCount) -eq $tokensBefore)
+
+    $good = MintEnrollment @{ machineName = "cs06-good"; ttlMinutes = 10; serverUrl = "http://192.168.68.55:5080/" }
+    Check "a valid override mints"                      ($good.code -eq 200)
+    Check "the policy carries the override, normalised" ($good.body.policy.serverUrl -eq "http://192.168.68.55:5080")
+
+    # Agent and server on one machine is a real setup — it is what run-enrollment-tests does. Only
+    # an INFERRED loopback address is refused; one the admin states is a declaration of intent.
+    $sameBox = MintEnrollment @{ machineName = "cs06-samebox"; ttlMinutes = 10; serverUrl = $url }
+    Check "an explicitly stated loopback URL is allowed" ($sameBox.code -eq 200)
+    Check "the same-box policy carries localhost"        ($sameBox.body.policy.serverUrl -eq $url)
+
+    # ---- Server:PublicBaseUrl wins over the request origin ----
+    Stop-TestServer $srv
+    $env:Server__PublicBaseUrl = "http://192.168.68.55:5080"
+    $srv = Start-TestServer $serverDll "publicurl"
+
+    $eff2 = Get-Json "/api/admin/enrollments/effective-url"
+    Check "a configured public URL wins over the origin" ($eff2.url -eq "http://192.168.68.55:5080" -and $eff2.fromConfig -eq $true)
+    Check "a configured public URL clears the block"     ($eff2.isLoopback -eq $false)
+
+    $configured = MintEnrollment @{ machineName = "cs06-configured"; ttlMinutes = 10 }
+    Check "minting over localhost now succeeds"          ($configured.code -eq 200)
+    Check "the policy carries the configured URL"        ($configured.body.policy.serverUrl -eq "http://192.168.68.55:5080")
+
+    Remove-Item Env:Server__PublicBaseUrl -ErrorAction SilentlyContinue
     Stop-TestServer $srv
 }
 finally {
@@ -763,7 +824,7 @@ finally {
     git worktree prune
     Remove-Item Env:ASPNETCORE_URLS, Env:Storage__DbPath, Env:Storage__ArchiveRoot, `
         Env:Backup__Enabled, Env:Logging__EventLog__LogLevel__Default, Env:Commands__LeaseMinutes, `
-        Env:Storage__MaxUploadMb -ErrorAction SilentlyContinue
+        Env:Storage__MaxUploadMb, Env:Server__PublicBaseUrl -ErrorAction SilentlyContinue
     Get-Job -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
 }
 

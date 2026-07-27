@@ -246,6 +246,19 @@ public record EnrollmentDto(
 public record CreateEnrollmentResponse(Guid Id, EnrollmentPolicy Policy);
 
 /// <summary>
+/// The server URL an enrollment file would be minted with right now, so the console can show it
+/// before a single-use token is spent on it.
+/// </summary>
+/// <param name="Url">The effective base URL, without a trailing slash.</param>
+/// <param name="FromConfig">True when it came from <c>Server:PublicBaseUrl</c> rather than the
+/// origin this request arrived on.</param>
+/// <param name="IsLoopback">True when it names the machine asking. Combined with
+/// <paramref name="FromConfig"/> being false this blocks minting, since an inferred loopback address
+/// cannot work on the machine being enrolled; a loopback URL that was configured or typed is a
+/// deliberate same-box setup and is allowed.</param>
+public record EffectiveServerUrl(string Url, bool FromConfig, bool IsLoopback);
+
+/// <summary>
 /// The enrollment file: <c>savelocker enroll --file &lt;policy&gt;</c>. Carries a single-use,
 /// short-lived <see cref="Token"/> — never a machine API key, so a leaked file expires on its own
 /// and is revocable.

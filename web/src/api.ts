@@ -1,4 +1,4 @@
-import type { GameSummary, Machine, Command, Conflict, Settings, Version, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, Enrollment, CreateEnrollmentResponse, AgentHealth, AdminStatus } from './types';
+import type { GameSummary, Machine, Command, Conflict, Settings, Version, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus } from './types';
 
 let adminPassword = localStorage.getItem('sl_password') || '';
 
@@ -126,6 +126,10 @@ export const api = {
       .then(res => { if (!res.ok) throw new Error(`${res.status}`); }),
 
   enrollments: () => request<Enrollment[]>('/admin/enrollments'),
+
+  // What the policy file WOULD say, without minting. Shown before the button is pressed, because a
+  // token is single-use: finding out the URL was wrong afterwards costs the token too.
+  effectiveServerUrl: () => request<EffectiveServerUrl>('/admin/enrollments/effective-url'),
 
   // The raw token comes back exactly once, inside the policy — the server keeps only its hash.
   // Whatever the caller does with this response is the only chance to hand it to the user.

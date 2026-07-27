@@ -371,7 +371,7 @@ agent.MapGet("/agent/latest", (IConfiguration cfg, AgentInstallerService install
     var info = installer.GetInfo();
     if (info is not null)
     {
-        var baseUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
+        var baseUrl = PublicUrl.For(ctx, cfg);
         return Results.Ok(new AgentVersionInfo(info.Version, $"{baseUrl}/api/agent/installer/download"));
     }
 
@@ -606,14 +606,46 @@ admin.MapPost("/admin/health/events/{id:guid}/dismiss", async (Guid id, HealthSe
 // Minting returns the policy file, raw token included. That token is not stored and cannot be
 // shown again — the console hands the file to the user once, or not at all.
 admin.MapPost("/admin/enrollments", async (
-    CreateEnrollmentRequest req, HttpContext http, EnrollmentService enrollment) =>
+    CreateEnrollmentRequest req, HttpContext http, IConfiguration cfg, EnrollmentService enrollment) =>
 {
-    // The URL the admin reached the console on is the one that demonstrably works, so it is the
-    // default. It is wrong exactly when the console is on the LAN and the agent needs the public
-    // tunnel — hence the override on the request.
-    var serverUrl = $"{http.Request.Scheme}://{http.Request.Host}";
-    return Results.Ok(await enrollment.CreateAsync(req, serverUrl));
+    // An explicit override wins, then Server:PublicBaseUrl, then the origin the admin reached the
+    // console on. Validated BEFORE minting: a token is single-use and unrecoverable, so refusing a
+    // bad URL after burning one would cost the admin the token as well as the attempt.
+    string effective;
+    var stated = !string.IsNullOrWhiteSpace(req.ServerUrl) || !string.IsNullOrWhiteSpace(cfg[PublicUrl.ConfigKey]);
+    if (!string.IsNullOrWhiteSpace(req.ServerUrl))
+    {
+        if (!PublicUrl.IsUsableAbsolute(req.ServerUrl, out effective))
+            return Results.BadRequest(
+                $"'{req.ServerUrl}' is not a usable server URL. Give a full address including the scheme, e.g. http://192.168.1.10:5080.");
+    }
+    else
+    {
+        effective = PublicUrl.For(http, cfg);
+    }
+
+    // Refuse an INFERRED loopback address: correct for the admin standing at the server, useless to
+    // every agent the file could be carried to. A loopback URL somebody typed, or configured, is a
+    // same-box setup they meant — that stays allowed.
+    if (!stated && PublicUrl.IsLoopback(effective))
+        return Results.BadRequest(
+            $"This console was reached at {effective}, which no other machine can use. " +
+            $"Reopen it at the server's LAN address, set {PublicUrl.ConfigKey}, or type the address in the Server URL box " +
+            $"(type {effective} if the agent really is on this machine).");
+
+    return Results.Ok(await enrollment.CreateAsync(req with { ServerUrl = effective }, effective));
 }).Produces<CreateEnrollmentResponse>();
+
+// What the enrollment file WOULD say, without minting anything. The console shows it, so the admin
+// sees the exact URL that is going into the policy before spending a single-use token on it.
+admin.MapGet("/admin/enrollments/effective-url", (HttpContext http, IConfiguration cfg) =>
+{
+    var url = PublicUrl.For(http, cfg);
+    return Results.Ok(new EffectiveServerUrl(
+        url,
+        !string.IsNullOrWhiteSpace(cfg[PublicUrl.ConfigKey]),
+        PublicUrl.IsLoopback(url)));
+}).Produces<EffectiveServerUrl>();
 
 admin.MapGet("/admin/enrollments", async (EnrollmentService enrollment) =>
     Results.Ok(await enrollment.ListAsync()))

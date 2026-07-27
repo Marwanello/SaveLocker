@@ -80,9 +80,12 @@ try {
         -Body (@{ name = "TlsGame-$stamp"; manifestKey = $null; customPathsJson = $null } | ConvertTo-Json) | Out-Null
 
     # ---- 1. Enroll over HTTPS records the pin ----
+    # serverUrl is stated, not inferred: the agent runs on this same box, and the server refuses to
+    # INFER a loopback address into a policy file (Console-BugBounty CS-06). It must also be the
+    # https URL, since pinning the certificate is the whole point of this suite.
     $mint = Invoke-RestMethod -Uri "$server/api/admin/enrollments" -Method Post `
         -ContentType "application/json" `
-        -Body (@{ machineName = "tls-deck-$stamp"; ttlMinutes = 15 } | ConvertTo-Json)
+        -Body (@{ machineName = "tls-deck-$stamp"; ttlMinutes = 15; serverUrl = $server } | ConvertTo-Json)
 
     $policyFile = Join-Path $state "policy.json"
     $mint.policy | ConvertTo-Json -Depth 6 | Set-Content -Path $policyFile -Encoding utf8

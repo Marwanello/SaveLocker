@@ -196,21 +196,35 @@ head or reports a blocked pull; no agent silently remains on a stale parent unti
 **Acceptance:** exactly one simultaneous caller receives `Granted=true`; every other caller receives
 `Granted=false` with the winner's lease, and no request fails with a database exception.
 
-### 6. Produce proxy-safe enrollment and update URLs — CS-06
+### 6. Produce reachable enrollment and update URLs — CS-06 (**scoped down 2026-07-27**)
 
-1. Establish one trusted public-base-URL policy:
-   - a configured public URL; or
-   - forwarded headers accepted only from configured/trusted proxies.
-2. Do not blindly trust `X-Forwarded-*` from arbitrary clients.
-3. Prefer a relative installer URL if the update client already resolves it against its configured
-   server, avoiding unnecessary origin reconstruction.
-4. Make the enrollment console send/display the exact effective URL that will be written to the
-   downloaded policy.
-5. Reject invalid, non-absolute enrollment overrides before minting a token.
-6. Add direct HTTP, HTTPS reverse-proxy, custom-port, and explicit-override tests.
+**Scope decision (maintainer, 2026-07-27):** there is no Cloudflare Tunnel and no HTTPS. SaveLocker
+is LAN-only over plain HTTP, syncing save files — not financial data or PII. The proxy half of this
+finding therefore protects a topology that does not exist, and building it would add trust
+configuration with nothing to test it against. Steps 1 (forwarded-header half), 2, 3 and the
+reverse-proxy/HTTPS parts of 6 are **dropped**, along with the manual HTTPS-tunnel check in
+Verification and its "Done when" line. Recorded in `Decisions.md`.
 
-**Acceptance:** the downloaded enrollment policy and update metadata always name the agent-reachable
-origin, including its correct `https` scheme and external port, without trusting spoofed headers.
+What remains is a real failure on a plain LAN: the URL is built from the request origin, so opening
+the console at `http://localhost:5080` on the server box mints a policy telling the new machine to
+sync with itself, and hands agents a `localhost` installer URL.
+
+1. ~~Trusted-proxy / forwarded-header policy~~ — dropped. A single configured public base URL
+   (`Server:PublicBaseUrl`) is implemented, and is also the answer if a proxy is ever added.
+2. ~~Do not blindly trust `X-Forwarded-*`~~ — dropped; they are not read at all.
+3. ~~Relative installer URL~~ — dropped; the installer URL shares the same resolver.
+4. Make the enrollment console display the exact effective URL that will be written to the
+   downloaded policy. ✅
+5. Reject invalid, non-absolute enrollment overrides before minting a token. ✅
+6. Add direct-HTTP, custom-port, explicit-override and configured-public-URL tests. ✅
+   ~~HTTPS reverse-proxy tests~~ — dropped.
+7. **Added:** refuse to mint when an *inferred* URL is loopback, since that file cannot work on the
+   machine it is for. A stated loopback URL (override or `Server:PublicBaseUrl`) is honoured — agent
+   and server on one box is a real setup, and both enrollment suites rely on it. ✅
+
+**Acceptance:** the downloaded enrollment policy and update metadata always name an origin other
+machines on the LAN can reach; an unusable one is refused at mint time rather than discovered when
+enrollment fails.
 
 ### 7. Bound and atomically replace hosted installers — CS-07 and CS-08
 
@@ -289,12 +303,14 @@ its ports and scratch directories, start/stop its own server, and cover at minim
 8. failed SteamGridDB verification preserving the old key;
 9. failed/concurrent enrollment redemption.
 
-Also perform one deployment-shaped manual check through the real HTTPS tunnel/reverse proxy:
+~~Also perform one deployment-shaped manual check through the real HTTPS tunnel/reverse proxy.~~
+**Dropped 2026-07-27** — there is no tunnel and no HTTPS (see CS-06 above). The LAN-shaped
+equivalent, still worth doing once by hand on the real deployment:
 
-1. open the console at its public URL;
+1. open the console at the server's LAN address;
 2. mint an enrollment file with the URL override blank;
-3. confirm `policy.serverUrl` exactly matches the public origin;
-4. query `/api/agent/latest` and confirm its download URL resolves through that same origin;
+3. confirm `policy.serverUrl` is that LAN address, not `localhost`;
+4. query `/api/agent/latest` and confirm its download URL uses the same origin;
 5. enroll a disposable agent and download the hosted installer.
 
 If an API or DTO changes, regenerate `web/src/api-types.ts` and commit the updated
@@ -306,7 +322,8 @@ If an API or DTO changes, regenerate `web/src/api-types.ts` and commit the updat
 - The machine-delete migration preserves existing save history on a copy of a pre-fix SQLite DB.
 - All new server-bug-bounty checks and existing agent/enrollment/health/concurrency suites pass.
 - Server build, console lint, and console production build complete with no warnings.
-- HTTPS proxy verification passes without manually overriding the enrollment URL.
+- ~~HTTPS proxy verification passes without manually overriding the enrollment URL.~~ Dropped
+  2026-07-27; replaced by the LAN check above.
 - API/OpenAPI/generated TypeScript artifacts are synchronized.
 - New persistence, command-delivery, proxy-trust, and file-publication rules are recorded in
   `Architecture.md`, `Decisions.md`, or `Gotchas.md` as appropriate.

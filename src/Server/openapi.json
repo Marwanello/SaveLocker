@@ -1626,6 +1626,25 @@
         }
       }
     },
+    "/api/admin/enrollments/effective-url": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectiveServerUrl"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/enrollments/{id}": {
       "delete": {
         "tags": [
@@ -2478,6 +2497,25 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "EffectiveServerUrl": {
+        "required": [
+          "url",
+          "fromConfig",
+          "isLoopback"
+        ],
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "fromConfig": {
+            "type": "boolean"
+          },
+          "isLoopback": {
+            "type": "boolean"
           }
         }
       },

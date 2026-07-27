@@ -84,7 +84,9 @@ conflicts between two other versions stay open. An ordinary push queues nothing.
 - `POST /api/admin/health/events/{id}/dismiss` → 204 / 404. **Dismiss is not resolve**: it does not fix the condition, and if the condition still holds the agent's next report reopens it.
 
 ## Enrollment (admin)
-- `POST /api/admin/enrollments` `{ machineName?, ttlMinutes?, serverUrl?, gameIds?, settleQuietSeconds?, settleMaxWaitSeconds? }` → `CreateEnrollmentResponse { id, policy }`. Mints a single-use token (default TTL **15 min**, max 24 h) and returns the **policy file** the agent consumes. **The raw token is in this response and nowhere else** — the server stores only its hash, so a policy that isn't saved here is unrecoverable. `serverUrl` defaults to the URL the console was reached on; override it when the admin is on the LAN but the agent must use the public tunnel. `gameIds` null = every enabled game.
+- `POST /api/admin/enrollments` `{ machineName?, ttlMinutes?, serverUrl?, gameIds?, settleQuietSeconds?, settleMaxWaitSeconds? }` → `CreateEnrollmentResponse { id, policy }`. Mints a single-use token (default TTL **15 min**, max 24 h) and returns the **policy file** the agent consumes. **The raw token is in this response and nowhere else** — the server stores only its hash, so a policy that isn't saved here is unrecoverable. `gameIds` null = every enabled game.
+  - `serverUrl` is the address the **agent** will use. Precedence: the explicit override → `Server:PublicBaseUrl` → the origin the console was reached on. Validated before a token is minted, so a bad value costs neither a token nor a retry: **400** if it is not an absolute `http(s)` URL, and **400** if an *inferred* URL is loopback (`localhost`, `127.x`, `::1`, `0.0.0.0`) — such a file would tell the new machine to sync with itself. A loopback URL you state explicitly (override or `Server:PublicBaseUrl`) is accepted: that is a same-box agent.
+- `GET /api/admin/enrollments/effective-url` → `EffectiveServerUrl { url, fromConfig, isLoopback }`. What a policy minted right now would carry. The console shows it before the button is pressed, since the token is single-use.
 - `GET /api/admin/enrollments` → `EnrollmentDto[]` (100 newest) `{ id, machineName, createdAt, expiresAt, redeemedAt, redeemedByMachineName }`. **Tokens whose window closed >24 h ago (`EnrollmentService.ListRetention`) are omitted** and pruned by the hourly sweep — their history lives in the audit log (`enrollment.create` records the expiry; an unredeemed one logs `enrollment.expire` when pruned).
 - `DELETE /api/admin/enrollments/{id}` → 204 / 404. Revokes an unspent token. Deleting a *spent* one only drops the record — it does not revoke the API key it bought (delete the machine for that).
 
@@ -105,7 +107,7 @@ when the GitHub release is newer than the hosted installer.
 - `GET /api/agent/installer/download` — streams the hosted installer binary. No auth. 404 if none hosted.
 
 ## Agent update check (agent-auth)
-- `GET /api/agent/latest` → `AgentVersionInfo { latestVersion, downloadUrl }`, or 204 if no installer is configured. Checks the filesystem first (`AgentInstallerService`); falls back to static `AgentUpdate:LatestVersion` + `DownloadUrl` config.
+- `GET /api/agent/latest` → `AgentVersionInfo { latestVersion, downloadUrl }`, or 204 if no installer is configured. Checks the filesystem first (`AgentInstallerService`); falls back to static `AgentUpdate:LatestVersion` + `DownloadUrl` config. The hosted `downloadUrl` uses `Server:PublicBaseUrl` when set, else the request origin — same resolver as the enrollment policy.
 
 ## Agent command channel (agent-auth)
 Polling model: agent makes outbound requests (~20 s). Each poll also reconciles the game list (adopt new server games, drop deleted ones).
