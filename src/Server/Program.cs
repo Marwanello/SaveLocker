@@ -171,6 +171,7 @@ using (var scope = app.Services.CreateScope())
 // Anything still staged is an upload that died with the process that started it. Swept once at
 // startup, with an age floor so a restart cannot delete an upload another process has in flight.
 app.Services.GetRequiredService<ArchiveStore>().SweepIncoming(TimeSpan.FromHours(1));
+app.Services.GetRequiredService<AgentInstallerService>().SweepIncoming(TimeSpan.FromHours(1));
 
 // OpenAPI JSON at /openapi/v1.json + a Swagger UI explorer at /swagger.
 app.MapOpenApi();
@@ -664,28 +665,51 @@ admin.MapGet("/admin/agent-installer", (AgentInstallerService installer) =>
 admin.MapPost("/admin/agent-installer", async (
     HttpRequest req, AgentInstallerService installer, CancellationToken ct) =>
 {
-    // Kestrel's default body limit is 30 MB; installers are ~43 MB.
-    // Must be set before ReadFormAsync begins reading the body.
+    // Kestrel's default body limit is 30 MB and installers are ~43 MB, so it has to be lifted —
+    // but it used to be lifted to NULL, i.e. removed. ReadFormAsync buffers a multipart body to
+    // memory and temp storage, so an unbounded limit let any reachable client (this route is open
+    // until an admin password is set) push the disk over on its own. Raised to the documented cap,
+    // not abolished. Must be set before ReadFormAsync starts reading.
     var sizeCap = req.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
-    if (sizeCap is { IsReadOnly: false }) sizeCap.MaxRequestBodySize = null;
+    if (sizeCap is { IsReadOnly: false }) sizeCap.MaxRequestBodySize = installer.MaxBytes;
+
+    if (!req.HasFormContentType)
+        return Results.BadRequest("Expected a multipart form upload with a 'file' field.");
 
     var version = req.Query["version"].FirstOrDefault()?.Trim();
     if (string.IsNullOrWhiteSpace(version))
         return Results.BadRequest("version query parameter is required.");
 
-    var form = await req.ReadFormAsync(ct);
-    var file = form.Files.GetFile("file");
-    if (file is null)
-        return Results.BadRequest("file field is required.");
+    try
+    {
+        var form = await req.ReadFormAsync(ct);
+        var file = form.Files.GetFile("file");
+        if (file is null)
+            return Results.BadRequest("file field is required.");
 
-    await using var stream = file.OpenReadStream();
-    var info = await installer.SaveAsync(stream, version, file.FileName, ct);
-    return Results.Ok(info);
+        await using var stream = file.OpenReadStream();
+        var info = await installer.SaveAsync(stream, version, file.FileName, ct);
+        return Results.Ok(info);
+    }
+    catch (InstallerTooLargeException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status413PayloadTooLarge);
+    }
+    catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
+    {
+        // Kestrel's own refusal, for a body that declared or streamed past the cap.
+        return Results.Problem($"Installer exceeds the {installer.MaxBytes / (1024 * 1024)} MB limit.",
+            statusCode: StatusCodes.Status413PayloadTooLarge);
+    }
+    catch (InstallerRejectedException ex)
+    {
+        return Results.BadRequest(ex.Message);
+    }
 }).Produces<AgentInstallerStatus>();
 
-admin.MapDelete("/admin/agent-installer", (AgentInstallerService installer) =>
+admin.MapDelete("/admin/agent-installer", async (AgentInstallerService installer, CancellationToken ct) =>
 {
-    installer.Delete();
+    await installer.DeleteAsync(ct);
     return Results.NoContent();
 });
 
@@ -697,6 +721,14 @@ admin.MapPost("/admin/agent-installer/fetch-github", async (
     {
         var info = await installer.FetchLatestFromGitHubAsync(httpFactory.CreateClient(), ct);
         return Results.Ok(info);
+    }
+    catch (InstallerTooLargeException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status413PayloadTooLarge);
+    }
+    catch (InstallerRejectedException ex)
+    {
+        return Results.BadRequest(ex.Message);
     }
     catch (Exception ex)
     {

@@ -123,6 +123,15 @@ session can judge an edge case, not to reopen the choice.
   open: the admin has said nothing about it, its machine is still stuck, and closing it would also
   disarm the rule that resolution may not rewind a newer Latest. Each supersession is audited as
   `conflict.resolve_superseded`.
+- **The hosted installer is staged, published, then the old one is removed — under one gate.**
+  `AgentInstallerService` is a singleton holding a `SemaphoreSlim` that manual upload, manual GitHub
+  fetch, the background poller and delete all pass through; the fetch holds it across its
+  "is this newer?" read too, since that decision is read-then-write. Validation (`.exe`, a usable
+  filename, a parseable version) happens **before** anything on disk is touched: the old code
+  accepted a 1 KB `notes.txt` with version `not-a-version` and served it to the fleet as the
+  installer. The request body is capped at `AgentUpdate:MaxInstallerMb` (200) rather than having
+  Kestrel's limit removed outright — `ReadFormAsync` buffers to memory and temp storage, and the
+  route is open until an admin password is set.
 - **An archive is staged, then published; rows are deleted before files.** Uploads land in
   `{ArchiveRoot}/.incoming/*.part` (same volume, so the publish is one rename) and are size-capped
   while copying, not on declared length — a disconnect used to leave a truncated archive sitting at

@@ -817,6 +817,181 @@ try {
 
     Remove-Item Env:Server__PublicBaseUrl -ErrorAction SilentlyContinue
     Stop-TestServer $srv
+
+    # =====================================================================================
+    # CS-07 + CS-08: the hosted installer is bounded, and replacing it is all-or-nothing
+    # =====================================================================================
+    # The update channel's failure mode is quiet: an admin uploads, the console says something
+    # cheerful, and the fleet stops being offered updates because the metadata names a file that is
+    # not there. So every check here ends by asking whether the installer still DOWNLOADS.
+    Write-Host ""
+    Write-Host "==== CS-07/08: bounded uploads, atomic installer replacement ===="
+
+    $env:Storage__DbPath              = Join-Path $scratch "installer.db"
+    $env:Storage__AgentInstallerRoot  = Join-Path $scratch "installer-store"
+    $env:AgentUpdate__MaxInstallerMb  = "2"
+    New-Item -ItemType Directory -Force $env:Storage__AgentInstallerRoot | Out-Null
+    $instRoot = $env:Storage__AgentInstallerRoot
+    $srv = Start-TestServer $serverDll "installer"
+
+    function MakeExe($path, $bytes, $marker) {
+        $fs = [System.IO.File]::Create($path)
+        $fs.SetLength($bytes)
+        $fs.Position = 0
+        $m = [System.Text.Encoding]::ASCII.GetBytes($marker)
+        $fs.Write($m, 0, $m.Length)
+        $fs.Close()
+    }
+    # A real multipart body, built by hand: Invoke-WebRequest -Form is PowerShell 7 only.
+    function PostInstaller($path, $version, $fileName) {
+        $boundary = [Guid]::NewGuid().ToString()
+        $LF = "`r`n"
+        $head = "--$boundary$LF" +
+                "Content-Disposition: form-data; name=`"file`"; filename=`"$fileName`"$LF" +
+                "Content-Type: application/octet-stream$LF$LF"
+        $tail = "$LF--$boundary--$LF"
+        $body = New-Object System.IO.MemoryStream
+        $hb = [System.Text.Encoding]::ASCII.GetBytes($head);  $body.Write($hb, 0, $hb.Length)
+        $fb = [System.IO.File]::ReadAllBytes($path);          $body.Write($fb, 0, $fb.Length)
+        $tb = [System.Text.Encoding]::ASCII.GetBytes($tail);  $body.Write($tb, 0, $tb.Length)
+        try {
+            $r = Invoke-WebRequest "$url/api/admin/agent-installer?version=$version" -Method Post `
+                -ContentType "multipart/form-data; boundary=$boundary" -Body $body.ToArray() -UseBasicParsing
+            return @{ code = [int]$r.StatusCode; body = ($r.Content | ConvertFrom-Json) }
+        } catch {
+            return @{ code = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { -1 }; body = $null }
+        } finally { $body.Dispose() }
+    }
+    function InstallerStatus {
+        try { return ((Invoke-WebRequest "$url/api/admin/agent-installer" -UseBasicParsing).Content | ConvertFrom-Json) }
+        catch { return $null }
+    }
+    function InstallerDownloads {
+        try {
+            $out = Join-Path $scratch "dl-installer.bin"
+            Invoke-WebRequest "$url/api/agent/installer/download" -OutFile $out -UseBasicParsing | Out-Null
+            return (Get-Item $out).Length
+        } catch { return -1 }
+    }
+    function StagedInstallerFiles {
+        @(Get-ChildItem $instRoot -Force -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like ".incoming-*" -or $_.Name -like ".info-*" })
+    }
+
+    # ---- 1. A good installer publishes ----
+    $goodExe = Join-Path $scratch "SaveLocker-Agent-Setup-1.0.0.exe"
+    MakeExe $goodExe 65536 "GOOD-1.0.0"
+    $up1 = PostInstaller $goodExe "1.0.0" "SaveLocker-Agent-Setup-1.0.0.exe"
+    Check "a valid installer uploads"                 ($up1.code -eq 200)
+    Check "the console reports it"                    ((InstallerStatus).version -eq "1.0.0")
+    Check "it downloads at the right size"            ((InstallerDownloads) -eq 65536)
+    Check "the upload left nothing staged"            (@(StagedInstallerFiles).Count -eq 0)
+
+    # ---- 2. CS-07: the body limit is enforced, not removed ----
+    $hugeExe = Join-Path $scratch "SaveLocker-Agent-Setup-9.9.9.exe"
+    MakeExe $hugeExe (5MB) "TOO-BIG"
+    $tooBig = PostInstaller $hugeExe "9.9.9" "SaveLocker-Agent-Setup-9.9.9.exe"
+    Check "an oversized installer is refused with 413" ($tooBig.code -eq 413)
+    Check "the oversized upload left nothing staged"   (@(StagedInstallerFiles).Count -eq 0)
+
+    # ---- 3. CS-08: a refused replacement must not cost the working installer ----
+    Check "the previous installer is still described"  ((InstallerStatus).version -eq "1.0.0")
+    Check "the previous installer still downloads"     ((InstallerDownloads) -eq 65536)
+
+    # ---- 4. Validation happens before anything on disk is touched ----
+    $notExe = Join-Path $scratch "notes.txt"
+    MakeExe $notExe 1024 "NOT-AN-EXE"
+    $badExt = PostInstaller $notExe "2.0.0" "notes.txt"
+    Check "a non-.exe upload is refused"               ($badExt.code -eq 400)
+
+    $badVer = PostInstaller $goodExe "not-a-version" "SaveLocker-Agent-Setup-x.exe"
+    Check "an unparseable version is refused"          ($badVer.code -eq 400)
+
+    $noName = PostInstaller $goodExe "2.0.0" ""
+    Check "an empty filename is refused"               ($noName.code -eq 400)
+
+    Check "after every refusal the old installer stands" `
+        ((InstallerStatus).version -eq "1.0.0" -and (InstallerDownloads) -eq 65536)
+    Check "the refusals left nothing staged"           (@(StagedInstallerFiles).Count -eq 0)
+
+    # ---- 5. A client that vanishes mid-upload ----
+    # Honest note: this one does NOT fail against the pre-fix build. There the body is buffered by
+    # ReadFormAsync before SaveAsync runs at all, so an abandoned upload never reached the
+    # delete-everything-first step. It guards the new staged path against regressing, rather than
+    # reproducing the old bug — checks 2 and 4 are the ones that fail pre-fix.
+    $client = [System.Net.Sockets.TcpClient]::new("127.0.0.1", $Port)
+    $stream = $client.GetStream()
+    $bnd = [Guid]::NewGuid().ToString()
+    $head = "POST /api/admin/agent-installer?version=3.0.0 HTTP/1.1`r`nHost: localhost:$Port`r`n" +
+            "Content-Type: multipart/form-data; boundary=$bnd`r`nContent-Length: 900000`r`n`r`n" +
+            "--$bnd`r`nContent-Disposition: form-data; name=`"file`"; filename=`"SaveLocker-Agent-Setup-3.0.0.exe`"`r`n`r`n"
+    $hb = [System.Text.Encoding]::ASCII.GetBytes($head)
+    $stream.Write($hb, 0, $hb.Length)
+    $stream.Write((New-Object byte[] -ArgumentList 4096), 0, 4096)
+    $stream.Flush()
+    Start-Sleep -Milliseconds 500
+    $client.Close()
+    Start-Sleep -Seconds 2
+
+    Check "an abandoned upload leaves the old installer" ((InstallerStatus).version -eq "1.0.0")
+    Check "the abandoned upload still downloads the old" ((InstallerDownloads) -eq 65536)
+
+    # ---- 6. Two writers at once produce one coherent installer ----
+    # Not "whoever wins": the point is that the metadata and the file on disk always agree, which
+    # is what the old delete-then-write-then-describe sequence could not promise.
+    $exeA = Join-Path $scratch "SaveLocker-Agent-Setup-4.0.0.exe"; MakeExe $exeA 40000 "AAA-4.0.0"
+    $exeB = Join-Path $scratch "SaveLocker-Agent-Setup-5.0.0.exe"; MakeExe $exeB 50000 "BBB-5.0.0"
+    $at = (Get-Date).AddSeconds(3).ToUniversalTime().Ticks
+    $uploader = {
+        param($u, $path, $version, $fileName, $at)
+        $boundary = [Guid]::NewGuid().ToString()
+        $LF = "`r`n"
+        $head = "--$boundary$LF" +
+                "Content-Disposition: form-data; name=`"file`"; filename=`"$fileName`"$LF" +
+                "Content-Type: application/octet-stream$LF$LF"
+        $tail = "$LF--$boundary--$LF"
+        $ms = New-Object System.IO.MemoryStream
+        $hb = [System.Text.Encoding]::ASCII.GetBytes($head); $ms.Write($hb, 0, $hb.Length)
+        $fb = [System.IO.File]::ReadAllBytes($path);         $ms.Write($fb, 0, $fb.Length)
+        $tb = [System.Text.Encoding]::ASCII.GetBytes($tail); $ms.Write($tb, 0, $tb.Length)
+        while ([DateTime]::UtcNow.Ticks -lt $at) { }
+        try {
+            $r = Invoke-WebRequest "$u/api/admin/agent-installer?version=$version" -Method Post `
+                -ContentType "multipart/form-data; boundary=$boundary" -Body $ms.ToArray() -UseBasicParsing
+            "$([int]$r.StatusCode)"
+        } catch { "ERR" } finally { $ms.Dispose() }
+    }
+    $ijobs = @(
+        (Start-Job -ScriptBlock $uploader -ArgumentList $url, $exeA, "4.0.0", "SaveLocker-Agent-Setup-4.0.0.exe", $at),
+        (Start-Job -ScriptBlock $uploader -ArgumentList $url, $exeB, "5.0.0", "SaveLocker-Agent-Setup-5.0.0.exe", $at)
+    )
+    $icodes = $ijobs | Wait-Job -Timeout 90 | Receive-Job
+    $ijobs | Remove-Job -Force
+
+    Check "two simultaneous uploads both answered 200"  (@($icodes | Where-Object { $_ -ne "200" }).Count -eq 0)
+    $final = InstallerStatus
+    $expectedSize = if ($final.version -eq "4.0.0") { 40000 } else { 50000 }
+    Check "one of the two won cleanly"                  ($final.version -in @("4.0.0", "5.0.0"))
+    Check "metadata and file agree after the race"      ((InstallerDownloads) -eq $expectedSize -and $final.sizeBytes -eq $expectedSize)
+    Check "the loser's binary was cleaned up"           (@(Get-ChildItem $instRoot -Filter *.exe).Count -eq 1)
+    Check "the race left nothing staged"                (@(StagedInstallerFiles).Count -eq 0)
+
+    # ---- 7. Startup sweeps abandoned installer staging ----
+    $staleInst = Join-Path $instRoot ".incoming-deadbeef.part"
+    "abandoned" | Set-Content $staleInst -Encoding utf8
+    (Get-Item $staleInst).LastWriteTimeUtc = (Get-Date).ToUniversalTime().AddHours(-4)
+    Stop-TestServer $srv
+    $srv = Start-TestServer $serverDll "installer2"
+    Check "startup sweeps abandoned installer staging"  (-not (Test-Path $staleInst))
+    Check "the installer survived the restart"          ((InstallerDownloads) -eq $expectedSize)
+
+    # ---- 8. Delete clears both the binary and the metadata ----
+    Invoke-RestMethod "$url/api/admin/agent-installer" -Method Delete | Out-Null
+    Check "delete removes the installer"                ($null -eq (InstallerStatus))
+    Check "delete removes the binary too"               (@(Get-ChildItem $instRoot -Filter *.exe).Count -eq 0)
+
+    Remove-Item Env:Storage__AgentInstallerRoot, Env:AgentUpdate__MaxInstallerMb -ErrorAction SilentlyContinue
+    Stop-TestServer $srv
 }
 finally {
     foreach ($p in $script:servers) { Stop-TestServer $p }
@@ -824,7 +999,8 @@ finally {
     git worktree prune
     Remove-Item Env:ASPNETCORE_URLS, Env:Storage__DbPath, Env:Storage__ArchiveRoot, `
         Env:Backup__Enabled, Env:Logging__EventLog__LogLevel__Default, Env:Commands__LeaseMinutes, `
-        Env:Storage__MaxUploadMb, Env:Server__PublicBaseUrl -ErrorAction SilentlyContinue
+        Env:Storage__MaxUploadMb, Env:Server__PublicBaseUrl, Env:Storage__AgentInstallerRoot, `
+        Env:AgentUpdate__MaxInstallerMb -ErrorAction SilentlyContinue
     Get-Job -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
 }
 

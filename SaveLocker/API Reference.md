@@ -94,7 +94,10 @@ The policy file is **deliberately unsigned** (`Decisions.md` §4). Its `games` l
 
 ## Agent installer management (admin)
 - `GET /api/admin/agent-installer` → `AgentInstallerStatus { version, fileName, uploadedAt, sizeBytes }`, or 204 if none hosted.
-- `POST /api/admin/agent-installer?version={v}` — multipart `file` field (`.exe`). Stores installer + sidecar JSON; replaces any previous. Returns `AgentInstallerStatus`. Body limit: 200 MB.
+- `POST /api/admin/agent-installer?version={v}` — multipart `file` field (`.exe`). Stores installer + sidecar JSON; replaces any previous. Returns `AgentInstallerStatus`.
+  - **413** past `AgentUpdate:MaxInstallerMb` (default 200), enforced by Kestrel *and* counted while copying. The limit is raised from Kestrel's 30 MB default, never removed.
+  - **400** for a non-`.exe`, an empty filename, or a version this server cannot parse — checked before anything on disk is touched.
+  - Replacement is atomic and serialised against the GitHub fetch, the background poller and delete. A refused or interrupted upload leaves the previous installer and its metadata serving.
 - `DELETE /api/admin/agent-installer` → 204. Removes the hosted installer; agents stop being offered updates.
 
 The server can optionally keep the hosted installer current from GitHub through
