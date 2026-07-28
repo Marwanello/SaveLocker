@@ -129,6 +129,13 @@ session can judge an edge case, not to reopen the choice.
   than implying automatic sync works. The same normalisation runs at every entry point (local API,
   CLI `--proc`), so `C:\Games\Foo\foo.exe` and `foo.exe` both persist as `foo` — stored verbatim,
   neither would ever match.
+- **Test-only environment variables stay, and stay unadvertised** (2026-07-28, maintainer decision).
+  `SAVELOCKER_LEASE_RENEW_SECONDS` and `SAVELOCKER_SYNC_LOCK_SECONDS` are kept — they are the only
+  way to observe a 3-hour renewal interval or a ~13-minute lock wait inside a test — but they are
+  **not** promoted to `AgentConfig` settings and are **not** documented anywhere a user reads. They
+  live in `Gotchas.md` (this vault) only; `web/src/help/cli-reference.md` and the release notes must
+  not mention them. Anything added in the same spirit follows the same rule: read silently, default
+  to the production value, clamp the override, and document it here rather than in the KB.
 - **Stack: single-language .NET.** Agent = C#/WinForms (Windows), C#/headless (Linux); Server =
   ASP.NET Core in Docker on unRAID.
 - **Runtime: .NET 10 (LTS)**, locked 2026-07-13. .NET 9 is STS, EOL 2026-11-10; .NET 10 is LTS to

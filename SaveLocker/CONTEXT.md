@@ -29,16 +29,17 @@ WA-09 is the largest remaining item and the one that touches code the others now
 WinForms context**, so every `_ui.Post(...)` in `TrayApp.cs` — including ones added by WA-01, WA-05
 and WA-06 — is currently a thread-pool post, not a UI-thread marshal.
 
-Two things need the maintainer rather than the next agent:
+**Manual verification is outstanding and none of it has been run** — the whole of the task's
+Verification section, plus the console bounty's **LAN enrollment-URL check** (open the console at
+the server's LAN address, mint an enrollment file with the URL override blank, confirm
+`policy.serverUrl` is the LAN address, not `localhost` — `logs/2026-07-27_console-bugbounty.md` →
+Verification). **WA-03's second-account ACL test is deferred by the maintainer** (2026-07-28) until
+a multi-user Windows box is available; it is no longer treated as blocking, but it means the release
+notes must describe the ACL change rather than assert that other users cannot read the credentials.
 
-1. **An open decision.** Two test-only environment variables now live in production code
-   (`SAVELOCKER_LEASE_RENEW_SECONDS`, `SAVELOCKER_SYNC_LOCK_SECONDS`). Keep, promote to real
-   settings, or remove and mark those tests manual? See the task's Progress section.
-2. **Manual verification, none of which has been run.** The whole of the task's Verification
-   section, plus the console bounty's outstanding **LAN enrollment-URL check** (open the console at
-   the server's LAN address, mint an enrollment file with the URL override blank, confirm
-   `policy.serverUrl` is the LAN address, not `localhost` — `logs/2026-07-27_console-bugbounty.md`
-   → Verification). WA-03's second-account ACL test is the release blocker among these.
+Two questions raised during the WA-01…WA-08 session are now **settled**, both in `Decisions.md`:
+the release is **v0.5.0**, and the two test-only environment variables are **kept but never
+advertised to users** (vault only — not `cli-reference.md`, not the release notes).
 
 ## Open work
 

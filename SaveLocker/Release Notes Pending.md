@@ -126,9 +126,15 @@ one code change, not two. The same is true in reverse for several bullets below.
 
 ### Not yet verified — do not publish these bullets without it
 
-- **The credentials bullet is unproven where it matters.** The permissions have been inspected, but
-  nothing has been tested from a second Windows account, and it has not been confirmed that the
-  enrolled user can still sync and take a silent update after a reboot.
+- **The credentials bullet is unproven where it matters, and the maintainer has accepted that for
+  now** (2026-07-28) — multi-user testing is deferred to a later session. The ACL is applied and
+  asserted programmatically against the well-known SIDs; what has *not* happened is a second Windows
+  login actually failing to read the files, or a confirmation that the enrolled user can still sync
+  and take a silent update after a reboot.
+  <br>**If it is still unverified at tag time, reword rather than drop it.** Describe the change —
+  "the folder holding this machine's credentials is now restricted to the account that set SaveLocker
+  up" — instead of asserting the outcome, "other people using this PC cannot read them". The first is
+  what has been demonstrated; the second is a security guarantee that has not been.
 - The live-game bullet has not been exercised against a real game, only a stand-in process.
 - The launch/exit bullet has not been exercised by enrolling a real non-Steam Steam shortcut.
 
@@ -238,15 +244,13 @@ enrollment 18.
 
 ---
 
-## Version not yet chosen
+## Version: v0.5.0 (decided 2026-07-28)
 
-Last released: **v0.4.1**. These are fixes only, no new capability, so v0.4.2 fits unless the
-Console or Windows bounties turn up something user-visible enough to warrant v0.5.0.
+Last released: **v0.4.1**. Not v0.4.2, for three reasons that each stand on their own:
 
-The console bounty carries a schema migration, which argues for v0.5.0 on its own: it is the first
-release where downgrading the container is not a clean rollback.
-
-**The Windows bounty settles it: v0.5.0.** Two of its fixes change behaviour users will notice
-rather than merely repairing it — SaveLocker no longer pulls automatically when a game launches on
-Windows, and moving an agent to a different server now requires registering again. Neither belongs
-in a patch release.
+- The console bounty carries a **schema migration** — this is the first release where downgrading
+  the container is not a clean rollback. Back up `/data` before deploying.
+- SaveLocker **no longer pulls automatically when a game launches on Windows**. That is a removed
+  behaviour, not a repair, and users who relied on it need to read about it.
+- Moving an agent to a different server now **requires registering again**, because the old server's
+  credentials are cleared rather than reused.

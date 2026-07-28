@@ -66,13 +66,16 @@ Read these before trusting the suite as proof:
 - **WA-04** — "server A's TLS pin was dropped" is vacuous over http (no pin is ever recorded). Real
   pin behaviour is covered by `run-enrollment-tls-tests.ps1`.
 
-### Open decision for the maintainer
+### Settled by the maintainer, 2026-07-28
 
-Two **test-only environment variables** now exist in production code —
-`SAVELOCKER_LEASE_RENEW_SECONDS` (WA-06) and `SAVELOCKER_SYNC_LOCK_SECONDS` (WA-07). Both are
-documented in `Gotchas.md`. They exist purely so the suite runs in seconds rather than half an hour.
-Raised with the maintainer, **not yet answered**: keep them, promote them to real config settings, or
-remove them and mark those tests manual.
+- The two **test-only environment variables** (`SAVELOCKER_LEASE_RENEW_SECONDS`,
+  `SAVELOCKER_SYNC_LOCK_SECONDS`) are **kept for future testing and stay unadvertised** — vault only,
+  never `cli-reference.md` or the release notes. Anything added in the same spirit follows the same
+  rule (`Decisions.md`).
+- The release is **v0.5.0**.
+- **WA-03's multi-user verification is deferred**, not blocking. Revisit when a multi-user Windows
+  box is available; until then the release notes describe the ACL change rather than assert the
+  outcome.
 
 ### Still outstanding for every finding so far
 
@@ -82,6 +85,8 @@ particular these acceptance criteria are *implemented but not signed off*:
 
 - WA-03's "an unrelated local user cannot read either credential" — needs a second Windows account.
   Also unproven: that the enrolled user can still sync **and take a silent update** after a reboot.
+  **Deferred by the maintainer 2026-07-28** — assumed working for now, to be revisited on a
+  multi-user box. Note the consequence: the ACL is demonstrated, the guarantee is not.
 - WA-08's GUI enrollment of a real non-Steam shortcut (verification item 3).
 - WA-06's tray two-server-lease transition (verification item 7) — a lease is only taken by the
   process watcher or the launch wrapper, neither drivable headlessly during a server change.

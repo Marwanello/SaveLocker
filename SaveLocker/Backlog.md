@@ -32,14 +32,14 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md`
   WA-10 honest autostart reporting, WA-11 discovery-source isolation, WA-12 first-open deep link.
   Progress table, weak-evidence notes and outstanding manual gates: `tasks/WinAgent-BugBounty.md`
   → Progress.
-  **Two follow-ups it leaves behind:**
-  - **Blocking for release: WA-03's second-account ACL test.** The credentials are now ACL-locked
-    to the enrolling account, but "an unrelated local user cannot read them" has only been proven by
-    inspecting the ACL, not by logging in as a second user. Also unproven: that the enrolled user can
-    still sync *and take a silent update* after a reboot.
-  - **A maintainer decision, unanswered:** two test-only env vars now live in production code
-    (`SAVELOCKER_LEASE_RENEW_SECONDS`, `SAVELOCKER_SYNC_LOCK_SECONDS`). Keep, promote to real
-    settings, or remove and mark those tests manual?
+  **One follow-up it leaves behind** (the env-var question is settled — see `Decisions.md`: kept,
+  unadvertised):
+  - **WA-03 multi-user verification — deferred by the maintainer 2026-07-28, not blocking.** The
+    credentials are ACL-locked to the enrolling account and asserted against the well-known SIDs, but
+    no second Windows account has ever tried to read them, and it is unconfirmed that the enrolled
+    user can still sync *and take a silent update* after a reboot. Revisit when a multi-user Windows
+    box is available. Until then the release notes must describe the ACL change rather than assert
+    that other users cannot read the files — see `Release Notes Pending.md`.
 
 - **Device-verify fresh Windows installer enrollment.** The wizard shipped in v0.1.7; the upgrade path is well verified. The **fresh install** (clean box, no `%PROGRAMDATA%\SaveLocker`) has never been exercised. Scenarios archived in `logs/2026-07-14_installer-enrollment.md`:
   - Happy path: run installer, choose enrollment file → page shows server + machine name → install → machine appears online in Machines.
