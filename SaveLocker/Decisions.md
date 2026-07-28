@@ -21,6 +21,21 @@ session can judge an edge case, not to reopen the choice.
   `ProcessNames` cannot be detected as running — that is what makes WA-08 a data-safety fix, not a
   convenience one. Adding a Windows launch wrapper would let the pull come back; nothing here
   precludes it.
+- **Two tiers of save-path validation: absolute refusals and overridable warnings** (WA-02,
+  2026-07-27). `SavePathGuard` is the hard floor — a drive root, a user profile (or the folder
+  holding all of them), a Windows/system directory, Program Files, or the agent's own state or
+  install directory can never be a save folder, and there is no override, because a force-pull
+  *replaces* whatever it is pointed at. `SaveDirSanity` stays the heuristic tier (Wine prefix,
+  repeated tail, over the upload cap): those have real false positives, so they are refused once and
+  accepted on an explicit second confirmation (`confirm` on the local API, `--force-path` on the
+  CLI). Paths are validated *and canonicalized* at all five entry points — folder picker, typed
+  local API, enrollment, CLI, and server `MachineSavePath` reconciliation — and validated **again**
+  inside `SyncEngine` immediately before archiving or restoring. The re-check is the load-bearing
+  one: config.json is hand-editable, the server can push a path with no local confirmation, and a
+  stored path can become a junction after it was accepted, so canonicalization resolves reparse
+  points rather than trusting the stored string. The state directory is refused as
+  same-or-ancestor only, not as a whole tree — `config.json` and `api-token` sit directly in it, and
+  the test suites legitimately put save folders below it.
 - **Stack: single-language .NET.** Agent = C#/WinForms (Windows), C#/headless (Linux); Server =
   ASP.NET Core in Docker on unRAID.
 - **Runtime: .NET 10 (LTS)**, locked 2026-07-13. .NET 9 is STS, EOL 2026-11-10; .NET 10 is LTS to

@@ -15,6 +15,14 @@
 #          reason). The dashboard-command path is tested too, because that is the one where the
 #          person clicking cannot see that the game is open.
 #
+#   WA-02. A broad Windows directory can never be archived or replaced.
+#          Save-folder assignment took any string, and the destructive sync path never checked one
+#          at all. A drive root, a user profile, Program Files or the agent's own state directory
+#          could be archived - and a force-pull would REPLACE it. Paths arrive from five places
+#          (picker, typed local API, enrollment, CLI, server reconciliation), so each validates,
+#          and SyncEngine validates again at the archive/restore boundary: a mapping accepted last
+#          week can be hand-edited, pushed by the server, or turned into a junction afterwards.
+#
 # Owns its server on :5189 and its state under .verify-winagent, so it never collides with a real
 # agent, a dev server, or another suite.
 # Usage: .\tests\run-winagent-tests.ps1
@@ -134,8 +142,9 @@ try {
     # does (the same reason run-local-api-tests.ps1 uses it here).
     $machineB = (Invoke-RestMethod "$server/api/machines") |
                 Where-Object { $_.name -eq "WinB-$stamp" }
-    # /api/games is agent-authenticated; /api/overview is the admin view of the same games.
-    $gameRow  = (Invoke-RestMethod "$server/api/overview") |
+    # /api/games is agent-authenticated; /api/overview is the admin view of the same games. Its
+    # rows are GameStateDto, so the game itself is one level down.
+    $gameRow  = (Invoke-RestMethod "$server/api/overview").game |
                 Where-Object { $_.name -eq $gameName } | Select-Object -First 1
     Invoke-RestMethod "$server/api/commands" -Method Post `
         -Body (@{ machineId = $machineB.id; gameId = $gameRow.id; type = "Pull"; force = $true } | ConvertTo-Json) `
@@ -168,6 +177,95 @@ try {
     Agent pull $gameName --force --config $cfgB | Out-Null
     $restored = (Get-Content (Join-Path $saveB "save.dat") -Raw).Trim()
     Check "WA-01 the pull succeeds once the game is closed" ($restored -eq "SERVER VERSION")
+
+    # =================================================================================
+    # WA-02. A BROAD WINDOWS DIRECTORY CAN NEVER BE ARCHIVED OR REPLACED
+    # =================================================================================
+    # Configuration-time refusals. Each is a path a force-pull would otherwise DELETE INTO.
+    $cfgP = Join-Path $scratch "p.json"
+    @{ ServerUrl = $server; Games = @() } | ConvertTo-Json | Set-Content -Path $cfgP -Encoding utf8
+    Agent register --name "WinP-$stamp" --config $cfgP | Out-Null
+
+    $bad = [ordered]@{
+        "a drive root"          = "C:\"
+        "the user profile"      = $env:USERPROFILE
+        "the profile container" = (Split-Path $env:USERPROFILE -Parent)
+        "Program Files"         = $env:ProgramFiles
+        "the Windows directory" = $env:WINDIR
+        "the agent state dir"   = $scratch
+    }
+    foreach ($label in $bad.Keys) {
+        $out = Agent add-game --name "Bad-$label-$stamp" --dir $bad[$label] --config $cfgP | Out-String
+        Check "WA-02 add-game refuses $label" ($out -match "(?i)refus")
+    }
+
+    # A normal folder is still accepted - without this the suite would pass if add-game were broken.
+    $okSave = Join-Path $scratch "ok_save"; New-Item -ItemType Directory -Force $okSave | Out-Null
+    "ok" | Set-Content (Join-Path $okSave "s.dat") -Encoding utf8
+    $okGame = "OkGame-$stamp"
+    Agent add-game --name $okGame --dir $okSave --config $cfgP | Out-Null
+    $okList = Agent list --config $cfgP | Out-String
+    Check "WA-02 an ordinary save folder is still accepted" ($okList -match [regex]::Escape($okGame))
+
+    # --- The sync boundary is the check that actually protects the user ---
+    # config.json is hand-editable and the server can push a path, so validating only where the UI
+    # accepts a folder defends nothing. Repoint a tracked game at the profile behind the agent's
+    # back, exactly as a hand-edit would, and both directions must refuse.
+    $raw = Get-Content $cfgP -Raw | ConvertFrom-Json
+    ($raw.Games | Where-Object { $_.Name -eq $okGame }).SaveDirectory = $env:USERPROFILE
+    $raw | ConvertTo-Json -Depth 10 | Set-Content $cfgP -Encoding utf8
+
+    $pushOut = Agent push $okGame --config $cfgP | Out-String
+    $pullOut = Agent pull $okGame --force --config $cfgP | Out-String
+    Check "WA-02 push refuses a hand-edited profile mapping" ($pushOut -match "(?i)REFUSED")
+    Check "WA-02 pull refuses a hand-edited profile mapping" ($pullOut -match "(?i)REFUSED")
+    Check "WA-02 the refusal names the user profile"         ($pullOut -match "(?i)user profile")
+
+    # --- A path that BECOMES a reparse point after the mapping was accepted ---
+    # Config-time canonicalization stores the link's resolved target, so re-pointing a junction the
+    # user picked is already inert. The case that remains is the stored path itself turning into a
+    # link - the literal string in config.json never changes, so a string comparison would pass it
+    # forever. That is what the sync-time re-canonicalization is for.
+    $linkSave = Join-Path $scratch "link_save"; New-Item -ItemType Directory -Force $linkSave | Out-Null
+    "link" | Set-Content (Join-Path $linkSave "s.dat") -Encoding utf8
+
+    $linkGame = "LinkGame-$stamp"
+    Agent add-game --name $linkGame --dir $linkSave --config $cfgP | Out-Null
+    $linkList = Agent list --config $cfgP | Out-String
+    Check "WA-02 an ordinary folder maps normally" ($linkList -match [regex]::Escape($linkGame))
+
+    Remove-Item $linkSave -Force -Recurse -ErrorAction SilentlyContinue
+    New-Item -ItemType Junction -Path $linkSave -Target $env:USERPROFILE | Out-Null
+    $linkPull = Agent pull $linkGame --force --config $cfgP | Out-String
+    $linkPush = Agent push $linkGame --config $cfgP | Out-String
+    Check "WA-02 a path that became a junction is refused at pull" ($linkPull -match "(?i)REFUSED")
+    Check "WA-02 a path that became a junction is refused at push" ($linkPush -match "(?i)REFUSED")
+    Remove-Item $linkSave -Force -Recurse -ErrorAction SilentlyContinue
+
+    # --- A hostile or mistaken SERVER path must not repoint the agent ---
+    # This is the only path source with no local confirmation step at all.
+    $machineP = (Invoke-RestMethod "$server/api/machines") | Where-Object { $_.name -eq "WinP-$stamp" }
+    $okRow    = (Invoke-RestMethod "$server/api/overview").game |
+                Where-Object { $_.name -eq $okGame } | Select-Object -First 1
+    $encoded  = [uri]::EscapeDataString($env:USERPROFILE)
+    Invoke-RestMethod "$server/api/games/$($okRow.id)/paths/$($machineP.id)?value=$encoded" -Method Post | Out-Null
+
+    # Put the local mapping back to something sane, so the only way it can become the profile is by
+    # the agent ACCEPTING the server's value.
+    $raw2 = Get-Content $cfgP -Raw | ConvertFrom-Json
+    ($raw2.Games | Where-Object { $_.Name -eq $okGame }).SaveDirectory = $okSave
+    $raw2 | ConvertTo-Json -Depth 10 | Set-Content $cfgP -Encoding utf8
+
+    $daemon2 = Start-Process -FilePath $dotnet `
+        -ArgumentList @($linuxDll, "daemon", "--port", "5191", "--config", $cfgP) `
+        -PassThru -WindowStyle Hidden
+    Start-Sleep -Seconds 30   # one reconcile tick (20 s) plus margin
+    Stop-Process -Id $daemon2.Id -Force -ErrorAction SilentlyContinue
+
+    $afterCfg = Get-Content $cfgP -Raw | ConvertFrom-Json
+    $mapped = ($afterCfg.Games | Where-Object { $_.Name -eq $okGame }).SaveDirectory
+    Check "WA-02 a server-issued profile path is NOT adopted" ($mapped -ne $env:USERPROFILE)
+    Check "WA-02 the previous mapping survives the refusal"   ($mapped -eq $okSave)
 }
 finally {
     Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue

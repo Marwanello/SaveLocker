@@ -21,6 +21,11 @@ public static class AgentEventCodes
     /// loses the restored save the moment the game writes at exit.</summary>
     public const string PullBlockedRunning = "pull.blocked_running";
 
+    /// <summary>The game is mapped to a folder that may never be archived or replaced — a drive root,
+    /// a user profile, a system directory, or the agent's own state. Nothing is being synced for it,
+    /// and that is the safe outcome.</summary>
+    public const string UnsafeSavePath = "savedir.unsafe";
+
     /// <summary>The game's save folder does not exist on this machine. Nothing is being synced for it.</summary>
     public const string SaveDirMissing = "savedir.missing";
 

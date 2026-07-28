@@ -44,7 +44,11 @@ export const api = {
     post<{ machineName: string }>('/api/register', { adminPassword }),
   games: () => req<TrackedGame[]>('/api/games'),
   removeGame: (id: string) => post(`/api/games/${id}/remove`),
-  setGameFolder: (id: string, path: string) => post(`/api/games/${id}/folder`, { path }),
+  // `confirm` accepts a folder the sanity heuristics flagged (a suspected Wine prefix, an oversized
+  // folder). It never overrides the hard refusals — a drive root or a user profile is refused with
+  // or without it.
+  setGameFolder: (id: string, path: string, confirm = false) =>
+    post(`/api/games/${id}/folder`, { path, confirm }),
   browse: (path?: string) =>
     req<BrowseListing>('/api/browse' + (path ? `?path=${encodeURIComponent(path)}` : '')),
   suggestedPath: (id: string) => req<{ path: string | null }>(`/api/games/${id}/suggested-path`),

@@ -252,12 +252,34 @@ public sealed class AgentApiServer : IDisposable
             return new OkResponse();
         }).Produces<OkResponse>();
 
-        app.MapPost("/api/games/{id:guid}/folder", async (Guid id, FolderRequest body) =>
+        app.MapPost("/api/games/{id:guid}/folder", async Task<Results<Ok<OkResponse>, BadRequest<ErrorResponse>>>
+            (Guid id, FolderRequest body) =>
         {
             var game = _config.Games.FirstOrDefault(g => g.GameId == id);
             if (game is not null && body.Path is not null)
             {
-                game.SaveDirectory = body.Path;
+                // Typed paths and picked paths arrive here alike, and neither was validated before.
+                // The hard check has no override — nothing makes C:\Users a save folder. WA-02.
+                var check = SavePathGuard.Check(body.Path, _config.StateDir);
+                if (!check.Ok)
+                    return TypedResults.BadRequest(new ErrorResponse($"Can't use that folder: {check.Reason}"));
+
+                // The heuristics DO have false positives (a game whose save folder is genuinely
+                // large, or genuinely named 'drive_c'), so they are refused once and accepted on a
+                // second, explicit confirmation rather than being silently ignored.
+                if (!body.Confirm)
+                {
+                    var problems = SaveDirSanity.Inspect(check.Canonical, game.ExcludeGlobs);
+                    if (problems.Count > 0)
+                        return TypedResults.BadRequest(new ErrorResponse(
+                            "That folder looks wrong: " + string.Join(" ", problems) +
+                            " Re-send with confirm to use it anyway."));
+                }
+
+                // The canonical form is stored, not the typed text: a relative path or a path with
+                // a trailing separator must not reach the server as a different string than the one
+                // that was validated.
+                game.SaveDirectory = check.Canonical!;
                 // Save first: watchers must be built from the config that is on disk, never from
                 // one a concurrent write is about to supersede.
                 _config.Save();
@@ -269,11 +291,11 @@ public sealed class AgentApiServer : IDisposable
                 // (the Deck's `savelocker ui`) it never hears about it at all.
                 if (!string.IsNullOrEmpty(_config.ApiKey))
                 {
-                    try { await ApiClient.For(_config).SetMachinePathAsync(id, body.Path); }
+                    try { await ApiClient.For(_config).SetMachinePathAsync(id, check.Canonical!); }
                     catch (Exception ex) { AgentLogger.LogException("AgentApiServer.SetMachinePath", ex); }
                 }
             }
-            return new OkResponse();
+            return TypedResults.Ok(new OkResponse());
         }).Produces<OkResponse>();
 
         app.MapPost("/api/folder-pick", async () =>
@@ -304,8 +326,14 @@ public sealed class AgentApiServer : IDisposable
                 return TypedResults.BadRequest(new ErrorResponse("Invalid candidate id"));
             if (body.Path is not null)
             {
+                // Refused here as well as in Enroller, so the user is told while they are still
+                // choosing rather than by a game silently skipping enrollment later. WA-02.
+                var check = SavePathGuard.Check(body.Path, _config.StateDir);
+                if (!check.Ok)
+                    return TypedResults.BadRequest(new ErrorResponse($"Can't use that folder: {check.Reason}"));
+
                 var list = _candidateCache.ToList();
-                list[id] = list[id] with { SuggestedSaveDir = body.Path };
+                list[id] = list[id] with { SuggestedSaveDir = check.Canonical };
                 _candidateCache = list;
             }
             return TypedResults.Ok(new OkResponse());
@@ -509,7 +537,11 @@ public sealed record ConfigRequest(
     bool? StartWithWindows,
     int? SettleQuietSeconds);
 public sealed record RegisterRequest(string? AdminPassword = null);
-public sealed record FolderRequest(string? Path);
+/// <param name="Confirm">
+/// Accept a path the sanity heuristics flagged. It never overrides <see cref="SavePathGuard"/> —
+/// those refusals are absolute.
+/// </param>
+public sealed record FolderRequest(string? Path, bool Confirm = false);
 public sealed record DismissWarningRequest(string? GameName);
 public sealed record OkResponse(bool Ok = true);
 public sealed record ErrorResponse(string Error);

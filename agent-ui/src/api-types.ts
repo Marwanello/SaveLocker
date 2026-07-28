@@ -407,6 +407,15 @@ export interface paths {
                         "application/json": components["schemas"]["OkResponse"];
                     };
                 };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -773,6 +782,8 @@ export interface components {
         };
         FolderRequest: {
             path: null | string;
+            /** @default false */
+            confirm: boolean;
         };
         FolderResponse: {
             path: null | string;

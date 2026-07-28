@@ -32,6 +32,18 @@ public static class Enroller
             if (config.FindGame(c.Name) is not null) { skipped++; continue; }
             if (string.IsNullOrEmpty(c.SuggestedSaveDir)) { skipped++; continue; }
 
+            // A scanner's save-root heuristic can land on something far too broad — an install tree,
+            // a profile folder. Enrolling it would create the game on the server AND map it, so the
+            // refusal has to happen before the game exists. WA-02.
+            var check = SavePathGuard.Check(c.SuggestedSaveDir, config.StateDir);
+            if (!check.Ok)
+            {
+                AgentLogger.Log($"Enrollment skipped '{c.Name}': {check.Reason} " +
+                                $"(scanner suggested '{c.SuggestedSaveDir}')");
+                skipped++;
+                continue;
+            }
+
             var game = await api.CreateGameAsync(new CreateGameRequest(c.Name, c.ManifestKey, null));
             // Persisted per candidate, not once at the end: a later candidate that fails — or a UI
             // window closed mid-batch — must not lose the games already created on the server, along
@@ -42,7 +54,7 @@ public static class Enroller
                 GameId = game.Id,
                 Name = game.Name,
                 ManifestKey = c.ManifestKey,
-                SaveDirectory = c.SuggestedSaveDir!,
+                SaveDirectory = check.Canonical!,
                 SteamAppId = c.SteamAppId,
             });
 
@@ -52,7 +64,7 @@ public static class Enroller
             // poller, so without this the console shows "not set" and a daemon reconcile (which
             // resolves paths from the server) blanks the local path it was never told about, leaving
             // the game unmapped and a Sync reporting "no matching mapped game on this machine".
-            try { await api.SetMachinePathAsync(game.Id, c.SuggestedSaveDir!); }
+            try { await api.SetMachinePathAsync(game.Id, check.Canonical!); }
             catch (Exception ex) { AgentLogger.LogException("Enroller.SetMachinePath", ex); }
             enrolled++;
         }

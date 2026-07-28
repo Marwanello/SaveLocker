@@ -124,6 +124,12 @@ public sealed class SyncEngine
 
     private async Task<UploadResult?> PushCoreAsync(TrackedGame game, bool force, bool settle, CancellationToken ct)
     {
+        // Re-checked at the boundary, not merely where the path was configured. A mapping accepted
+        // last week can become dangerous without anyone touching this agent's UI: config.json is
+        // hand-editable, the server can push a MachineSavePath, and a junction can be re-pointed at
+        // the user's profile after the fact. WA-02.
+        if (RefuseUnsafePath(game, "push")) return null;
+
         if (!Directory.Exists(game.SaveDirectory))
         {
             // Not a toast — but on a headless box this is the difference between "syncing fine" and
@@ -258,6 +264,10 @@ public sealed class SyncEngine
             return false;
         }
 
+        // A pull is the direction that DELETES. Whatever this path points at now is what a
+        // force-pull is about to replace, so it is checked here and again below. WA-02.
+        if (RefuseUnsafePath(game, "pull")) return false;
+
         var archive = TempArchive(game.GameId, "pull");
         using var crossProcess = AgentStateLock.ForGame(game.GameId, _config.StateDir);
         // LastSyncedHash gates the un-pushed-changes check below, so a stale one is not merely
@@ -312,6 +322,11 @@ public sealed class SyncEngine
                 return false;
             }
 
+            // Re-canonicalized here for the same reason the activity check is: the download took
+            // time, and a reparse point can be re-pointed during it. This check sits closest to the
+            // delete-and-replace, so it is the last word.
+            if (RefuseUnsafePath(game, "pull")) return false;
+
             try
             {
                 SaveArchive.RestoreArchive(archive, game.SaveDirectory, _tempDir);
@@ -338,6 +353,22 @@ public sealed class SyncEngine
         {
             if (File.Exists(archive)) File.Delete(archive);
         }
+    }
+
+    /// <summary>
+    /// True if the game's save path is one nothing may ever archive or replace, having reported it.
+    /// Loud on purpose: this is either a serious misconfiguration or a hostile server path, and on a
+    /// headless box the console is the only place anyone would find out.
+    /// </summary>
+    private bool RefuseUnsafePath(TrackedGame game, string verb)
+    {
+        var check = SavePathGuard.Check(game.SaveDirectory, _config.StateDir);
+        if (check.Ok) return false;
+
+        Alert($"[{game.Name}] REFUSED {verb}: {check.Reason} " +
+              $"(mapped to '{game.SaveDirectory}')",
+            AgentEventCodes.UnsafeSavePath, AgentEventSeverity.Error, game.GameId);
+        return true;
     }
 
     private static bool HasLocalData(string dir) =>

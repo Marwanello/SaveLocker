@@ -123,12 +123,29 @@ public sealed class CommandPoller : IDisposable
                 }
 
                 // Server now has a stored path for this machine → apply it (highest authority).
+                // "Highest authority" is not "unconditionally trusted": this is the one path source
+                // with no local confirmation step at all, so a mistaken or hostile console value
+                // would silently repoint a game at the user's profile. WA-02.
                 if (!string.IsNullOrWhiteSpace(sg.MachineSavePath) &&
                     sg.MachineSavePath != local.SaveDirectory)
                 {
-                    local.SaveDirectory = sg.MachineSavePath;
-                    changed = true;
-                    _notify($"Updated '{sg.Name}' save folder from server: {sg.MachineSavePath}");
+                    var check = SavePathGuard.Check(sg.MachineSavePath, _config.StateDir);
+                    if (!check.Ok)
+                    {
+                        // Not applied and not silent — the console sent it, so the console is where
+                        // whoever set it is looking.
+                        _health?.Report(AgentEventCodes.UnsafeSavePath, AgentEventSeverity.Error,
+                            $"Refused the server's save folder for '{sg.Name}': {check.Reason} " +
+                            $"(server sent '{sg.MachineSavePath}'). The previous mapping is unchanged.",
+                            sg.Id);
+                        AgentLogger.Log($"Refused server save path for '{sg.Name}': {check.Reason}");
+                    }
+                    else if (check.Canonical != local.SaveDirectory)
+                    {
+                        local.SaveDirectory = check.Canonical!;
+                        changed = true;
+                        _notify($"Updated '{sg.Name}' save folder from server: {check.Canonical}");
+                    }
                 }
                 // Already tracked but unmapped: detect locally and report back to server.
                 else if (string.IsNullOrEmpty(local.SaveDirectory) &&
@@ -196,8 +213,11 @@ public sealed class CommandPoller : IDisposable
     /// </summary>
     private async Task<string?> ResolveSaveDirAsync(GameDto sg)
     {
+        // Every return below goes through Safe(): adoption of a brand-new server game reaches the
+        // config without passing the reconcile check above, and detection/template expansion can
+        // land somewhere just as broad as a hostile server value. WA-02.
         if (!string.IsNullOrWhiteSpace(sg.MachineSavePath))
-            return sg.MachineSavePath;
+            return Safe(sg, sg.MachineSavePath);
 
         // A template beats a literal path, because it is the only form that means the same LOGICAL
         // folder on every machine. A literal from another machine is what lets two agents disagree
@@ -206,18 +226,35 @@ public sealed class CommandPoller : IDisposable
         if (PathResolver.IsTemplate(sg.SuggestedSaveDir) &&
             ResolverForGame(sg)?.ResolveToDirectory(sg.SuggestedSaveDir!) is { } expanded &&
             Directory.Exists(expanded))
-            return Path.GetFullPath(expanded);
+            return Safe(sg, expanded);
 
         if (!string.IsNullOrWhiteSpace(sg.SuggestedSaveDir) &&
             !PathResolver.IsTemplate(sg.SuggestedSaveDir) &&
             Directory.Exists(sg.SuggestedSaveDir))
-            return Path.GetFullPath(sg.SuggestedSaveDir);
+            return Safe(sg, sg.SuggestedSaveDir);
         try
         {
             var dirs = await _detection.ResolveSaveDirectoriesAsync(sg.ManifestKey ?? sg.Name);
-            return dirs.FirstOrDefault();
+            return dirs.FirstOrDefault() is { } d ? Safe(sg, d) : null;
         }
         catch { return null; }
+    }
+
+    /// <summary>
+    /// The canonical path if it is one we may ever sync, else null — leaving the game unmapped,
+    /// which is the safe state. Reported, because an unmapped game otherwise looks like detection
+    /// simply failing and invites someone to "fix" it by setting the very path we refused.
+    /// </summary>
+    private string? Safe(GameDto sg, string path)
+    {
+        var check = SavePathGuard.Check(path, _config.StateDir);
+        if (check.Ok) return check.Canonical;
+
+        _health?.Report(AgentEventCodes.UnsafeSavePath, AgentEventSeverity.Error,
+            $"Refused a save folder for '{sg.Name}': {check.Reason} (was '{path}'). " +
+            "The game is left unmapped; set its folder in Settings.", sg.Id);
+        AgentLogger.Log($"Refused save path for '{sg.Name}': {check.Reason} (was '{path}')");
+        return null;
     }
 
     /// <summary>

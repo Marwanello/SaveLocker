@@ -132,14 +132,32 @@ export function SettingsView({ state, onSaved }: Props) {
       || (await api.suggestedPath(game.id).catch(() => ({ path: null }))).path,
     nativePick: () => api.folderPick(),
     apply: async (path) => {
-      try {
-        await api.setGameFolder(game.id, path)
+      const send = async (confirm: boolean) => {
+        await api.setGameFolder(game.id, path, confirm)
         loadGames()
         onSaved()
         setStatus(`Save folder for ${game.name} set to ${path}`)
         setTimeout(() => setStatus(''), 4000)
+      }
+      try {
+        await send(false)
       } catch (e) {
-        setStatus('Could not set the save folder: ' + (e as Error).message)
+        const message = (e as Error).message
+        // The agent asks for confirmation only for the heuristic warnings, which have false
+        // positives. Hard refusals never carry this sentence, so they can never be clicked past —
+        // and the prompt repeats the agent's own wording rather than a cheerful paraphrase, because
+        // the whole point is that the user reads what is actually wrong.
+        if (message.includes('Re-send with confirm')) {
+          const ask = message.replace(' Re-send with confirm to use it anyway.', '')
+          if (!window.confirm(`${ask}\n\nUse ${path} anyway?`)) {
+            setStatus('Save folder unchanged.')
+            return
+          }
+          try { await send(true) }
+          catch (e2) { setStatus('Could not set the save folder: ' + (e2 as Error).message) }
+          return
+        }
+        setStatus('Could not set the save folder: ' + message)
       }
     },
   })

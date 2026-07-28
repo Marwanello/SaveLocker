@@ -192,6 +192,26 @@ public static class AgentCli
                         Console.WriteLine($"Warning: save directory does not exist — run the game first or verify the path.");
                     }
 
+                    // Refused before the game is created on the server, so a bad --dir does not leave
+                    // a half-made game behind. No --force-path here: these refusals are absolute. WA-02.
+                    var dirCheck = SavePathGuard.Check(dir, config.StateDir);
+                    if (!dirCheck.Ok)
+                    {
+                        Console.Error.WriteLine($"Refusing '{dir}': {dirCheck.Reason}");
+                        return 1;
+                    }
+
+                    // The heuristics can be wrong, so they are overridable — but only by saying so.
+                    var sanity = SaveDirSanity.Inspect(dirCheck.Canonical);
+                    if (sanity.Count > 0 && !opts.ContainsKey("force-path"))
+                    {
+                        Console.Error.WriteLine($"'{dir}' does not look like a save folder:");
+                        foreach (var p in sanity) Console.Error.WriteLine("  - " + p);
+                        Console.Error.WriteLine("Pass --force-path to use it anyway.");
+                        return 1;
+                    }
+                    dir = dirCheck.Canonical;
+
                     var game = await Api().CreateGameAsync(new CreateGameRequest(name, manifestKey, null));
                     var existing = config.FindGame(name);
                     var tracked = existing ?? new TrackedGame();
