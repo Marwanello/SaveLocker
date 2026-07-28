@@ -43,6 +43,13 @@
 #          arbitrary absolute DownloadUrl using a client whose default headers carried the machine
 #          key, so an off-origin URL was handed this machine's credential.
 #
+#   WA-06. A lease renewer does not outlive the engine that started it.
+#          Replacing _engine dropped the old one; its lease timers are rooted by the runtime timer
+#          queue, so they renewed against the OLD server forever while the game's exit released
+#          against the NEW one. The old server's lease was then held in perpetuity by a machine that
+#          had stopped talking to it, locking every other machine out of that game. Driven through
+#          `savelocker run`, the one path that actually holds a lease for a session.
+#
 # Owns its server on :5189 and its state under .verify-winagent, so it never collides with a real
 # agent, a dev server, or another suite.
 # Usage: .\tests\run-winagent-tests.ps1
@@ -560,6 +567,97 @@ try {
     finally {
         Stop-Process -Id $altProc.Id -Force -ErrorAction SilentlyContinue
         $extListener.Stop(); $extListener.Close()
+    }
+
+    # =================================================================================
+    # WA-06. A LEASE RENEWER DOES NOT OUTLIVE THE ENGINE THAT STARTED IT
+    # =================================================================================
+    # Replacing _engine dropped the old one on the floor. Its lease timers are rooted by the
+    # runtime's timer queue, so they kept renewing against the OLD server indefinitely, while the
+    # game's exit ran through the NEW engine and released against the NEW server - which had never
+    # issued anything. The old server's lease was then held forever by a machine that had stopped
+    # talking to it, locking every other machine out of that game.
+    #
+    # Driven through the real launch wrapper (`savelocker run`), which is the one code path that
+    # actually takes a lease and holds it for a session. The renew interval is accelerated by env
+    # var, because the interval is the very thing under test - at the production three hours nothing
+    # observable happens.
+    $leasePort = 5996
+    $leaseUrl  = "http://localhost:$leasePort"
+    $leaseHits = @{ acquire = 0; renew = 0; release = 0 }
+
+    $leaseListener = [System.Net.HttpListener]::new()
+    $leaseListener.Prefixes.Add("$leaseUrl/")
+    $leaseListener.Start()
+
+    # Answers just enough for the wrapper to get through acquire -> renew -> exit -> release.
+    function Pump-Lease($seconds) {
+        $deadline = (Get-Date).AddSeconds($seconds)
+        $t = $leaseListener.GetContextAsync()
+        while ((Get-Date) -lt $deadline) {
+            if (-not $t.Wait(200)) { continue }
+            $c = $t.Result
+            $path = $c.Request.Url.AbsolutePath
+            $method = $c.Request.HttpMethod
+            $body = "{}"
+
+            if ($path -match '/lease/renew$')      { $script:leaseHits.renew++ }
+            elseif ($path -match '/lease$' -and $method -eq 'POST') {
+                $script:leaseHits.acquire++
+                $body = '{"granted":true,"lease":{"gameId":"00000000-0000-0000-0000-000000000000","holderMachineId":null,"holderMachineName":null,"acquiredAt":null,"expiresAt":null}}'
+            }
+            elseif ($path -match '/lease$' -and $method -eq 'DELETE') { $script:leaseHits.release++ }
+
+            $c.Response.StatusCode = 200
+            $c.Response.ContentType = "application/json"
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+            $c.Response.OutputStream.Write($bytes, 0, $bytes.Length)
+            $c.Response.Close()
+            $t = $leaseListener.GetContextAsync()
+        }
+    }
+
+    try {
+        $leaseCfg  = Join-Path $scratch "lease.json"
+        $leaseSave = Join-Path $scratch "lease_save"
+        New-Item -ItemType Directory -Force $leaseSave | Out-Null
+        "save" | Set-Content (Join-Path $leaseSave "s.dat") -Encoding utf8
+
+        @{
+            ServerUrl = $leaseUrl; MachineName = "WinLease-$stamp"
+            ApiKey = "lease-test-key"; MachineId = [guid]::NewGuid().ToString()
+            Games = @(@{
+                GameId = [guid]::NewGuid().ToString(); Name = "LeaseGame"
+                SaveDirectory = $leaseSave; SteamAppId = "424242"
+            })
+        } | ConvertTo-Json -Depth 5 | Set-Content -Path $leaseCfg -Encoding utf8
+
+        # 2 s renewals; the child lives ~12 s, so several must land before it exits.
+        $env:SAVELOCKER_LEASE_RENEW_SECONDS = "2"
+        $env:SteamAppId = "424242"
+        $runProc = Start-Process -FilePath $dotnet -WindowStyle Hidden -PassThru `
+            -ArgumentList @($linuxDll, "run", "--config", $leaseCfg, "--",
+                            $fakeExe, "-NoProfile", "-Command", "Start-Sleep 12")
+        Remove-Item Env:SAVELOCKER_LEASE_RENEW_SECONDS, Env:SteamAppId -ErrorAction SilentlyContinue
+
+        # Long enough to cover the child (~12 s), then the exit push's settle gate (10 s) and the
+        # upload, and only then the release. Cutting this short reads as "release never happened".
+        Pump-Lease 45
+        $runProc.WaitForExit(20000) | Out-Null
+
+        Check "WA-06 the wrapper acquired a lease"          ($leaseHits.acquire -ge 1)
+        Check "WA-06 the lease was renewed while playing"   ($leaseHits.renew -ge 2)
+        Check "WA-06 the lease was released on exit"        ($leaseHits.release -ge 1)
+
+        # THE assertion. The wrapper has exited, so its engine is disposed. A timer that survived
+        # disposal would fire roughly every 2 s; over 15 s that is ~7 renewals. Zero is required.
+        $renewsAtExit = $leaseHits.renew
+        Pump-Lease 15
+        Check "WA-06 NO renewal happens after the engine is retired" ($leaseHits.renew -eq $renewsAtExit)
+    }
+    finally {
+        $leaseListener.Stop(); $leaseListener.Close()
+        Remove-Item Env:SAVELOCKER_LEASE_RENEW_SECONDS, Env:SteamAppId -ErrorAction SilentlyContinue
     }
 }
 finally {

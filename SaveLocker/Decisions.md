@@ -82,6 +82,23 @@ session can judge an edge case, not to reopen the choice.
   the artifact does not stop an attacker who can rewrite both. Authenticode verification is the
   check that would, because it does not depend on the channel — there is a marked hook for it in
   `UpdateChecker.VerifyLooksExecutable`, pending a decision on code signing.
+- **A `SyncEngine` has an explicit lifetime, and its leases belong to the origin that issued them**
+  (WA-06, 2026-07-27). Replacing `_engine` used to drop the old one on the floor. Its lease timers
+  are rooted by the runtime timer queue, so they kept renewing against the **old** server forever,
+  while the game's exit ran through the **new** engine and released against the new server — which
+  had never issued anything. The old server's lease was then held in perpetuity by a machine that
+  had stopped talking to it, locking every other machine out of that game. The engine now captures
+  its origin at construction (`_config` is shared and mutable, so it cannot answer "who issued my
+  leases?"), and `RetireAsync` stops every renewer, cancels work in flight, and releases held leases
+  **through the client that acquired them** before the caller moves on. Both hosts retire the engine
+  they replace. A retired engine refuses new work, so the offline-queue drainer and folder watchers
+  — which captured a reference before the change — cannot push to the previous server.
+  <br>Renewal callbacks check retirement twice, before the request and after it: disposing a timer
+  does not recall a callback already running, so without the second check a retired engine renews
+  and reports success. Release now happens in a `finally`, because a push that throws must not also
+  leak the lease — that left a game checked out until expiry with nobody playing it.
+  <br>`SAVELOCKER_LEASE_RENEW_SECONDS` shortens the three-hour interval for tests only; the interval
+  is the thing under test and nothing observable happens at the production value.
 - **Stack: single-language .NET.** Agent = C#/WinForms (Windows), C#/headless (Linux); Server =
   ASP.NET Core in Docker on unRAID.
 - **Runtime: .NET 10 (LTS)**, locked 2026-07-13. .NET 9 is STS, EOL 2026-11-10; .NET 10 is LTS to

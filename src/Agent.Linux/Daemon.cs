@@ -70,7 +70,18 @@ public sealed class Daemon : IAsyncDisposable
             },
             autoStart: new SystemdAutoStart(),
             pickFolder: null, // headless: no native dialog — the UI browses via /api/browse instead
-            onConnectionChanged: () => _engine = BuildEngine(),
+            // Retire the engine being replaced, off the request thread. Dropping it kept its lease
+            // timers renewing against the old server for the life of the process. WA-06.
+            onConnectionChanged: () =>
+            {
+                var replaced = _engine;
+                _engine = BuildEngine();
+                _ = Task.Run(async () =>
+                {
+                    try { await replaced.RetireAsync(); }
+                    catch (Exception ex) { AgentLogger.LogException("RetireEngine", ex); }
+                });
+            },
             getUpdateResult: () => null, // self-update is Windows-only (installer-based)
             browseRoots: SteamRoots.BrowseRoots(),
             launchInfo: LinuxLaunchCommand,
@@ -155,6 +166,8 @@ public sealed class Daemon : IAsyncDisposable
         _commandPoller?.Dispose();
         _drainer?.Dispose();
         _apiServer?.Dispose();
-        await Task.CompletedTask;
+        // Shutdown, not a connection change: stop renewing and let any held lease expire rather
+        // than blocking the exit on a release to a server that may be why we are stopping.
+        _engine.Dispose();
     }
 }

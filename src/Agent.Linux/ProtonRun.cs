@@ -44,7 +44,9 @@ public static class ProtonRun
         // and blocked pulls actually happen. Without a reporter here the console would never hear
         // about the failures that matter most (Decisions.md §2).
         var health = HealthReporter.For(config);
-        var engine = new SyncEngine(config, api, log: Log, notify: Log,
+        // Disposed at the end of the run: this process holds a lease renewer for the whole game
+        // session, and it must not outlive the wrapper. WA-06.
+        await using var engine = new SyncEngine(config, api, log: Log, notify: Log,
             offlineQueue: offlineQueue, health: health);
 
         // The game must be found before launch, but a failure here must never stop it starting:

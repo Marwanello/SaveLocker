@@ -155,8 +155,20 @@ internal sealed class TrayContext : ApplicationContext
         var api = ApiClient.For(_config);
         // Windows toasts AND reports: the tray tells the user in front of it, health reporting tells
         // the console. One dashboard then shows the whole fleet, Deck and PC alike.
+        var replaced = _engine;
         _engine = new SyncEngine(_config, api, log: AgentLogger.Log, notify: Notify,
             offlineQueue: _offlineQueue, health: _health);
+
+        // Retire the engine we just replaced, or its lease timers keep renewing against the old
+        // server forever while exit releases against the new one. Off the calling thread because
+        // this runs from a Kestrel request thread that must not block on a network release, and
+        // because RebuildEngine is also called from the constructor. WA-06.
+        if (replaced is not null)
+            _ = Task.Run(async () =>
+            {
+                try { await replaced.RetireAsync(); }
+                catch (Exception ex) { AgentLogger.LogException("RetireEngine", ex); }
+            });
     }
 
     private void RebuildMenu()
@@ -492,6 +504,9 @@ internal sealed class TrayContext : ApplicationContext
             _icon.Dispose();
             _commandPoller.Dispose();
             _processWatcher.Dispose();
+            // Synchronous: Dispose cannot await, so a held lease expires rather than being released.
+            // Exit is not a connection change — the same server is still the right one on restart.
+            _engine?.Dispose();
             foreach (var w in _folderWatchers) w.Dispose();
         }
         base.Dispose(disposing);
