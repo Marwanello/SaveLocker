@@ -36,6 +36,18 @@ session can judge an edge case, not to reopen the choice.
   points rather than trusting the stored string. The state directory is refused as
   same-or-ancestor only, not as a whole tree — `config.json` and `api-token` sit directly in it, and
   the test suites legitimately put save folders below it.
+- **Windows agent state belongs to one account: whoever enrolled** (WA-03, 2026-07-27). Not a local
+  group. `%PROGRAMDATA%` grants every authenticated user read access and it inherits, so
+  `config.json` (this machine's **server API key**) and `api-token` (which grants the local
+  management API) were readable by any local account. `StateDirSecurity` severs inheritance on the
+  state directory and grants only the enrolling user, `SYSTEM`, and Administrators — the last two
+  because an administrator can take ownership anyway, so removing them costs backup and repair
+  while adding nothing. This matches the shape the installer already chose: it deliberately does
+  **not** create `%PROGRAMDATA%\SaveLocker` while elevated, so the de-elevated tray user owns it
+  (`installer/SaveLocker.iss`), and no installer change was needed. The ACL is applied to the
+  *directory* with inheritable rules and enforced in `AtomicFile` — the one choke point every state
+  writer already goes through — so a state file added later cannot quietly miss it. Failure to
+  apply is logged loudly and is never fatal: an agent that refuses to start protects nothing.
 - **Stack: single-language .NET.** Agent = C#/WinForms (Windows), C#/headless (Linux); Server =
   ASP.NET Core in Docker on unRAID.
 - **Runtime: .NET 10 (LTS)**, locked 2026-07-13. .NET 9 is STS, EOL 2026-11-10; .NET 10 is LTS to

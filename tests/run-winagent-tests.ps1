@@ -23,6 +23,13 @@
 #          and SyncEngine validates again at the archive/restore boundary: a mapping accepted last
 #          week can be hand-edited, pushed by the server, or turned into a junction afterwards.
 #
+#   WA-03. The state directory is private to the enrolling account.
+#          %PROGRAMDATA% grants every authenticated user read access and it INHERITS, so any local
+#          account could read config.json (this machine's server API key) and api-token (which
+#          grants the local management API). The fix severs inheritance and grants only the
+#          enrolling user, SYSTEM and Administrators. A real second-account login is in the task's
+#          manual verification; what is asserted here is what decides that test's outcome.
+#
 # Owns its server on :5189 and its state under .verify-winagent, so it never collides with a real
 # agent, a dev server, or another suite.
 # Usage: .\tests\run-winagent-tests.ps1
@@ -266,6 +273,75 @@ try {
     $mapped = ($afterCfg.Games | Where-Object { $_.Name -eq $okGame }).SaveDirectory
     Check "WA-02 a server-issued profile path is NOT adopted" ($mapped -ne $env:USERPROFILE)
     Check "WA-02 the previous mapping survives the refusal"   ($mapped -eq $okSave)
+
+    # =================================================================================
+    # WA-03. THE STATE DIRECTORY IS PRIVATE TO THE ENROLLING ACCOUNT
+    # =================================================================================
+    # %PROGRAMDATA% grants every authenticated user read access and that INHERITS, so any local
+    # account could read config.json (the machine's server API key) and api-token (which grants the
+    # local management API). These checks are about the ACL, not about the files' contents.
+    #
+    # A real two-account test needs a second Windows login and is listed in the task's manual
+    # verification. What is asserted here is the thing that decides the outcome of that test: the
+    # inherited grant to ordinary users is gone, and only the three intended identities remain.
+    $aclDir = Join-Path $scratch "acl_state"
+    $aclCfg = Join-Path $aclDir "config.json"
+    New-Item -ItemType Directory -Force $aclDir | Out-Null
+
+    # A file written BEFORE the agent ever runs, carrying the permissive inherited ACL. A fresh fix
+    # that only protects newly created files would leave this one readable.
+    "stale" | Set-Content (Join-Path $aclDir "agent.log") -Encoding utf8
+
+    @{ ServerUrl = $server; Games = @() } | ConvertTo-Json | Set-Content -Path $aclCfg -Encoding utf8
+    Agent register --name "WinAcl-$stamp" --config $aclCfg | Out-Null
+
+    # api-token is minted by the local API server, not the CLI, so the daemon has to run once for
+    # the second credential to exist at all.
+    $daemon3 = Start-Process -FilePath $dotnet `
+        -ArgumentList @($linuxDll, "daemon", "--port", "5192", "--config", $aclCfg) `
+        -PassThru -WindowStyle Hidden
+    foreach ($i in 1..30) {
+        Start-Sleep -Milliseconds 500
+        if (Test-Path (Join-Path $aclDir "api-token")) { break }
+    }
+    Stop-Process -Id $daemon3.Id -Force -ErrorAction SilentlyContinue
+
+    $acl = Get-Acl $aclDir
+    Check "WA-03 the state directory stops inheriting from ProgramData" ($acl.AreAccessRulesProtected)
+
+    # The identities that must NOT appear. Resolved from well-known SIDs rather than names, because
+    # the display names are localised and would silently pass on a non-English Windows.
+    $strangers = @('S-1-5-11', 'S-1-5-32-545', 'S-1-1-0')  # Authenticated Users, Users, Everyone
+    $present = $acl.Access | ForEach-Object {
+        try { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value }
+        catch { $null }
+    }
+    foreach ($sid in $strangers) {
+        Check "WA-03 the state directory does not grant $sid" (-not ($present -contains $sid))
+    }
+
+    $me = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+    Check "WA-03 the enrolling account keeps access" ($present -contains $me)
+    Check "WA-03 SYSTEM keeps access"                ($present -contains 'S-1-5-18')
+    Check "WA-03 Administrators keep access"         ($present -contains 'S-1-5-32-544')
+
+    # The two credentials themselves. Both must end up with the directory's rules and nothing wider.
+    foreach ($leaf in @("config.json", "api-token", "agent.log")) {
+        $f = Join-Path $aclDir $leaf
+        if (-not (Test-Path $f)) { Check "WA-03 $leaf exists to be checked" $false; continue }
+        $facl = Get-Acl $f
+        $fpresent = $facl.Access | ForEach-Object {
+            try { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value }
+            catch { $null }
+        }
+        $leaked = @($strangers | Where-Object { $fpresent -contains $_ })
+        Check "WA-03 $leaf is not readable by other local users" ($leaked.Count -eq 0)
+    }
+
+    # The agent must still be able to use its own state after locking it down - a fix that made the
+    # credential unreadable to the agent too would pass every check above.
+    $who = Agent whoami --config $aclCfg | Out-String
+    Check "WA-03 the agent can still read its own config" ($who -match "WinAcl-$stamp")
 }
 finally {
     Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue

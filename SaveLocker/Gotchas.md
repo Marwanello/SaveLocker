@@ -39,6 +39,21 @@ here.
   and generate against that; grep the output for a symbol you just added before trusting it. A
   running daemon also locks the build output DLLs (`MSB3027 … locked by ".NET Host (pid)"`).
 
+- **The agent state directory is ACL-locked to whoever created it** (WA-03). `StateDirSecurity`
+  severs inheritance and grants only the enrolling user, SYSTEM and Administrators. This applies to
+  whatever directory `--config` points at, so a **test scratch directory gets locked too** — that is
+  intended and asserted, but `Remove-Item` on it only works as the same account (or elevated). If a
+  suite ever runs as a different user than the one that created `.verify-*`, clean up elevated.
+
+## Windows ACLs
+- **`SetAccessRuleProtection(isProtected: true, preserveInheritance: true)` does not let you then
+  strip the inherited rules.** The copies are materialised only when the descriptor is persisted, so
+  `GetAccessRules(includeExplicit: true, includeInherited: false, …)` never sees them and the purge
+  silently misses every one — `%PROGRAMDATA%`'s grant to Authenticated Users survives, and the
+  directory *looks* protected (`AreAccessRulesProtected` is true) while still being world-readable.
+  Pass `preserveInheritance: false` instead. Nothing is written until `SetAccessControl`, so there
+  is no window with an empty ACL. Cost an hour and a confidently-passing wrong test.
+
 ## PowerShell / shell quoting
 - **PowerShell escapes with a backtick, not a backslash.** `"...\$HOME..."` does not escape
   `$HOME` in PowerShell — it expands PowerShell's own `$HOME`, backslashes get eaten, and bash
