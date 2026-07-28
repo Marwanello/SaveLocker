@@ -247,6 +247,17 @@ public sealed class SyncEngine
     /// <summary>Download the server head and restore it locally if it differs.</summary>
     public async Task<bool> PullAsync(TrackedGame game, bool force = false, CancellationToken ct = default)
     {
+        // The backstop for WA-01. Every caller is expected to have checked already so it can word
+        // the refusal for its own surface, but this is the check that is actually load-bearing: it
+        // is the only one no tray action, dashboard command, CLI invocation, or lifecycle callback
+        // can route around.
+        if (GameActivity.IsActive(game, out var activeProc))
+        {
+            Alert(GameActivity.RefusalMessage(game, activeProc),
+                AgentEventCodes.PullBlockedRunning, AgentEventSeverity.Error, game.GameId);
+            return false;
+        }
+
         var archive = TempArchive(game.GameId, "pull");
         using var crossProcess = AgentStateLock.ForGame(game.GameId, _config.StateDir);
         // LastSyncedHash gates the un-pushed-changes check below, so a stale one is not merely
@@ -291,6 +302,16 @@ public sealed class SyncEngine
                 return false;
             }
 
+            // Re-checked here and not only at entry: the download above can take minutes on a large
+            // save, and the user is perfectly capable of starting the game during it. This is the
+            // check that sits closest to the destructive write, so it is the one that must be last.
+            if (GameActivity.IsActive(game, out var lateProc))
+            {
+                Alert(GameActivity.RefusalMessage(game, lateProc),
+                    AgentEventCodes.PullBlockedRunning, AgentEventSeverity.Error, game.GameId);
+                return false;
+            }
+
             try
             {
                 SaveArchive.RestoreArchive(archive, game.SaveDirectory, _tempDir);
@@ -323,11 +344,21 @@ public sealed class SyncEngine
         Directory.Exists(dir) && Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Any();
 
     /// <summary>
-    /// Pre-launch: take the lease (warn if held elsewhere) and pull the latest
-    /// save before the game starts writing.
+    /// Game launch: take the lease (warn if held elsewhere), and pull the latest save only if the
+    /// caller is a genuine pre-launch boundary.
     /// Returns (Granted: false, HolderMachineName) if another machine holds the lease.
+    /// <para>
+    /// <paramref name="preLaunch"/> is the whole distinction between the two hosts, and it is not a
+    /// tuning knob. Linux's <c>savelocker run -- %command%</c> runs <i>instead of</i> the game and
+    /// starts it itself, so it can restore with certainty that nothing has the save open: true.
+    /// Windows only has <see cref="ProcessWatcher"/>, which notices a game up to a poll interval
+    /// after it started and after it opened its saves: false. Calling this "pre-launch" on Windows
+    /// was the bug — the restore landed under a live process and the game overwrote it at exit.
+    /// See Decisions.md.
+    /// </para>
     /// </summary>
-    public async Task<(bool Granted, string? HolderMachineName)> OnGameLaunchAsync(TrackedGame game, CancellationToken ct = default)
+    public async Task<(bool Granted, string? HolderMachineName)> OnGameLaunchAsync(
+        TrackedGame game, bool preLaunch, CancellationToken ct = default)
     {
         var lease = await _api.AcquireLeaseAsync(game.GameId);
         if (!lease.Granted)
@@ -339,7 +370,16 @@ public sealed class SyncEngine
             return (false, holder);
         }
         StartLeaseRenewer(game);
-        await PullAsync(game, force: false, ct);
+
+        if (preLaunch)
+            await PullAsync(game, force: false, ct);
+        else
+            // Not an alert: this is the designed Windows behaviour, not a failure, and toasting it
+            // on every launch would train the user to ignore toasts. The lease is still held and the
+            // exit push still runs, so the fleet stays correct — only the launch pull is absent.
+            _log($"[{game.Name}] running — lease taken, launch pull skipped " +
+                 "(the game already has its saves open; pull before launching instead).");
+
         return (true, null);
     }
 

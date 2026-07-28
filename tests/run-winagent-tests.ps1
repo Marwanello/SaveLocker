@@ -1,0 +1,182 @@
+﻿# Windows agent bug bounty - regression harness for tasks/WinAgent-BugBounty.md.
+#
+# The existing suites are CLI- and API-oriented. These are the Windows-specific cases they cannot
+# express: a live game process, the updater, ProgramData ACLs, the HKCU Run key, and STA ownership.
+# Every check here must FAIL against the pre-fix code.
+#
+# Findings covered so far:
+#
+#   WA-01. No pull or restore under a live game process.
+#          A pull is the only destructive direction - it replaces the save directory. On Windows
+#          ProcessWatcher notices a game up to 4 s AFTER it started, so "pre-launch pull" was a
+#          restore underneath a process that already had the save open; the game then wrote over it
+#          at exit and the pulled save was silently gone. The fix refuses the pull instead, at the
+#          engine (the backstop nothing can route around) and at each surface (for a readable
+#          reason). The dashboard-command path is tested too, because that is the one where the
+#          person clicking cannot see that the game is open.
+#
+# Owns its server on :5189 and its state under .verify-winagent, so it never collides with a real
+# agent, a dev server, or another suite.
+# Usage: .\tests\run-winagent-tests.ps1
+
+$ErrorActionPreference = "Continue"
+
+$onWindows = if ($null -eq $IsWindows) { $true } else { $IsWindows }
+if (-not $onWindows) { Write-Host "SKIP: Windows-only suite."; exit 0 }
+
+$root    = Split-Path $PSScriptRoot -Parent
+$scratch = Join-Path $root ".verify-winagent"
+$server  = "http://localhost:5189"
+
+$inProgramFiles = Join-Path $env:ProgramFiles "dotnet\dotnet.exe"
+$dotnet = if (Test-Path $inProgramFiles) { $inProgramFiles } else { "dotnet" }
+$dll    = Join-Path $root "src/Agent/bin/Debug/net10.0-windows/SaveLocker.Agent.dll"
+if (-not (Test-Path $dll)) { Write-Host "Agent not built: $dll"; exit 2 }
+
+$serverDll = Join-Path $root "src/Server/bin/Debug/net10.0/SaveLocker.Server.dll"
+if (-not (Test-Path $serverDll)) { Write-Host "Server not built: $serverDll"; exit 2 }
+
+Remove-Item $scratch -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force $scratch | Out-Null
+
+$pass = 0; $fail = 0
+function Check($name, $cond) {
+    if ($cond) { Write-Host "PASS: $name"; $script:pass++ }
+    else        { Write-Host "FAIL: $name"; $script:fail++ }
+}
+function Agent { & $dotnet $dll @args 2>&1 }
+
+# ---- This suite owns its server (see Gotchas.md: the DLL ignores launchSettings.json) ----
+$state = Join-Path $scratch "state"
+New-Item -ItemType Directory -Force (Join-Path $state "archives") | Out-Null
+$env:ASPNETCORE_URLS      = $server
+$env:Storage__DbPath      = Join-Path $state "savelocker.db"
+$env:Storage__ArchiveRoot = Join-Path $state "archives"
+$env:Backup__Enabled      = "false"
+$env:Logging__EventLog__LogLevel__Default = "None"
+
+$serverProc = Start-Process -FilePath $dotnet -ArgumentList $serverDll -PassThru -WindowStyle Hidden
+$up = $false
+foreach ($i in 1..40) {
+    Start-Sleep -Milliseconds 700
+    try { Invoke-RestMethod "$server/api/admin/status" -TimeoutSec 3 | Out-Null; $up = $true; break } catch { }
+}
+if (-not $up) { Write-Host "FAIL: test server did not start on $server"; exit 1 }
+
+# ---- A fake "game": a copy of powershell.exe under a name nothing else on the box uses. ----
+# The process NAME is the whole point - that is what TrackedGame.ProcessNames matches on - so a
+# renamed copy of a real, long-running executable is a faithful stand-in and needs no build step.
+$fakeExe  = Join-Path $scratch "slfakegame.exe"
+$fakeName = "slfakegame"
+Copy-Item (Get-Process -Id $PID).Path $fakeExe -Force
+function Start-FakeGame {
+    $p = Start-Process -FilePath $fakeExe -ArgumentList @("-NoProfile", "-Command", "Start-Sleep 600") `
+         -PassThru -WindowStyle Hidden
+    # Do not race the assertion against process creation.
+    foreach ($i in 1..40) {
+        Start-Sleep -Milliseconds 250
+        if (Get-Process -Name $fakeName -ErrorAction SilentlyContinue) { return $p }
+    }
+    return $p
+}
+function Stop-FakeGame($p) {
+    if ($p) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+    foreach ($i in 1..40) {
+        Start-Sleep -Milliseconds 250
+        if (-not (Get-Process -Name $fakeName -ErrorAction SilentlyContinue)) { return }
+    }
+}
+
+try {
+    # =================================================================================
+    # WA-01. NO PULL OR RESTORE UNDER A LIVE GAME PROCESS
+    # =================================================================================
+    $stamp    = Get-Date -Format "HHmmss"
+    $gameName = "WinAgentGame-$stamp"
+
+    # Two "machines": A publishes the server head, B is the one that would be overwritten.
+    $cfgA  = Join-Path $scratch "a.json"
+    $cfgB  = Join-Path $scratch "b.json"
+    $saveA = Join-Path $scratch "a_save"; New-Item -ItemType Directory -Force $saveA | Out-Null
+    $saveB = Join-Path $scratch "b_save"; New-Item -ItemType Directory -Force $saveB | Out-Null
+    foreach ($c in @($cfgA, $cfgB)) {
+        @{ ServerUrl = $server; Games = @() } | ConvertTo-Json | Set-Content -Path $c -Encoding utf8
+    }
+    Agent register --name "WinA-$stamp" --config $cfgA | Out-Null
+    Agent register --name "WinB-$stamp" --config $cfgB | Out-Null
+
+    "SERVER VERSION" | Set-Content (Join-Path $saveA "save.dat") -Encoding utf8
+    Agent add-game --name $gameName --dir $saveA --config $cfgA | Out-Null
+    Agent push $gameName --config $cfgA | Out-Null
+
+    # B maps the same game to its own folder and declares the process that owns it.
+    "LOCAL VERSION" | Set-Content (Join-Path $saveB "save.dat") -Encoding utf8
+    Agent add-game --name $gameName --dir $saveB --proc $fakeName --config $cfgB | Out-Null
+
+    $listed = Agent list --config $cfgB | Out-String
+    Check "WA-01 the game records its process name" ($listed -match [regex]::Escape($fakeName))
+
+    # --- The game is running: a force-pull must not touch the save directory ---
+    $game = Start-FakeGame
+    Check "WA-01 the fake game is running" ($null -ne (Get-Process -Name $fakeName -ErrorAction SilentlyContinue))
+
+    $out = Agent pull $gameName --force --config $cfgB | Out-String
+    $after = Get-Content (Join-Path $saveB "save.dat") -Raw
+
+    Check "WA-01 force-pull is refused while the game runs" ($out -match "(?i)refused")
+    Check "WA-01 the refusal names the running process"     ($out -match [regex]::Escape($fakeName))
+    Check "WA-01 the save directory is UNCHANGED"           ($after.Trim() -eq "LOCAL VERSION")
+
+    # --- The same refusal must reach the dashboard-command path ---
+    # This is the surface that matters most: the person issuing it is not at the machine and cannot
+    # see that the game is open. The command is drained by the `daemon` host, which lives in the
+    # Linux project but runs on Windows and hosts the very same Agent.Core CommandPoller the tray
+    # does (the same reason run-local-api-tests.ps1 uses it here).
+    $machineB = (Invoke-RestMethod "$server/api/machines") |
+                Where-Object { $_.name -eq "WinB-$stamp" }
+    # /api/games is agent-authenticated; /api/overview is the admin view of the same games.
+    $gameRow  = (Invoke-RestMethod "$server/api/overview") |
+                Where-Object { $_.name -eq $gameName } | Select-Object -First 1
+    Invoke-RestMethod "$server/api/commands" -Method Post `
+        -Body (@{ machineId = $machineB.id; gameId = $gameRow.id; type = "Pull"; force = $true } | ConvertTo-Json) `
+        -ContentType "application/json" | Out-Null
+
+    $linuxDll = Join-Path $root "src/Agent.Linux/bin/Debug/net10.0/savelocker.dll"
+    $daemon = Start-Process -FilePath $dotnet `
+        -ArgumentList @($linuxDll, "daemon", "--port", "5190", "--config", $cfgB) `
+        -PassThru -WindowStyle Hidden
+    # One poller tick is 20 s; 45 s covers the first tick plus the reconcile ahead of it.
+    $pullCmd = $null
+    foreach ($i in 1..45) {
+        Start-Sleep -Seconds 1
+        $pullCmd = (Invoke-RestMethod "$server/api/commands") |
+                   Where-Object { $_.type -eq "Pull" -and $_.status -ne "Pending" } | Select-Object -First 1
+        if ($pullCmd) { break }
+    }
+    Stop-Process -Id $daemon.Id -Force -ErrorAction SilentlyContinue
+
+    $stillLocal = (Get-Content (Join-Path $saveB "save.dat") -Raw).Trim()
+    Check "WA-01 dashboard force-pull leaves the save UNCHANGED" ($stillLocal -eq "LOCAL VERSION")
+    Check "WA-01 the dashboard command was executed"    ($null -ne $pullCmd)
+    Check "WA-01 the dashboard is told the real reason" ($pullCmd.result -match "(?i)running")
+
+    # --- With the game closed, the very same pull must succeed ---
+    # Without this the suite would pass if pull were simply broken.
+    Stop-FakeGame $game
+    Check "WA-01 the fake game has exited" ($null -eq (Get-Process -Name $fakeName -ErrorAction SilentlyContinue))
+
+    Agent pull $gameName --force --config $cfgB | Out-Null
+    $restored = (Get-Content (Join-Path $saveB "save.dat") -Raw).Trim()
+    Check "WA-01 the pull succeeds once the game is closed" ($restored -eq "SERVER VERSION")
+}
+finally {
+    Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue
+    Get-Process -Name $fakeName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Remove-Item Env:ASPNETCORE_URLS, Env:Storage__DbPath, Env:Storage__ArchiveRoot, `
+                Env:Backup__Enabled, Env:Logging__EventLog__LogLevel__Default -ErrorAction SilentlyContinue
+}
+
+Write-Host ""
+Write-Host "$pass passed, $fail failed"
+if ($fail -gt 0) { exit 1 }
+exit 0

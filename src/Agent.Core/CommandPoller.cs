@@ -377,34 +377,49 @@ public sealed class CommandPoller : IDisposable
             return "no matching mapped game on this machine.";
 
         var engine = _engine();
+        var running = new List<string>();
         foreach (var g in targets)
         {
+            // A dashboard force-pull is the most dangerous surface there is: the person clicking it
+            // is not sitting at the machine and cannot see that the game is open. Refusing here and
+            // saying so in the command result is what puts the reason in front of them — the engine's
+            // own refusal only reaches the agent's event stream. WA-01.
+            var active = GameActivity.IsActive(g, out var proc);
+            if (active) running.Add(proc is null ? g.Name : $"{g.Name} ({proc}.exe)");
+
             switch (cmd.Type)
             {
                 case AgentCommandType.Pull:
-                    await engine.PullAsync(g, cmd.Force);
+                    if (!active) await engine.PullAsync(g, cmd.Force);
                     break;
                 case AgentCommandType.Push:
                     await engine.PushAsync(g, cmd.Force);
                     break;
                 case AgentCommandType.Sync:
-                    await engine.PullAsync(g, cmd.Force);
+                    if (!active) await engine.PullAsync(g, cmd.Force);
                     await engine.PushAsync(g, cmd.Force);
                     break;
             }
         }
 
+        if (running.Count > 0 && cmd.Type == AgentCommandType.Pull)
+            return $"REFUSED — still running: {string.Join(", ", running)}. " +
+                   "Restoring saves under a live game loses them; close it and re-issue the pull.";
+
         // One concise summary (the per-step engine progress goes to the log, not toasts).
         // For a single game, include the save's timestamp so the user can confirm it's current.
         var verb = cmd.Type.ToString().ToLowerInvariant() + "ed";
+        var suffix = running.Count > 0
+            ? $" (not pulled, still running: {string.Join(", ", running)})"
+            : "";
         if (targets.Count == 1)
         {
             var save = LatestSaveTimestamp(targets[0].SaveDirectory);
             return save is { } d
-                ? $"{targets[0].Name} {verb} — latest save {d:MMM d, h:mm tt}"
-                : $"{targets[0].Name} {verb}.";
+                ? $"{targets[0].Name} {verb} — latest save {d:MMM d, h:mm tt}{suffix}"
+                : $"{targets[0].Name} {verb}.{suffix}";
         }
-        return $"{verb} {targets.Count} games.";
+        return $"{verb} {targets.Count} games.{suffix}";
     }
 
     /// <summary>Newest last-write time among a game's save files, or null if none/unreadable.</summary>

@@ -28,7 +28,6 @@ internal sealed class TrayContext : ApplicationContext
     private readonly AgentConfig _config;
     private readonly NotifyIcon _icon;
     private readonly List<FolderWatcher> _folderWatchers = new();
-    private readonly HashSet<string> _running = new(StringComparer.OrdinalIgnoreCase);
     private readonly SynchronizationContext _ui;
     private readonly Detection _detection;
     private readonly GameScanner _scanner;
@@ -160,6 +159,14 @@ internal sealed class TrayContext : ApplicationContext
             var sub = new ToolStripMenuItem(game.Name);
             sub.DropDownItems.Add("Force Pull (get latest)", null, (_, _) => FireAndForget(async () =>
             {
+                // Checked here as well as in the engine so the toast names the real reason. The
+                // engine refuses regardless; this is only about what the user is told.
+                if (GameActivity.IsActive(game, out var proc))
+                {
+                    Notify($"{game.Name}: can't pull while the game is running" +
+                           (proc is null ? "" : $" ({proc}.exe)") + ". Close it and try again.");
+                    return;
+                }
                 await _engine.PullAsync(game, force: true);
                 Notify($"{game.Name}: force-pulled latest save.");
             }));
@@ -256,12 +263,18 @@ internal sealed class TrayContext : ApplicationContext
 
     private async Task SyncAll()
     {
+        var skipped = new List<string>();
         foreach (var g in _config.Games)
         {
-            await _engine.PullAsync(g);
+            // A running game is skipped for the pull only. Pushing while it runs is the normal
+            // folder-watch behaviour and takes nothing away from the user.
+            if (GameActivity.IsActive(g)) skipped.Add(g.Name);
+            else await _engine.PullAsync(g);
             await _engine.PushAsync(g);
         }
-        Notify("Sync all complete.");
+        Notify(skipped.Count == 0
+            ? "Sync all complete."
+            : $"Sync all complete. Not pulled (still running): {string.Join(", ", skipped)}.");
     }
 
     private void OpenDashboard()
@@ -394,18 +407,19 @@ internal sealed class TrayContext : ApplicationContext
 
     // ─── Process watcher callbacks ───────────────────────────────────────────────
 
-    private bool IsRunning(TrackedGame g)
-    {
-        lock (_running) return _running.Contains(g.Name);
-    }
+    // Asks the OS rather than the watcher's cached set. The set is only populated by a launch the
+    // watcher observed, so a game that was already running when the tray started was invisible to
+    // it — exactly the case the WA-01 baseline creates.
+    private static bool IsRunning(TrackedGame g) => GameActivity.IsActive(g);
 
     private void OnLaunched(string gameName)
     {
-        lock (_running) _running.Add(gameName);
         var game = _config.FindGame(gameName);
         if (game is not null) FireAndForget(async () =>
         {
-            var (granted, holder) = await _engine.OnGameLaunchAsync(game);
+            // preLaunch: false — ProcessWatcher observed the game up to a poll interval AFTER it
+            // started, so this is not a pre-launch boundary and must not restore. WA-01.
+            var (granted, holder) = await _engine.OnGameLaunchAsync(game, preLaunch: false);
             if (!granted && holder is not null)
             {
                 _apiServer.AddLeaseWarning(game.Name, holder);
@@ -416,7 +430,6 @@ internal sealed class TrayContext : ApplicationContext
 
     private void OnExited(string gameName)
     {
-        lock (_running) _running.Remove(gameName);
         _apiServer.ClearLeaseWarning(gameName);
         var game = _config.FindGame(gameName);
         if (game is not null) FireAndForget(() => _engine.OnGameExitAsync(game));

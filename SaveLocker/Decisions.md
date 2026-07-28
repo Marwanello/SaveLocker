@@ -5,9 +5,22 @@ session can judge an edge case, not to reopen the choice.
 
 - **Detection: reuse Ludusavi's manifest** (community save-location DB), don't re-map save
   locations ourselves. Build our own agent/server/dashboard for orchestration, leasing, conflicts.
-- **Conflict prevention: proactive lock/lease.** Server tracks a per-game checkout; agent pulls
-  before launch; other machines are warned if leased elsewhere. Content-hash + parent-version
-  lineage is the fallback detector.
+- **Conflict prevention: proactive lock/lease.** Server tracks a per-game checkout; the agent pulls
+  before launch *where it has a real launch boundary* (see the next bullet); other machines are
+  warned if leased elsewhere. Content-hash + parent-version lineage is the fallback detector.
+- **Only Linux has a pre-launch pull; Windows refuses to restore under a running game** (WA-01,
+  2026-07-27). `savelocker run -- %command%` runs *instead of* the game and starts it itself, so it
+  restores with certainty that nothing has the save open. Windows has only `ProcessWatcher`, which
+  polls every 4 s and therefore observes a game *after* it started and opened its saves — calling
+  that "pre-launch" meant restoring underneath a live process, which the game then overwrote at
+  exit, losing the pulled save silently. The Windows launch path now takes the lease and skips the
+  pull. `GameActivity.IsActive` is the central refusal, enforced inside `SyncEngine.PullAsync`
+  (twice — before download and again immediately before restore, since a game can launch during a
+  long download) so no tray action, dashboard command, CLI call, or lifecycle callback can route
+  around it. Each surface checks it too, only to word the reason. A game with no configured
+  `ProcessNames` cannot be detected as running — that is what makes WA-08 a data-safety fix, not a
+  convenience one. Adding a Windows launch wrapper would let the pull come back; nothing here
+  precludes it.
 - **Stack: single-language .NET.** Agent = C#/WinForms (Windows), C#/headless (Linux); Server =
   ASP.NET Core in Docker on unRAID.
 - **Runtime: .NET 10 (LTS)**, locked 2026-07-13. .NET 9 is STS, EOL 2026-11-10; .NET 10 is LTS to

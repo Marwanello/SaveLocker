@@ -17,6 +17,10 @@ public static class AgentEventCodes
     /// until someone chooses a side — and on a headless box, nobody is being told.</summary>
     public const string PullBlocked = "pull.blocked";
 
+    /// <summary>A pull was refused because the game itself is running. Restoring under a live process
+    /// loses the restored save the moment the game writes at exit.</summary>
+    public const string PullBlockedRunning = "pull.blocked_running";
+
     /// <summary>The game's save folder does not exist on this machine. Nothing is being synced for it.</summary>
     public const string SaveDirMissing = "savedir.missing";
 

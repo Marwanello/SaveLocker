@@ -53,6 +53,10 @@ public sealed class ProcessWatcher : IDisposable
     private readonly System.Timers.Timer _timer;
     private readonly Func<IReadOnlyDictionary<string, IReadOnlyList<string>>> _watchedByGame;
     private readonly Dictionary<string, bool> _running = new(StringComparer.OrdinalIgnoreCase);
+    // The first poll only records what is already running. Without it, starting the Agent while a
+    // game is open looks exactly like that game launching, and the launch handler fires a lease
+    // acquisition and (before WA-01) a restore for a game that has been playing for an hour.
+    private bool _baselined;
 
     public event Action<string>? GameLaunched; // game name
     public event Action<string>? GameExited;   // game name
@@ -69,9 +73,14 @@ public sealed class ProcessWatcher : IDisposable
 
     private void Poll()
     {
-        var active = new HashSet<string>(
-            Process.GetProcesses().Select(p => SafeName(p)).Where(n => n is not null)!,
-            StringComparer.OrdinalIgnoreCase);
+        var active = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in Process.GetProcesses())
+        {
+            // Every Process from GetProcesses holds a native handle. Polling every four seconds for
+            // the life of the tray leaked one per process per tick until the GC got round to them.
+            try { if (SafeName(p) is { } n) active.Add(n); }
+            finally { p.Dispose(); }
+        }
 
         foreach (var (game, procs) in _watchedByGame())
         {
@@ -79,9 +88,12 @@ public sealed class ProcessWatcher : IDisposable
             var wasRunning = _running.TryGetValue(game, out var w) && w;
             _running[game] = isRunning;
 
+            if (!_baselined) continue;
             if (isRunning && !wasRunning) GameLaunched?.Invoke(game);
             else if (!isRunning && wasRunning) GameExited?.Invoke(game);
         }
+
+        _baselined = true;
     }
 
     private static string? SafeName(Process p)

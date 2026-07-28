@@ -290,6 +290,15 @@ public static class AgentCli
                                 $"Run: savelocker add-game --name \"{g.Name}\" --dir <path>");
                             continue;
                         }
+                        if (GameActivity.IsActive(g, out var proc))
+                        {
+                            // Exit code stays 0: the other games in the loop may pull fine, and the
+                            // engine refuses this one regardless. This is the readable reason.
+                            Console.Error.WriteLine(
+                                $"'{g.Name}' is running{(proc is null ? "" : $" ({proc})")} — pull refused. " +
+                                "Restoring under a live game loses the restored save. Close it first.");
+                            continue;
+                        }
                         await engine.PullAsync(g, force);
                     }
                     await health.SendAsync(Api(), config, null, Log);

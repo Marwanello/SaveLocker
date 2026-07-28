@@ -58,7 +58,9 @@ public static class ProtonRun
                 // The result was previously discarded, so a Deck user who launched a game another
                 // machine had checked out got no warning anywhere: this process is not the daemon,
                 // and Game Mode never shows the console. Persist it so both UIs can surface it.
-                var (granted, holder) = await engine.OnGameLaunchAsync(game);
+                // preLaunch: true — this is the real boundary. Steam ran us instead of the game and
+                // the child below has not started yet, so nothing can have the save open.
+                var (granted, holder) = await engine.OnGameLaunchAsync(game, preLaunch: true);
                 if (!granted && holder is not null)
                     LeaseWarningStore.For(config).Add(game.Name, holder);
             }
