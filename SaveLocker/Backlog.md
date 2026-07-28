@@ -23,11 +23,23 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md`
     dependency. Self-hosting needs woff2 subsets for five Inter weights; the Deck UI already vendors
     TTF Regular/SemiBold in `src/Agent.Linux/Ui/Fonts/` (SIL OFL).
 
-- **Windows agent bug bounty.** Fix the 2026-07-26 review findings before the next Windows release:
-  live-game restores, unsafe save roots, readable machine credentials, non-transactional server
-  changes, an unverified/stale update channel, orphaned lease renewal, unlocked sync after lock
-  timeout, missing process mappings, and WinForms/state thread-ownership defects. Full bounded task
-  and verification gates: `tasks/WinAgent-BugBounty.md`.
+- **Windows agent bug bounty — 8 of 12 done (2026-07-27), WA-09…WA-12 remain.** Fixed on
+  `linux-agent-bugbounty` (not pushed): live-game restores, unsafe save roots, readable machine
+  credentials, non-transactional server changes, the unverified/stale update channel, orphaned lease
+  renewal, unlocked sync after lock timeout, and missing process mappings. **Left:** WA-09 WinForms
+  and live-state thread ownership (the big one — the tray's `SynchronizationContext` is captured
+  before WinForms installs it, so every UI-marshal in `TrayApp.cs` is currently a thread-pool post),
+  WA-10 honest autostart reporting, WA-11 discovery-source isolation, WA-12 first-open deep link.
+  Progress table, weak-evidence notes and outstanding manual gates: `tasks/WinAgent-BugBounty.md`
+  → Progress.
+  **Two follow-ups it leaves behind:**
+  - **Blocking for release: WA-03's second-account ACL test.** The credentials are now ACL-locked
+    to the enrolling account, but "an unrelated local user cannot read them" has only been proven by
+    inspecting the ACL, not by logging in as a second user. Also unproven: that the enrolled user can
+    still sync *and take a silent update* after a reboot.
+  - **A maintainer decision, unanswered:** two test-only env vars now live in production code
+    (`SAVELOCKER_LEASE_RENEW_SECONDS`, `SAVELOCKER_SYNC_LOCK_SECONDS`). Keep, promote to real
+    settings, or remove and mark those tests manual?
 
 - **Device-verify fresh Windows installer enrollment.** The wizard shipped in v0.1.7; the upgrade path is well verified. The **fresh install** (clean box, no `%PROGRAMDATA%\SaveLocker`) has never been exercised. Scenarios archived in `logs/2026-07-14_installer-enrollment.md`:
   - Happy path: run installer, choose enrollment file → page shows server + machine name → install → machine appears online in Machines.

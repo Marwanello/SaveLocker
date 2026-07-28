@@ -26,6 +26,77 @@ stale output cannot mask a fix.
 
 ---
 
+## Progress (updated 2026-07-27)
+
+**8 of 12 findings fixed on `linux-agent-bugbounty`, one commit each. Not pushed.**
+
+| ID | State | Commit |
+|---|---|---|
+| WA-01 | done | `34a7c75` |
+| WA-02 | done | `d1cadf0` |
+| WA-03 | done — **code only, see manual gates** | `382cd98` |
+| WA-04 | done | `ae7fc2b` |
+| WA-05 | done | `efe4335` (+ `98a1a68` recording the http/TLS decision it depends on) |
+| WA-06 | done — **weakest evidence, see below** | `980e26d` |
+| WA-07 | done | `ef4c621` |
+| WA-08 | done | `c27197e` |
+| WA-09 | **not started — resume here** | — |
+| WA-10 | not started | — |
+| WA-11 | not started | — |
+| WA-12 | not started | — |
+
+### Harness
+
+`tests/run-winagent-tests.ps1` — **81 checks**, own server on :5189, state in `.verify-winagent`.
+Each finding's block is verified to fail against pre-fix code by `git stash push -- src/`, rebuild,
+re-run. Where that check is weaker than "N of N fail", the commit message says so explicitly.
+
+### Where the evidence is weaker than the pass count suggests
+
+Read these before trusting the suite as proof:
+
+- **WA-06** — the central assertion ("no lease renewal after the engine is retired") does *not*
+  discriminate against pre-fix code: `SAVELOCKER_LEASE_RENEW_SECONDS` is itself part of the fix, and
+  at the production 3-hour interval there are no renewals to leak inside a test run. 2 of 4 fail
+  pre-fix. The claim rests on code review plus a test of the *fixed* lifecycle.
+- **WA-08** — the pre-fix run **aborts** at the first check (the endpoint does not exist, so the
+  follow-up POST throws). 1 of 8 observed failing; the rest are unreachable, not passing.
+- **WA-05** — 7 of 12 fail pre-fix. Two foreign-host checks pass vacuously there because
+  `check-update` is itself part of the fix, so nothing runs to make a request.
+- **WA-04** — "server A's TLS pin was dropped" is vacuous over http (no pin is ever recorded). Real
+  pin behaviour is covered by `run-enrollment-tls-tests.ps1`.
+
+### Open decision for the maintainer
+
+Two **test-only environment variables** now exist in production code —
+`SAVELOCKER_LEASE_RENEW_SECONDS` (WA-06) and `SAVELOCKER_SYNC_LOCK_SECONDS` (WA-07). Both are
+documented in `Gotchas.md`. They exist purely so the suite runs in seconds rather than half an hour.
+Raised with the maintainer, **not yet answered**: keep them, promote them to real config settings, or
+remove them and mark those tests manual.
+
+### Still outstanding for every finding so far
+
+**The entire Verification section below is unrun** apart from the automated suites. Nothing on a
+clean VM, nothing with two accounts, nothing with a real game or a real Steam shortcut. In
+particular these acceptance criteria are *implemented but not signed off*:
+
+- WA-03's "an unrelated local user cannot read either credential" — needs a second Windows account.
+  Also unproven: that the enrolled user can still sync **and take a silent update** after a reboot.
+- WA-08's GUI enrollment of a real non-Steam shortcut (verification item 3).
+- WA-06's tray two-server-lease transition (verification item 7) — a lease is only taken by the
+  process watcher or the launch wrapper, neither drivable headlessly during a server change.
+- WA-01's real-game timing (verification item 4).
+
+### Note for whoever picks up WA-09
+
+It is the largest remaining item and touches code every other finding now depends on. The three
+threads named in the finding are connected: `TrayContext` captures `SynchronizationContext.Current`
+in its constructor, **before `Application.Run` installs the WinForms context**, so `_ui.Post` is a
+thread-pool post and every "marshal to the UI thread" call in this file is a no-op today. Several
+WA-01…WA-08 fixes call `_ui.Post(_ => RebuildMenu(), null)` on that same broken context.
+
+---
+
 ## Severity
 
 | Severity | Meaning |

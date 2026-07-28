@@ -75,14 +75,65 @@ enrollment 18, hardening 33.
 
 ---
 
-## Windows agent — not started
+## Windows agent — in progress (8 of 12 findings done)
 
-**Source:** `tasks/WinAgent-BugBounty.md`
+**Branch:** `linux-agent-bugbounty` (same branch as the other two bounties, not pushed)
+**Source:** `tasks/WinAgent-BugBounty.md` — WA-01…WA-08 done, WA-09…WA-12 remain
 
 Some Linux fixes are in shared code (`Agent.Core`) and therefore already apply to the Windows tray:
 the server-address fix, the durable game removal, the crash-on-add fix, and the immediate
 save-folder watching. Decide at tag time whether to describe those once or per platform — they are
-one code change, not two.
+one code change, not two. The same is true in reverse for several bullets below.
+
+### Draft notes
+
+- **SaveLocker will no longer restore a save while the game is running.** Windows spots a game up to
+  four seconds after it starts — by which time it already has its save files open — so what was
+  described as a "pre-launch pull" could write over a save the game then overwrote again on exit,
+  losing it silently. Pulling now refuses while the game is open and says so, from the tray, the
+  dashboard and the command line alike. Launching a game still checks it out to your machine, and
+  quitting still pushes; only the automatic pull at launch is gone. Pull before you play.
+- **A game can no longer be pointed at a folder that isn't a save folder.** A drive root, your user
+  profile, `C:\Windows`, Program Files or SaveLocker's own settings folder are refused outright —
+  they could previously be uploaded, and a force-pull would have *replaced* them. Folders that merely
+  look wrong (a Wine prefix, something very large) now ask for confirmation instead of proceeding
+  quietly. The check runs again at the moment of syncing, so a mapping edited by hand or sent by the
+  server is caught too.
+- **Your machine's credentials are no longer readable by other people using the same PC.**
+  `%PROGRAMDATA%\SaveLocker` holds this machine's server key and the token for its local settings
+  API, and Windows was letting every account on the box read both. They are now restricted to the
+  account that set SaveLocker up, plus SYSTEM and administrators.
+- **Changing the server address is safer.** A mistyped address is rejected instead of being saved —
+  it used to be written to disk and then crash the agent on every start afterwards. Pointing the
+  agent at a *different* server now clears the old machine key, ID and certificate pin and asks you
+  to register again, rather than sending the previous server's credentials to the new one.
+- **Updates are checked before they run.** The server publishes a checksum for the installer and the
+  agent refuses anything that does not match, or that is not actually a program. Updates from a
+  location other than your own server are refused unless a checksum is published for them, and your
+  machine key is never sent to a download host. Changing servers discards any update the previous one
+  had offered.
+- **Quitting a game always releases its checkout, even if the save fails to upload.** It previously
+  released only after a successful push, so a failed upload left the game checked out to your PC —
+  and every other machine locked out of it — until the checkout expired.
+- **Two SaveLocker processes can no longer sync the same game at once.** When one was busy, the other
+  used to give up waiting after 30 seconds and proceed anyway, which is exactly what the wait exists
+  to prevent. It now waits as long as the work could legitimately take, and reports that the game is
+  busy rather than joining in.
+- **Games added through the app now know which program to watch for.** Only the command line could
+  set this before, so games added through the window were invisible to launch and exit syncing
+  entirely. Where SaveLocker cannot work it out — an installed Steam game, for instance — Settings
+  says "Launch/exit sync not configured" and lets you fill it in, instead of implying it is working.
+
+### Not yet verified — do not publish these bullets without it
+
+- **The credentials bullet is unproven where it matters.** The permissions have been inspected, but
+  nothing has been tested from a second Windows account, and it has not been confirmed that the
+  enrolled user can still sync and take a silent update after a reboot.
+- The live-game bullet has not been exercised against a real game, only a stand-in process.
+- The launch/exit bullet has not been exercised by enrolling a real non-Steam Steam shortcut.
+
+Windows suites green at time of writing: win agent bug bounty 81, server bug bounty 145, agent 45,
+hardening 33, local-api 30, concurrency 23, health 19, enrollment 18, enrollment-TLS 6.
 
 ## Console / server — in progress
 
@@ -194,3 +245,8 @@ Console or Windows bounties turn up something user-visible enough to warrant v0.
 
 The console bounty carries a schema migration, which argues for v0.5.0 on its own: it is the first
 release where downgrading the container is not a clean rollback.
+
+**The Windows bounty settles it: v0.5.0.** Two of its fixes change behaviour users will notice
+rather than merely repairing it — SaveLocker no longer pulls automatically when a game launches on
+Windows, and moving an agent to a different server now requires registering again. Neither belongs
+in a patch release.

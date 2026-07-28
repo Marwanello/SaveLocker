@@ -19,13 +19,26 @@ Deck Game Mode UI — is **built and shipped**. Feature-by-feature ship log: `lo
 
 ## Next action
 
-**Start `tasks/WinAgent-BugBounty.md`** — the last of the three bug bounties. Read it first; it is
-bounded and self-verifying like the other two. Everything below is context for that session.
+**Resume `tasks/WinAgent-BugBounty.md` at WA-09.** Read its **Progress** section first — it records
+which findings are done, which commits they are in, and (importantly) where the test evidence is
+weaker than the pass count suggests. WA-01…WA-08 are fixed and committed; WA-09…WA-12 are not
+started.
 
-Before the branch can ship there is also one **manual LAN check** (5 minutes, needs the real
-deployment): open the console at the server's LAN address, mint an enrollment file with the URL
-override blank, and confirm `policy.serverUrl` is that LAN address rather than `localhost`. Recorded
-in `logs/2026-07-27_console-bugbounty.md` → Verification.
+WA-09 is the largest remaining item and the one that touches code the others now rely on:
+`TrayContext` captures `SynchronizationContext.Current` **before `Application.Run` installs the
+WinForms context**, so every `_ui.Post(...)` in `TrayApp.cs` — including ones added by WA-01, WA-05
+and WA-06 — is currently a thread-pool post, not a UI-thread marshal.
+
+Two things need the maintainer rather than the next agent:
+
+1. **An open decision.** Two test-only environment variables now live in production code
+   (`SAVELOCKER_LEASE_RENEW_SECONDS`, `SAVELOCKER_SYNC_LOCK_SECONDS`). Keep, promote to real
+   settings, or remove and mark those tests manual? See the task's Progress section.
+2. **Manual verification, none of which has been run.** The whole of the task's Verification
+   section, plus the console bounty's outstanding **LAN enrollment-URL check** (open the console at
+   the server's LAN address, mint an enrollment file with the URL override blank, confirm
+   `policy.serverUrl` is the LAN address, not `localhost` — `logs/2026-07-27_console-bugbounty.md`
+   → Verification). WA-03's second-account ACL test is the release blocker among these.
 
 ## Open work
 
@@ -41,7 +54,16 @@ Branch `linux-agent-bugbounty` carries **all three bug bounties** and is **not p
   Remaining: run the Linux suites in WSL (`run-linux-tests.sh`, 40 checks, carries the unrun
   LA-08/LA-09 checks), add regression tests for LA-04/05/06/07, and do the Deck verification.
   See `tasks/LinuxAgent-BugBounty.md` → Progress.
-- **Windows agent bug bounty — not started.** `tasks/WinAgent-BugBounty.md`.
+- **Windows agent bug bounty — 8 of 12 done, 2026-07-27.** WA-01…WA-08 fixed, one commit each,
+  `34a7c75` … `c27197e` (plus `98a1a68`, the http/TLS decision WA-05 depends on). New harness
+  `tests/run-winagent-tests.ps1` (**81 checks**), each finding's block verified to fail against
+  pre-fix code. **WA-09…WA-12 remain**; WA-09 is the big one. Progress table, the four places where
+  test evidence is weaker than the pass count, and the outstanding manual gates are all in
+  `tasks/WinAgent-BugBounty.md` → Progress.
+  This half changes the **agent, the server and both UIs**: `openapi.json` + `web/src/api-types.ts`
+  moved (WA-05's update digest), and `agent-ui/src/api-types.ts` moved three times (WA-02, WA-04,
+  WA-08). New agent CLI command `check-update`; new agent-local API routes for save-path confirm and
+  process names.
 
 User-facing notes for all three accumulate in [[Release Notes Pending]]. Version is still unchosen;
 the console migrations argue for v0.5.0 over v0.4.2, since a container downgrade stops being a clean
@@ -49,10 +71,16 @@ rollback.
 
 ### Suite baseline (all green at 2026-07-27, Windows)
 
-server bug bounty 145 · agent 45 · hardening 33 · local-api 30 · concurrency 23 · health 19 ·
-enrollment 18 · enrollment-TLS 6. Server build 0/0; console lint and build clean — the console build
-is **warning-free for the first time** (CS-13 fixed the discarded `@import`), so a new warning there
-now means something.
+server bug bounty 145 · **win agent bug bounty 81** · agent 45 · hardening 33 · local-api 30 ·
+concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6. Server build 0/0; console lint and
+build clean — the console build is **warning-free for the first time** (CS-13 fixed the discarded
+`@import`), so a new warning there now means something. The Windows agent build has **one**
+pre-existing warning (MSB3277, a WindowsBase 4.0/5.0 conflict from WebView2); a second one means
+something.
+
+`run-winagent-tests.ps1` owns :5189 (+ :5190–5195 for daemons and stub servers) and
+`.verify-winagent`. It is slow by design — ~4 minutes, most of it real waits on lease renewal and
+lock contention.
 
 **Running the suites: clear `.verify/` and `src/Server/localstate/` together, and keep a dev server
 on :5179 up for `run-agent-tests` and `run-enrollment-tests`.** Both traps cost time this session —
