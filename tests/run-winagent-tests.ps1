@@ -63,8 +63,17 @@
 #          discovery genuinely cannot know - an installed Steam game, a save-root match - the UI now
 #          says "launch/exit sync not configured" instead of implying it works.
 #
-# Owns its server on :5189 and its state under .verify-winagent, so it never collides with a real
-# agent, a dev server, or another suite.
+#   WA-09. One thread owns the WinForms objects and the live game list.
+#          TrayContext captured SynchronizationContext.Current in its constructor - which runs as
+#          the ARGUMENT to Application.Run, before the loop installs the WinForms context. Every
+#          "marshal to the UI thread" post in the tray therefore went to the thread pool, silently,
+#          including the ones WA-01, WA-05 and WA-06 added. This block drives a real tray on its own
+#          port and asserts the owner; see the task file for what the stress checks do and do not
+#          prove.
+#
+# Owns its server on :5189 (and :5190-:5196 for daemons, stub servers and the WA-09 tray) and its
+# state under .verify-winagent, so it never collides with a real agent, a dev server, or another
+# suite.
 # Usage: .\tests\run-winagent-tests.ps1
 
 $ErrorActionPreference = "Continue"
@@ -809,6 +818,134 @@ try {
     Agent add-game --name "DerGame-$stamp" --dir $enrSave --proc "C:\Games\Foo\foo.exe" --config $derCfg | Out-Null
     $derList = Agent list --config $derCfg | Out-String
     Check "WA-08 an executable path is reduced to a process name" ($derList -match "procs=foo")
+
+    # =================================================================================
+    # WA-09. ONE THREAD OWNS THE WINFORMS OBJECTS AND THE LIVE GAME LIST
+    # =================================================================================
+    # TrayContext is constructed as the ARGUMENT to Application.Run, so its constructor ran before
+    # the message loop installed WindowsFormsSynchronizationContext. The captured context therefore
+    # fell through to `new SynchronizationContext()` and every _ui.Post in the tray - the menu
+    # rebuild, the balloon, the first-run prompt, the deep link, and the ones WA-01/05/06 added -
+    # was a plain thread-pool post. Nothing announced it: WinForms only throws on a cross-thread
+    # call once a handle exists.
+    #
+    # This is the one block that drives a REAL tray, because the defect is in the tray's startup
+    # sequence and nothing else reproduces it. It runs on its own port so it cannot collide with an
+    # installed agent (SAVELOCKER_TRAY_PORT, which scopes the single-instance mutex too).
+    #
+    # Read the honesty note in tasks/WinAgent-BugBounty.md before trusting this block: the owner
+    # assertion is the only one that discriminates against pre-fix code. The stress assertions are
+    # real but probabilistic - an off-thread menu rebuild often gets away with it.
+    if (-not [Environment]::UserInteractive) {
+        Write-Host "SKIP: WA-09 needs an interactive desktop session for the tray."
+    } else {
+        $trayPort = 5196
+        $trayBase = "http://localhost:$trayPort"
+        $trayCfg  = Join-Path $scratch "tray.json"
+        @{ ServerUrl = $server; Games = @() } | ConvertTo-Json | Set-Content -Path $trayCfg -Encoding utf8
+        Agent register --name "WinTray-$stamp" --config $trayCfg | Out-Null
+
+        $trayGame = "TrayGame-$stamp"
+        $traySave = Join-Path $scratch "tray_save"; New-Item -ItemType Directory -Force $traySave | Out-Null
+        "t" | Set-Content (Join-Path $traySave "t.dat") -Encoding utf8
+        Agent add-game --name $trayGame --dir $traySave --proc $fakeName --config $trayCfg | Out-Null
+
+        # The tray logs to the REAL %PROGRAMDATA%\SaveLocker\agent.log - AgentLogger has no --config
+        # override - so only the tail this run appends is examined.
+        $logPath = Join-Path $env:ProgramData "SaveLocker\agent.log"
+        $logMark = if (Test-Path $logPath) { (Get-Item $logPath).Length } else { 0 }
+        function Get-TrayLog {
+            if (-not (Test-Path $logPath)) { return "" }
+            $fs = [System.IO.File]::Open($logPath, 'Open', 'Read', 'ReadWrite')
+            try {
+                if ($fs.Length -lt $logMark) { $script:logMark = 0 }  # rotated
+                $fs.Seek($logMark, 'Begin') | Out-Null
+                $sr = New-Object System.IO.StreamReader($fs)
+                return $sr.ReadToEnd()
+            } finally { $fs.Dispose() }
+        }
+
+        $env:SAVELOCKER_TRAY_PORT = "$trayPort"
+        $tray = Start-Process -FilePath $dotnet -ArgumentList @($dll, "--config", $trayCfg) `
+                -PassThru -WindowStyle Hidden
+        $trayFake = $null
+        try {
+            $trayToken = $null
+            $trayUp = $false
+            foreach ($i in 1..40) {
+                Start-Sleep -Milliseconds 700
+                $tp = Join-Path $scratch "api-token"
+                if (Test-Path $tp) { $trayToken = (Get-Content $tp -Raw).Trim() }
+                try {
+                    Invoke-RestMethod "$trayBase/api/state" -Headers @{ "X-SaveLocker-Token" = $trayToken } -TimeoutSec 3 | Out-Null
+                    $trayUp = $true; break
+                } catch { }
+            }
+            Check "WA-09 the tray started and serves its local API" $trayUp
+            $TH = @{ "X-SaveLocker-Token" = $trayToken }
+
+            # THE discriminating assertion. Pre-fix there is no owner at all to name, and the context
+            # that was captured is the thread-pool default.
+            Check "WA-09 the UI owner is the WinForms context" (
+                (Get-TrayLog) -match "UI owner:.*WindowsFormsSynchronizationContext")
+
+            # A game created on the server by ANOTHER machine, so the tray's CommandPoller adopts it
+            # on a background tick - a MutateGames from the poller thread while the API thread below
+            # enumerates the same list. This is the collection-modified race in its real shape.
+            $otherCfg = Join-Path $scratch "tray_other.json"
+            @{ ServerUrl = $server; Games = @() } | ConvertTo-Json | Set-Content -Path $otherCfg -Encoding utf8
+            Agent register --name "WinTrayB-$stamp" --config $otherCfg | Out-Null
+            $adopted = "Adopted-$stamp"
+            Agent add-game --name $adopted --dir $traySave --config $otherCfg | Out-Null
+
+            # And a live game process, so ProcessWatcher raises launch/exit into the engine and the
+            # menu while all of the above is in flight.
+            $trayFake = Start-FakeGame
+
+            # The stress itself: ~30 s, long enough for at least one 20 s reconcile tick and several
+            # 4 s process polls, with the local API hammered throughout.
+            $enumErrors = 0
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            $rows = $null
+            while ($sw.Elapsed.TotalSeconds -lt 30) {
+                try {
+                    $rows = Invoke-RestMethod "$trayBase/api/games" -Headers $TH -TimeoutSec 5
+                    Invoke-RestMethod "$trayBase/api/state" -Headers $TH -TimeoutSec 5 | Out-Null
+                    $target = @($rows) | Where-Object { $_.name -eq $trayGame } | Select-Object -First 1
+                    if ($target) {
+                        Invoke-RestMethod "$trayBase/api/games/$($target.id)/processes" -Method Post `
+                            -Headers $TH -TimeoutSec 5 `
+                            -Body (@{ processNames = @($fakeName, "spin-$($sw.ElapsedMilliseconds)") } | ConvertTo-Json) `
+                            -ContentType "application/json" | Out-Null
+                    }
+                    Invoke-RestMethod "$trayBase/api/config" -Method Post -Headers $TH -TimeoutSec 5 `
+                        -Body (@{ settleQuietSeconds = (2 + ($sw.Elapsed.Seconds % 5)) } | ConvertTo-Json) `
+                        -ContentType "application/json" | Out-Null
+                }
+                catch { $enumErrors++ }
+                if ($sw.Elapsed.TotalSeconds -gt 12 -and $trayFake) { Stop-FakeGame $trayFake; $trayFake = $null }
+                Start-Sleep -Milliseconds 200
+            }
+
+            $trayLog = Get-TrayLog
+            Check "WA-09 no cross-thread WinForms call was made" (
+                $trayLog -notmatch "(?i)cross-thread|InvalidAsynchronousStateException|Invoke or BeginInvoke")
+            Check "WA-09 the live game list was never enumerated during a mutation" (
+                $trayLog -notmatch "(?i)Collection was modified")
+            Check "WA-09 the local API answered throughout the churn" ($enumErrors -eq 0)
+            Check "WA-09 the tray survived the stress" (-not $tray.HasExited)
+
+            # The poller's adoption really did happen - otherwise the race above never ran and the
+            # three checks are vacuous.
+            Check "WA-09 the poller adopted a server game during the churn" (
+                $null -ne (@($rows) | Where-Object { $_.name -eq $adopted }))
+        }
+        finally {
+            if ($trayFake) { Stop-FakeGame $trayFake }
+            Stop-Process -Id $tray.Id -Force -ErrorAction SilentlyContinue
+            Remove-Item Env:SAVELOCKER_TRAY_PORT -ErrorAction SilentlyContinue
+        }
+    }
 }
 finally {
     Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue

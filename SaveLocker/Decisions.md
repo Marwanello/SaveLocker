@@ -129,8 +129,29 @@ session can judge an edge case, not to reopen the choice.
   than implying automatic sync works. The same normalisation runs at every entry point (local API,
   CLI `--proc`), so `C:\Games\Foo\foo.exe` and `foo.exe` both persist as `foo` — stored verbatim,
   neither would ever match.
+- **One thread owns every WinForms object, and it is established rather than captured** (WA-09,
+  2026-07-28). `TrayContext` used to capture `SynchronizationContext.Current` in its constructor —
+  which runs as the **argument** to `Application.Run`, before the message loop installs
+  `WindowsFormsSynchronizationContext`. The capture fell through to `new SynchronizationContext()`,
+  so every `_ui.Post` in the tray was a plain thread-pool post: the menu rebuild, the balloon, the
+  first-run prompt, and the ones WA-01, WA-05 and WA-06 added. Nothing failed loudly, because
+  WinForms only throws on a cross-thread call once a handle exists and a `NotifyIcon` menu has none.
+  <br>`UiDispatcher` replaces it: it creates a control and **forces its handle**, which is itself
+  what installs the WinForms context on that thread. It therefore does not depend on where in the
+  startup sequence it is constructed — it makes the owner instead of hoping to find one. Every
+  WinForms touch from a background thread routes through `Post` (fire-and-forget) or `InvokeAsync`
+  (the modal surfaces: message boxes, the folder dialog). The owner is logged on every start
+  (`UI owner: thread N, context …`), because the defect was invisible precisely in that the wrong
+  context still accepted every post.
+  <br>Two consequences worth keeping: the folder picker no longer runs on a private STA thread —
+  `Main` is already `[STAThread]`, so there was nothing for a second one to provide, and reading
+  `Application.OpenForms` from it handed `ShowDialog` an owner belonging to another thread. And the
+  live game list is copy-on-write everywhere (`AgentConfig.MutateGames`), so a poller adoption cannot
+  throw "Collection was modified" out of a UI or render thread enumerating it.
+  <br>`SAVELOCKER_TRAY_PORT` was added under the rule below so a harness can drive a real tray; it
+  scopes the single-instance mutex too, so a test tray and the installed one coexist.
 - **Test-only environment variables stay, and stay unadvertised** (2026-07-28, maintainer decision).
-  `SAVELOCKER_LEASE_RENEW_SECONDS` and `SAVELOCKER_SYNC_LOCK_SECONDS` are kept — they are the only
+  `SAVELOCKER_LEASE_RENEW_SECONDS`, `SAVELOCKER_SYNC_LOCK_SECONDS` and `SAVELOCKER_TRAY_PORT` are kept — they are the only
   way to observe a 3-hour renewal interval or a ~13-minute lock wait inside a test — but they are
   **not** promoted to `AgentConfig` settings and are **not** documented anywhere a user reads. They
   live in `Gotchas.md` (this vault) only; `web/src/help/cli-reference.md` and the release notes must

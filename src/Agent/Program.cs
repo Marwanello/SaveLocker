@@ -20,7 +20,13 @@ static class Program
             // one is already open) just exits. The mutex name is shared with the
             // installer's AppMutex so setup can detect a running agent and prompt the
             // user to close it before replacing files. CLI one-shots are not guarded.
-            using var mutex = new Mutex(initiallyOwned: true, "SaveLocker.Agent", out var isNew);
+            // A harness tray runs on its own port and must not be blocked by — or block — the
+            // installed one, so the override scopes the guard too. Unset in production, where the
+            // name and the installer's AppMutex stay exactly as they were.
+            var trayPort = Environment.GetEnvironmentVariable("SAVELOCKER_TRAY_PORT");
+            var mutexName = string.IsNullOrWhiteSpace(trayPort) ? "SaveLocker.Agent"
+                                                               : $"SaveLocker.Agent.{trayPort}";
+            using var mutex = new Mutex(initiallyOwned: true, mutexName, out var isNew);
             if (!isNew) return 0;
             TrayApp.Run(config);
             return 0;

@@ -53,6 +53,10 @@ These exist because the production values are far too slow to observe in a suite
 - **`SAVELOCKER_SYNC_LOCK_SECONDS`** — how long to wait for another process's game lock
   (production: settle gate + upload window + margin, ~13 minutes). WA-07's test would otherwise
   wait that out twice.
+- **`SAVELOCKER_TRAY_PORT`** — moves the tray's local API off :5178 (Windows only). WA-09's block is
+  the only one that drives a **real tray**, and it must not collide with the installed agent. It
+  scopes the single-instance mutex to match (`SaveLocker.Agent.<port>`), so the harness tray and a
+  running installed tray coexist; unset, both the port and the mutex name are exactly as shipped.
 
 Set them per-process and clear them afterwards — leaving either set in a shell will make later runs
 behave in ways that look like bugs.

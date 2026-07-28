@@ -596,7 +596,8 @@ public static class AgentCli
             tracked.ManifestKey = pg.ManifestKey;
             tracked.ExcludeGlobs = (pg.ExcludeGlobs ?? Array.Empty<string>()).ToList();
             if (!string.IsNullOrEmpty(dir)) tracked.SaveDirectory = dir;
-            if (existing is null) config.Games.Add(tracked);
+            // Copy-on-write like every other writer: the last direct mutation of the live list.
+            if (existing is null) config.MutateGames(list => list.Add(tracked));
 
             if (string.IsNullOrEmpty(tracked.SaveDirectory))
             {

@@ -28,7 +28,7 @@ stale output cannot mask a fix.
 
 ## Progress (updated 2026-07-27)
 
-**8 of 12 findings fixed on `linux-agent-bugbounty`, one commit each. Not pushed.**
+**9 of 12 findings fixed on `linux-agent-bugbounty`, one commit each. Not pushed.**
 
 | ID | State | Commit |
 |---|---|---|
@@ -40,14 +40,15 @@ stale output cannot mask a fix.
 | WA-06 | done — **weakest evidence, see below** | `980e26d` |
 | WA-07 | done | `ef4c621` |
 | WA-08 | done | `c27197e` |
-| WA-09 | **not started — resume here** | — |
-| WA-10 | not started | — |
+| WA-09 | done — **1 of 6 checks discriminates, see below** | `df8b568` |
+| WA-10 | **not started — resume here** | — |
 | WA-11 | not started | — |
 | WA-12 | not started | — |
 
 ### Harness
 
-`tests/run-winagent-tests.ps1` — **81 checks**, own server on :5189, state in `.verify-winagent`.
+`tests/run-winagent-tests.ps1` — **88 checks**, own server on :5189 (+ :5190–:5196), state in
+`.verify-winagent`.
 Each finding's block is verified to fail against pre-fix code by `git stash push -- src/`, rebuild,
 re-run. Where that check is weaker than "N of N fail", the commit message says so explicitly.
 
@@ -55,6 +56,19 @@ re-run. Where that check is weaker than "N of N fail", the commit message says s
 
 Read these before trusting the suite as proof:
 
+- **WA-09** — **1 of 6 fails pre-fix**, and it is the owner assertion ("the UI owner is the WinForms
+  context"). The other five — no cross-thread call, no collection-modified, the API answering
+  throughout, the tray surviving, the poller adopting during the churn — **pass against pre-fix code
+  too**, and that is the finding's nature rather than a gap in the harness: an off-thread menu
+  rebuild usually gets away with it, because WinForms only throws once a handle exists and a
+  `NotifyIcon`'s menu has none. They are worth keeping as a stress floor; they are not proof.
+  <br>The pre-fix comparison also needed care. A first attempt showed 6 of 6 passing because the
+  shim constructed the marshalling `Control` *before* reading `SynchronizationContext.Current` — and
+  constructing a `Control` is itself enough to install the WinForms context. Reading `Current` first,
+  exactly as the original constructor did, reproduces the defect and fails the check. Anyone
+  re-verifying this must preserve that ordering or they will "confirm" a fix that is not there.
+  <br>Not covered automatically at all: the folder picker (opening a modal dialog cannot be
+  automated headlessly) and the WA-12 deep link. Verification items 1 and 3 still cover them by hand.
 - **WA-06** — the central assertion ("no lease renewal after the engine is retired") does *not*
   discriminate against pre-fix code: `SAVELOCKER_LEASE_RENEW_SECONDS` is itself part of the fix, and
   at the production 3-hour interval there are no renewals to leak inside a test run. 2 of 4 fail
@@ -92,13 +106,18 @@ particular these acceptance criteria are *implemented but not signed off*:
   process watcher or the launch wrapper, neither drivable headlessly during a server change.
 - WA-01's real-game timing (verification item 4).
 
-### Note for whoever picks up WA-09
+### What WA-09 changed, for whoever picks up WA-10…WA-12
 
-It is the largest remaining item and touches code every other finding now depends on. The three
-threads named in the finding are connected: `TrayContext` captures `SynchronizationContext.Current`
-in its constructor, **before `Application.Run` installs the WinForms context**, so `_ui.Post` is a
-thread-pool post and every "marshal to the UI thread" call in this file is a no-op today. Several
-WA-01…WA-08 fixes call `_ui.Post(_ => RebuildMenu(), null)` on that same broken context.
+`UiDispatcher` (new, `src/Agent/UiDispatcher.cs`) is now the single owner of every WinForms object.
+It creates a control and forces its handle, which is what installs the WinForms synchronization
+context on that thread — so it establishes the owner rather than capturing one that does not exist
+yet. Background code reaches the UI through `_ui.Post(...)` or, for the modal surfaces, `await
+_ui.InvokeAsync(...)`. **Any new UI work in `TrayApp.cs` must go through one of those two.**
+
+Also landed with it: `FolderPicker` runs on the tray's own UI thread instead of a private STA thread
+(`Main` is already `[STAThread]`); `ProcessWatcher` refuses overlapping polls; and the last direct
+mutation of the live `List<TrackedGame>` (`AgentCli.SeedGamesAsync`) went copy-on-write like the
+rest. WA-12 will need the deep-link queue to be applied on this dispatcher.
 
 ---
 
