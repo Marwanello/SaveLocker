@@ -172,6 +172,9 @@ using (var scope = app.Services.CreateScope())
 // startup, with an age floor so a restart cannot delete an upload another process has in flight.
 app.Services.GetRequiredService<ArchiveStore>().SweepIncoming(TimeSpan.FromHours(1));
 app.Services.GetRequiredService<AgentInstallerService>().SweepIncoming(TimeSpan.FromHours(1));
+// An installer uploaded before digests existed would otherwise never get one, and agents refuse to
+// run an unverifiable off-origin download. Fire-and-forget: hashing 100 MB must not delay startup.
+_ = app.Services.GetRequiredService<AgentInstallerService>().BackfillDigestAsync();
 
 // OpenAPI JSON at /openapi/v1.json + a Swagger UI explorer at /swagger.
 app.MapOpenApi();
@@ -373,15 +376,20 @@ agent.MapGet("/agent/latest", (IConfiguration cfg, AgentInstallerService install
     if (info is not null)
     {
         var baseUrl = PublicUrl.For(ctx, cfg);
-        return Results.Ok(new AgentVersionInfo(info.Version, $"{baseUrl}/api/agent/installer/download"));
+        return Results.Ok(new AgentVersionInfo(
+            info.Version, $"{baseUrl}/api/agent/installer/download", info.Sha256));
     }
 
-    // Fall back to the static config (backward-compat with the original design).
+    // Fall back to the static config (backward-compat with the original design). AgentUpdate:Sha256
+    // is optional here, but without it the agent will refuse an off-origin download — which is the
+    // intended pressure, since a hand-configured URL is exactly the case with no other integrity
+    // control at all (Decisions.md: plain http is supported, so the transport proves nothing).
     var ver = cfg["AgentUpdate:LatestVersion"];
     var url = cfg["AgentUpdate:DownloadUrl"];
+    var sha = cfg["AgentUpdate:Sha256"];
     return string.IsNullOrWhiteSpace(ver)
         ? Results.NoContent()
-        : Results.Ok(new AgentVersionInfo(ver, url ?? ""));
+        : Results.Ok(new AgentVersionInfo(ver, url ?? "", string.IsNullOrWhiteSpace(sha) ? null : sha.Trim()));
 }).Produces<AgentVersionInfo>();
 
 // Serves the hosted installer to agents. Public so the admin can also download it directly.

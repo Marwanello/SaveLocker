@@ -15,7 +15,7 @@ public static class AgentCli
     public static bool Handles(string command) => command is
         "register" or "enroll" or "trust" or "set-server" or "whoami" or "search" or "scan" or
         "resolve" or "add-game" or "remove-game" or "list" or "status" or "push" or "pull" or
-        "refresh-manifest" or "log" or "hash";
+        "refresh-manifest" or "log" or "hash" or "check-update";
 
     /// <summary>Run one command. Returns the process exit code.</summary>
     public static async Task<int> RunAsync(
@@ -334,6 +334,48 @@ public static class AgentCli
                         await engine.PullAsync(g, force);
                     }
                     await health.SendAsync(Api(), config, null, Log);
+                    break;
+                }
+
+                case "check-update":
+                {
+                    // Ask the configured server what it is offering, and optionally fetch and VERIFY
+                    // the artifact — never run it. Launching is the tray's job and needs a user's
+                    // consent; this exists so the download-and-verify path is inspectable from
+                    // outside the process, and so a headless box has any way at all to see what its
+                    // server is publishing.
+                    using var checker = new UpdateChecker(config);
+                    var result = await checker.CheckAsync();
+
+                    switch (result)
+                    {
+                        case UpdateResult.UpToDate:
+                            Console.WriteLine($"Up to date (v{UpdateChecker.CurrentVersion.ToString(3)}).");
+                            break;
+                        case UpdateResult.Skipped:
+                            Console.WriteLine($"v{config.SkipVersion} is available but was skipped.");
+                            break;
+                        case UpdateResult.Failed f:
+                            Console.Error.WriteLine($"Update check failed: {f.Reason}");
+                            return 1;
+                        case UpdateResult.Available a:
+                            Console.WriteLine($"v{a.Version} is available (current {UpdateChecker.CurrentVersion.ToString(3)}).");
+                            Console.WriteLine($"  url:    {a.DownloadUrl}");
+                            Console.WriteLine($"  sha256: {a.Sha256 ?? "(none published — an off-origin download will be refused)"}");
+
+                            if (!opts.ContainsKey("download")) break;
+                            try
+                            {
+                                var file = await checker.DownloadInstallerAsync(a.Version, a.DownloadUrl, a.Sha256);
+                                Console.WriteLine($"VERIFIED: {file}");
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.Error.WriteLine($"REFUSED: {ex.Message}");
+                                return 1;
+                            }
+                            break;
+                    }
                     break;
                 }
 

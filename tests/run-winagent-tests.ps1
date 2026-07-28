@@ -36,6 +36,13 @@
 #          MachineId and ServerPin survived an origin change, so server A's live machine key was
 #          sent to server B. Both are asserted here, the second by inspecting what B RECEIVED.
 #
+#   WA-05. An update is bound to the current server and verified before it runs.
+#          This path ends in EXECUTING a binary, and on the default configuration the transport
+#          proves nothing about what arrived (Decisions.md: plain http is supported, no certs are
+#          shipped). So the published SHA-256 is the whole control. The updater also accepted an
+#          arbitrary absolute DownloadUrl using a client whose default headers carried the machine
+#          key, so an off-origin URL was handed this machine's credential.
+#
 # Owns its server on :5189 and its state under .verify-winagent, so it never collides with a real
 # agent, a dev server, or another suite.
 # Usage: .\tests\run-winagent-tests.ps1
@@ -75,6 +82,9 @@ $env:Storage__DbPath      = Join-Path $state "savelocker.db"
 $env:Storage__ArchiveRoot = Join-Path $state "archives"
 $env:Backup__Enabled      = "false"
 $env:Logging__EventLog__LogLevel__Default = "None"
+# Pinned so the WA-05 tampering check knows exactly which file the server is serving. Left to its
+# default it lands beside the server binary, which is shared with every other run.
+$env:Storage__AgentInstallerRoot = Join-Path $state "agent-installer"
 
 $serverProc = Start-Process -FilePath $dotnet -ArgumentList $serverDll -PassThru -WindowStyle Hidden
 $up = $false
@@ -423,6 +433,134 @@ try {
     # assuming this check passed because nothing was ever sent.
     Write-Host "       (server B received $(if ($sawAny) { 'at least one' } else { 'no' }) request)"
     Check "WA-04 server A's key never reached server B" (-not $sawKeyA)
+
+    # =================================================================================
+    # WA-05. AN UPDATE IS BOUND TO THE CURRENT SERVER AND VERIFIED BEFORE IT RUNS
+    # =================================================================================
+    # This is the path that ends in EXECUTING a binary, and on the default configuration the
+    # transport proves nothing about what arrived (Decisions.md: plain http is supported and ships
+    # no certs). So the digest is the whole control, and these assert it is actually enforced.
+    $upCfg = Join-Path $scratch "update.json"
+    @{ ServerUrl = $server; Games = @() } | ConvertTo-Json | Set-Content -Path $upCfg -Encoding utf8
+    Agent register --name "WinUp-$stamp" --config $upCfg | Out-Null
+
+    # An "installer": a real PE file so the MZ check passes on the happy path. A renamed copy of a
+    # system exe is the cheapest way to get genuine executable bytes.
+    $fakeInstaller = Join-Path $scratch "SaveLocker-Agent-Setup-9.9.9.exe"
+    Copy-Item (Get-Process -Id $PID).Path $fakeInstaller -Force
+    $trueHash = (Get-FileHash $fakeInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    # Upload it as the hosted installer, at a version far above the running agent's.
+    # Built by hand rather than with Invoke-RestMethod -Form, which is PowerShell 7+ only and this
+    # suite has to run under Windows PowerShell 5.1.
+    Add-Type -AssemblyName System.Net.Http
+    $uploaded = $false
+    try {
+        $client  = New-Object System.Net.Http.HttpClient
+        $content = New-Object System.Net.Http.MultipartFormDataContent
+        $bytes   = [System.IO.File]::ReadAllBytes($fakeInstaller)
+        $part    = New-Object System.Net.Http.ByteArrayContent (,$bytes)
+        $part.Headers.ContentType =
+            [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/octet-stream")
+        $content.Add($part, "file", [System.IO.Path]::GetFileName($fakeInstaller))
+        $resp = $client.PostAsync("$server/api/admin/agent-installer?version=9.9.9", $content).GetAwaiter().GetResult()
+        $uploaded = $resp.IsSuccessStatusCode
+        if (-not $uploaded) { Write-Host "upload failed: $([int]$resp.StatusCode) $($resp.Content.ReadAsStringAsync().GetAwaiter().GetResult())" }
+        $client.Dispose()
+    } catch { Write-Host "upload failed: $_" }
+    Check "WA-05 the installer uploaded" $uploaded
+
+    $status = Invoke-RestMethod "$server/api/admin/agent-installer"
+    Check "WA-05 the server recorded a SHA-256 at upload"  ($status.sha256 -eq $trueHash)
+
+    # The digest must reach the agent, or it has nothing to verify against.
+    $latest = Invoke-RestMethod "$server/api/agent/latest" -Headers @{ "X-Api-Key" = (Get-Content $upCfg -Raw | ConvertFrom-Json).ApiKey }
+    Check "WA-05 /api/agent/latest publishes the digest"   ($latest.sha256 -eq $trueHash)
+
+    # --- The happy path: same origin, correct digest, real executable ---
+    $ok = Agent check-update --download --config $upCfg | Out-String
+    Check "WA-05 a correct installer is VERIFIED"          ($ok -match "VERIFIED")
+
+    # --- A tampered artifact must be refused ---
+    # The bytes on disk are changed behind the server's back, so the published digest no longer
+    # describes what a download returns. This is the substituted-payload case, and the one the
+    # digest exists for.
+    $hosted = Get-ChildItem $env:Storage__AgentInstallerRoot -Filter "*.exe" | Select-Object -First 1
+    Check "WA-05 the hosted installer file was found" ($null -ne $hosted)
+    if ($hosted) {
+        Add-Content -Path $hosted.FullName -Value "tampered" -Encoding utf8
+        $bad = Agent check-update --download --config $upCfg | Out-String
+        Check "WA-05 a tampered installer is REFUSED" ($bad -match "REFUSED")
+        Check "WA-05 the refusal names the checksum"  ($bad -match "(?i)checksum")
+    }
+
+    # --- An off-origin download with no digest is refused before any request is made ---
+    # AgentUpdate:DownloadUrl can point anywhere. A second server instance is started with the
+    # config-fallback path aimed at a foreign listener and NO AgentUpdate:Sha256 - the exact shape
+    # of a hand-configured update source with no integrity control.
+    $extPort  = 5994
+    $altPort  = 5195
+    $altUrl   = "http://localhost:$altPort"
+    $extHits  = 0
+    $extSawKey = $false
+
+    $extListener = [System.Net.HttpListener]::new()
+    $extListener.Prefixes.Add("http://localhost:$extPort/")
+    $extListener.Start()
+
+    $altState = Join-Path $scratch "alt-state"
+    New-Item -ItemType Directory -Force (Join-Path $altState "archives") | Out-Null
+
+    # Start-Process -Environment is PowerShell 7.4+, so the variables are set on THIS process (which
+    # the child inherits) and put back immediately after. Everything the main server needs is
+    # re-established below, because these names overlap.
+    $savedDb = $env:Storage__DbPath; $savedArch = $env:Storage__ArchiveRoot
+    $savedInst = $env:Storage__AgentInstallerRoot; $savedUrls = $env:ASPNETCORE_URLS
+    $env:ASPNETCORE_URLS             = $altUrl
+    $env:Storage__DbPath             = Join-Path $altState "savelocker.db"
+    $env:Storage__ArchiveRoot        = Join-Path $altState "archives"
+    $env:Storage__AgentInstallerRoot = Join-Path $altState "agent-installer"
+    $env:AgentUpdate__LatestVersion  = "9.9.9"
+    $env:AgentUpdate__DownloadUrl    = "http://localhost:$extPort/SaveLocker-Agent-Setup-9.9.9.exe"
+    $altProc = Start-Process -FilePath $dotnet -ArgumentList $serverDll -PassThru -WindowStyle Hidden
+    $env:ASPNETCORE_URLS             = $savedUrls
+    $env:Storage__DbPath             = $savedDb
+    $env:Storage__ArchiveRoot        = $savedArch
+    $env:Storage__AgentInstallerRoot = $savedInst
+    Remove-Item Env:AgentUpdate__LatestVersion, Env:AgentUpdate__DownloadUrl -ErrorAction SilentlyContinue
+
+    try {
+        $altUp = $false
+        foreach ($i in 1..40) {
+            Start-Sleep -Milliseconds 700
+            try { Invoke-RestMethod "$altUrl/api/admin/status" -TimeoutSec 3 | Out-Null; $altUp = $true; break } catch { }
+        }
+        Check "WA-05 the fallback-config server started" $altUp
+
+        $extCfg = Join-Path $scratch "ext.json"
+        @{ ServerUrl = $altUrl; Games = @() } | ConvertTo-Json | Set-Content -Path $extCfg -Encoding utf8
+        Agent register --name "WinExt-$stamp" --config $extCfg | Out-Null
+
+        $extOut = Agent check-update --download --config $extCfg | Out-String
+        Check "WA-05 an off-origin update with no digest is REFUSED" ($extOut -match "REFUSED")
+        Check "WA-05 the refusal names the foreign host"             ($extOut -match "localhost")
+
+        # Drain anything the listener received. Refused BEFORE any request means zero.
+        $t = $extListener.GetContextAsync()
+        while ($t.Wait(500)) {
+            $c = $t.Result
+            $extHits++
+            if ($c.Request.Headers["X-Api-Key"]) { $extSawKey = $true }
+            $c.Response.StatusCode = 404; $c.Response.Close()
+            $t = $extListener.GetContextAsync()
+        }
+        Check "WA-05 nothing was downloaded from the foreign host" ($extHits -eq 0)
+        Check "WA-05 the machine key never reached the foreign host" (-not $extSawKey)
+    }
+    finally {
+        Stop-Process -Id $altProc.Id -Force -ErrorAction SilentlyContinue
+        $extListener.Stop(); $extListener.Close()
+    }
 }
 finally {
     Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue

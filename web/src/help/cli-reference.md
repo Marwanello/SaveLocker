@@ -68,6 +68,7 @@ If you must run the `.exe`, redirect its output to a file:
 | `pull` | `[gameName\|all]`<br>`[--force]` | Download and restore the head. **Guarded:** refuses to overwrite local saves that hold un-pushed changes. `--force` discards the local copy and takes the server's. |
 | `hash` | `[gameName\|all]`<br>`--dir <path>`<br>`[--exclude <a,b>]` | Print the content hash of a save folder — the value the server compares to decide *changed*, *unchanged*, or *conflict*. Use it to check whether two machines really hold the same save. Identical bytes give an identical hash on **any** OS, so a Windows PC and a Steam Deck agree. Local only. |
 | `log` | `[--n <count>]` | Print the last *n* lines of the agent log (default 50). |
+| `check-update` | `[--download]` | Ask the configured server what agent version it is publishing, and show the URL and SHA-256. `--download` fetches the installer and **verifies** it, printing `VERIFIED` and the path — it never runs it; installing is the tray's job and needs your say-so. A download is refused if the checksum does not match, if the payload is not a Windows executable, or if it comes from a host other than your server without a published checksum. Since SaveLocker runs over plain `http://` by default, that checksum is the only thing standing between the server's answer and code running on your machine. |
 
 Manual `push` and `pull` are **immediate** — they skip the settle gate that delays automatic backups. See **Save-in-use safety**.
 

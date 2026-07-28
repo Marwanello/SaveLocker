@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:5191/"
+      "url": "http://localhost:5179/"
     }
   ],
   "paths": {
@@ -2114,6 +2114,12 @@
           "sizeBytes": {
             "type": "integer",
             "format": "int64"
+          },
+          "sha256": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2129,6 +2135,12 @@
           },
           "downloadUrl": {
             "type": "string"
+          },
+          "sha256": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

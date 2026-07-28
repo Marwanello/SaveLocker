@@ -64,6 +64,24 @@ session can judge an edge case, not to reopen the choice.
   alone satisfies "a typo cannot brick startup", and requiring a successful probe would make a
   server that is merely offline impossible to configure. A failed transition rolls back every field
   together instead.
+- **An update is verified by digest, and downloads are origin-bound** (WA-05, 2026-07-27). The
+  server computes a SHA-256 while storing an installer, publishes it on `/api/agent/latest`, and the
+  agent refuses to run anything that does not match. This is the direct consequence of shipping no
+  certificates: the transport proves nothing, so the digest is the *only* control over what gets
+  executed. A download to the configured server's own origin may use the authenticated client; a
+  download anywhere else gets **no credential, no pin, and is refused outright without a digest** —
+  the old code accepted an arbitrary absolute `DownloadUrl` using a client whose default headers
+  carried the machine key, handing this machine's credential to any host the server named. Also
+  bounded: a unique temp file created with `CreateNew` (the old fixed `%TEMP%` name was predictable
+  and pre-placeable by another local user), a 300 MB cap, deletion on every failure path, and an
+  MZ-header check so an HTML error page cannot reach `Process.Start`. A connection change retires
+  the checker and clears any cached result, and the origin is re-checked at the moment of launch.
+  <br>An installer stored before digests existed is hashed once at startup (`BackfillDigestAsync`),
+  so already-deployed servers keep working rather than serving something the agent will not verify.
+  <br>**Known limit, stated plainly:** a digest delivered over the same unauthenticated channel as
+  the artifact does not stop an attacker who can rewrite both. Authenticode verification is the
+  check that would, because it does not depend on the channel — there is a marked hook for it in
+  `UpdateChecker.VerifyLooksExecutable`, pending a decision on code signing.
 - **Stack: single-language .NET.** Agent = C#/WinForms (Windows), C#/headless (Linux); Server =
   ASP.NET Core in Docker on unRAID.
 - **Runtime: .NET 10 (LTS)**, locked 2026-07-13. .NET 9 is STS, EOL 2026-11-10; .NET 10 is LTS to

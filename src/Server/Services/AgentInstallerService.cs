@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using SaveLocker.Shared;
 
@@ -92,8 +93,12 @@ public class AgentInstallerService
         // ---- Stage ----
         var staged = Path.Combine(_root, $".incoming-{Guid.NewGuid():N}.part");
         long written = 0;
+        string digest;
         try
         {
+            // Hashed while streaming, not by re-reading afterwards: re-reading would hash whatever
+            // is on disk at that later moment, which is not necessarily what we just received.
+            using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             await using (var fs = new FileStream(
                 staged, FileMode.CreateNew, FileAccess.Write, FileShare.None,
                 bufferSize: 81920, useAsync: true))
@@ -104,12 +109,14 @@ public class AgentInstallerService
                 {
                     written += read;
                     if (written > _maxBytes) throw new InstallerTooLargeException(_maxBytes);
+                    sha.AppendData(buffer.AsSpan(0, read));
                     await fs.WriteAsync(buffer.AsMemory(0, read), ct);
                 }
                 await fs.FlushAsync(ct);
                 fs.Flush(flushToDisk: true);
             }
             if (written == 0) throw new InstallerRejectedException("The uploaded installer is empty.");
+            digest = Convert.ToHexStringLower(sha.GetHashAndReset());
 
             // ---- Publish ----
             // New file into place first, then metadata, and only then remove the old binaries. A
@@ -118,7 +125,7 @@ public class AgentInstallerService
             var exePath = Path.Combine(_root, safeName);
             File.Move(staged, exePath, overwrite: true);
 
-            var info = new AgentInstallerStatus(version, safeName, DateTime.UtcNow, written);
+            var info = new AgentInstallerStatus(version, safeName, DateTime.UtcNow, written, digest);
             await WriteInfoAsync(info, ct);
 
             foreach (var old in Directory.GetFiles(_root, "*.exe"))
@@ -153,6 +160,42 @@ public class AgentInstallerService
             var info = Path.Combine(_root, InfoFileName);
             if (File.Exists(info)) File.Delete(info);
             foreach (var f in Directory.GetFiles(_root, "*.exe")) TryDelete(f);
+        }
+        finally { _gate.Release(); }
+    }
+
+    /// <summary>
+    /// Give an installer stored before digests existed one, by hashing what is on disk. Called at
+    /// startup.
+    /// <para>
+    /// Without this every already-deployed server would keep serving an installer with no digest
+    /// until someone happened to upload a new one, and the agent would refuse to verify — so the
+    /// fix would arrive for nobody who already had it working. It hashes the file the admin
+    /// deliberately put there, which is the same trust decision that stored it in the first place;
+    /// it is not a substitute for a digest computed at upload time, and later uploads get that.
+    /// </para>
+    /// </summary>
+    public async Task BackfillDigestAsync(CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            var info = GetInfo();
+            if (info is null || !string.IsNullOrWhiteSpace(info.Sha256)) return;
+
+            var path = Path.Combine(_root, info.FileName);
+            if (!File.Exists(path)) return;
+
+            await using var fs = File.OpenRead(path);
+            var digest = Convert.ToHexStringLower(await SHA256.HashDataAsync(fs, ct));
+            await WriteInfoAsync(info with { Sha256 = digest }, ct);
+            _log.LogInformation(
+                "Computed a SHA-256 for the existing agent installer {File}; update verification is now active.",
+                info.FileName);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Could not compute a digest for the stored agent installer.");
         }
         finally { _gate.Release(); }
     }

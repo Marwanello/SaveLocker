@@ -2405,10 +2405,12 @@ export interface components {
             uploadedAt: string;
             /** Format: int64 */
             sizeBytes: number;
+            sha256?: null | string;
         };
         AgentVersionInfo: {
             latestVersion: string;
             downloadUrl: string;
+            sha256?: null | string;
         };
         AuditEntryDto: {
             /** Format: uuid */

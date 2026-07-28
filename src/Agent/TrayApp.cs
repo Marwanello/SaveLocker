@@ -138,6 +138,20 @@ internal sealed class TrayContext : ApplicationContext
 
     private void RebuildEngine()
     {
+        // Retire the update channel along with the engine. Both the checker (which caches the old
+        // base URL and key) and any cached "an update is available" result belong to the server
+        // that answered — after a server change the menu item still offered server A's installer,
+        // and clicking it downloaded and ran a binary the currently-configured server never
+        // authorised. WA-05.
+        var previous = _updateChecker;
+        if (previous is not null && !ServerOrigin.Same(previous.ServerUrl, _config.ServerUrl))
+        {
+            _updateChecker = null;
+            previous.Dispose();
+            LastUpdateResult = null;
+            _ui.Post(_ => RebuildMenu(), null);
+        }
+
         var api = ApiClient.For(_config);
         // Windows toasts AND reports: the tray tells the user in front of it, health reporting tells
         // the console. One dashboard then shows the whole fleet, Deck and PC alike.
@@ -186,7 +200,7 @@ internal sealed class TrayContext : ApplicationContext
 
         _updateMenuItem = LastUpdateResult is UpdateResult.Available avail
             ? new ToolStripMenuItem($"Update to v{avail.Version}…", null,
-                (_, _) => FireAndForget(() => PromptAndUpdateAsync(avail.Version, avail.DownloadUrl)))
+                (_, _) => FireAndForget(() => PromptAndUpdateAsync(avail)))
               { Font = new Font(SystemFonts.MenuFont!, FontStyle.Bold) }
             : new ToolStripMenuItem("Check for Updates",  null,
                 (_, _) => FireAndForget(() => CheckForUpdateAsync(silent: false)));
@@ -341,7 +355,7 @@ internal sealed class TrayContext : ApplicationContext
     {
         UnhookBalloon();
         if (LastUpdateResult is UpdateResult.Available a)
-            FireAndForget(() => PromptAndUpdateAsync(a.Version, a.DownloadUrl));
+            FireAndForget(() => PromptAndUpdateAsync(a));
     }
 
     private void OnBalloonClosed(object? sender, EventArgs e) => UnhookBalloon();
@@ -352,8 +366,9 @@ internal sealed class TrayContext : ApplicationContext
         _icon.BalloonTipClosed  -= OnBalloonClosed;
     }
 
-    private async Task PromptAndUpdateAsync(string version, string downloadUrl)
+    private async Task PromptAndUpdateAsync(UpdateResult.Available update)
     {
+        var version = update.Version;
         var choice = MessageBox.Show(
             $"SaveLocker v{version} is available.\n\nUpdate now? The app will restart after installing.",
             "SaveLocker Update",
@@ -387,7 +402,21 @@ internal sealed class TrayContext : ApplicationContext
         {
             Notify($"Downloading SaveLocker v{version}…");
             _updateChecker ??= new UpdateChecker(_config);
-            var installerPath = await _updateChecker.DownloadInstallerAsync(version, downloadUrl);
+
+            // Re-checked at the moment of use, not only when the menu was built: the user can sit
+            // on this prompt while the server changes underneath them. The result is authorised by
+            // the server that answered, so it must not be launched against a different one. WA-05.
+            if (!ServerOrigin.Same(_updateChecker.ServerUrl, _config.ServerUrl))
+            {
+                LastUpdateResult = null;
+                _ui.Post(_ => RebuildMenu(), null);
+                Notify("The server changed while this update was pending. " +
+                       "Check for updates again to get one from the current server.");
+                return;
+            }
+
+            var installerPath = await _updateChecker.DownloadInstallerAsync(
+                version, update.DownloadUrl, update.Sha256);
 
             Process.Start(new ProcessStartInfo(installerPath)
             {

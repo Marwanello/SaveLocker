@@ -69,11 +69,17 @@ public record ServerSettingsDto(
     double AutoFetchHours = 0);
 
 /// <summary>Status of the agent installer binary hosted on this server.</summary>
+/// <param name="Sha256">
+/// Lowercase hex SHA-256 of the installer, computed as it was stored. Null only for an installer
+/// uploaded before digests existed — a value here is what lets an agent prove the bytes it
+/// downloaded are the bytes this server holds.
+/// </param>
 public record AgentInstallerStatus(
     string Version,
     string FileName,
     DateTime UploadedAt,
-    long SizeBytes);
+    long SizeBytes,
+    string? Sha256 = null);
 
 /// <summary>Set (or clear, when null/empty) the SteamGridDB API key from the dashboard.</summary>
 public record SetSteamGridDbKeyRequest(string? ApiKey);
@@ -405,7 +411,17 @@ public record AgentHealthDto(
 // ----- Agent update channel -----
 
 /// <summary>Latest available agent version info, served by the SaveLocker server.</summary>
-public record AgentVersionInfo(string LatestVersion, string DownloadUrl);
+/// <param name="Sha256">
+/// Lowercase hex SHA-256 the downloaded installer must match before the agent will execute it.
+/// <para>
+/// This is the <b>only</b> integrity control on the default configuration: SaveLocker ships no
+/// certificates and plain http is supported (Decisions.md), so the transport proves nothing about
+/// what arrived. Null when the server cannot supply one — an installer stored before digests
+/// existed, or a hand-configured <c>AgentUpdate:DownloadUrl</c> with no <c>AgentUpdate:Sha256</c>
+/// beside it. The agent decides what to do about null; for an off-origin download it refuses.
+/// </para>
+/// </param>
+public record AgentVersionInfo(string LatestVersion, string DownloadUrl, string? Sha256 = null);
 
 // ----- Per-game conflict policy -----
 
