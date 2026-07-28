@@ -40,7 +40,7 @@ stale output cannot mask a fix.
 | WA-06 | done — **weakest evidence, see below** | `980e26d` |
 | WA-07 | done | `ef4c621` |
 | WA-08 | done | `c27197e` |
-| WA-09 | done — **1 of 6 checks discriminates, see below** | `df8b568` |
+| WA-09 | done — **1 of 6 checks discriminates, see below** | `4a3ac4c` |
 | WA-10 | **not started — resume here** | — |
 | WA-11 | not started | — |
 | WA-12 | not started | — |
