@@ -63,6 +63,20 @@ public static class GameActivity
         ". Restoring saves under a live game loses them when it writes at exit. " +
         "Close the game and pull again.";
 
+    /// <summary>
+    /// The process name a launcher path implies — <c>D:\Games\Foo\foo.exe</c> becomes <c>foo</c>.
+    /// Null when there is nothing usable to derive. Shared by both scanners so a shortcut produces
+    /// the same answer on either OS.
+    /// </summary>
+    public static string? ProcessNameFromExe(string? exePath)
+    {
+        if (string.IsNullOrWhiteSpace(exePath)) return null;
+        string name;
+        try { name = Path.GetFileNameWithoutExtension(exePath.Trim().Trim('"')); }
+        catch { return null; } // invalid path characters — not something to guess at
+        return string.IsNullOrWhiteSpace(name) ? null : name;
+    }
+
     private static string StripExe(string name) =>
         name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? name[..^4] : name;
 }

@@ -116,6 +116,19 @@ session can judge an edge case, not to reopen the choice.
   and acquisition is cancellable so a retired engine does not sit waiting.
   <br>`SAVELOCKER_SYNC_LOCK_SECONDS` shortens the wait for tests only — sibling of
   `SAVELOCKER_LEASE_RENEW_SECONDS`; both are listed in Gotchas.md.
+- **Process names are derived where they are known, and admitted as missing where they are not**
+  (WA-08, 2026-07-27). A game enrolled through the UI never received `ProcessNames`, so
+  `ProcessWatcher` excluded it outright — no lease, no push on quit, and (since WA-01) no refusal to
+  overwrite saves while it is running. Only the CLI's `--proc` populated it. A **non-Steam shortcut**
+  is the one source where the answer is known rather than guessed: Steam records the exact
+  executable, and `GameActivity.ProcessNameFromExe` reduces it to what `Process.ProcessName`
+  reports. An installed Steam game or a save-root match gets **null** — a folder name is not an
+  executable name, and guessing would be worse than admitting ignorance, because a wrong name is
+  indistinguishable from a game that is never running.
+  <br>Where it is null the UI says "Launch/exit sync not configured" and offers to set it, rather
+  than implying automatic sync works. The same normalisation runs at every entry point (local API,
+  CLI `--proc`), so `C:\Games\Foo\foo.exe` and `foo.exe` both persist as `foo` — stored verbatim,
+  neither would ever match.
 - **Stack: single-language .NET.** Agent = C#/WinForms (Windows), C#/headless (Linux); Server =
   ASP.NET Core in Docker on unRAID.
 - **Runtime: .NET 10 (LTS)**, locked 2026-07-13. .NET 9 is STS, EOL 2026-11-10; .NET 10 is LTS to

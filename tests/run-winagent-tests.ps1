@@ -56,6 +56,13 @@
 #          than one normal operation: the settle gate alone may hold it for 120 s, so a healthy
 #          exit-push routinely outlasted the wait and the other process barged in.
 #
+#   WA-08. Enrollment produces usable lifecycle metadata, or says it cannot.
+#          A game enrolled through the UI never received ProcessNames, so ProcessWatcher excluded it
+#          outright - no lease, no push on quit, and (since WA-01) no refusal to overwrite saves
+#          while it is running. The scanner knew the shortcut's executable and threw it away. Where
+#          discovery genuinely cannot know - an installed Steam game, a save-root match - the UI now
+#          says "launch/exit sync not configured" instead of implying it works.
+#
 # Owns its server on :5189 and its state under .verify-winagent, so it never collides with a real
 # agent, a dev server, or another suite.
 # Usage: .\tests\run-winagent-tests.ps1
@@ -730,6 +737,78 @@ try {
     $after = Agent pull $lockGame --force --config $lockCfg 2>&1 | Out-String
     $restored = (Get-Content (Join-Path $lockSave "s.dat") -Raw).Trim()
     Check "WA-07 the pull succeeds once the lock is released" ($restored -eq "ORIGINAL")
+
+    # =================================================================================
+    # WA-08. ENROLLMENT PRODUCES USABLE LIFECYCLE METADATA, OR SAYS IT CANNOT
+    # =================================================================================
+    # A game enrolled through the UI never received ProcessNames, so ProcessWatcher excluded it
+    # outright: no lease, no push when you quit, and - since WA-01 - no refusal to overwrite saves
+    # while it is running. The scanner knew the shortcut's executable and threw it away.
+    #
+    # Driven through the local API, which is what the UI actually calls.
+    $enrCfg = Join-Path $scratch "enroll_proc.json"
+    @{ ServerUrl = $server; Games = @() } | ConvertTo-Json | Set-Content -Path $enrCfg -Encoding utf8
+    Agent register --name "WinEnr-$stamp" --config $enrCfg | Out-Null
+
+    # Added BEFORE the daemon starts: a running daemon holds the game list in memory and does not
+    # re-read config.json, so a CLI write behind its back is invisible to it.
+    $enrGame = "EnrGame-$stamp"
+    $enrSave = Join-Path $scratch "enr_save"; New-Item -ItemType Directory -Force $enrSave | Out-Null
+    "s" | Set-Content (Join-Path $enrSave "s.dat") -Encoding utf8
+    Agent add-game --name $enrGame --dir $enrSave --config $enrCfg | Out-Null
+
+    $enrPort = 5194
+    $enrBase = "http://localhost:$enrPort"
+    $enrDaemon = Start-Process -FilePath $dotnet `
+        -ArgumentList @($linuxDll, "daemon", "--port", "$enrPort", "--config", $enrCfg) `
+        -PassThru -WindowStyle Hidden
+    try {
+        $enrToken = $null
+        foreach ($i in 1..40) {
+            Start-Sleep -Milliseconds 700
+            $tp = Join-Path $scratch "api-token"
+            if (Test-Path $tp) { $enrToken = (Get-Content $tp -Raw).Trim() }
+            try { Invoke-RestMethod "$enrBase/api/state" -Headers @{ "X-SaveLocker-Token" = $enrToken } -TimeoutSec 3 | Out-Null; break } catch { }
+        }
+        $H = @{ "X-SaveLocker-Token" = $enrToken }
+
+        # A game with no process mapping - the state every GUI enrollment used to land in. The API
+        # must report it as such rather than let the UI imply sync is working.
+        $glist = Invoke-RestMethod "$enrBase/api/games" -Headers $H
+        $row = $glist | Where-Object { $_.name -eq $enrGame }
+        Check "WA-08 the local API exposes processNames"        ($null -ne $row -and $null -ne $row.processNames)
+        Check "WA-08 an unmapped game reports NO process names" ($row.processNames.Count -eq 0)
+
+        # The user supplies it, the way the Settings row's "Set game process" does.
+        Invoke-RestMethod "$enrBase/api/games/$($row.id)/processes" -Method Post -Headers $H `
+            -Body (@{ processNames = @("MyGame.exe", " other.exe ") } | ConvertTo-Json) `
+            -ContentType "application/json" | Out-Null
+
+        $glist2 = Invoke-RestMethod "$enrBase/api/games" -Headers $H
+        $row2 = $glist2 | Where-Object { $_.name -eq $enrGame }
+        Check "WA-08 process names are accepted"        ($row2.processNames.Count -eq 2)
+        Check "WA-08 the .exe extension is stripped"    ($row2.processNames -contains "MyGame")
+        Check "WA-08 surrounding whitespace is trimmed" ($row2.processNames -contains "other")
+    }
+    finally { Stop-Process -Id $enrDaemon.Id -Force -ErrorAction SilentlyContinue }
+
+    # It must SURVIVE A RESTART - the mapping lives in config.json, and a value the watcher rebuilds
+    # from on every start is worthless if it only existed in memory.
+    $persisted = (Get-Content $enrCfg -Raw | ConvertFrom-Json).Games |
+                 Where-Object { $_.Name -eq $enrGame }
+    Check "WA-08 the mapping is persisted to config.json" ($persisted.ProcessNames -contains "MyGame")
+
+    $listAfter = Agent list --config $enrCfg | Out-String
+    Check "WA-08 the watcher map is rebuilt after restart" ($listAfter -match "procs=MyGame")
+
+    # And the derivation the scanner relies on: a shortcut's exe path becomes a process name.
+    # Asserted through the CLI, since a real shortcuts.vdf is not available in this harness.
+    $derCfg = Join-Path $scratch "derive.json"
+    @{ ServerUrl = $server; Games = @() } | ConvertTo-Json | Set-Content -Path $derCfg -Encoding utf8
+    Agent register --name "WinDer-$stamp" --config $derCfg | Out-Null
+    Agent add-game --name "DerGame-$stamp" --dir $enrSave --proc "C:\Games\Foo\foo.exe" --config $derCfg | Out-Null
+    $derList = Agent list --config $derCfg | Out-String
+    Check "WA-08 an executable path is reduced to a process name" ($derList -match "procs=foo")
 }
 finally {
     Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue

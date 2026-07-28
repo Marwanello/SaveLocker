@@ -77,7 +77,11 @@ public sealed class GameScanner : IGameScanner
                 s.AppName, save, ScanSource.SteamShortcut,
                 HasSteamCloud: false, ManifestKey: save is null ? null : s.AppName,
                 InstallDir: NullIfMissing(s.StartDir),
-                SteamAppId: s.AppId));
+                SteamAppId: s.AppId,
+                // Steam recorded the exact executable the user picked, so this is the one source
+                // where the process name is known rather than guessed. It was being discarded,
+                // which is why every GUI-enrolled game had an empty watcher mapping. WA-08.
+                SuggestedProcessName: GameActivity.ProcessNameFromExe(s.Exe)));
         }
         return results;
     }

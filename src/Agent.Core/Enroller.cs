@@ -56,6 +56,10 @@ public static class Enroller
                 ManifestKey = c.ManifestKey,
                 SaveDirectory = check.Canonical!,
                 SteamAppId = c.SteamAppId,
+                // Without this the Windows ProcessWatcher excludes the game outright, so lease,
+                // exit-push and the running-game pull refusal never run for anything enrolled
+                // through the UI. Only the CLI's --proc used to populate it. WA-08.
+                ProcessNames = c.SuggestedProcessName is { } proc ? new List<string> { proc } : new(),
             });
 
             // Report the chosen path to the server now, so it is authoritative from the start. The

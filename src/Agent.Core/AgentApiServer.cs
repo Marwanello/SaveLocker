@@ -283,8 +283,32 @@ public sealed class AgentApiServer : IDisposable
         });
 
         app.MapGet("/api/games", () => _config.Games
-            .Select(g => new TrackedGameDto(g.GameId, g.Name, g.SaveDirectory))
+            .Select(g => new TrackedGameDto(
+                g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray()))
             .ToArray()).Produces<TrackedGameDto[]>();
+
+        // Editing the process names is the other half of WA-08: discovery can only know them for a
+        // non-Steam shortcut, so for everything else the user needs a way to supply them — and the
+        // UI needs to be able to show, honestly, that lifecycle sync is unconfigured until they do.
+        app.MapPost("/api/games/{id:guid}/processes", (Guid id, ProcessNamesRequest body) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.Ok(new OkResponse());
+
+            // Accepts "foo.exe", "foo", or a comma-separated list, and normalises: the watcher
+            // matches on Process.ProcessName, which never carries the extension.
+            game.ProcessNames = (body.ProcessNames ?? Array.Empty<string>())
+                .SelectMany(p => p.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                .Select(p => GameActivity.ProcessNameFromExe(p))
+                .Where(p => p is not null)
+                .Select(p => p!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            _config.Save();
+            _onGamesChanged?.Invoke();
+            return TypedResults.Ok(new OkResponse());
+        }).Produces<OkResponse>();
 
         // Untracks the game on THIS machine only. It stays on the server for the rest of the fleet;
         // the opt-out is what stops the poller adopting it straight back.
@@ -486,7 +510,8 @@ public sealed class AgentApiServer : IDisposable
             candidate.Source.ToString(),
             candidate.HasSteamCloud,
             candidate.SuggestedSaveDir ?? "",
-            PrefixStart(candidate.PrefixPath))).ToArray();
+            PrefixStart(candidate.PrefixPath),
+            candidate.SuggestedProcessName)).ToArray();
 
     /// <summary>
     /// Where the path browser should open when a candidate has no save-folder guess: the deepest
@@ -564,8 +589,22 @@ public sealed record AgentStateDto(
     LeaseWarningDto[] LeaseWarnings,
     int SettleQuietSeconds,
     string Platform);
-public sealed record CandidateDto(int Id, string Name, string Source, bool HasSteamCloud, string Path, string? PrefixPath);
-public sealed record TrackedGameDto(Guid Id, string Name, string Path);
+/// <param name="ProcessName">
+/// The process discovery is confident means this game is running, or null when it cannot know —
+/// which is every source but a non-Steam shortcut. Null tells the UI that enrolling this candidate
+/// leaves launch/exit sync unconfigured, so it can say so instead of implying otherwise. WA-08.
+/// </param>
+public sealed record CandidateDto(
+    int Id, string Name, string Source, bool HasSteamCloud, string Path, string? PrefixPath,
+    string? ProcessName);
+/// <param name="ProcessNames">
+/// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
+/// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the
+/// UI must say so rather than imply automatic sync is working. WA-08.
+/// </param>
+public sealed record TrackedGameDto(Guid Id, string Name, string Path, string[] ProcessNames);
+
+public sealed record ProcessNamesRequest(string[]? ProcessNames);
 public sealed record AgentConfigDto(
     string ServerUrl,
     string MachineName,

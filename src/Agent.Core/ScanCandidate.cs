@@ -30,4 +30,16 @@ public sealed record ScanCandidate(
     /// Windows). Lets the path browser open inside the prefix instead of at $HOME when the
     /// save-folder guess is null — the normal case for a game absent from the manifest.
     /// </summary>
-    string? PrefixPath = null);
+    string? PrefixPath = null,
+    /// <summary>
+    /// The process name (no <c>.exe</c>) that means this game is running, when discovery can know
+    /// it unambiguously — which in practice means a non-Steam shortcut, where Steam records the
+    /// exact executable the user chose. Null for an installed Steam game or a save-root match: the
+    /// folder name is not an executable name and guessing would be worse than admitting ignorance.
+    /// <para>
+    /// On Windows this is what drives the whole process lifecycle — lease, exit-push, and the
+    /// running-game pull refusal (WA-01). A game enrolled without it is not merely missing a
+    /// nicety; <see cref="ProcessWatcher"/> excludes it entirely. WA-08.
+    /// </para>
+    /// </summary>
+    string? SuggestedProcessName = null);

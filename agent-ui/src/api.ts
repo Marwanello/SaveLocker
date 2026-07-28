@@ -52,6 +52,10 @@ export const api = {
   // or without it.
   setGameFolder: (id: string, path: string, confirm = false) =>
     post(`/api/games/${id}/folder`, { path, confirm }),
+  // Process names that mean the game is running. Empty means the Windows agent cannot detect it at
+  // all — no lease, no exit push, no refusal to pull under a live game.
+  setGameProcesses: (id: string, processNames: string[]) =>
+    post(`/api/games/${id}/processes`, { processNames }),
   browse: (path?: string) =>
     req<BrowseListing>('/api/browse' + (path ? `?path=${encodeURIComponent(path)}` : '')),
   suggestedPath: (id: string) => req<{ path: string | null }>(`/api/games/${id}/suggested-path`),

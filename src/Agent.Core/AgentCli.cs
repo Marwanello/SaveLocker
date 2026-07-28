@@ -234,8 +234,15 @@ public static class AgentCli
                     if (opts.TryGetValue("appid", out var appId) && !string.IsNullOrWhiteSpace(appId))
                         tracked.SteamAppId = appId.Trim();
                     if (opts.TryGetValue("proc", out var proc) && !string.IsNullOrWhiteSpace(proc))
+                        // Normalised the same way the local API does: the watcher matches on
+                        // Process.ProcessName, which is neither a path nor carries an extension, so
+                        // "C:\Games\Foo\foo.exe" stored verbatim would simply never match. WA-08.
                         tracked.ProcessNames = proc
                             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                            .Select(GameActivity.ProcessNameFromExe)
+                            .Where(p => p is not null)
+                            .Select(p => p!)
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
                             .ToList();
                     // Clears any per-machine opt-out as well as adding the entry — explicitly adding
                     // a game back is the one action that means "track this here again".

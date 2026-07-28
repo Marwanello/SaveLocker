@@ -36,7 +36,11 @@ public sealed class LinuxGameScanner : IGameScanner
                     ManifestKey: save is null ? null : s.AppName,
                     InstallDir: s.StartDir,
                     SteamAppId: s.AppId,
-                    PrefixPath: prefix));
+                    PrefixPath: prefix,
+                    // Carried for parity, and because config is shared between hosts — but Linux
+                    // drives lifecycle from the launch wrapper, not from process polling, so
+                    // nothing here depends on it (Decisions.md §3).
+                    SuggestedProcessName: GameActivity.ProcessNameFromExe(s.Exe)));
             }
         }
 
