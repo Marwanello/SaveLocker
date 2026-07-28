@@ -109,9 +109,21 @@ export function SettingsView({ state, onSaved }: Props) {
     }
   }
 
+  // The toggle shows what the machine will actually do at login, not what was clicked. The registry
+  // write can be refused outright (group policy, security software) or written and then reverted,
+  // and the box used to stay ticked through both. WA-10.
   const toggleStartup = async (val: boolean) => {
     setStartWithWindows(val)
-    await api.saveConfig({ startWithWindows: val }).catch(console.error)
+    try {
+      const res = await api.saveConfig({ startWithWindows: val })
+      setStartWithWindows(res.startWithWindows)
+      setStatus(res.startWithWindows === val
+        ? ''
+        : 'Windows did not keep that startup setting.')
+    } catch (e) {
+      setStartWithWindows(!val)
+      setStatus((e as Error).message)
+    }
   }
 
   const toggleGame = (id: string) => {

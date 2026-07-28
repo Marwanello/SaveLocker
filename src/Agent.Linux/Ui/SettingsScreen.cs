@@ -109,15 +109,15 @@ sealed class SettingsScreen
         var was = _autoStartOn;
         if (Widgets.Toggle("Start SaveLocker on boot", ref _autoStartOn) && was != _autoStartOn)
         {
-            // Reflect what the platform actually did, not what was asked: SetEnabled returns false
-            // when systemd --user is unavailable, and a toggle that lies is worse than one that
-            // refuses.
-            var applied = false;
-            try { applied = _autoStart.SetEnabled(_autoStartOn); } catch { /* reported below */ }
-            if (!applied)
+            // Reflect what the platform actually did, not what was asked: SetEnabled fails when
+            // systemd --user is unavailable, and a toggle that lies is worse than one that refuses.
+            var applied = AutoStartResult.Fail("Could not change auto-start.");
+            try { applied = _autoStart.SetEnabled(_autoStartOn); }
+            catch (Exception ex) { applied = AutoStartResult.Fail(ex.Message); }
+            if (!applied.Ok)
             {
                 _autoStartOn = was;
-                _status = "Could not change auto-start (is systemd --user available?).";
+                _status = applied.Error ?? "Could not change auto-start.";
             }
             else
             {

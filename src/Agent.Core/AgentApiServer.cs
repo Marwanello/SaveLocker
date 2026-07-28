@@ -199,6 +199,18 @@ public sealed class AgentApiServer : IDisposable
             // of that here without telling the host leaves the daemon split-brained: the poller
             // rebuilds its client every tick and talks to the NEW server while watcher pushes and
             // queue drains keep hitting the OLD one. Track the change, then hand it back below.
+            // Applied FIRST, and checked. It used to run last and its result was discarded, so a
+            // registry write refused by group policy still answered { ok: true } and the UI drew a
+            // ticked box for a machine that would not start the agent at login. Doing it here also
+            // means a refusal costs nothing: no setting has been mutated yet. WA-10.
+            if (body.StartWithWindows.HasValue)
+            {
+                var auto = _autoStart.SetEnabled(body.StartWithWindows.Value);
+                if (!auto.Ok)
+                    return TypedResults.BadRequest(new ErrorResponse(
+                        auto.Error ?? "Could not change the startup setting."));
+            }
+
             var before = (_config.ServerUrl, _config.MachineName);
             // Everything needed to undo a failed transition. Captured BEFORE any mutation, because
             // the point is that a rejected request leaves a config the agent can still start from.
@@ -243,12 +255,11 @@ public sealed class AgentApiServer : IDisposable
                     "Could not apply the change; the previous settings were kept. " + ex.Message));
             }
 
-            if (body.StartWithWindows.HasValue)
-                _autoStart.SetEnabled(body.StartWithWindows.Value);
-
             // The UI has to know the machine was un-enrolled, or the user is left looking at a
-            // "not connected" agent with no idea why their key stopped working.
-            return TypedResults.Ok(new ConfigChangeResponse(identityCleared));
+            // "not connected" agent with no idea why their key stopped working. The effective
+            // auto-start state is re-read rather than echoed back, so the toggle renders what the
+            // machine will actually do — including a change that was reverted underneath us.
+            return TypedResults.Ok(new ConfigChangeResponse(identityCleared, _autoStart.IsEnabled()));
         }).Produces<ConfigChangeResponse>();
 
         app.MapPost("/api/register", async Task<Results<Ok<RegisterResponse>, InternalServerError<ErrorResponse>>>
@@ -617,7 +628,7 @@ public sealed record EnrollRequest(int[]? Ids);
 /// True when the server URL moved to a different origin, so this machine's key, id and TLS pin were
 /// dropped and it must register or enroll again. See <see cref="ServerOrigin"/>.
 /// </param>
-public sealed record ConfigChangeResponse(bool IdentityCleared);
+public sealed record ConfigChangeResponse(bool IdentityCleared, bool StartWithWindows);
 
 public sealed record ConfigRequest(
     string? ServerUrl,

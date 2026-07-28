@@ -25,7 +25,7 @@ public sealed class SystemdAutoStart : IAutoStart
         return exit == 0 && stdout.Trim() == "enabled";
     }
 
-    public bool SetEnabled(bool enabled)
+    public AutoStartResult SetEnabled(bool enabled)
     {
         try
         {
@@ -36,8 +36,11 @@ public sealed class SystemdAutoStart : IAutoStart
                 Run("systemctl", "--user", "daemon-reload");
                 var (exit, _, err) = Run("systemctl", "--user", "enable", "--now", Unit);
                 if (exit != 0)
+                {
                     AgentLogger.Log($"systemctl --user enable failed (exit {exit}): {err.Trim()}");
-                return exit == 0;
+                    return AutoStartResult.Fail(Reason("enable", exit, err));
+                }
+                return AutoStartResult.Success();
             }
 
             // The exit code is the answer, not a formality. Disabling fails for real — no user bus
@@ -46,14 +49,33 @@ public sealed class SystemdAutoStart : IAutoStart
             // service as disabled while it was still enabled and still running.
             var (disableExit, _, disableErr) = Run("systemctl", "--user", "disable", "--now", Unit);
             if (disableExit != 0)
+            {
                 AgentLogger.Log($"systemctl --user disable failed (exit {disableExit}): {disableErr.Trim()}");
-            return disableExit == 0;
+                return AutoStartResult.Fail(Reason("disable", disableExit, disableErr));
+            }
+            return AutoStartResult.Success();
         }
         catch (Exception ex)
         {
             AgentLogger.LogException("SystemdAutoStart.SetEnabled", ex);
-            return false;
+            return AutoStartResult.Fail("Could not change the startup setting: " + ex.Message);
         }
+    }
+
+    /// <summary>
+    /// A reason the user can act on. Exit -1 is <see cref="Run"/>'s "could not even start
+    /// systemctl", which on a Deck reached over SSH means no user bus rather than a broken unit —
+    /// a distinction worth making, because the two have completely different fixes.
+    /// </summary>
+    private static string Reason(string verb, int exit, string stderr)
+    {
+        var detail = stderr.Trim();
+        if (exit == -1)
+            return $"Could not run systemctl to {verb} the service. If this is a remote shell, " +
+                   "there may be no user session bus — try from a desktop session.";
+        return detail.Length > 0
+            ? $"systemctl could not {verb} the service: {detail}"
+            : $"systemctl could not {verb} the service (exit {exit}).";
     }
 
     private static string UnitFile()

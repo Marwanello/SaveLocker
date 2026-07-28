@@ -150,8 +150,27 @@ session can judge an edge case, not to reopen the choice.
   throw "Collection was modified" out of a UI or render thread enumerating it.
   <br>`SAVELOCKER_TRAY_PORT` was added under the rule below so a harness can drive a real tray; it
   scopes the single-instance mutex too, so a test tray and the installed one coexist.
+- **A platform toggle reports the effective state, not the requested one** (WA-10, 2026-07-28).
+  "Start with Windows" had two independent ways to lie. `/api/config` discarded
+  `IAutoStart.SetEnabled`'s result and always answered ok, so a registry write refused by group
+  policy still drew a ticked box; and `IsEnabled` accepted **any** non-empty Run value, so an entry
+  left by an install that has moved or been uninstalled read as enabled while Windows launched
+  nothing at login.
+  <br>Now: `IsEnabled` is true only when the Run entry resolves to **this** executable (canonical
+  path, must exist). `SetEnabled` returns an `AutoStartResult` carrying a reason a person can act on,
+  and **reads the entry back** — `SetValue` not throwing is not the same as the value being there,
+  since policy and endpoint-protection products both virtualise and revert this key. The API applies
+  the toggle **first**, so a refusal costs nothing and returns 400 with the reason, and it echoes the
+  re-read effective state so the checkbox can correct itself.
+  <br>The same contract covers Linux: `SystemdAutoStart` distinguishes "systemctl failed" from
+  "could not run systemctl at all", which on a Deck reached over SSH means no user session bus — a
+  different problem with a different fix.
+  <br>`SAVELOCKER_RUNKEY_SUBPATH` (test-only, below) redirects the Run key so the access-denied
+  branch can be tested with a real Deny ACE. Applying one to the real
+  `…\CurrentVersion\Run` of a working machine to prove a point is not an acceptable test.
 - **Test-only environment variables stay, and stay unadvertised** (2026-07-28, maintainer decision).
-  `SAVELOCKER_LEASE_RENEW_SECONDS`, `SAVELOCKER_SYNC_LOCK_SECONDS` and `SAVELOCKER_TRAY_PORT` are kept — they are the only
+  `SAVELOCKER_LEASE_RENEW_SECONDS`, `SAVELOCKER_SYNC_LOCK_SECONDS`, `SAVELOCKER_TRAY_PORT` and
+  `SAVELOCKER_RUNKEY_SUBPATH` are kept — they are the only
   way to observe a 3-hour renewal interval or a ~13-minute lock wait inside a test — but they are
   **not** promoted to `AgentConfig` settings and are **not** documented anywhere a user reads. They
   live in `Gotchas.md` (this vault) only; `web/src/help/cli-reference.md` and the release notes must

@@ -811,6 +811,7 @@ export interface components {
         };
         ConfigChangeResponse: {
             identityCleared: boolean;
+            startWithWindows: boolean;
         };
         ConfigRequest: {
             serverUrl: null | string;

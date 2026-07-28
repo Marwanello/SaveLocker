@@ -71,6 +71,14 @@
 #          port and asserts the owner; see the task file for what the stress checks do and do not
 #          prove.
 #
+#   WA-10. The startup toggle reports what Windows will actually do.
+#          /api/config discarded IAutoStart.SetEnabled's result and always answered ok, so a write
+#          refused by group policy still drew a ticked box. And IsEnabled accepted any non-empty
+#          value, so an entry left by an install that has moved or been removed read as "enabled"
+#          while Windows launched nothing at login. The Run key is redirected to a throwaway
+#          location here (SAVELOCKER_RUNKEY_SUBPATH) so the access-denied branch can be exercised
+#          without applying a Deny ACE to the real one.
+#
 # Owns its server on :5189 (and :5190-:5196 for daemons, stub servers and the WA-09 tray) and its
 # state under .verify-winagent, so it never collides with a real agent, a dev server, or another
 # suite.
@@ -944,6 +952,112 @@ try {
             if ($trayFake) { Stop-FakeGame $trayFake }
             Stop-Process -Id $tray.Id -Force -ErrorAction SilentlyContinue
             Remove-Item Env:SAVELOCKER_TRAY_PORT -ErrorAction SilentlyContinue
+        }
+    }
+
+    # =================================================================================
+    # WA-10. THE STARTUP TOGGLE REPORTS WHAT WINDOWS WILL ACTUALLY DO
+    # =================================================================================
+    # Two separate lies. /api/config discarded SetEnabled's result and always answered ok, so a
+    # registry write refused by group policy still drew a ticked box. And IsEnabled accepted ANY
+    # non-empty value, so an entry left behind by an install that has moved or been removed read as
+    # "enabled" while Windows launched nothing at login.
+    #
+    # Driven through a real tray, because the HKCU Run key is only touched by the Windows AutoStart
+    # implementation. The key itself is redirected to a throwaway location: the access-denied case
+    # needs a Deny ACE, and applying one to the real Run key of a working machine would be a
+    # destructive thing to do to prove a point.
+    if (-not [Environment]::UserInteractive) {
+        Write-Host "SKIP: WA-10 needs an interactive desktop session for the tray."
+    } else {
+        $asPort = 5197
+        $asBase = "http://localhost:$asPort"
+        $asCfg  = Join-Path $scratch "autostart.json"
+        @{ ServerUrl = $server; Games = @() } | ConvertTo-Json | Set-Content -Path $asCfg -Encoding utf8
+        Agent register --name "WinAuto-$stamp" --config $asCfg | Out-Null
+
+        $asSub    = "Software\SaveLockerTest-$stamp\Run"
+        $asKeyPs  = "HKCU:\$asSub"
+        $env:SAVELOCKER_TRAY_PORT       = "$asPort"
+        $env:SAVELOCKER_RUNKEY_SUBPATH  = $asSub
+        $asTray = Start-Process -FilePath $dotnet -ArgumentList @($dll, "--config", $asCfg) `
+                  -PassThru -WindowStyle Hidden
+        try {
+            $asToken = $null
+            foreach ($i in 1..40) {
+                Start-Sleep -Milliseconds 700
+                $tp = Join-Path $scratch "api-token"
+                if (Test-Path $tp) { $asToken = (Get-Content $tp -Raw).Trim() }
+                try { Invoke-RestMethod "$asBase/api/state" -Headers @{ "X-SaveLocker-Token" = $asToken } -TimeoutSec 3 | Out-Null; break } catch { }
+            }
+            $AH = @{ "X-SaveLocker-Token" = $asToken }
+            function Get-AutoState { (Invoke-RestMethod "$asBase/api/state" -Headers $AH -TimeoutSec 5).startWithWindows }
+            function Set-AutoState($v) {
+                Invoke-RestMethod "$asBase/api/config" -Method Post -Headers $AH -TimeoutSec 10 `
+                    -Body (@{ startWithWindows = $v } | ConvertTo-Json) -ContentType "application/json"
+            }
+
+            Check "WA-10 a machine with no Run entry reports disabled" (-not (Get-AutoState))
+
+            $onResp = Set-AutoState $true
+            Check "WA-10 enabling reports the effective state" ($onResp.startWithWindows -eq $true)
+            Check "WA-10 enabling reports enabled"             (Get-AutoState)
+
+            $entry = (Get-ItemProperty -Path $asKeyPs -Name "SaveLocker" -ErrorAction SilentlyContinue).SaveLocker
+            Check "WA-10 a Run entry was written"          (-not [string]::IsNullOrWhiteSpace($entry))
+            Check "WA-10 it points at an existing exe"     (Test-Path ($entry -replace '^"|"$',''))
+
+            # THE honesty case: the entry survives an install that moved or was uninstalled. Windows
+            # would launch nothing; the toggle used to stay ticked regardless.
+            Set-ItemProperty -Path $asKeyPs -Name "SaveLocker" `
+                -Value "`"C:\NoSuchDir-$stamp\SaveLocker.Agent.exe`""
+            Check "WA-10 a stale Run entry is NOT reported as enabled" (-not (Get-AutoState))
+
+            # And one pointing at a real executable that is not this agent.
+            Set-ItemProperty -Path $asKeyPs -Name "SaveLocker" -Value "`"$fakeExe`""
+            Check "WA-10 an entry for a DIFFERENT exe is not reported as enabled" (-not (Get-AutoState))
+
+            Set-AutoState $true | Out-Null
+            Check "WA-10 re-enabling repairs the entry" (Get-AutoState)
+
+            $offResp = Set-AutoState $false
+            Check "WA-10 disabling reports the effective state" ($offResp.startWithWindows -eq $false)
+            Check "WA-10 disabling removes the Run entry" (
+                $null -eq (Get-ItemProperty -Path $asKeyPs -Name "SaveLocker" -ErrorAction SilentlyContinue))
+
+            # The refused write. A Deny ACE on the throwaway key is what group policy or security
+            # software does to the real one.
+            $acl  = Get-Acl $asKeyPs
+            $me   = [Security.Principal.WindowsIdentity]::GetCurrent().User
+            $deny = New-Object Security.AccessControl.RegistryAccessRule(
+                $me, "SetValue,CreateSubKey", "ContainerInherit", "None", "Deny")
+            $acl.AddAccessRule($deny)
+            Set-Acl -Path $asKeyPs -AclObject $acl
+            try {
+                $refused = $false; $message = ""
+                try { Set-AutoState $true | Out-Null }
+                catch {
+                    $refused = $true
+                    $message = "$_"
+                    try {
+                        $rs = $_.Exception.Response.GetResponseStream()
+                        $message = (New-Object IO.StreamReader($rs)).ReadToEnd()
+                    } catch { }
+                }
+                Check "WA-10 a refused registry write is reported as a failure" $refused
+                Check "WA-10 the failure explains itself" ($message -match "(?i)denied|policy|startup")
+                Check "WA-10 the toggle stays OFF after a refused write" (-not (Get-AutoState))
+            }
+            finally {
+                $acl2 = Get-Acl $asKeyPs
+                $acl2.RemoveAccessRuleAll($deny)
+                Set-Acl -Path $asKeyPs -AclObject $acl2
+            }
+        }
+        finally {
+            Stop-Process -Id $asTray.Id -Force -ErrorAction SilentlyContinue
+            Remove-Item Env:SAVELOCKER_TRAY_PORT, Env:SAVELOCKER_RUNKEY_SUBPATH -ErrorAction SilentlyContinue
+            Remove-Item "HKCU:\Software\SaveLockerTest-$stamp" -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 }

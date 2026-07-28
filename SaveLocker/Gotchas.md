@@ -57,6 +57,11 @@ These exist because the production values are far too slow to observe in a suite
   the only one that drives a **real tray**, and it must not collide with the installed agent. It
   scopes the single-instance mutex to match (`SaveLocker.Agent.<port>`), so the harness tray and a
   running installed tray coexist; unset, both the port and the mutex name are exactly as shipped.
+- **`SAVELOCKER_RUNKEY_SUBPATH`** — moves the HKCU "Start with Windows" subkey (Windows only).
+  WA-10's access-denied case needs a **Deny ACE**, and putting one on the real
+  `Software\Microsoft\Windows\CurrentVersion\Run` would break auto-start for everything on the box if
+  the suite died before its cleanup. The harness points the agent at a throwaway key instead and
+  deletes it afterwards.
 
 Set them per-process and clear them afterwards — leaving either set in a shell will make later runs
 behave in ways that look like bugs.

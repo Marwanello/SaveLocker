@@ -42,7 +42,10 @@ export const api = {
     machineName?: string
     startWithWindows?: boolean
     settleQuietSeconds?: number
-  }) => post<{ identityCleared: boolean }>('/api/config', body),
+    // startWithWindows is the EFFECTIVE state read back from the platform, not what was asked for.
+    // A refusal comes back as a failed request; this covers the quieter case where the entry was
+    // written and then reverted underneath us.
+  }) => post<{ identityCleared: boolean; startWithWindows: boolean }>('/api/config', body),
   register: (adminPassword?: string) =>
     post<{ machineName: string }>('/api/register', { adminPassword }),
   games: () => req<TrackedGame[]>('/api/games'),

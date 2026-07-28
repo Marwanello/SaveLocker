@@ -28,7 +28,7 @@ stale output cannot mask a fix.
 
 ## Progress (updated 2026-07-27)
 
-**9 of 12 findings fixed on `linux-agent-bugbounty`, one commit each. Not pushed.**
+**10 of 12 findings fixed on `linux-agent-bugbounty`, one commit each. Not pushed.**
 
 | ID | State | Commit |
 |---|---|---|
@@ -41,13 +41,13 @@ stale output cannot mask a fix.
 | WA-07 | done | `ef4c621` |
 | WA-08 | done | `c27197e` |
 | WA-09 | done — **1 of 6 checks discriminates, see below** | `4a3ac4c` |
-| WA-10 | **not started — resume here** | — |
-| WA-11 | not started | — |
+| WA-10 | done — 6 of 13 checks discriminate | (this commit) |
+| WA-11 | **not started — resume here** | — |
 | WA-12 | not started | — |
 
 ### Harness
 
-`tests/run-winagent-tests.ps1` — **88 checks**, own server on :5189 (+ :5190–:5196), state in
+`tests/run-winagent-tests.ps1` — **101 checks**, own server on :5189 (+ :5190–:5197), state in
 `.verify-winagent`.
 Each finding's block is verified to fail against pre-fix code by `git stash push -- src/`, rebuild,
 re-run. Where that check is weaker than "N of N fail", the commit message says so explicitly.
@@ -56,6 +56,14 @@ re-run. Where that check is weaker than "N of N fail", the commit message says s
 
 Read these before trusting the suite as proof:
 
+- **WA-10** — **6 of 13 fail pre-fix**, and the seven that pass are not vacuous: writing and removing
+  the Run entry worked before too, so those checks are shared ground rather than dead weight. One is
+  worth naming — "the toggle stays OFF after a refused write" passes pre-fix because the Deny ACE
+  stopped the write, so even the old permissive `IsEnabled` found nothing to report. It guards a
+  regression rather than demonstrating the defect.
+  <br>The pre-fix comparison **must keep `SAVELOCKER_RUNKEY_SUBPATH`** while reverting the three
+  behaviours. Stashing all of `src/` removes the knob, and the harness then points a Deny ACE and a
+  startup entry at the machine's **real** Run key. Shim the behaviours, not the plumbing.
 - **WA-09** — **1 of 6 fails pre-fix**, and it is the owner assertion ("the UI owner is the WinForms
   context"). The other five — no cross-thread call, no collection-modified, the API answering
   throughout, the tray surviving, the poller adopting during the churn — **pass against pre-fix code

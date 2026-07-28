@@ -64,18 +64,20 @@ static class Program
                 var autoStart = new SystemdAutoStart();
                 if (opts.ContainsKey("disable"))
                 {
-                    if (!autoStart.SetEnabled(false))
+                    var r = autoStart.SetEnabled(false);
+                    if (!r.Ok)
                     {
-                        Console.Error.WriteLine("Could not disable auto-start (is systemd --user available?). See the agent log.");
+                        Console.Error.WriteLine("Could not disable auto-start. " + r.Error);
                         return 1;
                     }
                     Console.WriteLine("Auto-start disabled.");
                 }
                 else if (opts.ContainsKey("enable"))
                 {
-                    if (!autoStart.SetEnabled(true))
+                    var r = autoStart.SetEnabled(true);
+                    if (!r.Ok)
                     {
-                        Console.Error.WriteLine("Could not enable auto-start (is systemd --user available?).");
+                        Console.Error.WriteLine("Could not enable auto-start. " + r.Error);
                         return 1;
                     }
                     Console.WriteLine("Auto-start enabled (systemd --user unit savelocker.service).");
