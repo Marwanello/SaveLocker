@@ -303,6 +303,12 @@ Check "daemon --lan is refused" ($LASTEXITCODE -ne 0 -and "$lanOut" -match "remo
 # Two throwaway listeners stand in for the servers. They answer 404 to everything, which is all
 # this needs: what is asserted is WHICH host was contacted, not that a push succeeded. The
 # queued entry keeps the drainer retrying, so the engine's target is exercised repeatedly.
+#
+# Since WA-04 the traffic B receives is UNAUTHENTICATED: an origin change clears the machine key,
+# id and TLS pin, because all three were issued by A and sending them to B would hand a live
+# credential to a host that was never meant to see it. So the poller stays quiet until the machine
+# re-registers and it is the drainer that reaches B here. That A's key never appears in a request
+# to B is asserted in run-winagent-tests.ps1, which owns the WA-04 coverage.
 # =================================================================================
 $portA = 5197; $portB = 5198; $swPort = 5187
 $urlA = "http://localhost:$portA"; $urlB = "http://localhost:$portB"

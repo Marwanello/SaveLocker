@@ -108,9 +108,21 @@ public static class AgentCli
                 {
                     var url = opts.GetValueOrDefault("url") ?? positionals.FirstOrDefault()
                               ?? throw new ArgumentException("Pass the server URL, e.g. set-server --url https://lgs.example.com");
-                    config.ServerUrl = url.TrimEnd('/');
+
+                    // Validated before it can reach disk: an unusable value here used to persist and
+                    // then crash every subsequent start when the client was constructed. WA-04.
+                    if (!config.TrySetServerUrl(url, out var cleared))
+                    {
+                        Console.Error.WriteLine(ServerOrigin.InvalidUrlMessage);
+                        return 1;
+                    }
                     config.Save();
                     Console.WriteLine($"Server URL set to {config.ServerUrl}");
+                    if (cleared)
+                        Console.WriteLine(
+                            "This is a different server, so the stored machine key, machine id and " +
+                            "TLS pin were cleared — they were issued by the previous one. " +
+                            "Register or enroll against the new server before syncing.");
                     break;
                 }
 

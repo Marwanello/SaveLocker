@@ -30,6 +30,12 @@
 #          enrolling user, SYSTEM and Administrators. A real second-account login is in the task's
 #          manual verification; what is asserted here is what decides that test's outcome.
 #
+#   WA-04. A server change is transactional and origin-bound.
+#          An unvalidated URL was written to disk BEFORE a client was built from it, so a typo
+#          persisted and every later start crashed on the same unusable value. Separately, ApiKey,
+#          MachineId and ServerPin survived an origin change, so server A's live machine key was
+#          sent to server B. Both are asserted here, the second by inspecting what B RECEIVED.
+#
 # Owns its server on :5189 and its state under .verify-winagent, so it never collides with a real
 # agent, a dev server, or another suite.
 # Usage: .\tests\run-winagent-tests.ps1
@@ -342,6 +348,81 @@ try {
     # credential unreadable to the agent too would pass every check above.
     $who = Agent whoami --config $aclCfg | Out-String
     Check "WA-03 the agent can still read its own config" ($who -match "WinAcl-$stamp")
+
+    # =================================================================================
+    # WA-04. A SERVER CHANGE IS TRANSACTIONAL AND ORIGIN-BOUND
+    # =================================================================================
+    # Two separate defects. First: an unvalidated URL was written to disk before a client was built
+    # from it, so a typo persisted and every later start crashed on it. Second: ApiKey, MachineId
+    # and ServerPin were kept across an origin change, so server A's live credential was sent to
+    # server B.
+    $svCfg = Join-Path $scratch "server_change.json"
+    @{ ServerUrl = $server; Games = @() } | ConvertTo-Json | Set-Content -Path $svCfg -Encoding utf8
+    Agent register --name "WinSv-$stamp" --config $svCfg | Out-Null
+
+    $beforeCfg = Get-Content $svCfg -Raw | ConvertFrom-Json
+    $keyA = $beforeCfg.ApiKey
+    Check "WA-04 the agent holds a key for server A" (-not [string]::IsNullOrWhiteSpace($keyA))
+
+    # --- A typo must not reach disk, and must not brick the next start ---
+    foreach ($badUrl in @("htp://typo", "not a url", "ftp://host:21", "localhost:5189")) {
+        $out = Agent set-server --url $badUrl --config $svCfg | Out-String
+        $now = (Get-Content $svCfg -Raw | ConvertFrom-Json).ServerUrl
+        Check "WA-04 '$badUrl' is refused"                 ($out -match "(?i)valid server URL")
+        Check "WA-04 '$badUrl' never reached disk"         ($now -eq $server)
+    }
+
+    # The agent still starts and still knows who it is - that is what "cannot brick startup" means.
+    $whoSv = Agent whoami --config $svCfg | Out-String
+    Check "WA-04 the agent still starts after the typos" ($whoSv -match "WinSv-$stamp")
+
+    # --- A cosmetic edit is not an origin change and must keep the enrollment ---
+    Agent set-server --url "$server/" --config $svCfg | Out-Null
+    $sameOrigin = Get-Content $svCfg -Raw | ConvertFrom-Json
+    Check "WA-04 a trailing slash keeps the machine key" ($sameOrigin.ApiKey -eq $keyA)
+
+    # --- A real origin change drops the credentials issued by the old server ---
+    Agent set-server --url "http://localhost:5999" --config $svCfg | Out-Null
+    $afterMove = Get-Content $svCfg -Raw | ConvertFrom-Json
+    Check "WA-04 the server URL moved"                  ($afterMove.ServerUrl -eq "http://localhost:5999")
+    Check "WA-04 server A's API key was dropped"        ([string]::IsNullOrWhiteSpace($afterMove.ApiKey))
+    Check "WA-04 server A's machine id was dropped"     ($null -eq $afterMove.MachineId)
+    Check "WA-04 server A's TLS pin was dropped"        ([string]::IsNullOrWhiteSpace($afterMove.ServerPin))
+
+    # --- and A's key must never be presented to B ---
+    # A throwaway listener stands in for server B. What is asserted is what it RECEIVED: the old
+    # key must not appear in any header of any request the agent makes after the switch.
+    $listenerB = [System.Net.HttpListener]::new()
+    $listenerB.Prefixes.Add("http://localhost:5999/")
+    $listenerB.Start()
+    $sawKeyA = $false
+    $sawAny  = $false
+    try {
+        $svDaemon = Start-Process -FilePath $dotnet `
+            -ArgumentList @($linuxDll, "daemon", "--port", "5193", "--config", $svCfg) `
+            -PassThru -WindowStyle Hidden
+        $deadline = (Get-Date).AddSeconds(45)
+        $ctx = $listenerB.GetContextAsync()
+        while ((Get-Date) -lt $deadline) {
+            if ($ctx.Wait(200)) {
+                $c = $ctx.Result
+                $sawAny = $true
+                foreach ($h in $c.Request.Headers.AllKeys) {
+                    if ($c.Request.Headers[$h] -eq $keyA) { $sawKeyA = $true }
+                }
+                $c.Response.StatusCode = 404; $c.Response.Close()
+                $ctx = $listenerB.GetContextAsync()
+            }
+        }
+        Stop-Process -Id $svDaemon.Id -Force -ErrorAction SilentlyContinue
+    }
+    finally { $listenerB.Stop(); $listenerB.Close() }
+
+    # Reported, not asserted. Whether B is contacted at all depends on which subsystem ticks first
+    # and is not the point; the point is what a request CARRIED. Printing it stops a future reader
+    # assuming this check passed because nothing was ever sent.
+    Write-Host "       (server B received $(if ($sawAny) { 'at least one' } else { 'no' }) request)"
+    Check "WA-04 server A's key never reached server B" (-not $sawKeyA)
 }
 finally {
     Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue

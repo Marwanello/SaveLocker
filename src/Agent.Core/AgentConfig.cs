@@ -177,6 +177,50 @@ public sealed class AgentConfig
             restrictPermissions: true);
     }
 
+    /// <summary>The identity fields a server issued, captured so a failed transition can restore them.</summary>
+    public readonly record struct ServerIdentity(string ServerUrl, string? ApiKey, Guid? MachineId, string? ServerPin);
+
+    /// <summary>A snapshot of the current connection identity, for rollback.</summary>
+    public ServerIdentity CaptureIdentity() => new(ServerUrl, ApiKey, MachineId, ServerPin);
+
+    /// <summary>Put back a captured identity, in memory only — the caller decides whether to persist.</summary>
+    public void RestoreIdentity(ServerIdentity id)
+    {
+        ServerUrl = id.ServerUrl;
+        ApiKey = id.ApiKey;
+        MachineId = id.MachineId;
+        ServerPin = id.ServerPin;
+    }
+
+    /// <summary>
+    /// Point this agent at a server, in memory. Returns false — changing nothing — if the URL is not
+    /// an absolute http/https address, so a typo can never reach disk and brick the next startup.
+    /// <para>
+    /// <paramref name="identityCleared"/> reports the security-relevant half: when the origin
+    /// actually changes, the machine key, machine id and TLS pin are <b>dropped</b>, because all
+    /// three were issued by the previous server and mean nothing to the new one. Sending them on
+    /// would hand a live credential to a host that was never meant to see it (WA-04). The user
+    /// re-registers or re-enrolls against the new origin. A cosmetic edit — a trailing slash, a
+    /// change of case — is not an origin change and keeps the enrollment.
+    /// </para>
+    /// </summary>
+    public bool TrySetServerUrl(string? url, out bool identityCleared)
+    {
+        identityCleared = false;
+        if (ServerOrigin.CanonicalUrl(url) is not { } canonical) return false;
+
+        if (!ServerOrigin.Same(ServerUrl, canonical))
+        {
+            ApiKey = null;
+            MachineId = null;
+            ServerPin = null;
+            identityCleared = true;
+        }
+
+        ServerUrl = canonical;
+        return true;
+    }
+
     /// <summary>
     /// Change one or more scalar settings without writing this process's whole view of the config.
     ///

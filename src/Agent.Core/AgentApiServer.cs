@@ -192,41 +192,81 @@ public sealed class AgentApiServer : IDisposable
             _autoStart.IsEnabled(),
             _config.SettleQuietSeconds)).Produces<AgentConfigDto>();
 
-        app.MapPost("/api/config", (ConfigRequest body) =>
+        app.MapPost("/api/config", Results<Ok<ConfigChangeResponse>, BadRequest<ErrorResponse>>
+            (ConfigRequest body) =>
         {
             // A host caches an ApiClient (base URL + key + pin) inside its SyncEngine. Changing any
             // of that here without telling the host leaves the daemon split-brained: the poller
             // rebuilds its client every tick and talks to the NEW server while watcher pushes and
             // queue drains keep hitting the OLD one. Track the change, then hand it back below.
             var before = (_config.ServerUrl, _config.MachineName);
+            // Everything needed to undo a failed transition. Captured BEFORE any mutation, because
+            // the point is that a rejected request leaves a config the agent can still start from.
+            var previousIdentity = _config.CaptureIdentity();
+            var previousName = _config.MachineName;
+            var previousSettle = _config.SettleQuietSeconds;
 
+            var identityCleared = false;
             if (!string.IsNullOrWhiteSpace(body.ServerUrl))
-                _config.ServerUrl = body.ServerUrl.Trim().TrimEnd('/');
+            {
+                // Validated BEFORE anything is written. The old code assigned the raw string, saved
+                // it, and only then built a client from it — so 'htp://typo' persisted, the client
+                // constructor threw, the caller got a 500, and every subsequent start of the agent
+                // crashed on the same unusable value. WA-04.
+                if (!_config.TrySetServerUrl(body.ServerUrl, out identityCleared))
+                    return TypedResults.BadRequest(new ErrorResponse(ServerOrigin.InvalidUrlMessage));
+            }
             if (!string.IsNullOrWhiteSpace(body.MachineName))
                 _config.MachineName = body.MachineName.Trim();
             if (body.SettleQuietSeconds.HasValue)
                 _config.SettleQuietSeconds = Math.Clamp(body.SettleQuietSeconds.Value, 0, 300);
-            _config.Save();
 
-            // Rebuild before the response returns, so no request that starts after the caller sees
-            // 200 can still be addressed to the previous server.
-            if (before != (_config.ServerUrl, _config.MachineName))
-                _onConnectionChanged?.Invoke();
+            try
+            {
+                _config.Save();
+
+                // Rebuild before the response returns, so no request that starts after the caller
+                // sees 200 can still be addressed to the previous server.
+                if (before != (_config.ServerUrl, _config.MachineName))
+                    _onConnectionChanged?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                // Roll back every field together. A half-applied transition is the one outcome worse
+                // than a rejected one: the agent would hold a new URL with the old credentials.
+                _config.RestoreIdentity(previousIdentity);
+                _config.MachineName = previousName;
+                _config.SettleQuietSeconds = previousSettle;
+                try { _config.Save(); } catch { /* the in-memory rollback is what matters */ }
+                AgentLogger.LogException("AgentApiServer.Config", ex);
+                return TypedResults.BadRequest(new ErrorResponse(
+                    "Could not apply the change; the previous settings were kept. " + ex.Message));
+            }
 
             if (body.StartWithWindows.HasValue)
                 _autoStart.SetEnabled(body.StartWithWindows.Value);
-            return new OkResponse();
-        }).Produces<OkResponse>();
+
+            // The UI has to know the machine was un-enrolled, or the user is left looking at a
+            // "not connected" agent with no idea why their key stopped working.
+            return TypedResults.Ok(new ConfigChangeResponse(identityCleared));
+        }).Produces<ConfigChangeResponse>();
 
         app.MapPost("/api/register", async Task<Results<Ok<RegisterResponse>, InternalServerError<ErrorResponse>>>
             (RegisterRequest body) =>
         {
+            var previousIdentity = _config.CaptureIdentity();
             try
             {
                 var api = ApiClient.For(_config, useConfigKey: false);
                 var reg = await api.RegisterAsync(_config.MachineName, body.AdminPassword);
+
+                // All three together, in one Save. The pin was previously ignored here entirely, so
+                // registering against an https server through the UI established an identity with no
+                // TLS pin at all — every later connection had nothing to compare against, and the
+                // TOFU guarantee enrollment provides simply did not exist on this path. WA-04.
                 _config.ApiKey = reg.ApiKey;
                 _config.MachineId = reg.MachineId;
+                if (api.ObservedPin is { } pin) _config.ServerPin = pin;
                 _config.Save();
                 _onConnectionChanged?.Invoke();
                 // The key itself is never returned — it is written to config and used from there.
@@ -235,6 +275,9 @@ public sealed class AgentApiServer : IDisposable
             }
             catch (Exception ex)
             {
+                // A failed registration must not leave a half-built identity — in particular not a
+                // pin or key from a partially-completed attempt against the new origin.
+                _config.RestoreIdentity(previousIdentity);
                 return TypedResults.InternalServerError(new ErrorResponse(ex.Message));
             }
         });
@@ -531,6 +574,12 @@ public sealed record AgentConfigDto(
 public sealed record AgentVersionDto(string CurrentVersion, string? LatestVersion, bool UpdateAvailable);
 public sealed record LaunchCommandDto(string? Command, string? Note);
 public sealed record EnrollRequest(int[]? Ids);
+/// <param name="IdentityCleared">
+/// True when the server URL moved to a different origin, so this machine's key, id and TLS pin were
+/// dropped and it must register or enroll again. See <see cref="ServerOrigin"/>.
+/// </param>
+public sealed record ConfigChangeResponse(bool IdentityCleared);
+
 public sealed record ConfigRequest(
     string? ServerUrl,
     string? MachineName,

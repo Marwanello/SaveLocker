@@ -48,6 +48,22 @@ session can judge an edge case, not to reopen the choice.
   *directory* with inheritable rules and enforced in `AtomicFile` — the one choke point every state
   writer already goes through — so a state file added later cannot quietly miss it. Failure to
   apply is logged loudly and is never fatal: an agent that refuses to start protects nothing.
+- **`ApiKey` + `MachineId` + `ServerPin` are one identity, bound to an origin** (WA-04, 2026-07-27).
+  Changing `ServerUrl` to a different origin **clears all three**, and the machine must register or
+  enroll again. Keeping them meant presenting server A's live machine key to server B — B rejects it,
+  but the credential has still been handed to a host that was never meant to see it, and A's stale
+  pin makes B's first genuine TLS identity look like a mismatch. Sameness is judged on
+  scheme+host+port (`ServerOrigin`), not the raw string, so a trailing slash or a change of case
+  keeps the enrollment. Separately, a candidate URL is validated as an absolute http/https address
+  **before** anything is mutated: the old code persisted the raw string and only then built a client
+  from it, so `htp://typo` reached disk, returned 500, and crashed every subsequent start.
+  Registration through the local UI now persists the observed TLS pin *with* the key and machine id
+  in one write — it previously ignored `ApiClient.ObservedPin` entirely, so registering against an
+  https server established an identity with no pin at all and no TOFU guarantee.
+  <br>**Deliberately not done:** the candidate connection is not probed before committing. Validation
+  alone satisfies "a typo cannot brick startup", and requiring a successful probe would make a
+  server that is merely offline impossible to configure. A failed transition rolls back every field
+  together instead.
 - **Stack: single-language .NET.** Agent = C#/WinForms (Windows), C#/headless (Linux); Server =
   ASP.NET Core in Docker on unRAID.
 - **Runtime: .NET 10 (LTS)**, locked 2026-07-13. .NET 9 is STS, EOL 2026-11-10; .NET 10 is LTS to

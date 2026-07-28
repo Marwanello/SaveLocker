@@ -243,7 +243,16 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["OkResponse"];
+                        "application/json": components["schemas"]["ConfigChangeResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
                     };
                 };
             };
@@ -757,6 +766,9 @@ export interface components {
             hasSteamCloud: boolean;
             path: string;
             prefixPath: null | string;
+        };
+        ConfigChangeResponse: {
+            identityCleared: boolean;
         };
         ConfigRequest: {
             serverUrl: null | string;

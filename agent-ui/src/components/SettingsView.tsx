@@ -68,15 +68,23 @@ export function SettingsView({ state, onSaved }: Props) {
     setSaving(true)
     try {
       const seconds = parseInt(settleQuietSeconds, 10)
-      await api.saveConfig({
+      const res = await api.saveConfig({
         serverUrl,
         machineName,
         settleQuietSeconds: Number.isFinite(seconds) ? Math.min(Math.max(seconds, 0), 300) : undefined,
       })
       dirtyFields.current.clear()
       onSaved()
-      setStatus('Saved.')
-      setTimeout(() => setStatus(''), 2000)
+      if (res.identityCleared) {
+        // Left on screen rather than auto-cleared: the agent cannot sync until the user acts on it,
+        // and a message that vanishes after two seconds is how someone ends up staring at a
+        // disconnected agent with no idea what changed.
+        setStatus('Saved. This is a different server, so the stored machine key was cleared — ' +
+                  'click Register / Re-register to enroll this machine with it.')
+      } else {
+        setStatus('Saved.')
+        setTimeout(() => setStatus(''), 2000)
+      }
     } catch (e) {
       setStatus('Save failed: ' + (e as Error).message)
     } finally {

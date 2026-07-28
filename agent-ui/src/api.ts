@@ -34,12 +34,15 @@ export const api = {
   candidates: () => req<Candidate[]>('/api/candidates'),
   rescan: () => post<Candidate[]>('/api/candidates/rescan'),
   enroll: (ids: number[]) => post<{ enrolled: number; skipped: number }>('/api/enroll', { ids }),
+  // identityCleared is true when the server URL moved to a different origin: the machine key, id
+  // and TLS pin were issued by the old server and have been dropped, so this agent must register
+  // or enroll again before it can sync.
   saveConfig: (body: {
     serverUrl?: string
     machineName?: string
     startWithWindows?: boolean
     settleQuietSeconds?: number
-  }) => post('/api/config', body),
+  }) => post<{ identityCleared: boolean }>('/api/config', body),
   register: (adminPassword?: string) =>
     post<{ machineName: string }>('/api/register', { adminPassword }),
   games: () => req<TrackedGame[]>('/api/games'),
