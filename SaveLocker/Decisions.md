@@ -74,6 +74,25 @@ session can judge an edge case, not to reopen the choice.
   (continuous sync risks mid-write copies; conflict files unusable for binary saves).
 - **Dashboard auth:** `AdminPasswordFilter` + PBKDF2-SHA256. Cloudflare Access/Google SSO deferred
   — blocked by the Tunnel's 100 MB file limit conflicting with large save archives.
+- **Plain HTTP is the default and supported configuration; TLS is bring-your-own** (2026-07-27,
+  maintainer decision). SaveLocker ships no certificates, no ACME client, and no self-signed
+  generation, and it will not nag about running over http. A user who wants TLS supplies their own
+  cert (reverse proxy or Kestrel config) and the agent then pins it on first use (`ServerTrust`,
+  §4). The product is a self-hosted LAN service on unRAID; the threat model is the household
+  network, not the open internet. Nothing may force, redirect to, or require https — no
+  `UseHttpsRedirection`, no HSTS, and no code path that treats an http server as misconfigured.
+  <br>**The consequence that matters, and it is not a small one:** on the default configuration the
+  transport provides *no* integrity guarantee. Anything the agent downloads and then **executes** —
+  the auto-update installer above all — cannot lean on TLS to prove it is genuine. Integrity has to
+  be carried in the payload's own verification (a digest published in the update metadata, and
+  Authenticode once releases are signed), and that check is then the *only* control, not a
+  belt-and-braces addition to a secure channel. See WA-05.
+  <br>Be honest about the limit: a digest delivered over the same unauthenticated channel as the
+  artifact does not stop an attacker who can rewrite both. It does stop a corrupted, truncated,
+  wrong, or substituted-at-the-download-host payload, and combined with restricting downloads to the
+  configured server's own origin it stops the agent being redirected to an arbitrary host. Full
+  protection against an on-path attacker requires the user to supply a cert — which is exactly the
+  trade this decision accepts.
 - **Enrollment model:** a game is defined once on the server; each agent maps its own local save
   dir. The server game is the single definition; scanners only suggest candidates.
 - **"Latest" = `Game.HeadVersionId`.** UI label "Latest"; admin action "Set as Latest".
