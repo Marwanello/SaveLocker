@@ -50,6 +50,12 @@
 #          had stopped talking to it, locking every other machine out of that game. Driven through
 #          `savelocker run`, the one path that actually holds a lease for a session.
 #
+#   WA-07. Save-lock contention fails closed.
+#          The cross-process lock timed out after 30 s and handed back an UNHELD handle, so the
+#          caller proceeded - the precise state the lock exists to prevent. And 30 s was shorter
+#          than one normal operation: the settle gate alone may hold it for 120 s, so a healthy
+#          exit-push routinely outlasted the wait and the other process barged in.
+#
 # Owns its server on :5189 and its state under .verify-winagent, so it never collides with a real
 # agent, a dev server, or another suite.
 # Usage: .\tests\run-winagent-tests.ps1
@@ -659,6 +665,71 @@ try {
         $leaseListener.Stop(); $leaseListener.Close()
         Remove-Item Env:SAVELOCKER_LEASE_RENEW_SECONDS, Env:SteamAppId -ErrorAction SilentlyContinue
     }
+
+    # =================================================================================
+    # WA-07. SAVE-LOCK CONTENTION FAILS CLOSED
+    # =================================================================================
+    # The cross-process lock timed out after 30 s and then handed back an UNHELD handle so the
+    # caller proceeded anyway - the precise state the lock exists to prevent. Worse, 30 s is shorter
+    # than one normal operation: the settle gate alone may hold it for SettleMaxWaitSeconds (120 by
+    # default), so a perfectly healthy exit-push routinely outlasted the wait and the second process
+    # concluded the first was stuck and barged in.
+    #
+    # Here process A holds the game lock the way a real settle does, and process B must refuse
+    # rather than touch the save directory.
+    $lockCfg  = Join-Path $scratch "lock.json"
+    $lockSave = Join-Path $scratch "lock_save"
+    New-Item -ItemType Directory -Force $lockSave | Out-Null
+    "ORIGINAL" | Set-Content (Join-Path $lockSave "s.dat") -Encoding utf8
+
+    @{ ServerUrl = $server; Games = @() } | ConvertTo-Json | Set-Content -Path $lockCfg -Encoding utf8
+    Agent register --name "WinLock-$stamp" --config $lockCfg | Out-Null
+    $lockGame = "LockGame-$stamp"
+    Agent add-game --name $lockGame --dir $lockSave --config $lockCfg | Out-Null
+    Agent push $lockGame --config $lockCfg | Out-Null
+
+    # Diverge locally, so a force-pull WOULD rewrite the folder if it got through.
+    "LOCAL EDIT" | Set-Content (Join-Path $lockSave "s.dat") -Encoding utf8
+
+    $lockGameId = (Get-Content $lockCfg -Raw | ConvertFrom-Json).Games[0].GameId
+    $lockFile = Join-Path $scratch "locks\game-$($lockGameId -replace '-','').lock"
+
+    # Stand in for a process mid-settle: hold the exact lock file with the same share mode the
+    # agent uses. No agent needs to be running - what is under test is the waiting side.
+    $holder = [System.IO.File]::Open($lockFile, 'OpenOrCreate', 'ReadWrite', 'None')
+    try {
+        # The real policy is ~13 minutes (settle gate + upload window + margin), which a suite cannot
+        # wait out twice. Shortened here so the WAIT is still observable but the test is not.
+        $env:SAVELOCKER_SYNC_LOCK_SECONDS = "20"
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $pullOut = Agent pull $lockGame --force --config $lockCfg 2>&1 | Out-String
+        $pushOut = Agent push $lockGame --force --config $lockCfg 2>&1 | Out-String
+        $sw.Stop()
+
+        $content = (Get-Content (Join-Path $lockSave "s.dat") -Raw).Trim()
+
+        Check "WA-07 a contended pull does NOT touch the save directory" ($content -eq "LOCAL EDIT")
+        Check "WA-07 the contended pull reports being blocked" (
+            $pullOut -match "(?i)another SaveLocker process|Busy")
+        Check "WA-07 the contended push reports being blocked" (
+            $pushOut -match "(?i)another SaveLocker process|Busy")
+
+        # It must have WAITED, not failed instantly - a lock that gives up at once would pass the
+        # assertions above while being useless for real contention.
+        # Two operations at a 20 s wait each: anything under ~30 s means it gave up early rather
+        # than genuinely blocking, which would pass the assertions above while being useless.
+        Check "WA-07 the waiter actually waited" ($sw.Elapsed.TotalSeconds -ge 30)
+    }
+    finally {
+        $holder.Dispose()
+        Remove-Item Env:SAVELOCKER_SYNC_LOCK_SECONDS -ErrorAction SilentlyContinue
+    }
+
+    # Once the holder lets go, the very same operations succeed - without this the suite would pass
+    # if syncing were simply broken.
+    $after = Agent pull $lockGame --force --config $lockCfg 2>&1 | Out-String
+    $restored = (Get-Content (Join-Path $lockSave "s.dat") -Raw).Trim()
+    Check "WA-07 the pull succeeds once the lock is released" ($restored -eq "ORIGINAL")
 }
 finally {
     Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue

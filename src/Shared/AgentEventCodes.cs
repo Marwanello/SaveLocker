@@ -26,6 +26,10 @@ public static class AgentEventCodes
     /// and that is the safe outcome.</summary>
     public const string UnsafeSavePath = "savedir.unsafe";
 
+    /// <summary>Another process on this machine holds the game's sync lock, so this operation was
+    /// skipped rather than run alongside it. Nothing was read or written.</summary>
+    public const string SyncBusy = "sync.busy";
+
     /// <summary>The game's save folder does not exist on this machine. Nothing is being synced for it.</summary>
     public const string SaveDirMissing = "savedir.missing";
 

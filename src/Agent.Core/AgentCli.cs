@@ -406,6 +406,15 @@ public static class AgentCli
             }
             return 0;
         }
+        catch (AgentStateLockException ex)
+        {
+            // Contention is an expected outcome, not a bug: the tray or the launch wrapper is
+            // legitimately mid-sync. A stack trace here would read as a crash, when in fact nothing
+            // was changed and retrying in a moment is the right answer. WA-07.
+            Console.Error.WriteLine($"Busy: {ex.Message}");
+            AgentLogger.Log($"CLI '{command}' skipped: {ex.Message}");
+            return 1;
+        }
         catch (Exception ex)
         {
             var msg = $"Error: {ex}";

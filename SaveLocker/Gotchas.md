@@ -45,6 +45,18 @@ here.
   intended and asserted, but `Remove-Item` on it only works as the same account (or elevated). If a
   suite ever runs as a different user than the one that created `.verify-*`, clean up elevated.
 
+## Test-only environment variables
+These exist because the production values are far too slow to observe in a suite. They are read by
+`Agent.Core` and are **not** user settings — nothing in the UI or docs offers them.
+- **`SAVELOCKER_LEASE_RENEW_SECONDS`** — lease renewal interval (production: 3 hours). WA-06's test
+  needs several renewals inside a few seconds.
+- **`SAVELOCKER_SYNC_LOCK_SECONDS`** — how long to wait for another process's game lock
+  (production: settle gate + upload window + margin, ~13 minutes). WA-07's test would otherwise
+  wait that out twice.
+
+Set them per-process and clear them afterwards — leaving either set in a shell will make later runs
+behave in ways that look like bugs.
+
 ## Windows ACLs
 - **`SetAccessRuleProtection(isProtected: true, preserveInheritance: true)` does not let you then
   strip the inherited rules.** The copies are materialised only when the descriptor is persisted, so

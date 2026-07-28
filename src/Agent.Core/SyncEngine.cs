@@ -151,13 +151,23 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         await gate.WaitAsync(ct);
         try
         {
-            using var crossProcess = AgentStateLock.ForGame(game.GameId, _config.StateDir);
+            // Fails closed. Proceeding unlocked here meant this process archived and rewrote sync
+            // state while another was doing the same to the same directory. WA-07.
+            using var crossProcess = AgentStateLock.ForGame(
+                game.GameId, _config.StateDir, GameLockTimeout, ct);
             // Inside the lock, so the parent we read cannot be superseded between here and the
             // upload. A long-lived host (the daemon, the tray) has been holding this object since it
             // started; the launch wrapper may have pushed since, and presenting the boot-time parent
             // is what makes the server record a conflict on a single-machine fleet.
             _config.RefreshGameSyncState(game);
             return await PushCoreAsync(game, force, settle, ct);
+        }
+        catch (AgentStateLockException ex)
+        {
+            // A typed failure, not a crash: the tray, the CLI and the dashboard all need to say
+            // "another process owns this game" rather than surface a stack trace.
+            ReportContention(game, "push", ex);
+            return null;
         }
         finally { gate.Release(); }
     }
@@ -313,7 +323,20 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         if (RefuseUnsafePath(game, "pull")) return false;
 
         var archive = TempArchive(game.GameId, "pull");
-        using var crossProcess = AgentStateLock.ForGame(game.GameId, _config.StateDir);
+        AgentStateLock crossProcess;
+        try
+        {
+            // Fails closed, and this is the direction where that matters most: proceeding unlocked
+            // meant restoring over a save directory another process was mid-archive on. WA-07.
+            crossProcess = AgentStateLock.ForGame(game.GameId, _config.StateDir, GameLockTimeout, ct);
+        }
+        catch (AgentStateLockException ex)
+        {
+            ReportContention(game, "pull", ex);
+            return false;
+        }
+
+        using var _lock = crossProcess;
         // LastSyncedHash gates the un-pushed-changes check below, so a stale one is not merely
         // untidy: it makes a legitimate pull look like it would overwrite local progress, and the
         // pull is refused. Refresh before either is read.
@@ -393,6 +416,13 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             _health?.MarkSynced(game.GameId);
             return true;
         }
+        catch (AgentStateLockException ex)
+        {
+            // The per-game lock is held above, but the sync-state write takes the separate 'config'
+            // lock and can be contended on its own. Same answer either way: report it, change nothing.
+            ReportContention(game, "pull", ex);
+            return false;
+        }
         finally
         {
             if (File.Exists(archive)) File.Delete(archive);
@@ -420,6 +450,41 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// <summary>Ties an operation's lifetime to the engine's, so retirement aborts work in flight.</summary>
     private CancellationTokenSource LinkRetirement(CancellationToken ct) =>
         CancellationTokenSource.CreateLinkedTokenSource(ct, _retired.Token);
+
+    /// <summary>
+    /// How long to wait for another process to finish syncing this game, sized to what that process
+    /// could legitimately be doing rather than to a round number.
+    /// <para>
+    /// The old 30 seconds was shorter than a single normal operation: a settle gate alone may hold
+    /// the lock for <c>SettleMaxWaitSeconds</c> (120 by default) and the upload's HTTP timeout is 10
+    /// minutes. So a perfectly healthy exit-push routinely outlasted the wait, and the second
+    /// process concluded the first was stuck and barged in — which is exactly the overlap the lock
+    /// exists to prevent. WA-07.
+    /// </para>
+    /// </summary>
+    /// <remarks>
+    /// <c>SAVELOCKER_SYNC_LOCK_SECONDS</c> overrides it for tests only — the real policy is ~13
+    /// minutes, and a suite cannot wait that out twice. Sibling of
+    /// <c>SAVELOCKER_LEASE_RENEW_SECONDS</c>; both are listed in Gotchas.md.
+    /// </remarks>
+    private TimeSpan GameLockTimeout =>
+        int.TryParse(Environment.GetEnvironmentVariable("SAVELOCKER_SYNC_LOCK_SECONDS"), out var s) && s > 0
+            ? TimeSpan.FromSeconds(Math.Clamp(s, 1, 3600))
+            : TimeSpan.FromSeconds(_config.SettleMaxWaitSeconds) // the settle gate
+              + TimeSpan.FromMinutes(10)                          // the ApiClient HTTP timeout
+              + TimeSpan.FromMinutes(1);                          // archive + hash of a large save
+
+    /// <summary>
+    /// Report that another process owns this game, as the user-facing failure it is. Nothing was
+    /// read or written, which is the whole point: the alternative was two processes archiving and
+    /// restoring the same directory at once.
+    /// </summary>
+    private void ReportContention(TrackedGame game, string verb, AgentStateLockException ex)
+    {
+        Alert($"[{game.Name}] {verb} skipped: another SaveLocker process is syncing this game. " +
+              $"Nothing was changed. ({ex.Message})",
+            AgentEventCodes.SyncBusy, AgentEventSeverity.Warning, game.GameId);
+    }
 
     private bool RefuseUnsafePath(TrackedGame game, string verb)
     {

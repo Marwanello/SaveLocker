@@ -99,6 +99,23 @@ session can judge an edge case, not to reopen the choice.
   leak the lease — that left a game checked out until expiry with nobody playing it.
   <br>`SAVELOCKER_LEASE_RENEW_SECONDS` shortens the three-hour interval for tests only; the interval
   is the thing under test and nothing observable happens at the production value.
+- **The cross-process lock fails closed** (WA-07, 2026-07-27). `AgentStateLock` used to time out after
+  30 s and hand back an *unheld* handle so the caller proceeded — the precise state the lock exists
+  to prevent. **The justification for that was factually wrong** and worth recording so it is not
+  reinstated: it claimed a lock file left by a crashed process must not block syncing forever, but
+  the lock is a *handle*, not the file's existence, and every OS releases handles when a process
+  dies. A crashed agent leaves a stale lock *file* that the next caller opens without difficulty.
+  There is no stale-lock scenario, so nothing was being bought by failing open.
+  <br>The 30 s was also shorter than one normal operation — the settle gate alone may hold the lock
+  for `SettleMaxWaitSeconds` (120 by default) and the upload's HTTP timeout is 10 minutes — so a
+  *healthy* exit-push routinely outlasted the wait and the other process barged in. The game lock is
+  now sized to what the holder could legitimately be doing: settle + upload window + margin, ~13
+  minutes. Short state writes (config, queue, health, lease warnings) get 60 s.
+  <br>Failure is a typed `AgentStateLockException`, reported as "another SaveLocker process is
+  syncing this game" by the tray, the CLI (`Busy:`, not a stack trace) and the console event stream,
+  and acquisition is cancellable so a retired engine does not sit waiting.
+  <br>`SAVELOCKER_SYNC_LOCK_SECONDS` shortens the wait for tests only — sibling of
+  `SAVELOCKER_LEASE_RENEW_SECONDS`; both are listed in Gotchas.md.
 - **Stack: single-language .NET.** Agent = C#/WinForms (Windows), C#/headless (Linux); Server =
   ASP.NET Core in Docker on unRAID.
 - **Runtime: .NET 10 (LTS)**, locked 2026-07-13. .NET 9 is STS, EOL 2026-11-10; .NET 10 is LTS to
