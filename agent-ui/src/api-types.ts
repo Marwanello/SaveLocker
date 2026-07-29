@@ -243,7 +243,16 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["OkResponse"];
+                        "application/json": components["schemas"]["ConfigChangeResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
                     };
                 };
             };
@@ -337,6 +346,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/processes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ProcessNamesRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OkResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games/{id}/remove": {
         parameters: {
             query?: never;
@@ -405,6 +455,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["OkResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
                     };
                 };
             };
@@ -748,6 +807,11 @@ export interface components {
             hasSteamCloud: boolean;
             path: string;
             prefixPath: null | string;
+            processName: null | string;
+        };
+        ConfigChangeResponse: {
+            identityCleared: boolean;
+            startWithWindows: boolean;
         };
         ConfigRequest: {
             serverUrl: null | string;
@@ -773,6 +837,8 @@ export interface components {
         };
         FolderRequest: {
             path: null | string;
+            /** @default false */
+            confirm: boolean;
         };
         FolderResponse: {
             path: null | string;
@@ -789,6 +855,9 @@ export interface components {
             /** @default true */
             ok: boolean;
         };
+        ProcessNamesRequest: {
+            processNames: null | string[];
+        };
         RegisterRequest: {
             adminPassword?: null | string;
         };
@@ -803,6 +872,7 @@ export interface components {
             id: string;
             name: string;
             path: string;
+            processNames: string[];
         };
     };
     responses: never;

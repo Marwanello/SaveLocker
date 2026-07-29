@@ -172,7 +172,7 @@ SaveLocker/
 │   │                                   #   OWN STATE (SQLite DB + archive store) between runners as
 │   │                                   #   an artifact — runners cannot share a network.
 │   └── linux/                          # Fake-game harness — no Steam/Proton/GPU/Deck needed
-│       ├── run-linux-tests.sh          # 27 checks; starts its own server, fake HOME
+│       ├── run-linux-tests.sh          # 40 checks; starts its own server, fake HOME
 │       ├── make-fixtures.py            # Builds compatdata tree + binary shortcuts.vdf
 │       ├── slow-game.sh                # Game that flushes after exit (settle gate + lock probe)
 │       └── manifest.yaml               # Fixture Ludusavi manifest

@@ -1,220 +1,381 @@
-# Decisions
+﻿# Decisions
 
-Settled choices. Don't re-litigate without a reason.
+Settled and shipped. Don't re-litigate — the "why" is kept to one line so a future
+session can judge an edge case, not to reopen the choice.
 
-## Build philosophy — Hybrid
-Reuse the open-source **Ludusavi manifest** (community DB mapping thousands of games → save locations, from PCGamingWiki) for detection. Build our own agent + server + dashboard for orchestration, leasing, and conflict handling. Do **not** re-map save locations ourselves.
-
-## Conflict prevention — Proactive lock/lease
-Server tracks an active "checkout" per game (like Steam Cloud's "in use"). Agent pulls latest before launch; the other machine is warned if saves are leased elsewhere. Content-hash + parent-version lineage is the fallback detector.
-
-## Tech stack — Single-language .NET  ⚠️ *version superseded by "Runtime: .NET 10 LTS" below*
-- Agent in C#/WinForms: best Windows integration (FileSystemWatcher, process watch, tray, single-file exe).
-- Server in ASP.NET Core, runs in Docker on unRAID. One language end-to-end.
-- The single-language, WinForms and ASP.NET Core choices all stand. Only the **framework version**
-  moved: .NET 9 → .NET 10.
-
-## Runtime: .NET 10 LTS (locked 2026-07-13)
-**Supersedes the version half of "Single-language .NET 9".** Execution plan: `tasks/dotnet-10-upgrade.md`.
-
-- **.NET 9 is STS and goes out of support 10 Nov 2026** — it is already in its maintenance phase
-  (security fixes only). This is a deadline, not a preference.
-- **.NET 10 is LTS** (supported to 14 Nov 2028) — three years, instead of another 18-month STS
-  treadmill. Prefer LTS-to-LTS from here.
-- **It dissolves the EF Core pin.** The rule "pin EF Core to 9.0.x; 10.x requires net10" existed
-  *because* we were on net9. The upgrade removes the reason, so the rule goes with it — do not leave
-  it behind to tell a future session not to do the thing that was just done.
-- **Timing: before Linux agent Phase 4, not after.** The safety net peaked the moment Phase 3 landed
-  — Windows 10/10, Linux 10/10, harness 27/27, and a cross-OS byte-compare in CI. That is exactly the
-  apparatus needed to catch a framework swap going wrong. Upgrading later means doing it across a
-  larger surface *and* porting fresh Phase 4/5 code onto net10 afterwards.
-- **Its own branch, its own PR.** Never mixed with feature work: if something breaks, the whole value
-  of the timing is that the cause is unambiguous.
-- **A `global.json` pins the SDK.** CI was silently building the net9 targets with **SDK 10.0.301**
-  (windows-latest preinstalls it; `dotnet build` takes the newest SDK unless pinned) while the dev box
-  used 9.0.315. Dev, CI and Docker must agree on the toolchain — and the pin must be satisfiable by
-  all three, including the `mcr.microsoft.com/dotnet/sdk` image.
-
-## unRAID as hub (vs peer-to-peer)
-- Asynchronous decoupling: PC pushes; laptop pulls later even if PC is off.
-- Single source of truth → trivial "who synced last" + conflict resolution.
-- Versioned history/rollback in one place.
-- Already always-on, has storage, Docker, internet-reachable via **CloudFlare Tunnel**.
-- Rejected raw Syncthing: continuous sync risks copying mid-write; conflict files messy for binary saves.
-
-## UX phase decisions (locked 2026-06-22)
-1. **Dashboard auth:** real admin auth shipped (2026-06-25) — `AdminPasswordFilter` + PBKDF2-SHA256, set from ConfigView. CloudFlare Access + Google deferred; blocked by Cloudflare Tunnel's 100 MB file limit (conflicts with large save archives).
-2. **Enrollment model:** a game is defined **once on the server** (via the dashboard); each agent **maps its own local save dir**. Scanners suggest candidates; the server game is the single definition.
-3. **"Latest" nomenclature:** the authoritative version agents pull is called **"Latest"** in the UI — this is the server **head** pointer. The dashboard labels it "Latest"; the admin action is **"Set as Latest"**.
-4. **Artwork:** **download/cache** SteamGridDB images on the server (offline-safe, survives upstream art changes) rather than storing only URLs.
-
-## Product name: SaveLocker (locked 2026-06-22)
-The official product/brand name is **SaveLocker**. Rename is complete (2026-07-10):
-- **User-visible:** config dir `%PROGRAMDATA%\SaveLocker`, single-instance mutex `"SaveLocker.Agent"`, registry Run-key `"SaveLocker"`, installer AppName/publisher, wizard images, health check, tray/window/balloon text, log paths, DB path `savelocker.db` (with rename shim for existing installs on `localgamesync.db`).
-- **Code identifiers:** namespaces (`SaveLocker.*`), solution (`SaveLocker.sln`), project files (`SaveLocker.Agent/Server/Shared.csproj`) — all renamed 2026-07-10.
-- **Note for existing Docker deployments:** the server DB at `/data/localgamesync.db` needs to be renamed to `/data/savelocker.db` (or override `Storage__DbPath`). The rename shim handles this automatically on the agent side.
-
-## Agent installer (locked 2026-06-22)
-- **Tooling: Inno Setup 6** (over WiX/MSI and MSIX). Free, full control over registry cleanup + uninstaller. MSIX rejected — its virtualisation would interfere with the agent reading the Steam registry + arbitrary save folders.
-- **Script:** `installer/SaveLocker.iss`. Build via `.\installer\build-installer.ps1`. Output: `installer/dist/SaveLocker-Agent-Setup-{version}.exe`.
-- **Machine-wide install** to `C:\Program Files\SaveLocker Agent`, `PrivilegesRequired=admin` (UAC up front).
-- **Why an installer:** auto-start writes a registry entry; a manually-deleted exe would orphan it. The uninstaller must own and revert every system change.
-- **Uninstall:** prompts before deleting `%PROGRAMDATA%\SaveLocker` (API key + tracked games config); *No* preserves it for a reinstall.
-
-## Linux agent (locked 2026-07-12)
-
-Decisions taken before writing any Linux code. All six phases shipped 2026-07-12 → 2026-07-14; the
-execution plan and its outcomes are archived at `logs/2026-07-14_linux-agent.md`.
-
-### 0. The niche is NON-Steam games run under Proton
-Games **bought on Steam already have Steam Cloud** — SaveLocker adds nothing there and should not compete with it. The problem we solve on Linux is the one Steam does not: **non-Steam games added to Steam as shortcuts** (standalone / itch / GOG / DRM-free builds — exactly the "Environment facts" user profile below), launched through Proton.
-
-This is the load-bearing scoping fact, and it shapes everything downstream:
-
-- **Discovery is `shortcuts.vdf`, not `libraryfolders.vdf`.** The `*.acf` / library-root scan (`GameScanner` Source 2) finds *installed Steam games* and is irrelevant here. `GameScanner` already parses `shortcuts.vdf` (Source 1, binary VDF) — but it currently reads only `AppName` / `StartDir` and **must also capture the shortcut's generated AppID**, because that AppID *is* the `compatdata/<appid>/` directory name.
-  - **Trap:** Steam derives that AppID as a **signed** 32-bit value but names the `compatdata` folder with the **unsigned** form. Get this wrong and every prefix lookup silently misses.
-- **Two save shapes, and the simpler one is probably the common one.** A non-Steam Windows game under Proton either writes *into* the prefix (`drive_c/users/steamuser/AppData/…`), **or** writes **portably, next to its .exe** — which is very common for standalone builds. The portable case never touches the prefix: it is a plain Linux path on the native filesystem, needing no prefix resolution at all.
-- **The Ludusavi manifest is much less useful here.** Standalone builds are largely absent from it. On Linux, **manual `--dir` mapping is the primary path**, not the fallback.
-- **Steam Cloud contention is a non-issue.** Non-Steam shortcuts have no Cloud. Likewise SD-card library roots — non-Steam `compatdata` lands in the main Steam root.
-
-The launch wrapper (decision 3) still applies: non-Steam shortcuts have a Launch Options field, `%command%` works, and with "Force compatibility tool" enabled Proton still exports `STEAM_COMPAT_DATA_PATH`.
-
-### 1. Proton-only for v1 — native Linux builds are out of scope
-A Proton game **is a Windows game**: it writes Windows-format saves to Windows paths inside a Wine prefix. A Deck and a Windows PC therefore produce **byte-identical saves**, and the existing content-hash lineage works across them with no conversion, no format translation, no line-ending handling.
-
-All the genuinely hard cross-OS problems (different save formats, different paths, text-mode line endings, case collisions) appear **only** with native Linux builds of a game. Excluding them means v1 needs **zero server schema change** — and Proton *is* the Steam Deck / Steam Machine use case.
-
-Native Linux builds need a save-*variant* model on the server (a version's lineage would only be valid within a platform family). Deferred until there is a reason to build it. **Do not sync a native-Linux save into a Windows install** — that is the corruption case this scoping avoids.
-
-### 2. No native UI on Linux — the daemon serves the existing React UI
-In **Game Mode** (gamescope) there is no system tray and no desktop; a tray icon is invisible and a toast is impossible. In **Desktop Mode** it is just KDE with a browser. So the Linux agent is a **headless daemon** that serves the existing `agent-ui` on `localhost:5178` — the same UI, for free, reachable from a browser in Desktop Mode. No WinForms equivalent, no GTK/Qt, no second frontend.
-
-**Loopback only — see §7.** An earlier `--lan` flag bound this to every interface; it has been withdrawn.
-
-Consequence, and it is a design obligation rather than a nice-to-have: **a headless spoke cannot tell the user anything.** A conflict that raises a toast on Windows is *silent* on a Deck. The agent must therefore report health and errors to the server so the console can surface them ("Steam Deck: conflict on Hades, 2 days ago"). **The console is the Deck's UI.** This ships *with* the Linux agent, not after it.
-
-**Amendment (2026-07-24): Game Mode has no browser, so it gets a gamepad-native subset — `savelocker ui`.** The reasoning above ("Desktop Mode is just KDE with a browser") holds for Desktop Mode and is *why* the React UI stays the Desktop Mode and console surface. But **Game Mode has no browser at all** — reaching `localhost:5178` there meant installing a browser and adding it as a non-Steam shortcut. So the `savelocker ui` command (SDL + Dear ImGui, in the existing Linux binary) adds a **Game-Mode-only subset**: four screens (Status / Add game / Set save folder / Steam launch setup) that call `Agent.Core` **in-process** — no second API client, no duplicated sync logic. It is a *view*, not a second frontend; the React UI remains the only full frontend. All three on-device gates passed on a real Deck (renders under gamescope, Steam Input delivers a gamepad with the default template, tarball delta ~8.8 MB uncompressed). See `logs/2026-07-24_linux-agent-streamline.md` §3 for the design and the rejected alternatives.
-
-**Amendment (2026-07-25): the Game Mode UI is themed to the console palette, and lease warnings are persisted.** Two things settled during the visual refresh (`tasks/deck-ui-visual-refresh.md`):
-
-1. *"ImGui will never look like the React UI"* is withdrawn. It was true of stock ImGui, not of the toolkit: `Ui/Theme.cs` carries the console's exact `web/src/index.css` palette and Inter/JetBrains Mono, `Ui/Widgets.cs` paints components over `InvisibleButton` (keeping gamepad nav while looking nothing like a debug panel), and `Ui/Icons.cs` draws the lucide glyph set as vector paths. Content parity with `agent-ui` is a stated goal, layout parity is not — 1280×800 held at arm's length is a different medium from a desktop window.
-
-2. **The 30 fps cap is relaxed to 60.** It was a battery measure; this is a configuration surface used for minutes, not a game running for hours, with no 3D engine behind it. VSync remains what actually bounds the loop.
-
-3. **Lease warnings move from `AgentApiServer`'s memory to `lease-warnings.json` beside the config.** This preserves the in-process rule — the alternative was an HTTP call from `savelocker ui` to `localhost:5178`, making the view a second API client. It also fixed a real defect rather than only a presentational one: `ProtonRun` discarded the result of `OnGameLaunchAsync`, and because the Linux launch wrapper is a separate short-lived process from the daemon, a Deck user who launched a game another machine had checked out was never warned anywhere. Entries expire after 24 h.
-
-> **Rejected alternatives (recorded so they do not resurface).** Full detail in `logs/2026-07-24_linux-agent-streamline.md` §3.
->
-> | Approach | Added size | Controller nav | Why rejected |
-> |---|---|---|---|
-> | Flatpak + WebKitGTK | 665 MB–1.5 GB installed | hand-built | Size — WebKitGTK ships only inside `org.gnome.Platform`; nothing else on a stock Deck shares that runtime. |
-> | Godot + C# | ~60–80 MB | good (built-in) | Godot needs ≤ net9 (net10 is only a 4.6 proposal) while `global.json` pins net10 — cannot reference `Agent.Core` in-process. New CI toolchain too. |
-> | Avalonia | ~20–30 MB | hand-built | Bigger *and* worse at the input model that matters — inherits the dead-D-pad problem. |
-> | `steam://openurl` | 0 | n/a | Game Mode does not open browser windows on a URL request. |
->
-> **Chosen: SDL + Dear ImGui inside the existing binary** — smallest on the table (we already pay for the self-contained .NET runtime), zero host dependencies, one binary (`savelocker ui`, not a Deck-specific build — "Deck-specific" is a mode, not a build), and ImGui's gamepad navigation is a config flag, not a feature to build.
-
-### 3. The Steam launch wrapper is the primary trigger — not process polling
-Users add `savelocker run %command%` to a game's Steam launch options. Steam then supplies `STEAM_COMPAT_DATA_PATH` and `SteamAppId` in the environment, which gives:
-- the **exact Wine prefix**, with no compatdata scanning or guessing, and
-- **precise** pre-launch / post-exit hooks, with no polling.
-
-Process-name polling is the fallback for non-Steam launchers (Heroic, Lutris, Bottles), and it is genuinely unpleasant on Linux — `/proc/<pid>/comm` truncates at 15 chars and Proton games hide behind `reaper` / `pv-bwrap` / `wine` wrappers. Prefer the wrapper wherever it is available.
-
-### 4. Enrollment carries a short-lived token, not an API key — and is not signed
-The console generates an enrollment file (server URL + preselected games/globs/settle delay) carrying a **single-use, ~15-minute enrollment token**, which the agent redeems for its real machine API key on first contact. A leaked file then expires on its own and is revocable. A long-lived API key sitting in `~/Downloads` is not.
-
-**The policy file is deliberately not signed.** The threat a forged file poses is not a bogus token — it is being pointed at a **malicious server**, whose *pull* writes files into save directories. Signing cannot fix that, because a fresh agent has no trust anchor and therefore no way to know the right public key; the *user* is the trust anchor (they downloaded the file from their own console). A PKI here would be security theatre. What actually mitigates it, in order: **HTTPS** (already have, via the Tunnel), **hardening the restore path** (see below), and **TOFU-pinning** the server after enrollment.
-
-Detached signing only earns its keep for *offline* policy distribution (bundling a policy into an installer for machines that never contact the console first). Build it then, not now.
-
-### 5. Install to the user's home, never to /usr
-SteamOS's root filesystem is **immutable and wiped on update**. Install to `~/.local/share/SaveLocker` with a `systemd --user` unit, which survives SteamOS updates. This rules out a plain `.deb`/`.rpm` system install. Self-contained publish is mandatory — SteamOS ships no .NET runtime.
-
-### 6. Dev on WSL2 (Ubuntu 24.04 LTS), not a VM, not Arch
-WSL2 (inside the **ext4 home** — never `/mnt/c`, where DrvFs breaks inotify, permissions, case-sensitivity and locking) faithfully reproduces everything that matters: Linux `FileShare` semantics, inotify, `/proc`, case-sensitivity, `systemd --user`, and self-contained publish.
-
-**Distro: Ubuntu 24.04 LTS.** The tempting reasoning — "SteamOS is Arch, so develop on Arch" — is wrong. Everything WSL actually validates (the list above) is **kernel and .NET behaviour, identical on every distro**, while the things that make SteamOS *SteamOS* (gamescope, immutable rootfs) cannot run under WSL on any base. So Arch buys zero extra fidelity and costs the thing that does pay: **CI parity** — GitHub Actions `ubuntu-latest` *is* Ubuntu 24.04, so dev and CI share a glibc, a .NET packaging story and a toolchain.
-
-**glibc.** The rule of thumb — *build on the oldest glibc you intend to support*, because an older-glibc build runs on newer systems but **never the reverse** — still stands, and it is why the release job pins **`ubuntu-latest`** rather than drifting onto whatever runner is convenient.
-
-> **Measured 2026-07-14, because the mechanism is not what it looks like.** A self-contained .NET app does **not** natively compile against the build host's glibc: `libcoreclr.so` and the other native libs are **prebuilt by Microsoft against an old baseline** and simply copied in, and our C# becomes IL. So the artifact's real floor is set by **.NET, not by Ubuntu**:
->
-> | | glibc |
-> |---|---|
-> | What the package **requires** (`objdump -T`, all `.so` + apphost) | **2.27** |
-> | What SteamOS 3 **provides** | **≥ 2.33** |
->
-> Building on Ubuntu 24.04 (host glibc 2.39) is therefore safe with a wide margin — the host's version is not inherited. **The real risk is a change that raises that floor silently**: enabling **NativeAOT**, or adding a natively-compiled dependency, would bind to the build host after all. That failure appears as `GLIBC_2.3x not found` **on a user's Deck** and cannot be reproduced on any machine we own — so CI's `package-linux` job now **asserts** the floor stays ≤ 2.31 rather than trusting it.
-
-The agent never talks to Steam — it reads two env vars and supervises a child process — so a **fake-game harness** (fixture compatdata tree + a script that writes saves slowly and exits, with the env vars set) exercises the entire code path with no Steam, no Proton and no GPU. That harness is also the CI test.
-
-Not testable without hardware: gamescope/Game Mode, the immutable rootfs, SD-card library paths, suspend/resume. A VM buys only the immutable-rootfs check and makes gamescope worse. **No Deck is owned** — hardware validation is an explicit deferred-risk item, exactly like the existing Windows device-verify pattern.
-
-### 7. The agent's local API is loopback-only, token-authenticated, and never serves the machine key
-`AgentApiServer` is shared by the Windows tray and the Linux daemon, and it is a **management** API: it rewrites `config.json`, re-registers this machine, and changes what syncs. Reaching it is equivalent to owning the box. It originally shipped unauthenticated with `AllowAnyOrigin`, and returned the machine's server API key in `/api/state` and `/api/config`.
-
-Four things, all of which are load-bearing together — none is sufficient alone:
-
-1. **Loopback only, always.** Kestrel binds `localhost`. `daemon --lan` is **withdrawn** and now exits non-zero with an SSH-tunnel instruction, rather than being silently ignored — someone's autostart unit or notes may still carry it, and they need to learn the exposure is gone. Remote access is an **authenticated SSH tunnel**, which supplies the authentication and transport security this API does not have.
-2. **A high-entropy local token** (32 random bytes, `{configDir}/api-token`, `0600`) on every `/api/*` request, compared in fixed time. This is what stops *another process running as this user*, and any web page the user has open, from driving the agent. The bundled UI gets it by having it injected into `index.html` at serve time; the same-origin policy is what stops another page reading it back.
-3. **Host and Origin validation.** A DNS-rebinding page resolves *its own* name to `127.0.0.1`, so the socket is loopback but the `Host` header still carries the attacker's domain — rejected, token or not. A foreign `Origin` is rejected the same way. **No CORS policy exists**: the UI is same-origin, so nothing legitimate needs one.
-4. **The machine API key is never serialized into a response.** Not in `/api/state`, not in `/api/config`, and `/api/register` returns the machine name rather than echoing the new key. The agent UI shows *whether* the machine is registered, not its secret. `whoami` still prints it — that is a local CLI the user runs in their own terminal, not something served over a socket.
-
-`/openapi` is deliberately **not** token-gated: it is a static description of the API with no machine state in it, and the UI's type generator has no way to send a header. Proven by `tests/run-local-api-tests.ps1`, which asserts each attack is refused rather than that the UI still works.
-
-### 8. Two processes own the agent's state, so every shared file is locked, atomic, and merged
-The agent is **not one process**. Autorun keeps the daemon alive while Steam starts `savelocker run -- %command%` as a second one (on Windows, the tray plus any CLI command). They share `config.json`, `offline-queue.json`, `health-events.json` and the temp archive directory. The locks that were here — a `SemaphoreSlim` and a `lock` statement — are in-process, and do nothing across that boundary.
-
-- **A per-game cross-process lock** (`AgentStateLock`, a lock file opened `FileShare.None` → `flock` on Unix, share-deny on Windows) wraps push and pull. It is held **in addition to** the in-process semaphore, not instead: a `flock` is owned by the *process*, so two threads in the same process both acquire it and neither blocks. Each layer covers what the other cannot.
-- **A lock timeout does not throw.** It logs and proceeds. A stale lock file from a crashed process must never be able to stop a game syncing forever — this tool exists to protect saves, and failing closed would lose them.
-- **Temp archives carry PID + GUID.** They were `{gameId}-push.zip`, shared by every process: two pushes of one game wrote the same file, and the first to finish deleted the other's archive mid-upload. A 6-hour sweep reclaims what a killed process leaves behind.
-- **Every write is atomic** (`AtomicFile`: temp file + rename). `File.WriteAllText` truncates before writing, so a second process could read an empty file and — this is the damaging part — `AgentConfig.Load` would fall back to defaults, discarding the machine's API key and game list.
-- **Read-modify-write is merged under the lock, not overwritten.** This is the bug that mattered: the daemon holds a config loaded at startup, and a whole-object `Save()` erased the `LastKnownVersionId` another process had just recorded. The next push then presented a stale parent and the server rejected it — **one machine conflicting with itself**, indistinguishable in the dashboard from the two-machine divergence in `CONTEXT.md`. `SaveGameSyncState` re-reads under the lock and applies only that game's fields; the queue and health files merge the same way.
-
-**State belongs beside the config file it came from**, not in the machine default — with `--config` those diverge, and each process would keep a private queue while believing it shared one.
-
-The long-term shape is **one owner**: wrapper→daemon IPC over a Unix socket, standalone only when no daemon is up. The locking above makes two owners *correct*; IPC would make it *simple*. Deferred, not rejected.
-
-### 9. A pulled archive is hostile input, and the restore is written that way
-The archive arrives over the network from a server the agent may have been pointed at by a **forged enrollment file** (§4 — the policy file is deliberately unsigned, and the threat it accepts is a malicious server URL). Everything in it — entry names, entry count, declared sizes — is attacker-controlled. Phase 6 hardened the restore's *delete* pass; the *copy* pass was still trusting.
-
-- **No destination may traverse a link below the save root.** If the target already held `linkdir -> /home/user` and the archive carried `linkdir/.bashrc`, `File.Copy` wrote **through** the link and overwrote a real file outside the save folder. `run-hardening-tests.ps1` reproduces this against pre-fix code — it is not theoretical.
-- **The root itself IS followed**, which is a deliberate departure from "reject any symlink". The root is *user-chosen* (`add-game --dir`), and a Deck user symlinking saves onto an SD card is a legitimate setup that must keep working. The paths **inside** the archive are not user-chosen, and those are what get checked.
-- **The whole restore is rejected, never partially applied.** Skipping the offending file would leave a half-restored save that reports success.
-- **Size caps** — 100,000 entries, 2 GB uncompressed. Checked against the declared central-directory sizes first (cheap, rejects an obvious bomb before a byte lands) *and* against **bytes actually written**, because the declared size is attacker-controlled and may understate. Env-overridable, which is both an operator escape hatch and what makes the caps testable without a 2 GB fixture.
-- ⚠️ **Extraction is hand-rolled now** (`ExtractChecked`), because a byte cap cannot be enforced through `ZipFile.ExtractToDirectory`. That means the zip-slip rejection it used to give for free is **ours to maintain** — the existing zip-slip test was kept and re-aimed at the replacement rather than deleted.
-- A refused archive is reported to the console as an event, not just thrown: a Deck owner would otherwise see nothing, and "refused" looks identical to "already up to date" from the outside.
-
-### 10. Sync state is read back before it is used, and `Save()` cannot write it (locked 2026-07-23)
-Amends §8, which fixed only half of this. §8 stopped a long-lived process **erasing** a parent version another process had recorded. It did nothing to stop that process **using** a parent already superseded — and the daemon holds `TrackedGame` references from boot for its entire lifetime (`Daemon.StartFolderWatchers`), so once the launch wrapper pushed on game exit, every watch-push presented the boot-time parent. The server correctly recorded a conflict; the conflict path deliberately does not advance the pointer; the daemon never recovered. **75 conflicts and 2.66 GB on a retain-5 game, on a fleet of one machine** (`logs/2026-07-23_conflict-storm.md`).
-
-- **Read back under the lock, immediately before use.** `SyncEngine` calls `AgentConfig.RefreshGameSyncState` inside the per-game lock at the top of push and pull. Refreshing `LastSyncedHash` matters as much as the parent: it gates the un-pushed-changes check, so a stale one makes a legitimate pull look like it would destroy local progress and the pull is refused.
-- **`Save()` is safe by construction, not by convention.** It preserves per-game sync bookkeeping from disk; `SaveGameSyncState` is its only writer. §8 stated this as a rule in a doc comment and left 17 call sites to remember it — `CommandPoller.ReconcileGamesAsync` did not, and wrote the daemon's boot-time parent over the file on every game-list change. **A rule that 17 callers must remember is not a rule.** Audit first: every one of those callers writes settings or the game list, so none lost anything by the change.
-- **`SaveDirectory` is the caller's to write**, deliberately. It is reconciled from the server (its highest authority) and set by the agent UI and CLI, all of which route through `Save()`. Preserving it from disk would discard exactly the write each caller is making.
-- **Lock order is `ForGame` → `config`, never nested on the same name.** The refresh acquires and releases `config` before `PushCoreAsync` takes it via `SaveGameSyncState`, and `Save()`'s disk read happens inside the lock it already holds via an unlocked helper. Verified under real `flock` in WSL, which Windows share-deny semantics would not have exposed.
-- ⚠️ **`changed` in `ReconcileGamesAsync` is edge-triggered.** All five paths that set it assign the value that makes their own next comparison equal, so it is false in steady state and **an idle measurement reads as "this cannot happen."** It flips when a human edits in the console — so the corruption landed mid-repair, which is exactly when it struck.
-
-`run-concurrency-tests.ps1` went 12 → 17. All 12 originals covered the **write** race; checks 6 and 7 cover the read path and the poll path, and both were verified to fail against pre-fix code before being accepted.
+- **Detection: reuse Ludusavi's manifest** (community save-location DB), don't re-map save
+  locations ourselves. Build our own agent/server/dashboard for orchestration, leasing, conflicts.
+- **Conflict prevention: proactive lock/lease.** Server tracks a per-game checkout; the agent pulls
+  before launch *where it has a real launch boundary* (see the next bullet); other machines are
+  warned if leased elsewhere. Content-hash + parent-version lineage is the fallback detector.
+- **Only Linux has a pre-launch pull; Windows refuses to restore under a running game** (WA-01,
+  2026-07-27). `savelocker run -- %command%` runs *instead of* the game and starts it itself, so it
+  restores with certainty that nothing has the save open. Windows has only `ProcessWatcher`, which
+  polls every 4 s and therefore observes a game *after* it started and opened its saves — calling
+  that "pre-launch" meant restoring underneath a live process, which the game then overwrote at
+  exit, losing the pulled save silently. The Windows launch path now takes the lease and skips the
+  pull. `GameActivity.IsActive` is the central refusal, enforced inside `SyncEngine.PullAsync`
+  (twice — before download and again immediately before restore, since a game can launch during a
+  long download) so no tray action, dashboard command, CLI call, or lifecycle callback can route
+  around it. Each surface checks it too, only to word the reason. A game with no configured
+  `ProcessNames` cannot be detected as running — that is what makes WA-08 a data-safety fix, not a
+  convenience one. Adding a Windows launch wrapper would let the pull come back; nothing here
+  precludes it.
+- **Two tiers of save-path validation: absolute refusals and overridable warnings** (WA-02,
+  2026-07-27). `SavePathGuard` is the hard floor — a drive root, a user profile (or the folder
+  holding all of them), a Windows/system directory, Program Files, or the agent's own state or
+  install directory can never be a save folder, and there is no override, because a force-pull
+  *replaces* whatever it is pointed at. `SaveDirSanity` stays the heuristic tier (Wine prefix,
+  repeated tail, over the upload cap): those have real false positives, so they are refused once and
+  accepted on an explicit second confirmation (`confirm` on the local API, `--force-path` on the
+  CLI). Paths are validated *and canonicalized* at all five entry points — folder picker, typed
+  local API, enrollment, CLI, and server `MachineSavePath` reconciliation — and validated **again**
+  inside `SyncEngine` immediately before archiving or restoring. The re-check is the load-bearing
+  one: config.json is hand-editable, the server can push a path with no local confirmation, and a
+  stored path can become a junction after it was accepted, so canonicalization resolves reparse
+  points rather than trusting the stored string. The state directory is refused as
+  same-or-ancestor only, not as a whole tree — `config.json` and `api-token` sit directly in it, and
+  the test suites legitimately put save folders below it.
+- **Windows agent state belongs to one account: whoever enrolled** (WA-03, 2026-07-27). Not a local
+  group. `%PROGRAMDATA%` grants every authenticated user read access and it inherits, so
+  `config.json` (this machine's **server API key**) and `api-token` (which grants the local
+  management API) were readable by any local account. `StateDirSecurity` severs inheritance on the
+  state directory and grants only the enrolling user, `SYSTEM`, and Administrators — the last two
+  because an administrator can take ownership anyway, so removing them costs backup and repair
+  while adding nothing. This matches the shape the installer already chose: it deliberately does
+  **not** create `%PROGRAMDATA%\SaveLocker` while elevated, so the de-elevated tray user owns it
+  (`installer/SaveLocker.iss`), and no installer change was needed. The ACL is applied to the
+  *directory* with inheritable rules and enforced in `AtomicFile` — the one choke point every state
+  writer already goes through — so a state file added later cannot quietly miss it. Failure to
+  apply is logged loudly and is never fatal: an agent that refuses to start protects nothing.
+- **`ApiKey` + `MachineId` + `ServerPin` are one identity, bound to an origin** (WA-04, 2026-07-27).
+  Changing `ServerUrl` to a different origin **clears all three**, and the machine must register or
+  enroll again. Keeping them meant presenting server A's live machine key to server B — B rejects it,
+  but the credential has still been handed to a host that was never meant to see it, and A's stale
+  pin makes B's first genuine TLS identity look like a mismatch. Sameness is judged on
+  scheme+host+port (`ServerOrigin`), not the raw string, so a trailing slash or a change of case
+  keeps the enrollment. Separately, a candidate URL is validated as an absolute http/https address
+  **before** anything is mutated: the old code persisted the raw string and only then built a client
+  from it, so `htp://typo` reached disk, returned 500, and crashed every subsequent start.
+  Registration through the local UI now persists the observed TLS pin *with* the key and machine id
+  in one write — it previously ignored `ApiClient.ObservedPin` entirely, so registering against an
+  https server established an identity with no pin at all and no TOFU guarantee.
+  <br>**Deliberately not done:** the candidate connection is not probed before committing. Validation
+  alone satisfies "a typo cannot brick startup", and requiring a successful probe would make a
+  server that is merely offline impossible to configure. A failed transition rolls back every field
+  together instead.
+- **An update is verified by digest, and downloads are origin-bound** (WA-05, 2026-07-27). The
+  server computes a SHA-256 while storing an installer, publishes it on `/api/agent/latest`, and the
+  agent refuses to run anything that does not match. This is the direct consequence of shipping no
+  certificates: the transport proves nothing, so the digest is the *only* control over what gets
+  executed. A download to the configured server's own origin may use the authenticated client; a
+  download anywhere else gets **no credential, no pin, and is refused outright without a digest** —
+  the old code accepted an arbitrary absolute `DownloadUrl` using a client whose default headers
+  carried the machine key, handing this machine's credential to any host the server named. Also
+  bounded: a unique temp file created with `CreateNew` (the old fixed `%TEMP%` name was predictable
+  and pre-placeable by another local user), a 300 MB cap, deletion on every failure path, and an
+  MZ-header check so an HTML error page cannot reach `Process.Start`. A connection change retires
+  the checker and clears any cached result, and the origin is re-checked at the moment of launch.
+  <br>An installer stored before digests existed is hashed once at startup (`BackfillDigestAsync`),
+  so already-deployed servers keep working rather than serving something the agent will not verify.
+  <br>**Known limit, stated plainly:** a digest delivered over the same unauthenticated channel as
+  the artifact does not stop an attacker who can rewrite both. Authenticode verification is the
+  check that would, because it does not depend on the channel — there is a marked hook for it in
+  `UpdateChecker.VerifyLooksExecutable`, pending a decision on code signing.
+- **A `SyncEngine` has an explicit lifetime, and its leases belong to the origin that issued them**
+  (WA-06, 2026-07-27). Replacing `_engine` used to drop the old one on the floor. Its lease timers
+  are rooted by the runtime timer queue, so they kept renewing against the **old** server forever,
+  while the game's exit ran through the **new** engine and released against the new server — which
+  had never issued anything. The old server's lease was then held in perpetuity by a machine that
+  had stopped talking to it, locking every other machine out of that game. The engine now captures
+  its origin at construction (`_config` is shared and mutable, so it cannot answer "who issued my
+  leases?"), and `RetireAsync` stops every renewer, cancels work in flight, and releases held leases
+  **through the client that acquired them** before the caller moves on. Both hosts retire the engine
+  they replace. A retired engine refuses new work, so the offline-queue drainer and folder watchers
+  — which captured a reference before the change — cannot push to the previous server.
+  <br>Renewal callbacks check retirement twice, before the request and after it: disposing a timer
+  does not recall a callback already running, so without the second check a retired engine renews
+  and reports success. Release now happens in a `finally`, because a push that throws must not also
+  leak the lease — that left a game checked out until expiry with nobody playing it.
+  <br>`SAVELOCKER_LEASE_RENEW_SECONDS` shortens the three-hour interval for tests only; the interval
+  is the thing under test and nothing observable happens at the production value.
+- **The cross-process lock fails closed** (WA-07, 2026-07-27). `AgentStateLock` used to time out after
+  30 s and hand back an *unheld* handle so the caller proceeded — the precise state the lock exists
+  to prevent. **The justification for that was factually wrong** and worth recording so it is not
+  reinstated: it claimed a lock file left by a crashed process must not block syncing forever, but
+  the lock is a *handle*, not the file's existence, and every OS releases handles when a process
+  dies. A crashed agent leaves a stale lock *file* that the next caller opens without difficulty.
+  There is no stale-lock scenario, so nothing was being bought by failing open.
+  <br>The 30 s was also shorter than one normal operation — the settle gate alone may hold the lock
+  for `SettleMaxWaitSeconds` (120 by default) and the upload's HTTP timeout is 10 minutes — so a
+  *healthy* exit-push routinely outlasted the wait and the other process barged in. The game lock is
+  now sized to what the holder could legitimately be doing: settle + upload window + margin, ~13
+  minutes. Short state writes (config, queue, health, lease warnings) get 60 s.
+  <br>Failure is a typed `AgentStateLockException`, reported as "another SaveLocker process is
+  syncing this game" by the tray, the CLI (`Busy:`, not a stack trace) and the console event stream,
+  and acquisition is cancellable so a retired engine does not sit waiting.
+  <br>`SAVELOCKER_SYNC_LOCK_SECONDS` shortens the wait for tests only — sibling of
+  `SAVELOCKER_LEASE_RENEW_SECONDS`; both are listed in Gotchas.md.
+- **Process names are derived where they are known, and admitted as missing where they are not**
+  (WA-08, 2026-07-27). A game enrolled through the UI never received `ProcessNames`, so
+  `ProcessWatcher` excluded it outright — no lease, no push on quit, and (since WA-01) no refusal to
+  overwrite saves while it is running. Only the CLI's `--proc` populated it. A **non-Steam shortcut**
+  is the one source where the answer is known rather than guessed: Steam records the exact
+  executable, and `GameActivity.ProcessNameFromExe` reduces it to what `Process.ProcessName`
+  reports. An installed Steam game or a save-root match gets **null** — a folder name is not an
+  executable name, and guessing would be worse than admitting ignorance, because a wrong name is
+  indistinguishable from a game that is never running.
+  <br>Where it is null the UI says "Launch/exit sync not configured" and offers to set it, rather
+  than implying automatic sync works. The same normalisation runs at every entry point (local API,
+  CLI `--proc`), so `C:\Games\Foo\foo.exe` and `foo.exe` both persist as `foo` — stored verbatim,
+  neither would ever match.
+- **One thread owns every WinForms object, and it is established rather than captured** (WA-09,
+  2026-07-28). `TrayContext` used to capture `SynchronizationContext.Current` in its constructor —
+  which runs as the **argument** to `Application.Run`, before the message loop installs
+  `WindowsFormsSynchronizationContext`. The capture fell through to `new SynchronizationContext()`,
+  so every `_ui.Post` in the tray was a plain thread-pool post: the menu rebuild, the balloon, the
+  first-run prompt, and the ones WA-01, WA-05 and WA-06 added. Nothing failed loudly, because
+  WinForms only throws on a cross-thread call once a handle exists and a `NotifyIcon` menu has none.
+  <br>`UiDispatcher` replaces it: it creates a control and **forces its handle**, which is itself
+  what installs the WinForms context on that thread. It therefore does not depend on where in the
+  startup sequence it is constructed — it makes the owner instead of hoping to find one. Every
+  WinForms touch from a background thread routes through `Post` (fire-and-forget) or `InvokeAsync`
+  (the modal surfaces: message boxes, the folder dialog). The owner is logged on every start
+  (`UI owner: thread N, context …`), because the defect was invisible precisely in that the wrong
+  context still accepted every post.
+  <br>Two consequences worth keeping: the folder picker no longer runs on a private STA thread —
+  `Main` is already `[STAThread]`, so there was nothing for a second one to provide, and reading
+  `Application.OpenForms` from it handed `ShowDialog` an owner belonging to another thread. And the
+  live game list is copy-on-write everywhere (`AgentConfig.MutateGames`), so a poller adoption cannot
+  throw "Collection was modified" out of a UI or render thread enumerating it.
+  <br>`SAVELOCKER_TRAY_PORT` was added under the rule below so a harness can drive a real tray; it
+  scopes the single-instance mutex too, so a test tray and the installed one coexist.
+- **A requested route is queued until WebView2 can honour it** (WA-12, 2026-07-28). `OpenWindow`
+  called `Navigate` before WebView2 existed. `CoreWebView2` is null until `EnsureCoreWebView2Async`
+  completes, so the call was dropped on the floor and `OnLoad` then navigated to `/` regardless:
+  accepting the first-run prompt asked for Settings and landed on Overview, on exactly the install
+  where the user has the most to configure. The guard that was there (`IsHandleCreated`) tested the
+  wrong thing — `Show()` creates the handle immediately, while WebView2 comes up long afterwards.
+  <br>`AgentWindow` now holds a pending route: `Navigate` applies it if the core is ready and stores
+  it otherwise, and initialization navigates to the stored route in preference to the home page. A
+  later deep link replaces an earlier one, so what opens is the last thing asked for. The field is
+  UI-thread-only by construction (every caller goes through the WA-09 dispatcher, and the
+  initialization continuation resumes there), which is why it carries no lock.
+- **Discovery is per-source best-effort; one bad source cannot fail the scan** (WA-11, 2026-07-28).
+  The scanner reads places the agent does not control — Steam `userdata` directories owned by other
+  Windows accounts, a library on a drive that can be unplugged mid-enumeration, a redirected or
+  cloud-backed Documents folder. Only **parse** errors were caught, so any of those threw out of
+  `ScanAsync` entirely: zero candidates, and the manual setup path the user would have used to work
+  around it was gone too, since the UI reaches it through the same failed request.
+  <br>Each source now runs inside its own boundary and is logged and skipped on failure. The
+  enumeration guard is the part worth remembering: `Directory.EnumerateDirectories` and
+  `EnumerateFiles` fail **lazily**, on the `MoveNext` that reaches the bad entry — a `try` around the
+  call site catches nothing, so the enumerator is stepped explicitly and whatever was read before the
+  failure is kept.
+  <br>`OperationCanceledException` still propagates: a cancelled scan is the caller's own doing, not
+  a broken source. Registry keys are opened with `using` rather than left to the finalizer.
+- **A platform toggle reports the effective state, not the requested one** (WA-10, 2026-07-28).
+  "Start with Windows" had two independent ways to lie. `/api/config` discarded
+  `IAutoStart.SetEnabled`'s result and always answered ok, so a registry write refused by group
+  policy still drew a ticked box; and `IsEnabled` accepted **any** non-empty Run value, so an entry
+  left by an install that has moved or been uninstalled read as enabled while Windows launched
+  nothing at login.
+  <br>Now: `IsEnabled` is true only when the Run entry resolves to **this** executable (canonical
+  path, must exist). `SetEnabled` returns an `AutoStartResult` carrying a reason a person can act on,
+  and **reads the entry back** — `SetValue` not throwing is not the same as the value being there,
+  since policy and endpoint-protection products both virtualise and revert this key. The API applies
+  the toggle **first**, so a refusal costs nothing and returns 400 with the reason, and it echoes the
+  re-read effective state so the checkbox can correct itself.
+  <br>The same contract covers Linux: `SystemdAutoStart` distinguishes "systemctl failed" from
+  "could not run systemctl at all", which on a Deck reached over SSH means no user session bus — a
+  different problem with a different fix.
+  <br>`SAVELOCKER_RUNKEY_SUBPATH` (test-only, below) redirects the Run key so the access-denied
+  branch can be tested with a real Deny ACE. Applying one to the real
+  `…\CurrentVersion\Run` of a working machine to prove a point is not an acceptable test.
+- **Test-only environment variables stay, and stay unadvertised** (2026-07-28, maintainer decision).
+  `SAVELOCKER_LEASE_RENEW_SECONDS`, `SAVELOCKER_SYNC_LOCK_SECONDS`, `SAVELOCKER_TRAY_PORT` and
+  `SAVELOCKER_RUNKEY_SUBPATH` are kept — they are the only
+  way to observe a 3-hour renewal interval or a ~13-minute lock wait inside a test — but they are
+  **not** promoted to `AgentConfig` settings and are **not** documented anywhere a user reads. They
+  live in `Gotchas.md` (this vault) only; `web/src/help/cli-reference.md` and the release notes must
+  not mention them. Anything added in the same spirit follows the same rule: read silently, default
+  to the production value, clamp the override, and document it here rather than in the KB.
+- **Stack: single-language .NET.** Agent = C#/WinForms (Windows), C#/headless (Linux); Server =
+  ASP.NET Core in Docker on unRAID.
+- **Runtime: .NET 10 (LTS)**, locked 2026-07-13. .NET 9 is STS, EOL 2026-11-10; .NET 10 is LTS to
+  2028-11-14. `global.json` pins the SDK — bump it and the Dockerfile's `sdk:`/`aspnet:` tags
+  together.
+- **unRAID as hub, not peer-to-peer.** Async decoupling (offline machines sync later), single
+  source of truth for conflict resolution, versioned history in one place. Rejected raw Syncthing
+  (continuous sync risks mid-write copies; conflict files unusable for binary saves).
+- **Dashboard auth:** `AdminPasswordFilter` + PBKDF2-SHA256. Cloudflare Access/Google SSO deferred
+  — blocked by the Tunnel's 100 MB file limit conflicting with large save archives.
+- **Plain HTTP is the default and supported configuration; TLS is bring-your-own** (2026-07-27,
+  maintainer decision). SaveLocker ships no certificates, no ACME client, and no self-signed
+  generation, and it will not nag about running over http. A user who wants TLS supplies their own
+  cert (reverse proxy or Kestrel config) and the agent then pins it on first use (`ServerTrust`,
+  §4). The product is a self-hosted LAN service on unRAID; the threat model is the household
+  network, not the open internet. Nothing may force, redirect to, or require https — no
+  `UseHttpsRedirection`, no HSTS, and no code path that treats an http server as misconfigured.
+  <br>**The consequence that matters, and it is not a small one:** on the default configuration the
+  transport provides *no* integrity guarantee. Anything the agent downloads and then **executes** —
+  the auto-update installer above all — cannot lean on TLS to prove it is genuine. Integrity has to
+  be carried in the payload's own verification (a digest published in the update metadata, and
+  Authenticode once releases are signed), and that check is then the *only* control, not a
+  belt-and-braces addition to a secure channel. See WA-05.
+  <br>Be honest about the limit: a digest delivered over the same unauthenticated channel as the
+  artifact does not stop an attacker who can rewrite both. It does stop a corrupted, truncated,
+  wrong, or substituted-at-the-download-host payload, and combined with restricting downloads to the
+  configured server's own origin it stops the agent being redirected to an arbitrary host. Full
+  protection against an on-path attacker requires the user to supply a cert — which is exactly the
+  trade this decision accepts.
+- **Enrollment model:** a game is defined once on the server; each agent maps its own local save
+  dir. The server game is the single definition; scanners only suggest candidates.
+- **"Latest" = `Game.HeadVersionId`.** UI label "Latest"; admin action "Set as Latest".
+- **Artwork:** SteamGridDB images are downloaded/cached server-side, not stored as bare URLs
+  (offline-safe, survives upstream changes).
+- **Product name: SaveLocker.** Rename complete 2026-07-10 — config dir, mutex, registry key,
+  DB path, namespaces, solution/project files. Existing Docker deployments may still have
+  `/data/localgamesync.db`; rename or set `Storage__DbPath`.
+- **Installer: Inno Setup 6**, not WiX/MSIX. MSIX's virtualization would interfere with reading
+  the Steam registry + arbitrary save folders. Machine-wide install, UAC up front. Uninstall
+  prompts before deleting `%PROGRAMDATA%\SaveLocker` (API key + config).
+- **Linux agent scope: non-Steam Windows games run under Proton only** (v1). Steam-bought games
+  already have Steam Cloud; native Linux game builds are explicitly out of scope (would need a
+  save-variant model — different formats/paths/line-endings per platform). A Proton save is a
+  Windows save, byte-identical to a Windows PC's — existing content-hash lineage works with zero
+  server schema change. **Never sync a native-Linux save into a Windows install.**
+- **Linux discovery:** `shortcuts.vdf` (non-Steam shortcuts), not `libraryfolders.vdf`/`*.acf`
+  (installed Steam games — irrelevant to this niche). Steam's shortcut AppID is signed in the
+  VDF but the `compatdata/<id>/` folder name is unsigned — `SteamShortcuts.CompatDataId()` is the
+  one place that converts.
+- **Linux UI: headless daemon serving the existing React UI** on `:5178` (Desktop Mode = KDE +
+  browser). **Game Mode has no browser**, so `savelocker ui` (SDL + Dear ImGui, in-process against
+  `Agent.Core`, no second API client) covers Status/Add game/Set folder/Launch setup as a gamepad
+  view — not a second frontend. Themed to the console's exact palette (`Ui/Theme.cs` mirrors
+  `web/src/index.css`). 60 fps cap (was 30; this is a menu, not a running game — VSync bounds it).
+  Rejected: Flatpak+WebKitGTK (665 MB+), Godot (needs ≤net9), Avalonia (still hand-built nav),
+  `steam://openurl` (Game Mode won't open a browser on request). Detail:
+  `logs/2026-07-24_linux-agent-streamline.md`.
+- **Launch trigger: the Steam wrapper (`savelocker run %command%`), not process polling.**
+  Gives exact prefix path + precise hooks via `STEAM_COMPAT_DATA_PATH`/`SteamAppId`. Process-name
+  polling is the fallback for non-Steam launchers only (Lutris/Heroic/Bottles) — `/proc/pid/comm`
+  truncation and Proton wrapper processes make it unpleasant.
+- **Enrollment token is short-lived and unsigned**, not a long-lived API key. Redeemed once for
+  the real machine key; expires ~15 min. Deliberately unsigned — the threat is a forged file
+  pointing at a malicious server, which signing can't fix (no trust anchor exists before the
+  user's own download). Mitigated by HTTPS + hardened restore path + TOFU pin after enrollment.
+- **Linux install: `~/.local/share/SaveLocker` + `systemd --user`**, never `/usr` — SteamOS's
+  rootfs is immutable and wiped on update. Self-contained publish (SteamOS ships no .NET runtime).
+- **Linux dev: WSL2 (Ubuntu 24.04 LTS) on ext4**, not a VM or Arch. Reproduces everything that
+  matters (FileShare/inotify/proc/systemd/case-sensitivity) and gives CI parity (`ubuntu-latest`
+  is Ubuntu 24.04). Never build from `/mnt/*`. Release job builds on `ubuntu-latest` for the
+  oldest-glibc guarantee (package floor is glibc 2.27 either way — .NET's native libs are
+  prebuilt by Microsoft, not compiled against the build host).
+- **Agent local API: loopback-only, token-authenticated, never serves the machine key.**
+  `AgentApiServer` can re-point a machine at another server — reaching it is equivalent to owning
+  the box. `--lan` is withdrawn and exits non-zero. Remote access is an SSH tunnel. Full rationale
+  in git history if ever revisited.
+- **Config/queue/health files are cross-process shared state**, not single-owner. Daemon +
+  launch-wrapper are separate processes sharing `config.json` etc. — per-game `flock` +
+  in-process semaphore both required, every write atomic (temp+rename), reads happen under the
+  lock immediately before use (not just before writing).
+- **Untracking a game is a per-machine opt-out, not a local delete.** `AgentConfig.UntrackedGameIds`
+  records that this machine does not sync a server game; the game stays on the server for the rest
+  of the fleet. A plain `Games.RemoveAll` does not stick — the game is still on the server, so the
+  daemon's next reconcile adopts it back, and any stale in-memory writer rewrites the entry. So the
+  opt-out is enforced in the primitive, not by convention: `Save()` drops anything on the list,
+  `SaveGameSyncState` never re-adds an entry absent from disk, and `CommandPoller` skips adoption.
+  `add-game` / enrollment clear the opt-out — explicitly adding a game back is the only "track this
+  here again". Untrack from the CLI with `remove-game --name`.
+- **Connection-affecting config changes must rebuild the host's `SyncEngine`.** `SyncEngine` caches
+  an `ApiClient` (base URL + key + pin). `CommandPoller` builds a fresh client per tick, so a server
+  URL change moved control traffic immediately while watcher pushes and queue drains kept hitting
+  the old host — split-brain with no error anywhere. `AgentApiServer` fires `onConnectionChanged`
+  before the settings response returns; both hosts rebuild there.
+- **A pulled archive is hostile input.** No destination write may traverse a symlink below the
+  save root (the root itself is followed — it's user-chosen; paths *inside* the archive are not).
+  Size caps (100k entries / 2 GB), checked against both declared and actual bytes. A refused
+  restore is reported to the console as an event.
+- **LAN-only over plain HTTP. No tunnel, no TLS termination, no reverse proxy** (2026-07-27). The
+  payload is save files, not credentials or PII, and the earlier Cloudflare Tunnel plan is dropped.
+  So `X-Forwarded-*` is never read and no trusted-proxy configuration exists — there is nothing in
+  front to trust. The one URL the server hands to *other machines* (enrollment policy, hosted
+  installer link) comes from `PublicUrl.For`: `Server:PublicBaseUrl` if configured, else the request
+  origin. Minting is **refused when an inferred URL is loopback**, because a console opened at
+  `http://localhost:5080` on the server box otherwise mints a file telling the new machine to sync
+  with itself. A loopback URL that was *stated* — typed into the override, or put in
+  `Server:PublicBaseUrl` — is honoured: agent and server on one box is a real setup, and it is what
+  both enrollment suites do. `Server:PublicBaseUrl` is also the single knob to set if a proxy is
+  ever added.
+- **Lease writes are single statements; losing a race is an answer, not an error.** Acquisition is a
+  conditional `UPDATE` (take over a row that is mine or expired) falling back to an `INSERT` whose
+  unique `GameId` index arbitrates — the losing caller catches the constraint violation and returns
+  `Granted=false` with the holder's lease. Read-then-insert gave one of two simultaneous launches a
+  500 at exactly the moment leasing is the thing being relied on. Release, renew, force-release and
+  the expiry sweep are conditional statements for the same reason, and the sweep can no longer
+  delete a lease renewed since it was selected. `ActiveLeaseAsync` is a pure read: it used to delete
+  expired rows, which made `GET /api/overview` a write that two parallel dashboard requests could
+  collide on.
+- **Every server-authoritative head change fans out; an ordinary push does not.** One code path
+  (`SetHeadAndPropagateAsync`) moves `HeadVersionId`. Where the *server* decided — automatic conflict
+  policy, manual resolution, rollback, Set as Latest — it queues a deduplicated **unforced** Pull for
+  every live machine that syncs the game (mapped save path or uploaded version), skipping the
+  uploader that already learned the head from its own response. An agent's parent advances only on
+  its own push or pull, so without this the fleet stays on the old parent and re-conflicts on its
+  next save — the console said resolved while the machines disagreed. An ordinary push deliberately
+  does **not** fan out: the other machines are not displaced by a decision, and a command arriving
+  mid-session is the failure the lease and settle gate exist to prevent. Unforced is the safety
+  property: unsynced local work reports *blocked* rather than being overwritten (only the console's
+  own Pull button forces).
+- **Set as Latest / rollback supersedes the conflicts it decides, and only those.** A conflict
+  offering the chosen version is resolved in its favour — leaving it open makes the console insist
+  the version it was just told to trust is unresolved. A conflict between two *other* versions stays
+  open: the admin has said nothing about it, its machine is still stuck, and closing it would also
+  disarm the rule that resolution may not rewind a newer Latest. Each supersession is audited as
+  `conflict.resolve_superseded`.
+- **A credential is only consumed once the thing it buys has been issued.** The SteamGridDB key is
+  verified *before* it replaces the stored one, and a rejection is a 4xx — it used to store first,
+  ask second, and answer 200 with `{ ok: false }`, so a typo overwrote a working key while the
+  console reported success. Enrollment burns its single-use token and issues the machine key inside
+  **one transaction**; anything that throws rolls the burn back, so a file is never spent for
+  nothing. The single-winner guarantee is unchanged: the burn is still a conditional `UPDATE`, and
+  a second redeemer matches zero rows.
+- **The SteamGridDB probe must hit an authenticated endpoint.** `search/autocomplete` is served
+  *without* a key — it returned 200 with real Celeste data for 25 characters of nonsense, so
+  "API key verified" only ever meant the site was reachable. `grids/game/{id}` answers 401 without
+  a valid key, which is the question being asked.
+- **The hosted installer is staged, published, then the old one is removed — under one gate.**
+  `AgentInstallerService` is a singleton holding a `SemaphoreSlim` that manual upload, manual GitHub
+  fetch, the background poller and delete all pass through; the fetch holds it across its
+  "is this newer?" read too, since that decision is read-then-write. Validation (`.exe`, a usable
+  filename, a parseable version) happens **before** anything on disk is touched: the old code
+  accepted a 1 KB `notes.txt` with version `not-a-version` and served it to the fleet as the
+  installer. The request body is capped at `AgentUpdate:MaxInstallerMb` (200) rather than having
+  Kestrel's limit removed outright — `ReadFormAsync` buffers to memory and temp storage, and the
+  route is open until an admin password is set.
+- **An archive is staged, then published; rows are deleted before files.** Uploads land in
+  `{ArchiveRoot}/.incoming/*.part` (same volume, so the publish is one rename) and are size-capped
+  while copying, not on declared length — a disconnect used to leave a truncated archive sitting at
+  the exact path a `SaveVersion` row would name. Deletion runs the other way round: commit the DB,
+  then delete the file, because an orphaned file is wasted space while a live row whose archive is
+  gone is a save the console offers and cannot produce. Failed deletes are audited as
+  `archive.orphaned` rather than ignored; staging is swept at startup (1 h age floor).
+- **Command delivery is at-least-once, under a visibility lease.** A claimed `AgentCommand` is
+  Dispatched with a `LeaseExpiresAt` + `ClaimToken`, written by one atomic UPDATE so two pollers
+  sharing a machine identity cannot both receive it; when the lease expires unacknowledged the
+  command is claimable again (`ClaimCount` records the redelivery, and a reclaim is audited).
+  At-most-once was the old behaviour and it silently lost any command whose agent died between the
+  poll and the result. Retrying is safe for every type — Pull re-reads the head, Push re-hashes and
+  the server answers `NoChange` on identical content, Sync is both, Scan only reads — so a lost
+  request is the worse failure. Terminal states stick: a late duplicate result is a no-op.
+- **Conflict pressure caps at 3 rejected payloads**, then further pushes report the condition
+  without re-uploading. 6-hour overdue threshold surfaces stale conflicts to a connected agent.
+  "Keep both" doesn't create two heads — the chosen snapshot becomes Latest, both conflicting
+  snapshots get `Protected` (exempt from retention) until explicitly unprotected. Resolution
+  refuses to promote something older than the current head.
 
 ## Environment facts (user-provided)
-- Games are **standalone builds**, not bought on Steam/Epic → save locations unpredictable, hence manifest-based detection + manual `--dir` fallback.
-- Sync trigger: **hybrid** (automatic background + manual override).
-
-## 11. Conflict pressure is capped on bytes and escalated on attention (locked 2026-07-23)
-A conflict is a safety stop, not permission to upload the same full save forever. The first three
-rejected payloads preserve a useful divergent history. After that, ordinary pushes report the
-condition without creating an archive or sending its bytes. The counter is persisted per game,
-shared under the same config lock as parent/hash state, and resets only after a clean push or pull.
-A forced push remains the explicit bypass.
-
-Six hours is the attention threshold. The console marks the conflict overdue and every heartbeat
-returns stale conflicts so a connected Windows tray can notify the user even when the stuck machine
-is a Deck. Long-lived agents notify once per conflict ID; the server keeps returning it until it is
-resolved so restarts still produce a reminder.
-
-“Keep both” does not create two heads. The chosen snapshot becomes the single authoritative Latest,
-while both conflict snapshots receive `SaveVersion.Protected` and are exempt from automatic
-retention. Protection can be removed explicitly from the Versions table. Conflict resolution also
-refuses to promote an option older than the current head, because a resolution must not silently
-undo a later Set as Latest.
+- Games are standalone builds, not bought on Steam/Epic → manifest-based detection + manual
+  `--dir` fallback is the primary path, not a fallback, on Linux.
+- Sync trigger: hybrid (automatic background + manual override).

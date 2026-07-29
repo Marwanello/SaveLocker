@@ -24,6 +24,16 @@ public sealed class AgentConfig
     /// <summary>Set once the first-run welcome prompt has been shown/dismissed so we don't nag.</summary>
     public bool FirstRunCompleted { get; set; }
     public List<TrackedGame> Games { get; set; } = new();
+    /// <summary>
+    /// Server games this machine has deliberately stopped tracking. Removing a game locally is not
+    /// enough on its own: the game still exists on the server, so the next
+    /// <c>CommandPoller.ReconcileGamesAsync</c> adopts it straight back and the removal reads as a
+    /// bug. This is the per-machine opt-out that makes "removed from this device" mean it — the
+    /// game stays on the server for every other machine. Enrolling or adding the game here clears
+    /// the opt-out. Written only by <see cref="SetTracked"/>; <see cref="Save"/> carries it through
+    /// from disk untouched, for the same lost-update reason as the per-game sync state.
+    /// </summary>
+    public List<Guid> UntrackedGameIds { get; set; } = new();
     /// <summary>Cumulative count of save versions successfully pushed to the server.</summary>
     public int TotalSavesPushed { get; set; }
     /// <summary>UTC timestamp of the most recent push or pull across all games.</summary>
@@ -151,10 +161,175 @@ public sealed class AgentConfig
             }
             TotalSavesPushed = onDisk.TotalSavesPushed;
             LastSyncTime = onDisk.LastSyncTime;
+            // Same reasoning as the sync state above: SetTracked owns this list, and a host that
+            // loaded its config at boot must not write a stale copy over another process's opt-out.
+            UntrackedGameIds = onDisk.UntrackedGameIds;
+
+            // And the opt-out has to be ENFORCED here, not just carried. A long-lived host loaded
+            // its game list at boot and holds it for the process lifetime, so after another process
+            // untracks a game this one still has it in memory — and the next Save() from any of the
+            // 17 call sites writes it straight back. Making the primitive honour the list means no
+            // caller has to know: an untracked game cannot be resurrected by a stale writer.
+            MutateGames(list => list.RemoveAll(g => UntrackedGameIds.Contains(g.GameId)));
         }
 
         AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(this, JsonOpts),
             restrictPermissions: true);
+    }
+
+    /// <summary>The identity fields a server issued, captured so a failed transition can restore them.</summary>
+    public readonly record struct ServerIdentity(string ServerUrl, string? ApiKey, Guid? MachineId, string? ServerPin);
+
+    /// <summary>A snapshot of the current connection identity, for rollback.</summary>
+    public ServerIdentity CaptureIdentity() => new(ServerUrl, ApiKey, MachineId, ServerPin);
+
+    /// <summary>Put back a captured identity, in memory only — the caller decides whether to persist.</summary>
+    public void RestoreIdentity(ServerIdentity id)
+    {
+        ServerUrl = id.ServerUrl;
+        ApiKey = id.ApiKey;
+        MachineId = id.MachineId;
+        ServerPin = id.ServerPin;
+    }
+
+    /// <summary>
+    /// Point this agent at a server, in memory. Returns false — changing nothing — if the URL is not
+    /// an absolute http/https address, so a typo can never reach disk and brick the next startup.
+    /// <para>
+    /// <paramref name="identityCleared"/> reports the security-relevant half: when the origin
+    /// actually changes, the machine key, machine id and TLS pin are <b>dropped</b>, because all
+    /// three were issued by the previous server and mean nothing to the new one. Sending them on
+    /// would hand a live credential to a host that was never meant to see it (WA-04). The user
+    /// re-registers or re-enrolls against the new origin. A cosmetic edit — a trailing slash, a
+    /// change of case — is not an origin change and keeps the enrollment.
+    /// </para>
+    /// </summary>
+    public bool TrySetServerUrl(string? url, out bool identityCleared)
+    {
+        identityCleared = false;
+        if (ServerOrigin.CanonicalUrl(url) is not { } canonical) return false;
+
+        if (!ServerOrigin.Same(ServerUrl, canonical))
+        {
+            ApiKey = null;
+            MachineId = null;
+            ServerPin = null;
+            identityCleared = true;
+        }
+
+        ServerUrl = canonical;
+        return true;
+    }
+
+    /// <summary>
+    /// Change one or more scalar settings without writing this process's whole view of the config.
+    ///
+    /// <see cref="Save"/> is the right primitive for a process that owns the game list — the daemon
+    /// and the tray, which reconcile it. <c>savelocker ui</c> owns none of it: it is a separate,
+    /// long-lived process that loads <c>config.json</c> at startup and never reloads it, so a
+    /// <see cref="Save"/> to toggle interface sounds serialized a game list minutes stale and undid
+    /// whatever the daemon had reconciled in between. Nothing in the write said so.
+    ///
+    /// <para>
+    /// So: re-read under the lock, apply <paramref name="apply"/> to the <b>fresh</b> state, write
+    /// that, and converge this object onto the result — the caller's view ends up matching the file
+    /// rather than drifting further from it.
+    /// </para>
+    /// </summary>
+    public void UpdateSettings(Action<AgentConfig> apply)
+    {
+        using var guard = AgentStateLock.Acquire("config", StateDir);
+
+        var fresh = ReadOnDisk();
+        if (fresh is null)
+        {
+            // Nothing on disk to merge with — our own copy is the best truth available.
+            apply(this);
+            AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(this, JsonOpts),
+                restrictPermissions: true);
+            return;
+        }
+
+        fresh.ConfigPath = ConfigPath;
+        apply(fresh);
+
+        AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(fresh, JsonOpts),
+            restrictPermissions: true);
+
+        ServerUrl = fresh.ServerUrl;
+        MachineName = fresh.MachineName;
+        ApiKey = fresh.ApiKey;
+        MachineId = fresh.MachineId;
+        ServerPin = fresh.ServerPin;
+        FirstRunCompleted = fresh.FirstRunCompleted;
+        SettleQuietSeconds = fresh.SettleQuietSeconds;
+        SettleMaxWaitSeconds = fresh.SettleMaxWaitSeconds;
+        UiSoundsMuted = fresh.UiSoundsMuted;
+        TotalSavesPushed = fresh.TotalSavesPushed;
+        LastSyncTime = fresh.LastSyncTime;
+        Games = fresh.Games;
+        UntrackedGameIds = fresh.UntrackedGameIds;
+    }
+
+    /// <summary>Is this server game one this machine has opted out of tracking?</summary>
+    public bool IsUntracked(Guid gameId) => UntrackedGameIds.Contains(gameId);
+
+    /// <summary>
+    /// Record that this machine does — or does not — track a server game, and add or drop the local
+    /// entry to match. Field-level and re-read under the lock, so a concurrent daemon save cannot
+    /// undo it: untracking a game from the Game Mode UI while the daemon is running has to survive
+    /// both the daemon's next <see cref="Save"/> and its next reconcile.
+    /// </summary>
+    public void SetTracked(Guid gameId, bool tracked, TrackedGame? entry = null)
+    {
+        using var guard = AgentStateLock.Acquire("config", StateDir);
+
+        var onDisk = ReadOnDisk() ?? this;
+        onDisk.ConfigPath = ConfigPath;
+
+        if (tracked)
+        {
+            onDisk.UntrackedGameIds.RemoveAll(id => id == gameId);
+            if (entry is not null && onDisk.Games.All(g => g.GameId != gameId))
+                onDisk.Games.Add(entry);
+        }
+        else
+        {
+            if (!onDisk.UntrackedGameIds.Contains(gameId)) onDisk.UntrackedGameIds.Add(gameId);
+            onDisk.Games.RemoveAll(g => g.GameId == gameId);
+        }
+
+        AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(onDisk, JsonOpts),
+            restrictPermissions: true);
+
+        // Converge this process's view on what we just wrote — the caller's next Save() must not
+        // reintroduce the entry we removed.
+        UntrackedGameIds = onDisk.UntrackedGameIds;
+        MutateGames(list =>
+        {
+            if (!tracked) list.RemoveAll(g => g.GameId == gameId);
+            else if (entry is not null && list.All(g => g.GameId != gameId)) list.Add(entry);
+        });
+    }
+
+    /// <summary>
+    /// Change the in-memory game list <b>copy-on-write</b>: mutate a copy, then publish it as one
+    /// reference assignment.
+    ///
+    /// <para>
+    /// Enrollment runs on a thread-pool continuation while a render loop or a UI thread is
+    /// enumerating this same list — <c>savelocker ui</c> calls <see cref="FindGame"/> for every
+    /// candidate row, every frame. Mutating the live <see cref="List{T}"/> under that throws
+    /// "Collection was modified" out of the render loop and takes the window down mid-enrollment.
+    /// A reader holding the old reference simply finishes its frame against a consistent snapshot
+    /// and picks up the new list on the next one.
+    /// </para>
+    /// </summary>
+    public void MutateGames(Action<List<TrackedGame>> mutate)
+    {
+        var next = new List<TrackedGame>(Games);
+        mutate(next);
+        Games = next;
     }
 
     /// <summary>
@@ -220,19 +395,17 @@ public sealed class AgentConfig
         }
         onDisk.ConfigPath = ConfigPath;
 
+        // The other process removed this game while we were syncing it. Respect that rather than
+        // resurrecting an entry the user deleted — the sync itself already completed, so its
+        // counters are still earned and are written below; only the per-game entry is dropped.
         var target = onDisk.Games.FirstOrDefault(g => g.GameId == game.GameId);
-        if (target is null)
+        if (target is not null)
         {
-            // The other process removed this game while we were syncing it. Respect that rather
-            // than resurrecting an entry the user deleted.
-            onDisk.Games.Add(game);
-            target = game;
+            target.LastKnownVersionId = game.LastKnownVersionId;
+            target.LastSyncedHash = game.LastSyncedHash;
+            target.ConsecutiveConflicts = game.ConsecutiveConflicts;
+            target.SaveDirectory = game.SaveDirectory;
         }
-
-        target.LastKnownVersionId = game.LastKnownVersionId;
-        target.LastSyncedHash = game.LastSyncedHash;
-        target.ConsecutiveConflicts = game.ConsecutiveConflicts;
-        target.SaveDirectory = game.SaveDirectory;
 
         if (countPush) onDisk.TotalSavesPushed++;
         if (touchSyncTime) onDisk.LastSyncTime = DateTime.UtcNow;

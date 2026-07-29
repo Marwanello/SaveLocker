@@ -168,6 +168,14 @@ using (var scope = app.Services.CreateScope())
     db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
 }
 
+// Anything still staged is an upload that died with the process that started it. Swept once at
+// startup, with an age floor so a restart cannot delete an upload another process has in flight.
+app.Services.GetRequiredService<ArchiveStore>().SweepIncoming(TimeSpan.FromHours(1));
+app.Services.GetRequiredService<AgentInstallerService>().SweepIncoming(TimeSpan.FromHours(1));
+// An installer uploaded before digests existed would otherwise never get one, and agents refuse to
+// run an unverifiable off-origin download. Fire-and-forget: hashing 100 MB must not delay startup.
+_ = app.Services.GetRequiredService<AgentInstallerService>().BackfillDigestAsync();
+
 // OpenAPI JSON at /openapi/v1.json + a Swagger UI explorer at /swagger.
 app.MapOpenApi();
 app.UseSwaggerUI(o => o.SwaggerEndpoint("/openapi/v1.json", "SaveLocker API v1"));
@@ -286,8 +294,17 @@ agent.MapPost("/games/{id:guid}/upload", async (
         sizeCap.MaxRequestBodySize = (long)(cfg.GetValue<int?>("Storage:MaxUploadMb") ?? 200) * 1024 * 1024;
 
     var machine = http.CurrentMachine();
-    var result = await sync.UploadAsync(id, machine.Id, parent, hash, http.Request.Body, force ?? false, ct);
-    return Results.Ok(result);
+    try
+    {
+        var result = await sync.UploadAsync(id, machine.Id, parent, hash, http.Request.Body, force ?? false, ct);
+        return Results.Ok(result);
+    }
+    catch (ArchiveTooLargeException ex)
+    {
+        // 413, not the 500 an unhandled throw would produce: the agent has to be able to tell
+        // "this save is too big for the configured limit" from "the server is broken".
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status413PayloadTooLarge);
+    }
 }).Produces<UploadResult>();
 
 agent.MapGet("/games/{id:guid}/download", async (Guid id, HttpContext http, SyncService sync) =>
@@ -358,16 +375,21 @@ agent.MapGet("/agent/latest", (IConfiguration cfg, AgentInstallerService install
     var info = installer.GetInfo();
     if (info is not null)
     {
-        var baseUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
-        return Results.Ok(new AgentVersionInfo(info.Version, $"{baseUrl}/api/agent/installer/download"));
+        var baseUrl = PublicUrl.For(ctx, cfg);
+        return Results.Ok(new AgentVersionInfo(
+            info.Version, $"{baseUrl}/api/agent/installer/download", info.Sha256));
     }
 
-    // Fall back to the static config (backward-compat with the original design).
+    // Fall back to the static config (backward-compat with the original design). AgentUpdate:Sha256
+    // is optional here, but without it the agent will refuse an off-origin download — which is the
+    // intended pressure, since a hand-configured URL is exactly the case with no other integrity
+    // control at all (Decisions.md: plain http is supported, so the transport proves nothing).
     var ver = cfg["AgentUpdate:LatestVersion"];
     var url = cfg["AgentUpdate:DownloadUrl"];
+    var sha = cfg["AgentUpdate:Sha256"];
     return string.IsNullOrWhiteSpace(ver)
         ? Results.NoContent()
-        : Results.Ok(new AgentVersionInfo(ver, url ?? ""));
+        : Results.Ok(new AgentVersionInfo(ver, url ?? "", string.IsNullOrWhiteSpace(sha) ? null : sha.Trim()));
 }).Produces<AgentVersionInfo>();
 
 // Serves the hosted installer to agents. Public so the admin can also download it directly.
@@ -454,13 +476,35 @@ admin.MapGet("/settings", async (SettingsService settings) =>
     Results.Ok(await settings.GetServerSettingsDtoAsync()))
     .Produces<ServerSettingsDto>();
 
+// Verify FIRST, store only on success. The old order stored the key and then asked SteamGridDB
+// about it, answering 200 with { ok: false } either way — so a typo silently replaced a working
+// key, and the console (which ignored `ok`) reported it as configured. A rejected key must leave
+// the working one exactly where it was.
 admin.MapPost("/settings/steamgriddb-key", async (
-    SetSteamGridDbKeyRequest req, SettingsService settings, ArtService art) =>
+    SetSteamGridDbKeyRequest req, SettingsService settings, ArtService art, CancellationToken ct) =>
 {
-    await settings.SetAsync(SettingsService.SteamGridDbApiKey, req.ApiKey);
     if (string.IsNullOrWhiteSpace(req.ApiKey))
+    {
+        await settings.SetAsync(SettingsService.SteamGridDbApiKey, null, ct);
         return Results.Ok(new { ok = true, message = "SteamGridDB API key cleared." });
-    var (ok, message) = await art.VerifyKeyAsync();
+    }
+
+    var (ok, message) = await art.VerifyCandidateKeyAsync(req.ApiKey, ct);
+    if (!ok)
+    {
+        // 400, not 200-with-a-flag: a caller that only checks the status code must not conclude
+        // this worked. The console used to be exactly that caller.
+        var configured = !string.IsNullOrWhiteSpace(
+            await settings.GetEffectiveAsync(SettingsService.SteamGridDbApiKey, ct));
+        return Results.BadRequest(new
+        {
+            ok = false,
+            message,
+            keptExistingKey = configured,
+        });
+    }
+
+    await settings.SetAsync(SettingsService.SteamGridDbApiKey, req.ApiKey, ct);
     return Results.Ok(new { ok, message });
 });
 
@@ -593,14 +637,46 @@ admin.MapPost("/admin/health/events/{id:guid}/dismiss", async (Guid id, HealthSe
 // Minting returns the policy file, raw token included. That token is not stored and cannot be
 // shown again — the console hands the file to the user once, or not at all.
 admin.MapPost("/admin/enrollments", async (
-    CreateEnrollmentRequest req, HttpContext http, EnrollmentService enrollment) =>
+    CreateEnrollmentRequest req, HttpContext http, IConfiguration cfg, EnrollmentService enrollment) =>
 {
-    // The URL the admin reached the console on is the one that demonstrably works, so it is the
-    // default. It is wrong exactly when the console is on the LAN and the agent needs the public
-    // tunnel — hence the override on the request.
-    var serverUrl = $"{http.Request.Scheme}://{http.Request.Host}";
-    return Results.Ok(await enrollment.CreateAsync(req, serverUrl));
+    // An explicit override wins, then Server:PublicBaseUrl, then the origin the admin reached the
+    // console on. Validated BEFORE minting: a token is single-use and unrecoverable, so refusing a
+    // bad URL after burning one would cost the admin the token as well as the attempt.
+    string effective;
+    var stated = !string.IsNullOrWhiteSpace(req.ServerUrl) || !string.IsNullOrWhiteSpace(cfg[PublicUrl.ConfigKey]);
+    if (!string.IsNullOrWhiteSpace(req.ServerUrl))
+    {
+        if (!PublicUrl.IsUsableAbsolute(req.ServerUrl, out effective))
+            return Results.BadRequest(
+                $"'{req.ServerUrl}' is not a usable server URL. Give a full address including the scheme, e.g. http://192.168.1.10:5080.");
+    }
+    else
+    {
+        effective = PublicUrl.For(http, cfg);
+    }
+
+    // Refuse an INFERRED loopback address: correct for the admin standing at the server, useless to
+    // every agent the file could be carried to. A loopback URL somebody typed, or configured, is a
+    // same-box setup they meant — that stays allowed.
+    if (!stated && PublicUrl.IsLoopback(effective))
+        return Results.BadRequest(
+            $"This console was reached at {effective}, which no other machine can use. " +
+            $"Reopen it at the server's LAN address, set {PublicUrl.ConfigKey}, or type the address in the Server URL box " +
+            $"(type {effective} if the agent really is on this machine).");
+
+    return Results.Ok(await enrollment.CreateAsync(req with { ServerUrl = effective }, effective));
 }).Produces<CreateEnrollmentResponse>();
+
+// What the enrollment file WOULD say, without minting anything. The console shows it, so the admin
+// sees the exact URL that is going into the policy before spending a single-use token on it.
+admin.MapGet("/admin/enrollments/effective-url", (HttpContext http, IConfiguration cfg) =>
+{
+    var url = PublicUrl.For(http, cfg);
+    return Results.Ok(new EffectiveServerUrl(
+        url,
+        !string.IsNullOrWhiteSpace(cfg[PublicUrl.ConfigKey]),
+        PublicUrl.IsLoopback(url)));
+}).Produces<EffectiveServerUrl>();
 
 admin.MapGet("/admin/enrollments", async (EnrollmentService enrollment) =>
     Results.Ok(await enrollment.ListAsync()))
@@ -619,28 +695,51 @@ admin.MapGet("/admin/agent-installer", (AgentInstallerService installer) =>
 admin.MapPost("/admin/agent-installer", async (
     HttpRequest req, AgentInstallerService installer, CancellationToken ct) =>
 {
-    // Kestrel's default body limit is 30 MB; installers are ~43 MB.
-    // Must be set before ReadFormAsync begins reading the body.
+    // Kestrel's default body limit is 30 MB and installers are ~43 MB, so it has to be lifted —
+    // but it used to be lifted to NULL, i.e. removed. ReadFormAsync buffers a multipart body to
+    // memory and temp storage, so an unbounded limit let any reachable client (this route is open
+    // until an admin password is set) push the disk over on its own. Raised to the documented cap,
+    // not abolished. Must be set before ReadFormAsync starts reading.
     var sizeCap = req.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
-    if (sizeCap is { IsReadOnly: false }) sizeCap.MaxRequestBodySize = null;
+    if (sizeCap is { IsReadOnly: false }) sizeCap.MaxRequestBodySize = installer.MaxBytes;
+
+    if (!req.HasFormContentType)
+        return Results.BadRequest("Expected a multipart form upload with a 'file' field.");
 
     var version = req.Query["version"].FirstOrDefault()?.Trim();
     if (string.IsNullOrWhiteSpace(version))
         return Results.BadRequest("version query parameter is required.");
 
-    var form = await req.ReadFormAsync(ct);
-    var file = form.Files.GetFile("file");
-    if (file is null)
-        return Results.BadRequest("file field is required.");
+    try
+    {
+        var form = await req.ReadFormAsync(ct);
+        var file = form.Files.GetFile("file");
+        if (file is null)
+            return Results.BadRequest("file field is required.");
 
-    await using var stream = file.OpenReadStream();
-    var info = await installer.SaveAsync(stream, version, file.FileName, ct);
-    return Results.Ok(info);
+        await using var stream = file.OpenReadStream();
+        var info = await installer.SaveAsync(stream, version, file.FileName, ct);
+        return Results.Ok(info);
+    }
+    catch (InstallerTooLargeException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status413PayloadTooLarge);
+    }
+    catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
+    {
+        // Kestrel's own refusal, for a body that declared or streamed past the cap.
+        return Results.Problem($"Installer exceeds the {installer.MaxBytes / (1024 * 1024)} MB limit.",
+            statusCode: StatusCodes.Status413PayloadTooLarge);
+    }
+    catch (InstallerRejectedException ex)
+    {
+        return Results.BadRequest(ex.Message);
+    }
 }).Produces<AgentInstallerStatus>();
 
-admin.MapDelete("/admin/agent-installer", (AgentInstallerService installer) =>
+admin.MapDelete("/admin/agent-installer", async (AgentInstallerService installer, CancellationToken ct) =>
 {
-    installer.Delete();
+    await installer.DeleteAsync(ct);
     return Results.NoContent();
 });
 
@@ -652,6 +751,14 @@ admin.MapPost("/admin/agent-installer/fetch-github", async (
     {
         var info = await installer.FetchLatestFromGitHubAsync(httpFactory.CreateClient(), ct);
         return Results.Ok(info);
+    }
+    catch (InstallerTooLargeException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status413PayloadTooLarge);
+    }
+    catch (InstallerRejectedException ex)
+    {
+        return Results.BadRequest(ex.Message);
     }
     catch (Exception ex)
     {

@@ -358,6 +358,12 @@ try {
     # =================================================================================
     # Only the Linux agent has `doctor`. A save path that is really a Wine prefix must be NAMED as
     # such, not left to fail later as a baffling "your save is too big".
+    #
+    # There are now TWO places that happens, and both are asserted. WA-02 moved the first line of
+    # defence earlier: add-game refuses the prefix outright, before the game is created on the
+    # server, so the mistake never becomes state. Doctor's warning still matters, because a mapping
+    # can arrive without passing through add-game — a hand-edited config, an older install, a path
+    # issued by the server — and because the refusal is overridable by design.
     if (-not $onWindows) {
         $fakePrefix = Join-Path $scratch "compatdata/12345"
         New-Item -ItemType Directory -Force (Join-Path $fakePrefix "pfx/drive_c") | Out-Null
@@ -366,7 +372,19 @@ try {
         $prefixCfg = Join-Path $scratch "prefix.json"
         @{ ServerUrl = $server; Games = @() } | ConvertTo-Json | Set-Content $prefixCfg -Encoding utf8
         Agent register --name "HardenPrefix-$stamp" --config $prefixCfg | Out-Null
-        Agent add-game --name "PrefixGame-$stamp" --dir $fakePrefix --config $prefixCfg | Out-Null
+
+        # The refusal reaches stderr, so merge it before matching.
+        $addOut = (Agent add-game --name "PrefixGame-$stamp" --dir $fakePrefix --config $prefixCfg) 2>&1 | Out-String
+        Check "add-game refuses a prefix root"        ($addOut -match "Wine PREFIX")
+        Check "the refusal offers the override"       ($addOut -match "force-path")
+        # Filtered rather than counted whole: an absent/empty Games property counts as 1 through
+        # @($null) on both PowerShell hosts, which would pass this check for the wrong reason.
+        $addedGames = @((Get-Content $prefixCfg -Raw | ConvertFrom-Json).Games |
+                        Where-Object { $_.Name -eq "PrefixGame-$stamp" })
+        Check "no game was created for the refusal"   ($addedGames.Count -eq 0)
+
+        # Overridden on purpose — which is exactly the state doctor exists to explain later.
+        Agent add-game --name "PrefixGame-$stamp" --dir $fakePrefix --force-path --config $prefixCfg | Out-Null
 
         $doc = Agent doctor --config $prefixCfg
         Check "doctor names a prefix-root save path" ("$doc" -match "Wine PREFIX")

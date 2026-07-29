@@ -44,7 +44,9 @@ public static class ProtonRun
         // and blocked pulls actually happen. Without a reporter here the console would never hear
         // about the failures that matter most (Decisions.md §2).
         var health = HealthReporter.For(config);
-        var engine = new SyncEngine(config, api, log: Log, notify: Log,
+        // Disposed at the end of the run: this process holds a lease renewer for the whole game
+        // session, and it must not outlive the wrapper. WA-06.
+        await using var engine = new SyncEngine(config, api, log: Log, notify: Log,
             offlineQueue: offlineQueue, health: health);
 
         // The game must be found before launch, but a failure here must never stop it starting:
@@ -58,7 +60,9 @@ public static class ProtonRun
                 // The result was previously discarded, so a Deck user who launched a game another
                 // machine had checked out got no warning anywhere: this process is not the daemon,
                 // and Game Mode never shows the console. Persist it so both UIs can surface it.
-                var (granted, holder) = await engine.OnGameLaunchAsync(game);
+                // preLaunch: true — this is the real boundary. Steam ran us instead of the game and
+                // the child below has not started yet, so nothing can have the save open.
+                var (granted, holder) = await engine.OnGameLaunchAsync(game, preLaunch: true);
                 if (!granted && holder is not null)
                     LeaseWarningStore.For(config).Add(game.Name, holder);
             }

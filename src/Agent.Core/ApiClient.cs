@@ -34,21 +34,9 @@ public sealed class ApiClient
     /// <param name="onPinMismatch">Invoked with the observed pin when it differs from the expected one.</param>
     public ApiClient(string baseUrl, string? apiKey, string? expectedPin = null, Action<string>? onPinMismatch = null)
     {
-        var handler = new HttpClientHandler();
-
-        // Observe the certificate without weakening validation: the callback still answers with the
-        // platform's own verdict. Returning `true` here would disable TLS validation outright, which
-        // is the classic way this hook gets misused.
-        handler.ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
-        {
-            if (ServerTrust.Fingerprint(cert) is { } pin)
-            {
-                ObservedPin = pin;
-                if (!string.IsNullOrEmpty(expectedPin) && pin != expectedPin)
-                    onPinMismatch?.Invoke(pin);
-            }
-            return errors == SslPolicyErrors.None;
-        };
+        // Shared with UpdateChecker via ServerHttp, so the TLS policy cannot drift between the two.
+        var handler = ServerHttp.CreateHandler(
+            expectedPin, onObserved: pin => ObservedPin = pin, onMismatch: onPinMismatch);
 
         _http = new HttpClient(handler) { BaseAddress = new Uri(baseUrl), Timeout = TimeSpan.FromMinutes(10) };
         if (!string.IsNullOrEmpty(apiKey))
@@ -107,6 +95,18 @@ public sealed class ApiClient
 
     public async Task<List<GameDto>> ListGamesAsync() =>
         await _http.GetFromJsonAsync<List<GameDto>>("/api/games") ?? new();
+
+    /// <summary>
+    /// GET a route and report the status code, or null if the connection itself failed. For
+    /// diagnostics that must tell "cannot reach the server" apart from "reached it and was
+    /// refused" — an unenrolled agent's 401 is a correct answer, not a network fault, and
+    /// <c>doctor</c> reported it as one.
+    /// </summary>
+    public async Task<HttpStatusCode?> ProbeAsync(string path)
+    {
+        try { return (await _http.GetAsync(path)).StatusCode; }
+        catch { return null; }
+    }
 
     /// <summary>
     /// Offer a generic template for a game the server has no save location for. Best-effort: the

@@ -23,7 +23,18 @@ public sealed class GameScanner : IGameScanner
 
     public GameScanner(Detection detection) => _detection = detection;
 
-    /// <summary>Run every source and return de-duplicated candidates, sorted by name.</summary>
+    /// <summary>
+    /// Run every source and return de-duplicated candidates, sorted by name.
+    ///
+    /// <para>
+    /// Every source is isolated. Discovery reads places the agent does not control — a Steam library
+    /// on a drive that can be unplugged mid-enumeration, a userdata directory another account owns, a
+    /// manifest download that fails offline — and any one of those used to throw out of the whole
+    /// scan. The user saw a failed rescan with no candidates at all, which also blocks the manual
+    /// setup path they would otherwise use to work around it. A source that fails is logged and
+    /// skipped; the healthy ones still answer. WA-11.
+    /// </para>
+    /// </summary>
     public async Task<IReadOnlyList<ScanCandidate>> ScanAsync(CancellationToken ct = default)
     {
         var all = new List<ScanCandidate>();
@@ -31,11 +42,13 @@ public sealed class GameScanner : IGameScanner
 
         if (steamPath is not null)
         {
-            all.AddRange(await ScanSteamShortcutsAsync(steamPath, ct));
-            all.AddRange(ScanInstalledSteamGames(steamPath));
+            all.AddRange(await SafeSourceAsync("Steam shortcuts",
+                () => ScanSteamShortcutsAsync(steamPath, ct), ct));
+            all.AddRange(await SafeSourceAsync("installed Steam games",
+                () => Task.FromResult(ScanInstalledSteamGames(steamPath)), ct));
         }
 
-        all.AddRange(await ScanSaveRootsAsync(ct));
+        all.AddRange(await SafeSourceAsync("common save roots", () => ScanSaveRootsAsync(ct), ct));
 
         // De-dupe by name: prefer a candidate that already has a suggested save dir.
         return all
@@ -47,21 +60,39 @@ public sealed class GameScanner : IGameScanner
 
     // ----- Steam location -----
 
-    /// <summary>Locate the Steam install via the registry; null if Steam isn't installed.</summary>
+    /// <summary>
+    /// Locate the Steam install via the registry; null if Steam isn't installed — or if the keys
+    /// cannot be read, which on a managed machine is a policy restriction rather than an absence.
+    /// Both keys are disposed deterministically; they used to be opened inline and left to the
+    /// finalizer, holding a native registry handle for however long that took.
+    /// </summary>
     public static string? FindSteamPath()
     {
         // HKCU is set per-user when Steam runs; HKLM is the machine install path.
-        var hkcu = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam")
-            ?.GetValue("SteamPath") as string;
-        if (!string.IsNullOrEmpty(hkcu) && Directory.Exists(hkcu))
+        var hkcu = ReadRegistryString(Registry.CurrentUser, @"Software\Valve\Steam", "SteamPath");
+        if (!string.IsNullOrEmpty(hkcu) && SafeDirectoryExists(hkcu))
             return Path.GetFullPath(hkcu);
 
-        var hklm = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\WOW6432Node\Valve\Steam")
-            ?.GetValue("InstallPath") as string;
-        if (!string.IsNullOrEmpty(hklm) && Directory.Exists(hklm))
+        var hklm = ReadRegistryString(
+            Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath");
+        if (!string.IsNullOrEmpty(hklm) && SafeDirectoryExists(hklm))
             return Path.GetFullPath(hklm);
 
         return null;
+    }
+
+    private static string? ReadRegistryString(RegistryKey hive, string subKey, string valueName)
+    {
+        try
+        {
+            using var key = hive.OpenSubKey(subKey);
+            return key?.GetValue(valueName) as string;
+        }
+        catch (Exception ex) when (IsAccessOrIo(ex))
+        {
+            AgentLogger.Log($"Scan: could not read {hive.Name}\\{subKey} ({ex.GetType().Name}: {ex.Message}). Skipping this Steam location.");
+            return null;
+        }
     }
 
     // ----- Source 1: non-Steam shortcuts (shortcuts.vdf, binary) -----
@@ -77,7 +108,11 @@ public sealed class GameScanner : IGameScanner
                 s.AppName, save, ScanSource.SteamShortcut,
                 HasSteamCloud: false, ManifestKey: save is null ? null : s.AppName,
                 InstallDir: NullIfMissing(s.StartDir),
-                SteamAppId: s.AppId));
+                SteamAppId: s.AppId,
+                // Steam recorded the exact executable the user picked, so this is the one source
+                // where the process name is known rather than guessed. It was being discarded,
+                // which is why every GUI-enrolled game had an empty watcher mapping. WA-08.
+                SuggestedProcessName: GameActivity.ProcessNameFromExe(s.Exe)));
         }
         return results;
     }
@@ -90,12 +125,17 @@ public sealed class GameScanner : IGameScanner
         foreach (var library in SteamLibraryPaths(steamPath))
         {
             var steamapps = Path.Combine(library, "steamapps");
-            if (!Directory.Exists(steamapps)) continue;
+            if (!SafeDirectoryExists(steamapps)) continue;
 
-            foreach (var acf in Directory.EnumerateFiles(steamapps, "appmanifest_*.acf"))
+            // Guarded rather than wrapped in a try: EnumerateFiles fails LAZILY, so a library on a
+            // drive unplugged mid-scan throws from inside the loop, not at the call. The entries
+            // already read are still good.
+            foreach (var acf in SafeEnumerateFiles(steamapps, "appmanifest_*.acf"))
             {
+                if (SafeReadAllText(acf) is not { } acfText) continue;
+
                 SteamVdf.VdfObject root;
-                try { root = SteamTextVdf.Parse(File.ReadAllText(acf)); }
+                try { root = SteamTextVdf.Parse(acfText); }
                 catch (InvalidDataException) { continue; }
 
                 var state = root.Object("AppState");
@@ -106,7 +146,7 @@ public sealed class GameScanner : IGameScanner
 
                 var installPath = installDir is null
                     ? null
-                    : NullIfMissing(Path.Combine(steamapps, "common", installDir));
+                    : NullIfMissing(SafeCombine(steamapps, "common", installDir));
 
                 // Installed Steam titles usually have Steam Cloud; flag rather than
                 // hide them so the user can still enroll if they want a local copy.
@@ -141,11 +181,13 @@ public sealed class GameScanner : IGameScanner
             Path.Combine(steamPath, "steamapps", "libraryfolders.vdf"),
             Path.Combine(steamPath, "config", "libraryfolders.vdf"),
         };
-        var file = candidates.FirstOrDefault(File.Exists);
+        var file = candidates.FirstOrDefault(SafeFileExists);
         if (file is null) yield break;
 
+        if (SafeReadAllText(file) is not { } text) yield break;
+
         SteamVdf.VdfObject root;
-        try { root = SteamTextVdf.Parse(File.ReadAllText(file)); }
+        try { root = SteamTextVdf.Parse(text); }
         catch (InvalidDataException) { yield break; }
 
         var folders = root.Object("libraryfolders");
@@ -154,7 +196,10 @@ public sealed class GameScanner : IGameScanner
         foreach (var lib in folders.Children)
         {
             var path = lib.String("path");
-            if (!string.IsNullOrEmpty(path) && Directory.Exists(path) && seen.Add(path))
+            // A library on a drive that is not currently attached is skipped, not fatal — the same
+            // reason SafeDirectoryExists exists at all: Directory.Exists throws on some failures
+            // (a disconnected UNC share) rather than returning false.
+            if (!string.IsNullOrEmpty(path) && SafeDirectoryExists(path) && seen.Add(path))
                 yield return Path.GetFullPath(path);
         }
     }
@@ -169,8 +214,10 @@ public sealed class GameScanner : IGameScanner
 
         foreach (var root in CommonSaveRoots())
         {
-            if (!Directory.Exists(root)) continue;
-            foreach (var dir in Directory.EnumerateDirectories(root))
+            if (!SafeDirectoryExists(root)) continue;
+            // One unreadable root — a redirected Documents folder, an OneDrive placeholder that
+            // cannot be materialised offline — must not cost the user the other five.
+            foreach (var dir in SafeEnumerateDirectories(root))
             {
                 ct.ThrowIfCancellationRequested();
                 var folderName = Path.GetFileName(dir);
@@ -209,5 +256,107 @@ public sealed class GameScanner : IGameScanner
     }
 
     private static string? NullIfMissing(string? dir) =>
-        !string.IsNullOrEmpty(dir) && Directory.Exists(dir) ? Path.GetFullPath(dir) : null;
+        !string.IsNullOrEmpty(dir) && SafeDirectoryExists(dir) ? Path.GetFullPath(dir) : null;
+
+    // ----- Failure isolation (WA-11) -----
+
+    /// <summary>
+    /// The failures a discovery source is expected to hit and must survive: a directory another
+    /// account owns, a drive that went away, a path the OS will not accept. Anything else —
+    /// <see cref="OperationCanceledException"/> above all — is a real fault and propagates.
+    /// </summary>
+    private static bool IsAccessOrIo(Exception ex) =>
+        ex is UnauthorizedAccessException
+           or IOException
+           or System.Security.SecurityException
+           or ArgumentException          // an invalid path from a VDF or the registry
+           or NotSupportedException;     // a path form this platform will not open
+
+    /// <summary>Run one discovery source; log and skip it if it fails, keeping the others.</summary>
+    private static async Task<IReadOnlyList<ScanCandidate>> SafeSourceAsync(
+        string what, Func<Task<IReadOnlyList<ScanCandidate>>> source, CancellationToken ct)
+    {
+        try { return await source(); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            // Deliberately broader than IsAccessOrIo: a source is a whole subsystem — the manifest
+            // download here is network code — and no failure inside one is worth losing the rest of
+            // the scan and the manual setup path along with it.
+            AgentLogger.LogException($"Scan source '{what}'", ex);
+            return Array.Empty<ScanCandidate>();
+        }
+    }
+
+    private static bool SafeDirectoryExists(string path)
+    {
+        try { return Directory.Exists(path); }
+        catch (Exception ex) when (IsAccessOrIo(ex)) { return false; }
+    }
+
+    private static bool SafeFileExists(string path)
+    {
+        try { return File.Exists(path); }
+        catch (Exception ex) when (IsAccessOrIo(ex)) { return false; }
+    }
+
+    private static string? SafeReadAllText(string path)
+    {
+        try { return File.ReadAllText(path); }
+        catch (Exception ex) when (IsAccessOrIo(ex))
+        {
+            AgentLogger.Log($"Scan: could not read '{path}' ({ex.GetType().Name}). Skipping it.");
+            return null;
+        }
+    }
+
+    private static string? SafeCombine(params string[] parts)
+    {
+        try { return Path.Combine(parts); }
+        catch (ArgumentException) { return null; }
+    }
+
+    private static IEnumerable<string> SafeEnumerateDirectories(string path) =>
+        Guarded(() => Directory.EnumerateDirectories(path), $"directories under '{path}'");
+
+    private static IEnumerable<string> SafeEnumerateFiles(string path, string pattern) =>
+        Guarded(() => Directory.EnumerateFiles(path, pattern), $"'{pattern}' under '{path}'");
+
+    /// <summary>
+    /// Enumerate lazily, stopping at the first access/IO failure instead of throwing it at the
+    /// caller. The lazy part is the point: <see cref="Directory.EnumerateDirectories(string)"/>
+    /// does not fail when it is called, it fails on the <c>MoveNext</c> that reaches the bad entry,
+    /// so a plain try/catch around the call site catches nothing. Whatever was read before the
+    /// failure is kept.
+    /// </summary>
+    private static IEnumerable<string> Guarded(Func<IEnumerable<string>> factory, string what)
+    {
+        IEnumerator<string> e;
+        try { e = factory().GetEnumerator(); }
+        catch (Exception ex) when (IsAccessOrIo(ex))
+        {
+            AgentLogger.Log($"Scan: could not enumerate {what} ({ex.GetType().Name}). Skipping it.");
+            yield break;
+        }
+
+        try
+        {
+            while (true)
+            {
+                string current;
+                try
+                {
+                    if (!e.MoveNext()) yield break;
+                    current = e.Current;
+                }
+                catch (Exception ex) when (IsAccessOrIo(ex))
+                {
+                    AgentLogger.Log($"Scan: stopped enumerating {what} ({ex.GetType().Name}). Keeping what was found.");
+                    yield break;
+                }
+                yield return current;
+            }
+        }
+        finally { e.Dispose(); }
+    }
 }

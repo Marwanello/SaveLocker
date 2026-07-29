@@ -68,15 +68,23 @@ export function SettingsView({ state, onSaved }: Props) {
     setSaving(true)
     try {
       const seconds = parseInt(settleQuietSeconds, 10)
-      await api.saveConfig({
+      const res = await api.saveConfig({
         serverUrl,
         machineName,
         settleQuietSeconds: Number.isFinite(seconds) ? Math.min(Math.max(seconds, 0), 300) : undefined,
       })
       dirtyFields.current.clear()
       onSaved()
-      setStatus('Saved.')
-      setTimeout(() => setStatus(''), 2000)
+      if (res.identityCleared) {
+        // Left on screen rather than auto-cleared: the agent cannot sync until the user acts on it,
+        // and a message that vanishes after two seconds is how someone ends up staring at a
+        // disconnected agent with no idea what changed.
+        setStatus('Saved. This is a different server, so the stored machine key was cleared — ' +
+                  'click Register / Re-register to enroll this machine with it.')
+      } else {
+        setStatus('Saved.')
+        setTimeout(() => setStatus(''), 2000)
+      }
     } catch (e) {
       setStatus('Save failed: ' + (e as Error).message)
     } finally {
@@ -101,9 +109,21 @@ export function SettingsView({ state, onSaved }: Props) {
     }
   }
 
+  // The toggle shows what the machine will actually do at login, not what was clicked. The registry
+  // write can be refused outright (group policy, security software) or written and then reverted,
+  // and the box used to stay ticked through both. WA-10.
   const toggleStartup = async (val: boolean) => {
     setStartWithWindows(val)
-    await api.saveConfig({ startWithWindows: val }).catch(console.error)
+    try {
+      const res = await api.saveConfig({ startWithWindows: val })
+      setStartWithWindows(res.startWithWindows)
+      setStatus(res.startWithWindows === val
+        ? ''
+        : 'Windows did not keep that startup setting.')
+    } catch (e) {
+      setStartWithWindows(!val)
+      setStatus((e as Error).message)
+    }
   }
 
   const toggleGame = (id: string) => {
@@ -132,17 +152,59 @@ export function SettingsView({ state, onSaved }: Props) {
       || (await api.suggestedPath(game.id).catch(() => ({ path: null }))).path,
     nativePick: () => api.folderPick(),
     apply: async (path) => {
-      try {
-        await api.setGameFolder(game.id, path)
+      const send = async (confirm: boolean) => {
+        await api.setGameFolder(game.id, path, confirm)
         loadGames()
         onSaved()
         setStatus(`Save folder for ${game.name} set to ${path}`)
         setTimeout(() => setStatus(''), 4000)
+      }
+      try {
+        await send(false)
       } catch (e) {
-        setStatus('Could not set the save folder: ' + (e as Error).message)
+        const message = (e as Error).message
+        // The agent asks for confirmation only for the heuristic warnings, which have false
+        // positives. Hard refusals never carry this sentence, so they can never be clicked past —
+        // and the prompt repeats the agent's own wording rather than a cheerful paraphrase, because
+        // the whole point is that the user reads what is actually wrong.
+        if (message.includes('Re-send with confirm')) {
+          const ask = message.replace(' Re-send with confirm to use it anyway.', '')
+          if (!window.confirm(`${ask}\n\nUse ${path} anyway?`)) {
+            setStatus('Save folder unchanged.')
+            return
+          }
+          try { await send(true) }
+          catch (e2) { setStatus('Could not set the save folder: ' + (e2 as Error).message) }
+          return
+        }
+        setStatus('Could not set the save folder: ' + message)
       }
     },
   })
+
+  // A prompt rather than an inline field: this is an occasional correction, not something the user
+  // edits while reading the list, and a text input per row would crowd out the save path.
+  const editProcessesFor = async (game: TrackedGame) => {
+    const current = game.processNames.join(', ')
+    const next = window.prompt(
+      `Which process means "${game.name}" is running?\n\n` +
+      'Use the executable name, e.g. "stardew valley" or "game.exe". ' +
+      'Separate several with commas.\n\n' +
+      'Until this is set, SaveLocker cannot take a lease when you launch, push when you quit, ' +
+      'or stop a pull from overwriting saves while the game is open.',
+      current)
+    if (next === null) return
+
+    try {
+      await api.setGameProcesses(game.id, next.split(',').map(s => s.trim()).filter(Boolean))
+      loadGames()
+      onSaved()
+      setStatus(`Launch/exit sync for ${game.name} updated.`)
+      setTimeout(() => setStatus(''), 4000)
+    } catch (e) {
+      setStatus('Could not set the game process: ' + (e as Error).message)
+    }
+  }
 
   const startupLabel = state?.platform === 'Linux'
     ? 'Start on login (launch agent when you sign in)'
@@ -300,6 +362,36 @@ export function SettingsView({ state, onSaved }: Props) {
                     <span>{g.path ? 'Change save path' : 'Set save path'}</span>
                   </button>
                 </div>
+
+                {/* Launch/exit sync state, stated honestly. An empty process list means the
+                    watcher excludes this game entirely — no lease, no push when you quit, and no
+                    refusal to overwrite saves while it is running. Claiming automatic sync here
+                    would be a lie, so the row says which it is and offers the fix. WA-08. */}
+                {state?.platform !== 'Linux' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                    {g.processNames.length > 0 ? (
+                      <span style={{ color: '#9CA3AF', fontSize: 10 }}>
+                        Launch/exit sync: {g.processNames.join(', ')}
+                      </span>
+                    ) : (
+                      <span style={{ color: '#f4a60d', fontSize: 11 }}>
+                        Launch/exit sync not configured
+                      </span>
+                    )}
+                    <button
+                      onClick={() => void editProcessesFor(g)}
+                      style={{
+                        padding: '4px 9px', background: 'transparent',
+                        border: `1px solid ${g.processNames.length > 0 ? '#494949' : '#f4a60d'}`,
+                        borderRadius: 4,
+                        color: g.processNames.length > 0 ? '#9CA3AF' : '#f4a60d',
+                        fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >
+                      {g.processNames.length > 0 ? 'Edit' : 'Set game process'}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}

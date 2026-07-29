@@ -1,4 +1,4 @@
-# Cross-process state safety - 17 checks. Runs on BOTH Windows and Linux.
+# Cross-process state safety - 23 checks. Runs on BOTH Windows and Linux.
 #
 # The agent is not one process. Autorun keeps the daemon alive while Steam starts a SECOND process
 # (`savelocker run -- %command%`), and on Windows the tray runs alongside any CLI command. They share
@@ -34,6 +34,11 @@
 #                         only ever drive its PUSH path (SaveGameSyncState). ReconcileGamesAsync
 #                         calls AgentConfig.Save(), which used to serialize the whole in-memory
 #                         object and rewind a parent version another process had just recorded.
+#   8. Durable untrack  - another process untracks a game the daemon is holding. Neither the
+#                         daemon's in-flight push nor its next reconcile may restore it. Both did:
+#                         SaveGameSyncState re-added the entry it found missing (against its own
+#                         comment), and reconcile re-adopted the game because it is still on the
+#                         server. So "Removed from this device" in Game Mode did not remove it.
 #
 # Owns its server on :5183. Usage: .\tests\run-concurrency-tests.ps1 / pwsh tests/run-concurrency-tests.ps1
 
@@ -254,6 +259,59 @@ try {
     Check "reconcile's write did NOT rewind C's parent version" ($finalC -eq $cliC)
 
     # =================================================================================
+    # 8. UNTRACKING A GAME IS DURABLE - no process may silently restore it (LA-02 / LA-03)
+    # =================================================================================
+    # "Removed from this device" used to be a lie with two separate authors. A second process
+    # removed the entry from config.json, and then:
+    #   - the daemon finished the push it already had in flight and SaveGameSyncState RE-ADDED the
+    #     entry it found missing on disk - its own comment said it must not; the code did; and
+    #   - the daemon's next reconcile adopted the game again, because it is still on the server.
+    # The fix is a per-machine opt-out (AgentConfig.UntrackedGameIds), so the game stays on the
+    # server for the rest of the fleet while this machine genuinely stops tracking it.
+    #
+    # Game B is the right subject: the daemon watches saveB, holds B in memory, and has pushed it -
+    # so both authors above are live. Quiesce first so the settle gate is not mid-flight.
+    Start-Sleep -Seconds 20
+
+    $gameBId = ((Get-Content $cfg -Raw | ConvertFrom-Json).Games | Where-Object { $_.Name -eq $gameB }).GameId
+    Agent remove-game --name $gameB --config $cfg | Out-Null
+
+    $afterRemove = Get-Content $cfg -Raw | ConvertFrom-Json
+    Check "the CLI untracked B on disk"        (-not (@($afterRemove.Games | ForEach-Object { $_.Name }) -contains $gameB))
+    Check "the opt-out was recorded"           (@($afterRemove.UntrackedGameIds) -contains $gameBId)
+
+    # Now drive BOTH authors. The daemon still holds B in memory — it was never told — so:
+    #   a) its still-live folder watcher pushes B, exercising SaveGameSyncState; and
+    #   b) an unrelated server-side change forces a reconcile that calls the full Save(), which
+    #      serializes that stale in-memory list. Without (b) the daemon may simply never write, and
+    #      the check passes for the wrong reason — it did exactly that on the first draft.
+    "post-removal progress B" | Set-Content (Join-Path $saveB "slot1.sav") -Encoding utf8
+    $gameAId = ((Invoke-RestMethod "$server/api/overview") | Where-Object { $_.game.name -eq $gameA }).game.id
+    Invoke-RestMethod "$server/api/games/$gameAId/excludes" -Method Post `
+        -Body '["*.untracktest"]' -ContentType "application/json" | Out-Null
+
+    $reconciled = $false
+    foreach ($i in 1..60) {
+        Start-Sleep -Seconds 1
+        $a = (Get-Content $cfg -Raw | ConvertFrom-Json).Games | Where-Object { $_.Name -eq $gameA }
+        if ($a.ExcludeGlobs -contains "*.untracktest") { $reconciled = $true; break }
+    }
+    Check "the daemon reconciled and wrote the whole config" $reconciled
+    Start-Sleep -Seconds 40
+
+    # One list, two authors: after 60 s both the watch-push and at least two reconciles have run, so
+    # B's continued absence is the assertion for each. The opt-out must also still be on record —
+    # if it were dropped, the very next reconcile would adopt B again.
+    $settled = Get-Content $cfg -Raw | ConvertFrom-Json
+    $settledNames = @($settled.Games | ForEach-Object { $_.Name })
+    Check "neither the push nor reconcile restored B" (-not ($settledNames -contains $gameB))
+    Check "the opt-out survived both writers"         (@($settled.UntrackedGameIds) -contains $gameBId)
+
+    # The game is untracked HERE, not deleted: the rest of the fleet still sees it.
+    $ovB = (Invoke-RestMethod "$server/api/overview") | Where-Object { $_.game.name -eq $gameB }
+    Check "B still exists on the server"           ($null -ne $ovB)
+
+    # =================================================================================
     # 3 + 4. QUEUE and HEALTH survive a second writer WITH THE SERVER DOWN
     # =================================================================================
     # Same shape, same reason: the daemon loaded both files at startup and still believes they are
@@ -276,18 +334,19 @@ try {
     Check "the CLI push queued game C while offline" ($queuedFirst -contains $gameC)
 
     # Second writer: the long-lived daemon, whose queue and event set were loaded before any of that.
-    "offline progress B" | Set-Content (Join-Path $saveB "slot1.sav") -Encoding utf8
+    # Game A, not B: check 8 above untracked B on this machine, so the daemon no longer watches it.
+    "offline progress A" | Set-Content (Join-Path $saveA "slot1.sav") -Encoding utf8
     foreach ($i in 1..60) {
         Start-Sleep -Seconds 1
         if (Test-Path $queuePath) {
             $names = @((Get-Content $queuePath -Raw | ConvertFrom-Json) | ForEach-Object { $_.GameName })
-            if ($names -contains $gameB) { break }
+            if ($names -contains $gameA) { break }
         }
     }
 
     $queue = if (Test-Path $queuePath) { @(Get-Content $queuePath -Raw | ConvertFrom-Json) } else { @() }
     $queuedIds = @($queue | ForEach-Object { $_.GameName })
-    Check "the daemon queued game B"                     ($queuedIds -contains $gameB)
+    Check "the daemon queued game A"                     ($queuedIds -contains $gameA)
     Check "the daemon's write did NOT erase C's entry"   ($queuedIds -contains $gameC)
 
     $health = if (Test-Path $healthPath) { Get-Content $healthPath -Raw | ConvertFrom-Json } else { $null }

@@ -25,6 +25,7 @@ export type AgentEvent = Schemas['AgentEventDto'];
 export type Enrollment = Schemas['EnrollmentDto'];
 export type EnrollmentPolicy = Schemas['EnrollmentPolicy'];
 export type CreateEnrollmentResponse = Schemas['CreateEnrollmentResponse'];
+export type EffectiveServerUrl = Schemas['EffectiveServerUrl'];
 export type AdminStatus = Schemas['AdminStatus'];
 export type ServerBuildInfo = NonNullable<Schemas['ServerBuildInfo']>;
 

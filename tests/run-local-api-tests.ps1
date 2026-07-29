@@ -1,4 +1,4 @@
-# Local agent API security - 26 checks (up to 27 when a candidate is scanned). Runs on BOTH Windows and Linux.
+# Local agent API - 30 checks (up to 31 when a candidate is scanned). Runs on BOTH Windows and Linux.
 #
 # The agent's own API (AgentApiServer, shared by the Windows tray and the Linux daemon) manages this
 # machine: it rewrites config, enrolls games and re-registers against the server. It used to be
@@ -12,6 +12,11 @@
 #   5. The token reaches the UI, and only the UI  - injected into index.html, 0600 on disk.
 #   6. The path browser is rooted                 - outside $HOME/Steam => 400, incl. via .. and a symlink.
 #   7. --lan is gone                              - it bound this API to every interface.
+#
+# Plus one correctness check that is not about attack surface:
+#
+#   10. A server change moves ALL traffic          - the cached SyncEngine used to keep pushing to
+#                                                    the old host while the poller moved (LA-01).
 #
 # The daemon runs on its own port so this suite never collides with a real agent on :5178.
 # Usage: .\tests\run-local-api-tests.ps1 / pwsh tests/run-local-api-tests.ps1
@@ -286,6 +291,104 @@ finally {
 # =================================================================================
 $lanOut = & $dotnet $dll daemon --lan --port $port --config $cfgPath 2>&1
 Check "daemon --lan is refused" ($LASTEXITCODE -ne 0 -and "$lanOut" -match "removed")
+
+# =================================================================================
+# 10. CHANGING THE SERVER URL MOVES *ALL* DAEMON TRAFFIC (LA-01)
+# The daemon caches an ApiClient (base URL + key + pin) inside its SyncEngine, built once at
+# startup. CommandPoller rebuilds its client every tick, so a server change moved the POLLER
+# immediately — while the folder-watcher pushes and the offline-queue drainer, which go through
+# that cached engine, kept talking to the OLD server. Split-brain: save traffic to one host,
+# control traffic to another, with no error anywhere.
+#
+# Two throwaway listeners stand in for the servers. They answer 404 to everything, which is all
+# this needs: what is asserted is WHICH host was contacted, not that a push succeeded. The
+# queued entry keeps the drainer retrying, so the engine's target is exercised repeatedly.
+#
+# Since WA-04 the traffic B receives is UNAUTHENTICATED: an origin change clears the machine key,
+# id and TLS pin, because all three were issued by A and sending them to B would hand a live
+# credential to a host that was never meant to see it. So the poller stays quiet until the machine
+# re-registers and it is the drainer that reaches B here. That A's key never appears in a request
+# to B is asserted in run-winagent-tests.ps1, which owns the WA-04 coverage.
+# =================================================================================
+$portA = 5197; $portB = 5198; $swPort = 5187
+$urlA = "http://localhost:$portA"; $urlB = "http://localhost:$portB"
+
+$swDir  = Join-Path $scratch "switch"
+$swSave = Join-Path $swDir "save"
+New-Item -ItemType Directory -Force $swSave | Out-Null
+"progress" | Set-Content (Join-Path $swSave "slot1.sav") -Encoding utf8
+
+$swGameId = [guid]::NewGuid().ToString()
+$swCfg    = Join-Path $swDir "cfg.json"
+@{
+    ServerUrl   = $urlA
+    MachineName = "SwitchTest"
+    ApiKey      = "switch-test-key"
+    MachineId   = [guid]::NewGuid().ToString()
+    Games       = @(@{ GameId = $swGameId; Name = "SwitchGame"; SaveDirectory = $swSave })
+} | ConvertTo-Json -Depth 5 | Set-Content -Path $swCfg -Encoding utf8
+
+# Seed the offline queue so the drainer has work the moment it ticks (every 30 s). Written as
+# literal JSON: PowerShell 5.1's ConvertTo-Json has no -AsArray and unwraps a single element.
+$queuedAt = (Get-Date).ToUniversalTime().ToString("o")
+"[{""GameId"":""$swGameId"",""GameName"":""SwitchGame"",""Force"":true,""QueuedAt"":""$queuedAt""}]" |
+    Set-Content -Path (Join-Path $swDir "offline-queue.json") -Encoding utf8
+
+$listenerA = [System.Net.HttpListener]::new(); $listenerA.Prefixes.Add("$urlA/")
+$listenerB = [System.Net.HttpListener]::new(); $listenerB.Prefixes.Add("$urlB/")
+$listenerA.Start(); $listenerB.Start()
+
+# Accept and answer on both listeners for $seconds, returning how many requests each took.
+function Serve($seconds) {
+    $a = 0; $b = 0
+    $deadline = (Get-Date).AddSeconds($seconds)
+    $taskA = $listenerA.GetContextAsync(); $taskB = $listenerB.GetContextAsync()
+    while ((Get-Date) -lt $deadline) {
+        if ($taskA.Wait(100)) {
+            $c = $taskA.Result; $c.Response.StatusCode = 404; $c.Response.Close(); $a++
+            $taskA = $listenerA.GetContextAsync()
+        }
+        if ($taskB.Wait(100)) {
+            $c = $taskB.Result; $c.Response.StatusCode = 404; $c.Response.Close(); $b++
+            $taskB = $listenerB.GetContextAsync()
+        }
+    }
+    return @{ A = $a; B = $b }
+}
+
+$swArgs = @($dll, "daemon", "--port", "$swPort", "--config", $swCfg)
+$swProc = if ($onWindows) {
+    Start-Process -FilePath $dotnet -ArgumentList $swArgs -PassThru -WindowStyle Hidden
+} else {
+    Start-Process -FilePath $dotnet -ArgumentList $swArgs -PassThru
+}
+
+try {
+    $swBase = "http://localhost:$swPort"
+    foreach ($i in 1..40) {
+        Start-Sleep -Milliseconds 700
+        try { Invoke-WebRequest "$swBase/" -UseBasicParsing -TimeoutSec 2 | Out-Null; break } catch { }
+    }
+    $swToken = (Get-Content (Join-Path $swDir "api-token") -Raw).Trim()
+    $swHeaders = @{ "X-SaveLocker-Token" = $swToken }
+
+    $state = Invoke-RestMethod "$swBase/api/state" -Headers $swHeaders
+    Check "the daemon started on server A" ($state.serverUrl -eq $urlA)
+
+    # Switch. The rebuild must land before this call returns.
+    Invoke-RestMethod "$swBase/api/config" -Method Post -Headers $swHeaders `
+        -Body (@{ serverUrl = $urlB } | ConvertTo-Json) -ContentType "application/json" | Out-Null
+
+    # 75 s covers at least two poller ticks (20 s) and two drainer ticks (30 s).
+    $hits = Serve 75
+    Check "traffic reached the new server B"          ($hits.B -ge 1)
+    Check "NO traffic reached the old server A"       ($hits.A -eq 0)
+}
+finally {
+    if ($swProc) { Stop-Process -Id $swProc.Id -Force -ErrorAction SilentlyContinue }
+    $listenerA.Stop(); $listenerA.Close()
+    $listenerB.Stop(); $listenerB.Close()
+}
 
 Write-Host ""
 Write-Host "$pass passed, $fail failed"

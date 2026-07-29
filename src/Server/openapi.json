@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:5191/"
+      "url": "http://localhost:5179/"
     }
   ],
   "paths": {
@@ -1626,6 +1626,25 @@
         }
       }
     },
+    "/api/admin/enrollments/effective-url": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectiveServerUrl"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/enrollments/{id}": {
       "delete": {
         "tags": [
@@ -1796,6 +1815,18 @@
               "null",
               "string"
             ]
+          },
+          "claimCount": {
+            "type": "integer",
+            "format": "int32",
+            "default": 0
+          },
+          "leaseExpiresAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -2083,6 +2114,12 @@
           "sizeBytes": {
             "type": "integer",
             "format": "int64"
+          },
+          "sha256": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2098,6 +2135,12 @@
           },
           "downloadUrl": {
             "type": "string"
+          },
+          "sha256": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2466,6 +2509,25 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "EffectiveServerUrl": {
+        "required": [
+          "url",
+          "fromConfig",
+          "isLoopback"
+        ],
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "fromConfig": {
+            "type": "boolean"
+          },
+          "isLoopback": {
+            "type": "boolean"
           }
         }
       },
@@ -2985,7 +3047,10 @@
             "format": "uuid"
           },
           "machineId": {
-            "type": "string",
+            "type": [
+              "null",
+              "string"
+            ],
             "format": "uuid"
           },
           "machineName": {

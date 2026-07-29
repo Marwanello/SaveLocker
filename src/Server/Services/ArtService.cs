@@ -58,15 +58,51 @@ public sealed class ArtService
     /// <summary>Check the configured key is accepted by SteamGridDB (used after a dashboard save).</summary>
     public async Task<(bool ok, string message)> VerifyKeyAsync(CancellationToken ct = default)
     {
-        _apiKey = await ResolveKeyAsync(ct);
-        if (string.IsNullOrWhiteSpace(_apiKey))
+        var key = await ResolveKeyAsync(ct);
+        if (string.IsNullOrWhiteSpace(key))
             return (false, "No SteamGridDB API key is configured.");
+        return await VerifyCandidateKeyAsync(key, ct);
+    }
+
+    /// <summary>
+    /// Celeste. A stable, always-present SteamGridDB game id, used only as something to ask about.
+    /// </summary>
+    private const int VerifyProbeGameId = 13136;
+
+    /// <summary>
+    /// Check a key that has <b>not been stored</b>. The dashboard save used to write first and ask
+    /// afterwards, so a typo replaced a working key and the console still reported success — the
+    /// only way back was to find the old key again.
+    /// <para>
+    /// The probe deliberately hits an <b>authenticated</b> endpoint. The old one asked
+    /// <c>search/autocomplete</c>, which SteamGridDB serves without a key at all: it returned 200
+    /// with real data for a 25-character string of nonsense, so "API key verified" only ever meant
+    /// "steamgriddb.com is reachable". Asset endpoints answer 401 without a valid key, which is the
+    /// question actually being asked.
+    /// </para>
+    /// </summary>
+    public async Task<(bool ok, string message)> VerifyCandidateKeyAsync(
+        string candidate, CancellationToken ct = default)
+    {
+        var key = candidate?.Trim();
+        if (string.IsNullOrWhiteSpace(key))
+            return (false, "No SteamGridDB API key is configured.");
+
         try
         {
-            using var doc = await GetJsonAsync("search/autocomplete/celeste", ct);
-            return doc is not null
-                ? (true, "API key verified with SteamGridDB.")
-                : (false, "SteamGridDB rejected the key (check that it was pasted correctly).");
+            using var req = new HttpRequestMessage(
+                HttpMethod.Get, $"grids/game/{VerifyProbeGameId}?limit=1");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+            using var resp = await _http.SendAsync(req, ct);
+
+            // Status codes, not just "did I get a document": a rejected key and an unreachable
+            // service are different answers, and the admin needs to be told which one happened.
+            if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+                return (false, "SteamGridDB rejected the key (check that it was pasted correctly).");
+            if (!resp.IsSuccessStatusCode)
+                return (false, $"Could not verify the key: SteamGridDB answered {(int)resp.StatusCode}.");
+
+            return (true, "API key verified with SteamGridDB.");
         }
         catch (Exception ex)
         {

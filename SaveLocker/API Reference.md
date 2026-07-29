@@ -10,7 +10,7 @@ Server endpoints (`src/Server/Program.cs`).
 
 ## Public (no auth)
 - `POST /api/machines/register` `{ name }` → `{ machineId, apiKey }`. First-time registration of a new name is open. Re-registering an **existing** name rotates its key — requires `X-Admin-Password` once an admin password is set (**401** otherwise). With no password configured it stays open.
-- `POST /api/enroll` `{ token, machineName? }` → `{ machineId, apiKey, machineName }`. Spends a single-use enrollment token for a real machine key. **No auth filter, because the token *is* the credential** — a fresh agent has nothing else. Unknown, expired and already-spent tokens all answer **401**. If the token was minted *for* a machine name, that name is binding and `machineName` in the body is ignored — so a leaked file cannot be spent to claim another machine's identity. Redeeming for an existing name **rotates** that machine's key (the re-enrollment path for a wiped device), authorised by the token exactly as the admin password authorises re-registration.
+- `POST /api/enroll` `{ token, machineName? }` → `{ machineId, apiKey, machineName }`. Spends a single-use enrollment token for a real machine key. Burning the token and issuing the key are one transaction, so a failure part-way leaves the file usable rather than spent for nothing; concurrent redemptions still yield exactly one winner. **No auth filter, because the token *is* the credential** — a fresh agent has nothing else. Unknown, expired and already-spent tokens all answer **401**. If the token was minted *for* a machine name, that name is binding and `machineName` in the body is ignored — so a leaked file cannot be spent to claim another machine's identity. Redeeming for an existing name **rotates** that machine's key (the re-enrollment path for a wiped device), authorised by the token exactly as the admin password authorises re-registration.
 - `GET /health` → `{ service, status:"ok" }`.
 - `GET /api/admin/status` → `{ passwordRequired, build: { version, commit, builtAt, isRelease } }`. Reachability probe **and** the console's build identity. `version` is the product version shared with the agent (one git tag for the repo), carrying a `+{n}.{sha}` suffix on builds made after the nearest tag; `isRelease` is simply the absence of that suffix. `builtAt` is UTC, null when unstamped, and an unstamped local build reports `"dev"` rather than a plausible-looking number. Unauthenticated on purpose — the version has to be readable before you can authenticate, since a wrong admin password is one of the things you would be diagnosing. It does disclose the exact version and commit to anyone who can reach the port; accepted for a self-hosted LAN service. Values come from `SAVELOCKER_VERSION` / `_COMMIT` / `_BUILT_AT`, baked in by `docker-publish.yml` (see `BuildInfo.cs`).
 - `GET /` → React admin dashboard (served from `wwwroot/` by ASP.NET static files).
@@ -31,17 +31,17 @@ Server endpoints (`src/Server/Program.cs`).
 
 ## Server settings
 - `GET /api/settings` → `ServerSettingsDto { steamGridDbConfigured, steamGridDbKeyMasked, steamGridDbFromConfig, autoFetchHours }`. Never returns the raw key.
-- `POST /api/settings/steamgriddb-key` body `{ apiKey }` → `{ ok, message }`. Stores in DB then verifies. Null/blank clears the DB override (falls back to config).
+- `POST /api/settings/steamgriddb-key` body `{ apiKey }` → `{ ok, message }`. **Verifies, then stores** — a key that fails verification answers **400** `{ ok: false, message, keptExistingKey }` and leaves the existing key exactly as it was. The probe hits an authenticated endpoint (`grids/game/{id}`); `search/autocomplete` is public and would accept anything. Null/blank clears the DB override (falls back to config) without a verification round-trip.
 - `POST /api/settings/agent-update-auto-fetch` body `{ hours }` → `{ autoFetchHours }`. Sets the GitHub installer polling interval; `0` disables it. The server applies a console change within one minute and immediately polls when enabling or changing the interval.
 
 ## Leases
-- `POST /api/games/{id}/lease` → `LeaseAcquireResponse { granted, lease }`. *(agent)*
+- `POST /api/games/{id}/lease` → `LeaseAcquireResponse { granted, lease }`. *(agent)* Atomic: simultaneous callers get exactly one `granted: true`, and every other caller gets `granted: false` carrying the **holder's** lease — never an error. Re-acquiring your own live lease renews it. An expired lease is taken over in place.
 - `POST /api/games/{id}/lease/renew` → 200 / 409. Renews the lease held by the calling machine; `SyncEngine` calls this on a 3 h timer during long play sessions. *(agent)*
 - `DELETE /api/games/{id}/lease` → 204 (release own lease). *(agent)*
 - `DELETE /api/games/{id}/lease/force` → 204 (admin force-release).
 
 ## Sync
-- `POST /api/games/{id}/upload?hash={h}&parent={versionId?}&force={bool?}` body = zip → `UploadResult { status: Created|NoChange|Conflict, version, conflict }`.
+- `POST /api/games/{id}/upload?hash={h}&parent={versionId?}&force={bool?}` body = zip → `UploadResult { status: Created|NoChange|Conflict, version, conflict }`. **413** if the body exceeds `Storage:MaxUploadMb` (default 200), counted while copying rather than from the declared length. The archive is staged and published atomically, so a refused or interrupted upload leaves no version and no file.
 - `GET /api/games/{id}/download` → head zip; response headers `X-Version-Id`, `X-Content-Hash`.
 - `GET /api/versions/{versionId}/download` → that version's zip.
 
@@ -53,6 +53,13 @@ Server endpoints (`src/Server/Program.cs`).
   chosen version becomes Latest and both conflict snapshots are protected from retention.
 - `POST /api/games/{id}/rollback?version={versionId}` → 200 / 400.
 - `POST /api/games/{id}/set-latest?version={versionId}` → 200 / 400. Same head-pointer move as rollback; backs the **"Set as Latest"** dashboard action + initial-sync wizard.
+
+Every head change the *server* decides — the two above, `conflicts/{id}/resolve`, and an automatic
+`NewestWins`/`PreferMachine` upload — queues a deduplicated **unforced** `Pull` for each live machine
+that syncs the game (mapped save path or uploaded version), skipping the uploader that already
+learned the new head from its own upload response. Rollback and Set as Latest additionally supersede
+any open conflict that **offers the chosen version** (audited as `conflict.resolve_superseded`);
+conflicts between two other versions stay open. An ordinary push queues nothing. See `Decisions.md`.
 - `POST /api/games/{id}/retain?value={n?}` → 200 / 404. Set per-game version retention limit (null = global default).
 - `DELETE /api/games/{id}/versions/{versionId}` → 200 / 404 / 400. Refuses if it is the head or referenced by an open conflict.
 - `POST /api/games/{id}/versions/{versionId}/protected?value={bool}` → 200 / 404. Protect or
@@ -77,7 +84,9 @@ Server endpoints (`src/Server/Program.cs`).
 - `POST /api/admin/health/events/{id}/dismiss` → 204 / 404. **Dismiss is not resolve**: it does not fix the condition, and if the condition still holds the agent's next report reopens it.
 
 ## Enrollment (admin)
-- `POST /api/admin/enrollments` `{ machineName?, ttlMinutes?, serverUrl?, gameIds?, settleQuietSeconds?, settleMaxWaitSeconds? }` → `CreateEnrollmentResponse { id, policy }`. Mints a single-use token (default TTL **15 min**, max 24 h) and returns the **policy file** the agent consumes. **The raw token is in this response and nowhere else** — the server stores only its hash, so a policy that isn't saved here is unrecoverable. `serverUrl` defaults to the URL the console was reached on; override it when the admin is on the LAN but the agent must use the public tunnel. `gameIds` null = every enabled game.
+- `POST /api/admin/enrollments` `{ machineName?, ttlMinutes?, serverUrl?, gameIds?, settleQuietSeconds?, settleMaxWaitSeconds? }` → `CreateEnrollmentResponse { id, policy }`. Mints a single-use token (default TTL **15 min**, max 24 h) and returns the **policy file** the agent consumes. **The raw token is in this response and nowhere else** — the server stores only its hash, so a policy that isn't saved here is unrecoverable. `gameIds` null = every enabled game.
+  - `serverUrl` is the address the **agent** will use. Precedence: the explicit override → `Server:PublicBaseUrl` → the origin the console was reached on. Validated before a token is minted, so a bad value costs neither a token nor a retry: **400** if it is not an absolute `http(s)` URL, and **400** if an *inferred* URL is loopback (`localhost`, `127.x`, `::1`, `0.0.0.0`) — such a file would tell the new machine to sync with itself. A loopback URL you state explicitly (override or `Server:PublicBaseUrl`) is accepted: that is a same-box agent.
+- `GET /api/admin/enrollments/effective-url` → `EffectiveServerUrl { url, fromConfig, isLoopback }`. What a policy minted right now would carry. The console shows it before the button is pressed, since the token is single-use.
 - `GET /api/admin/enrollments` → `EnrollmentDto[]` (100 newest) `{ id, machineName, createdAt, expiresAt, redeemedAt, redeemedByMachineName }`. **Tokens whose window closed >24 h ago (`EnrollmentService.ListRetention`) are omitted** and pruned by the hourly sweep — their history lives in the audit log (`enrollment.create` records the expiry; an unredeemed one logs `enrollment.expire` when pruned).
 - `DELETE /api/admin/enrollments/{id}` → 204 / 404. Revokes an unspent token. Deleting a *spent* one only drops the record — it does not revoke the API key it bought (delete the machine for that).
 
@@ -85,7 +94,10 @@ The policy file is **deliberately unsigned** (`Decisions.md` §4). Its `games` l
 
 ## Agent installer management (admin)
 - `GET /api/admin/agent-installer` → `AgentInstallerStatus { version, fileName, uploadedAt, sizeBytes }`, or 204 if none hosted.
-- `POST /api/admin/agent-installer?version={v}` — multipart `file` field (`.exe`). Stores installer + sidecar JSON; replaces any previous. Returns `AgentInstallerStatus`. Body limit: 200 MB.
+- `POST /api/admin/agent-installer?version={v}` — multipart `file` field (`.exe`). Stores installer + sidecar JSON; replaces any previous. Returns `AgentInstallerStatus`.
+  - **413** past `AgentUpdate:MaxInstallerMb` (default 200), enforced by Kestrel *and* counted while copying. The limit is raised from Kestrel's 30 MB default, never removed.
+  - **400** for a non-`.exe`, an empty filename, or a version this server cannot parse — checked before anything on disk is touched.
+  - Replacement is atomic and serialised against the GitHub fetch, the background poller and delete. A refused or interrupted upload leaves the previous installer and its metadata serving.
 - `DELETE /api/admin/agent-installer` → 204. Removes the hosted installer; agents stop being offered updates.
 
 The server can optionally keep the hosted installer current from GitHub through
@@ -98,13 +110,13 @@ when the GitHub release is newer than the hosted installer.
 - `GET /api/agent/installer/download` — streams the hosted installer binary. No auth. 404 if none hosted.
 
 ## Agent update check (agent-auth)
-- `GET /api/agent/latest` → `AgentVersionInfo { latestVersion, downloadUrl }`, or 204 if no installer is configured. Checks the filesystem first (`AgentInstallerService`); falls back to static `AgentUpdate:LatestVersion` + `DownloadUrl` config.
+- `GET /api/agent/latest` → `AgentVersionInfo { latestVersion, downloadUrl }`, or 204 if no installer is configured. Checks the filesystem first (`AgentInstallerService`); falls back to static `AgentUpdate:LatestVersion` + `DownloadUrl` config. The hosted `downloadUrl` uses `Server:PublicBaseUrl` when set, else the request origin — same resolver as the enrollment policy.
 
 ## Agent command channel (agent-auth)
 Polling model: agent makes outbound requests (~20 s). Each poll also reconciles the game list (adopt new server games, drop deleted ones).
 - `POST /api/agent/games` `{ name, manifestKey?, suggestedSaveDir? }` → `GameDto` — agent enrollment (agent-auth; no admin password required).
-- `GET /api/agent/commands` → `AgentCommandDto[]` — pending commands for the calling machine; claiming them flips each to `Dispatched`.
-- `POST /api/agent/commands/{id}/result` `{ status, result }` → 200 / 404.
+- `GET /api/agent/commands` → `AgentCommandDto[]` — claims the calling machine's due commands under a **visibility lease** (`Commands:LeaseMinutes`, default 10). Due = `Pending`, or `Dispatched` with an expired lease. One atomic claim, so two pollers on one machine identity cannot both get a command; `claimCount > 1` means an earlier delivery went unanswered. Delivery is at-least-once — see `Decisions.md`.
+- `POST /api/agent/commands/{id}/result` `{ status, result }` → 200 / 404. Idempotent: a late or duplicate report for an already-completed command returns 200 without reopening it.
 - `POST /api/agent/path/{gameId}?value={path}` → 200. Agent reports the locally resolved save path.
 - `POST /api/commands` `{ machineId, gameId?, type, force }` → `AgentCommandDto` (dashboard queues a command; `type` = `Pull|Push|Sync|Scan`). *(admin)*
 - `GET /api/commands` → recent `AgentCommandDto[]` (dashboard activity log). *(admin)*

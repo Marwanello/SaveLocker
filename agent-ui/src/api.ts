@@ -34,17 +34,31 @@ export const api = {
   candidates: () => req<Candidate[]>('/api/candidates'),
   rescan: () => post<Candidate[]>('/api/candidates/rescan'),
   enroll: (ids: number[]) => post<{ enrolled: number; skipped: number }>('/api/enroll', { ids }),
+  // identityCleared is true when the server URL moved to a different origin: the machine key, id
+  // and TLS pin were issued by the old server and have been dropped, so this agent must register
+  // or enroll again before it can sync.
   saveConfig: (body: {
     serverUrl?: string
     machineName?: string
     startWithWindows?: boolean
     settleQuietSeconds?: number
-  }) => post('/api/config', body),
+    // startWithWindows is the EFFECTIVE state read back from the platform, not what was asked for.
+    // A refusal comes back as a failed request; this covers the quieter case where the entry was
+    // written and then reverted underneath us.
+  }) => post<{ identityCleared: boolean; startWithWindows: boolean }>('/api/config', body),
   register: (adminPassword?: string) =>
     post<{ machineName: string }>('/api/register', { adminPassword }),
   games: () => req<TrackedGame[]>('/api/games'),
   removeGame: (id: string) => post(`/api/games/${id}/remove`),
-  setGameFolder: (id: string, path: string) => post(`/api/games/${id}/folder`, { path }),
+  // `confirm` accepts a folder the sanity heuristics flagged (a suspected Wine prefix, an oversized
+  // folder). It never overrides the hard refusals — a drive root or a user profile is refused with
+  // or without it.
+  setGameFolder: (id: string, path: string, confirm = false) =>
+    post(`/api/games/${id}/folder`, { path, confirm }),
+  // Process names that mean the game is running. Empty means the Windows agent cannot detect it at
+  // all — no lease, no exit push, no refusal to pull under a live game.
+  setGameProcesses: (id: string, processNames: string[]) =>
+    post(`/api/games/${id}/processes`, { processNames }),
   browse: (path?: string) =>
     req<BrowseListing>('/api/browse' + (path ? `?path=${encodeURIComponent(path)}` : '')),
   suggestedPath: (id: string) => req<{ path: string | null }>(`/api/games/${id}/suggested-path`),

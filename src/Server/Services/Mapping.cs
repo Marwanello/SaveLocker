@@ -20,8 +20,20 @@ public static class Mapping
             GlobConfig.Parse(g.ExcludeGlobs), g.ConflictPolicy, g.PreferredMachineId);
 
     public static SaveVersionDto ToDto(this SaveVersion v) =>
-        new(v.Id, v.GameId, v.MachineId, v.Machine?.Name ?? "", v.CreatedAt,
+        new(v.Id, v.GameId, v.MachineId, UploaderName(v), v.CreatedAt,
             v.ContentHash, v.Size, v.ParentVersionId, v.Protected);
+
+    /// <summary>
+    /// Names the uploader honestly. A version whose machine has been deleted keeps its snapshotted
+    /// name and says so, rather than rendering as an empty string.
+    /// </summary>
+    private static string UploaderName(SaveVersion v)
+    {
+        if (v.MachineId is not null) return v.Machine?.Name ?? v.MachineName;
+        return string.IsNullOrWhiteSpace(v.MachineName)
+            ? "(deleted machine)"
+            : $"{v.MachineName} (deleted)";
+    }
 
     public static LeaseDto ToDto(this Lease? lease, Guid gameId) =>
         lease is null
@@ -31,7 +43,7 @@ public static class Mapping
 
     public static AgentCommandDto ToDto(this AgentCommand c) =>
         new(c.Id, c.MachineId, c.Machine?.Name, c.GameId, c.Type, c.Force,
-            c.Status, c.CreatedAt, c.CompletedAt, c.Result);
+            c.Status, c.CreatedAt, c.CompletedAt, c.Result, c.ClaimCount, c.LeaseExpiresAt);
 
     public static ConflictDto ToDto(this ConflictFlag c, bool escalated = false) =>
         new(c.Id, c.GameId, c.VersionAId, c.VersionBId, c.Status, c.CreatedAt,

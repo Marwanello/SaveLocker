@@ -1,5 +1,9 @@
-@import "tailwindcss";
+/* This @import MUST stay above the Tailwind one. `@import "tailwindcss"` expands into generated
+   rules, and CSS requires every @import to precede all other rules — so with the two the other way
+   round the browser silently discarded this line and the whole console rendered in fallback fonts,
+   while the production build warned about it on every run. */
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
 
 @theme {
   --color-bg-global:        #2A3238;

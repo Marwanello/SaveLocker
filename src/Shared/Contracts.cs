@@ -69,11 +69,17 @@ public record ServerSettingsDto(
     double AutoFetchHours = 0);
 
 /// <summary>Status of the agent installer binary hosted on this server.</summary>
+/// <param name="Sha256">
+/// Lowercase hex SHA-256 of the installer, computed as it was stored. Null only for an installer
+/// uploaded before digests existed — a value here is what lets an agent prove the bytes it
+/// downloaded are the bytes this server holds.
+/// </param>
 public record AgentInstallerStatus(
     string Version,
     string FileName,
     DateTime UploadedAt,
-    long SizeBytes);
+    long SizeBytes,
+    string? Sha256 = null);
 
 /// <summary>Set (or clear, when null/empty) the SteamGridDB API key from the dashboard.</summary>
 public record SetSteamGridDbKeyRequest(string? ApiKey);
@@ -100,7 +106,9 @@ public record LeaseAcquireResponse(bool Granted, LeaseDto Lease);
 public record SaveVersionDto(
     Guid Id,
     Guid GameId,
-    Guid MachineId,
+    /// <summary>Null once the uploading machine has been deleted; <see cref="MachineName"/> still
+    /// names it.</summary>
+    Guid? MachineId,
     string MachineName,
     DateTime CreatedAt,
     string ContentHash,
@@ -182,7 +190,10 @@ public enum CommandStatus
 {
     /// <summary>Queued, not yet handed to the agent.</summary>
     Pending,
-    /// <summary>Handed to the agent on a poll; awaiting its result.</summary>
+    /// <summary>
+    /// Handed to the agent on a poll; awaiting its result. This is a <b>lease</b>, not a terminal
+    /// state — once it expires unacknowledged the command becomes claimable again.
+    /// </summary>
     Dispatched,
     Done,
     Failed
@@ -201,7 +212,12 @@ public record AgentCommandDto(
     CommandStatus Status,
     DateTime CreatedAt,
     DateTime? CompletedAt,
-    string? Result);
+    string? Result,
+    /// <summary>How many times this command has been handed to an agent. &gt;1 means an earlier
+    /// claim was never acknowledged and the command was reclaimed.</summary>
+    int ClaimCount = 0,
+    /// <summary>When the current claim stops being exclusive; null unless awaiting a result.</summary>
+    DateTime? LeaseExpiresAt = null);
 
 public record CommandResultRequest(CommandStatus Status, string? Result);
 
@@ -234,6 +250,19 @@ public record EnrollmentDto(
 
 /// <summary>Mint result: the row (for listing/revoking) plus the policy file handed to the agent.</summary>
 public record CreateEnrollmentResponse(Guid Id, EnrollmentPolicy Policy);
+
+/// <summary>
+/// The server URL an enrollment file would be minted with right now, so the console can show it
+/// before a single-use token is spent on it.
+/// </summary>
+/// <param name="Url">The effective base URL, without a trailing slash.</param>
+/// <param name="FromConfig">True when it came from <c>Server:PublicBaseUrl</c> rather than the
+/// origin this request arrived on.</param>
+/// <param name="IsLoopback">True when it names the machine asking. Combined with
+/// <paramref name="FromConfig"/> being false this blocks minting, since an inferred loopback address
+/// cannot work on the machine being enrolled; a loopback URL that was configured or typed is a
+/// deliberate same-box setup and is allowed.</param>
+public record EffectiveServerUrl(string Url, bool FromConfig, bool IsLoopback);
 
 /// <summary>
 /// The enrollment file: <c>savelocker enroll --file &lt;policy&gt;</c>. Carries a single-use,
@@ -382,7 +411,17 @@ public record AgentHealthDto(
 // ----- Agent update channel -----
 
 /// <summary>Latest available agent version info, served by the SaveLocker server.</summary>
-public record AgentVersionInfo(string LatestVersion, string DownloadUrl);
+/// <param name="Sha256">
+/// Lowercase hex SHA-256 the downloaded installer must match before the agent will execute it.
+/// <para>
+/// This is the <b>only</b> integrity control on the default configuration: SaveLocker ships no
+/// certificates and plain http is supported (Decisions.md), so the transport proves nothing about
+/// what arrived. Null when the server cannot supply one — an installer stored before digests
+/// existed, or a hand-configured <c>AgentUpdate:DownloadUrl</c> with no <c>AgentUpdate:Sha256</c>
+/// beside it. The agent decides what to do about null; for an off-origin download it refuses.
+/// </para>
+/// </param>
+public record AgentVersionInfo(string LatestVersion, string DownloadUrl, string? Sha256 = null);
 
 // ----- Per-game conflict policy -----
 

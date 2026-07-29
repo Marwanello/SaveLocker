@@ -125,7 +125,16 @@ public sealed class LocalAuth
 
     private static void RestrictDirectory(string dir)
     {
-        if (OperatingSystem.IsWindows()) return;
+        // Windows is not a no-op any more. %PROGRAMDATA% grants every authenticated user read
+        // access and that inherits, so both credentials under it were readable by any local
+        // account (WA-03). The directory ACL carries inheritable rules, which is what covers the
+        // token, config.json and every other state file the agent writes later.
+        if (OperatingSystem.IsWindows())
+        {
+            StateDirSecurity.Protect(dir);
+            return;
+        }
+
         try
         {
             File.SetUnixFileMode(dir,

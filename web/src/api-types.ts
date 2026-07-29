@@ -2112,6 +2112,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/enrollments/effective-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EffectiveServerUrl"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/enrollments/{id}": {
         parameters: {
             query?: never;
@@ -2277,6 +2312,13 @@ export interface components {
             /** Format: date-time */
             completedAt: null | string;
             result: null | string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            claimCount: number;
+            /** Format: date-time */
+            leaseExpiresAt?: null | string;
         };
         /** @enum {unknown} */
         AgentCommandType: "Pull" | "Push" | "Sync" | "Scan";
@@ -2363,10 +2405,12 @@ export interface components {
             uploadedAt: string;
             /** Format: int64 */
             sizeBytes: number;
+            sha256?: null | string;
         };
         AgentVersionInfo: {
             latestVersion: string;
             downloadUrl: string;
+            sha256?: null | string;
         };
         AuditEntryDto: {
             /** Format: uuid */
@@ -2471,6 +2515,11 @@ export interface components {
             manifestKey: null | string;
             customPathsJson: null | string;
             suggestedSaveDir?: null | string;
+        };
+        EffectiveServerUrl: {
+            url: string;
+            fromConfig: boolean;
+            isLoopback: boolean;
         };
         EnqueueCommandRequest: {
             /** Format: uuid */
@@ -2607,7 +2656,7 @@ export interface components {
             /** Format: uuid */
             gameId: string;
             /** Format: uuid */
-            machineId: string;
+            machineId: null | string;
             machineName: string;
             /** Format: date-time */
             createdAt: string;

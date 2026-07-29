@@ -21,11 +21,11 @@ public sealed class SystemdAutoStart : IAutoStart
     public bool IsEnabled()
     {
         if (!File.Exists(UnitPath)) return false;
-        var (exit, output) = Run("systemctl", "--user", "is-enabled", Unit);
-        return exit == 0 && output.Trim() == "enabled";
+        var (exit, stdout, _) = Run("systemctl", "--user", "is-enabled", Unit);
+        return exit == 0 && stdout.Trim() == "enabled";
     }
 
-    public bool SetEnabled(bool enabled)
+    public AutoStartResult SetEnabled(bool enabled)
     {
         try
         {
@@ -34,18 +34,48 @@ public sealed class SystemdAutoStart : IAutoStart
                 Directory.CreateDirectory(UnitDir);
                 File.WriteAllText(UnitPath, UnitFile());
                 Run("systemctl", "--user", "daemon-reload");
-                var (exit, _) = Run("systemctl", "--user", "enable", "--now", Unit);
-                return exit == 0;
+                var (exit, _, err) = Run("systemctl", "--user", "enable", "--now", Unit);
+                if (exit != 0)
+                {
+                    AgentLogger.Log($"systemctl --user enable failed (exit {exit}): {err.Trim()}");
+                    return AutoStartResult.Fail(Reason("enable", exit, err));
+                }
+                return AutoStartResult.Success();
             }
 
-            Run("systemctl", "--user", "disable", "--now", Unit);
-            return true;
+            // The exit code is the answer, not a formality. Disabling fails for real — no user bus
+            // (a Deck reached over SSH without a login session is the common one), systemd absent —
+            // and returning true regardless made both the CLI and the Game Mode toggle report a
+            // service as disabled while it was still enabled and still running.
+            var (disableExit, _, disableErr) = Run("systemctl", "--user", "disable", "--now", Unit);
+            if (disableExit != 0)
+            {
+                AgentLogger.Log($"systemctl --user disable failed (exit {disableExit}): {disableErr.Trim()}");
+                return AutoStartResult.Fail(Reason("disable", disableExit, disableErr));
+            }
+            return AutoStartResult.Success();
         }
         catch (Exception ex)
         {
             AgentLogger.LogException("SystemdAutoStart.SetEnabled", ex);
-            return false;
+            return AutoStartResult.Fail("Could not change the startup setting: " + ex.Message);
         }
+    }
+
+    /// <summary>
+    /// A reason the user can act on. Exit -1 is <see cref="Run"/>'s "could not even start
+    /// systemctl", which on a Deck reached over SSH means no user bus rather than a broken unit —
+    /// a distinction worth making, because the two have completely different fixes.
+    /// </summary>
+    private static string Reason(string verb, int exit, string stderr)
+    {
+        var detail = stderr.Trim();
+        if (exit == -1)
+            return $"Could not run systemctl to {verb} the service. If this is a remote shell, " +
+                   "there may be no user session bus — try from a desktop session.";
+        return detail.Length > 0
+            ? $"systemctl could not {verb} the service: {detail}"
+            : $"systemctl could not {verb} the service (exit {exit}).";
     }
 
     private static string UnitFile()
@@ -68,9 +98,18 @@ public sealed class SystemdAutoStart : IAutoStart
         """;
     }
 
-    /// <summary>Run systemctl and capture its output. Never throws — a box without systemd
-    /// (a container, a minimal chroot) simply reports the toggle as unavailable.</summary>
-    private static (int ExitCode, string Output) Run(string file, params string[] args)
+    /// <summary>
+    /// Runs the process (in practice, systemctl) and returns its exit code and both streams. Never
+    /// throws — a box without systemd (a container, a minimal chroot) simply reports the toggle as
+    /// unavailable.
+    /// <para>
+    /// Both streams are drained with <b>concurrent</b> async reads before the wait. Reading one to
+    /// the end and only then waiting deadlocks the moment the other fills its pipe buffer: the child
+    /// blocks writing, the parent blocks reading, and neither moves. systemctl writes its failure
+    /// reason to stderr, which is exactly the stream that was redirected and never read.
+    /// </para>
+    /// </summary>
+    private static (int ExitCode, string StdOut, string StdErr) Run(string file, params string[] args)
     {
         try
         {
@@ -83,14 +122,16 @@ public sealed class SystemdAutoStart : IAutoStart
             foreach (var a in args) psi.ArgumentList.Add(a);
 
             using var p = Process.Start(psi);
-            if (p is null) return (-1, "");
-            var stdout = p.StandardOutput.ReadToEnd();
+            if (p is null) return (-1, "", "");
+
+            var stdout = p.StandardOutput.ReadToEndAsync();
+            var stderr = p.StandardError.ReadToEndAsync();
             p.WaitForExit();
-            return (p.ExitCode, stdout);
+            return (p.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
         }
         catch (Exception)
         {
-            return (-1, "");
+            return (-1, "", "");
         }
     }
 }

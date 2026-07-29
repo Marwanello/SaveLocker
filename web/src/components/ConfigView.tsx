@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { api, setPassword } from '../api';
-import type { GameSummary, Machine, Settings, AgentInstallerStatus, Enrollment, AgentHealth, ServerBuildInfo } from '../types';
+import type { GameSummary, Machine, Settings, AgentInstallerStatus, Enrollment, EffectiveServerUrl, AgentHealth, ServerBuildInfo } from '../types';
 import { fleetSkew, isNewerThanConsole, isTestBuild } from '../versionSkew';
 
 interface Props {
@@ -20,6 +20,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
   const skew = fleetSkew(build?.version, health);
   const [copiedBuild, setCopiedBuild] = useState(false);
   const [sgdbInput, setSgdbInput] = useState('');
+  const [savingKey, setSavingKey] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -100,15 +101,26 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
     () => Object.fromEntries(games.map(s => [s.game.id, s.game.retainVersions?.toString() ?? '']))
   );
 
+  /**
+   * The input is cleared and the view refreshed only after the server confirms the key was stored.
+   * It used to do both unconditionally: a rejected key wiped what you had just pasted and the
+   * panel refreshed into "configured", so a typo looked exactly like success — while the previously
+   * working key had already been overwritten. The server verifies before storing now, and answers
+   * 4xx on rejection, which `api.saveSgdbKey` turns into a throw carrying the server's explanation.
+   */
   async function handleSaveKey() {
     const v = sgdbInput.trim();
     if (!v) { alert('Paste a SteamGridDB API key first.'); return; }
+    setSavingKey(true);
     try {
       const res = await api.saveSgdbKey(v);
       setSgdbInput('');
       alert(res.message || 'Saved.');
       onRefresh();
-    } catch (e) { alert('Could not save key: ' + (e as Error).message); }
+    } catch (e) {
+      // Input deliberately retained: the paste is the thing worth keeping when this fails.
+      alert('Key not saved: ' + (e as Error).message);
+    } finally { setSavingKey(false); }
   }
 
   async function handleClearKey() {
@@ -166,6 +178,15 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
   }
 
   useEffect(() => { loadEnrollments(); }, []);
+
+  // The URL the policy file will actually carry. Worth showing unprompted: the failure it prevents
+  // is silent — an enrollment file that works perfectly for the admin standing at the server and
+  // sends the Deck looking for itself.
+  const [effectiveUrl, setEffectiveUrl] = useState<EffectiveServerUrl | null>(null);
+  useEffect(() => { api.effectiveServerUrl().then(setEffectiveUrl).catch(() => setEffectiveUrl(null)); }, []);
+  // Only an INFERRED loopback address blocks minting. One that was configured or typed is a
+  // deliberate same-box setup (agent and server on one machine) and is perfectly valid.
+  const blockedByLoopback = effectiveUrl?.isLoopback === true && !effectiveUrl.fromConfig;
 
   async function handleMintEnrollment() {
     const ttl = parseInt(enrollTtl, 10);
@@ -259,9 +280,10 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
             />
             <button
               onClick={handleSaveKey}
-              style={{ padding: '6px 14px', background: '#129271', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+              disabled={savingKey}
+              style={{ padding: '6px 14px', background: '#129271', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: savingKey ? 'not-allowed' : 'pointer', opacity: savingKey ? 0.5 : 1, whiteSpace: 'nowrap' }}
             >
-              Save key
+              {savingKey ? 'Verifying…' : 'Save key'}
             </button>
             {settings.steamGridDbConfigured && (
               <button
@@ -527,6 +549,29 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
             The file is downloaded once and cannot be shown again.
           </p>
 
+          {effectiveUrl && (
+            <p style={{
+              margin: '0 0 12px', fontSize: 12, lineHeight: 1.5,
+              color: effectiveUrl.isLoopback ? '#f4a60d' : '#8b9aaa',
+            }}>
+              {blockedByLoopback ? (
+                <>
+                  <strong>This console was reached at {effectiveUrl.url}</strong>, which no other machine
+                  can use — an enrollment file naming it would send the new machine looking for itself.
+                  Reopen the console at this server's LAN address, set <code style={{ fontFamily: "'JetBrains Mono', monospace" }}>Server:PublicBaseUrl</code>,
+                  or type the address below. Creating a file is blocked until then.
+                </>
+              ) : (
+                <>
+                  The file will tell the agent to sync with{' '}
+                  <code style={{ fontFamily: "'JetBrains Mono', monospace", color: '#ECEFF1' }}>{effectiveUrl.url}</code>
+                  {effectiveUrl.fromConfig ? ' (from Server:PublicBaseUrl).' : '.'} Override it below if
+                  that is not how this machine reaches the server.
+                </>
+              )}
+            </p>
+          )}
+
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 180px' }}>
               <span style={{ fontSize: 11, color: '#556070' }}>Machine name (optional — binds the file to it)</span>
@@ -554,23 +599,37 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
               <input
                 value={enrollServerUrl}
                 onChange={e => setEnrollServerUrl(e.target.value)}
-                placeholder={window.location.origin}
+                placeholder={effectiveUrl?.url ?? window.location.origin}
                 style={{ padding: '6px 9px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 4, fontSize: 12.5, fontFamily: "'JetBrains Mono', monospace" }}
               />
             </label>
 
-            <button
-              onClick={handleMintEnrollment}
-              disabled={minting}
-              style={{ padding: '7px 14px', background: '#129271', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: minting ? 'default' : 'pointer', opacity: minting ? 0.6 : 1 }}
-            >
-              {minting ? 'Creating…' : 'Create enrollment file'}
-            </button>
+            {/* One expression drives both the disabled state and the way it looks — a control that
+                is dead but still renders bright green with a pointer cursor reads as a broken app
+                rather than a blocked action. */}
+            {(() => {
+              const blocked = minting || (blockedByLoopback && !enrollServerUrl.trim());
+              return (
+                <button
+                  onClick={handleMintEnrollment}
+                  disabled={blocked}
+                  title={blockedByLoopback && !enrollServerUrl.trim()
+                    ? 'Enter the address agents should use, or reopen the console at this server\'s LAN address.'
+                    : undefined}
+                  style={{ padding: '7px 14px', background: '#129271', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.5 : 1 }}
+                >
+                  {minting ? 'Creating…' : 'Create enrollment file'}
+                </button>
+              );
+            })()}
           </div>
 
+          {/* window.location.origin was wrong here: in dev that is Vite's port, and behind any
+              front end it is the browser's view rather than the server's. The effective URL comes
+              from the server, which is the thing that actually writes it into the file. */}
           <p style={{ margin: '10px 0 0', fontSize: 11.5, color: '#556070', lineHeight: 1.5 }}>
-            Leave the server URL blank to use <code style={{ fontFamily: "'JetBrains Mono', monospace" }}>{window.location.origin}</code> — the address you
-            reached this console on. Set it when the agent must use a different one (e.g. you are on the LAN but the machine will connect over your tunnel).
+            Set the server URL when the new machine reaches this server at a different address than
+            you did — otherwise leave it blank.
           </p>
         </div>
 
@@ -711,7 +770,11 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
 
                   // Never reported at all is its own state, and a meaningful one: a machine that was
                   // enrolled but whose agent has never run looks nothing like one that went offline.
-                  const status = !h
+                  // The health API returns a row for EVERY machine on purpose, so `!h` was never
+                  // true and this branch was unreachable — a freshly enrolled agent rendered as
+                  // "offline since —", which reads as a machine that has stopped rather than one
+                  // that has not started. The absent heartbeat is the thing to test.
+                  const status = !h || !h.lastHeartbeat
                     ? { text: 'never reported', color: '#556070' }
                     : h.online
                       ? { text: 'online', color: '#129271' }

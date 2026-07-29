@@ -14,8 +14,8 @@ public static class AgentCli
     /// <summary>Commands handled here. A host checks this before falling through to its own.</summary>
     public static bool Handles(string command) => command is
         "register" or "enroll" or "trust" or "set-server" or "whoami" or "search" or "scan" or
-        "resolve" or "add-game" or "list" or "status" or "push" or "pull" or "refresh-manifest" or
-        "log" or "hash";
+        "resolve" or "add-game" or "remove-game" or "list" or "status" or "push" or "pull" or
+        "refresh-manifest" or "log" or "hash" or "check-update";
 
     /// <summary>Run one command. Returns the process exit code.</summary>
     public static async Task<int> RunAsync(
@@ -108,9 +108,21 @@ public static class AgentCli
                 {
                     var url = opts.GetValueOrDefault("url") ?? positionals.FirstOrDefault()
                               ?? throw new ArgumentException("Pass the server URL, e.g. set-server --url https://lgs.example.com");
-                    config.ServerUrl = url.TrimEnd('/');
+
+                    // Validated before it can reach disk: an unusable value here used to persist and
+                    // then crash every subsequent start when the client was constructed. WA-04.
+                    if (!config.TrySetServerUrl(url, out var cleared))
+                    {
+                        Console.Error.WriteLine(ServerOrigin.InvalidUrlMessage);
+                        return 1;
+                    }
                     config.Save();
                     Console.WriteLine($"Server URL set to {config.ServerUrl}");
+                    if (cleared)
+                        Console.WriteLine(
+                            "This is a different server, so the stored machine key, machine id and " +
+                            "TLS pin were cleared — they were issued by the previous one. " +
+                            "Register or enroll against the new server before syncing.");
                     break;
                 }
 
@@ -192,6 +204,26 @@ public static class AgentCli
                         Console.WriteLine($"Warning: save directory does not exist — run the game first or verify the path.");
                     }
 
+                    // Refused before the game is created on the server, so a bad --dir does not leave
+                    // a half-made game behind. No --force-path here: these refusals are absolute. WA-02.
+                    var dirCheck = SavePathGuard.Check(dir, config.StateDir);
+                    if (!dirCheck.Ok)
+                    {
+                        Console.Error.WriteLine($"Refusing '{dir}': {dirCheck.Reason}");
+                        return 1;
+                    }
+
+                    // The heuristics can be wrong, so they are overridable — but only by saying so.
+                    var sanity = SaveDirSanity.Inspect(dirCheck.Canonical);
+                    if (sanity.Count > 0 && !opts.ContainsKey("force-path"))
+                    {
+                        Console.Error.WriteLine($"'{dir}' does not look like a save folder:");
+                        foreach (var p in sanity) Console.Error.WriteLine("  - " + p);
+                        Console.Error.WriteLine("Pass --force-path to use it anyway.");
+                        return 1;
+                    }
+                    dir = dirCheck.Canonical;
+
                     var game = await Api().CreateGameAsync(new CreateGameRequest(name, manifestKey, null));
                     var existing = config.FindGame(name);
                     var tracked = existing ?? new TrackedGame();
@@ -202,12 +234,36 @@ public static class AgentCli
                     if (opts.TryGetValue("appid", out var appId) && !string.IsNullOrWhiteSpace(appId))
                         tracked.SteamAppId = appId.Trim();
                     if (opts.TryGetValue("proc", out var proc) && !string.IsNullOrWhiteSpace(proc))
+                        // Normalised the same way the local API does: the watcher matches on
+                        // Process.ProcessName, which is neither a path nor carries an extension, so
+                        // "C:\Games\Foo\foo.exe" stored verbatim would simply never match. WA-08.
                         tracked.ProcessNames = proc
                             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                            .Select(GameActivity.ProcessNameFromExe)
+                            .Where(p => p is not null)
+                            .Select(p => p!)
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
                             .ToList();
-                    if (existing is null) config.Games.Add(tracked);
+                    // Clears any per-machine opt-out as well as adding the entry — explicitly adding
+                    // a game back is the one action that means "track this here again".
+                    config.SetTracked(game.Id, tracked: true, entry: tracked);
                     config.Save();
                     Console.WriteLine($"Tracking '{name}' -> {dir}");
+                    break;
+                }
+
+                case "remove-game":
+                {
+                    var name = opts.GetValueOrDefault("name")
+                               ?? throw new ArgumentException("--name is required.");
+                    var target = config.FindGame(name)
+                                 ?? throw new InvalidOperationException($"'{name}' is not tracked here.");
+
+                    // Per-machine opt-out, not a plain delete: the game stays on the server for the
+                    // rest of the fleet, and the opt-out is what stops a running daemon's reconcile
+                    // adopting it straight back.
+                    config.SetTracked(target.GameId, tracked: false);
+                    Console.WriteLine($"No longer tracking '{target.Name}' on this machine. It is still on the server.");
                     break;
                 }
 
@@ -273,9 +329,60 @@ public static class AgentCli
                                 $"Run: savelocker add-game --name \"{g.Name}\" --dir <path>");
                             continue;
                         }
+                        if (GameActivity.IsActive(g, out var proc))
+                        {
+                            // Exit code stays 0: the other games in the loop may pull fine, and the
+                            // engine refuses this one regardless. This is the readable reason.
+                            Console.Error.WriteLine(
+                                $"'{g.Name}' is running{(proc is null ? "" : $" ({proc})")} — pull refused. " +
+                                "Restoring under a live game loses the restored save. Close it first.");
+                            continue;
+                        }
                         await engine.PullAsync(g, force);
                     }
                     await health.SendAsync(Api(), config, null, Log);
+                    break;
+                }
+
+                case "check-update":
+                {
+                    // Ask the configured server what it is offering, and optionally fetch and VERIFY
+                    // the artifact — never run it. Launching is the tray's job and needs a user's
+                    // consent; this exists so the download-and-verify path is inspectable from
+                    // outside the process, and so a headless box has any way at all to see what its
+                    // server is publishing.
+                    using var checker = new UpdateChecker(config);
+                    var result = await checker.CheckAsync();
+
+                    switch (result)
+                    {
+                        case UpdateResult.UpToDate:
+                            Console.WriteLine($"Up to date (v{UpdateChecker.CurrentVersion.ToString(3)}).");
+                            break;
+                        case UpdateResult.Skipped:
+                            Console.WriteLine($"v{config.SkipVersion} is available but was skipped.");
+                            break;
+                        case UpdateResult.Failed f:
+                            Console.Error.WriteLine($"Update check failed: {f.Reason}");
+                            return 1;
+                        case UpdateResult.Available a:
+                            Console.WriteLine($"v{a.Version} is available (current {UpdateChecker.CurrentVersion.ToString(3)}).");
+                            Console.WriteLine($"  url:    {a.DownloadUrl}");
+                            Console.WriteLine($"  sha256: {a.Sha256 ?? "(none published — an off-origin download will be refused)"}");
+
+                            if (!opts.ContainsKey("download")) break;
+                            try
+                            {
+                                var file = await checker.DownloadInstallerAsync(a.Version, a.DownloadUrl, a.Sha256);
+                                Console.WriteLine($"VERIFIED: {file}");
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.Error.WriteLine($"REFUSED: {ex.Message}");
+                                return 1;
+                            }
+                            break;
+                    }
                     break;
                 }
 
@@ -305,6 +412,15 @@ public static class AgentCli
                     return 2;
             }
             return 0;
+        }
+        catch (AgentStateLockException ex)
+        {
+            // Contention is an expected outcome, not a bug: the tray or the launch wrapper is
+            // legitimately mid-sync. A stack trace here would read as a crash, when in fact nothing
+            // was changed and retrying in a moment is the right answer. WA-07.
+            Console.Error.WriteLine($"Busy: {ex.Message}");
+            AgentLogger.Log($"CLI '{command}' skipped: {ex.Message}");
+            return 1;
         }
         catch (Exception ex)
         {
@@ -480,7 +596,8 @@ public static class AgentCli
             tracked.ManifestKey = pg.ManifestKey;
             tracked.ExcludeGlobs = (pg.ExcludeGlobs ?? Array.Empty<string>()).ToList();
             if (!string.IsNullOrEmpty(dir)) tracked.SaveDirectory = dir;
-            if (existing is null) config.Games.Add(tracked);
+            // Copy-on-write like every other writer: the last direct mutation of the live list.
+            if (existing is null) config.MutateGames(list => list.Add(tracked));
 
             if (string.IsNullOrEmpty(tracked.SaveDirectory))
             {

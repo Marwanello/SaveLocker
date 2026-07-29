@@ -15,6 +15,14 @@ public sealed class SyncService
     private readonly ConflictEscalationPolicy _conflictEscalation;
     private readonly TimeSpan _leaseDuration = TimeSpan.FromHours(6);
     private readonly int _retainPerGame;
+    /// <summary>
+    /// How long a claimed command stays invisible to other claims. It has to outlast a real
+    /// execution — a Sync of a large save can run for minutes — while still being short enough that
+    /// a crashed agent's command comes back on its own.
+    /// </summary>
+    private readonly TimeSpan _commandLease;
+    /// <summary>The documented save-upload cap, enforced while copying rather than only by Kestrel.</summary>
+    private readonly long _maxUploadBytes;
 
     public SyncService(
         AppDbContext db,
@@ -26,6 +34,9 @@ public sealed class SyncService
         _store = store;
         _conflictEscalation = conflictEscalation;
         _retainPerGame = config.GetValue<int?>("Storage:RetainVersionsPerGame") ?? 10;
+        _commandLease = TimeSpan.FromMinutes(
+            config.GetValue<double?>("Commands:LeaseMinutes") ?? 10);
+        _maxUploadBytes = (long)(config.GetValue<int?>("Storage:MaxUploadMb") ?? 200) * 1024 * 1024;
     }
 
     // ----- Machines -----
@@ -104,6 +115,17 @@ public sealed class SyncService
         {
             g.PreferredMachineId = null;
             g.ConflictPolicy = ConflictPolicy.Manual;
+        }
+
+        // Detach this machine's history explicitly rather than leaning on ON DELETE SET NULL: the
+        // FK only fires when SQLite's foreign_keys pragma is on, and a version left pointing at a
+        // machine that no longer exists is exactly the dangling state this finding was about.
+        // Snapshotting the name here is the last chance to name the uploader at all.
+        var history = await _db.SaveVersions.Where(v => v.MachineId == machineId).ToListAsync();
+        foreach (var v in history)
+        {
+            if (string.IsNullOrEmpty(v.MachineName)) v.MachineName = machine.Name;
+            v.MachineId = null;
         }
 
         _db.Machines.Remove(machine);
@@ -265,7 +287,6 @@ public sealed class SyncService
         if (game is null) return false;
 
         var versions = await _db.SaveVersions.Where(v => v.GameId == gameId).ToListAsync();
-        foreach (var v in versions) _store.Delete(v.ArchivePath);
         _db.SaveVersions.RemoveRange(versions);
         _db.Leases.RemoveRange(await _db.Leases.Where(l => l.GameId == gameId).ToListAsync());
         _db.Conflicts.RemoveRange(await _db.Conflicts.Where(c => c.GameId == gameId).ToListAsync());
@@ -276,6 +297,14 @@ public sealed class SyncService
         _db.Games.Remove(game);
         await Audit(null, gameId, "game.delete", game.Name);
         await _db.SaveChangesAsync();
+        // The game row is gone, so the audit below can no longer reference it — pass no game id.
+        var orphans = versions.Where(v => !_store.TryDelete(v.ArchivePath)).ToList();
+        if (orphans.Count > 0)
+        {
+            await Audit(null, null, "archive.orphaned",
+                $"{orphans.Count} archive file(s) left after deleting '{game.Name}'");
+            await _db.SaveChangesAsync();
+        }
         return true;
     }
 
@@ -321,46 +350,98 @@ public sealed class SyncService
 
     // ----- Leases -----
 
+    /// <summary>
+    /// The game's lease if one is currently held, otherwise null.
+    /// <para>
+    /// Deliberately a pure read. It used to DELETE an expired row as a side effect, which made
+    /// <c>GET /api/overview</c> a write: two dashboard requests landing together both loaded the same
+    /// expired lease and both tried to remove it, and the loser got a concurrency exception on a
+    /// plain read. An expired row is simply treated as absent — acquisition takes it over in place
+    /// and <see cref="SweepExpiredLeasesAsync"/> collects it.
+    /// </para>
+    /// </summary>
     public async Task<Lease?> ActiveLeaseAsync(Guid gameId)
     {
         var lease = await _db.Leases.Include(l => l.Machine)
             .FirstOrDefaultAsync(l => l.GameId == gameId);
-        if (lease is null) return null;
-        if (lease.ExpiresAt < DateTime.UtcNow)
-        {
-            _db.Leases.Remove(lease);
-            await _db.SaveChangesAsync();
-            return null;
-        }
-        return lease;
+        return lease is null || lease.ExpiresAt < DateTime.UtcNow ? null : lease;
     }
 
+    /// <summary>
+    /// Take the game's lease, or report who holds it.
+    /// <para>
+    /// There is a unique index on <c>Lease.GameId</c>, and this used to read, decide, then insert.
+    /// Two machines launching the same game at the same moment both saw no lease and both inserted;
+    /// one got a database exception and the caller got a 500 — at precisely the moment lease-based
+    /// conflict prevention is the thing being relied on. Both steps below are atomic, and losing the
+    /// race is an ordinary <c>Granted=false</c> answer, not an error.
+    /// </para>
+    /// </summary>
     public async Task<LeaseAcquireResponse> AcquireLeaseAsync(Guid gameId, Guid machineId)
     {
-        var current = await ActiveLeaseAsync(gameId);
-        if (current is not null && current.MachineId != machineId)
-            return new LeaseAcquireResponse(false, current.ToDto(gameId));
+        var now = DateTime.UtcNow;
+        var expires = now.Add(_leaseDuration);
 
-        if (current is null)
+        // 1. Take over the existing row if it is already mine or has expired. The predicate is
+        //    re-evaluated by the database as the UPDATE runs, so a row someone else just claimed no
+        //    longer matches and this affects nothing.
+        var claimed = await _db.Leases
+            .Where(l => l.GameId == gameId && (l.MachineId == machineId || l.ExpiresAt < now))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(l => l.MachineId, machineId)
+                .SetProperty(l => l.AcquiredAt, now)
+                .SetProperty(l => l.ExpiresAt, expires));
+
+        if (claimed == 0)
         {
-            current = new Lease { Id = Guid.NewGuid(), GameId = gameId, MachineId = machineId };
-            _db.Leases.Add(current);
+            // 2. Nothing to take over: either there is no lease at all, or someone else holds a live
+            //    one. Let the unique index be the arbiter rather than a check that can go stale
+            //    between reading and writing.
+            var fresh = new Lease
+            {
+                Id = Guid.NewGuid(),
+                GameId = gameId,
+                MachineId = machineId,
+                AcquiredAt = now,
+                ExpiresAt = expires
+            };
+            _db.Leases.Add(fresh);
+            try
+            {
+                await _db.SaveChangesAsync();
+                claimed = 1;
+            }
+            catch (DbUpdateException)
+            {
+                // Lost the race. Detach explicitly: a failed Add stays tracked, and the audit write
+                // below would otherwise retry the same doomed insert.
+                _db.Entry(fresh).State = EntityState.Detached;
+            }
         }
-        current.AcquiredAt = DateTime.UtcNow;
-        current.ExpiresAt = DateTime.UtcNow.Add(_leaseDuration);
-        await Audit(machineId, gameId, "lease.acquire", null);
-        await _db.SaveChangesAsync();
 
-        current = await _db.Leases.Include(l => l.Machine).FirstAsync(l => l.GameId == gameId);
-        return new LeaseAcquireResponse(true, current.ToDto(gameId));
+        var holder = await _db.Leases.Include(l => l.Machine)
+            .FirstOrDefaultAsync(l => l.GameId == gameId);
+
+        // Re-checked against the row that actually exists rather than trusting the step above: it is
+        // the holder on disk that decides, and it may have changed hands again in between.
+        var granted = claimed > 0 && holder is not null && holder.MachineId == machineId;
+        if (granted)
+        {
+            await Audit(machineId, gameId, "lease.acquire", null);
+            await _db.SaveChangesAsync();
+        }
+
+        return new LeaseAcquireResponse(granted, holder.ToDto(gameId));
     }
 
     public async Task ReleaseLeaseAsync(Guid gameId, Guid machineId)
     {
-        var lease = await _db.Leases.FirstOrDefaultAsync(l => l.GameId == gameId);
-        if (lease is not null && lease.MachineId == machineId)
+        // Conditional delete: only the holder can release, decided by the database in one statement.
+        var removed = await _db.Leases
+            .Where(l => l.GameId == gameId && l.MachineId == machineId)
+            .ExecuteDeleteAsync();
+        if (removed > 0)
         {
-            _db.Leases.Remove(lease);
             await Audit(machineId, gameId, "lease.release", null);
             await _db.SaveChangesAsync();
         }
@@ -368,9 +449,12 @@ public sealed class SyncService
 
     public async Task<bool> RenewLeaseAsync(Guid gameId, Guid machineId)
     {
-        var lease = await _db.Leases.FirstOrDefaultAsync(l => l.GameId == gameId);
-        if (lease is null || lease.MachineId != machineId) return false;
-        lease.ExpiresAt = DateTime.UtcNow.Add(_leaseDuration);
+        var expires = DateTime.UtcNow.Add(_leaseDuration);
+        var renewed = await _db.Leases
+            .Where(l => l.GameId == gameId && l.MachineId == machineId)
+            .ExecuteUpdateAsync(s => s.SetProperty(l => l.ExpiresAt, expires));
+        if (renewed == 0) return false;
+
         await Audit(machineId, gameId, "lease.renew", null);
         await _db.SaveChangesAsync();
         return true;
@@ -379,10 +463,11 @@ public sealed class SyncService
     /// <summary>Admin: force-release a stuck lease regardless of holder.</summary>
     public async Task ForceReleaseLeaseAsync(Guid gameId)
     {
-        var lease = await _db.Leases.FirstOrDefaultAsync(l => l.GameId == gameId);
-        if (lease is not null)
+        // Same one-statement delete as the other lease paths: two admins clicking at once must not
+        // turn the second click into a concurrency exception.
+        var removed = await _db.Leases.Where(l => l.GameId == gameId).ExecuteDeleteAsync();
+        if (removed > 0)
         {
-            _db.Leases.Remove(lease);
             await Audit(null, gameId, "lease.force_release", null);
             await _db.SaveChangesAsync();
         }
@@ -394,13 +479,12 @@ public sealed class SyncService
     /// </summary>
     public async Task<int> SweepExpiredLeasesAsync()
     {
-        var expired = await _db.Leases
-            .Where(l => l.ExpiresAt < DateTime.UtcNow)
-            .ToListAsync();
-        if (expired.Count == 0) return 0;
-        _db.Leases.RemoveRange(expired);
-        await _db.SaveChangesAsync();
-        return expired.Count;
+        // One conditional DELETE rather than load-then-remove. Loading first opens a window in which
+        // a machine renews a lease the sweeper has already decided to delete, and the sweeper then
+        // deletes the live one by primary key — the game's checkout silently disappearing mid-session
+        // for no reason anyone could see afterwards.
+        var now = DateTime.UtcNow;
+        return await _db.Leases.Where(l => l.ExpiresAt < now).ExecuteDeleteAsync();
     }
 
     // ----- Upload (conflict-aware) -----
@@ -433,13 +517,39 @@ public sealed class SyncService
         // Persist the incoming archive as a new version regardless of outcome,
         // so the admin can choose it during conflict resolution.
         var versionId = Guid.NewGuid();
-        var (rel, size) = await _store.SaveAsync(gameId, versionId, archive, ct);
+        var (rel, size) = await _store.SaveAsync(gameId, versionId, archive, _maxUploadBytes, ct);
+
+        try
+        {
+            return await IngestAsync(game, versionId, rel, size, machineId, parentVersionId,
+                contentHash, serverHead, diverged, force, ct);
+        }
+        catch
+        {
+            // The archive is published but nothing indexes it. Remove it rather than leave a file
+            // no row can ever name — the inverse of the state the staged write prevents.
+            _store.TryDelete(rel);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// The database half of an upload, split out so a failure anywhere in it can un-publish the
+    /// archive that was just written. Every exit path here has already been paid for on disk.
+    /// </summary>
+    private async Task<UploadResult> IngestAsync(
+        Game game, Guid versionId, string rel, long size, Guid machineId, Guid? parentVersionId,
+        string contentHash, SaveVersion? serverHead, bool diverged, bool force, CancellationToken ct)
+    {
+        var gameId = game.Id;
 
         var version = new SaveVersion
         {
             Id = versionId,
             GameId = gameId,
             MachineId = machineId,
+            MachineName = await _db.Machines.Where(m => m.Id == machineId)
+                .Select(m => m.Name).FirstOrDefaultAsync(ct) ?? "",
             CreatedAt = DateTime.UtcNow,
             ContentHash = contentHash,
             Size = size,
@@ -460,10 +570,13 @@ public sealed class SyncService
             if (autoWins)
             {
                 // Policy says the incoming version wins — advance head without creating a conflict.
-                game.HeadVersionId = versionId;
-                await Audit(machineId, gameId, "upload.auto_resolved",
-                    $"policy={game.ConflictPolicy} {contentHash}");
-                await _db.SaveChangesAsync(ct);
+                // The machines this just displaced have to be told: the policy decided against their
+                // parent, and nothing in their own sync loop would reveal that until their next push
+                // was rejected. Propagating here is the difference between a policy that resolves
+                // conflicts and one that merely hides the first of them.
+                await SetHeadAndPropagateAsync(game, versionId, "upload.auto_resolved",
+                    $"policy={game.ConflictPolicy} {contentHash}",
+                    propagate: true, exceptMachineId: machineId, ct);
                 await PruneVersionsAsync(gameId, ct);
                 await LoadMachine(version, ct);
                 return new UploadResult(UploadStatus.Created, version.ToDto(), null);
@@ -522,10 +635,10 @@ public sealed class SyncService
             return new UploadResult(UploadStatus.Conflict, version.ToDto(), conflict.ToDto());
         }
 
-        // Fast-forward (or forced overwrite).
-        game.HeadVersionId = versionId;
-        await Audit(machineId, gameId, force ? "upload.force" : "upload.create", contentHash);
-        await _db.SaveChangesAsync(ct);
+        // Fast-forward (or forced overwrite). No fan-out: see SetHeadAndPropagateAsync's `propagate`.
+        await SetHeadAndPropagateAsync(game, versionId,
+            force ? "upload.force" : "upload.create", contentHash,
+            propagate: false, exceptMachineId: machineId, ct);
 
         await PruneVersionsAsync(gameId, ct);
 
@@ -557,12 +670,37 @@ public sealed class SyncService
             .ToListAsync(ct);
         foreach (var c in openConflicts) { protectedIds.Add(c.VersionAId); protectedIds.Add(c.VersionBId); }
 
+        var pruned = new List<SaveVersion>();
         foreach (var old in versions.Skip(limit))
         {
             if (old.Protected || protectedIds.Contains(old.Id)) continue;
-            _store.Delete(old.ArchivePath);
             _db.SaveVersions.Remove(old);
+            pruned.Add(old);
         }
+        if (pruned.Count == 0) return;
+
+        // Rows first, files second — see ReleaseArchivesAsync.
+        await _db.SaveChangesAsync(ct);
+        await ReleaseArchivesAsync(gameId, pruned, ct);
+    }
+
+    /// <summary>
+    /// Delete the archives behind rows that have <b>already been removed</b> from the database.
+    /// <para>
+    /// The order is the point. Files-first leaves a live <c>SaveVersion</c> whose archive is gone if
+    /// anything fails in between — a save the console still offers and cannot produce, which is
+    /// unrecoverable from the user's side. Rows-first leaves at worst an orphaned file: wasted space,
+    /// recoverable, and audited here as cleanup debt rather than silently ignored.
+    /// </para>
+    /// </summary>
+    private async Task ReleaseArchivesAsync(Guid gameId, IEnumerable<SaveVersion> removed, CancellationToken ct)
+    {
+        var orphans = removed.Where(v => !_store.TryDelete(v.ArchivePath)).ToList();
+        if (orphans.Count == 0) return;
+
+        await Audit(null, gameId, "archive.orphaned",
+            $"{orphans.Count} archive file(s) could not be deleted: " +
+            string.Join(", ", orphans.Take(5).Select(v => v.ArchivePath)));
         await _db.SaveChangesAsync(ct);
     }
 
@@ -631,10 +769,10 @@ public sealed class SyncService
             (c.VersionAId == versionId || c.VersionBId == versionId));
         if (inConflict) return (false, "Cannot delete a version that is part of an open conflict.");
 
-        _store.Delete(version.ArchivePath);
         _db.SaveVersions.Remove(version);
         await Audit(null, gameId, "version.delete", versionId.ToString());
         await _db.SaveChangesAsync();
+        await ReleaseArchivesAsync(gameId, new[] { version }, default);
         return (true, null);
     }
 
@@ -753,15 +891,15 @@ public sealed class SyncService
             foreach (var version in versions) version.Protected = true;
         }
 
-        game.HeadVersionId = winningVersionId;
         conflict.Status = ConflictStatus.Resolved;
         conflict.ResolvedVersionId = winningVersionId;
         conflict.ResolvedBy = resolvedBy;
         conflict.ResolvedAt = DateTime.UtcNow;
-        await Audit(null, conflict.GameId,
+        // Propagation is queued below rather than here, for the ordering reason spelled out there.
+        await SetHeadAndPropagateAsync(game, winningVersionId,
             keepBoth ? "conflict.resolve_keep_both" : "conflict.resolve",
-            winningVersionId.ToString());
-        await _db.SaveChangesAsync();
+            winningVersionId.ToString(),
+            propagate: false, exceptMachineId: null, CancellationToken.None);
 
         // ORDER MATTERS, and the obvious order is wrong. Queue the pulls FIRST: resolving unpins
         // both of the conflict's versions, so pruning here can legitimately delete the losing one —
@@ -805,34 +943,13 @@ public sealed class SyncService
     /// </list>
     /// </para>
     /// </summary>
-    private async Task QueueResolutionPullsAsync(ConflictFlag conflict)
-    {
-        var versionIds = new[] { conflict.VersionAId, conflict.VersionBId };
-
-        // Joined against Machines on purpose: DeleteMachineAsync keeps a deleted machine's versions
-        // as history, so a version's MachineId can name a machine that no longer exists — and
-        // queueing a command for it would violate the foreign key.
-        var machineIds = await (
-            from v in _db.SaveVersions
-            join m in _db.Machines on v.MachineId equals m.Id
-            where versionIds.Contains(v.Id)
-            select v.MachineId).Distinct().ToListAsync();
-
-        foreach (var machineId in machineIds)
-        {
-            // An admin clearing several conflicts in a row must not queue a pull per click. One pull
-            // brings the agent to the current head regardless of how many were resolved.
-            var alreadyQueued = await _db.AgentCommands.AnyAsync(c =>
-                c.MachineId == machineId &&
-                c.GameId == conflict.GameId &&
-                c.Type == AgentCommandType.Pull &&
-                c.Status == CommandStatus.Pending);
-            if (alreadyQueued) continue;
-
-            await EnqueueCommandAsync(new EnqueueCommandRequest(
-                machineId, conflict.GameId, AgentCommandType.Pull, Force: false));
-        }
-    }
+    private Task QueueResolutionPullsAsync(ConflictFlag conflict) =>
+        // Every live machine that syncs the game, not just the conflict's two: the same head change
+        // displaces a third machine sitting on the old parent exactly as much as it displaces the
+        // loser. QueueHeadPullsAsync already dedupes and already skips machines that are gone —
+        // DeleteMachineAsync keeps a deleted machine's versions as history with a null MachineId,
+        // and queueing a command for one would violate the foreign key.
+        QueueHeadPullsAsync(conflict.GameId, exceptMachineId: null, CancellationToken.None);
 
     /// <summary>Admin: move the head pointer to an earlier version (rollback).</summary>
     public Task<bool> RollbackAsync(Guid gameId, Guid versionId, string by) =>
@@ -846,16 +963,123 @@ public sealed class SyncService
     public Task<bool> SetAsLatestAsync(Guid gameId, Guid versionId, string by) =>
         SetHeadAsync(gameId, versionId, "set_latest", by);
 
+    /// <summary>
+    /// The admin head move behind both rollback and Set as Latest.
+    /// <para>
+    /// Both used to be a pointer write and nothing else, while the console promised every machine
+    /// would pull the chosen save. Nothing told them: an agent's parent advances only on its own
+    /// push or pull, so the fleet stayed on the previous head and conflicted on its next save.
+    /// </para>
+    /// </summary>
     private async Task<bool> SetHeadAsync(Guid gameId, Guid versionId, string action, string by)
     {
         var game = await _db.Games.FindAsync(gameId);
         var version = await _db.SaveVersions.FindAsync(versionId);
         if (game is null || version is null || version.GameId != gameId) return false;
 
-        game.HeadVersionId = versionId;
-        await Audit(null, gameId, action, $"{versionId} by {by}");
-        await _db.SaveChangesAsync();
+        // Close the conflicts this choice actually decides — the ones offering the chosen version.
+        // Leaving those open would have the console insist the very version it was just told to
+        // trust is unresolved. Conflicts between two OTHER versions stay open on purpose: the admin
+        // has said nothing about them, their machine is still stuck, and closing them here would
+        // also disarm the guard that refuses to resolve a conflict in a way that rewinds a newer
+        // Latest (run-agent-tests covers exactly that sequence). Audited one by one, so this is
+        // visible rather than a quiet side effect of clicking Set as Latest.
+        var superseded = await _db.Conflicts
+            .Where(c => c.GameId == gameId && c.Status == ConflictStatus.Open
+                        && (c.VersionAId == versionId || c.VersionBId == versionId))
+            .ToListAsync();
+        foreach (var c in superseded)
+        {
+            c.Status = ConflictStatus.Resolved;
+            c.ResolvedVersionId = versionId;
+            c.ResolvedBy = by;
+            c.ResolvedAt = DateTime.UtcNow;
+            await Audit(c.MachineId, gameId, "conflict.resolve_superseded",
+                $"{action} to {versionId} by {by}");
+        }
+
+        await SetHeadAndPropagateAsync(game, versionId, action, $"{versionId} by {by}",
+            propagate: true, exceptMachineId: null, CancellationToken.None);
         return true;
+    }
+
+    /// <summary>
+    /// The one place <see cref="Game.HeadVersionId"/> moves. Upload, automatic conflict policy,
+    /// manual resolution, rollback and Set as Latest all come through here, so "who gets told about
+    /// a new head" is one rule rather than four that drifted apart.
+    /// </summary>
+    /// <param name="propagate">
+    /// Whether to queue pulls for the game's other machines. False for an ordinary push: the
+    /// uploader learns the new head from its own upload response, and every other machine is
+    /// deliberately left to discover it through its normal pre-launch pull. Fanning commands out on
+    /// every save would mean a pull arriving while a game is running, which is the failure the
+    /// lease and settle gate exist to avoid. It is true where the server made a decision the fleet
+    /// could not otherwise learn: an automatic conflict policy, a manual resolution, or an admin
+    /// naming Latest.
+    /// </param>
+    /// <param name="exceptMachineId">
+    /// The machine that already knows — the uploader whose own response carried the new head. A
+    /// redundant command for it would be a no-op pull, but it would also be noise in the console's
+    /// command list at exactly the moment an admin is trying to read it.
+    /// </param>
+    private async Task SetHeadAndPropagateAsync(
+        Game game, Guid newHeadId, string action, string detail,
+        bool propagate, Guid? exceptMachineId, CancellationToken ct)
+    {
+        game.HeadVersionId = newHeadId;
+        await Audit(exceptMachineId, game.Id, action, detail);
+        await _db.SaveChangesAsync(ct);
+
+        if (propagate) await QueueHeadPullsAsync(game.Id, exceptMachineId, ct);
+    }
+
+    /// <summary>
+    /// Queue a deduplicated, <b>unforced</b> Pull for every live machine that syncs this game, so a
+    /// server-authoritative head change actually reaches the fleet.
+    /// <para>
+    /// Unforced is the safety property, and it is deliberate (see
+    /// <see cref="QueueResolutionPullsAsync"/>): a machine that is already current no-ops, a machine
+    /// with nothing unpushed takes the new head, and a machine carrying unsynced local work reports
+    /// <b>blocked</b> instead of having that work destroyed. The console's own Pull button is the
+    /// forced one, because there a human is asking for exactly that.
+    /// </para>
+    /// </summary>
+    private async Task QueueHeadPullsAsync(Guid gameId, Guid? exceptMachineId, CancellationToken ct)
+    {
+        // "Syncs this game" = has a mapped save folder for it, or has uploaded a version of it.
+        // Two queries and a set rather than a Union: this has to survive a version whose machine
+        // was deleted (MachineId is null) without dragging that case through the translation.
+        var candidates = new HashSet<Guid>(
+            await _db.MachineSavePaths.Where(p => p.GameId == gameId)
+                .Select(p => p.MachineId).ToListAsync(ct));
+        foreach (var id in await _db.SaveVersions
+                     .Where(v => v.GameId == gameId && v.MachineId != null)
+                     .Select(v => v.MachineId!.Value).Distinct().ToListAsync(ct))
+            candidates.Add(id);
+
+        if (exceptMachineId is { } skip) candidates.Remove(skip);
+        if (candidates.Count == 0) return;
+
+        // Only machines that still exist: a command for a deleted one violates the foreign key.
+        var live = await _db.Machines
+            .Where(m => candidates.Contains(m.Id))
+            .Select(m => m.Id)
+            .ToListAsync(ct);
+
+        foreach (var machineId in live)
+        {
+            // One pull brings an agent to the current head no matter how many head changes it
+            // missed, so a pending pull is already the whole answer.
+            var alreadyQueued = await _db.AgentCommands.AnyAsync(c =>
+                c.MachineId == machineId &&
+                c.GameId == gameId &&
+                c.Type == AgentCommandType.Pull &&
+                c.Status == CommandStatus.Pending, ct);
+            if (alreadyQueued) continue;
+
+            await EnqueueCommandAsync(new EnqueueCommandRequest(
+                machineId, gameId, AgentCommandType.Pull, Force: false));
+        }
     }
 
     public async Task<List<SaveVersion>> ListVersionsAsync(Guid gameId) =>
@@ -886,33 +1110,77 @@ public sealed class SyncService
     }
 
     /// <summary>
-    /// Agent: claim this machine's pending commands, marking them Dispatched so a
-    /// later poll won't run them again before a result is reported.
+    /// Agent: claim this machine's due commands under a <b>visibility lease</b>.
+    /// <para>
+    /// Delivery is at-least-once, not at-most-once. A command is due when it is Pending, or when it
+    /// is Dispatched and its lease has run out unacknowledged — an agent that dies between the poll
+    /// and the result no longer takes the command with it. Completed and failed commands are
+    /// terminal and never reappear.
+    /// </para>
+    /// <para>
+    /// The claim is one atomic UPDATE stamped with a fresh <see cref="AgentCommand.ClaimToken"/>,
+    /// then a read of exactly the rows carrying that token. The old read-then-update could hand the
+    /// same command to two processes polling with one machine identity.
+    /// </para>
+    /// <para>
+    /// Re-delivery is safe for every command type, which is why at-least-once is the right trade
+    /// here: <c>Pull</c> re-reads the current head and either no-ops or reports blocked, <c>Push</c>
+    /// re-hashes the local save and the server answers <c>NoChange</c> when the content already
+    /// matches the head (so a retry cannot manufacture a duplicate version), <c>Sync</c> is those
+    /// two in order, and <c>Scan</c> only reads. No retry turns a safe command into a destructive
+    /// one; losing a requested sync silently, which is what the old code did, is the worse failure.
+    /// </para>
     /// </summary>
     public async Task<List<AgentCommand>> DequeueCommandsAsync(Guid machineId)
     {
-        var pending = await _db.AgentCommands
-            .Where(c => c.MachineId == machineId && c.Status == CommandStatus.Pending)
+        var now = DateTime.UtcNow;
+        var token = Guid.NewGuid();
+
+        var claimed = await _db.AgentCommands
+            .Where(c => c.MachineId == machineId
+                        && (c.Status == CommandStatus.Pending
+                            || (c.Status == CommandStatus.Dispatched
+                                && c.LeaseExpiresAt != null
+                                && c.LeaseExpiresAt < now)))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.Status, CommandStatus.Dispatched)
+                .SetProperty(c => c.DispatchedAt, now)
+                .SetProperty(c => c.LeaseExpiresAt, now + _commandLease)
+                .SetProperty(c => c.ClaimToken, token)
+                .SetProperty(c => c.ClaimCount, c => c.ClaimCount + 1));
+
+        if (claimed == 0) return new List<AgentCommand>();
+
+        var commands = await _db.AgentCommands
+            .Where(c => c.ClaimToken == token)
             .OrderBy(c => c.CreatedAt)
             .ToListAsync();
 
-        foreach (var c in pending)
-        {
-            c.Status = CommandStatus.Dispatched;
-            c.DispatchedAt = DateTime.UtcNow;
-        }
-        if (pending.Count > 0) await _db.SaveChangesAsync();
-        return pending;
+        // A reclaim is the interesting event: it means an earlier delivery was never answered.
+        foreach (var c in commands.Where(c => c.ClaimCount > 1))
+            await Audit(machineId, c.GameId, "command.reclaim",
+                $"{c.Type}: lease expired, delivery #{c.ClaimCount}");
+        await _db.SaveChangesAsync();
+
+        return commands;
     }
 
-    /// <summary>Agent: report a command's outcome.</summary>
+    /// <summary>
+    /// Agent: report a command's outcome. Terminal states stick — a duplicate or late result for a
+    /// command already completed is accepted as a no-op rather than reopening it, so an agent
+    /// retrying a lost POST does not have to reason about what happened server-side.
+    /// </summary>
     public async Task<bool> CompleteCommandAsync(Guid commandId, Guid machineId, CommandStatus status, string? result)
     {
         var cmd = await _db.AgentCommands.FindAsync(commandId);
         if (cmd is null || cmd.MachineId != machineId) return false;
+        if (cmd.Status is CommandStatus.Done or CommandStatus.Failed) return true;
+
         cmd.Status = status == CommandStatus.Failed ? CommandStatus.Failed : CommandStatus.Done;
         cmd.Result = result;
         cmd.CompletedAt = DateTime.UtcNow;
+        cmd.LeaseExpiresAt = null;
+        cmd.ClaimToken = null;
         await Audit(machineId, cmd.GameId, "command.complete", $"{cmd.Type}: {status}");
         await _db.SaveChangesAsync();
         return true;
@@ -929,8 +1197,8 @@ public sealed class SyncService
 
     private async Task LoadMachine(SaveVersion v, CancellationToken ct)
     {
-        if (v.Machine is null)
-            v.Machine = await _db.Machines.FindAsync(new object?[] { v.MachineId }, ct);
+        if (v.Machine is null && v.MachineId is not null)
+            v.Machine = await _db.Machines.FindAsync(new object?[] { v.MachineId.Value }, ct);
     }
 
     public async Task<List<AuditEntryDto>> GetAuditLogAsync(int limit = 200)

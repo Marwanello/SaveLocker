@@ -22,7 +22,11 @@ public sealed class AgentApiServer : IDisposable
     private readonly Func<Task<string?>> _pickFolder;
     private readonly Func<LaunchCommandDto> _launchInfo;
     private readonly PathBrowser _browser;
-    private readonly Action? _onRegistered;
+    private readonly Action? _onConnectionChanged;
+    // Invoked after the tracked-game list or a save folder changed AND was durably written, so the
+    // host can rebuild its folder watchers. Ordering matters: watchers must be rebuilt from the
+    // config that is on disk, never from one a concurrent write is about to supersede.
+    private readonly Action? _onGamesChanged;
     private readonly Func<UpdateResult?> _getUpdateResult;
     private readonly string _uiRoot;
     private readonly LocalAuth _auth;
@@ -43,10 +47,11 @@ public sealed class AgentApiServer : IDisposable
         Func<IReadOnlyList<ScanCandidate>, int[], Task<(int enrolled, int skipped)>> enroll,
         IAutoStart autoStart,
         Func<Task<string?>>? pickFolder = null,
-        Action? onRegistered = null,
+        Action? onConnectionChanged = null,
         Func<UpdateResult?>? getUpdateResult = null,
         IEnumerable<string>? browseRoots = null,
-        Func<LaunchCommandDto>? launchInfo = null)
+        Func<LaunchCommandDto>? launchInfo = null,
+        Action? onGamesChanged = null)
     {
         _browser = new PathBrowser(browseRoots);
         Port = port;
@@ -56,7 +61,8 @@ public sealed class AgentApiServer : IDisposable
         _autoStart = autoStart;
         _pickFolder = pickFolder ?? (() => Task.FromResult<string?>(null));
         _launchInfo = launchInfo ?? (() => new LaunchCommandDto(null, null));
-        _onRegistered = onRegistered;
+        _onConnectionChanged = onConnectionChanged;
+        _onGamesChanged = onGamesChanged;
         _getUpdateResult = getUpdateResult ?? (() => null);
         _uiRoot = Path.Combine(AppContext.BaseDirectory, "agent-ui");
         _auth = LocalAuth.LoadOrCreate(config.ConfigPath);
@@ -186,61 +192,188 @@ public sealed class AgentApiServer : IDisposable
             _autoStart.IsEnabled(),
             _config.SettleQuietSeconds)).Produces<AgentConfigDto>();
 
-        app.MapPost("/api/config", (ConfigRequest body) =>
+        app.MapPost("/api/config", Results<Ok<ConfigChangeResponse>, BadRequest<ErrorResponse>>
+            (ConfigRequest body) =>
         {
+            // A host caches an ApiClient (base URL + key + pin) inside its SyncEngine. Changing any
+            // of that here without telling the host leaves the daemon split-brained: the poller
+            // rebuilds its client every tick and talks to the NEW server while watcher pushes and
+            // queue drains keep hitting the OLD one. Track the change, then hand it back below.
+            // Applied FIRST, and checked. It used to run last and its result was discarded, so a
+            // registry write refused by group policy still answered { ok: true } and the UI drew a
+            // ticked box for a machine that would not start the agent at login. Doing it here also
+            // means a refusal costs nothing: no setting has been mutated yet. WA-10.
+            if (body.StartWithWindows.HasValue)
+            {
+                var auto = _autoStart.SetEnabled(body.StartWithWindows.Value);
+                if (!auto.Ok)
+                    return TypedResults.BadRequest(new ErrorResponse(
+                        auto.Error ?? "Could not change the startup setting."));
+            }
+
+            var before = (_config.ServerUrl, _config.MachineName);
+            // Everything needed to undo a failed transition. Captured BEFORE any mutation, because
+            // the point is that a rejected request leaves a config the agent can still start from.
+            var previousIdentity = _config.CaptureIdentity();
+            var previousName = _config.MachineName;
+            var previousSettle = _config.SettleQuietSeconds;
+
+            var identityCleared = false;
             if (!string.IsNullOrWhiteSpace(body.ServerUrl))
-                _config.ServerUrl = body.ServerUrl.Trim().TrimEnd('/');
+            {
+                // Validated BEFORE anything is written. The old code assigned the raw string, saved
+                // it, and only then built a client from it — so 'htp://typo' persisted, the client
+                // constructor threw, the caller got a 500, and every subsequent start of the agent
+                // crashed on the same unusable value. WA-04.
+                if (!_config.TrySetServerUrl(body.ServerUrl, out identityCleared))
+                    return TypedResults.BadRequest(new ErrorResponse(ServerOrigin.InvalidUrlMessage));
+            }
             if (!string.IsNullOrWhiteSpace(body.MachineName))
                 _config.MachineName = body.MachineName.Trim();
             if (body.SettleQuietSeconds.HasValue)
                 _config.SettleQuietSeconds = Math.Clamp(body.SettleQuietSeconds.Value, 0, 300);
-            _config.Save();
-            if (body.StartWithWindows.HasValue)
-                _autoStart.SetEnabled(body.StartWithWindows.Value);
-            return new OkResponse();
-        }).Produces<OkResponse>();
+
+            try
+            {
+                _config.Save();
+
+                // Rebuild before the response returns, so no request that starts after the caller
+                // sees 200 can still be addressed to the previous server.
+                if (before != (_config.ServerUrl, _config.MachineName))
+                    _onConnectionChanged?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                // Roll back every field together. A half-applied transition is the one outcome worse
+                // than a rejected one: the agent would hold a new URL with the old credentials.
+                _config.RestoreIdentity(previousIdentity);
+                _config.MachineName = previousName;
+                _config.SettleQuietSeconds = previousSettle;
+                try { _config.Save(); } catch { /* the in-memory rollback is what matters */ }
+                AgentLogger.LogException("AgentApiServer.Config", ex);
+                return TypedResults.BadRequest(new ErrorResponse(
+                    "Could not apply the change; the previous settings were kept. " + ex.Message));
+            }
+
+            // The UI has to know the machine was un-enrolled, or the user is left looking at a
+            // "not connected" agent with no idea why their key stopped working. The effective
+            // auto-start state is re-read rather than echoed back, so the toggle renders what the
+            // machine will actually do — including a change that was reverted underneath us.
+            return TypedResults.Ok(new ConfigChangeResponse(identityCleared, _autoStart.IsEnabled()));
+        }).Produces<ConfigChangeResponse>();
 
         app.MapPost("/api/register", async Task<Results<Ok<RegisterResponse>, InternalServerError<ErrorResponse>>>
             (RegisterRequest body) =>
         {
+            var previousIdentity = _config.CaptureIdentity();
             try
             {
                 var api = ApiClient.For(_config, useConfigKey: false);
                 var reg = await api.RegisterAsync(_config.MachineName, body.AdminPassword);
+
+                // All three together, in one Save. The pin was previously ignored here entirely, so
+                // registering against an https server through the UI established an identity with no
+                // TLS pin at all — every later connection had nothing to compare against, and the
+                // TOFU guarantee enrollment provides simply did not exist on this path. WA-04.
                 _config.ApiKey = reg.ApiKey;
                 _config.MachineId = reg.MachineId;
+                if (api.ObservedPin is { } pin) _config.ServerPin = pin;
                 _config.Save();
-                _onRegistered?.Invoke();
+                _onConnectionChanged?.Invoke();
                 // The key itself is never returned — it is written to config and used from there.
                 // Nothing in the UI needs its value, and echoing it only creates a way to exfiltrate it.
                 return TypedResults.Ok(new RegisterResponse(_config.MachineName));
             }
             catch (Exception ex)
             {
+                // A failed registration must not leave a half-built identity — in particular not a
+                // pin or key from a partially-completed attempt against the new origin.
+                _config.RestoreIdentity(previousIdentity);
                 return TypedResults.InternalServerError(new ErrorResponse(ex.Message));
             }
         });
 
         app.MapGet("/api/games", () => _config.Games
-            .Select(g => new TrackedGameDto(g.GameId, g.Name, g.SaveDirectory))
+            .Select(g => new TrackedGameDto(
+                g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray()))
             .ToArray()).Produces<TrackedGameDto[]>();
 
+        // Editing the process names is the other half of WA-08: discovery can only know them for a
+        // non-Steam shortcut, so for everything else the user needs a way to supply them — and the
+        // UI needs to be able to show, honestly, that lifecycle sync is unconfigured until they do.
+        app.MapPost("/api/games/{id:guid}/processes", (Guid id, ProcessNamesRequest body) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.Ok(new OkResponse());
+
+            // Accepts "foo.exe", "foo", or a comma-separated list, and normalises: the watcher
+            // matches on Process.ProcessName, which never carries the extension.
+            game.ProcessNames = (body.ProcessNames ?? Array.Empty<string>())
+                .SelectMany(p => p.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                .Select(p => GameActivity.ProcessNameFromExe(p))
+                .Where(p => p is not null)
+                .Select(p => p!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            _config.Save();
+            _onGamesChanged?.Invoke();
+            return TypedResults.Ok(new OkResponse());
+        }).Produces<OkResponse>();
+
+        // Untracks the game on THIS machine only. It stays on the server for the rest of the fleet;
+        // the opt-out is what stops the poller adopting it straight back.
         app.MapPost("/api/games/{id:guid}/remove", (Guid id) =>
         {
-            _config.Games.RemoveAll(g => g.GameId == id);
-            _config.Save();
+            _config.SetTracked(id, tracked: false);
+            _onGamesChanged?.Invoke();
             return new OkResponse();
         }).Produces<OkResponse>();
 
-        app.MapPost("/api/games/{id:guid}/folder", (Guid id, FolderRequest body) =>
+        app.MapPost("/api/games/{id:guid}/folder", async Task<Results<Ok<OkResponse>, BadRequest<ErrorResponse>>>
+            (Guid id, FolderRequest body) =>
         {
             var game = _config.Games.FirstOrDefault(g => g.GameId == id);
             if (game is not null && body.Path is not null)
             {
-                game.SaveDirectory = body.Path;
+                // Typed paths and picked paths arrive here alike, and neither was validated before.
+                // The hard check has no override — nothing makes C:\Users a save folder. WA-02.
+                var check = SavePathGuard.Check(body.Path, _config.StateDir);
+                if (!check.Ok)
+                    return TypedResults.BadRequest(new ErrorResponse($"Can't use that folder: {check.Reason}"));
+
+                // The heuristics DO have false positives (a game whose save folder is genuinely
+                // large, or genuinely named 'drive_c'), so they are refused once and accepted on a
+                // second, explicit confirmation rather than being silently ignored.
+                if (!body.Confirm)
+                {
+                    var problems = SaveDirSanity.Inspect(check.Canonical, game.ExcludeGlobs);
+                    if (problems.Count > 0)
+                        return TypedResults.BadRequest(new ErrorResponse(
+                            "That folder looks wrong: " + string.Join(" ", problems) +
+                            " Re-send with confirm to use it anyway."));
+                }
+
+                // The canonical form is stored, not the typed text: a relative path or a path with
+                // a trailing separator must not reach the server as a different string than the one
+                // that was validated.
+                game.SaveDirectory = check.Canonical!;
+                // Save first: watchers must be built from the config that is on disk, never from
+                // one a concurrent write is about to supersede.
                 _config.Save();
+                _onGamesChanged?.Invoke();
+
+                // Tell the server now rather than letting the next poll notice. The server's stored
+                // path is the highest authority in reconcile, so until it hears about this one it
+                // keeps handing back the old value — and on a machine with no in-process poller
+                // (the Deck's `savelocker ui`) it never hears about it at all.
+                if (!string.IsNullOrEmpty(_config.ApiKey))
+                {
+                    try { await ApiClient.For(_config).SetMachinePathAsync(id, check.Canonical!); }
+                    catch (Exception ex) { AgentLogger.LogException("AgentApiServer.SetMachinePath", ex); }
+                }
             }
-            return new OkResponse();
+            return TypedResults.Ok(new OkResponse());
         }).Produces<OkResponse>();
 
         app.MapPost("/api/folder-pick", async () =>
@@ -271,8 +404,14 @@ public sealed class AgentApiServer : IDisposable
                 return TypedResults.BadRequest(new ErrorResponse("Invalid candidate id"));
             if (body.Path is not null)
             {
+                // Refused here as well as in Enroller, so the user is told while they are still
+                // choosing rather than by a game silently skipping enrollment later. WA-02.
+                var check = SavePathGuard.Check(body.Path, _config.StateDir);
+                if (!check.Ok)
+                    return TypedResults.BadRequest(new ErrorResponse($"Can't use that folder: {check.Reason}"));
+
                 var list = _candidateCache.ToList();
-                list[id] = list[id] with { SuggestedSaveDir = body.Path };
+                list[id] = list[id] with { SuggestedSaveDir = check.Canonical };
                 _candidateCache = list;
             }
             return TypedResults.Ok(new OkResponse());
@@ -382,7 +521,8 @@ public sealed class AgentApiServer : IDisposable
             candidate.Source.ToString(),
             candidate.HasSteamCloud,
             candidate.SuggestedSaveDir ?? "",
-            PrefixStart(candidate.PrefixPath))).ToArray();
+            PrefixStart(candidate.PrefixPath),
+            candidate.SuggestedProcessName)).ToArray();
 
     /// <summary>
     /// Where the path browser should open when a candidate has no save-folder guess: the deepest
@@ -460,8 +600,22 @@ public sealed record AgentStateDto(
     LeaseWarningDto[] LeaseWarnings,
     int SettleQuietSeconds,
     string Platform);
-public sealed record CandidateDto(int Id, string Name, string Source, bool HasSteamCloud, string Path, string? PrefixPath);
-public sealed record TrackedGameDto(Guid Id, string Name, string Path);
+/// <param name="ProcessName">
+/// The process discovery is confident means this game is running, or null when it cannot know —
+/// which is every source but a non-Steam shortcut. Null tells the UI that enrolling this candidate
+/// leaves launch/exit sync unconfigured, so it can say so instead of implying otherwise. WA-08.
+/// </param>
+public sealed record CandidateDto(
+    int Id, string Name, string Source, bool HasSteamCloud, string Path, string? PrefixPath,
+    string? ProcessName);
+/// <param name="ProcessNames">
+/// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
+/// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the
+/// UI must say so rather than imply automatic sync is working. WA-08.
+/// </param>
+public sealed record TrackedGameDto(Guid Id, string Name, string Path, string[] ProcessNames);
+
+public sealed record ProcessNamesRequest(string[]? ProcessNames);
 public sealed record AgentConfigDto(
     string ServerUrl,
     string MachineName,
@@ -470,13 +624,23 @@ public sealed record AgentConfigDto(
 public sealed record AgentVersionDto(string CurrentVersion, string? LatestVersion, bool UpdateAvailable);
 public sealed record LaunchCommandDto(string? Command, string? Note);
 public sealed record EnrollRequest(int[]? Ids);
+/// <param name="IdentityCleared">
+/// True when the server URL moved to a different origin, so this machine's key, id and TLS pin were
+/// dropped and it must register or enroll again. See <see cref="ServerOrigin"/>.
+/// </param>
+public sealed record ConfigChangeResponse(bool IdentityCleared, bool StartWithWindows);
+
 public sealed record ConfigRequest(
     string? ServerUrl,
     string? MachineName,
     bool? StartWithWindows,
     int? SettleQuietSeconds);
 public sealed record RegisterRequest(string? AdminPassword = null);
-public sealed record FolderRequest(string? Path);
+/// <param name="Confirm">
+/// Accept a path the sanity heuristics flagged. It never overrides <see cref="SavePathGuard"/> —
+/// those refusals are absolute.
+/// </param>
+public sealed record FolderRequest(string? Path, bool Confirm = false);
 public sealed record DismissWarningRequest(string? GameName);
 public sealed record OkResponse(bool Ok = true);
 public sealed record ErrorResponse(string Error);

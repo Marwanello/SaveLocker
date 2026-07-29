@@ -17,6 +17,19 @@ public static class AgentEventCodes
     /// until someone chooses a side — and on a headless box, nobody is being told.</summary>
     public const string PullBlocked = "pull.blocked";
 
+    /// <summary>A pull was refused because the game itself is running. Restoring under a live process
+    /// loses the restored save the moment the game writes at exit.</summary>
+    public const string PullBlockedRunning = "pull.blocked_running";
+
+    /// <summary>The game is mapped to a folder that may never be archived or replaced — a drive root,
+    /// a user profile, a system directory, or the agent's own state. Nothing is being synced for it,
+    /// and that is the safe outcome.</summary>
+    public const string UnsafeSavePath = "savedir.unsafe";
+
+    /// <summary>Another process on this machine holds the game's sync lock, so this operation was
+    /// skipped rather than run alongside it. Nothing was read or written.</summary>
+    public const string SyncBusy = "sync.busy";
+
     /// <summary>The game's save folder does not exist on this machine. Nothing is being synced for it.</summary>
     public const string SaveDirMissing = "savedir.missing";
 

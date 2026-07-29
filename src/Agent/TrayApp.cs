@@ -23,13 +23,21 @@ public static class TrayApp
 
 internal sealed class TrayContext : ApplicationContext
 {
-    private const int AgentApiPort = 5178;
+    /// <summary>
+    /// The local API port. SAVELOCKER_TRAY_PORT moves it so a harness can drive a real tray without
+    /// colliding with the installed one. Test-only and deliberately unadvertised, like the other two
+    /// (Decisions.md — "kept for testing, never documented for users").
+    /// </summary>
+    private static readonly int AgentApiPort =
+        int.TryParse(Environment.GetEnvironmentVariable("SAVELOCKER_TRAY_PORT"), out var p) && p > 0
+            ? p : 5178;
 
     private readonly AgentConfig _config;
     private readonly NotifyIcon _icon;
+    // Created, disposed and replaced only on the UI thread (StartFolderWatchers is the sole writer
+    // and every caller of it dispatches). WA-09.
     private readonly List<FolderWatcher> _folderWatchers = new();
-    private readonly HashSet<string> _running = new(StringComparer.OrdinalIgnoreCase);
-    private readonly SynchronizationContext _ui;
+    private readonly UiDispatcher _ui;
     private readonly Detection _detection;
     private readonly GameScanner _scanner;
     private readonly CommandPoller _commandPoller;
@@ -38,8 +46,9 @@ internal sealed class TrayContext : ApplicationContext
     private readonly HealthReporter _health;
     private readonly OfflineQueueDrainer _drainer;
     private AgentWindow? _window;
-    private ProcessWatcher _processWatcher;
-    private SyncEngine _engine = null!;
+    private readonly ProcessWatcher _processWatcher;
+    // Rebuilt from an API request thread; read from watcher/poller threads. See Daemon._engine.
+    private volatile SyncEngine _engine = null!;
 
     private UpdateChecker? _updateChecker;
     private readonly System.Threading.Timer _updateTimer;
@@ -50,14 +59,18 @@ internal sealed class TrayContext : ApplicationContext
 
     public TrayContext(AgentConfig config)
     {
+        // FIRST: this constructor runs before Application.Run pumps anything, so the dispatcher has
+        // to establish the UI owner rather than capture one that does not exist yet. WA-09.
+        _ui = new UiDispatcher();
+
         _config = config;
         _offlineQueue = OfflineQueue.For(config);
         _health = HealthReporter.For(config);
-        _ui = SynchronizationContext.Current ?? new SynchronizationContext();
         _detection = new Detection(config);
         _scanner = new GameScanner(_detection);
 
         AgentLogger.Log("SaveLocker agent starting…");
+        AgentLogger.Log($"UI owner: {_ui.Owner}");
         RebuildEngine();
         _drainer = new OfflineQueueDrainer(
             _offlineQueue, _config, () => _engine,
@@ -84,10 +97,11 @@ internal sealed class TrayContext : ApplicationContext
             doScan: () => _scanner.ScanAsync(),
             enroll: EnrollAsync,
             autoStart: new AutoStart(),
-            pickFolder: FolderPicker.ShowAsync,
-            onRegistered: RebuildEngine,
+            pickFolder: () => FolderPicker.ShowAsync(_ui),
+            onConnectionChanged: RebuildEngine,
             getUpdateResult: () => LastUpdateResult,
-            browseRoots: GameScanner.BrowseRoots());
+            browseRoots: GameScanner.BrowseRoots(),
+            onGamesChanged: () => _ui.Post(() => { RebuildMenu(); StartFolderWatchers(); }));
         _apiServer.Start();
 
         _commandPoller = new CommandPoller(
@@ -97,7 +111,7 @@ internal sealed class TrayContext : ApplicationContext
             _detection,
             _scanner,
             Notify,
-            onGamesChanged: () => _ui.Post(_ => { RebuildMenu(); StartFolderWatchers(); }, null),
+            onGamesChanged: () => _ui.Post(() => { RebuildMenu(); StartFolderWatchers(); }),
             health: _health,
             offlineQueue: _offlineQueue);
         _commandPoller.Start();
@@ -110,7 +124,7 @@ internal sealed class TrayContext : ApplicationContext
             dueTime: TimeSpan.FromSeconds(5),
             period: TimeSpan.FromHours(24));
 
-        _ui.Post(_ => MaybeShowFirstRun(), null);
+        _ui.Post(MaybeShowFirstRun);
     }
 
     private void MaybeShowFirstRun()
@@ -137,11 +151,37 @@ internal sealed class TrayContext : ApplicationContext
 
     private void RebuildEngine()
     {
+        // Retire the update channel along with the engine. Both the checker (which caches the old
+        // base URL and key) and any cached "an update is available" result belong to the server
+        // that answered — after a server change the menu item still offered server A's installer,
+        // and clicking it downloaded and ran a binary the currently-configured server never
+        // authorised. WA-05.
+        var previous = _updateChecker;
+        if (previous is not null && !ServerOrigin.Same(previous.ServerUrl, _config.ServerUrl))
+        {
+            _updateChecker = null;
+            previous.Dispose();
+            LastUpdateResult = null;
+            _ui.Post(RebuildMenu);
+        }
+
         var api = ApiClient.For(_config);
         // Windows toasts AND reports: the tray tells the user in front of it, health reporting tells
         // the console. One dashboard then shows the whole fleet, Deck and PC alike.
+        var replaced = _engine;
         _engine = new SyncEngine(_config, api, log: AgentLogger.Log, notify: Notify,
             offlineQueue: _offlineQueue, health: _health);
+
+        // Retire the engine we just replaced, or its lease timers keep renewing against the old
+        // server forever while exit releases against the new one. Off the calling thread because
+        // this runs from a Kestrel request thread that must not block on a network release, and
+        // because RebuildEngine is also called from the constructor. WA-06.
+        if (replaced is not null)
+            _ = Task.Run(async () =>
+            {
+                try { await replaced.RetireAsync(); }
+                catch (Exception ex) { AgentLogger.LogException("RetireEngine", ex); }
+            });
     }
 
     private void RebuildMenu()
@@ -158,6 +198,14 @@ internal sealed class TrayContext : ApplicationContext
             var sub = new ToolStripMenuItem(game.Name);
             sub.DropDownItems.Add("Force Pull (get latest)", null, (_, _) => FireAndForget(async () =>
             {
+                // Checked here as well as in the engine so the toast names the real reason. The
+                // engine refuses regardless; this is only about what the user is told.
+                if (GameActivity.IsActive(game, out var proc))
+                {
+                    Notify($"{game.Name}: can't pull while the game is running" +
+                           (proc is null ? "" : $" ({proc}.exe)") + ". Close it and try again.");
+                    return;
+                }
                 await _engine.PullAsync(game, force: true);
                 Notify($"{game.Name}: force-pulled latest save.");
             }));
@@ -177,7 +225,7 @@ internal sealed class TrayContext : ApplicationContext
 
         _updateMenuItem = LastUpdateResult is UpdateResult.Available avail
             ? new ToolStripMenuItem($"Update to v{avail.Version}…", null,
-                (_, _) => FireAndForget(() => PromptAndUpdateAsync(avail.Version, avail.DownloadUrl)))
+                (_, _) => FireAndForget(() => PromptAndUpdateAsync(avail)))
               { Font = new Font(SystemFonts.MenuFont!, FontStyle.Bold) }
             : new ToolStripMenuItem("Check for Updates",  null,
                 (_, _) => FireAndForget(() => CheckForUpdateAsync(silent: false)));
@@ -223,20 +271,24 @@ internal sealed class TrayContext : ApplicationContext
     {
         if (_window is null || _window.IsDisposed)
         {
-            _window = new AgentWindow(AgentApiPort);
+            // The view is handed to the constructor so it is already queued before OnLoad runs.
+            _window = new AgentWindow(AgentApiPort, view);
             _window.FormClosed += (_, _) => { _window = null; };
+        }
+        else
+        {
+            // An existing window may still be starting WebView2, so this is queued rather than
+            // dropped. The IsHandleCreated guard that used to sit at the bottom of this method
+            // tested the wrong thing entirely: Show() creates the handle immediately, while
+            // WebView2 comes up long afterwards, so it was true precisely when the navigation
+            // could not yet be honoured. WA-12.
+            _window.NavigateToView(view);
         }
 
         if (!_window.Visible)
             _window.Show();
         _window.BringToFront();
         _window.Activate();
-
-        // Navigate to a specific view via hash if requested.
-        if (view is not null && _window.IsHandleCreated)
-        {
-            _window.Navigate($"http://localhost:{AgentApiPort}/#{view}");
-        }
     }
 
     // ─── Enrollment (called by AgentApiServer) ──────────────────────────────────
@@ -246,7 +298,7 @@ internal sealed class TrayContext : ApplicationContext
     {
         var result = await Enroller.EnrollAsync(_config, candidates, ids);
         if (result.enrolled > 0)
-            _ui.Post(_ => { RebuildMenu(); StartFolderWatchers(); }, null);
+            _ui.Post(() => { RebuildMenu(); StartFolderWatchers(); });
         return result;
     }
 
@@ -254,12 +306,18 @@ internal sealed class TrayContext : ApplicationContext
 
     private async Task SyncAll()
     {
+        var skipped = new List<string>();
         foreach (var g in _config.Games)
         {
-            await _engine.PullAsync(g);
+            // A running game is skipped for the pull only. Pushing while it runs is the normal
+            // folder-watch behaviour and takes nothing away from the user.
+            if (GameActivity.IsActive(g)) skipped.Add(g.Name);
+            else await _engine.PullAsync(g);
             await _engine.PushAsync(g);
         }
-        Notify("Sync all complete.");
+        Notify(skipped.Count == 0
+            ? "Sync all complete."
+            : $"Sync all complete. Not pulled (still running): {string.Join(", ", skipped)}.");
     }
 
     private void OpenDashboard()
@@ -284,7 +342,7 @@ internal sealed class TrayContext : ApplicationContext
         _config.Save();
 
         LastUpdateResult = result;
-        _ui.Post(_ => RebuildMenu(), null);
+        _ui.Post(RebuildMenu);
 
         // Log EVERY outcome. A check that found nothing used to leave no trace at all — no balloon,
         // no log line — so "I clicked check for updates and nothing happened" was undiagnosable
@@ -302,11 +360,11 @@ internal sealed class TrayContext : ApplicationContext
         if (result is UpdateResult.Available a)
         {
             Notify($"SaveLocker v{a.Version} is available. Click to update.");
-            _ui.Post(_ =>
+            _ui.Post(() =>
             {
                 _icon.BalloonTipClicked += OnBalloonUpdateClicked;
                 _icon.BalloonTipClosed  += OnBalloonClosed;
-            }, null);
+            });
         }
         else if (!silent)
         {
@@ -326,7 +384,7 @@ internal sealed class TrayContext : ApplicationContext
     {
         UnhookBalloon();
         if (LastUpdateResult is UpdateResult.Available a)
-            FireAndForget(() => PromptAndUpdateAsync(a.Version, a.DownloadUrl));
+            FireAndForget(() => PromptAndUpdateAsync(a));
     }
 
     private void OnBalloonClosed(object? sender, EventArgs e) => UnhookBalloon();
@@ -337,33 +395,37 @@ internal sealed class TrayContext : ApplicationContext
         _icon.BalloonTipClosed  -= OnBalloonClosed;
     }
 
-    private async Task PromptAndUpdateAsync(string version, string downloadUrl)
+    private async Task PromptAndUpdateAsync(UpdateResult.Available update)
     {
-        var choice = MessageBox.Show(
+        var version = update.Version;
+        // Both prompts run on the UI thread: this method is reached from FireAndForget (a thread-pool
+        // task) as well as from the menu, and a MessageBox owned by a pool thread blocks that thread
+        // instead of the message loop. WA-09.
+        var choice = await _ui.InvokeAsync(() => MessageBox.Show(
             $"SaveLocker v{version} is available.\n\nUpdate now? The app will restart after installing.",
             "SaveLocker Update",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Information,
             MessageBoxDefaultButton.Button1,
-            MessageBoxOptions.DefaultDesktopOnly);
+            MessageBoxOptions.DefaultDesktopOnly));
 
         if (choice == DialogResult.No)
         {
             // Ask whether to skip this version entirely.
-            var skip = MessageBox.Show(
+            var skip = await _ui.InvokeAsync(() => MessageBox.Show(
                 "Skip this version and don't ask again?",
                 "SaveLocker Update",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question,
                 MessageBoxDefaultButton.Button2,
-                MessageBoxOptions.DefaultDesktopOnly);
+                MessageBoxOptions.DefaultDesktopOnly));
 
             if (skip == DialogResult.Yes)
             {
                 _config.SkipVersion = version;
                 _config.Save();
                 LastUpdateResult = null;
-                _ui.Post(_ => RebuildMenu(), null);
+                _ui.Post(RebuildMenu);
             }
             return;
         }
@@ -372,7 +434,21 @@ internal sealed class TrayContext : ApplicationContext
         {
             Notify($"Downloading SaveLocker v{version}…");
             _updateChecker ??= new UpdateChecker(_config);
-            var installerPath = await _updateChecker.DownloadInstallerAsync(version, downloadUrl);
+
+            // Re-checked at the moment of use, not only when the menu was built: the user can sit
+            // on this prompt while the server changes underneath them. The result is authorised by
+            // the server that answered, so it must not be launched against a different one. WA-05.
+            if (!ServerOrigin.Same(_updateChecker.ServerUrl, _config.ServerUrl))
+            {
+                LastUpdateResult = null;
+                _ui.Post(RebuildMenu);
+                Notify("The server changed while this update was pending. " +
+                       "Check for updates again to get one from the current server.");
+                return;
+            }
+
+            var installerPath = await _updateChecker.DownloadInstallerAsync(
+                version, update.DownloadUrl, update.Sha256);
 
             Process.Start(new ProcessStartInfo(installerPath)
             {
@@ -381,7 +457,7 @@ internal sealed class TrayContext : ApplicationContext
             });
 
             // Release the single-instance mutex so the installer can replace the exe.
-            _ui.Post(_ => ExitThread(), null);
+            _ui.Post(ExitThread);
         }
         catch (Exception ex)
         {
@@ -392,29 +468,29 @@ internal sealed class TrayContext : ApplicationContext
 
     // ─── Process watcher callbacks ───────────────────────────────────────────────
 
-    private bool IsRunning(TrackedGame g)
-    {
-        lock (_running) return _running.Contains(g.Name);
-    }
+    // Asks the OS rather than the watcher's cached set. The set is only populated by a launch the
+    // watcher observed, so a game that was already running when the tray started was invisible to
+    // it — exactly the case the WA-01 baseline creates.
+    private static bool IsRunning(TrackedGame g) => GameActivity.IsActive(g);
 
     private void OnLaunched(string gameName)
     {
-        lock (_running) _running.Add(gameName);
         var game = _config.FindGame(gameName);
         if (game is not null) FireAndForget(async () =>
         {
-            var (granted, holder) = await _engine.OnGameLaunchAsync(game);
+            // preLaunch: false — ProcessWatcher observed the game up to a poll interval AFTER it
+            // started, so this is not a pre-launch boundary and must not restore. WA-01.
+            var (granted, holder) = await _engine.OnGameLaunchAsync(game, preLaunch: false);
             if (!granted && holder is not null)
             {
                 _apiServer.AddLeaseWarning(game.Name, holder);
-                _ui.Post(_ => OpenWindow("overview"), null);
+                _ui.Post(() => OpenWindow("overview"));
             }
         });
     }
 
     private void OnExited(string gameName)
     {
-        lock (_running) _running.Remove(gameName);
         _apiServer.ClearLeaseWarning(gameName);
         var game = _config.FindGame(gameName);
         if (game is not null) FireAndForget(() => _engine.OnGameExitAsync(game));
@@ -432,8 +508,8 @@ internal sealed class TrayContext : ApplicationContext
         }
     });
 
-    private void Notify(string message) => _ui.Post(_ =>
-        _icon.ShowBalloonTip(4000, "SaveLocker", message, ToolTipIcon.Info), null);
+    private void Notify(string message) => _ui.Post(() =>
+        _icon.ShowBalloonTip(4000, "SaveLocker", message, ToolTipIcon.Info));
 
     protected override void Dispose(bool disposing)
     {
@@ -448,7 +524,12 @@ internal sealed class TrayContext : ApplicationContext
             _icon.Dispose();
             _commandPoller.Dispose();
             _processWatcher.Dispose();
+            // Synchronous: Dispose cannot await, so a held lease expires rather than being released.
+            // Exit is not a connection change — the same server is still the right one on restart.
+            _engine?.Dispose();
             foreach (var w in _folderWatchers) w.Dispose();
+            // Last: everything above may post a final menu rebuild or balloon on its way out.
+            _ui.Dispose();
         }
         base.Dispose(disposing);
     }

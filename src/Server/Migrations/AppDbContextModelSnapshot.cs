@@ -23,6 +23,12 @@ namespace SaveLocker.Server.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("ClaimCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("ClaimToken")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("TEXT");
 
@@ -36,6 +42,9 @@ namespace SaveLocker.Server.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<Guid?>("GameId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LeaseExpiresAt")
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("MachineId")
@@ -426,7 +435,11 @@ namespace SaveLocker.Server.Migrations
                     b.Property<Guid>("GameId")
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid>("MachineId")
+                    b.Property<Guid?>("MachineId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MachineName")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<Guid?>("ParentVersionId")
@@ -543,8 +556,7 @@ namespace SaveLocker.Server.Migrations
                     b.HasOne("SaveLocker.Server.Data.Machine", "Machine")
                         .WithMany()
                         .HasForeignKey("MachineId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Game");
 

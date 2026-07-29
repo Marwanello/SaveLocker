@@ -29,6 +29,13 @@ public class AppDbContext : DbContext
         b.Entity<Lease>().HasIndex(l => l.GameId).IsUnique();
 
         b.Entity<SaveVersion>().HasIndex(v => new { v.GameId, v.CreatedAt });
+        // Save history outlives the machine that produced it: deleting a machine must null the
+        // link, never cascade. SaveVersion.MachineName keeps the uploader nameable afterwards.
+        b.Entity<SaveVersion>()
+            .HasOne(v => v.Machine).WithMany()
+            .HasForeignKey(v => v.MachineId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         b.Entity<ConflictFlag>().HasIndex(c => new { c.GameId, c.Status });
         b.Entity<AuditLog>().HasIndex(a => a.Timestamp);
         b.Entity<AgentCommand>().HasIndex(c => new { c.MachineId, c.Status });

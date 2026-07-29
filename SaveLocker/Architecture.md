@@ -2,15 +2,16 @@
 
 ```
   ┌─────────────┐         ┌──────────────────────────┐         ┌─────────────┐
-  │  Gaming PC  │         │   unRAID (Docker)         │         │   Laptop    │
+  │  Gaming PC  │         │   unRAID (Docker)         │         │  Steam Deck │
   │  Agent      │◄──────► │  Server API + Dashboard   │ ◄─────► │  Agent      │
-  │ (tray .exe) │  HTTPS  │  + SQLite + archive store │  HTTPS  │ (tray .exe) │
-  └─────────────┘         └──────────────────────────┘         └─────────────┘
-                                      ▲
-                                      │ CloudFlare Tunnel (remote access)
+  │ (tray .exe) │  HTTPS  │  + SQLite + archive store │  HTTPS  │ (headless   │
+  └─────────────┘         └──────────────────────────┘         │  daemon)    │
+                                                                 └─────────────┘
 ```
 
-Hub-and-spoke (not peer-to-peer). See `Decisions.md` for why unRAID is the keystone.
+Hub-and-spoke (not peer-to-peer). See `Decisions.md` for why unRAID is the keystone. The Windows
+agent (`src/Agent`) and Linux agent (`src/Agent.Linux`) both host the shared sync brain in
+`src/Agent.Core` — see [[REPO_MAP]] for the full module layout.
 
 ## Components
 
@@ -32,6 +33,22 @@ Hub-and-spoke (not peer-to-peer). See `Decisions.md` for why unRAID is the keyst
 - **OpenAPI** — `AddOpenApi()`/`MapOpenApi()` serve `/openapi/v1.json`; Swagger UI at `/swagger`. The web dashboard's types are generated from this doc (`openapi-typescript` → `web/src/api-types.ts`).
 - **Dashboard** — React `web/` SPA. Docker `web` build stage copies `dist/` into `src/Server/wwwroot/`. Its `types.ts` is generated from the server's OpenAPI doc, so it can't drift from the DTOs.
 
+### Agent.Core (`src/Agent.Core`)
+The platform-neutral sync brain, shared by the Windows tray and the Linux daemon.
+- `SyncEngine.cs` — push/pull/pre-launch/post-exit; per-game cross-process `flock` + in-process
+  lock together (`Decisions.md` §8).
+- `SaveSettler.cs` — settle gate before an automatic push; `FileLockProbe.cs` backs it
+  (`FileShare` on Windows, `/proc/*/fd` on Linux).
+- `ApiClient.cs` / `ServerTrust.cs` — typed HTTP client + TOFU pin of the server's TLS key.
+- `LeaseWarningStore.cs` — durable `lease-warnings.json` beside the config; needed because the
+  Linux launch wrapper is a separate short-lived process from the daemon, so an in-memory warning
+  never reached any UI (24 h expiry).
+- `AgentApiServer.cs` — loopback-only local management API on `:5178`, token-authenticated
+  (`Decisions.md` §7).
+- `Watchers.cs`, `CommandPoller.cs`, `OfflineQueue(Drainer).cs`, `Enroller.cs`, `SteamVdf.cs`,
+  `SteamShortcuts.cs` — discovery, reconciliation, offline retry, enrollment.
+- `Platform.cs` (`IAutoStart`, `IGameScanner`) — the seam each host implements.
+
 ### Agent (`src/Agent`)
 - `Program.cs` — entry point: no args → tray (`TrayApp.cs`); args → CLI commands.
 - `TrayApp.cs` — tray icon + menu, engine/poller lifecycle, update-check startup + 24 h timer.
@@ -46,7 +63,28 @@ Hub-and-spoke (not peer-to-peer). See `Decisions.md` for why unRAID is the keyst
 - `OfflineQueue.cs` / `OfflineQueueDrainer.cs` — `PushAsync` enqueues to `%PROGRAMDATA%\SaveLocker\offline-queue.json` on `HttpRequestException`; 30 s drain timer retries when the server is reachable.
 - `AgentConfig.cs` — JSON config at `%PROGRAMDATA%\SaveLocker\config.json`. Tracks `SkipVersion` + `LastUpdateCheck` for update-check cooldown.
 
-## Agent auto-update
+### Linux agent (`src/Agent.Linux`) — binary `savelocker`
+Headless Proton-game agent; no tray, no toast. Scope is deliberately non-Steam Windows games run
+under Proton (`Decisions.md`), discovered via `shortcuts.vdf`.
+- `Program.cs` — `daemon` / `run` / `doctor` / `autostart`, else falls through to `AgentCli`.
+- `Daemon.cs` — headless host: `AgentApiServer` + `CommandPoller` + `OfflineQueueDrainer` +
+  folder watchers, all long-lived and holding `AgentConfig` in memory (the reason §8/§10 exist).
+- `ProtonRun.cs` — `savelocker run -- %command%`, the Steam launch wrapper: reads
+  `STEAM_COMPAT_DATA_PATH`/`SteamAppId`, pulls before launch, pushes after exit.
+- `LinuxGameScanner.cs` / `SteamRoots.cs` — `IGameScanner` + native/Flatpak Steam root + compatdata
+  resolution.
+- `Doctor.cs` — end-to-end diagnostic chain; the only UI a headless Deck install has outside the
+  Game Mode UI.
+- `SystemdAutoStart.cs` — `IAutoStart` via `systemd --user`.
+- `Ui/` — **`savelocker ui`**, the Game Mode-only gamepad surface (SDL + OpenGL + Dear ImGui), for
+  when there is no browser to reach `:5178` from. Four screens (Status / Add game / Set save
+  folder / Steam launch setup) call `Agent.Core` in-process — it is a view, not a second frontend.
+  `Theme.cs` mirrors `web/src/index.css` so palette/type match the React UI. `Widgets.cs` paints
+  gamepad-navigable components over `InvisibleButton`; `Icons.cs` draws the lucide glyph set as
+  vector paths. `Gallery.cs`/`Screenshot.cs` back the WSLg dev loop (`tests/linux/run-ui-wslg.sh`).
+  See `Decisions.md` and `Gotchas.md` for the ImGui-specific traps hit building this.
+
+## Agent auto-update (Windows only)
 Versioning is **MinVer** (git-tag-driven). Tag `v0.1.0` → that build stamps `0.1.0` in all assembly version fields. Between tags → `0.1.0-alpha.N+hash`.
 
 **Release flow:**
@@ -56,6 +94,9 @@ Versioning is **MinVer** (git-tag-driven). Tag `v0.1.0` → that build stamps `0
 4. Connected agents check within 24 h (or via tray "Check for Updates"); offered update via balloon → confirm dialog (Update Now / Skip / Remind Later).
 5. Agent downloads from `GET /api/agent/installer/download`, launches silently, exits.
 
+**Linux/Deck has no auto-update channel yet** — users re-run `install.sh` from a newer tarball
+(open backlog item, see `Backlog.md`).
+
 ## Conflict model (the safety mechanism)
 On upload the agent sends the version it last knew (`parent`):
 - `parent == server head` → **fast-forward** (new head).
@@ -64,6 +105,20 @@ On upload the agent sends the version it last knew (`parent`):
 
 Leases prevent most conflicts up front; hashing/lineage is the safety net.
 
+**Conflict pressure is capped, not infinite.** The first three rejected payloads on a game
+preserve real divergent history; after that, further pushes report the conflict without
+re-uploading bytes. A conflict overdue past **6 hours** is surfaced on every heartbeat so a
+connected Windows tray can notify the user even when the stuck machine is a headless Deck.
+**"Keep both"** doesn't fork into two heads: the chosen snapshot becomes the sole Latest, and
+both conflicting snapshots get `SaveVersion.Protected` (exempt from retention) until an admin
+explicitly unprotects them. Resolution refuses to promote anything older than the current head.
+
+**Resolving a conflict in the console only edits a row** — it does not tell the agent anything.
+A machine's local parent only advances on its own successful push or pull; a stuck agent needs a
+guarded pull (safe: it short-circuits before any file write when content already matches head) —
+use the CLI (`savelocker pull`, `force: false` by default) rather than the console's Pull button,
+which sends `force: true` and bypasses the unpushed-changes guard.
+
 ## Data model (SQLite via EF Core)
 EF-managed entities: `Machine`, `Game` (holds `HeadVersionId`), `SaveVersion` (parent chain +
 `ContentHash`; `Protected` exempts a snapshot from automatic retention), `Lease` (one per game,
@@ -71,6 +126,31 @@ unique index), `ConflictFlag`, `AuditLog`, `AgentCommand`, `AppSetting` (key/val
 `MachineSavePath` (composite key `(MachineId, GameId)` → a machine's stored save folder for a game).
 
 > **"Latest" = the head.** `Game.HeadVersionId` is the authoritative version agents pull; the dashboard labels it **Latest**; the admin action to set it is **"Set as Latest"**.
+
+### Rules the console bug bounty settled (2026-07-27)
+Each of these is a *durability or delivery* property rather than a feature; the "why" is in
+`Decisions.md`, the traps in `Gotchas.md`.
+
+- **`SaveVersion.MachineId` is nullable, `ON DELETE SET NULL`**, beside a `MachineName` snapshot
+  taken at upload. Save history outlives the machine that produced it — deleting a machine used to
+  cascade through every version it uploaded. `DeleteMachineAsync` detaches the rows explicitly
+  rather than relying on the FK.
+- **Head moves in exactly one place** (`SyncService.SetHeadAndPropagateAsync`). Where the *server*
+  decided — automatic policy, manual resolution, rollback, Set as Latest — it queues a deduplicated
+  **unforced** Pull for every live machine that syncs the game. An ordinary push does not fan out.
+- **`AgentCommand` delivery is a visibility lease**, not a one-way `Dispatched`: `LeaseExpiresAt` +
+  `ClaimToken` + `ClaimCount`, claimed by one atomic UPDATE. At-least-once, which is safe because
+  every command type is safe to repeat.
+- **Files are staged then published; rows are deleted before files.** Save archives land in
+  `{ArchiveRoot}/.incoming/*.part` and the hosted installer in `{AgentInstallerRoot}/.incoming-*`;
+  both publish by rename, both are swept at startup. Deletion commits the database first, because an
+  orphaned file is recoverable and a live row with no archive is not.
+- **Lease writes are single conditional statements**, so two machines launching together produce one
+  winner and one ordinary `Granted=false` instead of a 500. `ActiveLeaseAsync` is a pure read.
+- **URLs handed to other machines come from `PublicUrl.For`** — `Server:PublicBaseUrl`, else the
+  request origin — and an *inferred* loopback address refuses to mint an enrollment file.
+- **Credentials commit only on success:** the SteamGridDB key is verified before it replaces the
+  stored one, and enrollment burns its token inside the same transaction that issues the machine key.
 
 ## Retention
 After a successful upload, `SyncService.PruneVersionsAsync` keeps the newest

@@ -46,7 +46,12 @@ function Check($name, $cond) {
 }
 function Agent { & $dotnet $dll @args 2>&1 }
 
+# Every mint states its server URL. This suite runs the agent on the same box as the server, so the
+# policy really does need to say localhost — and the server refuses to INFER a loopback address,
+# because a file minted from a console opened at localhost cannot work on the machine it is for
+# (Console-BugBounty CS-06). Saying it explicitly is how a same-box setup declares itself.
 function Mint($body) {
+    if (-not $body.ContainsKey("serverUrl")) { $body["serverUrl"] = $server }
     Invoke-RestMethod -Uri "$server/api/admin/enrollments" -Method Post `
         -ContentType "application/json" -Body ($body | ConvertTo-Json)
 }

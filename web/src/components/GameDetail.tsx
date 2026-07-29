@@ -15,6 +15,19 @@ const fmtSize = (n: number) =>
     : n < 1024 * 1024 ? (n / 1024).toFixed(1) + ' KB'
       : (n / (1024 * 1024)).toFixed(2) + ' MB';
 
+/**
+ * What a command with no result yet is actually waiting for. "Dispatched" used to be a dead end in
+ * the UI as much as in the data: an agent that never answered left the row saying nothing forever.
+ * Delivery is leased now, so the honest answer is either "an agent has it" or "its claim lapsed and
+ * the next poll takes it again".
+ */
+const commandWaitText = (c: Command) => {
+  if (c.status === 'Pending') return 'awaiting next poll…';
+  if (c.status !== 'Dispatched') return '—';
+  const lapsed = c.leaseExpiresAt && new Date(asUtc(c.leaseExpiresAt)) < new Date();
+  return lapsed ? 'no reply — will be retried on the next poll' : 'running on the agent…';
+};
+
 interface Props {
   summary: GameSummary;
   machines: Machine[];
@@ -64,6 +77,9 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
   // Latest version per machine (for Machines table "Last upload" column)
   const latestByMachine: Record<string, Version> = {};
   for (const v of versions) {
+    // A version whose uploader has been deleted keeps its name but has no machine to key on —
+    // it is history, not a live contributor.
+    if (!v.machineId) continue;
     if (!latestByMachine[v.machineId]) latestByMachine[v.machineId] = v;
   }
 
@@ -174,7 +190,15 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
   }
 
   async function handleSetLatest(versionId: string) {
-    if (!confirm('Set this version as Latest? Every machine will pull it on next sync.')) return;
+    // Says what actually happens now: a pull is queued for every machine that syncs this game, and
+    // it is unforced, so a machine holding unsynced local work reports blocked rather than losing it.
+    if (!confirm(
+      'Set this version as Latest?\n\n' +
+      'A pull is queued for every machine that syncs this game. Any machine with local changes it ' +
+      'has not pushed yet will report the pull as blocked instead of overwriting them.\n\n' +
+      'If this version is one of the options in an open conflict, that conflict is marked resolved ' +
+      'in its favour.'
+    )) return;
     try {
       await api.setLatest(game.id, versionId);
       const vs = await api.versions(game.id);
@@ -683,9 +707,12 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                         ? <span style={{ color: '#f4a60d' }}>Failed</span>
                         : <span style={{ color: '#8b9aaa' }}>{c.status}</span>
                     }
+                    {c.claimCount > 1 && (
+                      <span style={{ color: '#f4a60d', fontWeight: 400 }}> · retried ×{c.claimCount}</span>
+                    )}
                   </td>
                   <td style={{ padding: '11px 18px', fontSize: 11.5, color: '#8b9aaa', maxWidth: 340, wordBreak: 'break-word', lineHeight: 1.6 }}>
-                    {c.result || (c.status === 'Pending' ? 'awaiting next poll…' : '—')}
+                    {c.result || commandWaitText(c)}
                   </td>
                 </tr>
               ))}

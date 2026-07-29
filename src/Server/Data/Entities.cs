@@ -64,8 +64,16 @@ public class SaveVersion
     public Guid GameId { get; set; }
     public Game? Game { get; set; }
 
-    public Guid MachineId { get; set; }
+    /// <summary>The machine that uploaded this snapshot, or null once that machine has been
+    /// deleted. Nullable on purpose: a version outlives its uploader (see
+    /// <see cref="MachineName"/>), and a cascade here would destroy save history the console
+    /// promises to keep.</summary>
+    public Guid? MachineId { get; set; }
     public Machine? Machine { get; set; }
+
+    /// <summary>The uploader's name captured at upload time. The only thing left to name the
+    /// uploader once <see cref="MachineId"/> has been nulled by a machine deletion.</summary>
+    public string MachineName { get; set; } = "";
 
     public DateTime CreatedAt { get; set; }
     /// <summary>Stable hash of the save directory contents.</summary>
@@ -159,6 +167,26 @@ public class AgentCommand
     public DateTime CreatedAt { get; set; }
     public DateTime? DispatchedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+
+    /// <summary>
+    /// When this claim stops being exclusive. A <see cref="CommandStatus.Dispatched"/> command whose
+    /// lease has passed is eligible to be handed out again: delivery is a lease, not a one-way door.
+    /// An agent that crashed between the poll and the result used to strand the command in
+    /// Dispatched forever, with nothing to retry it and nothing to say so.
+    /// </summary>
+    public DateTime? LeaseExpiresAt { get; set; }
+
+    /// <summary>
+    /// The claim that currently owns this command. Written by the same atomic UPDATE that marks it
+    /// Dispatched, so the claimer can then read back exactly the rows it won and two pollers sharing
+    /// one machine identity cannot both be handed the same command.
+    /// </summary>
+    public Guid? ClaimToken { get; set; }
+
+    /// <summary>How many times this command has been handed to an agent. &gt;1 means a lease
+    /// expired unacknowledged; the console shows it so a command that keeps failing silently is
+    /// visible rather than merely slow.</summary>
+    public int ClaimCount { get; set; }
 
     /// <summary>Human-readable outcome the agent reports (e.g. "pushed 1 game").</summary>
     public string? Result { get; set; }

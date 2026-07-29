@@ -99,8 +99,10 @@ public sealed class CommandPoller : IDisposable
         var serverById = serverGames.ToDictionary(g => g.Id);
         var changed = false;
 
-        // Drop local games that were deleted on the server.
-        var removed = _config.Games.RemoveAll(g => !serverById.ContainsKey(g.GameId));
+        // Drop local games that were deleted on the server. Copy-on-write for the same reason as
+        // enrollment: this runs on a timer thread while a UI thread enumerates the same list.
+        var removed = 0;
+        _config.MutateGames(list => removed = list.RemoveAll(g => !serverById.ContainsKey(g.GameId)));
         if (removed > 0)
         {
             changed = true;
@@ -121,12 +123,29 @@ public sealed class CommandPoller : IDisposable
                 }
 
                 // Server now has a stored path for this machine → apply it (highest authority).
+                // "Highest authority" is not "unconditionally trusted": this is the one path source
+                // with no local confirmation step at all, so a mistaken or hostile console value
+                // would silently repoint a game at the user's profile. WA-02.
                 if (!string.IsNullOrWhiteSpace(sg.MachineSavePath) &&
                     sg.MachineSavePath != local.SaveDirectory)
                 {
-                    local.SaveDirectory = sg.MachineSavePath;
-                    changed = true;
-                    _notify($"Updated '{sg.Name}' save folder from server: {sg.MachineSavePath}");
+                    var check = SavePathGuard.Check(sg.MachineSavePath, _config.StateDir);
+                    if (!check.Ok)
+                    {
+                        // Not applied and not silent — the console sent it, so the console is where
+                        // whoever set it is looking.
+                        _health?.Report(AgentEventCodes.UnsafeSavePath, AgentEventSeverity.Error,
+                            $"Refused the server's save folder for '{sg.Name}': {check.Reason} " +
+                            $"(server sent '{sg.MachineSavePath}'). The previous mapping is unchanged.",
+                            sg.Id);
+                        AgentLogger.Log($"Refused server save path for '{sg.Name}': {check.Reason}");
+                    }
+                    else if (check.Canonical != local.SaveDirectory)
+                    {
+                        local.SaveDirectory = check.Canonical!;
+                        changed = true;
+                        _notify($"Updated '{sg.Name}' save folder from server: {check.Canonical}");
+                    }
                 }
                 // Already tracked but unmapped: detect locally and report back to server.
                 else if (string.IsNullOrEmpty(local.SaveDirectory) &&
@@ -154,20 +173,23 @@ public sealed class CommandPoller : IDisposable
                 continue;
             }
 
-            // Adopt a server game not tracked here yet.
+            // Adopt a server game not tracked here yet — unless this machine opted out of it. The
+            // game is still on the server for the rest of the fleet; this box just said no.
+            if (_config.IsUntracked(sg.Id)) continue;
+
             var dir = await ResolveSaveDirAsync(sg);
             // If we resolved via detection (not from the server path), report it back.
             if (dir is not null && string.IsNullOrWhiteSpace(sg.MachineSavePath))
                 ReportPathAsync(sg.Id, dir);
 
-            _config.Games.Add(new TrackedGame
+            _config.MutateGames(list => list.Add(new TrackedGame
             {
                 GameId = sg.Id,
                 Name = sg.Name,
                 ManifestKey = sg.ManifestKey,
                 SaveDirectory = dir ?? "",
                 ExcludeGlobs = (sg.ExcludeGlobs ?? Array.Empty<string>()).ToList()
-            });
+            }));
             changed = true;
             _notify(dir is null
                 ? $"'{sg.Name}' was added on the server — set its save folder in Settings…"
@@ -191,8 +213,11 @@ public sealed class CommandPoller : IDisposable
     /// </summary>
     private async Task<string?> ResolveSaveDirAsync(GameDto sg)
     {
+        // Every return below goes through Safe(): adoption of a brand-new server game reaches the
+        // config without passing the reconcile check above, and detection/template expansion can
+        // land somewhere just as broad as a hostile server value. WA-02.
         if (!string.IsNullOrWhiteSpace(sg.MachineSavePath))
-            return sg.MachineSavePath;
+            return Safe(sg, sg.MachineSavePath);
 
         // A template beats a literal path, because it is the only form that means the same LOGICAL
         // folder on every machine. A literal from another machine is what lets two agents disagree
@@ -201,18 +226,35 @@ public sealed class CommandPoller : IDisposable
         if (PathResolver.IsTemplate(sg.SuggestedSaveDir) &&
             ResolverForGame(sg)?.ResolveToDirectory(sg.SuggestedSaveDir!) is { } expanded &&
             Directory.Exists(expanded))
-            return Path.GetFullPath(expanded);
+            return Safe(sg, expanded);
 
         if (!string.IsNullOrWhiteSpace(sg.SuggestedSaveDir) &&
             !PathResolver.IsTemplate(sg.SuggestedSaveDir) &&
             Directory.Exists(sg.SuggestedSaveDir))
-            return Path.GetFullPath(sg.SuggestedSaveDir);
+            return Safe(sg, sg.SuggestedSaveDir);
         try
         {
             var dirs = await _detection.ResolveSaveDirectoriesAsync(sg.ManifestKey ?? sg.Name);
-            return dirs.FirstOrDefault();
+            return dirs.FirstOrDefault() is { } d ? Safe(sg, d) : null;
         }
         catch { return null; }
+    }
+
+    /// <summary>
+    /// The canonical path if it is one we may ever sync, else null — leaving the game unmapped,
+    /// which is the safe state. Reported, because an unmapped game otherwise looks like detection
+    /// simply failing and invites someone to "fix" it by setting the very path we refused.
+    /// </summary>
+    private string? Safe(GameDto sg, string path)
+    {
+        var check = SavePathGuard.Check(path, _config.StateDir);
+        if (check.Ok) return check.Canonical;
+
+        _health?.Report(AgentEventCodes.UnsafeSavePath, AgentEventSeverity.Error,
+            $"Refused a save folder for '{sg.Name}': {check.Reason} (was '{path}'). " +
+            "The game is left unmapped; set its folder in Settings.", sg.Id);
+        AgentLogger.Log($"Refused save path for '{sg.Name}': {check.Reason} (was '{path}')");
+        return null;
     }
 
     /// <summary>
@@ -335,17 +377,24 @@ public sealed class CommandPoller : IDisposable
         var commands = await _api().GetAgentCommandsAsync();
         foreach (var cmd in commands)
         {
+            string result;
             try
             {
-                var result = await ExecuteAsync(cmd);
-                await _api().ReportCommandAsync(cmd.Id, CommandStatus.Done, result);
-                _notify(result);
+                result = await ExecuteAsync(cmd);
             }
             catch (Exception ex)
             {
                 await SafeReportFailure(cmd.Id, ex.Message);
                 _notify($"{cmd.Type} (from dashboard) failed: {ex.Message}");
+                continue;
             }
+
+            // Separate from the execution try/catch on purpose: the work is already done, so a
+            // report that cannot be delivered must not be turned into "the command failed". The
+            // server reclaims it when the lease expires and it runs again harmlessly.
+            try { await _api().ReportCommandAsync(cmd.Id, CommandStatus.Done, result); }
+            catch (Exception ex) { AgentLogger.LogException("CommandPoller.ReportSuccess", ex); }
+            _notify(result);
         }
     }
 
@@ -365,34 +414,49 @@ public sealed class CommandPoller : IDisposable
             return "no matching mapped game on this machine.";
 
         var engine = _engine();
+        var running = new List<string>();
         foreach (var g in targets)
         {
+            // A dashboard force-pull is the most dangerous surface there is: the person clicking it
+            // is not sitting at the machine and cannot see that the game is open. Refusing here and
+            // saying so in the command result is what puts the reason in front of them — the engine's
+            // own refusal only reaches the agent's event stream. WA-01.
+            var active = GameActivity.IsActive(g, out var proc);
+            if (active) running.Add(proc is null ? g.Name : $"{g.Name} ({proc}.exe)");
+
             switch (cmd.Type)
             {
                 case AgentCommandType.Pull:
-                    await engine.PullAsync(g, cmd.Force);
+                    if (!active) await engine.PullAsync(g, cmd.Force);
                     break;
                 case AgentCommandType.Push:
                     await engine.PushAsync(g, cmd.Force);
                     break;
                 case AgentCommandType.Sync:
-                    await engine.PullAsync(g, cmd.Force);
+                    if (!active) await engine.PullAsync(g, cmd.Force);
                     await engine.PushAsync(g, cmd.Force);
                     break;
             }
         }
 
+        if (running.Count > 0 && cmd.Type == AgentCommandType.Pull)
+            return $"REFUSED — still running: {string.Join(", ", running)}. " +
+                   "Restoring saves under a live game loses them; close it and re-issue the pull.";
+
         // One concise summary (the per-step engine progress goes to the log, not toasts).
         // For a single game, include the save's timestamp so the user can confirm it's current.
         var verb = cmd.Type.ToString().ToLowerInvariant() + "ed";
+        var suffix = running.Count > 0
+            ? $" (not pulled, still running: {string.Join(", ", running)})"
+            : "";
         if (targets.Count == 1)
         {
             var save = LatestSaveTimestamp(targets[0].SaveDirectory);
             return save is { } d
-                ? $"{targets[0].Name} {verb} — latest save {d:MMM d, h:mm tt}"
-                : $"{targets[0].Name} {verb}.";
+                ? $"{targets[0].Name} {verb} — latest save {d:MMM d, h:mm tt}{suffix}"
+                : $"{targets[0].Name} {verb}.{suffix}";
         }
-        return $"{verb} {targets.Count} games.";
+        return $"{verb} {targets.Count} games.{suffix}";
     }
 
     /// <summary>Newest last-write time among a game's save files, or null if none/unreadable.</summary>
@@ -417,10 +481,17 @@ public sealed class CommandPoller : IDisposable
             !string.IsNullOrEmpty(g.SaveDirectory) &&
             (gameId is null || g.GameId == gameId));
 
+    /// <summary>
+    /// Report a failure without letting the report itself become the failure. If this cannot reach
+    /// the server the command keeps its claim until the server's visibility lease expires, and is
+    /// then handed out again — the server treats delivery as at-least-once, so an unacknowledged
+    /// command comes back rather than being lost. Re-running any command type is safe (see
+    /// <c>SyncService.DequeueCommandsAsync</c>).
+    /// </summary>
     private async Task SafeReportFailure(Guid commandId, string message)
     {
         try { await _api().ReportCommandAsync(commandId, CommandStatus.Failed, message); }
-        catch { /* will be retried implicitly only if still pending; ignore */ }
+        catch (Exception ex) { AgentLogger.LogException("CommandPoller.SafeReportFailure", ex); }
     }
 
     public void Dispose() => _timer.Dispose();
