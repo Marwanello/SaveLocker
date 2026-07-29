@@ -42,7 +42,7 @@ stale output cannot mask a fix.
 | WA-08 | done | `c27197e` |
 | WA-09 | done — **1 of 6 checks discriminates, see below** | `4a3ac4c` |
 | WA-10 | done — 6 of 13 checks discriminate | `27d9a50` |
-| WA-11 | done — 4 of 6 checks discriminate | (this commit) |
+| WA-11 | done — 4 of 6 checks discriminate | `394b134` |
 | WA-12 | **not started — resume here** | — |
 
 ### Harness
