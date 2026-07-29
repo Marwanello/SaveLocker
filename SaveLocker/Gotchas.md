@@ -150,6 +150,14 @@ behave in ways that look like bugs.
 - **A green test may never enter the state where the bug lives.** "No admin password set,"
   "nothing running," "first run," "empty directory" are the easy setups a harness defaults to —
   and exactly the states real bugs hide outside of. Ask what state the suite never creates.
+- **A hand-rolled `HttpListener` stub is not a server.** A single-threaded accept loop is only
+  listening while it is inside `GetContextAsync`; a request that arrives in the gap between
+  iterations — or while the script is doing anything else between two pump calls — is never
+  accepted, and the agent's HTTP call hangs there indefinitely with no error anywhere. WA-12's block
+  lost an hour to this: the tray's lease POST never returned, so the launch handler never ran, and it
+  read exactly like a broken process watcher. Use the suite's real server and real state (a lease
+  genuinely held by a second registered machine) unless the point of the test *is* a malformed or
+  hostile response, as in WA-05.
 - **A concurrency test racing identical short-lived processes proves nothing** — process startup
   dominates and write windows never overlap. The discriminating shape is a long-lived process
   holding stale in-memory state vs. a short-lived one; order by waiting on observable state, not

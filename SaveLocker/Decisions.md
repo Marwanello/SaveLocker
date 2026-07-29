@@ -150,6 +150,17 @@ session can judge an edge case, not to reopen the choice.
   throw "Collection was modified" out of a UI or render thread enumerating it.
   <br>`SAVELOCKER_TRAY_PORT` was added under the rule below so a harness can drive a real tray; it
   scopes the single-instance mutex too, so a test tray and the installed one coexist.
+- **A requested route is queued until WebView2 can honour it** (WA-12, 2026-07-28). `OpenWindow`
+  called `Navigate` before WebView2 existed. `CoreWebView2` is null until `EnsureCoreWebView2Async`
+  completes, so the call was dropped on the floor and `OnLoad` then navigated to `/` regardless:
+  accepting the first-run prompt asked for Settings and landed on Overview, on exactly the install
+  where the user has the most to configure. The guard that was there (`IsHandleCreated`) tested the
+  wrong thing — `Show()` creates the handle immediately, while WebView2 comes up long afterwards.
+  <br>`AgentWindow` now holds a pending route: `Navigate` applies it if the core is ready and stores
+  it otherwise, and initialization navigates to the stored route in preference to the home page. A
+  later deep link replaces an earlier one, so what opens is the last thing asked for. The field is
+  UI-thread-only by construction (every caller goes through the WA-09 dispatcher, and the
+  initialization continuation resumes there), which is why it carries no lock.
 - **Discovery is per-source best-effort; one bad source cannot fail the scan** (WA-11, 2026-07-28).
   The scanner reads places the agent does not control — Steam `userdata` directories owned by other
   Windows accounts, a library on a drive that can be unplugged mid-enumeration, a redirected or

@@ -28,7 +28,8 @@ stale output cannot mask a fix.
 
 ## Progress (updated 2026-07-27)
 
-**11 of 12 findings fixed on `linux-agent-bugbounty`, one commit each. Not pushed.**
+**ALL 12 findings fixed on `linux-agent-bugbounty`, one commit each. Not pushed.**
+The code work is complete; the manual verification below is not. See "Still outstanding".
 
 | ID | State | Commit |
 |---|---|---|
@@ -43,11 +44,11 @@ stale output cannot mask a fix.
 | WA-09 | done — **1 of 6 checks discriminates, see below** | `4a3ac4c` |
 | WA-10 | done — 6 of 13 checks discriminate | `27d9a50` |
 | WA-11 | done — 4 of 6 checks discriminate | `394b134` |
-| WA-12 | **not started — resume here** | — |
+| WA-12 | done — 2 of 7 checks discriminate | (this commit) |
 
 ### Harness
 
-`tests/run-winagent-tests.ps1` — **107 checks**, own server on :5189 (+ :5190–:5197), state in
+`tests/run-winagent-tests.ps1` — **114 checks**, own server on :5189 (+ :5190–:5198), state in
 `.verify-winagent`.
 Each finding's block is verified to fail against pre-fix code by `git stash push -- src/`, rebuild,
 re-run. Where that check is weaker than "N of N fail", the commit message says so explicitly.
@@ -56,6 +57,15 @@ re-run. Where that check is weaker than "N of N fail", the commit message says s
 
 Read these before trusting the suite as proof:
 
+- **WA-12** — **2 of 7 fail pre-fix**, and they are the two that matter: the deep link being the
+  navigation target, and the window not falling back to the home page. The other five are fixture
+  steps (the game exists, another machine holds the lease, the tray is up, the launch was refused,
+  the window opened) that must succeed for the assertion to mean anything — pre-fix the window still
+  opens, it just opens on the wrong page.
+  <br>The drive is the **lease-refused** deep link, not the first-run prompt. The prompt is a modal
+  `MessageBox` and cannot be accepted headlessly; the refused launch goes through the identical
+  first-window-creation path. Verification item 1 still covers the Settings route by hand, and it is
+  the only place the *user-facing* symptom in the finding is confirmed.
 - **WA-11** — **4 of 6 fail pre-fix**. Of the two that do not: "the unreadable save root really is
   unreadable" is a fixture sanity check by design (a Deny ACE that silently failed to apply would
   make the whole block pass for the wrong reason), and "the unreadable root yields nothing" passes
@@ -123,6 +133,10 @@ particular these acceptance criteria are *implemented but not signed off*:
 - WA-06's tray two-server-lease transition (verification item 7) — a lease is only taken by the
   process watcher or the launch wrapper, neither drivable headlessly during a server change.
 - WA-01's real-game timing (verification item 4).
+- WA-12's first-run Settings deep link on a **cold WebView2 profile** (verification items 1 and 3).
+  The automated block drives the same first-window-creation path through a refused launch, but the
+  prompt itself is a modal `MessageBox` that cannot be accepted headlessly — so the exact symptom
+  named in the finding is still unconfirmed on a real fresh install.
 
 ### What WA-09 changed, for whoever picks up WA-10…WA-12
 

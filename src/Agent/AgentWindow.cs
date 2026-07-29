@@ -15,10 +15,25 @@ internal sealed class AgentWindow : Form
     private readonly WebView2 _webView = new() { Dock = DockStyle.Fill };
     private readonly int _port;
     private bool _navigated;
+    // Where to go once WebView2 finishes initializing. WebView2 comes up asynchronously, so on the
+    // FIRST open there is no CoreWebView2 yet and a Navigate call had nowhere to go — it was
+    // silently dropped and OnLoad then went to "/" regardless. That is the whole of WA-12: accepting
+    // the first-run prompt asked for Settings and landed on Overview.
+    //
+    // Only ever touched on the UI thread: every caller goes through the tray's dispatcher (WA-09),
+    // and OnLoad's continuation resumes there too. No lock is needed, and adding one would hide that
+    // requirement rather than enforce it.
+    private string? _pendingUrl;
+    private bool _coreReady;
 
-    public AgentWindow(int port)
+    private string HomeUrl => $"http://localhost:{_port}/";
+
+    /// <param name="view">Optional initial view (the React app's hash route), applied as soon as
+    /// WebView2 is ready rather than being lost to the startup race.</param>
+    public AgentWindow(int port, string? view = null)
     {
         _port = port;
+        _pendingUrl = UrlForView(port, view);
         Text = "SaveLocker";
         Icon = AppResources.Icon;
         // WinForms ClientSize units are physical pixels even when DeviceDpi > 96.
@@ -46,8 +61,14 @@ internal sealed class AgentWindow : Form
             var udFolder = Path.Combine(AgentConfig.DefaultDir, "WebView2");
             var env = await CoreWebView2Environment.CreateAsync(userDataFolder: udFolder);
             await _webView.EnsureCoreWebView2Async(env);
-            AgentLogger.Log($"WebView2: ready — navigating to http://localhost:{_port}/");
-            _webView.CoreWebView2.Navigate($"http://localhost:{_port}/");
+            _coreReady = true;
+
+            // The route requested while WebView2 was still starting wins over the home page. A
+            // later deep link replaces an earlier one, so what opens is the last thing asked for.
+            var target = _pendingUrl ?? HomeUrl;
+            _pendingUrl = null;
+            AgentLogger.Log($"WebView2: ready — navigating to {target}");
+            _webView.CoreWebView2.Navigate(target);
         }
         catch (Exception ex)
         {
@@ -59,12 +80,25 @@ internal sealed class AgentWindow : Form
         }
     }
 
-    /// <summary>Navigate to a URL (e.g. to deep-link to a view via hash).</summary>
+    /// <summary>
+    /// Navigate to a URL (e.g. to deep-link to a view via hash). Before WebView2 is ready the
+    /// request is <b>queued</b> rather than dropped, and applied the moment it comes up.
+    /// </summary>
     public void Navigate(string url)
     {
-        if (_webView.CoreWebView2 is { } wv2)
-            wv2.Navigate(url);
+        if (_coreReady && _webView.CoreWebView2 is { } wv2) wv2.Navigate(url);
+        else _pendingUrl = url;
     }
+
+    /// <summary>Show a specific view, whether or not WebView2 has finished starting.</summary>
+    public void NavigateToView(string? view)
+    {
+        if (UrlForView(_port, view) is { } url) Navigate(url);
+    }
+
+    /// <summary>The React app routes on the hash, so a view is a fragment on the home URL.</summary>
+    private static string? UrlForView(int port, string? view) =>
+        string.IsNullOrWhiteSpace(view) ? null : $"http://localhost:{port}/#{view.Trim()}";
 
     // ─── DWM title bar theming ────────────────────────────────────────────────────
 

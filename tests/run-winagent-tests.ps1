@@ -86,6 +86,13 @@
 #          against a fake USERPROFILE - two of the six common save roots come from it - so the
 #          unreadable directory is one this suite created and never the machine's own.
 #
+#   WA-12. A deep link survives WebView2 startup.
+#          OpenWindow called Navigate before WebView2 existed - CoreWebView2 is null until
+#          EnsureCoreWebView2Async completes - so the call was dropped and OnLoad went to "/"
+#          anyway. Accepting the first-run prompt asked for Settings and landed on Overview. The
+#          prompt is a modal MessageBox and cannot be driven headlessly, so the drive here is the
+#          other first-creation deep link: a launch refused because another machine holds the lease.
+#
 # Owns its server on :5189 (and :5190-:5196 for daemons, stub servers and the WA-09 tray) and its
 # state under .verify-winagent, so it never collides with a real agent, a dev server, or another
 # suite.
@@ -1159,6 +1166,125 @@ try {
     }
     Check "WA-11 the skipped source is reported in the log" (
         $log11 -match "(?i)Scan:.*(LocalLow|enumerat)")
+
+    # =================================================================================
+    # WA-12. A DEEP LINK SURVIVES WEBVIEW2 STARTUP
+    # =================================================================================
+    # OpenWindow called Navigate before WebView2 existed. CoreWebView2 is null until
+    # EnsureCoreWebView2Async completes, so the call was silently dropped - and OnLoad then went to
+    # "/" regardless. Accepting the first-run prompt asked for Settings and landed on Overview, on
+    # exactly the install where the user has the most to configure.
+    #
+    # The first-run prompt itself cannot be driven headlessly (it is a modal MessageBox), so this
+    # exercises the other caller that deep-links on FIRST window creation: a launch refused because
+    # another machine holds the lease, which opens #overview to show the warning. Same mechanism,
+    # same race, and it is drivable. Verification item 1 still covers the Settings path by hand.
+    if (-not [Environment]::UserInteractive) {
+        Write-Host "SKIP: WA-12 needs an interactive desktop session for the tray."
+    } else {
+        $dlPort = 5198
+        $dlSave = Join-Path $scratch "deeplink_save"
+        New-Item -ItemType Directory -Force $dlSave | Out-Null
+        "s" | Set-Content (Join-Path $dlSave "s.dat") -Encoding utf8
+
+        # The suite's REAL server, and a lease genuinely held by a second machine. An earlier version
+        # of this block used a hand-rolled HttpListener stub, and it could not work: a single-threaded
+        # accept loop is not listening during the gaps between its own iterations, so the tray's
+        # lease POST hung there forever and the launch handler never returned. The real server is
+        # always accepting, and this exercises the actual refusal path rather than a mock of it.
+        $dlCfg = Join-Path $scratch "deeplink.json"
+        @{ ServerUrl = $server; Games = @(); FirstRunCompleted = $true } |
+            ConvertTo-Json | Set-Content -Path $dlCfg -Encoding utf8
+        Agent register --name "WinLink-$stamp" --config $dlCfg | Out-Null
+        $dlGame = "LinkGame-$stamp"
+        Agent add-game --name $dlGame --dir $dlSave --proc $fakeName --config $dlCfg | Out-Null
+
+        $dlGameId = ((Get-Content $dlCfg -Raw | ConvertFrom-Json).Games |
+                     Where-Object { $_.Name -eq $dlGame }).GameId
+        Check "WA-12 the game exists on the server" (-not [string]::IsNullOrWhiteSpace($dlGameId))
+
+        # A second machine takes the lease, so the tray's launch is refused and names a real holder.
+        $dlOtherCfg = Join-Path $scratch "deeplink_other.json"
+        @{ ServerUrl = $server; Games = @() } | ConvertTo-Json | Set-Content -Path $dlOtherCfg -Encoding utf8
+        Agent register --name "OtherPC-$stamp" --config $dlOtherCfg | Out-Null
+        $dlOtherKey = (Get-Content $dlOtherCfg -Raw | ConvertFrom-Json).ApiKey
+        $held = Invoke-RestMethod "$server/api/games/$dlGameId/lease" -Method Post `
+                -Headers @{ "X-Api-Key" = $dlOtherKey } -TimeoutSec 10
+        Check "WA-12 another machine holds the lease" ($held.granted -eq $true)
+
+        $logPath12 = Join-Path $env:ProgramData "SaveLocker\agent.log"
+        $mark12 = if (Test-Path $logPath12) { (Get-Item $logPath12).Length } else { 0 }
+
+        # The fake game must be GONE before the tray starts. If it is still shutting down when the
+        # watcher takes its baseline, the baseline records it as running and the real start is never
+        # a transition - no launch event, and the block fails for a reason that has nothing to do
+        # with WA-12.
+        Stop-FakeGame $null
+
+        $env:SAVELOCKER_TRAY_PORT = "$dlPort"
+        $dlTray = Start-Process -FilePath $dotnet -ArgumentList @($dll, "--config", $dlCfg) `
+                  -PassThru -WindowStyle Hidden
+        $dlFake = $null
+        try {
+            # Wait on the tray being up rather than on a fixed sleep.
+            $dlUp = $false
+            $DH = @{}
+            foreach ($i in 1..40) {
+                Start-Sleep -Milliseconds 500
+                $tp = Join-Path $scratch "api-token"
+                if (-not (Test-Path $tp)) { continue }
+                $DH = @{ "X-SaveLocker-Token" = (Get-Content $tp -Raw).Trim() }
+                try {
+                    Invoke-RestMethod "http://localhost:$dlPort/api/state" -TimeoutSec 3 -Headers $DH | Out-Null
+                    $dlUp = $true; break
+                } catch { }
+            }
+            Check "WA-12 the tray is up before the game starts" $dlUp
+
+            # Let the watcher take its baseline (one poll is 4 s; give it three).
+            Start-Sleep -Seconds 12
+            $dlFake = Start-FakeGame
+
+            # The refusal is observable through the tray's own API, so wait on it rather than on a
+            # fixed sleep. Asserting this intermediate step separately is what makes a failure
+            # readable: "the watcher never saw the launch" and "the deep link went to the wrong
+            # place" have completely different causes.
+            $warned = $false
+            foreach ($i in 1..40) {
+                Start-Sleep -Seconds 1
+                try {
+                    $st = Invoke-RestMethod "http://localhost:$dlPort/api/state" -Headers $DH -TimeoutSec 3
+                    if (@($st.leaseWarnings).Length -gt 0) { $warned = $true; break }
+                } catch { }
+            }
+            Check "WA-12 the launch was seen and the lease refused" $warned
+
+            # Window creation + WebView2 startup, which is the slow part and the whole reason the
+            # route has to be queued rather than applied immediately.
+            Start-Sleep -Seconds 25
+
+            $log12 = ""
+            if (Test-Path $logPath12) {
+                $fs12 = [System.IO.File]::Open($logPath12, 'Open', 'Read', 'ReadWrite')
+                try {
+                    if ($fs12.Length -lt $mark12) { $mark12 = 0 }
+                    $fs12.Seek($mark12, 'Begin') | Out-Null
+                    $log12 = (New-Object System.IO.StreamReader($fs12)).ReadToEnd()
+                } finally { $fs12.Dispose() }
+            }
+
+            Check "WA-12 the refused launch opened the window" ($log12 -match "WebView2: ready")
+            Check "WA-12 the queued deep link is the navigation target" (
+                $log12 -match "WebView2: ready — navigating to http://localhost:$dlPort/#overview")
+            Check "WA-12 the window did NOT fall back to the home page" (
+                -not ($log12 -match "WebView2: ready — navigating to http://localhost:$dlPort/\s*$"))
+        }
+        finally {
+            if ($dlFake) { Stop-FakeGame $dlFake }
+            Stop-Process -Id $dlTray.Id -Force -ErrorAction SilentlyContinue
+            Remove-Item Env:SAVELOCKER_TRAY_PORT -ErrorAction SilentlyContinue
+        }
+    }
 }
 finally {
     Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue

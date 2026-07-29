@@ -271,20 +271,24 @@ internal sealed class TrayContext : ApplicationContext
     {
         if (_window is null || _window.IsDisposed)
         {
-            _window = new AgentWindow(AgentApiPort);
+            // The view is handed to the constructor so it is already queued before OnLoad runs.
+            _window = new AgentWindow(AgentApiPort, view);
             _window.FormClosed += (_, _) => { _window = null; };
+        }
+        else
+        {
+            // An existing window may still be starting WebView2, so this is queued rather than
+            // dropped. The IsHandleCreated guard that used to sit at the bottom of this method
+            // tested the wrong thing entirely: Show() creates the handle immediately, while
+            // WebView2 comes up long afterwards, so it was true precisely when the navigation
+            // could not yet be honoured. WA-12.
+            _window.NavigateToView(view);
         }
 
         if (!_window.Visible)
             _window.Show();
         _window.BringToFront();
         _window.Activate();
-
-        // Navigate to a specific view via hash if requested.
-        if (view is not null && _window.IsHandleCreated)
-        {
-            _window.Navigate($"http://localhost:{AgentApiPort}/#{view}");
-        }
     }
 
     // ─── Enrollment (called by AgentApiServer) ──────────────────────────────────
