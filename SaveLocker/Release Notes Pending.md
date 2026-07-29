@@ -75,10 +75,10 @@ enrollment 18, hardening 33.
 
 ---
 
-## Windows agent — in progress (8 of 12 findings done)
+## Windows agent — code complete (12 of 12 findings done)
 
-**Branch:** `linux-agent-bugbounty` (same branch as the other two bounties, not pushed)
-**Source:** `tasks/WinAgent-BugBounty.md` — WA-01…WA-08 done, WA-09…WA-12 remain
+**Branch:** `linux-agent-bugbounty` (same branch as the other two bounties)
+**Source:** `tasks/WinAgent-BugBounty.md` — all 12 findings fixed, one commit each
 
 Some Linux fixes are in shared code (`Agent.Core`) and therefore already apply to the Windows tray:
 the server-address fix, the durable game removal, the crash-on-add fix, and the immediate
@@ -123,6 +123,27 @@ one code change, not two. The same is true in reverse for several bullets below.
   set this before, so games added through the window were invisible to launch and exit syncing
   entirely. Where SaveLocker cannot work it out — an installed Steam game, for instance — Settings
   says "Launch/exit sync not configured" and lets you fill it in, instead of implying it is working.
+- **"Start with Windows" now tells you the truth.** The switch reported success whether or not
+  Windows had accepted the change, so on a machine where security software or workplace policy
+  blocks startup entries it showed as on while nothing started at login. It now reports the failure
+  and why. It also no longer shows as on when the startup entry points at a copy of SaveLocker that
+  has been moved or uninstalled — Windows would launch nothing, and the switch said otherwise.
+- **One unreadable folder no longer empties the whole game search.** If SaveLocker met a folder it
+  could not read while looking for games — another Windows account's Steam data, a drive unplugged
+  mid-scan, a cloud-synced Documents folder — the search failed outright and found nothing, which
+  also took away the manual "choose the folder yourself" route you would have used instead. It now
+  skips what it cannot read and returns everything else.
+- **Accepting the first-run prompt opens Settings.** Answering "Yes" to "open Settings and register
+  this machine?" landed on the Overview page instead, on exactly the install where there is the most
+  to set up.
+
+#### For the curious
+
+The tray had no single owner for its window and menus: the mechanism meant to hand work back to the
+interface thread was set up a moment too early to attach to anything, so it silently did nothing.
+Everything the tray shows you now goes through one owner that is created rather than looked for.
+Nothing about this was visible as a specific bug — it is the sort of thing that surfaces as a rare
+crash or a menu that does not refresh — but several of the fixes above depend on it.
 
 ### Not yet verified — do not publish these bullets without it
 
@@ -137,8 +158,15 @@ one code change, not two. The same is true in reverse for several bullets below.
   what has been demonstrated; the second is a security guarantee that has not been.
 - The live-game bullet has not been exercised against a real game, only a stand-in process.
 - The launch/exit bullet has not been exercised by enrolling a real non-Steam Steam shortcut.
+- **The first-run bullet is proven on the wrong door.** The test drives the identical
+  open-a-specific-page path through a different trigger, because the first-run prompt is a modal
+  dialog that cannot be answered by a test. The exact wording above — accepting *that* prompt on a
+  fresh install — has not been seen working. Publish it only after verification item 1.
+- **The game-search bullet is proven for save folders, not for Steam.** The Steam half (another
+  account's data, an unplugged library) rests on code review: pointing the test at a real Steam
+  install and breaking it is not something to do to a working machine.
 
-Windows suites green at time of writing: win agent bug bounty 81, server bug bounty 145, agent 45,
+Windows suites green at time of writing: win agent bug bounty 114, server bug bounty 145, agent 45,
 hardening 33, local-api 30, concurrency 23, health 19, enrollment 18, enrollment-TLS 6.
 
 ## Console / server — in progress
