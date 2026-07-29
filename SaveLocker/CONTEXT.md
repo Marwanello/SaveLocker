@@ -58,7 +58,21 @@ re-run `install.sh` from the newer tarball.
 
 ## Open work
 
-See [[Backlog]] for the prioritized list. Nothing is in flight; `SaveLocker/tasks/` is empty.
+See [[Backlog]] for the prioritized list. Nothing is in flight on `main`, and `SaveLocker/tasks/` is
+empty **here** — but see the parked task below before assuming there is none.
+
+### Parked on a branch — `offline-backoff-task` (`bee3116`, pushed, not merged)
+
+**`tasks/OfflineBackoff.md` and its Backlog entry exist only on that branch**, by choice
+(2026-07-29): the task was written but the work was deferred, and the maintainer did not want it
+landing on `main` yet. `git checkout offline-backoff-task` to pick it up.
+
+The task: an agent that cannot reach the server retries forever at a fixed cadence — the offline
+drainer every 30 s, *re-archiving the save folder each time before it finds out*, and the command
+poller every 20 s carrying the reconcile, the command fetch and the heartbeat. Roughly five failed
+requests a minute, indefinitely. On a Deck away from home that is battery and metered traffic spent
+on nothing. Note the scope: **backing off only the drainer does not achieve the goal**, which is why
+the task covers all three loops.
 
 ### Suite baseline (all green at 2026-07-29)
 
