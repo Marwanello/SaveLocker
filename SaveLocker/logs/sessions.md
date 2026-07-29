@@ -5,6 +5,59 @@ Full commit detail in `git log`. Active backlog in `Backlog.md`.
 
 ---
 
+## 2026-07-29 — v0.5.0: three bug bounties shipped
+
+WA-09…WA-12 finished the Windows bounty, then all three bounties merged (PR #30), the notes landed
+(PR #31) and `v0.5.0` was tagged. 34 findings across console, Deck agent and Windows agent.
+
+**WA-09** was the one the others rested on. `TrayContext` captured `SynchronizationContext.Current`
+in its constructor — which runs as the *argument* to `Application.Run`, before the loop installs the
+WinForms context — so the capture fell through to the thread-pool default and every "marshal to the
+UI thread" call in the tray was a plain pool post. Nothing failed loudly, because WinForms only
+throws on a cross-thread call once a handle exists and a `NotifyIcon` menu has none. `UiDispatcher`
+forces a control handle instead, which is itself what installs the context: it makes the owner rather
+than hoping to find one.
+
+That fix nearly certified itself. The first pre-fix comparison showed **6 of 6 passing** — because
+the shim constructed the marshalling `Control` before reading `Current`, and constructing a `Control`
+installs the context on its own. Reading `Current` first reproduces the defect. A "confirmed" fix
+that was never needed was one ordering away.
+
+**WA-10** and **WA-11** were both the same shape as the console bounty's theme: a report describing
+an intention rather than an outcome. The startup toggle answered ok whether or not Windows accepted
+the change, and `IsEnabled` accepted any non-empty Run value — so an entry left by an uninstalled
+copy read as enabled. Discovery caught only *parse* errors, so one unreadable folder failed the whole
+scan and took the manual setup path down with it.
+
+**WA-12**'s fix was four lines; its test cost an hour. The first version used a hand-rolled
+`HttpListener` stub, which cannot work: a single-threaded accept loop is only listening while it is
+inside `GetContextAsync`, so the tray's lease POST arrived in a gap, was never accepted, and hung
+forever with no error anywhere — reading exactly like a broken process watcher. Instrumenting the
+watcher and the launch handler found it; the block now uses the real server with a lease genuinely
+held by a second registered machine. Now in `Gotchas.md`.
+
+Two test-only environment variables were added under the rule settled the day before
+(`SAVELOCKER_TRAY_PORT`, `SAVELOCKER_RUNKEY_SUBPATH`). The second exists so the access-denied branch
+can be tested with a real Deny ACE without putting one on the machine's actual Run key.
+
+CI's first-ever run of the branch caught a Linux-only check the Windows box always skips: `doctor
+names a prefix-root save path`. Not a regression — WA-02 moved that defence earlier, so `add-game`
+now refuses a Wine prefix before the game is created and doctor had nothing left to describe. The
+test asserted both halves instead.
+
+**Two mistakes worth recording.** A `git checkout` meant to drop debug probes also reverted half the
+WA-12 fix, and the suite still passed — the other half alone was enough — so only the commit's file
+list caught it. And the release notes were verified by *looking at the rendered page*, which is how a
+`<br>` carried over from this vault's Obsidian markdown was found rendering as literal text, along
+with an angle-bracketed placeholder that had vanished entirely. The build was perfectly happy with
+both.
+
+Shipped unverified, deliberately: no Deck run, no second Windows account, no clean VM, and the Linux
+suite still unrun. The notes are worded to match — the credentials bullet describes the permission
+change rather than promising the guarantee, and Known Issues says why.
+
+---
+
 ## 2026-07-27 — Console / server bug bounty: all 13 findings, one commit each
 
 The P0 was real and worse in practice than on paper: deleting a machine cascaded through every save

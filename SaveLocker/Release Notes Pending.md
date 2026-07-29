@@ -1,284 +1,38 @@
 # Release Notes — Pending
 
-Accumulating draft for the **next release**. Three bug bounties are in flight — Console, Windows
-agent, Linux agent — and they will ship together or close together, so the user-facing notes are
-drafted here as each lands rather than reconstructed from git at tag time.
+Accumulating draft for the **next release**. Nothing is pending right now.
 
-**Lift the "Draft notes" sections into `web/src/releases/<version>.md` when tagging.** That file is
-also the GitHub Release body (`release.yml` `body_path`), so it is written once and cannot drift.
-Match the voice of `0.4.1.md`: plain language, what the user noticed, no finding IDs.
-
-> ⚠️ **Nothing below is released, and nothing is pushed.** Do not publish a bullet whose fix has not
-> been verified on the platform it affects — see "Not yet verified" under each section.
+Everything that was drafted here shipped in **v0.5.0** (2026-07-29) and now lives in
+`web/src/releases/0.5.0.md` — the console's What's New page *and* the GitHub Release body, so it is
+written once and cannot drift.
 
 ---
 
-## Linux / Steam Deck agent — done, unpushed
+## How to use this file
 
-**Branch:** `linux-agent-bugbounty` (off `main`, 2 commits, not pushed)
-**Commits:** `ba3f153` the fixes · `ab1f568` an unrelated vault condensation split out of it
-**Source:** `tasks/LinuxAgent-BugBounty.md` — 9 findings (2 P1, 6 P2, 1 P3), all fixed
-**Date:** 2026-07-26
+Draft each user-facing bullet here **as the fix lands**, not reconstructed from `git log` at tag
+time. Match the voice of the released notes: plain language, what the user noticed, no finding IDs.
 
-### Draft notes
+At tag time, lift the drafts into `web/src/releases/<version>.md` and add the entry to
+`web/src/releases/index.ts`. Then check the rendered page, not just the build — the notes are
+rendered **without raw HTML**, so `<br>` and `<angle-bracketed>` placeholders that are fine in this
+vault come out as literal text or vanish entirely. That has happened once already.
 
-Nothing here changes the server, so the console does not need redeploying for these. On Steam Deck,
-download the newer tarball and re-run `install.sh`.
-
-#### Fixed
-
-- **Changing the server address now moves all sync traffic to it.** Only some of it moved before:
-  the agent kept uploading saves to the *old* server while talking to the new one about everything
-  else, with nothing reporting a problem.
-- **Removing a game from a device now actually removes it.** Game Mode said "Removed from this
-  device" and the background service quietly added it straight back, usually within a minute. The
-  game stays on the server for your other machines — this only stops *this* device syncing it.
-- **`savelocker remove-game --name "<game>"`** — a new command, because on a Deck there was no way
-  to stop syncing a game without the Game Mode UI.
-- **Setting a save folder takes effect immediately.** The folder was saved but not watched until the
-  agent restarted, so a game mapped after setup could sit there never syncing. The choice is also
-  reported to the console right away instead of on the next check-in.
-- **Adding several games at once no longer loses the ones that worked.** If a later game failed, or
-  the window was closed part-way, the earlier ones were discarded — including the Steam AppID that
-  makes launch-time syncing work.
-- **Adding games no longer crashes the Game Mode window.** Adding while the list was on screen could
-  close the app outright.
-- **Changing a setting in Game Mode no longer undoes other changes.** Toggling interface sounds or
-  the sync delay wrote back the whole configuration as the app had found it at launch, discarding
-  anything that happened since.
-- **Turning off "Start on boot" reports the truth.** It always claimed success, even where it could
-  not work at all — so the service stayed enabled and running while the toggle showed it off.
-- **`savelocker doctor` gives correct answers.** With a custom config path it reported and tested
-  the wrong folder, and it described an un-enrolled device as "server unreachable", sending people
-  to debug a network that was fine. It now separates *cannot reach the server*, *reached it but this
-  device is not enrolled*, and *connected and healthy*.
-
-#### For the curious
-
-Two of these had the same shape: a long-lived background process holds the configuration it read at
-startup, and writes it back later over changes it never saw. The fixes push the rule down into the
-storage layer rather than asking every caller to remember it — the same approach taken for the
-one-machine conflict loop in v0.3.x, applied to the game list.
-
-### Not yet verified — do not publish these bullets without it
-
-- **The Linux test suite has not been run.** `tests/linux/run-linux-tests.sh` (33 → 40 checks) carries
-  the only tests for the *auto-start* and *doctor* fixes, and needs WSL on the ext4 clone.
-- **No Steam Deck verification.** All five scenarios in `tasks/LinuxAgent-BugBounty.md` → Verification
-  are outstanding.
-- Regression tests are still missing for the folder-watcher, multi-game-add, window-crash and
-  settings-write fixes. The first two P1 fixes *are* covered, and both tests were confirmed to fail
-  against the pre-fix code.
-
-Windows suites green at time of writing: agent 45, concurrency 23, local-api 30, health 19,
-enrollment 18, hardening 33.
+Keep a **"not yet verified"** section under each draft, and honour it at tag time. The rule that
+matters: if a fix is implemented but its user-visible guarantee has not been demonstrated, **reword
+the bullet to describe the change rather than assert the outcome** — do not quietly drop it, and do
+not publish the stronger claim. v0.5.0's Windows credentials bullet is the worked example, and its
+Known Issues entry is the accompanying honesty.
 
 ---
 
-## Windows agent — code complete (12 of 12 findings done)
+## Carried forward from v0.5.0
 
-**Branch:** `linux-agent-bugbounty` (same branch as the other two bounties)
-**Source:** `tasks/WinAgent-BugBounty.md` — all 12 findings fixed, one commit each
+Not release notes, but the reason the next release may need to *amend* v0.5.0's:
 
-Some Linux fixes are in shared code (`Agent.Core`) and therefore already apply to the Windows tray:
-the server-address fix, the durable game removal, the crash-on-add fix, and the immediate
-save-folder watching. Decide at tag time whether to describe those once or per platform — they are
-one code change, not two. The same is true in reverse for several bullets below.
-
-### Draft notes
-
-- **SaveLocker will no longer restore a save while the game is running.** Windows spots a game up to
-  four seconds after it starts — by which time it already has its save files open — so what was
-  described as a "pre-launch pull" could write over a save the game then overwrote again on exit,
-  losing it silently. Pulling now refuses while the game is open and says so, from the tray, the
-  dashboard and the command line alike. Launching a game still checks it out to your machine, and
-  quitting still pushes; only the automatic pull at launch is gone. Pull before you play.
-- **A game can no longer be pointed at a folder that isn't a save folder.** A drive root, your user
-  profile, `C:\Windows`, Program Files or SaveLocker's own settings folder are refused outright —
-  they could previously be uploaded, and a force-pull would have *replaced* them. Folders that merely
-  look wrong (a Wine prefix, something very large) now ask for confirmation instead of proceeding
-  quietly. The check runs again at the moment of syncing, so a mapping edited by hand or sent by the
-  server is caught too.
-- **Your machine's credentials are no longer readable by other people using the same PC.**
-  `%PROGRAMDATA%\SaveLocker` holds this machine's server key and the token for its local settings
-  API, and Windows was letting every account on the box read both. They are now restricted to the
-  account that set SaveLocker up, plus SYSTEM and administrators.
-- **Changing the server address is safer.** A mistyped address is rejected instead of being saved —
-  it used to be written to disk and then crash the agent on every start afterwards. Pointing the
-  agent at a *different* server now clears the old machine key, ID and certificate pin and asks you
-  to register again, rather than sending the previous server's credentials to the new one.
-- **Updates are checked before they run.** The server publishes a checksum for the installer and the
-  agent refuses anything that does not match, or that is not actually a program. Updates from a
-  location other than your own server are refused unless a checksum is published for them, and your
-  machine key is never sent to a download host. Changing servers discards any update the previous one
-  had offered.
-- **Quitting a game always releases its checkout, even if the save fails to upload.** It previously
-  released only after a successful push, so a failed upload left the game checked out to your PC —
-  and every other machine locked out of it — until the checkout expired.
-- **Two SaveLocker processes can no longer sync the same game at once.** When one was busy, the other
-  used to give up waiting after 30 seconds and proceed anyway, which is exactly what the wait exists
-  to prevent. It now waits as long as the work could legitimately take, and reports that the game is
-  busy rather than joining in.
-- **Games added through the app now know which program to watch for.** Only the command line could
-  set this before, so games added through the window were invisible to launch and exit syncing
-  entirely. Where SaveLocker cannot work it out — an installed Steam game, for instance — Settings
-  says "Launch/exit sync not configured" and lets you fill it in, instead of implying it is working.
-- **"Start with Windows" now tells you the truth.** The switch reported success whether or not
-  Windows had accepted the change, so on a machine where security software or workplace policy
-  blocks startup entries it showed as on while nothing started at login. It now reports the failure
-  and why. It also no longer shows as on when the startup entry points at a copy of SaveLocker that
-  has been moved or uninstalled — Windows would launch nothing, and the switch said otherwise.
-- **One unreadable folder no longer empties the whole game search.** If SaveLocker met a folder it
-  could not read while looking for games — another Windows account's Steam data, a drive unplugged
-  mid-scan, a cloud-synced Documents folder — the search failed outright and found nothing, which
-  also took away the manual "choose the folder yourself" route you would have used instead. It now
-  skips what it cannot read and returns everything else.
-- **Accepting the first-run prompt opens Settings.** Answering "Yes" to "open Settings and register
-  this machine?" landed on the Overview page instead, on exactly the install where there is the most
-  to set up.
-
-#### For the curious
-
-The tray had no single owner for its window and menus: the mechanism meant to hand work back to the
-interface thread was set up a moment too early to attach to anything, so it silently did nothing.
-Everything the tray shows you now goes through one owner that is created rather than looked for.
-Nothing about this was visible as a specific bug — it is the sort of thing that surfaces as a rare
-crash or a menu that does not refresh — but several of the fixes above depend on it.
-
-### Not yet verified — do not publish these bullets without it
-
-- **The credentials bullet is unproven where it matters, and the maintainer has accepted that for
-  now** (2026-07-28) — multi-user testing is deferred to a later session. The ACL is applied and
-  asserted programmatically against the well-known SIDs; what has *not* happened is a second Windows
-  login actually failing to read the files, or a confirmation that the enrolled user can still sync
-  and take a silent update after a reboot.
-  <br>**If it is still unverified at tag time, reword rather than drop it.** Describe the change —
-  "the folder holding this machine's credentials is now restricted to the account that set SaveLocker
-  up" — instead of asserting the outcome, "other people using this PC cannot read them". The first is
-  what has been demonstrated; the second is a security guarantee that has not been.
-- The live-game bullet has not been exercised against a real game, only a stand-in process.
-- The launch/exit bullet has not been exercised by enrolling a real non-Steam Steam shortcut.
-- **The first-run bullet is proven on the wrong door.** The test drives the identical
-  open-a-specific-page path through a different trigger, because the first-run prompt is a modal
-  dialog that cannot be answered by a test. The exact wording above — accepting *that* prompt on a
-  fresh install — has not been seen working. Publish it only after verification item 1.
-- **The game-search bullet is proven for save folders, not for Steam.** The Steam half (another
-  account's data, an unplugged library) rests on code review: pointing the test at a real Steam
-  install and breaking it is not something to do to a working machine.
-
-Windows suites green at time of writing: win agent bug bounty 114, server bug bounty 145, agent 45,
-hardening 33, local-api 30, concurrency 23, health 19, enrollment 18, enrollment-TLS 6.
-
-## Console / server — in progress
-
-**Branch:** `linux-agent-bugbounty` (the console fixes are landing on the same branch, not pushed)
-**Source:** `tasks/Console-BugBounty.md` — 13 findings (1 P0, 6 P1, 3 P2, 3 P3)
-**Fixed so far:** the machine-deletion data loss (P0) — `a761f3f`; lost dashboard commands (P1) —
-`d46dcd6`; half-written save archives (P1) — `32ffe8e`; head changes that never reached the
-machines (P1) — `7f4fa4a`; the two-machine launch race (P1) — `7e12fc5`; unusable enrollment URLs (P1, scoped to
-LAN — see the task file) — `312ed77`; unbounded and non-atomic installer uploads (P1+P2) — `60ed218`; credentials consumed before use (P2) — `400a4fa`; console state and navigation (P3)
-
-**This section changes the server, so the console must be redeployed** (`docker compose pull &&
-docker compose up -d`). The Linux section above explicitly says it does not; do not merge the two
-into one "no redeploy needed" statement at tag time.
-
-**There is a database migration.** It runs automatically on first start and rebuilds the save-version
-table. Take the usual backup before upgrading (`/data/backups/` holds the nightly ones).
-
-### Draft notes
-
-#### Fixed
-
-- **Removing a machine no longer deletes its saves.** The confirmation dialog promised the version
-  history would be kept, and it was not: removing a machine silently destroyed every save version
-  that machine had uploaded. If one of them was the current Latest, the game was left with no Latest
-  at all — its stored saves still on the server's disk, but nothing left to reach them with. Storage
-  totals dropped by the same amount. Existing history is preserved by the upgrade; anything already
-  lost this way cannot be recovered from the database, though the archive files themselves were never
-  deleted.
-- **A Pull, Push, Sync or Scan sent from the dashboard no longer goes missing.** If the machine
-  dropped off between picking the job up and finishing it — a reboot, a crash, the network going
-  away mid-report — the job sat in "Dispatched" forever and nothing ever ran it or said so. Jobs are
-  now handed out on a time limit: one that is not confirmed goes back in the queue and the next
-  check-in picks it up. The dashboard shows "retried ×2" when that happens, and says whether a job
-  is running on the machine or waiting to be handed out again.
-- **A machine that has never checked in says so.** A newly enrolled agent that had not run yet was
-  listed as "offline since —", which reads as a machine that stopped rather than one that never
-  started. It now says **never reported**.
-- **Browser Back and Forward work again.** Moving between Games, Configuration and Audit Log changed
-  the address bar but left the previous page on screen; only Help and What's New responded.
-- **The console uses the fonts it was designed with.** A stylesheet ordering mistake meant the browser
-  discarded the font import and fell back to system fonts everywhere.
-- **A bad SteamGridDB key no longer wipes out your working one.** The key was saved first and
-  checked afterwards, and the console said "saved" either way — so a mistyped or truncated paste
-  quietly replaced a key that worked, and the only way back was to find the original again. It is now
-  checked before anything is stored: a key that fails is rejected with the reason, your existing key
-  is untouched, and what you pasted stays in the box so you can fix it. The check itself was also
-  wrong: it asked SteamGridDB a question that does not need an API key, so *any* text passed
-  "verified". It now asks something that genuinely requires the key.
-- **Uploading an agent installer can no longer break the update channel.** Any file was accepted,
-  whatever it was: uploading a text file by mistake replaced the working installer and left every
-  machine being offered *that* as an update. Uploads are now checked before anything is replaced —
-  it must be a `.exe` with a version the server understands — and the new installer is only put in
-  place once it has arrived in full. A rejected or interrupted upload leaves the one you already had
-  serving. There is also a real size limit again (200 MB, configurable): the limit had been removed
-  outright rather than raised, so a large upload could fill the disk, and that endpoint is open until
-  you set an admin password.
-- **An enrollment file is never used up without handing back a key.** Setting up a new machine
-  spent the single-use token first and issued its key second, so a failure in between left the file
-  dead and the machine still not enrolled — with nothing to do but create another. Both halves now
-  succeed or fail together. Two machines racing the same file still produce exactly one enrolment.
-- **Enrollment files can no longer be created with an address the new machine cannot use.** If you
-  opened the console on the server itself — at `localhost` — the file told the new machine to sync
-  with *itself*, and the only sign was enrollment failing for reasons that pointed nowhere. The
-  console now shows the exact address the file will carry before you create it, refuses to create
-  one that cannot work, and rejects a mistyped address without spending the single-use token on it.
-  There is a new optional `Server:PublicBaseUrl` setting if you want to pin the address agents
-  should use regardless of how you reach the console.
-- **Launching the same game on two machines at once no longer errors.** Whichever one got there
-  first takes the checkout; the other is now told who holds it, which is what it was always supposed
-  to say. Previously one of the two got a server error instead — at exactly the moment the checkout
-  is the thing protecting your save. Ending a session also releases the checkout reliably, and an
-  expired one can no longer be cleaned up out from under a machine that has just renewed it.
-- **"Set as Latest" now actually reaches your machines.** It promised every machine would pull the
-  chosen save and then told none of them: the choice was recorded on the server and the machines
-  carried on from the save they already had, hitting a conflict on their very next save. The same
-  gap applied to rollback and to the automatic conflict settings ("newest wins" / "always prefer this
-  machine") — the machine that lost was never told it had lost. All of them now queue a sync for
-  every machine that syncs that game. As everywhere else, that sync will not overwrite local changes
-  you have not pushed: those machines report the pull as blocked so you can decide.
-- **Choosing a Latest clears the argument it settles.** Open conflicts on that game are marked
-  resolved in its favour, instead of the console continuing to flag the very save you just chose.
-- **An interrupted upload no longer leaves a broken save on the server.** If a machine lost its
-  connection part-way through sending a save, the incomplete file was written straight to the place a
-  real save lives, and repeated failures quietly filled the disk. Saves are now assembled aside and
-  only put in place once complete, so what the server keeps is either a whole save or nothing.
-- **A save that is too large is refused clearly.** It now comes back as "too large" against the
-  configured limit rather than a generic server error, so the agent can say something useful.
-- **Deleting a save version cannot leave the server offering one it no longer has.** The record and
-  the file are removed in an order that cannot strand the record, and a file the server fails to
-  delete is written to the audit log instead of being forgotten.
-- **Saves uploaded by a machine you later removed still say who made them.** They are listed as
-  "<machine> (deleted)" rather than a blank name, and they stay downloadable, keep their protected
-  flag, and can still be chosen when resolving a conflict.
-
-### Not yet verified — do not publish these bullets without it
-
-- The deployment-shaped check through the real HTTPS tunnel (`tasks/Console-BugBounty.md` →
-  Verification) has not been run; it is only needed once the proxy-URL finding lands.
-
-Windows suites green at time of writing: server bug bounty 27, agent 45, concurrency 23, health 19,
-enrollment 18.
-
----
-
-## Version: v0.5.0 (decided 2026-07-28)
-
-Last released: **v0.4.1**. Not v0.4.2, for three reasons that each stand on their own:
-
-- The console bounty carries a **schema migration** — this is the first release where downgrading
-  the container is not a clean rollback. Back up `/data` before deploying.
-- SaveLocker **no longer pulls automatically when a game launches on Windows**. That is a removed
-  behaviour, not a repair, and users who relied on it need to read about it.
-- Moving an agent to a different server now **requires registering again**, because the old server's
-  credentials are cleared rather than reused.
+- The **second-Windows-account ACL test** has still not been run. When it passes, reword the
+  credentials bullet in `web/src/releases/0.5.0.md` from the permission change to the guarantee, and
+  drop the matching Known Issues entry. Editing that file updates the console page and the GitHub
+  Release together.
+- The **Linux suite and Deck verification** are outstanding for fixes that already shipped. If either
+  turns up a problem, it is a v0.5.1 note rather than an amendment. See [[Backlog]].

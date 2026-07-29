@@ -1,4 +1,4 @@
-﻿# SaveLocker — Session Context
+# SaveLocker — Session Context
 
 **What:** Self-hosted Windows/Linux game save sync. Hub-and-spoke: a tray/headless agent on each
 PC or Steam Deck syncs saves through an ASP.NET Core server (Docker on unRAID). React admin
@@ -6,93 +6,79 @@ dashboard + embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[
 
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** main
 
-**Current released version:** **v0.4.1** (Deck UI navigation fix). GHCR package `savelocker` is
+**Current released version:** **v0.5.0** (released 2026-07-29). GHCR package `savelocker` is
 **public** — see [[Gotchas]].
 
 ---
 
 ## Status
 
-Core system — Windows tray agent, Linux/Deck agent, server, dashboard, CI/CD, conflict handling,
-Deck Game Mode UI — is **built and shipped**. Feature-by-feature ship log: `logs/shipped-2026-07.md`
-+ `logs/sessions.md`.
+**v0.5.0 is out and everything is merged to `main`.** It carries three bug bounties — console/server
+(13 findings), Linux/Deck agent (9), Windows agent (12) — as PR #30, plus the release notes as
+PR #31. Tag `v0.5.0` → `4944d8f`; both release jobs green; the GitHub Release carries the
+hand-written notes and both installers.
+
+**It shipped with its manual verification unrun.** That was a deliberate call, not an oversight, and
+the release notes are worded accordingly. Paying that debt down is the next work — see below.
+
+Everything before this is indexed in `logs/shipped-2026-07.md` + `logs/sessions.md`.
 
 ## Next action
 
-**Resume `tasks/WinAgent-BugBounty.md` at WA-09.** Read its **Progress** section first — it records
-which findings are done, which commits they are in, and (importantly) where the test evidence is
-weaker than the pass count suggests. WA-01…WA-08 are fixed and committed; WA-09…WA-12 are not
-started.
+**Post-release verification, in this order.** Nothing here is a code change; it is confirming that
+what shipped does what the notes claim.
 
-WA-09 is the largest remaining item and the one that touches code the others now rely on:
-`TrayContext` captures `SynchronizationContext.Current` **before `Application.Run` installs the
-WinForms context**, so every `_ui.Post(...)` in `TrayApp.cs` — including ones added by WA-01, WA-05
-and WA-06 — is currently a thread-pool post, not a UI-thread marshal.
+1. **Run `tests/linux/run-linux-tests.sh` in WSL** (40 checks). It holds the *only* tests for the
+   Linux auto-start and `doctor` fixes, both of which shipped in v0.5.0 untested. Needs the ext4
+   clone — see [[Gotchas]] → WSL.
+2. **Deck verification** of the Linux bounty — the five scenarios in
+   `logs/2026-07-29_linuxagent-bugbounty.md` → Verification. Hardware is available (2026-07-19).
+3. **The second-Windows-account ACL test** (WA-03). This is the one with a user-visible consequence:
+   until it runs, the v0.5.0 notes describe the permission change rather than promising other users
+   cannot read the credentials, and Known Issues says so. **Reword `web/src/releases/0.5.0.md` once
+   it passes** — that file is both the console page and the GitHub Release body, so editing it fixes
+   both at once.
+4. The rest of the Windows manual gates: fresh-VM install, a real game, a real non-Steam shortcut,
+   the first-run Settings deep link on a cold WebView2 profile.
+5. **The LAN enrollment-URL check** on the real deployment (`logs/2026-07-27_console-bugbounty.md`
+   → Verification).
 
-**Manual verification is outstanding and none of it has been run** — the whole of the task's
-Verification section, plus the console bounty's **LAN enrollment-URL check** (open the console at
-the server's LAN address, mint an enrollment file with the URL override blank, confirm
-`policy.serverUrl` is the LAN address, not `localhost` — `logs/2026-07-27_console-bugbounty.md` →
-Verification). **WA-03's second-account ACL test is deferred by the maintainer** (2026-07-28) until
-a multi-user Windows box is available; it is no longer treated as blocking, but it means the release
-notes must describe the ACL change rather than assert that other users cannot read the credentials.
+Missing regression tests (not blocking, but they are the reason some of the above is manual):
+LA-04/05/06/07 have code fixes and no tests.
 
-Two questions raised during the WA-01…WA-08 session are now **settled**, both in `Decisions.md`:
-the release is **v0.5.0**, and the two test-only environment variables are **kept but never
-advertised to users** (vault only — not `cli-reference.md`, not the release notes).
+## Deploying v0.5.0
+
+**Back up `/data` first.** Two schema migrations run on first start, and this is the first release
+where downgrading the container is not a clean rollback. `ghcr.io/skorcherx/savelocker:latest`
+already carries them — it was published on merge, before the tag.
+
+The console must be redeployed. Windows agents self-update once the installer is uploaded to the
+console (the GitHub Release asset is *not* automatically what the fleet is offered). Deck users
+re-run `install.sh` from the newer tarball.
 
 ## Open work
 
-Branch `linux-agent-bugbounty` carries **all three bug bounties** and is **not pushed**. See
-[[Backlog]] for the prioritized list. State of each:
+See [[Backlog]] for the prioritized list. Nothing is in flight; `SaveLocker/tasks/` is empty.
 
-- **Console / server bug bounty — DONE 2026-07-27.** All 13 findings fixed, one commit each,
-  `a761f3f` … `99648cb`. New harness `tests/run-server-bugbounty-tests.ps1` (**145 checks**). Full
-  write-up, including the two scope decisions and what is deliberately untested:
-  `logs/2026-07-27_console-bugbounty.md`. **This half changes the server, so the console must be
-  redeployed** — and it carries **two schema migrations**, so back up `/data` first.
-- **Linux agent bug bounty** — all 9 findings have code fixes and the Windows suites are green.
-  Remaining: run the Linux suites in WSL (`run-linux-tests.sh`, 40 checks, carries the unrun
-  LA-08/LA-09 checks), add regression tests for LA-04/05/06/07, and do the Deck verification.
-  See `tasks/LinuxAgent-BugBounty.md` → Progress.
-- **Windows agent bug bounty — 8 of 12 done, 2026-07-27.** WA-01…WA-08 fixed, one commit each,
-  `34a7c75` … `c27197e` (plus `98a1a68`, the http/TLS decision WA-05 depends on). New harness
-  `tests/run-winagent-tests.ps1` (**81 checks**), each finding's block verified to fail against
-  pre-fix code. **WA-09…WA-12 remain**; WA-09 is the big one. Progress table, the four places where
-  test evidence is weaker than the pass count, and the outstanding manual gates are all in
-  `tasks/WinAgent-BugBounty.md` → Progress.
-  This half changes the **agent, the server and both UIs**: `openapi.json` + `web/src/api-types.ts`
-  moved (WA-05's update digest), and `agent-ui/src/api-types.ts` moved three times (WA-02, WA-04,
-  WA-08). New agent CLI command `check-update`; new agent-local API routes for save-path confirm and
-  process names.
+### Suite baseline (all green at 2026-07-29)
 
-User-facing notes for all three accumulate in [[Release Notes Pending]]. Version is still unchosen;
-the console migrations argue for v0.5.0 over v0.4.2, since a container downgrade stops being a clean
-rollback.
+Windows, local: **win agent bug bounty 114** · server bug bounty 145 · agent 45 · hardening 33 ·
+local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6.
+Linux, in CI: agent 43 · hardening 37 · local-api 30 · concurrency 23 · health 19 · enrollment 16.
+The two platforms differ by design — each suite skips the other's cases.
 
-### Suite baseline (all green at 2026-07-27, Windows)
+Server build 0/0. Console lint and build clean; the Windows agent build has **one** pre-existing
+warning (MSB3277, a WindowsBase 4.0/5.0 conflict from WebView2) — a second one means something.
 
-server bug bounty 145 · **win agent bug bounty 81** · agent 45 · hardening 33 · local-api 30 ·
-concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6. Server build 0/0; console lint and
-build clean — the console build is **warning-free for the first time** (CS-13 fixed the discarded
-`@import`), so a new warning there now means something. The Windows agent build has **one**
-pre-existing warning (MSB3277, a WindowsBase 4.0/5.0 conflict from WebView2); a second one means
-something.
+`run-winagent-tests.ps1` owns :5189 (+ :5190–:5198) and `.verify-winagent`. It is slow by design —
+~5 minutes, most of it real waits on lease renewal, lock contention and WebView2 startup. **It drives
+two real tray processes**, so it needs an interactive desktop session and skips those blocks without
+one.
 
-`run-winagent-tests.ps1` owns :5189 (+ :5190–5195 for daemons and stub servers) and
-`.verify-winagent`. It is slow by design — ~4 minutes, most of it real waits on lease renewal and
-lock contention.
-
-**Running the suites: clear `.verify/` and `src/Server/localstate/` together, and keep a dev server
-on :5179 up for `run-agent-tests` and `run-enrollment-tests`.** Both traps cost time this session —
-they produce confident, unrelated-looking failures (31 and 13) that read exactly like regressions.
-See [[Gotchas]] → Testing.
-- **Fresh Windows installer enrollment** on a clean box (no `%PROGRAMDATA%\SaveLocker`) has never
-  been exercised — see `logs/2026-07-14_installer-enrollment.md`.
-- **`%PROGRAMDATA%\SaveLocker` ACLs** on a multi-user Windows box — `api-token`/`config.json` are
-  readable by other local users.
-- **Linux auto-update** — Deck users currently re-run `install.sh` manually; no auto-update
-  channel yet.
+**Before running any suite, read [[Gotchas]] → Testing and Test harness.** Two traps cost hours this
+session and both are documented there: clear `.verify/` and `src/Server/localstate/` *together*, and
+start the dev server with `ASPNETCORE_ENVIRONMENT=Development` *and* explicit `Storage__*` or it
+opens `/data/savelocker.db` (i.e. `E:\data\`) and hangs on a stale migrations lock.
 
 ---
 
@@ -108,6 +94,8 @@ See [[Gotchas]] → Testing.
 | Dev build & run commands, test suites | [[Build and Run]] |
 | Agent CLI | `web/src/help/cli-reference.md` (KB article) |
 | Active backlog | [[Backlog]] |
-| Draft notes for the next release | [[Release Notes Pending]] |
+| Shipped release notes | `web/src/releases/*.md` (the console page *and* the GitHub Release body) |
+| Windows bounty write-up | `logs/2026-07-29_winagent-bugbounty.md` |
+| Linux bounty write-up | `logs/2026-07-29_linuxagent-bugbounty.md` |
 | Console bounty write-up | `logs/2026-07-27_console-bugbounty.md` |
 | Session history | `logs/sessions.md` |

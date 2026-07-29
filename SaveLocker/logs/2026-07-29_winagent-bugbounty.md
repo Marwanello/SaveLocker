@@ -9,7 +9,7 @@ during the 2026-07-26 static review, add regression coverage for each failure mo
 installed tray-agent shape on a real multi-user Windows machine.
 
 The review covered the current working tree, including the in-progress shared-core changes from
-`tasks/LinuxAgent-BugBounty.md`. Findings below describe defects still present after those changes;
+`logs/2026-07-29_linuxagent-bugbounty.md`. Findings below describe defects still present after those changes;
 they do not ask for the Linux work to be reverted.
 
 The review command was:
@@ -183,7 +183,7 @@ rest. WA-12 will need the deep-link queue to be applied on this dispatcher.
 - `Backlog.md` already records the `%PROGRAMDATA%\SaveLocker` ACL concern. WA-03 raises it to P1
   because the two readable values are not ordinary preferences: one is a server credential and the
   other grants the machine-management API.
-- `tasks/LinuxAgent-BugBounty.md` covers shared config/list ownership from the Linux daemon and
+- `logs/2026-07-29_linuxagent-bugbounty.md` covers shared config/list ownership from the Linux daemon and
   separate Game Mode process. WA-04, WA-06, WA-07, and WA-09 must still be verified in the Windows
   tray + Kestrel + timer + CLI shape. A Linux regression alone does not close them.
 - Do not “fix” WA-01 by merely baselining the first `ProcessWatcher` poll. Every later launch is

@@ -7,39 +7,38 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md`
 
 ## High priority
 
-- **Linux agent bug bounty.** Fix the 2026-07-26 review findings before the next Linux release:
-  server-change split brain, removed-game resurrection, non-durable local untracking, stale folder
-  watchers, partial/concurrent enrollment, stale Game Mode config writes, false systemd success,
-  and misleading `doctor` output. Full bounded task and verification gates:
-  `tasks/LinuxAgent-BugBounty.md`.
+**All three bug bounties shipped in v0.5.0 (2026-07-29).** Code is on `main`; what remains is the
+verification that did not happen before the tag. Write-ups:
+`logs/2026-07-29_winagent-bugbounty.md`, `logs/2026-07-29_linuxagent-bugbounty.md`,
+`logs/2026-07-27_console-bugbounty.md`.
 
-- **~~Console / server bug bounty~~ — DONE 2026-07-27.** All 13 findings fixed on
-  `linux-agent-bugbounty` (not pushed), one commit each, with a new 145-check harness
-  (`tests/run-server-bugbounty-tests.ps1`). Archived: `logs/2026-07-27_console-bugbounty.md`.
-  **Two follow-ups it leaves behind**, neither blocking:
-  - the manual LAN enrollment-URL check on the real deployment (see that log → Verification);
-  - the console loads Inter and JetBrains Mono from Google Fonts at runtime, so on a LAN box with no
-    internet it still renders in fallback fonts. CS-13 fixed the import being *discarded*, not the
-    dependency. Self-hosting needs woff2 subsets for five Inter weights; the Deck UI already vendors
-    TTF Regular/SemiBold in `src/Agent.Linux/Ui/Fonts/` (SIL OFL).
+- **v0.5.0 post-release verification.** Ordered by what carries the most risk of the release notes
+  being wrong:
+  - **Run `tests/linux/run-linux-tests.sh` in WSL** (40 checks). It holds the *only* tests for the
+    Linux auto-start and `doctor` fixes, both of which shipped untested. Needs the ext4 clone.
+  - **Deck verification** — the five scenarios in `logs/2026-07-29_linuxagent-bugbounty.md` →
+    Verification. Hardware available since 2026-07-19.
+  - **Second-Windows-account ACL test (WA-03).** The one with a user-visible consequence: the
+    credentials are ACL-locked to the enrolling account and asserted against the well-known SIDs,
+    but no second account has ever tried to read them, and it is unconfirmed that the enrolled user
+    can still sync *and take a silent update* after a reboot. **v0.5.0's notes describe the change
+    rather than promising the guarantee, and Known Issues says so — reword
+    `web/src/releases/0.5.0.md` once this passes.** That file is both the console page and the
+    GitHub Release body, so one edit fixes both.
+  - Remaining Windows gates: fresh-VM install, a real game, a real non-Steam Steam shortcut, and the
+    first-run Settings deep link on a cold WebView2 profile (the automated test drives the same code
+    path through a refused launch, because the prompt is a modal dialog no test can answer).
+  - **LAN enrollment-URL check** on the real deployment (`logs/2026-07-27_console-bugbounty.md` →
+    Verification).
 
-- **Windows agent bug bounty — 8 of 12 done (2026-07-27), WA-09…WA-12 remain.** Fixed on
-  `linux-agent-bugbounty` (not pushed): live-game restores, unsafe save roots, readable machine
-  credentials, non-transactional server changes, the unverified/stale update channel, orphaned lease
-  renewal, unlocked sync after lock timeout, and missing process mappings. **Left:** WA-09 WinForms
-  and live-state thread ownership (the big one — the tray's `SynchronizationContext` is captured
-  before WinForms installs it, so every UI-marshal in `TrayApp.cs` is currently a thread-pool post),
-  WA-10 honest autostart reporting, WA-11 discovery-source isolation, WA-12 first-open deep link.
-  Progress table, weak-evidence notes and outstanding manual gates: `tasks/WinAgent-BugBounty.md`
-  → Progress.
-  **One follow-up it leaves behind** (the env-var question is settled — see `Decisions.md`: kept,
-  unadvertised):
-  - **WA-03 multi-user verification — deferred by the maintainer 2026-07-28, not blocking.** The
-    credentials are ACL-locked to the enrolling account and asserted against the well-known SIDs, but
-    no second Windows account has ever tried to read them, and it is unconfirmed that the enrolled
-    user can still sync *and take a silent update* after a reboot. Revisit when a multi-user Windows
-    box is available. Until then the release notes must describe the ACL change rather than assert
-    that other users cannot read the files — see `Release Notes Pending.md`.
+- **Missing regression tests from the Linux bounty — LA-04/05/06/07.** Folder-watcher refresh,
+  multi-game add, the Game Mode window crash and the settings-write clobber all have code fixes and
+  no tests. This is why several items above have to be checked by hand.
+
+- **Self-host the console fonts.** The console loads Inter and JetBrains Mono from Google Fonts at
+  runtime, so on a LAN box with no internet it renders in fallback fonts. CS-13 fixed the import
+  being *discarded*, not the dependency. Needs woff2 subsets for five Inter weights; the Deck UI
+  already vendors TTF Regular/SemiBold in `src/Agent.Linux/Ui/Fonts/` (SIL OFL).
 
 - **Device-verify fresh Windows installer enrollment.** The wizard shipped in v0.1.7; the upgrade path is well verified. The **fresh install** (clean box, no `%PROGRAMDATA%\SaveLocker`) has never been exercised. Scenarios archived in `logs/2026-07-14_installer-enrollment.md`:
   - Happy path: run installer, choose enrollment file → page shows server + machine name → install → machine appears online in Machines.
