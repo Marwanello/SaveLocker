@@ -28,7 +28,7 @@ stale output cannot mask a fix.
 
 ## Progress (updated 2026-07-27)
 
-**10 of 12 findings fixed on `linux-agent-bugbounty`, one commit each. Not pushed.**
+**11 of 12 findings fixed on `linux-agent-bugbounty`, one commit each. Not pushed.**
 
 | ID | State | Commit |
 |---|---|---|
@@ -42,12 +42,12 @@ stale output cannot mask a fix.
 | WA-08 | done | `c27197e` |
 | WA-09 | done — **1 of 6 checks discriminates, see below** | `4a3ac4c` |
 | WA-10 | done — 6 of 13 checks discriminate | `27d9a50` |
-| WA-11 | **not started — resume here** | — |
-| WA-12 | not started | — |
+| WA-11 | done — 4 of 6 checks discriminate | (this commit) |
+| WA-12 | **not started — resume here** | — |
 
 ### Harness
 
-`tests/run-winagent-tests.ps1` — **101 checks**, own server on :5189 (+ :5190–:5197), state in
+`tests/run-winagent-tests.ps1` — **107 checks**, own server on :5189 (+ :5190–:5197), state in
 `.verify-winagent`.
 Each finding's block is verified to fail against pre-fix code by `git stash push -- src/`, rebuild,
 re-run. Where that check is weaker than "N of N fail", the commit message says so explicitly.
@@ -56,6 +56,16 @@ re-run. Where that check is weaker than "N of N fail", the commit message says s
 
 Read these before trusting the suite as proof:
 
+- **WA-11** — **4 of 6 fail pre-fix**. Of the two that do not: "the unreadable save root really is
+  unreadable" is a fixture sanity check by design (a Deny ACE that silently failed to apply would
+  make the whole block pass for the wrong reason), and "the unreadable root yields nothing" passes
+  **vacuously** pre-fix — the scan crashed, so it yielded nothing at all. It earns its place only
+  once the scan survives.
+  <br>Not covered: the Steam sources. `FindSteamPath` reads the real registry and is not injectable,
+  so a fake Steam root cannot be substituted headlessly, and making a real Steam library unreadable
+  to prove a point is not an acceptable test. `SteamShortcuts.ReadAllAsync`'s per-account isolation
+  and the `.acf`/`libraryfolders.vdf` guards rest on code review. Verification item 9 covers them by
+  hand.
 - **WA-10** — **6 of 13 fail pre-fix**, and the seven that pass are not vacuous: writing and removing
   the Run entry worked before too, so those checks are shared ground rather than dead weight. One is
   worth naming — "the toggle stays OFF after a refused write" passes pre-fix because the Deny ACE

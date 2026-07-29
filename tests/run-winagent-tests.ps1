@@ -79,6 +79,13 @@
 #          location here (SAVELOCKER_RUNKEY_SUBPATH) so the access-denied branch can be exercised
 #          without applying a Deny ACE to the real one.
 #
+#   WA-11. One bad discovery source is skipped, not fatal.
+#          Only PARSE errors were caught, so an access-denied Steam userdata directory, a library on
+#          a drive unplugged mid-enumeration, or a redirected Documents folder threw out of the
+#          whole scan: zero candidates, and no manual setup path to work around it either. Driven
+#          against a fake USERPROFILE - two of the six common save roots come from it - so the
+#          unreadable directory is one this suite created and never the machine's own.
+#
 # Owns its server on :5189 (and :5190-:5196 for daemons, stub servers and the WA-09 tray) and its
 # state under .verify-winagent, so it never collides with a real agent, a dev server, or another
 # suite.
@@ -1060,6 +1067,98 @@ try {
             Remove-Item "HKCU:\Software\SaveLockerTest-$stamp" -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
+
+    # =================================================================================
+    # WA-11. ONE BAD DISCOVERY SOURCE IS SKIPPED, NOT FATAL
+    # =================================================================================
+    # Discovery reads places the agent does not control: Steam userdata owned by another Windows
+    # account, a library on a drive that can be unplugged mid-enumeration, a redirected Documents
+    # folder. Only PARSE errors were caught, so any of those threw out of the whole scan - the user
+    # got a failed rescan with zero candidates, which also takes away the manual setup path they
+    # would have used to work around it.
+    #
+    # Driven through the CLI `scan` against a fake USERPROFILE, so the denied directory is one this
+    # suite created. Two of the six common save roots come from USERPROFILE, which is what makes
+    # this testable without touching the machine's real profile: LocalLow is made unreadable and
+    # Saved Games is left healthy. Pre-fix, LocalLow is enumerated FIRST and takes Saved Games with
+    # it.
+    $wa11Home  = Join-Path $scratch "wa11profile"
+    $wa11Low   = Join-Path $wa11Home "AppData\LocalLow"
+    $wa11Saved = Join-Path $wa11Home "Saved Games"
+    $healthy   = "WA11Healthy-$stamp"
+    $hidden    = "WA11Hidden-$stamp"
+    New-Item -ItemType Directory -Force (Join-Path $wa11Saved $healthy) | Out-Null
+    New-Item -ItemType Directory -Force (Join-Path $wa11Low $hidden) | Out-Null
+
+    # A manifest naming both, so both folders WOULD match if their root could be read.
+    $wa11Manifest = Join-Path $scratch "wa11-manifest.yaml"
+    @(
+        "$($healthy):"
+        "  files:"
+        "    <winAppData>/$($healthy):"
+        "      tags:"
+        "        - save"
+        "$($hidden):"
+        "  files:"
+        "    <winAppData>/$($hidden):"
+        "      tags:"
+        "        - save"
+    ) -join "`n" | Set-Content -Path $wa11Manifest -Encoding utf8
+
+    $wa11Cfg = Join-Path $scratch "wa11.json"
+    @{ ServerUrl = $server; Games = @(); ManifestCachePath = $wa11Manifest } |
+        ConvertTo-Json | Set-Content -Path $wa11Cfg -Encoding utf8
+
+    $logPath11 = Join-Path $env:ProgramData "SaveLocker\agent.log"
+    $mark11 = if (Test-Path $logPath11) { (Get-Item $logPath11).Length } else { 0 }
+
+    # Deny THIS user the right to list LocalLow. Everything below runs inside try/finally so the
+    # ACE is removed even on a failure - a directory nothing can enumerate is a poor thing to leave
+    # behind in a scratch tree.
+    $lowAcl  = Get-Acl $wa11Low
+    $meSid   = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $denyDir = New-Object Security.AccessControl.FileSystemAccessRule(
+        $meSid, "ListDirectory,ReadData", "ContainerInherit,ObjectInherit", "None", "Deny")
+    $lowAcl.AddAccessRule($denyDir)
+    Set-Acl -Path $wa11Low -AclObject $lowAcl
+
+    $realHome = $env:USERPROFILE
+    try {
+        # Confirm the fixture is actually hostile. A test whose setup silently succeeded would pass
+        # against pre-fix code for the wrong reason.
+        $denied = $false
+        try { Get-ChildItem $wa11Low -ErrorAction Stop | Out-Null } catch { $denied = $true }
+        Check "WA-11 the unreadable save root really is unreadable" $denied
+
+        $env:USERPROFILE = $wa11Home
+        $scanOut = (Agent scan --config $wa11Cfg) | Out-String
+        $scanExit = $LASTEXITCODE
+    }
+    finally {
+        $env:USERPROFILE = $realHome
+        $lowAcl2 = Get-Acl $wa11Low
+        $lowAcl2.RemoveAccessRuleAll($denyDir)
+        Set-Acl -Path $wa11Low -AclObject $lowAcl2
+    }
+
+    Check "WA-11 the scan completes instead of failing"       ($scanExit -eq 0)
+    Check "WA-11 the healthy save root still yields its game" ($scanOut -match [regex]::Escape($healthy))
+    Check "WA-11 the unreadable root yields nothing"          (-not ($scanOut -match [regex]::Escape($hidden)))
+    Check "WA-11 the scan did not report an unhandled error"  (
+        -not ($scanOut -match "(?i)unhandled|stack trace|at SaveLocker\."))
+
+    # Reported, not silently swallowed: a source that vanishes without a trace is its own bug.
+    $log11 = ""
+    if (Test-Path $logPath11) {
+        $fs11 = [System.IO.File]::Open($logPath11, 'Open', 'Read', 'ReadWrite')
+        try {
+            if ($fs11.Length -lt $mark11) { $mark11 = 0 }
+            $fs11.Seek($mark11, 'Begin') | Out-Null
+            $log11 = (New-Object System.IO.StreamReader($fs11)).ReadToEnd()
+        } finally { $fs11.Dispose() }
+    }
+    Check "WA-11 the skipped source is reported in the log" (
+        $log11 -match "(?i)Scan:.*(LocalLow|enumerat)")
 }
 finally {
     Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue

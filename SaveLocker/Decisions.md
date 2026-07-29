@@ -150,6 +150,19 @@ session can judge an edge case, not to reopen the choice.
   throw "Collection was modified" out of a UI or render thread enumerating it.
   <br>`SAVELOCKER_TRAY_PORT` was added under the rule below so a harness can drive a real tray; it
   scopes the single-instance mutex too, so a test tray and the installed one coexist.
+- **Discovery is per-source best-effort; one bad source cannot fail the scan** (WA-11, 2026-07-28).
+  The scanner reads places the agent does not control — Steam `userdata` directories owned by other
+  Windows accounts, a library on a drive that can be unplugged mid-enumeration, a redirected or
+  cloud-backed Documents folder. Only **parse** errors were caught, so any of those threw out of
+  `ScanAsync` entirely: zero candidates, and the manual setup path the user would have used to work
+  around it was gone too, since the UI reaches it through the same failed request.
+  <br>Each source now runs inside its own boundary and is logged and skipped on failure. The
+  enumeration guard is the part worth remembering: `Directory.EnumerateDirectories` and
+  `EnumerateFiles` fail **lazily**, on the `MoveNext` that reaches the bad entry — a `try` around the
+  call site catches nothing, so the enumerator is stepped explicitly and whatever was read before the
+  failure is kept.
+  <br>`OperationCanceledException` still propagates: a cancelled scan is the caller's own doing, not
+  a broken source. Registry keys are opened with `using` rather than left to the finalizer.
 - **A platform toggle reports the effective state, not the requested one** (WA-10, 2026-07-28).
   "Start with Windows" had two independent ways to lie. `/api/config` discarded
   `IAutoStart.SetEnabled`'s result and always answered ok, so a registry write refused by group

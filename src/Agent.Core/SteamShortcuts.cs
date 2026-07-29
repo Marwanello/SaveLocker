@@ -54,19 +54,51 @@ public static class SteamShortcuts
         return results;
     }
 
-    /// <summary>Every shortcut across every Steam user account under a Steam root.</summary>
+    /// <summary>
+    /// Every shortcut across every Steam user account under a Steam root.
+    ///
+    /// <para>
+    /// One unreadable account does not lose the others. <c>userdata</c> holds a directory per Steam
+    /// account that has signed in on this machine, and on a shared PC those belong to different
+    /// Windows users — so an access-denied read there is the normal case, not a corrupt install. It
+    /// used to throw out of the entire scan. WA-11.
+    /// </para>
+    /// </summary>
     public static async Task<IReadOnlyList<SteamShortcut>> ReadAllAsync(
         string steamRoot, CancellationToken ct = default)
     {
         var results = new List<SteamShortcut>();
         var userdata = Path.Combine(steamRoot, "userdata");
-        if (!Directory.Exists(userdata)) return results;
 
-        foreach (var userDir in Directory.EnumerateDirectories(userdata))
+        List<string> userDirs;
+        try
         {
+            if (!Directory.Exists(userdata)) return results;
+            // Materialised inside the try: EnumerateDirectories fails lazily, so leaving it as a
+            // lazy sequence moves the failure into the loop below where it is harder to contain.
+            userDirs = Directory.EnumerateDirectories(userdata).ToList();
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException
+                                      or System.Security.SecurityException)
+        {
+            AgentLogger.Log($"Scan: could not list Steam userdata at '{userdata}' ({ex.GetType().Name}). No shortcuts from this root.");
+            return results;
+        }
+
+        foreach (var userDir in userDirs)
+        {
+            ct.ThrowIfCancellationRequested();
             var vdf = Path.Combine(userDir, "config", "shortcuts.vdf");
-            if (!File.Exists(vdf)) continue;
-            results.AddRange(Parse(await File.ReadAllBytesAsync(vdf, ct)));
+            try
+            {
+                if (!File.Exists(vdf)) continue;
+                results.AddRange(Parse(await File.ReadAllBytesAsync(vdf, ct)));
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException
+                                          or System.Security.SecurityException)
+            {
+                AgentLogger.Log($"Scan: could not read '{vdf}' ({ex.GetType().Name}). Skipping this Steam account.");
+            }
         }
         return results;
     }
