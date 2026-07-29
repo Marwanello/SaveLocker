@@ -44,7 +44,7 @@ The code work is complete; the manual verification below is not. See "Still outs
 | WA-09 | done — **1 of 6 checks discriminates, see below** | `4a3ac4c` |
 | WA-10 | done — 6 of 13 checks discriminate | `27d9a50` |
 | WA-11 | done — 4 of 6 checks discriminate | `394b134` |
-| WA-12 | done — 2 of 7 checks discriminate | (this commit) |
+| WA-12 | done — 2 of 7 checks discriminate | `081dea4` |
 
 ### Harness
 
