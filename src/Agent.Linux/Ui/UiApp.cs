@@ -347,6 +347,10 @@ sealed class UiApp
         NavDebug.BeginFrame();
         Widgets.BeginFrame();
         FeedImGuiNav();
+        // Before Update, which is what calls NewFrame: a queued mouse position must be in the queue
+        // NewFrame drains, because NewFrame is also where HoveredWindow is resolved. MouseDelta read
+        // here is last frame's, which costs the highlight a frame nobody can perceive.
+        TrackCursorOwner();
 
         // SDL's error string is sticky — it is never cleared on success, only overwritten on the
         // next failure. Silk's SdlContext.FramebufferSize calls SDL_GL_GetDrawableSize (which
@@ -357,10 +361,6 @@ sealed class UiApp
         try { SdlApi.GetApi().ClearError(); } catch { /* best-effort */ }
 
         _controller.Update((float)delta);
-
-        // AFTER Update, which is what calls NewFrame: MousePos/MouseDelta are this frame's values
-        // there, and no widget has been submitted yet, so this still governs every hover test below.
-        TrackCursorOwner();
 
 
         _gl.ClearColor(Theme.BgGlobal.X, Theme.BgGlobal.Y, Theme.BgGlobal.Z, 1.0f);
@@ -1398,14 +1398,18 @@ sealed class UiApp
     {
         var io = ImGui.GetIO();
 
-        // Assigned, not queued through AddMousePosEvent. A queued event is processed by the NEXT
-        // NewFrame, so it lands one frame late and alternates with whatever the real pointer is —
-        // which manufactures a delta on every single frame and makes the park look like frantic
-        // movement. Writing MousePos here is authoritative for this frame's hover tests, and a
-        // parked pointer is stationary by definition, so it never claims the cursor.
+        // The park is queued rather than assigned to io.MousePos, because NewFrame is where
+        // HoveredWindow is resolved and an assignment made after it can never make a CHILD window
+        // report hover — only the queue gets there in time.
+        //
+        // Returning early is the important half. The injection races Silk, which writes the real
+        // pointer position during the same Update, so the resolved position alternates and
+        // MouseDelta is non-zero on nearly every frame. A parked pointer is stationary by
+        // definition, so that delta is an artifact of the harness and must never be read as the
+        // user reaching for the trackpad — which is precisely the thing under test.
         if (_pointerPark is { } park)
         {
-            io.MousePos = park;
+            io.AddMousePosEvent(park.X, park.Y);
             return;
         }
 
