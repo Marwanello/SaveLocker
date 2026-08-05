@@ -6,24 +6,24 @@ dashboard + embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[
 
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** main
 
-**Current released version:** **v0.5.0** (released 2026-07-29). GHCR package `savelocker` is
+**Current released version:** **v0.5.1** (released 2026-08-05). GHCR package `savelocker` is
 **public** — see [[Gotchas]].
 
 ---
 
 ## Status
 
-**Merged to `main`: PR #32, `fleet-version-and-deck-focus` (2026-08-05, → `69e9691`).** Two reported
-faults, both fixed, plus the harness change that proved one of them. **Unreleased — no tag carries
-this yet**, so the fleet will not pick it up until the next release goes out.
+**Shipped in v0.5.1 (2026-08-05): PR #32 `fleet-version-and-deck-focus` (→ `69e9691`), notes as
+PR #34.** Two reported faults, both fixed, plus the harness change that proved one of them. The
+rollout is what remains — see Deploying below.
 
 1. **The fleet reported three agent versions for two releases** — `v0.5.0` and `v0.5.0.0` are the
    same build. The heartbeat sent `Version.ToString()`, which prints as many components as it parsed
    from: Windows reads the four-part PE version resource, Linux the three-part
    `AssemblyFileVersion`. Everything now goes through one `UpdateChecker.CurrentVersionText`
    (`Major.Minor.Patch`), and `versionSkew.normalizeVersion` collapses the old strings console-side
-   so a fleet mid-upgrade stops being flagged as mixed. `v0.4.1.0` is a genuinely old agent — that
-   machine still needs the update pushed.
+   so a fleet mid-upgrade stops being flagged as mixed. (The `v0.4.1.0` machine seen alongside these
+   was a genuinely old agent; the fleet was brought to v0.5.0 on 2026-08-05.)
 2. **The Deck's double highlight** — hover and focus paint the same ring, and gamescope always hands
    the app a pointer position, so a stationary pointer painted a second selector the D-pad could not
    move and A did not activate. Gated on `Widgets.PointerDrives`. This alone explains "A does
@@ -61,12 +61,13 @@ Everything before this is indexed in `logs/shipped-2026-07.md` + `logs/sessions.
 **Post-release verification, in this order.** Nothing here is a code change; it is confirming that
 what shipped does what the notes claim.
 
-0. **The two PR #32 fixes on hardware** — fold these into the Deck trip in step 2 rather than making
-   a separate one. WSLg proved the hover fix and cannot prove the frame-0 one. On device: open the UI
+0. **Roll v0.5.1 out, then verify it** — redeploy the console, upload the new installer in Config →
+   Agent Updates, re-run `install.sh` on the Deck. Config should then show **one** fleet version;
+   that is the whole point of the release and the only place the fix is visible.
+   **The two Deck fixes need hardware** — fold them into the Deck trip in step 2 rather than making a
+   separate one. WSLg proved the hover fix and cannot prove the frame-0 one. On device: open the UI
    cold and confirm exactly one ring with A working immediately, then rest a trackpad cursor
-   somewhere and confirm no second selector appears. Console → Config shows a single fleet version
-   only once every agent is running a build that carries #32 — nothing released does yet — and the
-   machine still on `v0.4.1.0` needs the update pushed regardless.
+   somewhere and confirm no second selector appears.
 
 1. **Run `tests/linux/run-linux-tests.sh` in WSL** (40 checks). It holds the *only* tests for the
    Linux auto-start and `doctor` fixes, both of which shipped in v0.5.0 untested. Needs the ext4
@@ -86,15 +87,24 @@ what shipped does what the notes claim.
 Missing regression tests (not blocking, but they are the reason some of the above is manual):
 LA-04/05/06/07 have code fixes and no tests.
 
-## Deploying v0.5.0
+## Deploying v0.5.1
 
-**Back up `/data` first.** Two schema migrations run on first start, and this is the first release
-where downgrading the container is not a clean rollback. `ghcr.io/skorcherx/savelocker:latest`
-already carries them — it was published on merge, before the tag.
+**No migration** — unlike v0.5.0, downgrading the container is a clean rollback again.
 
-The console must be redeployed. Windows agents self-update once the installer is uploaded to the
-console (the GitHub Release asset is *not* automatically what the fleet is offered). Deck users
-re-run `install.sh` from the newer tarball.
+The console must be redeployed **and every agent updated**: the version-display fix is split across
+both halves, so doing one and not the other leaves Config still showing a version split. Windows
+agents self-update once the installer is uploaded to the console (**the GitHub Release asset is not
+automatically what the fleet is offered** — upload it in Config → Agent Updates). Deck users re-run
+`install.sh` from the newer tarball.
+
+The fleet was on v0.5.0 as of 2026-08-05, so the `0.5.0` / `0.5.0.0` split is what Config shows until
+this rollout completes.
+
+### Deploying v0.5.0 (kept — it is the last one that needed care)
+
+**Back up `/data` first.** Two schema migrations run on first start, and this was the first release
+where downgrading the container was not a clean rollback. Anyone upgrading from before v0.5.0 still
+crosses that boundary.
 
 ## Open work
 
