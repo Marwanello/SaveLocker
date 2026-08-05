@@ -43,6 +43,10 @@ while [ $# -gt 0 ]; do
     --autoscan)   EXTRA="$EXTRA --autoscan" ;;
     --nav)        EXTRA="$EXTRA --nav ${2:?--nav needs a sequence, e.g. right,down,a}"; shift ;;
     --nav-debug)  EXTRA="$EXTRA --nav-debug" ;;   # live focus/zone/request read-out, top right
+    # Park a stationary pointer. WSLg leaves the real one outside the window, so hover is dead in
+    # every unattended capture — but gamescope always gives the app a pointer position. This is how
+    # a hover-vs-focus bug is reproduced off-device.
+    --pointer)    EXTRA="$EXTRA --pointer ${2:?--pointer needs X,Y}"; shift ;;
     *x*)          SIZE="$1" ;;
     *) echo "Unknown argument '$1'. Usage: run-ui-wslg.sh [WxH] [--no-build] [--gallery] [--screenshot out.png]" >&2; exit 2 ;;
   esac

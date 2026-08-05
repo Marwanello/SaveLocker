@@ -136,9 +136,10 @@ sealed class UiApp
 
     public static int Run(AgentConfig config, string? sizeOverride = null, string? screenshotPath = null,
         bool gallery = false, string? startScreen = null, bool autoScan = false,
-        string? navScript = null, bool navDebug = false)
+        string? navScript = null, bool navDebug = false, string? pointerAt = null)
     {
         NavDebug.Enabled = navDebug;
+        _pointerPark = ParsePointer(pointerAt);
 
         // Printed before the window opens, so the probe result is readable even from a run that
         // cannot open a display — which is how a self-contained publish gets checked on a Deck.
@@ -1358,6 +1359,31 @@ sealed class UiApp
     }
 
     /// <summary>
+    /// Park a synthetic pointer at a fixed position for the whole run — <c>--pointer X,Y</c>.
+    ///
+    /// A development affordance, and the only way to reproduce a Deck symptom off-device. WSLg leaves
+    /// the pointer outside the window unless a person is holding it there, so hover is dead in every
+    /// unattended capture; gamescope always hands the app a pointer position whether or not anyone has
+    /// touched the trackpad. Parking one makes the difference testable in a screenshot.
+    ///
+    /// It is deliberately STATIONARY: it never generates a MouseDelta, which is exactly the case that
+    /// used to paint a second selector nobody could move.
+    /// </summary>
+    private static Vector2? _pointerPark;
+
+    private static Vector2? ParsePointer(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var parts = raw.Split(',');
+        if (parts.Length == 2 &&
+            float.TryParse(parts[0], out var x) && float.TryParse(parts[1], out var y))
+            return new Vector2(x, y);
+
+        Console.Error.WriteLine($"Ignoring bad --pointer '{raw}' — expected X,Y.");
+        return null;
+    }
+
+    /// <summary>
     /// Decide which input owns the cursor this frame — see <see cref="Widgets.PointerDrives"/>.
     ///
     /// Starts false: a Deck is a gamepad first, and gamescope hands the app a pointer position
@@ -1368,6 +1394,10 @@ sealed class UiApp
     private static void TrackCursorOwner()
     {
         var io = ImGui.GetIO();
+
+        // Re-asserted every frame: Silk's backend writes the real pointer position each frame, so
+        // setting this once would be overwritten immediately.
+        if (_pointerPark is { } park) io.AddMousePosEvent(park.X, park.Y);
 
         // ImGui seeds MousePos at -FLT_MAX, so the first frame with a real position produces a
         // delta the size of the float range. That is the backend arriving, not the user moving.

@@ -57,7 +57,8 @@ static class Program
                     opts.GetValueOrDefault("screen"),
                     opts.ContainsKey("autoscan"),
                     opts.GetValueOrDefault("nav"),
-                    opts.ContainsKey("nav-debug"));
+                    opts.ContainsKey("nav-debug"),
+                    opts.GetValueOrDefault("pointer"));
 
             case "autostart":
             {
