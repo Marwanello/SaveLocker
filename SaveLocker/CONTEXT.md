@@ -13,8 +13,9 @@ dashboard + embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[
 
 ## Status
 
-**In flight: `fleet-version-and-deck-focus` (4 commits, local, not pushed, no PR).** Two reported
-faults, both fixed, plus the harness change that proved one of them.
+**Merged to `main`: PR #32, `fleet-version-and-deck-focus` (2026-08-05, → `69e9691`).** Two reported
+faults, both fixed, plus the harness change that proved one of them. **Unreleased — no tag carries
+this yet**, so the fleet will not pick it up until the next release goes out.
 
 1. **The fleet reported three agent versions for two releases** — `v0.5.0` and `v0.5.0.0` are the
    same build. The heartbeat sent `Version.ToString()`, which prints as many components as it parsed
@@ -36,7 +37,7 @@ read out of each): pointer on Quit → before, Overview *and* Quit ringed while 
 banner's dismiss X *and* the row; after, the focused control only.
 
 **The rail's first-frame `SetKeyboardFocusHere` seed was removed and then put back** (2026-08-05,
-maintainer's call — the branch carries no unverified change). It is still suspected: it cannot place
+maintainer's call — nothing unverified shipped). It is still suspected: it cannot place
 a cursor from a `NavFlattened` child, and it resolves at the end of frame 0 on top of the request
 `RecoverStrandedCursor` places the same frame. But **WSLg cannot reproduce the failure** — a settled
 screenshot is captured long after the recovery invariant has repaired it, and both builds open on
@@ -57,16 +58,15 @@ Everything before this is indexed in `logs/shipped-2026-07.md` + `logs/sessions.
 
 ## Next action
 
-**Land `fleet-version-and-deck-focus` first** — it is pushed; open the PR and add the Deck-only
-checks below to the verification list. Then continue with the post-release work.
-
 **Post-release verification, in this order.** Nothing here is a code change; it is confirming that
 what shipped does what the notes claim.
 
-0. **The two Deck fixes on hardware.** WSLg proved the hover fix and cannot prove the frame-0 one.
-   On device: open the UI cold and confirm exactly one ring with A working immediately, then rest a
-   trackpad cursor somewhere and confirm no second selector appears. Once agents are updated,
-   Console → Config must show a single fleet version.
+0. **The two PR #32 fixes on hardware** — fold these into the Deck trip in step 2 rather than making
+   a separate one. WSLg proved the hover fix and cannot prove the frame-0 one. On device: open the UI
+   cold and confirm exactly one ring with A working immediately, then rest a trackpad cursor
+   somewhere and confirm no second selector appears. Console → Config shows a single fleet version
+   only once every agent is running a build that carries #32 — nothing released does yet — and the
+   machine still on `v0.4.1.0` needs the update pushed regardless.
 
 1. **Run `tests/linux/run-linux-tests.sh` in WSL** (40 checks). It holds the *only* tests for the
    Linux auto-start and `doctor` fixes, both of which shipped in v0.5.0 untested. Needs the ext4

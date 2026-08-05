@@ -5,6 +5,42 @@ Full commit detail in `git log`. Active backlog in `Backlog.md`.
 
 ---
 
+## 2026-08-05 — Fleet version strings + the Deck double highlight (PR #32)
+
+Two field reports, one root cause each, and a testing lesson that outlasts both. Merged to `main`
+(`69e9691`); **unreleased — no tag carries it**.
+
+**"Why do we have v0.5.0 and v0.5.0.0?"** We didn't — one build reported itself two ways.
+`HealthReporter` sent `Version.ToString()`, which prints as many components as it was parsed from,
+and the platforms parse from different places: the Windows PE version resource is four-part, the
+Linux `AssemblyFileVersion` attribute three-part. Every other call site already used `.ToString(3)`;
+the heartbeat, the one thing the console displays, was the sole exception. It presented as a fleet
+running mixed versions — which is a real fault with real consequences — rather than as a formatting
+bug. One `UpdateChecker.CurrentVersionText` now feeds every surface, and `normalizeVersion` collapses
+already-recorded strings console-side so a fleet mid-upgrade is not flagged.
+
+**The Deck's double highlight.** Hover and focus paint the same ring on purpose, so a mouse-driven
+dev session looks like a gamepad-driven one. But gamescope always supplies a pointer position whether
+or not anyone touched the trackpad, so a *stationary* pointer painted a second selector on whatever
+it rested over — one the D-pad could not move and A did not activate. That also fully explains "A
+does nothing": focus was on Overview all along, so A re-selected the screen already showing while the
+eye was on the Quit ring. No frame-0 nav bug was needed to explain the report.
+
+**The lesson: the first A/B proved nothing, and looked like it proved everything.** Before and after
+came back pixel-identical, because WSLg leaves the real pointer outside the window (hover dead) and
+captures after settle (frame-0 race already repaired). Reproducing the symptom needed a new
+affordance — `--pointer X,Y` — and that took two wrong turns, each of which *looked* like success:
+queued through `AddMousePosEvent` it raced Silk's own write and manufactured a delta every frame, so
+the harness claimed the cursor and the test measured the harness; assigned to `io.MousePos` after
+`NewFrame` it silently killed hover everywhere, because `HoveredWindow` is resolved inside `NewFrame`
+— producing another matching, meaningless pair. Three `Gotchas.md` entries came out of this.
+
+**What was deliberately not shipped.** The rail's first-frame `SetKeyboardFocusHere` seed was removed
+on sound reasoning and then restored, because WSLg cannot reproduce the failure it supposedly causes
+and an unverified change was not worth carrying. The suspicion lives at the call site.
+
+---
+
 ## 2026-07-29 — v0.5.0: three bug bounties shipped
 
 WA-09…WA-12 finished the Windows bounty, then all three bounties merged (PR #30), the notes landed
