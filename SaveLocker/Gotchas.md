@@ -185,6 +185,20 @@ behave in ways that look like bugs.
 - **Don't upgrade ImGui.NET expecting a nav fix** — 1.91.6.1 was tried and reverted 2026-07-25;
   it didn't fix dead-Left and broke the working Right-cross. The nav fix lives in the internal-API
   binding above, on 1.90.8.1, and needs no newer package.
+- **Hover and focus paint the same ring, so hover must be gated on `Widgets.PointerDrives`.** A Deck
+  has a pointer whether or not anyone touched the trackpad — gamescope always supplies a position —
+  and an ungated `IsItemHovered()` paints a SECOND selector, on a different pane from the real one,
+  that the D-pad cannot move and A does not activate. It presents as "two things highlighted and A
+  does nothing", not as a mouse problem, and it is only as reproducible as where the pointer happens
+  to rest. Any new focusable widget must go through `Widgets.Hot()`.
+- **Mouse position must be injected BEFORE `_controller.Update()`**, which is what calls `NewFrame` —
+  and `NewFrame` is where `HoveredWindow` is resolved. Assigning `io.MousePos` after it still moves
+  the hit-test rect, so it looks like it works, but no CHILD window will ever report hover: hover
+  goes silently dead everywhere and an A/B comes back identical for the wrong reason.
+- **A parked pointer still produces a non-zero `MouseDelta` every frame.** The injection races Silk,
+  which writes the real position during the same `Update`, so the resolved position alternates. Read
+  naively, the harness itself looks like frantic mouse movement and claims the cursor — the test
+  measures the harness, not the code. `--pointer` skips the movement test entirely for this reason.
 
 ## Test harness
 - **Start the dev server with `ASPNETCORE_ENVIRONMENT=Development`**, or it never reads

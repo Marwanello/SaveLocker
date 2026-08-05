@@ -12,6 +12,12 @@ verification that did not happen before the tag. Write-ups:
 `logs/2026-07-29_winagent-bugbounty.md`, `logs/2026-07-29_linuxagent-bugbounty.md`,
 `logs/2026-07-27_console-bugbounty.md`.
 
+- **Land `fleet-version-and-deck-focus`** (4 commits, local only). Fleet version-string split and
+  the Deck double-highlight, both fixed; see [[CONTEXT]] → Status. Two things to settle before it
+  merges: whether to keep the **unproven** rail seed-removal commit, and the on-device checks —
+  one ring at open with A live, no second selector under a resting trackpad cursor, and a single
+  version in Console → Config once agents update.
+
 - **v0.5.0 post-release verification.** Ordered by what carries the most risk of the release notes
   being wrong:
   - **Run `tests/linux/run-linux-tests.sh` in WSL** (40 checks). It holds the *only* tests for the
