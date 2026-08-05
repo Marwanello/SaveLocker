@@ -65,9 +65,6 @@ sealed class UiApp
     // the Deck across a whole session, same failure as the focus ring's alpha-only pulse.
     private const float ScreenFadeSeconds = 0.30f;
 
-    /// <summary>Put the nav cursor on the rail on the first frame, so the D-pad works immediately.</summary>
-    private bool _focusRailOnce = true;
-
     // Which pane owns the cursor. Only that pane is navigable, so a directional move can never
     // wander across the boundary by accident; crossing panes is always deliberate.
     private enum Zone { Rail, Content }
@@ -330,8 +327,8 @@ sealed class UiApp
     private void OnRender(double delta)
     {
         // Feed one scripted press every few frames, through the same queue the pad writes to.
-        // Nothing is injected until focus has settled: SetKeyboardFocusHere resolves at the end of
-        // the first frame and overrides nav movement, so a press on frame 0 is simply eaten.
+        // Nothing is injected until focus has settled: the cursor is placed by a focus request that
+        // resolves on the frame after it is armed, so a press on frame 0 is simply eaten.
         // Wait for in-flight work before replaying: a real user presses Right after a scan has
         // finished, not into a spinner, and a script that races the scan tests nothing useful.
         var scriptReady = _framesRendered >= NavScriptStartFrame
@@ -349,6 +346,7 @@ sealed class UiApp
         NavDebug.BeginFrame();
         Widgets.BeginFrame();
         FeedImGuiNav();
+        TrackCursorOwner();
 
         // SDL's error string is sticky — it is never cleared on success, only overwritten on the
         // next failure. Silk's SdlContext.FramebufferSize calls SDL_GL_GetDrawableSize (which
@@ -666,17 +664,21 @@ sealed class UiApp
 
         foreach (var (label, icon, target, active) in items)
         {
-            // Land the cursor on the rail entry for the screen already being shown. Without an
-            // initial nav target ImGui starts with nothing focused, so the first D-pad press only
-            // picks a starting item and appears to do nothing.
-            if (_focusRailOnce && active)
-            {
-                _focusRailOnce = false;
-                ImGui.SetKeyboardFocusHere();
-            }
             if (Widgets.RailItem(label, icon, active)) Go(target);
             if (active) _activeRailId = Widgets.LastRailItemId;
         }
+
+        // There is deliberately no first-frame SetKeyboardFocusHere here any more. Seeding the cursor
+        // is RecoverStrandedCursor's job — nothing is focused on frame 0, which is precisely the
+        // condition it exists to repair, and it routes through igSetFocusID.
+        //
+        // The old call could not do it anyway: the rail is a NavFlattened child, and
+        // SetKeyboardFocusHere is a tabbing request confined to the active focus scope
+        // (ocornut/imgui#7226) — the exact restriction ImGuiInternal exists to get around. What it
+        // DID do was resolve at the end of frame 0 and override the recovery request placed the same
+        // frame, so the app opened with NavId == 0: no ring, A inert, and the first D-pad press spent
+        // picking a starting item instead of moving. Reported from the Deck as "A does nothing until
+        // I press up or down".
 
         // Quit sits at the bottom, away from the destinations — it is not a place you go.
         var used = ImGui.GetCursorPosY();
@@ -1348,7 +1350,35 @@ sealed class UiApp
             io.AddKeyEvent(k, true);
         _navDownLastFrame = fire;
 
+        // A D-pad press takes the cursor back from the pointer. Done here rather than in
+        // TrackCursorOwner so the change applies to the frame the press is fed, not the one after.
+        if (fire.Length > 0) Widgets.PointerDrives = false;
+
         NavDebug.NoteKeys(fire);
+    }
+
+    /// <summary>
+    /// Decide which input owns the cursor this frame — see <see cref="Widgets.PointerDrives"/>.
+    ///
+    /// Starts false: a Deck is a gamepad first, and gamescope hands the app a pointer position
+    /// whether or not anyone has touched the trackpad. Treating that stationary pointer as live is
+    /// what painted a highlight on whatever it happened to be resting over — a second selector that
+    /// the D-pad did not move and A did not activate.
+    /// </summary>
+    private static void TrackCursorOwner()
+    {
+        var io = ImGui.GetIO();
+
+        // ImGui seeds MousePos at -FLT_MAX, so the first frame with a real position produces a
+        // delta the size of the float range. That is the backend arriving, not the user moving.
+        var d = io.MouseDelta;
+        const float Absurd = 1e5f;
+        bool moved = MathF.Abs(d.X) < Absurd && MathF.Abs(d.Y) < Absurd &&
+                     (MathF.Abs(d.X) > 0.5f || MathF.Abs(d.Y) > 0.5f);
+
+        if (moved || ImGui.IsMouseClicked(ImGuiMouseButton.Left) ||
+            ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+            Widgets.PointerDrives = true;
     }
 
     /// <summary>

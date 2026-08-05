@@ -357,7 +357,7 @@ public static class AgentCli
                     switch (result)
                     {
                         case UpdateResult.UpToDate:
-                            Console.WriteLine($"Up to date (v{UpdateChecker.CurrentVersion.ToString(3)}).");
+                            Console.WriteLine($"Up to date (v{UpdateChecker.CurrentVersionText}).");
                             break;
                         case UpdateResult.Skipped:
                             Console.WriteLine($"v{config.SkipVersion} is available but was skipped.");
@@ -366,7 +366,7 @@ public static class AgentCli
                             Console.Error.WriteLine($"Update check failed: {f.Reason}");
                             return 1;
                         case UpdateResult.Available a:
-                            Console.WriteLine($"v{a.Version} is available (current {UpdateChecker.CurrentVersion.ToString(3)}).");
+                            Console.WriteLine($"v{a.Version} is available (current {UpdateChecker.CurrentVersionText}).");
                             Console.WriteLine($"  url:    {a.DownloadUrl}");
                             Console.WriteLine($"  sha256: {a.Sha256 ?? "(none published — an off-origin download will be refused)"}");
 

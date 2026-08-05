@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { api, setPassword } from '../api';
 import type { GameSummary, Machine, Settings, AgentInstallerStatus, Enrollment, EffectiveServerUrl, AgentHealth, ServerBuildInfo } from '../types';
-import { fleetSkew, isNewerThanConsole, isTestBuild } from '../versionSkew';
+import { fleetSkew, isNewerThanConsole, isTestBuild, normalizeVersion } from '../versionSkew';
 
 interface Props {
   games: GameSummary[];
@@ -796,7 +796,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
                         )}
                       </td>
                       <td style={tdMono}>
-                        {h?.agentVersion ? `v${h.agentVersion}` : '—'}
+                        {h?.agentVersion ? `v${normalizeVersion(h.agentVersion)}` : '—'}
                         {h?.platform ? <span style={{ color: '#556070' }}> · {h.platform}</span> : null}
                         {isTestBuild(h?.agentVersion) && (
                           <span

@@ -122,6 +122,26 @@ static class Widgets
     public static void BeginFrame() => _reportedThisFrame = false;
 
     /// <summary>
+    /// Whether the POINTER, rather than the D-pad, is currently driving. Set once a frame by the
+    /// shell; see <c>UiApp.TrackCursorOwner</c>.
+    ///
+    /// It is false on a Deck until the trackpad is actually used, and that is the point. Hover and
+    /// focus paint the same ring — deliberately, so a mouse-driven dev session looks like a
+    /// gamepad-driven one — which means a stationary pointer left sitting over some other control
+    /// paints a SECOND selector that the D-pad does not control and A does not activate. It is
+    /// exactly as intermittent as where the pointer happens to be, which is why it was reported as
+    /// "two things highlighted, can't reproduce on demand".
+    /// </summary>
+    public static bool PointerDrives { get; set; }
+
+    /// <summary>
+    /// "Is the cursor on this item?" — the one question every widget's highlight asks. Hover only
+    /// counts while the pointer owns the cursor, so there is never more than one ring on screen.
+    /// </summary>
+    private static bool Hot() =>
+        ImGui.IsItemFocused() || (PointerDrives && ImGui.IsItemHovered());
+
+    /// <summary>
     /// Called by every focusable widget immediately before it submits its item, with the id that
     /// item will have.
     /// </summary>
@@ -418,7 +438,7 @@ static class Widgets
         var id = ImGui.GetItemID();
         var dl = ImGui.GetWindowDrawList();
 
-        bool hovered = enabled && ImGui.IsItemHovered();
+        bool hovered = enabled && PointerDrives && ImGui.IsItemHovered();
         bool active = enabled && ImGui.IsItemActive();
         bool focused = enabled && ImGui.IsItemFocused();
 
@@ -623,7 +643,7 @@ static class Widgets
         var min = ImGui.GetItemRectMin();
         var dl = ImGui.GetWindowDrawList();
 
-        bool hot = ImGui.IsItemHovered() || ImGui.IsItemFocused();
+        bool hot = Hot();
         var lift = Tween(ImGui.GetItemID(), hot ? 1f : 0f);
         Feedback(ImGui.GetItemID(), pressed, Sound.Cue.Back, $"icon:{id}");
 
@@ -773,7 +793,7 @@ static class Widgets
         var max = ImGui.GetItemRectMax();
         var dl = ImGui.GetWindowDrawList();
 
-        bool hot = enabled && (ImGui.IsItemHovered() || ImGui.IsItemFocused());
+        bool hot = enabled && Hot();
         var lift = Tween(ImGui.GetItemID(), hot ? 1f : 0f);
         if (enabled) Feedback(ImGui.GetItemID(), pressed, label: $"row:{title}");
 
@@ -856,7 +876,7 @@ static class Widgets
         var min = ImGui.GetItemRectMin();
         var max = ImGui.GetItemRectMax();
         var dl = ImGui.GetWindowDrawList();
-        bool hot = enabled && (ImGui.IsItemHovered() || ImGui.IsItemFocused());
+        bool hot = enabled && Hot();
         if (enabled) Feedback(ImGui.GetItemID(), pressed, Sound.Cue.Toggle, $"check:{id}");
 
         var t = Tween(ImGui.GetItemID(), ticked ? 1f : 0f, 20f);
@@ -896,7 +916,7 @@ static class Widgets
         var max = ImGui.GetItemRectMax();
         var dl = ImGui.GetWindowDrawList();
 
-        bool hot = ImGui.IsItemHovered() || ImGui.IsItemFocused();
+        bool hot = Hot();
         var lift = Tween(ImGui.GetItemID(), hot ? 1f : 0f);
         var on = Tween(ImGui.GetItemID() ^ 0x5A5Au, active ? 1f : 0f);
         Feedback(ImGui.GetItemID(), pressed, label: $"rail:{label}");

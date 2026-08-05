@@ -65,6 +65,23 @@ export function isNewerThanConsole(
   return compareVersions(agent, console_) > 0;
 }
 
+/**
+ * The display form of a reported agent version: Major.Minor.Patch, keeping any `-pre` / `+meta`.
+ *
+ * Agents up to v0.5.0 reported the Windows build as a four-part "0.5.0.0" and the Linux build of the
+ * SAME release as "0.5.0" — the two platforms read the version from different places. Agents past
+ * that fix report three parts on both. This exists so a fleet mid-upgrade, and any machine whose last
+ * heartbeat predates the fix, is not counted as mixed for a difference that is only formatting.
+ */
+export function normalizeVersion(version: string | null | undefined): string | null {
+  if (!version) return null;
+  const m = /^(\d+(?:\.\d+){0,3})(.*)$/.exec(version.trim());
+  if (!m) return version;
+  const parts = m[1].split('.');
+  while (parts.length < 3) parts.push('0');
+  return parts.slice(0, 3).join('.') + m[2];
+}
+
 export interface FleetSkew {
   /** Names of machines running an agent ahead of the console. */
   aheadOfConsole: string[];
@@ -79,7 +96,7 @@ export function fleetSkew(
   agents: { machineName: string; agentVersion?: string | null }[],
 ): FleetSkew {
   const reporting = agents.filter(a => a.agentVersion);
-  const distinct = [...new Set(reporting.map(a => a.agentVersion!))];
+  const distinct = [...new Set(reporting.map(a => normalizeVersion(a.agentVersion)!))];
   return {
     aheadOfConsole: reporting
       .filter(a => isNewerThanConsole(a.agentVersion, consoleVersion))

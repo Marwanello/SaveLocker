@@ -22,7 +22,7 @@ public static class Doctor
         Section("Agent");
         // A headless box that cannot tell you which version it is running makes every other answer
         // less useful — and it is the first thing to ask for in a bug report.
-        Info("version", UpdateChecker.CurrentVersion.ToString());
+        Info("version", UpdateChecker.CurrentVersionText);
         Info("config", config.ConfigPath);
         // config.StateDir, not AgentConfig.DefaultDir: with --config the two differ, and reporting
         // (or probing) the default is worse than saying nothing — it declares the wrong directory

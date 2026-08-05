@@ -170,7 +170,7 @@ public sealed class HealthReporter
         }
 
         var beat = new AgentHeartbeat(
-            AgentVersion: UpdateChecker.CurrentVersion.ToString(),
+            AgentVersion: UpdateChecker.CurrentVersionText,
             Platform: OperatingSystem.IsWindows() ? "Windows" : "Linux",
             LastSyncTime: config.LastSyncTime,
             TrackedGames: config.Games.Count,

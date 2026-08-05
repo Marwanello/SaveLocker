@@ -38,6 +38,23 @@ public sealed class UpdateChecker : IDisposable
     /// </summary>
     public static readonly Version CurrentVersion = ResolveVersion();
 
+    /// <summary>
+    /// The one string every surface reports this version as — heartbeat, doctor, agent API, tray.
+    /// <para>
+    /// Always <c>Major.Minor.Patch</c>. <see cref="Version.ToString()"/> prints as many components as
+    /// the value was parsed from, and the two platforms parse from different places: the Windows PE
+    /// resource is always four-part ("0.5.0.0"), the Linux <c>AssemblyFileVersion</c> attribute carries
+    /// whatever the build script stamped ("0.5.0"). The same release therefore reported two different
+    /// strings, and the console — which compares them literally — read that as a fleet running mixed
+    /// versions, which is a real fault with real consequences (divergent exclude globs and save paths).
+    /// </para>
+    /// </summary>
+    public static readonly string CurrentVersionText = Format(CurrentVersion);
+
+    /// <summary>Major.Minor.Patch, tolerating a Version with fewer components than that.</summary>
+    private static string Format(Version v) =>
+        $"{v.Major}.{Math.Max(v.Minor, 0)}.{Math.Max(v.Build, 0)}";
+
     private static Version ResolveVersion()
     {
         // Windows: the PE version resource (proven; leave it first so nothing about Windows changes).
