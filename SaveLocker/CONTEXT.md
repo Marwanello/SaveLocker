@@ -35,13 +35,15 @@ read out of each): pointer on Quit → before, Overview *and* Quit ringed while 
 `rail:Overview`; after, Overview only. `--nav right` with the pointer on a game row → before, the
 banner's dismiss X *and* the row; after, the focused control only.
 
-⚠️ **One change in that branch is unproven: the removal of the rail's first-frame
-`SetKeyboardFocusHere` seed.** The reasoning is sound (it cannot place a cursor from a
-`NavFlattened` child, and it resolved on top of `RecoverStrandedCursor`'s request in the same frame)
-but **WSLg does not reproduce the failure** — a settled screenshot is captured long after the
-recovery invariant has repaired it, and both builds open on `focus: rail:Overview, request: none`.
-`RecoverStrandedCursor` covers the case either way. Drop that commit if you would rather not carry
-an unverified change; the hover fix does not depend on it.
+**The rail's first-frame `SetKeyboardFocusHere` seed was removed and then put back** (2026-08-05,
+maintainer's call — the branch carries no unverified change). It is still suspected: it cannot place
+a cursor from a `NavFlattened` child, and it resolves at the end of frame 0 on top of the request
+`RecoverStrandedCursor` places the same frame. But **WSLg cannot reproduce the failure** — a settled
+screenshot is captured long after the recovery invariant has repaired it, and both builds open on
+`focus: rail:Overview, request: none`, so removing it demonstrably changed nothing there. The
+suspicion is recorded at the call site. **If "A does nothing at open" survives the hover fix on
+hardware, that block is the first thing to delete** — `RecoverStrandedCursor` already seeds frame 0
+through `igSetFocusID`.
 
 **v0.5.0 is out and everything is merged to `main`.** It carries three bug bounties — console/server
 (13 findings), Linux/Deck agent (9), Windows agent (12) — as PR #30, plus the release notes as
@@ -55,9 +57,8 @@ Everything before this is indexed in `logs/shipped-2026-07.md` + `logs/sessions.
 
 ## Next action
 
-**Land `fleet-version-and-deck-focus` first** — decide on the unproven seed-removal commit above,
-open the PR, and add the Deck-only checks below to the verification list. Then continue with the
-post-release work.
+**Land `fleet-version-and-deck-focus` first** — it is pushed; open the PR and add the Deck-only
+checks below to the verification list. Then continue with the post-release work.
 
 **Post-release verification, in this order.** Nothing here is a code change; it is confirming that
 what shipped does what the notes claim.
