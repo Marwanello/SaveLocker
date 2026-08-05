@@ -347,7 +347,6 @@ sealed class UiApp
         NavDebug.BeginFrame();
         Widgets.BeginFrame();
         FeedImGuiNav();
-        TrackCursorOwner();
 
         // SDL's error string is sticky — it is never cleared on success, only overwritten on the
         // next failure. Silk's SdlContext.FramebufferSize calls SDL_GL_GetDrawableSize (which
@@ -358,6 +357,10 @@ sealed class UiApp
         try { SdlApi.GetApi().ClearError(); } catch { /* best-effort */ }
 
         _controller.Update((float)delta);
+
+        // AFTER Update, which is what calls NewFrame: MousePos/MouseDelta are this frame's values
+        // there, and no widget has been submitted yet, so this still governs every hover test below.
+        TrackCursorOwner();
 
 
         _gl.ClearColor(Theme.BgGlobal.X, Theme.BgGlobal.Y, Theme.BgGlobal.Z, 1.0f);
@@ -1395,9 +1398,16 @@ sealed class UiApp
     {
         var io = ImGui.GetIO();
 
-        // Re-asserted every frame: Silk's backend writes the real pointer position each frame, so
-        // setting this once would be overwritten immediately.
-        if (_pointerPark is { } park) io.AddMousePosEvent(park.X, park.Y);
+        // Assigned, not queued through AddMousePosEvent. A queued event is processed by the NEXT
+        // NewFrame, so it lands one frame late and alternates with whatever the real pointer is —
+        // which manufactures a delta on every single frame and makes the park look like frantic
+        // movement. Writing MousePos here is authoritative for this frame's hover tests, and a
+        // parked pointer is stationary by definition, so it never claims the cursor.
+        if (_pointerPark is { } park)
+        {
+            io.MousePos = park;
+            return;
+        }
 
         // ImGui seeds MousePos at -FLT_MAX, so the first frame with a real position produces a
         // delta the size of the float range. That is the backend arriving, not the user moving.
