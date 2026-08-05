@@ -139,9 +139,10 @@ sealed class UiApp
 
     public static int Run(AgentConfig config, string? sizeOverride = null, string? screenshotPath = null,
         bool gallery = false, string? startScreen = null, bool autoScan = false,
-        string? navScript = null, bool navDebug = false)
+        string? navScript = null, bool navDebug = false, string? pointerAt = null)
     {
         NavDebug.Enabled = navDebug;
+        _pointerPark = ParsePointer(pointerAt);
 
         // Printed before the window opens, so the probe result is readable even from a run that
         // cannot open a display — which is how a self-contained publish gets checked on a Deck.
@@ -349,6 +350,10 @@ sealed class UiApp
         NavDebug.BeginFrame();
         Widgets.BeginFrame();
         FeedImGuiNav();
+        // Before Update, which is what calls NewFrame: a queued mouse position must be in the queue
+        // NewFrame drains, because NewFrame is also where HoveredWindow is resolved. MouseDelta read
+        // here is last frame's, which costs the highlight a frame nobody can perceive.
+        TrackCursorOwner();
 
         // SDL's error string is sticky — it is never cleared on success, only overwritten on the
         // next failure. Silk's SdlContext.FramebufferSize calls SDL_GL_GetDrawableSize (which
@@ -669,6 +674,14 @@ sealed class UiApp
             // Land the cursor on the rail entry for the screen already being shown. Without an
             // initial nav target ImGui starts with nothing focused, so the first D-pad press only
             // picks a starting item and appears to do nothing.
+            //
+            // ⚠️ This is suspected of not working and is kept only because that is unproven. The rail
+            // is a NavFlattened child and SetKeyboardFocusHere is a tabbing request confined to the
+            // active focus scope (ocornut/imgui#7226) — the restriction ImGuiInternal exists to get
+            // around — and it resolves at the end of frame 0, on top of the request
+            // RecoverStrandedCursor places the same frame. If "A does nothing at open" survives the
+            // hover fix on hardware, delete this block first: RecoverStrandedCursor already seeds
+            // frame 0 through igSetFocusID, which is why removing it changed nothing under WSLg.
             if (_focusRailOnce && active)
             {
                 _focusRailOnce = false;
@@ -1348,7 +1361,75 @@ sealed class UiApp
             io.AddKeyEvent(k, true);
         _navDownLastFrame = fire;
 
+        // A D-pad press takes the cursor back from the pointer. Done here rather than in
+        // TrackCursorOwner so the change applies to the frame the press is fed, not the one after.
+        if (fire.Length > 0) Widgets.PointerDrives = false;
+
         NavDebug.NoteKeys(fire);
+    }
+
+    /// <summary>
+    /// Park a synthetic pointer at a fixed position for the whole run — <c>--pointer X,Y</c>.
+    ///
+    /// A development affordance, and the only way to reproduce a Deck symptom off-device. WSLg leaves
+    /// the pointer outside the window unless a person is holding it there, so hover is dead in every
+    /// unattended capture; gamescope always hands the app a pointer position whether or not anyone has
+    /// touched the trackpad. Parking one makes the difference testable in a screenshot.
+    ///
+    /// It is deliberately STATIONARY: it never generates a MouseDelta, which is exactly the case that
+    /// used to paint a second selector nobody could move.
+    /// </summary>
+    private static Vector2? _pointerPark;
+
+    private static Vector2? ParsePointer(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var parts = raw.Split(',');
+        if (parts.Length == 2 &&
+            float.TryParse(parts[0], out var x) && float.TryParse(parts[1], out var y))
+            return new Vector2(x, y);
+
+        Console.Error.WriteLine($"Ignoring bad --pointer '{raw}' — expected X,Y.");
+        return null;
+    }
+
+    /// <summary>
+    /// Decide which input owns the cursor this frame — see <see cref="Widgets.PointerDrives"/>.
+    ///
+    /// Starts false: a Deck is a gamepad first, and gamescope hands the app a pointer position
+    /// whether or not anyone has touched the trackpad. Treating that stationary pointer as live is
+    /// what painted a highlight on whatever it happened to be resting over — a second selector that
+    /// the D-pad did not move and A did not activate.
+    /// </summary>
+    private static void TrackCursorOwner()
+    {
+        var io = ImGui.GetIO();
+
+        // The park is queued rather than assigned to io.MousePos, because NewFrame is where
+        // HoveredWindow is resolved and an assignment made after it can never make a CHILD window
+        // report hover — only the queue gets there in time.
+        //
+        // Returning early is the important half. The injection races Silk, which writes the real
+        // pointer position during the same Update, so the resolved position alternates and
+        // MouseDelta is non-zero on nearly every frame. A parked pointer is stationary by
+        // definition, so that delta is an artifact of the harness and must never be read as the
+        // user reaching for the trackpad — which is precisely the thing under test.
+        if (_pointerPark is { } park)
+        {
+            io.AddMousePosEvent(park.X, park.Y);
+            return;
+        }
+
+        // ImGui seeds MousePos at -FLT_MAX, so the first frame with a real position produces a
+        // delta the size of the float range. That is the backend arriving, not the user moving.
+        var d = io.MouseDelta;
+        const float Absurd = 1e5f;
+        bool moved = MathF.Abs(d.X) < Absurd && MathF.Abs(d.Y) < Absurd &&
+                     (MathF.Abs(d.X) > 0.5f || MathF.Abs(d.Y) > 0.5f);
+
+        if (moved || ImGui.IsMouseClicked(ImGuiMouseButton.Left) ||
+            ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+            Widgets.PointerDrives = true;
     }
 
     /// <summary>

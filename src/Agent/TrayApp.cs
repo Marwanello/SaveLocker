@@ -350,8 +350,8 @@ internal sealed class TrayContext : ApplicationContext
         // notification settings, so the log is the only account that always survives.
         AgentLogger.Log(result switch
         {
-            UpdateResult.Available av => $"Update check: v{av.Version} available (current {UpdateChecker.CurrentVersion.ToString(3)}).",
-            UpdateResult.UpToDate     => $"Update check: up to date (v{UpdateChecker.CurrentVersion.ToString(3)}).",
+            UpdateResult.Available av => $"Update check: v{av.Version} available (current {UpdateChecker.CurrentVersionText}).",
+            UpdateResult.UpToDate     => $"Update check: up to date (v{UpdateChecker.CurrentVersionText}).",
             UpdateResult.Skipped      => $"Update check: an update is available but v{_config.SkipVersion} was skipped by the user.",
             UpdateResult.Failed f     => $"Update check FAILED: {f.Reason}",
             _                         => $"Update check: {result.GetType().Name}."
@@ -372,7 +372,7 @@ internal sealed class TrayContext : ApplicationContext
             // in silence, which is indistinguishable from the menu item doing nothing at all.
             Notify(result switch
             {
-                UpdateResult.UpToDate => $"You're up to date (v{UpdateChecker.CurrentVersion.ToString(3)}).",
+                UpdateResult.UpToDate => $"You're up to date (v{UpdateChecker.CurrentVersionText}).",
                 UpdateResult.Skipped  => $"v{_config.SkipVersion} is available but you chose to skip it. Reinstall from the console to take it.",
                 UpdateResult.Failed f => $"Could not check for updates: {f.Reason}",
                 _                     => "Update check finished with no result."

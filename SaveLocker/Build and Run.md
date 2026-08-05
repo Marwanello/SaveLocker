@@ -112,6 +112,17 @@ To pull Windows-side commits into the WSL clone:
 git fetch /mnt/e/Projects/SaveLocker main && git checkout FETCH_HEAD
 ```
 
+Game Mode UI, in a real window under WSLg — the loop that saves a Deck trip:
+```sh
+bash tests/linux/run-ui-wslg.sh --fixtures                     # populated screens, interactive
+bash tests/linux/run-ui-wslg.sh --fixtures --nav-debug \
+     --nav right --pointer 530,537 --screenshot /tmp/x.png     # scripted, unattended
+```
+`--nav` replays D-pad presses, `--nav-debug` overlays the live nav cursor, and `--pointer X,Y` parks
+a stationary pointer. The last one exists because WSLg leaves the real pointer outside the window
+while a Deck always has one — without it, hover-vs-focus bugs cannot reproduce off-device, and an
+A/B comes back identical while proving nothing.
+
 Release build (self-contained — SteamOS ships no .NET runtime):
 ```sh
 bash packaging/linux/build-linux.sh          # -> artifacts/linux/savelocker-linux-x64.tar.gz

@@ -152,7 +152,7 @@ public sealed class AgentApiServer : IDisposable
 
             return new AgentStateDto(
                 !string.IsNullOrEmpty(_config.ApiKey),
-                UpdateChecker.CurrentVersion.ToString(3),
+                UpdateChecker.CurrentVersionText,
                 _config.MachineName,
                 _config.ServerUrl,
                 _autoStart.IsEnabled(),
@@ -457,7 +457,7 @@ public sealed class AgentApiServer : IDisposable
                 ? available.Version
                 : null;
             return new AgentVersionDto(
-                UpdateChecker.CurrentVersion.ToString(3),
+                UpdateChecker.CurrentVersionText,
                 latest,
                 latest is not null);
         }).Produces<AgentVersionDto>();

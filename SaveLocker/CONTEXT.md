@@ -13,6 +13,38 @@ dashboard + embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[
 
 ## Status
 
+**In flight: `fleet-version-and-deck-focus` (4 commits, local, not pushed, no PR).** Two reported
+faults, both fixed, plus the harness change that proved one of them.
+
+1. **The fleet reported three agent versions for two releases** — `v0.5.0` and `v0.5.0.0` are the
+   same build. The heartbeat sent `Version.ToString()`, which prints as many components as it parsed
+   from: Windows reads the four-part PE version resource, Linux the three-part
+   `AssemblyFileVersion`. Everything now goes through one `UpdateChecker.CurrentVersionText`
+   (`Major.Minor.Patch`), and `versionSkew.normalizeVersion` collapses the old strings console-side
+   so a fleet mid-upgrade stops being flagged as mixed. `v0.4.1.0` is a genuinely old agent — that
+   machine still needs the update pushed.
+2. **The Deck's double highlight** — hover and focus paint the same ring, and gamescope always hands
+   the app a pointer position, so a stationary pointer painted a second selector the D-pad could not
+   move and A did not activate. Gated on `Widgets.PointerDrives`. This alone explains "A does
+   nothing": focus was on Overview the whole time, so A re-selected the screen already shown.
+3. **`--pointer X,Y`** added to `savelocker ui` + `run-ui-wslg.sh`, because none of §2 can reproduce
+   under WSLg without it. See [[Build and Run]] and the three new [[Gotchas]] → ImGui entries.
+
+**Verified under WSLg, A/B against pre-fix hover semantics** (screenshots, `--nav-debug` overlay
+read out of each): pointer on Quit → before, Overview *and* Quit ringed while focus reads
+`rail:Overview`; after, Overview only. `--nav right` with the pointer on a game row → before, the
+banner's dismiss X *and* the row; after, the focused control only.
+
+**The rail's first-frame `SetKeyboardFocusHere` seed was removed and then put back** (2026-08-05,
+maintainer's call — the branch carries no unverified change). It is still suspected: it cannot place
+a cursor from a `NavFlattened` child, and it resolves at the end of frame 0 on top of the request
+`RecoverStrandedCursor` places the same frame. But **WSLg cannot reproduce the failure** — a settled
+screenshot is captured long after the recovery invariant has repaired it, and both builds open on
+`focus: rail:Overview, request: none`, so removing it demonstrably changed nothing there. The
+suspicion is recorded at the call site. **If "A does nothing at open" survives the hover fix on
+hardware, that block is the first thing to delete** — `RecoverStrandedCursor` already seeds frame 0
+through `igSetFocusID`.
+
 **v0.5.0 is out and everything is merged to `main`.** It carries three bug bounties — console/server
 (13 findings), Linux/Deck agent (9), Windows agent (12) — as PR #30, plus the release notes as
 PR #31. Tag `v0.5.0` → `4944d8f`; both release jobs green; the GitHub Release carries the
@@ -25,8 +57,16 @@ Everything before this is indexed in `logs/shipped-2026-07.md` + `logs/sessions.
 
 ## Next action
 
+**Land `fleet-version-and-deck-focus` first** — it is pushed; open the PR and add the Deck-only
+checks below to the verification list. Then continue with the post-release work.
+
 **Post-release verification, in this order.** Nothing here is a code change; it is confirming that
 what shipped does what the notes claim.
+
+0. **The two Deck fixes on hardware.** WSLg proved the hover fix and cannot prove the frame-0 one.
+   On device: open the UI cold and confirm exactly one ring with A working immediately, then rest a
+   trackpad cursor somewhere and confirm no second selector appears. Once agents are updated,
+   Console → Config must show a single fleet version.
 
 1. **Run `tests/linux/run-linux-tests.sh` in WSL** (40 checks). It holds the *only* tests for the
    Linux auto-start and `doctor` fixes, both of which shipped in v0.5.0 untested. Needs the ext4
