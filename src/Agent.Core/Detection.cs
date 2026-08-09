@@ -93,6 +93,14 @@ public sealed class Detection
     public static PathResolver? HostResolver() =>
         OperatingSystem.IsWindows() ? PathResolver.Windows() : null;
 
+    /// <summary>
+    /// The manifest's own spelling of a game, for any spelling we can match; null if it is not in
+    /// the manifest. Discovery records this as the candidate's ManifestKey, and enrollment creates
+    /// the server-side game under it, so every machine names the same game the same way.
+    /// </summary>
+    public async Task<string?> CanonicalNameAsync(string name, CancellationToken ct = default) =>
+        (await GetManifestAsync(ct: ct)).CanonicalName(name);
+
     /// <summary>Suggest manifest game names that contain the given substring.</summary>
     public async Task<IReadOnlyList<string>> SearchAsync(string term, int max = 25, CancellationToken ct = default)
     {

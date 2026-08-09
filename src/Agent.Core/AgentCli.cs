@@ -224,8 +224,16 @@ public static class AgentCli
                     }
                     dir = dirCheck.Canonical;
 
-                    var game = await Api().CreateGameAsync(new CreateGameRequest(name, manifestKey, null));
-                    var existing = config.FindGame(name);
+                    // Canonicalised for the same reason Enroller does it: the server-side game name
+                    // is the identity every machine matches on, and the server compares names
+                    // case-insensitively but not past punctuation. Without this, `add-game` on a
+                    // Deck and the UI on a PC create two games for one title whenever the two
+                    // spellings differ by so much as a hyphen. Unknown to the manifest → unchanged.
+                    manifestKey = await detection.CanonicalNameAsync(manifestKey ?? name) ?? manifestKey;
+                    var serverName = manifestKey ?? name;
+
+                    var game = await Api().CreateGameAsync(new CreateGameRequest(serverName, manifestKey, null));
+                    var existing = config.FindGame(name) ?? config.FindGame(serverName);
                     var tracked = existing ?? new TrackedGame();
                     tracked.GameId = game.Id;
                     tracked.Name = game.Name;

@@ -33,7 +33,9 @@ public sealed class LinuxGameScanner : IGameScanner
                     SuggestedSaveDir: save,
                     Source: ScanSource.SteamShortcut,
                     HasSteamCloud: false,          // non-Steam shortcuts have no Cloud, by definition
-                    ManifestKey: save is null ? null : s.AppName,
+                    ManifestKey: save is null
+                        ? null
+                        : await _detection.CanonicalNameAsync(s.AppName, ct) ?? s.AppName,
                     InstallDir: s.StartDir,
                     SteamAppId: s.AppId,
                     PrefixPath: prefix,

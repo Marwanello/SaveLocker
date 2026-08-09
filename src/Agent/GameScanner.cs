@@ -111,7 +111,7 @@ public sealed class GameScanner : IGameScanner
             var save = await SuggestSaveDirAsync(s.AppName, ct, NullIfMissing(s.StartDir), steamPath);
             results.Add(new ScanCandidate(
                 s.AppName, save, ScanSource.SteamShortcut,
-                HasSteamCloud: false, ManifestKey: save is null ? null : s.AppName,
+                HasSteamCloud: false, ManifestKey: await CanonicalKeyAsync(s.AppName, save, ct),
                 InstallDir: NullIfMissing(s.StartDir),
                 SteamAppId: s.AppId,
                 // Steam recorded the exact executable the user picked, so this is the one source
@@ -169,7 +169,7 @@ public sealed class GameScanner : IGameScanner
                 // hide them so the user can still enroll if they want a local copy.
                 results.Add(new ScanCandidate(
                     trimmed, save, ScanSource.SteamInstalled,
-                    HasSteamCloud: true, ManifestKey: save is null ? null : trimmed,
+                    HasSteamCloud: true, ManifestKey: await CanonicalKeyAsync(trimmed, save, ct),
                     InstallDir: installPath));
             }
         }
@@ -242,7 +242,8 @@ public sealed class GameScanner : IGameScanner
                 if (manifestNames.Contains(folderName))
                     results.Add(new ScanCandidate(
                         folderName, Path.GetFullPath(dir), ScanSource.SaveRoot,
-                        HasSteamCloud: false, ManifestKey: folderName));
+                        HasSteamCloud: false,
+                        ManifestKey: manifest.CanonicalName(folderName) ?? folderName));
             }
         }
         return results;
@@ -281,6 +282,17 @@ public sealed class GameScanner : IGameScanner
     {
         var dirs = await _detection.ResolveWindowsAsync(name, installDir, storeRoot, ct);
         return dirs.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// The manifest's own spelling for a discovered name, or null when we did not match the manifest.
+    /// Enrollment creates the server-side game under this, so two machines that spell the same
+    /// shortcut differently still converge on one game.
+    /// </summary>
+    private async Task<string?> CanonicalKeyAsync(string name, string? save, CancellationToken ct)
+    {
+        if (save is null) return null;
+        return await _detection.CanonicalNameAsync(name, ct) ?? name;
     }
 
     private static string? NullIfMissing(string? dir) =>

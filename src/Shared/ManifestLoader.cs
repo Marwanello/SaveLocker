@@ -16,7 +16,14 @@ public sealed class ManifestLoader
 
     private readonly Dictionary<string, ManifestGame> _games;
 
-    private ManifestLoader(Dictionary<string, ManifestGame> games) => _games = games;
+    /// <summary>Any spelling we have seen → the manifest's OWN key, preserving its casing.</summary>
+    private readonly Dictionary<string, string> _canonical;
+
+    private ManifestLoader(Dictionary<string, ManifestGame> games, Dictionary<string, string> canonical)
+    {
+        _games = games;
+        _canonical = canonical;
+    }
 
     public int GameCount => _games.Count;
 
@@ -37,9 +44,13 @@ public sealed class ManifestLoader
         // entries that differ only in case (e.g. "Afterlife" vs "afterlife"), so
         // add one-by-one and keep the first — the ctor overload would throw.
         var games = new Dictionary<string, ManifestGame>(StringComparer.OrdinalIgnoreCase);
+        // A case-insensitive Dictionary finds the entry but will not hand back the key it stored
+        // under, and the manifest's own casing is exactly what CanonicalName has to return.
+        var canonical = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (name, game) in raw)
-            games.TryAdd(name, game);
-        return new ManifestLoader(games);
+            if (games.TryAdd(name, game)) canonical[name] = name;
+
+        return new ManifestLoader(games, canonical);
     }
 
     /// <summary>Load from a local cached manifest file.</summary>
@@ -75,7 +86,28 @@ public sealed class ManifestLoader
         if (_games.TryGetValue(name, out game!)) return true;
 
         _loose ??= BuildLooseIndex(_games);
-        return _loose.TryGetValue(NormalizeName(name), out game!);
+        if (!_loose.TryGetValue(NormalizeName(name), out var entry)) return false;
+        game = entry.Game;
+        return true;
+    }
+
+    /// <summary>
+    /// The manifest's own spelling of a game, given any spelling we can match; null if unknown.
+    /// <para>
+    /// This is what makes one game ONE game across machines. A game added to Steam as a non-Steam
+    /// shortcut is named whatever its owner typed, and enrollment used that string as the server-side
+    /// identity — so a Deck spelling it "DRAGON QUEST III HD 2D Remake" and a PC spelling it
+    /// "DRAGON QUEST III HD-2D Remake" created two separate games that could never sync to each
+    /// other. The server matches names case-insensitively but not past punctuation, so it cannot
+    /// reconcile them either. Enrolling under the manifest's title makes both machines converge.
+    /// </para>
+    /// </summary>
+    public string? CanonicalName(string name)
+    {
+        if (_canonical.TryGetValue(name, out var exact)) return exact;
+
+        _loose ??= BuildLooseIndex(_games);
+        return _loose.TryGetValue(NormalizeName(name), out var entry) ? entry.Key : null;
     }
 
     /// <summary>
@@ -106,20 +138,21 @@ public sealed class ManifestLoader
     }
 
     // Built lazily: the great majority of lookups hit the exact index, and this walks 50k+ keys.
-    private Dictionary<string, ManifestGame>? _loose;
+    private Dictionary<string, (string Key, ManifestGame Game)>? _loose;
 
-    private static Dictionary<string, ManifestGame> BuildLooseIndex(Dictionary<string, ManifestGame> games)
+    private static Dictionary<string, (string, ManifestGame)> BuildLooseIndex(
+        Dictionary<string, ManifestGame> games)
     {
         // An AMBIGUOUS key resolves to nothing rather than to a guess. Distinct manifest entries can
         // still normalise together, and picking one by iteration order is how a game silently
         // acquires another game's save paths — the exact failure this fallback exists to prevent.
-        var loose = new Dictionary<string, ManifestGame>(StringComparer.Ordinal);
+        var loose = new Dictionary<string, (string, ManifestGame)>(StringComparer.Ordinal);
         var ambiguous = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (name, game) in games)
         {
             var key = NormalizeName(name);
             if (key.Length == 0) continue;
-            if (!loose.TryAdd(key, game)) ambiguous.Add(key);
+            if (!loose.TryAdd(key, (name, game))) ambiguous.Add(key);
         }
         foreach (var key in ambiguous) loose.Remove(key);
         return loose;
