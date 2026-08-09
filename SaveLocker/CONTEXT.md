@@ -13,79 +13,62 @@ dashboard + embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[
 
 ## Status
 
-**Shipped in v0.5.1 (2026-08-05): PR #32 `fleet-version-and-deck-focus` (→ `69e9691`), notes as
-PR #34.** Two reported faults, both fixed, plus the harness change that proved one of them. The
-rollout is what remains — see Deploying below.
+**Merged 2026-08-08: PR #36 `save-path-autodetection` (→ `637d11f`).** Save-path autodetection went
+from resolving **57.5%** of sampled manifest games to **99.5%**, and from ~4% confidently-wrong
+answers to **zero**. Not yet released — see Deploying below.
 
-1. **The fleet reported three agent versions for two releases** — `v0.5.0` and `v0.5.0.0` are the
-   same build. The heartbeat sent `Version.ToString()`, which prints as many components as it parsed
-   from: Windows reads the four-part PE version resource, Linux the three-part
-   `AssemblyFileVersion`. Everything now goes through one `UpdateChecker.CurrentVersionText`
-   (`Major.Minor.Patch`), and `versionSkew.normalizeVersion` collapses the old strings console-side
-   so a fleet mid-upgrade stops being flagged as mixed. (The `v0.4.1.0` machine seen alongside these
-   was a genuinely old agent; the fleet was brought to v0.5.0 on 2026-08-05.)
-2. **The Deck's double highlight** — hover and focus paint the same ring, and gamescope always hands
-   the app a pointer position, so a stationary pointer painted a second selector the D-pad could not
-   move and A did not activate. Gated on `Widgets.PointerDrives`. This alone explains "A does
-   nothing": focus was on Overview the whole time, so A re-selected the screen already shown.
-3. **`--pointer X,Y`** added to `savelocker ui` + `run-ui-wslg.sh`, because none of §2 can reproduce
-   under WSLg without it. See [[Build and Run]] and the three new [[Gotchas]] → ImGui entries.
+1. **`PathResolver` implemented 10 of the manifest's 13 placeholders.** The three missing ones appear
+   in more save paths than everything else combined (`<base>` alone outnumbers every other token put
+   together). `<storeUserId>` is **discovered from disk, not derived** — Steam exposes both a 32-bit
+   account id and a SteamID64 and games use either, so an id read from `userdata/` resolved to paths
+   that do not exist.
+2. **`tags` were ignored**, so a `config`-tagged path could beat the real save path on hash order.
+   DRAGON QUEST III mapped to `Steam/Config/WindowsNoEditor`. Returning nothing now beats returning
+   a wrong path presented as certain.
+3. **Name matching now ignores punctuation as well as case** — a non-Steam shortcut carries whatever
+   its owner typed. Normalisation deliberately keeps word boundaries: deleting non-alphanumerics
+   collapses "Dragon Quest I & II" onto "III", and the manifest holds both.
+4. **Enrollment creates games under the manifest's canonical title.** Two machines spelling one
+   shortcut differently used to create two server games that could never sync, with no error
+   anywhere — no user error required.
+5. **Windows installed-Steam games never consulted the manifest at all**, so they always arrived with
+   no save folder and the user typed one by hand.
+6. **Add Games hides Steam Cloud titles by default**, naming what it hid.
 
-**Verified under WSLg, A/B against pre-fix hover semantics** (screenshots, `--nav-debug` overlay
-read out of each): pointer on Quit → before, Overview *and* Quit ringed while focus reads
-`rail:Overview`; after, Overview only. `--nav right` with the pointer on a game row → before, the
-banner's dismiss X *and* the row; after, the focused control only.
+**New suite: `tests/detection`** — materialises dummy save trees at the paths the real manifest
+claims and scores the production resolver against them. No Steam, Proton, GPU or Deck needed.
+`sweep` measures, `pinned` gates (15 cases). See `tests/detection/README.md`.
 
-**The rail's first-frame `SetKeyboardFocusHere` seed was removed and then put back** (2026-08-05,
-maintainer's call — nothing unverified shipped). It is still suspected: it cannot place
-a cursor from a `NavFlattened` child, and it resolves at the end of frame 0 on top of the request
-`RecoverStrandedCursor` places the same frame. But **WSLg cannot reproduce the failure** — a settled
-screenshot is captured long after the recovery invariant has repaired it, and both builds open on
-`focus: rail:Overview, request: none`, so removing it demonstrably changed nothing there. The
-suspicion is recorded at the call site. **If "A does nothing at open" survives the hover fix on
-hardware, that block is the first thing to delete** — `RecoverStrandedCursor` already seeds frame 0
-through `igSetFocusID`.
+**`run-linux-tests.sh` passes for the first time — 40/40.** It had never worked:
+`Storage__AgentInstallerRoot` was unset, so the server died at startup *after* migrations and all 16
+server-dependent checks failed as though the agent were broken. One variable. This clears what was
+item 1 of the v0.5.0 post-release verification.
 
-**v0.5.0 is out and everything is merged to `main`.** It carries three bug bounties — console/server
-(13 findings), Linux/Deck agent (9), Windows agent (12) — as PR #30, plus the release notes as
-PR #31. Tag `v0.5.0` → `4944d8f`; both release jobs green; the GitHub Release carries the
-hand-written notes and both installers.
+**Two verification traps worth remembering, both recorded in [[Gotchas]]:**
+- **The Windows suites drive `src/Agent/bin/DEBUG`.** A branch built only in Release runs them
+  against a stale binary and reports green while testing nothing.
+- **A harness can be structurally incapable of catching the bug it was written for.** The detection
+  oracle used the same fake `<storeUserId>` on both sides, so it passed a fix that did not work on
+  hardware; it also dropped `tags` when re-serialising, silently disabling the filter under test.
 
-**It shipped with its manual verification unrun.** That was a deliberate call, not an oversight, and
-the release notes are worded accordingly. Paying that debt down is the next work — see below.
-
-Everything before this is indexed in `logs/shipped-2026-07.md` + `logs/sessions.md`.
+Shipped in v0.5.1 (2026-08-05) and earlier: see `logs/shipped-2026-07.md` + `logs/sessions.md`.
 
 ## Next action
 
-**Post-release verification, in this order.** Nothing here is a code change; it is confirming that
-what shipped does what the notes claim.
-
-0. **Roll v0.5.1 out, then verify it** — redeploy the console, upload the new installer in Config →
-   Agent Updates, re-run `install.sh` on the Deck. Config should then show **one** fleet version;
-   that is the whole point of the release and the only place the fix is visible.
-   **The two Deck fixes need hardware** — fold them into the Deck trip in step 2 rather than making a
-   separate one. WSLg proved the hover fix and cannot prove the frame-0 one. On device: open the UI
-   cold and confirm exactly one ring with A working immediately, then rest a trackpad cursor
-   somewhere and confirm no second selector appears.
-
-1. **Run `tests/linux/run-linux-tests.sh` in WSL** (40 checks). It holds the *only* tests for the
-   Linux auto-start and `doctor` fixes, both of which shipped in v0.5.0 untested. Needs the ext4
-   clone — see [[Gotchas]] → WSL.
+1. **Check the live server for duplicate games** before deploying. Canonical naming stops NEW splits;
+   it does not merge games a server already holds under two spellings. There is no merge tool.
 2. **Deck verification** of the Linux bounty — the five scenarios in
-   `logs/2026-07-29_linuxagent-bugbounty.md` → Verification. Hardware is available (2026-07-19).
-3. **The second-Windows-account ACL test** (WA-03). This is the one with a user-visible consequence:
-   until it runs, the v0.5.0 notes describe the permission change rather than promising other users
-   cannot read the credentials, and Known Issues says so. **Reword `web/src/releases/0.5.0.md` once
-   it passes** — that file is both the console page and the GitHub Release body, so editing it fixes
-   both at once.
+   `logs/2026-07-29_linuxagent-bugbounty.md` → Verification. Hardware available (2026-07-19). Fold in
+   the two v0.5.1 Deck fixes (one ring on open with A working; a resting cursor must not paint a
+   second selector) and a real save-path detection check now that `<base>` resolves from `StartDir`.
+3. **The second-Windows-account ACL test (WA-03).** Still the only outstanding item with a
+   user-visible promise attached — reword `web/src/releases/0.5.0.md` once it passes.
 4. The rest of the Windows manual gates: fresh-VM install, a real game, a real non-Steam shortcut,
    the first-run Settings deep link on a cold WebView2 profile.
-5. **The LAN enrollment-URL check** on the real deployment (`logs/2026-07-27_console-bugbounty.md`
-   → Verification).
+5. **The LAN enrollment-URL check** on the real deployment
+   (`logs/2026-07-27_console-bugbounty.md` → Verification).
 
-Missing regression tests (not blocking, but they are the reason some of the above is manual):
-LA-04/05/06/07 have code fixes and no tests.
+Missing regression tests: LA-04/05/06/07 have code fixes and no tests.
 
 ## Deploying v0.5.1
 
@@ -124,10 +107,11 @@ requests a minute, indefinitely. On a Deck away from home that is battery and me
 on nothing. Note the scope: **backing off only the drainer does not achieve the goal**, which is why
 the task covers all three loops.
 
-### Suite baseline (all green at 2026-07-29)
+### Suite baseline (all green at 2026-08-08)
 
-Windows, local: **win agent bug bounty 114** · server bug bounty 145 · agent 45 · hardening 33 ·
+Windows, local: **win agent bug bounty 114** · server bug bounty 145 · agent **47** · hardening 33 ·
 local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6.
+Linux, local (WSL ext4): **run-linux-tests 40**. Detection: sweep 394/396, 15 pinned.
 Linux, in CI: agent 43 · hardening 37 · local-api 30 · concurrency 23 · health 19 · enrollment 16.
 The two platforms differ by design — each suite skips the other's cases.
 
