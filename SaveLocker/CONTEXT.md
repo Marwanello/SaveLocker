@@ -23,9 +23,16 @@ dashboard + embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[
    `<compatdata>/pfx/drive_c`, and that games run as `steamuser`. Heroic nests `pfx` only for a
    Proton runner, and a plain Wine runner runs the game as the **Linux** user. `PathResolver.Wine`
    takes both as parameters; `Proton()` delegates to it, behaviourally unchanged.
-3. **Verified on the Deck:** Absolute Drift (GOG via Heroic), found from Game Mode with the correct
-   path. `run-linux-tests.sh` **40 → 57**. Hardware has covered **gogdl and the sideload parser
-   only** — `legendary` and `nile` are fixtures-only. See [[Backlog]].
+3. **Verified on the Deck — all four runners plus the dedupe.** Absolute Drift (gogdl), Cave Story+
+   (legendary), Bomber Crew (nile), Quake III (sideload). Both Heroic games that were *also* added
+   to Steam collapsed to a single `<Heroic>` row, which is the case no hardware had been in before.
+   `run-linux-tests.sh` **40 → 59**.
+3b. **Cave Story+ exposed a manifest shape unrelated to Heroic**, now fixed: games that save as
+   loose files beside their own executable resolve to the INSTALL DIRECTORY — the whole game.
+   Syncing that would let a restore prune another machine's installation, so it is refused. The
+   guard **costs 8% of the manifest** (sweep 99.0% → 90.9%, all `MISS(<base>)`) and was kept
+   deliberately: see [[Backlog]] → file-level saves. It also *fixes* games where the install
+   directory outranked a real save folder — Cave Story+ itself went from wrong to right.
 4. **A sideloaded game's `.exe` can live in a different prefix than the one it runs in** — a
    leftover prefix survives uninstall and its stale `.exe` gets picked. Wine reaches it through
    `Z:`, so nothing complains. Saves follow the prefix it RUNS in, so this works and `doctor` keeps
@@ -133,7 +140,9 @@ the task covers all three loops.
 
 Windows, local: **win agent bug bounty 114** · server bug bounty 145 · agent **47** · hardening 33 ·
 local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6.
-Linux, local (WSL ext4): **run-linux-tests 57** on `heroic-detection`, 40 on `main`. Detection: sweep 394/396, 15 pinned.
+Linux, local (WSL ext4): **run-linux-tests 59** on `heroic-detection`, 40 on `main`. Detection: **sweep 271/298 (90.9%) at the default 300 sample, 17 pinned** — the drop from 99.0% is
+the install-directory guard and is deliberate (see Status 3b). `main` still reads 394/396 at a
+400-sample run; quote the sample size, the two are not comparable.
 Linux, in CI: agent 43 · hardening 37 · local-api 30 · concurrency 23 · health 19 · enrollment 16.
 The two platforms differ by design — each suite skips the other's cases.
 

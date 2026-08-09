@@ -1,13 +1,30 @@
 # Heroic Games Launcher — install-path detection (Linux)
 
-**Status:** steps 1–8 **implemented, green locally, and confirmed on a real Deck** (2026-08-09) —
-Absolute Drift via Heroic + GOG, found by `scan` from Game Mode with the correct save path. Hardware
-has exercised the **gogdl** runner only; see Verification for what that leaves open.
-**Written:** 2026-08-09.
+**Status: DONE** — implemented, green locally, and **all four runners plus the dedupe confirmed on a
+real Deck** (2026-08-09). Branch `heroic-detection`, not yet pushed. **Written:** 2026-08-09.
 
-`run-linux-tests.sh` is **51/51**, up from 40 — 11 new checks, all Heroic. Detection `pinned` all
-pass, sweep 295/298 (the default 300-game sample; `PathResolver.Proton` is unchanged behaviourally,
-so this is not a regression). Solution builds with only the one documented MSB3277 warning.
+| Runner | Hardware gate |
+|---|---|
+| `gogdl` (GOG) | Absolute Drift — found from Game Mode, save path correct |
+| `legendary` (Epic) | Cave Story+ — title read from `installed.json`, not the folder name |
+| `nile` (Amazon) | Bomber Crew — resolved through the manifest into its prefix |
+| `sideload` | Quake III — parsed correctly; cannot resolve, see below |
+
+Both Heroic games that were **also** added to Steam collapsed to a single `<Heroic>` row. That was
+the last untested case: no Deck had previously been in that state.
+
+`run-linux-tests.sh` is **59/59**, up from 40. Detection `pinned` green with 2 new cases; sweep
+**271/298**, down from 295/298 — the install-directory guard below, deliberate and measured.
+Solution builds with only the one documented MSB3277 warning.
+
+> [!important] One fix here is not about Heroic at all
+> Cave Story+ came back mapped to its **install directory**, because it saves as loose files beside
+> its own executable and a save location is a directory throughout. Syncing that archives the game,
+> and restore's delete pass would prune another machine's installation to match. Now refused —
+> which costs **8% of the manifest** (all `MISS(<base>)`) and also *fixes* games where the install
+> directory outranked a real save folder, Cave Story+ among them. `Backlog` carries the proper fix
+> (archive the matching files, not their directory). Affects Windows and Steam equally; it is on
+> this branch because this is where it was found.
 
 > [!note] Step 8's third bullet was dropped deliberately
 > The plan called for `tests/detection` cases scoring a wine-shaped prefix with a non-`steamuser`
