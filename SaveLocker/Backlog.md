@@ -14,8 +14,10 @@ verification that did not happen before the tag. Write-ups:
 
 - **v0.5.0 post-release verification.** Ordered by what carries the most risk of the release notes
   being wrong:
-  - **Run `tests/linux/run-linux-tests.sh` in WSL** (40 checks). It holds the *only* tests for the
-    Linux auto-start and `doctor` fixes, both of which shipped untested. Needs the ext4 clone.
+  - ~~**Run `tests/linux/run-linux-tests.sh` in WSL** (40 checks)~~ — **DONE 2026-08-08, 40/40.**
+    It had never passed: `Storage__AgentInstallerRoot` was unset, so the server died at startup
+    *after* migrations and 16 server-dependent checks failed as though the agent were broken. Fixed
+    in the harness (PR #36). This closes the Linux auto-start and `doctor` gap.
   - **Deck verification** — the five scenarios in `logs/2026-07-29_linuxagent-bugbounty.md` →
     Verification. Hardware available since 2026-07-19.
   - **Second-Windows-account ACL test (WA-03).** The one with a user-visible consequence: the
@@ -30,6 +32,11 @@ verification that did not happen before the tag. Write-ups:
     path through a refused launch, because the prompt is a modal dialog no test can answer).
   - **LAN enrollment-URL check** on the real deployment (`logs/2026-07-27_console-bugbounty.md` →
     Verification).
+
+- **Duplicate games already on the server.** Enrollment now creates games under the Ludusavi
+  manifest's canonical title (PR #36), so machines converge — but any game a live server already
+  holds under two spellings stays split. There is no merge tool: it needs a console merge or a
+  migration. Check the deployment before assuming this is theoretical.
 
 - **Missing regression tests from the Linux bounty — LA-04/05/06/07.** Folder-watcher refresh,
   multi-game add, the Game Mode window crash and the settings-write clobber all have code fixes and

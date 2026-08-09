@@ -131,6 +131,17 @@ behave in ways that look like bugs.
   whatever state both sides hold. Clearing only one produces confident, unrelated-looking
   failures (stale save files vs. lost version lineage). Isolating just the server's `Storage__DbPath`
   counts as "cleared the DB half" — still hits the same trap if `.verify/` is stale.
+- **Every Windows suite drives `src/Agent/bin/DEBUG`.** Build a branch in Release only and the
+  suites run a stale binary — reporting green while testing none of your changes. This cost a full
+  round of "all suites green" on PR #36: the Debug dll was three days old. `dotnet build
+  SaveLocker.sln -c Debug` before believing a Windows suite result, and stop any test server first
+  or the Server project fails on a locked `SaveLocker.Shared.dll`.
+- **A harness can be structurally incapable of catching the bug it exists for.** `tests/detection`
+  built its fixtures with an oracle that used the same fake `<storeUserId>` on both sides, so it
+  passed a fix that did not work on real hardware; separately it dropped `tags` when re-serialising
+  a game, silently disabling the very filter under test. Both were found by checking against a real
+  machine, not by reading the harness. When a harness defines its own ground truth, ask what it
+  would fail to notice.
 - **`Storage__AgentInstallerRoot` must be set too, and forgetting it only breaks Linux.**
   `AgentInstallerService` creates its root in its **constructor**, and the default resolves to
   `/data/agent-installer`, which a normal Linux user cannot create. The server then dies at startup
