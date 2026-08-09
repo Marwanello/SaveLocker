@@ -44,8 +44,10 @@ public sealed class LinuxGameScanner : IGameScanner
             }
         }
 
+        // Normalised, for the same reason as the Windows scanner: one game, one row, however the
+        // shortcut happens to be spelled.
         return results
-            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(c => ManifestLoader.NormalizeName(c.Name), StringComparer.Ordinal)
             .Select(g => g.OrderByDescending(c => c.SuggestedSaveDir is not null).First())
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();

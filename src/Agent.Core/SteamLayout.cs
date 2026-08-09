@@ -31,36 +31,4 @@ public static class SteamLayout
             ? root
             : null;
     }
-
-    /// <summary>
-    /// Steam's 32-bit account ids under a library root — the <c>userdata/&lt;id&gt;</c> folder
-    /// names, which is what the manifest's <c>&lt;storeUserId&gt;</c> means. NOT SteamID64.
-    /// <para>
-    /// Empty rather than throwing when userdata is absent or unreadable: on a machine where Steam
-    /// has never signed in there simply is no account, and that must not cost the caller every
-    /// other game it could otherwise have resolved.
-    /// </para>
-    /// </summary>
-    public static IReadOnlyList<string> AccountIds(string? steamRoot)
-    {
-        if (string.IsNullOrWhiteSpace(steamRoot)) return Array.Empty<string>();
-
-        try
-        {
-            var userdata = Path.Combine(steamRoot, "userdata");
-            if (!Directory.Exists(userdata)) return Array.Empty<string>();
-
-            return Directory.EnumerateDirectories(userdata)
-                .Select(Path.GetFileName)
-                .OfType<string>()
-                // "0" and "anonymous" are Steam's placeholders for "not signed in".
-                .Where(n => n.All(char.IsDigit) && n != "0")
-                .OrderBy(n => n, StringComparer.Ordinal)
-                .ToList();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return Array.Empty<string>();
-        }
-    }
 }

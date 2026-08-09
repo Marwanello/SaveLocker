@@ -54,6 +54,7 @@ artifacts/
 .verify-server-bugbounty/
 .verify-winagent/
 .verify-detection/
+.verify-suites/
 
 # WSLg dev-run scratch config for `savelocker ui` (tests/linux/run-ui-wslg.sh)
 .wslg-ui/

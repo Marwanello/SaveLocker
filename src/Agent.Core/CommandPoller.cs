@@ -335,13 +335,12 @@ public sealed class CommandPoller : IDisposable
         var compatData = _prefixForAppId?.Invoke(appId);
         if (string.IsNullOrWhiteSpace(compatData)) return null;
 
-        // <root> and the account id come off the prefix path itself; <base> is what the scanner
-        // recorded at enrollment. Without these the poller expands a game's paths differently from
-        // the scanner that first resolved them, and the two disagree about where the save lives.
+        // <root> comes off the prefix path itself; <base> is what the scanner recorded at
+        // enrollment. Without these the poller expands a game's paths differently from the scanner
+        // that first resolved them, and the two disagree about where the save lives.
         var storeRoot = SteamLayout.RootFromCompatData(compatData);
         var installDir = _config.Games.FirstOrDefault(g => g.GameId == sg.Id)?.InstallDir;
-        return PathResolver.Proton(
-            compatData, installDir, storeRoot, SteamLayout.AccountIds(storeRoot).FirstOrDefault());
+        return PathResolver.Proton(compatData, installDir, storeRoot);
     }
 
     /// <summary>

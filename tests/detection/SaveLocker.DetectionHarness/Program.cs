@@ -152,6 +152,7 @@ int Pinned()
         var name = parts[0];
         var expect = parts.Length > 1 ? parts[1] : "HIT";
         var why = parts.Length > 2 ? parts[2] : "";
+        var alias = parts.Length > 3 && parts[3].Length > 0 ? parts[3] : null;
 
         if (!rich.TryGetValue(name, out var game))
         {
@@ -160,9 +161,9 @@ int Pinned()
             continue;
         }
 
-        var r = Evaluate(name, game);
+        var r = Evaluate(name, game, alias);
         var ok = r.Outcome.StartsWith(expect, StringComparison.Ordinal);
-        Console.WriteLine($"  {(ok ? "PASS" : "FAIL")}  {name}");
+        Console.WriteLine($"  {(ok ? "PASS" : "FAIL")}  {name}{(alias is null ? "" : $"  (asked as \"{alias}\")")}");
         Console.WriteLine($"        expected {expect}, got {r.Outcome}   {why}");
         if (!ok && r.Expected.Count > 0)
             Console.WriteLine($"        wanted:   {string.Join("\n                  ", r.Expected)}");
@@ -178,7 +179,9 @@ int Pinned()
 
 // ---------------------------------------------------------------------------------------------
 
-Result Evaluate(string name, ManifestModel.Game game)
+// lookupName lets a case build fixtures from the manifest's own key while asking production for a
+// DIFFERENT spelling — the real shape of a non-Steam shortcut, whose name is whatever the user typed.
+Result Evaluate(string name, ManifestModel.Game game, string? lookupName = null)
 {
     // One fixture tree per game, keyed by a filesystem-safe form of its name. Games share nothing,
     // so one game's stray directory can never make another look like a hit.
@@ -214,7 +217,7 @@ Result Evaluate(string name, ManifestModel.Game game)
         installDir: oracle.InstallBase,
         storeRoot: oracle.SteamRoot,
         storeUserId: oracle.StoreUserId);
-    var returned = loader.ResolveSaveDirectories(name, resolver).Select(Norm).ToList();
+    var returned = loader.ResolveSaveDirectories(lookupName ?? name, resolver).Select(Norm).ToList();
 
     var outcome =
         expected.Count == 0 ? "SKIP(no expandable save path)"
@@ -239,14 +242,49 @@ string BlockingTokens(ManifestModel.Game game, Oracle oracle)
 }
 
 // ManifestLoader takes YAML, so the single game under test is re-serialised rather than the whole
-// 17 MB manifest being reparsed per game. Only `files` matters to the production resolver.
+// 17 MB manifest being reparsed per game.
+//
+// tags and `when` MUST be carried through. They used to be dropped — every entry was written as
+// "path": {} — which silently disabled the production tag filter this harness exists to verify:
+// production saw untagged paths, treated them all as saves, and happily returned config folders
+// while the harness scored them however it liked. A harness that disables the feature under test is
+// worse than no harness, because it reports success.
 string SingleEntryYaml(string name, ManifestModel.Game game)
 {
+    string Q(string v) => v.Replace("\\", "\\\\").Replace("\"", "\\\"");
+
     var sb = new System.Text.StringBuilder();
-    sb.Append('"').Append(name.Replace("\\", "\\\\").Replace("\"", "\\\"")).Append("\":\n");
+    sb.Append('"').Append(Q(name)).Append("\":\n");
     sb.Append("  files:\n");
-    foreach (var t in (game.Files ?? new()).Keys)
-        sb.Append("    \"").Append(t.Replace("\\", "\\\\").Replace("\"", "\\\"")).Append("\": {}\n");
+    foreach (var (template, entry) in game.Files ?? new())
+    {
+        sb.Append("    \"").Append(Q(template)).Append("\":\n");
+
+        if (entry?.Tags is { Count: > 0 } tags)
+        {
+            sb.Append("      tags:\n");
+            foreach (var tag in tags) sb.Append("        - \"").Append(Q(tag)).Append("\"\n");
+        }
+
+        if (entry?.When is { Count: > 0 } when)
+        {
+            sb.Append("      when:\n");
+            foreach (var w in when)
+            {
+                sb.Append("        -");
+                if (w?.Os is { Length: > 0 } os) sb.Append(" os: \"").Append(Q(os)).Append('"');
+                else sb.Append(" {}");
+                sb.Append('\n');
+            }
+        }
+
+        // A key with neither must still parse as a mapping entry: rewrite "key:\n" as "key: {}".
+        if (entry?.Tags is not { Count: > 0 } && entry?.When is not { Count: > 0 })
+        {
+            sb.Length -= 1;
+            sb.Append(" {}\n");
+        }
+    }
     return sb.ToString();
 }
 

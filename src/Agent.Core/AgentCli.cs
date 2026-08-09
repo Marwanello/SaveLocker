@@ -439,8 +439,8 @@ public static class AgentCli
     /// <c>--install-dir</c> supplies the manifest's <c>&lt;base&gt;</c>. It is optional but worth
     /// passing: more manifest save paths are written in terms of <c>&lt;base&gt;</c> than of every
     /// other placeholder combined, so omitting it is the difference between resolving a game and
-    /// being told to pass <c>--dir</c> by hand. <c>&lt;root&gt;</c> and the Steam account id are
-    /// derived from the prefix path, so they need no options of their own.
+    /// being told to pass <c>--dir</c> by hand. <c>&lt;root&gt;</c> is derived from the prefix path
+    /// and <c>&lt;storeUserId&gt;</c> is discovered on disk, so neither needs an option.
     /// </remarks>
     private static PathResolver? ResolverFor(Dictionary<string, string> opts)
     {
@@ -449,10 +449,8 @@ public static class AgentCli
         if (opts.TryGetValue("prefix", out var prefix) && !string.IsNullOrWhiteSpace(prefix))
         {
             var compatData = prefix.Trim();
-            var storeRoot = SteamLayout.RootFromCompatData(compatData);
             return PathResolver.Proton(
-                compatData, installDir, storeRoot,
-                SteamLayout.AccountIds(storeRoot).FirstOrDefault());
+                compatData, installDir, SteamLayout.RootFromCompatData(compatData));
         }
 
         if (!OperatingSystem.IsWindows()) return null;

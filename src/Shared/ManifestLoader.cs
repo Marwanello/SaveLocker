@@ -60,8 +60,71 @@ public sealed class ManifestLoader
         return Parse(yaml);
     }
 
-    public bool TryGetGame(string name, out ManifestGame game) =>
-        _games.TryGetValue(name, out game!);
+    /// <summary>
+    /// Exact (case-insensitive) lookup, falling back to a punctuation-insensitive one.
+    /// <para>
+    /// Case was already handled; punctuation was not, and that is what actually breaks. A game added
+    /// to Steam as a non-Steam shortcut carries whatever name the user typed — "DRAGON QUEST III HD
+    /// 2D Remake" — against a manifest keyed "Dragon Quest III HD-2D Remake". One missing hyphen
+    /// resolved nothing, and left the same game listed twice under two spellings because the
+    /// scanners' de-dupe compares names too. Non-alphanumerics are dropped on both sides.
+    /// </para>
+    /// </summary>
+    public bool TryGetGame(string name, out ManifestGame game)
+    {
+        if (_games.TryGetValue(name, out game!)) return true;
+
+        _loose ??= BuildLooseIndex(_games);
+        return _loose.TryGetValue(NormalizeName(name), out game!);
+    }
+
+    /// <summary>
+    /// Lowercase, punctuation reduced to single spaces, so spelling differs freely but WORDS do not.
+    /// <para>
+    /// Word boundaries have to survive. Deleting non-alphanumerics outright collapses
+    /// "Dragon Quest I &amp; II HD-2D Remake" and "Dragon Quest III HD-2D Remake" onto the same key —
+    /// "I &amp; II" becomes "III" — and the manifest contains both, so the wrong one won and DQ3
+    /// resolved to paths that do not exist. Mapping punctuation to a space instead keeps "i ii"
+    /// distinct from "iii" while still matching "HD-2D" to "HD 2D".
+    /// </para>
+    /// </summary>
+    public static string NormalizeName(string name)
+    {
+        var sb = new System.Text.StringBuilder(name.Length);
+        var pendingSpace = false;
+        foreach (var ch in name)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                if (pendingSpace && sb.Length > 0) sb.Append(' ');
+                pendingSpace = false;
+                sb.Append(char.ToLowerInvariant(ch));
+            }
+            else pendingSpace = true;
+        }
+        return sb.ToString();
+    }
+
+    // Built lazily: the great majority of lookups hit the exact index, and this walks 50k+ keys.
+    private Dictionary<string, ManifestGame>? _loose;
+
+    private static Dictionary<string, ManifestGame> BuildLooseIndex(Dictionary<string, ManifestGame> games)
+    {
+        // An AMBIGUOUS key resolves to nothing rather than to a guess. Distinct manifest entries can
+        // still normalise together, and picking one by iteration order is how a game silently
+        // acquires another game's save paths — the exact failure this fallback exists to prevent.
+        var loose = new Dictionary<string, ManifestGame>(StringComparer.Ordinal);
+        var ambiguous = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (name, game) in games)
+        {
+            var key = NormalizeName(name);
+            if (key.Length == 0) continue;
+            if (!loose.TryAdd(key, game)) ambiguous.Add(key);
+        }
+        foreach (var key in ambiguous) loose.Remove(key);
+        return loose;
+    }
+
 
     /// <summary>
     /// Resolve the concrete, existing save directories for a game on this machine.
@@ -95,11 +158,14 @@ public sealed class ManifestLoader
         {
             if (!IsWindowsSave(entry)) continue;
 
-            var dir = resolver.ResolveToDirectory(template);
-            if (dir is null || !Directory.Exists(dir)) continue;
-
-            var full = Path.GetFullPath(dir);
-            if (seen.Add(full)) results.Add(full);
+            // ResolveToDirectories, not ResolveToDirectory: <storeUserId> fans out over the ids
+            // actually present on disk, because it cannot be derived (see PathResolver).
+            foreach (var dir in resolver.ResolveToDirectories(template))
+            {
+                if (!Directory.Exists(dir)) continue;
+                var full = Path.GetFullPath(dir);
+                if (seen.Add(full)) results.Add(full);
+            }
         }
 
         return results;

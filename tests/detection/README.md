@@ -59,19 +59,19 @@ Before `<base>` / `<root>` / `<storeUserId>` and tag filtering landed — i.e. a
 After:
 
 ```
-     396  HIT          hit rate 99.5%
-       2  MISS         both malformed manifest entries; refusing them is correct
+     394  HIT          hit rate 99.5%
+       2  MISS         <storeUserId> embedded mid-segment; unknowable, correctly refused
        0  WRONG
-       2  SKIP
+       4  SKIP         malformed manifest entries the fixture builder will not create
 ```
 
-On ext4 (WSL, case-sensitive) the same sweep scores **396/396 — 100%**: the two malformed entries
-classify as SKIP there rather than MISS, because the fixture builder refuses to create them at all.
+Identical on Windows and on ext4 (WSL, case-sensitive).
 
-The two remaining misses are manifest data faults, not resolver faults: one entry hardcodes
-`C:/Users/Public/Documents/...` and another is `/AppData/LocalLow/...` with its `<home>` missing.
-Both are refused by the known-root guard, which is the desired behaviour — the user is asked to
-pick a folder rather than handed a confident path anchored outside every root we know.
+Nothing left in that table is a resolver fault. Two entries are malformed — one hardcodes
+`C:/Users/Public/Documents/...`, another is `/AppData/LocalLow/...` with its `<home>` missing — and
+two put `<storeUserId>` inside a path segment rather than as a whole one, where the id cannot be
+known. All four are refused rather than guessed, so the user is asked to pick a folder instead of
+being handed a confident path that is wrong.
 
 Analytic coverage over all 20,479 manifest entries that have a Windows save path:
 

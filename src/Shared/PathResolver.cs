@@ -218,6 +218,70 @@ public sealed class PathResolver
         !string.IsNullOrWhiteSpace(value) && value.Contains('<') && value.Contains('>');
 
     /// <summary>
+    /// Every existing directory a template designates, fanning <c>&lt;storeUserId&gt;</c> out over
+    /// what is actually on disk.
+    /// <para>
+    /// The id cannot be derived reliably, so it is discovered rather than guessed. Steam exposes at
+    /// least two forms — the 32-bit account id that names <c>userdata/&lt;id&gt;</c>, and the 64-bit
+    /// SteamID64 — and games pick whichever they like. DRAGON QUEST III writes
+    /// <c>…/Steam/76561197960271872/SaveGames</c> while the same machine's userdata folders are
+    /// <c>14297026</c> and <c>19627</c>; the two do not correspond, so any resolver that substituted
+    /// an id from userdata produced a path that does not exist. Enumerating the parent is correct
+    /// for both forms, for a machine with several Steam accounts, and for stores that are not Steam.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<string> ResolveToDirectories(string template)
+    {
+        if (!template.Contains("<storeUserId>", StringComparison.OrdinalIgnoreCase))
+            return ResolveToDirectory(template) is { } single ? [single] : [];
+
+        // Split at the token and resolve the part before it; that parent is what we enumerate.
+        var idx = template.IndexOf("<storeUserId>", StringComparison.OrdinalIgnoreCase);
+        var before = template[..idx];
+        var after = template[(idx + "<storeUserId>".Length)..];
+
+        // Only when the token is a WHOLE path segment. The manifest also embeds it inside one —
+        // "…/Max Gentlemen Sexy Business<storeUserId>" (a missing slash) and
+        // "…/Profiles/<storeUserId>.prf" (part of a filename) — and treating those as directory
+        // boundaries enumerates the wrong level, handing back a neighbouring folder as if it were
+        // the save. The id is unknowable in those shapes, so resolve nothing and let the user pick.
+        var wholeSegment =
+            (before.Length == 0 || before[^1] is '/' or '\\') &&
+            (after.Length == 0 || after[0] is '/' or '\\');
+        if (!wholeSegment) return [];
+
+        before = before.TrimEnd('/', '\\');
+        after = after.TrimStart('/', '\\');
+
+        if (ResolveToDirectory(before) is not { } parent || !Directory.Exists(parent))
+            return [];
+
+        var results = new List<string>();
+        foreach (var child in SafeChildDirectories(parent))
+        {
+            // Only id-shaped children. The parent holds more than accounts — DRAGON QUEST III's
+            // "Steam" folder also carries "Config" and "Logs", and returning those hands the user a
+            // settings directory labelled as their save. Every store id we care about is numeric.
+            var leaf = Path.GetFileName(child);
+            if (leaf.Length == 0 || !leaf.All(char.IsDigit)) continue;
+
+            // Rebuild the full template with this concrete id, so the remainder — and any wildcard
+            // or filename in it — goes through exactly the same trimming as every other path.
+            var rebuilt = after.Length == 0 ? child : Path.Combine(child, after.Replace('/', Path.DirectorySeparatorChar));
+            if (ResolveConcrete(rebuilt) is { } dir && Directory.Exists(dir))
+                results.Add(dir);
+        }
+
+        return results;
+    }
+
+    private static IEnumerable<string> SafeChildDirectories(string parent)
+    {
+        try { return Directory.EnumerateDirectories(parent).ToList(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return []; }
+    }
+
+    /// <summary>
     /// Expand placeholders in a template and return the deepest directory prefix
     /// that precedes any wildcard. Returns null if a required token is unknown.
     /// </summary>
@@ -237,6 +301,16 @@ public sealed class PathResolver
         if (expanded.Contains('<') && expanded.Contains('>'))
             return null;
 
+        return ResolveConcrete(expanded);
+    }
+
+    /// <summary>
+    /// The half of resolution that operates on an already-expanded path: trim at the first wildcard,
+    /// reduce a filename to its directory, and refuse anything not rooted in one of our tokens.
+    /// Shared so a &lt;storeUserId&gt; fan-out gets identical treatment to a straight expansion.
+    /// </summary>
+    private string? ResolveConcrete(string expanded)
+    {
         expanded = expanded.Replace('/', Path.DirectorySeparatorChar);
 
         // Trim at the first wildcard segment so we return a concrete directory.
