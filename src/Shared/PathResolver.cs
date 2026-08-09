@@ -130,12 +130,33 @@ public sealed class PathResolver
         string compatDataPath,
         string? installDir = null,
         string? storeRoot = null,
+        string? storeUserId = null) =>
+        // Steam's two conventions, and the only place they are assumed: the prefix is the `pfx`
+        // subdirectory, and every game runs as the fixed Wine user "steamuser".
+        Wine(Path.Combine(compatDataPath, "pfx", "drive_c"), "steamuser",
+             installDir, storeRoot, storeUserId);
+
+    /// <summary>
+    /// Build a resolver for a game in an arbitrary Wine prefix — the general form of
+    /// <see cref="Proton"/>, for prefixes that are not Steam's.
+    /// <para>
+    /// A launcher that manages its own prefixes (Heroic) obeys neither Steam convention: it nests
+    /// <c>pfx</c> only for a Proton runner, and a plain Wine runner runs the game as the Linux
+    /// user, not <c>steamuser</c>. Both are therefore parameters here. Use
+    /// <see cref="WinePrefix.Locate"/> to discover them from a prefix on disk; this method itself
+    /// never touches the filesystem.
+    /// </para>
+    /// </summary>
+    /// <param name="driveC">The prefix's <c>drive_c</c> directory.</param>
+    /// <param name="userName">The Wine user the game runs as — the <c>users/</c> subdirectory.</param>
+    public static PathResolver Wine(
+        string driveC,
+        string userName,
+        string? installDir = null,
+        string? storeRoot = null,
         string? storeUserId = null)
     {
-        // Proton runs every game as the fixed Wine user "steamuser".
-        const string user = "steamuser";
-        var driveC = Path.Combine(compatDataPath, "pfx", "drive_c");
-        var userHome = Path.Combine(driveC, "users", user);
+        var userHome = Path.Combine(driveC, "users", userName);
         var appData = Path.Combine(userHome, "AppData");
 
         var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -148,7 +169,7 @@ public sealed class PathResolver
             ["<winProgramData>"] = Path.Combine(driveC, "ProgramData"),
             ["<winDir>"] = Path.Combine(driveC, "windows"),
             ["<home>"] = userHome,
-            ["<osUserName>"] = user,
+            ["<osUserName>"] = userName,
             ["<winSavedGames>"] = Path.Combine(userHome, "Saved Games"),
         };
 

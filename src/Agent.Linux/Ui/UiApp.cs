@@ -131,7 +131,7 @@ sealed class UiApp
         _size = size;
         _screenshotPath = screenshotPath;
         _scanner = new LinuxGameScanner(new Detection(config));
-        _browser = new PathBrowser(SteamRoots.BrowseRoots());
+        _browser = new PathBrowser(SteamRoots.BrowseRoots().Concat(HeroicRoots.BrowseRoots()));
         _launch = Daemon.LinuxLaunchCommand();
         _settings = new SettingsScreen(config, new SystemdAutoStart());
         _leaseWarnings = LeaseWarningStore.For(config);
@@ -1159,7 +1159,7 @@ sealed class UiApp
         // existing save guess, then the deepest existing dir under the prefix, then the roots.
         _browsePath = (!string.IsNullOrEmpty(c.SuggestedSaveDir) && Directory.Exists(c.SuggestedSaveDir))
             ? c.SuggestedSaveDir!
-            : PrefixStart(c.PrefixPath) ?? "";
+            : SaveLocker.Shared.WinePrefix.BrowseStart(c.PrefixPath) ?? "";
         _lastListedPath = null;
         _screen = Screen.SetFolder;
     }
@@ -1446,24 +1446,6 @@ sealed class UiApp
                 return sdl.SetClipboardText(p) == 0;
         }
         catch { return false; }
-    }
-
-    /// <summary>
-    /// Deepest existing directory of <c>{prefix}/pfx/drive_c/users/steamuser</c>, else the prefix
-    /// root, else null. Mirrors AgentApiServer.PrefixStart so both surfaces open in the same place.
-    /// </summary>
-    private static string? PrefixStart(string? prefix)
-    {
-        if (string.IsNullOrWhiteSpace(prefix)) return null;
-        var deepest = Directory.Exists(prefix) ? prefix : null;
-        var probe = prefix;
-        foreach (var seg in new[] { "pfx", "drive_c", "users", "steamuser" })
-        {
-            probe = Path.Combine(probe, seg);
-            if (!Directory.Exists(probe)) break;
-            deepest = probe;
-        }
-        return deepest;
     }
 
     // ImGui.NET's Text* helpers treat their argument as a printf FORMAT string, so any dynamic text

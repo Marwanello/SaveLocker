@@ -10,3 +10,25 @@ Fake Prefix Game:
     <winAppData>/FakePrefixGame:
       tags:
         - save
+
+# The two Heroic games. Same tokens, resolved inside prefixes Steam did not create: one
+# proton-shaped (pfx/, user steamuser), one wine-shaped (drive_c/ directly, Linux username).
+Heroic Prefix Game:
+  files:
+    <winAppData>/HeroicPrefixGame:
+      tags:
+        - save
+Heroic Wine Game:
+  files:
+    <winDocuments>/HeroicWineGame:
+      tags:
+        - save
+
+# Present in the manifest ON PURPOSE. The renamed-prefix case is only a real test if the stranded
+# save WOULD resolve: a resolver that fell back to the prefix holding the game's files would find
+# this and hand back a path nothing writes to any more.
+Heroic Offline Game:
+  files:
+    <winDocuments>/HeroicOfflineGame:
+      tags:
+        - save

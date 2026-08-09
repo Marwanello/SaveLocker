@@ -521,28 +521,8 @@ public sealed class AgentApiServer : IDisposable
             candidate.Source.ToString(),
             candidate.HasSteamCloud,
             candidate.SuggestedSaveDir ?? "",
-            PrefixStart(candidate.PrefixPath),
+            SaveLocker.Shared.WinePrefix.BrowseStart(candidate.PrefixPath),
             candidate.SuggestedProcessName)).ToArray();
-
-    /// <summary>
-    /// Where the path browser should open when a candidate has no save-folder guess: the deepest
-    /// existing directory of <c>{prefix}/pfx/drive_c/users/steamuser</c>, falling back to the prefix
-    /// root, falling back to null. Computed here so the UI never builds Wine paths itself.
-    /// </summary>
-    private static string? PrefixStart(string? prefix)
-    {
-        if (string.IsNullOrWhiteSpace(prefix)) return null;
-
-        var deepest = Directory.Exists(prefix) ? prefix : null;
-        var probe = prefix;
-        foreach (var seg in new[] { "pfx", "drive_c", "users", "steamuser" })
-        {
-            probe = System.IO.Path.Combine(probe, seg);
-            if (!Directory.Exists(probe)) break;
-            deepest = probe;
-        }
-        return deepest;
-    }
 
     private static string FormatAgo(TimeSpan ago)
     {
