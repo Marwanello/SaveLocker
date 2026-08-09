@@ -6,15 +6,15 @@ dashboard + embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[
 
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** main
 
-**Current released version:** **v0.5.2** (released 2026-08-08). GHCR package `savelocker` is
-**public** — see [[Gotchas]].
+**Current released version:** **v0.5.3** (2026-08-09) — notes in `web/src/releases/0.5.3.md`. GHCR
+package `savelocker` is **public** — see [[Gotchas]].
 
 ---
 
 ## Status
 
-**In flight 2026-08-09: branch `heroic-detection` (`4f919d1`, not pushed).** Games staged in
-**Heroic Games Launcher** now get detected with their save paths. See `tasks/HeroicDetection.md`.
+**Shipping as v0.5.3: branch `heroic-detection` → PR.** Games staged in **Heroic Games Launcher**
+now get detected with their save paths. Write-up: `logs/2026-08-09_heroic-detection.md`.
 
 1. **They were always discovered and never resolvable.** Heroic's "Add to Steam" writes a real
    `shortcuts.vdf` entry, so the game appeared — but the prefix was looked up as
@@ -84,6 +84,8 @@ Shipped in v0.5.1 (2026-08-05) and earlier: see `logs/shipped-2026-07.md` + `log
 
 ## Next action
 
+0. **Merge the PR and tag v0.5.3.** It is an **agent** release: Decks re-run `install.sh` from the
+   newer tarball, and the console redeploy is optional (Help + notes only). No migration.
 1. **Check the live server for duplicate games** before deploying. Canonical naming stops NEW splits;
    it does not merge games a server already holds under two spellings. There is no merge tool.
 2. **Deck verification** of the Linux bounty — the five scenarios in
@@ -120,8 +122,8 @@ crosses that boundary.
 
 ## Open work
 
-See [[Backlog]] for the prioritized list. `tasks/HeroicDetection.md` is live on branch
-`heroic-detection` (see Status) — and see the parked task below.
+See [[Backlog]] for the prioritized list. `SaveLocker/tasks/` is empty **here** — but see the parked
+task below before assuming there is none.
 
 ### Parked on a branch — `offline-backoff-task` (`bee3116`, pushed, not merged)
 
