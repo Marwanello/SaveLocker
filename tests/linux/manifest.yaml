@@ -2,12 +2,18 @@
 # a Windows game whose save path is a <winAppData> token — which, under Proton, must resolve
 # INSIDE the game's Wine prefix rather than against the host.
 #
-# Only the in-prefix game is here. The portable game is deliberately absent: standalone builds
-# are largely missing from the real manifest, which is exactly why manual --dir is the primary
-# mapping path on Linux (Decisions.md §0).
+# The portable game is here ONLY to pin the install-root guard. Its manifest entry saves as a loose
+# file beside the executable — the Cave Story+ shape — so it resolves to the install DIRECTORY, i.e.
+# the whole game. That answer must be dropped, leaving the real portable save folder (<base>/Saves)
+# to win. Without the guard the install directory resolves first and beats it.
 Fake Prefix Game:
   files:
     <winAppData>/FakePrefixGame:
+      tags:
+        - save
+Fake Portable Game:
+  files:
+    <base>/Save.dat:
       tags:
         - save
 

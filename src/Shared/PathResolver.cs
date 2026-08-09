@@ -178,6 +178,45 @@ public sealed class PathResolver
     }
 
     /// <summary>
+    /// True when <paramref name="directory"/> is exactly the game's install directory —
+    /// <c>&lt;base&gt;</c> — rather than a folder inside it.
+    /// <para>
+    /// Some games keep their saves as loose files beside their own executable: Cave Story+ writes
+    /// <c>&lt;base&gt;/Save.dat</c> and <c>&lt;base&gt;/Profile.dat</c>. Since a save location is a
+    /// DIRECTORY here, every such path collapses to the install directory, and the install
+    /// directory is the entire game.
+    /// </para>
+    /// <para>
+    /// Syncing it would not merely be wasteful. Restore deletes files in the save folder that the
+    /// archive does not contain, so pulling one machine's copy over another's would prune that
+    /// machine's game installation to match — from two installs that differ by so much as a patch.
+    /// Refusing to answer, and letting the user name a folder, is the same trade v0.5.2 made for
+    /// config-tagged paths.
+    /// </para>
+    /// </summary>
+    /// <remarks>
+    /// Exact match only. A subdirectory of the install — the portable <c>&lt;base&gt;/Saves</c>
+    /// shape — is a perfectly good save folder and must keep resolving.
+    /// </remarks>
+    public bool IsInstallRoot(string? directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory)) return false;
+        if (!_tokens.TryGetValue("<base>", out var installDir) ||
+            string.IsNullOrWhiteSpace(installDir))
+            return false;
+
+        return string.Equals(Normalize(directory), Normalize(installDir), PathComparison);
+
+        static string Normalize(string p) =>
+            Path.GetFullPath(p.Replace('/', Path.DirectorySeparatorChar))
+                .TrimEnd(Path.DirectorySeparatorChar);
+    }
+
+    /// <summary>Path comparison for the host: Windows ignores case, Linux does not.</summary>
+    private static StringComparison PathComparison =>
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+    /// <summary>
     /// The reverse of <see cref="ResolveToDirectory"/>: rewrite a concrete path from THIS machine
     /// back into a template, or null when nothing matches.
     /// <para>

@@ -40,3 +40,15 @@ Dragon Quest III HD-2D Remake	MISS	the I & II sibling must not inherit DQ3's pat
 # --- <storeUserId> that is not a whole path segment is unknowable; refusing beats guessing ---
 Max Gentlemen Sexy Business!	MISS	token embedded mid-segment (a missing slash in the manifest)
 Edgar Torronteras' Moto-X 2000	MISS	token is part of a filename, not a directory
+
+# --- Saves loose in the install directory: the answer is the whole game, so it must not win ---
+# Found on a Deck (2026-08-09): Cave Story+ was mapped to its install folder. Resolving <base>
+# itself would sync the game, and restore's delete pass would then prune another machine's
+# installation to match it.
+#
+# Cave Story+ is the DQ3 shape all over again — a bad candidate outranking a good one. It has four
+# save paths: three loose files under <base>, and a real Documents folder. Dropping the install
+# directory is what lets the Documents folder win, so this is a HIT that used to be WRONG.
+Cave Story+	HIT	<base> loose files must not beat the real Documents folder
+# Nothing but <base> to offer, so refusing is the whole outcome.
+Beneath a Steel Sky	MISS	saves are loose files under <base>; the directory is the entire game

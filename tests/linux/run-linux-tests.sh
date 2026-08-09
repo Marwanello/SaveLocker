@@ -121,6 +121,20 @@ check "scan finds the portable shortcut"       "$(contains "${out}" "Fake Portab
 check "AppID converted signed -> unsigned"     "$(contains "${out}" "appid=${PREFIX_APPID}")"
 check "scan resolves the in-prefix save dir"   "$(contains "${out}" "${PREFIX_SAVE}")"
 check "scan resolves the portable save dir"    "$(contains "${out}" "${PORTABLE_SAVE}")"
+# The portable game's manifest entry saves to a loose file beside its .exe (the Cave Story+ shape),
+# so it resolves to the INSTALL DIRECTORY — the whole game. That answer must be dropped: syncing it
+# archives the game, and restore's delete pass would prune another machine's installation to match.
+# Without the guard the install dir resolves first and beats the real save folder above.
+# Whole-line match: the real save dir is ${PORTABLE_INSTALL}/Saves, so a substring test for the
+# install directory matches it too and passes no matter what the code does.
+check "the install directory is not offered as a save dir" \
+  "$(printf '%s\n' "${out}" | grep -qxF "      save: ${PORTABLE_INSTALL}" && echo 1 || echo 0)"
+# --prefix is required: without one there is no resolver on Linux at all, so the command would
+# report "not found" for a reason that has nothing to do with the guard under test.
+out2="$(agent resolve --config "${deck_cfg}" --prefix "${PORTABLE_PREFIX}" \
+        --install-dir "${PORTABLE_INSTALL}" "Fake Portable Game")"
+check "resolve refuses a <base>-only save path" \
+  "$(contains "${out2}" "no existing save directory found")"
 
 # ── Prefix resolution: manifest tokens must resolve INSIDE the prefix ────────────────────────
 out="$(agent resolve --config "${deck_cfg}" --prefix "${PREFIX}" "Fake Prefix Game")"

@@ -267,6 +267,7 @@ def main() -> int:
     print(f"PORTABLE_APPID={PORTABLE_APPID_UNSIGNED}")
     print(f"PORTABLE_PREFIX={os.path.join(steam, 'steamapps', 'compatdata', PORTABLE_APPID_UNSIGNED)}")
     print(f"PORTABLE_SAVE={portable_save}")
+    print(f"PORTABLE_INSTALL={portable_install}")
     print(f"HEROIC_CONFIG={heroic['config_root']}")
     print(f"HEROIC_EPIC_PREFIX={heroic['epic_prefix']}")
     print(f"HEROIC_EPIC_SAVE={heroic['epic_save']}")
