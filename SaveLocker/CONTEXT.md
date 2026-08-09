@@ -6,7 +6,7 @@ dashboard + embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[
 
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** main
 
-**Current released version:** **v0.5.1** (released 2026-08-05). GHCR package `savelocker` is
+**Current released version:** **v0.5.2** (released 2026-08-08). GHCR package `savelocker` is
 **public** — see [[Gotchas]].
 
 ---
