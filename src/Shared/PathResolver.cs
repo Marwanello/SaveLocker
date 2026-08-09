@@ -130,12 +130,33 @@ public sealed class PathResolver
         string compatDataPath,
         string? installDir = null,
         string? storeRoot = null,
+        string? storeUserId = null) =>
+        // Steam's two conventions, and the only place they are assumed: the prefix is the `pfx`
+        // subdirectory, and every game runs as the fixed Wine user "steamuser".
+        Wine(Path.Combine(compatDataPath, "pfx", "drive_c"), "steamuser",
+             installDir, storeRoot, storeUserId);
+
+    /// <summary>
+    /// Build a resolver for a game in an arbitrary Wine prefix — the general form of
+    /// <see cref="Proton"/>, for prefixes that are not Steam's.
+    /// <para>
+    /// A launcher that manages its own prefixes (Heroic) obeys neither Steam convention: it nests
+    /// <c>pfx</c> only for a Proton runner, and a plain Wine runner runs the game as the Linux
+    /// user, not <c>steamuser</c>. Both are therefore parameters here. Use
+    /// <see cref="WinePrefix.Locate"/> to discover them from a prefix on disk; this method itself
+    /// never touches the filesystem.
+    /// </para>
+    /// </summary>
+    /// <param name="driveC">The prefix's <c>drive_c</c> directory.</param>
+    /// <param name="userName">The Wine user the game runs as — the <c>users/</c> subdirectory.</param>
+    public static PathResolver Wine(
+        string driveC,
+        string userName,
+        string? installDir = null,
+        string? storeRoot = null,
         string? storeUserId = null)
     {
-        // Proton runs every game as the fixed Wine user "steamuser".
-        const string user = "steamuser";
-        var driveC = Path.Combine(compatDataPath, "pfx", "drive_c");
-        var userHome = Path.Combine(driveC, "users", user);
+        var userHome = Path.Combine(driveC, "users", userName);
         var appData = Path.Combine(userHome, "AppData");
 
         var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -148,13 +169,52 @@ public sealed class PathResolver
             ["<winProgramData>"] = Path.Combine(driveC, "ProgramData"),
             ["<winDir>"] = Path.Combine(driveC, "windows"),
             ["<home>"] = userHome,
-            ["<osUserName>"] = user,
+            ["<osUserName>"] = userName,
             ["<winSavedGames>"] = Path.Combine(userHome, "Saved Games"),
         };
 
         AddGameTokens(tokens, installDir, storeRoot, storeUserId);
         return new PathResolver(tokens);
     }
+
+    /// <summary>
+    /// True when <paramref name="directory"/> is exactly the game's install directory —
+    /// <c>&lt;base&gt;</c> — rather than a folder inside it.
+    /// <para>
+    /// Some games keep their saves as loose files beside their own executable: Cave Story+ writes
+    /// <c>&lt;base&gt;/Save.dat</c> and <c>&lt;base&gt;/Profile.dat</c>. Since a save location is a
+    /// DIRECTORY here, every such path collapses to the install directory, and the install
+    /// directory is the entire game.
+    /// </para>
+    /// <para>
+    /// Syncing it would not merely be wasteful. Restore deletes files in the save folder that the
+    /// archive does not contain, so pulling one machine's copy over another's would prune that
+    /// machine's game installation to match — from two installs that differ by so much as a patch.
+    /// Refusing to answer, and letting the user name a folder, is the same trade v0.5.2 made for
+    /// config-tagged paths.
+    /// </para>
+    /// </summary>
+    /// <remarks>
+    /// Exact match only. A subdirectory of the install — the portable <c>&lt;base&gt;/Saves</c>
+    /// shape — is a perfectly good save folder and must keep resolving.
+    /// </remarks>
+    public bool IsInstallRoot(string? directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory)) return false;
+        if (!_tokens.TryGetValue("<base>", out var installDir) ||
+            string.IsNullOrWhiteSpace(installDir))
+            return false;
+
+        return string.Equals(Normalize(directory), Normalize(installDir), PathComparison);
+
+        static string Normalize(string p) =>
+            Path.GetFullPath(p.Replace('/', Path.DirectorySeparatorChar))
+                .TrimEnd(Path.DirectorySeparatorChar);
+    }
+
+    /// <summary>Path comparison for the host: Windows ignores case, Linux does not.</summary>
+    private static StringComparison PathComparison =>
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     /// <summary>
     /// The reverse of <see cref="ResolveToDirectory"/>: rewrite a concrete path from THIS machine

@@ -1,3 +1,5 @@
+using SaveLocker.Shared;
+
 namespace SaveLocker.Agent;
 
 /// <summary>Where a <see cref="ScanCandidate"/> was discovered.</summary>
@@ -8,7 +10,13 @@ public enum ScanSource
     /// <summary>An installed Steam game (read from appmanifest_*.acf).</summary>
     SteamInstalled,
     /// <summary>A folder under a common save root whose name matches the manifest.</summary>
-    SaveRoot
+    SaveRoot,
+    /// <summary>
+    /// A game installed through Heroic Games Launcher (Linux). Discovered from Heroic's own library
+    /// files, not from Steam — Heroic runs its games in prefixes it manages itself, so a Heroic game
+    /// added to the Steam library has a shortcut but no compatdata prefix behind it.
+    /// </summary>
+    Heroic
 }
 
 /// <summary>
@@ -26,9 +34,15 @@ public sealed record ScanCandidate(
     /// <summary>Unsigned Steam AppID for a non-Steam shortcut — the compatdata folder name.</summary>
     string? SteamAppId = null,
     /// <summary>
-    /// The game's Proton compatdata prefix, when discovery resolved one (Linux only; null on
-    /// Windows). Lets the path browser open inside the prefix instead of at $HOME when the
-    /// save-folder guess is null — the normal case for a game absent from the manifest.
+    /// The game's Wine prefix, when discovery resolved one (Linux only; null on Windows) — Steam's
+    /// <c>compatdata/&lt;appid&gt;</c> for a shortcut, or Heroic's own <c>winePrefix</c>. Lets the
+    /// path browser open inside the prefix instead of at $HOME when the save-folder guess is null —
+    /// the normal case for a game absent from the manifest.
+    /// <para>
+    /// It is the prefix ROOT, not its <c>drive_c</c>: the two launchers nest it differently, so
+    /// anything descending into it must go through <see cref="WinePrefix.Locate"/> rather than
+    /// assume Steam's layout.
+    /// </para>
     /// </summary>
     string? PrefixPath = null,
     /// <summary>

@@ -73,6 +73,25 @@ public sealed class Detection
     }
 
     /// <summary>
+    /// Resolve a game's save directories inside an arbitrary Wine prefix — the general form of
+    /// <see cref="ResolveProtonAsync"/>, for prefixes Steam did not create (Heroic).
+    /// <para>
+    /// Empty when <paramref name="prefixRoot"/> holds no prefix. No <c>&lt;root&gt;</c> is passed:
+    /// a store library root is a Steam concept, and inventing one would expand
+    /// <c>&lt;root&gt;</c> paths to somewhere real and wrong rather than leaving them unresolved.
+    /// </para>
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ResolveWineAsync(
+        string gameName, string prefixRoot, string? installDir = null,
+        CancellationToken ct = default)
+    {
+        var resolver = WinePrefix.ResolverFor(prefixRoot, installDir);
+        return resolver is null
+            ? Array.Empty<string>()
+            : await ResolveSaveDirectoriesAsync(gameName, resolver, ct);
+    }
+
+    /// <summary>
     /// Resolve a natively-installed Windows game's save directories, with the per-game placeholders.
     /// Empty on any other platform — see <see cref="HostResolver"/>.
     /// </summary>

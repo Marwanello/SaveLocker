@@ -33,6 +33,15 @@ verification that did not happen before the tag. Write-ups:
   - **LAN enrollment-URL check** on the real deployment (`logs/2026-07-27_console-bugbounty.md` →
     Verification).
 
+- **File-level saves — the 24 games the install-root guard now refuses.** A save location is a
+  DIRECTORY throughout, so a manifest entry like `<base>/Save.dat` can only resolve to the whole
+  install folder. Refusing that was right (it would archive the game, and restore's delete pass
+  would prune another machine's installation), but it costs **8% of the manifest**: sweep went
+  99.0% → 90.9%, every new miss a `MISS(<base>)`. Recovering them properly means archiving the
+  matching FILES rather than their containing directory — a change to the archive model, touching
+  `SaveArchive`, the settle gate and restore. Measure before building: some of the 24 have another
+  path that now wins instead (Cave Story+ did), so the true loss is smaller than 24.
+
 - **Duplicate games already on the server.** Enrollment now creates games under the Ludusavi
   manifest's canonical title (PR #36), so machines converge — but any game a live server already
   holds under two spellings stays split. There is no merge tool: it needs a console merge or a

@@ -46,13 +46,98 @@ public sealed class LinuxGameScanner : IGameScanner
             }
         }
 
+        results.AddRange(await ScanHeroicAsync(ct));
+
         // Normalised, for the same reason as the Windows scanner: one game, one row, however the
         // shortcut happens to be spelled.
+        //
+        // This also collapses the Heroic double-listing: "Add to Steam" gives a Heroic game a real
+        // shortcuts.vdf entry, so it is discovered twice. Preferring the row that HAS a save dir
+        // picks the Heroic one — the shortcut's copy cannot resolve, because Steam never made a
+        // compatdata prefix for a game it does not launch.
         return results
             .GroupBy(c => ManifestLoader.NormalizeName(c.Name), StringComparer.Ordinal)
             .Select(g => g.OrderByDescending(c => c.SuggestedSaveDir is not null).First())
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    /// <summary>
+    /// Games staged in Heroic Games Launcher.
+    ///
+    /// <para>
+    /// These are worth a second discovery pass rather than being left to the shortcut scan above,
+    /// even though most of them also appear in <c>shortcuts.vdf</c> via Heroic's "Add to Steam".
+    /// The shortcut carries an AppID, and an AppID names a <c>compatdata</c> prefix — but Heroic
+    /// does not launch through Steam, so that prefix does not exist and the game arrives with no
+    /// save folder every time. The prefix that does exist is Heroic's, and only Heroic's config
+    /// knows where it is.
+    /// </para>
+    ///
+    /// <para>
+    /// No Steam Cloud here by definition: Heroic installs Epic, GOG, Amazon and sideloaded games.
+    /// </para>
+    /// </summary>
+    private async Task<List<ScanCandidate>> ScanHeroicAsync(CancellationToken ct)
+    {
+        var results = new List<ScanCandidate>();
+
+        foreach (var configRoot in HeroicRoots.Find())
+        {
+            foreach (var game in HeroicLibrary.Read(configRoot))
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var prefix = HeroicRoots.PrefixFor(configRoot, game.AppName);
+                var save = await HeroicSaveDirAsync(game, prefix, ct);
+
+                results.Add(new ScanCandidate(
+                    Name: game.Title,
+                    SuggestedSaveDir: save,
+                    Source: ScanSource.Heroic,
+                    HasSteamCloud: false,
+                    ManifestKey: save is null
+                        ? null
+                        : await _detection.CanonicalNameAsync(game.Title, ct) ?? game.Title,
+                    InstallDir: game.InstallPath,
+                    // Deliberately null. Heroic's app_name is not a Steam AppID, and the Deck's
+                    // launch wrapper matches on the AppID Steam passes it — writing Heroic's id
+                    // here would make a tracked game the wrapper can never fire for look correct.
+                    SteamAppId: null,
+                    PrefixPath: prefix,
+                    SuggestedProcessName: null));
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Best guess at a Heroic game's save directory: inside its Wine prefix per the manifest, else
+    /// portable, beside the executable. The same two shapes as a Steam shortcut, resolved through
+    /// Heroic's prefix instead of Steam's — and for a sideloaded GOG game the portable case is the
+    /// likelier of the two.
+    /// </summary>
+    private async Task<string?> HeroicSaveDirAsync(
+        HeroicGame game, string? prefix, CancellationToken ct)
+    {
+        // ONLY the configured prefix. Heroic launches the game in whatever `winePrefix` says, so
+        // that is where the game writes — even when the game's own files are somewhere else.
+        //
+        // Falling back to the prefix the game is INSTALLED in is deliberately not done. The two
+        // disagree when a prefix has been renamed on disk without updating Heroic's config: Heroic
+        // then creates a fresh empty prefix at the configured path and runs the game there, so the
+        // install-side prefix still holds a full set of real save files that nothing writes to any
+        // more. Resolving to it would hand back a wrong path that looks more convincing than the
+        // right one — see Doctor, which reports the disagreement instead of guessing past it.
+        if (prefix is not null)
+        {
+            var dirs = await _detection.ResolveWineAsync(
+                game.Title, prefix, installDir: game.InstallPath, ct);
+            if (dirs.FirstOrDefault() is { } inPrefix) return inPrefix;
+        }
+
+        return PortableSaveDir(game.InstallPath);
     }
 
     /// <summary>
@@ -89,10 +174,13 @@ public sealed class LinuxGameScanner : IGameScanner
     /// the archiver at the wrong tree, and the user can always say exactly what they mean with
     /// <c>--dir</c>.
     /// </summary>
-    private static string? PortableSaveDir(SteamShortcut shortcut)
+    private static string? PortableSaveDir(SteamShortcut shortcut) =>
+        PortableSaveDir(shortcut.StartDir
+                        ?? (shortcut.Exe is { } exe ? Path.GetDirectoryName(exe) : null));
+
+    /// <inheritdoc cref="PortableSaveDir(SteamShortcut)"/>
+    private static string? PortableSaveDir(string? installDir)
     {
-        var installDir = shortcut.StartDir
-                         ?? (shortcut.Exe is { } exe ? Path.GetDirectoryName(exe) : null);
         if (string.IsNullOrWhiteSpace(installDir) || !Directory.Exists(installDir))
             return null;
 

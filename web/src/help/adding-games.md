@@ -31,13 +31,17 @@ Alternatively, use the **game scanning** feature: the agent can auto-detect save
 **If a game is not in Steam, the agent cannot find it.** This is the single most common reason a game
 you have clearly installed never appears in **Add Games**.
 
-The agent discovers games from three places, and all three depend on Steam or on save data that
-already exists:
+The agent discovers games from four places:
 
 1. **Non-Steam shortcuts** — anything you added to Steam yourself, read from `shortcuts.vdf`.
 2. **Installed Steam games** — titles Steam itself installed.
 3. **Existing save folders** — a folder under `Documents\My Games`, `AppData` and similar whose name
    matches a known game.
+4. **Heroic Games Launcher** (Linux and Steam Deck) — games installed through Heroic from the Epic,
+   GOG or Amazon stores, or sideloaded into it. These are found from Heroic itself, so they do
+   **not** need adding to Steam first.
+
+Apart from Heroic, all of these depend on Steam or on save data that already exists.
 
 A game bought elsewhere and installed to, say, `E:\Games\...` matches none of these until you either
 add it to Steam or launch it once so it writes a save. So:
@@ -79,6 +83,22 @@ web UI, which is still there if you prefer it.
 Because there is no folder dialog on a Deck, that button opens a built-in folder browser instead. In Desktop Mode you drive it the way you drive anything else there: **the right stick (or a trackpad) moves the mouse cursor and the left stick scrolls** — point at a folder and click to open it. Rows are deliberately large enough to hit comfortably. **The D-pad does not work here** — SteamOS maps it to neither the cursor nor the arrow keys. If you have a keyboard attached, arrow keys move the selection, **Enter** or **right** enters a folder and **left**/**Backspace** goes up.
 
 The browser opens **inside the game's own Proton prefix** when the scan couldn't guess a save folder — so you land where the save actually lives instead of at your home directory. It browses your home directory, your Steam libraries, and mounted SD cards (`/run/media`); anything outside those is deliberately out of reach.
+
+#### Games installed through Heroic Games Launcher
+
+Heroic games are found without being added to Steam, and their save folders are detected inside the
+Wine prefix Heroic runs each game in. Adding them to Steam as well is still worth doing if you want
+to launch them from Game Mode — the agent lists such a game once, not twice.
+
+Two things about Heroic that look like faults and are not. It often names a sideloaded game's prefix
+`Prefixes/Title`, because its own "add a game" form starts with the word *Title* in the name field —
+harmless, and nothing to do with SaveLocker. **Do not rename a prefix folder to tidy it up:** Heroic
+keeps the old path in its settings, so it simply creates a new empty prefix there and runs the game
+in that, leaving your existing saves behind in the folder you renamed. Change the prefix in Heroic's
+per-game settings instead.
+
+Games that Heroic installed as **native Linux builds** are not detected. Only Windows titles running
+under Wine or Proton are supported.
 
 Save folders inside a Wine prefix (`My Documents`, `Application Data` and the like under `steamuser`) are symlinks. The browser now shows and follows those, because they point back inside the prefix; a link that would escape the browsable roots is still hidden.
 

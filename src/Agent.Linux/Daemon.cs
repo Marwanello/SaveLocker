@@ -83,7 +83,7 @@ public sealed class Daemon : IAsyncDisposable
                 });
             },
             getUpdateResult: () => null, // self-update is Windows-only (installer-based)
-            browseRoots: SteamRoots.BrowseRoots(),
+            browseRoots: SteamRoots.BrowseRoots().Concat(HeroicRoots.BrowseRoots()),
             launchInfo: LinuxLaunchCommand,
             onGamesChanged: StartFolderWatchers);
         _apiServer.Start();

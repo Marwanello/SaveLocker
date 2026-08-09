@@ -77,6 +77,10 @@ public static class Doctor
         }
 
         Console.WriteLine();
+        Section("Heroic Games Launcher");
+        ReportHeroic();
+
+        Console.WriteLine();
         Section("Tracked games");
         if (config.Games.Count == 0)
             Console.WriteLine("  (none — add one with: savelocker add-game --name <name> --dir <path> --appid <appid>)");
@@ -161,6 +165,86 @@ public static class Doctor
         }
         Console.WriteLine($"{_problems} problem(s) found — see the ✗ lines above.");
         return 1;
+    }
+
+    /// <summary>
+    /// Heroic, if it is here. Not finding it is not a problem — most machines do not have it — so
+    /// this reports rather than complains, right up until a game is found whose prefix is missing.
+    /// </summary>
+    private static void ReportHeroic()
+    {
+        var roots = HeroicRoots.Find();
+        if (roots.Count == 0)
+        {
+            Console.WriteLine("  not installed (no config.json under ~/.config/heroic or the Flatpak path).");
+            return;
+        }
+
+        foreach (var configRoot in roots)
+        {
+            Info("config", configRoot);
+            var games = HeroicLibrary.Read(configRoot);
+
+            if (games.Count == 0)
+            {
+                Console.WriteLine("  no installed Windows games found. Native-Linux titles are not " +
+                                  "listed here on purpose — they have no Wine prefix to sync from.");
+                continue;
+            }
+
+            foreach (var runner in games.GroupBy(g => g.Runner).OrderBy(g => g.Key, StringComparer.Ordinal))
+                Info(runner.Key, $"{runner.Count()} game(s)");
+
+            foreach (var game in games.OrderBy(g => g.Title, StringComparer.OrdinalIgnoreCase))
+            {
+                var prefix = HeroicRoots.PrefixFor(configRoot, game.AppName);
+                var layout = WinePrefix.Locate(prefix);
+
+                if (layout is null)
+                {
+                    Console.WriteLine($"  - {game.Title}  ({game.Runner})");
+                    Console.WriteLine($"      install: {game.InstallPath}");
+                    Console.WriteLine(prefix is null
+                        ? "      no Wine prefix recorded — launch it once in Heroic to create one."
+                        : $"      {prefix} is not a Wine prefix (no drive_c). Launch it once in Heroic.");
+                    continue;
+                }
+
+                Console.WriteLine($"  ✓ {game.Title}  ({game.Runner})");
+                Console.WriteLine($"      install: {game.InstallPath}");
+                // Which shape it is decides where the manifest's Windows tokens resolve, so it is
+                // the first thing to know when a Heroic game's save folder comes back empty.
+                Console.WriteLine($"      prefix:  {layout.Root} " +
+                                  $"({(layout.IsProtonShaped ? "proton" : "wine")}, user {layout.UserName})");
+
+                // A sideloaded game's executable should sit inside the prefix it runs in. When it
+                // does not, Heroic is launching an .exe from one prefix inside another — which
+                // works, because Wine reaches any Linux path through Z:, so nothing anywhere
+                // complains.
+                //
+                // Seen on a real Deck (2026-08-09): uninstalling left the old prefix and a complete
+                // .exe behind, the reinstall went to a different prefix, and Heroic's "pick the
+                // executable" step was answered with the leftover copy. Renaming a prefix folder
+                // without updating Heroic produces the same shape.
+                //
+                // Reported as a NOTE, not a problem. Saves follow the prefix the game RUNS in, which
+                // is the one above, so SaveLocker is reading the right tree and the machine works —
+                // failing doctor's exit code over it would cry wolf. It is still worth saying: it
+                // means two copies of the game exist, and <base> — the manifest's most common
+                // placeholder — points at the copy the game is not running.
+                if (WinePrefix.ContainingPrefix(game.InstallPath) is { } installedIn &&
+                    !installedIn.Equals(layout.Root, StringComparison.Ordinal))
+                {
+                    Console.WriteLine($"      ! its executable is in {installedIn}, a DIFFERENT prefix.");
+                    Console.WriteLine("        Saves follow the prefix above — the one it RUNS in — " +
+                                      "so that is the one SaveLocker reads, and that part is fine.");
+                    Console.WriteLine("        But a save path the manifest anchors to the install " +
+                                      "directory would resolve into the other copy. Usually this " +
+                                      "means an old prefix was left behind and its leftover .exe was " +
+                                      "picked; delete it and re-point the game in Heroic.");
+                }
+            }
+        }
     }
 
     private static async Task CheckServerAsync(AgentConfig config)

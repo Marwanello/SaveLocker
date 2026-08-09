@@ -5,6 +5,8 @@
 #   * shortcuts.vdf discovery, including the signed -> unsigned AppID trap
 #   * Proton prefix resolution (manifest tokens resolving INSIDE the prefix)
 #   * both save shapes: in-prefix AND portable-next-to-the-exe
+#   * Heroic Games Launcher: its own library files, its own prefixes — proton-shaped AND
+#     wine-shaped — and the double-listing when a Heroic game is also added to Steam
 #   * the launch wrapper: pull on launch, supervise the child, settle, push on exit
 #   * the settle gate waiting out a game that flushes after it exits
 #   * the /proc lock probe seeing a held write descriptor
@@ -119,6 +121,20 @@ check "scan finds the portable shortcut"       "$(contains "${out}" "Fake Portab
 check "AppID converted signed -> unsigned"     "$(contains "${out}" "appid=${PREFIX_APPID}")"
 check "scan resolves the in-prefix save dir"   "$(contains "${out}" "${PREFIX_SAVE}")"
 check "scan resolves the portable save dir"    "$(contains "${out}" "${PORTABLE_SAVE}")"
+# The portable game's manifest entry saves to a loose file beside its .exe (the Cave Story+ shape),
+# so it resolves to the INSTALL DIRECTORY — the whole game. That answer must be dropped: syncing it
+# archives the game, and restore's delete pass would prune another machine's installation to match.
+# Without the guard the install dir resolves first and beats the real save folder above.
+# Whole-line match: the real save dir is ${PORTABLE_INSTALL}/Saves, so a substring test for the
+# install directory matches it too and passes no matter what the code does.
+check "the install directory is not offered as a save dir" \
+  "$(printf '%s\n' "${out}" | grep -qxF "      save: ${PORTABLE_INSTALL}" && echo 1 || echo 0)"
+# --prefix is required: without one there is no resolver on Linux at all, so the command would
+# report "not found" for a reason that has nothing to do with the guard under test.
+out2="$(agent resolve --config "${deck_cfg}" --prefix "${PORTABLE_PREFIX}" \
+        --install-dir "${PORTABLE_INSTALL}" "Fake Portable Game")"
+check "resolve refuses a <base>-only save path" \
+  "$(contains "${out2}" "no existing save directory found")"
 
 # ── Prefix resolution: manifest tokens must resolve INSIDE the prefix ────────────────────────
 out="$(agent resolve --config "${deck_cfg}" --prefix "${PREFIX}" "Fake Prefix Game")"
@@ -128,6 +144,70 @@ check "manifest <winAppData> resolves inside the prefix" "$(contains "${out}" "$
 out="$(agent resolve --config "${deck_cfg}" "Fake Prefix Game")"
 check "no prefix -> no resolution (does not guess a host path)" \
   "$(contains "${out}" "no existing save directory found")"
+
+# ── Heroic Games Launcher ───────────────────────────────────────────────────────────────────
+# Heroic owns its own prefixes and obeys neither Steam convention, so nothing here is covered by
+# the shortcut checks above.
+out="$(agent scan --config "${deck_cfg}")"
+check "scan finds the Heroic Epic game"        "$(contains "${out}" "Heroic Prefix Game")"
+check "scan finds the Heroic sideloaded game"  "$(contains "${out}" "Heroic Wine Game")"
+# Proton-shaped prefix (pfx/, steamuser) that Steam did not create.
+check "Heroic proton-shaped prefix resolves"   "$(contains "${out}" "${HEROIC_EPIC_SAVE}")"
+# Wine-shaped prefix (drive_c/ directly, Linux username). Unresolvable by anything assuming Steam.
+check "Heroic wine-shaped prefix resolves"     "$(contains "${out}" "${HEROIC_WINE_SAVE}")"
+# Native-Linux titles are out of scope (Decisions.md §1) — they have no prefix to resolve in.
+check "native-Linux Heroic game not listed" \
+  "$([ "$(contains "${out}" "Heroic Linux Game")" = 1 ] && echo 0 || echo 1)"
+
+# The Epic game ALSO has a shortcuts.vdf entry from Heroic's "Add to Steam", with no compatdata
+# behind it. One game, one row — and it must be the row that has a save dir, not the empty one.
+check "Heroic + Steam shortcut collapse to one row" \
+  "$([ "$(printf '%s\n' "${out}" | grep -c 'Heroic Prefix Game')" = 1 ] && echo 0 || echo 1)"
+check "the surviving row is the Heroic one"    "$(contains "${out}" "Heroic Prefix Game  <Heroic>")"
+
+# --prefix must read the prefix's real layout rather than assume Steam's.
+out="$(agent resolve --config "${deck_cfg}" --prefix "${HEROIC_WINE_PREFIX}" "Heroic Wine Game")"
+check "resolve --prefix handles a wine-shaped prefix" "$(contains "${out}" "${HEROIC_WINE_SAVE}")"
+
+# ── A sideloaded game whose files and configured prefix are two different prefixes ────────────
+# Reproduced on a Deck (2026-08-09) on a CLEAN install, no renaming involved: Heroic's sideload
+# dialog seeds the prefix name from a title field that starts as the literal word "Title", so the
+# game installs into one prefix and is configured to launch in another. Renaming a prefix by hand
+# produces the same split.
+#
+# Either way the game runs in the CONFIGURED prefix, so that is where saves go. The other prefix can
+# hold a full set of real save files that nothing writes to any more — the more convincing of the
+# two answers, and the wrong one. Returning nothing beats returning it.
+cp "${HEROIC_SIDELOAD_LIBRARY%.json}.renamed-prefix.json" "${HEROIC_SIDELOAD_LIBRARY}"
+
+out="$(agent scan --config "${deck_cfg}")"
+check "split prefix: the game is still discovered" "$(contains "${out}" "Heroic Offline Game")"
+check "split prefix: no save path is guessed" \
+  "$([ "$(contains "${out}" "${HEROIC_STRANDED_SAVE}")" = 1 ] && echo 0 || echo 1)"
+# Proof the case is live: the stranded path DOES resolve if you point the resolver at that prefix.
+out="$(agent resolve --config "${deck_cfg}" --prefix "${HEROIC_RENAMED_PREFIX}" "Heroic Offline Game")"
+check "split prefix: the stranded save would have resolved" \
+  "$(contains "${out}" "${HEROIC_STRANDED_SAVE}")"
+
+out="$(agent doctor --config "${deck_cfg}")"
+doctor_split_rc=$?
+check "split prefix: doctor reports the disagreement" \
+  "$(contains "${out}" "its executable is in")"
+check "split prefix: doctor names both prefixes" \
+  "$([ "$(contains "${out}" "${HEROIC_RENAMED_PREFIX}")" = 0 ] && \
+     [ "$(contains "${out}" "${HEROIC_CONFIGURED_PREFIX}")" = 0 ] && echo 0 || echo 1)"
+# A NOTE, not a problem. Heroic splits these by default for sideloaded games, so failing doctor's
+# exit code over it would report a working Deck as broken.
+check "split prefix: doctor still exits 0" "${doctor_split_rc}"
+
+# Back to the healthy library, so the checks below still describe a clean machine.
+python3 - "${HEROIC_SIDELOAD_LIBRARY}" <<'PY'
+import json, sys
+p = sys.argv[1]
+lib = json.load(open(p))
+lib["games"] = [g for g in lib["games"] if g["app_name"] != "HeroicOfflineGame"]
+json.dump(lib, open(p, "w"), indent=2)
+PY
 
 # ── Map both games ──────────────────────────────────────────────────────────────────────────
 out="$(agent add-game --config "${deck_cfg}" --name "Fake Prefix Game" \
@@ -145,6 +225,10 @@ check "doctor reports no problems"        "${doctor_rc}"
 check "doctor finds the Steam root"       "$(contains "${out}" "${STEAM_ROOT}")"
 check "doctor resolves the Proton prefix" "$(contains "${out}" "${PREFIX}")"
 check "doctor confirms the /proc lock probe" "$(contains "${out}" "available (/proc)")"
+check "doctor finds the Heroic config root" "$(contains "${out}" "${HEROIC_CONFIG}")"
+# Which shape a prefix has decides where the manifest's tokens resolve, so doctor must say.
+check "doctor names the wine-shaped prefix"  "$(contains "${out}" "(wine, user deck)")"
+check "doctor names the proton-shaped prefix" "$(contains "${out}" "(proton, user steamuser)")"
 
 # doctor must describe the state root it is ACTUALLY using. ${deck_cfg} is deliberately outside
 # AgentConfig.DefaultDir, and doctor used to print (and probe) the default regardless - declaring

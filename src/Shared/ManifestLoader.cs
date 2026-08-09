@@ -183,6 +183,10 @@ public sealed class ManifestLoader
         //
         // Ordering is the template order in the manifest, de-duplicated, so the first result is
         // stable across runs rather than depending on hash iteration.
+        //
+        // A result that IS the install directory is dropped — see PathResolver.IsInstallRoot. Those
+        // arise from games that save as loose files beside their own executable, and the directory
+        // that contains those files is the whole game.
         var results = new List<string>();
         var seen = new HashSet<string>(
             OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
@@ -196,6 +200,7 @@ public sealed class ManifestLoader
             foreach (var dir in resolver.ResolveToDirectories(template))
             {
                 if (!Directory.Exists(dir)) continue;
+                if (resolver.IsInstallRoot(dir)) continue;
                 var full = Path.GetFullPath(dir);
                 if (seen.Add(full)) results.Add(full);
             }

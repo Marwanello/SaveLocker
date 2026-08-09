@@ -441,7 +441,8 @@ public static class AgentCli
 
     /// <summary>
     /// A game's manifest paths resolve inside its Wine prefix when one is given
-    /// (<c>--prefix &lt;compatdata/appid&gt;</c>); otherwise against this host.
+    /// (<c>--prefix &lt;compatdata/appid&gt;</c>, or any other Wine prefix — Heroic manages its own);
+    /// otherwise against this host.
     /// </summary>
     /// <remarks>
     /// <c>--install-dir</c> supplies the manifest's <c>&lt;base&gt;</c>. It is optional but worth
@@ -456,9 +457,18 @@ public static class AgentCli
 
         if (opts.TryGetValue("prefix", out var prefix) && !string.IsNullOrWhiteSpace(prefix))
         {
-            var compatData = prefix.Trim();
-            return PathResolver.Proton(
-                compatData, installDir, SteamLayout.RootFromCompatData(compatData));
+            var prefixRoot = prefix.Trim();
+            // <root> stays null for anything that is not compatdata-shaped — RootFromCompatData
+            // verifies rather than assumes, so a Heroic prefix leaves <root> unresolved instead of
+            // claiming its grandparent is a Steam library.
+            var storeRoot = SteamLayout.RootFromCompatData(prefixRoot);
+
+            // Reading the layout off disk covers Heroic, whose prefixes nest `pfx` only for a Proton
+            // runner and whose Wine user is the Linux username otherwise. Proton() remains the
+            // fallback for a prefix that does not exist yet — the pre-existing behaviour, and the
+            // right one for a Steam game that has not been launched.
+            return WinePrefix.ResolverFor(prefixRoot, installDir, storeRoot)
+                   ?? PathResolver.Proton(prefixRoot, installDir, storeRoot);
         }
 
         if (!OperatingSystem.IsWindows()) return null;
