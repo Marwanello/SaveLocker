@@ -33,6 +33,12 @@ verification that did not happen before the tag. Write-ups:
   - **LAN enrollment-URL check** on the real deployment (`logs/2026-07-27_console-bugbounty.md` →
     Verification).
 
+- **Heroic detection: finish the hardware coverage.** Branch `heroic-detection`, task file
+  `tasks/HeroicDetection.md`. `gogdl` and the `sideload` parser are confirmed on a Deck;
+  **`legendary` (Epic) and `nile` (Amazon) have fixture coverage only.** One installed game per
+  runner closes it. Also unproven on hardware: a Heroic game that is *also* added to Steam
+  collapsing to a single row (the dedupe), which no Deck has yet had in that state.
+
 - **Duplicate games already on the server.** Enrollment now creates games under the Ludusavi
   manifest's canonical title (PR #36), so machines converge — but any game a live server already
   holds under two spellings stays split. There is no merge tool: it needs a console merge or a
