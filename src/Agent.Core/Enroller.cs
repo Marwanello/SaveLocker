@@ -44,7 +44,13 @@ public static class Enroller
                 continue;
             }
 
-            var game = await api.CreateGameAsync(new CreateGameRequest(c.Name, c.ManifestKey, null));
+            // The MANIFEST's spelling, not the shortcut's, is the server-side identity. A shortcut
+            // carries whatever its owner typed, and the server matches names case-insensitively but
+            // not past punctuation — so a Deck saying "DRAGON QUEST III HD 2D Remake" and a PC saying
+            // "DRAGON QUEST III HD-2D Remake" created two games that could never sync to each other.
+            // Falls back to the scanned name for anything the manifest does not know.
+            var serverName = c.ManifestKey ?? c.Name;
+            var game = await api.CreateGameAsync(new CreateGameRequest(serverName, c.ManifestKey, null));
             // Persisted per candidate, not once at the end: a later candidate that fails — or a UI
             // window closed mid-batch — must not lose the games already created on the server, along
             // with their Steam AppIDs. SetTracked also clears any per-machine opt-out, so re-adding
@@ -56,6 +62,7 @@ public static class Enroller
                 ManifestKey = c.ManifestKey,
                 SaveDirectory = check.Canonical!,
                 SteamAppId = c.SteamAppId,
+                InstallDir = c.InstallDir,
                 // Without this the Windows ProcessWatcher excludes the game outright, so lease,
                 // exit-push and the running-game pull refusal never run for anything enrolled
                 // through the UI. Only the CLI's --proc used to populate it. WA-08.

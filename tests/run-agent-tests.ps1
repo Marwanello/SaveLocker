@@ -114,6 +114,39 @@ if ($onWindows) {
         (($detectOut -join "`n") -like "*no existing save directory found*")
 }
 
+# ---- Canonical naming: one game, however each machine spells its shortcut ----
+# A game added to Steam as a non-Steam shortcut is named whatever its owner typed, and that string
+# used to become the SERVER-SIDE identity. The server matches names case-insensitively but not past
+# punctuation, so a Deck spelling it "DRAGON QUEST III HD 2D Remake" and a PC spelling it
+# "...HD-2D Remake" created TWO games that could never sync to each other — with no error anywhere.
+# Enrollment now creates the game under the manifest's own title, so the spellings converge.
+$canonSave = Join-Path $scratch "canon-save"
+New-Item -ItemType Directory -Force $canonSave | Out-Null
+Set-Content -Path (Join-Path $canonSave "s.dat") -Value "x"
+
+$canonA = Join-Path $scratch "canon-a.json"
+$canonB = Join-Path $scratch "canon-b.json"
+foreach ($c in @($canonA, $canonB)) {
+    @{ ServerUrl = "http://localhost:5179"; ManifestCachePath = $manifest; Games = @() } |
+        ConvertTo-Json | Set-Content -Path $c -Encoding utf8
+}
+Agent register --config $canonA --name CanonA | Out-Null
+Agent register --config $canonB --name CanonB | Out-Null
+
+# Same game, two spellings: punctuation and case both differ from the manifest's "LGS Test Game".
+Agent add-game --config $canonA --name "shortcut one" --manifest "lgs-test-game" --dir $canonSave | Out-Null
+Agent add-game --config $canonB --name "shortcut two" --manifest "LGS TEST GAME"  --dir $canonSave | Out-Null
+
+$canonAId = (Get-Content $canonA -Raw | ConvertFrom-Json).Games[0].GameId
+$canonBId = (Get-Content $canonB -Raw | ConvertFrom-Json).Games[0].GameId
+Check "two spellings of one game converge on ONE server game" ($canonAId -eq $canonBId)
+
+# And it converges on the MANIFEST's title, not on whichever machine happened to enroll first.
+# Read back from the config, which stores the name the SERVER returned — so this asserts what the
+# server actually recorded, not merely what the agent asked for.
+$canonAName = (Get-Content $canonA -Raw | ConvertFrom-Json).Games[0].Name
+Check "the shared game carries the manifest's canonical name" ($canonAName -eq "LGS Test Game")
+
 # ---- Register two machines ----
 $pcReg  = Agent register --config $pcCfg  --name PC
 $lapReg = Agent register --config $lapCfg --name Laptop

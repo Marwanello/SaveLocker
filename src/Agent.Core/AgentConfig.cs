@@ -439,6 +439,13 @@ public sealed class TrackedGame
     /// matches on it to find the game for the prefix Steam handed it. Null on Windows.
     /// </summary>
     public string? SteamAppId { get; set; }
+    /// <summary>
+    /// The game's install directory on this machine — what the Ludusavi manifest calls
+    /// <c>&lt;base&gt;</c>, and the placeholder its save paths use more than any other. Recorded at
+    /// enrollment so a later re-resolve (the poller, the launch wrapper) expands the same templates
+    /// the scanner did; without it they silently resolve fewer paths than discovery already had.
+    /// </summary>
+    public string? InstallDir { get; set; }
     /// <summary>The server version this machine last pulled or pushed (its parent for the next push).</summary>
     public Guid? LastKnownVersionId { get; set; }
     /// <summary>Content hash of the local save at last sync, to detect real changes.</summary>

@@ -224,8 +224,16 @@ public static class AgentCli
                     }
                     dir = dirCheck.Canonical;
 
-                    var game = await Api().CreateGameAsync(new CreateGameRequest(name, manifestKey, null));
-                    var existing = config.FindGame(name);
+                    // Canonicalised for the same reason Enroller does it: the server-side game name
+                    // is the identity every machine matches on, and the server compares names
+                    // case-insensitively but not past punctuation. Without this, `add-game` on a
+                    // Deck and the UI on a PC create two games for one title whenever the two
+                    // spellings differ by so much as a hyphen. Unknown to the manifest → unchanged.
+                    manifestKey = await detection.CanonicalNameAsync(manifestKey ?? name) ?? manifestKey;
+                    var serverName = manifestKey ?? name;
+
+                    var game = await Api().CreateGameAsync(new CreateGameRequest(serverName, manifestKey, null));
+                    var existing = config.FindGame(name) ?? config.FindGame(serverName);
                     var tracked = existing ?? new TrackedGame();
                     tracked.GameId = game.Id;
                     tracked.Name = game.Name;
@@ -435,10 +443,27 @@ public static class AgentCli
     /// A game's manifest paths resolve inside its Wine prefix when one is given
     /// (<c>--prefix &lt;compatdata/appid&gt;</c>); otherwise against this host.
     /// </summary>
-    private static PathResolver? ResolverFor(Dictionary<string, string> opts) =>
-        opts.TryGetValue("prefix", out var prefix) && !string.IsNullOrWhiteSpace(prefix)
-            ? PathResolver.Proton(prefix.Trim())
-            : Detection.HostResolver();
+    /// <remarks>
+    /// <c>--install-dir</c> supplies the manifest's <c>&lt;base&gt;</c>. It is optional but worth
+    /// passing: more manifest save paths are written in terms of <c>&lt;base&gt;</c> than of every
+    /// other placeholder combined, so omitting it is the difference between resolving a game and
+    /// being told to pass <c>--dir</c> by hand. <c>&lt;root&gt;</c> is derived from the prefix path
+    /// and <c>&lt;storeUserId&gt;</c> is discovered on disk, so neither needs an option.
+    /// </remarks>
+    private static PathResolver? ResolverFor(Dictionary<string, string> opts)
+    {
+        var installDir = opts.GetValueOrDefault("install-dir");
+
+        if (opts.TryGetValue("prefix", out var prefix) && !string.IsNullOrWhiteSpace(prefix))
+        {
+            var compatData = prefix.Trim();
+            return PathResolver.Proton(
+                compatData, installDir, SteamLayout.RootFromCompatData(compatData));
+        }
+
+        if (!OperatingSystem.IsWindows()) return null;
+        return PathResolver.Windows(installDir);
+    }
 
     /// <summary>
     /// <c>enroll --file &lt;policy&gt;</c> — the one-command setup for a new machine, and the only

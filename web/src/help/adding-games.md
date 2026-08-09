@@ -26,6 +26,45 @@ After a game is added to the server, each machine needs to map its local save di
 
 Alternatively, use the **game scanning** feature: the agent can auto-detect save paths from Steam and Ludusavi's game manifests. Check the **Add Games** tab in the agent for detected candidates.
 
+## Add the game to Steam first (this is what makes detection work)
+
+**If a game is not in Steam, the agent cannot find it.** This is the single most common reason a game
+you have clearly installed never appears in **Add Games**.
+
+The agent discovers games from three places, and all three depend on Steam or on save data that
+already exists:
+
+1. **Non-Steam shortcuts** — anything you added to Steam yourself, read from `shortcuts.vdf`.
+2. **Installed Steam games** — titles Steam itself installed.
+3. **Existing save folders** — a folder under `Documents\My Games`, `AppData` and similar whose name
+   matches a known game.
+
+A game bought elsewhere and installed to, say, `E:\Games\...` matches none of these until you either
+add it to Steam or launch it once so it writes a save. So:
+
+**Add it to Steam as a non-Steam game** (in Steam: *Games → Add a Non-Steam Game to My Library*),
+then **Rescan** in the agent. This is worth doing anyway if you use Big Picture or a Steam Deck,
+since it is also how you launch the game there.
+
+Two things that help, but are not required:
+
+- **Launch the game once.** Detection confirms a folder actually exists, so a game that has never
+  written a save has nothing to point at. It will still be listed — just with **No save folder set**,
+  which you can fill in yourself.
+- **Name the shortcut close to the real title.** Matching ignores case and punctuation, so
+  `DRAGON QUEST III HD 2D Remake` still matches `Dragon Quest III HD-2D Remake`. It cannot recover
+  from an abbreviation or nickname — a shortcut called `DQ3` will not match anything.
+
+If a game still shows no folder after all that, it is most likely absent from the Ludusavi manifest
+(common for very recent releases). Set the folder yourself with **Set save path**; nothing else about
+syncing is affected.
+
+### Removing a game does not uninstall it
+
+Removing a game from SaveLocker only stops *this machine* syncing it. The game stays installed and
+stays on the server for your other machines. Re-adding it is just **Rescan** → tick → enrol — but it
+only reappears if it is still discoverable by one of the three routes above.
+
 ### On Linux / Steam Deck
 
 **The easiest route on a Deck is the Game Mode app.** Add `~/.local/share/SaveLocker/savelocker` to

@@ -139,8 +139,8 @@ public static class ProtonRun
         if (string.IsNullOrWhiteSpace(game.SaveDirectory) && prefix is not null)
         {
             var detection = new Detection(config);
-            var dirs = await detection.ResolveSaveDirectoriesAsync(
-                game.ManifestKey ?? game.Name, PathResolver.Proton(prefix));
+            var dirs = await detection.ResolveProtonAsync(
+                game.ManifestKey ?? game.Name, prefix, game.InstallDir);
 
             if (dirs.FirstOrDefault() is { } dir)
             {

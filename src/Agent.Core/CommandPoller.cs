@@ -323,13 +323,24 @@ public sealed class CommandPoller : IDisposable
     /// </summary>
     private PathResolver? ResolverForGame(GameDto sg)
     {
-        if (OperatingSystem.IsWindows()) return Detection.HostResolver();
+        if (OperatingSystem.IsWindows())
+        {
+            var tracked = _config.Games.FirstOrDefault(g => g.GameId == sg.Id);
+            return PathResolver.Windows(tracked?.InstallDir);
+        }
 
         var appId = _config.Games.FirstOrDefault(g => g.GameId == sg.Id)?.SteamAppId;
         if (string.IsNullOrWhiteSpace(appId)) return null;
 
         var compatData = _prefixForAppId?.Invoke(appId);
-        return string.IsNullOrWhiteSpace(compatData) ? null : PathResolver.Proton(compatData);
+        if (string.IsNullOrWhiteSpace(compatData)) return null;
+
+        // <root> comes off the prefix path itself; <base> is what the scanner recorded at
+        // enrollment. Without these the poller expands a game's paths differently from the scanner
+        // that first resolved them, and the two disagree about where the save lives.
+        var storeRoot = SteamLayout.RootFromCompatData(compatData);
+        var installDir = _config.Games.FirstOrDefault(g => g.GameId == sg.Id)?.InstallDir;
+        return PathResolver.Proton(compatData, installDir, storeRoot);
     }
 
     /// <summary>

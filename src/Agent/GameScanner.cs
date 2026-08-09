@@ -1,4 +1,5 @@
 ﻿using Microsoft.Win32;
+using SaveLocker.Shared;
 
 namespace SaveLocker.Agent;
 
@@ -45,14 +46,18 @@ public sealed class GameScanner : IGameScanner
             all.AddRange(await SafeSourceAsync("Steam shortcuts",
                 () => ScanSteamShortcutsAsync(steamPath, ct), ct));
             all.AddRange(await SafeSourceAsync("installed Steam games",
-                () => Task.FromResult(ScanInstalledSteamGames(steamPath)), ct));
+                () => ScanInstalledSteamGamesAsync(steamPath, ct), ct));
         }
 
         all.AddRange(await SafeSourceAsync("common save roots", () => ScanSaveRootsAsync(ct), ct));
 
         // De-dupe by name: prefer a candidate that already has a suggested save dir.
+        // Grouped on the NORMALISED name: the same game reaches us spelled differently by
+        // different sources — a Steam shortcut says "DRAGON QUEST III HD 2D Remake", the save-root
+        // heuristic reads "DRAGON QUEST III HD-2D Remake" off disk — and grouping on the raw name
+        // listed it twice, once with a path and once without.
         return all
-            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(c => ManifestLoader.NormalizeName(c.Name), StringComparer.Ordinal)
             .Select(g => g.OrderByDescending(c => c.SuggestedSaveDir is not null).First())
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -103,10 +108,10 @@ public sealed class GameScanner : IGameScanner
         var results = new List<ScanCandidate>();
         foreach (var s in await SteamShortcuts.ReadAllAsync(steamPath, ct))
         {
-            var save = await SuggestSaveDirAsync(s.AppName, ct);
+            var save = await SuggestSaveDirAsync(s.AppName, ct, NullIfMissing(s.StartDir), steamPath);
             results.Add(new ScanCandidate(
                 s.AppName, save, ScanSource.SteamShortcut,
-                HasSteamCloud: false, ManifestKey: save is null ? null : s.AppName,
+                HasSteamCloud: false, ManifestKey: await CanonicalKeyAsync(s.AppName, save, ct),
                 InstallDir: NullIfMissing(s.StartDir),
                 SteamAppId: s.AppId,
                 // Steam recorded the exact executable the user picked, so this is the one source
@@ -119,11 +124,15 @@ public sealed class GameScanner : IGameScanner
 
     // ----- Source 2: installed Steam games (libraryfolders.vdf + *.acf, text) -----
 
-    private IReadOnlyList<ScanCandidate> ScanInstalledSteamGames(string steamPath)
+    private async Task<IReadOnlyList<ScanCandidate>> ScanInstalledSteamGamesAsync(
+        string steamPath, CancellationToken ct)
     {
         var results = new List<ScanCandidate>();
         foreach (var library in SteamLibraryPaths(steamPath))
         {
+            // The library this game lives under is what <root> means for it — which is NOT always
+            // steamPath, since a game can sit in a library on another drive entirely.
+            var libraryRoot = library;
             var steamapps = Path.Combine(library, "steamapps");
             if (!SafeDirectoryExists(steamapps)) continue;
 
@@ -148,11 +157,20 @@ public sealed class GameScanner : IGameScanner
                     ? null
                     : NullIfMissing(SafeCombine(steamapps, "common", installDir));
 
+                // The manifest is consulted here now. It never used to be: this source built every
+                // candidate with SuggestedSaveDir and ManifestKey null while holding installPath in
+                // a local one line above — so an installed Steam game ALWAYS arrived with no save
+                // folder and the user was sent to type one by hand, even for the thousands of
+                // titles the manifest describes exactly.
+                var trimmed = name.Trim();
+                var save = await SuggestSaveDirAsync(trimmed, ct, installPath, libraryRoot);
+
                 // Installed Steam titles usually have Steam Cloud; flag rather than
                 // hide them so the user can still enroll if they want a local copy.
                 results.Add(new ScanCandidate(
-                    name.Trim(), SuggestedSaveDir: null, ScanSource.SteamInstalled,
-                    HasSteamCloud: true, ManifestKey: null, InstallDir: installPath));
+                    trimmed, save, ScanSource.SteamInstalled,
+                    HasSteamCloud: true, ManifestKey: await CanonicalKeyAsync(trimmed, save, ct),
+                    InstallDir: installPath));
             }
         }
         return results;
@@ -224,7 +242,8 @@ public sealed class GameScanner : IGameScanner
                 if (manifestNames.Contains(folderName))
                     results.Add(new ScanCandidate(
                         folderName, Path.GetFullPath(dir), ScanSource.SaveRoot,
-                        HasSteamCloud: false, ManifestKey: folderName));
+                        HasSteamCloud: false,
+                        ManifestKey: manifest.CanonicalName(folderName) ?? folderName));
             }
         }
         return results;
@@ -248,11 +267,32 @@ public sealed class GameScanner : IGameScanner
 
     // ----- Helpers -----
 
-    /// <summary>Resolve the first existing save dir the manifest knows for a name.</summary>
-    private async Task<string?> SuggestSaveDirAsync(string name, CancellationToken ct)
+    /// <summary>
+    /// Resolve the first existing save dir the manifest knows for a name.
+    /// <para>
+    /// <paramref name="installDir"/> and <paramref name="storeRoot"/> are what the manifest calls
+    /// <c>&lt;base&gt;</c> and <c>&lt;root&gt;</c>. They are optional because not every discovery
+    /// source knows them, but supplying them is what lets the majority of manifest entries resolve
+    /// at all — <c>&lt;base&gt;</c> alone appears in more save paths than every other placeholder
+    /// combined.
+    /// </para>
+    /// </summary>
+    private async Task<string?> SuggestSaveDirAsync(
+        string name, CancellationToken ct, string? installDir = null, string? storeRoot = null)
     {
-        var dirs = await _detection.ResolveSaveDirectoriesAsync(name, ct: ct);
+        var dirs = await _detection.ResolveWindowsAsync(name, installDir, storeRoot, ct);
         return dirs.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// The manifest's own spelling for a discovered name, or null when we did not match the manifest.
+    /// Enrollment creates the server-side game under this, so two machines that spell the same
+    /// shortcut differently still converge on one game.
+    /// </summary>
+    private async Task<string?> CanonicalKeyAsync(string name, string? save, CancellationToken ct)
+    {
+        if (save is null) return null;
+        return await _detection.CanonicalNameAsync(name, ct) ?? name;
     }
 
     private static string? NullIfMissing(string? dir) =>

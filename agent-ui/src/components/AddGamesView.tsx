@@ -21,7 +21,11 @@ const BTN_BASE: React.CSSProperties = {
 export function AddGamesView({ onEnrolled }: Props) {
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [checked, setChecked] = useState<Set<number>>(new Set())
-  const [hideSteamCloud, setHideSteamCloud] = useState(false)
+  // Hidden by DEFAULT. SaveLocker exists for games Steam does not back up; a Steam-bought title
+  // already has Steam Cloud, so listing hundreds of them first buries the handful the user
+  // actually came to enroll. The toggle is still there for the deliberate case of wanting a local
+  // copy of a Cloud game — this changes which list you start from, not what is reachable.
+  const [hideSteamCloud, setHideSteamCloud] = useState(true)
   const [scanning, setScanning] = useState(false)
   const [enrolling, setEnrolling] = useState(false)
   const [status, setStatus] = useState('')
@@ -34,7 +38,11 @@ export function AddGamesView({ onEnrolled }: Props) {
     try {
       const result = force ? await api.rescan() : await api.candidates()
       setCandidates(result)
-      setStatus(`Found ${result.length} candidate(s).`)
+      // Cleared, not set to a count. This used to report result.length — every candidate, including
+      // the filtered ones — and because footerStatus prefers `status` over its computed message, it
+      // won: the footer claimed "Found 29 candidate(s)" above a list of 16 and the hidden-count
+      // hint never rendered. Leaving it empty lets the computed message describe what is on screen.
+      setStatus('')
     } catch (e) {
       setStatus('Scan failed: ' + (e as Error).message)
     } finally {
@@ -102,10 +110,15 @@ export function AddGamesView({ onEnrolled }: Props) {
   const busy = scanning || enrolling
   const visible = hideSteamCloud ? candidates.filter(c => !c.hasSteamCloud) : candidates
   const enrollBlocked = missing.length > 0
+  // Named, not just counted. Now that these are hidden by default, a user looking for a game they
+  // can plainly see in Steam needs to be told it was filtered and by which button — silently
+  // showing a shorter list reads as "the scan didn't find it".
+  const hiddenCount = candidates.length - visible.length
   const footerStatus = status || (
     enrollBlocked
       ? `Set a save folder for: ${missing.map(c => c.name).join(', ')}`
-      : `Found ${visible.length} candidate(s).`
+      : `Found ${visible.length} candidate(s).` +
+        (hiddenCount > 0 ? ` ${hiddenCount} Steam Cloud game(s) hidden — use “Hide Steam Cloud” to show them.` : '')
   )
 
   return (

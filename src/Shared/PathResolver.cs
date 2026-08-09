@@ -9,10 +9,46 @@ public sealed class PathResolver
 {
     private readonly Dictionary<string, string> _tokens;
 
-    public PathResolver(Dictionary<string, string> tokens) => _tokens = tokens;
+    /// <summary>
+    /// Tokens holding an identifier rather than a path. <see cref="Tokenize"/> must skip them: they
+    /// would match anywhere the name or id happens to appear in a path and rewrite that fragment
+    /// into a placeholder, producing a template that expands to nonsense on the next machine.
+    /// </summary>
+    private static readonly HashSet<string> NonPathTokens =
+        new(StringComparer.OrdinalIgnoreCase) { "<osUserName>", "<storeUserId>" };
 
-    /// <summary>Build a resolver populated with this Windows user's known folders.</summary>
-    public static PathResolver Windows()
+    public PathResolver(Dictionary<string, string> tokens)
+    {
+        // Separators are normalised ONCE, here, so every comparison downstream is separator-safe.
+        //
+        // ResolveToDirectory rewrites the manifest's forward slashes to the platform separator, but
+        // token VALUES arrive however the caller built them — and a caller that passes
+        // "C:/games/steam" makes a token value that no expanded path will ever prefix-match. That
+        // silently defeats both Tokenize and the known-root guard. Replacing '/' is safe on Linux
+        // too: DirectorySeparatorChar is '/' there, so it is a no-op rather than a corruption.
+        _tokens = tokens.ToDictionary(
+            t => t.Key,
+            t => NonPathTokens.Contains(t.Key)
+                ? t.Value
+                : t.Value?.Replace('/', Path.DirectorySeparatorChar) ?? string.Empty,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Build a resolver populated with this Windows user's known folders.
+    /// </summary>
+    /// <param name="installDir">
+    /// The game's own install directory — what <c>&lt;base&gt;</c> expands to. Per-GAME, not
+    /// per-machine, which is why it is a parameter: <c>&lt;base&gt;</c> is the most common token in
+    /// the manifest by a wide margin, and without it roughly a third of resolvable games are lost.
+    /// </param>
+    /// <param name="storeRoot">The store library root the game is installed under — <c>&lt;root&gt;</c>.</param>
+    /// <param name="storeUserId">
+    /// Steam's 32-bit account id, i.e. the <c>userdata/&lt;id&gt;</c> folder name — NOT the 64-bit
+    /// SteamID64. Games that shard saves per account nest them under it.
+    /// </param>
+    public static PathResolver Windows(
+        string? installDir = null, string? storeRoot = null, string? storeUserId = null)
     {
         string Env(string var) => Environment.GetEnvironmentVariable(var) ?? string.Empty;
         string Special(Environment.SpecialFolder f) => Environment.GetFolderPath(f);
@@ -51,7 +87,25 @@ public sealed class PathResolver
             ["<winSavedGames>"] = Path.Combine(home, "Saved Games"),
         };
 
+        AddGameTokens(tokens, installDir, storeRoot, storeUserId);
         return new PathResolver(tokens);
+    }
+
+    /// <summary>
+    /// Add the three per-game placeholders shared by both platforms.
+    /// <para>
+    /// A null or empty value is <b>omitted entirely</b> rather than mapped to "". That distinction
+    /// matters: an unknown token left in place trips the leftover-placeholder guard in
+    /// <see cref="ResolveToDirectory"/> and yields null — "we cannot resolve this" — whereas an
+    /// empty mapping would silently produce a truncated path pointing somewhere real and wrong.
+    /// </para>
+    /// </summary>
+    private static void AddGameTokens(
+        Dictionary<string, string> tokens, string? installDir, string? storeRoot, string? storeUserId)
+    {
+        if (!string.IsNullOrWhiteSpace(installDir)) tokens["<base>"] = installDir;
+        if (!string.IsNullOrWhiteSpace(storeRoot)) tokens["<root>"] = storeRoot;
+        if (!string.IsNullOrWhiteSpace(storeUserId)) tokens["<storeUserId>"] = storeUserId;
     }
 
     /// <summary>
@@ -63,7 +117,20 @@ public sealed class PathResolver
     /// The game's <c>compatdata/&lt;appid&gt;</c> directory — exactly what Steam passes as
     /// <c>STEAM_COMPAT_DATA_PATH</c>. The prefix is the <c>pfx</c> subdirectory of it.
     /// </param>
-    public static PathResolver Proton(string compatDataPath)
+    /// <param name="installDir">
+    /// The game's install directory on the HOST filesystem — <c>&lt;base&gt;</c>. Under Proton this
+    /// is a native Linux path, not a path inside the prefix: a non-Steam shortcut's is its
+    /// <c>StartDir</c>, and a Steam game's is <c>steamapps/common/&lt;installdir&gt;</c>.
+    /// </param>
+    /// <param name="storeRoot">The Steam library root — <c>&lt;root&gt;</c>. Also a host path.</param>
+    /// <param name="storeUserId">
+    /// Steam's 32-bit account id, i.e. the <c>userdata/&lt;id&gt;</c> folder name — NOT SteamID64.
+    /// </param>
+    public static PathResolver Proton(
+        string compatDataPath,
+        string? installDir = null,
+        string? storeRoot = null,
+        string? storeUserId = null)
     {
         // Proton runs every game as the fixed Wine user "steamuser".
         const string user = "steamuser";
@@ -85,6 +152,7 @@ public sealed class PathResolver
             ["<winSavedGames>"] = Path.Combine(userHome, "Saved Games"),
         };
 
+        AddGameTokens(tokens, installDir, storeRoot, storeUserId);
         return new PathResolver(tokens);
     }
 
@@ -114,7 +182,7 @@ public sealed class PathResolver
             : StringComparison.Ordinal;
 
         var best = _tokens
-            .Where(t => t.Key != "<osUserName>" && !string.IsNullOrEmpty(t.Value))
+            .Where(t => !NonPathTokens.Contains(t.Key) && !string.IsNullOrEmpty(t.Value))
             .Select(t => (t.Key, Value: t.Value.TrimEnd(Path.DirectorySeparatorChar)))
             .Where(t => path.Equals(t.Value, cmp) ||
                         path.StartsWith(t.Value + Path.DirectorySeparatorChar, cmp))
@@ -128,9 +196,90 @@ public sealed class PathResolver
         return rest.Length == 0 ? best.Key : $"{best.Key}/{rest.Replace('\\', '/')}";
     }
 
+    /// <summary>
+    /// True when an expanded path actually sits under one of this resolver's own roots. Anything
+    /// else came from a template we did not fully expand, and is not ours to return.
+    /// </summary>
+    private bool StartsWithKnownRoot(string path)
+    {
+        var cmp = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        return _tokens
+            .Where(t => !NonPathTokens.Contains(t.Key) && !string.IsNullOrEmpty(t.Value))
+            .Select(t => t.Value.TrimEnd(Path.DirectorySeparatorChar))
+            .Any(root => path.Equals(root, cmp) ||
+                         path.StartsWith(root + Path.DirectorySeparatorChar, cmp));
+    }
+
     /// <summary>True when this value is a template rather than a concrete path.</summary>
     public static bool IsTemplate(string? value) =>
         !string.IsNullOrWhiteSpace(value) && value.Contains('<') && value.Contains('>');
+
+    /// <summary>
+    /// Every existing directory a template designates, fanning <c>&lt;storeUserId&gt;</c> out over
+    /// what is actually on disk.
+    /// <para>
+    /// The id cannot be derived reliably, so it is discovered rather than guessed. Steam exposes at
+    /// least two forms — the 32-bit account id that names <c>userdata/&lt;id&gt;</c>, and the 64-bit
+    /// SteamID64 — and games pick whichever they like. DRAGON QUEST III writes
+    /// <c>…/Steam/76561197960271872/SaveGames</c> while the same machine's userdata folders are
+    /// <c>14297026</c> and <c>19627</c>; the two do not correspond, so any resolver that substituted
+    /// an id from userdata produced a path that does not exist. Enumerating the parent is correct
+    /// for both forms, for a machine with several Steam accounts, and for stores that are not Steam.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<string> ResolveToDirectories(string template)
+    {
+        if (!template.Contains("<storeUserId>", StringComparison.OrdinalIgnoreCase))
+            return ResolveToDirectory(template) is { } single ? [single] : [];
+
+        // Split at the token and resolve the part before it; that parent is what we enumerate.
+        var idx = template.IndexOf("<storeUserId>", StringComparison.OrdinalIgnoreCase);
+        var before = template[..idx];
+        var after = template[(idx + "<storeUserId>".Length)..];
+
+        // Only when the token is a WHOLE path segment. The manifest also embeds it inside one —
+        // "…/Max Gentlemen Sexy Business<storeUserId>" (a missing slash) and
+        // "…/Profiles/<storeUserId>.prf" (part of a filename) — and treating those as directory
+        // boundaries enumerates the wrong level, handing back a neighbouring folder as if it were
+        // the save. The id is unknowable in those shapes, so resolve nothing and let the user pick.
+        var wholeSegment =
+            (before.Length == 0 || before[^1] is '/' or '\\') &&
+            (after.Length == 0 || after[0] is '/' or '\\');
+        if (!wholeSegment) return [];
+
+        before = before.TrimEnd('/', '\\');
+        after = after.TrimStart('/', '\\');
+
+        if (ResolveToDirectory(before) is not { } parent || !Directory.Exists(parent))
+            return [];
+
+        var results = new List<string>();
+        foreach (var child in SafeChildDirectories(parent))
+        {
+            // Only id-shaped children. The parent holds more than accounts — DRAGON QUEST III's
+            // "Steam" folder also carries "Config" and "Logs", and returning those hands the user a
+            // settings directory labelled as their save. Every store id we care about is numeric.
+            var leaf = Path.GetFileName(child);
+            if (leaf.Length == 0 || !leaf.All(char.IsDigit)) continue;
+
+            // Rebuild the full template with this concrete id, so the remainder — and any wildcard
+            // or filename in it — goes through exactly the same trimming as every other path.
+            var rebuilt = after.Length == 0 ? child : Path.Combine(child, after.Replace('/', Path.DirectorySeparatorChar));
+            if (ResolveConcrete(rebuilt) is { } dir && Directory.Exists(dir))
+                results.Add(dir);
+        }
+
+        return results;
+    }
+
+    private static IEnumerable<string> SafeChildDirectories(string parent)
+    {
+        try { return Directory.EnumerateDirectories(parent).ToList(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return []; }
+    }
 
     /// <summary>
     /// Expand placeholders in a template and return the deepest directory prefix
@@ -152,6 +301,16 @@ public sealed class PathResolver
         if (expanded.Contains('<') && expanded.Contains('>'))
             return null;
 
+        return ResolveConcrete(expanded);
+    }
+
+    /// <summary>
+    /// The half of resolution that operates on an already-expanded path: trim at the first wildcard,
+    /// reduce a filename to its directory, and refuse anything not rooted in one of our tokens.
+    /// Shared so a &lt;storeUserId&gt; fan-out gets identical treatment to a straight expansion.
+    /// </summary>
+    private string? ResolveConcrete(string expanded)
+    {
         expanded = expanded.Replace('/', Path.DirectorySeparatorChar);
 
         // Trim at the first wildcard segment so we return a concrete directory.
@@ -166,6 +325,16 @@ public sealed class PathResolver
 
         if (kept.Count == 0) return null;
         var path = string.Join(Path.DirectorySeparatorChar, kept);
+
+        // A template that expands to something not rooted in one of OUR tokens is refused.
+        //
+        // The community manifest contains malformed entries with no placeholder at all — e.g.
+        // "/AppData/LocalLow/Strange Scaffold/.../Savegames" for Space Warlord Organ Trading
+        // Simulator, which is missing its <home>. Left alone, Path.GetFullPath anchors that to the
+        // CURRENT DRIVE, so the agent can hand back "E:\AppData\..." — a real path outside every
+        // prefix and profile we know about, presented to the user as a confident answer. Found by
+        // tests/detection.
+        if (!StartsWithKnownRoot(path)) return null;
 
         // If the template pointed at a specific file (last kept segment has an
         // extension and there were no wildcards after it), use its directory.

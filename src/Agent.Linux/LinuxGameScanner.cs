@@ -33,7 +33,9 @@ public sealed class LinuxGameScanner : IGameScanner
                     SuggestedSaveDir: save,
                     Source: ScanSource.SteamShortcut,
                     HasSteamCloud: false,          // non-Steam shortcuts have no Cloud, by definition
-                    ManifestKey: save is null ? null : s.AppName,
+                    ManifestKey: save is null
+                        ? null
+                        : await _detection.CanonicalNameAsync(s.AppName, ct) ?? s.AppName,
                     InstallDir: s.StartDir,
                     SteamAppId: s.AppId,
                     PrefixPath: prefix,
@@ -44,8 +46,10 @@ public sealed class LinuxGameScanner : IGameScanner
             }
         }
 
+        // Normalised, for the same reason as the Windows scanner: one game, one row, however the
+        // shortcut happens to be spelled.
         return results
-            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(c => ManifestLoader.NormalizeName(c.Name), StringComparer.Ordinal)
             .Select(g => g.OrderByDescending(c => c.SuggestedSaveDir is not null).First())
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -68,8 +72,11 @@ public sealed class LinuxGameScanner : IGameScanner
     {
         if (compatDataPath is not null)
         {
-            var dirs = await _detection.ResolveSaveDirectoriesAsync(
-                shortcut.AppName, PathResolver.Proton(compatDataPath), ct);
+            // StartDir is the game's install directory, which is exactly what <base> means — the
+            // most common placeholder in the manifest by a wide margin. Passing it is most of the
+            // reason a shortcut now resolves at all.
+            var dirs = await _detection.ResolveProtonAsync(
+                shortcut.AppName, compatDataPath, installDir: shortcut.StartDir, ct);
             if (dirs.FirstOrDefault() is { } inPrefix) return inPrefix;
         }
 

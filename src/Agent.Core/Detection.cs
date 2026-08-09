@@ -47,12 +47,59 @@ public sealed class Detection
     }
 
     /// <summary>
+    /// Resolve a Proton game's save directories, supplying the three per-game placeholders.
+    /// <para>
+    /// <c>&lt;root&gt;</c> is DERIVED from the compatdata path rather than plumbed in: the prefix is
+    /// always <c>{root}/steamapps/compatdata/{appid}</c>, so the library root is three levels up.
+    /// That keeps every caller — scanner, poller, launch wrapper, CLI — passing only what it
+    /// genuinely knows.
+    /// </para>
+    /// </summary>
+    /// <param name="installDir">
+    /// The game's install directory on the host — <c>&lt;base&gt;</c>. For a non-Steam shortcut
+    /// that is its <c>StartDir</c>.
+    /// </param>
+    /// <remarks>
+    /// No <c>&lt;storeUserId&gt;</c> is passed: PathResolver discovers it from the filesystem,
+    /// because Steam exposes both a 32-bit account id and a SteamID64 and games use either.
+    /// </remarks>
+    public async Task<IReadOnlyList<string>> ResolveProtonAsync(
+        string gameName, string compatDataPath, string? installDir = null,
+        CancellationToken ct = default)
+    {
+        var storeRoot = SteamLayout.RootFromCompatData(compatDataPath);
+        return await ResolveSaveDirectoriesAsync(
+            gameName, PathResolver.Proton(compatDataPath, installDir, storeRoot), ct);
+    }
+
+    /// <summary>
+    /// Resolve a natively-installed Windows game's save directories, with the per-game placeholders.
+    /// Empty on any other platform — see <see cref="HostResolver"/>.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ResolveWindowsAsync(
+        string gameName, string? installDir = null, string? storeRoot = null,
+        CancellationToken ct = default)
+    {
+        if (!OperatingSystem.IsWindows()) return Array.Empty<string>();
+        return await ResolveSaveDirectoriesAsync(
+            gameName, PathResolver.Windows(installDir, storeRoot), ct);
+    }
+
+    /// <summary>
     /// The resolver for games running natively on this host — Windows only. There is no Linux
     /// equivalent: a Proton game's paths live in its own prefix (per-game, so the caller must
     /// supply it), and native-Linux builds are out of scope (Decisions.md §1).
     /// </summary>
     public static PathResolver? HostResolver() =>
         OperatingSystem.IsWindows() ? PathResolver.Windows() : null;
+
+    /// <summary>
+    /// The manifest's own spelling of a game, for any spelling we can match; null if it is not in
+    /// the manifest. Discovery records this as the candidate's ManifestKey, and enrollment creates
+    /// the server-side game under it, so every machine names the same game the same way.
+    /// </summary>
+    public async Task<string?> CanonicalNameAsync(string name, CancellationToken ct = default) =>
+        (await GetManifestAsync(ct: ct)).CanonicalName(name);
 
     /// <summary>Suggest manifest game names that contain the given substring.</summary>
     public async Task<IReadOnlyList<string>> SearchAsync(string term, int max = 25, CancellationToken ct = default)
