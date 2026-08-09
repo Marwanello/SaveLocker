@@ -74,24 +74,62 @@ public sealed class ManifestLoader
             return Array.Empty<string>();
 
         resolver ??= PathResolver.Windows();
-        var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var template in game.Files.Keys)
+        // Only SAVE paths, and only ones that apply to Windows.
+        //
+        // Every entry used to be considered, which had two consequences the caller could not see.
+        // Callers take the first result, and the order was a HashSet's — so a game could be mapped
+        // to its settings folder instead of its saves. DRAGON QUEST III does exactly that: its save
+        // path needs <storeUserId>, its sibling "Steam/Config/WindowsNoEditor" does not, so the
+        // config folder was the only one that resolved and it won. Roughly 4% of sampled games hit
+        // this (tests/detection). Returning nothing is strictly better: the user is asked to pick,
+        // instead of being handed a wrong path presented as certain.
+        //
+        // Ordering is the template order in the manifest, de-duplicated, so the first result is
+        // stable across runs rather than depending on hash iteration.
+        var results = new List<string>();
+        var seen = new HashSet<string>(
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
+        foreach (var (template, entry) in game.Files)
         {
+            if (!IsWindowsSave(entry)) continue;
+
             var dir = resolver.ResolveToDirectory(template);
-            if (dir is not null && Directory.Exists(dir))
-                results.Add(Path.GetFullPath(dir));
+            if (dir is null || !Directory.Exists(dir)) continue;
+
+            var full = Path.GetFullPath(dir);
+            if (seen.Add(full)) results.Add(full);
         }
 
-        return results.ToList();
+        return results;
+    }
+
+    /// <summary>
+    /// A file entry that describes a save on Windows. Absent <c>tags</c> or <c>when</c> mean
+    /// "unspecified", which the manifest treats as applying — so absence must never be read as
+    /// exclusion, or we would drop thousands of perfectly good entries.
+    /// </summary>
+    private static bool IsWindowsSave(ManifestFileEntry? entry)
+    {
+        var tagsOk = entry?.Tags is not { Count: > 0 } tags ||
+                     tags.Contains("save", StringComparer.OrdinalIgnoreCase);
+
+        var osOk = entry?.When is not { Count: > 0 } when ||
+                   when.Any(w => string.IsNullOrEmpty(w?.Os) ||
+                                 w.Os.Equals("windows", StringComparison.OrdinalIgnoreCase));
+
+        return tagsOk && osOk;
     }
 
     // ----- Manifest schema (only the parts we use) -----
 
     public sealed class ManifestGame
     {
+        // The value is nullable: "some/path:" with no tags block deserialises to null, not an
+        // empty entry, and dereferencing it would take down the whole scan.
         [YamlMember(Alias = "files")]
-        public Dictionary<string, ManifestFileEntry>? Files { get; set; }
+        public Dictionary<string, ManifestFileEntry?>? Files { get; set; }
 
         [YamlMember(Alias = "installDir")]
         public Dictionary<string, object>? InstallDir { get; set; }
@@ -101,5 +139,16 @@ public sealed class ManifestLoader
     {
         [YamlMember(Alias = "tags")]
         public List<string>? Tags { get; set; }
+
+        /// <summary>Applicability conditions. Only <c>os</c> is used; <c>store</c> is not, because
+        /// the agent does not always know which store a given install came from.</summary>
+        [YamlMember(Alias = "when")]
+        public List<ManifestWhen?>? When { get; set; }
+    }
+
+    public sealed class ManifestWhen
+    {
+        [YamlMember(Alias = "os")]
+        public string? Os { get; set; }
     }
 }

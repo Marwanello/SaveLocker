@@ -63,9 +63,16 @@ echo "Fixtures in ${scratch} (fake HOME=${HOME})"
 echo "==> Starting server on ${server_url}"
 server_state="${scratch}/server"
 mkdir -p "${server_state}/archives"
+# AgentInstallerRoot matters as much as the other two, and only on Linux. AgentInstallerService
+# creates its root in its CONSTRUCTOR, and the default resolves to /data/agent-installer — which a
+# normal user cannot create. The server then died at startup AFTER migrations had run, so the log
+# looked like a healthy boot right up to an unhandled UnauthorizedAccessException, and all 16
+# server-dependent checks below failed as though the agent were broken. Windows never saw it: there
+# the same default happily creates E:\data\.
 ASPNETCORE_URLS="${server_url}" \
 Storage__DbPath="${server_state}/savelocker.db" \
 Storage__ArchiveRoot="${server_state}/archives" \
+Storage__AgentInstallerRoot="${server_state}/agent-installer" \
   dotnet run --project "${repo_root}/src/Server/SaveLocker.Server.csproj" \
     --no-launch-profile >"${scratch}/server.log" 2>&1 &
 server_pid=$!

@@ -68,8 +68,11 @@ public sealed class LinuxGameScanner : IGameScanner
     {
         if (compatDataPath is not null)
         {
-            var dirs = await _detection.ResolveSaveDirectoriesAsync(
-                shortcut.AppName, PathResolver.Proton(compatDataPath), ct);
+            // StartDir is the game's install directory, which is exactly what <base> means — the
+            // most common placeholder in the manifest by a wide margin. Passing it is most of the
+            // reason a shortcut now resolves at all.
+            var dirs = await _detection.ResolveProtonAsync(
+                shortcut.AppName, compatDataPath, installDir: shortcut.StartDir, ct);
             if (dirs.FirstOrDefault() is { } inPrefix) return inPrefix;
         }
 

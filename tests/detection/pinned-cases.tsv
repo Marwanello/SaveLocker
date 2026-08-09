@@ -1,0 +1,29 @@
+# Save-path detection regression cases.  <name>TAB<expected>TAB<why>
+#
+# Expected is matched as a PREFIX of the outcome, so "MISS" matches "MISS(<base>)".
+# Outcomes: HIT | MISS(<tokens>) | WRONG(config folder) | WRONG(unrelated folder) | SKIP
+#
+# Every line here was a MISS or a WRONG before <base>/<root>/<storeUserId> and tag filtering
+# landed. They are kept as HIT so the gain cannot silently regress.
+
+# --- were MISS: needed tokens PathResolver did not implement ---
+Depths of Peril	HIT	<base> — the most common token in the manifest
+Dogfight 1942	HIT	<base>
+Neva	HIT	<storeUserId>
+
+# --- were WRONG(config folder): tags were ignored, so the settings folder won ---
+Dragon Quest III HD-2D Remake	HIT	needs <storeUserId> AND tag filtering; the config sibling must not win
+Sonic Frontiers	HIT	same shape
+Gotham Knights	HIT	same shape
+
+# --- guard fixes already made ---
+F.E.A.R.	HIT	<winPublic> — guards the "one segment too deep" regression fixed in PathResolver
+Celeste	HIT	resolvable via its non-<base> path; must not regress now that <base> exists
+
+# --- malformed manifest entries: refusing them is the CORRECT answer ---
+# Both lack a usable placeholder, so they designate a path anchored outside every root we know.
+# SKIP rather than MISS because the fixture builder will not create them either — there is nowhere
+# inside the scratch tree they could go. Returning nothing makes the user pick a folder; returning
+# "/AppData/..." or "E:\AppData\..." would look authoritative and be wrong.
+Space Warlord Organ Trading Simulator	SKIP	manifest entry is "/AppData/LocalLow/..." with no <home>
+Ironclads: American Civil War	SKIP	manifest entry hardcodes "C:/Users/Public/Documents/..."

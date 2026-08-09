@@ -47,6 +47,73 @@ public sealed class Detection
     }
 
     /// <summary>
+    /// Resolve a Proton game's save directories, supplying the three per-game placeholders.
+    /// <para>
+    /// <c>&lt;root&gt;</c> and the Steam account ids are DERIVED from the compatdata path rather
+    /// than plumbed in: the prefix is always <c>{root}/steamapps/compatdata/{appid}</c>, so the
+    /// library root is three levels up and the accounts are the <c>userdata/*</c> folders under it.
+    /// That keeps every caller — scanner, poller, launch wrapper, CLI — passing only what it
+    /// genuinely knows.
+    /// </para>
+    /// </summary>
+    /// <param name="installDir">
+    /// The game's install directory on the host — <c>&lt;base&gt;</c>. For a non-Steam shortcut
+    /// that is its <c>StartDir</c>.
+    /// </param>
+    public async Task<IReadOnlyList<string>> ResolveProtonAsync(
+        string gameName, string compatDataPath, string? installDir = null,
+        CancellationToken ct = default)
+    {
+        var storeRoot = SteamLayout.RootFromCompatData(compatDataPath);
+        var accountIds = SteamLayout.AccountIds(storeRoot);
+
+        // One account is the norm; a shared machine has several and only one of them owns the save.
+        // Trying each and taking the first that resolves beats picking arbitrarily, because a wrong
+        // account id yields a path that does not exist rather than a plausible-looking wrong one.
+        foreach (var resolver in Resolvers(accountIds, id =>
+                     PathResolver.Proton(compatDataPath, installDir, storeRoot, id)))
+        {
+            var dirs = await ResolveSaveDirectoriesAsync(gameName, resolver, ct);
+            if (dirs.Count > 0) return dirs;
+        }
+
+        return Array.Empty<string>();
+    }
+
+    /// <summary>
+    /// Resolve a natively-installed Windows game's save directories, with the per-game placeholders.
+    /// Empty on any other platform — see <see cref="HostResolver"/>.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ResolveWindowsAsync(
+        string gameName, string? installDir = null, string? storeRoot = null,
+        CancellationToken ct = default)
+    {
+        if (!OperatingSystem.IsWindows()) return Array.Empty<string>();
+
+        foreach (var resolver in Resolvers(SteamLayout.AccountIds(storeRoot), id =>
+                     PathResolver.Windows(installDir, storeRoot, id)))
+        {
+            var dirs = await ResolveSaveDirectoriesAsync(gameName, resolver, ct);
+            if (dirs.Count > 0) return dirs;
+        }
+
+        return Array.Empty<string>();
+    }
+
+    /// <summary>
+    /// One resolver per Steam account, plus a final id-less one. The id-less attempt matters: the
+    /// great majority of games never mention &lt;storeUserId&gt;, and without it a machine whose
+    /// userdata cannot be read would resolve nothing at all rather than merely losing the handful
+    /// of games that do shard saves per account.
+    /// </summary>
+    private static IEnumerable<PathResolver> Resolvers(
+        IReadOnlyList<string> accountIds, Func<string?, PathResolver> build)
+    {
+        foreach (var id in accountIds) yield return build(id);
+        yield return build(null);
+    }
+
+    /// <summary>
     /// The resolver for games running natively on this host — Windows only. There is no Linux
     /// equivalent: a Proton game's paths live in its own prefix (per-game, so the caller must
     /// supply it), and native-Linux builds are out of scope (Decisions.md §1).

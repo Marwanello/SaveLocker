@@ -131,6 +131,14 @@ behave in ways that look like bugs.
   whatever state both sides hold. Clearing only one produces confident, unrelated-looking
   failures (stale save files vs. lost version lineage). Isolating just the server's `Storage__DbPath`
   counts as "cleared the DB half" — still hits the same trap if `.verify/` is stale.
+- **`Storage__AgentInstallerRoot` must be set too, and forgetting it only breaks Linux.**
+  `AgentInstallerService` creates its root in its **constructor**, and the default resolves to
+  `/data/agent-installer`, which a normal Linux user cannot create. The server then dies at startup
+  *after* migrations have run — so `server.log` reads like a healthy boot right up to an unhandled
+  `UnauthorizedAccessException`, and every server-dependent check fails as though the agent were
+  broken. This is what made `run-linux-tests.sh` score 24/40 with 16 cascading failures; setting the
+  variable took it to 40/40 with no code change. Windows never sees it, because there the same
+  default happily creates `E:\data\`.
 - **Give every test server its own `Storage__DbPath`/`Storage__ArchiveRoot`.** A dirty dev DB
   fails `run-enrollment-tests.ps1` in a way that reads like broken enrollment code (12/16
   failures starting at "mint returns a raw token").
