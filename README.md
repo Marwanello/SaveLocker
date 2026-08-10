@@ -59,11 +59,17 @@ The server is the single source of truth. Agents only make outbound HTTP calls â
 
 ## Screenshots
 
-### Agent
+### Agent (Windows)
 
 | Overview | Add Games |
 |---|---|
 | ![Agent overview](docs/screenshots/overview.png) | ![Agent add games](docs/screenshots/addGames.png) |
+
+### Agent (Steam Deck)
+
+| | |
+|---|---|
+| ![Steam Deck agent UI](docs/screenshots/steam-agent1.jpeg) | ![Steam Deck agent UI](docs/screenshots/steam-agent2.jpeg) |
 
 ### System tray
 
