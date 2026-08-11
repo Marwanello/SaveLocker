@@ -522,7 +522,8 @@ public sealed class AgentApiServer : IDisposable
             candidate.HasSteamCloud,
             candidate.SuggestedSaveDir ?? "",
             SaveLocker.Shared.WinePrefix.BrowseStart(candidate.PrefixPath),
-            candidate.SuggestedProcessName)).ToArray();
+            candidate.SuggestedProcessName,
+            candidate.Store.ToString())).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -585,9 +586,15 @@ public sealed record AgentStateDto(
 /// which is every source but a non-Steam shortcut. Null tells the UI that enrolling this candidate
 /// leaves launch/exit sync unconfigured, so it can say so instead of implying otherwise. WA-08.
 /// </param>
+/// <param name="Store">
+/// The storefront the game came from — <c>Steam</c>, <c>Epic</c>, <c>Gog</c>, <c>Amazon</c>,
+/// <c>Sideload</c>, or <c>Unknown</c> when discovery cannot tell (a non-Steam shortcut). Orthogonal
+/// to <paramref name="Source"/>: one Heroic source covers four storefronts, and a large install
+/// base is only navigable if the UI can narrow to one of them.
+/// </param>
 public sealed record CandidateDto(
     int Id, string Name, string Source, bool HasSteamCloud, string Path, string? PrefixPath,
-    string? ProcessName);
+    string? ProcessName, string Store);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the

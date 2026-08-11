@@ -46,6 +46,13 @@ a { text-decoration: none; color: inherit; }
 input::placeholder { color: #556070; }
 input:focus { border-color: #129271 !important; outline: none; }
 
+/* A column of cards that scrolls inside a fixed-height page.
+   The `> *` rule is the load-bearing half: a flex column with a bounded height SHRINKS its children
+   to fit rather than overflowing, so without it the cards silently collapse to a few pixels each
+   instead of producing a scrollbar. */
+.page-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.page-scroll > * { flex-shrink: 0; }
+
 /* Help KB prose */
 .help-content { color: #ECEFF1; line-height: 1.75; }
 .help-content h1 { font-size: 20px; font-weight: 700; margin-bottom: 16px; color: #ECEFF1; }

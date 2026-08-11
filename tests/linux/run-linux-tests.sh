@@ -136,6 +136,23 @@ out2="$(agent resolve --config "${deck_cfg}" --prefix "${PORTABLE_PREFIX}" \
 check "resolve refuses a <base>-only save path" \
   "$(contains "${out2}" "no existing save directory found")"
 
+# ── Discovery: installed Steam games ────────────────────────────────────────────────────────
+# These were deliberately not discovered at all until now, on the reasoning that Steam Cloud covers
+# them. The UI filters what the scan returns, so "hidden by default" and "never scanned" look
+# identical from the couch — and only one of them can be undone by the user.
+check "scan finds the installed Steam game"    "$(contains "${out}" "Fake Installed Game")"
+# The library is on a second volume with its own compatdata. Resolving this proves the scan pairs
+# each library with its own prefixes rather than looking in the main Steam root.
+check "installed game resolves in its own library's prefix" "$(contains "${out}" "${INSTALLED_SAVE}")"
+# A runtime is an installed "app" and not a game. Listing it is not cosmetic: it is enrollable.
+check "Steam runtimes are not offered as games" \
+  "$([ "$(contains "${out}" "Steamworks Common Redistributables")" = 1 ] && echo 0 || echo 1)"
+# Its appid is deliberately one no code could have hardcoded. Found on a Deck: the filter WAS a
+# list of appids, and Valve mints a new one per Proton release, so Proton 9/10/11, Proton Hotfix
+# and Steam Linux Runtime 4.0 all arrived as enrollable games. toolmanifest.vdf is the real marker.
+check "an unknown compat tool is not offered as a game" \
+  "$([ "$(contains "${out}" "Proton 99.0")" = 1 ] && echo 0 || echo 1)"
+
 # ── Prefix resolution: manifest tokens must resolve INSIDE the prefix ────────────────────────
 out="$(agent resolve --config "${deck_cfg}" --prefix "${PREFIX}" "Fake Prefix Game")"
 check "manifest <winAppData> resolves inside the prefix" "$(contains "${out}" "${PREFIX_SAVE}")"

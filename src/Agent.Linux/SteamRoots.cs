@@ -60,6 +60,54 @@ public static class SteamRoots
             if (Directory.Exists(media)) yield return media;
     }
 
+    /// <summary>
+    /// Every Steam library root reachable from <paramref name="steamRoot"/>: the root itself plus
+    /// each <c>libraryfolders.vdf</c> entry. A Deck's SD card is a library like any other, so this
+    /// is what makes an installed game on the card visible at all.
+    /// <para>
+    /// Unlike a non-Steam shortcut's prefix (see <see cref="CompatDataPath"/>), an installed game's
+    /// <c>compatdata</c> lives in the library the game is installed in — so the two must be walked
+    /// together, per library.
+    /// </para>
+    /// </summary>
+    public static IEnumerable<string> LibraryPaths(string steamRoot)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal) { steamRoot };
+        yield return steamRoot;
+
+        var file = new[]
+        {
+            Path.Combine(steamRoot, "steamapps", "libraryfolders.vdf"),
+            Path.Combine(steamRoot, "config", "libraryfolders.vdf"),
+        }.FirstOrDefault(File.Exists);
+        if (file is null) yield break;
+
+        var root = ParseVdf(file);
+        if (root is null) yield break;
+
+        var folders = root.Object("libraryfolders");
+        if (folders is null) yield break;
+
+        foreach (var lib in folders.Children)
+        {
+            var path = lib.String("path");
+            // A library on an SD card that is not currently inserted is skipped, not fatal.
+            if (!string.IsNullOrEmpty(path) && Directory.Exists(path) && seen.Add(path))
+                yield return Path.GetFullPath(path);
+        }
+    }
+
+    /// <summary>Read and parse a text VDF, or null if it is unreadable or malformed.</summary>
+    public static SteamVdf.VdfObject? ParseVdf(string path)
+    {
+        try { return SteamTextVdf.Parse(File.ReadAllText(path)); }
+        catch (Exception ex) when (ex is InvalidDataException or IOException
+                                      or UnauthorizedAccessException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>The compatdata directory for a shortcut's AppID under a Steam root, or null.</summary>
     /// <remarks>
     /// Non-Steam shortcuts always keep their prefix in the <b>main</b> Steam root, even when the

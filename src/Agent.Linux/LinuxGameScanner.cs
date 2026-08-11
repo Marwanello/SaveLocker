@@ -3,12 +3,17 @@ using SaveLocker.Shared;
 namespace SaveLocker.Agent.Linux;
 
 /// <summary>
-/// Discovers non-Steam Steam shortcuts and, where possible, their Proton save directories.
+/// Discovers non-Steam Steam shortcuts, installed Steam games and Heroic games, and where possible
+/// their Proton/Wine save directories.
 ///
-/// This is deliberately NOT the Windows scanner's shape. Steam-store games are out of scope —
-/// they have Steam Cloud (Decisions.md §0) — so there is no <c>libraryfolders.vdf</c> / <c>*.acf</c>
-/// scan here. Discovery is <c>shortcuts.vdf</c>, and the shortcut's AppID is what names the
-/// Proton prefix we then resolve saves inside.
+/// <para>
+/// Installed Steam games are discovered but <b>flagged</b> <c>HasSteamCloud</c>, not enrolled by
+/// default — the same shape the Windows scanner has always had. They were originally left out
+/// entirely (Decisions.md, "Linux discovery"), on the reasoning that Steam Cloud already covers
+/// them. That reasoning holds for the default view and nothing else: not every Steam title opts
+/// into Cloud, and a user who wants a local copy of one had no way to reach it, because the UI
+/// filters what the scan returns and the scan returned nothing to filter.
+/// </para>
 /// </summary>
 public sealed class LinuxGameScanner : IGameScanner
 {
@@ -44,6 +49,8 @@ public sealed class LinuxGameScanner : IGameScanner
                     // nothing here depends on it (Decisions.md §3).
                     SuggestedProcessName: GameActivity.ProcessNameFromExe(s.Exe)));
             }
+
+            results.AddRange(await ScanInstalledSteamGamesAsync(root, ct));
         }
 
         results.AddRange(await ScanHeroicAsync(ct));
@@ -57,10 +64,146 @@ public sealed class LinuxGameScanner : IGameScanner
         // compatdata prefix for a game it does not launch.
         return results
             .GroupBy(c => ManifestLoader.NormalizeName(c.Name), StringComparer.Ordinal)
-            .Select(g => g.OrderByDescending(c => c.SuggestedSaveDir is not null).First())
+            .Select(g => g
+                .OrderByDescending(c => c.SuggestedSaveDir is not null)
+                // A tie goes to the copy Steam does NOT back up. The same game can be both an
+                // installed Steam title and a shortcut the user made to a DRM-free build; enrolling
+                // the one that already has Cloud is the less useful of the two.
+                .ThenBy(c => c.HasSteamCloud)
+                .First())
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
+
+    /// <summary>
+    /// Steam appids that appear as installed "apps" but are not games. A backstop only — see
+    /// <see cref="IsCompatTool"/> for the check that actually carries this.
+    /// </summary>
+    private static readonly HashSet<string> NonGameAppIds = new(StringComparer.Ordinal)
+    {
+        "228980",   // Steamworks Common Redistributables — no toolmanifest, so only this catches it
+    };
+
+    /// <summary>
+    /// Is this installed app a Steam compatibility tool (Proton, the Linux runtimes) rather than a
+    /// game? Decided by the <c>toolmanifest.vdf</c> Steam itself requires in a compat tool's install
+    /// directory, not by a list of appids.
+    /// <para>
+    /// The list came first and was wrong on real hardware within one release: Valve ships a new
+    /// Proton every year and each gets a NEW appid, so any enumeration is stale the day it is
+    /// written — a Deck listed Proton 9/10/11, Proton Hotfix and Steam Linux Runtime 4.0 as
+    /// enrollable games. The marker file is version-independent and is what Steam keys on too.
+    /// </para>
+    /// </summary>
+    private static bool IsCompatTool(string? installPath) =>
+        installPath is not null && File.Exists(Path.Combine(installPath, "toolmanifest.vdf"));
+
+    /// <summary>
+    /// Games installed from the Steam store, read from <c>appmanifest_*.acf</c> in every library.
+    ///
+    /// <para>
+    /// A Proton game's saves live in its own prefix, and for an installed title that prefix is
+    /// <c>compatdata/&lt;appid&gt;</c> in the library the game is installed in — not in the main
+    /// Steam root, which is where a non-Steam shortcut's prefix always goes. A game on an SD card
+    /// therefore resolves only if the library and the prefix are walked together, which is why this
+    /// iterates <see cref="SteamRoots.LibraryPaths"/> rather than reusing the caller's root.
+    /// </para>
+    ///
+    /// <para>
+    /// A title with no prefix at all is a native-Linux build (Decisions.md §1: out of scope) or one
+    /// that has never been launched. It is still listed, with no save folder — the user can set one,
+    /// and the alternative is a game that is plainly installed silently missing from the list.
+    /// </para>
+    /// </summary>
+    private async Task<List<ScanCandidate>> ScanInstalledSteamGamesAsync(
+        string steamRoot, CancellationToken ct)
+    {
+        var results = new List<ScanCandidate>();
+
+        foreach (var library in SteamRoots.LibraryPaths(steamRoot))
+        {
+            var steamapps = Path.Combine(library, "steamapps");
+            if (!Directory.Exists(steamapps)) continue;
+
+            foreach (var acf in SafeEnumerateFiles(steamapps, "appmanifest_*.acf"))
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var state = SteamRoots.ParseVdf(acf)?.Object("AppState");
+                var name = state?.String("name")?.Trim();
+                var appId = state?.String("appid");
+                if (string.IsNullOrWhiteSpace(name) || appId is null) continue;
+                if (NonGameAppIds.Contains(appId)) continue;
+
+                var installDir = state?.String("installdir");
+                var installPath = installDir is null
+                    ? null
+                    : NullIfMissing(Path.Combine(steamapps, "common", installDir));
+                if (IsCompatTool(installPath)) continue;
+
+                var prefix = Path.Combine(steamapps, "compatdata", appId);
+                var save = Directory.Exists(prefix)
+                    ? (await _detection.ResolveProtonAsync(name, prefix, installPath, ct))
+                        .FirstOrDefault()
+                    : null;
+
+                results.Add(new ScanCandidate(
+                    Name: name,
+                    SuggestedSaveDir: save,
+                    Source: ScanSource.SteamInstalled,
+                    // Flagged, not hidden here. The UI's default view is what hides them; the scan
+                    // must still return them or no filter can bring them back.
+                    HasSteamCloud: true,
+                    ManifestKey: save is null
+                        ? null
+                        : await _detection.CanonicalNameAsync(name, ct) ?? name,
+                    InstallDir: installPath,
+                    SteamAppId: appId,
+                    PrefixPath: Directory.Exists(prefix) ? prefix : null,
+                    // The launch wrapper matches on the AppID Steam hands it, so process polling is
+                    // as irrelevant here as it is for a shortcut (Decisions.md §3).
+                    SuggestedProcessName: null,
+                    Store: GameStore.Steam));
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Enumerate lazily without letting one unreadable library cost the rest of the scan.
+    /// <see cref="Directory.EnumerateFiles(string, string)"/> fails on the <c>MoveNext</c> that
+    /// reaches the bad entry, not at the call, so a try around the call site catches nothing — an
+    /// SD card pulled mid-scan is exactly this case on a Deck.
+    /// </summary>
+    private static IEnumerable<string> SafeEnumerateFiles(string dir, string pattern)
+    {
+        IEnumerator<string> e;
+        try { e = Directory.EnumerateFiles(dir, pattern).GetEnumerator(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { yield break; }
+
+        try
+        {
+            while (true)
+            {
+                string current;
+                try
+                {
+                    if (!e.MoveNext()) yield break;
+                    current = e.Current;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    yield break;
+                }
+                yield return current;
+            }
+        }
+        finally { e.Dispose(); }
+    }
+
+    private static string? NullIfMissing(string? dir) =>
+        !string.IsNullOrEmpty(dir) && Directory.Exists(dir) ? Path.GetFullPath(dir) : null;
 
     /// <summary>
     /// Games staged in Heroic Games Launcher.
@@ -105,12 +248,27 @@ public sealed class LinuxGameScanner : IGameScanner
                     // here would make a tracked game the wrapper can never fire for look correct.
                     SteamAppId: null,
                     PrefixPath: prefix,
-                    SuggestedProcessName: null));
+                    SuggestedProcessName: null,
+                    Store: StoreForRunner(game.Runner)));
             }
         }
 
         return results;
     }
+
+    /// <summary>
+    /// Heroic names the store by its CLI tool, not by the storefront users know it as. Unrecognised
+    /// runners map to <see cref="GameStore.Unknown"/> rather than being guessed at — a new Heroic
+    /// runner must not land in the wrong store filter.
+    /// </summary>
+    private static GameStore StoreForRunner(string? runner) => runner?.ToLowerInvariant() switch
+    {
+        "legendary" => GameStore.Epic,
+        "gog" or "gogdl" => GameStore.Gog,
+        "nile" => GameStore.Amazon,
+        "sideload" => GameStore.Sideload,
+        _ => GameStore.Unknown,
+    };
 
     /// <summary>
     /// Best guess at a Heroic game's save directory: inside its Wine prefix per the manifest, else

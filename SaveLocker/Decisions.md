@@ -245,10 +245,20 @@ session can judge an edge case, not to reopen the choice.
   save-variant model — different formats/paths/line-endings per platform). A Proton save is a
   Windows save, byte-identical to a Windows PC's — existing content-hash lineage works with zero
   server schema change. **Never sync a native-Linux save into a Windows install.**
-- **Linux discovery:** `shortcuts.vdf` (non-Steam shortcuts), not `libraryfolders.vdf`/`*.acf`
-  (installed Steam games — irrelevant to this niche). Steam's shortcut AppID is signed in the
-  VDF but the `compatdata/<id>/` folder name is unsigned — `SteamShortcuts.CompatDataId()` is the
-  one place that converts.
+- **Linux discovery:** `shortcuts.vdf` (non-Steam shortcuts), Heroic's library files, **and — since
+  2026-08-10 — `libraryfolders.vdf`/`*.acf` (installed Steam games)**. Steam's shortcut AppID is
+  signed in the VDF but the `compatdata/<id>/` folder name is unsigned —
+  `SteamShortcuts.CompatDataId()` is the one place that converts.
+  <br>**Reversal, deliberate.** Installed Steam games were originally out of scope because Steam
+  Cloud already covers them. That reasoning justifies a default view, not an absence: the agent UI
+  filters what the scan RETURNS, so a scan that returns nothing leaves "hidden by default" and
+  "never discovered" indistinguishable from the couch — and only one of those can be undone by the
+  user. Windows had always scanned them and flagged `HasSteamCloud`; Linux now matches. They stay
+  out of the default view, one filter click away.
+  <br>An installed game's prefix is `compatdata/<appid>` **in the library it is installed in**, not
+  in the main Steam root where every shortcut's prefix goes — so libraries and prefixes are walked
+  together, per library. A Deck's SD card is exactly this case, and getting it wrong finds the game
+  and never finds its saves.
 - **Linux UI: headless daemon serving the existing React UI** on `:5178` (Desktop Mode = KDE +
   browser). **Game Mode has no browser**, so `savelocker ui` (SDL + Dear ImGui, in-process against
   `Agent.Core`, no second API client) covers Status/Add game/Set folder/Launch setup as a gamepad

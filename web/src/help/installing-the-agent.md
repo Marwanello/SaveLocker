@@ -160,8 +160,9 @@ to exit, waits for the save to finish being written, and pushes it.
 
 - ✅ **Non-Steam games added to Steam as shortcuts**, run through Proton. This is the case SaveLocker
   exists for.
-- ❌ **Games you bought on Steam.** They already have **Steam Cloud**, which does this job. SaveLocker
-  deliberately does not compete with it. This is a scoping decision, not a missing feature.
+- ⚠️ **Games you bought on Steam** — found, but hidden until you ask for them. They already have
+  **Steam Cloud**, so they are kept out of the default list rather than burying the games you came
+  to add. Pick the **Steam** filter (or **All**) in Add games to see them.
 - ❌ **Native Linux builds** of a game. A Proton game *is* a Windows game — it writes Windows-format
   saves — so a Deck save and a Windows PC save are **the same save**, and can be synced between them
   freely. A *native Linux* build writes a different format, and syncing that into a Windows install

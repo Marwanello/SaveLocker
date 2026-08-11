@@ -6,14 +6,48 @@ dashboard + embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[
 
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** main
 
-**Current released version:** **v0.5.3** (2026-08-09) — notes in `web/src/releases/0.5.3.md`. GHCR
+**Current released version:** **v0.5.4** (2026-08-10) — notes in `web/src/releases/0.5.4.md`. GHCR
 package `savelocker` is **public** — see [[Gotchas]].
 
 ---
 
 ## Status
 
-**Shipping as v0.5.3: branch `heroic-detection` → PR.** Games staged in **Heroic Games Launcher**
+**Shipped as v0.5.4 (2026-08-10): enrollment filters + a console that scrolls in panes.**
+Three changes, one theme — a large library was unnavigable in both surfaces:
+
+1. **The console page no longer scrolls; its panes do.** The root was `minHeight: 100vh`, so the
+   page grew and the games sidebar never got a bounded height — picking a game far down the list
+   pushed its settings off screen and you scrolled back up to read them. Root is now a fixed
+   `height: 100vh` + `overflow: hidden`. **The trap:** a flex column with a bounded height SHRINKS
+   its children rather than overflowing, so ConfigView's cards silently collapsed to ~4 px each
+   instead of producing a scrollbar. `.page-scroll` in `index.css` carries the `> * { flex-shrink: 0 }`
+   that fixes it — any new full-page scroller wants that class, not a bare `overflowY: auto`.
+2. **Add Games has filter chips** — Suggested / All / Steam / Added to Steam / Heroic / Needs path,
+   with Heroic storefront sub-chips (Epic, GOG, Amazon, Sideloaded, Other) fed by a new `Store` on
+   `ScanCandidate` and `CandidateDto`. Chips with a zero count are not rendered. `Suggested` is the
+   old hide-Steam-Cloud default, now named and reversible. Mirrored into the Deck Game Mode UI
+   (`Ui/UiApp.cs` → `AddFilter`), minus the store axis. Selection is by ABSOLUTE candidate index in
+   both UIs — `Enroller` indexes into the unfiltered list, so renumbering would enroll the wrong game.
+3. **The Linux agent now discovers installed Steam games** — see [[Decisions]] for the reversal and
+   why it is one. `SteamTextVdf` moved `src/Agent` → `src/Agent.Core` to make it reachable.
+   `run-linux-tests.sh` **59 → 62**: the new fixture puts the installed game in a SECOND library
+   with its own compatdata, which is the only shape that catches a scan reusing the main Steam root.
+
+**Deck-tested 2026-08-10 (24 candidates, real library).** Filters work. One real bug found and fixed
+there: **a compat tool is identified by `toolmanifest.vdf` in its install directory, never by
+appid.** The first cut filtered a hardcoded list of five appids and the Deck listed Proton 9.0,
+10.0, 11.0, Proton Hotfix and Steam Linux Runtime 4.0 as enrollable games — Valve mints a new appid
+per Proton release, so any such list is stale the day it is written. Both scanners now use the
+marker file; the appid list survives only for Steamworks Common Redistributables, which ships no
+toolmanifest. Pinned by a fixture whose appid is deliberately unguessable (`run-linux-tests` 63).
+
+Not covered by any suite: the agent-ui chips themselves (no harness drives that React UI) and the
+Game Mode filter row. Both typecheck/build. The Heroic chip and its store sub-chips are still
+unverified on hardware — the test Deck has no Heroic games installed, so the chip correctly did not
+render at all.
+
+**Shipped as v0.5.3: branch `heroic-detection` → PR.** Games staged in **Heroic Games Launcher**
 now get detected with their save paths. Write-up: `logs/2026-08-09_heroic-detection.md`.
 
 1. **They were always discovered and never resolvable.** Heroic's "Add to Steam" writes a real
@@ -84,9 +118,15 @@ Shipped in v0.5.1 (2026-08-05) and earlier: see `logs/shipped-2026-07.md` + `log
 
 ## Next action
 
-0. **Merge the PR and tag v0.5.3.** It is an **agent** release: Decks re-run `install.sh` from the
-   newer tarball, and the console redeploy is optional (Help + notes only). No migration.
-1. **Check the live server for duplicate games** before deploying. Canonical naming stops NEW splits;
+0. **Roll out v0.5.4.** Agents carry it: Decks re-run `install.sh` from the release tarball; Windows
+   agents self-update once the installer from the GitHub Release is uploaded in **Config → Agent
+   Updates** (**the Release asset is not automatically what the fleet is offered**). The console
+   redeploy brings the scrolling fix + Help and can follow. No migration.
+1. **Watch for what the field finds.** Two things shipped without hardware coverage, both named in
+   Status: the Heroic **store** sub-chips (the test Deck has no Heroic games) and the Game Mode
+   filter row's gamepad navigation. Neither can lose save data — worst case is a list that filters
+   oddly — which is why they shipped.
+2. **Check the live server for duplicate games** before deploying. Canonical naming stops NEW splits;
    it does not merge games a server already holds under two spellings. There is no merge tool.
 2. **Deck verification** of the Linux bounty — the five scenarios in
    `logs/2026-07-29_linuxagent-bugbounty.md` → Verification. Hardware available (2026-07-19). Fold in
@@ -142,7 +182,10 @@ the task covers all three loops.
 
 Windows, local: **win agent bug bounty 114** · server bug bounty 145 · agent **47** · hardening 33 ·
 local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6.
-Linux, local (WSL ext4): **run-linux-tests 59** on `heroic-detection`, 40 on `main`. Detection: **sweep 271/298 (90.9%) at the default 300 sample, 17 pinned** — the drop from 99.0% is
+Linux, local (WSL ext4): **run-linux-tests 63** with the enrollment-filter work, 59 on `main`.
+**Copy source into the WSL clone with `sed 's/\r$//'`, never a plain `rsync` from `/mnt/e`** — the
+Windows tree is CRLF, and a CRLF `slow-game.sh` fails 6 wrapper/settle checks that have nothing to
+do with the code under test. Cost half an hour this session; the failures look like real wrapper bugs. Detection: **sweep 271/298 (90.9%) at the default 300 sample, 17 pinned** — the drop from 99.0% is
 the install-directory guard and is deliberate (see Status 3b). `main` still reads 394/396 at a
 400-sample run; quote the sample size, the two are not comparable.
 Linux, in CI: agent 43 · hardening 37 · local-api 30 · concurrency 23 · health 19 · enrollment 16.

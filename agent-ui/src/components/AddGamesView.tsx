@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, FolderOpen, FolderSearch, Cloud } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { RefreshCw, FolderOpen, FolderSearch } from 'lucide-react'
 import type { Candidate } from '../types'
 import { api } from '../api'
 import { useFolderPicker } from '../useFolderPicker'
@@ -18,14 +18,54 @@ const BTN_BASE: React.CSSProperties = {
   fontFamily: 'inherit',
 }
 
+/**
+ * The list filters, in the order they appear.
+ *
+ * `suggested` is the default and is NOT the same as `all`: SaveLocker exists for games Steam does
+ * not back up, so a library of hundreds of Cloud-backed titles would otherwise bury the handful the
+ * user came to enroll. It is a starting view, not a restriction — `all` is one click away, which is
+ * the part the Linux agent was missing entirely: it filtered Cloud games out with no control to
+ * bring them back, so an installed Steam game could not be reached at all.
+ */
+type FilterId = 'suggested' | 'all' | 'steam' | 'shortcut' | 'heroic' | 'nopath'
+
+const FILTERS: { id: FilterId; label: string; hint: string; match: (c: Candidate) => boolean }[] = [
+  { id: 'suggested', label: 'Suggested', hint: 'Everything except games Steam Cloud already backs up', match: c => !c.hasSteamCloud },
+  { id: 'all', label: 'All', hint: 'Every game found, including Steam Cloud titles', match: () => true },
+  { id: 'steam', label: 'Steam', hint: 'Games installed from the Steam store', match: c => c.source === 'SteamInstalled' },
+  { id: 'shortcut', label: 'Added to Steam', hint: 'Non-Steam games you added to your Steam library', match: c => c.source === 'SteamShortcut' },
+  { id: 'heroic', label: 'Heroic', hint: 'Games installed through Heroic Games Launcher', match: c => c.source === 'Heroic' },
+  // Not a source but a state, and the one that costs the user the most time: these are the games
+  // absent from the Ludusavi manifest, so each needs a save folder set by hand before it can enroll.
+  { id: 'nopath', label: 'Needs path', hint: 'No save folder could be detected — set one by hand', match: c => !c.path },
+]
+
+/** Heroic's storefronts, as a second axis under the Heroic filter. `Unknown` covers a runner we don't map. */
+const STORES: { id: string; label: string }[] = [
+  { id: 'Epic', label: 'Epic' },
+  { id: 'Gog', label: 'GOG' },
+  { id: 'Amazon', label: 'Amazon' },
+  { id: 'Sideload', label: 'Sideloaded' },
+  { id: 'Unknown', label: 'Other' },
+]
+
+function chipStyle(active: boolean): React.CSSProperties {
+  return {
+    display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px',
+    background: active ? 'rgba(18,146,113,0.12)' : 'transparent',
+    border: `1px solid ${active ? '#129271' : '#494949'}`,
+    borderRadius: 999,
+    color: active ? '#129271' : '#9CA3AF',
+    fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit',
+    whiteSpace: 'nowrap',
+  }
+}
+
 export function AddGamesView({ onEnrolled }: Props) {
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [checked, setChecked] = useState<Set<number>>(new Set())
-  // Hidden by DEFAULT. SaveLocker exists for games Steam does not back up; a Steam-bought title
-  // already has Steam Cloud, so listing hundreds of them first buries the handful the user
-  // actually came to enroll. The toggle is still there for the deliberate case of wanting a local
-  // copy of a Cloud game — this changes which list you start from, not what is reachable.
-  const [hideSteamCloud, setHideSteamCloud] = useState(true)
+  const [filter, setFilter] = useState<FilterId>('suggested')
+  const [store, setStore] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
   const [enrolling, setEnrolling] = useState(false)
   const [status, setStatus] = useState('')
@@ -108,17 +148,39 @@ export function AddGamesView({ onEnrolled }: Props) {
   }
 
   const busy = scanning || enrolling
-  const visible = hideSteamCloud ? candidates.filter(c => !c.hasSteamCloud) : candidates
+
+  // Only chips that would show something are offered — an empty "Heroic" chip on a machine with no
+  // Heroic install is a dead end that reads like a bug. Suggested and All always render, so the
+  // toolbar never collapses to nothing.
+  const chips = useMemo(
+    () => FILTERS
+      .map(f => ({ ...f, count: candidates.filter(f.match).length }))
+      .filter(f => f.count > 0 || f.id === 'suggested' || f.id === 'all'),
+    [candidates])
+
+  const stores = useMemo(() => {
+    if (filter !== 'heroic') return []
+    const heroic = candidates.filter(c => c.source === 'Heroic')
+    return STORES
+      .map(s => ({ ...s, count: heroic.filter(c => c.store === s.id).length }))
+      .filter(s => s.count > 0)
+  }, [candidates, filter])
+
+  const active = FILTERS.find(f => f.id === filter) ?? FILTERS[0]
+  const visible = candidates
+    .filter(active.match)
+    .filter(c => !(filter === 'heroic' && store) || c.store === store)
+
   const enrollBlocked = missing.length > 0
-  // Named, not just counted. Now that these are hidden by default, a user looking for a game they
-  // can plainly see in Steam needs to be told it was filtered and by which button — silently
-  // showing a shorter list reads as "the scan didn't find it".
+  // Named, not just counted. A user looking for a game they can plainly see in Steam needs to be
+  // told it was filtered and by which control — silently showing a shorter list reads as "the scan
+  // didn't find it".
   const hiddenCount = candidates.length - visible.length
   const footerStatus = status || (
     enrollBlocked
       ? `Set a save folder for: ${missing.map(c => c.name).join(', ')}`
-      : `Found ${visible.length} candidate(s).` +
-        (hiddenCount > 0 ? ` ${hiddenCount} Steam Cloud game(s) hidden — use “Hide Steam Cloud” to show them.` : '')
+      : `Showing ${visible.length} of ${candidates.length} game(s) found.` +
+        (hiddenCount > 0 ? ' Choose “All” to see every one.' : '')
   )
 
   return (
@@ -145,21 +207,40 @@ export function AddGamesView({ onEnrolled }: Props) {
           <FolderOpen size={13} strokeWidth={1.75} color="#9CA3AF" />
           <span>Set save folder…</span>
         </button>
-        <button
-          onClick={() => setHideSteamCloud(h => !h)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px',
-            background: hideSteamCloud ? 'rgba(18,146,113,0.1)' : 'transparent',
-            border: `1px solid ${hideSteamCloud ? '#129271' : '#494949'}`,
-            borderRadius: 4,
-            color: hideSteamCloud ? '#129271' : '#9CA3AF',
-            fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
-          }}
-        >
-          <Cloud size={13} strokeWidth={1.75} color={hideSteamCloud ? '#129271' : '#9CA3AF'} />
-          <span>Hide Steam Cloud</span>
-        </button>
       </div>
+
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 5, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
+        {chips.map(f => (
+          <button
+            key={f.id}
+            title={f.hint}
+            onClick={() => { setFilter(f.id); setStore(null) }}
+            style={chipStyle(filter === f.id)}
+          >
+            <span>{f.label}</span>
+            <span style={{ opacity: 0.65, fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace", fontSize: 10.5 }}>
+              {f.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* Heroic storefronts — a second axis, shown only while the Heroic filter is on. */}
+      {stores.length > 1 && (
+        <div style={{ display: 'flex', gap: 5, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center', paddingLeft: 2 }}>
+          <span style={{ color: '#6B7280', fontSize: 11 }}>Store:</span>
+          <button onClick={() => setStore(null)} style={chipStyle(store === null)}>All</button>
+          {stores.map(s => (
+            <button key={s.id} onClick={() => setStore(s.id)} style={chipStyle(store === s.id)}>
+              <span>{s.label}</span>
+              <span style={{ opacity: 0.65, fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace", fontSize: 10.5 }}>
+                {s.count}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Game list */}
       <div style={{
@@ -194,6 +275,17 @@ export function AddGamesView({ onEnrolled }: Props) {
                 }}>
                   {c.source}
                 </span>
+                {/* Only when it adds something the source does not already say. */}
+                {c.store && c.store !== 'Unknown' && c.store !== 'Steam' && (
+                  <span style={{
+                    color: '#9CA3AF', fontSize: 10,
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.09)',
+                    padding: '1px 6px', borderRadius: 3,
+                  }}>
+                    {STORES.find(s => s.id === c.store)?.label ?? c.store}
+                  </span>
+                )}
                 {c.hasSteamCloud && (
                   <span style={{
                     color: '#60a5fa', fontSize: 10,

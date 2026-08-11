@@ -220,6 +220,12 @@ behave in ways that look like bugs.
   measures the harness, not the code. `--pointer` skips the movement test entirely for this reason.
 
 ## Test harness
+- **Never `rsync` the Windows working tree into the WSL clone to run `run-linux-tests.sh`.** The
+  Windows tree is CRLF, and `tests/linux/slow-game.sh` with CRLF line endings misbehaves: the game
+  exits with the wrong code and stops writing early, failing 6 checks across the launch wrapper, the
+  settle gate and the `/proc` lock probe. They read as real wrapper bugs and are not. Copy the files
+  you changed through `sed 's/\r$//'` instead, into a checkout reset to `origin/main`. Take the
+  baseline on pristine `main` first — the numbers only mean something as a pair.
 - **Start the dev server with `ASPNETCORE_ENVIRONMENT=Development`**, or it never reads
   `appsettings.Development.json` and opens `/data/savelocker.db` (i.e. `E:\data\...`) instead of
   `src/Server/localstate`. That stray DB carries a stale `__EFMigrationsLock`, so the server hangs

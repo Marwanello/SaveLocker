@@ -13,7 +13,7 @@ Two save layouts both work, and you don't have to tell SaveLocker which you have
 
 ## What SaveLocker deliberately does *not* sync
 
-❌ **Games you bought on Steam.** They already have **Steam Cloud**, which does this job well. SaveLocker does not compete with it and deliberately leaves those saves alone. This is a scoping decision, not a missing feature — turn on Steam Cloud for those and let it handle them.
+⚠️ **Games you bought on Steam — found, but not offered by default.** They already have **Steam Cloud**, which does this job well, so listing hundreds of them first would bury the handful you came to add. They are one click away: in **Add games**, choose the **Steam** filter (or **All**). Worth doing for a title that never opted into Cloud, or when you want a copy of your own — otherwise leave Steam Cloud to it.
 
 ❌ **Native Linux builds of a game.** This one matters, because syncing it would *corrupt* your save. A Proton game is a Windows game: it writes Windows-format saves, so a save from your Windows PC and a save from the Deck under Proton are interchangeable. A *native Linux* build of the same game writes a different save format. Pushing a native-Linux save into a Windows install (or vice-versa) would overwrite a good save with one the other side can't read. So SaveLocker won't. If a game offers both, **run the Windows build under Proton** on the Deck to keep it in sync with your PC.
 

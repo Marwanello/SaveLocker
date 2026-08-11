@@ -98,6 +98,35 @@ sealed class UiApp
     private Task<(int enrolled, int skipped)>? _enrollTask;
     private string _addStatus = "";
 
+    /// <summary>
+    /// Which discovered games the list shows. Not cosmetic on a Deck: the scan now returns installed
+    /// Steam titles too, and a library of hundreds of them is unreachable with a thumbstick unless
+    /// it can be narrowed. Mirrors the browser UI's filter chips, minus the store axis — Heroic's
+    /// storefronts are a Desktop Mode concern and each extra pill costs a d-pad press here.
+    /// </summary>
+    private enum AddFilter { Suggested, All, Steam, Shortcut, Heroic, NoPath }
+    private AddFilter _addFilter = AddFilter.Suggested;
+
+    private static bool MatchesFilter(ScanCandidate c, AddFilter f) => f switch
+    {
+        AddFilter.Suggested => !c.HasSteamCloud,
+        AddFilter.Steam => c.Source == ScanSource.SteamInstalled,
+        AddFilter.Shortcut => c.Source == ScanSource.SteamShortcut,
+        AddFilter.Heroic => c.Source == ScanSource.Heroic,
+        AddFilter.NoPath => string.IsNullOrEmpty(c.SuggestedSaveDir),
+        _ => true,
+    };
+
+    private static string FilterLabel(AddFilter f) => f switch
+    {
+        AddFilter.Suggested => "Suggested",
+        AddFilter.Steam => "Steam",
+        AddFilter.Shortcut => "Added to Steam",
+        AddFilter.Heroic => "Heroic",
+        AddFilter.NoPath => "Needs path",
+        _ => "All",
+    };
+
     // Set-folder (path browser) state. Listing is cached and only refreshed when the path changes,
     // so navigating does not re-walk the disk every frame.
     private int _folderTargetId = -1;
@@ -1046,11 +1075,35 @@ sealed class UiApp
             .Select(i => _candidates[i].Name)
             .ToList();
 
+        // Only filters that would show something are offered: an empty "Heroic" pill on a Deck with
+        // no Heroic install is one more thing to nav past that can never do anything. Suggested and
+        // All always render, so the row never disappears.
+        var filters = Enum.GetValues<AddFilter>()
+            .Select(f => (Filter: f, Count: _candidates.Count(c => MatchesFilter(c, f))))
+            .Where(x => x.Count > 0 || x.Filter is AddFilter.Suggested or AddFilter.All)
+            .ToList();
+
+        if (_candidates.Count > 0)
+        {
+            foreach (var (f, count) in filters)
+            {
+                if (f != filters[0].Filter) ImGui.SameLine(0, Theme.Space.Sm);
+                var kind = _addFilter == f ? Widgets.ButtonKind.Primary : Widgets.ButtonKind.Ghost;
+                if (Widgets.PillButton($"{FilterLabel(f)}  {count}", kind))
+                    _addFilter = f;
+            }
+            Widgets.Gap(Theme.Space.Sm);
+        }
+
+        var shown = Enumerable.Range(0, _candidates.Count)
+            .Where(i => MatchesFilter(_candidates[i], _addFilter))
+            .ToList();
+
         // The section header is drawn BEFORE the list height is measured: measuring first and then
         // adding a header underflows the child by exactly the header's height, which clipped the
         // action bar off the bottom of the screen.
         Widgets.SectionHeader(_candidates.Count > 0
-            ? $"Discovered games ({_candidates.Count})"
+            ? $"Discovered games ({shown.Count} of {_candidates.Count})"
             : "Discovered games");
 
         // The action bar is pinned to the bottom so it never scrolls out of reach on a long list —
@@ -1067,10 +1120,17 @@ sealed class UiApp
         ImGui.BeginChild("candidates", new Vector2(0, listH),
             ImGuiChildFlags.AlwaysUseWindowPadding, ImGuiWindowFlags.NavFlattened);
         NavDebug.PushScope("candidates");
-        if (_candidates.Count > 0)
+        if (shown.Count > 0)
         {
-            for (int i = 0; i < _candidates.Count; i++)
-                DrawCandidateRow(i);
+            // Absolute indices throughout: _selected and Enroller both index into _candidates, so a
+            // filter must never renumber anything — hiding a row would otherwise silently enroll a
+            // different game than the one that was ticked.
+            foreach (var i in shown) DrawCandidateRow(i);
+        }
+        else if (_candidates.Count > 0)
+        {
+            Widgets.Text($"No games match “{FilterLabel(_addFilter)}”. Choose All to see every one.",
+                Theme.TextMuted);
         }
         else
         {

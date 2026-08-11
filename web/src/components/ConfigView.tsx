@@ -236,7 +236,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
   const rowSep = { borderTop: '1px solid #252e35' };
 
   return (
-    <main style={{ padding: '20px 24px', maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <main className="page-scroll" style={{ padding: '20px 24px', maxWidth: 900, margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
       {/* Page heading */}
       <div style={{ padding: '4px 0 8px' }}>

@@ -20,6 +20,25 @@ public enum ScanSource
 }
 
 /// <summary>
+/// Which storefront a candidate came from, when discovery can tell. This is a second axis to
+/// <see cref="ScanSource"/>, not a finer one: a source says HOW the game was found, a store says
+/// WHO sold it. Heroic is the only source that manages more than one, and its own library files
+/// name the runner outright, so the distinction costs nothing to carry and is the only way a user
+/// with a large Heroic install base can narrow the list to one store.
+/// </summary>
+public enum GameStore
+{
+    /// <summary>Discovery has no store to report — a shortcut, or a save-root match.</summary>
+    Unknown,
+    Steam,
+    Epic,
+    Gog,
+    Amazon,
+    /// <summary>Installed by hand into a launcher that manages it (Heroic's <c>sideload</c>).</summary>
+    Sideload
+}
+
+/// <summary>
 /// A discovered game the user might want to enroll. <see cref="SuggestedSaveDir"/>
 /// is our best guess at the local save folder (may be null if we couldn't resolve
 /// one yet — the user can fill it in).
@@ -56,4 +75,6 @@ public sealed record ScanCandidate(
     /// nicety; <see cref="ProcessWatcher"/> excludes it entirely. WA-08.
     /// </para>
     /// </summary>
-    string? SuggestedProcessName = null);
+    string? SuggestedProcessName = null,
+    /// <summary>Which storefront sold the game, when discovery knows. See <see cref="GameStore"/>.</summary>
+    GameStore Store = GameStore.Unknown);

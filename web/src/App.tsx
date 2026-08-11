@@ -131,7 +131,10 @@ export default function App() {
   const isPublicView = view === 'help' || view === 'whats-new';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+    // A fixed viewport height, not a minimum: the games sidebar and the detail panel each own their
+    // scrollbar, and they only get one if an ancestor bounds their height. With minHeight the page
+    // itself grew and scrolled, so picking a game far down the list left the detail panel offscreen.
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
       <NavBar
         view={view}
         onViewChange={v => { setView(v); if (!data && v !== 'help' && v !== 'whats-new') load(); }}

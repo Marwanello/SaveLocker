@@ -13,14 +13,22 @@ public sealed class GameScanner : IGameScanner
 {
     private readonly Detection _detection;
 
-    /// <summary>Steam appids that appear as installed "apps" but aren't games.</summary>
+    /// <summary>
+    /// Steam appids that appear as installed "apps" but aren't games. A backstop only — the load-
+    /// bearing check is <see cref="IsCompatTool"/>. An appid list cannot be maintained: Valve ships
+    /// new runtimes with new ids, and this one had already fallen behind by three.
+    /// </summary>
     private static readonly HashSet<string> NonGameAppIds = new()
     {
-        "228980", // Steamworks Common Redistributables
-        "1070560", // Steam Linux Runtime
-        "1391110", // Steam Linux Runtime - Soldier
-        "1628350", // Steam Linux Runtime - Sniper
+        "228980", // Steamworks Common Redistributables — ships no toolmanifest, so only this catches it
     };
+
+    /// <summary>
+    /// A Steam compatibility tool (Proton, the Linux runtimes), identified by the
+    /// <c>toolmanifest.vdf</c> Steam requires in its install directory rather than by appid.
+    /// </summary>
+    private static bool IsCompatTool(string? installPath) =>
+        installPath is not null && SafeFileExists(Path.Combine(installPath, "toolmanifest.vdf"));
 
     public GameScanner(Detection detection) => _detection = detection;
 
@@ -156,6 +164,7 @@ public sealed class GameScanner : IGameScanner
                 var installPath = installDir is null
                     ? null
                     : NullIfMissing(SafeCombine(steamapps, "common", installDir));
+                if (IsCompatTool(installPath)) continue;
 
                 // The manifest is consulted here now. It never used to be: this source built every
                 // candidate with SuggestedSaveDir and ManifestKey null while holding installPath in
@@ -170,7 +179,7 @@ public sealed class GameScanner : IGameScanner
                 results.Add(new ScanCandidate(
                     trimmed, save, ScanSource.SteamInstalled,
                     HasSteamCloud: true, ManifestKey: await CanonicalKeyAsync(trimmed, save, ct),
-                    InstallDir: installPath));
+                    InstallDir: installPath, Store: GameStore.Steam));
             }
         }
         return results;

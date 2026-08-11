@@ -33,6 +33,15 @@ verification that did not happen before the tag. Write-ups:
   - **LAN enrollment-URL check** on the real deployment (`logs/2026-07-27_console-bugbounty.md` →
     Verification).
 
+- **Emulator saves.** Not implemented at all: RetroArch, Dolphin, PCSX2, DuckStation and friends
+  keep saves and save-states in their own per-emulator trees, and the Ludusavi manifest does not
+  describe them, so nothing in discovery can find them today. On a Deck this is a large share of
+  what people actually play. Once it lands, add an **Emulator** filter to the Add Games chip row
+  (`agent-ui/src/components/AddGamesView.tsx` → `FILTERS`, and the Game Mode mirror in
+  `Ui/UiApp.cs` → `AddFilter`) — the row is built to take another entry. Note the save-variant
+  problem from Decisions.md §1 applies here too: an emulator save is platform-neutral, so it is
+  the first candidate that could sync between a Deck and a Windows PC without Proton involved.
+
 - **File-level saves — the 24 games the install-root guard now refuses.** A save location is a
   DIRECTORY throughout, so a manifest entry like `<base>/Save.dat` can only resolve to the whole
   install folder. Refusing that was right (it would archive the game, and restore's delete pass

@@ -40,6 +40,10 @@ PORTABLE_APPID_SIGNED = 1234567890
 PORTABLE_APPID_UNSIGNED = str(PORTABLE_APPID_SIGNED & 0xFFFFFFFF)
 HEROIC_SHORTCUT_APPID_SIGNED = 1122334455
 
+# An installed Steam game's appid. Always positive — the signed/unsigned trap is a shortcuts.vdf
+# problem only; an .acf stores the id as text and needs no conversion.
+INSTALLED_APPID = "440900"
+
 # The Wine user for the wine-shaped prefix. Deliberately NOT "steamuser" — a plain Wine runner
 # runs the game as the Linux user, and code that assumes steamuser resolves every token to a
 # directory that does not exist.
@@ -235,6 +239,67 @@ def main() -> int:
         os.path.join(steam, "steamapps", "compatdata", PORTABLE_APPID_UNSIGNED, "pfx", "drive_c"),
         exist_ok=True)
 
+    # --- Game 3: an INSTALLED Steam game, in a second library -------------------------------
+    # Deliberately not in the main Steam root. An installed game keeps its prefix in the library it
+    # is installed in — unlike a shortcut, whose prefix always sits in the main root — so a scanner
+    # that reuses the root it was handed finds the game and never finds its saves. A Deck's SD card
+    # is exactly this case.
+    steam_library = os.path.join(root, "sdcard", "SteamLibrary")
+    installed_steamapps = os.path.join(steam_library, "steamapps")
+    installed_install = os.path.join(installed_steamapps, "common", "FakeInstalledGame")
+    installed_prefix = os.path.join(installed_steamapps, "compatdata", INSTALLED_APPID)
+    installed_save = os.path.join(
+        installed_prefix, "pfx", "drive_c", "users", "steamuser",
+        "AppData", "Roaming", "FakeInstalledGame")
+    os.makedirs(installed_save, exist_ok=True)
+    os.makedirs(installed_install, exist_ok=True)
+
+    with open(os.path.join(installed_steamapps, f"appmanifest_{INSTALLED_APPID}.acf"), "w") as f:
+        f.write(
+            '"AppState"\n{\n'
+            f'\t"appid"\t\t"{INSTALLED_APPID}"\n'
+            '\t"name"\t\t"Fake Installed Game"\n'
+            '\t"installdir"\t\t"FakeInstalledGame"\n'
+            "}\n")
+
+    # A runtime, not a game. Filtered by appid — it ships no toolmanifest.vdf, so it is the one
+    # case the hardcoded list still has to carry.
+    with open(os.path.join(installed_steamapps, "appmanifest_228980.acf"), "w") as f:
+        f.write(
+            '"AppState"\n{\n'
+            '\t"appid"\t\t"228980"\n'
+            '\t"name"\t\t"Steamworks Common Redistributables"\n'
+            '\t"installdir"\t\t"Steamworks Shared"\n'
+            "}\n")
+
+    # A compat tool with an appid NOTHING can have hardcoded — that is the entire point. A Deck
+    # listed Proton 9/10/11, Proton Hotfix and Steam Linux Runtime 4.0 as enrollable games because
+    # the filter was a list of appids and Valve keeps minting new ones. The marker that identifies
+    # it is toolmanifest.vdf in its install directory, which every compat tool has and no game does.
+    tool_install = os.path.join(installed_steamapps, "common", "Proton 99.0")
+    os.makedirs(tool_install, exist_ok=True)
+    with open(os.path.join(tool_install, "toolmanifest.vdf"), "w") as f:
+        f.write('"manifest"\n{\n\t"version"\t\t"2"\n\t"commandline"\t\t"/proton run"\n}\n')
+    with open(os.path.join(installed_steamapps, "appmanifest_9999990.acf"), "w") as f:
+        f.write(
+            '"AppState"\n{\n'
+            '\t"appid"\t\t"9999990"\n'
+            '\t"name"\t\t"Proton 99.0"\n'
+            '\t"installdir"\t\t"Proton 99.0"\n'
+            "}\n")
+
+    os.makedirs(os.path.join(steam, "steamapps"), exist_ok=True)
+    with open(os.path.join(steam, "steamapps", "libraryfolders.vdf"), "w") as f:
+        f.write(
+            '"libraryfolders"\n{\n'
+            '\t"0"\n\t{\n'
+            f'\t\t"path"\t\t"{steam}"\n'
+            "\t}\n"
+            '\t"1"\n\t{\n'
+            f'\t\t"path"\t\t"{steam_library}"\n'
+            "\t}\n"
+            "}\n")
+
     # --- Heroic ------------------------------------------------------------------------------
     heroic = build_heroic(home, games)
 
@@ -268,6 +333,10 @@ def main() -> int:
     print(f"PORTABLE_PREFIX={os.path.join(steam, 'steamapps', 'compatdata', PORTABLE_APPID_UNSIGNED)}")
     print(f"PORTABLE_SAVE={portable_save}")
     print(f"PORTABLE_INSTALL={portable_install}")
+    print(f"INSTALLED_APPID={INSTALLED_APPID}")
+    print(f"INSTALLED_LIBRARY={steam_library}")
+    print(f"INSTALLED_PREFIX={installed_prefix}")
+    print(f"INSTALLED_SAVE={installed_save}")
     print(f"HEROIC_CONFIG={heroic['config_root']}")
     print(f"HEROIC_EPIC_PREFIX={heroic['epic_prefix']}")
     print(f"HEROIC_EPIC_SAVE={heroic['epic_save']}")

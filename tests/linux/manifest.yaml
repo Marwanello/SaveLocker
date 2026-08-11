@@ -17,6 +17,15 @@ Fake Portable Game:
       tags:
         - save
 
+# An installed Steam game. Its prefix lives in the library it is INSTALLED in, not in the main
+# Steam root, so this only resolves if discovery walks libraryfolders.vdf and pairs each library
+# with its own compatdata.
+Fake Installed Game:
+  files:
+    <winAppData>/FakeInstalledGame:
+      tags:
+        - save
+
 # The two Heroic games. Same tokens, resolved inside prefixes Steam did not create: one
 # proton-shaped (pfx/, user steamuser), one wine-shaped (drive_c/ directly, Linux username).
 Heroic Prefix Game:

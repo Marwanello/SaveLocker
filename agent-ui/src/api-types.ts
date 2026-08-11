@@ -808,6 +808,7 @@ export interface components {
             path: string;
             prefixPath: null | string;
             processName: null | string;
+            store: string;
         };
         ConfigChangeResponse: {
             identityCleared: boolean;
