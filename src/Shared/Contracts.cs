@@ -82,7 +82,19 @@ public static class AgentPlatform
     public const string Windows = "win-x64";
     public const string Linux = "linux-x64";
 
-    public static readonly string[] All = [Windows, Linux];
+    /// <summary>
+    /// The Decky plugin. Not a RID, and not an agent — it is a package the LINUX agent installs into
+    /// another application's directory on the user's behalf, and it rides this enum because a slot is
+    /// exactly what it needs: an upload, a digest, an atomic replace and a version to compare. The
+    /// alternative was a second, near-identical set of routes and a second console card.
+    /// <para>
+    /// It is the one slot whose GitHub asset comes from a <b>different repository</b>
+    /// (<c>SkorcherX/SaveLocker-Decky</c>), which is why a slot carries its own repo.
+    /// </para>
+    /// </summary>
+    public const string DeckyPlugin = "decky-plugin";
+
+    public static readonly string[] All = [Windows, Linux, DeckyPlugin];
 
     /// <summary>
     /// Normalizes a caller-supplied platform, defaulting an absent one to <see cref="Windows"/>.
@@ -102,7 +114,12 @@ public static class AgentPlatform
     }
 
     /// <summary>How a person should see it. Never used as a path or a query value.</summary>
-    public static string Describe(string platform) => platform == Linux ? "Linux" : "Windows";
+    public static string Describe(string platform) => platform switch
+    {
+        Linux       => "Linux",
+        DeckyPlugin => "Decky plugin",
+        _           => "Windows",
+    };
 }
 
 /// <summary>Status of the agent installer binary hosted on this server.</summary>

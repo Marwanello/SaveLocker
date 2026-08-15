@@ -5,6 +5,45 @@ Full commit detail in `git log`. Active backlog in `Backlog.md`.
 
 ---
 
+## 2026-08-15 — Decky Phase 5: the agent keeps the plugin updated
+
+**The problem was distribution, not code.** Decky holds exactly one custom-store URL and it
+*replaces* the official store while set — so the only route to plugin update prompts costs the user
+every other plugin's updates, nobody leaves it there, and in practice nobody was ever prompted about
+ours. The agent now does it, through the channel it already uses for its own updates.
+
+**It is a third `AgentPlatform` slot, not new machinery.** `decky-plugin` rides the existing
+installer routes and inherits upload, digest, sidecar, atomic replace, delete, GitHub fetch, the
+poller, the download route and a console card wholesale; the agent asks
+`/api/agent/latest?platform=decky-plugin`. The plan called for a separate `GET /api/agent/plugin/latest`
+and that would have thrown all of it away. The only genuinely new thing a slot needed is a
+**per-slot GitHub repo**, because the plugin releases from `SkorcherX/SaveLocker-Decky`.
+
+**Writing the files IS the install** — Decky chowns a non-`_root` plugin's contents to the desktop
+user and hot-reloads on change, so there is no sudo, no `systemctl` and no Steam restart. What
+shapes `Agent.Linux/DeckyPlugin.cs` is the other half of that: the plugin *directory* stays
+root-owned 755 and `plugin.json` is root's outright. So every destination is proven writable before
+one byte is written, `plugin.json` is skipped by name rather than discovered by failing, and
+`package.json` is written last — the plugin reloading mid-update should run new code briefly claiming
+the old version, never the reverse. The plan asked the package to carry a file manifest; a zip
+already is one, so the entry list is used directly and nothing new has to be kept in sync.
+
+**`run-linux-tests` 161 → 197/197**, with a fake `~/homebrew/plugins/SaveLocker` in the fixture HOME.
+Against a build with the guard removed the refusal checks fail as they should — but the two
+"wrote NOTHING" assertions beside them still passed, surviving only on enumeration order. They are
+recorded as order-dependent in the write-up rather than trusted.
+
+**None of it has run on hardware**, which is why this is not called shipped. The reload mechanism was
+observed by hand during Phase 4, but the agent doing it by itself, and the server hosting a real
+plugin zip, are both unexercised. Write-up: `logs/2026-08-15_decky-plugin.md`.
+
+**Found in passing, not fixed:** a bogus SteamGridDB key is accepted and stored again
+(`run-server-bugbounty-tests` 162/164). Reproduced on pristine `main` with the tree stashed, so it is
+not from this change — SteamGridDB now answers 200 to the probe for an invalid Bearer, and the code
+judges on status alone. In [[Backlog]].
+
+---
+
 ## 2026-08-15 — v0.5.6 + the Decky plugin, and a save-loss bug the Deck found
 
 **The release exists because of one bug, and only hardware could have found it.** A tracked game

@@ -81,11 +81,18 @@ public sealed class UpdateChecker : IDisposable
     public static readonly string Platform =
         OperatingSystem.IsWindows() ? AgentPlatform.Windows : AgentPlatform.Linux;
 
-    /// <summary>What this platform's package is called on disk, and what its first bytes must be.</summary>
-    private static (string Extension, byte[] Magic, string Describe) PackageShape =>
-        OperatingSystem.IsWindows()
-            ? (".exe", [(byte)'M', (byte)'Z'], "a Windows executable")
-            : (".tar.gz", [0x1f, 0x8b], "a gzip archive");
+    /// <summary>
+    /// What a package is called on disk and what its first bytes must be. The agent's own package
+    /// differs per host; the Decky plugin is a zip wherever it is downloaded, because it is not this
+    /// machine's code — it is another application's, which only the Linux agent ever fetches.
+    /// </summary>
+    private static (string Extension, byte[] Magic, string Describe) ShapeOf(PackageKind kind) =>
+        kind switch
+        {
+            PackageKind.DeckyPlugin => (".zip", [(byte)'P', (byte)'K'], "a zip archive"),
+            _ when OperatingSystem.IsWindows() => (".exe", [(byte)'M', (byte)'Z'], "a Windows executable"),
+            _ => (".tar.gz", [0x1f, 0x8b], "a gzip archive"),
+        };
 
     /// <summary>The origin this checker was built for. A connection change retires it (see TrayApp).</summary>
     public string ServerUrl { get; }
@@ -114,17 +121,7 @@ public sealed class UpdateChecker : IDisposable
     {
         try
         {
-            // A server from before platform slots ignores the parameter and answers with the
-            // Windows installer, which is exactly what it would have answered anyway — so an old
-            // server keeps working for a Windows agent, and a Linux agent talking to one is told
-            // about a .exe it will refuse at the payload check rather than run.
-            var resp = await _http.GetAsync($"/api/agent/latest?platform={Platform}");
-
-            if (resp.StatusCode == HttpStatusCode.NoContent)
-                return new UpdateResult.UpToDate();
-
-            resp.EnsureSuccessStatusCode();
-            var info = await resp.Content.ReadFromJsonAsync<AgentVersionInfo>();
+            var info = await FetchLatestAsync(Platform);
             if (info is null || string.IsNullOrWhiteSpace(info.LatestVersion))
                 return new UpdateResult.UpToDate();
 
@@ -144,6 +141,25 @@ public sealed class UpdateChecker : IDisposable
         {
             return new UpdateResult.Failed(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// What the server is offering for <paramref name="platform"/>, or null when it is offering
+    /// nothing. No version comparison — the caller knows what it is comparing against, which for the
+    /// Decky plugin is not this agent's version at all.
+    /// </summary>
+    public async Task<AgentVersionInfo?> FetchLatestAsync(string platform)
+    {
+        // A server from before platform slots ignores the parameter and answers with the Windows
+        // installer, which is exactly what it would have answered anyway — so an old server keeps
+        // working for a Windows agent, and a Linux agent talking to one is told about a .exe it will
+        // refuse at the payload check rather than run. Such a server also has no plugin slot, so it
+        // answers the plugin query with the same .exe; the payload check is what stops that too.
+        var resp = await _http.GetAsync($"/api/agent/latest?platform={platform}");
+        if (resp.StatusCode == HttpStatusCode.NoContent) return null;
+
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<AgentVersionInfo>();
     }
 
     /// <summary>
@@ -167,8 +183,14 @@ public sealed class UpdateChecker : IDisposable
     /// server's origin; optional (with a warning) for the server's own package endpoint, so a
     /// server that predates digests still updates rather than becoming permanently unupdatable.
     /// </param>
+    /// <param name="kind">
+    /// Which package shape the bytes must have. Everything else about the download — the origin
+    /// rule, the credential rule, the size cap, the digest — is identical, which is why the Decky
+    /// plugin comes through here rather than getting a second downloader of its own.
+    /// </param>
     public async Task<string> DownloadInstallerAsync(
-        string version, string downloadUrl, string? expectedSha256 = null, IProgress<int>? progress = null)
+        string version, string downloadUrl, string? expectedSha256 = null, IProgress<int>? progress = null,
+        PackageKind kind = PackageKind.Agent)
     {
         if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out var url) ||
             (url.Scheme != Uri.UriSchemeHttp && url.Scheme != Uri.UriSchemeHttps))
@@ -202,7 +224,7 @@ public sealed class UpdateChecker : IDisposable
             // predictable and world-writable, so another local user could pre-place or swap the file
             // between download and launch.
             var dest = Path.Combine(
-                Path.GetTempPath(), $"SaveLockerSetup-{version}-{Guid.NewGuid():N}{PackageShape.Extension}");
+                Path.GetTempPath(), $"SaveLockerSetup-{version}-{Guid.NewGuid():N}{ShapeOf(kind).Extension}");
             try
             {
                 var actual = await StreamToFileAsync(http, url, dest, progress);
@@ -215,7 +237,7 @@ public sealed class UpdateChecker : IDisposable
                         $"  expected: {expectedSha256.Trim().ToLowerInvariant()}\n" +
                         $"  actual:   {actual}");
 
-                VerifyLooksLikeAgentPackage(dest);
+                VerifyLooksLikePackage(dest, kind);
                 return dest;
             }
             catch
@@ -309,9 +331,9 @@ public sealed class UpdateChecker : IDisposable
     /// a real cost; see Decisions.md.
     /// </para>
     /// </summary>
-    private static void VerifyLooksLikeAgentPackage(string path)
+    private static void VerifyLooksLikePackage(string path, PackageKind kind)
     {
-        var (_, magic, describe) = PackageShape;
+        var (_, magic, describe) = ShapeOf(kind);
 
         using var fs = File.OpenRead(path);
         var header = new byte[magic.Length];
@@ -321,6 +343,15 @@ public sealed class UpdateChecker : IDisposable
                 $"The downloaded update is not {describe} — the server, or a proxy in the way, " +
                 "returned something else. It was NOT used.");
     }
+}
+
+/// <summary>Which package a download is, for the shape check that runs on the received bytes.</summary>
+public enum PackageKind
+{
+    /// <summary>The agent itself — a .exe on Windows, a .tar.gz on Linux.</summary>
+    Agent,
+    /// <summary>The Decky plugin: a zip, on the one host that installs it.</summary>
+    DeckyPlugin,
 }
 
 /// <summary>Discriminated union result returned by <see cref="UpdateChecker.CheckAsync"/>.</summary>

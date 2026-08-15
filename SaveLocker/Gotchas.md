@@ -338,6 +338,19 @@ behave in ways that look like bugs.
   `ssh -N -L 8080:127.0.0.1:8080 deck@<ip>`, then `curl http://localhost:8080/json` for targets and
   drive CDP over the websocket. `Runtime.evaluate` of `document.body.innerText` against the
   **QuickAccess** target prints whatever the panel is showing, error boundary included.
+- **The agent may overwrite the plugin's files, but may not create new TOP-LEVEL ones.** Decky
+  recursively chowns a non-`_root` plugin's *contents* to the desktop user, but leaves the plugin
+  directory itself root-owned at 755 — and chowns `plugin.json` to root even for a non-`_root`
+  plugin. So `main.py`, `package.json` and everything under `dist/` can be replaced (and `dist/`
+  entries added or removed freely), `plugin.json` never can, and a future version adding a top-level
+  `py_modules/` cannot be installed this way at all. `DeckyPlugin.cs` therefore proves every
+  destination writable **before** writing one byte and refuses the whole package otherwise: a plugin
+  half on one version and half on another is worse than an old one.
+- **Hot reload needs the `debug` flag in `plugin.json`.** The loader's watchdog fires either way, but
+  without the flag Decky logs *"Plugin X is already loaded and has requested to not be re-loaded"* —
+  files updated, old code still running, nothing reported. It is the flag's only effect anywhere in
+  the loader, and since `plugin.json` is the one file the agent cannot rewrite, **an installation
+  predating that flag can never self-update** and needs one manual reinstall.
 - **Do not ask for the `_root` flag.** Everything the backend needs belongs to the desktop user: the
   `api-token` is 0600 owned by them and the agent's API is loopback. Root buys nothing and a
   root-created file under `~/.local/share/SaveLocker` breaks the agent's next write as that user.

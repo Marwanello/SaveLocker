@@ -16,21 +16,34 @@ Config → Agent updates are filled (the Linux one serves the released tarball �
 published `SHA256SUMS-linux.txt` exactly). GHCR package `savelocker` is **public** ([[Gotchas]]).
 
 **Decky plugin:** its own repo, <https://github.com/SkorcherX/SaveLocker-Decky>, at **v0.2.0**. Not
-on the Decky store and cannot honestly be submitted — see `tasks/DeckyPlugin.md`.
+on the Decky store and cannot honestly be submitted — see `logs/2026-08-15_decky-plugin.md`. Since
+Phase 5 (below) the **agent keeps it updated**, so the custom-store setting is no longer the only
+route to an update.
 
 ---
 
 ## Where things stand
 
-**Nothing in flight.** Everything below is on `main` and released.
+**Decky Phase 5 is done and unreleased** — the agent now keeps the Decky plugin updated. Everything
+else below is on `main` and released.
 
 **v0.5.6 (2026-08-15)** carries a **save-losing fix** found on real hardware. A tracked game with no
 recorded `SteamAppId` matched nothing in the launch wrapper, so it played with **no sync at all** and
 said so only to `agent.log` — two of four games on the maintainer's Deck were in that state, and a
 Khazan session on 2026-08-11 was never pushed. A Proton prefix is named for the AppID that launches
 into it, so the save path already carried the answer; the agent now resolves it everywhere and the
-daemon records it (`b31e160`). Also in the release: the launch-option rule and API (`tasks/DeckyPlugin.md`
+daemon records it (`b31e160`). Also in the release: the launch-option rule and API (`logs/2026-08-15_decky-plugin.md`
 Phases 1–2), and `doctor` reporting whether a game's launch options were ever set.
+
+**Phase 5 (2026-08-15, this session)** closes the plugin's update story. Decky holds exactly one
+custom-store URL and it *replaces* the official store while set, so nobody leaves it there and in
+practice nobody was ever prompted about a plugin update. The agent does it instead, through the
+channel it already uses for its own updates: the server hosts the plugin zip in a **third installer
+slot** (`?platform=decky-plugin`, from the plugin's own repo — the slot carries its own GitHub repo)
+and the Linux agent replaces the files under `~/homebrew/plugins/SaveLocker`, which Decky hot-reloads
+within a second. It refuses rather than half-installs: every destination is proven writable before a
+byte is written, because the plugin directory is root-owned 755 and `plugin.json` is root's outright.
+`run-linux-tests` 161 → **197/197**. **It has not run on hardware** — see Next action.
 
 **The Decky plugin is done and working on hardware** — Phases 1–4. It sets Steam launch options
 (which the agent *cannot*: Steam rewrites its own config on exit), and its Quick Access panel shows
@@ -42,11 +55,15 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
 
 ## Next action
 
-1. **`tasks/DeckyPlugin.md` Phase 5** — the agent keeps the Decky plugin updated, so users are not
-   stuck choosing between Decky's custom-store setting (which replaces the official store while set,
-   so nobody leaves it there) and never being told an update exists. **The hard part is already
-   proven on hardware**; the task file carries the two corrections that came out of Phase 4. Handoff
-   notes below.
+1. **Prove Phase 5 on the Deck.** The harness covers the agent's half with a fake plugin directory;
+   what it cannot cover is the part that makes the feature work at all — Decky noticing the files
+   change and reloading. That mechanism *was* observed by hand during Phase 4 (`touch` as the desktop
+   user, and repeated `scp`s of real builds), so this is not a guess, but the agent doing it by
+   itself has never happened on hardware, and neither has the server hosting a real plugin zip. Cut a
+   plugin release, upload it in **Config → Agent updates → Decky plugin** (type the version — Decky's
+   artifact is always `SaveLocker.zip`), and watch a Deck pick it up. A manual reinstall through
+   Decky always works, and is what the refusal path tells the user to do. Details and the two
+   deviations from the plan: `logs/2026-08-15_decky-plugin.md`.
 2. **Watch the Deck self-update on the NEXT release.** `install.sh` over a running daemon is proven
    (three times, 2026-08-15), but the agent staging and applying an update *by itself* has still
    never run on hardware. Everything it needs is now in place — the Linux row is populated and its
@@ -60,9 +77,9 @@ Everything else — the WA-03 second-account ACL test, the remaining Windows man
 enrollment-URL check, the missing LA-04/05/06/07 regression tests, and the `WA-01`/113-of-114
 baseline drift — is prioritised in [[Backlog]].
 
-## Handoff: picking up Decky Phase 5
+## Handoff: working on the Decky plugin
 
-Read `tasks/DeckyPlugin.md` (Phase 5 section) and [[Gotchas]] → *Decky plugin* first. Both carry
+Read `logs/2026-08-15_decky-plugin.md` and [[Gotchas]] → *Decky plugin* first. Both carry
 things that were measured on hardware and cannot be re-derived by reading code.
 
 **The Deck.** `deck@192.168.68.67`, key auth is set up (see the maintainer — the key is deliberately
@@ -89,7 +106,8 @@ come from the same job. Bump `package.json` too: Decky reads the installed versi
 
 ## Parked on a branch — `offline-backoff-task` (`bee3116`, pushed, not merged)
 
-`main` carries only `tasks/DeckyPlugin.md`; do not conclude that is the only task. `tasks/OfflineBackoff.md`
+`main` carries no task files at all now that the Decky one is finished; do not conclude there is no
+open work. `tasks/OfflineBackoff.md`
 and its Backlog entry exist only on that branch, deliberately (2026-07-29) — the task was written and
 the work deferred. `git checkout offline-backoff-task` to pick it up.
 

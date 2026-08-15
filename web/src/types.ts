@@ -35,4 +35,4 @@ export type AgentInstallerStatus = Schemas['AgentInstallerStatus'];
  * vocabulary of wire constants rather than an enum, so it has no schema of its own — but these
  * strings are exactly what `?platform=` accepts, and an absent parameter means `win-x64`.
  */
-export type AgentPlatform = 'win-x64' | 'linux-x64';
+export type AgentPlatform = 'win-x64' | 'linux-x64' | 'decky-plugin';

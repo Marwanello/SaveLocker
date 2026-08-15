@@ -123,7 +123,7 @@ dotnet build src/Agent.Linux/SaveLocker.Agent.Linux.csproj --no-incremental
 
 # Fake-game harness: no Steam, no Proton, no GPU, no Deck required.
 # Starts its own server on :5179 with a throwaway DB, and runs against a fake HOME.
-bash tests/linux/run-linux-tests.sh          # 123 checks
+bash tests/linux/run-linux-tests.sh          # 197 checks
 ```
 
 To pull Windows-side commits into the WSL clone:
@@ -154,9 +154,18 @@ Build on the **oldest glibc** you intend to support (Ubuntu 24.04 → Deck is fo
 subdirectory here and must not become one again — Decky's plugin database tracks plugins as
 submodules whose *root* is the plugin, so a monorepo subdirectory cannot be packaged or listed.
 
-Nothing in this repo depends on it. The rule it relies on lives in `Agent.Core/LaunchOptions.cs` and
-is covered by `run-linux-tests`; the plugin only reads the agent's API and writes what it is told.
-Its own repo carries the build, the release workflow and the install/debug notes.
+Nothing in this repo depends on it *working*. The rule it relies on lives in
+`Agent.Core/LaunchOptions.cs` and is covered by `run-linux-tests`; the plugin only reads the agent's
+API and writes what it is told. Its own repo carries the build, the release workflow and the
+install/debug notes.
+
+**This repo does, however, distribute it.** The server hosts its release zip in a third installer
+slot (`?platform=decky-plugin`, from `SkorcherX/SaveLocker-Decky`), and the Linux agent replaces the
+files under `~/homebrew/plugins/SaveLocker` from it — see `Agent.Linux/DeckyPlugin.cs` and the
+constraints in [[Gotchas]] → *Decky plugin*. To exercise that here, a fake plugin directory in the
+fixture HOME is all `run-linux-tests` needs; no Decky, no Deck. To publish a plugin release to a real
+server, upload the zip in **Config → Agent updates → Decky plugin** (type the version — Decky's
+artifact is always `SaveLocker.zip`) or let the GitHub fetch read the tag.
 
 ## Tests
 
@@ -178,8 +187,8 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 
 | Where | Counts |
 |---|---|
-| Windows, local | win agent bug bounty **114** (reads **113/114** since 2026-08-14 — see [[Backlog]]) · server bug bounty 164 · agent 47 · hardening 33 · local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6 |
-| Linux, local (WSL ext4) | `run-linux-tests` **63** on `main`, **69** at `4c9f5f5`, **84** after Phase 2, **117** after Phase 3, **123** after Phase 4 of the auto-update work, **137** after Phase 1, **154** after Phase 2 and **161** after the Deck hardware pass of `tasks/DeckyPlugin.md` (2026-08-15, same clone) |
+| Windows, local | win agent bug bounty **114** (reads **113/114** since 2026-08-14 — see [[Backlog]]) · server bug bounty **164** (reads **162/164** since 2026-08-15 — see [[Backlog]]) · agent 47 · hardening 33 · local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6 |
+| Linux, local (WSL ext4) | `run-linux-tests` **63** on `main`, **69** at `4c9f5f5`, **84** after Phase 2, **117** after Phase 3, **123** after Phase 4 of the auto-update work, **137** after Phase 1, **154** after Phase 2, **161** after the Deck hardware pass and **197** after Phase 5 of `logs/2026-08-15_decky-plugin.md` (2026-08-15, same clone) |
 | Linux, in CI | agent 43 · hardening 37 · local-api 30 · concurrency 23 · health 19 · enrollment 16 |
 | Detection | sweep **271/298 (90.9%)** at the default 300 sample, 17 pinned |
 

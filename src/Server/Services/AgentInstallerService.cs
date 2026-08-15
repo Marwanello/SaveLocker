@@ -34,7 +34,6 @@ public sealed class InstallerRejectedException(string message) : Exception(messa
 /// </summary>
 public class AgentInstallerService
 {
-    private readonly string _githubRepo;
     private readonly long _maxBytes;
     private readonly ILogger<AgentInstallerService> _log;
     private const string InfoFileName = "installer-info.json";
@@ -47,12 +46,19 @@ public class AgentInstallerService
     /// <c>.tar.gz</c>, whose extension by that reckoning is <c>.gz</c>.
     /// </param>
     /// <param name="IsReleaseAsset">Recognises this platform's asset among a GitHub release's.</param>
+    /// <param name="Repo">
+    /// Which GitHub repository this slot's asset is released from. Per-slot rather than one field on
+    /// the service, because the Decky plugin lives in its own repository — Decky's plugin database
+    /// tracks plugins as submodules whose root is the plugin, so it could never be a subdirectory of
+    /// SaveLocker's.
+    /// </param>
     private sealed record Slot(
         string Platform,
         string Root,
         string Extension,
         Func<string, bool> IsReleaseAsset,
-        string AssetPattern);
+        string AssetPattern,
+        string Repo);
 
     private readonly Dictionary<string, Slot> _slots;
 
@@ -71,7 +77,8 @@ public class AgentInstallerService
         _log = log;
         var root = cfg["Storage:AgentInstallerRoot"]
             ?? Path.Combine(AppContext.BaseDirectory, "data", "agent-installer");
-        _githubRepo = cfg["AgentUpdate:GitHubRepo"] ?? "SkorcherX/SaveLocker";
+        var agentRepo = cfg["AgentUpdate:GitHubRepo"] ?? "SkorcherX/SaveLocker";
+        var pluginRepo = cfg["AgentUpdate:Plugin:GitHubRepo"] ?? "SkorcherX/SaveLocker-Decky";
         _maxBytes = (long)(cfg.GetValue<int?>("AgentUpdate:MaxInstallerMb") ?? 200) * 1024 * 1024;
 
         _slots = new Dictionary<string, Slot>(StringComparer.Ordinal)
@@ -82,7 +89,8 @@ public class AgentInstallerService
                 ".exe",
                 name => name.StartsWith("SaveLocker-Agent-Setup", StringComparison.OrdinalIgnoreCase)
                      && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase),
-                "SaveLocker-Agent-Setup-*.exe"),
+                "SaveLocker-Agent-Setup-*.exe",
+                agentRepo),
 
             [AgentPlatform.Linux] = new(
                 AgentPlatform.Linux,
@@ -90,7 +98,17 @@ public class AgentInstallerService
                 ".tar.gz",
                 name => name.StartsWith("savelocker-", StringComparison.OrdinalIgnoreCase)
                      && name.EndsWith("-linux-x64.tar.gz", StringComparison.OrdinalIgnoreCase),
-                "savelocker-*-linux-x64.tar.gz"),
+                "savelocker-*-linux-x64.tar.gz",
+                agentRepo),
+
+            [AgentPlatform.DeckyPlugin] = new(
+                AgentPlatform.DeckyPlugin,
+                Path.Combine(root, AgentPlatform.DeckyPlugin),
+                ".zip",
+                name => name.StartsWith("SaveLocker", StringComparison.OrdinalIgnoreCase)
+                     && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase),
+                "SaveLocker*.zip",
+                pluginRepo),
         };
 
         foreach (var slot in _slots.Values) Directory.CreateDirectory(slot.Root);
@@ -319,7 +337,7 @@ public class AgentInstallerService
         try
         {
             using var meta = new HttpRequestMessage(
-                HttpMethod.Get, $"https://api.github.com/repos/{_githubRepo}/releases/latest");
+                HttpMethod.Get, $"https://api.github.com/repos/{slot.Repo}/releases/latest");
             meta.Headers.UserAgent.ParseAdd("SaveLocker-Server");
             meta.Headers.Accept.ParseAdd("application/vnd.github+json");
 
@@ -343,7 +361,7 @@ public class AgentInstallerService
             }
             if (assetUrl is null || assetName is null)
                 throw new InstallerRejectedException(
-                    $"Latest release of {_githubRepo} has no {slot.AssetPattern} asset.");
+                    $"Latest release of {slot.Repo} has no {slot.AssetPattern} asset.");
 
             // The scheduled poll still needs to inspect release metadata, but should not
             // repeatedly download the same installer on every interval. Manual fetches

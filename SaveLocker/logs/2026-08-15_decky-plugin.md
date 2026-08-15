@@ -416,7 +416,74 @@ on-screen keyboard is the actual friction, so a plugin removes nothing.
 
 ---
 
-## Phase 5 — The agent keeps the plugin updated — **PLANNED 2026-08-15, NOT STARTED**
+## Phase 5 — The agent keeps the plugin updated — **DONE 2026-08-15 (harness only; no hardware yet)**
+
+**Outcome:** `run-linux-tests` 161 → **197/197** (36 new checks; baseline in [[Build and Run]]).
+Solution builds clean — `Agent.Linux` 0 warnings, `Agent` with only the pre-existing MSB3277 — and
+`web` typechecks. `run-server-bugbounty-tests` reads **162/164**: both failures are the SteamGridDB
+key-verification pair, **reproduced on pristine `main` with the tree stashed**, so they are not from
+this change; they are now in [[Backlog]].
+
+**The refusal checks discriminate — and the two beside them do not, which is worth knowing.** Run
+against a build with the plan-before-write guard removed (`CanReplace` no longer consulted,
+everything queued unconditionally), the run reads **195/197**: *a package needing a new top-level
+file is REFUSED* and *the refusal names the reinstall route* both fail, because without the guard
+there is no refusal at all — the copy loop simply throws when it reaches the unwritable path.
+
+But *the refused package wrote NOTHING* and *not even the file it could have written* **still
+passed**, which they should not have. They survived only because `Directory.EnumerateFiles` happened
+to yield `py_modules/helper.py` before `dist/index.js`, so the throw came before anything was
+written. Reverse that order and the same broken build leaves a half-installed plugin those two
+checks would call clean. They are worth keeping — they are the assertion that matters — but they are
+**order-dependent**, and the refusal pair is what actually pins the behaviour. Do not read a green
+run of just those two as proof the guard is there.
+
+### Two deviations from the plan below, taken deliberately
+
+1. **No `GET /api/agent/plugin/latest`, and no new machinery.** The plugin is a **third
+   `AgentPlatform` slot** (`decky-plugin`), so it inherits the upload, digest, sidecar, atomic
+   replace, delete, GitHub fetch, poller, download route and console card wholesale, and the agent
+   asks the route it already asks: `/api/agent/latest?platform=decky-plugin`. The step said this
+   would be "mostly threading a third value through the platform enum" — it was, and inventing a
+   parallel route would have thrown that away. The one genuinely new thing a slot needed is a
+   **per-slot GitHub repo**, because the plugin releases from `SkorcherX/SaveLocker-Decky`.
+   `decky-plugin` is not a RID, unlike its two neighbours; that is documented where the constant is.
+
+2. **The file manifest is the package's own entry list**, not a manifest file the package ships. The
+   step called for the package to "carry a file manifest" — but a zip already is one, and requiring a
+   new file inside it would have made every check depend on a plugin-side release landing first. The
+   agent enumerates the extracted payload, resolves each destination and proves it writable (probed
+   for real, not read off mode bits — SteamOS mounts things read-only), and refuses the whole package
+   if any is not. Same guarantee, nothing new to keep in sync.
+
+Two smaller things worth knowing. `plugin.json` is **skipped by name**, not discovered by failing —
+the whole point is that nothing is attempted that could fail partway. And `package.json` is written
+**last**: every write trips Decky's watcher, so the plugin may reload mid-update, and it is far
+better for it to run new code briefly reporting the old version than to report the new version while
+running the old code.
+
+`UpdateChecker` was extended rather than duplicated, as the step required: `FetchLatestAsync(platform)`
+was factored out of `CheckAsync` (the plugin's comparison is against the *plugin's* installed version,
+not the agent's), and `DownloadInstallerAsync` took a `PackageKind` so the payload shape check knows a
+zip from a tarball. Everything else about the download — the off-origin rule, the credential rule, the
+size cap, the digest — is untouched and shared.
+
+### Still unverified, and the reason this is not "shipped"
+
+**None of it has run on hardware.** The harness proves the agent's half against a fake
+`~/homebrew/plugins/SaveLocker`; what it cannot prove is the part that makes the feature work at all
+— that Decky notices the files change and reloads the plugin. That mechanism *was* observed during
+Phase 4 (a `touch` as the desktop user, and repeated `scp`s of real builds), so this is not a guess,
+but the agent doing it by itself has never happened on a Deck. Also unexercised on hardware: the real
+release zip's shape (the harness builds its own), and the server hosting a plugin package at all.
+
+Before the first real rollout: publish a plugin release, upload it in **Config → Agent updates →
+Decky plugin**, and watch a Deck pick it up. Keep the backup route in mind — a manual reinstall
+through Decky always works and is what the refusal path tells the user to do.
+
+---
+
+## Phase 5 — original plan
 
 **The goal: a user installs the plugin once and never thinks about it again.** Today the only way to
 get update *prompts* is Decky's custom-store setting, and Decky holds exactly one store URL — so

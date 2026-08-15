@@ -264,11 +264,36 @@ public sealed class Daemon : IAsyncDisposable
                 try { await Updater.StageAsync(_config, update, AgentLogger.Log); }
                 catch (Exception ex) { AgentLogger.Log($"update: could not stage v{update.Version} — {ex.Message}"); }
             }
+
+            await CheckPluginUpdateAsync();
         }
         catch (Exception ex)
         {
             AgentLogger.LogException("CheckForUpdate", ex);
         }
+    }
+
+    /// <summary>
+    /// The Decky plugin, on the same schedule and the same switch as the agent's own update.
+    /// <para>
+    /// Unlike the agent, this one <b>applies</b>. Nothing has to be stopped to replace another
+    /// application's files, and Decky reloads the plugin by itself when they change — so there is no
+    /// next-start step to wait for, and staging it would only invent one.
+    /// </para>
+    /// <para>
+    /// Silent on a machine with no Decky, which is almost all of them: <see cref="DeckyPlugin"/>
+    /// answers <see cref="PluginUpdateState.NoDecky"/> before it does any work at all.
+    /// </para>
+    /// </summary>
+    private async Task CheckPluginUpdateAsync()
+    {
+        var outcome = await DeckyPlugin.CheckAsync(_config, AgentLogger.Log, apply: _config.AutoUpdate);
+
+        // NoDecky is the only outcome that says nothing. Every other one — including "up to date" —
+        // is logged, for the same reason the agent's own check is: on a box with no UI, the log is
+        // the only account of whether the check happened at all.
+        if (outcome.State is PluginUpdateState.NoDecky) return;
+        AgentLogger.Log($"plugin check: {outcome.Message}");
     }
 
     /// <summary>

@@ -746,6 +746,161 @@ kill "${noauto_pid}" 2>/dev/null; wait "${noauto_pid}" 2>/dev/null
 check "AutoUpdate:false still reports being behind"    "$(contains "${noauto_json}" '"updateAvailable":true')"
 check "AutoUpdate:false stages nothing"                "$([ ! -f "${fake_prefix}/update/apply.json" ] && echo 0 || echo 1)"
 
+# ── The Decky plugin: the agent keeps it updated ──────────────────────────────────────────────
+# Phase 5 of tasks/DeckyPlugin.md. No Decky and no Steam Deck needed — the plugin directory is just
+# a directory, which is the same trick the whole harness uses for Steam. What is being tested is the
+# agent's half: version comparison, digest verification, and above all the plan-before-write rule
+# that keeps a package it cannot fully install from being half-installed.
+echo
+echo "==> Decky plugin updates"
+
+plugin_dir="${HOME}/homebrew/plugins/SaveLocker"
+plugin_ver() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "${plugin_dir}/package.json" 2>/dev/null; }
+# The events file follows the CONFIG, not HOME: HealthReporter writes into config.StateDir, which
+# for deck_cfg is the scratch root (the same place its api-token sits), NOT the fake home's default
+# state dir. Reading the default one finds nothing and looks exactly like "the event was never
+# reported" — which is what it looked like the first time this block ran.
+plugin_events() { cat "${scratch}/health-events.json" 2>/dev/null || echo '{}'; }
+
+# Builds a plugin zip: $1 out, $2 version, $3 marker written into dist/index.js,
+# $4 (optional) an extra top-level path the package needs.
+make_plugin_zip() {
+  python3 - "$@" <<'PYZIP'
+import json, sys, zipfile
+out, ver, marker = sys.argv[1], sys.argv[2], sys.argv[3]
+extra = sys.argv[4] if len(sys.argv) > 4 else None
+with zipfile.ZipFile(out, "w") as z:
+    z.writestr("SaveLocker/package.json", json.dumps({"name": "SaveLocker", "version": ver}))
+    z.writestr("SaveLocker/plugin.json", json.dumps({"name": "SaveLocker", "version": ver, "flags": ["debug"]}))
+    z.writestr("SaveLocker/main.py", "# plugin %s\n" % ver)
+    z.writestr("SaveLocker/dist/index.js", "// %s\n" % marker)
+    if extra:
+        z.writestr("SaveLocker/" + extra, "payload the old layout has no home for\n")
+PYZIP
+}
+host_plugin() {   # $1 zip, $2 version
+  curl -sf -X POST "${server_url}/api/admin/agent-installer?version=$2&platform=decky-plugin" \
+    -F "file=@$1;filename=SaveLocker.zip" >/dev/null
+}
+
+# ---- No Decky at all: silent, and never an error ----
+# Almost every machine. A plugin updater that complains on a box that has never heard of Decky is
+# one an admin learns to ignore, taking the real reports with it.
+out="$(agent plugin-update --config "${deck_cfg}")"; plugin_rc=$?
+check "no Decky: plugin-update exits 0"           "${plugin_rc}"
+check "no Decky: it says why"                     "$(contains "${out}" "Decky Loader is not installed")"
+out="$(agent doctor --config "${deck_cfg}")"; doctor_nodecky_rc=$?
+check "no Decky: doctor says nothing applies"     "$(contains "${out}" "Decky Loader is not installed")"
+check "no Decky: doctor does not call it a problem" "${doctor_nodecky_rc}"
+
+# ---- Decky present, plugin not installed: the one thing the agent cannot do ----
+# Creating the plugin directory needs root, so first install stays a manual paste. Doctor is where
+# a user finds that out, so it has to carry the URL.
+mkdir -p "${HOME}/homebrew/plugins"
+out="$(agent doctor --config "${deck_cfg}")"
+check "Decky without the plugin: doctor names the plugin" "$(contains "${out}" "plugin is not installed")"
+check "Decky without the plugin: doctor gives the install URL" \
+  "$(contains "${out}" "SaveLocker-Decky/releases/latest/download")"
+
+# ---- An installed plugin at v0.1.0 ----
+# plugin.json is root-owned on a real device and must never be written; here it carries a sentinel
+# so "left exactly as it was" is an assertion rather than a hope. stale.js is a file the NEW package
+# does not carry, which dist/ pruning must remove.
+mkdir -p "${plugin_dir}/dist"
+echo '{"name":"SaveLocker","version":"0.1.0"}' >"${plugin_dir}/package.json"
+echo '{"name":"SaveLocker","version":"0.1.0","flags":["debug"],"sentinel":"do-not-touch"}' >"${plugin_dir}/plugin.json"
+echo '# plugin 0.1.0' >"${plugin_dir}/main.py"
+echo '// old bundle' >"${plugin_dir}/dist/index.js"
+echo '// removed in 0.2.0' >"${plugin_dir}/dist/stale.js"
+
+make_plugin_zip "${scratch}/plugin-0.2.0.zip" "0.2.0" "bundle 0.2.0"
+host_plugin "${scratch}/plugin-0.2.0.zip" "0.2.0"
+
+# ---- --check reports and installs nothing ----
+out="$(agent plugin-update --check --config "${deck_cfg}")"; plugin_rc=$?
+check "--check sees the newer plugin"             "$(contains "${out}" "v0.2.0 available")"
+check "--check exits non-zero when behind"        "$([ "${plugin_rc}" != "0" ] && echo 0 || echo 1)"
+check "--check installed nothing"                 "$([ "$(plugin_ver)" = "0.1.0" ] && echo 0 || echo 1)"
+
+# ---- The install ----
+out="$(agent plugin-update --config "${deck_cfg}")"; plugin_rc=$?
+check "plugin-update installs the new version"    "${plugin_rc}"
+check "package.json now reports 0.2.0"            "$([ "$(plugin_ver)" = "0.2.0" ] && echo 0 || echo 1)"
+check "the new bundle is in place"                "$(contains "$(cat "${plugin_dir}/dist/index.js")" "bundle 0.2.0")"
+check "main.py was replaced"                      "$(contains "$(cat "${plugin_dir}/main.py")" "plugin 0.2.0")"
+# The correction from the Phase 4 hardware pass: Decky chowns plugin.json to root even for a
+# non-_root plugin, so the agent must not depend on writing it — and must not quietly try.
+check "plugin.json was NOT touched"               "$(contains "$(cat "${plugin_dir}/plugin.json")" "do-not-touch")"
+check "a dist file the new version dropped is gone" \
+  "$([ ! -f "${plugin_dir}/dist/stale.js" ] && echo 0 || echo 1)"
+check "the console is told the plugin was updated" "$(contains "$(plugin_events)" "plugin.updated")"
+
+# ---- A second pass changes nothing ----
+out="$(agent plugin-update --config "${deck_cfg}")"; plugin_rc=$?
+check "a second pass reports up to date"          "$(contains "${out}" "up to date")"
+check "a second pass exits 0"                     "${plugin_rc}"
+
+# ---- An OLDER package on the server never downgrades an installation ----
+make_plugin_zip "${scratch}/plugin-0.0.9.zip" "0.0.9" "ancient bundle"
+host_plugin "${scratch}/plugin-0.0.9.zip" "0.0.9"
+out="$(agent plugin-update --config "${deck_cfg}")"
+check "an older hosted plugin does not downgrade"  "$([ "$(plugin_ver)" = "0.2.0" ] && echo 0 || echo 1)"
+check "the bundle is still the newer one"          "$(contains "$(cat "${plugin_dir}/dist/index.js")" "bundle 0.2.0")"
+
+# ---- A wrong digest is refused, and nothing is written ----
+# The plugin becomes code running inside Steam's own UI, and plain http proves nothing about where
+# it came from (Decisions.md), so the digest is the only integrity control there is. Rewriting the
+# stored file behind the server's back is exactly what a substituted download looks like.
+make_plugin_zip "${scratch}/plugin-0.3.0.zip" "0.3.0" "bundle 0.3.0"
+host_plugin "${scratch}/plugin-0.3.0.zip" "0.3.0"
+make_plugin_zip "${scratch}/plugin-tampered.zip" "0.3.0" "TAMPERED"
+cp "${scratch}/plugin-tampered.zip" "${inst_root}/decky-plugin/SaveLocker.zip"
+out="$(agent plugin-update --config "${deck_cfg}")"; plugin_rc=$?
+check "a tampered plugin package is REFUSED"       "$(contains "${out}" "checksum")"
+check "the refusal exits non-zero"                 "$([ "${plugin_rc}" != "0" ] && echo 0 || echo 1)"
+check "the tampered package installed nothing"     "$([ "$(plugin_ver)" = "0.2.0" ] && echo 0 || echo 1)"
+check "the tampered bundle never landed"           "$(grep -q 'TAMPERED' "${plugin_dir}/dist/index.js" && echo 1 || echo 0)"
+check "a refused plugin update is reported to the console" \
+  "$(contains "$(plugin_events)" "plugin.update_failed")"
+
+# ---- A package needing a file the agent may not create is refused BEFORE any write ----
+# The real constraint: the plugin directory itself is root-owned 755, so an existing file can be
+# overwritten but a new top-level one cannot be created. Discovering that partway through would
+# leave a plugin half on one version and half on another, which is worse than an old one.
+make_plugin_zip "${scratch}/plugin-0.4.0.zip" "0.4.0" "bundle 0.4.0" "py_modules/helper.py"
+host_plugin "${scratch}/plugin-0.4.0.zip" "0.4.0"
+chmod 555 "${plugin_dir}"
+out="$(agent plugin-update --config "${deck_cfg}")"; plugin_rc=$?
+chmod 755 "${plugin_dir}"
+check "a package needing a new top-level file is REFUSED" "$(contains "${out}" "py_modules/helper.py")"
+check "the refusal names the reinstall route"      "$(contains "${out}" "Install Plugin from")"
+check "the refusal exits non-zero"                 "$([ "${plugin_rc}" != "0" ] && echo 0 || echo 1)"
+check "the refused package wrote NOTHING"          "$([ "$(plugin_ver)" = "0.2.0" ] && echo 0 || echo 1)"
+check "not even the file it could have written"    "$(contains "$(cat "${plugin_dir}/dist/index.js")" "bundle 0.2.0")"
+
+# ---- AutoUpdate:false reports but does not apply ----
+# The same switch that governs the agent's own updates, for the same reason: turning it off means
+# nothing gets replaced without someone deciding, not that you stop being told you are behind.
+make_plugin_zip "${scratch}/plugin-0.5.0.zip" "0.5.0" "bundle 0.5.0"
+host_plugin "${scratch}/plugin-0.5.0.zip" "0.5.0"
+noauto_plugin_cfg="${scratch}/plugin-noauto-config.json"
+python3 - "${deck_cfg}" "${noauto_plugin_cfg}" <<'PYNOAUTO'
+import json, sys
+c = json.load(open(sys.argv[1])); c["AutoUpdate"] = False; json.dump(c, open(sys.argv[2], "w"))
+PYNOAUTO
+out="$(agent plugin-update --config "${noauto_plugin_cfg}")"
+check "AutoUpdate:false still reports the newer plugin" "$(contains "${out}" "v0.5.0 available")"
+check "AutoUpdate:false says why nothing happened"      "$(contains "${out}" "Automatic updates are turned off")"
+check "AutoUpdate:false installed nothing"              "$([ "$(plugin_ver)" = "0.2.0" ] && echo 0 || echo 1)"
+
+# ---- doctor carries the plugin's state, because on a Deck it is the only UI ----
+out="$(agent doctor --config "${deck_cfg}")"; doctor_plugin_rc=$?
+check "doctor reports the installed plugin version" "$(contains "${out}" "installed: v0.2.0")"
+check "doctor reports the available plugin update"  "$(contains "${out}" "v0.5.0 available")"
+check "a plugin update is not a doctor problem"     "${doctor_plugin_rc}"
+
+rm -rf "${HOME}/homebrew"
+
 # ── The generated systemd unit and the packaged one are the same text ─────────────────────────
 # They are two writers of one file and they had drifted: the packaged unit carried the update hook
 # and the hardening, the generated one did not, so whether a Deck got them depended on which had

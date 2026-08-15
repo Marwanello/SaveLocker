@@ -65,6 +65,9 @@ static class Program
             case "launch-options":
                 return LaunchOptionsCommand(opts, config);
 
+            case "plugin-update":
+                return await PluginUpdateCommand(opts, config);
+
             // The unit's ExecStartPre. Runs in the NEW invocation, after the old daemon is gone —
             // which is the whole reason the swap does not happen inside the daemon (Updater.cs).
             case "apply-update":
@@ -192,6 +195,40 @@ static class Program
         Console.WriteLine();
         Console.WriteLine($"{unconfirmed} of {games.Count} game(s) not confirmed.");
         return unconfirmed == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// <c>savelocker plugin-update [--check]</c> — the Decky plugin's update, by hand.
+    ///
+    /// <para>
+    /// The daemon does this on its own timer; this is for someone who does not want to wait, and it
+    /// is the seam the harness drives. <c>--check</c> reports and installs nothing, and exits
+    /// non-zero when the installed plugin is behind — which makes it usable from a script, and makes
+    /// the "does not apply what it only checked" assertion possible at all.
+    /// </para>
+    /// </summary>
+    private static async Task<int> PluginUpdateCommand(Dictionary<string, string> opts, AgentConfig config)
+    {
+        var check = opts.ContainsKey("check");
+
+        // AutoUpdate is the fleet-wide "the agent may install things" switch, and the plugin is
+        // installed by the same mechanism on the same trust, so it honours the same setting. An
+        // explicit `plugin-update` is still refused by it: the point of turning it off is that
+        // nothing gets replaced without someone deciding, and this is the report they decide from.
+        var apply = !check && config.AutoUpdate;
+
+        var outcome = await DeckyPlugin.CheckAsync(config, Console.WriteLine, apply);
+
+        Console.WriteLine($"plugin: {outcome.Message}");
+        if (outcome.State is PluginUpdateState.Available && !check && !config.AutoUpdate)
+            Console.WriteLine("Automatic updates are turned off for this machine, so nothing was installed.");
+
+        return outcome.State switch
+        {
+            PluginUpdateState.Refused or PluginUpdateState.Failed => 1,
+            PluginUpdateState.Available when check => 1,
+            _ => 0,
+        };
     }
 
     /// <summary>
@@ -371,6 +408,9 @@ static class Program
           update                                           Fetch, verify and install a newer agent now
                                                            (the daemon otherwise stages it and applies
                                                             it the next time the agent starts)
+          plugin-update [--check]                          Update the Decky plugin from the server;
+                                                            --check only reports, exiting non-zero
+                                                            if it is behind
 
         Game Mode
           ui [--size WxH] [--screenshot <file.png>]        Gamepad-native window for Steam Game Mode (Deck)

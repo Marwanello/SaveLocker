@@ -394,7 +394,12 @@ agent.MapGet("/agent/latest", (IConfiguration cfg, AgentInstallerService install
     // `slot`, never the raw `platform` — that one is NULL for the agents this fallback exists for,
     // which sent no parameter at all, and comparing it here silently sent them to the Linux section
     // and answered 204. WA-05's off-origin block is what caught it.
-    var section = slot == AgentPlatform.Windows ? "AgentUpdate" : "AgentUpdate:Linux";
+    var section = slot switch
+    {
+        AgentPlatform.Linux       => "AgentUpdate:Linux",
+        AgentPlatform.DeckyPlugin => "AgentUpdate:Plugin",
+        _                         => "AgentUpdate",
+    };
     var ver = cfg[$"{section}:LatestVersion"];
     var url = cfg[$"{section}:DownloadUrl"];
     var sha = cfg[$"{section}:Sha256"];

@@ -128,6 +128,12 @@ SaveLocker/
 │       ├── HeroicRoots.cs               # Locates Heroic and answers the only question that matters
 │       │                               #   per game: which Wine prefix does it run in?
 │       ├── HeroicLibrary.cs             # Heroic's library files (legendary/gogdl/nile) → games
+│       ├── DeckyPlugin.cs               # Keeps the Decky plugin updated, through the agent's own
+│       │                                #   update channel. Decky hands a non-_root plugin's files
+│       │                                #   to the desktop user and hot-reloads on change, so
+│       │                                #   WRITING the files is the install. Every destination is
+│       │                                #   proven writable BEFORE any byte lands — the plugin dir
+│       │                                #   is root-owned 755 and plugin.json is root's outright
 │       ├── Doctor.cs                    # Diagnoses the whole chain (the only UI a Deck has)
 │       ├── SystemdAutoStart.cs          # IAutoStart: systemd --user unit
 │       └── Ui/                          # `savelocker ui` — Game Mode surface (SDL + GL + ImGui)
@@ -192,7 +198,7 @@ SaveLocker/
 │           ├── Sidebar.tsx · StatusHeader.tsx
 │           ├── OverviewView.tsx · AddGamesView.tsx · SettingsView.tsx
 │           ├── LaunchSetupCard.tsx      # The Steam launch-options command + Copy. Renders nothing
-│           │                           #   on Windows. Target of tasks/DeckyPlugin.md
+│           │                           #   on Windows. Target of logs/2026-08-15_decky-plugin.md
 │           └── PathBrowserModal.tsx     # UI for PathBrowser — the Deck's only folder picker
 │
 │                                     # NOTE: the Decky plugin lives in its OWN repository,

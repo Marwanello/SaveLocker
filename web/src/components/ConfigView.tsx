@@ -718,7 +718,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
 }
 
 /**
- * One hosted agent package per platform. The two slots are independent all the way down — separate
+ * One hosted package per platform. The slots are independent all the way down — separate
  * storage, separate GitHub asset, separate version — so each panel owns its own state rather than
  * the card holding one installer and a selector. An admin routinely has a newer Windows installer
  * than Linux tarball (or no tarball at all, on a release that predates it), and the card has to be
@@ -748,6 +748,18 @@ const INSTALLER_SLOTS: InstallerSlot[] = [
     accept: '.gz,.tar.gz',
     fileHint: 'savelocker-x.y.z-linux-x64.tar.gz',
     parseVersion: name => name.match(/^savelocker-(.+?)-linux-x64\.tar\.gz$/i)?.[1] ?? '',
+  },
+  // Not an agent, and the only slot whose asset comes from another repository. It is here because a
+  // Deck's Linux agent installs it, from this channel, on the same AutoUpdate switch — so an admin
+  // asking "what is my fleet being offered?" reads all three in one place. The zip carries no
+  // version in its name (Decky's release artifact is always SaveLocker.zip), so this is the one slot
+  // where the Version field has to be typed — or filled by the GitHub fetch, which reads the tag.
+  {
+    platform: 'decky-plugin',
+    label: 'Decky plugin',
+    accept: '.zip',
+    fileHint: 'SaveLocker.zip — type the version, it is not in the filename',
+    parseVersion: name => name.match(/^SaveLocker-?(\d[\d.]*)\.zip$/i)?.[1] ?? '',
   },
 ];
 

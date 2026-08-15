@@ -173,6 +173,10 @@ public static class Doctor
         }
 
         Console.WriteLine();
+        Section("Decky plugin");
+        await ReportPluginAsync(config);
+
+        Console.WriteLine();
         Section("Platform");
         var probe = FileLockProbe.FirstWriter(AgentConfig.DefaultDir, Array.Empty<string>());
         if (probe.Supported)
@@ -338,6 +342,50 @@ public static class Doctor
         {
             Info("update", $"could not check ({ex.Message})");
         }
+    }
+
+    /// <summary>
+    /// The Decky plugin, if this machine has Decky at all. Nothing here is ever a problem: the plugin
+    /// is an accelerator and the copy-paste path it automates is the supported one, so a Deck without
+    /// it loses nothing it had. What this section does is answer the two questions nothing else on
+    /// the device can — which version of the plugin is running, and whether the agent is able to keep
+    /// it that way.
+    /// </summary>
+    private static async Task ReportPluginAsync(AgentConfig config)
+    {
+        if (!DeckyPlugin.DeckyPresent)
+        {
+            Console.WriteLine($"  Decky Loader is not installed (no {DeckyPlugin.PluginsRoot}). " +
+                              "Nothing here applies — launch options are set by hand.");
+            return;
+        }
+
+        Info("plugins", DeckyPlugin.PluginsRoot);
+
+        if (!DeckyPlugin.Installed)
+        {
+            Console.WriteLine($"  the {DeckyPlugin.PluginName} plugin is not installed.");
+            Console.WriteLine("  Install it once from Decky → Install Plugin from URL:");
+            Console.WriteLine($"           {DeckyPlugin.InstallUrl}");
+            Console.WriteLine("  After that the agent keeps it updated by itself.");
+            return;
+        }
+
+        Info("installed", $"v{DeckyPlugin.InstalledVersion() ?? "unknown"}  ({DeckyPlugin.PluginDir})");
+
+        // Reported, never counted — being a plugin version behind is not a fault, and a check that
+        // could not run is almost always the unreachable server the Server section already flagged.
+        var outcome = await DeckyPlugin.CheckAsync(config, _ => { }, apply: false);
+        Info("update", outcome.State switch
+        {
+            PluginUpdateState.Available => $"{outcome.Message}" +
+                (config.AutoUpdate
+                    ? " — the agent will install it on its next check"
+                    : " — automatic updates are off, so run: savelocker plugin-update"),
+            PluginUpdateState.Refused => outcome.Message,
+            PluginUpdateState.Failed  => $"could not check ({outcome.Message})",
+            _                         => outcome.Message,
+        });
     }
 
     private static async Task<List<(string Root, SteamShortcut Shortcut)>> ReadShortcutsAsync(
