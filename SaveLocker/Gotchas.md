@@ -295,3 +295,11 @@ behave in ways that look like bugs.
 - **A vault doc can point at a task file, or a version, that no longer exists.** Check the
   filesystem/`git tag -l` before trusting a pointer in `CONTEXT.md`/`Backlog.md` — this vault has
   drifted before (a deleted task still listed as next action; a stale version number).
+- **A `Docs:` commit runs no CI, by design.** `ci.yml` and `docker-publish.yml` both carry the same
+  `paths-ignore` (`SaveLocker/**`, `CLAUDE.md`, `AGENTS.md`, `.agents/**`), so a vault-only push is
+  skipped by both — a green tick is *absent*, not failing. Two things follow. **Never widen it to
+  `'**.md'`:** `web/src/releases/*.md` are bundled into the console image and `web/src/help/*.md`
+  are the Help KB, so both are code as far as the build is concerned. And **Actions does not expand
+  YAML anchors**, so `ci.yml`'s two copies (one per trigger) must be edited together. If any CI job
+  is ever made a *required* status check, the `pull_request` copy will block docs-only PRs forever
+  — the comment in `ci.yml` says what to do about it.

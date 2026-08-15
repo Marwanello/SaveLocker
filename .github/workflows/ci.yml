@@ -1,10 +1,36 @@
 name: CI
 
+# A docs-only change cannot break a build, and this workflow is expensive: two windows-latest
+# runners, a chained three-job cross-OS sequence, the Deck packaging job and the full agent suite.
+# The vault is edited on nearly every session, so without this most of those runs prove nothing.
+# A run is skipped only when EVERY changed file matches, so a commit touching both docs and code
+# still builds. The list is deliberately identical to docker-publish.yml's — keep them in step.
+#
+# ⚠️ Do NOT generalise this to '**.md'. web/src/releases/*.md are the console's release notes and are
+# BUNDLED INTO the web build, and web/src/help/*.md are the Help KB — ignoring those would let a
+# broken build reach main. Only the Obsidian vault and the agent-instruction files are safe.
+#
+# ⚠️ On `pull_request`, an ignored path means the check does not report at all — it is ABSENT, not
+# passing. If any job here is ever marked a REQUIRED status check in branch protection, docs-only
+# PRs will block forever with no way to satisfy them. `main` is unprotected today; if that changes,
+# either drop paths-ignore from the pull_request trigger or add a stub job that always succeeds.
 on:
   pull_request:
     branches: [main]
+    # Repeated verbatim under `push` below: GitHub Actions does not expand YAML anchors, so the
+    # two lists cannot be shared and must be edited together.
+    paths-ignore:
+      - 'SaveLocker/**'
+      - 'CLAUDE.md'
+      - 'AGENTS.md'
+      - '.agents/**'
   push:
     branches: [main]
+    paths-ignore:
+      - 'SaveLocker/**'
+      - 'CLAUDE.md'
+      - 'AGENTS.md'
+      - '.agents/**'
 
 jobs:
   # Server + Shared only. The Agent project is net10.0-windows and does not build on Linux.
