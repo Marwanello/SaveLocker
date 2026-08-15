@@ -10,16 +10,15 @@ embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[Architecture
 
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** `main`
 
-**Released:** **v0.5.4** (2026-08-10, **rolled out 2026-08-15**) — notes in
-`web/src/releases/0.5.4.md`. GHCR package `savelocker` is **public** ([[Gotchas]]).
+**Released:** **v0.5.5** (tagged 2026-08-14, merged as PR #40) — notes in
+`web/src/releases/0.5.5.md`. GHCR package `savelocker` is **public** ([[Gotchas]]).
 
 ---
 
 ## Where things stand
 
-**In flight — branch `steam-cloud-from-manifest`** (**not pushed**, not merged). It now carries two
-unrelated pieces of work; the maintainer's call is that the whole branch pushes when the auto-update
-feature is finished.
+**Nothing in flight.** `steam-cloud-from-manifest` merged (PR #40, `10be23e`) and v0.5.5 is tagged.
+The branch carried two unrelated pieces of work, both complete:
 
 1. **Steam Cloud from the manifest** (2 commits). Steam Cloud is read from the Ludusavi manifest
    instead of assumed from "Steam installed it" — only 14,340 of the manifest's 48,908 Steam-id
@@ -29,8 +28,8 @@ feature is finished.
    `logs/2026-08-14_steam-cloud-from-manifest.md`. It also settled a recurring idea in
    [[Decisions]]: **do not scrape PCGamingWiki — the Ludusavi manifest already is that scrape.**
 
-2. **Linux / Steam Deck agent auto-update** — in progress, `tasks/LinuxAutoUpdate.md`, four phases,
-   one commit each.
+2. **Linux / Steam Deck agent auto-update** — done, `logs/2026-08-15_linux-auto-update.md`, four
+   phases, one commit each.
    - **Phase 1 (server) done.** The hosted-installer store is platform-aware — Windows keeps the
      storage root it always had, `linux-x64/` is a subdirectory beside it, and every update route
      takes `?platform=`, absent meaning `win-x64` so no deployed agent notices.
@@ -58,20 +57,22 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
 
 ## Next action
 
-1. **Push and PR `steam-cloud-from-manifest`** — the maintainer's stated plan was that the whole
-   branch pushes once auto-update is finished, and it is. Five commits.
-2. **Tag v0.5.5 and roll it out.** Mechanics in [[Build and Run]] → Rolling a release out. No
-   migration. The one step that always gets missed — uploading the installer in Config → Agent
-   updates — now has **two** rows to fill, and the Linux one is what makes every future Deck update
-   automatic.
-3. **Deck hardware pass.** Three things have never been seen on real hardware: a genuine end-to-end
+1. **Finish rolling v0.5.5 out** — tagged, but confirm the deploy landed and, above all, that
+   **both** rows in Config → Agent updates are filled. Uploading the installer is the step that
+   always gets missed, there are now **two** of them, and the Linux one is what makes every future
+   Deck update automatic. Mechanics in [[Build and Run]] → Rolling a release out. No migration.
+2. **Deck hardware pass.** Three things have never been seen on real hardware: a genuine end-to-end
    self-update, the Game Mode "update is ready" notice, and the agent UI's Updates panel. Nothing
    there can lose save data, and everything behind them is covered by `run-linux-tests`, but no
    screen has been looked at. Record `systemd-analyze --user security savelocker.service` before and
    after while there ([[Backlog]] → the hardening item this folded in).
-4. **Check the live server for duplicate games** before deploying. Canonical naming stops *new*
-   splits; it does not merge what a server already holds under two spellings, and there is no merge
-   tool ([[Backlog]]).
+   <br>**`tasks/DeckyPlugin.md` Phase 3 wants the same trip** — plan it in if the plugin work has
+   started by then.
+3. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
+   merge what a server already holds under two spellings, and there is no merge tool ([[Backlog]]).
+4. **`tasks/DeckyPlugin.md`** — planned 2026-08-15, not started. Phases 1–2 are agent-side, need no
+   Decky and no hardware, and Phase 2 pays off on its own (`doctor` gains "launch options are not
+   set for this game").
 
 Everything else — Deck verification, the WA-03 second-account ACL test, the remaining Windows manual
 gates, the LAN enrollment-URL check, the missing LA-04/05/06/07 regression tests, and the
@@ -79,7 +80,7 @@ gates, the LAN enrollment-URL check, the missing LA-04/05/06/07 regression tests
 
 ## Parked on a branch — `offline-backoff-task` (`bee3116`, pushed, not merged)
 
-`SaveLocker/tasks/` is empty **on `main`**; do not conclude there is no task. `tasks/OfflineBackoff.md`
+`main` carries only `tasks/DeckyPlugin.md`; do not conclude that is the only task. `tasks/OfflineBackoff.md`
 and its Backlog entry exist only on that branch, deliberately (2026-07-29) — the task was written and
 the work deferred. `git checkout offline-backoff-task` to pick it up.
 

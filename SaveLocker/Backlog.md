@@ -109,6 +109,20 @@ verification that did not happen before the tag. Write-ups:
   Reuses the Help KB shell (`web/src/help/`) for the article surface; the checks are `/api/overview`
   + machines. Deck Game Mode already has a "Next step" card (`Ui/UiApp.cs`) — same idea, wider scope.
 
+- **Decky plugin — apply Steam launch options automatically.** Raised 2026-08-15. Pasting `savelocker
+  run -- %command%` into Properties → Launch Options is the last manual per-device step and the
+  most-missed action in the flow; nothing today notices it was skipped, so the failure presents as a
+  game that just never syncs. The agent **cannot** do this itself — Steam holds `localconfig.vdf` /
+  `shortcuts.vdf` in memory and rewrites them on exit, so any agent-side edit is discarded. A Decky
+  plugin's frontend runs in Steam's own JS context and can call `SetAppLaunchOptions`, which is the
+  entire justification for the dependency.
+  <br>**Planned 2026-08-15 → `tasks/DeckyPlugin.md`** (four phases, one per session; 1–2 are
+  agent-side and ship with no plugin in existence). Turns on: the rewrite must **substitute into**
+  `%command%`, never append, or mangohud/gamemoderun/per-game args break; the local API is
+  token-gated with no CORS, so the plugin's *Python backend* must make every call and the frontend
+  cannot reach `:5178` at all; and the signed→unsigned AppID trap applies again, so normalise in the
+  agent. Decky stays an accelerator — `LaunchSetupCard` and the copy-paste docs are unchanged.
+
 - **Linux agent secret permissions and state layout.** `config.json` contains a long-lived machine key; file privacy depends on the launching shell's umask. Enforce `0700` on private state directories and `0600` on config, queue, health, and log files in code, including CLI enrollment paths. Consider separating immutable app files from mutable XDG config/state so upgrades cannot overlap the executable tree.
 
 - **Linux auto-update.** The update channel (`/api/agent/latest`) is installer-shaped and Windows-only. A Deck user currently re-runs `install.sh` from a newer tarball. Worth doing before there are many Deck users — a headless device that never updates is one nobody will notice is stale.

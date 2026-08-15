@@ -29,10 +29,11 @@ When a `SaveLocker/tasks/` file exists for the current work:
 2. Execute **only** the steps listed.
 3. Verify via the method specified in the task file.
 4. Stop and report — do not continue to the next task unless instructed.
+5. We should have a commit for each task we successfully complete.
 
 ## Session handoff (end of session)
 
-Before closing, update the vault so the next session starts clean:
+Before commiting, update the vault so the next session starts clean:
 1. Update `SaveLocker/CONTEXT.md` — current status, any new gotchas, next action.
 2. Move completed `tasks/*.md` files to `SaveLocker/logs/` with a date prefix.
 3. Update `SaveLocker/Backlog.md` if priorities shifted.
