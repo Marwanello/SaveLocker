@@ -36,6 +36,16 @@ if command -v pgrep >/dev/null 2>&1 && pgrep -f "savelocker daemon" >/dev/null 2
   stray_daemon=1
 fi
 
+# A hand-run install supersedes anything the agent had staged for itself: the files are about to be
+# replaced by these ones, and applying a staged update on the next start would then install a
+# version the user did not just choose — possibly over the top of a newer one. Dropping the staging
+# tree is also what stops `apply-update` rolling this install back, since a leftover applied.json
+# reads as "the last update never started".
+if [ -d "${prefix}/update" ]; then
+  echo "==> Discarding a staged agent update — this install supersedes it"
+  rm -rf "${prefix}/update"
+fi
+
 # --remove-destination unlinks each target before writing, so the replacement gets a NEW inode and
 # anything still running keeps the old one. That is what makes the copy safe even if a process we
 # could not stop is holding these files: it survives on the old inode instead of taking a SIGBUS.
@@ -131,6 +141,11 @@ Installed. Next:
         savelocker register --name "Steam Deck")
 
   2. savelocker doctor            # checks the whole chain -- start here if anything is off
+
+     From here on the agent keeps itself current: it checks the server, and when
+     a newer version is hosted it downloads, verifies and unpacks it, then
+     installs it the next time the agent starts. Nothing changes underneath a
+     running session. To take one immediately:  savelocker update
 
   3. Add this to a game's Steam launch options:
 

@@ -16,6 +16,16 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <!-- This assembly is Linux-only in fact — /proc, systemctl, ~/.local, Proton prefixes — but the
+       TFM is deliberately RID-agnostic so it builds on any dev box. Saying so explicitly is what
+       lets the platform-compatibility analyzer accept File.SetUnixFileMode and friends, instead of
+       every Unix call site needing an OperatingSystem.IsWindows() guard that could never be true. -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatform">
+      <_Parameter1>linux</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Agent.Core\SaveLocker.Agent.Core.csproj" />
     <ProjectReference Include="..\Shared\SaveLocker.Shared.csproj" />
@@ -30,6 +40,16 @@
     <EmbeddedResource Include="Ui\Fonts\Inter-Regular.ttf" />
     <EmbeddedResource Include="Ui\Fonts\Inter-SemiBold.ttf" />
     <EmbeddedResource Include="Ui\Fonts\JetBrainsMono-Regular.ttf" />
+  </ItemGroup>
+
+  <!-- THE systemd unit. Embedded from packaging/ rather than duplicated in C#, because this file
+       has two writers — install.sh drops the packaged copy, and `savelocker autostart` writes one
+       itself — and they had already drifted. Now they emit the same text, with only the executable
+       path substituted, so the hardening directives and the update hook cannot exist in one and not
+       the other. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\packaging\linux\savelocker.service"
+                      LogicalName="SaveLocker.Agent.Linux.savelocker.service" />
   </ItemGroup>
 
   <!-- UI-sized re-export of the Steam artwork. Linked from packaging/ rather than copied so there

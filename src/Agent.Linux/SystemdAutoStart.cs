@@ -78,24 +78,60 @@ public sealed class SystemdAutoStart : IAutoStart
             : $"systemctl could not {verb} the service (exit {exit}).";
     }
 
-    private static string UnitFile()
+    /// <summary>
+    /// The packaged unit, with the executable path pointed at whatever this agent actually is.
+    /// <para>
+    /// It is read from the embedded copy of <c>packaging/linux/savelocker.service</c> rather than
+    /// written out here, because there are two writers of this file — <c>install.sh</c> drops the
+    /// packaged one, this writes its own — and they had drifted: the packaged unit grew an
+    /// <c>ExecStartPre</c> update hook and a set of hardening directives that the generated one knew
+    /// nothing about, so whether a Deck got them depended on which path had last touched the unit.
+    /// </para>
+    /// </summary>
+    internal static string UnitFile()
     {
-        var exe = Environment.ProcessPath ?? "savelocker";
-        return $"""
-        [Unit]
-        Description=SaveLocker agent
-        After=network-online.target
+        var template = ReadTemplate();
+        var exe = AgentExecutable();
 
-        [Service]
-        Type=simple
-        ExecStart={exe} daemon
-        Restart=on-failure
-        RestartSec=10
+        // %h/... is right for a standard install and is what the packaged file says. It is wrong for
+        // an agent living anywhere else — a build tree, a second copy under test — so when we know
+        // our own path, we use it.
+        return string.IsNullOrEmpty(exe)
+            ? template
+            : template.Replace(PackagedExecPath, exe, StringComparison.Ordinal);
+    }
 
-        [Install]
-        WantedBy=default.target
+    /// <summary>
+    /// This agent's own launcher.
+    /// <para>
+    /// The apphost beside our assemblies is preferred over <see cref="Environment.ProcessPath"/>,
+    /// because under <c>dotnet savelocker.dll</c> the process path is the <b>dotnet host</b> — and a
+    /// unit written from that says <c>ExecStart=/usr/bin/dotnet daemon</c>, which starts nothing at
+    /// all. The installed agent is a self-contained apphost, so the two agree there; it is running
+    /// from a build tree that tells them apart, which is exactly where a broken unit is written and
+    /// not noticed.
+    /// </para>
+    /// </summary>
+    private static string? AgentExecutable()
+    {
+        var beside = Path.Combine(AppContext.BaseDirectory, "savelocker");
+        if (File.Exists(beside)) return Path.GetFullPath(beside);
+        return Environment.ProcessPath;
+    }
 
-        """;
+    /// <summary>The path the packaged unit names, and therefore the string to substitute.</summary>
+    private const string PackagedExecPath = "%h/.local/share/SaveLocker/savelocker";
+
+    private static string ReadTemplate()
+    {
+        using var stream = typeof(SystemdAutoStart).Assembly
+            .GetManifestResourceStream("SaveLocker.Agent.Linux.savelocker.service")
+            ?? throw new InvalidOperationException(
+                "The embedded savelocker.service is missing from this build.");
+        using var reader = new StreamReader(stream);
+        // systemd does not care about CRLF, but a unit file that round-trips through a Windows
+        // checkout and back should still read as the file in packaging/.
+        return reader.ReadToEnd().Replace("\r\n", "\n");
     }
 
     /// <summary>

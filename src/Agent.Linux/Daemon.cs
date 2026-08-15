@@ -125,6 +125,12 @@ public sealed class Daemon : IAsyncDisposable
         StartFolderWatchers();
         StartUpdateChecks();
 
+        // Everything is up: the API server is listening, the poller and watchers are running. That
+        // is the bar for "this build works", and it is what turns an applied update from provisional
+        // into permanent. Until this runs, the next start treats the installed version as suspect
+        // and puts the previous one back (Updater.cs).
+        Updater.Commit(_config, AgentLogger.Log);
+
         var where = $"http://localhost:{_apiPort}/";
         AgentLogger.Log($"daemon ready — agent UI on {where}");
         Console.WriteLine($"SaveLocker daemon running. Agent UI: {where}");
@@ -195,13 +201,24 @@ public sealed class Daemon : IAsyncDisposable
             AgentLogger.Log(result switch
             {
                 UpdateResult.Available a =>
-                    $"Update check: v{a.Version} available (running {UpdateChecker.CurrentVersionText}). " +
-                    "Install it by re-running install.sh from the new tarball.",
+                    $"Update check: v{a.Version} available (running {UpdateChecker.CurrentVersionText}).",
                 UpdateResult.UpToDate => $"Update check: up to date (v{UpdateChecker.CurrentVersionText}).",
                 UpdateResult.Skipped   => $"Update check: v{_config.SkipVersion} is available but was skipped.",
                 UpdateResult.Failed f  => $"Update check FAILED: {f.Reason}",
                 _                      => $"Update check: {result.GetType().Name}.",
             });
+
+            if (result is UpdateResult.Available update &&
+                !string.Equals(Updater.PendingVersion(_config), update.Version, StringComparison.Ordinal))
+            {
+                // Staged, never applied. Swapping the agent's files out from under a running daemon
+                // is what `systemctl --user stop` killing the whole cgroup makes impossible to do
+                // safely from here — so the work that CAN be done now is done now, and the swap
+                // waits for the next start (Updater.cs). `savelocker update` is the way to say
+                // "now" instead.
+                try { await Updater.StageAsync(_config, update, AgentLogger.Log); }
+                catch (Exception ex) { AgentLogger.Log($"update: could not stage v{update.Version} — {ex.Message}"); }
+            }
         }
         catch (Exception ex)
         {

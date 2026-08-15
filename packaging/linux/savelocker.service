@@ -7,9 +7,31 @@ After=network-online.target
 Type=simple
 # %h is the user's home: this is a --user unit, installed under ~/.local/share.
 # Never /usr — SteamOS's rootfs is immutable and is wiped on every system update.
+#
+# ExecStartPre is where a staged update is installed. It has to be here rather than inside the
+# daemon: `systemctl --user stop` kills every process in the unit's cgroup, so an updater the daemon
+# spawned would be killed together with the unit it had just stopped, halfway through replacing the
+# agent's files. This runs in the NEW invocation, with the old daemon already gone. It is also where
+# an update that could not start is rolled back. It never fails the unit — a device that will not
+# start at all is a far worse outcome than one running last week's build.
+ExecStartPre=-%h/.local/share/SaveLocker/savelocker apply-update
 ExecStart=%h/.local/share/SaveLocker/savelocker daemon
 Restart=on-failure
 RestartSec=10
+
+# Hardening. Every one of these was checked against what the agent actually does; the three that
+# look obvious and are missing are missing on purpose:
+#   ProtectHome            — the agent's whole job is reading and writing save files under $HOME.
+#   ProtectProc            — the settle gate's writer probe reads /proc/<pid>/fd to see if a game
+#                            still has the save open.
+#   MemoryDenyWriteExecute — the .NET JIT needs W^X pages.
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+LockPersonality=yes
 
 [Install]
 WantedBy=default.target

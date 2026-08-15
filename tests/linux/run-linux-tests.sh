@@ -511,6 +511,219 @@ kill "${upd_pid}" 2>/dev/null; wait "${upd_pid}" 2>/dev/null
 check "the daemon reports the update to its own API"  "$(contains "${upd_json}" '"updateAvailable":true')"
 check "the daemon names the Linux version"            "$(contains "${upd_json}" '"latestVersion":"9.9.9"')"
 
+# ── Stage and apply: the agent replaces its own files ────────────────────────────────────────
+# Driven against a COPY of the built agent, never bin/Debug itself, and with the config living
+# INSIDE that copy — because on Linux the install prefix and the state directory are the same
+# place, and "config.json survives an update" is only a real assertion when it is genuinely sitting
+# in the tree being replaced.
+#
+# The tarball's savelocker is a small script rather than a published binary: the updater only ever
+# asks it to start and report a version, a self-contained publish takes minutes, and everything
+# under test here is about which files move where. The daemon is driven through savelocker.dll,
+# which the tarball does not carry, so the real agent code keeps running throughout.
+echo
+echo "==> Update: stage and apply"
+fake_prefix="${scratch}/prefix"
+cp -r "${agent_dir}/bin/Debug/net10.0" "${fake_prefix}"
+prefix_cfg="${fake_prefix}/config.json"
+cat >"${prefix_cfg}" <<EOF
+{
+  "ServerUrl": "${server_url}",
+  "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "Games": []
+}
+EOF
+prefix_agent() { dotnet "${fake_prefix}/savelocker.dll" "$@" --config "${prefix_cfg}" 2>&1; }
+prefix_agent register --name "UpdPrefix" >/dev/null
+orig_sum="$(md5sum "${fake_prefix}/savelocker" | cut -d' ' -f1)"
+orig_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["ApiKey"])' "${prefix_cfg}")"
+
+# Builds a linux tarball whose savelocker prints $2 for `version` and exits $3 for everything else.
+make_agent_tarball() {   # $1 out, $2 version, $3 version-exit-code
+  local out="$1" ver="$2" rc="${3:-0}"
+  rm -rf "${scratch}/newver"; mkdir -p "${scratch}/newver/SaveLocker"
+  cat >"${scratch}/newver/SaveLocker/savelocker" <<EOS
+#!/usr/bin/env bash
+if [ "\$1" = "version" ]; then echo "${ver}"; exit ${rc}; fi
+exit 0
+EOS
+  chmod +x "${scratch}/newver/SaveLocker/savelocker"
+  echo "payload ${ver}" >"${scratch}/newver/SaveLocker/newfile.txt"
+  tar -czf "${out}" -C "${scratch}/newver" SaveLocker
+}
+host_tarball() {   # $1 file, $2 version
+  curl -sf -X POST "${server_url}/api/admin/agent-installer?version=$2&platform=linux-x64" \
+    -F "file=@$1;filename=savelocker-$2-linux-x64.tar.gz" >/dev/null
+}
+
+# ---- A package that writes outside the staging directory is refused ----
+# It becomes the code this machine runs, so it is treated as hostile input in the same way a pulled
+# save archive is. Nothing may be left behind, and the working agent must be untouched.
+python3 - "${scratch}/escape.tar.gz" <<'PYT'
+import io, sys, tarfile
+t = tarfile.open(sys.argv[1], "w:gz")
+data = b"escaped"
+info = tarfile.TarInfo("SaveLocker/../../../escaped.txt"); info.size = len(data)
+t.addfile(info, io.BytesIO(data))
+t.close()
+PYT
+host_tarball "${scratch}/escape.tar.gz" "9.9.9"
+out="$(prefix_agent update)"
+check "a package escaping the staging dir is REFUSED"  "$(contains "${out}" "outside the staging directory")"
+check "the escaping package installed nothing"         "$([ "$(md5sum "${fake_prefix}/savelocker" | cut -d' ' -f1)" = "${orig_sum}" ] && echo 0 || echo 1)"
+# Where that entry actually resolves to: staged/SaveLocker/../../../escaped.txt is the prefix root.
+check "the escaping package wrote nothing outside"     "$([ ! -f "${fake_prefix}/escaped.txt" ] && [ ! -f "${scratch}/escaped.txt" ] && echo 0 || echo 1)"
+
+# ---- A package containing a link is refused outright ----
+# Stronger than resolving links and checking where they land: the published tarball is a plain
+# `dotnet publish` tree and contains none, so a link in one is either a corrupt build or an attempt
+# to write through it. A symlink to /etc is the shape that matters — extract it, then write "into"
+# it, and the write lands outside the staging directory without any path ever looking wrong.
+python3 - "${scratch}/symlink.tar.gz" <<'PYT'
+import sys, tarfile
+t = tarfile.open(sys.argv[1], "w:gz")
+info = tarfile.TarInfo("SaveLocker/escape")
+info.type = tarfile.SYMTYPE
+info.linkname = "/etc"
+t.addfile(info)
+t.close()
+PYT
+host_tarball "${scratch}/symlink.tar.gz" "9.9.9"
+out="$(prefix_agent update)"
+check "a package containing a link is REFUSED"         "$(contains "${out}" "contains a link")"
+check "the link package installed nothing"             "$([ "$(md5sum "${fake_prefix}/savelocker" | cut -d' ' -f1)" = "${orig_sum}" ] && echo 0 || echo 1)"
+check "no link was created in the staging tree"        "$([ ! -L "${fake_prefix}/update/staged/SaveLocker/escape" ] && echo 0 || echo 1)"
+
+# ---- A package that is not the version it claims is refused ----
+# The digest proves the bytes came from the server; it says nothing about what they contain. Only
+# running the thing does.
+make_agent_tarball "${scratch}/wrongver.tar.gz" "1.2.3"
+host_tarball "${scratch}/wrongver.tar.gz" "9.9.9"
+out="$(prefix_agent update)"
+check "a package reporting the wrong version is REFUSED" "$(contains "${out}" "not what it claimed")"
+check "the wrong-version package installed nothing"      "$([ "$(md5sum "${fake_prefix}/savelocker" | cut -d' ' -f1)" = "${orig_sum}" ] && echo 0 || echo 1)"
+
+# ---- A package that cannot run is refused ----
+# This is the one that would brick a headless Deck: it unpacks perfectly, hashes correctly, and
+# only fails when something tries to execute it — by which time the working agent is gone.
+make_agent_tarball "${scratch}/broken.tar.gz" "9.9.9" 1
+host_tarball "${scratch}/broken.tar.gz" "9.9.9"
+out="$(prefix_agent update)"
+check "a package that cannot run is REFUSED"           "$(contains "${out}" "Refusing to install it")"
+check "the unrunnable package installed nothing"       "$([ "$(md5sum "${fake_prefix}/savelocker" | cut -d' ' -f1)" = "${orig_sum}" ] && echo 0 || echo 1)"
+
+# ---- The good one: the daemon stages it, and does NOT apply it ----
+make_agent_tarball "${scratch}/good.tar.gz" "9.9.9"
+host_tarball "${scratch}/good.tar.gz" "9.9.9"
+dotnet "${fake_prefix}/savelocker.dll" daemon --config "${prefix_cfg}" --port 5187 \
+  >"${scratch}/stage-daemon.log" 2>&1 &
+stage_pid=$!
+for _ in $(seq 1 40); do
+  [ -f "${fake_prefix}/update/apply.json" ] && break
+  sleep 0.5
+done
+check "the daemon staged the update"                   "$([ -f "${fake_prefix}/update/apply.json" ] && echo 0 || echo 1)"
+check "the daemon did NOT swap the running agent"      "$([ "$(md5sum "${fake_prefix}/savelocker" | cut -d' ' -f1)" = "${orig_sum}" ] && echo 0 || echo 1)"
+kill "${stage_pid}" 2>/dev/null; wait "${stage_pid}" 2>/dev/null
+
+# ---- A staged update waits while a game is running ----
+# The wrapper is a REAL `savelocker run`, because that is what the /proc scan looks for: argv[0]
+# basename savelocker, argv[1] run. A shell script would not do — the kernel puts the interpreter
+# in argv[0], so the scan would never see it and the check would pass for the wrong reason.
+#
+# DOTNET_ROOT is needed only here, and only in a dev tree: this is the framework-dependent apphost,
+# which looks for a runtime in /usr/share/dotnet and does not know about a per-user install. A
+# released agent is published self-contained and has no such problem — but without this the wrapper
+# never starts, the /proc scan correctly finds no game, and the deferral check passes nothing while
+# looking exactly like a working feature.
+#
+# Derived from the dotnet on PATH, NOT from $HOME: this suite reassigns HOME to the fixture tree, so
+# "$HOME/.dotnet" resolves inside the fake home and finds nothing.
+dotnet_root="$(dirname "$(readlink -f "$(command -v dotnet)")")"
+DOTNET_ROOT="${dotnet_root}" \
+  "${fake_prefix}/savelocker" run --config "${prefix_cfg}" -- sleep 25 >"${scratch}/wrapper.log" 2>&1 &
+wrapper_pid=$!
+sleep 3
+out="$(prefix_agent apply-update)"
+check "apply defers while a game is running"           "$(contains "${out}" "is running")"
+check "the deferred apply changed nothing"             "$([ "$(md5sum "${fake_prefix}/savelocker" | cut -d' ' -f1)" = "${orig_sum}" ] && echo 0 || echo 1)"
+check "the update is still staged for next time"       "$([ -f "${fake_prefix}/update/apply.json" ] && echo 0 || echo 1)"
+kill "${wrapper_pid}" 2>/dev/null; wait "${wrapper_pid}" 2>/dev/null
+
+# ---- With the game closed, it applies ----
+out="$(prefix_agent apply-update)"
+# "installed (" and not just "installed": the ROLLBACK message is "…was installed but never started
+# successfully", so the looser match reported a successful install for a run that had just undone
+# one. It passed for exactly the wrong reason while the checks around it failed.
+check "apply installs the staged update"               "$(contains "${out}" "installed (")"
+check "the new agent is in place"                      "$("${fake_prefix}/savelocker" version 2>/dev/null | grep -qx '9.9.9' && echo 0 || echo 1)"
+check "a file only the new package carries arrived"    "$([ -f "${fake_prefix}/newfile.txt" ] && echo 0 || echo 1)"
+# The whole reason apply copies file-by-file instead of swapping the directory.
+check "config.json survived the update"                "$([ -f "${prefix_cfg}" ] && echo 0 || echo 1)"
+check "the machine API key survived the update" \
+  "$([ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["ApiKey"])' "${prefix_cfg}")" = "${orig_key}" ] && echo 0 || echo 1)"
+check "the previous version is kept for rollback"      "$([ -f "${fake_prefix}/update/previous/savelocker" ] && echo 0 || echo 1)"
+check "the update is not confirmed yet"                "$([ -f "${fake_prefix}/update/applied.json" ] && echo 0 || echo 1)"
+
+# ---- An update that never starts is rolled back ----
+# applied.json surviving into the next start IS the failure signal: the agent was replaced and never
+# reached the point where it could confirm itself. This is the case that decides whether a bad
+# release costs a Deck owner an evening or their whole install.
+out="$(prefix_agent apply-update)"
+check "an unconfirmed update is rolled back"           "$(contains "${out}" "rolled back")"
+check "the previous agent binary is back"              "$([ "$(md5sum "${fake_prefix}/savelocker" | cut -d' ' -f1)" = "${orig_sum}" ] && echo 0 || echo 1)"
+check "the rollback cleared its own marker"            "$([ ! -f "${fake_prefix}/update/applied.json" ] && echo 0 || echo 1)"
+check "the rollback did not touch config.json" \
+  "$([ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["ApiKey"])' "${prefix_cfg}")" = "${orig_key}" ] && echo 0 || echo 1)"
+
+# ---- A daemon that comes up confirms the update, and the rollback set is released ----
+dotnet "${fake_prefix}/savelocker.dll" daemon --config "${prefix_cfg}" --port 5187 \
+  >"${scratch}/commit-daemon.log" 2>&1 &
+commit_pid=$!
+for _ in $(seq 1 40); do
+  [ -f "${fake_prefix}/update/apply.json" ] && break
+  sleep 0.5
+done
+kill "${commit_pid}" 2>/dev/null; wait "${commit_pid}" 2>/dev/null
+prefix_agent apply-update >/dev/null
+check "re-staged and re-applied"                       "$([ -f "${fake_prefix}/update/applied.json" ] && echo 0 || echo 1)"
+
+dotnet "${fake_prefix}/savelocker.dll" daemon --config "${prefix_cfg}" --port 5187 \
+  >"${scratch}/commit-daemon2.log" 2>&1 &
+commit_pid=$!
+for _ in $(seq 1 40); do
+  [ ! -f "${fake_prefix}/update/applied.json" ] && break
+  sleep 0.5
+done
+kill "${commit_pid}" 2>/dev/null; wait "${commit_pid}" 2>/dev/null
+check "a daemon that starts confirms the update"       "$([ ! -f "${fake_prefix}/update/applied.json" ] && echo 0 || echo 1)"
+check "the rollback copy is released once confirmed"   "$([ ! -d "${fake_prefix}/update/previous" ] && echo 0 || echo 1)"
+
+# ── The generated systemd unit and the packaged one are the same text ─────────────────────────
+# They are two writers of one file and they had drifted: the packaged unit carried the update hook
+# and the hardening, the generated one did not, so whether a Deck got them depended on which had
+# last written it.
+unit_out="${HOME}/.config/systemd/user/savelocker.service"
+rm -f "${unit_out}"
+# A stub systemctl, so a WSL box that really does run systemd does not end up with an enabled user
+# service pointing into a test directory. The unit FILE is written before systemctl is ever called,
+# which is the whole point of the checks below.
+mkdir -p "${scratch}/nosystemctl"
+printf '#!/usr/bin/env bash\nexit 1\n' >"${scratch}/nosystemctl/systemctl"
+chmod +x "${scratch}/nosystemctl/systemctl"
+PATH="${scratch}/nosystemctl:${PATH}" prefix_agent autostart --enable >/dev/null 2>&1 || true
+if [ -f "${unit_out}" ]; then
+  check "the generated unit carries the update hook"   "$(grep -q 'apply-update' "${unit_out}" && echo 0 || echo 1)"
+  check "the generated unit carries the hardening"     "$(grep -q 'NoNewPrivileges=yes' "${unit_out}" && echo 0 || echo 1)"
+  check "the generated unit points at this agent"      "$(grep -q "${fake_prefix}" "${unit_out}" && echo 0 || echo 1)"
+  # ProtectHome would cut the agent off from every save file it exists to sync. Anchored, because
+  # the unit explains in a comment WHY it is absent — and an unanchored grep matches that comment,
+  # so the check failed on a unit that was perfectly correct.
+  check "the generated unit does not set ProtectHome"  "$(grep -qE '^ProtectHome' "${unit_out}" && echo 1 || echo 0)"
+else
+  check "the generated unit was written"               "1"
+fi
+
 # ── The update channel: AgentUpdate:Linux:* and the off-origin refusal ───────────────────────
 # A second server whose Linux slot is EMPTY, so the config fallback is the only source — the one
 # path that proves AgentUpdate:Linux:* is read at all, since an empty section is indistinguishable

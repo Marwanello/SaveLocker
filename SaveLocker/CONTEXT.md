@@ -40,17 +40,23 @@ feature is finished.
      hardcoded `getUpdateResult: () => null` is wired up — so `doctor`, the agent UI and the
      console can all say a Deck is behind. `run-linux-tests` 69 → **84**. Still read-only: a Deck
      is *told* about an update, and still takes it by re-running `install.sh`.
-   - **Phase 3 (stage and apply) is next** — the first phase that moves files.
+   - **Phase 3 (stage and apply) done.** A Deck now updates itself: the daemon stages (download,
+     verify, unpack, smoke-test) and the swap happens from the unit's `ExecStartPre` at the next
+     start, with the previous version kept until the new one proves it can run. `run-linux-tests`
+     84 → **117**. Folds in the systemd unit hardening, and makes the packaged unit and the
+     generated one one file.
+   - **Phase 4 (policy, events, provenance, docs) is next** — and is what makes it *visible*: the
+     console still cannot see any of this, because no agent event reports it.
 
 Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
 `logs/shipped-2026-07.md`.
 
 ## Next action
 
-1. **Phase 3 of `tasks/LinuxAutoUpdate.md`** — stage, verify, extract, smoke-test, then apply from
-   the unit's `ExecStartPre`. Read `install.sh` end to end first: the two traps that shape the whole
-   design (`systemctl --user stop` kills the cgroup; the install prefix **is** the state dir) are
-   written up in the task file.
+1. **Phase 4 of `tasks/LinuxAutoUpdate.md`** — agent events so the console can see an update land
+   (on a Deck that is the only user-visible surface there is), the Game Mode card, release
+   provenance, and the docs rewrite: `web/src/help/agent-update.md` still opens with "Auto-update is
+   a Windows feature", which is no longer true.
 2. **Push and PR `steam-cloud-from-manifest`** once auto-update lands. Worth release-notes lines for
    both halves — users will see games appear in Add Games that were previously hidden, and Decks
    stop needing a hand-run `install.sh`.

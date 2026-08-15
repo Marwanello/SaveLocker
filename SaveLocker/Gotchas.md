@@ -251,7 +251,30 @@ behave in ways that look like bugs.
   naively, the harness itself looks like frantic mouse movement and claims the cursor — the test
   measures the harness, not the code. `--pointer` skips the movement test entirely for this reason.
 
+## Linux agent
+- **`Environment.ProcessPath` is the *dotnet host* under `dotnet savelocker.dll`.** Any code that
+  answers "where am I installed?" must use `AppContext.BaseDirectory` instead. This is not
+  theoretical: `SystemdAutoStart` used `ProcessPath` and wrote `ExecStart=/…/dotnet daemon` — a unit
+  that starts nothing — whenever it was run from a build tree. The installed agent is a
+  self-contained apphost, so the two agree there and the fault is invisible on a real Deck.
+- **`systemctl --user stop` kills the unit's whole cgroup.** An updater (or anything else) spawned
+  by the daemon dies together with the unit it just stopped. That is why the update swap runs from
+  `ExecStartPre` of the *next* invocation rather than from the daemon, and why `savelocker update`
+  can restart the service safely — it runs in the user's shell session, not in the unit.
+- **The Linux install prefix IS the state directory** (`~/.local/share/SaveLocker`), so
+  `config.json` — this machine's server API key — sits inside the tree an update replaces. Anything
+  that "replaces the install" must copy file-by-file, never swap or rename the directory.
+
 ## Test harness
+- **`run-linux-tests.sh` reassigns `HOME` to the fixture tree.** So `"$HOME/.dotnet"` inside a check
+  resolves into the fake home and finds nothing — derive a real `DOTNET_ROOT` from
+  `command -v dotnet`. Only the framework-dependent apphost needs it; a released agent is published
+  self-contained. Cost an hour: without it the launch wrapper never started, the "is a game running?"
+  scan correctly found nothing, and the check it gated passed while testing nothing at all.
+- **Assert on text only one outcome can produce.** `contains "$out" "installed"` also matched the
+  rollback message *"was installed but never started successfully"* — so a run that had just UNDONE
+  an install reported a successful one, and passed. Likewise an unanchored `grep ProtectHome`
+  matched the comment explaining why `ProtectHome` is absent.
 - **Never `rsync` the Windows working tree into the WSL clone to run `run-linux-tests.sh`.** The
   Windows tree is CRLF, and `tests/linux/slow-game.sh` with CRLF line endings misbehaves: the game
   exits with the wrong code and stops writing early, failing 6 checks across the launch wrapper, the

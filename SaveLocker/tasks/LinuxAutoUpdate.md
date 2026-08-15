@@ -149,9 +149,57 @@ builds, but no browser has drawn it. Fold it into the Deck hardware pass ([[Back
 
 ---
 
-## Phase 3 — Agent: stage and apply
+## Phase 3 — Agent: stage and apply — **DONE 2026-08-15**
 
 The first phase that moves files. Read `install.sh` end to end before starting.
+
+**Outcome:** `run-linux-tests.sh` 84 → **117/117** (33 new checks). Linux agent build 0/0. No shared
+or Windows code was touched — `Agent.Linux`, `packaging/` and the Linux suite only — so the Windows
+suites are unaffected and were not re-run.
+
+**The two guards that matter were mutation-tested, not just exercised.** Disabling the tar
+path-escape check and the smoke test's version comparison fails 15 checks. That is the test that
+counts here: nearly everything Phase 3 adds is a refusal, and a refusal test passes trivially
+against code that never reaches the refusal.
+
+What the shape ended up being, and why:
+- **The daemon never applies.** It stages — download, verify, unpack, smoke-test — and stops. The
+  swap happens in `ExecStartPre` of the next invocation, a fresh process in the new cgroup with the
+  old daemon already gone. `savelocker update` is the "now" path, and it is safe to restart from
+  there precisely because it runs in the user's shell session rather than in the unit.
+- **Old files are moved aside, not deleted.** A rename in the same directory is free, gives the
+  replacement a new inode (so a `savelocker run` wrapper mid-game keeps running from the copy it
+  mapped), and leaves a complete previous version to roll back to.
+- **`applied.json` surviving into the next start IS the failure signal.** The daemon clears it once
+  it is genuinely up; if the new build cannot start, the next `ExecStartPre` sees it and reverts.
+  Rollback also removes files the failed version *added*, which is why the marker records them —
+  restoring only what was replaced leaves the failed version's files scattered through the install.
+- **`AppContext.BaseDirectory`, never `Environment.ProcessPath`.** Under `dotnet savelocker.dll` the
+  process path is the dotnet host. The updater got this right from the start; `SystemdAutoStart` did
+  not, and was writing `ExecStart=/…/dotnet daemon` — a unit that starts nothing. The suite caught
+  it. Both now resolve the agent beside its own assemblies.
+- **One systemd unit.** `packaging/linux/savelocker.service` is embedded in the assembly and
+  `SystemdAutoStart` substitutes the exec path, so the two writers of that file cannot drift again.
+  The hardening from [[Backlog]] is folded in; `ProtectHome`, `ProtectProc` and
+  `MemoryDenyWriteExecute` are absent on purpose and the unit says why.
+- **`install.sh` discards a staged update.** A hand-run install supersedes it — otherwise the next
+  start would install a version the user did not choose, and a leftover `applied.json` would read
+  as "the last update never started" and roll the hand-install back.
+
+Traps this phase hit, all worth knowing before Phase 4:
+- The suite reassigns `HOME` to the fixture tree, so `"$HOME/.dotnet"` inside a test resolves into
+  the fake home. Derive a real `DOTNET_ROOT` from `command -v dotnet` instead. The
+  framework-dependent apphost needs it; a released agent is self-contained and does not.
+- `contains "$out" "installed"` matched the **rollback** message ("…was installed but never started
+  successfully"), so a run that had just undone an install reported a successful one. Anchor
+  assertions on text that only one outcome can produce.
+- An unanchored `grep ProtectHome` matched the comment explaining why `ProtectHome` is absent.
+
+**Deviation from the plan above:** the hostile-tarball coverage lives in `run-linux-tests.sh` rather
+than `run-hardening-tests.ps1`. The extractor is Linux-only code and the Linux suite is where a real
+hostile tarball can be built and fed to it; splitting it across a PowerShell suite that would have
+to drive the Linux agent anyway buys nothing. Both cases named in the plan are covered — path escape
+*and* a symlink entry, the latter refused outright rather than resolved.
 
 ### Steps
 
