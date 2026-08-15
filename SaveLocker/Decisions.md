@@ -98,6 +98,31 @@ session can judge an edge case, not to reopen the choice.
   the artifact does not stop an attacker who can rewrite both. Authenticode verification is the
   check that would, because it does not depend on the channel — there is a marked hook for it in
   `UpdateChecker.VerifyLooksExecutable`, pending a decision on code signing.
+- **The Linux agent stages an update while running and installs it at the next start** (2026-08-15).
+  Not a mid-session restart, and not a prompt. Three things forced the shape and none of them are
+  worth rediscovering:
+  <br>**`systemctl --user stop` kills the unit's entire cgroup.** An updater the daemon spawned dies
+  together with the unit it just stopped — halfway through replacing the agent's files. So the
+  daemon only does what is safe while running (download, verify the digest, unpack, smoke-test) and
+  the swap runs from `ExecStartPre` of the *next* invocation, a fresh process with the old daemon
+  already gone. `savelocker update` may restart the service because it runs in the user's shell
+  session, not in the unit; anything the daemon spawns must not.
+  <br>**The install prefix IS the state directory** (`~/.local/share/SaveLocker`), so `config.json`
+  — the machine's server API key — sits inside the tree an update replaces. Apply therefore copies
+  file-by-file, touching only paths the tarball carries; renaming the tree away would take the
+  enrollment with it. Splitting app files from XDG state stays a separate Backlog item, deliberately
+  not done here.
+  <br>**A package that unpacks perfectly can still be unable to run** — wrong architecture, a glibc
+  newer than the device has, a truncation the server hashed too. So the staged binary is executed
+  and must report the version the server offered before it is allowed to replace a working agent.
+  Old files are *moved* aside, not deleted: a rename is free, gives the replacement a new inode (so a
+  `savelocker run` wrapper mid-game keeps running from the copy it mapped), and leaves a complete
+  previous version. `applied.json` surviving into the next start is the failure signal — the daemon
+  clears it once it is genuinely up, so a build that cannot start is rolled back automatically and
+  reported as `update.rolled_back`.
+  <br>**Consent, stated plainly:** a Deck installs updates without asking, because it has no surface
+  to ask on. What it does not do is change anything mid-session. `AutoUpdate: false` in `config.json`
+  stops the staging while keeping the checks, so the console still says the machine is behind.
 - **A `SyncEngine` has an explicit lifetime, and its leases belong to the origin that issued them**
   (WA-06, 2026-07-27). Replacing `_engine` used to drop the old one on the floor. Its lease timers
   are rooted by the runtime timer queue, so they kept renewing against the **old** server forever,

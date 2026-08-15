@@ -254,7 +254,25 @@ to drive the Linux agent anyway buys nothing. Both cases named in the plan are c
 
 ---
 
-## Phase 4 — Policy, surfaces, provenance, docs
+## Phase 4 — Policy, surfaces, provenance, docs — **DONE 2026-08-15**
+
+**Outcome:** `run-linux-tests.sh` 117 → **123/123**, `run-winagent-tests` **114/114** (this phase
+touched shared code — `AgentEventCodes`, `AgentConfig` — so the Windows suite mattered), console
+lint and build clean.
+
+`AutoUpdate: false` was mutation-tested: it is a *negative* assertion ("stages nothing"), which
+passes if staging failed to happen for any reason at all. Removing the gate fails exactly that one
+check, which is what makes it worth having. It is paired with a positive one — the daemon must still
+report being behind — so "opted out" cannot be confused with "stopped checking".
+
+Everything in the plan landed except one deliberate substitution: the "Windows vs Linux" comparison
+in the help article is a bullet list, not a table.
+
+**Found while verifying: no markdown table renders anywhere in the console.** `HelpView.tsx:113` and
+`WhatsNewView.tsx:100` use bare `<ReactMarkdown>`, and tables are a GFM extension needing
+`remark-gfm`. `cli-reference.md` is almost entirely tables and is currently a wall of raw pipes for
+every user. Pre-existing and out of scope here, so it is spun off as its own task rather than fixed
+in passing — but the new article was written without tables so it is not shipping broken today.
 
 ### Steps
 

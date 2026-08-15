@@ -209,6 +209,7 @@ public sealed class Daemon : IAsyncDisposable
             });
 
             if (result is UpdateResult.Available update &&
+                _config.AutoUpdate &&
                 !string.Equals(Updater.PendingVersion(_config), update.Version, StringComparison.Ordinal))
             {
                 // Staged, never applied. Swapping the agent's files out from under a running daemon

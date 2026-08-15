@@ -699,6 +699,53 @@ kill "${commit_pid}" 2>/dev/null; wait "${commit_pid}" 2>/dev/null
 check "a daemon that starts confirms the update"       "$([ ! -f "${fake_prefix}/update/applied.json" ] && echo 0 || echo 1)"
 check "the rollback copy is released once confirmed"   "$([ ! -d "${fake_prefix}/update/previous" ] && echo 0 || echo 1)"
 
+# ---- The console is told, because on a Deck nothing else can tell anyone ----
+# The events file is the durable half of health reporting: apply-update runs from ExecStartPre and
+# exits long before a heartbeat is possible, so it writes here and the daemon starting straight
+# afterwards drains it. Without these codes an update — or a rollback — is completely invisible.
+events="$(cat "${fake_prefix}/health-events.json" 2>/dev/null || echo '{}')"
+check "staging an update is reported to the console"   "$(contains "${events}" "update.staged")"
+check "a rollback is reported to the console"          "$(contains "${events}" "update.rolled_back")"
+check "the rollback event is an error, not a whisper"  "$(python3 -c '
+import json,sys
+d=json.load(open(sys.argv[1]))
+ev=[e for e in d.get("Events",[]) if e.get("Code")=="update.rolled_back"]
+sys.exit(0 if ev and ev[0].get("Severity") in (2,"Error") else 1)' "${fake_prefix}/health-events.json" && echo 0 || echo 1)"
+
+# ---- A package that cannot be prepared is reported too ----
+# The machine keeps working, so nothing else looks wrong; it simply stops updating. That is exactly
+# the failure a headless device never surfaces on its own.
+rm -f "${fake_prefix}/health-events.json"
+make_agent_tarball "${scratch}/broken2.tar.gz" "9.9.9" 1
+host_tarball "${scratch}/broken2.tar.gz" "9.9.9"
+prefix_agent update >/dev/null 2>&1
+events="$(cat "${fake_prefix}/health-events.json" 2>/dev/null || echo '{}')"
+check "a refused package is reported to the console"   "$(contains "${events}" "update.failed")"
+
+# ---- AutoUpdate: false stops the agent preparing updates by itself ----
+# It must keep CHECKING, though: the point is to choose when the files change, not to stop being
+# told you are behind. So the daemon still reports an available version to its own API.
+rm -rf "${fake_prefix}/update"
+make_agent_tarball "${scratch}/good2.tar.gz" "9.9.9"
+host_tarball "${scratch}/good2.tar.gz" "9.9.9"
+python3 - "${prefix_cfg}" <<'PY4'
+import json,sys
+p=sys.argv[1]; c=json.load(open(p)); c["AutoUpdate"]=False; json.dump(c,open(p,"w"))
+PY4
+dotnet "${fake_prefix}/savelocker.dll" daemon --config "${prefix_cfg}" --port 5187 \
+  >"${scratch}/noauto-daemon.log" 2>&1 &
+noauto_pid=$!
+noauto_json=""
+for _ in $(seq 1 20); do
+  noauto_json="$(curl -sf -H "X-SaveLocker-Token: $(cat "${fake_prefix}/api-token")" \
+    "http://localhost:5187/api/agent-version" 2>/dev/null)"
+  grep -q '"updateAvailable":true' <<<"${noauto_json}" && break
+  sleep 1
+done
+kill "${noauto_pid}" 2>/dev/null; wait "${noauto_pid}" 2>/dev/null
+check "AutoUpdate:false still reports being behind"    "$(contains "${noauto_json}" '"updateAvailable":true')"
+check "AutoUpdate:false stages nothing"                "$([ ! -f "${fake_prefix}/update/apply.json" ] && echo 0 || echo 1)"
+
 # ── The generated systemd unit and the packaged one are the same text ─────────────────────────
 # They are two writers of one file and they had drifted: the packaged unit carried the update hook
 # and the hardening, the generated one did not, so whether a Deck got them depended on which had

@@ -78,6 +78,13 @@ verification that did not happen before the tag. Write-ups:
   multi-game add, the Game Mode window crash and the settings-write clobber all have code fixes and
   no tests. This is why several items above have to be checked by hand.
 
+- **No markdown table renders in the console** (found 2026-08-15). `HelpView.tsx:113` and
+  `WhatsNewView.tsx:100` use a bare `<ReactMarkdown>`; tables are a GFM extension and need
+  `remark-gfm`. **`cli-reference.md` is almost entirely tables**, so the KB's most-used page is a
+  wall of raw pipe characters for every user today. Needs the plugin *and* table styling that
+  respects the bounded-flex-column trap in [[Gotchas]]. `agent-update.md` was deliberately written
+  without tables because of this; it would read better as one once fixed.
+
 - **Self-host the console fonts.** The console loads Inter and JetBrains Mono from Google Fonts at
   runtime, so on a LAN box with no internet it renders in fallback fonts. CS-13 fixed the import
   being *discarded*, not the dependency. Needs woff2 subsets for five Inter weights; the Deck UI

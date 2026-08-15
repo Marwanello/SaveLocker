@@ -129,12 +129,20 @@ public static class Updater
             WriteJson(StagedMarker(config), new StagedUpdate(update.Version, payload, DateTime.UtcNow));
             log($"update: v{update.Version} staged and verified — it will be applied the next time " +
                 "the agent starts.");
+            Report(config, AgentEventCodes.UpdateStaged, AgentEventSeverity.Info,
+                $"SaveLocker v{update.Version} is downloaded and verified, and will be installed the " +
+                $"next time this machine's agent starts (currently running v{UpdateChecker.CurrentVersionText}).");
             return update.Version;
         }
-        catch
+        catch (Exception ex)
         {
             DeleteDirectory(StagedDir(config));
             TryDelete(StagedMarker(config));
+            // The machine keeps working, so nothing else will ever look wrong — it just stops
+            // updating, quietly and forever. On a device with no UI that is invisible without this.
+            Report(config, AgentEventCodes.UpdateFailed, AgentEventSeverity.Warning,
+                $"SaveLocker v{update.Version} could not be prepared, so this machine is still on " +
+                $"v{UpdateChecker.CurrentVersionText}. Nothing was replaced. {ex.Message}");
             throw;
         }
         finally
@@ -425,6 +433,14 @@ public static class Updater
         TryDelete(AppliedMarker(config));
         DeleteDirectory(previous);
         log($"update: rolled back ({restored} files restored).");
+
+        // The machine now syncs perfectly on the old version, so nothing else reports a problem —
+        // but a build that cannot start on this device is one an admin should hear about before it
+        // reaches the rest of the fleet.
+        Report(config, AgentEventCodes.UpdateRolledBack, AgentEventSeverity.Error,
+            $"SaveLocker v{applied.Version} was installed on this machine and did not start. " +
+            $"v{applied.FromVersion} has been restored and the agent is running normally. " +
+            "That version should not be rolled out further until this is understood.");
     }
 
     /// <summary>
@@ -474,6 +490,19 @@ public static class Updater
             catch { /* the process exited, or is not ours to read */ }
         }
         return null;
+    }
+
+    /// <summary>
+    /// Put an event where the console will see it. Durable by design: <c>apply-update</c> runs from
+    /// <c>ExecStartPre</c> and exits long before anything could send a heartbeat, so the event is
+    /// written to the shared events file and the daemon starting immediately afterwards drains it.
+    /// That is the same path the launch wrapper already uses (Decisions.md §2 — the console is the
+    /// Deck's UI), and it is why a rollback that happened at boot is still reportable.
+    /// </summary>
+    private static void Report(AgentConfig config, string code, AgentEventSeverity severity, string message)
+    {
+        try { HealthReporter.For(config).Report(code, severity, message); }
+        catch { /* reporting a problem must never become one */ }
     }
 
     private static void CopyExecutableBit(string src, string dst)

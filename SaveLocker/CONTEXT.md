@@ -45,22 +45,31 @@ feature is finished.
      start, with the previous version kept until the new one proves it can run. `run-linux-tests`
      84 → **117**. Folds in the systemd unit hardening, and makes the packaged unit and the
      generated one one file.
-   - **Phase 4 (policy, events, provenance, docs) is next** — and is what makes it *visible*: the
-     console still cannot see any of this, because no agent event reports it.
+   - **Phase 4 (policy, events, provenance, docs) done.** `update.staged` / `update.failed` /
+     `update.rolled_back` reach the console, which on a Deck is the only notice anyone gets;
+     `AutoUpdate: false` opts out of staging while still reporting being behind; Game Mode says when
+     an update is waiting; release workflow pins its actions to SHAs and publishes checksums plus a
+     build attestation. `run-linux-tests` 117 → **123**, `run-winagent-tests` **114/114**.
+     <br>**The feature is complete.** Release notes are written as **v0.5.5**
+     (`web/src/releases/0.5.5.md`) covering both halves of the branch.
 
 Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
 `logs/shipped-2026-07.md`.
 
 ## Next action
 
-1. **Phase 4 of `tasks/LinuxAutoUpdate.md`** — agent events so the console can see an update land
-   (on a Deck that is the only user-visible surface there is), the Game Mode card, release
-   provenance, and the docs rewrite: `web/src/help/agent-update.md` still opens with "Auto-update is
-   a Windows feature", which is no longer true.
-2. **Push and PR `steam-cloud-from-manifest`** once auto-update lands. Worth release-notes lines for
-   both halves — users will see games appear in Add Games that were previously hidden, and Decks
-   stop needing a hand-run `install.sh`.
-3. **Check the live server for duplicate games** before deploying. Canonical naming stops *new*
+1. **Push and PR `steam-cloud-from-manifest`** — the maintainer's stated plan was that the whole
+   branch pushes once auto-update is finished, and it is. Five commits.
+2. **Tag v0.5.5 and roll it out.** Mechanics in [[Build and Run]] → Rolling a release out. No
+   migration. The one step that always gets missed — uploading the installer in Config → Agent
+   updates — now has **two** rows to fill, and the Linux one is what makes every future Deck update
+   automatic.
+3. **Deck hardware pass.** Three things have never been seen on real hardware: a genuine end-to-end
+   self-update, the Game Mode "update is ready" notice, and the agent UI's Updates panel. Nothing
+   there can lose save data, and everything behind them is covered by `run-linux-tests`, but no
+   screen has been looked at. Record `systemd-analyze --user security savelocker.service` before and
+   after while there ([[Backlog]] → the hardening item this folded in).
+4. **Check the live server for duplicate games** before deploying. Canonical naming stops *new*
    splits; it does not merge what a server already holds under two spellings, and there is no merge
    tool ([[Backlog]]).
 

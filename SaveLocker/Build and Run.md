@@ -90,10 +90,14 @@ Dashboard: `http://unraid-ip:5080`.
 Console and agents are two halves and a release usually needs both — doing one and not the other
 leaves Config reporting a version split.
 
-- **Windows agents self-update — but only once the installer is uploaded in Config → Agent Updates.
-  The GitHub Release asset is NOT automatically what the fleet is offered.** This is the step that
-  gets missed.
-- **Decks** re-run `install.sh` from the newer tarball (no Linux update channel yet — [[Backlog]]).
+- **Neither fleet is offered anything until the package is uploaded in Config → Agent updates. The
+  GitHub Release asset is NOT automatically what agents are offered.** This is the step that gets
+  missed, and since 2026-08-15 there are **two rows** to fill — Windows and Linux.
+- **Windows agents** then prompt in the tray and install when the user accepts.
+- **Decks** then update themselves: the daemon stages the tarball and installs it at its next start.
+  A hand-run `install.sh` still works and supersedes anything staged. **The first** update onto a
+  pre-0.5.5 Deck still has to be done by hand, because the agent that would fetch it is the one
+  being replaced.
 - **Console** redeploy is the `docker compose pull` above.
 
 **Migrations:** only **v0.5.0** ever broke rollback — two schema migrations run on first start, so
@@ -119,7 +123,7 @@ dotnet build src/Agent.Linux/SaveLocker.Agent.Linux.csproj --no-incremental
 
 # Fake-game harness: no Steam, no Proton, no GPU, no Deck required.
 # Starts its own server on :5179 with a throwaway DB, and runs against a fake HOME.
-bash tests/linux/run-linux-tests.sh          # 117 checks
+bash tests/linux/run-linux-tests.sh          # 123 checks
 ```
 
 To pull Windows-side commits into the WSL clone:
@@ -165,7 +169,7 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 | Where | Counts |
 |---|---|
 | Windows, local | win agent bug bounty **114** (reads **113/114** since 2026-08-14 — see [[Backlog]]) · server bug bounty 164 · agent 47 · hardening 33 · local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6 |
-| Linux, local (WSL ext4) | `run-linux-tests` **63** on `main`, **69** at `4c9f5f5`, **84** after Phase 2, **117** after Phase 3 of the auto-update work (2026-08-15, same clone) |
+| Linux, local (WSL ext4) | `run-linux-tests` **63** on `main`, **69** at `4c9f5f5`, **84** after Phase 2, **117** after Phase 3, **123** after Phase 4 of the auto-update work (2026-08-15, same clone) |
 | Linux, in CI | agent 43 · hardening 37 · local-api 30 · concurrency 23 · health 19 · enrollment 16 |
 | Detection | sweep **271/298 (90.9%)** at the default 300 sample, 17 pinned |
 

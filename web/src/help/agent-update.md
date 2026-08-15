@@ -1,53 +1,90 @@
 # Agent auto-update & fetching from GitHub
 
-> **Auto-update is a Windows feature.** Everything on this page — the update check, the silent installer, the GitHub fetch — is how the **Windows** agent keeps itself current. The Linux / Steam Deck agent does not self-update; see **Updating the Linux agent** at the bottom of this page.
+Both agents keep themselves current, from packages this server hosts. They go about it differently, because a Windows PC has a tray icon to ask you with and a Steam Deck does not:
 
-## How agent updates work
+- **Windows** — package `SaveLocker-Agent-Setup-x.y.z.exe`. The tray offers the update; it installs when you accept.
+- **Linux / Steam Deck** — package `savelocker-x.y.z-linux-x64.tar.gz`. It installs itself at the next agent start, without asking. Nothing ever changes mid-session.
 
-The Windows SaveLocker agent checks the server for a newer installer on startup and periodically while running. If a newer version is available, it downloads the installer silently and relaunches itself. No user interaction is required.
+The server hosts a package **per platform**, and each agent asks for its own. Uploading a Windows installer does nothing for your Deck, and vice versa — Configuration → Agent updates has a row for each.
 
-The server hosts the agent installer at `/api/agent/installer`. The version it serves is set by uploading a new installer — either manually or via the GitHub fetch button.
+## How the Windows agent updates
 
-## Fetching the latest installer from GitHub
+It checks the server for a newer installer on startup and periodically while running. When one is available the tray offers it; accepting downloads the installer and runs it, and the agent restarts. You can decline, and decline permanently for a particular version.
 
-The dashboard can pull the latest installer directly from the SaveLocker GitHub Releases:
+## How the Linux / Steam Deck agent updates
 
-1. Go to **Configuration → Agent Updates**.
-2. Click **Fetch latest from GitHub**.
-3. The server downloads the installer from the latest GitHub Release and stores it locally.
-4. Agents will pick up the new version on their next update check (within ~30 minutes, or on restart).
+It checks the server every few hours. When a newer version is hosted it downloads it, checks it against the checksum the server published, unpacks it, and **runs it once to confirm it starts and reports the version it should**. Only then is it kept — as a *staged* update.
 
-This is useful when you've deployed a new server version via Docker but haven't manually placed a new installer in `/data/agent-installer/`.
+The staged update is installed the **next time the agent starts**: on a reboot, or when you next log in. Nothing is replaced underneath a running session, and a game in progress is never interrupted. You do not have to do anything.
+
+To take one immediately instead of waiting:
+
+```sh
+savelocker update
+```
+
+The previous version is kept until the new one has started successfully. If an update is installed and then fails to start, the agent puts the old version back by itself and reports it to this console — a Deck does not strand itself on a broken build.
+
+**To turn automatic installing off**, set `"AutoUpdate": false` in the agent's `config.json` (`~/.local/share/SaveLocker/config.json`). It keeps *checking*, so the console and `savelocker doctor` still tell you when the machine is behind; it just stops preparing the update on its own.
+
+## What you see in this console
+
+A Deck has no tray and cannot pop up a message, so it reports to the dashboard instead — that is the only notice anyone gets. Under a machine's health you may see:
+
+- **`update.staged`** — a newer version is downloaded and verified, and goes in at the next start.
+- **`update.failed`** — a package could not be used (bad checksum, or it would not run). Nothing was replaced and the machine still works. It has, however, stopped updating, which is the sort of thing that otherwise goes unnoticed for months.
+- **`update.rolled_back`** — a version was installed here, did not start, and the previous one was restored. The machine is fine. **That build should not be rolled out further until you know why.**
+
+## Fetching the latest packages from GitHub
+
+The dashboard can pull straight from the SaveLocker GitHub Releases:
+
+1. Go to **Configuration → Agent updates**.
+2. Click **Fetch from GitHub** on the row you want.
+3. The server downloads that platform's asset from the latest Release and stores it.
+4. Agents pick it up on their next check.
+
+A Release that predates the Linux tarball has no asset for that row, and the server says so rather than serving something else.
 
 ## Automatic fetching
 
-In **Configuration → Agent Updates**, set **Automatic GitHub fetch** to an interval in hours. The server checks immediately when you enable or change the schedule, then repeats at that interval. Set it to `0` to disable automatic fetching. The change is stored by the server and applies within one minute; no Docker or JSON configuration edit is required.
+In **Configuration → Agent updates**, set **Automatic GitHub fetch** to an interval in hours. The server checks immediately when you enable or change the schedule, then repeats. Set `0` to disable. It applies within a minute; no Docker or JSON edit needed. It refreshes **both** platforms.
 
-## Checking the current hosted version
+## Checking the current hosted versions
 
-The Configuration tab shows the **currently hosted installer version**. If it's blank, no installer has been uploaded yet and auto-update is effectively disabled.
+The Configuration tab shows the hosted version for each platform. A blank row means nothing has been uploaded for it, and those agents will not be offered an update.
 
 ## Keeping versions in sync
 
-After updating the server (e.g. pulling a new Docker image), always fetch a matching agent installer so all machines stay on the same version. Version skew between agents is the most common cause of unexpected conflicts — see [Best practices for multiple machines](#help/multi-machine).
+After updating the server, host a matching agent package for every platform you run. Version skew between agents is the most common cause of unexpected conflicts — see [Best practices for multiple machines](#help/multi-machine).
 
-## Manual installer placement
+## Manual placement
 
-If you prefer not to use the GitHub fetch button, you can place the installer manually:
+If you would rather not use the GitHub button:
 
-1. Download `SaveLocker-Agent-Setup-{version}.exe` from the GitHub Releases page.
-2. Copy it into `/data/agent-installer/` on your Docker host.
+1. Download the package from the GitHub Releases page.
+2. Copy it into `/data/agent-installer/` for Windows, or `/data/agent-installer/linux-x64/` for Linux, on your Docker host.
 3. Restart the server container so it picks up the new file.
 
-## Updating the Linux agent
-
-The Linux / Steam Deck agent has **no auto-update** — it never phones home for a new installer, and the GitHub fetch above only serves the Windows `.exe`. To update a Deck, re-run the installer from a newer tarball:
+Each Release also publishes `SHA256SUMS-windows.txt` / `SHA256SUMS-linux.txt`. To check a download by hand:
 
 ```sh
-tar -xzf savelocker-<newer-version>-linux-x64.tar.gz
+sha256sum -c SHA256SUMS-linux.txt
+```
+
+The Linux tarball additionally carries a build attestation tying it to the workflow run that produced it, which — unlike a checksum — does not depend on trusting the page you read the checksum from:
+
+```sh
+gh attestation verify savelocker-<version>-linux-x64.tar.gz --repo SkorcherX/SaveLocker
+```
+
+## Installing a Deck by hand
+
+Still supported, and it supersedes anything the agent had staged for itself:
+
+```sh
+tar -xzf savelocker-<version>-linux-x64.tar.gz
 ./SaveLocker/install.sh
 ```
 
-`install.sh` installs over the top and **keeps your configuration** — enrollment, tracked games, and the server pin all survive. Your saves are on the server, not in the agent, so there is nothing to migrate.
-
-Keep the Deck's version matched to the rest of your machines: version skew between agents is the most common cause of unexpected conflicts (see [Best practices for multiple machines](#help/multi-machine)). Check the running version with `savelocker doctor`.
+`install.sh` installs over the top and **keeps your configuration** — enrollment, tracked games and the server pin all survive. Your saves are on the server, not in the agent, so there is nothing to migrate.

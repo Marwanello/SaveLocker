@@ -4,6 +4,10 @@ on:
   push:
     tags: ['v*']
 
+# Actions are pinned to full commit SHAs, not tags. A tag is a moving pointer the action's owner can
+# repoint at any time, and these actions handle the release artifacts that agents download and then
+# EXECUTE — the update channel's integrity starts here. The trailing comment records which release
+# each SHA was, so a future bump is a readable diff rather than an opaque hex swap.
 jobs:
   build-installer:
     runs-on: windows-latest
@@ -11,18 +15,18 @@ jobs:
       contents: write   # needed to create the GitHub Release
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           fetch-depth: 0   # MinVer needs full history to walk back to the nearest tag
           fetch-tags: true # explicitly fetch all tags — checkout doesn't guarantee this on tag-triggered runs
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: agent-ui/package-lock.json
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9  # v4
         with:
           dotnet-version: '10.0.x'
 
@@ -33,6 +37,16 @@ jobs:
         run: |
           $version = '${{ github.ref_name }}'.TrimStart('v')
           .\installer\build-installer.ps1 -AppVersion $version
+
+      # A checksum the user can verify by hand, for the copy they downloaded from the Releases page.
+      # The server computes its own digest over the bytes it stored, so the agent's update channel
+      # does not depend on this file — it is for the human doing a manual install.
+      - name: Checksum the installer
+        shell: bash
+        run: |
+          cd installer/dist
+          sha256sum SaveLocker-Agent-Setup-*.exe > SHA256SUMS-windows.txt
+          cat SHA256SUMS-windows.txt
 
       # The release body is the SAME file the console bundles and renders under What's New
       # (web/src/releases/<ver>.md), so notes are written once and cannot drift between the two.
@@ -52,9 +66,11 @@ jobs:
           fi
 
       - name: Create GitHub Release and upload installer
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
         with:
-          files: installer/dist/SaveLocker-Agent-Setup-*.exe
+          files: |
+            installer/dist/SaveLocker-Agent-Setup-*.exe
+            installer/dist/SHA256SUMS-windows.txt
           body_path: ${{ steps.notes.outputs.path }}
           generate_release_notes: ${{ steps.notes.outputs.generate }}
 
@@ -72,35 +88,57 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write      # attestations are signed with a short-lived OIDC token
+      attestations: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           fetch-depth: 0
           fetch-tags: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: agent-ui/package-lock.json
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9  # v4
         with:
           dotnet-version: '10.0.x'
 
       # The version is passed explicitly: MinVer stamps 0.0.0.0 when it cannot reach the git history
       # on a runner, and the agent reports its version to the console in every heartbeat — an
       # unstamped build shows up in the dashboard as a lie.
+      #
+      # It is also what the agent's own updater checks the tarball against: a staged package must
+      # report the version the server offered before it is allowed to replace a working agent. An
+      # unstamped tarball fails that check, so this is now load-bearing rather than cosmetic.
       - name: Build self-contained tarball
         run: |
           version="${GITHUB_REF_NAME#v}"
           bash packaging/linux/build-linux.sh "$version"
 
-      # No generate_release_notes here: this job only ATTACHES an asset to the release the
-      # installer job created, and asking for generated notes a second time would overwrite the
-      # hand-written body that job already set.
-      - name: Attach tarball to the release
-        uses: softprops/action-gh-release@v2
+      - name: Checksum the tarball
+        run: |
+          cd artifacts/linux
+          sha256sum savelocker-*-linux-x64.tar.gz > SHA256SUMS-linux.txt
+          cat SHA256SUMS-linux.txt
+
+      # Ties this exact tarball to this exact workflow run, verifiable with
+      # `gh attestation verify <file> --repo SkorcherX/SaveLocker`. Unlike the checksum, this does
+      # not depend on trusting the page the checksum was read from.
+      - name: Attest the tarball
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2
         with:
-          files: artifacts/linux/savelocker-*-linux-x64.tar.gz
+          subject-path: artifacts/linux/savelocker-*-linux-x64.tar.gz
+
+      # No generate_release_notes here: this job only ATTACHES assets to the release the installer
+      # job created, and asking for generated notes a second time would overwrite the hand-written
+      # body that job already set.
+      - name: Attach tarball to the release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
+        with:
+          files: |
+            artifacts/linux/savelocker-*-linux-x64.tar.gz
+            artifacts/linux/SHA256SUMS-linux.txt
