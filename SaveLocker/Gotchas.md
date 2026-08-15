@@ -296,7 +296,7 @@ behave in ways that look like bugs.
   you changed through `sed 's/\r$//'` instead, into a checkout reset to `origin/main`. Take the
   baseline on pristine `main` first — the numbers only mean something as a pair.
 
-## Decky plugin (`decky/`)
+## Decky plugin (own repo: SkorcherX/SaveLocker-Decky)
 - **Ship `package.json`, or Decky loads the plugin the wrong way.** It picks the load path from that
   file: `"type": "module"` selects `import()` (`ESMODULE_V1`), and **no `package.json` at all** falls
   back to `LEGACY_EVAL_IIFE`, which `eval`s the bundle as a classic script. The ESM bundle then dies

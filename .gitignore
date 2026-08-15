@@ -62,7 +62,3 @@ artifacts/
 # ImGui writes this beside the working directory when `savelocker ui` exits.
 imgui.ini
 
-# Decky plugin build. `dist/` is what gets copied to a Deck, but it is rebuilt from src/ by
-# `npm run build` and a committed copy would drift from the source beside it.
-decky/node_modules/
-decky/dist/

@@ -148,34 +148,15 @@ bash packaging/linux/build-linux.sh          # -> artifacts/linux/savelocker-lin
 ```
 Build on the **oldest glibc** you intend to support (Ubuntu 24.04 → Deck is forward-compatible; the reverse is not).
 
-## Decky plugin (`decky/`)
+## Decky plugin
 
-Its own build — **not** in `SaveLocker.sln`, not in CI, and not required by anything. It only sets
-Steam launch options, which the agent cannot do itself ([[Gotchas]] / `tasks/DeckyPlugin.md`).
+**Lives in its own repository:** <https://github.com/SkorcherX/SaveLocker-Decky>. It is not a
+subdirectory here and must not become one again — Decky's plugin database tracks plugins as
+submodules whose *root* is the plugin, so a monorepo subdirectory cannot be packaged or listed.
 
-```sh
-cd decky && npm install && npm run build     # -> decky/dist/index.js
-```
-
-Sideload onto a Deck — `~/homebrew/plugins/` is **root-owned**, so stage over SSH and do the move
-with `sudo` on the Deck. **All four of `plugin.json`, `package.json`, `main.py` and `dist/`** must be
-there; see `decky/README.md` for why omitting `package.json` fails as
-`SyntaxError: Unexpected token 'export'` inside Decky's own loader rather than as a missing file.
-```sh
-scp -r decky/{plugin.json,package.json,main.py,dist} deck@<ip>:~/savelocker-plugin-stage/
-ssh deck@<ip> 'sudo cp -r ~/savelocker-plugin-stage /home/deck/homebrew/plugins/SaveLocker &&
-                sudo chown -R root:root /home/deck/homebrew/plugins/SaveLocker &&
-                sudo systemctl restart plugin_loader'
-```
-`dist/` and `node_modules/` are gitignored: `dist/` is what ships to the Deck but is rebuilt from
-`src/`, and a committed copy would drift from the source beside it.
-
-The plugin's **backend** logs to `~/homebrew/logs/SaveLocker/` on the Deck. Its **frontend** logs
-nowhere on disk — tunnel CEF (`ssh -N -L 8080:127.0.0.1:8080`) and read it over CDP.
-
-**It cannot be covered by any suite here.** It needs Steam, Decky Loader and a real library, so its
-verification is a hardware pass — which is why every rule it depends on lives in `Agent.Core` and is
-covered by `run-linux-tests` instead.
+Nothing in this repo depends on it. The rule it relies on lives in `Agent.Core/LaunchOptions.cs` and
+is covered by `run-linux-tests`; the plugin only reads the agent's API and writes what it is told.
+Its own repo carries the build, the release workflow and the install/debug notes.
 
 ## Tests
 
