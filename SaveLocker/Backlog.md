@@ -50,6 +50,11 @@ verification that did not happen before the tag. Write-ups:
   matching FILES rather than their containing directory — a change to the archive model, touching
   `SaveArchive`, the settle gate and restore. Measure before building: some of the 24 have another
   path that now wins instead (Cave Story+ did), so the true loss is smaller than 24.
+  <br>**Manifest-wide sizing (2026-08-14):** of 21,061 entries with save paths, **702** have a save
+  set that trims to `<base>` and nothing else — those are refused outright — and **169** more have
+  `<base>` as one of several, so they lose a path but keep an answer. That 702 is the ceiling on
+  what this item can recover. Counted from `data/manifest.yaml` by trimming each save template at
+  its first wildcard, the same rule `PathResolver` applies.
 
 - **Duplicate games already on the server.** Enrollment now creates games under the Ludusavi
   manifest's canonical title (PR #36), so machines converge — but any game a live server already
@@ -102,6 +107,14 @@ verification that did not happen before the tag. Write-ups:
 
 - **Game Mode UI reflects a stale game list.** `savelocker ui` only *reads* local `config.json`; it never reconciles with the server (only the daemon does, every 20s — `CommandPoller.ReconcileGamesAsync`). So a game deleted in the console still shows in Game Mode until the daemon runs, and there is no in-UI way to untrack. Deferred 2026-07-24 (maintainer chose to keep Phase 3 lean). Fix when revisited: reconcile-on-launch (+ periodic) in `savelocker ui`, optionally a per-game "Stop tracking" that also deletes server-side so the daemon does not re-adopt it (`CommandPoller.cs:157`).
 
+- **The other stores' cloud flags.** `ManifestLoader.ManifestCloud` parses only `steam`, because
+  that is the only flag a surface acts on. The manifest also marks `gog` (3,232), `epic` (739),
+  `origin` (239) and `uplay` (106). These matter for **Heroic** candidates, which are exactly the
+  GOG/Epic/Amazon games currently flagged `HasSteamCloud: false` — correct as far as it goes, but it
+  means a GOG game that GOG Galaxy already syncs is offered as if nothing covers it. Needs a
+  per-store flag on `ScanCandidate` rather than a second bool, and a decision about whether the
+  default view should hide those too (Galaxy sync is opt-in per game, unlike Steam Cloud — so
+  probably not, which is why this is not high priority).
 - **Registry-based saves** — the Ludusavi manifest has a `registry:` section; only `files:` paths are handled.
 - **Multi-directory saves** — some games list multiple save paths. The sync engine tracks one `SaveDirectory` per game; multi-dir support needs a schema change.
 - **File-count / newest-mtime delta in conflict UI** — would help disambiguate conflict options. The server does not store it; needs computing at upload time or deriving from the archive on demand. Not done; everything else in conflict Tier 1 is complete.

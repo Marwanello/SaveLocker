@@ -5,6 +5,22 @@ session can judge an edge case, not to reopen the choice.
 
 - **Detection: reuse Ludusavi's manifest** (community save-location DB), don't re-map save
   locations ourselves. Build our own agent/server/dashboard for orchestration, leasing, conflicts.
+  <br>**Corollary: do not scrape PCGamingWiki. The manifest IS that scrape** (2026-08-14, raised by
+  a Breath of Fire IV page that looked like uncaptured data). Every row of that page's Game data
+  table is in the manifest token-for-token — `<path-to-game>` → `<base>`, the per-store rows as
+  `when: store:`, config rows tagged `config`. A scraper of our own would re-derive 52,973 entries we
+  refresh with one `GET`, against a site that 403s automated fetches. What the wiki DOES hold that
+  the manifest drops is nothing we want (launch commands, system requirements); what the manifest
+  holds and we were dropping is covered by the next bullet. If save-path coverage needs to improve,
+  the lever is contributing upstream to the wiki — it flows back on the next refresh.
+- **Steam Cloud is per-game manifest data, never inferred from the storefront** (2026-08-14).
+  Discovery hardcoded `HasSteamCloud: true` for anything installed through Steam. Only 14,340 of the
+  manifest's 48,908 Steam-id titles actually have Steam Cloud, and the default Add Games view HIDES
+  what is flagged — so the assumption made thousands of games the user owns invisible, with nothing
+  backing them up. `ManifestLoader.HasSteamCloud` returns `bool?`; **`null` means "not in the
+  manifest" and is not the same answer as "no"** — that case keeps the old assumption, which is what
+  makes the change purely additive. This does not reopen the scope decision below: installed Steam
+  games are still out of the *default view*, just no longer out of it for a reason that was false.
 - **Conflict prevention: proactive lock/lease.** Server tracks a per-game checkout; the agent pulls
   before launch *where it has a real launch boundary* (see the next bullet); other machines are
   warned if leased elsewhere. Content-hash + parent-version lineage is the fallback detector.
@@ -241,7 +257,9 @@ session can judge an edge case, not to reopen the choice.
   the Steam registry + arbitrary save folders. Machine-wide install, UAC up front. Uninstall
   prompts before deleting `%PROGRAMDATA%\SaveLocker` (API key + config).
 - **Linux agent scope: non-Steam Windows games run under Proton only** (v1). Steam-bought games
-  already have Steam Cloud; native Linux game builds are explicitly out of scope (would need a
+  were assumed to already have Steam Cloud — **most do not** (see the Steam Cloud bullet above;
+  the scope call stands, its stated premise does not). Native Linux game builds are explicitly out
+  of scope (would need a
   save-variant model — different formats/paths/line-endings per platform). A Proton save is a
   Windows save, byte-identical to a Windows PC's — existing content-hash lineage works with zero
   server schema change. **Never sync a native-Linux save into a Windows install.**
@@ -254,7 +272,9 @@ session can judge an edge case, not to reopen the choice.
   filters what the scan RETURNS, so a scan that returns nothing leaves "hidden by default" and
   "never discovered" indistinguishable from the couch — and only one of those can be undone by the
   user. Windows had always scanned them and flagged `HasSteamCloud`; Linux now matches. They stay
-  out of the default view, one filter click away.
+  out of the default view, one filter click away — and **since 2026-08-14 only the ones the manifest
+  says are genuinely cloud-synced are flagged at all**, which is most of the point: the default view
+  was hiding games nothing was backing up.
   <br>An installed game's prefix is `compatdata/<appid>` **in the library it is installed in**, not
   in the main Steam root where every shortcut's prefix goes — so libraries and prefixes are walked
   together, per library. A Deck's SD card is exactly this case, and getting it wrong finds the game

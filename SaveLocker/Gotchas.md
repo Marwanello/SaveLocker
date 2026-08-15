@@ -45,6 +45,20 @@ here.
   intended and asserted, but `Remove-Item` on it only works as the same account (or elevated). If a
   suite ever runs as a different user than the one that created `.verify-*`, clean up elevated.
 
+## Ludusavi manifest
+- **The manifest never writes `false` — absence IS the negative.** A `cloud:` block lists only the
+  stores whose PCGamingWiki "Save game cloud syncing" row is ticked, and the whole block is omitted
+  when none are. So "no `cloud:` block" and "a block that does not name `steam`" say exactly the
+  same thing, and both mean *no Steam Cloud*. Reading a missing block as "unknown" would throw away
+  38k games' worth of real data. The same shape applies to `tags:` and `when:`, in the opposite
+  direction: absent there means "unspecified", i.e. **applies** — read absence as exclusion and
+  thousands of good entries vanish (`ManifestLoader.IsWindowsSave` carries that note).
+- **`ManifestLoader.GameCount` is smaller than the manifest's key count, by design.** The manifest
+  holds entries differing only in case (`Afterlife` / `afterlife`); `Parse` keeps the first and drops
+  58 of 52,973. If a count derived from the manifest is short by a few dozen, that is this, not a
+  parse failure — confirm before hunting.
+- **PCGamingWiki 403s automated fetches.** Read a page through the browser tools, not `curl`/WebFetch.
+
 ## Test-only environment variables
 These exist because the production values are far too slow to observe in a suite. They are read by
 `Agent.Core` and are **not** user settings — nothing in the UI or docs offers them.

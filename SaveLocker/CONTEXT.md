@@ -13,6 +13,31 @@ package `savelocker` is **public** — see [[Gotchas]].
 
 ## Status
 
+**In progress on branch `steam-cloud-from-manifest` (not merged, not released): Steam Cloud is read
+from the manifest instead of guessed.** Raised 2026-08-14 from a PCGamingWiki page that looked like
+uncaptured save-path data. It was not — the Ludusavi manifest *is* a PCGamingWiki scrape, so there
+is no path data to harvest and [[Decisions]] now says so, to stop the idea coming back. The real
+find was a field on that page we were throwing away.
+
+1. **Discovery hardcoded `HasSteamCloud: true` for everything Steam installed**, on the reasoning
+   that Steam titles usually have Cloud. **They usually do not** — 14,340 of the manifest's 48,908
+   Steam-id titles do. The default Add Games view HIDES what is flagged, so the guess made thousands
+   of games the user owns invisible, with nothing backing them up. Breath of Fire IV is the shape of
+   it: sold on Steam, `cloud: gog` only.
+2. **`ManifestLoader.HasSteamCloud` returns `bool?` and the tri-state is load-bearing.** `null` =
+   "not in the manifest", which is NOT "no Cloud"; that case keeps the old assumption, so the change
+   only overrides where real data exists. Both scanners now read it.
+3. **The manifest never writes `false`** — a `cloud:` block lists only ticked stores and is omitted
+   when none are, so a missing block and a block without `steam` mean the same thing. Recorded in
+   [[Gotchas]] → Ludusavi manifest, along with the `tags`/`when` shape that reads the OPPOSITE way.
+4. **`run-linux-tests.sh` 63 → 69.** Three fixture games differ in nothing the scanner can observe
+   except their cloud block, because with one installed game the suite cannot tell reading the field
+   from returning a constant — and a constant is the bug. **4 of the 6 new checks fail against
+   pre-fix code**; the 2 that pass pin the other direction, so an "always false" fix cannot sneak by.
+
+Not done here: the agent-ui chips and Deck Game Mode need no change (they read the DTO), but neither
+has a harness, so neither surface is covered. Windows has no Cloud-specific check either.
+
 **Shipped as v0.5.4 (2026-08-10): enrollment filters + a console that scrolls in panes.**
 Three changes, one theme — a large library was unnavigable in both surfaces:
 
@@ -122,6 +147,14 @@ Shipped in v0.5.1 (2026-08-05) and earlier: see `logs/shipped-2026-07.md` + `log
    agents self-update once the installer from the GitHub Release is uploaded in **Config → Agent
    Updates** (**the Release asset is not automatically what the fleet is offered**). The console
    redeploy brings the scrolling fix + Help and can follow. No migration.
+0b. **Merge `steam-cloud-from-manifest`** (committed on the branch, **not pushed** — PR it).
+   Agent-side only: no server, schema or console change, so it rides the next agent build. Worth a
+   release-notes line — users will see games appear in Add Games that were previously hidden.
+0c. **Fix or re-baseline `WA-01 the dashboard is told the real reason`.** `run-winagent-tests.ps1`
+   reads **113/114 on pristine `main`** — it fails at `ff4464b` with no local changes, so the 114
+   baseline below has drifted. The command executes and returns a result; the result text just no
+   longer matches `running`. Confirmed in a detached worktree, so it is not a dirty-harness
+   artifact, and it is unrelated to the Cloud work.
 1. **Watch for what the field finds.** Two things shipped without hardware coverage, both named in
    Status: the Heroic **store** sub-chips (the test Deck has no Heroic games) and the Game Mode
    filter row's gamepad navigation. Neither can lose save data — worst case is a list that filters
@@ -180,9 +213,11 @@ the task covers all three loops.
 
 ### Suite baseline (all green at 2026-08-08)
 
-Windows, local: **win agent bug bounty 114** · server bug bounty 145 · agent **47** · hardening 33 ·
+Windows, local: **win agent bug bounty 114 — but reads 113/114 as of 2026-08-14** (see Next action
+0c: one check fails on pristine `main`, verified in a worktree) · server bug bounty 145 · agent **47** · hardening 33 ·
 local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6.
-Linux, local (WSL ext4): **run-linux-tests 63** with the enrollment-filter work, 59 on `main`.
+Linux, local (WSL ext4): **run-linux-tests 63 on `main`, 69 on `steam-cloud-from-manifest`** (both
+measured 2026-08-14, same clone, identical failure sets — 0 failed either way).
 **Copy source into the WSL clone with `sed 's/\r$//'`, never a plain `rsync` from `/mnt/e`** — the
 Windows tree is CRLF, and a CRLF `slow-game.sh` fails 6 wrapper/settle checks that have nothing to
 do with the code under test. Cost half an hour this session; the failures look like real wrapper bugs. Detection: **sweep 271/298 (90.9%) at the default 300 sample, 17 pinned** — the drop from 99.0% is
@@ -219,6 +254,7 @@ opens `/data/savelocker.db` (i.e. `E:\data\`) and hangs on a stale migrations lo
 | Agent CLI | `web/src/help/cli-reference.md` (KB article) |
 | Active backlog | [[Backlog]] |
 | Shipped release notes | `web/src/releases/*.md` (the console page *and* the GitHub Release body) |
+| PCGamingWiki / Steam Cloud write-up | `logs/2026-08-14_steam-cloud-from-manifest.md` |
 | Windows bounty write-up | `logs/2026-07-29_winagent-bugbounty.md` |
 | Linux bounty write-up | `logs/2026-07-29_linuxagent-bugbounty.md` |
 | Console bounty write-up | `logs/2026-07-27_console-bugbounty.md` |
