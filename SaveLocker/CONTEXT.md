@@ -45,8 +45,9 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
    updates (Windows `.exe` and Linux `.tar.gz`) and `docker compose pull` the console. The GitHub
    Release asset is *not* what agents are offered; this is the step that always gets missed.
    Mechanics in [[Build and Run]] → Rolling a release out. No migration.
-   <br>**The Deck is on an unreleased `0.5.6-deckytest` build** — ahead of the fleet by version
-   string, behind it by provenance. Once the Linux row is filled it can take the real build.
+   <br>**Console and the Windows agent are on v0.5.6; the Deck was moved onto the real release by
+   hand** (2026-08-15) after the test build turned out to be un-updatable — it reported plain
+   `0.5.6`, so the server correctly answered "up to date" forever. See [[Gotchas]] → Builds.
 2. **`tasks/DeckyPlugin.md` Phase 5** — the agent keeps the plugin updated, so users are not stuck
    choosing between Decky's custom-store setting (which replaces the official store while set) and
    never being told about updates. **The hard part is already proven on hardware**; the task file
@@ -69,8 +70,8 @@ things that were measured on hardware and cannot be re-derived by reading code.
 
 **The Deck.** `deck@192.168.68.67`, key auth is set up (see the maintainer — the key is deliberately
 not named here). It is awake only when the maintainer wakes it. Useful state on it:
-- agent `0.5.6-deckytest`, service `savelocker.service` active, 4 tracked games, all with launch
-  options confirmed;
+- agent **v0.5.6 (the released build**, checksum-verified against the published `SHA256SUMS-linux.txt`),
+  service `savelocker.service` active, 4 tracked games, all with launch options confirmed;
 - plugin at `~/homebrew/plugins/SaveLocker`, and a config backup at
   `~/savelocker-decky-backup-20260815-112213` (`config.json`, `shortcuts.vdf`, `localconfig.vdf`);
 - `~/savelocker-plugin-stage/` is the staging directory for anything needing `sudo`.

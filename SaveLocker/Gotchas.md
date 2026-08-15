@@ -24,6 +24,16 @@ here.
   changing iteration count/salt/hash size invalidates every stored password. `tests/verify-password-compat.ps1`
   guards this; keep a `v1` verification path if it ever moves.
 
+- **A test build must not carry a RELEASE's numeric version, or it can never be updated and cannot
+  be told apart from the real thing.** `build-linux.sh` stamps `AssemblyFileVersion` with the numeric
+  part only (`${version%%-*}` — the attribute rejects a `-suffix`), so a tarball built as
+  `0.5.6-deckytest` reports plain `0.5.6`: identical to the release in every heartbeat and in the
+  console. `UpdateChecker` then compares with `System.Version` and `0.5.6 <= 0.5.6` is **up to date,
+  forever** — the machine is pinned to the test build and the update channel says nothing is wrong.
+  Cost one Deck a manual reinstall (2026-08-15). This is exactly why CI stamps **`9.9.9-ci`**: the
+  numeric part cannot collide with a real release, and `versionSkew.ts` reads a newer-than-console
+  version as a TEST BUILD. Use a 9.9.9 variant for any hand-built package.
+
 ## Paths
 - **Dev storage is `localstate/`, never `data/`** — Windows is case-insensitive, so
   `src/Server/Data/` (source) and a runtime `data/` collide. `Remove-Item data -Recurse` once
