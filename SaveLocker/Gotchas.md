@@ -308,6 +308,20 @@ behave in ways that look like bugs.
   is unreachable past the fold — with four games the list already overflowed with no way to scroll,
   which reads as "the panel is broken" rather than "nothing here is focusable". Wrap rows in
   `Focusable` from `@decky/ui`.
+- **The Quick Access panel REMOUNTS when a Steam dropdown closes.** Every `useState` in the plugin
+  goes back to its initial value, so a selection made in a dropdown is destroyed by the act of
+  making it. Anything that must survive an interaction has to live at module scope. The tell is a
+  render immediately after the selection reporting the PARENT's state as empty too — which is also
+  the only way this was found, after three wrong guesses: **log state at render time, not in the
+  handler.**
+- **A read-only row needs `Field` with `focusable`, not a bare `Focusable`.** The QAM scrolls by
+  MOVING FOCUS, so a run of rows the D-pad cannot land on is a hole it skips — it reveals a line,
+  finds nothing focusable, and jumps to the back button, leaving the user toggling up/down. A
+  `Focusable` with no handler is not reliably a target (it is resolved by matching props like
+  `onActivate`); `Field`'s own `focusable` prop is.
+- **`Field` puts children in a RIGHT-HAND column beside its label**, so a row with no label renders
+  half-indented and truncated. `childrenLayout="below"` gives it the full width. Build every such
+  row through one helper — this was fixed twice because two places built them by hand.
 - **The plugin frontend logs nowhere on disk.** The Python backend writes to
   `~/homebrew/logs/<Plugin>/*.log`, but the frontend runs in Steam's `SharedJSContext`, so a render
   error exists only in CEF — and the backend log will happily say everything loaded. Tunnel it:

@@ -367,7 +367,36 @@ Record the before/after launch-options strings for each in the write-up.
 
 ---
 
-## Phase 4 — Optional: the Game Mode status surface
+## Phase 4 — The Game Mode status surface — **DONE, VERIFIED ON HARDWARE 2026-08-15**
+
+Shipped as **SaveLocker-Decky v0.2.0**. Needed **no agent or server change**: `/api/state` already
+carried lease warnings, last-sync and counts, `/api/agent-version` already knew about a staged
+update, and `doctor` is executed rather than fetched.
+
+**What it has:** lease warnings (toasted once each, dismissable) · status (server, last sync, games,
+saves, agent version + update waiting) · launch options (Phase 3) · **push/pull, per game or all** ·
+`doctor` on demand.
+
+**Sync controls were added beyond the original list**, at the maintainer's request: forcing a save
+one direction is exactly the situation a Deck user cannot resolve without Desktop Mode. They run the
+CLI rather than reimplementing anything, so they inherit its guards — a pull refuses while the game
+is running (CLI *and* SyncEngine), a plain pull refuses to overwrite un-pushed changes, a diverged
+push becomes a conflict. `--force` is the only way to lose data and sits behind a destructive-styled
+confirmation naming the game; deliberately **not** a toggle, which could be left on.
+
+**Three UI bugs, all found only by using it on the Deck** — all now in [[Gotchas]] → Decky:
+the panel remounts when a Steam dropdown closes (destroying component state, which is why the game
+selection never stuck); a read-only row needs `Field focusable`, not a bare `Focusable`, or the QAM
+cannot scroll to it; and `Field` renders children in a right-hand column unless told otherwise.
+
+The third took four attempts. What finally solved it was logging state **at render time** rather than
+reasoning about the handler — the first three attempts were guesses, and one of them ("the plugin is
+reloading constantly") was an artefact of `Runtime.enable` replaying the console buffer. **Measure
+live, discard the buffer first.**
+
+---
+
+## Phase 4 — original plan
 
 Only worth doing if Phase 3 lands well. Ranked by what is genuinely missing today:
 
@@ -410,6 +439,25 @@ Three facts, and the feature falls out of them:
    no `systemctl`, no root, no Steam restart.
 3. **Decky reads the plugin's version from `package.json`**, the same file being overwritten, so its
    own UI reports the new version afterwards without being told.
+
+### Corrections from the Phase 4 hardware pass (2026-08-15)
+
+Both were found by accident while deploying Phase 4, and both would have made this phase silently
+ineffective:
+
+1. **`plugin.json` is root-owned** — Decky chowns *it* to the effective user even for a non-`_root`
+   plugin, while everything else goes to the desktop user. The agent can replace `main.py`,
+   `package.json` and anything under `dist/`, but **never `plugin.json`**. Design the package so it
+   does not need to.
+2. **Hot reload requires the `debug` flag in `plugin.json`.** Without it the watcher fires and Decky
+   logs *"Plugin X is already loaded and has requested to not be re-loaded"* — files updated, old
+   code still running, nothing reported. It is the flag's only effect anywhere in the loader. The
+   plugin now ships with it, and since `plugin.json` cannot be rewritten by the agent, **an
+   installation predating that flag can never self-update** and needs one manual reinstall.
+
+**The mechanism itself is proven.** With the flag set, `touch`ing a file as the desktop user made
+Decky unload and reload the plugin in about a second — no sudo, no `systemctl`, no Steam restart —
+and repeated `scp`s of a real build did the same throughout Phase 4's development.
 
 ### Scope, and the one thing this cannot do
 
