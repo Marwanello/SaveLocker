@@ -280,6 +280,15 @@ behave in ways that look like bugs.
   rollback message *"was installed but never started successfully"* — so a run that had just UNDONE
   an install reported a successful one, and passed. Likewise an unanchored `grep ProtectHome`
   matched the comment explaining why `ProtectHome` is absent.
+- **WSL usually has no native `node`, and `build-linux.sh` needs one.** It inherits the Windows
+  `PATH`, finds `/mnt/c/Program Files/nodejs/npm`, and that fails on a UNC path with
+  `error TS5083: Cannot read file 'C:/Windows/tsconfig.json'` — which reads like a TypeScript config
+  problem and is not. Build `agent-ui` on Windows, copy `agent-ui/dist` into the clone, and package
+  with `SAVELOCKER_SKIP_UI_BUILD=1` (it refuses to run unless `dist/index.html` is really there —
+  packaging without it produces an agent whose UI is a blank page).
+- **Sync the WSL clone from `git status`, not from a hand-written file list.** A hardcoded list in a
+  helper script went stale mid-session and the clone silently built an *older* tree than the one
+  under test — the failure surfaced as a compile error, but it just as easily would not have.
 - **Never `rsync` the Windows working tree into the WSL clone to run `run-linux-tests.sh`.** The
   Windows tree is CRLF, and `tests/linux/slow-game.sh` with CRLF line endings misbehaves: the game
   exits with the wrong code and stops writing early, failing 6 checks across the launch wrapper, the

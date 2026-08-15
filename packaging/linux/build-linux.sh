@@ -22,8 +22,22 @@ rid="${2:-linux-x64}"
 numeric_version="${version%%-*}"
 
 echo "==> Building agent UI (the daemon's only UI)"
+# SAVELOCKER_SKIP_UI_BUILD=1 packages a dist/ that was built elsewhere. The case this exists for is
+# WSL, which usually has no native node — it inherits the Windows PATH and finds npm.cmd, which then
+# fails on a UNC path. Skipping is safe ONLY if dist/ is really there: without it the daemon starts
+# and silently serves a blank page, which is a Deck with no UI at all. So assert it rather than
+# trusting the flag.
 if [ -d "${repo_root}/agent-ui" ]; then
-  (cd "${repo_root}/agent-ui" && npm ci --silent && npm run build --silent)
+  if [ -n "${SAVELOCKER_SKIP_UI_BUILD:-}" ]; then
+    [ -f "${repo_root}/agent-ui/dist/index.html" ] || {
+      echo "SAVELOCKER_SKIP_UI_BUILD is set but agent-ui/dist/index.html is missing." >&2
+      echo "Build it first (cd agent-ui && npm ci && npm run build), or unset the flag." >&2
+      exit 1
+    }
+    echo "    skipped (SAVELOCKER_SKIP_UI_BUILD) — packaging the existing agent-ui/dist"
+  else
+    (cd "${repo_root}/agent-ui" && npm ci --silent && npm run build --silent)
+  fi
 fi
 
 echo "==> Publishing savelocker ${version} (${rid}, self-contained)"
