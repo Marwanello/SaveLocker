@@ -369,33 +369,46 @@ agent.MapPost("/agent/health", async (AgentHeartbeat beat, HttpContext http, Hea
     return Results.Ok(await health.RecordHeartbeatAsync(http.CurrentMachine().Id, beat));
 }).Produces<AgentHeartbeatResponse>();
 
-agent.MapGet("/agent/latest", (IConfiguration cfg, AgentInstallerService installer, HttpContext ctx) =>
+agent.MapGet("/agent/latest", (IConfiguration cfg, AgentInstallerService installer, HttpContext ctx,
+    string? platform) =>
 {
-    // Locally hosted installer takes precedence over the config-based URL.
-    var info = installer.GetInfo();
+    if (!AgentPlatform.TryNormalize(platform, out var slot)) return UnknownPlatform(platform);
+
+    // Locally hosted package takes precedence over the config-based URL.
+    var info = installer.GetInfo(slot);
     if (info is not null)
     {
         var baseUrl = PublicUrl.For(ctx, cfg);
         return Results.Ok(new AgentVersionInfo(
-            info.Version, $"{baseUrl}/api/agent/installer/download", info.Sha256));
+            info.Version, $"{baseUrl}/api/agent/installer/download?platform={slot}", info.Sha256));
     }
 
     // Fall back to the static config (backward-compat with the original design). AgentUpdate:Sha256
     // is optional here, but without it the agent will refuse an off-origin download — which is the
     // intended pressure, since a hand-configured URL is exactly the case with no other integrity
     // control at all (Decisions.md: plain http is supported, so the transport proves nothing).
-    var ver = cfg["AgentUpdate:LatestVersion"];
-    var url = cfg["AgentUpdate:DownloadUrl"];
-    var sha = cfg["AgentUpdate:Sha256"];
+    //
+    // The flat keys stay the Windows ones: they are what every existing deployment and appsettings
+    // file already carries, and re-homing them under a platform section would silently disable the
+    // update channel on upgrade. Later platforms get a section of their own.
+    // `slot`, never the raw `platform` — that one is NULL for the agents this fallback exists for,
+    // which sent no parameter at all, and comparing it here silently sent them to the Linux section
+    // and answered 204. WA-05's off-origin block is what caught it.
+    var section = slot == AgentPlatform.Windows ? "AgentUpdate" : "AgentUpdate:Linux";
+    var ver = cfg[$"{section}:LatestVersion"];
+    var url = cfg[$"{section}:DownloadUrl"];
+    var sha = cfg[$"{section}:Sha256"];
     return string.IsNullOrWhiteSpace(ver)
         ? Results.NoContent()
         : Results.Ok(new AgentVersionInfo(ver, url ?? "", string.IsNullOrWhiteSpace(sha) ? null : sha.Trim()));
 }).Produces<AgentVersionInfo>();
 
-// Serves the hosted installer to agents. Public so the admin can also download it directly.
-app.MapGet("/api/agent/installer/download", (AgentInstallerService installer) =>
+// Serves the hosted package to agents. Public so the admin can also download it directly.
+app.MapGet("/api/agent/installer/download", (AgentInstallerService installer, string? platform) =>
 {
-    var path = installer.GetInstallerPath();
+    if (!AgentPlatform.TryNormalize(platform, out var slot)) return UnknownPlatform(platform);
+
+    var path = installer.GetInstallerPath(slot);
     if (path is null) return Results.NotFound();
     var stream = File.OpenRead(path);
     return Results.Stream(stream, "application/octet-stream", Path.GetFileName(path));
@@ -686,15 +699,21 @@ admin.MapDelete("/admin/enrollments/{id:guid}", async (Guid id, EnrollmentServic
     await enrollment.RevokeAsync(id) ? Results.NoContent() : Results.NotFound());
 
 // ---- Agent installer management (admin) ----
-admin.MapGet("/admin/agent-installer", (AgentInstallerService installer) =>
+// Every route here takes an optional ?platform=; absent means win-x64, so a console or script
+// written before platform slots existed keeps managing the Windows installer unchanged.
+admin.MapGet("/admin/agent-installer", (AgentInstallerService installer, string? platform) =>
 {
-    var info = installer.GetInfo();
+    if (!AgentPlatform.TryNormalize(platform, out var slot)) return UnknownPlatform(platform);
+
+    var info = installer.GetInfo(slot);
     return info is null ? Results.NoContent() : Results.Ok(info);
 }).Produces<AgentInstallerStatus>();
 
 admin.MapPost("/admin/agent-installer", async (
-    HttpRequest req, AgentInstallerService installer, CancellationToken ct) =>
+    HttpRequest req, AgentInstallerService installer, string? platform, CancellationToken ct) =>
 {
+    if (!AgentPlatform.TryNormalize(platform, out var slot)) return UnknownPlatform(platform);
+
     // Kestrel's default body limit is 30 MB and installers are ~43 MB, so it has to be lifted —
     // but it used to be lifted to NULL, i.e. removed. ReadFormAsync buffers a multipart body to
     // memory and temp storage, so an unbounded limit let any reachable client (this route is open
@@ -718,7 +737,7 @@ admin.MapPost("/admin/agent-installer", async (
             return Results.BadRequest("file field is required.");
 
         await using var stream = file.OpenReadStream();
-        var info = await installer.SaveAsync(stream, version, file.FileName, ct);
+        var info = await installer.SaveAsync(stream, version, file.FileName, ct, slot);
         return Results.Ok(info);
     }
     catch (InstallerTooLargeException ex)
@@ -737,19 +756,25 @@ admin.MapPost("/admin/agent-installer", async (
     }
 }).Produces<AgentInstallerStatus>();
 
-admin.MapDelete("/admin/agent-installer", async (AgentInstallerService installer, CancellationToken ct) =>
+admin.MapDelete("/admin/agent-installer", async (
+    AgentInstallerService installer, string? platform, CancellationToken ct) =>
 {
-    await installer.DeleteAsync(ct);
+    if (!AgentPlatform.TryNormalize(platform, out var slot)) return UnknownPlatform(platform);
+
+    await installer.DeleteAsync(ct, slot);
     return Results.NoContent();
 });
 
-// Pulls the latest release installer straight from GitHub instead of a manual upload.
+// Pulls the latest release asset straight from GitHub instead of a manual upload.
 admin.MapPost("/admin/agent-installer/fetch-github", async (
-    AgentInstallerService installer, IHttpClientFactory httpFactory, CancellationToken ct) =>
+    AgentInstallerService installer, IHttpClientFactory httpFactory, string? platform, CancellationToken ct) =>
 {
+    if (!AgentPlatform.TryNormalize(platform, out var slot)) return UnknownPlatform(platform);
+
     try
     {
-        var info = await installer.FetchLatestFromGitHubAsync(httpFactory.CreateClient(), ct);
+        var info = await installer.FetchLatestFromGitHubAsync(
+            httpFactory.CreateClient(), ct, platform: slot);
         return Results.Ok(info);
     }
     catch (InstallerTooLargeException ex)
@@ -767,6 +792,13 @@ admin.MapPost("/admin/agent-installer/fetch-github", async (
 }).Produces<AgentInstallerStatus>();
 
 app.Run();
+
+// Refused rather than defaulted: `?platform=` selects a directory, and a caller asking for a
+// platform this server does not host wants to hear so, not to be handed the Windows installer
+// instead. An ABSENT platform is not this case — it means win-x64, see AgentPlatform.
+static IResult UnknownPlatform(string? requested) => Results.BadRequest(
+    $"'{requested}' is not a platform this server hosts an agent for. " +
+    $"Expected one of: {string.Join(", ", AgentPlatform.All)}.");
 
 // Streams a downloaded version, exposing its id and content hash as response
 // headers so the agent can record the parent version for its next upload.

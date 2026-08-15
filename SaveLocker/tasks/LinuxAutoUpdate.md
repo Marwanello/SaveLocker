@@ -1,0 +1,218 @@
+# Task: Linux / Steam Deck agent auto-update
+
+From [[Backlog]] → Medium → *Linux auto-update*. Planned 2026-08-14.
+
+**Four phases. Execute ONE phase per session, verify it, stop.** Each phase is independently
+shippable and leaves the fleet working: 1 changes nothing for existing agents, 2 is read-only, 3
+is the first one that moves files, 4 is policy and coverage.
+
+---
+
+## Decisions taken at planning time (maintainer, 2026-08-14)
+
+1. **Stage automatically, apply on next daemon start.** The daemon downloads, verifies and stages
+   whenever the server offers a newer version, but the file swap happens at the *next* start
+   (boot/login). No mid-session restart, no prompt surface required on a device that has none, and a
+   Deck is never more than one boot stale. `savelocker update` forces it immediately for anyone who
+   wants it now.
+2. **Do not move the state directory.** `AgentConfig.DefaultDir` and the install prefix are both
+   `~/.local/share/SaveLocker`, so `config.json`, `api-token`, `offline-queue.json` and `agent.log`
+   live *inside* the tree an update replaces. Apply is therefore an **in-place per-file copy**, never
+   a directory swap — a swap would destroy this machine's server API key. Splitting app files from
+   XDG state stays a separate Backlog item.
+3. **Fold in two adjacent Backlog items:** *Harden the `systemd --user` unit* (Phase 3 already edits
+   both unit sources) and *Linux release provenance* (Phase 4 — same trust story).
+
+## Two things that will bite if forgotten
+
+- **`systemctl --user stop` kills the entire cgroup.** An updater the daemon spawns as a child dies
+  with the unit it just stopped — mid-swap. This is why the apply runs from `ExecStartPre` of the
+  *next* invocation and not from a child of the daemon.
+- **Overwriting the running tree is only safe via unlink-then-write.** Linux refuses to write a file
+  it is executing (`Text file busy`), and the managed DLLs beside it *are* writable while mapped, so
+  overwriting them SIGBUSes the running daemon. `cp --remove-destination` gives each replacement a
+  **new inode**, so a live `savelocker run` wrapper keeps the old one and survives. `install.sh`
+  already learned this the hard way — read its comments before writing the apply step.
+
+---
+
+## Phase 1 — Server: the installer store becomes platform-aware — **DONE 2026-08-15**
+
+Ships alone. An agent that sends no `platform` gets exactly what it gets today.
+
+**Outcome:** `run-server-bugbounty-tests.ps1` 145 → **164/164** (19 new checks, baseline updated in
+[[Build and Run]]); `run-winagent-tests.ps1` unchanged. Server build 0/0, console lint and build
+clean. Two things worth carrying into Phase 2: `?platform=` is bound as a real handler parameter
+rather than read off `HttpRequest`, so it is documented in `openapi.json` — and `/api/agent/latest`
+now returns a `downloadUrl` that **names the platform**, which is what stops an agent following it
+to the other OS's package and failing a digest check it could never pass. The config fallback for
+Linux lives under `AgentUpdate:Linux:*` (env `AgentUpdate__Linux__DownloadUrl`) — deliberately not a
+dashed section name, because `AgentUpdate__linux-x64__…` is not a legal bash identifier and the
+Linux harness has to export it.
+
+**The hosted path and the config-fallback path pick a platform separately, and only one of them was
+covered.** A rename left the fallback comparing the *raw* (null) parameter instead of the normalised
+one, so every agent that sends no `?platform=` — which is all of them until Phase 2 — was routed to
+the empty Linux section and got 204: the entire Windows fleet would have gone silently "up to date"
+forever. Every platform check above still passed, because with a hosted installer present the
+fallback never runs. WA-05's off-origin block caught it. Both paths now have their own checks, and
+the fallback one was proven to fail against the broken build (204) and pass against the fixed one.
+
+### Steps
+
+1. `src/Server/Services/AgentInstallerService.cs` — introduce a platform slot.
+   - Keep the current root as the **`win-x64` slot, untouched**, and add a `linux-x64/`
+     subdirectory. Zero migration; `BackfillDigestAsync` and every deployed server keep working.
+   - Thread a `platform` parameter through `GetInfo`, `SaveAsync`, `DeleteAsync`,
+     `FetchLatestFromGitHubAsync`, `GetInstallerPath`, `SweepIncoming`, `BackfillDigestAsync`.
+   - Per-platform validation, replacing the hardcoded `.exe` checks: `win-x64` → `*.exe`;
+     `linux-x64` → `*.tar.gz`. The cleanup glob (`Directory.GetFiles(_root, "*.exe")`) is per-slot
+     and per-extension too.
+   - Reject an unknown platform string outright — it must never resolve to a path.
+   - The single `SemaphoreSlim` still covers every writer. Do not split it per platform.
+2. GitHub asset matching: `SaveLocker-Agent-Setup*.exe` for `win-x64`,
+   `savelocker-*-linux-x64.tar.gz` for `linux-x64` (that is what `release.yml`'s `build-linux` job
+   already attaches). `AgentInstallerPollerService` polls **both** slots per tick.
+3. `src/Server/Program.cs` — `?platform=` on `/api/agent/latest`,
+   `/api/agent/installer/download`, and the four `/api/admin/agent-installer*` routes.
+   **Absent means `win-x64`**, so an agent from before this change is unaffected.
+4. `src/Shared/Contracts.cs` — add `Platform` to `AgentInstallerStatus`.
+5. `web/src/api.ts` + `web/src/components/ConfigView.tsx` — the Agent Updates card grows a Windows
+   row and a Linux row (hosted version, size, uploaded-at, upload / fetch / delete per row).
+6. Regenerate `src/Server/openapi.json` and `web/src/api-types.ts`; commit both (CLAUDE.md).
+
+### Verify
+
+- `tests/run-server-bugbounty-tests.ps1` — extend the installer block: a `.tar.gz` uploaded to the
+  win slot is **refused**; an `.exe` to the linux slot is **refused**; an unknown `?platform=` is
+  **refused**; `/api/agent/latest` with **no** platform param still answers with the Windows
+  installer; the two slots do not overwrite each other.
+- Suite must stay green at its recorded baseline otherwise. `Storage__AgentInstallerRoot` must be
+  set for the run ([[Gotchas]] → Testing).
+
+---
+
+## Phase 2 — Agent: check-only, on both platforms
+
+Read-only. Nothing is executed or replaced. Safe to ship on its own.
+
+### Steps
+
+1. `src/Agent.Core/UpdateChecker.cs`:
+   - Send `?platform=` on `/api/agent/latest`, derived once from `RuntimeInformation`.
+   - Replace `VerifyLooksExecutable`'s MZ assertion with a per-platform payload check — gzip magic
+     `1f 8b` for the tarball. Keep the existing framing: it is a *sanity* check that turns a
+     captive-portal HTML page into a comprehensible error; the digest is what proves authenticity.
+     Carry the Authenticode TODO across unchanged.
+   - Temp file extension follows the platform, and on Linux it is created `0600`.
+   - Everything else stays: TOFU-pinned client for same-origin, no credential and a mandatory digest
+     off-origin, 300 MB cap, delete on every failure path (Decisions → WA-05).
+2. `src/Agent.Linux/Daemon.cs:85` — replace `getUpdateResult: () => null` (and its
+   "self-update is Windows-only" comment) with a real update-result provider.
+3. `src/Agent.Linux/Doctor.cs` — a line for current version vs. what the server offers, and (from
+   Phase 3) whether an update is staged and pending a restart.
+4. `agent-ui` Settings/Overview — surface the available version. The DTO
+   (`AgentVersionDto`) already exists.
+
+### Verify
+
+- `tests/linux/run-linux-tests.sh` (currently 69 on this branch's baseline) gains, against its own
+  fake server: `check-update` reports an offered version; `check-update --download` **VERIFIES** a
+  good tarball; a digest mismatch is **REFUSED**; an off-origin URL with no digest is **REFUSED**
+  (the Linux mirror of WA-05); a non-gzip payload is **REFUSED**.
+- Confirm each new check fails against the pre-change binary — otherwise it tests nothing
+  ([[Gotchas]] → Testing).
+
+---
+
+## Phase 3 — Agent: stage and apply
+
+The first phase that moves files. Read `install.sh` end to end before starting.
+
+### Steps
+
+1. **Stage** (new code in `Agent.Linux`, driven by the daemon and by `savelocker update`):
+   - Download + verify digest via the Phase 2 `UpdateChecker`.
+   - Extract into `<StateDir>/update/staged/`. **The tarball is hostile input** — same trust class
+     as a pulled save archive, and worse in that it becomes code. Reject `..`, absolute paths and
+     symlink escapes; cap entry count and total bytes. Reuse the `SaveArchive` rules rather than
+     writing a second set.
+   - **Smoke-test before committing:** run `staged/savelocker --version` and require it to start and
+     print the expected version. A staged binary that cannot execute is precisely the failure that
+     leaves a Deck permanently offline with nobody watching.
+   - Write `<StateDir>/update/apply.json` — version, staged path, staged-at.
+2. **Apply** — `savelocker apply-update`:
+   - Idempotent; a no-op with no marker; refuses a staged version that is not newer than the running
+     one; clears the marker on success.
+   - Copies **per file** with unlink-then-write semantics into `~/.local/share/SaveLocker`, touching
+     only paths the tarball carries. `config.json`, `api-token`, `offline-queue.json`,
+     `lease-warnings.json` and `agent.log` are never in the tarball and must survive — assert this.
+   - Keeps a rollback copy. A marker still present on the *next* start means the last apply's start
+     failed → revert and report.
+3. **Restart orchestration:**
+   - `ExecStartPre=…/savelocker apply-update` in **both** `packaging/linux/savelocker.service` and
+     `SystemdAutoStart.UnitFile()`. These two currently write different units and have been drifting;
+     make them one source of truth.
+   - The daemon calls `systemctl --user restart --no-block savelocker.service` and exits. The apply
+     then runs in the **new** invocation — a fresh process, not the cgroup being killed.
+   - **No systemd (hand-started daemon):** do **not** attempt a self-restart. Leave the update staged
+     and report "staged; run `savelocker apply-update`" through the health channel, `doctor` and the
+     agent UI. A daemon that stops itself and cannot come back is a Deck going quietly offline —
+     the exact failure `install.sh` shouts about today.
+4. **Safety gate:** stage at any time; **apply only when no game is running** — no held lease and no
+   live `savelocker run` wrapper. Otherwise defer to the next start.
+5. **Fold in the unit hardening** ([[Backlog]] → Medium) while both unit sources are open:
+   `UMask=0077`, `NoNewPrivileges=yes`, `PrivateTmp=yes`, `ProtectSystem=full`,
+   `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`, `RestrictSUIDSGID=yes`, `LockPersonality=yes`.
+   **Not** `ProtectHome` (save access), **not** `ProtectProc` (the Linux writer probe), **not**
+   `MemoryDenyWriteExecute` (.NET JIT). Note `PrivateTmp` interacts with the staging path — stage
+   under `<StateDir>`, not `/tmp`.
+6. No bootstrap problem to solve: `install.sh` always rewrites the unit, so the manual tarball
+   upgrade to the release carrying this feature is what installs the `ExecStartPre` unit.
+
+### Verify
+
+- `tests/linux/run-linux-tests.sh`: apply swaps the tree and the new binary reports the new version;
+  config/API key/queue/log survive an apply; a staged tree containing `../escape` is refused; a
+  staged binary that cannot start is refused and nothing is swapped; apply is refused while a fake
+  game is running; a marker left over from a failed start triggers rollback.
+- `tests/run-hardening-tests.ps1`: tar zip-slip and symlink-escape on the update tarball.
+- On the Deck: `systemd-analyze --user security savelocker.service` **before and after**, recorded in
+  the write-up. Then a real end-to-end update against the live server.
+
+---
+
+## Phase 4 — Policy, surfaces, provenance, docs
+
+### Steps
+
+1. Schedule + opt-out: reuse `AgentConfig.LastUpdateCheck` and the 24 h cooldown shape the tray
+   already uses; add a config toggle to disable auto-staging. `SkipVersion` already exists and
+   applies unchanged.
+2. `src/Shared/AgentEventCodes.cs` — codes for update staged / applied / failed, reported through
+   `HealthReporter`. **This is the load-bearing surface on a Deck**: there is no toast, so the
+   console is where an update outcome becomes visible (Decisions §2).
+3. Game Mode `src/Agent.Linux/Ui/UiApp.cs` — the existing "Next step" card carries
+   "Update staged — applies on next start".
+4. **Linux release provenance** ([[Backlog]] → Medium), folded in: pin `release.yml`'s actions to
+   full commit SHAs, publish SHA-256 checksums and a GitHub artifact attestation for the tarball,
+   draft → attach all assets → publish. Document the verification command beside the Deck install
+   instructions.
+   <br>Worth stating plainly so nobody mis-sequences this: **the update channel does not depend on
+   it.** The server hashes the bytes it stored, so the digest exists either way. This buys a user
+   verifying a manual download, and it is what an off-origin `AgentUpdate:DownloadUrl` would need.
+5. Docs:
+   - `web/src/help/agent-update.md` — currently opens with "Auto-update is a Windows feature" and
+     ends with a manual "Updating the Linux agent" section. Rewrite both.
+   - `web/src/help/cli-reference.md` — `savelocker update`; `apply-update` is internal, mention it
+     only as the unit's `ExecStartPre` hook.
+   - [[Decisions]] — one entry for the apply mechanism (stage now / apply on next start via
+     `ExecStartPre`, and *why* not a child process).
+   - [[Gotchas]] — the cgroup-kill trap and the prefix/state-dir collision.
+   - Release notes for whichever version ships it.
+
+### Verify
+
+Full suite sweep at the recorded baselines in [[Build and Run]], plus a real Deck update: an old
+tarball installed by hand, the server serving a newer one, and the Deck arriving at the new version
+across one restart with its enrollment, queue and tracked games intact.

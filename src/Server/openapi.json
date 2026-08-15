@@ -104,6 +104,15 @@
         "tags": [
           "SaveLocker.Server"
         ],
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK"
@@ -540,6 +549,15 @@
       "get": {
         "tags": [
           "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -1673,6 +1691,15 @@
         "tags": [
           "SaveLocker.Server"
         ],
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -1689,6 +1716,15 @@
       "post": {
         "tags": [
           "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -1707,6 +1743,15 @@
         "tags": [
           "SaveLocker.Server"
         ],
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK"
@@ -1718,6 +1763,15 @@
       "post": {
         "tags": [
           "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -2120,6 +2174,10 @@
               "null",
               "string"
             ]
+          },
+          "platform": {
+            "type": "string",
+            "default": "win-x64"
           }
         }
       },

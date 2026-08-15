@@ -103,6 +103,14 @@ behave in ways that look like bugs.
   is case-insensitive). Force a real collection: `@($x | Where-Object {...}).Length`.
 - **Under `$ErrorActionPreference="Stop"`, native stderr terminates the script** — an expected
   warning (e.g. a CONFLICT message) aborts a test run. Use `Continue` and parse output text.
+- **`-ErrorAction SilentlyContinue` does not suppress a web cmdlet's failure.** `Invoke-RestMethod` /
+  `Invoke-WebRequest` raise a *terminating* error on a refused connection or a 4xx, and `-ErrorAction`
+  only governs non-terminating ones — so a call aimed at a server the script just stopped kills the
+  run. It does not look like a crash: `finally` still prints the tally, so the suite reports a
+  **lower pass count with zero failures**, and every section after the throw silently never ran.
+  (Cost a confused re-run on 2026-08-15: 161 → "144 passed, 0 failed".) Wrap every such call in
+  `try/catch` — which is what the suites' own `InstallerStatus`-style helpers already do — and check
+  a suite's total against its recorded baseline, not just its failure count.
 - **`Copy-Item -Recurse src dst` copies *into* dst when dst exists** rather than overwriting —
   always `Remove-Item -Recurse -Force $dst` first.
 - **`VAR=x cmd` (bash) does not export `VAR`** to `cmd` unless exported — a prefix assignment

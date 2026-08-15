@@ -834,6 +834,12 @@ try {
     $instRoot = $env:Storage__AgentInstallerRoot
     $srv = Start-TestServer $serverDll "installer"
 
+    # /api/agent/latest is an agent route, so the platform checks below need a real machine key.
+    # Registered here rather than in the checks so a restart mid-block cannot invalidate it.
+    $instReg = Invoke-RestMethod "$url/api/machines/register" -Method Post -ContentType "application/json" `
+        -Body (@{ name = "InstallerProbe" } | ConvertTo-Json)
+    $instHdr = @{ "X-Api-Key" = $instReg.apiKey }
+
     function MakeExe($path, $bytes, $marker) {
         $fs = [System.IO.File]::Create($path)
         $fs.SetLength($bytes)
@@ -843,7 +849,12 @@ try {
         $fs.Close()
     }
     # A real multipart body, built by hand: Invoke-WebRequest -Form is PowerShell 7 only.
-    function PostInstaller($path, $version, $fileName) {
+    # $platform is deliberately OPTIONAL and appended only when given: half the point of these
+    # checks is that a caller which names no platform still gets the Windows slot it always got.
+    function PlatformQuery($platform) { if ($platform) { "&platform=$platform" } else { "" } }
+    # Leading "?" form, for the routes that have no other query parameter.
+    function PlatformOnly($platform) { if ($platform) { "?platform=$platform" } else { "" } }
+    function PostInstaller($path, $version, $fileName, $platform) {
         $boundary = [Guid]::NewGuid().ToString()
         $LF = "`r`n"
         $head = "--$boundary$LF" +
@@ -855,21 +866,28 @@ try {
         $fb = [System.IO.File]::ReadAllBytes($path);          $body.Write($fb, 0, $fb.Length)
         $tb = [System.Text.Encoding]::ASCII.GetBytes($tail);  $body.Write($tb, 0, $tb.Length)
         try {
-            $r = Invoke-WebRequest "$url/api/admin/agent-installer?version=$version" -Method Post `
+            $r = Invoke-WebRequest "$url/api/admin/agent-installer?version=$version$(PlatformQuery $platform)" -Method Post `
                 -ContentType "multipart/form-data; boundary=$boundary" -Body $body.ToArray() -UseBasicParsing
             return @{ code = [int]$r.StatusCode; body = ($r.Content | ConvertFrom-Json) }
         } catch {
             return @{ code = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { -1 }; body = $null }
         } finally { $body.Dispose() }
     }
-    function InstallerStatus {
-        try { return ((Invoke-WebRequest "$url/api/admin/agent-installer" -UseBasicParsing).Content | ConvertFrom-Json) }
+    function InstallerStatus($platform) {
+        try { return ((Invoke-WebRequest "$url/api/admin/agent-installer$(PlatformOnly $platform)" -UseBasicParsing).Content | ConvertFrom-Json) }
         catch { return $null }
     }
-    function InstallerDownloads {
+    function InstallerStatusCode($platform) {
+        try { return [int](Invoke-WebRequest "$url/api/admin/agent-installer$(PlatformOnly $platform)" -UseBasicParsing).StatusCode }
+        catch {
+            if ($_.Exception.Response) { return [int]$_.Exception.Response.StatusCode }
+            return -1
+        }
+    }
+    function InstallerDownloads($platform) {
         try {
             $out = Join-Path $scratch "dl-installer.bin"
-            Invoke-WebRequest "$url/api/agent/installer/download" -OutFile $out -UseBasicParsing | Out-Null
+            Invoke-WebRequest "$url/api/agent/installer/download$(PlatformOnly $platform)" -OutFile $out -UseBasicParsing | Out-Null
             return (Get-Item $out).Length
         } catch { return -1 }
     }
@@ -989,6 +1007,87 @@ try {
     Invoke-RestMethod "$url/api/admin/agent-installer" -Method Delete | Out-Null
     Check "delete removes the installer"                ($null -eq (InstallerStatus))
     Check "delete removes the binary too"               (@(Get-ChildItem $instRoot -Filter *.exe).Count -eq 0)
+
+    # ---- 9. Platform slots are independent, and an absent platform still means Windows ----
+    # The failure this guards is not a crash. It is a Deck being offered a Windows .exe, or a
+    # Windows box being offered a tarball, because one slot leaked into the other — and the agent
+    # would then download something it cannot run and report a version nobody is on. The last
+    # check is the compatibility one: an agent built before slots existed sends no platform at all.
+    $linuxRoot = Join-Path $instRoot "linux-x64"
+    $tarball   = Join-Path $scratch "savelocker-2.0.0-linux-x64.tar.gz"
+    MakeExe $tarball 24000 "TARBALL-2.0.0"
+
+    $wrongSlotA = PostInstaller $tarball "2.0.0" "savelocker-2.0.0-linux-x64.tar.gz" $null
+    Check "a tarball into the Windows slot is refused"   ($wrongSlotA.code -eq 400)
+    $wrongSlotB = PostInstaller $goodExe "1.0.0" "SaveLocker-Agent-Setup-1.0.0.exe" "linux-x64"
+    Check "an .exe into the Linux slot is refused"       ($wrongSlotB.code -eq 400)
+
+    # A platform names a directory, so an unrecognised one must be refused rather than defaulted —
+    # being quietly handed the Windows installer is the answer that gets a Deck into trouble.
+    Check "an unknown platform is refused on status"     ((InstallerStatusCode "solaris") -eq 400)
+    $bogusUpload = PostInstaller $goodExe "1.0.0" "SaveLocker-Agent-Setup-1.0.0.exe" "solaris"
+    Check "an unknown platform is refused on upload"     ($bogusUpload.code -eq 400)
+    Check "an unknown platform is refused on download"   ((InstallerDownloads "solaris") -eq -1)
+
+    # Both slots filled at once, with DIFFERENT versions — the normal state of a fleet whose
+    # Windows installer is ahead of its Deck tarball, and the one a single-slot store cannot hold.
+    $win2 = PostInstaller $goodExe "1.0.0" "SaveLocker-Agent-Setup-1.0.0.exe" "win-x64"
+    $lin2 = PostInstaller $tarball "2.0.0" "savelocker-2.0.0-linux-x64.tar.gz" "linux-x64"
+    Check "both slots accept their own package"          ($win2.code -eq 200 -and $lin2.code -eq 200)
+    Check "each slot reports its own version"            ((InstallerStatus "win-x64").version -eq "1.0.0" -and
+                                                          (InstallerStatus "linux-x64").version -eq "2.0.0")
+    Check "each slot downloads its own bytes"            ((InstallerDownloads "win-x64") -eq 65536 -and
+                                                          (InstallerDownloads "linux-x64") -eq 24000)
+    Check "the Linux package is stored under its own root" `
+        (@(Get-ChildItem $linuxRoot -Filter *.tar.gz).Count -eq 1 -and
+         @(Get-ChildItem $instRoot -Filter *.tar.gz).Count -eq 0)
+    Check "the Windows slot kept its own .exe"           (@(Get-ChildItem $instRoot -Filter *.exe).Count -eq 1)
+
+    # Compatibility: no ?platform= at all is exactly what every already-deployed agent sends.
+    Check "an absent platform still means Windows"       ((InstallerStatus).version -eq "1.0.0" -and
+                                                          (InstallerDownloads) -eq 65536)
+    $latestDefault = Invoke-RestMethod "$url/api/agent/latest" -Headers $instHdr
+    Check "/api/agent/latest defaults to the Windows slot" ($latestDefault.latestVersion -eq "1.0.0")
+    $latestLinux = Invoke-RestMethod "$url/api/agent/latest?platform=linux-x64" -Headers $instHdr
+    Check "/api/agent/latest serves the Linux slot"      ($latestLinux.latestVersion -eq "2.0.0")
+    # The URL it hands back has to name the same platform, or the agent follows it and downloads
+    # the other OS's package with a digest that will never match.
+    Check "the offered URL carries the platform"         ($latestLinux.downloadUrl -like "*platform=linux-x64*")
+
+    # Deleting one slot must not touch the other.
+    Invoke-RestMethod "$url/api/admin/agent-installer?platform=linux-x64" -Method Delete | Out-Null
+    Check "deleting Linux leaves Windows serving"        ((InstallerStatus "win-x64").version -eq "1.0.0" -and
+                                                          (InstallerDownloads "win-x64") -eq 65536)
+    Check "deleting Linux emptied only its own root"     ($null -eq (InstallerStatus "linux-x64") -and
+                                                          @(Get-ChildItem $linuxRoot -Filter *.tar.gz).Count -eq 0)
+
+    # ---- 10. The AgentUpdate:* config fallback also defaults to Windows ----
+    # Its own check because the hosted path and the fallback path choose a platform SEPARATELY, and
+    # a defect in the second one is invisible from the first: with a hosted installer present the
+    # fallback never runs, so every check above passes while this one is broken. Reading the raw
+    # (null) parameter instead of the normalised one sent every pre-platform agent to the Linux
+    # section, which is empty, so the server answered 204 and the whole fleet quietly went "up to
+    # date" forever. WA-05's off-origin block caught that; this is the cheap local guard.
+    #
+    # The Windows slot is emptied while the server is still UP — a web cmdlet aimed at a stopped
+    # server throws a TERMINATING error that -ErrorAction cannot suppress, which takes the rest of
+    # the suite with it.
+    Invoke-RestMethod "$url/api/admin/agent-installer" -Method Delete | Out-Null
+    Stop-TestServer $srv
+    $env:AgentUpdate__LatestVersion = "7.7.7"
+    $env:AgentUpdate__DownloadUrl   = "http://example.invalid/SaveLocker-Agent-Setup-7.7.7.exe"
+    $srv = Start-TestServer $serverDll "installer-fallback"
+    Remove-Item Env:AgentUpdate__LatestVersion, Env:AgentUpdate__DownloadUrl -ErrorAction SilentlyContinue
+
+    Check "the hosted slot really is empty first"        ($null -eq (InstallerStatus))
+    $fbDefault = Invoke-RestMethod "$url/api/agent/latest" -Headers $instHdr
+    Check "the config fallback answers an agent that names no platform" ($fbDefault.latestVersion -eq "7.7.7")
+    # Linux has its own section and nothing in it, so it must answer 204 rather than borrow the
+    # Windows URL — a Deck handed a .exe would download it and never be able to run it.
+    $fbLinuxCode = try {
+        [int](Invoke-WebRequest "$url/api/agent/latest?platform=linux-x64" -Headers $instHdr -UseBasicParsing).StatusCode
+    } catch { -1 }
+    Check "the Windows fallback is not offered to Linux"  ($fbLinuxCode -eq 204)
 
     Remove-Item Env:Storage__AgentInstallerRoot, Env:AgentUpdate__MaxInstallerMb -ErrorAction SilentlyContinue
     Stop-TestServer $srv

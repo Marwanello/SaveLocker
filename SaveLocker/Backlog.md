@@ -40,6 +40,10 @@ verification that did not happen before the tag. Write-ups:
   building and running a detached worktree, so it is not the `.verify/` trap. The dashboard command
   executes and returns a result; the result text no longer matches `running`. Either fix it or
   re-baseline the 114 in [[Build and Run]]. Not investigated.
+  <br>**It did NOT reproduce on 2026-08-15** (full 114 ran, WA-01 passed, the only two failures were
+  an unrelated bug in that session's own change). So it is **intermittent**, not a standing failure —
+  which rules out re-baselining as the fix and makes a timing dependency the thing to look for.
+  Treat a green WA-01 as evidence of nothing until it is understood.
 
 - **v0.5.4 surfaces that shipped without hardware coverage.** Neither can lose save data — worst
   case is a list that filters oddly — which is why they shipped, but both are unverified: the Heroic
@@ -101,10 +105,16 @@ verification that did not happen before the tag. Write-ups:
 - **Linux agent secret permissions and state layout.** `config.json` contains a long-lived machine key; file privacy depends on the launching shell's umask. Enforce `0700` on private state directories and `0600` on config, queue, health, and log files in code, including CLI enrollment paths. Consider separating immutable app files from mutable XDG config/state so upgrades cannot overlap the executable tree.
 
 - **Linux auto-update.** The update channel (`/api/agent/latest`) is installer-shaped and Windows-only. A Deck user currently re-runs `install.sh` from a newer tarball. Worth doing before there are many Deck users — a headless device that never updates is one nobody will notice is stale.
+  <br>**Planned 2026-08-14 → `tasks/LinuxAutoUpdate.md`** (four phases, one per session). It absorbs
+  the two items below it — the unit hardening because Phase 3 edits both unit sources anyway, and
+  release provenance because it is the same trust story. Two things the plan turns on: `systemctl
+  --user stop` kills the whole cgroup, so the apply cannot run as a child of the daemon; and the
+  Linux install prefix **is** the state dir, so an update is a per-file copy and never a directory
+  swap.
 
-- **Harden the `systemd --user` unit.** Add and Deck-test: `UMask=0077`, `NoNewPrivileges=yes`, `PrivateTmp=yes`, `ProtectSystem=full`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`, `RestrictSUIDSGID=yes`, `LockPersonality=yes`. Mirror in both `packaging/linux/savelocker.service` and `SystemdAutoStart.UnitFile()`. Do **not** add `ProtectHome` (save access), `ProtectProc` (Linux writer probe), or `MemoryDenyWriteExecute` (.NET JIT). Record `systemd-analyze --user security savelocker.service` before/after on a Deck.
+- **Harden the `systemd --user` unit.** *(Folded into `tasks/LinuxAutoUpdate.md` Phase 3.)* Add and Deck-test: `UMask=0077`, `NoNewPrivileges=yes`, `PrivateTmp=yes`, `ProtectSystem=full`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`, `RestrictSUIDSGID=yes`, `LockPersonality=yes`. Mirror in both `packaging/linux/savelocker.service` and `SystemdAutoStart.UnitFile()`. Do **not** add `ProtectHome` (save access), `ProtectProc` (Linux writer probe), or `MemoryDenyWriteExecute` (.NET JIT). Record `systemd-analyze --user security savelocker.service` before/after on a Deck.
 
-- **Linux release provenance.** Pin GitHub Actions in `release.yml` to full commit SHAs; publish SHA-256 checksums and a GitHub artifact attestation for the tarball; use draft → attach all assets → publish flow. Document the verification command beside the Deck install instructions.
+- **Linux release provenance.** *(Folded into `tasks/LinuxAutoUpdate.md` Phase 4 — note the update channel does NOT depend on it: the server hashes the bytes it stored.)* Pin GitHub Actions in `release.yml` to full commit SHAs; publish SHA-256 checksums and a GitHub artifact attestation for the tarball; use draft → attach all assets → publish flow. Document the verification command beside the Deck install instructions.
 
 - **Constrain external manifest paths.** The Ludusavi manifest is downloaded from mutable `master`; expanded templates are not proven to stay inside the intended Proton prefix. Pin or integrity-verify an approved manifest revision, canonicalize resolved paths, reject `..`/symlink escapes outside allowed roots, test a hostile manifest entry. Preserve explicit manually mapped portable-save paths as a separate trusted-user path.
 

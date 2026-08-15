@@ -1,3 +1,5 @@
+using SaveLocker.Shared;
+
 namespace SaveLocker.Server.Services;
 
 /// <summary>
@@ -66,24 +68,42 @@ public sealed class AgentInstallerPollerService : BackgroundService
         return await settings.GetAutoFetchHoursAsync(ct);
     }
 
+    /// <summary>
+    /// Checks every platform, each inside its own boundary. One platform's failure must not stop the
+    /// others being refreshed — and the commonest failure by far is benign: a release that predates
+    /// the Linux tarball simply has no asset for that slot, which is a warning, not an error.
+    /// </summary>
     private async Task PollAsync(CancellationToken ct)
     {
-        try
-        {
-            await using var scope = _scopeFactory.CreateAsyncScope();
-            var installer = scope.ServiceProvider.GetRequiredService<AgentInstallerService>();
-            var http = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>().CreateClient();
-            var before = installer.GetInfo();
-            var after = await installer.FetchLatestFromGitHubAsync(http, ct, onlyIfNewer: true);
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var installer = scope.ServiceProvider.GetRequiredService<AgentInstallerService>();
+        var http = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>().CreateClient();
 
-            if (before?.Version == after.Version && before.UploadedAt == after.UploadedAt)
-                _log.LogDebug("GitHub installer auto-poll: hosted installer v{Version} is current.", after.Version);
-            else
-                _log.LogInformation("GitHub installer auto-poll: hosted installer updated to v{Version}.", after.Version);
-        }
-        catch (Exception ex) when (!ct.IsCancellationRequested)
+        foreach (var platform in AgentPlatform.All)
         {
-            _log.LogError(ex, "GitHub installer auto-poll failed.");
+            if (ct.IsCancellationRequested) return;
+            try
+            {
+                var before = installer.GetInfo(platform);
+                var after = await installer.FetchLatestFromGitHubAsync(
+                    http, ct, onlyIfNewer: true, platform: platform);
+
+                if (before?.Version == after.Version && before.UploadedAt == after.UploadedAt)
+                    _log.LogDebug("GitHub installer auto-poll: hosted {Platform} package v{Version} is current.",
+                        platform, after.Version);
+                else
+                    _log.LogInformation("GitHub installer auto-poll: hosted {Platform} package updated to v{Version}.",
+                        platform, after.Version);
+            }
+            catch (InstallerRejectedException ex) when (!ct.IsCancellationRequested)
+            {
+                _log.LogWarning("GitHub installer auto-poll: nothing to fetch for {Platform}. {Reason}",
+                    platform, ex.Message);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                _log.LogError(ex, "GitHub installer auto-poll failed for {Platform}.", platform);
+            }
         }
     }
 }

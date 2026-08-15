@@ -10,34 +10,42 @@ embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[Architecture
 
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** `main`
 
-**Released:** **v0.5.4** (2026-08-10) — notes in `web/src/releases/0.5.4.md`. GHCR package
-`savelocker` is **public** ([[Gotchas]]).
+**Released:** **v0.5.4** (2026-08-10, **rolled out 2026-08-15**) — notes in
+`web/src/releases/0.5.4.md`. GHCR package `savelocker` is **public** ([[Gotchas]]).
 
 ---
 
 ## Where things stand
 
-**v0.5.4 is tagged but not rolled out.** The fleet is still on what it was; see Next action.
+**In flight — branch `steam-cloud-from-manifest`** (**not pushed**, not merged). It now carries two
+unrelated pieces of work; the maintainer's call is that the whole branch pushes when the auto-update
+feature is finished.
 
-**In flight — branch `steam-cloud-from-manifest`** (2 commits, **not pushed**, not merged).
-Steam Cloud is now read from the Ludusavi manifest instead of assumed from "Steam installed it" —
-only 14,340 of the manifest's 48,908 Steam-id titles actually have Cloud, and the default Add Games
-view hides whatever is flagged, so the assumption was hiding games nothing was backing up.
-Agent-side only: no server, schema or console change. `run-linux-tests` 63 → 69.
-Full write-up: `logs/2026-08-14_steam-cloud-from-manifest.md`.
+1. **Steam Cloud from the manifest** (2 commits). Steam Cloud is read from the Ludusavi manifest
+   instead of assumed from "Steam installed it" — only 14,340 of the manifest's 48,908 Steam-id
+   titles actually have Cloud, and the default Add Games view hides whatever is flagged, so the
+   assumption was hiding games nothing was backing up. Agent-side only: no server, schema or console
+   change. `run-linux-tests` 63 → 69. Write-up:
+   `logs/2026-08-14_steam-cloud-from-manifest.md`. It also settled a recurring idea in
+   [[Decisions]]: **do not scrape PCGamingWiki — the Ludusavi manifest already is that scrape.**
 
-That branch also settled a recurring idea in [[Decisions]]: **do not scrape PCGamingWiki — the
-Ludusavi manifest already is that scrape.**
+2. **Linux / Steam Deck agent auto-update** — in progress, `tasks/LinuxAutoUpdate.md`, four phases,
+   one commit each. **Phase 1 (server) is done:** the hosted-installer store is platform-aware —
+   Windows keeps the storage root it always had, `linux-x64/` is a subdirectory beside it, and every
+   update route takes `?platform=`, absent meaning `win-x64` so no deployed agent notices.
+   `run-server-bugbounty-tests` 145 → **161**. **Phase 2 (agent check-only) is next.**
 
 Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
 `logs/shipped-2026-07.md`.
 
 ## Next action
 
-1. **Roll out v0.5.4** — mechanics in [[Build and Run]] → Rolling a release out. No migration.
-   Watch for the step that always gets missed: uploading the installer in Config → Agent Updates.
-2. **Push and PR `steam-cloud-from-manifest`.** Worth a release-notes line — users will see games
-   appear in Add Games that were previously hidden.
+1. **Phase 2 of `tasks/LinuxAutoUpdate.md`** — the agent sends `?platform=`, the MZ header check
+   becomes a per-platform payload check, and `Daemon.cs`'s `getUpdateResult: () => null` gets wired
+   up. Read-only: nothing is executed or replaced until Phase 3.
+2. **Push and PR `steam-cloud-from-manifest`** once auto-update lands. Worth release-notes lines for
+   both halves — users will see games appear in Add Games that were previously hidden, and Decks
+   stop needing a hand-run `install.sh`.
 3. **Check the live server for duplicate games** before deploying. Canonical naming stops *new*
    splits; it does not merge what a server already holds under two spellings, and there is no merge
    tool ([[Backlog]]).

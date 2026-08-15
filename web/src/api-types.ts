@@ -159,7 +159,9 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    platform?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -715,7 +717,9 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    platform?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -2191,7 +2195,9 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    platform?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -2212,7 +2218,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    platform?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -2232,7 +2240,9 @@ export interface paths {
         };
         delete: {
             parameters: {
-                query?: never;
+                query?: {
+                    platform?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -2264,7 +2274,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    platform?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -2406,6 +2418,8 @@ export interface components {
             /** Format: int64 */
             sizeBytes: number;
             sha256?: null | string;
+            /** @default win-x64 */
+            platform: string;
         };
         AgentVersionInfo: {
             latestVersion: string;
