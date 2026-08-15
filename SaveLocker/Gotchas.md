@@ -166,6 +166,19 @@ behave in ways that look like bugs.
   `hashchange`. A `hashchange` handler that knows about only some views leaves Back/Forward changing
   the address bar without changing the page.
 
+- **A credential cannot be verified through a URL a CDN will cache.** SteamGridDB sits behind
+  Cloudflare, which answers a repeated URL from the edge **without the origin ever seeing the
+  `Authorization` header** — so `grids/game/13136?limit=1` came back `200` with `"success":true` for
+  a key of deliberate nonsense, `cf-cache-status: HIT`, `age: 37422`: a ten-hour-old copy of
+  somebody's valid-key response. Picking an *authenticated* endpoint is necessary and **not
+  sufficient**; the request must also miss the cache, so `VerifyCandidateKeyAsync` appends a unique
+  `&_=<guid>`. Two things that do **not** work: reading the body's `success` field (the cached body
+  says `true`) and sending `Cache-Control: no-cache` (the edge ignores a request directive). This is
+  the same bug CS-09 fixed, returning by a different route — the first version verified against an
+  endpoint needing no key at all, this one against a response nobody re-fetched. Symptom either way:
+  a typo silently replaces a working key. **Art fetches keep their cacheable URLs on purpose** — a
+  cached image is the point there.
+
 ## Testing
 - **Clear the server DB and `.verify/` together**, never one alone — `run-agent-tests.ps1` reuses
   whatever state both sides hold. Clearing only one produces confident, unrelated-looking

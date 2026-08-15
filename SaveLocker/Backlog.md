@@ -45,17 +45,6 @@ verification that did not happen before the tag. Write-ups:
   which rules out re-baselining as the fix and makes a timing dependency the thing to look for.
   Treat a green WA-01 as evidence of nothing until it is understood.
 
-- **A bogus SteamGridDB key is accepted and stored** (found 2026-08-15). `run-server-bugbounty-tests`
-  reads **162/164**: *a key that fails verification is not a 200* and *the working key still comes
-  from config*. **Reproduced on pristine `main`** with the working tree stashed, so it is not a
-  regression from that session's change — CS-09's whole point was that a typo must not replace a
-  working key, and it can again. The cause is external: `VerifyCandidateKeyAsync` probes
-  `grids/game/13136` and judges on the **status code alone**, and SteamGridDB now answers that
-  **200** for an invalid Bearer (a direct request with the same bogus token still returns 401, so the
-  two paths disagree — worth pinning down which request shape gets which answer). The fix is
-  presumably to read the body's `success` field rather than trust the status. Until then the console
-  will happily overwrite a working key with a typo. Not investigated further.
-
 - **v0.5.4 surfaces that shipped without hardware coverage.** Neither can lose save data — worst
   case is a list that filters oddly — which is why they shipped, but both are unverified: the Heroic
   **store** sub-chips (the test Deck has no Heroic games, so the chip correctly never rendered) and

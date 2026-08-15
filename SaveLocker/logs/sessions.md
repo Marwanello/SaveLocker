@@ -37,10 +37,20 @@ recorded as order-dependent in the write-up rather than trusted.
 observed by hand during Phase 4, but the agent doing it by itself, and the server hosting a real
 plugin zip, are both unexercised. Write-up: `logs/2026-08-15_decky-plugin.md`.
 
-**Found in passing, not fixed:** a bogus SteamGridDB key is accepted and stored again
-(`run-server-bugbounty-tests` 162/164). Reproduced on pristine `main` with the tree stashed, so it is
-not from this change — SteamGridDB now answers 200 to the probe for an invalid Bearer, and the code
-judges on status alone. In [[Backlog]].
+**Also fixed: CS-09 had regressed, by a route nobody would have guessed.** A bogus SteamGridDB key
+was being accepted and stored again (`run-server-bugbounty-tests` 162/164, reproduced on pristine
+`main` with the tree stashed, so not from this change). The first hypothesis — that SteamGridDB now
+answers 200 for a bad key, so read the body's `success` flag — was **wrong**, and following it would
+have shipped a fix that fixed nothing. The response headers gave it away: `cf-cache-status: HIT`,
+`age: 37422`. Cloudflare was serving a **ten-hour-old copy of somebody's valid-key response** to a
+request carrying deliberate nonsense; the origin never saw the `Authorization` header at all, and the
+cached body says `"success":true`. `Cache-Control: no-cache` does not help either — the edge ignores
+a request directive. The fix is a unique `&_=<guid>` on the verification probe, which forces
+`BYPASS`; the origin then answers 401 and says which kind of wrong the key is (`Invalid key format`
+/ `Invalid API key` / `Authentication Required`), so the console now passes that on. Art fetches keep
+their cacheable URLs deliberately. **This is the second time this bug has arrived** — CS-09's version
+verified against an endpoint needing no key at all — so the general shape is now in [[Gotchas]]: a
+credential cannot be verified through a URL a CDN will cache.
 
 ---
 

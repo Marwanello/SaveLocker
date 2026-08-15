@@ -74,11 +74,32 @@ public sealed class ArtService
     /// afterwards, so a typo replaced a working key and the console still reported success — the
     /// only way back was to find the old key again.
     /// <para>
-    /// The probe deliberately hits an <b>authenticated</b> endpoint. The old one asked
+    /// The probe deliberately hits an <b>authenticated</b> endpoint. An older one asked
     /// <c>search/autocomplete</c>, which SteamGridDB serves without a key at all: it returned 200
     /// with real data for a 25-character string of nonsense, so "API key verified" only ever meant
-    /// "steamgriddb.com is reachable". Asset endpoints answer 401 without a valid key, which is the
-    /// question actually being asked.
+    /// "steamgriddb.com is reachable".
+    /// </para>
+    /// <para>
+    /// <b>Choosing an authenticated endpoint is not enough on its own — the request must also miss
+    /// Cloudflare's cache.</b> SteamGridDB sits behind Cloudflare, which caches these responses by
+    /// URL and answers from the edge <i>without the origin ever seeing the Authorization header</i>.
+    /// Measured 2026-08-15: the fixed probe URL came back <c>200</c> with
+    /// <c>{"success":true,…}</c> and <c>cf-cache-status: HIT, age: 37422</c> — a ten-hour-old copy
+    /// of somebody's valid-key response, handed to a request carrying deliberate nonsense. So the
+    /// bug came back exactly as CS-09 described it, and reading the body's <c>success</c> flag would
+    /// <b>not</b> have caught it: the cached body says <c>true</c>. A <c>Cache-Control: no-cache</c>
+    /// request header does not help either — the edge ignores it.
+    /// </para>
+    /// <para>
+    /// Hence the unique query parameter: it makes each verification a URL nothing has cached, the
+    /// edge answers <c>BYPASS</c>, and the origin actually evaluates the key. It then distinguishes
+    /// the cases usefully — <c>Invalid key format</c>, <c>Invalid API key</c>,
+    /// <c>Authentication Required</c> — so its own words are worth passing on to whoever is pasting
+    /// the key. The <c>success</c> flag is checked too, as a second line rather than the first.
+    /// </para>
+    /// <para>
+    /// This applies only to verification. Art fetches deliberately keep the cacheable URLs: a cached
+    /// image is exactly what we want there, and being polite to SteamGridDB is the stated design.
     /// </para>
     /// </summary>
     public async Task<(bool ok, string message)> VerifyCandidateKeyAsync(
@@ -91,16 +112,29 @@ public sealed class ArtService
         try
         {
             using var req = new HttpRequestMessage(
-                HttpMethod.Get, $"grids/game/{VerifyProbeGameId}?limit=1");
+                HttpMethod.Get, $"grids/game/{VerifyProbeGameId}?limit=1&_={Guid.NewGuid():N}");
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
             using var resp = await _http.SendAsync(req, ct);
+
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            var reason = ErrorFrom(body);
 
             // Status codes, not just "did I get a document": a rejected key and an unreachable
             // service are different answers, and the admin needs to be told which one happened.
             if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
-                return (false, "SteamGridDB rejected the key (check that it was pasted correctly).");
+                return (false, reason is null
+                    ? "SteamGridDB rejected the key (check that it was pasted correctly)."
+                    : $"SteamGridDB rejected the key: {reason}.");
+
             if (!resp.IsSuccessStatusCode)
                 return (false, $"Could not verify the key: SteamGridDB answered {(int)resp.StatusCode}.");
+
+            // A 2xx that says success:false is not a verified key. Should not happen now the probe
+            // reaches the origin, and it costs one field to not depend on that.
+            if (!SucceededBody(body))
+                return (false, reason is null
+                    ? "SteamGridDB did not accept the key."
+                    : $"SteamGridDB did not accept the key: {reason}.");
 
             return (true, "API key verified with SteamGridDB.");
         }
@@ -108,6 +142,39 @@ public sealed class ArtService
         {
             return (false, "Could not reach SteamGridDB: " + ex.Message);
         }
+    }
+
+    /// <summary>The API's own explanation of a refusal, or null if it gave none we can read.</summary>
+    private static string? ErrorFrom(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("errors", out var errors) ||
+                errors.ValueKind != JsonValueKind.Array)
+                return null;
+
+            var text = string.Join("; ", errors.EnumerateArray()
+                .Select(e => e.GetString())
+                .Where(e => !string.IsNullOrWhiteSpace(e)));
+            return string.IsNullOrWhiteSpace(text) ? null : text;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Did the body itself claim success? Unreadable or absent counts as yes — the status code has
+    /// already said so, and this is a corroborating check, not a stricter one.
+    /// </summary>
+    private static bool SucceededBody(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return !doc.RootElement.TryGetProperty("success", out var ok) ||
+                   ok.ValueKind != JsonValueKind.False;
+        }
+        catch { return true; }
     }
 
     /// <summary>(Re)fetch and cache artwork for a game by name. Returns a status message.</summary>
