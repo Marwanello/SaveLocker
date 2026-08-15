@@ -8,6 +8,8 @@ Server endpoints (`src/Server/Program.cs`).
 - **Agent routes** (`X-Api-Key: <machine key>`) — identify the calling machine.
 - **Admin routes** (`X-Admin-Password: <password>`) — dashboard / human operations. When no admin password is set the header is ignored and all admin routes are open. Check `GET /api/admin/status` to know if a password is required.
 
+> **This page is the SERVER's API only.** The agent serves a *separate* API on `:5178` that manages its own machine — different host, different port, different credential (`X-SaveLocker-Token` plus a loopback `Host` check, no CORS). It has its own OpenAPI document at `:5178/openapi/v1.json`; see `AgentApiServer.cs` and [[REPO_MAP]] → Auth model.
+
 ## Public (no auth)
 - `POST /api/machines/register` `{ name }` → `{ machineId, apiKey }`. First-time registration of a new name is open. Re-registering an **existing** name rotates its key — requires `X-Admin-Password` once an admin password is set (**401** otherwise). With no password configured it stays open.
 - `POST /api/enroll` `{ token, machineName? }` → `{ machineId, apiKey, machineName }`. Spends a single-use enrollment token for a real machine key. Burning the token and issuing the key are one transaction, so a failure part-way leaves the file usable rather than spent for nothing; concurrent redemptions still yield exactly one winner. **No auth filter, because the token *is* the credential** — a fresh agent has nothing else. Unknown, expired and already-spent tokens all answer **401**. If the token was minted *for* a machine name, that name is binding and `machineName` in the body is ignored — so a leaked file cannot be spent to claim another machine's identity. Redeeming for an existing name **rotates** that machine's key (the re-enrollment path for a wiped device), authorised by the token exactly as the admin password authorises re-registration.
@@ -28,9 +30,13 @@ Server endpoints (`src/Server/Program.cs`).
 - `GET /api/games/{id}/state` → `GameStateDto`.
 - `GET /api/games/{id}/versions` → `SaveVersionDto[]`. Each version carries `protected`; protected
   versions are exempt from automatic retention until an admin clears it.
+- `GET /api/games/{id}/path-candidates` → `MachineScanCandidateDto[]` `{ machineId, machineName, suggestedPath, lastSeen }`. What each machine's own scan proposes for this game — what the dashboard offers when mapping a save folder by hand.
+- `POST /api/games/{id}/excludes` body `string[]` → 200 / 404. Per-game exclude globs. Empty array clears them back to `Sync:DefaultExcludeGlobs`.
+- `POST /api/games/{id}/conflict-policy` body `{ policy, preferredMachineId? }` → 200 / 404. `policy` = `Manual` (default — record it and wait for an admin) | `NewestWins` (the incoming version always wins, no conflict row) | `PreferMachine` (the designated machine's pushes advance the head; every other machine follows the `Manual` path). This is what selects the automatic head moves described under **Admin** below.
+- `POST /api/games/{id}/prune` → `PruneResult { removed }`. Applies retention to this game now, rather than waiting for the next upload to trigger it.
 
 ## Server settings
-- `GET /api/settings` → `ServerSettingsDto { steamGridDbConfigured, steamGridDbKeyMasked, steamGridDbFromConfig, autoFetchHours }`. Never returns the raw key.
+- `GET /api/settings` → `ServerSettingsDto { steamGridDbConfigured, steamGridDbKeyMasked, steamGridDbFromConfig, adminPasswordSet, defaultExcludeGlobs, autoFetchHours }`. Never returns the raw key.
 - `POST /api/settings/steamgriddb-key` body `{ apiKey }` → `{ ok, message }`. **Verifies, then stores** — a key that fails verification answers **400** `{ ok: false, message, keptExistingKey }` and leaves the existing key exactly as it was. The probe hits an authenticated endpoint (`grids/game/{id}`); `search/autocomplete` is public and would accept anything. Null/blank clears the DB override (falls back to config) without a verification round-trip.
 - `POST /api/settings/agent-update-auto-fetch` body `{ hours }` → `{ autoFetchHours }`. Sets the GitHub installer polling interval; `0` disables it. The server applies a console change within one minute and immediately polls when enabling or changing the interval.
 
@@ -93,12 +99,16 @@ conflicts between two other versions stay open. An ordinary push queues nothing.
 The policy file is **deliberately unsigned** (`Decisions.md` §4). Its `games` list only pre-seeds the agent; the server stays authoritative and the agent's reconcile corrects it.
 
 ## Agent installer management (admin)
-- `GET /api/admin/agent-installer` → `AgentInstallerStatus { version, fileName, uploadedAt, sizeBytes }`, or 204 if none hosted.
-- `POST /api/admin/agent-installer?version={v}` — multipart `file` field (`.exe`). Stores installer + sidecar JSON; replaces any previous. Returns `AgentInstallerStatus`.
+
+**Every route in this section takes an optional `?platform=`.** Absent means `win-x64`, so a console or script written before platform slots existed keeps managing the Windows installer unchanged. Valid values are `win-x64` and `linux-x64` (`AgentPlatform.All`); anything else is **400** rather than defaulted — `?platform=` selects a directory, and a caller asking for a platform this server does not host wants to hear so, not to be handed the Windows installer instead. Storage is `{root}` for `win-x64` and `{root}/linux-x64/` beside it, so no deployed server needed migrating.
+
+- `GET /api/admin/agent-installer` → `AgentInstallerStatus { version, fileName, uploadedAt, sizeBytes, sha256, platform }`, or 204 if none hosted **for that platform**.
+- `POST /api/admin/agent-installer?version={v}` — multipart `file` field. Stores installer + sidecar JSON; replaces any previous **for that platform**. Returns `AgentInstallerStatus`.
   - **413** past `AgentUpdate:MaxInstallerMb` (default 200), enforced by Kestrel *and* counted while copying. The limit is raised from Kestrel's 30 MB default, never removed.
-  - **400** for a non-`.exe`, an empty filename, or a version this server cannot parse — checked before anything on disk is touched.
+  - **400** for an empty filename, a version this server cannot parse, or a file whose name does not match the platform's expected shape — `SaveLocker-Agent-Setup-*.exe` for `win-x64`, `savelocker-*-linux-x64.tar.gz` for `linux-x64`. Checked before anything on disk is touched. (Matched with `EndsWith`, not `Path.GetExtension`: the Linux package's extension by that reckoning is `.gz`.)
   - Replacement is atomic and serialised against the GitHub fetch, the background poller and delete. A refused or interrupted upload leaves the previous installer and its metadata serving.
-- `DELETE /api/admin/agent-installer` → 204. Removes the hosted installer; agents stop being offered updates.
+- `POST /api/admin/agent-installer/fetch-github` → fetches the newest release asset for that platform from GitHub now, instead of waiting for the poller. Same atomicity and validation as the upload above.
+- `DELETE /api/admin/agent-installer` → 204. Removes that platform's hosted installer; its agents stop being offered updates. The other platform is untouched.
 
 The server can optionally keep the hosted installer current from GitHub through
 **Configuration → Agent updates → Automatic GitHub fetch**. Set the interval in hours
@@ -107,14 +117,20 @@ The server can optionally keep the hosted installer current from GitHub through
 when the GitHub release is newer than the hosted installer.
 
 ## Agent installer download (public)
-- `GET /api/agent/installer/download` — streams the hosted installer binary. No auth. 404 if none hosted.
+- `GET /api/agent/installer/download?platform={p}` — streams the hosted installer binary for that platform. No auth. 404 if none hosted; **400** for an unknown platform. Absent `platform` = `win-x64`.
 
 ## Agent update check (agent-auth)
-- `GET /api/agent/latest` → `AgentVersionInfo { latestVersion, downloadUrl }`, or 204 if no installer is configured. Checks the filesystem first (`AgentInstallerService`); falls back to static `AgentUpdate:LatestVersion` + `DownloadUrl` config. The hosted `downloadUrl` uses `Server:PublicBaseUrl` when set, else the request origin — same resolver as the enrollment policy.
+- `GET /api/agent/latest?platform={p}` → `AgentVersionInfo { latestVersion, downloadUrl, sha256 }`, or 204 if no installer is configured for that platform. Checks the filesystem first (`AgentInstallerService`); falls back to static `AgentUpdate:LatestVersion` + `DownloadUrl` config, with the Linux fallback under `AgentUpdate:Linux:*` (env `AgentUpdate__Linux__DownloadUrl` — deliberately not a dashed section name, because `AgentUpdate__linux-x64__…` is not a legal bash identifier and the Linux harness has to export it).
+  - The returned `downloadUrl` **names the platform** (`…/download?platform={slot}`). That is what stops an agent following it to the other OS's package and failing a digest check it could never pass.
+  - `sha256` is the digest of the bytes this server stored, so the update channel does not depend on release-side provenance.
+  - The config fallback resolves its platform from the **normalised** slot, not the raw parameter. That distinction is not cosmetic: while it compared the raw (null) value, every agent that sent no `?platform=` — all of them, before agents learned to — was routed to the empty Linux section and got 204, i.e. the entire Windows fleet would have gone silently "up to date" forever. Both paths now have their own coverage.
+  - The hosted `downloadUrl` uses `Server:PublicBaseUrl` when set, else the request origin — same resolver as the enrollment policy.
 
 ## Agent command channel (agent-auth)
 Polling model: agent makes outbound requests (~20 s). Each poll also reconciles the game list (adopt new server games, drop deleted ones).
 - `POST /api/agent/games` `{ name, manifestKey?, suggestedSaveDir? }` → `GameDto` — agent enrollment (agent-auth; no admin password required).
+- `GET /api/agent/games/{id}/state` → `GameStateDto` / 404. The agent-auth twin of `/api/games/{id}/state`, so an agent can read one game's head without an admin password.
+- `POST /api/agent/games/{id}/template?value={template}` → 200 / 204 / 400. An agent describing the save location **generically** (a manifest-style template), so every other machine expands it for itself rather than inheriting a literal path that means nothing on its filesystem. **Only fills an empty value** — it never overwrites one machine's answer with another's — and rejects anything that is not a template. **204** means there was already a value.
 - `GET /api/agent/commands` → `AgentCommandDto[]` — claims the calling machine's due commands under a **visibility lease** (`Commands:LeaseMinutes`, default 10). Due = `Pending`, or `Dispatched` with an expired lease. One atomic claim, so two pollers on one machine identity cannot both get a command; `claimCount > 1` means an earlier delivery went unanswered. Delivery is at-least-once — see `Decisions.md`.
 - `POST /api/agent/commands/{id}/result` `{ status, result }` → 200 / 404. Idempotent: a late or duplicate report for an already-completed command returns 200 without reopening it.
 - `POST /api/agent/path/{gameId}?value={path}` → 200. Agent reports the locally resolved save path.
