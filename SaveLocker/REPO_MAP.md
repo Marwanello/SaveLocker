@@ -195,6 +195,23 @@ SaveLocker/
 │           │                           #   on Windows. Target of tasks/DeckyPlugin.md
 │           └── PathBrowserModal.tsx     # UI for PathBrowser — the Deck's only folder picker
 │
+├── decky/                               # Decky Loader plugin — NOT in SaveLocker.sln, its own build
+│   │                                   # (npm). Sets Steam launch options, which the agent cannot:
+│   │                                   # Steam rewrites its own config on exit, so only code inside
+│   │                                   # Steam's JS context can. An accelerator, never the supported
+│   │                                   # path — the copy-paste flow stays.
+│   ├── main.py                          # Backend. EVERY agent call happens here: the frontend's
+│   │                                   #   origin (steamloopback.host) is refused by LocalAuth, by
+│   │                                   #   design. Read-only against the agent's state dir — Decky
+│   │                                   #   backends run as ROOT and a root-owned file there would
+│   │                                   #   break the agent's next write as the desktop user.
+│   ├── src/index.tsx                    # Frontend. Reads current options from Steam, posts them to
+│   │                                   #   /api/launch-options/resolve, writes only what came back
+│   │                                   #   `changed`. Holds NO rule — that lives in LaunchOptions.cs
+│   ├── src/steam.d.ts                   # The two SteamClient members used, declared locally so the
+│   │                                   #   undocumented-Valve-internals surface stays small
+│   └── plugin.json · rollup.config.js · README.md
+│
 ├── installer/
 │   ├── SaveLocker.iss                   # Inno Setup 6: machine-wide, UAC, uninstall reverts all
 │   └── build-installer.ps1             # dotnet publish + ISCC → installer/dist/SaveLocker-Agent-Setup-{ver}.exe

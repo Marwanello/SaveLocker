@@ -210,10 +210,34 @@ foreign `Origin`. Baseline → expect **~148**.
 
 ---
 
-## Phase 3 — The plugin: read, diff, apply
+## Phase 3 — The plugin: read, diff, apply — **WRITTEN 2026-08-15, NOT YET VERIFIED**
 
 First phase that requires Decky Loader. Built from
 `https://github.com/SteamDeckHomebrew/decky-plugin-template`.
+
+**Status: the code exists and builds; nothing has run it.** `npm run build` produces
+`decky/dist/index.js` and `tsc --noEmit` is clean against the real `@decky/api` / `@decky/ui`
+packages — but that proves it *compiles*, not that it works. It has never been loaded by Decky,
+never talked to a running agent, and never written a launch option. **Do not treat this phase as
+done until the hardware checks below pass.**
+
+What compiling does and does not buy: the `SteamClient` signatures were taken from
+`decky-frontend-lib`'s own `globals/steam-client/App.ts`
+(`SetAppLaunchOptions(appId: number, launchOptions: string)`,
+`RegisterForAppDetails(appId, cb): Unregisterable`) and declared locally in `src/steam.d.ts`, so
+they match the library's view. They are still undocumented Valve internals, and the library's view
+can be wrong or stale.
+
+**The known unknown to check first.** A non-Steam shortcut keeps its options in
+`strShortcutLaunchOptions` while an installed Steam game uses `strLaunchOptions`. The plugin reads
+whichever is non-empty. That is a guess about which field a Deck actually populates for the
+shortcuts SaveLocker targets — and if it is wrong, the plugin reads an empty string, believes the
+game has no options, and **overwrites a user's mangohud line**. Verify this before letting it near a
+game whose options you care about.
+
+Two other things worth knowing before the hardware pass: `@decky/rollup` exports a **default**
+`deckyPlugin()`, not the `defineConfig` the template's docs imply (the first config written here was
+wrong and failed to build), and `decky/dist` + `decky/node_modules` are gitignored.
 
 ### Steps
 
@@ -239,11 +263,23 @@ First phase that requires Decky Loader. Built from
 ### Verify
 
 **Hardware only** — this cannot be covered by `run-linux-tests`, which is exactly why Phases 1 and 2
-carry the logic. On a Deck: a fresh non-Steam shortcut gets the wrapper; one with `mangohud
-%command%` is wrapped, not clobbered; one with a hand-typed short command is repaired to the
-absolute path; a second run changes nothing; the game then actually syncs on launch. Record the
-before/after launch-options strings in the write-up. Fold this into the **Deck hardware pass**
-already queued in [[CONTEXT]] → Next action.
+carry the logic. Fold it into the **Deck hardware pass** already queued in [[CONTEXT]] → Next action.
+
+Run these in order, and **on a throwaway shortcut first** — the field question above means the early
+runs can destroy real launch options:
+
+1. The plugin loads in the QAM and says something sensible with **no agent running** ("The SaveLocker
+   agent is not running"), then with one running.
+2. `strShortcutLaunchOptions` vs `strLaunchOptions`: add a non-Steam shortcut, set
+   `mangohud %command%` by hand, and confirm the plugin **reads it back**. This is the check that
+   everything else depends on.
+3. A fresh shortcut with empty options gets the wrapper, and the game then actually syncs on launch.
+4. One with `mangohud %command%` ends up wrapped, not clobbered.
+5. One with a hand-typed bare `savelocker run -- %command%` is repaired to the absolute path.
+6. A second pass changes nothing and toasts nothing.
+7. `savelocker doctor` now reports those games as confirmed, and `launch-options --check` exits 0.
+
+Record the before/after launch-options strings for each in the write-up.
 
 ---
 

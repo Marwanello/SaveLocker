@@ -148,6 +148,29 @@ bash packaging/linux/build-linux.sh          # -> artifacts/linux/savelocker-lin
 ```
 Build on the **oldest glibc** you intend to support (Ubuntu 24.04 → Deck is forward-compatible; the reverse is not).
 
+## Decky plugin (`decky/`)
+
+Its own build — **not** in `SaveLocker.sln`, not in CI, and not required by anything. It only sets
+Steam launch options, which the agent cannot do itself ([[Gotchas]] / `tasks/DeckyPlugin.md`).
+
+```sh
+cd decky && npm install && npm run build     # -> decky/dist/index.js
+```
+
+Sideload onto a Deck — Decky reads `~/homebrew/plugins/<name>/`, and needs `plugin.json`, `main.py`
+and `dist/`:
+```sh
+ssh deck@<deck-ip> mkdir -p ~/homebrew/plugins/SaveLocker
+scp -r plugin.json main.py dist deck@<deck-ip>:~/homebrew/plugins/SaveLocker/
+```
+Restart Decky (or Steam) afterwards. `dist/` and `node_modules/` are gitignored: `dist/` is what
+ships to the Deck but is rebuilt from `src/`, and a committed copy would drift from the source
+beside it.
+
+**It cannot be covered by any suite here.** It needs Steam, Decky Loader and a real library, so its
+verification is a hardware pass — which is why every rule it depends on lives in `Agent.Core` and is
+covered by `run-linux-tests` instead.
+
 ## Tests
 
 ```sh
