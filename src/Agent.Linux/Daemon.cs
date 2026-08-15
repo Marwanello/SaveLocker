@@ -155,7 +155,7 @@ public sealed class Daemon : IAsyncDisposable
         if (string.IsNullOrEmpty(exe)) exe = Environment.ProcessPath;
         return string.IsNullOrEmpty(exe)
             ? new LaunchCommandDto(null, "Could not determine the installed path — see install.sh for the exact command.")
-            : new LaunchCommandDto($"{exe} run -- %command%", null);
+            : new LaunchCommandDto(LaunchOptions.Invocation(exe), null);
     }
 
     /// <summary>

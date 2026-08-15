@@ -839,6 +839,65 @@ autostart_rc=$?
 check "autostart --disable fails loudly when systemctl fails"   "$([ "${autostart_rc}" != "0" ] && echo 0 || echo 1)"
 check "autostart --disable does not claim success"   "$(grep -q 'Auto-start disabled' <<<"${out}" && echo 1 || echo 0)"
 
+# ---- Launch options: the rewrite rule (tasks/DeckyPlugin.md Phase 1) ----
+#
+# Pasting `savelocker run -- %command%` into Steam is the last manual per-device step, and the one
+# nothing notices was skipped. The rule that automates it has to SUBSTITUTE into %command% rather
+# than append, because users run mangohud, set env vars and pass per-game arguments — each of which
+# has a position Steam expects it in. It also has to be idempotent: it runs on a timer, not once.
+#
+# No Steam here, and none needed: the rule is pure, and `launch-options --wrapper` drives it
+# directly. What Steam does with the result is Phase 3, on hardware.
+echo
+echo "==> Launch options"
+
+w="/home/deck/.local/share/SaveLocker/savelocker"
+inv="${w} run -- %command%"
+lo() { agent launch-options --wrapper "$1" --preview "$2"; }
+
+check "no existing options -> the wrapper invocation" \
+  "$([ "$(agent launch-options --wrapper "${w}")" = "${inv}" ] && echo 0 || echo 1)"
+check "empty existing options -> the wrapper invocation" \
+  "$([ "$(lo "${w}" "")" = "${inv}" ] && echo 0 || echo 1)"
+
+# The three shapes a real user's launch options actually take.
+check "an outer wrapper is preserved, not clobbered" \
+  "$([ "$(lo "${w}" "mangohud %command%")" = "mangohud ${inv}" ] && echo 0 || echo 1)"
+check "a leading env assignment stays in front" \
+  "$([ "$(lo "${w}" "DXVK_HUD=1 %command%")" = "DXVK_HUD=1 ${inv}" ] && echo 0 || echo 1)"
+# Steam appends a %command%-less string to the game's own argv, which is exactly where it lands.
+check "game arguments with no %command% end up after it" \
+  "$([ "$(lo "${w}" "-novid -fullscreen")" = "${inv} -novid -fullscreen" ] && echo 0 || echo 1)"
+
+# THE repair. A hand-typed short command is the documented Game-Mode failure: ~/.local/bin is not on
+# PATH there, so the game silently never launches. Only the path changes; everything else survives.
+check "a bare 'savelocker' is repaired to the absolute path" \
+  "$([ "$(lo "${w}" "savelocker run -- %command%")" = "${inv}" ] && echo 0 || echo 1)"
+check "a stale absolute path is repaired in place" \
+  "$([ "$(lo "${w}" "mangohud /old/prefix/savelocker run -- %command% -novid")" \
+       = "mangohud ${inv} -novid" ] && echo 0 || echo 1)"
+
+# Idempotent: the timer re-runs this against its own output every few minutes.
+for existing in "" "mangohud %command%" "-novid" "savelocker run -- %command%"; do
+  once="$(lo "${w}" "${existing}")"
+  twice="$(lo "${w}" "${once}")"
+  check "idempotent for '${existing:-(empty)}'" "$([ "${once}" = "${twice}" ] && echo 0 || echo 1)"
+done
+
+# A non-default install prefix can contain spaces; unquoted, Steam would run the first word and pass
+# the rest as arguments.
+spaced="/home/deck/My Games/savelocker"
+spaced_inv="\"${spaced}\" run -- %command%"
+check "a wrapper path with spaces is quoted" \
+  "$([ "$(agent launch-options --wrapper "${spaced}")" = "${spaced_inv}" ] && echo 0 || echo 1)"
+check "an already-applied quoted path is left alone" \
+  "$([ "$(lo "${spaced}" "${spaced_inv}")" = "${spaced_inv}" ] && echo 0 || echo 1)"
+
+# Only OUR wrapper is rewritten. Another tool that happens to sit in front of %command% is a user's
+# deliberate choice, not something to repair.
+check "a non-savelocker wrapper is not mistaken for a stale one" \
+  "$([ "$(lo "${w}" "gamemoderun %command%")" = "gamemoderun ${inv}" ] && echo 0 || echo 1)"
+
 echo
 echo "==== LINUX AGENT RESULT: ${pass} passed, ${fail} failed ===="
 [ "${fail}" = "0" ]

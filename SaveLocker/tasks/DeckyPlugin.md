@@ -69,9 +69,26 @@ That is the whole justification for the dependency — nothing else here needs D
 
 ---
 
-## Phase 1 — Agent: the launch-option rewrite rule, as a pure function
+## Phase 1 — Agent: the launch-option rewrite rule, as a pure function — **DONE 2026-08-15**
 
 Ships alone. Nothing calls it yet; this phase is the rule and its tests.
+
+**Outcome:** `run-linux-tests` 123 → **137/137** (14 new checks; baseline updated in [[Build and Run]]).
+Both hosts build — `Agent.Linux` 0 warnings, `Agent` with only the pre-existing MSB3277. The checks
+were run against a deliberately naive append-instead-of-substitute build first: **10 of the 14 fail**
+there, including every idempotence check, so they discriminate rather than merely pass.
+
+**Deviation from the plan below, taken deliberately.** The CLI seam went into
+`Agent.Linux/Program.cs`, not `AgentCli.cs` as Phase 2 step 4 says. `AgentCli` is the *shared*
+surface and launch options are meaningless on Windows (`LaunchCommandDto.Command` is null there), so
+a shared `launch-options` would have been a command that cannot answer on half the fleet. Phase 2
+should extend the Linux one rather than move it. It arrived in Phase 1 because the repo has no unit
+test project — every suite drives a binary — so a pure function needs a CLI seam to be testable at
+all: `savelocker launch-options [--preview "<existing>"] [--wrapper <path>]`.
+
+`Daemon.LinuxLaunchCommand` now builds its string through `LaunchOptions.Invocation`, so the command
+the agent UI shows and the command the rule writes cannot drift — and the daemon's copy picked up
+the quoting it never had.
 
 ### Steps
 

@@ -58,6 +58,13 @@ static class Program
             case "update":
                 return await UpdateNowAsync(config);
 
+            // The launch-options command this device needs, and — with --preview — what a game
+            // already carrying options would end up with. Phase 2 of tasks/DeckyPlugin.md turns
+            // this into a per-game desired-state listing; today it is the rule's only surface, and
+            // the answer to "what exactly do I paste into Steam?" without opening the agent UI.
+            case "launch-options":
+                return LaunchOptionsCommand(opts);
+
             // The unit's ExecStartPre. Runs in the NEW invocation, after the old daemon is gone —
             // which is the whole reason the swap does not happen inside the daemon (Updater.cs).
             case "apply-update":
@@ -115,6 +122,42 @@ static class Program
                 PrintUsage();
                 return 2;
         }
+    }
+
+    /// <summary>
+    /// <c>savelocker launch-options [--preview "&lt;existing&gt;"] [--wrapper &lt;path&gt;]</c>.
+    ///
+    /// <para>
+    /// With no arguments: the launch-options string a game on this device should carry. With
+    /// <c>--preview</c>: what a game ALREADY carrying that string would end up with, which is the
+    /// question worth asking before letting anything rewrite a working game's options.
+    /// <c>--wrapper</c> overrides the resolved binary path so the rule can be exercised without an
+    /// installed agent.
+    /// </para>
+    /// </summary>
+    private static int LaunchOptionsCommand(Dictionary<string, string> opts)
+    {
+        var wrapper = opts.GetValueOrDefault("wrapper");
+        if (string.IsNullOrWhiteSpace(wrapper))
+        {
+            var info = Daemon.LinuxLaunchCommand();
+            if (info.Command is null)
+            {
+                Console.Error.WriteLine(info.Note ?? "Could not determine the installed path.");
+                return 1;
+            }
+            // Recovered from the invocation rather than resolved twice, so the two cannot disagree.
+            wrapper = info.Command[..info.Command.IndexOf(" run -- ", StringComparison.Ordinal)].Trim('"');
+        }
+
+        if (opts.TryGetValue("preview", out var existing))
+        {
+            Console.WriteLine(LaunchOptions.Apply(existing, wrapper));
+            return 0;
+        }
+
+        Console.WriteLine(LaunchOptions.Invocation(wrapper));
+        return 0;
     }
 
     /// <summary>
@@ -279,6 +322,9 @@ static class Program
           push [game|all] [--force]                        Upload saves
           pull [game|all] [--force]                        Download saves
           run -- %command%                                 Steam launch wrapper: pull, play, push
+          launch-options [--preview "<existing>"]          The string to paste into Steam's Launch
+                                                           Options, or what a game already carrying
+                                                           options would end up with
 
         Daemon
           daemon [--port <n>]                              Run headless; serves the agent UI on localhost:5178
