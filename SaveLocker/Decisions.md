@@ -1,4 +1,4 @@
-﻿# Decisions
+# Decisions
 
 Settled and shipped. Don't re-litigate — the "why" is kept to one line so a future
 session can judge an edge case, not to reopen the choice.
@@ -279,6 +279,12 @@ session can judge an edge case, not to reopen the choice.
   in the main Steam root where every shortcut's prefix goes — so libraries and prefixes are walked
   together, per library. A Deck's SD card is exactly this case, and getting it wrong finds the game
   and never finds its saves.
+  <br>**A compat tool is identified by `toolmanifest.vdf` in its install directory, never by appid**
+  (found on a Deck, 2026-08-10). The first cut filtered a hardcoded list of five appids and the Deck
+  offered Proton 9.0/10.0/11.0, Proton Hotfix and Steam Linux Runtime 4.0 as enrollable games —
+  Valve mints a new appid per Proton release, so any such list is stale the day it is written. Both
+  scanners use the marker file; the appid list survives only for Steamworks Common Redistributables,
+  which ships no toolmanifest. Pinned by a fixture whose appid is deliberately unguessable.
 - **Linux UI: headless daemon serving the existing React UI** on `:5178` (Desktop Mode = KDE +
   browser). **Game Mode has no browser**, so `savelocker ui` (SDL + Dear ImGui, in-process against
   `Agent.Core`, no second API client) covers Status/Add game/Set folder/Launch setup as a gamepad

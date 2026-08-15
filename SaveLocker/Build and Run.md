@@ -85,6 +85,21 @@ Dashboard: `http://unraid-ip:5080`.
 
 > **Existing Docker deployments** may have `/data/localgamesync.db` from before the rename. Either rename the file on the unRAID share or set `Storage__DbPath=/data/localgamesync.db`.
 
+### Rolling a release out to the fleet
+
+Console and agents are two halves and a release usually needs both — doing one and not the other
+leaves Config reporting a version split.
+
+- **Windows agents self-update — but only once the installer is uploaded in Config → Agent Updates.
+  The GitHub Release asset is NOT automatically what the fleet is offered.** This is the step that
+  gets missed.
+- **Decks** re-run `install.sh` from the newer tarball (no Linux update channel yet — [[Backlog]]).
+- **Console** redeploy is the `docker compose pull` above.
+
+**Migrations:** only **v0.5.0** ever broke rollback — two schema migrations run on first start, so
+**back up `/data` first** when crossing that boundary from anything older. Every release since has
+been a clean container downgrade.
+
 ## Build agent installer
 
 ```sh
@@ -137,6 +152,33 @@ bash tests/linux/run-linux-tests.sh   # Linux agent; starts its own server (run 
 ```
 
 Scratch state written to `.verify/` (Windows) and `.verify-linux/` (Linux), both git-ignored.
+
+**Before running any suite, read [[Gotchas]] → Testing and Test harness.** Two traps recur: clear
+`.verify/` and `src/Server/localstate/` *together*, and start the dev server with
+`ASPNETCORE_ENVIRONMENT=Development` *and* explicit `Storage__*`, or it opens `/data/savelocker.db`
+(i.e. `E:\data\`) and hangs on a stale migrations lock.
+
+### Suite baseline
+
+Quote these as a pair with the date — a bare number means nothing on its own.
+
+| Where | Counts |
+|---|---|
+| Windows, local | win agent bug bounty **114** (reads **113/114** since 2026-08-14 — see [[Backlog]]) · server bug bounty 145 · agent 47 · hardening 33 · local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6 |
+| Linux, local (WSL ext4) | `run-linux-tests` **63** on `main`, **69** on `steam-cloud-from-manifest` (2026-08-14, same clone) |
+| Linux, in CI | agent 43 · hardening 37 · local-api 30 · concurrency 23 · health 19 · enrollment 16 |
+| Detection | sweep **271/298 (90.9%)** at the default 300 sample, 17 pinned |
+
+The two platforms differ by design — each suite skips the other's cases. The detection drop from
+99.0% is the install-directory guard and is deliberate ([[Backlog]] → file-level saves); `main` reads
+394/396 at a **400**-sample run, so quote the sample size or the two are not comparable.
+
+Server build 0/0. Console lint and build clean. The Windows agent build has **one** pre-existing
+warning (MSB3277, a WindowsBase 4.0/5.0 conflict from WebView2) — a second one means something.
+
+`run-winagent-tests.ps1` owns :5189 (+ :5190–:5198) and `.verify-winagent`. Slow by design (~5 min,
+mostly real waits on lease renewal, lock contention and WebView2 startup). **It drives two real tray
+processes**, so it needs an interactive desktop session and silently skips those blocks without one.
 
 ## Regenerate OpenAPI types (web dashboard)
 

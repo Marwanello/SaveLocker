@@ -19,7 +19,9 @@ verification that did not happen before the tag. Write-ups:
     *after* migrations and 16 server-dependent checks failed as though the agent were broken. Fixed
     in the harness (PR #36). This closes the Linux auto-start and `doctor` gap.
   - **Deck verification** — the five scenarios in `logs/2026-07-29_linuxagent-bugbounty.md` →
-    Verification. Hardware available since 2026-07-19.
+    Verification. Hardware available since 2026-07-19. Fold in the two v0.5.1 Deck fixes while
+    there (one ring on open with A working; a resting cursor must not paint a second selector) and
+    a real save-path detection check now that `<base>` resolves from `StartDir`.
   - **Second-Windows-account ACL test (WA-03).** The one with a user-visible consequence: the
     credentials are ACL-locked to the enrolling account and asserted against the well-known SIDs,
     but no second account has ever tried to read them, and it is unconfirmed that the enrolled user
@@ -32,6 +34,18 @@ verification that did not happen before the tag. Write-ups:
     path through a refused launch, because the prompt is a modal dialog no test can answer).
   - **LAN enrollment-URL check** on the real deployment (`logs/2026-07-27_console-bugbounty.md` →
     Verification).
+
+- **`WA-01 the dashboard is told the real reason` fails on pristine `main`** (found 2026-08-14).
+  `run-winagent-tests.ps1` reads **113/114** at `ff4464b` with no local changes — confirmed by
+  building and running a detached worktree, so it is not the `.verify/` trap. The dashboard command
+  executes and returns a result; the result text no longer matches `running`. Either fix it or
+  re-baseline the 114 in [[Build and Run]]. Not investigated.
+
+- **v0.5.4 surfaces that shipped without hardware coverage.** Neither can lose save data — worst
+  case is a list that filters oddly — which is why they shipped, but both are unverified: the Heroic
+  **store** sub-chips (the test Deck has no Heroic games, so the chip correctly never rendered) and
+  the Game Mode filter row's gamepad navigation. Nothing drives the agent-ui React chips in any
+  suite either.
 
 - **Emulator saves.** Not implemented at all: RetroArch, Dolphin, PCSX2, DuckStation and friends
   keep saves and save-states in their own per-emulator trees, and the Ludusavi manifest does not
@@ -55,11 +69,6 @@ verification that did not happen before the tag. Write-ups:
   `<base>` as one of several, so they lose a path but keep an answer. That 702 is the ceiling on
   what this item can recover. Counted from `data/manifest.yaml` by trimming each save template at
   its first wildcard, the same rule `PathResolver` applies.
-
-- **Duplicate games already on the server.** Enrollment now creates games under the Ludusavi
-  manifest's canonical title (PR #36), so machines converge — but any game a live server already
-  holds under two spellings stays split. There is no merge tool: it needs a console merge or a
-  migration. Check the deployment before assuming this is theoretical.
 
 - **Missing regression tests from the Linux bounty — LA-04/05/06/07.** Folder-watcher refresh,
   multi-game add, the Game Mode window crash and the settings-write clobber all have code fixes and
@@ -102,8 +111,6 @@ verification that did not happen before the tag. Write-ups:
 - **Deferred: one state owner for the Linux agent** — wrapper→daemon IPC over a Unix socket, standalone fallback when no daemon is up. The locking in `Decisions.md` §8 makes the current two-owner model *correct*; IPC would make it *simple*. Worth doing before the state files grow further.
 
 ## Planned / future
-
-- ~~**Linux add-game streamlining — Phase 3.**~~ **Done — shipped 2026-07-24** (PR #25 + artwork PR #26). Gamepad-native `savelocker ui` (SDL + Dear ImGui in the existing binary), verified on a real Deck through the full cold flow. Archived design + rejected alternatives in `logs/2026-07-24_linux-agent-streamline.md`; §2 amendment in `Decisions.md`.
 
 - **Game Mode UI reflects a stale game list.** `savelocker ui` only *reads* local `config.json`; it never reconciles with the server (only the daemon does, every 20s — `CommandPoller.ReconcileGamesAsync`). So a game deleted in the console still shows in Game Mode until the daemon runs, and there is no in-UI way to untrack. Deferred 2026-07-24 (maintainer chose to keep Phase 3 lean). Fix when revisited: reconcile-on-launch (+ periodic) in `savelocker ui`, optionally a per-game "Stop tracking" that also deletes server-side so the daemon does not re-adopt it (`CommandPoller.cs:157`).
 

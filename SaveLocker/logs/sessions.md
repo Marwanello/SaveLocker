@@ -5,6 +5,74 @@ Full commit detail in `git log`. Active backlog in `Backlog.md`.
 
 ---
 
+## 2026-08-10 — v0.5.4: enrollment filters + a console that scrolls in panes
+
+Three changes, one theme — a large library was unnavigable in both surfaces.
+
+**The console page no longer scrolls; its panes do.** The root was `minHeight: 100vh`, so the page
+grew and the games sidebar never got a bounded height: picking a game far down the list pushed its
+settings off screen. Root is now a fixed `height: 100vh` + `overflow: hidden`. The trap that cost
+the time is in `Gotchas.md` → Web console — a bounded flex column shrinks its children rather than
+overflowing, so ConfigView's cards collapsed to ~4 px each instead of producing a scrollbar.
+
+**Add Games has filter chips** — Suggested / All / Steam / Added to Steam / Heroic / Needs path,
+with Heroic storefront sub-chips fed by a new `Store` on `ScanCandidate` and `CandidateDto`. Zero-
+count chips are not rendered. `Suggested` is the old hide-Steam-Cloud default, now named and
+reversible. Mirrored into Game Mode (`Ui/UiApp.cs` → `AddFilter`), minus the store axis.
+
+**The Linux agent now discovers installed Steam games** — see `Decisions.md` for the reversal and
+why it is one. `SteamTextVdf` moved `src/Agent` → `src/Agent.Core` to make it reachable.
+`run-linux-tests.sh` 59 → 62: the new fixture puts the installed game in a SECOND library with its
+own compatdata, the only shape that catches a scan reusing the main Steam root.
+
+**Deck-tested (24 candidates, real library).** One real bug found there — a compat tool is
+identified by `toolmanifest.vdf`, never by appid; recorded in `Decisions.md` → Linux discovery
+(`run-linux-tests` → 63). Shipped without hardware coverage on two surfaces: the Heroic store
+sub-chips (the test Deck has no Heroic games, so the chip correctly did not render) and the Game
+Mode filter row's gamepad navigation. Neither can lose save data, which is why they shipped.
+
+## 2026-08-09 — v0.5.3: Heroic Games Launcher detection
+
+Games staged in Heroic are detected with their save paths. Full write-up, including the four
+runners verified on hardware and the two Steam conventions that turned out to be only Steam's:
+`logs/2026-08-09_heroic-detection.md`. `run-linux-tests.sh` 40 → 59.
+
+One finding was unrelated to Heroic and outlived it: games that save as loose files beside their own
+executable resolve to the INSTALL DIRECTORY, i.e. the whole game. Syncing that would let a restore
+prune another machine's installation, so it is refused. The guard costs 8% of the manifest and was
+kept deliberately — `Backlog.md` → file-level saves carries the sizing.
+
+## 2026-08-08 — PR #36 `save-path-autodetection` (→ `637d11f`)
+
+Save-path autodetection went from resolving **57.5%** of sampled manifest games to **99.5%**, and
+from ~4% confidently-wrong answers to **zero**. The reasoning behind each fix now lives in
+`ManifestLoader.cs` / `PathResolver.cs` comments, which are the copy that cannot drift:
+
+1. `PathResolver` implemented 10 of the manifest's 13 placeholders; the three missing ones appear in
+   more save paths than everything else combined (`<base>` alone outnumbers every other token).
+   `<storeUserId>` is **discovered from disk, not derived** — Steam exposes both a 32-bit account id
+   and a SteamID64 and games use either.
+2. `tags` were ignored, so a `config`-tagged path could beat the real save path on hash order.
+   Returning nothing now beats returning a wrong path presented as certain.
+3. Name matching ignores punctuation as well as case, while deliberately keeping word boundaries —
+   deleting non-alphanumerics collapses "Dragon Quest I & II" onto "III" and the manifest holds both.
+4. Enrollment creates games under the manifest's canonical title, so two machines spelling one
+   shortcut differently stop creating two server games that can never sync.
+5. Windows installed-Steam games never consulted the manifest at all.
+
+**New suite `tests/detection`** — materialises dummy save trees at the paths the real manifest claims
+and scores the production resolver against them. No Steam, Proton, GPU or Deck needed. See
+`tests/detection/README.md`.
+
+**`run-linux-tests.sh` passed for the first time — 40/40.** It had never worked:
+`Storage__AgentInstallerRoot` was unset, so the server died at startup *after* migrations and all 16
+server-dependent checks failed as though the agent were broken. One variable.
+
+Two verification traps from this work are in `Gotchas.md`: the Windows suites drive
+`src/Agent/bin/DEBUG` (a Release-only build reports green while testing nothing), and a harness can
+be structurally incapable of catching the bug it was written for (the detection oracle used the same
+fake `<storeUserId>` on both sides, and dropped `tags` when re-serialising).
+
 ## 2026-08-05 — Fleet version strings + the Deck double highlight (PR #32)
 
 Two field reports, one root cause each, and a testing lesson that outlasts both. Merged to `main`

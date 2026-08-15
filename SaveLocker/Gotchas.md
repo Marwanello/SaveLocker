@@ -1,4 +1,4 @@
-﻿# Gotchas
+# Gotchas
 
 Operating traps for Claude/an AI working this repo — not a history of bugs already shipped and
 fixed. If it's a one-time incident with no recurring workflow risk, it belongs in `logs/`, not
@@ -129,6 +129,16 @@ behave in ways that look like bugs.
   Releases (self-contained publish) are unaffected.
 
 ## Web console
+- **A bounded flex column SHRINKS its children instead of overflowing.** The console root is a fixed
+  `height: 100vh` + `overflow: hidden` so the page does not scroll and its panes do — but the naive
+  version of that collapsed ConfigView's cards to ~4 px each rather than producing a scrollbar. The
+  fix is `> * { flex-shrink: 0 }`, which `.page-scroll` in `index.css` carries: **any new full-page
+  scroller wants that class, not a bare `overflowY: auto`.** (Shipped v0.5.4; the symptom before it
+  was a games sidebar with no bounded height, so picking a game far down the list pushed its
+  settings off screen.)
+- **Candidate selection is by ABSOLUTE index in both Add Games UIs.** `Enroller` indexes into the
+  *unfiltered* list, so a filter that renumbers what it shows enrolls the wrong game. Applies to
+  `agent-ui` and the Game Mode mirror in `Ui/UiApp.cs`.
 - **`@import` must precede every other rule.** `@import "tailwindcss"` expands into generated CSS,
   so anything imported after it is silently discarded by the browser — the Google Fonts line sat
   there for months, the console rendered in fallback fonts, and the production build warned about it
