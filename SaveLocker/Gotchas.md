@@ -28,8 +28,6 @@ here.
 - **Dev storage is `localstate/`, never `data/`** — Windows is case-insensitive, so
   `src/Server/Data/` (source) and a runtime `data/` collide. `Remove-Item data -Recurse` once
   deleted `Entities.cs`/`AppDbContext.cs`.
-- **`dotnet` may be missing from an open shell** right after a winget install — open a new shell,
-  or prepend `"$env:ProgramFiles\dotnet"` to `$env:Path`.
 - **The agent is a WinExe** — launching the installed `.exe` from a shell shows no stdout/stderr.
   Redirect to a file, or read `%PROGRAMDATA%\SaveLocker\agent.log` (`SaveLocker.Agent.exe log`
   tails it).
@@ -175,20 +173,27 @@ behave in ways that look like bugs.
   machine, not by reading the harness. When a harness defines its own ground truth, ask what it
   would fail to notice.
 - **`Storage__AgentInstallerRoot` must be set too, and forgetting it only breaks Linux.**
-  `AgentInstallerService` creates its root in its **constructor**, and the default resolves to
+  `AgentInstallerService` creates every platform slot's root in its **constructor** (since v0.5.5
+  that is `win-x64` plus a `linux-x64/` subdirectory), and the default resolves to
   `/data/agent-installer`, which a normal Linux user cannot create. The server then dies at startup
   *after* migrations have run — so `server.log` reads like a healthy boot right up to an unhandled
   `UnauthorizedAccessException`, and every server-dependent check fails as though the agent were
   broken. This is what made `run-linux-tests.sh` score 24/40 with 16 cascading failures; setting the
   variable took it to 40/40 with no code change. Windows never sees it, because there the same
   default happily creates `E:\data\`.
-- **Give every test server its own `Storage__DbPath`/`Storage__ArchiveRoot`.** A dirty dev DB
-  fails `run-enrollment-tests.ps1` in a way that reads like broken enrollment code (12/16
-  failures starting at "mint returns a raw token").
-- **Running the server DLL directly ignores `launchSettings.json`** — binds `:5000` in
-  Production config instead of `:5179`/Development. A script that starts its own server must pass
-  `ASPNETCORE_URLS` and `ASPNETCORE_ENVIRONMENT`/`Storage__*` explicitly; a test that restarts a
-  server must own it (its own port + state dir).
+- **Give every test server its own `Storage__DbPath`/`Storage__ArchiveRoot`.** The suites are not
+  idempotent against a dirty DB and they do not fail in a way that names the cause: a dirty dev DB
+  fails `run-enrollment-tests.ps1` as though enrollment code were broken (12/16, starting at "mint
+  returns a raw token"), and `run-agent-tests.ps1` uses fixed game names (`SyncGame`) so a second run
+  inherits the first's versions and conflicts and fails ~16 checks.
+- **Running the server DLL directly ignores `launchSettings.json`** — binds `:5000` in Production
+  config instead of `:5179`/Development, and never reads `appsettings.Development.json`, so it opens
+  `/data/savelocker.db` (i.e. `E:\data\…`) rather than `src/Server/localstate`. That stray DB carries
+  a stale `__EFMigrationsLock`, so the server then hangs in migration **forever** and every
+  server-dependent check in `run-agent-tests.ps1` fails as though the agent were broken.
+  `cd src/Server && dotnet run` gets this right; the built DLL does not. A script that starts its own
+  server must pass `ASPNETCORE_URLS` and `ASPNETCORE_ENVIRONMENT`/`Storage__*` explicitly; a test
+  that restarts a server must own it (its own port + state dir).
 - **The readiness probe must hit an unauthenticated route** — `/api/games` 401s without an API
   key, so a naive `curl -sf` loop burns its whole timeout. Use `/api/admin/status`.
 - **A leaked test server (thrown before its `finally`) poisons every later run** — it keeps the
@@ -281,15 +286,6 @@ behave in ways that look like bugs.
   settle gate and the `/proc` lock probe. They read as real wrapper bugs and are not. Copy the files
   you changed through `sed 's/\r$//'` instead, into a checkout reset to `origin/main`. Take the
   baseline on pristine `main` first — the numbers only mean something as a pair.
-- **Start the dev server with `ASPNETCORE_ENVIRONMENT=Development`**, or it never reads
-  `appsettings.Development.json` and opens `/data/savelocker.db` (i.e. `E:\data\...`) instead of
-  `src/Server/localstate`. That stray DB carries a stale `__EFMigrationsLock`, so the server hangs
-  in migration forever, and every server-dependent check in `run-agent-tests.ps1` fails as though
-  the agent were broken. `cd src/Server && dotnet run` gets this right; running the built DLL
-  directly does not.
-- **`run-agent-tests.ps1` is not idempotent against a dirty server DB.** It uses fixed game names
-  (`SyncGame`), so a second run inherits the first run's versions and conflicts and fails ~16
-  checks. Point the server at a throwaway `Storage__DbPath` for a clean run.
 
 ## Vault hygiene
 - **A vault doc can point at a task file, or a version, that no longer exists.** Check the
