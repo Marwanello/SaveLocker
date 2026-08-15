@@ -149,6 +149,12 @@ game from launching — you get a black screen and the game never opens.
 That is the whole integration. The agent pulls the latest save before the game starts, waits for it
 to exit, waits for the save to finish being written, and pushes it.
 
+> **If you use Decky Loader, you can skip this step entirely.** SaveLocker's optional Decky plugin
+> sets these launch options for you — merging with any `mangohud` line or arguments you already
+> have — and adds lease warnings, sync controls and `doctor` to the Quick Access panel. See
+> **The Decky plugin (Steam Deck)**. It is an accelerator, not a requirement: everything on this
+> page works without it, and stays supported.
+
 > ### ⚠️ The step everyone misses
 > For a **non-Steam game**, you must also tick **"Force the use of a specific Steam Play
 > compatibility tool"** (Properties → Compatibility) and pick a Proton version.

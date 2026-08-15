@@ -2,6 +2,7 @@ import { Cpu, AlertTriangle } from 'lucide-react'
 import type { AgentState, LeaseWarning } from '../types'
 import { api } from '../api'
 import { LaunchSetupCard } from './LaunchSetupCard'
+import { DeckyPluginCard } from './DeckyPluginCard'
 
 interface Props {
   state: AgentState | null
@@ -77,6 +78,9 @@ export function OverviewView({ state, onWarningDismissed }: Props) {
           <StatCard value={state?.lastSyncAgo ?? '—'} label="Last Sync" color="#9CA3AF" />
         </div>
         <LaunchSetupCard />
+        {/* After the launch-options card on purpose: the manual step is the supported one, and this
+            is the optional thing that can remove it. Both hide themselves on Windows. */}
+        <DeckyPluginCard />
       </div>
     </div>
   )
