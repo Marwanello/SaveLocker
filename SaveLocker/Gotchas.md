@@ -296,6 +296,31 @@ behave in ways that look like bugs.
   you changed through `sed 's/\r$//'` instead, into a checkout reset to `origin/main`. Take the
   baseline on pristine `main` first — the numbers only mean something as a pair.
 
+## Decky plugin (`decky/`)
+- **Ship `package.json`, or Decky loads the plugin the wrong way.** It picks the load path from that
+  file: `"type": "module"` selects `import()` (`ESMODULE_V1`), and **no `package.json` at all** falls
+  back to `LEGACY_EVAL_IIFE`, which `eval`s the bundle as a classic script. The ESM bundle then dies
+  on its own last line with `SyntaxError: Unexpected token 'export'`, thrown from inside Decky's
+  loader with no hint that a file is missing. The tell is `version: null` for the plugin in
+  `DeckyPluginLoader.plugins` — that field comes from the same file. All four of `plugin.json`,
+  `package.json`, `main.py` and `dist/` must be installed.
+- **The Quick Access panel only scrolls to things the D-pad can reach.** A column of plain `<div>`s
+  is unreachable past the fold — with four games the list already overflowed with no way to scroll,
+  which reads as "the panel is broken" rather than "nothing here is focusable". Wrap rows in
+  `Focusable` from `@decky/ui`.
+- **The plugin frontend logs nowhere on disk.** The Python backend writes to
+  `~/homebrew/logs/<Plugin>/*.log`, but the frontend runs in Steam's `SharedJSContext`, so a render
+  error exists only in CEF — and the backend log will happily say everything loaded. Tunnel it:
+  `ssh -N -L 8080:127.0.0.1:8080 deck@<ip>`, then `curl http://localhost:8080/json` for targets and
+  drive CDP over the websocket. `Runtime.evaluate` of `document.body.innerText` against the
+  **QuickAccess** target prints whatever the panel is showing, error boundary included.
+- **Do not ask for the `_root` flag.** Everything the backend needs belongs to the desktop user: the
+  `api-token` is 0600 owned by them and the agent's API is loopback. Root buys nothing and a
+  root-created file under `~/.local/share/SaveLocker` breaks the agent's next write as that user.
+- **A non-Steam shortcut populates BOTH `strLaunchOptions` and `strShortcutLaunchOptions`**, with the
+  same value (measured on a Deck, 2026-08-15). Reading either works; reading whichever is non-empty
+  covers installed Steam games too.
+
 ## Vault hygiene
 - **A vault doc can point at a task file, or a version, that no longer exists.** Check the
   filesystem/`git tag -l` before trusting a pointer in `CONTEXT.md`/`Backlog.md` — this vault has

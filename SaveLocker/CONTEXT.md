@@ -67,12 +67,10 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
    **both** rows in Config → Agent updates are filled. Uploading the installer is the step that
    always gets missed, there are now **two** of them, and the Linux one is what makes every future
    Deck update automatic. Mechanics in [[Build and Run]] → Rolling a release out. No migration.
-2. **Finish the Decky plugin hardware pass** — `tasks/DeckyPlugin.md` Phase 3. The agent side is
-   verified on the Deck and found two real bugs (one losing saves, `b31e160`); the plugin itself has
-   still never been loaded, because `~/homebrew/plugins` is root-owned and needs a manual sudo
-   install. Files staged at `~/savelocker-plugin-stage` on the Deck. **The Deck is running an
-   unreleased `0.5.6-deckytest` build** — either roll v0.5.6 properly or note that it is ahead of
-   the fleet.
+2. **Cut v0.5.6.** The Deck is running an unreleased `0.5.6-deckytest` build, so it is ahead of the
+   fleet, and what is on `main` now includes a **save-losing fix** (`b31e160`) that everyone should
+   have. `tasks/DeckyPlugin.md` Phases 1–3 are done and verified on hardware; only the optional
+   Phase 4 (QAM status surface) is left, and it is not a blocker.
 3. **Deck hardware pass (the rest).** Three things have never been seen on real hardware: a genuine end-to-end
    self-update, the Game Mode "update is ready" notice, and the agent UI's Updates panel. Nothing
    there can lose save data, and everything behind them is covered by `run-linux-tests`, but no

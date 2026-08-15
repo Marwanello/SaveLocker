@@ -157,15 +157,21 @@ Steam launch options, which the agent cannot do itself ([[Gotchas]] / `tasks/Dec
 cd decky && npm install && npm run build     # -> decky/dist/index.js
 ```
 
-Sideload onto a Deck — Decky reads `~/homebrew/plugins/<name>/`, and needs `plugin.json`, `main.py`
-and `dist/`:
+Sideload onto a Deck — `~/homebrew/plugins/` is **root-owned**, so stage over SSH and do the move
+with `sudo` on the Deck. **All four of `plugin.json`, `package.json`, `main.py` and `dist/`** must be
+there; see `decky/README.md` for why omitting `package.json` fails as
+`SyntaxError: Unexpected token 'export'` inside Decky's own loader rather than as a missing file.
 ```sh
-ssh deck@<deck-ip> mkdir -p ~/homebrew/plugins/SaveLocker
-scp -r plugin.json main.py dist deck@<deck-ip>:~/homebrew/plugins/SaveLocker/
+scp -r decky/{plugin.json,package.json,main.py,dist} deck@<ip>:~/savelocker-plugin-stage/
+ssh deck@<ip> 'sudo cp -r ~/savelocker-plugin-stage /home/deck/homebrew/plugins/SaveLocker &&
+                sudo chown -R root:root /home/deck/homebrew/plugins/SaveLocker &&
+                sudo systemctl restart plugin_loader'
 ```
-Restart Decky (or Steam) afterwards. `dist/` and `node_modules/` are gitignored: `dist/` is what
-ships to the Deck but is rebuilt from `src/`, and a committed copy would drift from the source
-beside it.
+`dist/` and `node_modules/` are gitignored: `dist/` is what ships to the Deck but is rebuilt from
+`src/`, and a committed copy would drift from the source beside it.
+
+The plugin's **backend** logs to `~/homebrew/logs/SaveLocker/` on the Deck. Its **frontend** logs
+nowhere on disk — tunnel CEF (`ssh -N -L 8080:127.0.0.1:8080`) and read it over CDP.
 
 **It cannot be covered by any suite here.** It needs Steam, Decky Loader and a real library, so its
 verification is a hardware pass — which is why every rule it depends on lives in `Agent.Core` and is

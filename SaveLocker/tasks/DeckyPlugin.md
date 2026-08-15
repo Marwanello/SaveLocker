@@ -210,7 +210,37 @@ foreign `Origin`. Baseline → expect **~148**.
 
 ---
 
-## Phase 3 — The plugin: read, diff, apply — **AGENT SIDE VERIFIED ON HARDWARE 2026-08-15; PLUGIN NOT YET LOADED**
+## Phase 3 — The plugin: read, diff, apply — **DONE, VERIFIED END-TO-END ON HARDWARE 2026-08-15**
+
+**The write path is proven on a real Deck.** Dragon Quest III was deliberately set to a bare
+`savelocker run -- %command%` — the documented Game Mode failure — and the plugin repaired it to the
+absolute path. Verified four ways: Steam's own API, `shortcuts.vdf` **on disk** (so Steam really
+persisted it), the agent's record, and `doctor`/`--check` (`0 of 4 not confirmed`, exit 0). The other
+three games came back byte-identical, both `WINEDLLOVERRIDES` strings intact.
+
+**The field question is answered, and the fear was unfounded.** A non-Steam shortcut populates
+**both** `strLaunchOptions` and `strShortcutLaunchOptions`, with the same value. Reading cannot come
+back empty for a game that has options, so the clobber risk the dry-run was built to guard against
+does not exist on this Steam version. The dry-run stays: it is what made it safe to find that out,
+and it is worth having when Valve changes something.
+
+**Three things the plan did not anticipate:**
+
+1. **A missing `package.json` broke loading**, as `SyntaxError: Unexpected token 'export'` thrown
+   from inside Decky's loader. Decky picks the load path from that file, and without it evals an ESM
+   bundle as a classic script. The install docs listed three files; four are required. In [[Gotchas]].
+2. **The QAM would not scroll** — rows must be `Focusable` or the D-pad cannot reach them, so
+   anything past the fold is unreachable. Four games already overflowed.
+3. **`_root` was wrong to ask for** and has been dropped. The token is the desktop user's own 0600
+   file; root bought nothing and carried the state-dir hazard the plugin's own docstring warned about.
+
+**Deck state after this session:** running an unreleased `0.5.6-deckytest` agent; plugin installed at
+`~/homebrew/plugins/SaveLocker`, owned by `deck` so it can be updated over SSH without sudo. Backup
+of `config.json`/`shortcuts.vdf`/`localconfig.vdf` at `~/savelocker-decky-backup-20260815-112213`.
+
+---
+
+### Status before the plugin was loaded (kept — the agent-side findings are the valuable part)
 
 **Hardware pass, first session (2026-08-15, Deck at 192.168.68.67 over SSH).** Everything on the
 agent side is now proven on a real Deck. The plugin itself is still unloaded: `~/homebrew/plugins`
