@@ -52,6 +52,12 @@ The branch carried two unrelated pieces of work, both complete:
      <br>**The feature is complete.** Release notes are written as **v0.5.5**
      (`web/src/releases/0.5.5.md`) covering both halves of the branch.
 
+**Since v0.5.5 (unreleased, on `main`):** `tasks/DeckyPlugin.md` Phases 1–2 (the launch-option rule
+and the agent API that publishes it), the Decky plugin itself (written, not yet loaded), and two
+bugs the Deck hardware pass found — one of which was **losing saves**: a tracked game with no
+recorded `SteamAppId` matched nothing in the launch wrapper and synced nothing, silently
+(`b31e160`). Worth a release note when v0.5.6 is cut.
+
 Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
 `logs/shipped-2026-07.md`.
 
@@ -61,18 +67,21 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
    **both** rows in Config → Agent updates are filled. Uploading the installer is the step that
    always gets missed, there are now **two** of them, and the Linux one is what makes every future
    Deck update automatic. Mechanics in [[Build and Run]] → Rolling a release out. No migration.
-2. **Deck hardware pass.** Three things have never been seen on real hardware: a genuine end-to-end
+2. **Finish the Decky plugin hardware pass** — `tasks/DeckyPlugin.md` Phase 3. The agent side is
+   verified on the Deck and found two real bugs (one losing saves, `b31e160`); the plugin itself has
+   still never been loaded, because `~/homebrew/plugins` is root-owned and needs a manual sudo
+   install. Files staged at `~/savelocker-plugin-stage` on the Deck. **The Deck is running an
+   unreleased `0.5.6-deckytest` build** — either roll v0.5.6 properly or note that it is ahead of
+   the fleet.
+3. **Deck hardware pass (the rest).** Three things have never been seen on real hardware: a genuine end-to-end
    self-update, the Game Mode "update is ready" notice, and the agent UI's Updates panel. Nothing
    there can lose save data, and everything behind them is covered by `run-linux-tests`, but no
    screen has been looked at. Record `systemd-analyze --user security savelocker.service` before and
-   after while there ([[Backlog]] → the hardening item this folded in).
-   <br>**`tasks/DeckyPlugin.md` Phase 3 wants the same trip** — plan it in if the plugin work has
-   started by then.
-3. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
+   after while there ([[Backlog]] → the hardening item this folded in). **`install.sh` over a
+   running daemon is now proven on hardware** (twice, 2026-08-15) — the self-update path itself
+   still is not.
+4. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
    merge what a server already holds under two spellings, and there is no merge tool ([[Backlog]]).
-4. **`tasks/DeckyPlugin.md`** — planned 2026-08-15, not started. Phases 1–2 are agent-side, need no
-   Decky and no hardware, and Phase 2 pays off on its own (`doctor` gains "launch options are not
-   set for this game").
 
 Everything else — Deck verification, the WA-03 second-account ACL test, the remaining Windows manual
 gates, the LAN enrollment-URL check, the missing LA-04/05/06/07 regression tests, and the

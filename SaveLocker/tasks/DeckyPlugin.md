@@ -210,7 +210,40 @@ foreign `Origin`. Baseline → expect **~148**.
 
 ---
 
-## Phase 3 — The plugin: read, diff, apply — **WRITTEN 2026-08-15, NOT YET VERIFIED**
+## Phase 3 — The plugin: read, diff, apply — **AGENT SIDE VERIFIED ON HARDWARE 2026-08-15; PLUGIN NOT YET LOADED**
+
+**Hardware pass, first session (2026-08-15, Deck at 192.168.68.67 over SSH).** Everything on the
+agent side is now proven on a real Deck. The plugin itself is still unloaded: `~/homebrew/plugins`
+is root-owned and there is no passwordless sudo, so the final install is a manual step. Files are
+staged at `~/savelocker-plugin-stage` and a backup of `config.json`, `shortcuts.vdf` and
+`localconfig.vdf` sits in `~/savelocker-decky-backup-<stamp>`.
+
+**Two bugs found, neither visible to any suite** — both fixed and covered (`b31e160`):
+
+1. **A tracked game with no recorded `SteamAppId` synced nothing, silently.** Two of the four games
+   on the Deck. The wrapper logged "no tracked game matches this launch" and played the whole
+   session unsynced. A four-minute Khazan session on 2026-08-11 was never pushed. See the commit.
+2. **The stale-path repair would have rewritten working launch options** — the maintainer's OCTOPATH
+   carries `WINEDLLOVERRIDES=… /home/deck/.local/bin/savelocker run -- %command%`, and
+   `~/.local/bin/savelocker` is the symlink `install.sh` creates. Only a *relative* path is repaired
+   now.
+
+**Verified on the Deck:**
+- `install.sh` over a **running** daemon: survived, came back active, config/API key/games intact.
+  Done twice. (First time this path has been exercised on hardware.)
+- `/api/launch-options` returns all four games with **unsigned** AppIDs.
+- `resolve` against the real `shortcuts.vdf` values returns `changed: false` for both games that
+  already had options, leaving `WINEDLLOVERRIDES` and the symlink path untouched.
+- The AppID backfill recorded both missing ids on daemon start.
+
+**Still unverified, and the reason this phase is not done:** everything inside Steam. Whether the
+plugin loads, whether `strShortcutLaunchOptions` is the field a Deck populates, and whether
+`SetAppLaunchOptions` persists. The dry-run default (`8ed58f9`) exists so the first attempt cannot
+destroy anything while answering the field question.
+
+---
+
+### Original plan (written before the hardware pass)
 
 First phase that requires Decky Loader. Built from
 `https://github.com/SteamDeckHomebrew/decky-plugin-template`.
