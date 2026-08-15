@@ -1,3 +1,4 @@
+import v056 from './0.5.6.md?raw';
 import v055 from './0.5.5.md?raw';
 import v054 from './0.5.4.md?raw';
 import v053 from './0.5.3.md?raw';
@@ -31,6 +32,7 @@ export interface Release {
  * There is deliberately no 0.3.1 — it was tagged but never published. See the note in 0.3.2.md.
  */
 export const releases: Release[] = [
+  { version: '0.5.6', date: '2026-08-15', content: v056 },
   { version: '0.5.5', date: '2026-08-15', content: v055 },
   { version: '0.5.4', date: '2026-08-10', content: v054 },
   { version: '0.5.3', date: '2026-08-09', content: v053 },
