@@ -5,6 +5,44 @@ Full commit detail in `git log`. Active backlog in `Backlog.md`.
 
 ---
 
+## 2026-08-15 — v0.5.6 + the Decky plugin, and a save-loss bug the Deck found
+
+**The release exists because of one bug, and only hardware could have found it.** A tracked game
+with no recorded `SteamAppId` matched nothing in `ProtonRun`'s resolver, so it played with **no sync
+at all** — logging "no tracked game matches this launch" to a file nobody reads while the game was
+tracked, its folder mapped and its launch options correct. Two of four games on the maintainer's Deck
+were in that state; a Khazan session on 2026-08-11 was never pushed. A Proton prefix is *named* for
+the AppID that launches into it, so the save path already held the answer: `SteamLayout.CompatDataIdIn`
+(promoted out of Doctor, now numeric-only) plus `TrackedGame.ResolveSteamAppId`, resolved everywhere
+that matches or reports, and recorded by the daemon.
+
+**The Decky plugin, Phases 1–4 of `tasks/DeckyPlugin.md`.** It sets the Steam launch options the
+agent *cannot* — Steam rewrites `localconfig.vdf`/`shortcuts.vdf` on exit, so only code inside Steam
+can — and its Quick Access panel now shows lease warnings, status, push/pull per game or all, and
+`doctor` on demand. The rule lives in `Agent.Core/LaunchOptions.cs` and the plugin holds none of it,
+so the launch command can change without a plugin release. It moved to its own repository
+(`SkorcherX/SaveLocker-Decky`, v0.2.0) because Decky tracks plugins as submodules whose root is the
+plugin. **Not submitted to the Decky store:** its PR template requires attesting that generative AI
+did not write a majority of the code, which cannot honestly be claimed here.
+
+**Four bugs were caught by the plan's own rules before they shipped**, which is the argument for
+those rules: the "stale path repair" would have rewritten a working `WINEDLLOVERRIDES` line on a real
+game; idempotence keyed on the binary's *filename* would have re-wrapped forever under
+`dotnet savelocker.dll`; the plugin would have overwritten every user's mangohud line had it compared
+against `desired` instead of round-tripping through `/resolve`; and a missing `package.json` made
+Decky eval an ESM bundle as a classic script.
+
+**The UI lessons cost the most time and are all in `Gotchas.md` → Decky.** The QAM scrolls by moving
+focus, so non-focusable rows are holes the D-pad skips; `Field`'s `focusable` prop is the way, not a
+bare `Focusable`. `Field` parks children in a right-hand column unless told otherwise. And the panel
+**remounts when a Steam dropdown closes**, destroying component state — which is why a game selection
+never stuck, found only by logging state at *render* time after three wrong guesses, one of them
+caused by reading a console buffer that `Runtime.enable` had replayed.
+
+Also: `install.sh` over a running daemon verified twice on hardware; `run-linux-tests` 123 → 161.
+
+---
+
 ## 2026-08-10 — v0.5.4: enrollment filters + a console that scrolls in panes
 
 Three changes, one theme — a large library was unnavigable in both surfaces.

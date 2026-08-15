@@ -10,80 +10,84 @@ embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[Architecture
 
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** `main`
 
-**Released:** **v0.5.5** (tagged 2026-08-14, merged as PR #40) — notes in
-`web/src/releases/0.5.5.md`. GHCR package `savelocker` is **public** ([[Gotchas]]).
+**Released:** **v0.5.6** (tagged 2026-08-15) — notes in `web/src/releases/0.5.6.md`. Installer,
+Linux tarball, checksums and `ghcr.io/skorcherx/savelocker:0.5.6` + `:latest` all published. GHCR
+package `savelocker` is **public** ([[Gotchas]]).
+
+**Decky plugin:** its own repo, <https://github.com/SkorcherX/SaveLocker-Decky>, at **v0.2.0**. Not
+on the Decky store and cannot honestly be submitted — see `tasks/DeckyPlugin.md`.
 
 ---
 
 ## Where things stand
 
-**Nothing in flight.** `steam-cloud-from-manifest` merged (PR #40, `10be23e`) and v0.5.5 is tagged.
-The branch carried two unrelated pieces of work, both complete:
+**Nothing in flight.** Everything below is on `main` and released.
 
-1. **Steam Cloud from the manifest** (2 commits). Steam Cloud is read from the Ludusavi manifest
-   instead of assumed from "Steam installed it" — only 14,340 of the manifest's 48,908 Steam-id
-   titles actually have Cloud, and the default Add Games view hides whatever is flagged, so the
-   assumption was hiding games nothing was backing up. Agent-side only: no server, schema or console
-   change. `run-linux-tests` 63 → 69. Write-up:
-   `logs/2026-08-14_steam-cloud-from-manifest.md`. It also settled a recurring idea in
-   [[Decisions]]: **do not scrape PCGamingWiki — the Ludusavi manifest already is that scrape.**
+**v0.5.6 (2026-08-15)** carries a **save-losing fix** found on real hardware. A tracked game with no
+recorded `SteamAppId` matched nothing in the launch wrapper, so it played with **no sync at all** and
+said so only to `agent.log` — two of four games on the maintainer's Deck were in that state, and a
+Khazan session on 2026-08-11 was never pushed. A Proton prefix is named for the AppID that launches
+into it, so the save path already carried the answer; the agent now resolves it everywhere and the
+daemon records it (`b31e160`). Also in the release: the launch-option rule and API (`tasks/DeckyPlugin.md`
+Phases 1–2), and `doctor` reporting whether a game's launch options were ever set.
 
-2. **Linux / Steam Deck agent auto-update** — done, `logs/2026-08-15_linux-auto-update.md`, four
-   phases, one commit each.
-   - **Phase 1 (server) done.** The hosted-installer store is platform-aware — Windows keeps the
-     storage root it always had, `linux-x64/` is a subdirectory beside it, and every update route
-     takes `?platform=`, absent meaning `win-x64` so no deployed agent notices.
-     `run-server-bugbounty-tests` 145 → **164**.
-   - **Phase 2 (agent, check-only) done.** The agent asks for its own platform, the MZ header
-     assertion is now a per-platform payload check (gzip on Linux), and the Linux daemon's
-     hardcoded `getUpdateResult: () => null` is wired up — so `doctor`, the agent UI and the
-     console can all say a Deck is behind. `run-linux-tests` 69 → **84**. Still read-only: a Deck
-     is *told* about an update, and still takes it by re-running `install.sh`.
-   - **Phase 3 (stage and apply) done.** A Deck now updates itself: the daemon stages (download,
-     verify, unpack, smoke-test) and the swap happens from the unit's `ExecStartPre` at the next
-     start, with the previous version kept until the new one proves it can run. `run-linux-tests`
-     84 → **117**. Folds in the systemd unit hardening, and makes the packaged unit and the
-     generated one one file.
-   - **Phase 4 (policy, events, provenance, docs) done.** `update.staged` / `update.failed` /
-     `update.rolled_back` reach the console, which on a Deck is the only notice anyone gets;
-     `AutoUpdate: false` opts out of staging while still reporting being behind; Game Mode says when
-     an update is waiting; release workflow pins its actions to SHAs and publishes checksums plus a
-     build attestation. `run-linux-tests` 117 → **123**, `run-winagent-tests` **114/114**.
-     <br>**The feature is complete.** Release notes are written as **v0.5.5**
-     (`web/src/releases/0.5.5.md`) covering both halves of the branch.
-
-**Since v0.5.5 (unreleased, on `main`):** `tasks/DeckyPlugin.md` Phases 1–2 (the launch-option rule
-and the agent API that publishes it), the Decky plugin itself (written, not yet loaded), and two
-bugs the Deck hardware pass found — one of which was **losing saves**: a tracked game with no
-recorded `SteamAppId` matched nothing in the launch wrapper and synced nothing, silently
-(`b31e160`). Worth a release note when v0.5.6 is cut.
+**The Decky plugin is done and working on hardware** — Phases 1–4. It sets Steam launch options
+(which the agent *cannot*: Steam rewrites its own config on exit), and its Quick Access panel shows
+lease warnings, sync status, push/pull per game or all, and `doctor` on demand. Phases 1–2 are in the
+agent and covered by `run-linux-tests`; 3–4 are the plugin and were verified on the Deck.
 
 Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
 `logs/shipped-2026-07.md`.
 
 ## Next action
 
-1. **Finish rolling v0.5.5 out** — tagged, but confirm the deploy landed and, above all, that
-   **both** rows in Config → Agent updates are filled. Uploading the installer is the step that
-   always gets missed, there are now **two** of them, and the Linux one is what makes every future
-   Deck update automatic. Mechanics in [[Build and Run]] → Rolling a release out. No migration.
-2. **Cut v0.5.6.** The Deck is running an unreleased `0.5.6-deckytest` build, so it is ahead of the
-   fleet, and what is on `main` now includes a **save-losing fix** (`b31e160`) that everyone should
-   have. `tasks/DeckyPlugin.md` Phases 1–3 are done and verified on hardware; only the optional
-   Phase 4 (QAM status surface) is left, and it is not a blocker.
-3. **Deck hardware pass (the rest).** Three things have never been seen on real hardware: a genuine end-to-end
-   self-update, the Game Mode "update is ready" notice, and the agent UI's Updates panel. Nothing
-   there can lose save data, and everything behind them is covered by `run-linux-tests`, but no
-   screen has been looked at. Record `systemd-analyze --user security savelocker.service` before and
-   after while there ([[Backlog]] → the hardening item this folded in). **`install.sh` over a
-   running daemon is now proven on hardware** (twice, 2026-08-15) — the self-update path itself
-   still is not.
+1. **Roll v0.5.6 out to the fleet — nothing has it yet.** Upload **both** rows in Config → Agent
+   updates (Windows `.exe` and Linux `.tar.gz`) and `docker compose pull` the console. The GitHub
+   Release asset is *not* what agents are offered; this is the step that always gets missed.
+   Mechanics in [[Build and Run]] → Rolling a release out. No migration.
+   <br>**The Deck is on an unreleased `0.5.6-deckytest` build** — ahead of the fleet by version
+   string, behind it by provenance. Once the Linux row is filled it can take the real build.
+2. **`tasks/DeckyPlugin.md` Phase 5** — the agent keeps the plugin updated, so users are not stuck
+   choosing between Decky's custom-store setting (which replaces the official store while set) and
+   never being told about updates. **The hard part is already proven on hardware**; the task file
+   carries the two corrections that came out of Phase 4. See the handoff notes below.
+3. **Deck hardware pass (the rest).** Never seen on real hardware: a genuine end-to-end *self*-update
+   (`install.sh` over a running daemon is proven, twice), the Game Mode "update is ready" notice, and
+   the agent UI's Updates panel. Record `systemd-analyze --user security savelocker.service` while
+   there ([[Backlog]]).
 4. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
    merge what a server already holds under two spellings, and there is no merge tool ([[Backlog]]).
 
-Everything else — Deck verification, the WA-03 second-account ACL test, the remaining Windows manual
-gates, the LAN enrollment-URL check, the missing LA-04/05/06/07 regression tests, and the
-`WA-01`/113-of-114 baseline drift — is prioritised in [[Backlog]].
+Everything else — the WA-03 second-account ACL test, the remaining Windows manual gates, the LAN
+enrollment-URL check, the missing LA-04/05/06/07 regression tests, and the `WA-01`/113-of-114
+baseline drift — is prioritised in [[Backlog]].
+
+## Handoff: picking up Decky Phase 5
+
+Read `tasks/DeckyPlugin.md` (Phase 5 section) and [[Gotchas]] → *Decky plugin* first. Both carry
+things that were measured on hardware and cannot be re-derived by reading code.
+
+**The Deck.** `deck@192.168.68.67`, key auth is set up (see the maintainer — the key is deliberately
+not named here). It is awake only when the maintainer wakes it. Useful state on it:
+- agent `0.5.6-deckytest`, service `savelocker.service` active, 4 tracked games, all with launch
+  options confirmed;
+- plugin at `~/homebrew/plugins/SaveLocker`, and a config backup at
+  `~/savelocker-decky-backup-20260815-112213` (`config.json`, `shortcuts.vdf`, `localconfig.vdf`);
+- `~/savelocker-plugin-stage/` is the staging directory for anything needing `sudo`.
+
+**How to iterate on the plugin without sudo** — this is also exactly the mechanism Phase 5 automates:
+`scp` a new `dist/index.js` (and `main.py`) straight into `~/homebrew/plugins/SaveLocker/`, and Decky
+hot-reloads within a second. Works because a non-`_root` plugin's files are chowned to the desktop
+user and the plugin ships the `debug` flag. **`plugin.json` is root-owned and needs `sudo`.**
+
+**Debugging the plugin frontend.** It logs nowhere on disk. Tunnel CEF —
+`ssh -N -L 8080:127.0.0.1:8080 deck@…` — then `curl http://localhost:8080/json` for targets and drive
+CDP over the websocket. **Discard the console buffer before measuring**: `Runtime.enable` replays
+history, which already caused one wrong conclusion. Log state at *render* time, not in handlers.
+
+**Plugin releases.** Tag the plugin repo; its workflow builds the zip, publishes it, and regenerates
+`store/plugins` with the artifact's SHA-256 — Decky verifies that hash, so index and artifact must
+come from the same job. Bump `package.json` too: Decky reads the installed version from it.
 
 ## Parked on a branch — `offline-backoff-task` (`bee3116`, pushed, not merged)
 
