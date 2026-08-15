@@ -2,10 +2,13 @@
 
 From [[Backlog]] → Medium → *Decky plugin*. Planned 2026-08-15.
 
-**Four phases. Execute ONE phase per session, verify it, stop.** Phases 1–2 are agent-side and ship
-on their own with no plugin in existence, fully covered by `run-linux-tests`. Phase 3 is the first
-one that needs Decky. Phase 4 is the status surface and is optional — stopping after 3 leaves a
-coherent feature.
+**Execute ONE phase per session, verify it, stop.** Phases 1–2 are agent-side and ship on their own
+with no plugin in existence, fully covered by `run-linux-tests`. Phase 3 is the first one that needs
+Decky. **Phases 1–3 are done and verified on hardware.** Phase 4 (a Game Mode status surface) and
+Phase 5 (the agent keeping the plugin updated) are both optional and independent — stopping after 3
+leaves a coherent, working feature. Of the two, **Phase 5 is the one users would feel**: without it
+the only route to update prompts is Decky's custom-store setting, which replaces the official store
+while it is set.
 
 ---
 
@@ -62,10 +65,13 @@ That is the whole justification for the dependency — nothing else here needs D
   launch environment use the unsigned form. The two must be compared in one representation or every
   non-Steam shortcut — the entire target population — silently fails to match. Normalise in the
   agent (Phase 1), so the plugin never sees the question.
-- **Decky plugin backends run as root.** Reading a `deck`-owned 0600 token from root works, but the
-  plugin must not write anything into `~/.local/share/SaveLocker/` — a root-created file there would
-  break the agent the next time it tries to rewrite it as `deck`. The plugin is read-only against
-  the agent's state directory, and mutates only through the API.
+- **Do not ask for the `_root` flag** (corrected 2026-08-15 — the original plan assumed root and was
+  wrong). Everything the backend needs is the desktop user's own: the `api-token` is 0600 owned by
+  that user, and the agent's API is loopback. Root buys nothing, and a root-created file under
+  `~/.local/share/SaveLocker/` would break the agent the next time it rewrote that file as the
+  desktop user. The plugin stays read-only against the agent's state directory and mutates only
+  through the API. **Phase 5 depends on this:** Decky recursively chowns a non-`_root` plugin's files
+  to the desktop user, which is the only reason the agent can update the plugin at all.
 
 ---
 
@@ -378,6 +384,82 @@ Only worth doing if Phase 3 lands well. Ranked by what is genuinely missing toda
 
 Enrollment from the QAM is deliberately **not** on this list — `savelocker ui` covers it and the
 on-screen keyboard is the actual friction, so a plugin removes nothing.
+
+---
+
+## Phase 5 — The agent keeps the plugin updated — **PLANNED 2026-08-15, NOT STARTED**
+
+**The goal: a user installs the plugin once and never thinks about it again.** Today the only way to
+get update *prompts* is Decky's custom-store setting, and Decky holds exactly one store URL — so
+while it points at ours, the user sees no other plugins and is told about no other plugins' updates.
+They will not leave it there, which means in practice they are never prompted about ours either.
+
+The agent can do this instead, through the channel it already uses for its own updates.
+
+### Why this works — verified in Decky's source, 2026-08-15
+
+Three facts, and the feature falls out of them:
+
+1. **The plugin's files belong to the desktop user, not root.** `browser.py` does
+   `chown(plugin_dir, …HOST_USER, recursive=True)` for any plugin **without** the `_root` flag —
+   which is why dropping that flag in Phase 3 matters more than it looked at the time. Only the
+   top-level plugin directory stays root-owned, at 755.
+2. **Hot reload is on by default.** The loader runs a `watchdog` observer over the plugins directory
+   and reloads a plugin when its files change; `get_live_reload()` reads `LIVE_RELOAD` and
+   **defaults to `"1"`**. It is not a developer-mode feature. So writing the files IS the install —
+   no `systemctl`, no root, no Steam restart.
+3. **Decky reads the plugin's version from `package.json`**, the same file being overwritten, so its
+   own UI reports the new version afterwards without being told.
+
+### Scope, and the one thing this cannot do
+
+**First install still needs Decky or sudo**, because creating `~/homebrew/plugins/SaveLocker/`
+requires root. That stays a one-time *Install Plugin from URL* paste — which is *better* than the
+custom store, because it never touches the store setting at all. This phase is updates only.
+
+### The constraint to design around, not discover
+
+The top-level plugin directory is root-owned and 755, so the agent can **overwrite existing files but
+cannot create new top-level ones**. `main.py`, `plugin.json`, `package.json` and everything under
+`dist/` are fine — `dist/` is itself user-owned, so files there can be added and removed freely. But
+a future plugin version that adds, say, a top-level `py_modules/` could not be installed this way.
+
+So: the package carries a **file manifest**, the agent checks it can satisfy every path *before*
+writing anything, and reports "reinstall needed" rather than half-applying an update. A partially
+written plugin is worse than an old one.
+
+### Steps
+
+1. **Server** — a plugin slot beside `win-x64` / `linux-x64` in `AgentInstallerService`. It is the
+   same shape (upload, digest, sidecar, atomic replace), so this is mostly threading a third value
+   through the platform enum rather than new machinery. `GET /api/agent/plugin/latest` returns
+   `{ version, downloadUrl, sha256 }` or 204. A third row in **Config → Agent updates**.
+2. **Agent (Linux only)** — on start and on the existing update timer: if
+   `~/homebrew/plugins/SaveLocker/package.json` exists, compare its `version` against the server's.
+   Newer → download, verify the SHA-256 the server published, check the manifest against what is
+   writable, then write. Reuse `UpdateChecker`'s download-and-verify wholesale; do not write a second
+   one.
+3. **Respect `AutoUpdate: false`** exactly as the agent's own updates do — report being behind,
+   change nothing.
+4. **Report it.** A `plugin.updated` / `plugin.update_failed` event through `HealthReporter`, so the
+   console is told. On a Deck the console is the only place anyone would see it ([[Decisions]] §2).
+5. **`doctor`** — report the installed plugin version, or that Decky is present but the plugin is
+   not (with the one-paste install URL), or nothing at all when Decky is absent.
+
+### Verify
+
+`run-linux-tests`, with a fake `~/homebrew/plugins/SaveLocker` in the fixture HOME — no Decky needed,
+the same trick the whole harness already uses. Cover: an update is applied; the version comparison
+does not downgrade; a **wrong digest is refused and nothing is written**; a manifest naming a path
+the agent cannot create is refused *before* any write; `AutoUpdate: false` reports but does not
+apply; and Decky absent is silent rather than an error.
+
+### The coupling to accept
+
+SaveLocker would be writing into another application's directory. Decky's own design hands those
+files to the user, so nothing is being weakened — but if Decky ever changes ownership or adds an
+integrity check on load, this breaks. The fallback is the custom store or a manual reinstall, and
+both keep working, so the failure is degraded rather than broken.
 
 ---
 
