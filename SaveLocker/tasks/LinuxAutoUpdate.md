@@ -92,9 +92,33 @@ the fallback one was proven to fail against the broken build (204) and pass agai
 
 ---
 
-## Phase 2 — Agent: check-only, on both platforms
+## Phase 2 — Agent: check-only, on both platforms — **DONE 2026-08-15**
 
 Read-only. Nothing is executed or replaced. Safe to ship on its own.
+
+**Outcome:** `run-linux-tests.sh` 69 → **84/84** (15 new checks), `run-winagent-tests` unchanged,
+solution build 1 warning (the known MSB3277) / 0 errors, agent-ui build clean.
+
+Both groups of new checks were proven to fail against the pre-change code — the discipline is worth
+keeping for this feature specifically, because most of what it adds is *refusals*, and a refusal
+test passes trivially against code that never gets far enough to refuse. Reverting only
+`UpdateChecker.cs` fails 12 of 15; reverting only `Daemon.cs` fails exactly the 2 daemon checks.
+
+Three things worth carrying into Phase 3:
+- **The daemon's `/api/agent-version` is token-gated** (Decisions.md — reaching the local API is
+  equivalent to owning the box). A test that forgets `X-SaveLocker-Token` gets a 401, which asserts
+  identically to "the daemon has no update to report". Read the token from the config's state dir.
+- The one check that does **not** discriminate on its own is "a good tarball downloads and
+  VERIFIES": pre-change the agent asked with no platform, got the Windows `.exe`, and that passed
+  the old MZ check. It is a happy-path check, not a guard; checks 1–3 are what pin the platform.
+- The first update check runs on a **5 s** timer after daemon start, not inline — long enough for
+  the API server and first reconcile to settle, short enough that opening the agent UI right after a
+  restart does not show a blank update line.
+
+**Not visually verified:** the agent UI's Updates panel renders only against a live agent on
+`:5178`, and nothing was running. Its data contract is verified end-to-end by the suite (the daemon
+really answers `updateAvailable: true` with the Linux version) and the component type-checks and
+builds, but no browser has drawn it. Fold it into the Deck hardware pass ([[Backlog]]).
 
 ### Steps
 

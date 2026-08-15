@@ -30,19 +30,27 @@ feature is finished.
    [[Decisions]]: **do not scrape PCGamingWiki — the Ludusavi manifest already is that scrape.**
 
 2. **Linux / Steam Deck agent auto-update** — in progress, `tasks/LinuxAutoUpdate.md`, four phases,
-   one commit each. **Phase 1 (server) is done:** the hosted-installer store is platform-aware —
-   Windows keeps the storage root it always had, `linux-x64/` is a subdirectory beside it, and every
-   update route takes `?platform=`, absent meaning `win-x64` so no deployed agent notices.
-   `run-server-bugbounty-tests` 145 → **161**. **Phase 2 (agent check-only) is next.**
+   one commit each.
+   - **Phase 1 (server) done.** The hosted-installer store is platform-aware — Windows keeps the
+     storage root it always had, `linux-x64/` is a subdirectory beside it, and every update route
+     takes `?platform=`, absent meaning `win-x64` so no deployed agent notices.
+     `run-server-bugbounty-tests` 145 → **164**.
+   - **Phase 2 (agent, check-only) done.** The agent asks for its own platform, the MZ header
+     assertion is now a per-platform payload check (gzip on Linux), and the Linux daemon's
+     hardcoded `getUpdateResult: () => null` is wired up — so `doctor`, the agent UI and the
+     console can all say a Deck is behind. `run-linux-tests` 69 → **84**. Still read-only: a Deck
+     is *told* about an update, and still takes it by re-running `install.sh`.
+   - **Phase 3 (stage and apply) is next** — the first phase that moves files.
 
 Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
 `logs/shipped-2026-07.md`.
 
 ## Next action
 
-1. **Phase 2 of `tasks/LinuxAutoUpdate.md`** — the agent sends `?platform=`, the MZ header check
-   becomes a per-platform payload check, and `Daemon.cs`'s `getUpdateResult: () => null` gets wired
-   up. Read-only: nothing is executed or replaced until Phase 3.
+1. **Phase 3 of `tasks/LinuxAutoUpdate.md`** — stage, verify, extract, smoke-test, then apply from
+   the unit's `ExecStartPre`. Read `install.sh` end to end first: the two traps that shape the whole
+   design (`systemctl --user stop` kills the cgroup; the install prefix **is** the state dir) are
+   written up in the task file.
 2. **Push and PR `steam-cloud-from-manifest`** once auto-update lands. Worth release-notes lines for
    both halves — users will see games appear in Add Games that were previously hidden, and Decks
    stop needing a hand-run `install.sh`.

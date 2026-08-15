@@ -434,6 +434,129 @@ wait "${daemon_pid}" 2>/dev/null
 # autostart must report the REAL outcome (LA-08)
 # ---------------------------------------------------------------------------
 # `disable` used to throw away systemctl's exit code and print "Auto-start disabled." no matter
+# ── The update channel: the agent asks for the LINUX package ─────────────────────────────────
+# A Deck asking for updates and being handed a Windows .exe is the whole failure mode this block
+# exists for, and it has two shapes: a server that hosts both and must serve the right one, and a
+# server too old to know about platforms at all, which answers with the .exe no matter what.
+#
+# Nothing here is ever executed. `check-update --download` fetches and VERIFIES, and stops.
+echo
+echo "==> Update channel"
+inst_root="${server_state}/agent-installer"
+
+# The tarball is a real gzip stream; content does not matter, only its first two bytes and its
+# digest, which the server computes as it stores the file.
+printf '\037\213\010fake linux agent tarball' >"${scratch}/savelocker-9.9.9-linux-x64.tar.gz"
+curl -sf -X POST "${server_url}/api/admin/agent-installer?version=9.9.9&platform=linux-x64" \
+  -F "file=@${scratch}/savelocker-9.9.9-linux-x64.tar.gz" >/dev/null
+# A Windows installer in the Windows slot, at a DIFFERENT version. If the agent ignored the
+# platform it would report 8.8.8 here, which is why the two versions must not match.
+printf 'MZfake windows installer' >"${scratch}/SaveLocker-Agent-Setup-8.8.8.exe"
+curl -sf -X POST "${server_url}/api/admin/agent-installer?version=8.8.8" \
+  -F "file=@${scratch}/SaveLocker-Agent-Setup-8.8.8.exe" >/dev/null
+
+out="$(agent check-update --config "${deck_cfg}")"
+check "check-update sees the Linux package"        "$(contains "${out}" "v9.9.9 is available")"
+check "check-update did NOT take the Windows one"  "$(grep -q '8\.8\.8' <<<"${out}" && echo 1 || echo 0)"
+check "the offered URL names the Linux platform"   "$(contains "${out}" "platform=linux-x64")"
+
+out="$(agent check-update --download --config "${deck_cfg}")"
+check "a good tarball downloads and VERIFIES"      "$(contains "${out}" "VERIFIED")"
+
+# The digest is the only integrity control on plain http (Decisions.md), so it has to be the thing
+# that refuses. Rewriting the stored file behind the server's back leaves installer-info.json
+# describing bytes that are no longer there — exactly what a substituted download looks like.
+printf '\037\213\010tampered payload, same name' >"${inst_root}/linux-x64/savelocker-9.9.9-linux-x64.tar.gz"
+out="$(agent check-update --download --config "${deck_cfg}")"
+check "a tampered tarball is REFUSED"              "$(contains "${out}" "REFUSED")"
+check "the refusal names the checksum"             "$(contains "${out}" "checksum")"
+
+# The payload check, which is the ONLY thing standing between a Deck and a Windows .exe here: the
+# digest matches (the server hashed what it was given), the extension matches, and the bytes are
+# still an MZ executable. This is what a server that predates platform slots serves to everyone.
+printf 'MZ this is a windows executable, not a tarball' >"${scratch}/wrong-payload.tar.gz"
+curl -sf -X POST "${server_url}/api/admin/agent-installer?version=9.9.9&platform=linux-x64" \
+  -F "file=@${scratch}/wrong-payload.tar.gz;filename=savelocker-9.9.9-linux-x64.tar.gz" >/dev/null
+out="$(agent check-update --download --config "${deck_cfg}")"
+check "a Windows executable offered to Linux is REFUSED" "$(contains "${out}" "REFUSED")"
+check "the refusal says it is not a gzip archive"        "$(contains "${out}" "gzip archive")"
+
+# doctor is the only diagnostic surface a Deck has, so the update state has to reach it.
+out="$(agent doctor --config "${deck_cfg}")"
+check "doctor reports the available update"        "$(contains "${out}" "update: v9.9.9 available")"
+
+# The daemon's own view, which is what the agent UI reads. This is the path that was hardcoded to
+# null on Linux — every other check here goes through the one-shot CLI, which builds its own checker
+# and would keep passing while the daemon reported nothing at all.
+dotnet "${agent_dir}/bin/Debug/net10.0/savelocker.dll" daemon \
+  --config "${deck_cfg}" --port 5188 >"${scratch}/update-daemon.log" 2>&1 &
+upd_pid=$!
+for _ in $(seq 1 40); do
+  curl -sf "http://localhost:5188/" >/dev/null 2>&1 && break
+  sleep 0.5
+done
+# The local API is token-gated (Decisions.md: reaching it is equivalent to owning the box), and the
+# token lives beside the config it belongs to. Without the header every request is a 401 — which is
+# indistinguishable from "the daemon has no update to report" if you only look at the assertion.
+upd_token="$(cat "${scratch}/api-token")"
+# The first check is on a short timer rather than inline with startup, so give it room to land.
+upd_json=""
+for _ in $(seq 1 20); do
+  upd_json="$(curl -sf -H "X-SaveLocker-Token: ${upd_token}" \
+    "http://localhost:5188/api/agent-version" 2>/dev/null)"
+  grep -q '"updateAvailable":true' <<<"${upd_json}" && break
+  sleep 1
+done
+kill "${upd_pid}" 2>/dev/null; wait "${upd_pid}" 2>/dev/null
+check "the daemon reports the update to its own API"  "$(contains "${upd_json}" '"updateAvailable":true')"
+check "the daemon names the Linux version"            "$(contains "${upd_json}" '"latestVersion":"9.9.9"')"
+
+# ── The update channel: AgentUpdate:Linux:* and the off-origin refusal ───────────────────────
+# A second server whose Linux slot is EMPTY, so the config fallback is the only source — the one
+# path that proves AgentUpdate:Linux:* is read at all, since an empty section is indistinguishable
+# from a missing one when the answer is 204 either way. Its DownloadUrl points somewhere that is
+# not this server and carries no digest, which must be refused before a single request is made.
+alt_port=5196
+alt_url="http://127.0.0.1:${alt_port}"
+foreign_port=5997
+alt_state="${scratch}/alt-server"
+mkdir -p "${alt_state}/archives"
+ASPNETCORE_URLS="${alt_url}" \
+Storage__DbPath="${alt_state}/savelocker.db" \
+Storage__ArchiveRoot="${alt_state}/archives" \
+Storage__AgentInstallerRoot="${alt_state}/agent-installer" \
+AgentUpdate__Linux__LatestVersion="9.9.9" \
+AgentUpdate__Linux__DownloadUrl="http://127.0.0.1:${foreign_port}/savelocker-9.9.9-linux-x64.tar.gz" \
+  dotnet run --project "${repo_root}/src/Server/SaveLocker.Server.csproj" \
+    --no-launch-profile >"${scratch}/alt-server.log" 2>&1 &
+alt_pid=$!
+for _ in $(seq 1 60); do
+  curl -sf "${alt_url}/api/admin/status" >/dev/null 2>&1 && break
+  sleep 1
+done
+
+alt_cfg="${scratch}/alt-config.json"
+python3 - "${alt_cfg}" "${alt_url}" <<'PY3'
+import json,sys
+json.dump({"ServerUrl": sys.argv[2], "MachineName": "DeckAlt", "Games": []}, open(sys.argv[1], "w"))
+PY3
+agent register --config "${alt_cfg}" --name "DeckAlt" >/dev/null
+
+out="$(agent check-update --config "${alt_cfg}")"
+check "AgentUpdate:Linux:* is served to a Linux agent"  "$(contains "${out}" "v9.9.9 is available")"
+out="$(agent check-update --download --config "${alt_cfg}")"
+check "an off-origin update with no digest is REFUSED"  "$(contains "${out}" "REFUSED")"
+check "the refusal names the foreign host"              "$(contains "${out}" "127.0.0.1")"
+# Nothing is listening on ${foreign_port} and nothing ever will be. That wording only comes from
+# the refusal raised BEFORE any request is made — a connection failure would read completely
+# differently — so this is what proves the agent never reached out, without needing a listener to
+# ask. (WA-05 makes the same point on Windows with a real listener that records its hits.)
+check "the refusal is the pre-request one, not a failed fetch" \
+  "$(contains "${out}" "Refusing to download an update")"
+
+kill "${alt_pid}" 2>/dev/null
+wait "${alt_pid}" 2>/dev/null
+
 # what. The failure is not hypothetical on a Deck: reached over SSH without a login session there
 # is no user bus, systemctl fails, and the agent cheerfully said the service was off while it kept
 # running. A stub systemctl that exits non-zero reproduces exactly that, without needing to break

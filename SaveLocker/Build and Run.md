@@ -119,7 +119,7 @@ dotnet build src/Agent.Linux/SaveLocker.Agent.Linux.csproj --no-incremental
 
 # Fake-game harness: no Steam, no Proton, no GPU, no Deck required.
 # Starts its own server on :5179 with a throwaway DB, and runs against a fake HOME.
-bash tests/linux/run-linux-tests.sh          # 27 checks
+bash tests/linux/run-linux-tests.sh          # 84 checks
 ```
 
 To pull Windows-side commits into the WSL clone:
@@ -165,7 +165,7 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 | Where | Counts |
 |---|---|
 | Windows, local | win agent bug bounty **114** (reads **113/114** since 2026-08-14 — see [[Backlog]]) · server bug bounty 164 · agent 47 · hardening 33 · local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6 |
-| Linux, local (WSL ext4) | `run-linux-tests` **63** on `main`, **69** on `steam-cloud-from-manifest` (2026-08-14, same clone) |
+| Linux, local (WSL ext4) | `run-linux-tests` **63** on `main`, **69** at `4c9f5f5`, **84** with the Phase 2 auto-update block (2026-08-15, same clone) |
 | Linux, in CI | agent 43 · hardening 37 · local-api 30 · concurrency 23 · health 19 · enrollment 16 |
 | Detection | sweep **271/298 (90.9%)** at the default 300 sample, 17 pinned |
 

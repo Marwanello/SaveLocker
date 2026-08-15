@@ -41,6 +41,7 @@ public static class Doctor
         else
             Info("machine", $"{config.MachineName} ({config.MachineId})");
         await CheckServerAsync(config);
+        await ReportUpdateAsync(config);
 
         Console.WriteLine();
         Section("Steam");
@@ -284,6 +285,35 @@ public static class Doctor
         catch (Exception ex)
         {
             Problem($"server answered {(int)status} but the game list could not be read: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// What the server is offering this platform. Reported, never counted as a problem: being a
+    /// version behind is not a fault, and a failed check is usually the same unreachable server the
+    /// section above has already complained about — a second ✗ for it would just inflate the count.
+    /// </summary>
+    private static async Task ReportUpdateAsync(AgentConfig config)
+    {
+        if (string.IsNullOrEmpty(config.ApiKey)) return;
+
+        try
+        {
+            using var checker = new UpdateChecker(config);
+            Info("update", await checker.CheckAsync() switch
+            {
+                UpdateResult.Available a =>
+                    $"v{a.Version} available (running {UpdateChecker.CurrentVersionText}) — " +
+                    "install it by re-running install.sh from the new tarball",
+                UpdateResult.UpToDate => $"up to date (v{UpdateChecker.CurrentVersionText})",
+                UpdateResult.Skipped  => $"v{config.SkipVersion} available, skipped by request",
+                UpdateResult.Failed f => $"could not check ({f.Reason})",
+                _                     => "unknown",
+            });
+        }
+        catch (Exception ex)
+        {
+            Info("update", $"could not check ({ex.Message})");
         }
     }
 
