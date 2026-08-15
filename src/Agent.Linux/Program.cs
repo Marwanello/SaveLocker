@@ -164,7 +164,7 @@ static class Program
 
         // Only games Steam launches. Nothing can set launch options for a game that has no AppID,
         // so listing them here would be reporting a fault the user cannot act on.
-        var games = config.Games.Where(g => SteamShortcuts.UnsignedAppId(g.SteamAppId) is not null).ToList();
+        var games = config.Games.Where(g => SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()) is not null).ToList();
         if (games.Count == 0)
         {
             Console.WriteLine("No tracked game launches under a Steam AppID.");
@@ -175,7 +175,7 @@ static class Program
         var unconfirmed = 0;
         foreach (var g in games)
         {
-            var appId = SteamShortcuts.UnsignedAppId(g.SteamAppId)!.Value;
+            var appId = SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId())!.Value;
             string state;
             if (g.LaunchOptionsError is { Length: > 0 } error) { state = $"ERROR: {error}"; unconfirmed++; }
             else if (g.LaunchOptionsAppliedAt is { } at) state = $"set (confirmed {at:yyyy-MM-dd HH:mm} UTC)";

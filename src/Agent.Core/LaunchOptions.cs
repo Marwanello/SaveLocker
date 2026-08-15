@@ -37,13 +37,13 @@ public static class LaunchOptions
         Quote(wrapperPath) + RunSeparator + CommandToken;
 
     /// <summary>
-    /// True when <paramref name="existing"/> already runs <paramref name="wrapperPath"/> as the
-    /// wrapper. A DIFFERENT savelocker path reads as false on purpose: that is the stale-path case,
-    /// and it wants repairing rather than leaving alone (see <see cref="Apply"/>).
+    /// True when <paramref name="existing"/> already runs the wrapper by an <b>absolute</b> path —
+    /// any absolute one, not just the path we would write. A relative one reads as false: that is
+    /// the case Steam cannot resolve in Game Mode, and the one <see cref="Apply"/> repairs.
     /// </summary>
     public static bool IsApplied(string? existing, string wrapperPath) =>
         TryFindWrapper(existing, wrapperPath, out _, out _, out var foundPath)
-        && string.Equals(foundPath, wrapperPath, StringComparison.Ordinal);
+        && Path.IsPathRooted(foundPath);
 
     /// <summary>
     /// The launch-options string this game should have. Idempotent — it runs on a timer, not once,
@@ -51,11 +51,15 @@ public static class LaunchOptions
     ///
     /// <list type="bullet">
     /// <item>empty → the wrapper invocation alone.</item>
-    /// <item>already wrapped by this exact path → returned unchanged.</item>
-    /// <item>wrapped by a DIFFERENT savelocker path → only that path is replaced. This is what
-    /// repairs a hand-typed bare <c>savelocker run -- %command%</c> into the absolute form, and it
-    /// matters: Game Mode does not put <c>~/.local/bin</c> on PATH, so the short form silently fails
-    /// to launch the game at all.</item>
+    /// <item>already wrapped by any <b>absolute</b> savelocker path → returned unchanged, even when
+    /// that is not the path we would have written. <c>~/.local/bin/savelocker</c> is a symlink to
+    /// the real binary and is what <c>install.sh</c> puts on a Deck; rewriting it to the link's
+    /// target changes nothing about how the game runs, so it is churn on a working config rather
+    /// than a repair.</item>
+    /// <item>wrapped by a <b>relative</b> savelocker → replaced with the absolute path. This is the
+    /// repair that matters, and the only one: Game Mode does not put <c>~/.local/bin</c> on PATH, so
+    /// a hand-typed bare <c>savelocker run -- %command%</c> silently stops the game launching at
+    /// all.</item>
     /// <item>contains <c>%command%</c> → the token is replaced by the invocation, which leaves outer
     /// wrappers (<c>mangohud %command%</c>), leading <c>VAR=x</c> assignments and trailing game
     /// arguments each where they were.</item>
@@ -70,7 +74,7 @@ public static class LaunchOptions
 
         if (TryFindWrapper(trimmed, wrapperPath, out var pathStart, out var pathLength, out var foundPath))
         {
-            return string.Equals(foundPath, wrapperPath, StringComparison.Ordinal)
+            return Path.IsPathRooted(foundPath)
                 ? trimmed
                 : string.Concat(
                     trimmed.AsSpan(0, pathStart),

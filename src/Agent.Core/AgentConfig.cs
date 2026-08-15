@@ -484,4 +484,21 @@ public sealed class TrackedGame
     public DateTime? LaunchOptionsAppliedAt { get; set; }
     /// <inheritdoc cref="LaunchOptionsAppliedAt"/>
     public string? LaunchOptionsError { get; set; }
+
+    /// <summary>
+    /// The AppID this game launches under: the recorded one, or — when it was never recorded — the
+    /// one its own save directory reveals, because a Proton prefix is named for the AppID that
+    /// launches into it.
+    ///
+    /// <para>
+    /// A method rather than a property so it is never serialised into <c>config.json</c>: the stored
+    /// value stays the one something actually established, and this stays a derivation. Use it
+    /// anywhere the AppID is being *matched* or *reported*; the daemon separately backfills the
+    /// stored field so the file itself becomes correct.
+    /// </para>
+    /// </summary>
+    public string? ResolveSteamAppId() =>
+        string.IsNullOrWhiteSpace(SteamAppId)
+            ? SteamLayout.CompatDataIdIn(SaveDirectory)
+            : SteamAppId;
 }

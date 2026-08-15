@@ -90,9 +90,15 @@ public static class Doctor
         foreach (var g in config.Games)
         {
             Console.WriteLine($"  {g.Name}");
-            if (g.SteamAppId is null)
+            // Resolved, not stored: a game mapped inside a Proton prefix HAS an AppID even when one
+            // was never recorded, and the wrapper matches on the resolved value. Reporting "(none)"
+            // for one of those would send the user to fix something that is not broken.
+            var resolvedAppId = g.ResolveSteamAppId();
+            if (resolvedAppId is null)
                 Console.WriteLine("    appid: (none — the launch wrapper cannot match this game)\n" +
                                   "           Run 'savelocker scan' to find the correct AppID, then re-add with --appid.");
+            else if (string.IsNullOrWhiteSpace(g.SteamAppId))
+                Info("    appid", $"{resolvedAppId} (from the save path; recorded on next daemon start)");
             else
                 Info("    appid", g.SteamAppId);
             if (string.IsNullOrWhiteSpace(g.SaveDirectory))
@@ -107,7 +113,7 @@ public static class Doctor
             // a text field the user never opened. The agent cannot read them (Steam owns that file),
             // so this only says as much as something else has reported. Silence is UNKNOWN, and
             // saying so beats both a false alarm and a false all-clear.
-            if (g.SteamAppId is not null)
+            if (resolvedAppId is not null)
             {
                 if (g.LaunchOptionsError is { Length: > 0 } loError)
                     Problem($"'{g.Name}' launch options could not be set: {loError}");
@@ -360,12 +366,8 @@ public static class Doctor
     }
 
     /// <summary>The <c>compatdata/&lt;id&gt;</c> segment of a path, or null if it is not in a prefix.</summary>
-    private static string? CompatDataIdIn(string path)
-    {
-        var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var i = Array.FindIndex(parts, p => p.Equals("compatdata", StringComparison.OrdinalIgnoreCase));
-        return i >= 0 && i + 1 < parts.Length && parts[i + 1].Length > 0 ? parts[i + 1] : null;
-    }
+    /// <summary>Shared with the launch wrapper and the backfill — see <see cref="SteamLayout"/>.</summary>
+    private static string? CompatDataIdIn(string path) => SteamLayout.CompatDataIdIn(path);
 
     private static void Section(string name) => Console.WriteLine($"── {name} ──");
     private static void Info(string label, string value) => Console.WriteLine($"  {label}: {value}");

@@ -31,4 +31,30 @@ public static class SteamLayout
             ? root
             : null;
     }
+
+    /// <summary>
+    /// The AppID out of any path that runs through <c>compatdata/&lt;appid&gt;/</c> — a prefix, or a
+    /// save folder inside one. Null when the path does not go through a prefix at all (a portable
+    /// game beside its .exe, or a native save location).
+    ///
+    /// <para>
+    /// A prefix directory is <b>named</b> for the AppID that launches into it, so a save folder
+    /// mapped inside one already identifies its game. That matters because the AppID is what the
+    /// launch wrapper matches on, and a tracked game that never recorded one is invisible to it: the
+    /// wrapper logs "no tracked game matches this launch" and the session syncs nothing, while every
+    /// other sign — the game is tracked, the folder is mapped, the launch options are set — says it
+    /// should be working. Seen on real hardware 2026-08-15 on two of four tracked games.
+    /// </para>
+    /// </summary>
+    public static string? CompatDataIdIn(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var i = Array.FindIndex(parts, p => p.Equals("compatdata", StringComparison.OrdinalIgnoreCase));
+        if (i < 0 || i + 1 >= parts.Length) return null;
+        var id = parts[i + 1];
+        // Only a numeric segment: `compatdata/whatever/` is not an AppID, and handing a non-numeric
+        // one to the wrapper's matcher would be worse than having none.
+        return id.Length > 0 && id.All(char.IsAsciiDigit) ? id : null;
+    }
 }

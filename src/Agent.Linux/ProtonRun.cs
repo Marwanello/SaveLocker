@@ -122,14 +122,20 @@ public static class ProtonRun
     private static async Task<TrackedGame?> ResolveGameAsync(
         AgentConfig config, string? appId, string? prefix, Action<string> log)
     {
+        // ResolveSteamAppId(), not SteamAppId: a game mapped to a folder inside a prefix HAS an
+        // AppID whether or not one was ever recorded, and matching only the stored field meant such
+        // a game matched nothing. It did not fail loudly — the wrapper logged "no tracked game
+        // matches this launch" and played the whole session with no sync at all, while the game was
+        // tracked, its folder mapped and its launch options correct. Two of four tracked games on
+        // real hardware were in exactly that state (2026-08-15).
         var game = config.Games.FirstOrDefault(g =>
-            !string.IsNullOrEmpty(appId) && g.SteamAppId == appId);
+            !string.IsNullOrEmpty(appId) && g.ResolveSteamAppId() == appId);
 
         // A prefix directory is named for its AppID, so its folder name identifies the game too.
         game ??= prefix is null
             ? null
             : config.Games.FirstOrDefault(g =>
-                g.SteamAppId is { Length: > 0 } id &&
+                g.ResolveSteamAppId() is { Length: > 0 } id &&
                 string.Equals(id, Path.GetFileName(prefix.TrimEnd('/')), StringComparison.Ordinal));
 
         if (game is null) return null;

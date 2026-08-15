@@ -869,16 +869,28 @@ check "a leading env assignment stays in front" \
 check "game arguments with no %command% end up after it" \
   "$([ "$(lo "${w}" "-novid -fullscreen")" = "${inv} -novid -fullscreen" ] && echo 0 || echo 1)"
 
-# THE repair. A hand-typed short command is the documented Game-Mode failure: ~/.local/bin is not on
-# PATH there, so the game silently never launches. Only the path changes; everything else survives.
+# THE repair, and the ONLY one. A hand-typed short command is the documented Game-Mode failure:
+# ~/.local/bin is not on PATH there, so the game silently never launches. Only the path changes;
+# everything else survives.
 check "a bare 'savelocker' is repaired to the absolute path" \
   "$([ "$(lo "${w}" "savelocker run -- %command%")" = "${inv}" ] && echo 0 || echo 1)"
-check "a stale absolute path is repaired in place" \
-  "$([ "$(lo "${w}" "mangohud /old/prefix/savelocker run -- %command% -novid")" \
-       = "mangohud ${inv} -novid" ] && echo 0 || echo 1)"
+
+# An absolute path is left ALONE even when it is not the one we would have written. Measured on a
+# real Deck (2026-08-15): install.sh symlinks ~/.local/bin/savelocker to the binary under
+# ~/.local/share, and games set up at different times carry different spellings. Both run the same
+# program, so rewriting one to the other is churn on a working config, not a repair — and it would
+# have edited two of the maintainer's real games on the plugin's first write.
+other="/home/deck/.local/bin/savelocker"
+check "a different ABSOLUTE savelocker path is left alone" \
+  "$([ "$(lo "${w}" "${other} run -- %command%")" = "${other} run -- %command%" ] && echo 0 || echo 1)"
+# The exact string off the Deck, WINEDLLOVERRIDES and all: quotes, commas and '=' inside the value.
+real='WINEDLLOVERRIDES="winmm,version,dxgi=n,b" /home/deck/.local/bin/savelocker run -- %command%'
+check "a real Deck game's options survive untouched" \
+  "$([ "$(lo "${w}" "${real}")" = "${real}" ] && echo 0 || echo 1)"
 
 # Idempotent: the timer re-runs this against its own output every few minutes.
-for existing in "" "mangohud %command%" "-novid" "savelocker run -- %command%"; do
+for existing in "" "mangohud %command%" "-novid" "savelocker run -- %command%" \
+                "${real}" "/home/deck/.local/bin/savelocker run -- %command%"; do
   once="$(lo "${w}" "${existing}")"
   twice="$(lo "${w}" "${once}")"
   check "idempotent for '${existing:-(empty)}'" "$([ "${once}" = "${twice}" ] && echo 0 || echo 1)"
@@ -905,6 +917,57 @@ check "an already-applied quoted path is left alone" \
 # deliberate choice, not something to repair.
 check "a non-savelocker wrapper is not mistaken for a stale one" \
   "$([ "$(lo "${w}" "gamemoderun %command%")" = "gamemoderun ${inv}" ] && echo 0 || echo 1)"
+
+# ---- A game mapped inside a prefix but with no recorded AppID ----
+#
+# Found on real hardware 2026-08-15, on two of four tracked games. The wrapper matched only the
+# STORED SteamAppId, so such a game matched nothing: it logged "no tracked game matches this launch"
+# and played the entire session with no sync, while the game was tracked, its save folder mapped and
+# its launch options correct. The maintainer's Khazan save from 2026-08-11 was never pushed.
+#
+# A prefix directory is named for the AppID that launches into it, so the save path already answers
+# this. The wrapper resolves it; the daemon records it.
+echo
+echo "==> AppID recovered from the save path"
+
+noappid_dir="${scratch}/no-appid"
+mkdir -p "${noappid_dir}"
+noappid_cfg="${noappid_dir}/config.json"
+cat >"${noappid_cfg}" <<EOF
+{
+  "ServerUrl": "${server_url}",
+  "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "Games": [
+    { "GameId": "33333333-3333-3333-3333-333333333333", "Name": "Prefix Game No AppId",
+      "SaveDirectory": "${PREFIX_SAVE}" }
+  ]
+}
+EOF
+
+out="$(agent doctor --config "${noappid_cfg}")"
+check "doctor recovers the appid from the save path" \
+  "$(contains "${out}" "${PREFIX_APPID} (from the save path")"
+check "doctor does not call it unmatched"  "$(grep -q 'the launch wrapper cannot match' <<<"${out}" && echo 1 || echo 0)"
+
+# The launch itself: exactly the shape that silently synced nothing.
+export STEAM_COMPAT_DATA_PATH="${PREFIX}"
+export SteamAppId="${PREFIX_APPID}"
+out="$(agent run --config "${noappid_cfg}" -- "${fixtures}/slow-game.sh" "${PREFIX_SAVE}" 1 0)"
+unset STEAM_COMPAT_DATA_PATH SteamAppId
+check "the wrapper matches a game that never recorded an appid" \
+  "$(grep -q 'no tracked game matches this launch' <<<"${out}" && echo 1 || echo 0)"
+
+# And the daemon writes it down, so config.json, `list` and the console stop lying about it.
+dotnet "${agent_dir}/bin/Debug/net10.0/savelocker.dll" daemon \
+  --config "${noappid_cfg}" --port 5186 >"${noappid_dir}/daemon.log" 2>&1 &
+bf_pid=$!
+for _ in $(seq 1 40); do
+  curl -sf "http://localhost:5186/" >/dev/null 2>&1 && break
+  sleep 0.5
+done
+kill "${bf_pid}" 2>/dev/null; wait "${bf_pid}" 2>/dev/null
+check "the daemon records the recovered appid in config" \
+  "$(grep -q "\"SteamAppId\": \"${PREFIX_APPID}\"" "${noappid_cfg}" && echo 0 || echo 1)"
 
 # ---- Launch options: the desired-state API (tasks/DeckyPlugin.md Phase 2) ----
 #

@@ -487,7 +487,7 @@ public sealed class AgentApiServer : IDisposable
         app.MapPost("/api/launch-options/applied", (LaunchOptionsAppliedRequest body) =>
         {
             var game = _config.Games.FirstOrDefault(
-                g => SteamShortcuts.UnsignedAppId(g.SteamAppId) == body.SteamAppId);
+                g => SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()) == body.SteamAppId);
             if (game is null) return TypedResults.Ok(new OkResponse());
 
             game.LaunchOptionsAppliedAt = body.Applied ? DateTime.UtcNow : null;
@@ -533,7 +533,7 @@ public sealed class AgentApiServer : IDisposable
 
         var desired = LaunchOptions.Invocation(wrapper);
         return _config.Games
-            .Select(g => (game: g, appId: SteamShortcuts.UnsignedAppId(g.SteamAppId)))
+            .Select(g => (game: g, appId: SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId())))
             .Where(x => x.appId is not null)
             .Select(x => new LaunchOptionRowDto(
                 x.appId!.Value, x.game.GameId, x.game.Name, desired,

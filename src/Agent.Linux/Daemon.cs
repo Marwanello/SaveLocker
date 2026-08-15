@@ -62,9 +62,38 @@ public sealed class Daemon : IAsyncDisposable
     /// </summary>
     private static void Notify(string message) => AgentLogger.Log(message);
 
+    /// <summary>
+    /// Record the AppID a tracked game's own save folder reveals, for games that never got one.
+    ///
+    /// <para>
+    /// Everything that matches on the AppID resolves it on the fly, so this is not what makes those
+    /// games work — it is what makes <c>config.json</c>, <c>list</c> and the console tell the truth
+    /// about them. The daemon does it because it is the single long-lived writer of the config; a
+    /// short-lived process doing the same write is the documented lost-update trap.
+    /// </para>
+    /// </summary>
+    private void BackfillSteamAppIds()
+    {
+        var filled = 0;
+        foreach (var game in _config.Games)
+        {
+            if (!string.IsNullOrWhiteSpace(game.SteamAppId)) continue;
+            if (SteamLayout.CompatDataIdIn(game.SaveDirectory) is not { } id) continue;
+
+            game.SteamAppId = id;
+            filled++;
+            AgentLogger.Log($"recorded appid {id} for '{game.Name}' from its save path — " +
+                            "the launch wrapper could not match this game before");
+        }
+
+        if (filled > 0) _config.Save();
+    }
+
     public async Task RunAsync(CancellationToken ct)
     {
         AgentLogger.Log($"SaveLocker daemon starting — machine '{_config.MachineName}', server {_config.ServerUrl}");
+
+        BackfillSteamAppIds();
 
         _apiServer = new AgentApiServer(
             port: _apiPort,
