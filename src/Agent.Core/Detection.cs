@@ -120,6 +120,20 @@ public sealed class Detection
     public async Task<string?> CanonicalNameAsync(string name, CancellationToken ct = default) =>
         (await GetManifestAsync(ct: ct)).CanonicalName(name);
 
+    /// <summary>
+    /// Whether the manifest says this game already syncs through Steam Cloud; null when it is not in
+    /// the manifest and we therefore have no answer.
+    /// <para>
+    /// Discovery reads this instead of assuming that everything installed through Steam is covered.
+    /// The assumption is wrong far more often than it is right — of the manifest's 48,908 titles with
+    /// a Steam id, only 14,340 have Steam Cloud — and the default Add Games view HIDES whatever is
+    /// flagged, so a wrong "yes" makes a game the user owns invisible. Breath of Fire IV is the
+    /// shape of it: sold on Steam, GOG-cloud only, hidden as already-covered.
+    /// </para>
+    /// </summary>
+    public async Task<bool?> HasSteamCloudAsync(string name, CancellationToken ct = default) =>
+        (await GetManifestAsync(ct: ct)).HasSteamCloud(name);
+
     /// <summary>Suggest manifest game names that contain the given substring.</summary>
     public async Task<IReadOnlyList<string>> SearchAsync(string term, int max = 25, CancellationToken ct = default)
     {

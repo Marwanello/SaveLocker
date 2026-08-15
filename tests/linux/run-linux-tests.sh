@@ -153,6 +153,32 @@ check "Steam runtimes are not offered as games" \
 check "an unknown compat tool is not offered as a game" \
   "$([ "$(contains "${out}" "Proton 99.0")" = 1 ] && echo 0 || echo 1)"
 
+# ── Steam Cloud is per-game manifest data, not "Steam installed it" ──────────────────────────
+# The flag was hardcoded true for every installed Steam title, and the default Add Games view HIDES
+# whatever is flagged — so a game with no cloud behind it at all was invisible, and the user was
+# never told it existed. Most Steam titles are in that position: of the manifest's 48,908 entries
+# with a Steam id, only 14,340 have Steam Cloud.
+#
+# The three games below differ in NOTHING the scanner can observe except their manifest cloud block,
+# which is what makes this a test of reading it rather than of any particular constant.
+check "no cloud block -> not flagged as Steam Cloud" \
+  "$(contains "${out}" "Fake Installed Game  <SteamInstalled> appid=")"
+check "cloud: steam: true -> flagged as Steam Cloud" \
+  "$(contains "${out}" "Fake Cloud Game  <SteamInstalled> [Steam Cloud] appid=")"
+# The Breath of Fire IV shape, and the case that motivated this: a cloud block that exists, is
+# correct, and does not name Steam. Sold on Steam; only GOG syncs it.
+check "cloud: gog only -> not flagged as Steam Cloud" \
+  "$(contains "${out}" "Fake Gog Cloud Game  <SteamInstalled> appid=")"
+
+# The flag is only worth anything if the filter acts on it — this is the view the user actually sees.
+out_nocloud="$(agent scan --config "${deck_cfg}" --no-cloud)"
+check "--no-cloud keeps a Steam game the manifest does not cloud" \
+  "$(contains "${out_nocloud}" "Fake Installed Game")"
+check "--no-cloud keeps the gog-cloud-only game" \
+  "$(contains "${out_nocloud}" "Fake Gog Cloud Game")"
+check "--no-cloud drops the genuinely cloud-synced game" \
+  "$([ "$(contains "${out_nocloud}" "Fake Cloud Game  <")" = 1 ] && echo 0 || echo 1)"
+
 # ── Prefix resolution: manifest tokens must resolve INSIDE the prefix ────────────────────────
 out="$(agent resolve --config "${deck_cfg}" --prefix "${PREFIX}" "Fake Prefix Game")"
 check "manifest <winAppData> resolves inside the prefix" "$(contains "${out}" "${PREFIX_SAVE}")"

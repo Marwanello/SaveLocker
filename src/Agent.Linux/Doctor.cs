@@ -52,7 +52,8 @@ public static class Doctor
         var shortcuts = await ReadShortcutsAsync(roots);
         Check("non-Steam shortcuts found", shortcuts.Count > 0,
             "no shortcuts in shortcuts.vdf. SaveLocker syncs non-Steam games added to Steam; " +
-            "Steam-store games already have Steam Cloud.");
+            "Steam-store games are listed too, and hidden from the default view only when the " +
+            "manifest says Steam Cloud actually covers them.");
 
         Console.WriteLine();
         Section("Shortcuts and Proton prefixes");
