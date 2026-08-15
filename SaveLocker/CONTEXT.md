@@ -10,9 +10,10 @@ embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[Architecture
 
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** `main`
 
-**Released:** **v0.5.6** (tagged 2026-08-15) — notes in `web/src/releases/0.5.6.md`. Installer,
-Linux tarball, checksums and `ghcr.io/skorcherx/savelocker:0.5.6` + `:latest` all published. GHCR
-package `savelocker` is **public** ([[Gotchas]]).
+**Released:** **v0.5.6** (tagged 2026-08-15) — notes in `web/src/releases/0.5.6.md`.
+**Rollout is COMPLETE**: console, the Windows agent and the Deck are all on it, and **both** rows in
+Config → Agent updates are filled (the Linux one serves the released tarball — its digest matches the
+published `SHA256SUMS-linux.txt` exactly). GHCR package `savelocker` is **public** ([[Gotchas]]).
 
 **Decky plugin:** its own repo, <https://github.com/SkorcherX/SaveLocker-Decky>, at **v0.2.0**. Not
 on the Decky store and cannot honestly be submitted — see `tasks/DeckyPlugin.md`.
@@ -41,22 +42,18 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
 
 ## Next action
 
-1. **Roll v0.5.6 out to the fleet — nothing has it yet.** Upload **both** rows in Config → Agent
-   updates (Windows `.exe` and Linux `.tar.gz`) and `docker compose pull` the console. The GitHub
-   Release asset is *not* what agents are offered; this is the step that always gets missed.
-   Mechanics in [[Build and Run]] → Rolling a release out. No migration.
-   <br>**Console and the Windows agent are on v0.5.6; the Deck was moved onto the real release by
-   hand** (2026-08-15) after the test build turned out to be un-updatable — it reported plain
-   `0.5.6`, so the server correctly answered "up to date" forever. See [[Gotchas]] → Builds.
-2. **`tasks/DeckyPlugin.md` Phase 5** — the agent keeps the plugin updated, so users are not stuck
-   choosing between Decky's custom-store setting (which replaces the official store while set) and
-   never being told about updates. **The hard part is already proven on hardware**; the task file
-   carries the two corrections that came out of Phase 4. See the handoff notes below.
-3. **Deck hardware pass (the rest).** Never seen on real hardware: a genuine end-to-end *self*-update
-   (`install.sh` over a running daemon is proven, twice), the Game Mode "update is ready" notice, and
-   the agent UI's Updates panel. Record `systemd-analyze --user security savelocker.service` while
-   there ([[Backlog]]).
-4. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
+1. **`tasks/DeckyPlugin.md` Phase 5** — the agent keeps the Decky plugin updated, so users are not
+   stuck choosing between Decky's custom-store setting (which replaces the official store while set,
+   so nobody leaves it there) and never being told an update exists. **The hard part is already
+   proven on hardware**; the task file carries the two corrections that came out of Phase 4. Handoff
+   notes below.
+2. **Watch the Deck self-update on the NEXT release.** `install.sh` over a running daemon is proven
+   (three times, 2026-08-15), but the agent staging and applying an update *by itself* has still
+   never run on hardware. Everything it needs is now in place — the Linux row is populated and its
+   digest matches the release — so v0.5.7 is the moment to leave the Deck alone and watch. Also
+   unseen: the Game Mode "update is ready" notice and the agent UI's Updates panel. Record
+   `systemd-analyze --user security savelocker.service` while there ([[Backlog]]).
+3. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
    merge what a server already holds under two spellings, and there is no merge tool ([[Backlog]]).
 
 Everything else — the WA-03 second-account ACL test, the remaining Windows manual gates, the LAN
