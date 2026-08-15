@@ -174,11 +174,19 @@ public sealed class GameScanner : IGameScanner
                 var trimmed = name.Trim();
                 var save = await SuggestSaveDirAsync(trimmed, ct, installPath, libraryRoot);
 
-                // Installed Steam titles usually have Steam Cloud; flag rather than
-                // hide them so the user can still enroll if they want a local copy.
+                // Flagged rather than hidden here — the UI's default view is what hides them, and
+                // the scan must still return them or no filter could bring them back.
+                //
+                // Which titles get flagged is READ from the manifest, not assumed. This was
+                // hardcoded true for anything installed through Steam, on the reasoning that Steam
+                // titles usually have Cloud; they usually do not (Detection.HasSteamCloudAsync), and
+                // a wrong "yes" hides a game the user owns behind a filter they never chose. A title
+                // absent from the manifest keeps the old assumption: no data is not evidence of no
+                // Cloud, and that case is unchanged from before.
                 results.Add(new ScanCandidate(
                     trimmed, save, ScanSource.SteamInstalled,
-                    HasSteamCloud: true, ManifestKey: await CanonicalKeyAsync(trimmed, save, ct),
+                    HasSteamCloud: await _detection.HasSteamCloudAsync(trimmed, ct) ?? true,
+                    ManifestKey: await CanonicalKeyAsync(trimmed, save, ct),
                     InstallDir: installPath, Store: GameStore.Steam));
             }
         }

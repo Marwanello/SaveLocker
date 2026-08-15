@@ -50,4 +50,27 @@ public static class AgentEventCodes
     /// <summary>The save never went quiet, so the settle gate gave up and archived anyway — the
     /// snapshot may be mid-write.</summary>
     public const string SettleTimeout = "settle.timeout";
+
+    /// <summary>
+    /// A newer agent has been downloaded, verified and unpacked, and will be installed the next time
+    /// this machine's agent starts. Informational, and the only notice anyone gets: a Deck has no
+    /// tray to prompt from, so "an update is waiting" exists on the dashboard or nowhere.
+    /// </summary>
+    public const string UpdateStaged = "update.staged";
+
+    /// <summary>
+    /// A staged update could not be used — it failed its digest, unpacked to something that is not
+    /// an agent, or would not run when asked for its version. Nothing was replaced, so the machine
+    /// keeps working; what it stops doing is <i>updating</i>, silently and indefinitely, which is
+    /// exactly the kind of fault a headless device never surfaces on its own.
+    /// </summary>
+    public const string UpdateFailed = "update.failed";
+
+    /// <summary>
+    /// An installed update did not survive its first start and the previous version was put back.
+    /// The machine is running and syncing, so nothing else will look wrong — but this fleet has a
+    /// build that bricks the agent on at least one device, and that is worth an admin knowing before
+    /// they roll it out anywhere else.
+    /// </summary>
+    public const string UpdateRolledBack = "update.rolled_back";
 }

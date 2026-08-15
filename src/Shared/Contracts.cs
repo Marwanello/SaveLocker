@@ -68,18 +68,61 @@ public record ServerSettingsDto(
     string[]? DefaultExcludeGlobs = null,
     double AutoFetchHours = 0);
 
+/// <summary>
+/// The platforms the server hosts an agent package for. These strings are wire values — they appear
+/// as <c>?platform=</c> on the update routes and are persisted in each slot's metadata — so they are
+/// .NET RIDs rather than anything prettier, and they do not change.
+/// <para>
+/// <b>Absent means <see cref="Windows"/>.</b> Every agent released before platform slots existed
+/// sends no parameter at all, and must keep being offered exactly what it was offered before.
+/// </para>
+/// </summary>
+public static class AgentPlatform
+{
+    public const string Windows = "win-x64";
+    public const string Linux = "linux-x64";
+
+    public static readonly string[] All = [Windows, Linux];
+
+    /// <summary>
+    /// Normalizes a caller-supplied platform, defaulting an absent one to <see cref="Windows"/>.
+    /// Returns false for anything unrecognised — a platform names a directory, so it may never be
+    /// taken on trust.
+    /// </summary>
+    public static bool TryNormalize(string? value, out string platform)
+    {
+        platform = Windows;
+        if (string.IsNullOrWhiteSpace(value)) return true;
+
+        var match = All.FirstOrDefault(p => string.Equals(p, value.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (match is null) return false;
+
+        platform = match;
+        return true;
+    }
+
+    /// <summary>How a person should see it. Never used as a path or a query value.</summary>
+    public static string Describe(string platform) => platform == Linux ? "Linux" : "Windows";
+}
+
 /// <summary>Status of the agent installer binary hosted on this server.</summary>
 /// <param name="Sha256">
 /// Lowercase hex SHA-256 of the installer, computed as it was stored. Null only for an installer
 /// uploaded before digests existed — a value here is what lets an agent prove the bytes it
 /// downloaded are the bytes this server holds.
 /// </param>
+/// <param name="Platform">
+/// Which agent this package is for (<see cref="AgentPlatform"/>). Optional with a Windows default so
+/// an <c>installer-info.json</c> written before slots existed still deserializes — that file is
+/// always the Windows one, because it is the only one that could have been written.
+/// </param>
 public record AgentInstallerStatus(
     string Version,
     string FileName,
     DateTime UploadedAt,
     long SizeBytes,
-    string? Sha256 = null);
+    string? Sha256 = null,
+    string Platform = AgentPlatform.Windows);
 
 /// <summary>Set (or clear, when null/empty) the SteamGridDB API key from the dashboard.</summary>
 public record SetSteamGridDbKeyRequest(string? ApiKey);

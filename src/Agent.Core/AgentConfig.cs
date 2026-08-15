@@ -43,6 +43,17 @@ public sealed class AgentConfig
     /// <summary>UTC timestamp of the last update check; used to enforce a 24 h cooldown between background checks.</summary>
     public DateTime? LastUpdateCheck { get; set; }
     /// <summary>
+    /// Whether the Linux agent may prepare a newer version by itself. True by default: a headless
+    /// device that never updates is one nobody notices is stale.
+    /// <para>
+    /// Turning it off stops the agent <b>staging</b> anything. It keeps checking, so `doctor`, the
+    /// agent UI and the console still say when the machine is behind — the point is to choose when
+    /// the files change, not to stop knowing. `savelocker update` ignores this: it is someone asking
+    /// for the update in as many words.
+    /// </para>
+    /// </summary>
+    public bool AutoUpdate { get; set; } = true;
+    /// <summary>
     /// Seconds a save folder must be quiet — no file changes, nothing open for writing — before an
     /// automatic push archives it. Games that keep flushing after exit need a longer wait; 0 disables
     /// the gate and archives immediately (fast, but can capture a half-written save).

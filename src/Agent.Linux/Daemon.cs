@@ -23,6 +23,14 @@ public sealed class Daemon : IAsyncDisposable
     private AgentApiServer? _apiServer;
     private CommandPoller? _commandPoller;
     private OfflineQueueDrainer? _drainer;
+    private Timer? _updateTimer;
+
+    // Written by the update timer, read by API request threads answering /api/agent-version.
+    private volatile UpdateResult? _lastUpdateResult;
+
+    // Bound to the origin it was built for, exactly like the engine, and retired the same way on a
+    // connection change — an update authorised by server A must never be offered against server B.
+    private UpdateChecker? _updateChecker;
     // Written from an API request thread (server URL change, registration), read from watcher,
     // poller and drainer threads — the publish has to be visible to all of them.
     private volatile SyncEngine _engine;
@@ -81,8 +89,15 @@ public sealed class Daemon : IAsyncDisposable
                     try { await replaced.RetireAsync(); }
                     catch (Exception ex) { AgentLogger.LogException("RetireEngine", ex); }
                 });
+
+                // The offer belonged to the old server. Keeping it would advertise a version this
+                // server may not have, at a URL on an origin this machine no longer trusts.
+                var oldChecker = _updateChecker;
+                _updateChecker = null;
+                _lastUpdateResult = null;
+                oldChecker?.Dispose();
             },
-            getUpdateResult: () => null, // self-update is Windows-only (installer-based)
+            getUpdateResult: () => _lastUpdateResult,
             browseRoots: SteamRoots.BrowseRoots().Concat(HeroicRoots.BrowseRoots()),
             launchInfo: LinuxLaunchCommand,
             onGamesChanged: StartFolderWatchers);
@@ -108,6 +123,13 @@ public sealed class Daemon : IAsyncDisposable
         _commandPoller.Start();
 
         StartFolderWatchers();
+        StartUpdateChecks();
+
+        // Everything is up: the API server is listening, the poller and watchers are running. That
+        // is the bar for "this build works", and it is what turns an applied update from provisional
+        // into permanent. Until this runs, the next start treats the installed version as suspect
+        // and puts the previous one back (Updater.cs).
+        Updater.Commit(_config, AgentLogger.Log);
 
         var where = $"http://localhost:{_apiPort}/";
         AgentLogger.Log($"daemon ready — agent UI on {where}");
@@ -137,6 +159,75 @@ public sealed class Daemon : IAsyncDisposable
     }
 
     /// <summary>
+    /// Ask the server what it is offering for this platform: shortly after start, then every few
+    /// hours. Cheap — one small GET — so a Deck that reboots often simply checks often.
+    /// <para>
+    /// <b>This checks and reports; it does not update.</b> Nothing is downloaded, unpacked or run
+    /// here. The result exists so `doctor`, the agent UI and (through the heartbeat) the console can
+    /// say a device is behind — which on a headless Deck is the entire user-visible mechanism, since
+    /// there is nothing here that can toast (Decisions.md §2). Staging and applying arrive with the
+    /// updater; until then a Deck is still updated by re-running install.sh.
+    /// </para>
+    /// </summary>
+    private void StartUpdateChecks()
+    {
+        _updateTimer = new Timer(
+            _ => _ = CheckForUpdateAsync(),
+            null,
+            // Short, not instant: long enough for the API server and the first reconcile to settle,
+            // short enough that someone who opens the agent UI right after a restart — which is
+            // exactly when they do — is not looking at a blank update line.
+            dueTime: TimeSpan.FromSeconds(5),
+            period: TimeSpan.FromHours(6));
+    }
+
+    private async Task CheckForUpdateAsync()
+    {
+        try
+        {
+            // An unregistered agent has no key, and the route is authenticated. Asking anyway would
+            // log a 401 every six hours on a machine whose real problem is that nobody enrolled it.
+            if (string.IsNullOrEmpty(_config.ApiKey)) return;
+
+            var checker = _updateChecker ??= new UpdateChecker(_config);
+            var result = await checker.CheckAsync();
+            _lastUpdateResult = result;
+
+            _config.UpdateSettings(c => c.LastUpdateCheck = DateTime.UtcNow);
+
+            // Every outcome is logged, including the boring one. On a box with no UI the log is the
+            // only account of whether the check happened at all, and "it never said anything" has to
+            // be distinguishable from "it said nothing was there".
+            AgentLogger.Log(result switch
+            {
+                UpdateResult.Available a =>
+                    $"Update check: v{a.Version} available (running {UpdateChecker.CurrentVersionText}).",
+                UpdateResult.UpToDate => $"Update check: up to date (v{UpdateChecker.CurrentVersionText}).",
+                UpdateResult.Skipped   => $"Update check: v{_config.SkipVersion} is available but was skipped.",
+                UpdateResult.Failed f  => $"Update check FAILED: {f.Reason}",
+                _                      => $"Update check: {result.GetType().Name}.",
+            });
+
+            if (result is UpdateResult.Available update &&
+                _config.AutoUpdate &&
+                !string.Equals(Updater.PendingVersion(_config), update.Version, StringComparison.Ordinal))
+            {
+                // Staged, never applied. Swapping the agent's files out from under a running daemon
+                // is what `systemctl --user stop` killing the whole cgroup makes impossible to do
+                // safely from here — so the work that CAN be done now is done now, and the swap
+                // waits for the next start (Updater.cs). `savelocker update` is the way to say
+                // "now" instead.
+                try { await Updater.StageAsync(_config, update, AgentLogger.Log); }
+                catch (Exception ex) { AgentLogger.Log($"update: could not stage v{update.Version} — {ex.Message}"); }
+            }
+        }
+        catch (Exception ex)
+        {
+            AgentLogger.LogException("CheckForUpdate", ex);
+        }
+    }
+
+    /// <summary>
     /// Watch each mapped save folder so a game that syncs *without* the launch wrapper (started
     /// outside Steam, or a save written while the game idles) still gets pushed. The settle gate
     /// keeps this from archiving a save mid-write.
@@ -163,6 +254,8 @@ public sealed class Daemon : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         foreach (var w in _folderWatchers) w.Dispose();
+        _updateTimer?.Dispose();
+        _updateChecker?.Dispose();
         _commandPoller?.Dispose();
         _drainer?.Dispose();
         _apiServer?.Dispose();

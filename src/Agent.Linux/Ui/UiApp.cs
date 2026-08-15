@@ -936,6 +936,20 @@ sealed class UiApp
 
                 Widgets.Gap(Theme.Space.Lg);
                 Widgets.SectionHeader("Next step");
+
+                // A staged update outranks the launch-option reminder: it is the only thing on this
+                // screen that says the agent is about to change, and Game Mode has nowhere else to
+                // say it. It needs no button — the whole point of the design is that the user does
+                // nothing and the swap happens at the next start.
+                if (Updater.PendingVersion(_config) is { } pending)
+                {
+                    Widgets.TextWrapped(
+                        $"SaveLocker {pending} is ready and will be installed the next time this "
+                        + "device starts SaveLocker. Nothing to do.",
+                        Theme.AccentGreen);
+                    Widgets.Gap(Theme.Space.Sm);
+                }
+
                 Widgets.TextWrapped(
                     "Each game needs the SaveLocker launch option set once in Steam before it syncs.",
                     Theme.TextMuted);

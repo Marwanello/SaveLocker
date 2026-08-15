@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { FolderSearch, Trash2 } from 'lucide-react'
-import type { AgentState, TrackedGame } from '../types'
+import type { AgentState, AgentVersion, TrackedGame } from '../types'
 import { api } from '../api'
 import { useFolderPicker } from '../useFolderPicker'
 import { PathBrowserModal } from './PathBrowserModal'
@@ -32,6 +32,50 @@ const BTN_SECONDARY: React.CSSProperties = {
 const SECTION_HEADER: React.CSSProperties = {
   color: '#9CA3AF', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.11em',
   marginBottom: 14, paddingBottom: 8, borderBottom: '1px solid #494949',
+}
+
+/**
+ * What the agent's last update check found.
+ *
+ * On Windows the tray owns the actual update — this is a read-out of what it already knows, and the
+ * tray is where the user says yes. On Linux there is no tray and nothing that can toast, so this and
+ * `savelocker doctor` are the only places a Deck user can see they are behind; the agent does not
+ * yet install it for them, so the instruction has to be here rather than a button that does nothing.
+ */
+function UpdateStatus({ platform }: { platform?: string }) {
+  const [info, setInfo] = useState<AgentVersion | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    api.agentVersion().then(setInfo).catch(() => setFailed(true))
+  }, [])
+
+  if (failed) return <div style={{ color: '#9CA3AF', fontSize: 12 }}>Could not read the agent version.</div>
+  if (!info) return <div style={{ color: '#9CA3AF', fontSize: 12 }}>Checking…</div>
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ color: '#ECEFF1', fontSize: 13 }}>Running v{info.currentVersion}</span>
+        {info.updateAvailable && info.latestVersion && (
+          <span style={{
+            padding: '2px 7px', background: '#f4a60d', color: '#1E252A', borderRadius: 4,
+            fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
+          }}>
+            v{info.latestVersion} AVAILABLE
+          </span>
+        )}
+      </div>
+      <div style={{ color: '#9CA3AF', fontSize: 11, lineHeight: 1.5 }}>
+        {!info.updateAvailable
+          ? 'This is the version the server is offering.'
+          : platform === 'Linux'
+            ? 'Download the new tarball on this device and re-run install.sh to take it. ' +
+              'The agent checks every few hours; it does not install updates by itself yet.'
+            : 'The tray icon offers the update — accept it there to install and restart.'}
+      </div>
+    </div>
+  )
 }
 
 export function SettingsView({ state, onSaved }: Props) {
@@ -279,6 +323,12 @@ export function SettingsView({ state, onSaved }: Props) {
         {status && (
           <div style={{ color: '#9CA3AF', fontSize: 12, marginTop: 8 }}>{status}</div>
         )}
+      </div>
+
+      {/* Updates */}
+      <div>
+        <div style={SECTION_HEADER}>Updates</div>
+        <UpdateStatus platform={state?.platform} />
       </div>
 
       {/* Sync Safety */}

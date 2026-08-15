@@ -1,4 +1,4 @@
-import type { GameSummary, Machine, Command, Conflict, Settings, Version, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus } from './types';
+import type { GameSummary, Machine, Command, Conflict, Settings, Version, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus } from './types';
 
 let adminPassword = localStorage.getItem('sl_password') || '';
 
@@ -10,6 +10,26 @@ export function setPassword(p: string) {
 
 function headers(extra: Record<string, string> = {}): Record<string, string> {
   return { 'X-Admin-Password': adminPassword, ...extra };
+}
+
+/**
+ * The server explains a refusal in one of two shapes and the caller cannot know which: minimal-API
+ * `BadRequest(string)` sends a JSON-encoded string, `Problem(...)` sends problem details with a
+ * `detail` field. Reading only one of them turned half the server's reasons into a bare
+ * "400 Bad Request" — which, for the installer routes, is exactly the wrong-file-for-this-platform
+ * message the admin needs to see.
+ */
+async function explain(res: Response): Promise<string> {
+  const body = await res.text().catch(() => '');
+  if (body) {
+    try {
+      const parsed = JSON.parse(body);
+      if (typeof parsed === 'string' && parsed) return parsed;
+      if (parsed?.detail) return parsed.detail as string;
+      if (parsed?.title) return parsed.title as string;
+    } catch { return body; }
+  }
+  return `${res.status} ${res.statusText}`;
 }
 
 async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
@@ -162,34 +182,31 @@ export const api = {
     fetch(`/api/admin/enrollments/${id}`, { method: 'DELETE', headers: headers() })
       .then(res => { if (!res.ok) throw new Error(`${res.status}`); }),
 
-  installerStatus: (): Promise<AgentInstallerStatus | null> =>
-    fetch('/api/admin/agent-installer', { headers: headers() }).then(async res => {
+  installerStatus: (platform: AgentPlatform): Promise<AgentInstallerStatus | null> =>
+    fetch(`/api/admin/agent-installer?platform=${platform}`, { headers: headers() }).then(async res => {
       if (res.status === 204) return null;
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       return res.json() as Promise<AgentInstallerStatus>;
     }),
 
-  uploadInstaller: (formData: FormData, version: string): Promise<AgentInstallerStatus> =>
-    fetch(`/api/admin/agent-installer?version=${encodeURIComponent(version)}`, {
+  uploadInstaller: (formData: FormData, version: string, platform: AgentPlatform): Promise<AgentInstallerStatus> =>
+    fetch(`/api/admin/agent-installer?version=${encodeURIComponent(version)}&platform=${platform}`, {
       method: 'POST',
       headers: headers(), // no Content-Type — let browser set multipart boundary
       body: formData,
     }).then(async res => {
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      if (!res.ok) throw new Error(await explain(res));
       return res.json() as Promise<AgentInstallerStatus>;
     }),
 
-  deleteInstaller: (): Promise<void> =>
-    fetch('/api/admin/agent-installer', { method: 'DELETE', headers: headers() })
+  deleteInstaller: (platform: AgentPlatform): Promise<void> =>
+    fetch(`/api/admin/agent-installer?platform=${platform}`, { method: 'DELETE', headers: headers() })
       .then(res => { if (!res.ok) throw new Error(`${res.status}`); }),
 
-  fetchInstallerFromGitHub: (): Promise<AgentInstallerStatus> =>
-    fetch('/api/admin/agent-installer/fetch-github', { method: 'POST', headers: headers() })
+  fetchInstallerFromGitHub: (platform: AgentPlatform): Promise<AgentInstallerStatus> =>
+    fetch(`/api/admin/agent-installer/fetch-github?platform=${platform}`, { method: 'POST', headers: headers() })
       .then(async res => {
-        if (!res.ok) {
-          const detail = await res.json().then(j => j.detail).catch(() => null);
-          throw new Error(detail || `${res.status} ${res.statusText}`);
-        }
+        if (!res.ok) throw new Error(await explain(res));
         return res.json() as Promise<AgentInstallerStatus>;
       }),
 };

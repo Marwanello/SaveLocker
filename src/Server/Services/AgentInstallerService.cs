@@ -15,8 +15,14 @@ public sealed class InstallerTooLargeException(long limitBytes)
 public sealed class InstallerRejectedException(string message) : Exception(message);
 
 /// <summary>
-/// Manages the agent installer binary stored on the server so agents can
-/// self-update without requiring a separate CDN or GitHub release URL.
+/// Manages the agent packages stored on the server so agents can self-update without requiring a
+/// separate CDN or GitHub release URL.
+/// <para>
+/// <b>One slot per platform</b> (<see cref="AgentPlatform"/>): the Windows installer keeps the
+/// storage root it has always had, and every later platform gets a subdirectory named for it. That
+/// asymmetry is deliberate — it means a server that has been running for months needs no migration
+/// and its existing <c>installer-info.json</c> keeps being found exactly where it is.
+/// </para>
 /// <para>
 /// Replacement is <b>staged then published</b>, under a gate shared by every writer — manual
 /// upload, manual GitHub fetch, the background poller, and delete. It used to delete every existing
@@ -28,15 +34,33 @@ public sealed class InstallerRejectedException(string message) : Exception(messa
 /// </summary>
 public class AgentInstallerService
 {
-    private readonly string _root;
     private readonly string _githubRepo;
     private readonly long _maxBytes;
     private readonly ILogger<AgentInstallerService> _log;
     private const string InfoFileName = "installer-info.json";
 
     /// <summary>
-    /// One writer at a time. The service is a singleton, so this genuinely covers the manual
-    /// upload, the manual fetch, the poller and delete — the four callers that used to race.
+    /// Where one platform's package lives and what counts as one.
+    /// </summary>
+    /// <param name="Extension">
+    /// Matched with <c>EndsWith</c>, not <c>Path.GetExtension</c>: the Linux package is a
+    /// <c>.tar.gz</c>, whose extension by that reckoning is <c>.gz</c>.
+    /// </param>
+    /// <param name="IsReleaseAsset">Recognises this platform's asset among a GitHub release's.</param>
+    private sealed record Slot(
+        string Platform,
+        string Root,
+        string Extension,
+        Func<string, bool> IsReleaseAsset,
+        string AssetPattern);
+
+    private readonly Dictionary<string, Slot> _slots;
+
+    /// <summary>
+    /// One writer at a time, across every platform. The service is a singleton, so this genuinely
+    /// covers the manual upload, the manual fetch, the poller and delete — the four callers that
+    /// used to race. It is deliberately not split per platform: the slots share a storage root and
+    /// contend for almost nothing, and one gate is one thing to reason about.
     /// </summary>
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -45,28 +69,68 @@ public class AgentInstallerService
     public AgentInstallerService(IConfiguration cfg, ILogger<AgentInstallerService> log)
     {
         _log = log;
-        _root = cfg["Storage:AgentInstallerRoot"]
+        var root = cfg["Storage:AgentInstallerRoot"]
             ?? Path.Combine(AppContext.BaseDirectory, "data", "agent-installer");
         _githubRepo = cfg["AgentUpdate:GitHubRepo"] ?? "SkorcherX/SaveLocker";
         _maxBytes = (long)(cfg.GetValue<int?>("AgentUpdate:MaxInstallerMb") ?? 200) * 1024 * 1024;
-        Directory.CreateDirectory(_root);
+
+        _slots = new Dictionary<string, Slot>(StringComparer.Ordinal)
+        {
+            [AgentPlatform.Windows] = new(
+                AgentPlatform.Windows,
+                root,
+                ".exe",
+                name => name.StartsWith("SaveLocker-Agent-Setup", StringComparison.OrdinalIgnoreCase)
+                     && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase),
+                "SaveLocker-Agent-Setup-*.exe"),
+
+            [AgentPlatform.Linux] = new(
+                AgentPlatform.Linux,
+                Path.Combine(root, AgentPlatform.Linux),
+                ".tar.gz",
+                name => name.StartsWith("savelocker-", StringComparison.OrdinalIgnoreCase)
+                     && name.EndsWith("-linux-x64.tar.gz", StringComparison.OrdinalIgnoreCase),
+                "savelocker-*-linux-x64.tar.gz"),
+        };
+
+        foreach (var slot in _slots.Values) Directory.CreateDirectory(slot.Root);
     }
 
     public long MaxBytes => _maxBytes;
 
-    public AgentInstallerStatus? GetInfo()
+    /// <summary>
+    /// Resolves a platform to its slot. Unknown is an exception rather than a default, because the
+    /// value names a directory — the routes validate it first, and this is the backstop.
+    /// </summary>
+    private Slot SlotFor(string platform) =>
+        _slots.TryGetValue(platform, out var slot)
+            ? slot
+            : throw new InstallerRejectedException($"'{platform}' is not a platform this server hosts an agent for.");
+
+    private static string InfoPath(Slot slot) => Path.Combine(slot.Root, InfoFileName);
+
+    public AgentInstallerStatus? GetInfo(string platform = AgentPlatform.Windows)
     {
-        var path = Path.Combine(_root, InfoFileName);
+        var slot = SlotFor(platform);
+        var path = InfoPath(slot);
         if (!File.Exists(path)) return null;
-        try { return JsonSerializer.Deserialize<AgentInstallerStatus>(File.ReadAllText(path), _json); }
+        try
+        {
+            var info = JsonSerializer.Deserialize<AgentInstallerStatus>(File.ReadAllText(path), _json);
+            // Metadata written before slots existed carries no platform. It is in the Windows slot's
+            // root because that is the only slot that could have written it, so say so.
+            return info is null ? null : info with { Platform = slot.Platform };
+        }
         catch { return null; }
     }
 
     public async Task<AgentInstallerStatus> SaveAsync(
-        Stream content, string version, string fileName, CancellationToken ct)
+        Stream content, string version, string fileName, CancellationToken ct,
+        string platform = AgentPlatform.Windows)
     {
+        var slot = SlotFor(platform);
         await _gate.WaitAsync(ct);
-        try { return await SaveCoreAsync(content, version, fileName, ct); }
+        try { return await SaveCoreAsync(content, version, fileName, slot, ct); }
         finally { _gate.Release(); }
     }
 
@@ -76,14 +140,16 @@ public class AgentInstallerService
     /// Callers must already hold <see cref="_gate"/>.
     /// </summary>
     private async Task<AgentInstallerStatus> SaveCoreAsync(
-        Stream content, string version, string fileName, CancellationToken ct)
+        Stream content, string version, string fileName, Slot slot, CancellationToken ct)
     {
         // ---- Validate before touching anything ----
         var safeName = Path.GetFileName(fileName?.Trim() ?? "");
         if (string.IsNullOrWhiteSpace(safeName))
             throw new InstallerRejectedException("The uploaded file has no usable filename.");
-        if (!safeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-            throw new InstallerRejectedException($"'{safeName}' is not a .exe — the agent installer must be one.");
+        if (!safeName.EndsWith(slot.Extension, StringComparison.OrdinalIgnoreCase))
+            throw new InstallerRejectedException(
+                $"'{safeName}' is not a {slot.Extension} — the {AgentPlatform.Describe(slot.Platform)} " +
+                "agent package must be one.");
 
         version = version?.Trim() ?? "";
         if (ParseVersion(version) is null)
@@ -91,7 +157,7 @@ public class AgentInstallerService
                 $"'{version}' is not a version this server can compare (expected something like 0.4.2).");
 
         // ---- Stage ----
-        var staged = Path.Combine(_root, $".incoming-{Guid.NewGuid():N}.part");
+        var staged = Path.Combine(slot.Root, $".incoming-{Guid.NewGuid():N}.part");
         long written = 0;
         string digest;
         try
@@ -120,15 +186,16 @@ public class AgentInstallerService
 
             // ---- Publish ----
             // New file into place first, then metadata, and only then remove the old binaries. A
-            // crash midway leaves a stray .exe, which is clutter; the reverse order leaves metadata
-            // naming a file that does not exist, which is a broken update channel.
-            var exePath = Path.Combine(_root, safeName);
+            // crash midway leaves a stray package, which is clutter; the reverse order leaves
+            // metadata naming a file that is not there, which is a broken update channel.
+            var exePath = Path.Combine(slot.Root, safeName);
             File.Move(staged, exePath, overwrite: true);
 
-            var info = new AgentInstallerStatus(version, safeName, DateTime.UtcNow, written, digest);
-            await WriteInfoAsync(info, ct);
+            var info = new AgentInstallerStatus(
+                version, safeName, DateTime.UtcNow, written, digest, slot.Platform);
+            await WriteInfoAsync(info, slot, ct);
 
-            foreach (var old in Directory.GetFiles(_root, "*.exe"))
+            foreach (var old in Directory.GetFiles(slot.Root, "*" + slot.Extension))
             {
                 if (string.Equals(Path.GetFileName(old), safeName, StringComparison.OrdinalIgnoreCase)) continue;
                 try { File.Delete(old); }
@@ -145,28 +212,29 @@ public class AgentInstallerService
     }
 
     /// <summary>Metadata is written aside and renamed, so a reader never sees a half-written file.</summary>
-    private async Task WriteInfoAsync(AgentInstallerStatus info, CancellationToken ct)
+    private async Task WriteInfoAsync(AgentInstallerStatus info, Slot slot, CancellationToken ct)
     {
-        var tmp = Path.Combine(_root, $".info-{Guid.NewGuid():N}.tmp");
+        var tmp = Path.Combine(slot.Root, $".info-{Guid.NewGuid():N}.tmp");
         await File.WriteAllTextAsync(tmp, JsonSerializer.Serialize(info), ct);
-        File.Move(tmp, Path.Combine(_root, InfoFileName), overwrite: true);
+        File.Move(tmp, InfoPath(slot), overwrite: true);
     }
 
-    public async Task DeleteAsync(CancellationToken ct = default)
+    public async Task DeleteAsync(CancellationToken ct = default, string platform = AgentPlatform.Windows)
     {
+        var slot = SlotFor(platform);
         await _gate.WaitAsync(ct);
         try
         {
-            var info = Path.Combine(_root, InfoFileName);
+            var info = InfoPath(slot);
             if (File.Exists(info)) File.Delete(info);
-            foreach (var f in Directory.GetFiles(_root, "*.exe")) TryDelete(f);
+            foreach (var f in Directory.GetFiles(slot.Root, "*" + slot.Extension)) TryDelete(f);
         }
         finally { _gate.Release(); }
     }
 
     /// <summary>
     /// Give an installer stored before digests existed one, by hashing what is on disk. Called at
-    /// startup.
+    /// startup, for every platform slot.
     /// <para>
     /// Without this every already-deployed server would keep serving an installer with no digest
     /// until someone happened to upload a new one, and the agent would refuse to verify — so the
@@ -180,22 +248,28 @@ public class AgentInstallerService
         await _gate.WaitAsync(ct);
         try
         {
-            var info = GetInfo();
-            if (info is null || !string.IsNullOrWhiteSpace(info.Sha256)) return;
+            foreach (var slot in _slots.Values)
+            {
+                try
+                {
+                    var info = GetInfo(slot.Platform);
+                    if (info is null || !string.IsNullOrWhiteSpace(info.Sha256)) continue;
 
-            var path = Path.Combine(_root, info.FileName);
-            if (!File.Exists(path)) return;
+                    var path = Path.Combine(slot.Root, info.FileName);
+                    if (!File.Exists(path)) continue;
 
-            await using var fs = File.OpenRead(path);
-            var digest = Convert.ToHexStringLower(await SHA256.HashDataAsync(fs, ct));
-            await WriteInfoAsync(info with { Sha256 = digest }, ct);
-            _log.LogInformation(
-                "Computed a SHA-256 for the existing agent installer {File}; update verification is now active.",
-                info.FileName);
-        }
-        catch (Exception ex)
-        {
-            _log.LogWarning(ex, "Could not compute a digest for the stored agent installer.");
+                    await using var fs = File.OpenRead(path);
+                    var digest = Convert.ToHexStringLower(await SHA256.HashDataAsync(fs, ct));
+                    await WriteInfoAsync(info with { Sha256 = digest }, slot, ct);
+                    _log.LogInformation(
+                        "Computed a SHA-256 for the existing {Platform} agent package {File}; update verification is now active.",
+                        slot.Platform, info.FileName);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "Could not compute a digest for the stored {Platform} agent package.", slot.Platform);
+                }
+            }
         }
         finally { _gate.Release(); }
     }
@@ -203,31 +277,42 @@ public class AgentInstallerService
     /// <summary>Remove staging files left by an upload whose process died. Called at startup.</summary>
     public int SweepIncoming(TimeSpan olderThan)
     {
-        if (!Directory.Exists(_root)) return 0;
         var cutoff = DateTime.UtcNow - olderThan;
         var removed = 0;
-        foreach (var file in Directory.EnumerateFiles(_root, ".incoming-*.part")
-                     .Concat(Directory.EnumerateFiles(_root, ".info-*.tmp")))
+        foreach (var slot in _slots.Values)
         {
-            try
+            if (!Directory.Exists(slot.Root)) continue;
+            foreach (var file in Directory.EnumerateFiles(slot.Root, ".incoming-*.part")
+                         .Concat(Directory.EnumerateFiles(slot.Root, ".info-*.tmp")))
             {
-                if (File.GetLastWriteTimeUtc(file) > cutoff) continue;
-                File.Delete(file);
-                removed++;
+                try
+                {
+                    if (File.GetLastWriteTimeUtc(file) > cutoff) continue;
+                    File.Delete(file);
+                    removed++;
+                }
+                catch (Exception ex) { _log.LogWarning(ex, "Could not sweep stale installer file {Path}.", file); }
             }
-            catch (Exception ex) { _log.LogWarning(ex, "Could not sweep stale installer file {Path}.", file); }
         }
         return removed;
     }
 
     /// <summary>
-    /// Fetches the latest release's agent installer asset from the configured GitHub repo
-    /// (<c>AgentUpdate:GitHubRepo</c>) and stores it as the hosted installer — automating the
-    /// otherwise-manual download-from-GitHub-then-upload step. Throws if no matching asset exists.
+    /// Fetches the latest release's asset for <paramref name="platform"/> from the configured GitHub
+    /// repo (<c>AgentUpdate:GitHubRepo</c>) and stores it as that platform's hosted package —
+    /// automating the otherwise-manual download-from-GitHub-then-upload step.
     /// </summary>
+    /// <exception cref="InstallerRejectedException">
+    /// The latest release carries no asset for this platform. That is a 400, not a 500: a release
+    /// predating the Linux tarball is a normal thing to encounter, and the poller checking both
+    /// platforms every interval must be able to tell it apart from a real failure.
+    /// </exception>
     public async Task<AgentInstallerStatus> FetchLatestFromGitHubAsync(
-        HttpClient http, CancellationToken ct, bool onlyIfNewer = false)
+        HttpClient http, CancellationToken ct, bool onlyIfNewer = false,
+        string platform = AgentPlatform.Windows)
     {
+        var slot = SlotFor(platform);
+
         // The whole fetch is inside the gate, not just the write: the "is this newer?" decision is
         // read-then-write, and a manual upload landing between the two would be silently replaced.
         await _gate.WaitAsync(ct);
@@ -249,8 +334,7 @@ public class AgentInstallerService
             foreach (var a in root.GetProperty("assets").EnumerateArray())
             {
                 var name = a.GetProperty("name").GetString() ?? "";
-                if (name.StartsWith("SaveLocker-Agent-Setup", StringComparison.OrdinalIgnoreCase) &&
-                    name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                if (slot.IsReleaseAsset(name))
                 {
                     assetName = name;
                     assetUrl = a.GetProperty("browser_download_url").GetString();
@@ -258,14 +342,14 @@ public class AgentInstallerService
                 }
             }
             if (assetUrl is null || assetName is null)
-                throw new InvalidOperationException(
-                    $"Latest release of {_githubRepo} has no SaveLocker-Agent-Setup-*.exe asset.");
+                throw new InstallerRejectedException(
+                    $"Latest release of {_githubRepo} has no {slot.AssetPattern} asset.");
 
             // The scheduled poll still needs to inspect release metadata, but should not
             // repeatedly download the same installer on every interval. Manual fetches
             // retain their original force-refresh behavior.
-            var current = GetInfo();
-            if (onlyIfNewer && current is not null && GetInstallerPath() is not null &&
+            var current = GetInfo(slot.Platform);
+            if (onlyIfNewer && current is not null && GetInstallerPath(slot.Platform) is not null &&
                 !IsNewerVersion(version, current.Version))
                 return current;
 
@@ -280,7 +364,7 @@ public class AgentInstallerService
                 throw new InstallerTooLargeException(_maxBytes);
 
             await using var stream = await dlResp.Content.ReadAsStreamAsync(ct);
-            return await SaveCoreAsync(stream, version, assetName, ct);
+            return await SaveCoreAsync(stream, version, assetName, slot, ct);
         }
         finally { _gate.Release(); }
     }
@@ -315,12 +399,13 @@ public class AgentInstallerService
         return Version.TryParse(normalized, out var parsed) ? parsed : null;
     }
 
-    /// <summary>Returns the on-disk path to the hosted installer, or null if none is present.</summary>
-    public string? GetInstallerPath()
+    /// <summary>Returns the on-disk path to a platform's hosted package, or null if none is present.</summary>
+    public string? GetInstallerPath(string platform = AgentPlatform.Windows)
     {
-        var info = GetInfo();
+        var slot = SlotFor(platform);
+        var info = GetInfo(slot.Platform);
         if (info is null) return null;
-        var path = Path.Combine(_root, info.FileName);
+        var path = Path.Combine(slot.Root, info.FileName);
         return File.Exists(path) ? path : null;
     }
 }

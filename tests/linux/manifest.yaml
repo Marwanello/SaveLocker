@@ -20,9 +20,34 @@ Fake Portable Game:
 # An installed Steam game. Its prefix lives in the library it is INSTALLED in, not in the main
 # Steam root, so this only resolves if discovery walks libraryfolders.vdf and pairs each library
 # with its own compatdata.
+#
+# It also carries NO cloud block, which is the manifest's way of saying "no Steam Cloud" — the
+# generator writes only ticked stores and omits the block when none are. Being sold on Steam must
+# therefore not flag it, or the default Add Games view hides a game nothing else backs up.
 Fake Installed Game:
   files:
     <winAppData>/FakeInstalledGame:
+      tags:
+        - save
+
+# The other half of that pair: sold on Steam AND actually covered by Steam Cloud. Without this the
+# suite cannot tell a manifest read from a constant — flipping the flag to always-false would pass
+# every check above.
+Fake Cloud Game:
+  cloud:
+    steam: true
+  files:
+    <winAppData>/FakeCloudGame:
+      tags:
+        - save
+
+# Sold on Steam, cloud block present, but GOG-only — the Breath of Fire IV shape, and the case that
+# motivated reading the field. A block that exists is not a block that names Steam.
+Fake Gog Cloud Game:
+  cloud:
+    gog: true
+  files:
+    <winAppData>/FakeGogCloudGame:
       tags:
         - save
 

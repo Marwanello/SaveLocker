@@ -1,4 +1,4 @@
-﻿# Gotchas
+# Gotchas
 
 Operating traps for Claude/an AI working this repo — not a history of bugs already shipped and
 fixed. If it's a one-time incident with no recurring workflow risk, it belongs in `logs/`, not
@@ -45,6 +45,20 @@ here.
   intended and asserted, but `Remove-Item` on it only works as the same account (or elevated). If a
   suite ever runs as a different user than the one that created `.verify-*`, clean up elevated.
 
+## Ludusavi manifest
+- **The manifest never writes `false` — absence IS the negative.** A `cloud:` block lists only the
+  stores whose PCGamingWiki "Save game cloud syncing" row is ticked, and the whole block is omitted
+  when none are. So "no `cloud:` block" and "a block that does not name `steam`" say exactly the
+  same thing, and both mean *no Steam Cloud*. Reading a missing block as "unknown" would throw away
+  38k games' worth of real data. The same shape applies to `tags:` and `when:`, in the opposite
+  direction: absent there means "unspecified", i.e. **applies** — read absence as exclusion and
+  thousands of good entries vanish (`ManifestLoader.IsWindowsSave` carries that note).
+- **`ManifestLoader.GameCount` is smaller than the manifest's key count, by design.** The manifest
+  holds entries differing only in case (`Afterlife` / `afterlife`); `Parse` keeps the first and drops
+  58 of 52,973. If a count derived from the manifest is short by a few dozen, that is this, not a
+  parse failure — confirm before hunting.
+- **PCGamingWiki 403s automated fetches.** Read a page through the browser tools, not `curl`/WebFetch.
+
 ## Test-only environment variables
 These exist because the production values are far too slow to observe in a suite. They are read by
 `Agent.Core` and are **not** user settings — nothing in the UI or docs offers them.
@@ -89,6 +103,14 @@ behave in ways that look like bugs.
   is case-insensitive). Force a real collection: `@($x | Where-Object {...}).Length`.
 - **Under `$ErrorActionPreference="Stop"`, native stderr terminates the script** — an expected
   warning (e.g. a CONFLICT message) aborts a test run. Use `Continue` and parse output text.
+- **`-ErrorAction SilentlyContinue` does not suppress a web cmdlet's failure.** `Invoke-RestMethod` /
+  `Invoke-WebRequest` raise a *terminating* error on a refused connection or a 4xx, and `-ErrorAction`
+  only governs non-terminating ones — so a call aimed at a server the script just stopped kills the
+  run. It does not look like a crash: `finally` still prints the tally, so the suite reports a
+  **lower pass count with zero failures**, and every section after the throw silently never ran.
+  (Cost a confused re-run on 2026-08-15: 161 → "144 passed, 0 failed".) Wrap every such call in
+  `try/catch` — which is what the suites' own `InstallerStatus`-style helpers already do — and check
+  a suite's total against its recorded baseline, not just its failure count.
 - **`Copy-Item -Recurse src dst` copies *into* dst when dst exists** rather than overwriting —
   always `Remove-Item -Recurse -Force $dst` first.
 - **`VAR=x cmd` (bash) does not export `VAR`** to `cmd` unless exported — a prefix assignment
@@ -115,6 +137,16 @@ behave in ways that look like bugs.
   Releases (self-contained publish) are unaffected.
 
 ## Web console
+- **A bounded flex column SHRINKS its children instead of overflowing.** The console root is a fixed
+  `height: 100vh` + `overflow: hidden` so the page does not scroll and its panes do — but the naive
+  version of that collapsed ConfigView's cards to ~4 px each rather than producing a scrollbar. The
+  fix is `> * { flex-shrink: 0 }`, which `.page-scroll` in `index.css` carries: **any new full-page
+  scroller wants that class, not a bare `overflowY: auto`.** (Shipped v0.5.4; the symptom before it
+  was a games sidebar with no bounded height, so picking a game far down the list pushed its
+  settings off screen.)
+- **Candidate selection is by ABSOLUTE index in both Add Games UIs.** `Enroller` indexes into the
+  *unfiltered* list, so a filter that renumbers what it shows enrolls the wrong game. Applies to
+  `agent-ui` and the Game Mode mirror in `Ui/UiApp.cs`.
 - **`@import` must precede every other rule.** `@import "tailwindcss"` expands into generated CSS,
   so anything imported after it is silently discarded by the browser — the Google Fonts line sat
   there for months, the console rendered in fallback fonts, and the production build warned about it
@@ -219,7 +251,30 @@ behave in ways that look like bugs.
   naively, the harness itself looks like frantic mouse movement and claims the cursor — the test
   measures the harness, not the code. `--pointer` skips the movement test entirely for this reason.
 
+## Linux agent
+- **`Environment.ProcessPath` is the *dotnet host* under `dotnet savelocker.dll`.** Any code that
+  answers "where am I installed?" must use `AppContext.BaseDirectory` instead. This is not
+  theoretical: `SystemdAutoStart` used `ProcessPath` and wrote `ExecStart=/…/dotnet daemon` — a unit
+  that starts nothing — whenever it was run from a build tree. The installed agent is a
+  self-contained apphost, so the two agree there and the fault is invisible on a real Deck.
+- **`systemctl --user stop` kills the unit's whole cgroup.** An updater (or anything else) spawned
+  by the daemon dies together with the unit it just stopped. That is why the update swap runs from
+  `ExecStartPre` of the *next* invocation rather than from the daemon, and why `savelocker update`
+  can restart the service safely — it runs in the user's shell session, not in the unit.
+- **The Linux install prefix IS the state directory** (`~/.local/share/SaveLocker`), so
+  `config.json` — this machine's server API key — sits inside the tree an update replaces. Anything
+  that "replaces the install" must copy file-by-file, never swap or rename the directory.
+
 ## Test harness
+- **`run-linux-tests.sh` reassigns `HOME` to the fixture tree.** So `"$HOME/.dotnet"` inside a check
+  resolves into the fake home and finds nothing — derive a real `DOTNET_ROOT` from
+  `command -v dotnet`. Only the framework-dependent apphost needs it; a released agent is published
+  self-contained. Cost an hour: without it the launch wrapper never started, the "is a game running?"
+  scan correctly found nothing, and the check it gated passed while testing nothing at all.
+- **Assert on text only one outcome can produce.** `contains "$out" "installed"` also matched the
+  rollback message *"was installed but never started successfully"* — so a run that had just UNDONE
+  an install reported a successful one, and passed. Likewise an unanchored `grep ProtectHome`
+  matched the comment explaining why `ProtectHome` is absent.
 - **Never `rsync` the Windows working tree into the WSL clone to run `run-linux-tests.sh`.** The
   Windows tree is CRLF, and `tests/linux/slow-game.sh` with CRLF line endings misbehaves: the game
   exits with the wrong code and stops writing early, failing 6 checks across the launch wrapper, the

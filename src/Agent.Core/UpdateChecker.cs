@@ -70,10 +70,27 @@ public sealed class UpdateChecker : IDisposable
         return new Version(0, 1, 0);
     }
 
+    /// <summary>
+    /// Which of the server's agent packages this build is asking for.
+    /// <para>
+    /// Architecture is assumed x64 rather than read from <c>RuntimeInformation</c>: those are the
+    /// only two the release workflow produces, a Deck is x64, and inventing a third value here
+    /// would only turn "the server hosts nothing for me" into a 400.
+    /// </para>
+    /// </summary>
+    public static readonly string Platform =
+        OperatingSystem.IsWindows() ? AgentPlatform.Windows : AgentPlatform.Linux;
+
+    /// <summary>What this platform's package is called on disk, and what its first bytes must be.</summary>
+    private static (string Extension, byte[] Magic, string Describe) PackageShape =>
+        OperatingSystem.IsWindows()
+            ? (".exe", [(byte)'M', (byte)'Z'], "a Windows executable")
+            : (".tar.gz", [0x1f, 0x8b], "a gzip archive");
+
     /// <summary>The origin this checker was built for. A connection change retires it (see TrayApp).</summary>
     public string ServerUrl { get; }
 
-    /// <summary>Refuse an installer larger than this. The server caps uploads at 200 MB by default.</summary>
+    /// <summary>Refuse a package larger than this. The server caps uploads at 200 MB by default.</summary>
     private const long MaxInstallerBytes = 300L * 1024 * 1024;
 
     public UpdateChecker(AgentConfig config)
@@ -97,7 +114,11 @@ public sealed class UpdateChecker : IDisposable
     {
         try
         {
-            var resp = await _http.GetAsync("/api/agent/latest");
+            // A server from before platform slots ignores the parameter and answers with the
+            // Windows installer, which is exactly what it would have answered anyway — so an old
+            // server keeps working for a Windows agent, and a Linux agent talking to one is told
+            // about a .exe it will refuse at the payload check rather than run.
+            var resp = await _http.GetAsync($"/api/agent/latest?platform={Platform}");
 
             if (resp.StatusCode == HttpStatusCode.NoContent)
                 return new UpdateResult.UpToDate();
@@ -126,18 +147,24 @@ public sealed class UpdateChecker : IDisposable
     }
 
     /// <summary>
-    /// Download the installer and prove it is the artifact the configured server authorised, or
-    /// throw. Nothing is left on disk on any failure path.
+    /// Download this platform's agent package and prove it is the artifact the configured server
+    /// authorised, or throw. Nothing is left on disk on any failure path.
     ///
     /// <para>
     /// Everything here is one defence, because the transport is not one. SaveLocker ships no
-    /// certificates and plain http is the default (Decisions.md), so a downloaded executable cannot
+    /// certificates and plain http is the default (Decisions.md), so a downloaded package cannot
     /// be trusted because of <i>how</i> it arrived — only because of what it hashes to.
+    /// </para>
+    /// <para>
+    /// It only ever <b>downloads and verifies</b>. Running the Windows installer is the tray's job
+    /// and needs the user's consent; unpacking the Linux tarball is the updater's, and is gated on
+    /// its own checks. Keeping that separation is what lets the CLI exercise this whole path
+    /// without anything being executed.
     /// </para>
     /// </summary>
     /// <param name="expectedSha256">
     /// The digest from the update metadata. Required for a download that leaves the configured
-    /// server's origin; optional (with a warning) for the server's own installer endpoint, so a
+    /// server's origin; optional (with a warning) for the server's own package endpoint, so a
     /// server that predates digests still updates rather than becoming permanently unupdatable.
     /// </param>
     public async Task<string> DownloadInstallerAsync(
@@ -156,13 +183,13 @@ public sealed class UpdateChecker : IDisposable
         if (!sameOrigin && string.IsNullOrWhiteSpace(expectedSha256))
             throw new InvalidOperationException(
                 $"Refusing to download an update from {url.Host}: it is not this SaveLocker server, " +
-                "and the server supplied no SHA-256 to verify it against. Host the installer on the " +
+                "and the server supplied no SHA-256 to verify it against. Host the package on the " +
                 "server itself, or set AgentUpdate:Sha256 alongside AgentUpdate:DownloadUrl.");
 
         if (string.IsNullOrWhiteSpace(expectedSha256))
             AgentLogger.Log(
                 "WARNING: the server supplied no SHA-256 for this update, so the downloaded " +
-                "installer cannot be verified before it runs. Re-upload the installer in the console " +
+                "package cannot be verified before it is used. Re-upload it in the console " +
                 "to record one.");
 
         // The machine key is a credential for OUR server. The old code reused one client whose
@@ -174,7 +201,8 @@ public sealed class UpdateChecker : IDisposable
             // Unique per attempt and created exclusively: the old fixed name in %TEMP% was
             // predictable and world-writable, so another local user could pre-place or swap the file
             // between download and launch.
-            var dest = Path.Combine(Path.GetTempPath(), $"SaveLockerSetup-{version}-{Guid.NewGuid():N}.exe");
+            var dest = Path.Combine(
+                Path.GetTempPath(), $"SaveLockerSetup-{version}-{Guid.NewGuid():N}{PackageShape.Extension}");
             try
             {
                 var actual = await StreamToFileAsync(http, url, dest, progress);
@@ -182,12 +210,12 @@ public sealed class UpdateChecker : IDisposable
                 if (!string.IsNullOrWhiteSpace(expectedSha256) &&
                     !string.Equals(actual, expectedSha256.Trim(), StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException(
-                        "The downloaded installer does not match the checksum the server published. " +
-                        "It was NOT run and has been deleted.\n" +
+                        "The downloaded package does not match the checksum the server published. " +
+                        "It was NOT used and has been deleted.\n" +
                         $"  expected: {expectedSha256.Trim().ToLowerInvariant()}\n" +
                         $"  actual:   {actual}");
 
-                VerifyLooksExecutable(dest);
+                VerifyLooksLikeAgentPackage(dest);
                 return dest;
             }
             catch
@@ -223,8 +251,19 @@ public sealed class UpdateChecker : IDisposable
         using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 
         await using var src = await resp.Content.ReadAsStreamAsync();
+
         // CreateNew, not Create: this must fail rather than overwrite anything already at the path.
-        await using var fs = new FileStream(dest, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        // On Unix the mode is set AS the file is created, not afterwards — there is then no instant
+        // at which a package this machine is about to execute is writable by anyone else.
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+        };
+        if (!OperatingSystem.IsWindows())
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        await using var fs = new FileStream(dest, options);
 
         var buf = new byte[81920];
         long downloaded = 0;
@@ -246,10 +285,19 @@ public sealed class UpdateChecker : IDisposable
         return Convert.ToHexStringLower(sha.GetHashAndReset());
     }
 
+    public void Dispose() => _http.Dispose();
+
     /// <summary>
-    /// Reject anything that is not a Windows executable. Without this the most likely wrong payload
-    /// — a captive-portal login page or a proxy's HTML error page served with 200 — reaches
-    /// <c>Process.Start</c>, which hands it to the shell.
+    /// Reject anything that is not this platform's package shape — an <c>MZ</c> executable on
+    /// Windows, a gzip archive on Linux. Without it the most likely wrong payload (a captive-portal
+    /// login page, or a proxy's HTML error page served with 200) reaches the code that runs or
+    /// unpacks it.
+    /// <para>
+    /// It also catches the one cross-platform mistake this channel can make: a Linux agent pointed
+    /// at a server that predates platform slots is offered the <b>Windows</b> installer, and an
+    /// <c>MZ</c> header is not a gzip header, so it stops here with a sentence naming the problem
+    /// rather than failing somewhere inside tar.
+    /// </para>
     /// <para>
     /// This is a sanity check, not a security control: the digest is what proves authenticity. It
     /// is here because it produces a comprehensible error instead of a baffling one.
@@ -261,16 +309,17 @@ public sealed class UpdateChecker : IDisposable
     /// a real cost; see Decisions.md.
     /// </para>
     /// </summary>
-    public void Dispose() => _http.Dispose();
-
-    private static void VerifyLooksExecutable(string path)
+    private static void VerifyLooksLikeAgentPackage(string path)
     {
+        var (_, magic, describe) = PackageShape;
+
         using var fs = File.OpenRead(path);
-        var header = new byte[2];
-        if (fs.Read(header) != 2 || header[0] != (byte)'M' || header[1] != (byte)'Z')
+        var header = new byte[magic.Length];
+        if (fs.ReadAtLeast(header, magic.Length, throwOnEndOfStream: false) != magic.Length ||
+            !header.AsSpan().SequenceEqual(magic))
             throw new InvalidOperationException(
-                "The downloaded update is not a Windows executable — the server or a proxy in the " +
-                "way returned something else. It was NOT run.");
+                $"The downloaded update is not {describe} — the server, or a proxy in the way, " +
+                "returned something else. It was NOT used.");
     }
 }
 

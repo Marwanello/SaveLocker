@@ -1,10 +1,26 @@
-﻿# Decisions
+# Decisions
 
 Settled and shipped. Don't re-litigate — the "why" is kept to one line so a future
 session can judge an edge case, not to reopen the choice.
 
 - **Detection: reuse Ludusavi's manifest** (community save-location DB), don't re-map save
   locations ourselves. Build our own agent/server/dashboard for orchestration, leasing, conflicts.
+  <br>**Corollary: do not scrape PCGamingWiki. The manifest IS that scrape** (2026-08-14, raised by
+  a Breath of Fire IV page that looked like uncaptured data). Every row of that page's Game data
+  table is in the manifest token-for-token — `<path-to-game>` → `<base>`, the per-store rows as
+  `when: store:`, config rows tagged `config`. A scraper of our own would re-derive 52,973 entries we
+  refresh with one `GET`, against a site that 403s automated fetches. What the wiki DOES hold that
+  the manifest drops is nothing we want (launch commands, system requirements); what the manifest
+  holds and we were dropping is covered by the next bullet. If save-path coverage needs to improve,
+  the lever is contributing upstream to the wiki — it flows back on the next refresh.
+- **Steam Cloud is per-game manifest data, never inferred from the storefront** (2026-08-14).
+  Discovery hardcoded `HasSteamCloud: true` for anything installed through Steam. Only 14,340 of the
+  manifest's 48,908 Steam-id titles actually have Steam Cloud, and the default Add Games view HIDES
+  what is flagged — so the assumption made thousands of games the user owns invisible, with nothing
+  backing them up. `ManifestLoader.HasSteamCloud` returns `bool?`; **`null` means "not in the
+  manifest" and is not the same answer as "no"** — that case keeps the old assumption, which is what
+  makes the change purely additive. This does not reopen the scope decision below: installed Steam
+  games are still out of the *default view*, just no longer out of it for a reason that was false.
 - **Conflict prevention: proactive lock/lease.** Server tracks a per-game checkout; the agent pulls
   before launch *where it has a real launch boundary* (see the next bullet); other machines are
   warned if leased elsewhere. Content-hash + parent-version lineage is the fallback detector.
@@ -82,6 +98,31 @@ session can judge an edge case, not to reopen the choice.
   the artifact does not stop an attacker who can rewrite both. Authenticode verification is the
   check that would, because it does not depend on the channel — there is a marked hook for it in
   `UpdateChecker.VerifyLooksExecutable`, pending a decision on code signing.
+- **The Linux agent stages an update while running and installs it at the next start** (2026-08-15).
+  Not a mid-session restart, and not a prompt. Three things forced the shape and none of them are
+  worth rediscovering:
+  <br>**`systemctl --user stop` kills the unit's entire cgroup.** An updater the daemon spawned dies
+  together with the unit it just stopped — halfway through replacing the agent's files. So the
+  daemon only does what is safe while running (download, verify the digest, unpack, smoke-test) and
+  the swap runs from `ExecStartPre` of the *next* invocation, a fresh process with the old daemon
+  already gone. `savelocker update` may restart the service because it runs in the user's shell
+  session, not in the unit; anything the daemon spawns must not.
+  <br>**The install prefix IS the state directory** (`~/.local/share/SaveLocker`), so `config.json`
+  — the machine's server API key — sits inside the tree an update replaces. Apply therefore copies
+  file-by-file, touching only paths the tarball carries; renaming the tree away would take the
+  enrollment with it. Splitting app files from XDG state stays a separate Backlog item, deliberately
+  not done here.
+  <br>**A package that unpacks perfectly can still be unable to run** — wrong architecture, a glibc
+  newer than the device has, a truncation the server hashed too. So the staged binary is executed
+  and must report the version the server offered before it is allowed to replace a working agent.
+  Old files are *moved* aside, not deleted: a rename is free, gives the replacement a new inode (so a
+  `savelocker run` wrapper mid-game keeps running from the copy it mapped), and leaves a complete
+  previous version. `applied.json` surviving into the next start is the failure signal — the daemon
+  clears it once it is genuinely up, so a build that cannot start is rolled back automatically and
+  reported as `update.rolled_back`.
+  <br>**Consent, stated plainly:** a Deck installs updates without asking, because it has no surface
+  to ask on. What it does not do is change anything mid-session. `AutoUpdate: false` in `config.json`
+  stops the staging while keeping the checks, so the console still says the machine is behind.
 - **A `SyncEngine` has an explicit lifetime, and its leases belong to the origin that issued them**
   (WA-06, 2026-07-27). Replacing `_engine` used to drop the old one on the floor. Its lease timers
   are rooted by the runtime timer queue, so they kept renewing against the **old** server forever,
@@ -241,7 +282,9 @@ session can judge an edge case, not to reopen the choice.
   the Steam registry + arbitrary save folders. Machine-wide install, UAC up front. Uninstall
   prompts before deleting `%PROGRAMDATA%\SaveLocker` (API key + config).
 - **Linux agent scope: non-Steam Windows games run under Proton only** (v1). Steam-bought games
-  already have Steam Cloud; native Linux game builds are explicitly out of scope (would need a
+  were assumed to already have Steam Cloud — **most do not** (see the Steam Cloud bullet above;
+  the scope call stands, its stated premise does not). Native Linux game builds are explicitly out
+  of scope (would need a
   save-variant model — different formats/paths/line-endings per platform). A Proton save is a
   Windows save, byte-identical to a Windows PC's — existing content-hash lineage works with zero
   server schema change. **Never sync a native-Linux save into a Windows install.**
@@ -254,11 +297,19 @@ session can judge an edge case, not to reopen the choice.
   filters what the scan RETURNS, so a scan that returns nothing leaves "hidden by default" and
   "never discovered" indistinguishable from the couch — and only one of those can be undone by the
   user. Windows had always scanned them and flagged `HasSteamCloud`; Linux now matches. They stay
-  out of the default view, one filter click away.
+  out of the default view, one filter click away — and **since 2026-08-14 only the ones the manifest
+  says are genuinely cloud-synced are flagged at all**, which is most of the point: the default view
+  was hiding games nothing was backing up.
   <br>An installed game's prefix is `compatdata/<appid>` **in the library it is installed in**, not
   in the main Steam root where every shortcut's prefix goes — so libraries and prefixes are walked
   together, per library. A Deck's SD card is exactly this case, and getting it wrong finds the game
   and never finds its saves.
+  <br>**A compat tool is identified by `toolmanifest.vdf` in its install directory, never by appid**
+  (found on a Deck, 2026-08-10). The first cut filtered a hardcoded list of five appids and the Deck
+  offered Proton 9.0/10.0/11.0, Proton Hotfix and Steam Linux Runtime 4.0 as enrollable games —
+  Valve mints a new appid per Proton release, so any such list is stale the day it is written. Both
+  scanners use the marker file; the appid list survives only for Steamworks Common Redistributables,
+  which ships no toolmanifest. Pinned by a fixture whose appid is deliberately unguessable.
 - **Linux UI: headless daemon serving the existing React UI** on `:5178` (Desktop Mode = KDE +
   browser). **Game Mode has no browser**, so `savelocker ui` (SDL + Dear ImGui, in-process against
   `Agent.Core`, no second API client) covers Status/Add game/Set folder/Launch setup as a gamepad

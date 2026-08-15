@@ -111,6 +111,20 @@ public sealed class ManifestLoader
     }
 
     /// <summary>
+    /// Whether the manifest says this game's saves sync through Steam Cloud. Null when the game is
+    /// not in the manifest at all — which is not the same answer as "no", and callers must not
+    /// collapse the two.
+    /// <para>
+    /// The manifest never writes <c>false</c>. A <c>cloud:</c> block lists only the stores whose
+    /// PCGamingWiki "Save game cloud syncing" row is ticked, and is omitted entirely when none are —
+    /// so a missing block and a block without <c>steam</c> state the same thing, and both mean no.
+    /// 15,465 of 52,973 entries carry a block; 14,344 of those name Steam.
+    /// </para>
+    /// </summary>
+    public bool? HasSteamCloud(string name) =>
+        TryGetGame(name, out var game) ? game.Cloud?.Steam == true : null;
+
+    /// <summary>
     /// Lowercase, punctuation reduced to single spaces, so spelling differs freely but WORDS do not.
     /// <para>
     /// Word boundaries have to survive. Deleting non-alphanumerics outright collapses
@@ -237,6 +251,19 @@ public sealed class ManifestLoader
 
         [YamlMember(Alias = "installDir")]
         public Dictionary<string, object>? InstallDir { get; set; }
+
+        [YamlMember(Alias = "cloud")]
+        public ManifestCloud? Cloud { get; set; }
+    }
+
+    /// <summary>
+    /// Storefronts that sync this game's saves themselves. Only the stores we act on are declared;
+    /// the deserializer ignores the rest (gog, epic, origin, uplay).
+    /// </summary>
+    public sealed class ManifestCloud
+    {
+        [YamlMember(Alias = "steam")]
+        public bool Steam { get; set; }
     }
 
     public sealed class ManifestFileEntry

@@ -14,6 +14,12 @@ namespace SaveLocker.Agent.Linux;
 /// into Cloud, and a user who wants a local copy of one had no way to reach it, because the UI
 /// filters what the scan returns and the scan returned nothing to filter.
 /// </para>
+///
+/// <para>
+/// The flag itself is the manifest's answer, not the storefront's: most Steam titles have no Steam
+/// Cloud (<see cref="Detection.HasSteamCloudAsync"/>), so flagging on "Steam installed it" hid
+/// thousands of games that nothing else was backing up.
+/// </para>
 /// </summary>
 public sealed class LinuxGameScanner : IGameScanner
 {
@@ -153,7 +159,11 @@ public sealed class LinuxGameScanner : IGameScanner
                     Source: ScanSource.SteamInstalled,
                     // Flagged, not hidden here. The UI's default view is what hides them; the scan
                     // must still return them or no filter can bring them back.
-                    HasSteamCloud: true,
+                    //
+                    // WHICH ones get flagged comes from the manifest, not from the fact that Steam
+                    // installed them — see Detection.HasSteamCloudAsync. A title the manifest does
+                    // not know keeps the old assumption.
+                    HasSteamCloud: await _detection.HasSteamCloudAsync(name, ct) ?? true,
                     ManifestKey: save is null
                         ? null
                         : await _detection.CanonicalNameAsync(name, ct) ?? name,

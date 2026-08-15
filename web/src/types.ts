@@ -28,11 +28,11 @@ export type CreateEnrollmentResponse = Schemas['CreateEnrollmentResponse'];
 export type EffectiveServerUrl = Schemas['EffectiveServerUrl'];
 export type AdminStatus = Schemas['AdminStatus'];
 export type ServerBuildInfo = NonNullable<Schemas['ServerBuildInfo']>;
+export type AgentInstallerStatus = Schemas['AgentInstallerStatus'];
 
-// Hand-written — not in the generated api-types; run `npm run gen:api` after server update.
-export interface AgentInstallerStatus {
-  version: string;
-  fileName: string;
-  uploadedAt: string;
-  sizeBytes: number;
-}
+/**
+ * Which agent a hosted package is for. Hand-written because the server's `AgentPlatform` is a
+ * vocabulary of wire constants rather than an enum, so it has no schema of its own — but these
+ * strings are exactly what `?platform=` accepts, and an absent parameter means `win-x64`.
+ */
+export type AgentPlatform = 'win-x64' | 'linux-x64';
