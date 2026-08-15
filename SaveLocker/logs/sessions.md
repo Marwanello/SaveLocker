@@ -28,7 +28,15 @@ one byte is written, `plugin.json` is skipped by name rather than discovered by 
 the old version, never the reverse. The plan asked the package to carry a file manifest; a zip
 already is one, so the entry list is used directly and nothing new has to be kept in sync.
 
-**`run-linux-tests` 161 → 197/197**, with a fake `~/homebrew/plugins/SaveLocker` in the fixture HOME.
+**And it now says so.** Nothing told a user the plugin existed, so the agent UI got a
+collapsed-by-default card on Overview and the console got a KB article. The card reads real state
+from a new `GET /api/decky` — local file reads, no network, re-read per request — so it says
+"INSTALLED v0.2.0" instead of offering install steps to someone who already followed them. What had
+deferred that was regenerating `api-types.ts`, believed to need the installed agent stopped; it does
+not. `openapi-typescript` emits no server URL, so generating from a daemon on any port is
+byte-identical to the `:5178` script's output. In [[Gotchas]].
+
+**`run-linux-tests` 161 → 197/197 → 208/208**, with a fake `~/homebrew/plugins/SaveLocker` in the fixture HOME.
 Against a build with the guard removed the refusal checks fail as they should — but the two
 "wrote NOTHING" assertions beside them still passed, surviving only on enumeration order. They are
 recorded as order-dependent in the write-up rather than trusted.

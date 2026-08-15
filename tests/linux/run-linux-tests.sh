@@ -1179,6 +1179,45 @@ code="$(curl -s -o /dev/null -w '%{http_code}' -H "X-SaveLocker-Token: ${lo_toke
         -H "Origin: https://evil.example" "${lo_api}")"
 check "the endpoint refuses a foreign Origin"         "$([ "${code}" = "403" ] && echo 0 || echo 1)"
 
+# ---- /api/decky: what the agent UI reads to decide what to say about the plugin ----
+# Local file reads only, and re-read per request — the plugin can be installed, updated or removed
+# while the daemon runs, including by the agent itself. A cached answer would tell a user to install
+# something they just installed.
+decky_api="http://localhost:5187/api/decky"
+
+rm -rf "${HOME}/homebrew"
+d="$(get "${decky_api}")"
+check "decky: applicable on Linux"                   "$(contains "${d}" '"applicable":true')"
+check "decky: absent Decky is reported, not guessed" "$(contains "${d}" '"deckyPresent":false')"
+check "decky: no plugin without Decky"               "$(contains "${d}" '"pluginInstalled":false')"
+check "decky: the install URL has one source"        "$(contains "${d}" 'SaveLocker-Decky/releases/latest/download')"
+
+mkdir -p "${HOME}/homebrew/plugins"
+d="$(get "${decky_api}")"
+check "decky: Decky alone is detected"               "$(contains "${d}" '"deckyPresent":true')"
+check "decky: Decky alone is not a plugin"           "$(contains "${d}" '"pluginInstalled":false')"
+
+mkdir -p "${HOME}/homebrew/plugins/SaveLocker"
+echo '{"name":"SaveLocker","version":"0.2.0"}' >"${HOME}/homebrew/plugins/SaveLocker/package.json"
+d="$(get "${decky_api}")"
+check "decky: an installed plugin is seen LIVE"      "$(contains "${d}" '"pluginInstalled":true')"
+# Read from the same package.json Decky reports in its own UI, so the two cannot disagree.
+check "decky: it reports the installed version"      "$(contains "${d}" '"pluginVersion":"0.2.0"')"
+
+# An unreadable package.json is the reinstall signal, not a crash.
+echo 'not json at all' >"${HOME}/homebrew/plugins/SaveLocker/package.json"
+d="$(get "${decky_api}")"
+check "decky: an unreadable package.json is null, not a 500" "$(contains "${d}" '"pluginVersion":null')"
+
+# Same two guards as every other route on this API — a new route is a new chance to forget them.
+code="$(curl -s -o /dev/null -w '%{http_code}' "${decky_api}")"
+check "decky: refuses an unauthenticated caller"     "$([ "${code}" = "401" ] && echo 0 || echo 1)"
+code="$(curl -s -o /dev/null -w '%{http_code}' -H "X-SaveLocker-Token: ${lo_token}" \
+        -H "Origin: https://evil.example" "${decky_api}")"
+check "decky: refuses a foreign Origin"              "$([ "${code}" = "403" ] && echo 0 || echo 1)"
+
+rm -rf "${HOME}/homebrew"
+
 # The merge. Only the caller knows the CURRENT options and only the agent knows the rule, which is
 # why this is a round trip rather than a string the caller assembles.
 resolved="$(get -X POST -H 'Content-Type: application/json' \

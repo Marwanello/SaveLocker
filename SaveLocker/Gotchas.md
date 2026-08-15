@@ -46,6 +46,12 @@ here.
   release build, not the dev build just compiled. Start a dev daemon on a free port (e.g. 5190)
   and generate against that; grep the output for a symbol you just added before trusting it. A
   running daemon also locks the build output DLLs (`MSB3027 … locked by ".NET Host (pid)"`).
+  <br>**The generated file is port-independent, so you never have to stop the installed agent.**
+  `openapi-typescript` emits types only — no `servers` block, no URL — so running it by hand against
+  another port produces a file byte-identical to what the `:5178` script would write, and CI's
+  `gen:api -- --check` is satisfied. Verified 2026-08-15 by generating from a Linux daemon on 5186
+  (in WSL, reachable from Windows through WSL2 localhost forwarding) and diffing: the only change
+  was the route being added. `npx openapi-typescript http://localhost:<port>/openapi/v1.json -o src/api-types.ts`.
 
 - **The agent state directory is ACL-locked to whoever created it** (WA-03). `StateDirSecurity`
   severs inheritance and grants only the enrolling user, SYSTEM and Administrators. This applies to

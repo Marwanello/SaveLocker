@@ -199,6 +199,10 @@ SaveLocker/
 │           ├── OverviewView.tsx · AddGamesView.tsx · SettingsView.tsx
 │           ├── LaunchSetupCard.tsx      # The Steam launch-options command + Copy. Renders nothing
 │           │                           #   on Windows. Target of logs/2026-08-15_decky-plugin.md
+│           ├── DeckyPluginCard.tsx      # The optional Decky plugin: what it adds, and whether it
+│           │                           #   is installed (GET /api/decky — local reads, no network).
+│           │                           #   Collapsed by default: expanded it pushed the setup
+│           │                           #   instructions off a Deck's screen
 │           └── PathBrowserModal.tsx     # UI for PathBrowser — the Deck's only folder picker
 │
 │                                     # NOTE: the Decky plugin lives in its OWN repository,

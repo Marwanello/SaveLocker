@@ -418,7 +418,8 @@ on-screen keyboard is the actual friction, so a plugin removes nothing.
 
 ## Phase 5 — The agent keeps the plugin updated — **DONE 2026-08-15 (harness only; no hardware yet)**
 
-**Outcome:** `run-linux-tests` 161 → **197/197** (36 new checks; baseline in [[Build and Run]]).
+**Outcome:** `run-linux-tests` 161 → **197/197** (36 new checks), then → **208/208** when the agent
+UI was given live plugin state (11 more). Baseline in [[Build and Run]].
 Solution builds clean — `Agent.Linux` 0 warnings, `Agent` with only the pre-existing MSB3277 — and
 `web` typechecks. `run-server-bugbounty-tests` reads **162/164**: both failures are the SteamGridDB
 key-verification pair, **reproduced on pristine `main` with the tree stashed**, so they are not from
@@ -467,6 +468,32 @@ was factored out of `CheckAsync` (the plugin's comparison is against the *plugin
 not the agent's), and `DownloadInstallerAsync` took a `PackageKind` so the payload shape check knows a
 zip from a tarball. Everything else about the download — the off-origin rule, the credential rule, the
 size cap, the digest — is untouched and shared.
+
+### Telling the user the plugin exists (added the same session)
+
+Phase 5 made the plugin update itself, but nothing told anyone it was an option. Two surfaces now
+do: a **collapsed-by-default card** on the agent UI's Overview, and a console KB article
+(`web/src/help/decky-plugin.md`, linked from `installing-the-agent.md`).
+
+**Collapsed matters more than it sounds.** Expanded, the card was taller than everything above it
+and pushed the actual launch-options instructions off a Deck's screen; collapsed, the whole Overview
+fits at 1280×800 with nothing to scroll. The whole header row is the toggle, not just the chevron —
+a 14 px target is a poor one on a Deck.
+
+**It reads real state**, from a new `GET /api/decky` (`DeckyStatusDto`), so it says "INSTALLED
+v0.2.0" rather than offering install instructions to someone who already followed them. Local file
+reads only — no network — so the UI can poll it freely, and it is read per request because the
+plugin can be installed, updated or removed while the daemon runs, including by the agent itself.
+Three states, deliberately worded as three different pieces of advice rather than one paragraph with
+a flag in it: no Decky, Decky but no plugin (the only one that shows the install URL), and installed.
+All three were verified in a browser against a real Linux daemon by adding and removing the fixture
+plugin directory underneath it.
+
+**The api-types regeneration turned out not to need the installed agent stopped**, which is what had
+deferred this in the first place. `openapi-typescript` emits types only — no `servers` block, no URL
+— so generating from a daemon on any port produces a file byte-identical to what the `:5178` script
+writes, and CI's `gen:api -- --check` is satisfied. Confirmed by diffing: the only change was the new
+route. Now in [[Gotchas]], beside the warning it qualifies.
 
 ### Still unverified, and the reason this is not "shipped"
 

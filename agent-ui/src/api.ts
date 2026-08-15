@@ -1,4 +1,4 @@
-import type { AgentState, AgentVersion, BrowseListing, Candidate, TrackedGame } from './types'
+import type { AgentState, AgentVersion, BrowseListing, Candidate, DeckyStatus, TrackedGame } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -67,6 +67,7 @@ export const api = {
   candidateFolder: (id: number, path: string) => post(`/api/candidates/${id}/folder`, { path }),
   dismissLeaseWarning: (gameName: string) => post('/api/lease-warnings/dismiss', { gameName }),
   launchCommand: () => req<{ command: string | null; note: string | null }>('/api/launch-command'),
+  decky: () => req<DeckyStatus>('/api/decky'),
   // What the agent's last check found. The agent decides this, not the UI: it is the host that
   // knows which platform's package the server offered and whether the version is actually newer.
   agentVersion: () => req<AgentVersion>('/api/agent-version'),

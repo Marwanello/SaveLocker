@@ -2,52 +2,59 @@ import { useEffect, useState } from 'react'
 import { Puzzle, Copy, Check, ChevronDown, ChevronRight } from 'lucide-react'
 import { api } from '../api'
 import { copyText } from '../clipboard'
-
-/** The one-paste URL for Decky's "Install Plugin from URL". Kept in step with DeckyPlugin.cs. */
-const INSTALL_URL =
-  'https://github.com/SkorcherX/SaveLocker-Decky/releases/latest/download/SaveLocker.zip'
+import type { DeckyStatus } from '../types'
 
 /**
- * What the optional Decky plugin adds, and how to get it.
+ * The optional Decky plugin: what it adds, and — once it is installed — that it is.
  *
- * <p>Gated on the same signal as {@link LaunchSetupCard} — it self-fetches the launch command and
- * renders nothing when there is none, i.e. on Windows, where Decky does not exist.</p>
+ * <p>Everything comes from <code>/api/decky</code>, which reads local files only, so this costs no
+ * network call. <code>applicable</code> is false wherever Decky cannot exist (Windows) and the card
+ * renders nothing, the same way {@link LaunchSetupCard} hides itself there.</p>
  *
  * <p><b>Collapsed by default, and that is the point.</b> This sits under the launch-options card,
  * which is the one a user actually needs; expanded it was taller than everything above it combined
- * and pushed the real instructions off a Deck's screen. Collapsed it is one line that says the
- * option exists — which is all it has to do for someone who does not use Decky, i.e. most people.
- * The detail is one click away for anyone it applies to.</p>
+ * and pushed the real instructions off a Deck's screen. Collapsed it is one line — which is all it
+ * has to be for someone who does not use Decky, i.e. most people.</p>
  *
  * <p>Deliberately placed after the launch-options card rather than instead of it: the copy-paste
  * path is the supported one and a Deck without Decky loses nothing (Decisions: Decky is an
  * accelerator, never the supported path).</p>
  *
- * <p>It is static text rather than live state: reporting "installed / not installed / v0.2.0" here
- * would need a new route on the agent's own API, and that means regenerating
- * <code>agent-ui/src/api-types.ts</code> against a running dev daemon on :5178 — the port an
- * installed agent already holds. Worth doing; not worth stopping someone's running agent for.
- * <code>savelocker doctor</code> already reports the live state.</p>
+ * <p>The three states it can be in are genuinely different advice, so they read differently rather
+ * than sharing one paragraph with a flag in it: no Decky (here is what you would gain), Decky but no
+ * plugin (here is the one paste), plugin installed (nothing to do, and its version). Only the middle
+ * one shows the install URL — offering it to someone who has already used it is how a card starts
+ * being ignored.</p>
  */
 export function DeckyPluginCard() {
-  const [hasLaunchCommand, setHasLaunchCommand] = useState(false)
+  const [status, setStatus] = useState<DeckyStatus | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  useEffect(() => {
-    api.launchCommand().then(i => setHasLaunchCommand(!!i?.command)).catch(() => {})
-  }, [])
+  useEffect(() => { api.decky().then(setStatus).catch(() => {}) }, [])
 
-  if (!hasLaunchCommand) return null
+  if (!status?.applicable) return null
+
+  const installed = status.pluginInstalled
+  const version = status.pluginVersion
 
   const copy = async () => {
-    if (await copyText(INSTALL_URL)) {
+    if (await copyText(status.installUrl)) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }
   }
 
   const Chevron = expanded ? ChevronDown : ChevronRight
+
+  const summary = installed
+    ? <>The plugin is set up. It sets launch options for you and adds sync controls to Game Mode —
+        this agent keeps it updated.</>
+    : status.deckyPresent
+      ? <>You have <strong style={{ color: '#ECEFF1' }}>Decky Loader</strong> but not the SaveLocker
+          plugin. It can set the launch options above for you and add sync controls to Game Mode.</>
+      : <>Use <strong style={{ color: '#ECEFF1' }}>Decky Loader</strong>? A plugin can set the launch
+          options above for you and add sync controls to Game Mode.</>
 
   return (
     <div style={{
@@ -67,12 +74,21 @@ export function DeckyPluginCard() {
       >
         <Puzzle size={16} strokeWidth={1.9} color="#129271" style={{ flexShrink: 0 }} />
         <span style={{ color: '#ECEFF1', fontSize: 13, fontWeight: 700 }}>Decky plugin</span>
-        <span style={{
-          padding: '1px 7px', border: '1px solid #556070', color: '#9CA3AF',
-          borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', flexShrink: 0,
-        }}>
-          OPTIONAL
-        </span>
+        {installed ? (
+          <span style={{
+            padding: '1px 7px', background: '#129271', color: '#fff',
+            borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', flexShrink: 0,
+          }}>
+            {version ? `INSTALLED v${version}` : 'INSTALLED'}
+          </span>
+        ) : (
+          <span style={{
+            padding: '1px 7px', border: '1px solid #556070', color: '#9CA3AF',
+            borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', flexShrink: 0,
+          }}>
+            OPTIONAL
+          </span>
+        )}
         <span style={{
           marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 3,
           color: '#129271', fontSize: 11.5, fontWeight: 600, flexShrink: 0,
@@ -83,9 +99,8 @@ export function DeckyPluginCard() {
       </button>
 
       <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
-        Use <strong style={{ color: '#ECEFF1' }}>Decky Loader</strong>? A plugin can set the launch
-        options above for you and add sync controls to Game Mode.
-        {!expanded && ' Everything here works without it.'}
+        {summary}
+        {!expanded && !installed && ' Everything here works without it.'}
       </p>
 
       {expanded && (
@@ -111,41 +126,50 @@ export function DeckyPluginCard() {
             </li>
           </ul>
 
-          <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
-            Install it once from Decky &rarr; <strong style={{ color: '#ECEFF1' }}>Install Plugin from URL</strong> with
-            the link below. After that this agent keeps it updated by itself — you do not need Decky's
-            custom-store setting, which would replace your official store while it is set.
-          </p>
+          {installed ? (
+            <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
+              Nothing to do — this agent replaces the plugin's files when a newer version is published,
+              and Decky reloads it within a second. Run <code style={{ fontSize: 11 }}>savelocker doctor</code> to
+              see whether one is waiting.
+            </p>
+          ) : (
+            <>
+              <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
+                {status.deckyPresent
+                  ? <>Install it from Decky &rarr; <strong style={{ color: '#ECEFF1' }}>Install Plugin from URL</strong> with
+                      the link below.</>
+                  : <>Install <strong style={{ color: '#ECEFF1' }}>Decky Loader</strong> first, then add this
+                      from Decky &rarr; <strong style={{ color: '#ECEFF1' }}>Install Plugin from URL</strong>.</>}
+                {' '}After that this agent keeps it updated by itself — you do not need Decky's
+                custom-store setting, which would replace your official store while it is set.
+              </p>
 
-          <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
-            <code style={{
-              flex: 1, minWidth: 0, background: '#12181C', border: '1px solid #494949', borderRadius: 5,
-              padding: '8px 10px', color: '#ECEFF1', fontSize: 11.5, lineHeight: 1.4,
-              overflowX: 'auto', whiteSpace: 'nowrap',
-              fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace",
-            }}>
-              {INSTALL_URL}
-            </code>
-            <button
-              onClick={() => void copy()}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
-                padding: '0 12px', background: 'transparent',
-                border: `1px solid ${copied ? '#129271' : '#494949'}`, borderRadius: 5,
-                color: copied ? '#129271' : '#ECEFF1', fontSize: 12, fontWeight: 600,
-                cursor: 'pointer', fontFamily: 'inherit',
-              }}
-            >
-              {copied
-                ? <><Check size={13} strokeWidth={2} /><span>Copied</span></>
-                : <><Copy size={13} strokeWidth={1.9} /><span>Copy</span></>}
-            </button>
-          </div>
-
-          <p style={{ color: '#556070', fontSize: 11.5, lineHeight: 1.5, margin: 0 }}>
-            Already installed? Nothing to do — <code style={{ fontSize: 11 }}>savelocker doctor</code> reports
-            its version and whether it is up to date.
-          </p>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+                <code style={{
+                  flex: 1, minWidth: 0, background: '#12181C', border: '1px solid #494949', borderRadius: 5,
+                  padding: '8px 10px', color: '#ECEFF1', fontSize: 11.5, lineHeight: 1.4,
+                  overflowX: 'auto', whiteSpace: 'nowrap',
+                  fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace",
+                }}>
+                  {status.installUrl}
+                </code>
+                <button
+                  onClick={() => void copy()}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                    padding: '0 12px', background: 'transparent',
+                    border: `1px solid ${copied ? '#129271' : '#494949'}`, borderRadius: 5,
+                    color: copied ? '#129271' : '#ECEFF1', fontSize: 12, fontWeight: 600,
+                    cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  {copied
+                    ? <><Check size={13} strokeWidth={2} /><span>Copied</span></>
+                    : <><Copy size={13} strokeWidth={1.9} /><span>Copy</span></>}
+                </button>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

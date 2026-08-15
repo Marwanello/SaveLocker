@@ -129,7 +129,10 @@ public sealed class Daemon : IAsyncDisposable
             getUpdateResult: () => _lastUpdateResult,
             browseRoots: SteamRoots.BrowseRoots().Concat(HeroicRoots.BrowseRoots()),
             launchInfo: LinuxLaunchCommand,
-            onGamesChanged: StartFolderWatchers);
+            onGamesChanged: StartFolderWatchers,
+            // Read per request rather than captured once: the plugin can be installed, updated or
+            // removed while the daemon runs — by Decky, by the user, or by this agent itself.
+            deckyStatus: DeckyPlugin.Status);
         _apiServer.Start();
 
         _drainer = new OfflineQueueDrainer(_offlineQueue, _config, () => _engine, Notify);

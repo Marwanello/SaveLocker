@@ -107,6 +107,13 @@ public static class DeckyPlugin
     }
 
     /// <summary>
+    /// This machine's plugin state, from local files only — no server call, so the agent UI can poll
+    /// it as freely as anything else. <see cref="CheckAsync"/> is the one that talks to the server.
+    /// </summary>
+    public static DeckyStatusDto Status() =>
+        new(Applicable: true, DeckyPresent, Installed, InstalledVersion(), InstallUrl);
+
+    /// <summary>
     /// Ask the server what plugin it is offering and, when <paramref name="apply"/> is true, install
     /// it. Never throws: this runs on a timer on a device nobody is watching, and a plugin that could
     /// not be updated must not become a reason the agent stops doing anything else.

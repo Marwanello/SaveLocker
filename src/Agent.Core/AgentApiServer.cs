@@ -21,6 +21,7 @@ public sealed class AgentApiServer : IDisposable
     private readonly IAutoStart _autoStart;
     private readonly Func<Task<string?>> _pickFolder;
     private readonly Func<LaunchCommandDto> _launchInfo;
+    private readonly Func<DeckyStatusDto> _deckyStatus;
     private readonly PathBrowser _browser;
     private readonly Action? _onConnectionChanged;
     // Invoked after the tracked-game list or a save folder changed AND was durably written, so the
@@ -51,7 +52,8 @@ public sealed class AgentApiServer : IDisposable
         Func<UpdateResult?>? getUpdateResult = null,
         IEnumerable<string>? browseRoots = null,
         Func<LaunchCommandDto>? launchInfo = null,
-        Action? onGamesChanged = null)
+        Action? onGamesChanged = null,
+        Func<DeckyStatusDto>? deckyStatus = null)
     {
         _browser = new PathBrowser(browseRoots);
         Port = port;
@@ -61,6 +63,9 @@ public sealed class AgentApiServer : IDisposable
         _autoStart = autoStart;
         _pickFolder = pickFolder ?? (() => Task.FromResult<string?>(null));
         _launchInfo = launchInfo ?? (() => new LaunchCommandDto(null, null));
+        // Default is "not applicable", which is exactly right for the Windows tray: Decky cannot
+        // exist there, so the host injects nothing and the UI hides the card.
+        _deckyStatus = deckyStatus ?? (() => new DeckyStatusDto(false, false, false, null, ""));
         _onConnectionChanged = onConnectionChanged;
         _onGamesChanged = onGamesChanged;
         _getUpdateResult = getUpdateResult ?? (() => null);
@@ -451,6 +456,11 @@ public sealed class AgentApiServer : IDisposable
         // nulls (the tray sets up sync through the installer) and the UI hides the card.
         app.MapGet("/api/launch-command", () => _launchInfo()).Produces<LaunchCommandDto>();
 
+        // The optional Decky plugin's state on this machine, so the agent UI can say "installed,
+        // v0.2.0" instead of showing install instructions to someone who already followed them.
+        // Local file reads only — no network, so polling it costs nothing.
+        app.MapGet("/api/decky", () => _deckyStatus()).Produces<DeckyStatusDto>();
+
         // ---- Launch options (tasks/DeckyPlugin.md) ----
         //
         // The agent cannot write Steam's launch options: Steam holds localconfig.vdf/shortcuts.vdf in
@@ -688,6 +698,31 @@ public sealed record AgentConfigDto(
     int SettleQuietSeconds);
 public sealed record AgentVersionDto(string CurrentVersion, string? LatestVersion, bool UpdateAvailable);
 public sealed record LaunchCommandDto(string? Command, string? Note);
+
+/// <summary>
+/// What this machine knows about the optional Decky plugin, from <b>local files only</b> — no
+/// network call, so the agent UI can poll it as freely as anything else.
+/// </summary>
+/// <param name="Applicable">
+/// False wherever Decky cannot exist (Windows). The UI hides the whole card on false rather than
+/// rendering "not installed", which would be advice nobody on that platform can act on.
+/// </param>
+/// <param name="DeckyPresent">Is Decky Loader itself installed? Judged by its plugins directory.</param>
+/// <param name="PluginVersion">
+/// The installed plugin's version, read from the same <c>package.json</c> Decky reports in its own
+/// UI, so the two cannot disagree. Null when the plugin is not installed — or when that file cannot
+/// be read, which is itself the signal to reinstall.
+/// </param>
+/// <param name="InstallUrl">
+/// Served rather than hard-coded in the UI so the one-paste URL has a single source. Empty when not
+/// <paramref name="Applicable"/>.
+/// </param>
+public sealed record DeckyStatusDto(
+    bool Applicable,
+    bool DeckyPresent,
+    bool PluginInstalled,
+    string? PluginVersion,
+    string InstallUrl);
 
 /// <param name="SteamAppId">
 /// The <b>unsigned</b> 32-bit AppID, normalised here so no caller has to know the trap: Steam stores
