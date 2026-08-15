@@ -150,13 +150,28 @@ public sealed class Daemon : IAsyncDisposable
     /// </summary>
     internal static LaunchCommandDto LinuxLaunchCommand()
     {
-        string? exe = null;
-        try { exe = new FileInfo("/proc/self/exe").LinkTarget; } catch { /* fall back below */ }
-        if (string.IsNullOrEmpty(exe)) exe = Environment.ProcessPath;
-        return string.IsNullOrEmpty(exe)
+        var exe = WrapperPath();
+        return exe is null
             ? new LaunchCommandDto(null, "Could not determine the installed path — see install.sh for the exact command.")
             : new LaunchCommandDto(LaunchOptions.Invocation(exe), null);
     }
+
+    /// <inheritdoc cref="LinuxLaunchCommand"/>
+    internal static string? WrapperPath()
+    {
+        string? exe = null;
+        try { exe = new FileInfo("/proc/self/exe").LinkTarget; } catch { /* fall back below */ }
+        if (string.IsNullOrEmpty(exe)) exe = Environment.ProcessPath;
+        return string.IsNullOrEmpty(exe) ? null : exe;
+    }
+
+    /// <summary>
+    /// The wrapper path for display when there may not be one. The placeholder is deliberately not a
+    /// plausible-looking path: a user pasting it would get a command that fails immediately, which is
+    /// far better than one that looks right and silently never runs.
+    /// </summary>
+    internal static string WrapperPathOrDefault() =>
+        WrapperPath() ?? "<path to savelocker>";
 
     /// <summary>
     /// Ask the server what it is offering for this platform: shortly after start, then every few

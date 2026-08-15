@@ -884,6 +884,14 @@ for existing in "" "mangohud %command%" "-novid" "savelocker run -- %command%"; 
   check "idempotent for '${existing:-(empty)}'" "$([ "${once}" = "${twice}" ] && echo 0 || echo 1)"
 done
 
+# Idempotence must not depend on the binary being NAMED savelocker. Run from a build tree the agent
+# is `dotnet savelocker.dll`, so the resolved wrapper is the dotnet host — and a rule keyed on the
+# name alone does not recognise its own output and wraps it again on every pass.
+odd="/usr/lib/dotnet/dotnet"
+odd_once="$(lo "${odd}" "")"
+check "idempotent for a wrapper not named savelocker" \
+  "$([ "$(lo "${odd}" "${odd_once}")" = "${odd_once}" ] && echo 0 || echo 1)"
+
 # A non-default install prefix can contain spaces; unquoted, Steam would run the first word and pass
 # the rest as arguments.
 spaced="/home/deck/My Games/savelocker"
@@ -897,6 +905,109 @@ check "an already-applied quoted path is left alone" \
 # deliberate choice, not something to repair.
 check "a non-savelocker wrapper is not mistaken for a stale one" \
   "$([ "$(lo "${w}" "gamemoderun %command%")" = "gamemoderun ${inv}" ] && echo 0 || echo 1)"
+
+# ---- Launch options: the desired-state API (tasks/DeckyPlugin.md Phase 2) ----
+#
+# The agent publishes what each game SHOULD carry and takes a report back; something that can write
+# Steam's launch options does the writing. Nothing here needs Steam, Decky or a Deck.
+echo
+echo "==> Launch options API"
+
+lo_dir="${scratch}/launch-options"
+mkdir -p "${lo_dir}"
+lo_cfg="${lo_dir}/config.json"
+# Two games on purpose: one Steam launches, one it does not. The AppID is written in Steam's SIGNED
+# form, which is what a user copying from another tool would type — the API must hand back the
+# unsigned form Steam's own JS API uses, or every lookup silently matches nothing.
+cat >"${lo_cfg}" <<EOF
+{
+  "ServerUrl": "${server_url}",
+  "ManifestCachePath": "${fixtures}/manifest.yaml",
+  "Games": [
+    { "GameId": "11111111-1111-1111-1111-111111111111", "Name": "Prefix Game",
+      "SaveDirectory": "${PREFIX_SAVE}", "SteamAppId": "-1234567890" },
+    { "GameId": "22222222-2222-2222-2222-222222222222", "Name": "No AppId Game",
+      "SaveDirectory": "${PORTABLE_SAVE}" }
+  ]
+}
+EOF
+
+dotnet "${agent_dir}/bin/Debug/net10.0/savelocker.dll" daemon \
+  --config "${lo_cfg}" --port 5187 >"${lo_dir}/daemon.log" 2>&1 &
+lo_pid=$!
+for _ in $(seq 1 40); do
+  curl -sf "http://localhost:5187/" >/dev/null 2>&1 && break
+  sleep 0.5
+done
+lo_token="$(cat "${lo_dir}/api-token")"
+lo_api="http://localhost:5187/api/launch-options"
+get() { curl -sf -H "X-SaveLocker-Token: ${lo_token}" "$@"; }
+
+rows="$(get "${lo_api}")"
+check "a tracked game with an AppID gets a row"      "$(contains "${rows}" '"name":"Prefix Game"')"
+check "the AppID is emitted UNSIGNED"                "$(contains "${rows}" "\"steamAppId\":${PREFIX_APPID}")"
+check "a game with no AppID gets no row"             "$(grep -q 'No AppId Game' <<<"${rows}" && echo 1 || echo 0)"
+check "the row carries the wrapper invocation"        "$(contains "${rows}" 'run -- %command%')"
+# Nothing has reported yet, and that is UNKNOWN rather than broken — most machines have nothing that
+# could report. Saying "not applied" here would make the signal worthless.
+check "an unreported game is unknown, not failed"    "$(contains "${rows}" '"appliedAt":null')"
+
+# The management API hands out control of this machine; these two are the whole reason a browser
+# tab cannot drive it (LocalAuth). Asserted here because a new route is a new chance to forget.
+code="$(curl -s -o /dev/null -w '%{http_code}' "${lo_api}")"
+check "the endpoint refuses an unauthenticated caller" "$([ "${code}" = "401" ] && echo 0 || echo 1)"
+# 403, not 401: a page that already has the token must still be refused on Origin alone.
+code="$(curl -s -o /dev/null -w '%{http_code}' -H "X-SaveLocker-Token: ${lo_token}" \
+        -H "Origin: https://evil.example" "${lo_api}")"
+check "the endpoint refuses a foreign Origin"         "$([ "${code}" = "403" ] && echo 0 || echo 1)"
+
+# The merge. Only the caller knows the CURRENT options and only the agent knows the rule, which is
+# why this is a round trip rather than a string the caller assembles.
+resolved="$(get -X POST -H 'Content-Type: application/json' \
+  -d "{\"games\":[{\"steamAppId\":${PREFIX_APPID},\"current\":\"mangohud %command%\"}]}" \
+  "${lo_api}/resolve")"
+check "resolve wraps an existing mangohud, not clobbers it" "$(contains "${resolved}" 'mangohud ')"
+check "resolve reports it as changed"                       "$(contains "${resolved}" '"changed":true')"
+
+already="$(python3 -c "import json,sys; print(json.load(sys.stdin)[0]['desired'])" <<<"${rows}")"
+resolved="$(get -X POST -H 'Content-Type: application/json' \
+  -d "$(python3 -c "import json,sys; print(json.dumps({'games':[{'steamAppId':${PREFIX_APPID},'current':sys.argv[1]}]}))" "${already}")" \
+  "${lo_api}/resolve")"
+check "resolve does not ask to rewrite a correct game"      "$(contains "${resolved}" '"changed":false')"
+
+# --check is the question "is every game confirmed?", so unknown counts against it.
+agent launch-options --config "${lo_cfg}" --check >/dev/null 2>&1
+lo_check_rc=$?
+check "--check fails while nothing is confirmed"      "$([ "${lo_check_rc}" != "0" ] && echo 0 || echo 1)"
+
+out="$(agent doctor --config "${lo_cfg}")"
+check "doctor names the unconfirmed game"             "$(contains "${out}" "launch options: unknown")"
+
+# A report comes back. The daemon owns the config while it runs, so it does the write and is stopped
+# before anything else reads the file — a second writer here is the documented lost-update trap.
+get -X POST -H 'Content-Type: application/json' \
+  -d "{\"steamAppId\":${PREFIX_APPID},\"applied\":true}" "${lo_api}/applied" >/dev/null
+kill "${lo_pid}" 2>/dev/null; wait "${lo_pid}" 2>/dev/null
+
+agent launch-options --config "${lo_cfg}" --check >/dev/null 2>&1
+lo_check_rc=$?
+check "--check passes once the game is confirmed"     "$([ "${lo_check_rc}" = "0" ] && echo 0 || echo 1)"
+out="$(agent doctor --config "${lo_cfg}")"
+check "doctor reports the confirmed game as set"      "$(contains "${out}" "launch options: set (confirmed")"
+
+# A reported FAILURE is a real fault, unlike silence, and doctor must say so.
+python3 - "${lo_cfg}" <<'PY'
+import json, sys
+p = sys.argv[1]
+cfg = json.load(open(p))
+cfg["Games"][0]["LaunchOptionsAppliedAt"] = None
+cfg["Games"][0]["LaunchOptionsError"] = "Steam refused the write"
+json.dump(cfg, open(p, "w"), indent=2)
+PY
+out="$(agent doctor --config "${lo_cfg}")"
+doctor_err_rc=$?
+check "doctor reports a recorded failure as a problem" "$(contains "${out}" "Steam refused the write")"
+check "a recorded failure makes doctor exit non-zero"  "$([ "${doctor_err_rc}" != "0" ] && echo 0 || echo 1)"
 
 echo
 echo "==== LINUX AGENT RESULT: ${pass} passed, ${fail} failed ===="

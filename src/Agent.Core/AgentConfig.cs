@@ -469,4 +469,19 @@ public sealed class TrackedGame
     /// <summary>Effective exclude globs (global defaults ∪ per-game) from the server;
     /// files matching these are skipped when hashing and archiving.</summary>
     public List<string> ExcludeGlobs { get; set; } = new();
+    /// <summary>
+    /// When something last confirmed this game's Steam launch options carry the wrapper, and what
+    /// went wrong if it could not.
+    ///
+    /// <para>
+    /// Both null is <b>unknown</b>, not broken: the agent cannot read Steam's launch options itself
+    /// (see <see cref="LaunchOptions"/>), so this is only ever filled in by something that can — a
+    /// Decky plugin today. Most machines have none, and reporting them all as faulty would make the
+    /// signal worthless. A recorded <see cref="LaunchOptionsError"/>, by contrast, is a real fault:
+    /// something tried and failed.
+    /// </para>
+    /// </summary>
+    public DateTime? LaunchOptionsAppliedAt { get; set; }
+    /// <inheritdoc cref="LaunchOptionsAppliedAt"/>
+    public string? LaunchOptionsError { get; set; }
 }

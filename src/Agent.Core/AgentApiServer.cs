@@ -451,6 +451,51 @@ public sealed class AgentApiServer : IDisposable
         // nulls (the tray sets up sync through the installer) and the UI hides the card.
         app.MapGet("/api/launch-command", () => _launchInfo()).Produces<LaunchCommandDto>();
 
+        // ---- Launch options (tasks/DeckyPlugin.md) ----
+        //
+        // The agent cannot write Steam's launch options: Steam holds localconfig.vdf/shortcuts.vdf in
+        // memory and rewrites them on exit, so an agent-side edit is discarded. These three routes
+        // are how something that CAN write them (a Decky plugin, whose frontend runs inside Steam's
+        // own JS context) does it without holding any SaveLocker knowledge of its own — the rule
+        // stays here, in LaunchOptions, testable without Steam or hardware.
+
+        // What each tracked game should carry if it carries nothing yet, plus whatever anyone has
+        // reported back about it. Empty on Windows: there is no wrapper there, so _launchInfo()
+        // returns a null command and there is nothing any caller could usefully do.
+        app.MapGet("/api/launch-options", () => LaunchOptionRows()).Produces<LaunchOptionRowDto[]>();
+
+        // The merge. The caller knows each game's CURRENT options (only Steam does) and the agent
+        // knows the rule, so neither can do this alone — which is exactly why this is a round trip
+        // and not a string the caller assembles. Batched: a plugin sweeps the whole library at once.
+        app.MapPost("/api/launch-options/resolve", (ResolveLaunchOptionsRequest body) =>
+        {
+            var wrapper = WrapperPath();
+            if (wrapper is null) return Array.Empty<ResolvedLaunchOptionDto>();
+
+            return (body.Games ?? []).Select(g =>
+            {
+                var desired = LaunchOptions.Apply(g.Current, wrapper);
+                // Compared against the trimmed original: a caller that only ever writes on `changed`
+                // must not be told to rewrite a game whose options differ by whitespace alone.
+                return new ResolvedLaunchOptionDto(
+                    g.SteamAppId, desired, !string.Equals(desired, g.Current?.Trim(), StringComparison.Ordinal));
+            }).ToArray();
+        }).Produces<ResolvedLaunchOptionDto[]>();
+
+        // Reported back so `doctor` can say "this game's launch options were never set" instead of
+        // the user discovering it as a save that silently never synced.
+        app.MapPost("/api/launch-options/applied", (LaunchOptionsAppliedRequest body) =>
+        {
+            var game = _config.Games.FirstOrDefault(
+                g => SteamShortcuts.UnsignedAppId(g.SteamAppId) == body.SteamAppId);
+            if (game is null) return TypedResults.Ok(new OkResponse());
+
+            game.LaunchOptionsAppliedAt = body.Applied ? DateTime.UtcNow : null;
+            game.LaunchOptionsError = string.IsNullOrWhiteSpace(body.Error) ? null : body.Error.Trim();
+            _config.Save();
+            return TypedResults.Ok(new OkResponse());
+        }).Produces<OkResponse>();
+
         app.MapGet("/api/agent-version", () =>
         {
             var latest = _getUpdateResult() is UpdateResult.Available available
@@ -461,6 +506,39 @@ public sealed class AgentApiServer : IDisposable
                 latest,
                 latest is not null);
         }).Produces<AgentVersionDto>();
+    }
+
+    /// <summary>
+    /// The installed wrapper binary's path, recovered from the invocation <see cref="_launchInfo"/>
+    /// already builds rather than resolved a second time — two resolvers would eventually disagree,
+    /// and the one the user is shown must be the one that gets written. Null where there is no
+    /// wrapper at all (Windows).
+    /// </summary>
+    private string? WrapperPath()
+    {
+        var command = _launchInfo().Command;
+        if (string.IsNullOrEmpty(command)) return null;
+        var run = command.IndexOf(" run -- ", StringComparison.Ordinal);
+        return run <= 0 ? null : command[..run].Trim('"');
+    }
+
+    /// <summary>
+    /// One row per tracked game that launches under a Steam AppID. Games without one are skipped
+    /// rather than reported: nothing can set launch options for a game Steam does not launch.
+    /// </summary>
+    private LaunchOptionRowDto[] LaunchOptionRows()
+    {
+        var wrapper = WrapperPath();
+        if (wrapper is null) return [];
+
+        var desired = LaunchOptions.Invocation(wrapper);
+        return _config.Games
+            .Select(g => (game: g, appId: SteamShortcuts.UnsignedAppId(g.SteamAppId)))
+            .Where(x => x.appId is not null)
+            .Select(x => new LaunchOptionRowDto(
+                x.appId!.Value, x.game.GameId, x.game.Name, desired,
+                x.game.LaunchOptionsAppliedAt, x.game.LaunchOptionsError))
+            .ToArray();
     }
 
     private void MapUi(WebApplication app)
@@ -610,6 +688,27 @@ public sealed record AgentConfigDto(
     int SettleQuietSeconds);
 public sealed record AgentVersionDto(string CurrentVersion, string? LatestVersion, bool UpdateAvailable);
 public sealed record LaunchCommandDto(string? Command, string? Note);
+
+/// <param name="SteamAppId">
+/// The <b>unsigned</b> 32-bit AppID, normalised here so no caller has to know the trap: Steam stores
+/// a non-Steam shortcut's id signed but exposes it unsigned, and comparing the two representations
+/// silently matches nothing — which would be every game this feature exists for.
+/// </param>
+/// <param name="Desired">What this game should carry if it carries nothing yet. Identical for every
+/// game on a device; a game that already has options needs the resolve route instead.</param>
+/// <param name="AppliedAt">Null with a null <paramref name="Error"/> means <b>unknown</b>, not
+/// broken — most machines have nothing that could report.</param>
+public sealed record LaunchOptionRowDto(
+    uint SteamAppId, Guid GameId, string Name, string Desired, DateTime? AppliedAt, string? Error);
+
+public sealed record ResolveLaunchOptionsRequest(LaunchOptionCurrentDto[]? Games);
+/// <param name="Current">The game's launch options as Steam holds them right now, empty or null if unset.</param>
+public sealed record LaunchOptionCurrentDto(uint SteamAppId, string? Current);
+/// <param name="Changed">False when the game already carries exactly this — the caller should not write.</param>
+public sealed record ResolvedLaunchOptionDto(uint SteamAppId, string Desired, bool Changed);
+
+public sealed record LaunchOptionsAppliedRequest(uint SteamAppId, bool Applied, string? Error);
+
 public sealed record EnrollRequest(int[]? Ids);
 /// <param name="IdentityCleared">
 /// True when the server URL moved to a different origin, so this machine's key, id and TLS pin were

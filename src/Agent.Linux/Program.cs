@@ -63,7 +63,7 @@ static class Program
             // this into a per-game desired-state listing; today it is the rule's only surface, and
             // the answer to "what exactly do I paste into Steam?" without opening the agent UI.
             case "launch-options":
-                return LaunchOptionsCommand(opts);
+                return LaunchOptionsCommand(opts, config);
 
             // The unit's ExecStartPre. Runs in the NEW invocation, after the old daemon is gone —
             // which is the whole reason the swap does not happen inside the daemon (Updater.cs).
@@ -135,19 +135,18 @@ static class Program
     /// installed agent.
     /// </para>
     /// </summary>
-    private static int LaunchOptionsCommand(Dictionary<string, string> opts)
+    private static int LaunchOptionsCommand(Dictionary<string, string> opts, AgentConfig config)
     {
         var wrapper = opts.GetValueOrDefault("wrapper");
         if (string.IsNullOrWhiteSpace(wrapper))
         {
-            var info = Daemon.LinuxLaunchCommand();
-            if (info.Command is null)
+            wrapper = Daemon.WrapperPath();
+            if (wrapper is null)
             {
-                Console.Error.WriteLine(info.Note ?? "Could not determine the installed path.");
+                Console.Error.WriteLine(
+                    "Could not determine the installed path — see install.sh for the exact command.");
                 return 1;
             }
-            // Recovered from the invocation rather than resolved twice, so the two cannot disagree.
-            wrapper = info.Command[..info.Command.IndexOf(" run -- ", StringComparison.Ordinal)].Trim('"');
         }
 
         if (opts.TryGetValue("preview", out var existing))
@@ -156,8 +155,43 @@ static class Program
             return 0;
         }
 
-        Console.WriteLine(LaunchOptions.Invocation(wrapper));
-        return 0;
+        var check = opts.ContainsKey("check");
+        if (!check && !opts.ContainsKey("list"))
+        {
+            Console.WriteLine(LaunchOptions.Invocation(wrapper));
+            return 0;
+        }
+
+        // Only games Steam launches. Nothing can set launch options for a game that has no AppID,
+        // so listing them here would be reporting a fault the user cannot act on.
+        var games = config.Games.Where(g => SteamShortcuts.UnsignedAppId(g.SteamAppId) is not null).ToList();
+        if (games.Count == 0)
+        {
+            Console.WriteLine("No tracked game launches under a Steam AppID.");
+            return 0;
+        }
+
+        var desired = LaunchOptions.Invocation(wrapper);
+        var unconfirmed = 0;
+        foreach (var g in games)
+        {
+            var appId = SteamShortcuts.UnsignedAppId(g.SteamAppId)!.Value;
+            string state;
+            if (g.LaunchOptionsError is { Length: > 0 } error) { state = $"ERROR: {error}"; unconfirmed++; }
+            else if (g.LaunchOptionsAppliedAt is { } at) state = $"set (confirmed {at:yyyy-MM-dd HH:mm} UTC)";
+            else { state = "unknown — nothing has confirmed these"; unconfirmed++; }
+
+            Console.WriteLine($"{g.Name}  (appid {appId})");
+            Console.WriteLine($"    {state}");
+            Console.WriteLine($"    {desired}");
+        }
+
+        // --check is an explicit question, so unknown counts against it; `doctor` treats the same
+        // state as merely unknown, because there it sits among things that ARE faults.
+        if (!check) return 0;
+        Console.WriteLine();
+        Console.WriteLine($"{unconfirmed} of {games.Count} game(s) not confirmed.");
+        return unconfirmed == 0 ? 0 : 1;
     }
 
     /// <summary>
@@ -322,9 +356,11 @@ static class Program
           push [game|all] [--force]                        Upload saves
           pull [game|all] [--force]                        Download saves
           run -- %command%                                 Steam launch wrapper: pull, play, push
-          launch-options [--preview "<existing>"]          The string to paste into Steam's Launch
-                                                           Options, or what a game already carrying
-                                                           options would end up with
+          launch-options [--list|--check]                  The string to paste into Steam's Launch
+                         [--preview "<existing>"]           Options; --list adds per-game state and
+                                                            --check exits non-zero if any is
+                                                            unconfirmed; --preview shows what a game
+                                                            already carrying options would end up with
 
         Daemon
           daemon [--port <n>]                              Run headless; serves the agent UI on localhost:5178

@@ -723,6 +723,119 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/launch-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LaunchOptionRowDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/launch-options/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ResolveLaunchOptionsRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ResolvedLaunchOptionDto"][];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/launch-options/applied": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LaunchOptionsAppliedRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OkResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent-version": {
         parameters: {
             query?: never;
@@ -848,6 +961,28 @@ export interface components {
             command: null | string;
             note: null | string;
         };
+        LaunchOptionCurrentDto: {
+            /** Format: uint32 */
+            steamAppId: number | string;
+            current: null | string;
+        };
+        LaunchOptionRowDto: {
+            /** Format: uint32 */
+            steamAppId: number | string;
+            /** Format: uuid */
+            gameId: string;
+            name: string;
+            desired: string;
+            /** Format: date-time */
+            appliedAt: null | string;
+            error: null | string;
+        };
+        LaunchOptionsAppliedRequest: {
+            /** Format: uint32 */
+            steamAppId: number | string;
+            applied: boolean;
+            error: null | string;
+        };
         LeaseWarningDto: {
             gameName: string;
             holderMachine: string;
@@ -864,6 +999,15 @@ export interface components {
         };
         RegisterResponse: {
             machineName: string;
+        };
+        ResolveLaunchOptionsRequest: {
+            games: null | components["schemas"]["LaunchOptionCurrentDto"][];
+        };
+        ResolvedLaunchOptionDto: {
+            /** Format: uint32 */
+            steamAppId: number | string;
+            desired: string;
+            changed: boolean;
         };
         SuggestedPathDto: {
             path: null | string;

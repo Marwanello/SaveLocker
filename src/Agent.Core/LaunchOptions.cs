@@ -42,7 +42,7 @@ public static class LaunchOptions
     /// and it wants repairing rather than leaving alone (see <see cref="Apply"/>).
     /// </summary>
     public static bool IsApplied(string? existing, string wrapperPath) =>
-        TryFindWrapper(existing, out _, out _, out var foundPath)
+        TryFindWrapper(existing, wrapperPath, out _, out _, out var foundPath)
         && string.Equals(foundPath, wrapperPath, StringComparison.Ordinal);
 
     /// <summary>
@@ -68,7 +68,7 @@ public static class LaunchOptions
         var trimmed = existing?.Trim();
         if (string.IsNullOrEmpty(trimmed)) return Invocation(wrapperPath);
 
-        if (TryFindWrapper(trimmed, out var pathStart, out var pathLength, out var foundPath))
+        if (TryFindWrapper(trimmed, wrapperPath, out var pathStart, out var pathLength, out var foundPath))
         {
             return string.Equals(foundPath, wrapperPath, StringComparison.Ordinal)
                 ? trimmed
@@ -92,8 +92,18 @@ public static class LaunchOptions
     /// Locate an existing <c>&lt;path&gt; run -- %command%</c>, reporting where the path sits so a
     /// caller can replace just that much. The path may be quoted; an unquoted one runs back to the
     /// previous whitespace, which is what leaves <c>mangohud …</c> in front of it untouched.
+    ///
+    /// <para>
+    /// An occurrence counts as ours when the path is <b>either</b> named <c>savelocker</c> — which is
+    /// what finds a stale one worth repairing — <b>or</b> exactly the wrapper we are applying. The
+    /// second half is what keeps <see cref="Apply"/> idempotent for a wrapper whose file is named
+    /// something else, and that is not hypothetical: run from a build tree the agent is
+    /// <c>dotnet savelocker.dll</c>, so the resolved path is the <i>dotnet host</i>. Keyed on the
+    /// name alone, Apply would not recognise its own output and would wrap it again every pass.
+    /// </para>
     /// </summary>
-    private static bool TryFindWrapper(string? value, out int pathStart, out int pathLength, out string? path)
+    private static bool TryFindWrapper(
+        string? value, string wrapperPath, out int pathStart, out int pathLength, out string? path)
     {
         pathStart = 0;
         pathLength = 0;
@@ -118,7 +128,12 @@ public static class LaunchOptions
             path = value[start..run];
         }
 
-        if (path.Length == 0 || !IsWrapper(path)) { path = null; return false; }
+        if (path.Length == 0 ||
+            !(IsWrapper(path) || string.Equals(path, wrapperPath, StringComparison.Ordinal)))
+        {
+            path = null;
+            return false;
+        }
 
         pathStart = start;
         pathLength = run - start;

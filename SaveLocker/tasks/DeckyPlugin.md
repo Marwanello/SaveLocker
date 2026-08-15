@@ -138,9 +138,36 @@ Baseline: `run-linux-tests` 123 → expect **~135**. Update the baseline in [[Bu
 
 ---
 
-## Phase 2 — Agent: `GET /api/launch-options` publishes desired state
+## Phase 2 — Agent: `GET /api/launch-options` publishes desired state — **DONE 2026-08-15**
 
 Ships alone. A new read-only endpoint plus a CLI command; the console and the plugin are unaffected.
+
+**Outcome:** `run-linux-tests` 137 → **154/154** (17 new; baseline in [[Build and Run]]).
+`run-local-api-tests` **30/30**, solution builds clean.
+
+**A third route the plan was missing, and Phase 3 could not have worked without it.** The plan had
+the plugin compare a game's current options against `desired` and write when they differ — but
+`desired` is only correct for a game that has *nothing* set. Following it literally, the plugin would
+have **overwritten every user's `mangohud`, environment variables and per-game arguments** the first
+time it ran. The merge needs the current value (only Steam has it) and the rule (only the agent has
+it), so neither side can do it alone: `POST /api/launch-options/resolve` takes a batch of current
+values and returns each game's target plus a `changed` flag. Phase 3's plugin should use *that*, and
+treat `desired` as the empty-game shortcut. Decision 1 survives intact — the plugin still holds no
+rule.
+
+**A real bug in Phase 1, found by the harness rather than by reading it.** `Apply` recognised its own
+output by the wrapper being *named* `savelocker`, so for a wrapper with any other name it did not
+recognise it and wrapped it again on every pass — unbounded growth on a timer. Not hypothetical: run
+from a build tree the agent is `dotnet savelocker.dll`, so the resolved path is the **dotnet host**,
+which is exactly the shape the harness runs in. An occurrence now counts as ours if the path is
+named `savelocker` **or** equals the wrapper being applied; the first half still finds a stale one to
+repair, the second keeps idempotence independent of the file's name. Pinned by its own check.
+
+Also: `doctor` gained per-game launch-option state (unknown is not a failure; a recorded error is,
+and it makes doctor exit non-zero), `savelocker launch-options` gained `--list`/`--check`, and
+`agent-ui/src/api-types.ts` was regenerated — **CI runs `gen:api -- --check`, so adding a route
+without regenerating fails the build.** The KB article `web/src/help/cli-reference.md` now documents
+the command; Phase 1 should have done that and did not.
 
 ### Steps
 
@@ -198,10 +225,12 @@ First phase that requires Decky Loader. Built from
    Degrade quietly when the agent is not installed or not running — the plugin must not error-toast
    on a machine where SaveLocker was never set up.
 3. **Frontend** — for each row, read the game's current launch options
-   (`SteamClient.Apps.RegisterForAppDetails` → `strLaunchOptions`), compare against `desired`, and
-   call `SteamClient.Apps.SetAppLaunchOptions` only where they differ. The diff is the agent's job
-   in principle, but the *current* value only exists in Steam, so the comparison happens here —
-   compare against the agent's `desired` string verbatim, never re-derive it.
+   (`SteamClient.Apps.RegisterForAppDetails` → `strLaunchOptions`), **POST them all to
+   `/api/launch-options/resolve`**, and call `SteamClient.Apps.SetAppLaunchOptions` only for the rows
+   that come back `changed: true`, using the `desired` string verbatim. Do **not** compare against
+   the `desired` from `GET /api/launch-options` and write on a difference: that value assumes the
+   game has nothing set, so doing so would wipe out every user's `mangohud`, env vars and per-game
+   arguments. The merge is a round trip precisely because neither side can do it alone.
 4. Run on plugin load and on a slow timer (a few minutes is plenty — enrollment is rare), plus a
    manual "Apply now" button. Idempotence from Phase 1 is what makes the timer safe.
 5. A visible list: game, applied / not applied / error. Nothing silent — a plugin that edits Steam

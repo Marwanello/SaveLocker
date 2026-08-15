@@ -102,6 +102,23 @@ public static class Doctor
             }
             Info("    save dir", g.SaveDirectory);
 
+            // Launch options are the last manual step of Deck setup and the one nothing notices was
+            // skipped — a game with none simply never syncs, with no error anywhere to connect it to
+            // a text field the user never opened. The agent cannot read them (Steam owns that file),
+            // so this only says as much as something else has reported. Silence is UNKNOWN, and
+            // saying so beats both a false alarm and a false all-clear.
+            if (g.SteamAppId is not null)
+            {
+                if (g.LaunchOptionsError is { Length: > 0 } loError)
+                    Problem($"'{g.Name}' launch options could not be set: {loError}");
+                else if (g.LaunchOptionsAppliedAt is { } appliedAt)
+                    Info("    launch options", $"set (confirmed {appliedAt:yyyy-MM-dd HH:mm} UTC)");
+                else
+                    Console.WriteLine("    launch options: unknown — nothing has confirmed them.\n" +
+                                      "           Paste this into Steam → Properties → Launch Options:\n" +
+                                      $"           {LaunchOptions.Invocation(Daemon.WrapperPathOrDefault())}");
+            }
+
             // A non-Steam shortcut's AppID is crc32(exe + name) with the high bit set — stable across
             // launches and Desktop/Game Mode, but RECOMPUTED if the shortcut is renamed, re-pointed, or
             // removed and re-added. Steam then makes a fresh empty prefix, and a save folder mapped to

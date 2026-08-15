@@ -27,6 +27,22 @@ public static class SteamShortcuts
     /// </summary>
     public static string CompatDataId(int signedAppId) => unchecked((uint)signedAppId).ToString();
 
+    /// <summary>
+    /// The unsigned AppID for a value that may have arrived in either representation — the same trap
+    /// as <see cref="CompatDataId(int)"/>, one step later. <c>TrackedGame.SteamAppId</c> is normally
+    /// already unsigned because discovery wrote it, but <c>add-game --appid</c> takes whatever a user
+    /// types, and a user copying from a tool that prints the signed form would otherwise be handed
+    /// back an AppID Steam's own API does not recognise. Null for anything unparseable.
+    /// </summary>
+    public static uint? UnsignedAppId(string? appId)
+    {
+        if (string.IsNullOrWhiteSpace(appId)) return null;
+        var text = appId.Trim();
+        if (uint.TryParse(text, out var unsigned)) return unsigned;
+        if (int.TryParse(text, out var signed)) return unchecked((uint)signed);
+        return null;
+    }
+
     /// <summary>Parse one shortcuts.vdf. Returns empty for a malformed or empty file.</summary>
     public static IReadOnlyList<SteamShortcut> Parse(byte[] vdf)
     {
