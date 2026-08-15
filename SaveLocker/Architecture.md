@@ -26,7 +26,7 @@ agent (`src/Agent`) and Linux agent (`src/Agent.Linux`) both host the shared syn
 - `Services/SyncService.cs` — all orchestration logic (registration, leasing, conflict-aware upload, download, resolve, rollback, **version pruning**).
 - `Services/ArchiveStore.cs` — archive files on disk: `{root}/{gameId}/{versionId}.zip`.
 - `Services/BackupService.cs` — nightly SQLite snapshots (`BackupScheduler` + `VACUUM INTO`, WAL-safe) with retention; the DB is the version graph, so it has its own on-box backup (`/data/backups`). See `API Reference.md`.
-- `Services/AgentInstallerService.cs` — stores the agent installer binary on disk (`Storage:AgentInstallerRoot`, default `data/agent-installer/`) with a sidecar `installer-info.json`. `GET /api/agent/latest` checks here first; admin endpoints let the dashboard upload/delete/stream the installer. See **Agent auto-update** below.
+- `Services/AgentInstallerService.cs` — stores agent installer binaries on disk (`Storage:AgentInstallerRoot`, default `data/agent-installer/`) in **platform-aware slots**: Windows at the root (`SaveLocker-Agent-Setup-*.exe`), Linux at `linux-x64/` (`savelocker-*-linux-x64.tar.gz`). Each slot holds a metadata file (`installer-info.json`) with version, digest, and size. `GET /api/agent/latest?platform=` checks here first; admin endpoints let the dashboard upload/delete/stream per platform. See **Agent auto-update** below.
 - `Services/AgentInstallerPollerService.cs` — optional `BackgroundService` that checks the configured GitHub release at the dashboard-managed `AgentUpdate:AutoFetchHours` interval and refreshes the hosted installer only when a newer release is available.
 - `Services/LeaseSweeperService.cs` — `BackgroundService` that runs hourly via `IServiceScopeFactory` and sweeps leases where `ExpiresAt < UtcNow`.
 - `Services/SettingsService.cs` — DB-backed key/value store (`AppSetting` entity). DB value overrides `IConfiguration` (appsettings/env); used for SteamGridDB key, admin password hash, and installer auto-fetch interval.
@@ -84,18 +84,27 @@ under Proton (`Decisions.md`), discovered via `shortcuts.vdf`.
   vector paths. `Gallery.cs`/`Screenshot.cs` back the WSLg dev loop (`tests/linux/run-ui-wslg.sh`).
   See `Decisions.md` and `Gotchas.md` for the ImGui-specific traps hit building this.
 
-## Agent auto-update (Windows only)
+## Agent auto-update
 Versioning is **MinVer** (git-tag-driven). Tag `v0.1.0` → that build stamps `0.1.0` in all assembly version fields. Between tags → `0.1.0-alpha.N+hash`.
 
+### Windows
 **Release flow:**
 1. `git tag v0.2.0 && git push origin v0.2.0`
 2. `release.yml` builds on `windows-latest`, runs `build-installer.ps1`, creates a GitHub Release with the exe attached.
-3. Admin uploads the installer in dashboard → Configuration → Agent Updates (`POST /api/admin/agent-installer`).
+3. Admin uploads the installer in dashboard → Configuration → Agent Updates (Windows row, `POST /api/admin/agent-installer?platform=win-x64`).
 4. Connected agents check within 24 h (or via tray "Check for Updates"); offered update via balloon → confirm dialog (Update Now / Skip / Remind Later).
-5. Agent downloads from `GET /api/agent/installer/download`, launches silently, exits.
+5. Agent downloads from `GET /api/agent/installer/download?platform=win-x64`, verifies digest, launches silently, exits.
 
-**Linux/Deck has no auto-update channel yet** — users re-run `install.sh` from a newer tarball
-(open backlog item, see `Backlog.md`).
+### Linux/Deck
+**Release flow:**
+1. `git tag v0.2.0 && git push origin v0.2.0`
+2. `release.yml` builds on `ubuntu-latest` (glibc floor), runs `build-linux.sh`, attaches `savelocker-v0.2.0-linux-x64.tar.gz` + SHA-256 checksums + attestation.
+3. Admin (or `AgentInstallerPollerService` if enabled) uploads the tarball to dashboard → Configuration → Agent Updates (Linux row, `POST /api/admin/agent-installer?platform=linux-x64`).
+4. Connected agents check within 24 h; daemon **stages** (download, verify digest, unpack, smoke-test) without prompting.
+5. Update **applies on the next daemon start** via `systemd` unit `ExecStartPre`, not mid-session. Old files are moved aside; a failed swap is rolled back automatically.
+6. `AutoUpdate: false` in `config.json` stops the staging while keeping the checks (console still reports being behind).
+
+See **Decisions.md** for the stage-now/apply-on-next-start rationale (cgroup safety, state-dir collision, smoke-test guarantee).
 
 ## Conflict model (the safety mechanism)
 On upload the agent sends the version it last knew (`parent`):
