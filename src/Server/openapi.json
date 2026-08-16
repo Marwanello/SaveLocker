@@ -1058,7 +1058,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SetAutoFetchHoursRequest"
+                "$ref": "#/components/schemas/AutoFetchSchedule"
               }
             }
           },
@@ -2292,6 +2292,36 @@
           }
         }
       },
+      "AutoFetchSchedule": {
+        "required": [
+          "mode",
+          "hours",
+          "dayOfWeek",
+          "dayOfMonth",
+          "timeOfDay"
+        ],
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string"
+          },
+          "hours": {
+            "type": "number",
+            "format": "double"
+          },
+          "dayOfWeek": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "dayOfMonth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "timeOfDay": {
+            "type": "string"
+          }
+        }
+      },
       "BackupInfo": {
         "required": [
           "fileName",
@@ -3286,6 +3316,23 @@
             "type": "number",
             "format": "double",
             "default": 0
+          },
+          "schedule": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AutoFetchSchedule"
+              }
+            ]
+          },
+          "nextAutoFetchRunAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -3300,18 +3347,6 @@
               "null",
               "string"
             ]
-          }
-        }
-      },
-      "SetAutoFetchHoursRequest": {
-        "required": [
-          "hours"
-        ],
-        "type": "object",
-        "properties": {
-          "hours": {
-            "type": "number",
-            "format": "double"
           }
         }
       },

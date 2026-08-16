@@ -25,25 +25,6 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const [autoFetchHoursInput, setAutoFetchHoursInput] = useState(() => String(settings.autoFetchHours));
-  const [savingAutoFetchHours, setSavingAutoFetchHours] = useState(false);
-
-  useEffect(() => { setAutoFetchHoursInput(String(settings.autoFetchHours)); }, [settings.autoFetchHours]);
-
-  async function handleSaveAutoFetchHours() {
-    const raw = autoFetchHoursInput.trim();
-    const hours = raw === '' ? 0 : Number(raw);
-    if (!Number.isFinite(hours) || hours < 0) {
-      alert('Enter a non-negative number of hours. Set 0 to disable automatic fetching.');
-      return;
-    }
-    setSavingAutoFetchHours(true);
-    try {
-      await api.setAutoFetchHours(hours);
-      await onRefresh();
-    } catch (e) { alert('Could not save auto-fetch schedule: ' + (e as Error).message); }
-    finally { setSavingAutoFetchHours(false); }
-  }
   // Per-game retention inputs: gameId -> string (empty = use default)
   const [retentionInputs, setRetentionInputs] = useState<Record<string, string>>(
     () => Object.fromEntries(games.map(s => [s.game.id, s.game.retainVersions?.toString() ?? '']))
@@ -305,51 +286,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
       </div>
 
       {/* ── Agent Updates ── */}
-      <AgentUpdatesCard />
-
-      {/* ── Automatic GitHub fetch schedule ──
-          Interval-only for now; a real weekly/monthly schedule is a separate, larger change
-          (SaveLocker/tasks/UpdateScheduling.md) that also moves this behind its own Edit button. */}
-      <div style={card}>
-        <div style={cardHeader}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#ECEFF1' }}>Automatic GitHub fetch</span>
-          <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>keeps hosted packages current on a schedule</span>
-        </div>
-        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {settings.autoFetchHours > 0 ? (
-              <span style={{ padding: '2px 7px', background: '#129271', color: '#fff', borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>
-                every {settings.autoFetchHours} h
-              </span>
-            ) : (
-              <span style={{ padding: '2px 7px', border: '1px solid #556070', color: '#556070', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>disabled</span>
-            )}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <input
-              type="number"
-              min={0}
-              step={0.5}
-              value={autoFetchHoursInput}
-              onChange={e => setAutoFetchHoursInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSaveAutoFetchHours()}
-              aria-label="Automatic GitHub fetch interval in hours"
-              style={{ width: 140, padding: '7px 10px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 5, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}
-            />
-            <span style={{ fontSize: 12, color: '#9CA3AF' }}>hours</span>
-            <button
-              onClick={handleSaveAutoFetchHours}
-              disabled={savingAutoFetchHours}
-              style={{ padding: '6px 14px', background: savingAutoFetchHours ? '#2A3238' : '#129271', color: savingAutoFetchHours ? '#556070' : '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: savingAutoFetchHours ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
-            >
-              {savingAutoFetchHours ? 'Saving…' : 'Save schedule'}
-            </button>
-          </div>
-          <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>
-            Set 0 to disable. When enabled, the server checks GitHub immediately, then at this interval; changes apply within a minute.
-          </p>
-        </div>
-      </div>
+      <AgentUpdatesCard settings={settings} onScheduleChanged={onRefresh} />
 
       {/* ── Save retention ── */}
       <div style={card}>

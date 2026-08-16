@@ -1335,7 +1335,7 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["SetAutoFetchHoursRequest"];
+                    "application/json": components["schemas"]["AutoFetchSchedule"];
                 };
             };
             responses: {
@@ -2479,6 +2479,16 @@ export interface components {
             action: string;
             detail: null | string;
         };
+        AutoFetchSchedule: {
+            mode: string;
+            /** Format: double */
+            hours: number;
+            /** Format: int32 */
+            dayOfWeek: number;
+            /** Format: int32 */
+            dayOfMonth: number;
+            timeOfDay: string;
+        };
         BackupInfo: {
             fileName: string;
             /** Format: int64 */
@@ -2751,13 +2761,12 @@ export interface components {
              * @default 0
              */
             autoFetchHours: number;
+            schedule?: null | components["schemas"]["AutoFetchSchedule"];
+            /** Format: date-time */
+            nextAutoFetchRunAt?: null | string;
         };
         SetAdminPasswordRequest: {
             password: null | string;
-        };
-        SetAutoFetchHoursRequest: {
-            /** Format: double */
-            hours: number;
         };
         SetConflictPolicyRequest: {
             policy: components["schemas"]["ConflictPolicy"];

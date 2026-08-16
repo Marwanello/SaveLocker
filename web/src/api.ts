@@ -1,4 +1,4 @@
-import type { GameSummary, Machine, Command, Conflict, Settings, Version, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus } from './types';
+import type { GameSummary, Machine, Command, Conflict, Settings, Version, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule } from './types';
 
 let adminPassword = localStorage.getItem('sl_password') || '';
 
@@ -123,11 +123,11 @@ export const api = {
     return body ?? {};
   },
 
-  setAutoFetchHours: (hours: number) =>
-    request<{ autoFetchHours: number }>('/settings/agent-update-auto-fetch', {
+  setAutoFetchSchedule: (schedule: AutoFetchSchedule) =>
+    request<{ schedule: AutoFetchSchedule; nextRunAt: string | null }>('/settings/agent-update-auto-fetch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hours }),
+      body: JSON.stringify(schedule),
     }),
 
   getGamePaths: (gameId: string) =>

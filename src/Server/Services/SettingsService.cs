@@ -18,8 +18,17 @@ public sealed class SettingsService
     /// <summary>Settings key for the admin dashboard password hash.</summary>
     public const string AdminPasswordHash = "Admin:PasswordHash";
 
-    /// <summary>Settings key for the GitHub installer auto-fetch interval.</summary>
+    /// <summary>Settings key for the GitHub installer auto-fetch interval. Still the only thing
+    /// read when <see cref="AgentUpdateScheduleMode"/> is absent or "hours" — existing deployments
+    /// that never touch the newer weekly/monthly modes see no behaviour change.</summary>
     public const string AgentUpdateAutoFetchHours = "AgentUpdate:AutoFetchHours";
+
+    /// <summary>"disabled" | "hours" | "weekly" | "monthly". Absent means "hours", for back-compat
+    /// with every deployment that predates weekly/monthly scheduling.</summary>
+    public const string AgentUpdateScheduleMode = "AgentUpdate:Schedule:Mode";
+    public const string AgentUpdateScheduleDayOfWeek = "AgentUpdate:Schedule:DayOfWeek";
+    public const string AgentUpdateScheduleDayOfMonth = "AgentUpdate:Schedule:DayOfMonth";
+    public const string AgentUpdateScheduleTimeOfDay = "AgentUpdate:Schedule:TimeOfDay";
 
     private readonly AppDbContext _db;
     private readonly IConfiguration _cfg;
@@ -87,18 +96,59 @@ public sealed class SettingsService
             hours.ToString(System.Globalization.CultureInfo.InvariantCulture), ct);
     }
 
+    /// <summary>The full schedule, defaulting Mode to "hours" when never set — the DB carries no
+    /// row for it on every deployment that predates weekly/monthly scheduling, and defaulting to
+    /// "hours" there means <see cref="GetAutoFetchHoursAsync"/> (and its own config/env fallback)
+    /// keeps being the entire story for them, unchanged.</summary>
+    public async Task<AutoFetchSchedule> GetAutoFetchScheduleAsync(CancellationToken ct = default)
+    {
+        var mode = await GetEffectiveAsync(AgentUpdateScheduleMode, ct) ?? "hours";
+        var hours = await GetAutoFetchHoursAsync(ct);
+        var dayOfWeek = int.TryParse(await GetEffectiveAsync(AgentUpdateScheduleDayOfWeek, ct), out var dw)
+            ? Math.Clamp(dw, 0, 6) : 0; // Sunday
+        var dayOfMonth = int.TryParse(await GetEffectiveAsync(AgentUpdateScheduleDayOfMonth, ct), out var dm)
+            ? Math.Clamp(dm, 1, 31) : 1;
+        var timeOfDay = await GetEffectiveAsync(AgentUpdateScheduleTimeOfDay, ct) ?? "03:00";
+        return new AutoFetchSchedule(mode, hours, dayOfWeek, dayOfMonth, timeOfDay);
+    }
+
+    public async Task SetAutoFetchScheduleAsync(AutoFetchSchedule schedule, CancellationToken ct = default)
+    {
+        var mode = schedule.Mode?.Trim().ToLowerInvariant();
+        if (mode is not ("disabled" or "hours" or "weekly" or "monthly"))
+            throw new ArgumentOutOfRangeException(nameof(schedule), "Mode must be disabled, hours, weekly, or monthly.");
+        if (schedule.DayOfWeek is < 0 or > 6)
+            throw new ArgumentOutOfRangeException(nameof(schedule), "DayOfWeek must be 0-6 (0=Sunday).");
+        if (schedule.DayOfMonth is < 1 or > 31)
+            throw new ArgumentOutOfRangeException(nameof(schedule), "DayOfMonth must be 1-31.");
+        if (!TimeOnly.TryParse(schedule.TimeOfDay, out _))
+            throw new ArgumentOutOfRangeException(nameof(schedule), "TimeOfDay must be a time like 03:00.");
+
+        await SetAsync(AgentUpdateScheduleMode, mode, ct);
+        // Only touched in hours mode, through its own validated setter — switching to weekly and
+        // back to hours later should not have silently zeroed out the interval the admin had.
+        if (mode == "hours")
+            await SetAutoFetchHoursAsync(schedule.Hours, ct);
+        await SetAsync(AgentUpdateScheduleDayOfWeek, schedule.DayOfWeek.ToString(), ct);
+        await SetAsync(AgentUpdateScheduleDayOfMonth, schedule.DayOfMonth.ToString(), ct);
+        await SetAsync(AgentUpdateScheduleTimeOfDay, schedule.TimeOfDay, ct);
+    }
+
     /// <summary>The dashboard-facing settings snapshot (never includes the raw key).</summary>
     public async Task<ServerSettingsDto> GetServerSettingsDtoAsync(CancellationToken ct = default)
     {
         var inDb = await _db.Settings.AnyAsync(s => s.Key == SteamGridDbApiKey && s.Value != "", ct);
         var key = await GetEffectiveAsync(SteamGridDbApiKey, ct);
+        var schedule = await GetAutoFetchScheduleAsync(ct);
         return new ServerSettingsDto(
             SteamGridDbConfigured: !string.IsNullOrWhiteSpace(key),
             SteamGridDbKeyMasked: Mask(key),
             SteamGridDbFromConfig: !inDb && !string.IsNullOrWhiteSpace(key),
             AdminPasswordSet: await HasAdminPasswordAsync(ct),
             DefaultExcludeGlobs: GlobConfig.GlobalDefaults(_cfg),
-            AutoFetchHours: await GetAutoFetchHoursAsync(ct));
+            AutoFetchHours: schedule.Hours,
+            Schedule: schedule,
+            NextAutoFetchRunAt: AutoFetchScheduler.ComputeNextRun(schedule, DateTime.UtcNow));
     }
 
     /// <summary>Show only the last 4 characters so the dashboard can confirm which key is set.</summary>

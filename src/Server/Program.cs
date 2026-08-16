@@ -527,12 +527,17 @@ admin.MapPost("/settings/steamgriddb-key", async (
 });
 
 admin.MapPost("/settings/agent-update-auto-fetch", async (
-    SetAutoFetchHoursRequest req, SettingsService settings, CancellationToken ct) =>
+    AutoFetchSchedule req, SettingsService settings, CancellationToken ct) =>
 {
     try
     {
-        await settings.SetAutoFetchHoursAsync(req.Hours, ct);
-        return Results.Ok(new { autoFetchHours = req.Hours });
+        await settings.SetAutoFetchScheduleAsync(req, ct);
+        var schedule = await settings.GetAutoFetchScheduleAsync(ct);
+        return Results.Ok(new
+        {
+            schedule,
+            nextRunAt = AutoFetchScheduler.ComputeNextRun(schedule, DateTime.UtcNow),
+        });
     }
     catch (ArgumentOutOfRangeException ex)
     {

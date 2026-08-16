@@ -66,7 +66,26 @@ public record ServerSettingsDto(
     bool SteamGridDbFromConfig,
     bool AdminPasswordSet,
     string[]? DefaultExcludeGlobs = null,
-    double AutoFetchHours = 0);
+    double AutoFetchHours = 0,
+    AutoFetchSchedule? Schedule = null,
+    DateTime? NextAutoFetchRunAt = null);
+
+/// <summary>
+/// When the server automatically checks GitHub for newer agent/plugin packages.
+/// <paramref name="Mode"/> is <c>"disabled"</c>, <c>"hours"</c> (poll every
+/// <paramref name="Hours"/>), <c>"weekly"</c> (every <paramref name="DayOfWeek"/> at
+/// <paramref name="TimeOfDay"/>), or <c>"monthly"</c> (every <paramref name="DayOfMonth"/> at
+/// <paramref name="TimeOfDay"/> — clamped to a shorter month's last day, so 31 means "the last
+/// day" in February). <paramref name="TimeOfDay"/> (<c>"HH:mm"</c>) and <paramref name="DayOfWeek"/>
+/// (0=Sunday..6=Saturday) are interpreted in the SERVER's local time zone — the schedule belongs to
+/// the machine running the poll, not to whichever browser happens to be looking at it.
+/// </summary>
+public record AutoFetchSchedule(
+    string Mode,
+    double Hours,
+    int DayOfWeek,
+    int DayOfMonth,
+    string TimeOfDay);
 
 /// <summary>
 /// The platforms the server hosts an agent package for. These strings are wire values — they appear
@@ -163,9 +182,6 @@ public record InstallerHashVerification(
 
 /// <summary>Set (or clear, when null/empty) the SteamGridDB API key from the dashboard.</summary>
 public record SetSteamGridDbKeyRequest(string? ApiKey);
-
-/// <summary>Sets how often the server checks GitHub for a newer agent installer; 0 disables it.</summary>
-public record SetAutoFetchHoursRequest(double Hours);
 
 /// <summary>Set (or clear, when null/empty) the admin dashboard password.</summary>
 public record SetAdminPasswordRequest(string? Password);

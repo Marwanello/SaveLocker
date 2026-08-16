@@ -25,29 +25,43 @@ public sealed class AgentInstallerPollerService : BackgroundService
     {
         try
         {
-            double? configuredHours = null;
+            AutoFetchSchedule? configuredSchedule = null;
             DateTime? nextPollAt = null;
 
             while (!ct.IsCancellationRequested)
             {
-                var hours = await GetConfiguredHoursAsync(ct);
-                if (configuredHours != hours)
+                var schedule = await GetScheduleAsync(ct);
+                if (configuredSchedule != schedule)
                 {
-                    configuredHours = hours;
-                    nextPollAt = null;
-                    if (hours > 0)
-                        _log.LogInformation(
-                            "GitHub installer auto-poll enabled; checking every {Hours:0.##} hour(s).", hours);
+                    configuredSchedule = schedule;
+
+                    if (schedule.Mode == "hours")
+                    {
+                        // Preserves the exact pre-scheduling behaviour: an interval schedule (freshly
+                        // enabled OR just reconfigured) checks immediately, then every N hours.
+                        nextPollAt = null;
+                        if (schedule.Hours > 0)
+                            _log.LogInformation(
+                                "GitHub installer auto-poll enabled; checking every {Hours:0.##} hour(s).", schedule.Hours);
+                        else
+                            _log.LogInformation(
+                                "GitHub installer auto-poll disabled (AgentUpdate:AutoFetchHours is not positive).");
+                    }
                     else
+                    {
+                        // Weekly/monthly: switching to (or editing) a real schedule should not fire a
+                        // surprise poll the moment settings are saved — only "hours" has that history.
+                        nextPollAt = AutoFetchScheduler.ComputeNextRun(schedule, DateTime.UtcNow);
                         _log.LogInformation(
-                            "GitHub installer auto-poll disabled (AgentUpdate:AutoFetchHours is not positive).");
+                            "GitHub installer auto-poll enabled; next check {NextPollAt:u} ({Mode}).",
+                            nextPollAt, schedule.Mode);
+                    }
                 }
 
-                if (hours > 0 && (nextPollAt is null || DateTime.UtcNow >= nextPollAt.Value))
+                if (AutoFetchScheduler.IsEnabled(schedule) && (nextPollAt is null || DateTime.UtcNow >= nextPollAt.Value))
                 {
-                    // A newly enabled or reconfigured schedule checks immediately.
                     await PollAsync(ct);
-                    nextPollAt = DateTime.UtcNow.AddHours(hours);
+                    nextPollAt = AutoFetchScheduler.ComputeNextRun(schedule, DateTime.UtcNow);
                 }
 
                 var untilNextPoll = nextPollAt is null
@@ -61,11 +75,11 @@ public sealed class AgentInstallerPollerService : BackgroundService
         catch (OperationCanceledException) { /* graceful shutdown */ }
     }
 
-    private async Task<double> GetConfiguredHoursAsync(CancellationToken ct)
+    private async Task<AutoFetchSchedule> GetScheduleAsync(CancellationToken ct)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
         var settings = scope.ServiceProvider.GetRequiredService<SettingsService>();
-        return await settings.GetAutoFetchHoursAsync(ct);
+        return await settings.GetAutoFetchScheduleAsync(ct);
     }
 
     /// <summary>
