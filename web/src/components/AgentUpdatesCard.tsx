@@ -194,6 +194,7 @@ function AgentUpdatesModal({
                   type="checkbox"
                   checked={checked[slot.platform]}
                   onChange={e => setChecked(prev => ({ ...prev, [slot.platform]: e.target.checked }))}
+                  style={{ accentColor: '#129271' }}
                 />
                 {slot.label}
                 {bulkResults[slot.platform] && (
