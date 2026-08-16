@@ -78,10 +78,7 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
    artifact is always `SaveLocker.zip`), and watch a Deck pick it up. A manual reinstall through
    Decky always works, and is what the refusal path tells the user to do. Details and the two
    deviations from the plan: `logs/2026-08-15_decky-plugin.md`.
-2. **Record `systemd-analyze --user security savelocker.service` on the Deck** ([[Backlog]]) — the
-   one item from the v0.5.7 rollout that was not covered by it happening. Everything else that was
-   queued here is now done; see *Proven on hardware* above.
-3. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
+2. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
    merge what a server already holds under two spellings, and there is no merge tool ([[Backlog]]).
 
 Everything else — the WA-03 second-account ACL test, the remaining Windows manual gates, the LAN

@@ -186,6 +186,22 @@ behave in ways that look like bugs.
   cached image is the point there.
 
 ## Testing
+- **`systemd-analyze security` misreads a `--user` unit — do not act on its score.** Run against
+  `savelocker.service` on a Deck (2026-08-15) it reports **8.5 EXPOSED** and, top of the list,
+  *"Service runs as root user"*. It does not: a `--user` unit runs as the desktop user. The tool
+  grades as though every unit were a system service, so an unset `User=` reads as root, and every
+  capability row that follows from that premise (`CAP_SYS_ADMIN`, `CAP_SYS_MODULE`, `CAP_SYS_BOOT`…)
+  is scored against privileges the user manager never grants in the first place.
+  <br>Read the individual rows instead. All seven shipped settings are confirmed in effect there:
+  `NoNewPrivileges`, `PrivateTmp`, `LockPersonality`, `RestrictSUIDSGID`, `UMask`, `PrivateMounts`
+  and the address-family allow-list. Two rows look like failures and are not: **`ProtectSystem=`
+  reads ✗ because it is `full` rather than `strict`** — its own description confirms it is set — and
+  **`RestrictAddressFamilies=~AF_UNIX` / `~AF_(INET|INET6)` read ✗ because we deliberately allow
+  those three**, while `~AF_PACKET`, `~AF_NETLINK` and `~…` read ✓. That is the allow-list working,
+  not a hole.
+  <br>The remaining big-ticket items — `ProtectHome`, `ProtectProc`, `MemoryDenyWriteExecute` — are
+  refused on purpose and the unit file says why beside each. See [[Backlog]] before "improving" the
+  number.
 - **Clear the server DB and `.verify/` together**, never one alone — `run-agent-tests.ps1` reuses
   whatever state both sides hold. Clearing only one produces confident, unrelated-looking
   failures (stale save files vs. lost version lineage). Isolating just the server's `Storage__DbPath`

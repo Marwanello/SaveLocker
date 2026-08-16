@@ -146,7 +146,22 @@ verification that did not happen before the tag. Write-ups:
   Linux install prefix **is** the state dir, so an update is a per-file copy and never a directory
   swap.
 
-- **Harden the `systemd --user` unit.** *(Folded into `tasks/LinuxAutoUpdate.md` Phase 3.)* Add and Deck-test: `UMask=0077`, `NoNewPrivileges=yes`, `PrivateTmp=yes`, `ProtectSystem=full`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`, `RestrictSUIDSGID=yes`, `LockPersonality=yes`. Mirror in both `packaging/linux/savelocker.service` and `SystemdAutoStart.UnitFile()`. Do **not** add `ProtectHome` (save access), `ProtectProc` (Linux writer probe), or `MemoryDenyWriteExecute` (.NET JIT). Record `systemd-analyze --user security savelocker.service` before/after on a Deck.
+- ~~**Harden the `systemd --user` unit.**~~ **DONE** — shipped in v0.5.5, and measured on the Deck
+  2026-08-15: `systemd-analyze --user security savelocker.service` → **8.5 EXPOSED**. All seven
+  settings are confirmed in effect (`NoNewPrivileges`, `PrivateTmp`, `LockPersonality`,
+  `RestrictSUIDSGID`, `UMask`, `PrivateMounts` and the `RestrictAddressFamilies` allow-list — the
+  blocked families read ✓ and the three we permit read ✗, which is the allow-list working).
+  `ProtectSystem=full` reads ✗ only because it is not `strict`; its description confirms it is set.
+  <br>**Do not chase the 8.5.** The score is dominated by rows that do not apply to a `--user` unit
+  or that were rejected on purpose — see [[Gotchas]] → *Testing*. `ProtectHome`, `ProtectProc` and
+  `MemoryDenyWriteExecute` remain refused for the documented reasons (save access, the writer probe,
+  the .NET JIT).
+  <br>**If it is ever revisited**, the honest candidates are `SystemCallArchitectures=native`,
+  `RestrictNamespaces`, `ProtectKernelTunables/Logs/Modules`, `ProtectControlGroups`, `ProtectClock`,
+  `ProtectHostname`, `RestrictRealtime` and `SystemCallFilter=@system-service`. None is free: the
+  daemon spawns processes (the staged binary's smoke test, `systemctl`), and the unit file's own
+  comment is the standing warning — a device that will not start at all is far worse than one that
+  scores badly. Each needs a Deck test, not a reading.
 
 - **Linux release provenance.** *(Folded into `tasks/LinuxAutoUpdate.md` Phase 4 — note the update channel does NOT depend on it: the server hashes the bytes it stored.)* Pin GitHub Actions in `release.yml` to full commit SHAs; publish SHA-256 checksums and a GitHub artifact attestation for the tarball; use draft → attach all assets → publish flow. Document the verification command beside the Deck install instructions.
 
