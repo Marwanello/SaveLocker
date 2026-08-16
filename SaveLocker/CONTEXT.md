@@ -108,8 +108,8 @@ come from the same job. Bump `package.json` too: Decky reads the installed versi
 
 ## Parked on a branch — `offline-backoff-task` (`bee3116`, pushed, not merged)
 
-`main` carries no task files at all now that the Decky one is finished; do not conclude there is no
-open work. `tasks/OfflineBackoff.md`
+`main` carries one task file — `tasks/InstallUpdateNow.md`, planned but not started. Do not conclude
+that is the only open work. `tasks/OfflineBackoff.md`
 and its Backlog entry exist only on that branch, deliberately (2026-07-29) — the task was written and
 the work deferred. `git checkout offline-backoff-task` to pick it up.
 
