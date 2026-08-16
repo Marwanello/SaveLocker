@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { getPassword, setPassword as persistPassword } from '../api';
 import type { AgentEvent, Conflict, ServerBuildInfo } from '../types';
 import logoUrl from '../assets/SaveLocker_Logo_crop.png';
@@ -58,16 +58,34 @@ export function NavBar({
     onConnect();
   }
 
-  const errorCount = problems.filter(p => p.severity === 'Error').length;
-  const badgeColor = errorCount > 0 ? '#e5534b' : '#f4a60d';
+  // Info events (e.g. "an update was applied") are routine confirmations, not problems — they
+  // never drive the badge's color or count it up as alarming.
+  const actionable = problems.filter(p => p.severity !== 'Info');
+  const errorCount = actionable.filter(p => p.severity === 'Error').length;
+  const badgeColor = actionable.length === 0 ? '#4a9eff' : errorCount > 0 ? '#e5534b' : '#f4a60d';
 
-  const navBtn = (active: boolean) =>
-    `px-[14px] py-[5px] rounded-[5px] text-[12px] border cursor-pointer font-[inherit] ` +
-    (active
-      ? 'bg-accent-green text-white border-accent-green font-semibold'
-      : 'bg-transparent text-text-primary border-border');
+  const severityColor = (s: AgentEvent['severity']) =>
+    s === 'Error' ? '#e5534b' : s === 'Warning' ? '#f4a60d' : '#4a9eff';
+  const severityLabel = (s: AgentEvent['severity']) =>
+    s === 'Error' ? 'ERROR' : s === 'Warning' ? 'WARN' : 'INFO';
 
-  const ghostBtn = `px-[13px] py-[5px] rounded-[5px] text-[12px] bg-transparent text-text-primary border border-border cursor-pointer font-[inherit]`;
+  // Inline styles, not Tailwind classes: index.css's unlayered `* { padding: 0 }` reset beats any
+  // @layer utilities rule regardless of specificity, so a Tailwind padding class here is silently
+  // a no-op. Password/Connect already use inline styles for the same reason — match that padding
+  // exactly (5px 14px) so every control in this row is the same height.
+  const navBtnStyle = (active: boolean): CSSProperties => ({
+    padding: '5px 14px', borderRadius: 5, fontSize: 12, border: '1px solid',
+    cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+    background: active ? '#129271' : 'transparent',
+    color: active ? '#fff' : '#ECEFF1',
+    borderColor: active ? '#129271' : '#494949',
+    fontWeight: active ? 600 : 400,
+  });
+
+  const ghostBtnStyle: CSSProperties = {
+    padding: '5px 13px', borderRadius: 5, fontSize: 12, background: 'transparent',
+    color: '#ECEFF1', border: '1px solid #494949', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+  };
 
   return (
     <header
@@ -130,11 +148,11 @@ export function NavBar({
 
       {/* Controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <button className={navBtn(view === 'games')} onClick={() => onViewChange('games')}>Games</button>
-        <button className={navBtn(view === 'config')} onClick={() => onViewChange('config')}>Configuration</button>
-        <button className={navBtn(view === 'audit')} onClick={() => onViewChange('audit')}>Audit Log</button>
-        <button className={navBtn(view === 'help')} onClick={() => onViewChange('help')}>Help</button>
-        <button className={navBtn(view === 'whats-new')} onClick={() => onViewChange('whats-new')}>What's New</button>
+        <button style={navBtnStyle(view === 'games')} onClick={() => onViewChange('games')}>Games</button>
+        <button style={navBtnStyle(view === 'config')} onClick={() => onViewChange('config')}>Configuration</button>
+        <button style={navBtnStyle(view === 'audit')} onClick={() => onViewChange('audit')}>Audit Log</button>
+        <button style={navBtnStyle(view === 'help')} onClick={() => onViewChange('help')}>Help</button>
+        <button style={navBtnStyle(view === 'whats-new')} onClick={() => onViewChange('whats-new')}>What's New</button>
 
         {/* API Key composite input */}
         <div style={{ display: 'flex', alignItems: 'center', background: '#2A3238', border: '1px solid #494949', borderRadius: 5, overflow: 'hidden' }}>
@@ -157,7 +175,7 @@ export function NavBar({
           Connect
         </button>
 
-        <button className={ghostBtn} onClick={onRefresh}>↻ Refresh</button>
+        <button style={{ ...ghostBtnStyle, padding: '5px 10px', fontSize: 14, lineHeight: 1 }} onClick={onRefresh} title="Refresh">↻</button>
 
         {escalatedConflicts.length > 0 && (
           <button
@@ -185,7 +203,7 @@ export function NavBar({
                 fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
               }}
             >
-              ⚠ {problems.length}
+              {actionable.length > 0 ? '⚠' : 'ⓘ'} {problems.length}
             </button>
 
             {showProblems && (
@@ -208,11 +226,11 @@ export function NavBar({
                         style={{
                           marginTop: 2, flexShrink: 0, padding: '1px 7px', borderRadius: 3, fontSize: 10,
                           fontWeight: 700, letterSpacing: '0.3px',
-                          color: p.severity === 'Error' ? '#e5534b' : '#f4a60d',
-                          border: `1px solid ${p.severity === 'Error' ? '#e5534b' : '#f4a60d'}`,
+                          color: severityColor(p.severity),
+                          border: `1px solid ${severityColor(p.severity)}`,
                         }}
                       >
-                        {p.severity === 'Error' ? 'ERROR' : 'WARN'}
+                        {severityLabel(p.severity)}
                       </span>
 
                       <div style={{ flex: 1, minWidth: 0 }}>

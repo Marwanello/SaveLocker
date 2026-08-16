@@ -640,7 +640,10 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
               ? <tr><td colSpan={6} style={{ padding: '20px 18px', color: '#556070', fontSize: 13 }}>No machines registered.</td></tr>
               : machines.map(m => {
                   const h = healthByMachine.get(m.id);
-                  const problems = h?.openEvents.length ?? 0;
+                  // Info events are routine confirmations (an update landed, a plugin refreshed) —
+                  // not something needing a human's attention, so they don't count toward "problems".
+                  const problems = h?.openEvents.filter(e => e.severity !== 'Info').length ?? 0;
+                  const infoEvents = h?.openEvents.filter(e => e.severity === 'Info') ?? [];
 
                   // Never reported at all is its own state, and a meaningful one: a machine that was
                   // enrolled but whose agent has never run looks nothing like one that went offline.
@@ -659,8 +662,19 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
                       <td style={tdStyle}>
                         {m.name}
                         {problems > 0 && (
-                          <span style={{ marginLeft: 8, padding: '1px 6px', borderRadius: 3, fontSize: 10, fontWeight: 700, color: '#e5534b', border: '1px solid #e5534b' }}>
+                          <span
+                            title={h?.openEvents.filter(e => e.severity !== 'Info').map(e => e.message).join('\n')}
+                            style={{ marginLeft: 8, padding: '1px 6px', borderRadius: 3, fontSize: 10, fontWeight: 700, color: '#e5534b', border: '1px solid #e5534b', whiteSpace: 'nowrap', display: 'inline-block' }}
+                          >
                             {problems} problem{problems > 1 ? 's' : ''}
+                          </span>
+                        )}
+                        {infoEvents.length > 0 && (
+                          <span
+                            title={infoEvents.map(e => e.message).join('\n')}
+                            style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 3, fontSize: 10, fontWeight: 700, color: '#4a9eff', border: '1px solid #4a9eff', whiteSpace: 'nowrap', display: 'inline-block' }}
+                          >
+                            {infoEvents.length} update{infoEvents.length > 1 ? 's' : ''}
                           </span>
                         )}
                         {(h?.offlineQueueDepth ?? 0) > 0 && (
