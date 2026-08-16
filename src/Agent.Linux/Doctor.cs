@@ -322,6 +322,17 @@ public static class Doctor
     /// </summary>
     private static async Task ReportUpdateAsync(AgentConfig config)
     {
+        // Staged is a different state from available, and it is the one with an action attached: the
+        // bytes are already here, verified and smoke-tested, and the only question left is when the
+        // unit next starts. Reported before the check and outside the registration guard, because it
+        // is local state — a machine whose enrollment has gone can still be holding an update, and
+        // that is exactly when someone runs doctor.
+        if (Updater.StagedUpdate(config) is { } staged)
+        {
+            Info("staged", $"v{staged.Version} is downloaded and verified");
+            Console.WriteLine("  " + (staged.BlockedReason ?? Updater.ApplyInstruction()));
+        }
+
         if (string.IsNullOrEmpty(config.ApiKey)) return;
 
         try
@@ -330,8 +341,10 @@ public static class Doctor
             Info("update", await checker.CheckAsync() switch
             {
                 UpdateResult.Available a =>
-                    $"v{a.Version} available (running {UpdateChecker.CurrentVersionText}) — " +
-                    "install it by re-running install.sh from the new tarball",
+                    $"v{a.Version} available (running {UpdateChecker.CurrentVersionText})" +
+                    (config.AutoUpdate
+                        ? " — it will be downloaded and staged on the next check"
+                        : " — automatic updates are off, so run: savelocker update"),
                 UpdateResult.UpToDate => $"up to date (v{UpdateChecker.CurrentVersionText})",
                 UpdateResult.Skipped  => $"v{config.SkipVersion} available, skipped by request",
                 UpdateResult.Failed f => $"could not check ({f.Reason})",

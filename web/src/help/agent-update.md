@@ -15,7 +15,31 @@ It checks the server for a newer installer on startup and periodically while run
 
 It checks the server every few hours. When a newer version is hosted it downloads it, checks it against the checksum the server published, unpacks it, and **runs it once to confirm it starts and reports the version it should**. Only then is it kept — as a *staged* update.
 
-The staged update is installed the **next time the agent starts**: on a reboot, or when you next log in. Nothing is replaced underneath a running session, and a game in progress is never interrupted. You do not have to do anything.
+The staged update is installed the **next time the agent starts**. Nothing is replaced underneath a running session, and a game in progress is never interrupted. You do not have to do anything.
+
+### What "the next time the agent starts" actually means
+
+Not a reboot specifically, and not restarting Steam. It means the **`savelocker.service` systemd `--user` unit** starting — that is where the swap runs, before the new agent comes up.
+
+| Action | Installs a waiting update? |
+|---|---|
+| Restarting your Deck | **Yes**, always |
+| `systemctl --user restart savelocker.service` | Yes |
+| `savelocker update` | Yes — checks, downloads if needed, installs, restarts |
+| Switching to Desktop mode and back | **Only if lingering is off** (the default). It is a log out and log in, so your user services stop and start with it. With `loginctl enable-linger` set they keep running, and nothing is swapped. |
+| **Restart Steam** (in the power menu) | **No.** That restarts Steam's own processes; SaveLocker is not one of them. It is the natural thing to reach for and it does nothing here. |
+| Sleep and wake | No |
+| Closing a game | No |
+
+The Game Mode screen (`savelocker ui`) tells you which of these applies to *your* device, because it can read whether lingering is on. `savelocker doctor` says the same thing.
+
+If a game is running when the unit restarts, the update is **deliberately left waiting** — it goes in at the start after that. This is the one case where restarting appears to do nothing.
+
+### The Decky plugin
+
+If you have the [SaveLocker Decky plugin](#help/decky-plugin), its panel shows an **Install update now** button whenever a verified update is waiting, and does the restart for you without leaving Game Mode. It only appears for an update that is already downloaded — never for one that has merely been announced, because that one needs a network round trip that can fail.
+
+### From a terminal
 
 To take one immediately instead of waiting:
 

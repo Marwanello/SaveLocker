@@ -229,11 +229,15 @@ On the Deck, SSH is off by default: `sudo systemctl enable --now sshd` (and set 
 
 ## Notes
 
-- **There is no auto-update on Linux yet.** To update, download the newer tarball and run
-  `install.sh` again — it installs over the top and keeps your configuration.
+- **The Linux agent updates itself.** It downloads and verifies a newer version, then installs it the
+  next time the agent starts — see [Agent auto-update](#help/agent-update), which also explains what
+  does and does not count as "the next time the agent starts". Installing by hand still works:
+  download the newer tarball and run `install.sh` again, which installs over the top and keeps your
+  configuration.
 - The agent stops when you log out unless *lingering* is enabled. On a Deck that is usually fine (you
   are logged in whenever you are playing). To keep it running regardless:
-  `sudo loginctl enable-linger $USER`.
+  `sudo loginctl enable-linger $USER`. Note that with lingering on, **switching to Desktop mode and
+  back no longer applies a waiting update** — only a reboot does. Same table as above.
 - Log file: `~/.local/share/SaveLocker/agent.log` (not `%PROGRAMDATA%` — Linux state lives under
   XDG paths). Tail it with `savelocker log`.
 

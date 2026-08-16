@@ -29,6 +29,10 @@ public sealed class AgentApiServer : IDisposable
     // config that is on disk, never from one a concurrent write is about to supersede.
     private readonly Action? _onGamesChanged;
     private readonly Func<UpdateResult?> _getUpdateResult;
+    // "Downloaded, verified and waiting", which is a different state from _getUpdateResult's "the
+    // server is offering something newer" — and the only one anything may offer to install now.
+    // Injected because Updater lives in Agent.Linux: Windows stages nothing and supplies nothing.
+    private readonly Func<StagedUpdateInfo?> _stagedUpdate;
     private readonly string _uiRoot;
     private readonly LocalAuth _auth;
     // Lease warnings are persisted, not held in memory: the Linux launch wrapper is a separate
@@ -53,7 +57,8 @@ public sealed class AgentApiServer : IDisposable
         IEnumerable<string>? browseRoots = null,
         Func<LaunchCommandDto>? launchInfo = null,
         Action? onGamesChanged = null,
-        Func<DeckyStatusDto>? deckyStatus = null)
+        Func<DeckyStatusDto>? deckyStatus = null,
+        Func<StagedUpdateInfo?>? stagedUpdate = null)
     {
         _browser = new PathBrowser(browseRoots);
         Port = port;
@@ -69,6 +74,7 @@ public sealed class AgentApiServer : IDisposable
         _onConnectionChanged = onConnectionChanged;
         _onGamesChanged = onGamesChanged;
         _getUpdateResult = getUpdateResult ?? (() => null);
+        _stagedUpdate = stagedUpdate ?? (() => null);
         _uiRoot = Path.Combine(AppContext.BaseDirectory, "agent-ui");
         _auth = LocalAuth.LoadOrCreate(config.ConfigPath);
         _leaseWarnings = LeaseWarningStore.For(config);
@@ -511,10 +517,13 @@ public sealed class AgentApiServer : IDisposable
             var latest = _getUpdateResult() is UpdateResult.Available available
                 ? available.Version
                 : null;
+            var staged = _stagedUpdate();
             return new AgentVersionDto(
                 UpdateChecker.CurrentVersionText,
                 latest,
-                latest is not null);
+                latest is not null,
+                staged?.Version,
+                staged?.BlockedReason);
         }).Produces<AgentVersionDto>();
     }
 
@@ -696,7 +705,39 @@ public sealed record AgentConfigDto(
     string MachineName,
     bool StartWithWindows,
     int SettleQuietSeconds);
-public sealed record AgentVersionDto(string CurrentVersion, string? LatestVersion, bool UpdateAvailable);
+/// <param name="UpdateAvailable">
+/// The server is offering something newer. That is all it means: nothing is downloaded, and acting
+/// on it needs network, a download, a digest check and a smoke test — any of which can fail, and all
+/// of which take a while.
+/// </param>
+/// <param name="StagedVersion">
+/// A version already downloaded, verified against the published SHA-256, unpacked and smoke-tested,
+/// waiting for the next start. Applying it is a file copy and a restart: it works offline and cannot
+/// fail for any of the reasons a download can, which is why this — and never
+/// <paramref name="UpdateAvailable"/> — is what an "install now" control may offer.
+/// Null when nothing is staged, and always null on Windows, which stages nothing (its updater runs
+/// the installer).
+/// </param>
+/// <param name="StagedBlockedReason">
+/// Why restarting right now would install nothing, as a sentence to show verbatim, or null when it
+/// would work. Today the only reason is a game running under the launch wrapper: the apply is
+/// deferred while one is alive, so a restart in that state is <b>safe but does nothing visible</b> —
+/// the worst possible outcome for a button. Phrased here rather than by each caller so the three
+/// surfaces that can say "update" cannot word it differently.
+/// </param>
+public sealed record AgentVersionDto(
+    string CurrentVersion,
+    string? LatestVersion,
+    bool UpdateAvailable,
+    string? StagedVersion,
+    string? StagedBlockedReason);
+
+/// <summary>
+/// What the host knows about an update it has already staged. Supplied by the Linux daemon, which
+/// owns <c>Updater</c>; the Windows tray injects nothing, because it stages nothing.
+/// </summary>
+/// <param name="BlockedReason"><inheritdoc cref="AgentVersionDto" path="/param[@name='StagedBlockedReason']"/></param>
+public sealed record StagedUpdateInfo(string Version, string? BlockedReason);
 public sealed record LaunchCommandDto(string? Command, string? Note);
 
 /// <summary>

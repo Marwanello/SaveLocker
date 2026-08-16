@@ -132,7 +132,11 @@ public sealed class Daemon : IAsyncDisposable
             onGamesChanged: StartFolderWatchers,
             // Read per request rather than captured once: the plugin can be installed, updated or
             // removed while the daemon runs — by Decky, by the user, or by this agent itself.
-            deckyStatus: DeckyPlugin.Status);
+            deckyStatus: DeckyPlugin.Status,
+            // Also per request: this daemon stages updates on its own timer, and whether a game is
+            // running — which is what decides if a restart would install anything — changes minute
+            // to minute. A value captured at startup would be wrong by the time anyone read it.
+            stagedUpdate: () => Updater.StagedUpdate(_config));
         _apiServer.Start();
 
         _drainer = new OfflineQueueDrainer(_offlineQueue, _config, () => _engine, Notify);

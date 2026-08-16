@@ -939,13 +939,19 @@ sealed class UiApp
 
                 // A staged update outranks the launch-option reminder: it is the only thing on this
                 // screen that says the agent is about to change, and Game Mode has nowhere else to
-                // say it. It needs no button — the whole point of the design is that the user does
-                // nothing and the swap happens at the next start.
+                // say it.
+                //
+                // There is still no button, deliberately — this screen cannot restart the unit it is
+                // being read from. What it CAN do is stop being a dead end. The old wording said the
+                // update lands "the next time this device starts SaveLocker" and then "Nothing to
+                // do", which is true, opaque and reads as "you cannot do anything": nothing on
+                // screen says that phrase means a systemd --user unit, so someone who wants it now
+                // has to guess. Updater.ApplyInstruction() answers it for this device instead.
                 if (Updater.PendingVersion(_config) is { } pending)
                 {
                     Widgets.TextWrapped(
-                        $"SaveLocker {pending} is ready and will be installed the next time this "
-                        + "device starts SaveLocker. Nothing to do.",
+                        $"SaveLocker {pending} is downloaded and ready. "
+                        + Updater.ApplyInstruction(),
                         Theme.AccentGreen);
                     Widgets.Gap(Theme.Space.Sm);
                 }

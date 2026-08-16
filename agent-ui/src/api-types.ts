@@ -937,6 +937,8 @@ export interface components {
             currentVersion: string;
             latestVersion: null | string;
             updateAvailable: boolean;
+            stagedVersion: null | string;
+            stagedBlockedReason: null | string;
         };
         BrowseEntry: {
             name: string;

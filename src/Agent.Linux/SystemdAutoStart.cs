@@ -25,6 +25,34 @@ public sealed class SystemdAutoStart : IAutoStart
         return exit == 0 && stdout.Trim() == "enabled";
     }
 
+    /// <summary>
+    /// Is this user's systemd manager kept alive across logout (<c>loginctl enable-linger</c>)?
+    /// <para>
+    /// It decides what a user has to be told to apply a staged update, and nothing else here cares.
+    /// With lingering <b>off</b> — the default, and what <c>install.sh</c> assumes — switching a Deck
+    /// to Desktop mode and back is a logout/login, so the user manager and <c>savelocker.service</c>
+    /// cycle with it and <c>ExecStartPre</c> performs the swap. With it <b>on</b> the manager
+    /// persists across both and the unit is never touched, so only a reboot does it. Three KB
+    /// articles recommend <c>enable-linger</c> as the fix for "the agent stops when I log out", so
+    /// telling those users to switch modes would be telling them to do nothing.
+    /// </para>
+    /// <para>
+    /// Read from logind's own marker file rather than <c>loginctl show-user</c>: that is what logind
+    /// keys on, it costs no process, and it answers on a machine with no session bus at all — the
+    /// SSH case the rest of this class already has to survive.
+    /// </para>
+    /// </summary>
+    internal static bool LingerEnabled()
+    {
+        try
+        {
+            var user = Environment.UserName;
+            return !string.IsNullOrEmpty(user) &&
+                   File.Exists(Path.Combine("/var/lib/systemd/linger", user));
+        }
+        catch { return false; }
+    }
+
     public AutoStartResult SetEnabled(bool enabled)
     {
         try

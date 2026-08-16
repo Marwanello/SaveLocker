@@ -55,7 +55,7 @@ public static class Updater
     private static string AppliedMarker(AgentConfig c) => Path.Combine(UpdateRoot(c), "applied.json");
 
     /// <summary>Written by <see cref="StageAsync"/>; read by <see cref="Apply"/>.</summary>
-    private sealed record StagedUpdate(string Version, string PayloadDir, DateTime StagedAt);
+    private sealed record StagedPayload(string Version, string PayloadDir, DateTime StagedAt);
 
     /// <summary>
     /// Written by <see cref="Apply"/> and cleared by <see cref="Commit"/>. Its survival into the
@@ -81,6 +81,56 @@ public static class Updater
 
     /// <summary>Is there a staged update waiting to be applied at the next start?</summary>
     public static string? PendingVersion(AgentConfig config) => ReadStaged(config)?.Version;
+
+    /// <summary>
+    /// The staged update, and whether restarting right now would actually install it.
+    /// <para>
+    /// This is what <c>/api/agent-version</c> publishes, and the reason it exists separately from
+    /// the update <i>check</i>: "the server is offering v0.5.8" and "v0.5.8 is on this disk, verified
+    /// and smoke-tested" are different states, and only the second can be acted on offline, quickly,
+    /// and without a way to fail. Anything offering to install now must read this one.
+    /// </para>
+    /// </summary>
+    public static StagedUpdateInfo? StagedUpdate(AgentConfig config) =>
+        ReadStaged(config) is { } staged
+            ? new StagedUpdateInfo(staged.Version, BlockedReason(config))
+            : null;
+
+    /// <summary>
+    /// Why a restart would install nothing, phrased for a user, or null when it would work.
+    /// <para>
+    /// <see cref="Apply"/> defers a staged update while a game is running under the launch wrapper,
+    /// so a restart in that state succeeds and changes nothing — which from a button looks exactly
+    /// like a bug. The sentence is built here rather than by each surface so the Game Mode UI, the
+    /// agent UI and the Decky plugin cannot word the same condition three different ways.
+    /// </para>
+    /// </summary>
+    private static string? BlockedReason(AgentConfig config) =>
+        RunningGame(config) is { } game
+            ? $"{game} is running — the update will install when you close it."
+            : null;
+
+    /// <summary>
+    /// How to make a staged update happen now, in words that are true on <b>this</b> device.
+    /// <para>
+    /// The honest answer is not "restart SaveLocker". The swap runs from the unit's
+    /// <c>ExecStartPre</c>, so what has to cycle is the <c>savelocker.service</c> systemd
+    /// <c>--user</c> unit — which nothing on a Game Mode screen says, so the user guesses. A reboot
+    /// always does it. Switching to Desktop mode and back only does it when lingering is off (see
+    /// <see cref="SystemdAutoStart.LingerEnabled"/>), which is why this is probed rather than
+    /// promised.
+    /// </para>
+    /// <para>
+    /// "Restart Steam" is named because it is the control that is actually on screen and the first
+    /// thing anyone reaches for, and it is not it: that restarts Steam's own processes, not a
+    /// systemd user unit. Saying so costs a clause and saves the one wrong guess everybody makes.
+    /// </para>
+    /// </summary>
+    public static string ApplyInstruction() =>
+        SystemdAutoStart.LingerEnabled()
+            ? "Restart your device to install it. Restarting Steam will not."
+            : "Restart your device to install it, or switch to Desktop mode and back. " +
+              "Restarting Steam will not.";
 
     // ── Stage ──────────────────────────────────────────────────────────────────────────────────
 
@@ -126,7 +176,7 @@ public static class Updater
 
             SmokeTest(binary, update.Version);
 
-            WriteJson(StagedMarker(config), new StagedUpdate(update.Version, payload, DateTime.UtcNow));
+            WriteJson(StagedMarker(config), new StagedPayload(update.Version, payload, DateTime.UtcNow));
             log($"update: v{update.Version} staged and verified — it will be applied the next time " +
                 "the agent starts.");
             Report(config, AgentEventCodes.UpdateStaged, AgentEventSeverity.Info,
@@ -316,10 +366,10 @@ public static class Updater
 
             if (ReadStaged(config) is not { } staged) return 0;
 
-            if (!force && RunningGame() is { } game)
+            if (!force && RunningGame(config) is { } game)
             {
-                log($"update: v{staged.Version} is staged, but '{game}' is running. " +
-                    "Leaving it staged — it will be applied the next time the agent starts.");
+                log($"update: {game} is running, so v{staged.Version} stays staged. " +
+                    "It will be applied the next time the agent starts.");
                 return 0;
             }
 
@@ -335,7 +385,7 @@ public static class Updater
         }
     }
 
-    private static void InstallStaged(AgentConfig config, StagedUpdate staged, Action<string> log)
+    private static void InstallStaged(AgentConfig config, StagedPayload staged, Action<string> log)
     {
         var payload = staged.PayloadDir;
         if (!Directory.Exists(payload))
@@ -471,8 +521,16 @@ public static class Updater
     /// while the game is actually running, and this has to work on a device that is offline and
     /// mid-boot. Its own process is skipped, and so is the daemon — only <c>run</c> means a game.
     /// </para>
+    /// <para>
+    /// <paramref name="config"/> is what turns a pid into a name. Steam hands the wrapper
+    /// <c>SteamAppId</c> in its environment, which is the same key everything else matches games on,
+    /// so the tracked game is one lookup away — and "Khazan is running" is an answer a user can act
+    /// on, where "pid 4131 is running" is one they cannot. Falls back to the generic phrase whenever
+    /// the environment cannot be read or names nothing tracked, which is not a failure: the only
+    /// thing the caller needs is whether a game is there.
+    /// </para>
     /// </summary>
-    private static string? RunningGame()
+    private static string? RunningGame(AgentConfig? config = null)
     {
         var self = Environment.ProcessId;
         foreach (var dir in Directory.EnumerateDirectories("/proc"))
@@ -485,11 +543,31 @@ public static class Updater
                 if (argv.Length >= 2 &&
                     Path.GetFileName(argv[0]).Equals("savelocker", StringComparison.Ordinal) &&
                     argv[1].Equals("run", StringComparison.Ordinal))
-                    return $"pid {pid}";
+                    return TrackedGameOf(dir, config) ?? "A game";
             }
             catch { /* the process exited, or is not ours to read */ }
         }
         return null;
+    }
+
+    /// <summary>
+    /// Which tracked game a live wrapper process is playing, from its own environment, or null.
+    /// Readable because the wrapper runs as the same user as everything else here.
+    /// </summary>
+    private static string? TrackedGameOf(string procDir, AgentConfig? config)
+    {
+        if (config is null) return null;
+        try
+        {
+            var appId = File.ReadAllText(Path.Combine(procDir, "environ"))
+                .Split('\0', StringSplitOptions.RemoveEmptyEntries)
+                .FirstOrDefault(v => v.StartsWith("SteamAppId=", StringComparison.Ordinal))?["SteamAppId=".Length..];
+            if (SteamShortcuts.UnsignedAppId(appId) is not { } wanted) return null;
+
+            return config.Games.FirstOrDefault(
+                g => SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()) == wanted)?.Name;
+        }
+        catch { return null; }
     }
 
     /// <summary>
@@ -527,7 +605,7 @@ public static class Updater
         catch { /* best effort */ }
     }
 
-    private static StagedUpdate? ReadStaged(AgentConfig c) => ReadJson<StagedUpdate>(StagedMarker(c));
+    private static StagedPayload? ReadStaged(AgentConfig c) => ReadJson<StagedPayload>(StagedMarker(c));
     private static AppliedUpdate? ReadApplied(AgentConfig c) => ReadJson<AppliedUpdate>(AppliedMarker(c));
 
     private static T? ReadJson<T>(string path) where T : class

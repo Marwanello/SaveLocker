@@ -39,8 +39,13 @@ const SECTION_HEADER: React.CSSProperties = {
  *
  * On Windows the tray owns the actual update — this is a read-out of what it already knows, and the
  * tray is where the user says yes. On Linux there is no tray and nothing that can toast, so this and
- * `savelocker doctor` are the only places a Deck user can see they are behind; the agent does not
- * yet install it for them, so the instruction has to be here rather than a button that does nothing.
+ * `savelocker doctor` are the only places a Deck user can see the state of an update at all.
+ *
+ * **Staged and available are different states and are shown differently.** Available means the
+ * server is offering something newer and nothing has been downloaded. Staged means the payload is
+ * already here, checked against the published SHA-256 and smoke-tested, and the only thing left is
+ * the restart — so it gets the green badge and the instruction, while available gets neither.
+ * `stagedVersion` is null on Windows, where the installer path stages nothing.
  */
 function UpdateStatus({ platform }: { platform?: string }) {
   const [info, setInfo] = useState<AgentVersion | null>(null)
@@ -53,26 +58,36 @@ function UpdateStatus({ platform }: { platform?: string }) {
   if (failed) return <div style={{ color: '#9CA3AF', fontSize: 12 }}>Could not read the agent version.</div>
   if (!info) return <div style={{ color: '#9CA3AF', fontSize: 12 }}>Checking…</div>
 
+  const badge = (text: string, background: string) => (
+    <span style={{
+      padding: '2px 7px', background, color: '#1E252A', borderRadius: 4,
+      fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
+    }}>{text}</span>
+  )
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ color: '#ECEFF1', fontSize: 13 }}>Running v{info.currentVersion}</span>
-        {info.updateAvailable && info.latestVersion && (
-          <span style={{
-            padding: '2px 7px', background: '#f4a60d', color: '#1E252A', borderRadius: 4,
-            fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
-          }}>
-            v{info.latestVersion} AVAILABLE
-          </span>
-        )}
+        {info.stagedVersion
+          ? badge(`v${info.stagedVersion} READY`, '#4ade80')
+          : info.updateAvailable && info.latestVersion
+            ? badge(`v${info.latestVersion} AVAILABLE`, '#f4a60d')
+            : null}
       </div>
       <div style={{ color: '#9CA3AF', fontSize: 11, lineHeight: 1.5 }}>
-        {!info.updateAvailable
-          ? 'This is the version the server is offering.'
-          : platform === 'Linux'
-            ? 'Download the new tarball on this device and re-run install.sh to take it. ' +
-              'The agent checks every few hours; it does not install updates by itself yet.'
-            : 'The tray icon offers the update — accept it there to install and restart.'}
+        {info.stagedVersion
+          // The agent's own words for what blocks it, verbatim: it knows which game is running and
+          // this UI does not, and re-phrasing it here is how three surfaces start disagreeing.
+          ? info.stagedBlockedReason
+            ?? 'It is downloaded and verified, and installs the next time the agent starts — a ' +
+               'reboot, or a log out and back in. Nothing is replaced under a running session.'
+          : !info.updateAvailable
+            ? 'This is the version the server is offering.'
+            : platform === 'Linux'
+              ? 'The agent downloads and verifies it on its next check (every few hours), then ' +
+                'installs it at the following start. Run `savelocker update` to do it now.'
+              : 'The tray icon offers the update — accept it there to install and restart.'}
       </div>
     </div>
   )

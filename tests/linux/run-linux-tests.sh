@@ -510,6 +510,12 @@ done
 kill "${upd_pid}" 2>/dev/null; wait "${upd_pid}" 2>/dev/null
 check "the daemon reports the update to its own API"  "$(contains "${upd_json}" '"updateAvailable":true')"
 check "the daemon names the Linux version"            "$(contains "${upd_json}" '"latestVersion":"9.9.9"')"
+# The distinction the "install now" button is built on. What this server is offering right now is
+# the MZ payload from the check above — refused at stage time — so this daemon is in the state
+# "something newer exists" and NOT in the state "it is on this disk, verified". Only the second may
+# be offered as an instant install, and an implementation that filled stagedVersion from the update
+# result rather than from the marker on disk fails exactly here.
+check "available is not staged"                       "$(contains "${upd_json}" '"stagedVersion":null')"
 
 # ── Stage and apply: the agent replaces its own files ────────────────────────────────────────
 # Driven against a COPY of the built agent, never bin/Debug itself, and with the config living
@@ -624,7 +630,14 @@ for _ in $(seq 1 40); do
 done
 check "the daemon staged the update"                   "$([ -f "${fake_prefix}/update/apply.json" ] && echo 0 || echo 1)"
 check "the daemon did NOT swap the running agent"      "$([ "$(md5sum "${fake_prefix}/savelocker" | cut -d' ' -f1)" = "${orig_sum}" ] && echo 0 || echo 1)"
+# Read while this daemon is still up, and deterministic rather than timed: apply.json exists, so the
+# answer cannot be "not yet". This field is what the Decky plugin's "Install update now" button
+# hangs off, and nothing may offer that button on `updateAvailable` alone.
+stage_json="$(curl -sf -H "X-SaveLocker-Token: $(cat "${fake_prefix}/api-token")" \
+  "http://localhost:5187/api/agent-version" 2>/dev/null)"
 kill "${stage_pid}" 2>/dev/null; wait "${stage_pid}" 2>/dev/null
+check "the daemon publishes the STAGED version"        "$(contains "${stage_json}" '"stagedVersion":"9.9.9"')"
+check "with no game running, nothing blocks it"        "$(contains "${stage_json}" '"stagedBlockedReason":null')"
 
 # ---- A staged update waits while a game is running ----
 # The wrapper is a REAL `savelocker run`, because that is what the /proc scan looks for: argv[0]
@@ -641,14 +654,40 @@ kill "${stage_pid}" 2>/dev/null; wait "${stage_pid}" 2>/dev/null
 # "$HOME/.dotnet" resolves inside the fake home and finds nothing.
 dotnet_root="$(dirname "$(readlink -f "$(command -v dotnet)")")"
 DOTNET_ROOT="${dotnet_root}" \
-  "${fake_prefix}/savelocker" run --config "${prefix_cfg}" -- sleep 25 >"${scratch}/wrapper.log" 2>&1 &
+  "${fake_prefix}/savelocker" run --config "${prefix_cfg}" -- sleep 60 >"${scratch}/wrapper.log" 2>&1 &
 wrapper_pid=$!
 sleep 3
 out="$(prefix_agent apply-update)"
 check "apply defers while a game is running"           "$(contains "${out}" "is running")"
 check "the deferred apply changed nothing"             "$([ "$(md5sum "${fake_prefix}/savelocker" | cut -d' ' -f1)" = "${orig_sum}" ] && echo 0 || echo 1)"
 check "the update is still staged for next time"       "$([ -f "${fake_prefix}/update/apply.json" ] && echo 0 || echo 1)"
+
+# The deferral is SAFE and INVISIBLE, which is the worst pair of properties a button can have: press
+# restart with a game open and everything succeeds while nothing changes. So the condition has to be
+# published before anyone offers the button, in words the surface can print without rephrasing.
+out="$(prefix_agent doctor)"
+check "doctor reports the staged version"              "$(contains "${out}" "staged: v9.9.9")"
+check "doctor says the running game is why"            "$(contains "${out}" "is running — the update will install when you close it.")"
 kill "${wrapper_pid}" 2>/dev/null; wait "${wrapper_pid}" 2>/dev/null
+
+# ---- With no game running, doctor answers "how do I take it now?" ----
+# The question this whole feature came from. "It installs the next time this device starts
+# SaveLocker" is true and unusable: nothing on a Deck says that means a systemd --user unit.
+out="$(prefix_agent doctor)"
+check "doctor says what actually applies it"           "$(contains "${out}" "Restart your device to install it")"
+# Both lingering branches must carry this clause and must carry it identically — the first draft
+# had one of them say "— restarting Steam" mid-sentence, so this check silently only held on a
+# non-lingering box and would have failed on a Deck that took the KB's enable-linger advice.
+check "doctor kills the wrong guess about Steam"       "$(contains "${out}" "Restarting Steam will not")"
+# Desktop mode and back is a logout/login, so it cycles the user manager — but only while lingering
+# is off. Three KB articles recommend `loginctl enable-linger`, and a user who took that advice must
+# not be told to do something that does nothing. Asserted against whichever state this box is in.
+if [ -e "/var/lib/systemd/linger/$(id -un)" ]; then
+  check "lingering on: the mode switch is NOT promised" \
+    "$(grep -qF -- 'Desktop mode' <<<"${out}" && echo 1 || echo 0)"
+else
+  check "lingering off: the mode switch is offered too" "$(contains "${out}" "switch to Desktop mode and back")"
+fi
 
 # ---- With the game closed, it applies ----
 out="$(prefix_agent apply-update)"
