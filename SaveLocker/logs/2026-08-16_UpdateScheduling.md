@@ -1,5 +1,10 @@
 # Task — Real scheduling for the agent-update auto-fetch
 
+**Shipped:** 2026-08-16, commit `290ca2c`. Mode dropdown (disabled/hours/weekly/monthly) behind the
+Agent Updates card's Edit button; `AutoFetchScheduler.ComputeNextRun` is a pure, tested function
+(`tests/run-schedule-tests.ps1`, 15/15). One real bug caught in manual verification and fixed: the
+schedule editor's draft re-synced from the 15s settings poll and silently wiped in-progress edits.
+
 **Created:** 2026-08-16
 
 **Target:** `web/src/components/ConfigView.tsx` (`autoFetchHours` UI, `~line 27` and `~line 306-347`),

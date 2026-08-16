@@ -1,5 +1,10 @@
 # Task — Agent Updates card: condense to informational + edit wizard
 
+**Shipped:** 2026-08-16, commits `5672547` + `ab9d9da`. Verified live against the real
+`SkorcherX/SaveLocker` GitHub API (fetched real v0.5.8 packages, hash verification matched). One
+real bug caught in that pass and fixed: a release publishes both `SHA256SUMS-windows.txt` and
+`SHA256SUMS-linux.txt`, and the first version only checked whichever GitHub listed first.
+
 **Created:** 2026-08-16
 
 **Target:** `web/src/components/ConfigView.tsx` (Agent Updates card, `~line 306` on), likely a new

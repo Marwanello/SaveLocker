@@ -1,5 +1,8 @@
 # Task — Audit trail gaps: package updates, conflict detail, exclude-pattern detail
 
+**Shipped:** 2026-08-16, commit `6d594e3`. All three gaps closed as scoped below; 164/164 server
+bug-bounty suite passes.
+
 **Created:** 2026-08-16
 
 **Target:** `src/Server/Services/SyncService.cs`, `src/Server/Program.cs`,

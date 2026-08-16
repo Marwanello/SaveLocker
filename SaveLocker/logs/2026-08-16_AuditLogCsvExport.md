@@ -1,5 +1,7 @@
 # Task — Audit Log CSV export
 
+**Shipped:** 2026-08-16, commit `de6c7a4`.
+
 **Created:** 2026-08-16
 
 **Target:** `web/src/components/AuditView.tsx`

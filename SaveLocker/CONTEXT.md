@@ -25,6 +25,25 @@ Not on the Decky store and cannot honestly be submitted — see `logs/2026-08-15
 Since Phase 5 (below) the **agent keeps it updated**, so the custom-store setting is no longer the
 only route to an update.
 
+**Console UI/audit cleanup (2026-08-16, this session, on `main` but NOT in v0.5.8 — that was already
+tagged).** Four small tasks, one commit each, all with a real bug caught during manual browser
+verification and fixed before shipping — write-ups in `logs/2026-08-16_*.md`:
+- NavBar button sizing + Refresh icon-only, Info-severity agent events no longer read as
+  "problems" (`75d2df7`, `ab9d9da` for the follow-up checkbox-color fix).
+- Audit Log gained CSV export, and three new audited events: agent/plugin package updates,
+  human-readable conflict-resolution detail (which machine's version won/lost), and exclude-glob
+  diffs (`de6c7a4`, `6d594e3`).
+- Agent Updates card is now read-only status + a single Edit modal (bulk "fetch all", per-package
+  controls, GitHub `SHA256SUMS*.txt` hash verification) — `5672547`.
+- The auto-fetch interval became a real schedule: disabled/hours/weekly/monthly, with the
+  weekly/monthly modes computing their next occurrence server-side
+  (`AutoFetchScheduler.ComputeNextRun`, tested by `tests/run-schedule-tests.ps1`) — `290ca2c`.
+<br>**Not yet in a tagged release** — next release's notes need to cover all four. `AutoFetchSchedule`
+replaces the old `SetAutoFetchHoursRequest` on the wire (`/api/settings/agent-update-auto-fetch`'s
+body shape changed), and `AgentInstallerStatus` gained a `Source` field — both are additive/back-
+compat server-side (old DB rows with no schedule read as `mode: "hours"`, exactly as before), but any
+external script POSTing the old `{ hours }` shape to that endpoint needs updating.
+
 ---
 
 ## Where things stand
@@ -108,6 +127,8 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
    and the two deviations from the plan: `logs/2026-08-15_decky-plugin.md`.
    <br>**Do 1 before this**, or the button v0.2.1 adds stays invisible and the pass proves only half
    of what it could: the plugin reads `stagedVersion`, which only a v0.5.8 agent publishes.
+3. **Whenever the next release after v0.5.8 is cut, fold in the console UI/audit cleanup above** —
+   it's on `main` but landed after v0.5.8 was tagged, so its release notes say nothing about it.
 3. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
    merge what a server already holds under two spellings, and there is no merge tool ([[Backlog]]).
 
