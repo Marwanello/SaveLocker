@@ -49,6 +49,28 @@ function ActionBadge({ action }: { action: string }) {
   );
 }
 
+function csvCell(v: string | null | undefined): string {
+  const s = v ?? '';
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+/** Exports what's currently loaded, not the server's whole history — GetAuditLogAsync caps at 200. */
+function exportCsv(entries: AuditEntry[]) {
+  const header = ['Time', 'Machine', 'Game', 'Action', 'Detail'];
+  const rows = entries.map(e => [
+    e.timestamp, e.machineName ?? '', e.gameName ?? '', e.action, e.detail ?? '',
+  ].map(csvCell).join(','));
+  const csv = [header.join(','), ...rows].join('\r\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `savelocker-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function formatTs(iso: string) {
   const normalized = /[Z+]/.test(iso.slice(-6)) ? iso : iso + 'Z';
   const d = new Date(normalized);
@@ -83,15 +105,29 @@ export function AuditView() {
         <span style={{ color: '#129271', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
           Audit Log — last {entries.length} events
         </span>
-        <button
-          onClick={load}
-          style={{
-            padding: '5px 13px', background: 'transparent', border: '1px solid #494949',
-            borderRadius: 4, color: '#ECEFF1', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
-          }}
-        >
-          ↻ Refresh
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => exportCsv(entries)}
+            disabled={entries.length === 0}
+            title={`Export the ${entries.length} loaded event(s) as CSV`}
+            style={{
+              padding: '5px 13px', background: 'transparent', border: '1px solid #494949',
+              borderRadius: 4, color: entries.length === 0 ? '#556070' : '#ECEFF1', fontSize: 12,
+              cursor: entries.length === 0 ? 'default' : 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            ⤓ Export CSV
+          </button>
+          <button
+            onClick={load}
+            style={{
+              padding: '5px 13px', background: 'transparent', border: '1px solid #494949',
+              borderRadius: 4, color: '#ECEFF1', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            ↻ Refresh
+          </button>
+        </div>
       </div>
 
       {error && <div style={{ color: '#e05252', fontSize: 13, marginBottom: 12 }}>{error}</div>}
