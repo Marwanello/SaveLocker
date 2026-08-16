@@ -720,8 +720,21 @@ public sealed class SyncService
     {
         var game = await _db.Games.FindAsync(gameId);
         if (game is null) return false;
+
+        // The caller replaces the whole list, so the only way to say what actually changed is to
+        // diff against what was there before — otherwise the audit trail says "3 pattern(s)" and a
+        // user troubleshooting "why did my save stop syncing" has no way to see WHICH pattern did it.
+        var before = GlobConfig.Parse(game.ExcludeGlobs).ToHashSet(StringComparer.OrdinalIgnoreCase);
         game.ExcludeGlobs = GlobConfig.Join(patterns);
-        await Audit(null, gameId, "game.excludes", GlobConfig.Parse(game.ExcludeGlobs).Length + " pattern(s)");
+        var after = GlobConfig.Parse(game.ExcludeGlobs).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var added = after.Except(before, StringComparer.OrdinalIgnoreCase).ToArray();
+        var removed = before.Except(after, StringComparer.OrdinalIgnoreCase).ToArray();
+        var parts = new List<string>();
+        if (added.Length > 0) parts.Add("+" + string.Join(", +", added));
+        if (removed.Length > 0) parts.Add("-" + string.Join(", -", removed));
+
+        await Audit(null, gameId, "game.excludes", parts.Count > 0 ? string.Join("; ", parts) : "no change");
         await _db.SaveChangesAsync();
         return true;
     }
@@ -867,6 +880,9 @@ public sealed class SyncService
         if (game is null || winner is null)
             return (false, "The game or chosen version no longer exists.");
 
+        var losingVersionId = winningVersionId == conflict.VersionAId ? conflict.VersionBId : conflict.VersionAId;
+        var loser = await _db.SaveVersions.FindAsync(losingVersionId);
+
         var currentHead = game.HeadVersionId is { } headId
             ? await _db.SaveVersions.FindAsync(headId)
             : null;
@@ -895,10 +911,18 @@ public sealed class SyncService
         conflict.ResolvedVersionId = winningVersionId;
         conflict.ResolvedBy = resolvedBy;
         conflict.ResolvedAt = DateTime.UtcNow;
+        // Named by uploading machine, not just version IDs — the whole point of this detail string
+        // is that "the wrong side was picked" is investigable after the fact without a DB query.
+        var resolveDetail =
+            $"resolved by {resolvedBy}: kept {winner.MachineName}'s version ({winner.CreatedAt:O})" +
+            (loser is not null
+                ? $", {(keepBoth ? "also kept" : "discarded")} {loser.MachineName}'s version ({loser.CreatedAt:O})"
+                : "");
+
         // Propagation is queued below rather than here, for the ordering reason spelled out there.
         await SetHeadAndPropagateAsync(game, winningVersionId,
             keepBoth ? "conflict.resolve_keep_both" : "conflict.resolve",
-            winningVersionId.ToString(),
+            resolveDetail,
             propagate: false, exceptMachineId: null, CancellationToken.None);
 
         // ORDER MATTERS, and the obvious order is wrong. Queue the pulls FIRST: resolving unpins
@@ -1212,6 +1236,15 @@ public sealed class SyncService
             orderby a.Timestamp descending
             select new AuditEntryDto(a.Id, a.Timestamp, a.MachineId, m.Name, a.GameId, g.Name, a.Action, a.Detail)
         ).Take(limit).ToListAsync();
+    }
+
+    /// <summary>Machine- and game-less audit entry, for events with no natural owner of either kind
+    /// (agent installer packages). Saves immediately — unlike the private overload, callers here are
+    /// not already inside a larger unit of work that saves for them.</summary>
+    public async Task LogAuditAsync(string action, string? detail)
+    {
+        await Audit(null, null, action, detail);
+        await _db.SaveChangesAsync();
     }
 
     private Task Audit(Guid? machineId, Guid? gameId, string action, string? detail)

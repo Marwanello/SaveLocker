@@ -77,6 +77,7 @@ public sealed class AgentInstallerPollerService : BackgroundService
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
         var installer = scope.ServiceProvider.GetRequiredService<AgentInstallerService>();
+        var sync = scope.ServiceProvider.GetRequiredService<SyncService>();
         var http = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>().CreateClient();
 
         foreach (var platform in AgentPlatform.All)
@@ -92,8 +93,12 @@ public sealed class AgentInstallerPollerService : BackgroundService
                     _log.LogDebug("GitHub installer auto-poll: hosted {Platform} package v{Version} is current.",
                         platform, after.Version);
                 else
+                {
                     _log.LogInformation("GitHub installer auto-poll: hosted {Platform} package updated to v{Version}.",
                         platform, after.Version);
+                    await sync.LogAuditAsync("agent_installer.auto_fetch",
+                        $"{platform}: {(before is null ? "—" : "v" + before.Version)} → v{after.Version}");
+                }
             }
             catch (InstallerRejectedException ex) when (!ct.IsCancellationRequested)
             {

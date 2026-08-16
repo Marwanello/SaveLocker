@@ -25,6 +25,9 @@ const ACTION_COLORS: Record<string, string> = {
   'enrollment.redeem': '#129271',
   'enrollment.revoke': '#e05252',
   'enrollment.expire': '#9CA3AF',
+  'agent_installer.upload':       '#4a9eff',
+  'agent_installer.fetch_github': '#4a9eff',
+  'agent_installer.auto_fetch':   '#4a9eff',
 };
 
 function ActionBadge({ action }: { action: string }) {

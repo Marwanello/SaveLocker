@@ -715,7 +715,7 @@ admin.MapGet("/admin/agent-installer", (AgentInstallerService installer, string?
 }).Produces<AgentInstallerStatus>();
 
 admin.MapPost("/admin/agent-installer", async (
-    HttpRequest req, AgentInstallerService installer, string? platform, CancellationToken ct) =>
+    HttpRequest req, AgentInstallerService installer, SyncService sync, string? platform, CancellationToken ct) =>
 {
     if (!AgentPlatform.TryNormalize(platform, out var slot)) return UnknownPlatform(platform);
 
@@ -743,6 +743,7 @@ admin.MapPost("/admin/agent-installer", async (
 
         await using var stream = file.OpenReadStream();
         var info = await installer.SaveAsync(stream, version, file.FileName, ct, slot);
+        await sync.LogAuditAsync("agent_installer.upload", $"{slot}: v{info.Version} ({file.FileName})");
         return Results.Ok(info);
     }
     catch (InstallerTooLargeException ex)
@@ -772,14 +773,20 @@ admin.MapDelete("/admin/agent-installer", async (
 
 // Pulls the latest release asset straight from GitHub instead of a manual upload.
 admin.MapPost("/admin/agent-installer/fetch-github", async (
-    AgentInstallerService installer, IHttpClientFactory httpFactory, string? platform, CancellationToken ct) =>
+    AgentInstallerService installer, IHttpClientFactory httpFactory, SyncService sync, string? platform, CancellationToken ct) =>
 {
     if (!AgentPlatform.TryNormalize(platform, out var slot)) return UnknownPlatform(platform);
 
     try
     {
+        // Admin-triggered, so logged regardless of whether the version actually changed — the
+        // click itself is the event worth recording, not just its effect (unlike the background
+        // poller below, which only speaks up when it changes something).
+        var before = installer.GetInfo(slot);
         var info = await installer.FetchLatestFromGitHubAsync(
             httpFactory.CreateClient(), ct, platform: slot);
+        await sync.LogAuditAsync("agent_installer.fetch_github",
+            $"{slot}: {(before is null ? "—" : "v" + before.Version)} → v{info.Version}");
         return Results.Ok(info);
     }
     catch (InstallerTooLargeException ex)
