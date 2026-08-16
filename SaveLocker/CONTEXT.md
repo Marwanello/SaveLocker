@@ -11,10 +11,11 @@ embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[Architecture
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** `main`
 
 **Released:** **v0.5.7** (tagged 2026-08-15) — notes in `web/src/releases/0.5.7.md`.
-**Rollout has NOT started** — the tag is pushed and CI builds the artifacts, but nothing is offered
-to any fleet until the rows in Config → Agent updates are filled. There are now **three**: win-x64,
-linux-x64 and the new **decky-plugin**. v0.5.6's rollout was complete on all counts; this one starts
-from there. GHCR package `savelocker` is **public** ([[Gotchas]]).
+**Rollout is complete for both agents** (2026-08-15): console redeployed, the Windows agent took it
+from the tray's *Check for updates*, and **the Deck updated itself** — see below, it is the first
+time that has happened. The **decky-plugin** row of Config → Agent updates is still **empty**: it
+needs a plugin release cut from the plugin's own repo, and until then no Deck is offered one. GHCR
+package `savelocker` is **public** ([[Gotchas]]).
 
 **Decky plugin:** its own repo, <https://github.com/SkorcherX/SaveLocker-Decky>, at **v0.2.0**. Not
 on the Decky store and cannot honestly be submitted — see `logs/2026-08-15_decky-plugin.md`. Since
@@ -51,6 +52,18 @@ byte is written, because the plugin directory is root-owned 755 and `plugin.json
 lease warnings, sync status, push/pull per game or all, and `doctor` on demand. Phases 1–2 are in the
 agent and covered by `run-linux-tests`; 3–4 are the plugin and were verified on the Deck.
 
+**Proven on hardware by the v0.5.7 rollout (2026-08-15) — two things that had never been seen.**
+The Deck **staged and applied an update entirely by itself**: it noticed v0.5.7, downloaded and
+verified it, and installed it at the next start with nobody typing anything. Everything the feature
+needed had been in place since v0.5.5 and every piece was proven separately, but the unattended run
+had never been watched, and it was the standing caveat in v0.5.7's release notes. The **Game Mode
+"update is ready" notice** (`Ui/UiApp.cs`) was seen for the first time in the same pass. The trigger
+was a plain **reboot** — chosen over Desktop mode precisely because it needs no terminal, which is
+the argument `tasks/InstallUpdateNow.md` is built on.
+
+Still unseen on hardware: the **agent UI's Updates panel**, and everything about the plugin updating
+itself (nothing has been uploaded to the decky-plugin row yet).
+
 Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
 `logs/shipped-2026-07.md`.
 
@@ -65,13 +78,9 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
    artifact is always `SaveLocker.zip`), and watch a Deck pick it up. A manual reinstall through
    Decky always works, and is what the refusal path tells the user to do. Details and the two
    deviations from the plan: `logs/2026-08-15_decky-plugin.md`.
-2. **Roll v0.5.7 out, and watch the Deck self-update while doing it.** `install.sh` over a running daemon is proven
-   (three times, 2026-08-15), but the agent staging and applying an update *by itself* has still
-   never run on hardware. Everything it needs is now in place — the Linux row is populated and its
-   digest matches the release — so this is the moment to upload the v0.5.7 tarball, leave the Deck
-   alone, and watch. Also
-   unseen: the Game Mode "update is ready" notice and the agent UI's Updates panel. Record
-   `systemd-analyze --user security savelocker.service` while there ([[Backlog]]).
+2. **Record `systemd-analyze --user security savelocker.service` on the Deck** ([[Backlog]]) — the
+   one item from the v0.5.7 rollout that was not covered by it happening. Everything else that was
+   queued here is now done; see *Proven on hardware* above.
 3. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
    merge what a server already holds under two spellings, and there is no merge tool ([[Backlog]]).
 

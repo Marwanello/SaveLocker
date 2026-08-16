@@ -5,6 +5,28 @@ Full commit detail in `git log`. Active backlog in `Backlog.md`.
 
 ---
 
+## 2026-08-15 — v0.5.7, and a Deck that updated itself
+
+**Tagged v0.5.7** — the Decky plugin self-update (Phase 5), the SteamGridDB key fix, and the agent
+UI/KB work that tells people the plugin exists.
+
+**The rollout closed two gaps that had never been observed on hardware.** The Deck **staged and
+applied an update entirely by itself**: it noticed v0.5.7, downloaded and verified it, and installed
+it at the next start with nobody typing anything. Every piece of that had been proven separately
+since v0.5.5 and the unattended run never had — it was the standing caveat in v0.5.7's own release
+notes. The **Game Mode "update is ready" notice** (`Ui/UiApp.cs`) was seen for the first time in the
+same pass, by the maintainer, which is also what produced `tasks/InstallUpdateNow.md`.
+
+**The trigger was a plain reboot**, chosen over Desktop mode because it needs no terminal. That is
+exactly the argument the new task is built on: the notice tells a Game Mode user the update is ready
+and gives them nothing to press, and the fallback everyone will actually reach for is the power menu.
+
+Console redeployed and the Windows agent took it from the tray's *Check for updates*. The
+**decky-plugin** row of Config → Agent updates is still empty — it needs a release cut from the
+plugin's own repo — so nothing about the plugin updating itself has run on hardware yet.
+
+---
+
 ## 2026-08-15 — Decky Phase 5: the agent keeps the plugin updated
 
 **The problem was distribution, not code.** Decky holds exactly one custom-store URL and it
