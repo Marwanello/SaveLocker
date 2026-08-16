@@ -97,17 +97,6 @@ verification that did not happen before the tag. Write-ups:
 
 ## Medium priority
 
-- **"Install update now", and honest words when there is no plugin** — `tasks/InstallUpdateNow.md`,
-  planned 2026-08-15. A Deck with a staged update says *"will be installed the next time this device
-  starts SaveLocker. Nothing to do."* — true, and a dead end for anyone who wants it now. "Starts
-  SaveLocker" means the `savelocker.service` **user unit** restarting, which nothing on screen says,
-  and the only routes today need a terminal. Three phases: publish `stagedVersion` on
-  `/api/agent-version` (today it only reports *available*, which is a different state and the wrong
-  one to offer a button for), a plugin button that **restarts the unit** rather than running
-  `savelocker update`, and replacing "Nothing to do" with an instruction that is always true.
-  <br>**Do not tell users to switch to Desktop mode without checking lingering** — it only cycles the
-  unit when lingering is off, and the KB tells people to enable it in three places.
-
 - **Interactive setup guide in the console.** Raised 2026-08-14 alongside the savelocker.com plan. A
   first-run walkthrough that takes a new user from an empty server to a syncing game, in the console
   itself rather than in prose: mint an enrollment file → wait for the machine to appear → add a first

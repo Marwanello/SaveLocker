@@ -6,6 +6,13 @@ SaveLocker? The only thing I can think of is changing to Desktop mode."*
 **Execute the phases in order, verify each, stop.** Phase 1 is agent-side and ships alone. Phase 2 is
 the plugin and needs a plugin release. Phase 3 is words only and could ship with either.
 
+**ALL THREE PHASES DONE 2026-08-15.** `run-linux-tests` 208 → **216/216** (8 new checks). Phase 2
+shipped as **SaveLocker-Decky v0.2.1**. Phase 1 and 3 are in the agent and **not yet in a release** —
+until an agent carrying `stagedVersion` reaches a Deck, the plugin's new section stays hidden, which
+is the correct behaviour on an older agent and is why the plugin release was safe to cut first.
+
+**Nothing here has run on hardware.** See *What is still unproven* at the bottom.
+
 ---
 
 ## The problem
@@ -46,7 +53,35 @@ Phase 3 depends on it.
 
 ---
 
-## Phase 1 — Agent: publish that an update is STAGED, not merely available
+## Phase 1 — Agent: publish that an update is STAGED, not merely available — **DONE 2026-08-15**
+
+**One deviation, and it is the reason Phase 2 works at all.** The step said `StagedVersion` (one
+nullable string) injected as a `Func<string?>`. It is **two** fields — `StagedVersion` and
+`StagedBlockedReason` — behind one `Func<StagedUpdateInfo?>`, because bite 4 of Phase 2 needs to know
+whether a game is running *at the same instant* it learns something is staged. Two separate
+injections would let a caller read "staged, nothing blocking" from two different moments and offer a
+button that quietly does nothing. `StagedBlockedReason` is a finished sentence built in the agent
+(`Updater.BlockedReason`), not a flag: three surfaces can now say "update", and the *Costs accepted*
+section is right that the way they avoid disagreeing is to read one field rather than each phrasing
+its own.
+
+**`Updater.RunningGame` now names the game.** It returned `"pid 4131"`, which is not an answer anyone
+can act on — the task's own example sentence is *"Khazan is running"*. It resolves the wrapper
+process's `SteamAppId` out of `/proc/<pid>/environ` (readable: the wrapper runs as the same user) and
+matches it against tracked games, falling back to `"A game"`. The deferral log line moved the name to
+the front so both forms read as English.
+
+**Step 4 was not optional in practice.** The agent UI's Updates panel said *"Download the new tarball
+on this device and re-run install.sh… it does not install updates by itself yet"* — untrue since
+v0.5.5, and `doctor` carried the same stale sentence. Both now distinguish staged from available, and
+the panel shows the agent's blocked-reason verbatim.
+
+**Verified, and the checks discriminate.** `run-linux-tests` 208 → 216. The `available is not staged`
+check runs against the daemon whose offered payload is the MZ-executable one the suite already
+refuses at stage time — so it is genuinely in the "offered but not on disk" state, and an
+implementation filling `stagedVersion` from the update *result* fails it (confirmed by mutation).
+
+### Original plan
 
 `GET /api/agent-version` returns `AgentVersionDto(CurrentVersion, LatestVersion, UpdateAvailable)`,
 built from `_getUpdateResult()`. That is **"the server is offering something newer"**, which is not
@@ -83,7 +118,35 @@ reports `stagedVersion: null` before staging and the version after — the harne
 
 ---
 
-## Phase 2 — The plugin: an "Install update now" button
+## Phase 2 — The plugin: an "Install update now" button — **DONE 2026-08-15, released as v0.2.1**
+
+Shipped in <https://github.com/SkorcherX/SaveLocker-Decky>. **Not run on hardware.**
+
+**Bite 2 — the systemd session — is answered by construction rather than by measurement, and that is
+the one thing to watch on the Deck.** The backend sets `XDG_RUNTIME_DIR=/run/user/$(id -u)`
+explicitly rather than hoping to inherit it, which is what the plan said to do if the environment is
+not inherited; doing it unconditionally costs nothing and removes the question. Root was never
+considered — `savelocker.service` is a `--user` unit belonging to the desktop user, and root's
+systemd has never heard of it, so the non-`_root` decision from the Decky-plugin task is what makes
+this possible at all rather than merely tidy. **If it still fails on hardware, systemctl's own text
+is passed through**, because "Failed to connect to bus" and "Unit savelocker.service not found" are
+completely different problems and only it can tell them apart.
+
+**Bite 3 — the API disappearing — needed one thing the plan did not mention.** Polling until the new
+`currentVersion` appears cannot work: the agent prints `Major.Minor.Patch` and the server's version
+string need not agree on component count (this is exactly why `Updater.SmokeTest` compares with
+`SameVersion` rather than string equality). Success is the **staged marker being gone**, which only
+happens once the swap ran, and the version is then read back rather than predicted.
+
+**A bug the plan could not have anticipated, found while writing it: success unmounts the section.**
+`stagedVersion` goes null the instant the swap lands, so the component rendering the button — and the
+result — disappears with it, and the user's press ends with a row silently vanishing, which looks
+exactly like a press that did nothing. The outcome now keeps the section mounted by itself.
+
+**A game running removes the button rather than disabling it**, and the agent's sentence takes its
+place. The 30 s status poll brings it back when the game closes.
+
+### Original plan
 
 Needs Decky. Lives in <https://github.com/SkorcherX/SaveLocker-Decky> and needs a plugin release.
 
@@ -129,7 +192,30 @@ confirm the message rather than a silent no-op.
 
 ---
 
-## Phase 3 — Say something useful when there is no plugin
+## Phase 3 — Say something useful when there is no plugin — **DONE 2026-08-15**
+
+**Option 1 taken: lingering is probed.** `SystemdAutoStart.LingerEnabled()` reads logind's own marker
+(`/var/lib/systemd/linger/$USER`) rather than shelling out to `loginctl show-user` — that is what
+logind keys on, it costs no process, and it answers on a box with no session bus, which is the SSH
+case the rest of that class already has to survive. The sentence lives in `Updater.ApplyInstruction()`
+so the Game Mode screen and `doctor` cannot word it differently.
+
+Game Mode now reads: *"SaveLocker 0.5.8 is downloaded and ready. Restart your device to install it,
+or switch to Desktop mode and back. Restarting Steam will not."* — the last clause because the power
+menu's **Restart Steam** is the control actually on screen and the first thing anyone reaches for.
+
+**The stated verification does not exist.** *"`run-linux-tests` drives `savelocker ui --screenshot`
+already"* — it does not; there is no `ui` invocation in that harness at all (`run-ui-wslg.sh` is a
+separate, interactive script). Verified through **`doctor`** instead, which wanted the staged state
+anyway: doctor is the only diagnostic a Deck has, and someone reading it about a waiting update wants
+the same answer the Game Mode screen gives. The lingering branch is asserted against whichever state
+the box running the suite is actually in, so it is a real check on either.
+
+`doctor` reports the staged version **before** the registration guard, deliberately: a machine whose
+enrollment has gone can still be holding a verified update, and that is exactly when someone runs
+doctor.
+
+### Original plan
 
 Most Decks have no Decky, and they get the notice with no button. "Nothing to do" should become an
 instruction that is **always true**, which means **reboot**.
@@ -159,6 +245,26 @@ the "Restart Steam does not do it" row, which is the wrong guess everyone will m
 assertion on the new wording is enough. The lingering variant, if taken, needs both states faked.
 
 ---
+
+## What is still unproven (2026-08-15)
+
+Everything below the API. The harness covers the agent's half and cannot reach any of it.
+
+1. **Does Decky's backend get a usable `systemctl --user`?** The one genuine unknown. It is answered
+   by naming `XDG_RUNTIME_DIR` rather than by measurement, and a failure surfaces as systemctl's own
+   text in the panel — so the first press on a Deck either works or says exactly why.
+2. **The panel surviving its own API going away.** Written for it, never watched.
+3. **A game running.** `Updater.RunningGame` naming a tracked game from `/proc/<pid>/environ` is
+   exercised by the harness only in its fallback form (`"A game"` — the fixture wrapper has no
+   `SteamAppId`). The name path has never run.
+4. **The Game Mode wording, on a screen.** It is a string change in a screen that was itself only
+   first seen on 2026-08-15.
+5. **The lingering-on branch.** Faking it needs root, so the suite asserts whichever state its box is
+   in — which has always been *off*.
+
+Also: the plugin's section stays hidden until an agent publishing `stagedVersion` reaches the device.
+Cutting v0.2.1 first is deliberate — it exercises the plugin update channel (`logs/2026-08-15_decky-plugin.md`
+Phase 5, which had never run on hardware) with a change that cannot misbehave if it does not appear.
 
 ## Costs accepted
 

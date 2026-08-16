@@ -5,6 +5,60 @@ Full commit detail in `git log`. Active backlog in `Backlog.md`.
 
 ---
 
+## 2026-08-15 — "Install update now", and SaveLocker-Decky v0.2.1
+
+**A Deck with a staged update had one screen and no way out of it:** *"will be installed the next
+time this device starts SaveLocker. Nothing to do."* Every word true, and useless — that phrase means
+the `savelocker.service` systemd `--user` unit starting, which nothing on screen says, so the only
+routes were a reboot or a terminal. All three phases of `logs/2026-08-15_install-update-now.md` in
+one pass. `run-linux-tests` 208 → **216/216**.
+
+**The feature is one field, and the field is a distinction that did not exist.** `/api/agent-version`
+reported `updateAvailable` — *the server is offering something newer* — and callers treated that as
+actionable. It is not: taking it needs network, a download, a digest check and a smoke test.
+**Staged** is the other state: already on disk, verified against the published SHA-256, smoke-tested,
+and applying it is a file copy that cannot fail for any of the reasons a download can. Only staged
+may be offered as an instant install, and now only staged is published as such.
+
+**A second field the plan did not have, and Phase 2 does not work without it.** `Updater.Apply`
+defers a staged update while a game is running — so pressing restart then **succeeds and installs
+nothing**, which is the worst pair of properties a button can have. `stagedBlockedReason` is a
+finished sentence built in the agent, not a flag, so the three surfaces that can now say "update"
+read one field instead of each phrasing its own. It also made `Updater.RunningGame` worth fixing: it
+returned `"pid 4131"`, and now resolves the wrapper's `SteamAppId` out of `/proc/<pid>/environ` to
+name the game.
+
+**Do not promise the Desktop-mode switch without checking.** It cycles the user manager only while
+lingering is off — and the KB recommends `loginctl enable-linger` in three articles as the fix for
+"the agent stops when I log out", so a user who followed that advice would have been told to do
+something that does nothing. `SystemdAutoStart.LingerEnabled()` reads logind's own marker file, and
+the sentence lives in `Updater.ApplyInstruction()` so Game Mode and `doctor` cannot drift. Both
+branches name the power menu's **Restart Steam** as the thing that does *not* work — it is the
+control actually on screen and the first guess everyone makes.
+
+**The plan's stated verification did not exist.** *"`run-linux-tests` drives `savelocker ui
+--screenshot` already"* — there is no `ui` invocation in that harness at all. Verified through
+`doctor` instead, which wanted the staged state anyway. **The new checks were confirmed to
+discriminate**: against a build filling `stagedVersion` from the update result, one dropping the
+running-game check, and one ignoring the lingering probe, the run reads 212/216 with exactly the
+right four failures. One of those four exposed a real bug in the words — the two lingering branches
+capitalised the Steam clause differently, so that assertion silently only held on a non-lingering
+box and would have failed on a Deck that took the KB's advice.
+
+**A bug found while writing the plugin, not while testing it: success unmounts the section.**
+`stagedVersion` goes null the instant the swap lands, so the component holding the button *and the
+result* disappears with it — the press would end with a row silently vanishing, indistinguishable
+from a press that did nothing.
+
+**Released as SaveLocker-Decky v0.2.1, deliberately before the agent half.** The Update section reads
+`stagedVersion`, which no released agent publishes yet, so it stays hidden — which makes this the
+safest possible first exercise of Phase 5's plugin update channel, which has never run on hardware.
+**Nothing in either half has run on hardware**, and the one genuine unknown is whether Decky's
+backend has a usable `systemctl --user`; it names `XDG_RUNTIME_DIR` explicitly rather than hoping to
+inherit it, and passes systemctl's own text through when it still fails.
+
+---
+
 ## 2026-08-15 — v0.5.7, and a Deck that updated itself
 
 **Tagged v0.5.7** — the Decky plugin self-update (Phase 5), the SteamGridDB key fix, and the agent
@@ -15,7 +69,7 @@ applied an update entirely by itself**: it noticed v0.5.7, downloaded and verifi
 it at the next start with nobody typing anything. Every piece of that had been proven separately
 since v0.5.5 and the unattended run never had — it was the standing caveat in v0.5.7's own release
 notes. The **Game Mode "update is ready" notice** (`Ui/UiApp.cs`) was seen for the first time in the
-same pass, by the maintainer, which is also what produced `tasks/InstallUpdateNow.md`.
+same pass, by the maintainer, which is also what produced `logs/2026-08-15_install-update-now.md`.
 
 **The trigger was a plain reboot**, chosen over Desktop mode because it needs no terminal. That is
 exactly the argument the new task is built on: the notice tells a Game Mode user the update is ready

@@ -123,7 +123,7 @@ dotnet build src/Agent.Linux/SaveLocker.Agent.Linux.csproj --no-incremental
 
 # Fake-game harness: no Steam, no Proton, no GPU, no Deck required.
 # Starts its own server on :5179 with a throwaway DB, and runs against a fake HOME.
-bash tests/linux/run-linux-tests.sh          # 208 checks
+bash tests/linux/run-linux-tests.sh          # 216 checks
 ```
 
 To pull Windows-side commits into the WSL clone:
@@ -188,7 +188,7 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 | Where | Counts |
 |---|---|
 | Windows, local | win agent bug bounty **114** (reads **113/114** since 2026-08-14 — see [[Backlog]]) · server bug bounty **164** · agent 47 · hardening 33 · local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6 |
-| Linux, local (WSL ext4) | `run-linux-tests` **63** on `main`, **69** at `4c9f5f5`, **84** after Phase 2, **117** after Phase 3, **123** after Phase 4 of the auto-update work, **137** after Phase 1, **154** after Phase 2, **161** after the Deck hardware pass, **197** after Phase 5 and **208** once the agent UI read the plugin's state live, both of `logs/2026-08-15_decky-plugin.md` (2026-08-15, same clone) |
+| Linux, local (WSL ext4) | `run-linux-tests` **63** on `main`, **69** at `4c9f5f5`, **84** after Phase 2, **117** after Phase 3, **123** after Phase 4 of the auto-update work, **137** after Phase 1, **154** after Phase 2, **161** after the Deck hardware pass, **197** after Phase 5 and **208** once the agent UI read the plugin's state live, both of `logs/2026-08-15_decky-plugin.md`, then **216** after `logs/2026-08-15_install-update-now.md` (2026-08-15, same clone) |
 | Linux, in CI | agent 43 · hardening 37 · local-api 30 · concurrency 23 · health 19 · enrollment 16 |
 | Detection | sweep **271/298 (90.9%)** at the default 300 sample, 17 pinned |
 
