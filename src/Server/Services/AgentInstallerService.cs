@@ -148,7 +148,7 @@ public class AgentInstallerService
     {
         var slot = SlotFor(platform);
         await _gate.WaitAsync(ct);
-        try { return await SaveCoreAsync(content, version, fileName, slot, ct); }
+        try { return await SaveCoreAsync(content, version, fileName, slot, ct, source: "manual"); }
         finally { _gate.Release(); }
     }
 
@@ -158,7 +158,7 @@ public class AgentInstallerService
     /// Callers must already hold <see cref="_gate"/>.
     /// </summary>
     private async Task<AgentInstallerStatus> SaveCoreAsync(
-        Stream content, string version, string fileName, Slot slot, CancellationToken ct)
+        Stream content, string version, string fileName, Slot slot, CancellationToken ct, string source)
     {
         // ---- Validate before touching anything ----
         var safeName = Path.GetFileName(fileName?.Trim() ?? "");
@@ -210,7 +210,7 @@ public class AgentInstallerService
             File.Move(staged, exePath, overwrite: true);
 
             var info = new AgentInstallerStatus(
-                version, safeName, DateTime.UtcNow, written, digest, slot.Platform);
+                version, safeName, DateTime.UtcNow, written, digest, slot.Platform, source);
             await WriteInfoAsync(info, slot, ct);
 
             foreach (var old in Directory.GetFiles(slot.Root, "*" + slot.Extension))
@@ -382,9 +382,86 @@ public class AgentInstallerService
                 throw new InstallerTooLargeException(_maxBytes);
 
             await using var stream = await dlResp.Content.ReadAsStreamAsync(ct);
-            return await SaveCoreAsync(stream, version, assetName, slot, ct);
+            return await SaveCoreAsync(stream, version, assetName, slot, ct, source: "github");
         }
         finally { _gate.Release(); }
+    }
+
+    /// <summary>
+    /// Compares the hosted package's digest against a <c>SHA256SUMS*.txt</c> release asset from the
+    /// same GitHub repo the package was (or could have been) fetched from — the same provenance a
+    /// human doing a manual install is told to check by hand (release.yml's own comment). Not every
+    /// release publishes one (the Decky plugin repo does not, as of this writing), so "no such file"
+    /// is reported as <c>unknown</c>, not <c>mismatch</c> — silence is not evidence of tampering.
+    /// </summary>
+    public async Task<InstallerHashVerification> VerifyHashAsync(
+        string platform, HttpClient http, CancellationToken ct)
+    {
+        var slot = SlotFor(platform);
+        var info = GetInfo(slot.Platform);
+        if (info?.Sha256 is null)
+            return new(slot.Platform, "unknown", null, null,
+                "No hosted package or digest to compare.");
+
+        using var meta = new HttpRequestMessage(
+            HttpMethod.Get, $"https://api.github.com/repos/{slot.Repo}/releases/latest");
+        meta.Headers.UserAgent.ParseAdd("SaveLocker-Server");
+        meta.Headers.Accept.ParseAdd("application/vnd.github+json");
+        using var metaResp = await http.SendAsync(meta, ct);
+        if (!metaResp.IsSuccessStatusCode)
+            return new(slot.Platform, "unknown", null, null, "Could not reach GitHub.");
+
+        // A single release attaches BOTH platforms' checksum files (release.yml's build-linux job
+        // adds its own asset to the SAME release the installer job created) — so this cannot stop
+        // at the first name matching "SHA256SUMS*.txt". Every candidate is checked for a line
+        // naming this platform's file, and the first that actually lists it wins.
+        using var doc = JsonDocument.Parse(await metaResp.Content.ReadAsStringAsync(ct));
+        var candidates = new List<(string Name, string Url)>();
+        foreach (var a in doc.RootElement.GetProperty("assets").EnumerateArray())
+        {
+            var name = a.GetProperty("name").GetString() ?? "";
+            if (name.StartsWith("SHA256SUMS", StringComparison.OrdinalIgnoreCase) &&
+                name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+            {
+                var url = a.GetProperty("browser_download_url").GetString();
+                if (url is not null) candidates.Add((name, url));
+            }
+        }
+        if (candidates.Count == 0)
+            return new(slot.Platform, "unknown", null, null,
+                "The latest release of this repo publishes no SHA256SUMS file to check against.");
+
+        string? published = null, matchedSumsName = null;
+        var lastNonListingSumsName = candidates[0].Name;
+        foreach (var (name, url) in candidates)
+        {
+            using var dl = new HttpRequestMessage(HttpMethod.Get, url);
+            dl.Headers.UserAgent.ParseAdd("SaveLocker-Server");
+            using var dlResp = await http.SendAsync(dl, ct);
+            if (!dlResp.IsSuccessStatusCode) continue;
+
+            var text = await dlResp.Content.ReadAsStringAsync(ct);
+            foreach (var line in text.Split('\n'))
+            {
+                var parts = line.Trim().Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+                // `sha256sum` prefixes the filename with a mode marker (`*`/` `) on some platforms.
+                if (parts.Length >= 2 && string.Equals(
+                        parts[^1].TrimStart('*'), info.FileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    published = parts[0].ToLowerInvariant();
+                    matchedSumsName = name;
+                    break;
+                }
+            }
+            if (published is not null) break;
+            lastNonListingSumsName = name;
+        }
+        if (published is null)
+            return new(slot.Platform, "unknown", null, lastNonListingSumsName,
+                $"No SHA256SUMS file in the latest release lists {info.FileName} — it may be from a release older than the hosted package.");
+
+        var matches = string.Equals(published, info.Sha256, StringComparison.OrdinalIgnoreCase);
+        return new(slot.Platform, matches ? "match" : "mismatch", published, matchedSumsName, null);
     }
 
     private void TryDelete(string path)

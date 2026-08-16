@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { api, setPassword } from '../api';
-import type { GameSummary, Machine, Settings, AgentInstallerStatus, AgentPlatform, Enrollment, EffectiveServerUrl, AgentHealth, ServerBuildInfo } from '../types';
+import type { GameSummary, Machine, Settings, Enrollment, EffectiveServerUrl, AgentHealth, ServerBuildInfo } from '../types';
 import { fleetSkew, isNewerThanConsole, isTestBuild, normalizeVersion } from '../versionSkew';
+import { AgentUpdatesCard } from './AgentUpdatesCard';
 
 interface Props {
   games: GameSummary[];
@@ -304,54 +305,49 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
       </div>
 
       {/* ── Agent Updates ── */}
+      <AgentUpdatesCard />
+
+      {/* ── Automatic GitHub fetch schedule ──
+          Interval-only for now; a real weekly/monthly schedule is a separate, larger change
+          (SaveLocker/tasks/UpdateScheduling.md) that also moves this behind its own Edit button. */}
       <div style={card}>
         <div style={cardHeader}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#ECEFF1' }}>Agent updates</span>
-          <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>hosted packages</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#ECEFF1' }}>Automatic GitHub fetch</span>
+          <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>keeps hosted packages current on a schedule</span>
         </div>
-        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-          {INSTALLER_SLOTS.map((slot, i) => (
-            <InstallerSlotPanel key={slot.platform} slot={slot} first={i === 0} />
-          ))}
-
-          {/* Automatic GitHub fetch */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid #2A3238', paddingTop: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, color: '#ECEFF1' }}>Automatic GitHub fetch:</span>
-              {settings.autoFetchHours > 0 ? (
-                <span style={{ padding: '2px 7px', background: '#129271', color: '#fff', borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>
-                  every {settings.autoFetchHours} h
-                </span>
-              ) : (
-                <span style={{ padding: '2px 7px', border: '1px solid #556070', color: '#556070', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>disabled</span>
-              )}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <input
-                type="number"
-                min={0}
-                step={0.5}
-                value={autoFetchHoursInput}
-                onChange={e => setAutoFetchHoursInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSaveAutoFetchHours()}
-                aria-label="Automatic GitHub fetch interval in hours"
-                style={{ width: 140, padding: '7px 10px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 5, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}
-              />
-              <span style={{ fontSize: 12, color: '#9CA3AF' }}>hours</span>
-              <button
-                onClick={handleSaveAutoFetchHours}
-                disabled={savingAutoFetchHours}
-                style={{ padding: '6px 14px', background: savingAutoFetchHours ? '#2A3238' : '#129271', color: savingAutoFetchHours ? '#556070' : '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: savingAutoFetchHours ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
-              >
-                {savingAutoFetchHours ? 'Saving…' : 'Save schedule'}
-              </button>
-            </div>
-            <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>
-              Set 0 to disable. When enabled, the server checks GitHub immediately, then at this interval; changes apply within a minute.
-            </p>
+        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            {settings.autoFetchHours > 0 ? (
+              <span style={{ padding: '2px 7px', background: '#129271', color: '#fff', borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>
+                every {settings.autoFetchHours} h
+              </span>
+            ) : (
+              <span style={{ padding: '2px 7px', border: '1px solid #556070', color: '#556070', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>disabled</span>
+            )}
           </div>
-
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              type="number"
+              min={0}
+              step={0.5}
+              value={autoFetchHoursInput}
+              onChange={e => setAutoFetchHoursInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSaveAutoFetchHours()}
+              aria-label="Automatic GitHub fetch interval in hours"
+              style={{ width: 140, padding: '7px 10px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 5, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}
+            />
+            <span style={{ fontSize: 12, color: '#9CA3AF' }}>hours</span>
+            <button
+              onClick={handleSaveAutoFetchHours}
+              disabled={savingAutoFetchHours}
+              style={{ padding: '6px 14px', background: savingAutoFetchHours ? '#2A3238' : '#129271', color: savingAutoFetchHours ? '#556070' : '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: savingAutoFetchHours ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
+            >
+              {savingAutoFetchHours ? 'Saving…' : 'Save schedule'}
+            </button>
+          </div>
+          <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>
+            Set 0 to disable. When enabled, the server checks GitHub immediately, then at this interval; changes apply within a minute.
+          </p>
         </div>
       </div>
 
@@ -731,181 +727,6 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
   );
 }
 
-/**
- * One hosted package per platform. The slots are independent all the way down — separate
- * storage, separate GitHub asset, separate version — so each panel owns its own state rather than
- * the card holding one installer and a selector. An admin routinely has a newer Windows installer
- * than Linux tarball (or no tarball at all, on a release that predates it), and the card has to be
- * able to show that rather than imply the fleet is on one version.
- */
-interface InstallerSlot {
-  platform: AgentPlatform;
-  label: string;
-  /** `accept` for the file input. Advisory — the server is what actually refuses a wrong file. */
-  accept: string;
-  fileHint: string;
-  /** Pulls the version out of a release asset's filename, so the admin rarely types it. */
-  parseVersion: (name: string) => string;
-}
-
-const INSTALLER_SLOTS: InstallerSlot[] = [
-  {
-    platform: 'win-x64',
-    label: 'Windows',
-    accept: '.exe',
-    fileHint: 'SaveLocker-Agent-Setup-x.y.z.exe',
-    parseVersion: name => name.match(/Setup-(.+?)\.exe$/i)?.[1] ?? '',
-  },
-  {
-    platform: 'linux-x64',
-    label: 'Linux / Steam Deck',
-    accept: '.gz,.tar.gz',
-    fileHint: 'savelocker-x.y.z-linux-x64.tar.gz',
-    parseVersion: name => name.match(/^savelocker-(.+?)-linux-x64\.tar\.gz$/i)?.[1] ?? '',
-  },
-  // Not an agent, and the only slot whose asset comes from another repository. It is here because a
-  // Deck's Linux agent installs it, from this channel, on the same AutoUpdate switch — so an admin
-  // asking "what is my fleet being offered?" reads all three in one place. The zip carries no
-  // version in its name (Decky's release artifact is always SaveLocker.zip), so this is the one slot
-  // where the Version field has to be typed — or filled by the GitHub fetch, which reads the tag.
-  {
-    platform: 'decky-plugin',
-    label: 'Decky plugin',
-    accept: '.zip',
-    fileHint: 'SaveLocker.zip — type the version, it is not in the filename',
-    parseVersion: name => name.match(/^SaveLocker-?(\d[\d.]*)\.zip$/i)?.[1] ?? '',
-  },
-];
-
-function InstallerSlotPanel({ slot, first }: { slot: InstallerSlot; first: boolean }) {
-  const [status, setStatus] = useState<AgentInstallerStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [fetching, setFetching] = useState(false);
-  const [versionOverride, setVersionOverride] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { setStatus(await api.installerStatus(slot.platform)); }
-    catch { /* non-fatal */ }
-    finally { setLoading(false); }
-  }, [slot.platform]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function handleUpload() {
-    const file = fileInputRef.current?.files?.[0];
-    if (!file) { alert(`Choose a ${slot.label} package first.`); return; }
-    const ver = versionOverride.trim() || slot.parseVersion(file.name);
-    if (!ver) { alert('Could not parse version from filename. Enter it in the Version field.'); return; }
-    setUploading(true);
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      await api.uploadInstaller(fd, ver, slot.platform);
-      setVersionOverride('');
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      await load();
-    } catch (e) { alert('Upload failed: ' + (e as Error).message); }
-    finally { setUploading(false); }
-  }
-
-  async function handleDelete() {
-    if (!confirm(`Remove the hosted ${slot.label} package? Those agents will no longer be offered an update until a new one is uploaded.`)) return;
-    try { await api.deleteInstaller(slot.platform); await load(); }
-    catch (e) { alert('Delete failed: ' + (e as Error).message); }
-  }
-
-  async function handleFetchGitHub() {
-    setFetching(true);
-    try {
-      const info = await api.fetchInstallerFromGitHub(slot.platform);
-      await load();
-      alert(`Fetched v${info.version} (${info.fileName}) from GitHub.`);
-    } catch (e) { alert('Fetch from GitHub failed: ' + (e as Error).message); }
-    finally { setFetching(false); }
-  }
-
-  return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', gap: 10,
-      borderTop: first ? undefined : '1px solid #2A3238',
-      paddingTop: first ? 0 : 14,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 13, color: '#ECEFF1', fontWeight: 600, minWidth: 122 }}>{slot.label}</span>
-        {loading ? (
-          <span style={{ fontSize: 12, color: '#556070' }}>Loading…</span>
-        ) : status ? (
-          <>
-            <span style={{ padding: '2px 7px', background: '#129271', color: '#fff', borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>v{status.version}</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#9CA3AF' }}>{status.fileName}</span>
-            <span style={{ fontSize: 11, color: '#556070' }}>·</span>
-            <span style={{ fontSize: 11, color: '#556070' }}>{(status.sizeBytes / (1024 * 1024)).toFixed(1)} MB</span>
-            <span style={{ fontSize: 11, color: '#556070' }}>· uploaded {new Date(asUtc(status.uploadedAt)).toLocaleDateString()}</span>
-            <a
-              href={`/api/agent/installer/download?platform=${slot.platform}`}
-              style={{ fontSize: 11, color: '#129271', textDecoration: 'none' }}
-              target="_blank" rel="noreferrer"
-            >
-              Download ↓
-            </a>
-            <button
-              onClick={handleDelete}
-              style={{ padding: '2px 10px', border: '1px solid #f4a60d', color: '#f4a60d', background: 'transparent', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
-            >
-              Delete
-            </button>
-          </>
-        ) : (
-          <span style={{ padding: '2px 7px', border: '1px solid #556070', color: '#556070', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>none — these agents won't be offered updates</span>
-        )}
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={slot.accept}
-          aria-label={`${slot.label} agent package`}
-          onChange={e => {
-            const parsed = slot.parseVersion(e.target.files?.[0]?.name ?? '');
-            if (parsed) setVersionOverride(parsed);
-          }}
-          style={{ flex: 1, minWidth: 200, padding: '5px 0', color: '#9CA3AF', fontSize: 12, background: 'transparent', border: 'none' }}
-        />
-        <input
-          type="text"
-          value={versionOverride}
-          onChange={e => setVersionOverride(e.target.value)}
-          placeholder="Version (e.g. 0.2.0)"
-          aria-label={`${slot.label} package version`}
-          style={{ width: 140, padding: '7px 10px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 5, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}
-        />
-        <button
-          onClick={handleUpload}
-          disabled={uploading}
-          style={{ padding: '6px 14px', background: uploading ? '#2A3238' : '#129271', color: uploading ? '#556070' : '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: uploading ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
-        >
-          {uploading ? 'Uploading…' : 'Upload'}
-        </button>
-        <button
-          onClick={handleFetchGitHub}
-          disabled={fetching}
-          style={{ padding: '6px 14px', background: 'transparent', color: fetching ? '#556070' : '#129271', border: `1px solid ${fetching ? '#2A3238' : '#129271'}`, borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: fetching ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
-        >
-          {fetching ? 'Fetching…' : 'Fetch from GitHub'}
-        </button>
-      </div>
-      <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: -4 }}>
-        <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10 }}>{slot.fileHint}</code>
-        {' '}from the release workflow — upload it, or pull it straight from the latest GitHub Release.
-        The version is read from the filename. Connected {slot.label} agents are offered it at their next check-in.
-      </p>
-    </div>
-  );
-}
 
 function BuildField({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
   return (

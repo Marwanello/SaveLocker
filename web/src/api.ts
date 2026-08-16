@@ -1,4 +1,4 @@
-import type { GameSummary, Machine, Command, Conflict, Settings, Version, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus } from './types';
+import type { GameSummary, Machine, Command, Conflict, Settings, Version, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus } from './types';
 
 let adminPassword = localStorage.getItem('sl_password') || '';
 
@@ -208,5 +208,12 @@ export const api = {
       .then(async res => {
         if (!res.ok) throw new Error(await explain(res));
         return res.json() as Promise<AgentInstallerStatus>;
+      }),
+
+  verifyInstallerHash: (platform: AgentPlatform): Promise<InstallerHashVerification> =>
+    fetch(`/api/admin/agent-installer/verify?platform=${platform}`, { headers: headers() })
+      .then(async res => {
+        if (!res.ok) throw new Error(await explain(res));
+        return res.json() as Promise<InstallerHashVerification>;
       }),
 };

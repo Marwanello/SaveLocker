@@ -133,13 +133,33 @@ public static class AgentPlatform
 /// an <c>installer-info.json</c> written before slots existed still deserializes — that file is
 /// always the Windows one, because it is the only one that could have been written.
 /// </param>
+/// <param name="Source">
+/// <c>"manual"</c> (an admin uploaded it) or <c>"github"</c> (fetched from the release, by hand or
+/// by the auto-poll). Defaults to <c>"manual"</c> so a package hosted before this field existed
+/// deserializes as the more conservative of the two rather than silently claiming a provenance it
+/// never recorded.
+/// </param>
 public record AgentInstallerStatus(
     string Version,
     string FileName,
     DateTime UploadedAt,
     long SizeBytes,
     string? Sha256 = null,
-    string Platform = AgentPlatform.Windows);
+    string Platform = AgentPlatform.Windows,
+    string Source = "manual");
+
+/// <summary>
+/// Result of comparing a hosted package's digest against its GitHub release's published
+/// <c>SHA256SUMS*.txt</c>, when one exists. <paramref name="Status"/> is <c>"match"</c>,
+/// <c>"mismatch"</c>, or <c>"unknown"</c> (no digest to compare, or the release publishes no
+/// checksums file) — unknown is deliberately not treated as a failure.
+/// </summary>
+public record InstallerHashVerification(
+    string Platform,
+    string Status,
+    string? PublishedSha256,
+    string? ChecksumAsset,
+    string? Note);
 
 /// <summary>Set (or clear, when null/empty) the SteamGridDB API key from the dashboard.</summary>
 public record SetSteamGridDbKeyRequest(string? ApiKey);

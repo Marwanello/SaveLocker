@@ -803,6 +803,17 @@ admin.MapPost("/admin/agent-installer/fetch-github", async (
     }
 }).Produces<AgentInstallerStatus>();
 
+// Compares the hosted package's digest against the SHA256SUMS*.txt asset on its GitHub repo's
+// latest release, when one is published. GET, not POST: it reads two things (the local digest,
+// GitHub's) and changes nothing server-side.
+admin.MapGet("/admin/agent-installer/verify", async (
+    AgentInstallerService installer, IHttpClientFactory httpFactory, string? platform, CancellationToken ct) =>
+{
+    if (!AgentPlatform.TryNormalize(platform, out var slot)) return UnknownPlatform(platform);
+    var result = await installer.VerifyHashAsync(slot, httpFactory.CreateClient(), ct);
+    return Results.Ok(result);
+}).Produces<InstallerHashVerification>();
+
 app.Run();
 
 // Refused rather than defaulted: `?platform=` selects a directory, and a caller asking for a

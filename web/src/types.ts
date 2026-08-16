@@ -29,6 +29,7 @@ export type EffectiveServerUrl = Schemas['EffectiveServerUrl'];
 export type AdminStatus = Schemas['AdminStatus'];
 export type ServerBuildInfo = NonNullable<Schemas['ServerBuildInfo']>;
 export type AgentInstallerStatus = Schemas['AgentInstallerStatus'];
+export type InstallerHashVerification = Schemas['InstallerHashVerification'];
 
 /**
  * Which agent a hosted package is for. Hand-written because the server's `AgentPlatform` is a

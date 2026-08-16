@@ -1786,6 +1786,34 @@
           }
         }
       }
+    },
+    "/api/admin/agent-installer/verify": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallerHashVerification"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2178,6 +2206,10 @@
           "platform": {
             "type": "string",
             "default": "win-x64"
+          },
+          "source": {
+            "type": "string",
+            "default": "manual"
           }
         }
       },
@@ -2887,6 +2919,42 @@
             "type": "integer",
             "format": "int64",
             "default": 0
+          }
+        }
+      },
+      "InstallerHashVerification": {
+        "required": [
+          "platform",
+          "status",
+          "publishedSha256",
+          "checksumAsset",
+          "note"
+        ],
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "publishedSha256": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "checksumAsset": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
