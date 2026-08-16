@@ -142,7 +142,7 @@ export function AgentUpdatesCard({
         })}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 4, borderTop: '1px solid #2A3238' }}>
-          <span style={{ fontSize: 12, color: '#9CA3AF' }}>{describeSchedule(settings.schedule, settings.nextAutoFetchRunAt)}</span>
+          <span style={{ fontSize: 12, color: '#9CA3AF' }}>{describeSchedule(settings.schedule ?? undefined, settings.nextAutoFetchRunAt)}</span>
         </div>
 
         <div style={{ marginTop: 4 }}>
@@ -158,7 +158,7 @@ export function AgentUpdatesCard({
       {showEdit && (
         <AgentUpdatesModal
           statuses={statuses}
-          schedule={settings.schedule}
+          schedule={settings.schedule ?? undefined}
           onClose={() => setShowEdit(false)}
           onChanged={reload}
           onScheduleChanged={onScheduleChanged}
