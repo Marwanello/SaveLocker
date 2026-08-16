@@ -10,12 +10,14 @@ embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[Architecture
 
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** `main`
 
-**Released:** **v0.5.7** (tagged 2026-08-15) — notes in `web/src/releases/0.5.7.md`.
-**Rollout is complete for both agents** (2026-08-15): console redeployed, the Windows agent took it
-from the tray's *Check for updates*, and **the Deck updated itself** — see below, it is the first
-time that has happened. The **decky-plugin** row of Config → Agent updates is still **empty**, so no
-Deck is offered a plugin update — but the release to put in it now exists (v0.2.1, below), and
-uploading it is Next action 1. GHCR package `savelocker` is **public** ([[Gotchas]]).
+**Released:** **v0.5.8** (tagged 2026-08-16) — notes in `web/src/releases/0.5.8.md`. **Not rolled
+out**: see Next action. It is agent-side only — "Install update now" and the words around it.
+
+v0.5.7's rollout (2026-08-15) is complete: console redeployed, the Windows agent took it from the
+tray's *Check for updates*, and **the Deck updated itself** — see below, it is the first time that
+has happened. The **decky-plugin** row of Config → Agent updates is still **empty**, so no Deck is
+offered a plugin update — the release to put in it exists (v0.2.1, below) and uploading it is Next
+action 2. GHCR package `savelocker` is **public** ([[Gotchas]]).
 
 **Decky plugin:** its own repo, <https://github.com/SkorcherX/SaveLocker-Decky>, at **v0.2.1**
 (tagged 2026-08-15 — the first plugin release cut since the agent gained the ability to install one).
@@ -27,8 +29,8 @@ only route to an update.
 
 ## Where things stand
 
-**On `main` and NOT in an agent release: "Install update now"** (`logs/2026-08-15_install-update-now.md`,
-all three phases, 2026-08-15). `/api/agent-version` now distinguishes **staged** (downloaded,
+**Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three
+phases). `/api/agent-version` now distinguishes **staged** (downloaded,
 SHA-256-verified, smoke-tested, applying it is a file copy that works offline) from merely
 **available** (the server is offering something newer; taking it needs a download that can fail) —
 they were one field and only the first may be offered as an instant install. It also publishes
@@ -39,12 +41,13 @@ Desktop-mode switch only cycles the unit when lingering is **off**, and the KB r
 `enable-linger` in three places. `run-linux-tests` 208 → **216/216**; the new checks were confirmed
 to fail against deliberately broken builds.
 
-**The plugin half shipped first, as SaveLocker-Decky v0.2.1.** Its Update section reads
-`stagedVersion`, so it stays hidden until an agent carrying that field reaches a Deck — which is why
-cutting it first was safe, and it gives Phase 5's never-exercised plugin update channel something
-harmless to carry. **Nothing in either half has run on hardware.**
+**The plugin half shipped first, as SaveLocker-Decky v0.2.1** (2026-08-16, before the agent half was
+tagged). Its Update section reads `stagedVersion`, so it shows nothing until a v0.5.8 agent is
+actually installed — which is why cutting it first was safe, and it gives Phase 5's never-exercised
+plugin update channel something harmless to carry. **Nothing in either half has run on hardware**, and
+the one genuine unknown is whether Decky's backend gets a usable `systemctl --user`.
 
-Everything else below is released. **v0.5.7 is rolled out.**
+Everything else below is released and rolled out.
 
 **v0.5.6 (2026-08-15)** carries a **save-losing fix** found on real hardware. A tracked game with no
 recorded `SteamAppId` matched nothing in the launch wrapper, so it played with **no sync at all** and
@@ -88,7 +91,12 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
 
 ## Next action
 
-1. **Prove Phase 5 on the Deck — the release to carry it now exists.** The harness covers the agent's
+1. **Roll out v0.5.8.** Redeploy the console (`docker compose pull && docker compose up -d`), then
+   upload **both** agent packages in Config → Agent updates — the Windows installer and the Linux
+   tarball — because neither fleet is offered anything until those rows are filled ([[Build and Run]]
+   → *Rolling a release out*). The Deck should then update itself again, unattended, which is now the
+   second time that has been watched rather than the first.
+2. **Prove Phase 5 on the Deck — the release to carry it now exists.** The harness covers the agent's
    half with a fake plugin directory; what it cannot cover is the part that makes the feature work at
    all — Decky noticing the files change and reloading. That mechanism *was* observed by hand during
    Phase 4 (`touch` as the desktop user, and repeated `scp`s of real builds), so this is not a guess,
@@ -98,10 +106,8 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
    watch the Deck pick it up. The Deck is on plugin v0.2.0, so it is genuinely behind. A manual
    reinstall through Decky always works, and is what the refusal path tells the user to do. Details
    and the two deviations from the plan: `logs/2026-08-15_decky-plugin.md`.
-2. **Decide whether to cut v0.5.8.** "Install update now" is on `main` and its plugin half is already
-   published, but the button cannot appear until an agent publishing `stagedVersion` is installed —
-   so the plugin release currently changes nothing visible on a Deck. That is deliberate and safe; it
-   is also the whole feature sitting one release away. Release notes for it have not been written.
+   <br>**Do 1 before this**, or the button v0.2.1 adds stays invisible and the pass proves only half
+   of what it could: the plugin reads `stagedVersion`, which only a v0.5.8 agent publishes.
 3. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
    merge what a server already holds under two spellings, and there is no merge tool ([[Backlog]]).
 

@@ -5,7 +5,7 @@ Full commit detail in `git log`. Active backlog in `Backlog.md`.
 
 ---
 
-## 2026-08-15 — "Install update now", and SaveLocker-Decky v0.2.1
+## 2026-08-16 — v0.5.8, and SaveLocker-Decky v0.2.1
 
 **A Deck with a staged update had one screen and no way out of it:** *"will be installed the next
 time this device starts SaveLocker. Nothing to do."* Every word true, and useless — that phrase means
@@ -50,12 +50,14 @@ box and would have failed on a Deck that took the KB's advice.
 result* disappears with it — the press would end with a row silently vanishing, indistinguishable
 from a press that did nothing.
 
-**Released as SaveLocker-Decky v0.2.1, deliberately before the agent half.** The Update section reads
-`stagedVersion`, which no released agent publishes yet, so it stays hidden — which makes this the
-safest possible first exercise of Phase 5's plugin update channel, which has never run on hardware.
-**Nothing in either half has run on hardware**, and the one genuine unknown is whether Decky's
-backend has a usable `systemctl --user`; it names `XDG_RUNTIME_DIR` explicitly rather than hoping to
-inherit it, and passes systemctl's own text through when it still fails.
+**Released as SaveLocker-Decky v0.2.1 first, then tagged v0.5.8.** The plugin's Update section reads
+`stagedVersion`, which no *installed* agent publishes until v0.5.8 reaches a device — so the plugin
+release changes nothing visible on its own, which makes it the safest possible first exercise of
+Phase 5's plugin update channel. **Nothing in either half has run on hardware**, and the one genuine
+unknown is whether Decky's backend has a usable `systemctl --user`; it names `XDG_RUNTIME_DIR`
+explicitly rather than hoping to inherit it, and passes systemctl's own text through when it still
+fails. **Order matters for the hardware pass**: roll v0.5.8 out before uploading the plugin zip, or
+the button stays invisible and the pass proves half of what it could.
 
 ---
 
