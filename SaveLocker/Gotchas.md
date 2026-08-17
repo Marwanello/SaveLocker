@@ -85,6 +85,16 @@ These exist because the production values are far too slow to observe in a suite
   the only one that drives a **real tray**, and it must not collide with the installed agent. It
   scopes the single-instance mutex to match (`SaveLocker.Agent.<port>`), so the harness tray and a
   running installed tray coexist; unset, both the port and the mutex name are exactly as shipped.
+- **`SAVELOCKER_STATE_ROOT`** — moves the whole agent state root, i.e. what `AgentConfig.DefaultDir`
+  is built from. **`--config` alone is not enough to run a second agent on Windows**: it moves
+  `config.json` and everything derived from `StateDir`, but `agent.log`, the WebView2 profile
+  directory and a fresh config's default `ManifestCachePath` are all built from `DefaultDir` and stay
+  in the installed agent's folder — so a test tray's log interleaves with the real one's, and the
+  1 MB rotation is a `File.Move` under a process-local lock that the other process cannot see (its
+  writes are swallowed, silently). Linux already had this in `XDG_DATA_HOME`; Windows had nothing.
+  Must be a **rooted** path or it is ignored — a relative one would resolve against whatever
+  directory the process started in, which for a tray launched from Explorer is not knowable. Setting
+  it makes `--config` optional: `DefaultConfigPath` moves with it.
 - **`SAVELOCKER_RUNKEY_SUBPATH`** — moves the HKCU "Start with Windows" subkey (Windows only).
   WA-10's access-denied case needs a **Deny ACE**, and putting one on the real
   `Software\Microsoft\Windows\CurrentVersion\Run` would break auto-start for everything on the box if
