@@ -44,6 +44,25 @@ body shape changed), and `AgentInstallerStatus` gained a `Source` field — both
 compat server-side (old DB rows with no schedule read as `mode: "hours"`, exactly as before), but any
 external script POSTing the old `{ hours }` shape to that endpoint needs updating.
 
+**`testenv` gained a Steam Deck target and a real `clean` (2026-08-19, this session).** Asked for
+directly: push a test build to the real Deck beside the installed release agent, the way the rig
+already does for Windows and WSL, and be able to delete every test build/state it leaves behind —
+not just stop the processes, which `down` already did. `tests/testenv.ps1 build -Only deck`
+cross-publishes a self-contained linux-x64 tarball in WSL (`packaging/linux/build-linux.sh`, same
+packer a real release uses); `up` `scp`s it to `~/savelocker-test` on the Deck (state in the sibling
+`~/savelocker-test-state`, never `~/.local/share/SaveLocker`) over SSH, gated by
+`$env:SAVELOCKER_DECK_HOST` / `$env:SAVELOCKER_DECK_SERVER_URL` — unset skips the Deck silently,
+matching how nothing else in the rig assumes hardware that may not be present. New `testenv.ps1
+clean` stops everything first and then deletes it: Windows' `-StateRoot`, the WSL rig's state dir,
+the Deck's deployed build+state, and the dashboard container **and its image and data volume** (a
+plain `down` left all three of those behind). Full design and the reasoning behind each isolation
+choice: see the new *Throwaway test rig* section in [[Build and Run]] and *`tests/testenv.ps1`* in
+[[Gotchas]]. **Not yet run against the real Deck** — the self-contained publish itself was verified
+in WSL (a throwaway console app published `-r linux-x64 --self-contained` and ran), but no `ssh`/
+`scp` round trip has touched real hardware. First real run should watch for: whether `SAVELOCKER_DECK_SERVER_URL`
+guessing the LAN IP by hand is annoying enough to automate, and whether the Deck's SSH session
+allows the `setsid`-detached daemon to outlive it the same way it does over the WSL path.
+
 ---
 
 ## Where things stand

@@ -128,6 +128,31 @@ These exist because the production values are far too slow to observe in a suite
 Set them per-process and clear them afterwards — leaving either set in a shell will make later runs
 behave in ways that look like bugs.
 
+## `tests/testenv.ps1` (throwaway test rig)
+- **The Steam Deck target has no default and must be opted into** — `$env:SAVELOCKER_DECK_HOST` /
+  `$env:SAVELOCKER_DECK_SERVER_URL`, unlike every other target here which has a workable Windows/WSL
+  default. Leaving `SAVELOCKER_DECK_HOST` unset is the normal state for a session not touching the
+  Deck and silently skips it under `-Only all`; only an explicit `-Only deck` with it unset is an
+  error. Don't "fix" the skip by inventing a default IP — every LAN differs and a wrong guess would
+  silently SSH nowhere useful, or somewhere unintended.
+- **The Deck is only awake when the maintainer wakes it** (CONTEXT.md). Every SSH/`scp` call the
+  rig makes carries `-o ConnectTimeout=5` and every caller wraps it in try/catch, reporting
+  "unreachable" rather than hanging on the OS default TCP timeout or aborting `up`/`down`/`status`
+  for the Windows and WSL targets too. A thrown, uncaught SSH failure here is a bug in the script,
+  not a correct response to a sleeping Deck.
+- **The Deck build must be self-contained** (`build -Only deck`) — SteamOS ships no .NET runtime,
+  so the WSL target's own framework-dependent `dotnet build` would need a `dotnet` on the Deck that
+  does not exist. It reuses `packaging/linux/build-linux.sh` (the same packer a real release uses)
+  from inside WSL — cross-publishing `-r linux-x64 --self-contained` from Windows directly also
+  works (verified 2026-08-19: restores and runs fine), but WSL is where `agent-ui/dist` is already
+  staged for the other Linux target, so there is no reason to open a second path.
+- **The Deck's install directory is never `~/.local/share/SaveLocker`.** That path is both the real
+  agent's binaries *and* its state (see *Linux agent* below), so a test build there would overwrite
+  the real install. The rig uses `~/savelocker-test` for the binary and `~/savelocker-test-state` as
+  `XDG_DATA_HOME` (so real state lands at `~/savelocker-test-state/SaveLocker`), and every remote
+  `rm -rf` in `testenv-deck.sh` first asserts its target path contains `savelocker-test` before
+  touching anything, in case a mistyped `-DeckPrefix` ever resolved to something like `$HOME`.
+
 ## Windows ACLs
 - **`SetAccessRuleProtection(isProtected: true, preserveInheritance: true)` does not let you then
   strip the inherited rules.** The copies are materialised only when the descriptor is persisted, so
