@@ -63,6 +63,26 @@ cmd_build() {
   echo "built: $(dotnet "$DLL" version 2>/dev/null)"
 }
 
+# The Deck target needs a SELF-CONTAINED linux-x64 publish — SteamOS ships no .NET runtime, so the
+# framework-dependent `dotnet build` above (which needs the WSL clone's own dotnet on the far end)
+# cannot run there at all. This reuses the real release packer, exactly as a tagged release would,
+# just stamped with a test version instead. WSL is still where this runs, not Windows directly: it
+# is the one place on this rig with both a Linux dotnet and agent-ui/dist already staged.
+cmd_build_deck() {
+  [ -d "$REPO" ] || die "no clone at $REPO"
+  cd "$REPO" || exit 1
+  stage_ui
+  local dest="${SAVELOCKER_ARTIFACT_DIR:-}"
+  [ -n "$dest" ] || die "SAVELOCKER_ARTIFACT_DIR not set"
+  echo "== building the Deck agent as $VERSION (self-contained linux-x64) =="
+  SAVELOCKER_SKIP_UI_BUILD=1 bash packaging/linux/build-linux.sh "$VERSION" linux-x64 || die "build failed"
+  local tarball="$REPO/artifacts/linux/savelocker-${VERSION}-linux-x64.tar.gz"
+  [ -f "$tarball" ] || die "expected tarball missing: $tarball"
+  mkdir -p "$dest"
+  cp "$tarball" "$dest/" || die "copy to $dest failed"
+  echo "artifact: $dest/$(basename "$tarball")"
+}
+
 cmd_up() {
   [ -f "$DLL" ] || die "not built — run: testenv.ps1 build"
   cmd_down >/dev/null 2>&1
@@ -137,6 +157,19 @@ cmd_status() {
   fi
 }
 
+# down only stops the daemon; this deletes what it left behind — the whole point being that
+# `testenv.ps1 clean` can reclaim the disk without also wiping the WSL clone's normal dev state
+# (the built DLLs live in the shared $REPO tree and are cheap to rebuild, so they are left alone).
+cmd_clean() {
+  cmd_down >/dev/null 2>&1
+  if [ -d "$XDG_DATA_HOME" ]; then
+    rm -rf "$XDG_DATA_HOME"
+    echo "removed $XDG_DATA_HOME"
+  else
+    echo "nothing to remove ($XDG_DATA_HOME doesn't exist)"
+  fi
+}
+
 cmd_test() {
   [ -d "$REPO" ] || die "no clone at $REPO"
   # The suite is sensitive to a stray agent — it scans for running games — so take the daemon down
@@ -201,11 +234,13 @@ cmd_sync() {
 }
 
 case "$CMD" in
-  build)  cmd_build ;;
-  up)     cmd_up ;;
-  down)   cmd_down ;;
-  status) cmd_status ;;
-  test)   cmd_test ;;
-  sync)   cmd_sync ;;
-  *)      die "unknown command '$CMD'" ;;
+  build)       cmd_build ;;
+  build-deck)  cmd_build_deck ;;
+  up)          cmd_up ;;
+  down)        cmd_down ;;
+  status)      cmd_status ;;
+  test)        cmd_test ;;
+  sync)        cmd_sync ;;
+  clean)       cmd_clean ;;
+  *)           die "unknown command '$CMD'" ;;
 esac
