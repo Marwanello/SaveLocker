@@ -1,22 +1,38 @@
-﻿# One place to drive the throwaway test environment: a Windows agent, a headless WSL agent and a
-# dashboard container, all running beside — never instead of — the installed release agent.
+﻿# One place to drive the throwaway test environment: a Windows agent, a headless WSL agent, a
+# Steam Deck (or any SSH-reachable Linux box) and a dashboard container, all running beside — never
+# instead of — the installed release agent.
 #
-#   .\tests\testenv.ps1 build     build all three from this working tree
+#   .\tests\testenv.ps1 build     build all four from this working tree
 #   .\tests\testenv.ps1 up        start them (registers on first run)
 #   .\tests\testenv.ps1 down      stop them; the installed agent is never touched
 #   .\tests\testenv.ps1 status    what is running, and which build
 #   .\tests\testenv.ps1 test      run the suites
 #   .\tests\testenv.ps1 sync      copy this tree's uncommitted changes into the WSL clone
 #   .\tests\testenv.ps1 logs      tail every log the rig writes
+#   .\tests\testenv.ps1 clean     down, then DELETE every test build and all its state — WSL,
+#                                 Windows, the Deck and the dashboard container/image/volume
 #
 # Separation rests on three test-only variables (Gotchas.md → Test-only environment variables):
 # SAVELOCKER_STATE_ROOT moves all Windows state, SAVELOCKER_TRAY_PORT moves the local API *and*
 # scopes the single-instance mutex, SAVELOCKER_RUNKEY_SUBPATH keeps "Start with Windows" off the
-# real Run key. Linux needs none of them — XDG_DATA_HOME already does the whole job.
+# real Run key. Linux needs none of them — XDG_DATA_HOME already does the whole job, and the Deck
+# target reuses that same trick over SSH: a self-contained build lands in its own directory pair
+# (-DeckPrefix and "$DeckPrefix-state"), never ~/.local/share/SaveLocker, which is both the real
+# install's binaries AND its state (Gotchas.md → Linux agent).
+#
+# The Deck has no universal default — every LAN differs — so it only runs when configured:
+#   $env:SAVELOCKER_DECK_HOST        deck@192.168.68.67-style SSH target
+#   $env:SAVELOCKER_DECK_SERVER_URL  this PC's LAN IP, e.g. http://192.168.68.58:5080 — the Deck
+#                                     cannot dial "localhost" and reach a container on another
+#                                     machine. Needed for `up`, not for `down`/`status`/`clean`.
+# Leaving SAVELOCKER_DECK_HOST unset skips the Deck everywhere `-Only` defaults to 'all'; passing
+# `-Only deck` explicitly without it is an error instead of a silent no-op. The Deck is "awake only
+# when the maintainer wakes it" (CONTEXT.md), so every SSH call has a short connect timeout and
+# reports unreachable rather than hanging or aborting the rest of the rig.
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs')]
+    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'clean')]
     [string]$Command = 'status',
 
     # Never a released version number. A test build stamped with one compares equal to the real
@@ -32,7 +48,19 @@ param(
     [string]$Distro   = 'Ubuntu',
     [string]$WslRepo  = '$HOME/SaveLocker',
 
-    [ValidateSet('all', 'windows', 'linux', 'console')]
+    # SSH target for a real Deck, "user@host" — e.g. deck@192.168.68.67. No default: unlike the
+    # Windows/WSL targets there is no "this machine", so an unset host means "don't touch the Deck"
+    # rather than a guess. Set once via the env var so it never has to be typed.
+    [string]$DeckHost = $env:SAVELOCKER_DECK_HOST,
+    # Distinct from both the WSL rig's :5187 and the real Deck agent's :5178 — a real, separate
+    # machine, so nothing here collides on the wire the way WSL2's localhost forwarding does.
+    [int]$DeckPort = 5177,
+    # Remote directory for the extracted self-contained build. State lives in the sibling
+    # "$DeckPrefix-state" (set as XDG_DATA_HOME by testenv-deck.sh) — see header comment.
+    [string]$DeckPrefix = '~/savelocker-test',
+    [string]$DeckServerUrl = $env:SAVELOCKER_DECK_SERVER_URL,
+
+    [ValidateSet('all', 'windows', 'linux', 'deck', 'console')]
     [string]$Only = 'all',
 
     [ValidateSet('all', 'agents', 'dashboard')]
@@ -79,7 +107,7 @@ function ConvertTo-WslPath {
 }
 
 function Invoke-Wsl {
-    param([string]$Sub, [string]$StdinFile)
+    param([string]$Sub, [string]$StdinFile, [string]$ArtifactDir)
 
     $sh = Join-Path $PSScriptRoot 'testenv.sh'
     if (-not (Test-Path $sh)) { throw "missing $sh" }
@@ -100,6 +128,11 @@ function Invoke-Wsl {
         $vars += "SAVELOCKER_WIN_GITDIR='$(ConvertTo-WslPath (Split-Path $common -Parent))'"
         $vars += "SAVELOCKER_BRANCH='$(& git -C $root rev-parse --abbrev-ref HEAD)'"
     }
+    if ($ArtifactDir) {
+        # build-deck's only: where to drop the finished tarball so Windows can find it without
+        # guessing at a \\wsl$\ UNC path.
+        $vars += "SAVELOCKER_ARTIFACT_DIR='$(ConvertTo-WslPath $ArtifactDir)'"
+    }
 
     # A .sh copied from this (CRLF) tree gives bash "bad interpreter: ...^M", so strip CR on the way
     # in rather than trusting the checkout's line endings.
@@ -110,6 +143,80 @@ function Invoke-Wsl {
     }
     & wsl -d $Distro -- bash -c $cmd
 }
+
+function Test-DeckConfigured { return [bool]$DeckHost }
+
+# Gates build/up (which respect -Only): explicit '-Only deck' with no host configured is an error,
+# 'all' with no host configured is a silent skip so the default all-in-one flow still works for
+# whoever hasn't wired up a Deck. down/status/logs/clean run unconditionally whenever a host IS
+# configured instead — see the switch block, matching how 'down' already ignores -Only entirely.
+function Use-Deck {
+    if ($Only -eq 'deck') {
+        if (-not $DeckHost) { throw "No Deck configured - set -DeckHost or `$env:SAVELOCKER_DECK_HOST (e.g. deck@192.168.68.67)." }
+        return $true
+    }
+    if ($Only -eq 'all') {
+        if ($DeckHost) { return $true }
+        Warn "deck skipped - set -DeckHost or `$env:SAVELOCKER_DECK_HOST to include it"
+        return $false
+    }
+    return $false
+}
+
+# Runs a subcommand of testenv-deck.sh over SSH — the same shape as Invoke-Wsl, just over the
+# network instead of wsl.exe. A short ConnectTimeout matters here in a way it does not for WSL: the
+# Deck is only awake when the maintainer wakes it (CONTEXT.md), so a cold Deck must fail in seconds,
+# not hang on the default TCP timeout. Every caller wraps this in try/catch and Warn — a sleeping
+# Deck must never abort the rest of the rig.
+function Invoke-Deck {
+    param([string]$Sub)
+
+    $sh = Join-Path $PSScriptRoot 'testenv-deck.sh'
+    if (-not (Test-Path $sh)) { throw "missing $sh" }
+
+    # Same CRLF trap as Invoke-Wsl: scp copies this working tree's bytes as-is, so strip CR on the
+    # remote side rather than trusting the checkout's line endings.
+    & scp -o ConnectTimeout=5 -q $sh "${DeckHost}:/tmp/.savelocker-testenv-deck.raw"
+    if ($LASTEXITCODE -ne 0) { throw "cannot reach $DeckHost (asleep?)" }
+
+    $vars = @(
+        "SAVELOCKER_DECK_PREFIX='$DeckPrefix'",
+        "SAVELOCKER_DECK_PORT=$DeckPort",
+        "SAVELOCKER_SERVER_URL='$DeckServerUrl'",
+        "SAVELOCKER_TEST_VERSION='$Version'"
+    )
+    $cmd = "sed 's/\r`$//' /tmp/.savelocker-testenv-deck.raw > /tmp/.savelocker-testenv-deck.sh; " +
+           ($vars -join ' ') + " bash /tmp/.savelocker-testenv-deck.sh $Sub"
+    & ssh -o ConnectTimeout=5 $DeckHost $cmd
+    if ($LASTEXITCODE -ne 0) { throw "deck '$Sub' failed (exit $LASTEXITCODE)" }
+}
+
+function Build-Deck {
+    Say "building the Deck agent as $Version (self-contained linux-x64)"
+    Build-AgentUi
+    $artifactDir = Join-Path $env:TEMP 'savelocker-testenv-artifacts'
+    New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+    Invoke-Wsl 'build-deck' -ArtifactDir $artifactDir
+    $tarball = Join-Path $artifactDir "savelocker-$Version-linux-x64.tar.gz"
+    if (-not (Test-Path $tarball)) { throw "deck build did not produce $tarball" }
+    Write-Host "  built: $tarball"
+}
+
+function Start-Deck {
+    $tarball = Join-Path (Join-Path $env:TEMP 'savelocker-testenv-artifacts') "savelocker-$Version-linux-x64.tar.gz"
+    if (-not (Test-Path $tarball)) { throw "not built - run: .\tests\testenv.ps1 build -Only deck" }
+    if (-not $DeckServerUrl) {
+        throw "no -DeckServerUrl / `$env:SAVELOCKER_DECK_SERVER_URL - the Deck can't reach 'localhost', it needs this PC's LAN IP (e.g. http://192.168.68.58:$ConsolePort)"
+    }
+
+    Say "pushing $(Split-Path $tarball -Leaf) to $DeckHost"
+    & scp -o ConnectTimeout=5 -q $tarball "${DeckHost}:/tmp/.savelocker-test.tar.gz"
+    if ($LASTEXITCODE -ne 0) { throw "scp to $DeckHost failed (asleep?)" }
+
+    Invoke-Deck 'up'
+}
+
+function Stop-Deck { Invoke-Deck 'down' }
 
 # The installed release agent runs as SaveLocker.Agent.exe, so a dotnet.exe host with the agent DLL
 # on its command line can only ever be a build from this tree. Nothing here can reach the real one.
@@ -327,6 +434,7 @@ switch ($Command) {
     'build' {
         if ($Only -eq 'all' -or $Only -eq 'windows') { Build-Windows }
         if ($Only -eq 'all' -or $Only -eq 'linux')   { Build-AgentUi; Invoke-Wsl 'build' }
+        if (Use-Deck) { Build-Deck }
         if ($Only -eq 'all' -or $Only -eq 'console') { Build-Console }
     }
 
@@ -334,17 +442,24 @@ switch ($Command) {
         if ($Only -eq 'all' -or $Only -eq 'console') { Start-Console }
         if ($Only -eq 'all' -or $Only -eq 'windows') { Start-Windows }
         if ($Only -eq 'all' -or $Only -eq 'linux')   { Invoke-Wsl 'up' }
+        if (Use-Deck) {
+            try { Start-Deck } catch { Warn "deck: $($_.Exception.Message)" }
+        }
         Show-RealGameMappings
         Write-Host ''
         Write-Host "console      $serverUrl"
         Write-Host "windows UI   http://localhost:$WinPort"
         Write-Host "linux UI     http://localhost:$LinuxPort   (WSL2 forwards it to Windows)"
+        if ($DeckHost) { Write-Host "deck UI      http://<deck-ip>:$DeckPort   ($DeckHost)" }
     }
 
     'down' {
         Say 'stopping the test rig (the installed agent is not touched)'
         Stop-Windows
         Invoke-Wsl 'down'
+        if (Test-DeckConfigured) {
+            try { Stop-Deck } catch { Warn "deck: $($_.Exception.Message)" }
+        }
         if (-not $AgentsOnly) { Stop-Console }
     }
 
@@ -359,6 +474,12 @@ switch ($Command) {
 
         Invoke-Wsl 'status'
         Show-RealGameMappings
+
+        if (Test-DeckConfigured) {
+            try { Invoke-Deck 'status' } catch { Warn "deck: $($_.Exception.Message)" }
+        } else {
+            Write-Host 'deck         not configured (set -DeckHost or $env:SAVELOCKER_DECK_HOST)'
+        }
 
         $release = Get-Process SaveLocker.Agent -ErrorAction SilentlyContinue
         if ($release) {
@@ -392,5 +513,33 @@ switch ($Command) {
         & wsl -d $Distro -- bash -c 'tail -20 ~/.savelocker-testenv-daemon.log 2>/dev/null || echo "(none)"'
         Say 'wsl suite'
         & wsl -d $Distro -- bash -c 'tail -20 ~/.savelocker-testenv-suite.log 2>/dev/null || echo "(none)"'
+        if (Test-DeckConfigured) {
+            Say 'deck daemon'
+            try { Invoke-Deck 'logs' } catch { Warn "deck: $($_.Exception.Message)" }
+        }
+    }
+
+    'clean' {
+        Say "deleting the test rig's builds and state (the installed agent and any real save data are never touched)"
+
+        Stop-Windows
+        if (Test-Path $StateRoot) {
+            Remove-Item $StateRoot -Recurse -Force
+            Write-Host "  removed $StateRoot"
+        }
+
+        Invoke-Wsl 'clean'
+
+        if (Test-DeckConfigured) {
+            try { Invoke-Deck 'clean' } catch { Warn "deck: $($_.Exception.Message)" }
+        }
+
+        if (-not $AgentsOnly) {
+            Say 'removing the dashboard container, image and data volume'
+            & docker rm -f $container 2>$null | Out-Null
+            & docker volume rm $volume 2>$null | Out-Null
+            & docker rmi $image 2>$null | Out-Null
+            Write-Host "  removed $container / $volume / $image"
+        }
     }
 }
