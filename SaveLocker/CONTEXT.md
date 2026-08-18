@@ -72,6 +72,16 @@ and finding it still running from a second one. All four commands (`build`/`up`/
 verified working end-to-end against the real Deck, the real WSL clone, and Docker, with the real
 installed Deck agent (pid confirmed unchanged throughout) and its config never touched. Full
 write-up of all three: [[Gotchas]] → *`tests/testenv.ps1`*.
+<br>**Cyberpunk 2077 uploads root-caused and fixed, not yet deployed (2026-08-18, branch
+`cyberpunk-save-upload-fix`).** "Always fails to upload" was never an agent bug — the maintainer's
+save is a genuine 100+ MB archive and `maro.savelocker.dpdns.org` is Cloudflare-proxied, whose free
+edge kills any single request past a fixed ~100s, which this connection's upload speed cannot beat.
+Fixed with a chunked upload protocol (`/upload/begin` → `/upload/{id}/chunk` → `/upload/{id}/complete`,
+`ApiClient.UploadAsync`) that never asks one request to carry more than 4 MiB; the old single-shot
+route stays for agents/servers that haven't updated yet, with an automatic fallback either way.
+Write-up: `logs/2026-08-18_cyberpunk-upload-timeout.md`. Gotcha recorded: `Gotchas.md` → *Hosting /
+network*. **Not deployed** — the real server needs a redeploy (and the fleet a new agent build) before
+this actually reaches the maintainer's own Cyberpunk sync; see Next action.
 
 ---
 
@@ -139,6 +149,10 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
 
 ## Next action
 
+0. **Deploy the Cyberpunk upload fix** (`cyberpunk-save-upload-fix`, above) once it's merged: redeploy
+   the console AND ship a new Windows agent build. Deploying only one half still leaves the maintainer's
+   own Cyberpunk sync broken — the fallback means a new agent against an old server just reproduces
+   today's failure, and an old agent against a new server never learns the new routes exist.
 1. **Roll out v0.5.8.** Redeploy the console (`docker compose pull && docker compose up -d`), then
    upload **both** agent packages in Config → Agent updates — the Windows installer and the Linux
    tarball — because neither fleet is offered anything until those rows are filled ([[Build and Run]]
