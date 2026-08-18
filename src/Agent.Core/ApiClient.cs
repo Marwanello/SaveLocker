@@ -187,8 +187,66 @@ public sealed class ApiClient
         return resp.IsSuccessStatusCode;
     }
 
+    /// <summary>
+    /// Bytes per request in the chunked upload protocol. Sized well under Cloudflare's fixed ~100s
+    /// proxied-edge timeout at the slowest realistic home upload speed this was diagnosed against
+    /// (~200 KB/s): 4 MiB is ~20s there, five times under the limit, and stays under it down to
+    /// roughly 40 KB/s. See Gotchas.md → "Cloudflare's 100s edge timeout".
+    /// </summary>
+    private const int UploadChunkBytes = 4 * 1024 * 1024;
+
+    /// <summary>Attempts for a single chunk before the whole push gives up and falls through to the
+    /// caller's own retry (queued for the offline drainer). A transient reset is exactly what this
+    /// protocol exists to survive — this is the layer that survives it without redoing the rest of
+    /// the archive.</summary>
+    private const int UploadChunkMaxAttempts = 4;
+
+    /// <summary>
+    /// Upload an archive via the chunked protocol: Begin (which can short-circuit with NoChange
+    /// before a single byte moves), then one small request per <see cref="UploadChunkBytes"/> slice
+    /// — each individually retried — then Complete. A single request carrying the whole archive is
+    /// what a proxied edge with a fixed timeout kills once the file is large and the link slow enough;
+    /// this never asks one request to carry more than a few seconds' worth of upload.
+    /// <para>
+    /// Falls back to the old single-shot route on a 404 from Begin — a server an agent has updated
+    /// ahead of (the two ship and get redeployed separately) simply does not have it yet. Without
+    /// this, updating the agent first would turn every upload from "sometimes works" into "always
+    /// 404s" until the server catches up, which is a worse rollout than doing nothing.
+    /// </para>
+    /// </summary>
     public async Task<UploadResult> UploadAsync(
         Guid gameId, string contentHash, Guid? parent, bool force, string archivePath, CancellationToken ct = default)
+    {
+        var beginResp = await _http.PostAsJsonAsync(
+            $"/api/games/{gameId}/upload/begin", new BeginUploadRequest(contentHash, parent, force), ct);
+        if (beginResp.StatusCode == HttpStatusCode.NotFound)
+            return await UploadSingleShotAsync(gameId, contentHash, parent, force, archivePath, ct);
+        beginResp.EnsureSuccessStatusCode();
+        var begin = (await beginResp.Content.ReadFromJsonAsync<BeginUploadResponse>(cancellationToken: ct))!;
+        if (begin.NoChange is { } noChange) return noChange;
+        var sessionId = begin.SessionId!.Value;
+
+        await using (var fs = File.OpenRead(archivePath))
+        {
+            var buffer = new byte[UploadChunkBytes];
+            long offset = 0;
+            int read;
+            while ((read = await ReadFullyAsync(fs, buffer, ct)) > 0)
+            {
+                await PutChunkWithRetryAsync(gameId, sessionId, offset, buffer, read, ct);
+                offset += read;
+            }
+        }
+
+        var completeResp = await _http.PostAsync($"/api/games/{gameId}/upload/{sessionId}/complete", null, ct);
+        completeResp.EnsureSuccessStatusCode();
+        return (await completeResp.Content.ReadFromJsonAsync<UploadResult>(cancellationToken: ct))!;
+    }
+
+    /// <summary>The pre-chunking upload: the whole archive as one request body. Kept only for a
+    /// server too old to have the chunked routes — see the fallback in <see cref="UploadAsync"/>.</summary>
+    private async Task<UploadResult> UploadSingleShotAsync(
+        Guid gameId, string contentHash, Guid? parent, bool force, string archivePath, CancellationToken ct)
     {
         var url = $"/api/games/{gameId}/upload?hash={Uri.EscapeDataString(contentHash)}";
         if (parent is { } p) url += $"&parent={p}";
@@ -200,6 +258,50 @@ public sealed class ApiClient
         var resp = await _http.PostAsync(url, content, ct);
         resp.EnsureSuccessStatusCode();
         return (await resp.Content.ReadFromJsonAsync<UploadResult>(cancellationToken: ct))!;
+    }
+
+    /// <summary>
+    /// PUT one chunk, retrying a network-level failure a few times before letting it propagate. The
+    /// offset makes a retry safe even when the previous attempt's bytes actually landed and only its
+    /// response was lost — the server treats an offset behind its own count as a no-op replay rather
+    /// than double-appending.
+    /// </summary>
+    private async Task PutChunkWithRetryAsync(
+        Guid gameId, Guid sessionId, long offset, byte[] buffer, int count, CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                using var content = new ByteArrayContent(buffer, 0, count);
+                content.Headers.ContentType = new("application/octet-stream");
+                var resp = await _http.PutAsync(
+                    $"/api/games/{gameId}/upload/{sessionId}/chunk?offset={offset}", content, ct);
+                resp.EnsureSuccessStatusCode();
+                return;
+            }
+            catch (HttpRequestException) when (attempt < UploadChunkMaxAttempts && !ct.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), ct);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Fill <paramref name="buffer"/> as full as the stream allows before returning. A single
+    /// <c>ReadAsync</c> is allowed to return fewer bytes than asked for even mid-file, and a short
+    /// chunk here would desync the byte offset both sides are counting from that point on.
+    /// </summary>
+    private static async Task<int> ReadFullyAsync(Stream s, byte[] buffer, CancellationToken ct)
+    {
+        var total = 0;
+        while (total < buffer.Length)
+        {
+            var read = await s.ReadAsync(buffer.AsMemory(total, buffer.Length - total), ct);
+            if (read == 0) break;
+            total += read;
+        }
+        return total;
     }
 
     /// <summary>
