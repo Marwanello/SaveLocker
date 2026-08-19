@@ -1,13 +1,16 @@
-# 2026-08-19 — MoonDeck-streamed shortcuts invisible to save detection (Cyberpunk 2077 and others)
+# 2026-08-19 — Four root causes of unreliable Linux save detection, found live on a real Deck
 
-**Status: DONE** — root-caused, fixed, and verified on the real Deck. Branch
-`claude/steam-deck-save-detection-68b6c5`, no task file (investigation requested live).
+**Status: DONE** — four independent root causes, all fixed and verified on the real Deck. Branch
+`claude/steam-deck-save-detection-68b6c5`, no task file (investigation requested live, in two
+rounds — Cyberpunk first, then a named follow-up list once that fix was confirmed).
 
 ## The report
 
-Two related complaints about the maintainer's own Deck: some games "I'm sure have save paths" are
-detected unreliably, and some installed games — Cyberpunk 2077 named specifically — are not picked
-up by `scan` at all.
+Round 1: some games "I'm sure have save paths" are detected unreliably, and some installed games —
+Cyberpunk 2077 named specifically — are not picked up by `scan` at all.
+<br>Round 2, once Cyberpunk was fixed: "there are also other games on steam and on heroic that i know
+i launched and had saves for but they don't show up" — A Short Hike, Left 4 Dead 2, Borderlands 2,
+Roadwarden named specifically, "and so much more."
 
 ## Investigation
 
@@ -134,3 +137,121 @@ convincing than the truth is worse than an admitted unknown. The note is also he
 nothing in the agent-ui Add Games view or the Game Mode UI surfaces it yet, since neither reads
 `doctor` output at all; if this becomes a common complaint, that is the next lever, not a cleverer
 tie-break.
+
+---
+
+## Round 2: the rest of the installed-games list (A Short Hike, Left 4 Dead 2, Borderlands 2, Roadwarden)
+
+With Cyberpunk fixed, the maintainer named four more games bought and played on Steam whose saves
+`scan` still would not find, "and so much more" — and indeed the original scan had resolved only
+**16 of 194** candidates. Two more, independent bugs in `ScanInstalledSteamGamesAsync` explain most
+of that gap; the fourth named game turned out to have no bug behind it at all.
+
+### Investigation
+
+Pulled each game's real manifest entry off the Deck's own cached `~/.local/share/SaveLocker/manifest.yaml`
+(the SAME file the real, already-installed agent has been using) rather than trusting memory of what
+a save path "usually" is — this is exactly the class of guess `Decisions.md` already warns against.
+
+**Left 4 Dead 2** — the manifest's Windows save path is not inside any Wine prefix at all:
+`<root>/userdata/<storeUserId>/550/remote`, Steam's own Cloud sync folder. `compatdata/550` does not
+exist anywhere on the Deck — the game has probably never been Proton-launched — but
+`userdata/162214018/550/remote` does, with real synced save files. `ScanInstalledSteamGamesAsync`
+gated its ENTIRE resolution attempt on `Directory.Exists(prefix)`, so a template needing no prefix at
+all was never even tried.
+
+**Borderlands 2** — its ACF is on the SD card (`/run/media/deck/SDCard/steamapps/appmanifest_49520.acf`),
+but `compatdata/49520` in the MAIN root also exists, fully populated, real save history included:
+`.../Documents/My Games/Borderlands 2/WillowGame/SaveData` — while the SD card's OWN
+`compatdata/49520` (Steam re-created one there too) is real but useless: its equivalent folder is
+named `My games`, lowercase g, not `My Games` — Linux is case-sensitive, so the manifest's exact-case
+template matches nothing there. Confirmed with `savelocker resolve --prefix <main-root-prefix>
+--install-dir <sdcard-installdir> "Borderlands 2"`, which succeeded immediately once pointed at the
+right prefix by hand — proving the resolver itself was never the problem, only which prefix
+`ScanInstalledSteamGamesAsync` was willing to look at.
+
+**A Short Hike** — `compatdata/1055540` exists but `drive_c/users/steamuser/` is completely empty: no
+Wine boot has ever populated it. The install directory
+(`.../steamapps/common/A Short Hike/`) confirmed why —
+`AShortHike.x86_64` and `UnityPlayer.so`, a **native Linux build**, no `.exe` anywhere. The game has
+never run under Proton on this Deck at all, so there is genuinely nothing in any prefix to find.
+Native-Linux builds are explicitly out of scope (`Decisions.md` §1) — this is not a bug, and no
+orphaned save data turned up anywhere else on the machine either (searched every compatdata prefix
+for `adamgryu`/`short hike` fragments, found nothing).
+
+**Roadwarden** — `compatdata/1155970` does not exist anywhere on the Deck, and its manifest entry has
+no Steam-Cloud-style fallback (only Wine-prefix-anchored paths, and its `cloud:` block names GOG, not
+Steam). Genuinely never launched under Proton here either; nothing to recover.
+
+> [!note] Two named games turned out fine, and that matters as much as the two that didn't
+> Reporting only the bugs would overstate what was broken. A Short Hike and Roadwarden are both
+> correctly, honestly unresolved — the first because it runs as a native build outside this feature's
+> stated scope, the second because there is simply no local Proton save history for it right now.
+> Neither is a case of SaveLocker silently getting the wrong answer; both are SaveLocker admitting it
+> has nothing, which is the behaviour `Decisions.md` and `logs/2026-08-09_heroic-detection.md` both
+> deliberately chose over a convincing guess.
+
+### Fix
+
+- **`<root>` is now built from the caller's verified Steam root directly**, never derived from
+  whichever compatdata path happens to be tried
+  (`Detection.ResolveProtonAsync`'s usual `SteamLayout.RootFromCompatData`, which reads it off the
+  prefix path's own directory structure). `userdata` — Steam Cloud's sync folder — exists exactly
+  once, at the true Steam client root, regardless of which library holds a game's files or its
+  compatdata; deriving `<root>` from a secondary library's prefix path silently pointed it at a
+  library with no `userdata` at all. `LinuxGameScanner` now calls
+  `PathResolver.Proton(prefix, installPath, storeRoot: steamRoot)` directly through a small
+  `ResolveInstalledAsync` helper instead of going through `ResolveProtonAsync`.
+- **Resolution is attempted even when no prefix exists anywhere** — the `Directory.Exists(prefix)`
+  gate is gone. `PathResolver.Proton` only builds strings; a prefix that does not exist just makes its
+  own tokens fail their own `Directory.Exists` check further down in
+  `ManifestLoader.ResolveSaveDirectories`, which is exactly what lets a `<root>`-anchored template
+  (needing no prefix) still resolve.
+- **A present-but-useless prefix now falls back to the main Steam root too, not only a missing one.**
+  When the current library's own prefix resolves nothing, `ScanInstalledSteamGamesAsync` retries
+  against `{steamRoot}/steamapps/compatdata/{appid}` if that is a genuinely different, existing
+  location — covering both "no prefix in this library" and Borderlands 2's actual shape, "a prefix
+  exists here but Steam re-created it fresh and it has nothing usable." Checking only the main root
+  (not every library combinatorially) is deliberate: it is where Steam already treats compatdata as
+  special-cased for a different reason (a non-Steam shortcut's prefix always lands there), so a
+  relocated game's ORIGINAL location is disproportionately likely to be it, and this is the one shape
+  actually observed on hardware.
+
+### Verification
+
+Two new fixture games mirroring the exact real shapes — a game whose current library has a
+present-but-useless prefix (deliberately non-empty with an unrelated folder, so a fixture that only
+checked `Directory.Exists` could not accidentally pass) while the main root has the real one, and a
+game with no prefix anywhere whose only save path is a `<root>/userdata/<storeUserId>/<appid>/remote`
+template. Four new checks, all green:
+
+```
+scan finds the relocated game
+relocated game resolves via the main root's prefix
+scan finds the cloud-only game
+cloud-only game resolves with no prefix at all
+```
+
+Combined with round 1's seven: **`run-linux-tests.sh` 216 → 227 (225 pass; the same two
+pre-existing, unrelated Decky-messaging failures from round 1, still untouched by this change).**
+
+**On the real Deck** — rebuilt and redeployed the test build again:
+- `scan` now resolves Left 4 Dead 2 to `userdata/162214018/550/remote` and Borderlands 2 to
+  `compatdata/49520/pfx/drive_c/users/steamuser/Documents/My Games/Borderlands 2/WillowGame/SaveData`
+  — both the real, previously-invisible save folders.
+- A Short Hike and Roadwarden remain correctly unresolved, for the reasons above.
+- Candidates resolving a save dir: **16 → 32**, roughly double, across the whole 193-candidate scan —
+  most of the remaining ~34 unresolved `SteamInstalled` entries sampled (Hades, FTL, Little
+  Nightmares) show the SAME empty-prefix shape as A Short Hike: likely native-Linux builds or
+  genuinely never Proton-launched, not a fifth bug. Not individually confirmed for every remaining
+  title — a reasonable stopping point once the pattern repeated three times running.
+
+### Notes
+
+The first attempt at this fix only fell back to the main root when the current library's prefix was
+**missing** (`!Directory.Exists`), which is what the Borderlands 2 investigation exists to warn
+against: that version passed a hand-built fixture that happened to also make the prefix missing
+entirely, and would have shipped silently wrong for the real, present-but-empty-in-the-wrong-case
+shape actually on the Deck. Caught only by building the fixture carefully enough to match hardware
+exactly, then re-testing against real hardware anyway rather than trusting the green suite alone —
+worth remembering next time a fallback's fixture is easier to write than the bug is to reproduce.
