@@ -293,6 +293,16 @@ verification that did not happen before the tag. Write-ups:
 
 - **Linux agent secret permissions and state layout.** `config.json` contains a long-lived machine key; file privacy depends on the launching shell's umask. Enforce `0700` on private state directories and `0600` on config, queue, health, and log files in code, including CLI enrollment paths. Consider separating immutable app files from mutable XDG config/state so upgrades cannot overlap the executable tree.
 
+- **Upload only changed files, not the whole save folder.** Raised 2026-08-19 (maintainer plays
+  Cyberpunk 2077 and Fallout: New Vegas, both of which keep many largely-static per-slot save files —
+  a session that changes one slot still re-zips and re-uploads every other unchanged one today,
+  because change detection is one aggregate hash over the whole folder
+  (`SaveArchive.HashDirectory`), not per-file. Real payoff for a Deck on a constrained uplink, same
+  cost center as the parked `tasks/OfflineBackoff.md` (bytes instead of requests). Decisions to
+  settle first (copy-forward reconstruction vs. a content-addressable store, and where the
+  fast-forward-only scope boundary sits) and the measurement that proves it:
+  `tasks/PerFileDeltaUpload.md`.
+
 - **Linux auto-update.** The update channel (`/api/agent/latest`) is installer-shaped and Windows-only. A Deck user currently re-runs `install.sh` from a newer tarball. Worth doing before there are many Deck users — a headless device that never updates is one nobody will notice is stale.
   <br>**Planned 2026-08-14 → `tasks/LinuxAutoUpdate.md`** (four phases, one per session). It absorbs
   the two items below it — the unit hardening because Phase 3 edits both unit sources anyway, and
