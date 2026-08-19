@@ -152,6 +152,14 @@ behave in ways that look like bugs.
   `XDG_DATA_HOME` (so real state lands at `~/savelocker-test-state/SaveLocker`), and every remote
   `rm -rf` in `testenv-deck.sh` first asserts its target path contains `savelocker-test` before
   touching anything, in case a mistyped `-DeckPrefix` ever resolved to something like `$HOME`.
+- **The Deck test agent's UI is never reachable at `http://<deck-ip>:<port>` from another machine —
+  not a firewall/setup gap, a hard-coded refusal.** `AgentApiServer.Start` binds Kestrel with
+  `ListenLocalhost`, unconditionally, for every host including this test build: "binding it to a
+  LAN interface would expose [machine control] to the whole network." Decisions.md records a
+  `--lan` flag that existed once specifically to relax this and was withdrawn. The sanctioned route
+  is an SSH tunnel (`ssh -L <port>:localhost:<port> user@host`, then browse `localhost:<port>` on
+  the near end) — `Get-DeckUiHint` in testenv.ps1 prints exactly that. An earlier version of this
+  printed a bare `http://<deck-ip>:<port>` as if it would just work; it never would have.
 - **A `setsid ... & disown` daemon does NOT survive its launching SSH command returning, on a real
   systemd Deck** — found and fixed 2026-08-19 running `up` against real hardware for the first time.
   It answered the one check `up` makes, then was gone by the next `status`, with its own log showing
