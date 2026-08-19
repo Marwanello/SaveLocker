@@ -106,6 +106,16 @@ this Deck at all — confirmed rather than assumed. Resolved candidates on the m
 flagged separately, not caused by this change)**. Full write-up:
 `logs/2026-08-19_moondeck-save-detection.md`; scope decisions recorded in [[Decisions]] → *Linux
 discovery*.
+<br>**Two follow-ups scoped, not built, same session:** reading Ludusavi's own resolver source
+alongside ours (asked directly: "is there a distinct difference... what to learn from it") found it
+glob-matches the filesystem and is case-insensitive inside a Wine prefix, which is *why* it never hit
+the Borderlands 2 bug — worth generalizing beyond today's one-off fix. Separately, the maintainer
+wants native-Linux saves trackable alongside Windows/Proton ones, accepting per-game restore
+uncertainty in exchange for being able to try — the data for it already exists in the same manifest,
+the real design cost is keeping a Windows save and a Linux save of one game from ever sharing a
+version lineage. Both phased plans: [[Backlog]] → *Case-insensitive path matching inside a
+Wine/Proton prefix* and *Native Linux save support*; the scope decision each touches is annotated in
+[[Decisions]].
 <br>**The Deck's IP has moved again since this file was last touched** — `tests/testenv.local.ps1`
 (gitignored, authoritative) now has `deck@192.168.0.103` / `http://192.168.0.124:5080`, not the
 `192.168.68.x` addresses below. Update this file's own IPs the next time they're touched by hand;
