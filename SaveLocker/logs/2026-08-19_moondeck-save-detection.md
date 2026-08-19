@@ -340,3 +340,66 @@ in this write-up (the MoonDeck fallback, the tie-break, the retry-on-empty-resol
 has what it needs to classify Cyberpunk correctly as `SteamInstalled` the moment its ACF is reachable
 again. Not yet confirmed with the card actually inserted — the next real verification step, whenever
 the maintainer has it at hand.
+
+---
+
+## Round 5: classifying Cyberpunk correctly without needing the card at all
+
+Round 4 closed on "reinsert `SD2` to confirm." The maintainer's own follow-up question made that
+unnecessary: **"doesn't Steam know there are other games installed but the SD of it is not
+mounted?"** — pointing at exactly the fact Round 4 had already surfaced but not fully used: the save
+data for Cyberpunk sits on internal storage, reachable right now, while only the *install* is on the
+absent card. Round 4's own `apps`-block reading (`"1091500" "91231172278"` under `SD2`, read while
+`SD2` was unmounted) is Steam's own persistent bookkeeping — it survives the card being absent
+*because* it lives in `libraryfolders.vdf` on the always-reachable main root, not on the card itself.
+Nothing about classifying Cyberpunk correctly actually needed `SD2` inserted; it needed that file read
+one level deeper than Round 4 had gone.
+
+**Why a resolved compatdata prefix alone was never going to be enough to justify this**, and had to
+wait for a second signal: Steam does not clean up compatdata on uninstall (established fixing Round
+1) — a real, resolvable prefix full of real save data is exactly as consistent with "genuinely
+installed, unreachable right now" as it is with "was installed once, uninstalled since, orphaned data
+left behind." The `SuggestSaveDirAsync` MoonDeck fallback from round 1 could find the save; it could
+never have justified relabelling the source, because finding a save proves nothing about current
+install state. The `apps` block is the one place that actually says which is true.
+
+**Fix.** `SteamRoots.AllKnownInstalledAppIds` reads every library's `apps` block from
+`libraryfolders.vdf` — `{ appid: size-on-disk }` — regardless of whether that library currently
+exists, the same file `AllConfiguredLibraryPaths` already reads for the unmounted-library note above,
+one level deeper. `LinuxGameScanner.ScanAsync` checks a MoonDeck shortcut's real AppID against it; when
+present, the candidate is built as `SteamInstalled` rather than `SteamShortcut` throughout — real
+`HasSteamCloud` from the manifest instead of the shortcut default of `false`, the real AppID instead
+of the shortcut's synthetic one (what the launch wrapper needs to match a genuine LOCAL Steam+Proton
+launch, the only kind it can ever hook), and `InstallDir: null` rather than MoonDeck's own script
+directory, which would be actively misleading attached to a candidate now presented as genuinely
+installed. `ViaMoonDeck` (round 3) still applies unchanged: if the real ACF ever becomes reachable too
+(the library gets mounted), that direct read remains more authoritative and keeps winning the dedupe.
+
+**Verification.** New fixture (`Fake Phantom Installed Game`): a library that does not exist on disk
+at all, whose `libraryfolders.vdf` entry nonetheless carries an `apps` block naming it — no ACF
+reachable anywhere, exactly Cyberpunk's shape. `run-linux-tests.sh` 232 → **234.**
+
+> [!warning] The first run of the new fixture read 193 passed, 41 failed — not the code
+> A leftover `dotnet … daemon --port 5187` from an earlier manual run this same session was still
+> bound to the port a *different* test section's daemon needed, so every test depending on that
+> section's daemon starting failed with an unrelated `AddressInUseException` crash, cascading across
+> completely unconnected areas (update staging, the Decky plugin, launch options). Both of this
+> round's own checks passed cleanly in that same "failing" run — the tell that pointed away from the
+> new code before the crash log confirmed it. Killing the stray process and re-running read
+> **232 pass, 2 fail** (this round's 2 new checks included, same two pre-existing unrelated Decky
+> failures). Worth remembering: a mass of unrelated failures after a change is a reason to check the
+> environment before the diff.
+
+**On the real Deck** — no card swap needed. `scan` now reads:
+```
+Cyberpunk 2077  <SteamInstalled> [Steam Cloud] appid=1091500
+    save: .../compatdata/1091500/pfx/drive_c/users/steamuser/Saved Games/CD Projekt Red/Cyberpunk 2077
+```
+`SteamInstalled`, real AppID, real Cloud flag, correct save path — with `SD2` still not in the Deck.
+
+> [!note] A side effect worth knowing about, not a bug
+> Cyberpunk now carries `[Steam Cloud]`, which means it is hidden from the default Add Games view —
+> exactly like every other Cloud-covered installed game, and exactly the point of that filter
+> (Decisions.md, Steam Cloud bullet). If it is not already tracked, it will look like it "disappeared"
+> from Add Games rather than reclassified; the `--no-cloud` filter (or the agent-ui's own Cloud
+> toggle) still shows it.
