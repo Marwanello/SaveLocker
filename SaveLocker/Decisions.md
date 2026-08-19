@@ -288,6 +288,12 @@ session can judge an edge case, not to reopen the choice.
   save-variant model — different formats/paths/line-endings per platform). A Proton save is a
   Windows save, byte-identical to a Windows PC's — existing content-hash lineage works with zero
   server schema change. **Never sync a native-Linux save into a Windows install.**
+  <br>**Revisit requested 2026-08-19** (maintainer: willing to accept per-game uncertainty on restore
+  in exchange for being able to try it at all — "if it doesn't [work] I have my OS save already
+  there"). The scope call itself still stands until the save-variant model exists; a phased plan for
+  building that model — the missing piece named above — is scoped in [[Backlog]] → *Native Linux save
+  support*. The one part of this decision that plan must not weaken: a Windows/Proton save and a
+  native-Linux save of the same game must never share a version lineage, however the UI presents them.
 - **Linux discovery:** `shortcuts.vdf` (non-Steam shortcuts), Heroic's library files, **and — since
   2026-08-10 — `libraryfolders.vdf`/`*.acf` (installed Steam games)**. Steam's shortcut AppID is
   signed in the VDF but the `compatdata/<id>/` folder name is unsigned —

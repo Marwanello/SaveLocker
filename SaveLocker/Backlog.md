@@ -60,6 +60,91 @@ verification that did not happen before the tag. Write-ups:
   problem from Decisions.md §1 applies here too: an emulator save is platform-neutral, so it is
   the first candidate that could sync between a Deck and a Windows PC without Proton involved.
 
+- **Case-insensitive path matching inside a Wine/Proton prefix.** Scoped 2026-08-19, not built.
+  Found by reading Ludusavi's own resolver (`src/scan.rs`, `src/path.rs`) side by side with ours
+  while chasing the Borderlands 2 bug in `logs/2026-08-19_moondeck-save-detection.md`: Ludusavi
+  never does an exact-case check inside a Steam compatdata prefix — it glob-matches the filesystem
+  and forces case-insensitivity there unconditionally (`add_path_insensitive!`), and everywhere else
+  picks sensitivity from the SAVE'S declared platform (`os: windows` → insensitive), never from the
+  host OS. `PathResolver.ResolveConcrete` does the opposite: one exact-case `Directory.Exists` against
+  the fully-expanded string. That gap is exactly why Borderlands 2 needed a hand-written fix — Wine
+  created `My games`, the manifest and the working prefix both say `My Games` — and it will recur for
+  any other game a re-created prefix, a different Proton version, or a different Wine build happens to
+  case a folder differently, not just a relocated install.
+  <br>**Shape of the fix:** only `PathResolver.Proton`/`.Wine` need this — `.Windows()` never should,
+  NTFS is already case-insensitive there. Can't bolt a case-insensitive check onto the END of
+  `ResolveConcrete`: it builds one path string and checks it once, and any ONE of several segments
+  (`Documents`, `My Games`, the game's own folder) could be the mismatched one, not just the last.
+  Needs to walk segment-by-segment, resolving each one against its parent's REAL directory listing
+  case-insensitively (`Directory.GetDirectories(parent).FirstOrDefault(d =>
+  Path.GetFileName(d).Equals(segment, OrdinalIgnoreCase))`) and building the actual on-disk path as it
+  goes. Decide the tie-break up front, don't leave it implicit: if a parent genuinely has both
+  `My games` and `My Games` (a plausible OUTCOME of the exact relocation bug that motivated this),
+  prefer an exact-case match when one exists, else pick deterministically (newest mtime is probably
+  the honest answer, matching "which copy is actually being written to").
+  <br>**Where:** `src/Shared/PathResolver.cs`, shared by the shortcut and installed-game scan paths
+  both — this subsumes, not replaces, today's Borderlands-2 fix: that one fixes "resolved the wrong
+  PREFIX entirely" (a different library); this fixes "resolved the right prefix, wrong casing inside
+  it," which can happen with no relocation involved at all.
+  <br>**Tests:** a fixture Wine prefix with one wrong-cased folder resolving correctly; a fixture with
+  BOTH castings present, pinning the tie-break; a check that the Windows-host resolver's behavior is
+  provably unchanged (never even reaches the new code path).
+
+- **Native Linux save support** — sync a native-Linux-built game's save alongside its Windows/Proton
+  counterpart, without letting the two formats corrupt each other. Asked for directly 2026-08-19,
+  same session as the fixes above: "I want the freedom to just store it in the dashboard and try — if
+  it works ok, if it doesn't I have my OS save already there." Scoped, not built.
+  <br>**The data already exists for this.** The SAME manifest SaveLocker downloads carries `os: linux`
+  save-path entries — seen directly while investigating A Short Hike and Roadwarden today:
+  `<xdgConfig>/unity3d/adamgryu/A Short Hike/GameSaveNew.mountain`, `<home>/.renpy/roadwarden`.
+  `Decisions.md` §1 keeps native Linux out of scope for a SYNC-safety reason, not a detection one: "a
+  Proton save is byte-identical to a Windows PC's, so the existing content-hash lineage works with
+  zero schema change" — a native Linux build's save format carries no such guarantee, so restoring a
+  Linux-format save over a Windows-format one (or the reverse) risks a save the target game can't read
+  or silently misinterprets.
+  <br>**The user's own framing narrows the real risk usefully.** PUSHING a save is a pure read —
+  archiving whatever a native Linux build wrote can never damage anything, whatever the format turns
+  out to be. The danger is entirely on PULL, which overwrites live files. Discovery and backup can be
+  as exploratory as the user wants; only restore needs to be made safe.
+  <br>**The footgun to design around, found by reasoning through it rather than by hitting it:**
+  enrollment already makes "the same canonical manifest name" auto-join one Game
+  (`ManifestLoader.CanonicalName` — "makes both machines converge" is the whole point of it). Add
+  native-Linux discovery with no other change, and a Windows PC and a Linux-native Deck both playing
+  "A Short Hike" would silently join the SAME Game the first time either enrolled it — exactly the
+  cross-format mixing `Decisions.md` warns against, by DEFAULT, not as an edge case.
+  <br>**Proposed shape**, mirroring `tasks/LinuxAutoUpdate.md`'s multi-session structure:
+  1. *Detection* — `PathResolver` gains a native-Linux host resolver (parallel to `.Windows()`) with
+     the XDG tokens the manifest actually uses (`<xdgData>`/`<xdgConfig>`, same `$XDG_*`-or-fallback
+     pattern `HeroicRoots.Find()` already has, just not centralized). `ManifestLoader` gains an
+     `IsLinuxSave` filter parallel to `IsWindowsSave`, and `ResolveSaveDirectories` takes which one to
+     apply instead of hardcoding Windows. Telling a native install from a Proton one apart isn't
+     reliable from Steam's ACF alone (Steam can silently offer either build for the same game), so
+     `LinuxGameScanner` should try BOTH resolvers and surface whichever actually resolves — the same
+     "report the disagreement, don't guess" instinct behind Heroic's split-prefix note — rather than
+     trying to classify the install up front.
+  2. *Data model — keep them from ever merging.* A `Game.Platform` field decided at creation; the
+     uniqueness key auto-join relies on becomes (canonical name, platform), not canonical name alone.
+     This has to land BEFORE step 1 reaches anyone with the same game on two different platforms, or
+     the footgun above is live from day one. Two Games can share a display name; they must never share
+     a version lineage.
+  3. *Pull-time guard, belt-and-braces.* Even with #2 preventing the dangerous case structurally, check
+     platform again immediately before restore — mirrors `SavePathGuard`'s own "validated at five entry
+     points, re-checked again right before use" pattern, and this codebase's standing preference for
+     defense in depth over trusting one earlier gate.
+  4. *UI* — a badge, not a name suffix: two cards both titled "A Short Hike" with a distinguishing tag
+     reads better than inventing a second string identity for one real game. The Add Games filter row
+     already has the right slot (`FILTERS` in `AddGamesView.tsx`, `AddFilter` in `Ui/UiApp.cs`).
+  <br>**Related — read together with Emulator saves, above.** An emulator's own save-state format is
+  genuinely platform-neutral (RetroArch's format doesn't care what OS RetroArch runs on), which is why
+  that item was already flagged as the first thing that could sync Deck↔Windows with no Proton
+  involved. A native-Linux GAME build carries no such guarantee — its save format is whatever the
+  developer's Linux port happened to use, unrelated to the Windows build's — which is exactly why this
+  item needs the platform-isolation step (#2) that emulator saves may not.
+  <br>**Deliberately not attempted in phase 1:** cross-format conversion or merging — nothing about the
+  manifest or the archive format gives any basis for that, and guessing at compatibility between two
+  save formats is precisely the mistake `logs/2026-08-19_moondeck-save-detection.md` argues against
+  throughout.
+
 - **File-level saves — the 24 games the install-root guard now refuses.** A save location is a
   DIRECTORY throughout, so a manifest entry like `<base>/Save.dat` can only resolve to the whole
   install folder. Refusing that was right (it would archive the game, and restore's delete pass
