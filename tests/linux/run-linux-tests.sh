@@ -136,6 +136,22 @@ out2="$(agent resolve --config "${deck_cfg}" --prefix "${PORTABLE_PREFIX}" \
 check "resolve refuses a <base>-only save path" \
   "$(contains "${out2}" "no existing save directory found")"
 
+# ── Discovery: MoonDeck-streamed shortcuts ────────────────────────────────────────────────────
+# A MoonDeck shortcut's Exe launches its streaming client, not the game, so Steam never creates a
+# compatdata prefix for the shortcut's OWN AppID. When the same title is also installed locally
+# under Proton, the real AppID lives in LaunchOptions (MOONDECK_STEAM_APP_ID=...) and that prefix
+# is where the game's actual saves are — found on a real Deck where Cyberpunk 2077 was invisible to
+# scan for exactly this reason.
+check "scan finds the MoonDeck shortcut"           "$(contains "${out}" "MoonDeck Streamed Game")"
+check "scan resolves save via MOONDECK_STEAM_APP_ID" \
+  "$(contains "${out}" "${MOONDECK_REAL_SAVE}")"
+# A duplicate shortcut (same name, different dead AppID, no LaunchOptions) must not win the dedupe
+# over the one that actually resolves — the shape found on the real Deck for other titles.
+check "the resolving MoonDeck row wins over its dead duplicate" \
+  "$(contains "${out}" "MoonDeck Streamed Game  <SteamShortcut>")"
+check "only one MoonDeck Streamed Game row survives the dedupe" \
+  "$([ "$(printf '%s\n' "${out}" | grep -c 'MoonDeck Streamed Game')" = 1 ] && echo 0 || echo 1)"
+
 # ── Discovery: installed Steam games ────────────────────────────────────────────────────────
 # These were deliberately not discovered at all until now, on the reasoning that Steam Cloud covers
 # them. The UI filters what the scan returns, so "hidden by default" and "never scanned" look
@@ -272,6 +288,17 @@ check "doctor finds the Heroic config root" "$(contains "${out}" "${HEROIC_CONFI
 # Which shape a prefix has decides where the manifest's tokens resolve, so doctor must say.
 check "doctor names the wine-shaped prefix"  "$(contains "${out}" "(wine, user deck)")"
 check "doctor names the proton-shaped prefix" "$(contains "${out}" "(proton, user steamuser)")"
+
+# A MoonDeck shortcut's own AppID never gets a prefix, and doctor must not stop at that — it has to
+# say the real local prefix its LaunchOptions names DOES exist, since that is what makes the "no
+# prefix, launch it once" advice above wrong for this specific shortcut.
+check "doctor points at the real local prefix MoonDeck streams" \
+  "$(contains "${out}" "MoonDeck streams appid ${MOONDECK_REAL_APPID}")"
+check "doctor names the actual prefix path" "$(contains "${out}" "${MOONDECK_REAL_PREFIX}")"
+# The duplicate shortcut (same name, different dead AppID) is worth a note, but the machine still
+# works — scan's dedupe already picked the one that resolves — so it must not fail doctor's exit code.
+check "doctor notes the duplicate MoonDeck shortcut" \
+  "$(contains "${out}" "'MoonDeck Streamed Game' has 2 shortcuts with different AppIDs")"
 
 # doctor must describe the state root it is ACTUALLY using. ${deck_cfg} is deliberately outside
 # AgentConfig.DefaultDir, and doctor used to print (and probe) the default regardless - declaring

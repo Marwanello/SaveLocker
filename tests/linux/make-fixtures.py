@@ -28,6 +28,13 @@ either Steam convention:
                             files and the prefix it is configured to run in are two different
                             directories, both healthy-looking. Shipped as a swappable VARIANT of the
                             sideload library, because it is a deliberately broken machine.
+  7. "MoonDeck Streamed Game" — a MoonDeck (Decky streaming plugin) shortcut. Its OWN Exe launches
+                            MoonDeck's client script, so Steam never makes a compatdata prefix for
+                            its own AppID — but it IS also installed locally under Proton, under the
+                            real Steam AppID its LaunchOptions names. Also given a stray duplicate
+                            shortcut (same name, different dead AppID, no LaunchOptions) — the shape
+                            found on a real Deck where a launcher re-creates a shortcut instead of
+                            updating the existing one.
 """
 import json
 import os
@@ -39,6 +46,19 @@ PREFIX_APPID_UNSIGNED = str(PREFIX_APPID_SIGNED & 0xFFFFFFFF)  # 3060399406 — 
 PORTABLE_APPID_SIGNED = 1234567890
 PORTABLE_APPID_UNSIGNED = str(PORTABLE_APPID_SIGNED & 0xFFFFFFFF)
 HEROIC_SHORTCUT_APPID_SIGNED = 1122334455
+
+# A MoonDeck shortcut's OWN AppID never gets a prefix — Steam launches its streaming client script,
+# never the game — so nothing creates compatdata for this one, on purpose. Deliberately not a
+# numeric PREFIX of any other appid constant here: a substring `contains` check on the real prefix's
+# path must not accidentally match this dead one's "no prefix at .../compatdata/<id>" line too.
+MOONDECK_SHORTCUT_APPID_SIGNED = 1611110001
+# A launcher re-creating the shortcut instead of updating it leaves a second one behind: same name,
+# different (also dead) AppID, no LaunchOptions at all.
+MOONDECK_DUP_APPID_SIGNED = 1622220002
+# The REAL Steam AppID MoonDeck streams, per its LaunchOptions. Plain positive text, like an
+# installed game's appmanifest — MOONDECK_STEAM_APP_ID is never signed/unsigned-encoded, so this
+# needs none of the CompatDataId conversion the shortcut's own AppID does.
+MOONDECK_REAL_APPID = "1633330"
 
 # An installed Steam game's appid. Always positive — the signed/unsigned trap is a shortcuts.vdf
 # problem only; an .acf stores the id as text and needs no conversion.
@@ -72,13 +92,16 @@ def vdf_int(key: str, value: int) -> bytes:
     return b"\x02" + cstr(key) + struct.pack("<i", value)
 
 
-def shortcut(index: int, name: str, exe: str, start_dir: str, appid: int) -> bytes:
+def shortcut(index: int, name: str, exe: str, start_dir: str, appid: int,
+             launch_options: str | None = None) -> bytes:
     body = (
         vdf_int("appid", appid)
         + vdf_string("AppName", name)
         + vdf_string("Exe", f'"{exe}"')          # Steam quotes these
         + vdf_string("StartDir", f'"{start_dir}"')
     )
+    if launch_options is not None:
+        body += vdf_string("LaunchOptions", launch_options)
     return b"\x00" + cstr(str(index)) + body + b"\x08"
 
 
@@ -246,6 +269,22 @@ def main() -> int:
         os.path.join(steam, "steamapps", "compatdata", PORTABLE_APPID_UNSIGNED, "pfx", "drive_c"),
         exist_ok=True)
 
+    # --- MoonDeck-streamed game: local Proton install under a DIFFERENT appid than its shortcut ---
+    # Steam never makes a prefix for the shortcut's own appid (its Exe launches MoonDeck's client
+    # script, not the game) — nothing creates compatdata/MOONDECK_SHORTCUT_APPID_UNSIGNED at all.
+    # The real prefix sits under the plain appid LaunchOptions names, exactly like an ordinary
+    # locally-installed Proton game.
+    moondeck_prefix = os.path.join(steam, "steamapps", "compatdata", MOONDECK_REAL_APPID)
+    moondeck_save = os.path.join(
+        moondeck_prefix, "pfx", "drive_c", "users", "steamuser",
+        "AppData", "Roaming", "MoonDeckStreamedGame")
+    os.makedirs(moondeck_save, exist_ok=True)
+    # MoonDeck's own script directory — NOT the game's install dir. Standing in as <base> would
+    # resolve template paths into this instead of the game, which is exactly the mistake to prove
+    # does not happen.
+    moondeck_script_dir = os.path.join(home, "homebrew", "plugins", "moondeck", "python")
+    os.makedirs(moondeck_script_dir, exist_ok=True)
+
     # --- Game 3: an INSTALLED Steam game, in a second library -------------------------------
     # Deliberately not in the main Steam root. An installed game keeps its prefix in the library it
     # is installed in — unlike a shortcut, whose prefix always sits in the main root — so a scanner
@@ -347,6 +386,22 @@ def main() -> int:
         + shortcut(2, "Heroic Prefix Game",
                    os.path.join(heroic["epic_install"], "game.exe"), heroic["epic_install"],
                    HEROIC_SHORTCUT_APPID_SIGNED)
+        # MoonDeck's own entry: Exe is the streaming client, StartDir is MoonDeck's plugin
+        # directory (not the game's), and LaunchOptions is where the real local appid lives.
+        + shortcut(3, "MoonDeck Streamed Game",
+                   os.path.join(moondeck_script_dir, "moondeckrun.sh"), moondeck_script_dir,
+                   MOONDECK_SHORTCUT_APPID_SIGNED,
+                   launch_options=(
+                       "MOONDECK_APP_TYPE=0 "
+                       f"MOONDECK_STEAM_APP_ID={MOONDECK_REAL_APPID} "
+                       "MOONDECK_AUTO_RES=1280x800 "
+                       "MOONDECK_LINKED_DISPLAY='Fake Display (1280x800 mm)' "
+                       "%command%"))
+        # A stray duplicate of the same name, no LaunchOptions, own appid also dead — the shape
+        # found on a real Deck where a launcher re-creates a shortcut instead of updating it.
+        + shortcut(4, "MoonDeck Streamed Game",
+                   os.path.join(moondeck_script_dir, "moondeckrun.sh"), moondeck_script_dir,
+                   MOONDECK_DUP_APPID_SIGNED)
     )
     with open(os.path.join(vdf_dir, "shortcuts.vdf"), "wb") as f:
         f.write(build_shortcuts_vdf(entries))
@@ -378,6 +433,9 @@ def main() -> int:
     print(f"HEROIC_CONFIGURED_PREFIX={heroic['configured_prefix']}")
     print(f"HEROIC_STRANDED_SAVE={heroic['stranded_save']}")
     print(f"HEROIC_SIDELOAD_LIBRARY={heroic['sideload_library']}")
+    print(f"MOONDECK_REAL_APPID={MOONDECK_REAL_APPID}")
+    print(f"MOONDECK_REAL_PREFIX={moondeck_prefix}")
+    print(f"MOONDECK_REAL_SAVE={moondeck_save}")
     return 0
 
 
