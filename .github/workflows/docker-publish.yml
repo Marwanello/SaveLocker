@@ -78,8 +78,8 @@ jobs:
           push: true
           # Versioned alongside :latest so a rollback has something to name.
           tags: |
-            ghcr.io/skorcherx/savelocker:latest
-            ghcr.io/skorcherx/savelocker:${{ steps.build.outputs.image_tag }}
+            ghcr.io/marwanello/savelocker:latest
+            ghcr.io/marwanello/savelocker:${{ steps.build.outputs.image_tag }}
           build-args: |
             SAVELOCKER_VERSION=${{ steps.build.outputs.version }}
             SAVELOCKER_COMMIT=${{ steps.build.outputs.commit }}
