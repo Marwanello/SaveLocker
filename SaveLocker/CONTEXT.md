@@ -117,12 +117,16 @@ version lineage. Both phased plans: [[Backlog]] → *Case-insensitive path match
 Wine/Proton prefix* and *Native Linux save support*; the scope decision each touches is annotated in
 [[Decisions]].
 <br>**A third, same session: what happens when one game has several real local sources** (MoonDeck
-shortcut + a genuine install, or Steam+Epic+GOG all installed at once) **— also scoped, not built.**
-Found a concrete bug in passing: the dedupe's tie-break can now pick the MoonDeck pointer over a
-genuine local install (it could not before today's own fix, since the pointer never used to resolve
-anything). Full answer to "should the dashboard handle this" (no — it already converges cross-machine
-correctly; this is a same-machine, agent-side discovery question) in [[Backlog]] → *One game, several
-real sources*.
+shortcut + a genuine install, or Steam+Epic+GOG all installed at once) **— scoped, and its one
+concrete bug fixed same day.** The dedupe's tie-break could pick a MoonDeck pointer over a genuine
+local install (it could not before round 1's own fix, since the pointer never used to resolve
+anything) — `ScanAsync` now tracks that case explicitly and sorts a genuine install first regardless
+of Steam Cloud. `run-linux-tests` 227 → 230; confirmed no regression on the real Deck. The rest —
+surfacing multiple sources in the UI, extending `doctor`'s duplicate note across scan sources, the
+server-side "two Games already diverged under different spellings" gap — stays in [[Backlog]] → *One
+game, several real sources*, by the maintainer's own choice to split the small fix from the rest.
+Full answer to "should the dashboard handle this" (no — it already converges cross-machine correctly;
+this is a same-machine, agent-side discovery question) is there too.
 <br>**The Deck's IP has moved again since this file was last touched** — `tests/testenv.local.ps1`
 (gitignored, authoritative) now has `deck@192.168.0.103` / `http://192.168.0.124:5080`, not the
 `192.168.68.x` addresses below. Update this file's own IPs the next time they're touched by hand;
