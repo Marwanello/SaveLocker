@@ -168,6 +168,11 @@ function Invoke-Wsl {
 
 function Test-DeckConfigured { return [bool]$DeckHost }
 
+# Strips the "user@" prefix DeckHost carries for ssh/scp, leaving the bare host/IP a browser needs
+# — unlike Windows/WSL, which are reachable at "localhost", the Deck is a genuinely separate
+# machine on the LAN, so its agent UI URL has to be built from whatever DeckHost is actually set to.
+function Get-DeckIp { return $DeckHost -replace '^[^@]+@', '' }
+
 # Gates build/up (which respect -Only): explicit '-Only deck' with no host configured is an error,
 # 'all' with no host configured is a silent skip so the default all-in-one flow still works for
 # whoever hasn't wired up a Deck. down/status/logs/clean run unconditionally whenever a host IS
@@ -472,7 +477,7 @@ switch ($Command) {
         Write-Host "console      $serverUrl"
         Write-Host "windows UI   http://localhost:$WinPort"
         Write-Host "linux UI     http://localhost:$LinuxPort   (WSL2 forwards it to Windows)"
-        if ($DeckHost) { Write-Host "deck UI      http://<deck-ip>:$DeckPort   ($DeckHost)" }
+        if ($DeckHost) { Write-Host "deck UI      http://$(Get-DeckIp):$DeckPort   ($DeckHost, on your LAN — not localhost)" }
     }
 
     'down' {
@@ -498,7 +503,10 @@ switch ($Command) {
         Show-RealGameMappings
 
         if (Test-DeckConfigured) {
-            try { Invoke-Deck 'status' } catch { Warn "deck: $($_.Exception.Message)" }
+            try {
+                Invoke-Deck 'status'
+                Write-Host "deck UI      http://$(Get-DeckIp):$DeckPort   ($DeckHost, on your LAN — not localhost)"
+            } catch { Warn "deck: $($_.Exception.Message)" }
         } else {
             Write-Host 'deck         not configured (set -DeckHost or $env:SAVELOCKER_DECK_HOST)'
         }
