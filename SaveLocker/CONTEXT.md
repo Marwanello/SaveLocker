@@ -73,6 +73,28 @@ verified working end-to-end against the real Deck, the real WSL clone, and Docke
 installed Deck agent (pid confirmed unchanged throughout) and its config never touched. Full
 write-up of all three: [[Gotchas]] → *`tests/testenv.ps1`*.
 
+**Save-path detection reliability investigated and fixed on the real Deck (2026-08-19, branch
+`claude/steam-deck-save-detection-68b6c5`, no task file).** Asked directly: some games "definitely
+have save paths" weren't detected reliably, and Cyberpunk 2077 specifically wasn't picked up despite
+being installed. Deployed the testenv Deck target (above) to investigate live. Root cause: Cyberpunk
+is launched through a **MoonDeck** (Decky streaming plugin) shortcut, whose `Exe` runs MoonDeck's own
+client script, never the game — Steam makes no compatdata prefix for it at all. The real save data
+(autosaves 9 days old) sat orphaned under `compatdata/1091500`, Cyberpunk's actual Steam AppID, from
+a Steam-Store install since uninstalled. `LinuxGameScanner` now also tries the AppID MoonDeck's
+`LaunchOptions` names (`MOONDECK_STEAM_APP_ID=`) when the shortcut's own prefix fails to resolve, and
+`Doctor` explains the finding either way. **Found in passing: six shortcuts on this same Deck
+(HITMAN 3, Minit, Moving Out, Animal Crossing, Metal Gear, Waydroid) are each duplicated in
+`shortcuts.vdf` under two different AppIDs** — Steam only ever launches one, and scan's dedupe could
+silently pick the dead one with no way for the user to know; `doctor` now notes it (not a `Problem` —
+scan's dedupe still often lands correctly). `run-linux-tests` 216 → **223 (221 pass; 2 pre-existing,
+unrelated Decky-messaging failures flagged separately, not caused by this change)**. Full write-up:
+`logs/2026-08-19_moondeck-save-detection.md`; scope decision recorded in [[Decisions]] → *Linux
+discovery*.
+<br>**The Deck's IP has moved again since this file was last touched** — `tests/testenv.local.ps1`
+(gitignored, authoritative) now has `deck@192.168.0.103` / `http://192.168.0.124:5080`, not the
+`192.168.68.x` addresses below. Update this file's own IPs the next time they're touched by hand;
+`deck-config` (no args) always prints the current, real values.
+
 **Cyberpunk 2077 uploads root-caused, fixed, and confirmed on the maintainer's own hardware
 (2026-08-18, branch `cyberpunk-save-upload-fix`).** "Always fails to upload" was never an agent bug —
 the maintainer's save is a genuine 100+ MB archive and `maro.savelocker.dpdns.org` is Cloudflare-
@@ -184,6 +206,10 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
    it's on `main` but landed after v0.5.8 was tagged, so its release notes say nothing about it.
 3. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
    merge what a server already holds under two spellings, and there is no merge tool ([[Backlog]]).
+4. **Merge `claude/steam-deck-save-detection-68b6c5` and fold the MoonDeck fix into the next Linux
+   release notes.** Code is done and verified on hardware (above); nothing about it has shipped yet.
+   Worth pairing with a look at whether the six duplicate-shortcut names it found are worth a
+   heads-up to the maintainer directly, independent of any code change.
 
 Everything else — the WA-03 second-account ACL test, the remaining Windows manual gates, the LAN
 enrollment-URL check, the missing LA-04/05/06/07 regression tests, and the `WA-01`/113-of-114
@@ -194,8 +220,10 @@ baseline drift — is prioritised in [[Backlog]].
 Read `logs/2026-08-15_decky-plugin.md` and [[Gotchas]] → *Decky plugin* first. Both carry
 things that were measured on hardware and cannot be re-derived by reading code.
 
-**The Deck.** `deck@192.168.68.67`, key auth is set up (see the maintainer — the key is deliberately
-not named here). It is awake only when the maintainer wakes it. Useful state on it:
+**The Deck.** `deck@192.168.0.103` (moved since this was last written — a DHCP-leased IP drifts; run
+`.\tests\testenv.ps1 deck-config` with no args for whatever is current), key auth is set up (see the
+maintainer — the key is deliberately not named here). It is awake only when the maintainer wakes it.
+Useful state on it:
 - agent **v0.5.6 (the released build**, checksum-verified against the published `SHA256SUMS-linux.txt`),
   service `savelocker.service` active, 4 tracked games, all with launch options confirmed;
 - plugin at `~/homebrew/plugins/SaveLocker`, and a config backup at

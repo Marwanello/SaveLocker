@@ -310,6 +310,15 @@ session can judge an edge case, not to reopen the choice.
   Valve mints a new appid per Proton release, so any such list is stale the day it is written. Both
   scanners use the marker file; the appid list survives only for Steamworks Common Redistributables,
   which ships no toolmanifest. Pinned by a fixture whose appid is deliberately unguessable.
+  <br>**A MoonDeck (Decky streaming plugin) shortcut's own AppID never gets a prefix either**
+  (2026-08-19, `logs/2026-08-19_moondeck-save-detection.md`) — its `Exe` launches MoonDeck's own
+  streaming client, never the game, so Steam has nothing to make compatdata for. When the same title
+  is (or was) ALSO installed locally under Proton, the real AppID is in `LaunchOptions`
+  (`MOONDECK_STEAM_APP_ID=`), and that is the prefix any local save data lives in — found via
+  Cyberpunk 2077 on the maintainer's own Deck, where the Steam-Store copy had since been uninstalled
+  but its compatdata (and real save data, 9 days old) was still there. `SteamShortcuts.MoonDeckAppId`
+  carries it; `LinuxGameScanner` tries it only after the shortcut's own prefix fails to resolve, with
+  `installDir` left null since `StartDir` here is MoonDeck's script directory, not the game's.
 - **Linux UI: headless daemon serving the existing React UI** on `:5178` (Desktop Mode = KDE +
   browser). **Game Mode has no browser**, so `savelocker ui` (SDL + Dear ImGui, in-process against
   `Agent.Core`, no second API client) covers Status/Add game/Set folder/Launch setup as a gamepad
