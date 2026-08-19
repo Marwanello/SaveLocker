@@ -70,6 +70,12 @@ INSTALLED_APPID = "440900"
 # constant — and the bug being pinned is exactly a constant.
 CLOUD_APPID = "440901"
 GOG_CLOUD_APPID = "440902"
+# Installed in the second library, but its compatdata is left behind in the MAIN root — the shape of
+# a game relocated to an SD card after Steam already created its prefix elsewhere.
+RELOCATED_APPID = "440903"
+# Installed, but has NO compatdata prefix anywhere at all — only a Steam Cloud sync folder under the
+# Steam root's own userdata, which needs no Wine prefix to resolve.
+CLOUD_ONLY_APPID = "440904"
 
 # The Wine user for the wine-shaped prefix. Deliberately NOT "steamuser" — a plain Wine runner
 # runs the game as the Linux user, and code that assumes steamuser resolves every token to a
@@ -330,6 +336,48 @@ def main() -> int:
                 f'\t"installdir"\t\t"{install}"\n'
                 "}\n")
 
+    # A game RELOCATED after Steam already made its prefix: the ACF (and install) are in the second
+    # library like game 3 above, and the SECOND library's own compatdata EXISTS too — Steam made a
+    # fresh one there — but it resolves nothing, while the ORIGINAL prefix, left behind in the main
+    # root from before the move, has the real save history. Found on a real Deck (2026-08-19):
+    # Borderlands 2's SD-card prefix is real (Steam re-created it) but empty of anything the manifest
+    # matches. A present-but-unusable prefix must be retried against, not only a missing one — the
+    # relocated prefix here is deliberately non-empty (a stray, differently-shaped folder) so a
+    # fixture that only checked Directory.Exists would wrongly call this game resolved right here.
+    relocated_install = os.path.join(installed_steamapps, "common", "FakeRelocatedGame")
+    os.makedirs(relocated_install, exist_ok=True)
+    with open(os.path.join(installed_steamapps, f"appmanifest_{RELOCATED_APPID}.acf"), "w") as f:
+        f.write(
+            '"AppState"\n{\n'
+            f'\t"appid"\t\t"{RELOCATED_APPID}"\n'
+            '\t"name"\t\t"Fake Relocated Game"\n'
+            '\t"installdir"\t\t"FakeRelocatedGame"\n'
+            "}\n")
+    os.makedirs(os.path.join(
+        installed_steamapps, "compatdata", RELOCATED_APPID, "pfx", "drive_c", "users", "steamuser",
+        "AppData", "Roaming", "SomeOtherUnrelatedFolder"), exist_ok=True)
+    relocated_save = os.path.join(
+        steam, "steamapps", "compatdata", RELOCATED_APPID, "pfx", "drive_c", "users", "steamuser",
+        "AppData", "Roaming", "FakeRelocatedGame")
+    os.makedirs(relocated_save, exist_ok=True)
+
+    # A game with NO compatdata prefix anywhere — only a Steam Cloud sync folder under the Steam
+    # root's OWN userdata, a native path with nothing to do with any Wine prefix. Found on the same
+    # Deck: Left 4 Dead 2, whose manifest save path is exactly this shape
+    # (<root>/userdata/<storeUserId>/550/remote). Gating resolution on a prefix existing at all would
+    # silently drop it even though the real save data is sitting right there.
+    with open(os.path.join(installed_steamapps, f"appmanifest_{CLOUD_ONLY_APPID}.acf"), "w") as f:
+        f.write(
+            '"AppState"\n{\n'
+            f'\t"appid"\t\t"{CLOUD_ONLY_APPID}"\n'
+            '\t"name"\t\t"Fake Cloud Only Game"\n'
+            '\t"installdir"\t\t"FakeCloudOnlyGame"\n'
+            "}\n")
+    os.makedirs(os.path.join(installed_steamapps, "common", "FakeCloudOnlyGame"), exist_ok=True)
+    # Same account shortcuts.vdf uses below (vdf_dir) — a real machine has exactly one.
+    cloud_only_save = os.path.join(steam, "userdata", "1234567", CLOUD_ONLY_APPID, "remote")
+    os.makedirs(cloud_only_save, exist_ok=True)
+
     # A runtime, not a game. Filtered by appid — it ships no toolmanifest.vdf, so it is the one
     # case the hardcoded list still has to carry.
     with open(os.path.join(installed_steamapps, "appmanifest_228980.acf"), "w") as f:
@@ -423,6 +471,10 @@ def main() -> int:
     print(f"INSTALLED_SAVE={installed_save}")
     print(f"CLOUD_SAVE={cloud_saves[CLOUD_APPID]}")
     print(f"GOG_CLOUD_SAVE={cloud_saves[GOG_CLOUD_APPID]}")
+    print(f"RELOCATED_APPID={RELOCATED_APPID}")
+    print(f"RELOCATED_SAVE={relocated_save}")
+    print(f"CLOUD_ONLY_APPID={CLOUD_ONLY_APPID}")
+    print(f"CLOUD_ONLY_SAVE={cloud_only_save}")
     print(f"HEROIC_CONFIG={heroic['config_root']}")
     print(f"HEROIC_EPIC_PREFIX={heroic['epic_prefix']}")
     print(f"HEROIC_EPIC_SAVE={heroic['epic_save']}")
