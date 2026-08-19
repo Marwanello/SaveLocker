@@ -81,3 +81,21 @@ MoonDeck Streamed Game:
     <winAppData>/MoonDeckStreamedGame:
       tags:
         - save
+
+# Installed in a second library, but its compatdata prefix is left behind in the MAIN Steam root —
+# the shape of a game moved to an SD card after Steam already created its prefix elsewhere. Only
+# resolves if discovery falls back to the main root when the current library's own prefix is missing.
+Fake Relocated Game:
+  files:
+    <winAppData>/FakeRelocatedGame:
+      tags:
+        - save
+
+# Installed, but has no compatdata prefix anywhere — its only save path is Steam's own Cloud sync
+# folder under the Steam root's userdata, which needs no Wine prefix to resolve at all. Only
+# resolves if discovery does not gate resolution on a prefix existing first.
+Fake Cloud Only Game:
+  files:
+    <root>/userdata/<storeUserId>/440904/remote:
+      tags:
+        - save

@@ -112,16 +112,32 @@ public sealed class LinuxGameScanner : IGameScanner
     ///
     /// <para>
     /// A Proton game's saves live in its own prefix, and for an installed title that prefix is
-    /// <c>compatdata/&lt;appid&gt;</c> in the library the game is installed in — not in the main
-    /// Steam root, which is where a non-Steam shortcut's prefix always goes. A game on an SD card
-    /// therefore resolves only if the library and the prefix are walked together, which is why this
-    /// iterates <see cref="SteamRoots.LibraryPaths"/> rather than reusing the caller's root.
+    /// normally <c>compatdata/&lt;appid&gt;</c> in the library the game is installed in — not in the
+    /// main Steam root, which is where a non-Steam shortcut's prefix always goes. A game on an SD
+    /// card therefore resolves only if the library and the prefix are walked together, which is why
+    /// this iterates <see cref="SteamRoots.LibraryPaths"/> rather than reusing the caller's root.
     /// </para>
     ///
     /// <para>
-    /// A title with no prefix at all is a native-Linux build (Decisions.md §1: out of scope) or one
-    /// that has never been launched. It is still listed, with no save folder — the user can set one,
-    /// and the alternative is a game that is plainly installed silently missing from the list.
+    /// "Normally", not always: moving a game's install location (most commonly internal storage to
+    /// an SD card, found on a real Deck 2026-08-19 — Borderlands 2) does not always take a USABLE
+    /// prefix with it. Steam can spin up a fresh one at the new location whose special folders were
+    /// auto-created with different casing than an existing manifest path expects — Borderlands 2's
+    /// SD-card prefix has <c>My games</c>, the manifest wants <c>My Games</c>, and Linux is
+    /// case-sensitive — while the ORIGINAL prefix, still sitting in the main root from before the
+    /// move, has the real save history and resolves fine. The fallback is therefore tried whenever
+    /// the current library's prefix resolves NOTHING, not only when it is missing outright — a
+    /// present-but-unusable prefix and an absent one look identical from here. And some templates
+    /// (Steam Cloud's own sync folder, <c>&lt;root&gt;/userdata/…</c> — Left 4 Dead 2 on the same
+    /// Deck) live under the Steam root itself and need no prefix to exist at all, which is why
+    /// resolution is attempted regardless of whether either prefix is found.
+    /// </para>
+    ///
+    /// <para>
+    /// A title that resolves nothing at all is a native-Linux build (Decisions.md §1: out of scope)
+    /// or one that has never actually been launched under Proton. It is still listed, with no save
+    /// folder — the user can set one, and the alternative is a game that is plainly installed
+    /// silently missing from the list.
     /// </para>
     /// </summary>
     private async Task<List<ScanCandidate>> ScanInstalledSteamGamesAsync(
@@ -150,11 +166,24 @@ public sealed class LinuxGameScanner : IGameScanner
                     : NullIfMissing(Path.Combine(steamapps, "common", installDir));
                 if (IsCompatTool(installPath)) continue;
 
+                // <root> is built from steamRoot directly everywhere below, NOT derived from
+                // whichever prefix is tried (Detection.ResolveProtonAsync's usual
+                // SteamLayout.RootFromCompatData) — Steam Cloud's own sync folder
+                // (<root>/userdata/<storeUserId>/<appid>/remote) lives under userdata, which exists
+                // exactly once, at the real Steam client root, regardless of which library holds the
+                // game's files, its compatdata, or whether a prefix exists at all. Deriving <root>
+                // from a secondary library's prefix path would silently point it at a library with no
+                // userdata folder at all.
                 var prefix = Path.Combine(steamapps, "compatdata", appId);
-                var save = Directory.Exists(prefix)
-                    ? (await _detection.ResolveProtonAsync(name, prefix, installPath, ct))
-                        .FirstOrDefault()
-                    : null;
+                var save = await ResolveInstalledAsync(name, prefix, installPath, steamRoot, ct);
+
+                if (save is null && !string.Equals(steamRoot, library, StringComparison.Ordinal))
+                {
+                    var mainRootPrefix = Path.Combine(steamRoot, "steamapps", "compatdata", appId);
+                    var fallbackSave = await ResolveInstalledAsync(
+                        name, mainRootPrefix, installPath, steamRoot, ct);
+                    if (fallbackSave is not null) (save, prefix) = (fallbackSave, mainRootPrefix);
+                }
 
                 results.Add(new ScanCandidate(
                     Name: name,
@@ -181,6 +210,26 @@ public sealed class LinuxGameScanner : IGameScanner
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Try one compatdata prefix (which need not exist — see below) for an installed Steam game.
+    /// Shared so the main-root fallback in <see cref="ScanInstalledSteamGamesAsync"/> is a second
+    /// call with a different prefix, not a second copy of the resolution call.
+    /// <para>
+    /// <paramref name="storeRoot"/> is always the caller's verified Steam root, never derived from
+    /// <paramref name="prefix"/> — see the caller for why. <see cref="PathResolver.Proton"/> only
+    /// builds strings; a prefix that does not exist just yields tokens that fail their own
+    /// <c>Directory.Exists</c> check inside <see cref="ManifestLoader.ResolveSaveDirectories"/>,
+    /// which is what lets a <c>&lt;root&gt;</c>-anchored template (Steam Cloud's own sync folder)
+    /// resolve even when there is no prefix anywhere at all.
+    /// </para>
+    /// </summary>
+    private async Task<string?> ResolveInstalledAsync(
+        string name, string prefix, string? installPath, string storeRoot, CancellationToken ct)
+    {
+        var resolver = PathResolver.Proton(prefix, installPath, storeRoot: storeRoot);
+        return (await _detection.ResolveSaveDirectoriesAsync(name, resolver, ct)).FirstOrDefault();
     }
 
     /// <summary>

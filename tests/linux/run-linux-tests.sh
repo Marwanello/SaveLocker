@@ -169,6 +169,23 @@ check "Steam runtimes are not offered as games" \
 check "an unknown compat tool is not offered as a game" \
   "$([ "$(contains "${out}" "Proton 99.0")" = 1 ] && echo 0 || echo 1)"
 
+# A game relocated to a second library (e.g. moved to an SD card to free space) can end up with a
+# fresh, USELESS prefix at the new location (Steam re-creates one; it just has nothing the manifest
+# matches) while the ORIGINAL prefix, left behind in the main root, has the real save history —
+# found on a real Deck (2026-08-19): Borderlands 2. Resolves only if the scan retries the main root
+# whenever the current library's own prefix resolves NOTHING, not only when it is missing outright.
+check "scan finds the relocated game"              "$(contains "${out}" "Fake Relocated Game")"
+check "relocated game resolves via the main root's prefix" \
+  "$(contains "${out}" "${RELOCATED_SAVE}")"
+
+# A game with NO compatdata prefix anywhere — its only save path is Steam's own Cloud sync folder
+# under userdata, which needs no Wine prefix at all. Found on the same Deck: Left 4 Dead 2. Also
+# proves <root> comes from the real Steam root and not from a library the (missing) prefix path
+# happens to point at — userdata exists exactly once, never per-library.
+check "scan finds the cloud-only game"              "$(contains "${out}" "Fake Cloud Only Game")"
+check "cloud-only game resolves with no prefix at all" \
+  "$(contains "${out}" "${CLOUD_ONLY_SAVE}")"
+
 # ── Steam Cloud is per-game manifest data, not "Steam installed it" ──────────────────────────
 # The flag was hardcoded true for every installed Steam title, and the default Add Games view HIDES
 # whatever is flagged — so a game with no cloud behind it at all was invisible, and the user was
