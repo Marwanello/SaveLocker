@@ -125,6 +125,14 @@ verification that did not happen before the tag. Write-ups:
   lever is *fewer stops*: collapse the output behind a "show output" expander so those rows only
   exist when wanted. Cosmetic, and only noticeable after running doctor.
 
+- **Surface duplicate-shortcut-name warnings outside `doctor`.** `logs/2026-08-19_moondeck-save-detection.md`
+  added a `doctor` note for a game name backed by two different Steam AppIDs (found on the
+  maintainer's own Deck: HITMAN 3, Minit, Moving Out, Animal Crossing, Metal Gear, Waydroid) — Steam
+  launches only one, and scan's dedupe can silently pick the dead one. `doctor` is CLI/headless-only;
+  neither the agent-ui Add Games view nor the Game Mode UI reads its output at all, so a user who
+  never opens a terminal never sees the warning. Worth a chip on the affected candidate once there is
+  evidence this recurs for more than one Deck.
+
 - **Linux agent secret permissions and state layout.** `config.json` contains a long-lived machine key; file privacy depends on the launching shell's umask. Enforce `0700` on private state directories and `0600` on config, queue, health, and log files in code, including CLI enrollment paths. Consider separating immutable app files from mutable XDG config/state so upgrades cannot overlap the executable tree.
 
 - **Linux auto-update.** The update channel (`/api/agent/latest`) is installer-shaped and Windows-only. A Deck user currently re-runs `install.sh` from a newer tarball. Worth doing before there are many Deck users — a headless device that never updates is one nobody will notice is stale.
