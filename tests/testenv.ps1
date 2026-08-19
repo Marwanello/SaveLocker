@@ -20,15 +20,18 @@
 # (-DeckPrefix and "$DeckPrefix-state"), never ~/.local/share/SaveLocker, which is both the real
 # install's binaries AND its state (Gotchas.md → Linux agent).
 #
-# The Deck has no universal default — every LAN differs — so it only runs when configured:
+# The Deck has no universal default — every LAN differs — so it only runs when configured. Copy
+# tests/testenv.local.ps1.example to tests/testenv.local.ps1 (gitignored) and fill in:
 #   $env:SAVELOCKER_DECK_HOST        deck@192.168.68.67-style SSH target
 #   $env:SAVELOCKER_DECK_SERVER_URL  this PC's LAN IP, e.g. http://192.168.68.58:5080 — the Deck
 #                                     cannot dial "localhost" and reach a container on another
 #                                     machine. Needed for `up`, not for `down`/`status`/`clean`.
-# Leaving SAVELOCKER_DECK_HOST unset skips the Deck everywhere `-Only` defaults to 'all'; passing
-# `-Only deck` explicitly without it is an error instead of a silent no-op. The Deck is "awake only
-# when the maintainer wakes it" (CONTEXT.md), so every SSH call has a short connect timeout and
-# reports unreachable rather than hanging or aborting the rest of the rig.
+# testenv.local.ps1 is loaded automatically below if present — re-edit it whenever the Deck's IP
+# changes rather than re-typing an env var every shell. An explicit -DeckHost/-DeckServerUrl on the
+# command line always wins over it. Leaving both unset skips the Deck everywhere `-Only` defaults
+# to 'all'; passing `-Only deck` explicitly without them is an error instead of a silent no-op. The
+# Deck is "awake only when the maintainer wakes it" (CONTEXT.md), so every SSH call has a short
+# connect timeout and reports unreachable rather than hanging or aborting the rest of the rig.
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
@@ -72,6 +75,22 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+
+# Deck settings live here, not just in $env: vars set for one shell — a home LAN's DHCP lease can
+# move the Deck's IP at any time, so this needs to be a place you go edit ONE line and have every
+# future session pick it up, not a shell profile you forget you edited. Gitignored (tests/*.local.ps1):
+# it names your LAN, not the project's. testenv.local.ps1.example is the committed template.
+# Explicit -DeckHost/-DeckServerUrl on the command line still win over whatever this sets.
+$deckConfig = Join-Path $PSScriptRoot 'testenv.local.ps1'
+if (Test-Path $deckConfig) {
+    . $deckConfig
+    if (-not $PSBoundParameters.ContainsKey('DeckHost') -and $env:SAVELOCKER_DECK_HOST) {
+        $DeckHost = $env:SAVELOCKER_DECK_HOST
+    }
+    if (-not $PSBoundParameters.ContainsKey('DeckServerUrl') -and $env:SAVELOCKER_DECK_SERVER_URL) {
+        $DeckServerUrl = $env:SAVELOCKER_DECK_SERVER_URL
+    }
+}
 
 $root      = Split-Path $PSScriptRoot -Parent
 $agentDll  = Join-Path $root 'src\Agent\bin\Debug\net10.0-windows\SaveLocker.Agent.dll'
