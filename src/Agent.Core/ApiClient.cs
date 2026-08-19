@@ -214,18 +214,27 @@ public sealed class ApiClient
     /// 404s" until the server catches up, which is a worse rollout than doing nothing.
     /// </para>
     /// </summary>
+    /// <param name="onProgress">
+    /// Called with (bytes sent so far, total archive bytes) after every chunk, so a UI can show a
+    /// real progress bar for the direction actually slow enough to want one — a push, not a pull.
+    /// Best-effort only: the single-shot fallback can only report 0/total and total/total, since it
+    /// has no chunk boundaries to report progress from in between.
+    /// </param>
     public async Task<UploadResult> UploadAsync(
-        Guid gameId, string contentHash, Guid? parent, bool force, string archivePath, CancellationToken ct = default)
+        Guid gameId, string contentHash, Guid? parent, bool force, string archivePath,
+        Action<long, long>? onProgress = null, CancellationToken ct = default)
     {
         var beginResp = await _http.PostAsJsonAsync(
             $"/api/games/{gameId}/upload/begin", new BeginUploadRequest(contentHash, parent, force), ct);
         if (beginResp.StatusCode == HttpStatusCode.NotFound)
-            return await UploadSingleShotAsync(gameId, contentHash, parent, force, archivePath, ct);
+            return await UploadSingleShotAsync(gameId, contentHash, parent, force, archivePath, onProgress, ct);
         beginResp.EnsureSuccessStatusCode();
         var begin = (await beginResp.Content.ReadFromJsonAsync<BeginUploadResponse>(cancellationToken: ct))!;
         if (begin.NoChange is { } noChange) return noChange;
         var sessionId = begin.SessionId!.Value;
 
+        var totalBytes = new FileInfo(archivePath).Length;
+        onProgress?.Invoke(0, totalBytes);
         await using (var fs = File.OpenRead(archivePath))
         {
             var buffer = new byte[UploadChunkBytes];
@@ -235,6 +244,7 @@ public sealed class ApiClient
             {
                 await PutChunkWithRetryAsync(gameId, sessionId, offset, buffer, read, ct);
                 offset += read;
+                onProgress?.Invoke(offset, totalBytes);
             }
         }
 
@@ -246,17 +256,21 @@ public sealed class ApiClient
     /// <summary>The pre-chunking upload: the whole archive as one request body. Kept only for a
     /// server too old to have the chunked routes — see the fallback in <see cref="UploadAsync"/>.</summary>
     private async Task<UploadResult> UploadSingleShotAsync(
-        Guid gameId, string contentHash, Guid? parent, bool force, string archivePath, CancellationToken ct)
+        Guid gameId, string contentHash, Guid? parent, bool force, string archivePath,
+        Action<long, long>? onProgress, CancellationToken ct)
     {
         var url = $"/api/games/{gameId}/upload?hash={Uri.EscapeDataString(contentHash)}";
         if (parent is { } p) url += $"&parent={p}";
         if (force) url += "&force=true";
 
+        var totalBytes = new FileInfo(archivePath).Length;
+        onProgress?.Invoke(0, totalBytes);
         await using var fs = File.OpenRead(archivePath);
         using var content = new StreamContent(fs);
         content.Headers.ContentType = new("application/zip");
         var resp = await _http.PostAsync(url, content, ct);
         resp.EnsureSuccessStatusCode();
+        onProgress?.Invoke(totalBytes, totalBytes);
         return (await resp.Content.ReadFromJsonAsync<UploadResult>(cancellationToken: ct))!;
     }
 
