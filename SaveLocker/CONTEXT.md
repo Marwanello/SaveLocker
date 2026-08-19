@@ -73,22 +73,38 @@ verified working end-to-end against the real Deck, the real WSL clone, and Docke
 installed Deck agent (pid confirmed unchanged throughout) and its config never touched. Full
 write-up of all three: [[Gotchas]] → *`tests/testenv.ps1`*.
 
-**Save-path detection reliability investigated and fixed on the real Deck (2026-08-19, branch
-`claude/steam-deck-save-detection-68b6c5`, no task file).** Asked directly: some games "definitely
-have save paths" weren't detected reliably, and Cyberpunk 2077 specifically wasn't picked up despite
-being installed. Deployed the testenv Deck target (above) to investigate live. Root cause: Cyberpunk
-is launched through a **MoonDeck** (Decky streaming plugin) shortcut, whose `Exe` runs MoonDeck's own
-client script, never the game — Steam makes no compatdata prefix for it at all. The real save data
-(autosaves 9 days old) sat orphaned under `compatdata/1091500`, Cyberpunk's actual Steam AppID, from
-a Steam-Store install since uninstalled. `LinuxGameScanner` now also tries the AppID MoonDeck's
-`LaunchOptions` names (`MOONDECK_STEAM_APP_ID=`) when the shortcut's own prefix fails to resolve, and
-`Doctor` explains the finding either way. **Found in passing: six shortcuts on this same Deck
-(HITMAN 3, Minit, Moving Out, Animal Crossing, Metal Gear, Waydroid) are each duplicated in
-`shortcuts.vdf` under two different AppIDs** — Steam only ever launches one, and scan's dedupe could
-silently pick the dead one with no way for the user to know; `doctor` now notes it (not a `Problem` —
-scan's dedupe still often lands correctly). `run-linux-tests` 216 → **223 (221 pass; 2 pre-existing,
-unrelated Decky-messaging failures flagged separately, not caused by this change)**. Full write-up:
-`logs/2026-08-19_moondeck-save-detection.md`; scope decision recorded in [[Decisions]] → *Linux
+**Save-path detection reliability investigated and fixed on the real Deck — four root causes, two
+rounds (2026-08-19, branch `claude/steam-deck-save-detection-68b6c5`, no task file).** Round 1, asked
+directly: some games "definitely have save paths" weren't detected reliably, and Cyberpunk 2077
+specifically wasn't picked up despite being installed. Deployed the testenv Deck target (above) to
+investigate live. Root cause: Cyberpunk is launched through a **MoonDeck** (Decky streaming plugin)
+shortcut, whose `Exe` runs MoonDeck's own client script, never the game — Steam makes no compatdata
+prefix for it at all. The real save data (autosaves 9 days old) sat orphaned under
+`compatdata/1091500`, Cyberpunk's actual Steam AppID, from a Steam-Store install since uninstalled.
+`LinuxGameScanner` now also tries the AppID MoonDeck's `LaunchOptions` names
+(`MOONDECK_STEAM_APP_ID=`) when the shortcut's own prefix fails to resolve, and `Doctor` explains the
+finding either way. **Found in passing: six shortcuts on this same Deck (HITMAN 3, Minit, Moving Out,
+Animal Crossing, Metal Gear, Waydroid) are each duplicated in `shortcuts.vdf` under two different
+AppIDs** — Steam only ever launches one, and scan's dedupe could silently pick the dead one with no
+way for the user to know; `doctor` now notes it (not a `Problem` — scan's dedupe still often lands
+correctly).
+<br>**Round 2, once Cyberpunk was fixed: four more named games (A Short Hike, Left 4 Dead 2,
+Borderlands 2, Roadwarden) "and so much more."** Two further, independent bugs in
+`ScanInstalledSteamGamesAsync` — installed Steam games specifically, not shortcuts. Left 4 Dead 2's
+save is Steam Cloud's own sync folder (`<root>/userdata/<storeUserId>/550/remote`), which needs no
+Wine prefix at all, but resolution was gated on one existing; Borderlands 2 was moved to the SD card
+and Steam re-created a fresh, useless prefix there (`My games`, wrong case) while the ORIGINAL,
+working prefix stayed in the main root — so the fallback now retries the main root whenever the
+current library's own prefix resolves nothing, not only when it is missing outright. `<root>` is now
+always built from the verified Steam root directly rather than derived from whichever prefix path is
+tried, or Steam Cloud paths on a secondary library silently pointed at a `userdata` folder that isn't
+there. A Short Hike and Roadwarden turned out to have no bug behind them — the former runs as a
+native Linux build (out of scope, `Decisions.md` §1), the latter has never been Proton-launched on
+this Deck at all — confirmed rather than assumed. Resolved candidates on the maintainer's own scan:
+16 → 32, roughly double.
+<br>`run-linux-tests` 216 → **227 (225 pass; 2 pre-existing, unrelated Decky-messaging failures
+flagged separately, not caused by this change)**. Full write-up:
+`logs/2026-08-19_moondeck-save-detection.md`; scope decisions recorded in [[Decisions]] → *Linux
 discovery*.
 <br>**The Deck's IP has moved again since this file was last touched** — `tests/testenv.local.ps1`
 (gitignored, authoritative) now has `deck@192.168.0.103` / `http://192.168.0.124:5080`, not the

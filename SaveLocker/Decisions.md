@@ -319,6 +319,23 @@ session can judge an edge case, not to reopen the choice.
   but its compatdata (and real save data, 9 days old) was still there. `SteamShortcuts.MoonDeckAppId`
   carries it; `LinuxGameScanner` tries it only after the shortcut's own prefix fails to resolve, with
   `installDir` left null since `StartDir` here is MoonDeck's script directory, not the game's.
+  <br>**An installed game's `&lt;root&gt;` is always the caller's verified Steam root, never derived
+  from whichever compatdata path is being tried** (same 2026-08-19 session). Steam Cloud's own sync
+  folder (`&lt;root&gt;/userdata/&lt;storeUserId&gt;/&lt;appid&gt;/remote`) exists exactly once, at
+  the true Steam root, regardless of which library holds a game's files or compatdata — deriving
+  `&lt;root&gt;` from the prefix path instead (the general-purpose `SteamLayout.RootFromCompatData`)
+  silently pointed it at a secondary library with no `userdata` at all. Found via Left 4 Dead 2, whose
+  compatdata does not exist anywhere on the maintainer's Deck at all — resolution is now attempted
+  even then, since a `&lt;root&gt;`-anchored template needs no prefix to exist.
+  <br>**A relocated install (most commonly internal storage → SD card) can leave a fresh, USELESS
+  prefix at the new location while the original, working one stays in the main root** — Steam
+  re-creates a prefix there rather than moving the old one, and the fresh one's special folders can be
+  auto-created with different casing than an existing save history expects (Borderlands 2:
+  `My games` where the manifest and the original prefix both say `My Games`; Linux is
+  case-sensitive). The fallback to the main root's own compatdata is therefore tried whenever the
+  current library's prefix resolves NOTHING, not only when the directory is missing outright — a
+  present-but-unusable prefix looks identical to an absent one from outside, and the first cut of this
+  fix (checking only `Directory.Exists`) missed exactly this shape.
 - **Linux UI: headless daemon serving the existing React UI** on `:5178` (Desktop Mode = KDE +
   browser). **Game Mode has no browser**, so `savelocker ui` (SDL + Dear ImGui, in-process against
   `Agent.Core`, no second API client) covers Status/Add game/Set folder/Launch setup as a gamepad
