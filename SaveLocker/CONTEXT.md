@@ -44,16 +44,25 @@ body shape changed), and `AgentInstallerStatus` gained a `Source` field — both
 compat server-side (old DB rows with no schedule read as `mode: "hours"`, exactly as before), but any
 external script POSTing the old `{ hours }` shape to that endpoint needs updating.
 
-**Cyberpunk 2077 uploads root-caused and fixed, not yet deployed (2026-08-18, branch
-`cyberpunk-save-upload-fix`).** "Always fails to upload" was never an agent bug — the maintainer's
-save is a genuine 100+ MB archive and `maro.savelocker.dpdns.org` is Cloudflare-proxied, whose free
-edge kills any single request past a fixed ~100s, which this connection's upload speed cannot beat.
-Fixed with a chunked upload protocol (`/upload/begin` → `/upload/{id}/chunk` → `/upload/{id}/complete`,
-`ApiClient.UploadAsync`) that never asks one request to carry more than 4 MiB; the old single-shot
-route stays for agents/servers that haven't updated yet, with an automatic fallback either way.
-Write-up: `logs/2026-08-18_cyberpunk-upload-timeout.md`. Gotcha recorded: `Gotchas.md` → *Hosting /
-network*. **Not deployed** — the real server needs a redeploy (and the fleet a new agent build) before
-this actually reaches the maintainer's own Cyberpunk sync; see Next action.
+**Cyberpunk 2077 uploads root-caused, fixed, and confirmed on the maintainer's own hardware
+(2026-08-18, branch `cyberpunk-save-upload-fix`).** "Always fails to upload" was never an agent bug —
+the maintainer's save is a genuine 100+ MB archive and `maro.savelocker.dpdns.org` is Cloudflare-
+proxied, whose free edge kills any single request past a fixed ~100s, which this connection's upload
+speed cannot beat. Fixed with a chunked upload protocol (`/upload/begin` → `/upload/{id}/chunk` →
+`/upload/{id}/complete`, `ApiClient.UploadAsync`) that never asks one request to carry more than
+4 MiB; the old single-shot route stays for agents/servers that haven't updated yet, with an automatic
+fallback either way. Write-up: `logs/2026-08-18_cyberpunk-upload-timeout.md`. Gotcha recorded:
+`Gotchas.md` → *Hosting / network*. Verified working after a manual local console image + agent
+9.9.9 test-installer deploy (not yet a tagged release — see Next action).
+<br>**Same session, same branch: the agent UI's Overview page gained a live activity card** — a
+"Sync now" button, current phase/game with a byte progress bar for a push (fed straight from the
+chunk loop above, `SyncActivityTracker` in `Agent.Core`), and a short rolling log of what just
+happened, at the bottom of the page. `SyncEngine` also gained `SyncAllAsync`, deduplicating what the
+tray's menu and the new button both do. Verified end to end through a real running tray + isolated
+console (sync-now click → activity log → stat updates, all correct); a live mid-transfer progress
+snapshot could not be screenshotted locally — loopback is fast enough that a 90 MB chunked push
+completes in under a second — but the exact code path that reported it is what the successful push
+itself exercised 20+ times without error.
 
 ---
 
