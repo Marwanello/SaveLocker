@@ -44,6 +44,7 @@ esac
 # principle as testenv.sh's own DAEMON_PATTERN, just inverted (there it excludes the release
 # apphost name; here the isolation is the path itself).
 DAEMON_PATTERN="$PREFIX/savelocker daemon"
+SCOPE_UNIT="savelocker-testenv-deck"
 
 cmd_install() {
   [ -f "$TARBALL" ] || die "no upload at $TARBALL — push the tarball first"
@@ -61,6 +62,9 @@ cmd_install() {
 show_real_game_mappings() {
   local cfg="$STATE/config.json"
   [ -f "$cfg" ] || return 0
+  # `|| true` matters under `pipefail`: grep exits 1 when NO game maps a real folder - the common,
+  # good case - and without it that innocuous "nothing to report" became this function's own exit
+  # code, which became cmd_status's/cmd_up's, which testenv.ps1 read as the whole SSH call failing.
   grep -o '"SaveDirectory": *"[^"]*"' "$cfg" | sed -E 's/.*"SaveDirectory": *"([^"]*)"/\1/' |
   while IFS= read -r dir; do
     case "$dir" in
@@ -68,7 +72,7 @@ show_real_game_mappings() {
       *) echo "WARNING: the test agent maps a real folder: $dir" >&2
          echo "  a pull from the test console would restore over it." >&2 ;;
     esac
-  done
+  done || true
 }
 
 cmd_up() {
@@ -92,12 +96,24 @@ cmd_up() {
 
   echo "== daemon on :$PORT =="
   cd "$PREFIX" || exit 1
-  setsid "$BIN" daemon --port "$PORT" > "$DAEMON_LOG" 2>&1 < /dev/null &
+  # PLAIN setsid+disown does NOT survive this SSH command returning: logind's KillUserProcesses
+  # tracks by CGROUP, not POSIX session ID, and setsid's new session does not move the process out
+  # of the SSH login session's cgroup - the daemon answers the check below just fine and is then
+  # gone the moment this script exits. systemd-run --user --scope hands it to the Deck's own
+  # `user@<uid>.service` manager instead (already running from the local desktop login), which is
+  # independent of this SSH session and survives it closing. Confirmed on hardware 2026-08-19: `up`
+  # reported success and the process was gone on the very next `status`, with the daemon's own log
+  # showing it started and answered fine - it was killed from outside, not a startup failure.
+  systemd-run --user --scope --unit="$SCOPE_UNIT" -- \
+    "$BIN" daemon --port "$PORT" > "$DAEMON_LOG" 2>&1 < /dev/null &
   disown
 
+  # Re-read the token EVERY iteration, not once before the loop - see testenv.sh's cmd_up for why
+  # (a race with the freshly-backgrounded daemon still writing api-token, plus why the group-level
+  # 2>/dev/null is needed rather than one on `tr` alone).
   local token out
-  token=$(tr -d '\r\n' < "$STATE/api-token" 2>/dev/null)
   for _ in $(seq 1 40); do
+    token=$( { tr -d '\r\n' < "$STATE/api-token"; } 2>/dev/null )
     out=$(curl -sf -m 3 -H "X-SaveLocker-Token: $token" "http://localhost:$PORT/api/state" 2>/dev/null)
     [ -n "$out" ] && break
     sleep 0.7
@@ -111,14 +127,24 @@ cmd_up() {
 }
 
 cmd_down() {
+  # Capture pids BEFORE stopping anything, so the report below reflects what was actually running
+  # rather than what's left after the systemctl stop below already reaped it.
   local pids
   pids=$(pgrep -f "$DAEMON_PATTERN" | tr '\n' ' ')
+
+  # Stop the scope directly rather than relying only on the pkill below: a transient scope is
+  # removed once its main process exits, so killing the process SHOULD take the scope with it, but
+  # doing this first means a leftover scope (the process having died some other way) can never make
+  # the next `up` fail with "Unit savelocker-testenv-deck.scope already exists".
+  systemctl --user stop "${SCOPE_UNIT}.scope" >/dev/null 2>&1 || true
+
   if [ -z "$pids" ]; then
     echo "no test daemon running"
     return 0
   fi
-  # A headless daemon has no tray and no window, so this is the only way to close it.
-  pkill -f "$DAEMON_PATTERN"
+  # A headless daemon has no tray and no window, so this is the only way to close it. Harmless if
+  # the systemctl stop above already did it - pkill just finds nothing left to kill.
+  pkill -f "$DAEMON_PATTERN" 2>/dev/null
   sleep 1
   pkill -9 -f "$DAEMON_PATTERN" 2>/dev/null
   echo "stopped daemon (pid $pids)"
@@ -132,7 +158,7 @@ cmd_status() {
   echo "state dir:   $XDG_DATA_HOME"
   if [ -n "$pids" ]; then
     local token out
-    token=$(tr -d '\r\n' < "$STATE/api-token" 2>/dev/null)
+    token=$( { tr -d '\r\n' < "$STATE/api-token"; } 2>/dev/null )
     out=$(curl -sf -m 3 -H "X-SaveLocker-Token: $token" "http://localhost:$PORT/api/state" 2>/dev/null)
     echo "state:       ${out:-<no answer on :$PORT>}"
   fi
