@@ -60,6 +60,72 @@ verification that did not happen before the tag. Write-ups:
   problem from Decisions.md §1 applies here too: an emulator save is platform-neutral, so it is
   the first candidate that could sync between a Deck and a Windows PC without Proton involved.
 
+- **One game, several real sources — the dedupe rule needs a second dimension, and the choice needs
+  to be visible.** Scoped 2026-08-19, not built. Asked for directly, using Cyberpunk as the example:
+  MoonDeck's streaming shortcut and a genuinely-installed copy (Steam, or Epic/GOG through Heroic) can
+  both legitimately exist for the same game on one device, and the question was three-fold — what to
+  do about it, whether the dashboard should even know, and whether multiple local sources should
+  enroll under one title.
+  <br>**A concrete bug first, exposed by today's own MoonDeck fix.** `LinuxGameScanner.ScanAsync`'s
+  final dedupe (`GroupBy(NormalizeName).OrderByDescending(has-a-save-dir).ThenBy(HasSteamCloud)
+  .First()`) ties on `HasSteamCloud`, and a `SteamShortcut` candidate is *always* `HasSteamCloud:
+  false` — "the same game can be both an installed Steam title and a shortcut to a DRM-free build;
+  enrolling the one Cloud doesn't cover is the more useful pick," which is sound when the shortcut
+  really is an alternate, independent build. Before today, a MoonDeck shortcut never resolved a save
+  dir at all, so it never reached that tie — the first sort key (has-a-save-dir) already picked the
+  genuine install correctly, for the wrong reason. Now that MoonDeck shortcuts resolve (this session's
+  fix), if the SAME game is ALSO genuinely installed with real Steam Cloud, both candidates resolve, the
+  MoonDeck one's hardcoded `false` wins the tie, and the candidate that survives is a streaming
+  *pointer*, not the local install — recording the pointer's own synthetic AppID as `SteamAppId`, which
+  the launch wrapper will only ever see during a MoonDeck session, never a genuine local one. The DRM-free
+  reasoning the rule was built for doesn't apply to a pointer at all; it needs its own signal (e.g.
+  `SteamShortcut.MoonDeckAppId is not null`, already known from this session's fix) rather than reusing
+  `HasSteamCloud`. Small, precise, worth fixing on its own rather than folding into the larger piece
+  below.
+  <br>**The larger piece: discovery currently decides and hides, rather than showing its work.** The
+  GroupBy dedupe silently picks ONE candidate per normalized name and the user never sees that there
+  were two or three — not in `scan`, not in the Add Games UI, not in `doctor` (today's duplicate-AppID
+  note only compares raw `shortcuts.vdf` entries against each other, never a shortcut against a
+  SteamInstalled or Heroic candidate of the same name — the exact Cyberpunk shape asked about here
+  would currently say nothing). That was a reasonable default when the "duplicate" was almost always
+  genuinely redundant (Steam Cloud already covers the installed copy). It stops being reasonable once a
+  "duplicate" can be a mere pointer to the SAME data, or genuinely divergent — two real, independently-
+  played installs (Steam Cyberpunk at hour 20, a fresh Epic install never launched) that a silent pick
+  would make one of them invisible.
+  <br>**Should the dashboard handle it?** Only the part it already does, and no schema change: the
+  server already converges "the same game from different machines" correctly via
+  `ManifestLoader.CanonicalName` — one `Game`, many `MachineSavePath` rows, exactly the shape it needs.
+  The new question — several local sources for the same game *on one machine* — is a discovery-time,
+  agent-side concern, not a server one: it never needs to know a choice was made, only which single path
+  this machine currently maps, precisely what it already stores. Pushing "which of several local copies"
+  into the server model would be solving a local problem non-locally for no benefit.
+  <br>**Should multiple local sources enroll to one title?** Yes to one title, no to each syncing
+  independently — and the two cases genuinely differ in risk, worth telling apart from the native-Linux
+  item above rather than solving the same way. Same-platform duplicates (Steam vs Epic vs GOG, all
+  Windows/Proton, or a MoonDeck pointer at one of them) are the SAME underlying build's save format
+  regardless of storefront — safely interchangeable, so "one title, one active local path, switchable"
+  is enough; the mechanism already exists (`add-game --name X --dir <other-path>` re-maps today, it's
+  just not discoverable). Cross-platform duplicates (Windows/Proton vs native-Linux) are NOT
+  interchangeable — that is the whole reason the native-Linux item above needs `Game.Platform`
+  isolation. Conflating the two would either over-restrict the safe case or under-protect the unsafe
+  one.
+  <br>**Proposed shape:**
+  1. Fix the tie-break: a MoonDeck-resolved candidate loses to a genuine SteamInstalled/Heroic
+     candidate of the same name when both resolve, regardless of `HasSteamCloud`.
+  2. Extend the existing duplicate-AppID `doctor` note to compare ACROSS `ScanSource`s, not only within
+     raw shortcuts — the Cyberpunk shape (shortcut vs. genuinely installed) is invisible to it today.
+  3. Record what discovery is doing, not just its result: when the dedupe collapses more than one real
+     candidate, keep the runner-up(s) — visible in `doctor`, and in the Add Games UI as a small
+     "N other copies found" affordance on the row, so switching later is a menu pick instead of a
+     remembered CLI flag.
+  4. No new field is required to make a manual switch possible — `add-game --dir` already re-maps an
+     existing tracked game. Step 3 is entirely about discoverability, not a missing mechanism.
+  <br>**Also closes a stale pointer:** `CONTEXT.md`'s Next action list has referenced "Check the live
+  server for duplicate games ([[Backlog]])" without a matching entry existing here — the server-side
+  half of that (merging two Games that already diverged under different spellings) is a real, separate
+  gap from the agent-side discovery question above and still has no plan; noted here so the pointer
+  resolves to something.
+
 - **Case-insensitive path matching inside a Wine/Proton prefix.** Scoped 2026-08-19, not built.
   Found by reading Ludusavi's own resolver (`src/scan.rs`, `src/path.rs`) side by side with ours
   while chasing the Borderlands 2 bug in `logs/2026-08-19_moondeck-save-detection.md`: Ludusavi

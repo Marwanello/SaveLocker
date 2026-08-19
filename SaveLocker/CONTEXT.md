@@ -116,6 +116,13 @@ the real design cost is keeping a Windows save and a Linux save of one game from
 version lineage. Both phased plans: [[Backlog]] → *Case-insensitive path matching inside a
 Wine/Proton prefix* and *Native Linux save support*; the scope decision each touches is annotated in
 [[Decisions]].
+<br>**A third, same session: what happens when one game has several real local sources** (MoonDeck
+shortcut + a genuine install, or Steam+Epic+GOG all installed at once) **— also scoped, not built.**
+Found a concrete bug in passing: the dedupe's tie-break can now pick the MoonDeck pointer over a
+genuine local install (it could not before today's own fix, since the pointer never used to resolve
+anything). Full answer to "should the dashboard handle this" (no — it already converges cross-machine
+correctly; this is a same-machine, agent-side discovery question) in [[Backlog]] → *One game, several
+real sources*.
 <br>**The Deck's IP has moved again since this file was last touched** — `tests/testenv.local.ps1`
 (gitignored, authoritative) now has `deck@192.168.0.103` / `http://192.168.0.124:5080`, not the
 `192.168.68.x` addresses below. Update this file's own IPs the next time they're touched by hand;
@@ -231,7 +238,8 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
 3. **Whenever the next release after v0.5.8 is cut, fold in the console UI/audit cleanup above** —
    it's on `main` but landed after v0.5.8 was tagged, so its release notes say nothing about it.
 3. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
-   merge what a server already holds under two spellings, and there is no merge tool ([[Backlog]]).
+   merge what a server already holds under two spellings, and there is no merge tool — scoped
+   alongside a related but distinct agent-side gap in [[Backlog]] → *One game, several real sources*.
 4. **Merge `claude/steam-deck-save-detection-68b6c5` and fold the MoonDeck fix into the next Linux
    release notes.** Code is done and verified on hardware (above); nothing about it has shipped yet.
    Worth pairing with a look at whether the six duplicate-shortcut names it found are worth a
