@@ -133,9 +133,20 @@ mounted; Steam's own `libraryfolders.vdf` records Cyberpunk's real 91 GB Steam i
 1091500) on `SD2`, which just isn't inserted right now — no scanner, ours or Steam's, can read
 missing media, and `SteamRoots.LibraryPaths` already skips it correctly by design. What was missing
 was saying so: `doctor` now names every library still configured but not currently reachable.
-`run-linux-tests` 230 → 232. **Not yet confirmed with the card reinserted** — everything upstream
-(the MoonDeck fallback, the tie-break, the retry logic) should classify it correctly the moment its
-ACF is reachable again, but that specific claim is unverified until `SD2` is back in the Deck.
+`run-linux-tests` 230 → 232.
+<br>**A fifth, immediately after: classified correctly without needing the card at all.** The
+maintainer's own follow-up ("doesn't Steam know it's installed even with the SD not mounted?") named
+the lever round four had surfaced but not used — `libraryfolders.vdf`'s per-library `apps` block
+persists across a card being absent, on the always-reachable main root. `SteamRoots
+.AllKnownInstalledAppIds` reads it; a MoonDeck shortcut whose real AppID appears there is now built as
+`SteamInstalled` throughout (real Cloud flag, real AppID, no misleading install dir), never just
+`SteamShortcut`. A resolved compatdata prefix alone could never justify this — Steam does not clean up
+compatdata on uninstall, so it cannot tell "genuinely installed, unreachable right now" apart from
+"uninstalled, orphaned data left behind"; the `apps` block is the one signal that can. `run-linux-tests`
+232 → 234. Confirmed on the real Deck with `SD2` still NOT inserted: `scan` now reads
+`Cyberpunk 2077  <SteamInstalled> [Steam Cloud] appid=1091500` with the correct save path. One
+side effect worth knowing, not a bug: the Cloud flag now hides it from the default Add Games view,
+same as any other Cloud-covered installed game.
 <br>**The Deck's IP has moved again since this file was last touched** — `tests/testenv.local.ps1`
 (gitignored, authoritative) now has `deck@192.168.0.103` / `http://192.168.0.124:5080`, not the
 `192.168.68.x` addresses below. Update this file's own IPs the next time they're touched by hand;

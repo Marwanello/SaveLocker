@@ -342,6 +342,16 @@ session can judge an edge case, not to reopen the choice.
   current library's prefix resolves NOTHING, not only when the directory is missing outright — a
   present-but-unusable prefix looks identical to an absent one from outside, and the first cut of this
   fix (checking only `Directory.Exists`) missed exactly this shape.
+  <br>**A MoonDeck shortcut's real AppID is reclassified as `SteamInstalled`, not `SteamShortcut`,
+  when Steam's own `libraryfolders.vdf` — specifically its per-library `apps` block — says the AppID
+  is installed somewhere** (`SteamRoots.AllKnownInstalledAppIds`, same session). A resolved compatdata
+  prefix can never justify this by itself: Steam does not clean up compatdata on uninstall, so a real
+  prefix full of real save data is equally consistent with "genuinely installed, on media not
+  reachable right now" and "was installed once, uninstalled since, orphaned data left behind." The
+  `apps` block is the one place that says which — and it survives its own library's media being
+  absent, because it lives in the SAME file on the always-reachable main root, not on the card
+  itself. Found via Cyberpunk 2077 a second time: genuinely Steam-installed on a card labelled "SD2"
+  that stayed unmounted throughout, reclassified correctly with no card swap needed at all.
 - **Linux UI: headless daemon serving the existing React UI** on `:5178` (Desktop Mode = KDE +
   browser). **Game Mode has no browser**, so `savelocker ui` (SDL + Dear ImGui, in-process against
   `Agent.Core`, no second API client) covers Status/Add game/Set folder/Launch setup as a gamepad
