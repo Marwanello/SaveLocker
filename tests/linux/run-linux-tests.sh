@@ -330,6 +330,15 @@ check "doctor names the actual prefix path" "$(contains "${out}" "${MOONDECK_REA
 check "doctor notes the duplicate MoonDeck shortcut" \
   "$(contains "${out}" "'MoonDeck Streamed Game' has 2 shortcuts with different AppIDs")"
 
+# A library libraryfolders.vdf still names but that does not exist right now (an SD card that isn't
+# inserted) must be called out by name, not silently skipped the way LibraryPaths correctly skips it
+# for scanning purposes — found on a real Deck (2026-08-19): a genuinely Steam-installed game
+# (Cyberpunk 2077, on a card labelled "SD2") had no way to explain why it was invisible.
+check "doctor names the unmounted library" \
+  "$(contains "${out}" "library configured but not mounted right now: ${UNMOUNTED_LIBRARY}")"
+# Not a fault — an unmounted card is completely normal — so it must not fail doctor's exit code.
+check "an unmounted library is not a doctor problem" "${doctor_rc}"
+
 # doctor must describe the state root it is ACTUALLY using. ${deck_cfg} is deliberately outside
 # AgentConfig.DefaultDir, and doctor used to print (and probe) the default regardless - declaring
 # the wrong directory healthy while the one in use might be missing or read-only.

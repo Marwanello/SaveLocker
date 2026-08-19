@@ -50,6 +50,23 @@ public static class Doctor
             "no Steam root found (looked for ~/.steam/steam, ~/.local/share/Steam and the Flatpak path).");
         foreach (var r in roots) Info("root", r);
 
+        // A library Steam itself still remembers (libraryfolders.vdf persists across a card swap)
+        // but that is not currently mounted — an SD card pulled or swapped for another. Nothing here
+        // is a fault: the scan is right to skip it rather than fail. But a genuinely Steam-installed
+        // game on that card is now invisible with nothing else to say why, which reads exactly like
+        // a detection bug rather than "insert the right card."
+        foreach (var r in roots)
+        {
+            foreach (var missing in SteamRoots.AllConfiguredLibraryPaths(r)
+                         .Where(p => !Directory.Exists(p))
+                         .Distinct(StringComparer.Ordinal))
+            {
+                Console.WriteLine($"  ! library configured but not mounted right now: {missing}");
+                Console.WriteLine("      an SD card that isn't currently inserted — any game installed" +
+                                  " there is invisible to this scan until it is.");
+            }
+        }
+
         var shortcuts = await ReadShortcutsAsync(roots);
         Check("non-Steam shortcuts found", shortcuts.Count > 0,
             "no shortcuts in shortcuts.vdf. SaveLocker syncs non-Steam games added to Steam; " +

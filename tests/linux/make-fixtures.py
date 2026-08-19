@@ -427,6 +427,12 @@ def main() -> int:
             '\t"installdir"\t\t"Proton 99.0"\n'
             "}\n")
 
+    # A third library Steam still remembers (libraryfolders.vdf persists it) but that does not exist
+    # on disk right now — an SD card that isn't currently inserted. Deliberately never created with
+    # os.makedirs; the whole point is that it is absent. Found on a real Deck (2026-08-19): Cyberpunk
+    # 2077's genuine 91 GB Steam install sat on exactly this kind of unmounted card.
+    unmounted_library = os.path.join(root, "sdcard", "UnmountedLibrary")
+
     os.makedirs(os.path.join(steam, "steamapps"), exist_ok=True)
     with open(os.path.join(steam, "steamapps", "libraryfolders.vdf"), "w") as f:
         f.write(
@@ -436,6 +442,9 @@ def main() -> int:
             "\t}\n"
             '\t"1"\n\t{\n'
             f'\t\t"path"\t\t"{steam_library}"\n'
+            "\t}\n"
+            '\t"2"\n\t{\n'
+            f'\t\t"path"\t\t"{unmounted_library}"\n'
             "\t}\n"
             "}\n")
 
@@ -505,6 +514,7 @@ def main() -> int:
     print(f"CLOUD_ONLY_SAVE={cloud_only_save}")
     print(f"DUAL_SOURCE_APPID={DUAL_SOURCE_APPID}")
     print(f"DUAL_SOURCE_SAVE={dual_source_save}")
+    print(f"UNMOUNTED_LIBRARY={unmounted_library}")
     print(f"HEROIC_CONFIG={heroic['config_root']}")
     print(f"HEROIC_EPIC_PREFIX={heroic['epic_prefix']}")
     print(f"HEROIC_EPIC_SAVE={heroic['epic_save']}")

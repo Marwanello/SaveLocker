@@ -97,6 +97,38 @@ public static class SteamRoots
         }
     }
 
+    /// <summary>
+    /// Every library <c>libraryfolders.vdf</c> names, whether or not it currently exists —
+    /// unlike <see cref="LibraryPaths"/>, which silently skips a library that is not mounted right
+    /// now (an SD card pulled or swapped for another). Nothing here is wrong to skip — a scan that
+    /// errored out over a missing card would be worse — but "this library is not currently visible"
+    /// and "you have no such library" look identical from a scan alone, and Steam itself remembers a
+    /// library across a card swap in exactly this file. <c>doctor</c> is where the difference gets
+    /// said out loud: found on a real Deck (2026-08-19) with three SD-card libraries configured and
+    /// only one inserted, where a genuinely Steam-installed game on an absent card had no way to
+    /// explain why it was invisible.
+    /// </summary>
+    public static IEnumerable<string> AllConfiguredLibraryPaths(string steamRoot)
+    {
+        var file = new[]
+        {
+            Path.Combine(steamRoot, "steamapps", "libraryfolders.vdf"),
+            Path.Combine(steamRoot, "config", "libraryfolders.vdf"),
+        }.FirstOrDefault(File.Exists);
+        if (file is null) yield break;
+
+        var root = ParseVdf(file);
+        var folders = root?.Object("libraryfolders");
+        if (folders is null) yield break;
+
+        foreach (var lib in folders.Children)
+        {
+            var path = lib.String("path");
+            if (!string.IsNullOrEmpty(path))
+                yield return path;
+        }
+    }
+
     /// <summary>Read and parse a text VDF, or null if it is unreadable or malformed.</summary>
     public static SteamVdf.VdfObject? ParseVdf(string path)
     {
