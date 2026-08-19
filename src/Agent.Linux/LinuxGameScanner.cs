@@ -37,30 +37,64 @@ public sealed class LinuxGameScanner : IGameScanner
 
         foreach (var root in SteamRoots.Find())
         {
+            // Steam's own record of what is installed where, across every configured library —
+            // mounted or not (SteamRoots.AllKnownInstalledAppIds). A MoonDeck shortcut whose real
+            // AppID appears here is not a "non-Steam shortcut" at all; it is a genuine Steam-Store
+            // install that merely cannot be read from directly right now, because its library's
+            // media is not currently connected. Computed once per root, reused for every shortcut.
+            var knownInstalled = SteamRoots.AllKnownInstalledAppIds(root);
+
             foreach (var s in await SteamShortcuts.ReadAllAsync(root, ct))
             {
                 ct.ThrowIfCancellationRequested();
                 var prefix = s.AppId is null ? null : SteamRoots.CompatDataPath(root, s.AppId);
                 var (save, usedPrefix) = await SuggestSaveDirAsync(s, root, prefix, ct);
 
+                // A resolved compatdata prefix alone can never make this distinction: Steam does not
+                // clean up compatdata on uninstall, so a real prefix full of real save data proves
+                // nothing about whether the game is STILL installed anywhere. The apps block does.
+                var realAppId = s.MoonDeckAppId;
+                var confirmedInstalled = realAppId is not null && knownInstalled.Contains(realAppId);
+
                 results.Add((new ScanCandidate(
                     Name: s.AppName,
                     SuggestedSaveDir: save,
-                    Source: ScanSource.SteamShortcut,
-                    HasSteamCloud: false,          // non-Steam shortcuts have no Cloud, by definition
+                    Source: confirmedInstalled ? ScanSource.SteamInstalled : ScanSource.SteamShortcut,
+                    // A confirmed install gets the manifest's real answer, exactly like any other
+                    // installed game — not the shortcut default, which exists only because a
+                    // non-Steam shortcut is never Steam Cloud-eligible in the first place.
+                    HasSteamCloud: confirmedInstalled
+                        ? await _detection.HasSteamCloudAsync(s.AppName, ct) ?? true
+                        : false,
                     ManifestKey: save is null
                         ? null
                         : await _detection.CanonicalNameAsync(s.AppName, ct) ?? s.AppName,
-                    InstallDir: s.StartDir,
-                    SteamAppId: s.AppId,
+                    // s.StartDir is the shortcut's own launch directory — for a MoonDeck shortcut
+                    // that is MoonDeck's script folder, not the game's, and would be actively
+                    // misleading attached to a candidate now presented as genuinely installed. We do
+                    // not know the real install directory without the ACF, which is exactly what is
+                    // unreachable here — admitted, not guessed at.
+                    InstallDir: confirmedInstalled ? null : s.StartDir,
+                    // The real AppID, not the shortcut's synthetic one, once confirmed — it is what
+                    // the launch wrapper needs to match a genuine LOCAL Steam+Proton launch, the only
+                    // kind it can ever hook (a MoonDeck-streamed session cannot be, regardless of
+                    // which AppID is recorded).
+                    SteamAppId: confirmedInstalled ? realAppId : s.AppId,
                     // The prefix that actually produced the save dir, for the path browser — a
                     // MoonDeck shortcut resolves via a DIFFERENT prefix than its own (below), and
                     // opening the browser at the dead one would strand the user at an empty prefix.
                     PrefixPath: usedPrefix ?? prefix,
                     // Carried for parity, and because config is shared between hosts — but Linux
                     // drives lifecycle from the launch wrapper, not from process polling, so
-                    // nothing here depends on it (Decisions.md §3).
-                    SuggestedProcessName: GameActivity.ProcessNameFromExe(s.Exe)),
+                    // nothing here depends on it (Decisions.md §3). Null once confirmedInstalled for
+                    // the same reason every other SteamInstalled candidate carries null: a script's
+                    // name is not the game's process name any more than a folder's is.
+                    SuggestedProcessName: confirmedInstalled
+                        ? null
+                        : GameActivity.ProcessNameFromExe(s.Exe)),
+                    // Still tracked even once reclassified: if the real ACF ever becomes reachable
+                    // too (the library gets mounted), that direct read is more authoritative than
+                    // this inferred stand-in, and should keep winning the dedupe below.
                     ViaMoonDeck: usedPrefix is not null && usedPrefix != prefix));
             }
 
