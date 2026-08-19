@@ -145,6 +145,19 @@ check "resolve refuses a <base>-only save path" \
 check "scan finds the MoonDeck shortcut"           "$(contains "${out}" "MoonDeck Streamed Game")"
 check "scan resolves save via MOONDECK_STEAM_APP_ID" \
   "$(contains "${out}" "${MOONDECK_REAL_SAVE}")"
+# The Cyberpunk 2077 shape: a game that is BOTH genuinely installed (real Steam Cloud) AND has a
+# MoonDeck shortcut pointing at it. The installed copy must survive the dedupe — a SteamShortcut
+# candidate is unconditionally HasSteamCloud: false, so without the MoonDeck-aware tie-break this
+# would wrongly favor the streaming pointer purely because "prefer the copy Cloud doesn't cover"
+# does not know the pointer isn't an independent build. Regression pin for a bug introduced by the
+# MoonDeck fix itself: before that fix the pointer never resolved anything, so it never reached this
+# tie by construction — not because the ordering was correct.
+check "dual-source game resolves" \
+  "$(contains "${out}" "${DUAL_SOURCE_SAVE}")"
+check "the genuinely-installed copy wins over its own MoonDeck shortcut" \
+  "$(contains "${out}" "Fake Dual Source Game  <SteamInstalled> [Steam Cloud] appid=${DUAL_SOURCE_APPID}")"
+check "only one Fake Dual Source Game row survives the dedupe" \
+  "$([ "$(printf '%s\n' "${out}" | grep -c 'Fake Dual Source Game')" = 1 ] && echo 0 || echo 1)"
 # A duplicate shortcut (same name, different dead AppID, no LaunchOptions) must not win the dedupe
 # over the one that actually resolves — the shape found on the real Deck for other titles.
 check "the resolving MoonDeck row wins over its dead duplicate" \
