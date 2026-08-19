@@ -73,6 +73,85 @@ verified working end-to-end against the real Deck, the real WSL clone, and Docke
 installed Deck agent (pid confirmed unchanged throughout) and its config never touched. Full
 write-up of all three: [[Gotchas]] → *`tests/testenv.ps1`*.
 
+**Save-path detection reliability investigated and fixed on the real Deck — four root causes, two
+rounds (2026-08-19, branch `claude/steam-deck-save-detection-68b6c5`, no task file).** Round 1, asked
+directly: some games "definitely have save paths" weren't detected reliably, and Cyberpunk 2077
+specifically wasn't picked up despite being installed. Deployed the testenv Deck target (above) to
+investigate live. Root cause: Cyberpunk is launched through a **MoonDeck** (Decky streaming plugin)
+shortcut, whose `Exe` runs MoonDeck's own client script, never the game — Steam makes no compatdata
+prefix for it at all. The real save data (autosaves 9 days old) sat orphaned under
+`compatdata/1091500`, Cyberpunk's actual Steam AppID, from a Steam-Store install since uninstalled.
+`LinuxGameScanner` now also tries the AppID MoonDeck's `LaunchOptions` names
+(`MOONDECK_STEAM_APP_ID=`) when the shortcut's own prefix fails to resolve, and `Doctor` explains the
+finding either way. **Found in passing: six shortcuts on this same Deck (HITMAN 3, Minit, Moving Out,
+Animal Crossing, Metal Gear, Waydroid) are each duplicated in `shortcuts.vdf` under two different
+AppIDs** — Steam only ever launches one, and scan's dedupe could silently pick the dead one with no
+way for the user to know; `doctor` now notes it (not a `Problem` — scan's dedupe still often lands
+correctly).
+<br>**Round 2, once Cyberpunk was fixed: four more named games (A Short Hike, Left 4 Dead 2,
+Borderlands 2, Roadwarden) "and so much more."** Two further, independent bugs in
+`ScanInstalledSteamGamesAsync` — installed Steam games specifically, not shortcuts. Left 4 Dead 2's
+save is Steam Cloud's own sync folder (`<root>/userdata/<storeUserId>/550/remote`), which needs no
+Wine prefix at all, but resolution was gated on one existing; Borderlands 2 was moved to the SD card
+and Steam re-created a fresh, useless prefix there (`My games`, wrong case) while the ORIGINAL,
+working prefix stayed in the main root — so the fallback now retries the main root whenever the
+current library's own prefix resolves nothing, not only when it is missing outright. `<root>` is now
+always built from the verified Steam root directly rather than derived from whichever prefix path is
+tried, or Steam Cloud paths on a secondary library silently pointed at a `userdata` folder that isn't
+there. A Short Hike and Roadwarden turned out to have no bug behind them — the former runs as a
+native Linux build (out of scope, `Decisions.md` §1), the latter has never been Proton-launched on
+this Deck at all — confirmed rather than assumed. Resolved candidates on the maintainer's own scan:
+16 → 32, roughly double.
+<br>`run-linux-tests` 216 → **227 (225 pass; 2 pre-existing, unrelated Decky-messaging failures
+flagged separately, not caused by this change)**. Full write-up:
+`logs/2026-08-19_moondeck-save-detection.md`; scope decisions recorded in [[Decisions]] → *Linux
+discovery*.
+<br>**Two follow-ups scoped, not built, same session:** reading Ludusavi's own resolver source
+alongside ours (asked directly: "is there a distinct difference... what to learn from it") found it
+glob-matches the filesystem and is case-insensitive inside a Wine prefix, which is *why* it never hit
+the Borderlands 2 bug — worth generalizing beyond today's one-off fix. Separately, the maintainer
+wants native-Linux saves trackable alongside Windows/Proton ones, accepting per-game restore
+uncertainty in exchange for being able to try — the data for it already exists in the same manifest,
+the real design cost is keeping a Windows save and a Linux save of one game from ever sharing a
+version lineage. Both phased plans: [[Backlog]] → *Case-insensitive path matching inside a
+Wine/Proton prefix* and *Native Linux save support*; the scope decision each touches is annotated in
+[[Decisions]].
+<br>**A third, same session: what happens when one game has several real local sources** (MoonDeck
+shortcut + a genuine install, or Steam+Epic+GOG all installed at once) **— scoped, and its one
+concrete bug fixed same day.** The dedupe's tie-break could pick a MoonDeck pointer over a genuine
+local install (it could not before round 1's own fix, since the pointer never used to resolve
+anything) — `ScanAsync` now tracks that case explicitly and sorts a genuine install first regardless
+of Steam Cloud. `run-linux-tests` 227 → 230; confirmed no regression on the real Deck. The rest —
+surfacing multiple sources in the UI, extending `doctor`'s duplicate note across scan sources, the
+server-side "two Games already diverged under different spellings" gap — stays in [[Backlog]] → *One
+game, several real sources*, by the maintainer's own choice to split the small fix from the rest.
+Full answer to "should the dashboard handle this" (no — it already converges cross-machine correctly;
+this is a same-machine, agent-side discovery question) is there too.
+<br>**A fourth, same session: Cyberpunk was reported wrong again — turned out not to be a bug.** The
+Deck has FOUR configured Steam libraries (main root, SDCard, WinSD, SD2) and only SDCard is currently
+mounted; Steam's own `libraryfolders.vdf` records Cyberpunk's real 91 GB Steam install (appid
+1091500) on `SD2`, which just isn't inserted right now — no scanner, ours or Steam's, can read
+missing media, and `SteamRoots.LibraryPaths` already skips it correctly by design. What was missing
+was saying so: `doctor` now names every library still configured but not currently reachable.
+`run-linux-tests` 230 → 232.
+<br>**A fifth, immediately after: classified correctly without needing the card at all.** The
+maintainer's own follow-up ("doesn't Steam know it's installed even with the SD not mounted?") named
+the lever round four had surfaced but not used — `libraryfolders.vdf`'s per-library `apps` block
+persists across a card being absent, on the always-reachable main root. `SteamRoots
+.AllKnownInstalledAppIds` reads it; a MoonDeck shortcut whose real AppID appears there is now built as
+`SteamInstalled` throughout (real Cloud flag, real AppID, no misleading install dir), never just
+`SteamShortcut`. A resolved compatdata prefix alone could never justify this — Steam does not clean up
+compatdata on uninstall, so it cannot tell "genuinely installed, unreachable right now" apart from
+"uninstalled, orphaned data left behind"; the `apps` block is the one signal that can. `run-linux-tests`
+232 → 234. Confirmed on the real Deck with `SD2` still NOT inserted: `scan` now reads
+`Cyberpunk 2077  <SteamInstalled> [Steam Cloud] appid=1091500` with the correct save path. One
+side effect worth knowing, not a bug: the Cloud flag now hides it from the default Add Games view,
+same as any other Cloud-covered installed game.
+<br>**The Deck's IP has moved again since this file was last touched** — `tests/testenv.local.ps1`
+(gitignored, authoritative) now has `deck@192.168.0.103` / `http://192.168.0.124:5080`, not the
+`192.168.68.x` addresses below. Update this file's own IPs the next time they're touched by hand;
+`deck-config` (no args) always prints the current, real values.
+
 **Cyberpunk 2077 uploads root-caused, fixed, and confirmed on the maintainer's own hardware
 (2026-08-18, branch `cyberpunk-save-upload-fix`).** "Always fails to upload" was never an agent bug —
 the maintainer's save is a genuine 100+ MB archive and `maro.savelocker.dpdns.org` is Cloudflare-
@@ -183,7 +262,12 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
 3. **Whenever the next release after v0.5.8 is cut, fold in the console UI/audit cleanup above** —
    it's on `main` but landed after v0.5.8 was tagged, so its release notes say nothing about it.
 3. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
-   merge what a server already holds under two spellings, and there is no merge tool ([[Backlog]]).
+   merge what a server already holds under two spellings, and there is no merge tool — scoped
+   alongside a related but distinct agent-side gap in [[Backlog]] → *One game, several real sources*.
+4. **Merge `claude/steam-deck-save-detection-68b6c5` and fold the MoonDeck fix into the next Linux
+   release notes.** Code is done and verified on hardware (above); nothing about it has shipped yet.
+   Worth pairing with a look at whether the six duplicate-shortcut names it found are worth a
+   heads-up to the maintainer directly, independent of any code change.
 
 Everything else — the WA-03 second-account ACL test, the remaining Windows manual gates, the LAN
 enrollment-URL check, the missing LA-04/05/06/07 regression tests, and the `WA-01`/113-of-114
@@ -194,8 +278,10 @@ baseline drift — is prioritised in [[Backlog]].
 Read `logs/2026-08-15_decky-plugin.md` and [[Gotchas]] → *Decky plugin* first. Both carry
 things that were measured on hardware and cannot be re-derived by reading code.
 
-**The Deck.** `deck@192.168.68.67`, key auth is set up (see the maintainer — the key is deliberately
-not named here). It is awake only when the maintainer wakes it. Useful state on it:
+**The Deck.** `deck@192.168.0.103` (moved since this was last written — a DHCP-leased IP drifts; run
+`.\tests\testenv.ps1 deck-config` with no args for whatever is current), key auth is set up (see the
+maintainer — the key is deliberately not named here). It is awake only when the maintainer wakes it.
+Useful state on it:
 - agent **v0.5.6 (the released build**, checksum-verified against the published `SHA256SUMS-linux.txt`),
   service `savelocker.service` active, 4 tracked games, all with launch options confirmed;
 - plugin at `~/homebrew/plugins/SaveLocker`, and a config backup at
