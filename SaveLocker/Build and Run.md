@@ -185,19 +185,35 @@ dir, the Deck's deployed build and state, and the dashboard's container/image/vo
 after a `clean` is a plain `build` + `up` — nothing about the rig is meant to survive it, which is
 the point of calling it something other than `down`.
 
-**Steam Deck target.** Unlike Windows/WSL there is no "this machine" default. Copy
+**Steam Deck target.** Unlike Windows/WSL there is no "this machine" default. Either copy
 `tests/testenv.local.ps1.example` to `tests/testenv.local.ps1` (gitignored — it names your LAN, not
-the project's) and fill in:
+the project's) and fill in the two lines by hand, or write it with the rig itself:
 
 ```powershell
-$env:SAVELOCKER_DECK_HOST        = 'deck@192.168.68.67'    # SSH target, key auth already set up
-$env:SAVELOCKER_DECK_SERVER_URL  = 'http://192.168.68.58:5080'  # this PC's LAN IP — the Deck
-                                                                  # cannot dial "localhost"
+.\tests\testenv.ps1 deck-config -DeckHost deck@192.168.68.67 -DeckServerUrl http://192.168.68.58:5080
+.\tests\testenv.ps1 deck-config                                  # prints what's currently saved
+.\tests\testenv.ps1 deck-config -DeckHost deck@192.168.68.99      # updates just the host, keeps the URL
 ```
 
-`testenv.ps1` loads this file automatically on every run, so a DHCP lease moving the Deck's IP
-means re-editing this one file, not a shell profile or a re-typed env var. An explicit
-`-DeckHost`/`-DeckServerUrl` on the command line still wins over it.
+`testenv.ps1` loads `testenv.local.ps1` automatically on every run, so a DHCP lease moving the
+Deck's IP means one `deck-config` call (or one edited line), not a shell profile or a re-typed env
+var. An explicit `-DeckHost`/`-DeckServerUrl` on the command line always wins over the saved file.
+
+**Authentication is whatever your `ssh`/`scp` already do — the script never sees or stores a
+password.** Every Deck call shells out to the Windows OpenSSH client exactly as if you'd typed it:
+with a key in `~/.ssh/authorized_keys` on the Deck it connects silently; without one, `ssh`/`scp`
+fall back to an interactive password prompt right there in the console, which works but asks again
+on every single call (`up` alone makes three). Key auth is worth setting up once:
+
+```powershell
+ssh-keygen -t ed25519                                    # skip if you already have a key
+Get-Content $env:USERPROFILE\.ssh\id_ed25519.pub | ssh deck@<deck-ip> "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+ssh deck@<deck-ip> echo ok                                # should now connect with no prompt
+```
+
+The last command asks for the Deck's password once, to write `authorized_keys`; nothing after that
+does. SSH must already be enabled on the Deck (Desktop Mode → Konsole → `passwd` to set one if
+you haven't, then `sudo systemctl enable --now sshd`).
 
 `build -Only deck` cross-compiles a **self-contained** linux-x64 publish in WSL (the same packer
 `packaging/linux/build-linux.sh` uses for a real release, just stamped with the test version) —

@@ -11,6 +11,9 @@
 #   .\tests\testenv.ps1 logs      tail every log the rig writes
 #   .\tests\testenv.ps1 clean     down, then DELETE every test build and all its state — WSL,
 #                                 Windows, the Deck and the dashboard container/image/volume
+#   .\tests\testenv.ps1 deck-config -DeckHost deck@<ip> [-DeckServerUrl http://<lan-ip>:5080]
+#                                 write/update tests/testenv.local.ps1 (below) instead of hand-
+#                                 editing it; no args just prints what's currently saved
 #
 # Separation rests on three test-only variables (Gotchas.md → Test-only environment variables):
 # SAVELOCKER_STATE_ROOT moves all Windows state, SAVELOCKER_TRAY_PORT moves the local API *and*
@@ -35,7 +38,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'clean')]
+    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'clean', 'deck-config')]
     [string]$Command = 'status',
 
     # Never a released version number. A test build stamped with one compares equal to the real
@@ -560,5 +563,25 @@ switch ($Command) {
             & docker rmi $image 2>$null | Out-Null
             Write-Host "  removed $container / $volume / $image"
         }
+    }
+
+    'deck-config' {
+        # $DeckHost/$DeckServerUrl already reflect explicit flag > saved file > env var by this
+        # point (the loader above), so writing them straight back merges a one-sided edit — e.g.
+        # `deck-config -DeckHost deck@newip` alone keeps whatever SAVELOCKER_DECK_SERVER_URL was
+        # already saved instead of blanking it.
+        if ($PSBoundParameters.ContainsKey('DeckHost') -or $PSBoundParameters.ContainsKey('DeckServerUrl')) {
+            if (-not $DeckHost) { throw 'no -DeckHost given and none saved yet' }
+            $lines = @(
+                "# Written by: testenv.ps1 deck-config — edit by hand or re-run the command."
+                "`$env:SAVELOCKER_DECK_HOST = '$DeckHost'"
+            )
+            if ($DeckServerUrl) { $lines += "`$env:SAVELOCKER_DECK_SERVER_URL = '$DeckServerUrl'" }
+            Set-Content -Path $deckConfig -Value $lines -Encoding UTF8
+            Say "saved to $deckConfig"
+        }
+
+        Write-Host "deck host:        $(if ($DeckHost) { $DeckHost } else { '(not set)' })"
+        Write-Host "deck server url:  $(if ($DeckServerUrl) { $DeckServerUrl } else { '(not set)' })"
     }
 }
