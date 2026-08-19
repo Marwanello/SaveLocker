@@ -185,14 +185,19 @@ dir, the Deck's deployed build and state, and the dashboard's container/image/vo
 after a `clean` is a plain `build` + `up` — nothing about the rig is meant to survive it, which is
 the point of calling it something other than `down`.
 
-**Steam Deck target.** Unlike Windows/WSL there is no "this machine" default — set once per shell
-(or in your PowerShell profile):
+**Steam Deck target.** Unlike Windows/WSL there is no "this machine" default. Copy
+`tests/testenv.local.ps1.example` to `tests/testenv.local.ps1` (gitignored — it names your LAN, not
+the project's) and fill in:
 
 ```powershell
 $env:SAVELOCKER_DECK_HOST        = 'deck@192.168.68.67'    # SSH target, key auth already set up
 $env:SAVELOCKER_DECK_SERVER_URL  = 'http://192.168.68.58:5080'  # this PC's LAN IP — the Deck
                                                                   # cannot dial "localhost"
 ```
+
+`testenv.ps1` loads this file automatically on every run, so a DHCP lease moving the Deck's IP
+means re-editing this one file, not a shell profile or a re-typed env var. An explicit
+`-DeckHost`/`-DeckServerUrl` on the command line still wins over it.
 
 `build -Only deck` cross-compiles a **self-contained** linux-x64 publish in WSL (the same packer
 `packaging/linux/build-linux.sh` uses for a real release, just stamped with the test version) —
