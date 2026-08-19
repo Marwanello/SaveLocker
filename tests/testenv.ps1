@@ -168,10 +168,13 @@ function Invoke-Wsl {
 
 function Test-DeckConfigured { return [bool]$DeckHost }
 
-# Strips the "user@" prefix DeckHost carries for ssh/scp, leaving the bare host/IP a browser needs
-# — unlike Windows/WSL, which are reachable at "localhost", the Deck is a genuinely separate
-# machine on the LAN, so its agent UI URL has to be built from whatever DeckHost is actually set to.
-function Get-DeckIp { return $DeckHost -replace '^[^@]+@', '' }
+# The agent's local API — including the Deck test daemon's — is loopback-only, ALWAYS
+# (AgentApiServer.Start: "binding it to a LAN interface would expose [machine control] to the
+# whole network"; Decisions.md records a `--lan` flag that existed once and was withdrawn). So
+# "http://<deck-ip>:<port>" is not reachable from this PC no matter what's set up on the Deck -
+# there is nothing to set up, it refuses on principle. The daemon's own startup message says the
+# sanctioned way to reach it remotely: an SSH tunnel.
+function Get-DeckUiHint { return "ssh -L ${DeckPort}:localhost:${DeckPort} $DeckHost   then open http://localhost:$DeckPort" }
 
 # Gates build/up (which respect -Only): explicit '-Only deck' with no host configured is an error,
 # 'all' with no host configured is a silent skip so the default all-in-one flow still works for
@@ -487,7 +490,7 @@ switch ($Command) {
         Write-Host "console      $serverUrl"
         Write-Host "windows UI   http://localhost:$WinPort"
         Write-Host "linux UI     http://localhost:$LinuxPort   (WSL2 forwards it to Windows)"
-        if ($DeckHost) { Write-Host "deck UI      http://$(Get-DeckIp):$DeckPort   ($DeckHost, on your LAN — not localhost)" }
+        if ($DeckHost) { Write-Host "deck UI      $(Get-DeckUiHint)" }
     }
 
     'down' {
@@ -515,7 +518,7 @@ switch ($Command) {
         if (Test-DeckConfigured) {
             try {
                 Invoke-Deck 'status'
-                Write-Host "deck UI      http://$(Get-DeckIp):$DeckPort   ($DeckHost, on your LAN — not localhost)"
+                Write-Host "deck UI      $(Get-DeckUiHint)"
             } catch { Warn "deck: $($_.Exception.Message)" }
         } else {
             Write-Host 'deck         not configured (set -DeckHost or $env:SAVELOCKER_DECK_HOST)'
