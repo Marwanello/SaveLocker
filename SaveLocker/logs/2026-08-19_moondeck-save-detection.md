@@ -290,3 +290,53 @@ failures, still untouched)**. Confirmed no regression on the real Deck: Cyberpun
 Borderlands 2, A Short Hike and Roadwarden all resolve identically to round 2 — this Deck has no live
 dual-source case for any of them right now, so the check is that nothing else moved, not that the new
 branch fired.
+
+---
+
+## Round 4: Cyberpunk again — an unmounted SD card, not a bug
+
+Reported directly: Cyberpunk 2077 still shows under agent-ui's "Added to Steam" filter
+(`ScanSource.SteamShortcut`) instead of "Steam" (`SteamInstalled`), and "cyberpunk is installed
+through STEAM in my steam deck." Round 1 had already found no `appmanifest_*.acf` for it anywhere
+reachable and concluded the Steam-Store copy had been uninstalled — worth re-checking rather than
+standing on that conclusion, since real hardware changes between sessions.
+
+**Investigation.** A fresh, exhaustive ACF sweep (every `appmanifest_*.acf` on the main root and every
+currently-mounted card, by content, not just filename) still found no Cyberpunk anywhere reachable.
+But `libraryfolders.vdf` names **four** configured libraries, not two: the main root, `SDCard`,
+`WinSD`, `SD2` — and only `SDCard` is currently mounted (`/run/media/deck/` has exactly one entry).
+Steam's own per-library `apps` block in that same file — which Steam persists in its own config, not
+on the removable media, so it survives a card being absent — names `SD2`'s contents directly:
+
+```
+"3" { "path" "/run/media/deck/SD2" ... "apps" { ... "1091500" "91231172278" ... } }
+```
+
+AppID `1091500`, 91,231,172,278 bytes (≈91 GB) — Cyberpunk 2077's real Steam install, genuinely
+present, on a card that simply isn't in the Deck right now. **The maintainer was completely right, and
+so was the scanner**: no code, ours or Steam's own, can read a file off media that isn't physically
+connected. `SteamRoots.LibraryPaths` already skips a missing library on purpose (its own doc comment
+says so) — correct behavior, functioning exactly as designed. What was missing was ever SAYING so.
+
+**Fix — diagnostics, not detection; there is nothing to detect from absent media.**
+`SteamRoots.AllConfiguredLibraryPaths` returns every library `libraryfolders.vdf` names regardless of
+whether it currently exists (mirroring `LibraryPaths`' own VDF-walking, minus the `Directory.Exists`
+filter). `Doctor`'s Steam section now diffs that against what actually resolves and names each gap by
+its real path — a plain note, not a `Problem`: an unmounted card is completely normal, and failing
+doctor's exit code over it would report a working Deck as broken, same reasoning as every other note
+this session.
+
+**Verification.** New WSL fixture: a third `libraryfolders.vdf` entry pointing at a path deliberately
+never created on disk. `run-linux-tests.sh` 230 → **232 (230 pass, same two pre-existing failures)**.
+**On the real Deck**, `doctor` now reads exactly:
+```
+  ! library configured but not mounted right now: /run/media/deck/WinSD
+      an SD card that isn't currently inserted — any game installed there is invisible to this scan until it is.
+  ! library configured but not mounted right now: /run/media/deck/SD2
+      an SD card that isn't currently inserted — any game installed there is invisible to this scan until it is.
+```
+— naming `SD2` specifically, the exact card the real fix requires: reinsert it, and every earlier fix
+in this write-up (the MoonDeck fallback, the tie-break, the retry-on-empty-resolution logic) already
+has what it needs to classify Cyberpunk correctly as `SteamInstalled` the moment its ACF is reachable
+again. Not yet confirmed with the card actually inserted — the next real verification step, whenever
+the maintainer has it at hand.

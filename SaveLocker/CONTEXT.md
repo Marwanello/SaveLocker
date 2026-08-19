@@ -127,6 +127,15 @@ server-side "two Games already diverged under different spellings" gap — stays
 game, several real sources*, by the maintainer's own choice to split the small fix from the rest.
 Full answer to "should the dashboard handle this" (no — it already converges cross-machine correctly;
 this is a same-machine, agent-side discovery question) is there too.
+<br>**A fourth, same session: Cyberpunk was reported wrong again — turned out not to be a bug.** The
+Deck has FOUR configured Steam libraries (main root, SDCard, WinSD, SD2) and only SDCard is currently
+mounted; Steam's own `libraryfolders.vdf` records Cyberpunk's real 91 GB Steam install (appid
+1091500) on `SD2`, which just isn't inserted right now — no scanner, ours or Steam's, can read
+missing media, and `SteamRoots.LibraryPaths` already skips it correctly by design. What was missing
+was saying so: `doctor` now names every library still configured but not currently reachable.
+`run-linux-tests` 230 → 232. **Not yet confirmed with the card reinserted** — everything upstream
+(the MoonDeck fallback, the tie-break, the retry logic) should classify it correctly the moment its
+ACF is reachable again, but that specific claim is unverified until `SD2` is back in the Deck.
 <br>**The Deck's IP has moved again since this file was last touched** — `tests/testenv.local.ps1`
 (gitignored, authoritative) now has `deck@192.168.0.103` / `http://192.168.0.124:5080`, not the
 `192.168.68.x` addresses below. Update this file's own IPs the next time they're touched by hand;
