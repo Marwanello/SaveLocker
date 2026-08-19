@@ -82,6 +82,12 @@ CLOUD_ONLY_APPID = "440904"
 DUAL_SOURCE_APPID = "440905"
 # The MoonDeck shortcut's OWN appid for the dual-source game — dead, same as any MoonDeck shortcut.
 DUAL_SOURCE_MOONDECK_SHORTCUT_APPID_SIGNED = 1644440001
+# Genuinely installed per Steam's OWN bookkeeping (libraryfolders.vdf's "apps" block) on a library
+# that is NOT currently mounted at all — no ACF reachable anywhere, only a MoonDeck shortcut and
+# Steam's persisted record that it belongs there. The Cyberpunk 2077 shape exactly: real save data
+# still reachable (its compatdata never left the main root), but the install itself cannot be read.
+PHANTOM_INSTALLED_APPID = "440906"
+PHANTOM_INSTALLED_MOONDECK_SHORTCUT_APPID_SIGNED = 1655550001
 
 # The Wine user for the wine-shaped prefix. Deliberately NOT "steamuser" — a plain Wine runner
 # runs the game as the Linux user, and code that assumes steamuser resolves every token to a
@@ -401,6 +407,14 @@ def main() -> int:
         "AppData", "Roaming", "FakeDualSourceGame")
     os.makedirs(dual_source_save, exist_ok=True)
 
+    # A game installed on a library that will not exist on disk at all (see unmounted_library,
+    # below) — no ACF anywhere reachable, only Steam's bookkeeping and a MoonDeck shortcut. Its
+    # compatdata never left the main root, exactly like Cyberpunk 2077's real shape.
+    phantom_installed_save = os.path.join(
+        steam, "steamapps", "compatdata", PHANTOM_INSTALLED_APPID, "pfx", "drive_c", "users",
+        "steamuser", "AppData", "Roaming", "FakePhantomInstalledGame")
+    os.makedirs(phantom_installed_save, exist_ok=True)
+
     # A runtime, not a game. Filtered by appid — it ships no toolmanifest.vdf, so it is the one
     # case the hardcoded list still has to carry.
     with open(os.path.join(installed_steamapps, "appmanifest_228980.acf"), "w") as f:
@@ -430,7 +444,10 @@ def main() -> int:
     # A third library Steam still remembers (libraryfolders.vdf persists it) but that does not exist
     # on disk right now — an SD card that isn't currently inserted. Deliberately never created with
     # os.makedirs; the whole point is that it is absent. Found on a real Deck (2026-08-19): Cyberpunk
-    # 2077's genuine 91 GB Steam install sat on exactly this kind of unmounted card.
+    # 2077's genuine 91 GB Steam install sat on exactly this kind of unmounted card. Its "apps" block
+    # names PHANTOM_INSTALLED_APPID — Steam's own bookkeeping survives the card being absent, which is
+    # the whole point: it is what lets discovery tell "genuinely installed, unreachable right now"
+    # apart from "not installed at all", the same way the real SD2 card's own apps block did.
     unmounted_library = os.path.join(root, "sdcard", "UnmountedLibrary")
 
     os.makedirs(os.path.join(steam, "steamapps"), exist_ok=True)
@@ -445,6 +462,9 @@ def main() -> int:
             "\t}\n"
             '\t"2"\n\t{\n'
             f'\t\t"path"\t\t"{unmounted_library}"\n'
+            '\t\t"apps"\n\t\t{\n'
+            f'\t\t\t"{PHANTOM_INSTALLED_APPID}"\t\t"123456789"\n'
+            "\t\t}\n"
             "\t}\n"
             "}\n")
 
@@ -487,6 +507,14 @@ def main() -> int:
                    os.path.join(moondeck_script_dir, "moondeckrun.sh"), moondeck_script_dir,
                    DUAL_SOURCE_MOONDECK_SHORTCUT_APPID_SIGNED,
                    launch_options=f"MOONDECK_APP_TYPE=0 MOONDECK_STEAM_APP_ID={DUAL_SOURCE_APPID} %command%")
+        # MoonDeck shortcut for a game installed on a library that is not mounted AT ALL — no ACF
+        # reachable anywhere, only Steam's own "apps" bookkeeping. The exact Cyberpunk 2077 shape.
+        + shortcut(6, "Fake Phantom Installed Game",
+                   os.path.join(moondeck_script_dir, "moondeckrun.sh"), moondeck_script_dir,
+                   PHANTOM_INSTALLED_MOONDECK_SHORTCUT_APPID_SIGNED,
+                   launch_options=(
+                       "MOONDECK_APP_TYPE=0 "
+                       f"MOONDECK_STEAM_APP_ID={PHANTOM_INSTALLED_APPID} %command%"))
     )
     with open(os.path.join(vdf_dir, "shortcuts.vdf"), "wb") as f:
         f.write(build_shortcuts_vdf(entries))
@@ -515,6 +543,8 @@ def main() -> int:
     print(f"DUAL_SOURCE_APPID={DUAL_SOURCE_APPID}")
     print(f"DUAL_SOURCE_SAVE={dual_source_save}")
     print(f"UNMOUNTED_LIBRARY={unmounted_library}")
+    print(f"PHANTOM_INSTALLED_APPID={PHANTOM_INSTALLED_APPID}")
+    print(f"PHANTOM_INSTALLED_SAVE={phantom_installed_save}")
     print(f"HEROIC_CONFIG={heroic['config_root']}")
     print(f"HEROIC_EPIC_PREFIX={heroic['epic_prefix']}")
     print(f"HEROIC_EPIC_SAVE={heroic['epic_save']}")

@@ -158,6 +158,15 @@ check "the genuinely-installed copy wins over its own MoonDeck shortcut" \
   "$(contains "${out}" "Fake Dual Source Game  <SteamInstalled> [Steam Cloud] appid=${DUAL_SOURCE_APPID}")"
 check "only one Fake Dual Source Game row survives the dedupe" \
   "$([ "$(printf '%s\n' "${out}" | grep -c 'Fake Dual Source Game')" = 1 ] && echo 0 || echo 1)"
+
+# The Cyberpunk 2077 shape exactly: installed on a library that is not mounted AT ALL (no ACF
+# reachable anywhere), known only via Steam's own "apps" bookkeeping and a MoonDeck shortcut naming
+# the real AppID. Must be reported as SteamInstalled, not SteamShortcut — a resolved compatdata
+# prefix alone could never justify that (Steam does not clean up compatdata on uninstall, so a real
+# prefix proves nothing about whether the game is STILL installed), but the apps block does.
+check "scan finds the phantom-installed game"       "$(contains "${out}" "${PHANTOM_INSTALLED_SAVE}")"
+check "it is reported as SteamInstalled, not a shortcut" \
+  "$(contains "${out}" "Fake Phantom Installed Game  <SteamInstalled> [Steam Cloud] appid=${PHANTOM_INSTALLED_APPID}")"
 # A duplicate shortcut (same name, different dead AppID, no LaunchOptions) must not win the dedupe
 # over the one that actually resolves — the shape found on the real Deck for other titles.
 check "the resolving MoonDeck row wins over its dead duplicate" \

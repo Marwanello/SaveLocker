@@ -111,3 +111,15 @@ Fake Dual Source Game:
     <winAppData>/FakeDualSourceGame:
       tags:
         - save
+
+# Installed on a library that is not mounted at all — no ACF reachable anywhere, only Steam's own
+# "apps" bookkeeping (which survives the library being absent) and a MoonDeck shortcut naming the
+# same real AppID. Real Steam Cloud, to prove HasSteamCloud switches from the shortcut default
+# (always false) to the manifest's real answer once the install is confirmed this way.
+Fake Phantom Installed Game:
+  cloud:
+    steam: true
+  files:
+    <winAppData>/FakePhantomInstalledGame:
+      tags:
+        - save
