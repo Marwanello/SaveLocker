@@ -306,6 +306,16 @@ function Show-RealGameMappings {
 function Build-Windows {
     Say "building the Windows agent as $Version"
     if (Get-TestTray) { Stop-Windows }
+    # SaveLocker.Agent.csproj runs its OWN "npm run build" (BeforeTargets="Build", unconditionally,
+    # no staleness check) to stage the WebView2 UI — it has no idea whether node_modules exists. A
+    # fresh worktree has never had `npm install` run in agent-ui/, so without this the csproj's own
+    # npm step dies with "'tsc' is not recognized" before a single line of C# compiles.
+    $agentUiDir = Join-Path $root 'agent-ui'
+    if (-not (Test-Path (Join-Path $agentUiDir 'node_modules'))) {
+        Say 'agent-ui has no node_modules yet - installing first'
+        Push-Location $agentUiDir
+        try { & npm install --no-audit --no-fund | Out-Null } finally { Pop-Location }
+    }
     # -p:Version does NOT work here: MinVer assigns Version/FileVersion/AssemblyVersion in a later
     # target and overwrites it. MinVerVersionOverride is its own escape hatch.
     $env:MinVerVersionOverride = $Version
