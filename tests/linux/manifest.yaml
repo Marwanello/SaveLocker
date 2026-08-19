@@ -72,3 +72,12 @@ Heroic Offline Game:
     <winDocuments>/HeroicOfflineGame:
       tags:
         - save
+
+# A MoonDeck-streamed game, ALSO installed locally under Proton. Its shortcut's own AppID never
+# gets a compatdata prefix (Steam launches MoonDeck's client script, not the game); this only
+# resolves if discovery reads MOONDECK_STEAM_APP_ID out of LaunchOptions and tries THAT prefix too.
+MoonDeck Streamed Game:
+  files:
+    <winAppData>/MoonDeckStreamedGame:
+      tags:
+        - save

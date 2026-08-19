@@ -37,7 +37,7 @@ public sealed class LinuxGameScanner : IGameScanner
             {
                 ct.ThrowIfCancellationRequested();
                 var prefix = s.AppId is null ? null : SteamRoots.CompatDataPath(root, s.AppId);
-                var save = await SuggestSaveDirAsync(s, prefix, ct);
+                var (save, usedPrefix) = await SuggestSaveDirAsync(s, root, prefix, ct);
 
                 results.Add(new ScanCandidate(
                     Name: s.AppName,
@@ -49,7 +49,10 @@ public sealed class LinuxGameScanner : IGameScanner
                         : await _detection.CanonicalNameAsync(s.AppName, ct) ?? s.AppName,
                     InstallDir: s.StartDir,
                     SteamAppId: s.AppId,
-                    PrefixPath: prefix,
+                    // The prefix that actually produced the save dir, for the path browser — a
+                    // MoonDeck shortcut resolves via a DIFFERENT prefix than its own (below), and
+                    // opening the browser at the dead one would strand the user at an empty prefix.
+                    PrefixPath: usedPrefix ?? prefix,
                     // Carried for parity, and because config is shared between hosts — but Linux
                     // drives lifecycle from the launch wrapper, not from process polling, so
                     // nothing here depends on it (Decisions.md §3).
@@ -309,19 +312,23 @@ public sealed class LinuxGameScanner : IGameScanner
     }
 
     /// <summary>
-    /// Best guess at a shortcut's save directory. Two shapes exist and both are real:
+    /// Best guess at a shortcut's save directory. Three shapes exist and all are real:
     ///
     /// 1. <b>In-prefix</b> — the game writes to Windows paths inside its Wine prefix. The Ludusavi
     ///    manifest's tokens resolve there, via a resolver built for THIS game's prefix.
-    /// 2. <b>Portable</b> — the game writes next to its own .exe. That is a plain Linux path on the
+    /// 2. <b>MoonDeck-streamed</b> — the shortcut's own <c>Exe</c> launches MoonDeck's streaming
+    ///    client, not the game, so Steam never creates a compatdata prefix for it. When the same
+    ///    title is ALSO installed locally under Proton, <c>LaunchOptions</c> names the real AppID
+    ///    (<see cref="SteamShortcut.MoonDeckAppId"/>) and that prefix is where local saves live.
+    /// 3. <b>Portable</b> — the game writes next to its own .exe. That is a plain Linux path on the
     ///    native filesystem and needs no prefix resolution at all. Common for the standalone builds
     ///    this feature exists for, so it is checked even when a prefix exists.
     ///
-    /// Null when neither resolves, which on Linux is the expected case rather than a failure: most
+    /// Null when none resolves, which on Linux is the expected case rather than a failure: most
     /// standalone builds are absent from the manifest, so <c>add-game --dir</c> is the primary path.
     /// </summary>
-    private async Task<string?> SuggestSaveDirAsync(
-        SteamShortcut shortcut, string? compatDataPath, CancellationToken ct)
+    private async Task<(string? Save, string? UsedPrefix)> SuggestSaveDirAsync(
+        SteamShortcut shortcut, string steamRoot, string? compatDataPath, CancellationToken ct)
     {
         if (compatDataPath is not null)
         {
@@ -330,10 +337,20 @@ public sealed class LinuxGameScanner : IGameScanner
             // reason a shortcut now resolves at all.
             var dirs = await _detection.ResolveProtonAsync(
                 shortcut.AppName, compatDataPath, installDir: shortcut.StartDir, ct);
-            if (dirs.FirstOrDefault() is { } inPrefix) return inPrefix;
+            if (dirs.FirstOrDefault() is { } inPrefix) return (inPrefix, compatDataPath);
         }
 
-        return PortableSaveDir(shortcut);
+        if (shortcut.MoonDeckAppId is { } moonDeckAppId &&
+            SteamRoots.CompatDataPath(steamRoot, moonDeckAppId) is { } moonDeckPrefix)
+        {
+            // installDir is deliberately NOT shortcut.StartDir here: StartDir is MoonDeck's own
+            // streaming-client script directory, not the game's — passing it as <base> would
+            // resolve template paths into a directory that has nothing to do with the game.
+            var dirs = await _detection.ResolveProtonAsync(shortcut.AppName, moonDeckPrefix, installDir: null, ct);
+            if (dirs.FirstOrDefault() is { } inPrefix) return (inPrefix, moonDeckPrefix);
+        }
+
+        return (PortableSaveDir(shortcut), null);
     }
 
     /// <summary>
