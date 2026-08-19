@@ -61,7 +61,8 @@ verification that did not happen before the tag. Write-ups:
   the first candidate that could sync between a Deck and a Windows PC without Proton involved.
 
 - **One game, several real sources — the dedupe rule needs a second dimension, and the choice needs
-  to be visible.** Scoped 2026-08-19, not built. Asked for directly, using Cyberpunk as the example:
+  to be visible.** Scoped 2026-08-19; **step 1 (the tie-break bug) shipped the same day**, steps 2–4
+  remain. Asked for directly, using Cyberpunk as the example:
   MoonDeck's streaming shortcut and a genuinely-installed copy (Steam, or Epic/GOG through Heroic) can
   both legitimately exist for the same game on one device, and the question was three-fold — what to
   do about it, whether the dashboard should even know, and whether multiple local sources should
@@ -110,8 +111,14 @@ verification that did not happen before the tag. Write-ups:
   isolation. Conflating the two would either over-restrict the safe case or under-protect the unsafe
   one.
   <br>**Proposed shape:**
-  1. Fix the tie-break: a MoonDeck-resolved candidate loses to a genuine SteamInstalled/Heroic
-     candidate of the same name when both resolve, regardless of `HasSteamCloud`.
+  1. ~~Fix the tie-break: a MoonDeck-resolved candidate loses to a genuine SteamInstalled/Heroic
+     candidate of the same name when both resolve, regardless of `HasSteamCloud`.~~ **DONE, same
+     day.** `ScanAsync` now carries a local `ViaMoonDeck` flag per shortcut candidate (true only when
+     `SuggestSaveDirAsync` resolved through the MoonDeck fallback prefix, not the shortcut's own) and
+     sorts it ahead of the `HasSteamCloud` tie-break. Pinned by a new fixture (`Fake Dual Source
+     Game`: genuinely installed with real Steam Cloud, also pointed at by a MoonDeck shortcut) —
+     `run-linux-tests.sh` 227 → 230. Confirmed no regression on the real Deck across all four games
+     from the sessions above.
   2. Extend the existing duplicate-AppID `doctor` note to compare ACROSS `ScanSource`s, not only within
      raw shortcuts — the Cyberpunk shape (shortcut vs. genuinely installed) is invisible to it today.
   3. Record what discovery is doing, not just its result: when the dedupe collapses more than one real

@@ -255,3 +255,38 @@ entirely, and would have shipped silently wrong for the real, present-but-empty-
 shape actually on the Deck. Caught only by building the fixture carefully enough to match hardware
 exactly, then re-testing against real hardware anyway rather than trusting the green suite alone —
 worth remembering next time a fallback's fixture is easier to write than the bug is to reproduce.
+
+---
+
+## Round 3: the tie-break bug round 1 introduced (fixed same day)
+
+Asked directly, using Cyberpunk as the example again: MoonDeck creates a streaming shortcut, but the
+same game can also be genuinely installed (Steam, or Epic/GOG through Heroic) — is that going to be
+detected as duplicates, what should happen about it, and should the dashboard even know? Full design
+answer (dashboard's role, same-platform vs cross-platform duplicates, why `add-game --dir` already
+covers manual switching): `Backlog.md` → *One game, several real sources*. This section covers just
+the one piece that shipped immediately, per the maintainer's own call to split it from the rest.
+
+**The bug.** `LinuxGameScanner.ScanAsync`'s final dedupe ties on `HasSteamCloud`, and a
+`SteamShortcut` candidate is *always* `HasSteamCloud: false` by construction — "prefer the copy Cloud
+doesn't already cover" is the right call when the shortcut is a genuinely independent DRM-free build,
+but a MoonDeck shortcut is a pointer to the SAME install, not an alternate one. Round 1's own fix is
+what exposed this: before it, a MoonDeck shortcut never resolved a save dir at all, so the FIRST sort
+key (has-a-save-dir) already picked a genuinely-installed duplicate correctly — by construction, not
+by design. Once MoonDeck shortcuts resolve, a game that is BOTH genuinely installed with real Steam
+Cloud AND has a MoonDeck shortcut pointing at it hits the Cloud tie, and the pointer's hardcoded
+`false` wins — surfacing the pointer's own dead AppID as `SteamAppId` instead of the real install's.
+
+**Fix.** `ScanAsync` now tracks, per shortcut candidate, whether it resolved through the MoonDeck
+fallback (a DIFFERENT game's prefix) rather than its own — a local flag, not a new field on
+`ScanCandidate`, since nothing downstream of the dedupe needs to know how a survivor was found, only
+that it was. Sorted ahead of the `HasSteamCloud` tie-break, so a genuine local install always beats a
+MoonDeck pointer to it.
+
+**Verification.** New fixture (`Fake Dual Source Game`): genuinely installed with `cloud: steam:
+true`, also pointed at by a MoonDeck shortcut naming its real AppID — the Cyberpunk shape directly.
+`run-linux-tests.sh` 227 → **230 (228 pass; the same two pre-existing, unrelated Decky-messaging
+failures, still untouched)**. Confirmed no regression on the real Deck: Cyberpunk, Left 4 Dead 2,
+Borderlands 2, A Short Hike and Roadwarden all resolve identically to round 2 — this Deck has no live
+dual-source case for any of them right now, so the check is that nothing else moved, not that the new
+branch fired.
