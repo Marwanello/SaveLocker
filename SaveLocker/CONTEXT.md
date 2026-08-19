@@ -44,24 +44,34 @@ body shape changed), and `AgentInstallerStatus` gained a `Source` field — both
 compat server-side (old DB rows with no schedule read as `mode: "hours"`, exactly as before), but any
 external script POSTing the old `{ hours }` shape to that endpoint needs updating.
 
-**`testenv` gained a Steam Deck target and a real `clean` (2026-08-19, this session).** Asked for
-directly: push a test build to the real Deck beside the installed release agent, the way the rig
-already does for Windows and WSL, and be able to delete every test build/state it leaves behind —
-not just stop the processes, which `down` already did. `tests/testenv.ps1 build -Only deck`
-cross-publishes a self-contained linux-x64 tarball in WSL (`packaging/linux/build-linux.sh`, same
-packer a real release uses); `up` `scp`s it to `~/savelocker-test` on the Deck (state in the sibling
-`~/savelocker-test-state`, never `~/.local/share/SaveLocker`) over SSH, gated by
-`$env:SAVELOCKER_DECK_HOST` / `$env:SAVELOCKER_DECK_SERVER_URL` — unset skips the Deck silently,
-matching how nothing else in the rig assumes hardware that may not be present. New `testenv.ps1
-clean` stops everything first and then deletes it: Windows' `-StateRoot`, the WSL rig's state dir,
+**`testenv` gained a Steam Deck target and a real `clean`, and both are now proven on real
+hardware (2026-08-17–19, across sessions).** Asked for directly: push a test build to the real Deck
+beside the installed release agent, the way the rig already does for Windows and WSL, and be able to
+delete every test build/state it leaves behind — not just stop the processes, which `down` already
+did. `tests/testenv.ps1 build -Only deck` cross-publishes a self-contained linux-x64 tarball in WSL
+(`packaging/linux/build-linux.sh`, same packer a real release uses); `up` `scp`s it to
+`~/savelocker-test` on the Deck (state in the sibling `~/savelocker-test-state`, never
+`~/.local/share/SaveLocker`) over SSH, gated by `$env:SAVELOCKER_DECK_HOST` /
+`$env:SAVELOCKER_DECK_SERVER_URL` — unset skips the Deck silently. Editing those two settings got
+its own command, `deck-config`, writing a gitignored `tests/testenv.local.ps1` that's loaded
+automatically (a DHCP-leased Deck IP moves; retyping an env var every shell was the wrong friction).
+`clean` stops everything first and then deletes it: Windows' `-StateRoot`, the WSL rig's state dir,
 the Deck's deployed build+state, and the dashboard container **and its image and data volume** (a
-plain `down` left all three of those behind). Full design and the reasoning behind each isolation
-choice: see the new *Throwaway test rig* section in [[Build and Run]] and *`tests/testenv.ps1`* in
-[[Gotchas]]. **Not yet run against the real Deck** — the self-contained publish itself was verified
-in WSL (a throwaway console app published `-r linux-x64 --self-contained` and ran), but no `ssh`/
-`scp` round trip has touched real hardware. First real run should watch for: whether `SAVELOCKER_DECK_SERVER_URL`
-guessing the LAN IP by hand is annoying enough to automate, and whether the Deck's SSH session
-allows the `setsid`-detached daemon to outlive it the same way it does over the WSL path.
+plain `down` left all three of those behind). Design detail: *Throwaway test rig* in
+[[Build and Run]] and *`tests/testenv.ps1`* in [[Gotchas]].
+<br>**The first real `up` against hardware (2026-08-19) found three genuine bugs, not zero** — worth
+internalising as a reminder that "the self-contained publish works" is not the same claim as "the
+rig works": a fresh worktree's `agent-ui` had never had `npm install` run, which the Windows build
+needs internally but never checked for; both bash scripts' `cmd_up` read the daemon's auth token
+exactly once, racing the daemon still writing it; and the Deck's daemon — this is the one that would
+have made the whole feature useless in practice — **did not survive its own SSH session closing**,
+because `setsid`/`disown` guard against a different mechanism than the one that killed it
+(`logind`'s `KillUserProcesses` tracks by cgroup, not POSIX session ID). Fixed with
+`systemd-run --user --scope`, confirmed by starting a throwaway process, closing the SSH connection,
+and finding it still running from a second one. All four commands (`build`/`up`/`down`/`clean`) now
+verified working end-to-end against the real Deck, the real WSL clone, and Docker, with the real
+installed Deck agent (pid confirmed unchanged throughout) and its config never touched. Full
+write-up of all three: [[Gotchas]] → *`tests/testenv.ps1`*.
 
 ---
 

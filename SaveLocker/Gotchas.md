@@ -152,6 +152,37 @@ behave in ways that look like bugs.
   `XDG_DATA_HOME` (so real state lands at `~/savelocker-test-state/SaveLocker`), and every remote
   `rm -rf` in `testenv-deck.sh` first asserts its target path contains `savelocker-test` before
   touching anything, in case a mistyped `-DeckPrefix` ever resolved to something like `$HOME`.
+- **A `setsid ... & disown` daemon does NOT survive its launching SSH command returning, on a real
+  systemd Deck** — found and fixed 2026-08-19 running `up` against real hardware for the first time.
+  It answered the one check `up` makes, then was gone by the next `status`, with its own log showing
+  a clean start and a served request — killed from outside, not a startup failure. The cause:
+  `logind`'s `KillUserProcesses` tracks membership by **cgroup**, not POSIX session ID, and `setsid`
+  only changes the latter — the process stays in the SSH login session's cgroup and dies with it.
+  `nohup`/`disown` do not help either; they guard against SIGHUP from a closing terminal, a different
+  mechanism. This never showed up on the WSL target because WSL processes aren't cgroup-scoped to a
+  particular `wsl.exe` invocation the same way. The fix (`testenv-deck.sh`'s `cmd_up`):
+  `systemd-run --user --scope --unit=<name> -- <daemon command>` hands the process to the Deck's own
+  `user@<uid>.service` manager — already running from the local desktop login — instead of the SSH
+  session's transient one, and it survives that session closing. Confirmed empirically (started a
+  `sleep`, checked from a second SSH connection after the first one closed) before trusting it for
+  the real daemon. `cmd_down` stops the scope directly (`systemctl --user stop <unit>.scope`) rather
+  than relying only on `pkill` finding the process, so a leftover scope can never make the next `up`
+  fail with "Unit already exists".
+- **A background daemon's token file must be re-read on every poll iteration, not once before the
+  loop.** `cmd_up` in both `testenv.sh` and `testenv-deck.sh` backgrounds the daemon, then reads
+  `api-token` to auth the readiness check — reading it exactly once, immediately after backgrounding,
+  races the daemon still writing that file: "No such file or directory" even though the daemon comes
+  up fine a moment later. Windows's `Get-WinAgentState` already re-reads its token fresh on every
+  poll; the bash side didn't, until this was traced to ground on 2026-08-19. Re-read inside the
+  retry loop instead. **A plain `2>/dev/null` on the reading command does not suppress the error
+  either** — a failed `<` redirect is raised by the shell itself, before the redirected command ever
+  runs, so it needs the whole `{ tr ...; } 2>/dev/null` group form, confirmed by reproducing both
+  ways side by side.
+- **`grep` in a pipeline under `set -o pipefail` exits 1 on zero matches, and that becomes the whole
+  function's (and caller's) exit code if it's the pipeline's last stage.** `testenv-deck.sh`'s
+  `show_real_game_mappings` — used from `cmd_status` and `cmd_up` — reported the entirely normal "no
+  game maps a real folder" case as the SSH command having failed, because nothing matched the
+  `grep -o` feeding the warning loop. Needs `|| true` after the pipeline.
 
 ## Windows ACLs
 - **`SetAccessRuleProtection(isProtected: true, preserveInheritance: true)` does not let you then

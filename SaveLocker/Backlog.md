@@ -97,13 +97,6 @@ verification that did not happen before the tag. Write-ups:
 
 ## Medium priority
 
-- **Verify `testenv.ps1`'s Steam Deck target on real hardware.** Added 2026-08-19 (push a test
-  build + `clean` — see CONTEXT.md); the self-contained linux-x64 publish was verified in WSL but no
-  `ssh`/`scp` round trip has touched the actual Deck. Run `build -Only deck`, `up`, confirm the
-  daemon survives the SSH session closing and registers against the console at
-  `SAVELOCKER_DECK_SERVER_URL`, then `clean` and confirm both `~/savelocker-test` and
-  `~/savelocker-test-state` are gone and `~/.local/share/SaveLocker` (the real install) is untouched.
-
 - **Interactive setup guide in the console.** Raised 2026-08-14 alongside the savelocker.com plan. A
   first-run walkthrough that takes a new user from an empty server to a syncing game, in the console
   itself rather than in prose: mint an enrollment file → wait for the machine to appear → add a first
