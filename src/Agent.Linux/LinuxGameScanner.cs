@@ -29,7 +29,11 @@ public sealed class LinuxGameScanner : IGameScanner
 
     public async Task<IReadOnlyList<ScanCandidate>> ScanAsync(CancellationToken ct = default)
     {
-        var results = new List<ScanCandidate>();
+        // Paired with a flag for the final dedupe below: true only when a SteamShortcut candidate
+        // resolved through the MoonDeck fallback (a DIFFERENT game's prefix, not its own) rather than
+        // its own compatdata or a portable folder. Local to this method on purpose — nothing
+        // downstream of the dedupe needs to know how a survivor was found, only that it was.
+        var results = new List<(ScanCandidate Candidate, bool ViaMoonDeck)>();
 
         foreach (var root in SteamRoots.Find())
         {
@@ -39,7 +43,7 @@ public sealed class LinuxGameScanner : IGameScanner
                 var prefix = s.AppId is null ? null : SteamRoots.CompatDataPath(root, s.AppId);
                 var (save, usedPrefix) = await SuggestSaveDirAsync(s, root, prefix, ct);
 
-                results.Add(new ScanCandidate(
+                results.Add((new ScanCandidate(
                     Name: s.AppName,
                     SuggestedSaveDir: save,
                     Source: ScanSource.SteamShortcut,
@@ -56,13 +60,14 @@ public sealed class LinuxGameScanner : IGameScanner
                     // Carried for parity, and because config is shared between hosts — but Linux
                     // drives lifecycle from the launch wrapper, not from process polling, so
                     // nothing here depends on it (Decisions.md §3).
-                    SuggestedProcessName: GameActivity.ProcessNameFromExe(s.Exe)));
+                    SuggestedProcessName: GameActivity.ProcessNameFromExe(s.Exe)),
+                    ViaMoonDeck: usedPrefix is not null && usedPrefix != prefix));
             }
 
-            results.AddRange(await ScanInstalledSteamGamesAsync(root, ct));
+            results.AddRange((await ScanInstalledSteamGamesAsync(root, ct)).Select(c => (c, false)));
         }
 
-        results.AddRange(await ScanHeroicAsync(ct));
+        results.AddRange((await ScanHeroicAsync(ct)).Select(c => (c, false)));
 
         // Normalised, for the same reason as the Windows scanner: one game, one row, however the
         // shortcut happens to be spelled.
@@ -72,14 +77,22 @@ public sealed class LinuxGameScanner : IGameScanner
         // picks the Heroic one — the shortcut's copy cannot resolve, because Steam never made a
         // compatdata prefix for a game it does not launch.
         return results
-            .GroupBy(c => ManifestLoader.NormalizeName(c.Name), StringComparer.Ordinal)
+            .GroupBy(r => ManifestLoader.NormalizeName(r.Candidate.Name), StringComparer.Ordinal)
             .Select(g => g
-                .OrderByDescending(c => c.SuggestedSaveDir is not null)
+                .OrderByDescending(r => r.Candidate.SuggestedSaveDir is not null)
+                // A MoonDeck shortcut only ever resolves by pointing at ANOTHER install's real
+                // prefix — it is never itself a local install — so it loses to a genuine one before
+                // the Cloud tie-break below even applies. Without this, a MoonDeck shortcut for a
+                // game that is ALSO genuinely installed with real Steam Cloud would win the Cloud
+                // tie-break purely because a SteamShortcut candidate is unconditionally
+                // HasSteamCloud: false, handing the survivor the streaming pointer's own AppID —
+                // one the launch wrapper only ever sees during a MoonDeck session, never a real one.
+                .ThenBy(r => r.ViaMoonDeck)
                 // A tie goes to the copy Steam does NOT back up. The same game can be both an
                 // installed Steam title and a shortcut the user made to a DRM-free build; enrolling
                 // the one that already has Cloud is the less useful of the two.
-                .ThenBy(c => c.HasSteamCloud)
-                .First())
+                .ThenBy(r => r.Candidate.HasSteamCloud)
+                .First().Candidate)
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }

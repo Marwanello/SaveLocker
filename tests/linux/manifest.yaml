@@ -99,3 +99,15 @@ Fake Cloud Only Game:
     <root>/userdata/<storeUserId>/440904/remote:
       tags:
         - save
+
+# Genuinely installed with real Steam Cloud AND has a MoonDeck shortcut pointing at it — the
+# Cyberpunk 2077 shape. The installed copy must win the dedupe despite having Steam Cloud, because a
+# MoonDeck shortcut is a pointer, not an independent build; unlike the DRM-free-shortcut case, Cloud
+# coverage here says nothing about which candidate is more useful to track.
+Fake Dual Source Game:
+  cloud:
+    steam: true
+  files:
+    <winAppData>/FakeDualSourceGame:
+      tags:
+        - save

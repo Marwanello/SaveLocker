@@ -76,6 +76,12 @@ RELOCATED_APPID = "440903"
 # Installed, but has NO compatdata prefix anywhere at all — only a Steam Cloud sync folder under the
 # Steam root's own userdata, which needs no Wine prefix to resolve.
 CLOUD_ONLY_APPID = "440904"
+# Genuinely installed AND also has a MoonDeck shortcut pointing at it (the Cyberpunk 2077 shape) —
+# real Steam Cloud, so the dedupe's Cloud tie-break would wrongly favor the MoonDeck pointer if the
+# MoonDeck check did not come first.
+DUAL_SOURCE_APPID = "440905"
+# The MoonDeck shortcut's OWN appid for the dual-source game — dead, same as any MoonDeck shortcut.
+DUAL_SOURCE_MOONDECK_SHORTCUT_APPID_SIGNED = 1644440001
 
 # The Wine user for the wine-shaped prefix. Deliberately NOT "steamuser" — a plain Wine runner
 # runs the game as the Linux user, and code that assumes steamuser resolves every token to a
@@ -378,6 +384,23 @@ def main() -> int:
     cloud_only_save = os.path.join(steam, "userdata", "1234567", CLOUD_ONLY_APPID, "remote")
     os.makedirs(cloud_only_save, exist_ok=True)
 
+    # A game that is BOTH genuinely installed (real Steam Cloud) AND has a MoonDeck shortcut pointing
+    # at it — the Cyberpunk 2077 shape. Pins the tie-break: the installed copy must survive the
+    # dedupe even though a SteamShortcut candidate is unconditionally HasSteamCloud: false, which
+    # would otherwise win "prefer the copy Cloud doesn't cover" purely by construction.
+    with open(os.path.join(installed_steamapps, f"appmanifest_{DUAL_SOURCE_APPID}.acf"), "w") as f:
+        f.write(
+            '"AppState"\n{\n'
+            f'\t"appid"\t\t"{DUAL_SOURCE_APPID}"\n'
+            '\t"name"\t\t"Fake Dual Source Game"\n'
+            '\t"installdir"\t\t"FakeDualSourceGame"\n'
+            "}\n")
+    os.makedirs(os.path.join(installed_steamapps, "common", "FakeDualSourceGame"), exist_ok=True)
+    dual_source_save = os.path.join(
+        installed_steamapps, "compatdata", DUAL_SOURCE_APPID, "pfx", "drive_c", "users", "steamuser",
+        "AppData", "Roaming", "FakeDualSourceGame")
+    os.makedirs(dual_source_save, exist_ok=True)
+
     # A runtime, not a game. Filtered by appid — it ships no toolmanifest.vdf, so it is the one
     # case the hardcoded list still has to carry.
     with open(os.path.join(installed_steamapps, "appmanifest_228980.acf"), "w") as f:
@@ -450,6 +473,11 @@ def main() -> int:
         + shortcut(4, "MoonDeck Streamed Game",
                    os.path.join(moondeck_script_dir, "moondeckrun.sh"), moondeck_script_dir,
                    MOONDECK_DUP_APPID_SIGNED)
+        # MoonDeck shortcut for the game that is ALSO genuinely installed (Cyberpunk 2077 shape).
+        + shortcut(5, "Fake Dual Source Game",
+                   os.path.join(moondeck_script_dir, "moondeckrun.sh"), moondeck_script_dir,
+                   DUAL_SOURCE_MOONDECK_SHORTCUT_APPID_SIGNED,
+                   launch_options=f"MOONDECK_APP_TYPE=0 MOONDECK_STEAM_APP_ID={DUAL_SOURCE_APPID} %command%")
     )
     with open(os.path.join(vdf_dir, "shortcuts.vdf"), "wb") as f:
         f.write(build_shortcuts_vdf(entries))
@@ -475,6 +503,8 @@ def main() -> int:
     print(f"RELOCATED_SAVE={relocated_save}")
     print(f"CLOUD_ONLY_APPID={CLOUD_ONLY_APPID}")
     print(f"CLOUD_ONLY_SAVE={cloud_only_save}")
+    print(f"DUAL_SOURCE_APPID={DUAL_SOURCE_APPID}")
+    print(f"DUAL_SOURCE_SAVE={dual_source_save}")
     print(f"HEROIC_CONFIG={heroic['config_root']}")
     print(f"HEROIC_EPIC_PREFIX={heroic['epic_prefix']}")
     print(f"HEROIC_EPIC_SAVE={heroic['epic_save']}")
