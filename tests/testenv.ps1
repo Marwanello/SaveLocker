@@ -552,10 +552,14 @@ switch ($Command) {
     'logs' {
         $winLog = Join-Path $winState 'agent.log'
         if (Test-Path $winLog) { Say "windows test agent — $winLog"; Get-Content $winLog -Tail 20 }
+        # The bash fallback text must be SINGLE-quoted, not double: PowerShell 5.1 mis-serialises an
+        # embedded " inside a single-quoted PS string when building a native command line for
+        # wsl.exe, and the far side receives "...echo "(none)"" with the quoting broken - a plain
+        # bash syntax error, reproduced and confirmed fixed 2026-08-19.
         Say 'wsl daemon'
-        & wsl -d $Distro -- bash -c 'tail -20 ~/.savelocker-testenv-daemon.log 2>/dev/null || echo "(none)"'
+        & wsl -d $Distro -- bash -c 'tail -20 ~/.savelocker-testenv-daemon.log 2>/dev/null || echo ''(none)'''
         Say 'wsl suite'
-        & wsl -d $Distro -- bash -c 'tail -20 ~/.savelocker-testenv-suite.log 2>/dev/null || echo "(none)"'
+        & wsl -d $Distro -- bash -c 'tail -20 ~/.savelocker-testenv-suite.log 2>/dev/null || echo ''(none)'''
         if (Test-DeckConfigured) {
             Say 'deck daemon'
             try { Invoke-Deck 'logs' } catch { Warn "deck: $($_.Exception.Message)" }
