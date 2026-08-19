@@ -104,9 +104,16 @@ cmd_up() {
   setsid dotnet "$DLL" daemon --port "$PORT" > "$DAEMON_LOG" 2>&1 < /dev/null &
   disown
 
+  # Re-read the token EVERY iteration, not once before the loop: a freshly (re)started daemon can
+  # still be writing api-token in the instant right after it's backgrounded, and reading it exactly
+  # once there races that write - "No such file or directory" even though the daemon comes up fine
+  # a moment later. Cost a debugging session on 2026-08-19 chasing a phantom "up" failure.
+  # The 2>/dev/null on `tr` alone does NOT catch this: a failed `<` redirect is the shell's own
+  # error, printed before `tr` ever runs, so it needs the whole group's stderr redirected instead -
+  # confirmed by reproducing both ways.
   local token out
-  token=$(tr -d '\r\n' < "$STATE/api-token" 2>/dev/null)
   for _ in $(seq 1 40); do
+    token=$( { tr -d '\r\n' < "$STATE/api-token"; } 2>/dev/null )
     out=$(curl -sf -m 3 -H "X-SaveLocker-Token: $token" "http://localhost:$PORT/api/state" 2>/dev/null)
     [ -n "$out" ] && break
     sleep 0.7
@@ -148,7 +155,7 @@ cmd_status() {
   echo "daemon pids: ${pids:-none}"
   echo "state dir:   $STATE"
   if [ -n "$pids" ]; then
-    token=$(tr -d '\r\n' < "$STATE/api-token" 2>/dev/null)
+    token=$( { tr -d '\r\n' < "$STATE/api-token"; } 2>/dev/null )
     out=$(curl -sf -m 3 -H "X-SaveLocker-Token: $token" "http://localhost:$PORT/api/state" 2>/dev/null)
     echo "state:       ${out:-<no answer on :$PORT>}"
   fi
