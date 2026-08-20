@@ -526,6 +526,25 @@ static class Widgets
         ImGui.Dummy(new Vector2(width, height));
     }
 
+    /// <summary>
+    /// A thin filled bar — a push's byte progress, the one sync direction slow enough to want one
+    /// (<c>ApiClient.UploadAsync</c>'s chunk loop is what reports it). Mirrors the browser agent
+    /// UI's Activity card bar so the two surfaces read as the same feature.
+    /// </summary>
+    public static void ProgressBar(float fraction, float width, float height = 6f)
+    {
+        fraction = Math.Clamp(fraction, 0f, 1f);
+        var dl = ImGui.GetWindowDrawList();
+        var min = ImGui.GetCursorScreenPos();
+        var rounding = height / 2f;
+
+        dl.AddRectFilled(min, min + new Vector2(width, height), U32(Theme.BgTableHd), rounding);
+        if (fraction > 0f)
+            dl.AddRectFilled(min, min + new Vector2(width * fraction, height), U32(Theme.AccentGreen), rounding);
+
+        ImGui.Dummy(new Vector2(width, height));
+    }
+
     /// <summary>A small rounded chip — the server-URL pill and inline state markers.</summary>
     public static void Badge(string text, Vector4 colour, Icons.Glyph? icon = null, bool mono = false)
     {
