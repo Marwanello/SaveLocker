@@ -48,8 +48,14 @@
 # and add (adjust the /home/deck paths if your Deck's user differs):
 #   deck ALL=(ALL) NOPASSWD: /usr/bin/rm -rf /home/deck/homebrew/plugins/SaveLocker-Test
 #   deck ALL=(ALL) NOPASSWD: /usr/bin/cp -r /home/deck/.savelocker-testenv-decky-stage /home/deck/homebrew/plugins/SaveLocker-Test
+#   deck ALL=(ALL) NOPASSWD: /usr/bin/chown -R deck\:deck /home/deck/homebrew/plugins/SaveLocker-Test
 #   deck ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart plugin_loader
-# Scoped to exactly these three commands, not blanket passwordless sudo - the same trade every
+# The chown line matters, not just for tidiness: plugin backends run as the deck user, not root
+# (confirmed on hardware via `ps` — every loaded plugin's main.py, including the real SaveLocker's,
+# runs as deck), so a `sudo cp -r` copy left root-owned never actually loads — Decky just silently
+# has no process for it. sudoers needs the colon in "deck:deck" escaped as "deck\:deck" or visudo's
+# parser rejects the line. Scoped to exactly these four commands, not blanket passwordless sudo -
+# the same trade every
 # `sudo cp ...; sudo systemctl restart plugin_loader` in this project's own README makes, just made
 # non-interactive so `up`/`clean` can run unattended. The `zz-` PREFIX MATTERS, not just the
 # filename: /etc/sudoers.d/ is read in ASCII order, sudo uses the LAST matching rule for a given
@@ -448,11 +454,20 @@ function Install-DeckyPluginOnDeck {
     # sudo, not the plugin_loader restart alone: ~/homebrew/plugins is root-owned (Gotchas.md ->
     # Decky plugin), same as the README's own manual-install command this mirrors. This is a
     # non-interactive `ssh host cmd` (no PTY), so sudo can only succeed here without a password
-    # prompt - i.e. the Deck needs a NOPASSWD sudoers rule for exactly these three commands. See the
+    # prompt - i.e. the Deck needs a NOPASSWD sudoers rule for exactly these four commands. See the
     # header comment for the exact /etc/sudoers.d snippet; without it this throws with sudo's own
     # "a terminal is required to read the password" rather than hanging.
+    #
+    # chown back to deck:deck after the copy - plugin backends run as the deck user, not root
+    # (confirmed on hardware: `ps` shows every loaded plugin's main.py running as deck, including
+    # the real SaveLocker's own), and `sudo cp -r` leaves its copies root-owned. Decky's own
+    # installer does this chown itself for a normal install (Gotchas.md: "Decky recursively chowns a
+    # non-root plugin's contents to the desktop user") - skipping it here isn't a cosmetic gap, it's
+    # the difference between the plugin loading at all and Decky silently never starting it: a
+    # root-owned SaveLocker-Test directory produced NO running process whatsoever, confirmed via
+    # `ps -eo user,pid,cmd | grep -i savelocker` showing only the real, untouched SaveLocker.
     $remoteTarget = "~/homebrew/plugins/$deckyTestPluginName"
-    & ssh -o ConnectTimeout=5 $DeckHost "sudo rm -rf $remoteTarget && sudo cp -r $remoteStage $remoteTarget && sudo systemctl restart plugin_loader"
+    & ssh -o ConnectTimeout=5 $DeckHost "sudo rm -rf $remoteTarget && sudo cp -r $remoteStage $remoteTarget && sudo chown -R deck:deck $remoteTarget && sudo systemctl restart plugin_loader"
     if ($LASTEXITCODE -ne 0) {
         throw "install on $DeckHost failed - if sudo asked for a password, see this file's header " +
               "comment for the NOPASSWD sudoers rule this step needs"
