@@ -34,8 +34,10 @@ public sealed class Daemon : IAsyncDisposable
     // Written from an API request thread (server URL change, registration), read from watcher,
     // poller and drainer threads — the publish has to be visible to all of them.
     private volatile SyncEngine _engine;
-    // Outlives every engine rebuild on purpose — see AgentApiServer's field of the same type.
-    private readonly SyncActivityTracker _activity = new();
+    // Outlives every engine rebuild on purpose — see AgentApiServer's field of the same type. Persists
+    // to disk so `savelocker ui`, a separate process, can show the same feed (SyncActivityStore).
+    private readonly SyncActivityTracker _activity;
+    private readonly SyncActivityStore _activityStore;
 
     /// <summary>
     /// <paramref name="apiPort"/> is overridable so a test harness can run a daemon alongside the
@@ -49,6 +51,8 @@ public sealed class Daemon : IAsyncDisposable
         _health = HealthReporter.For(config);
         _detection = new Detection(config);
         _scanner = new LinuxGameScanner(_detection);
+        _activityStore = SyncActivityStore.For(config);
+        _activity = new SyncActivityTracker(_activityStore.Write);
         _engine = BuildEngine();
     }
 
