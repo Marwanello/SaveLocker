@@ -10,8 +10,13 @@ embedded React agent UI + a gamepad-native Deck Game Mode UI. See [[Architecture
 
 **Repo:** https://github.com/SkorcherX/SaveLocker | **Branch:** `main`
 
-**Released:** **v0.5.8** (tagged 2026-08-16) — notes in `web/src/releases/0.5.8.md`. **Not rolled
-out**: see Next action. It is agent-side only — "Install update now" and the words around it.
+**Released:** **v0.5.10** (tagged 2026-08-19) — notes in `web/src/releases/0.5.10.md`. **Rolled out
+2026-08-20** (maintainer-confirmed): console redeployed, both agent installer packages uploaded.
+The Cyberpunk chunked-upload fix ships as *part of* v0.5.10 (the fix commit landed after v0.5.9 was
+tagged), so "roll out v0.5.8" and "deploy the Cyberpunk fix" — this file's old Next action items 0
+and 1 — both resolve to the same rollout: the console and fleet are now current through v0.5.10,
+which also carries v0.5.9's console UI/audit cleanup and the MoonDeck/case-insensitive save-detection
+fixes. See `logs/shipped-2026-08.md` for the full index of what that covers.
 
 v0.5.7's rollout (2026-08-15) is complete: console redeployed, the Windows agent took it from the
 tray's *Check for updates*, and **the Deck updated itself** — see below, it is the first time that
@@ -258,45 +263,29 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
 
 ## Next action
 
-0. **Deploy the Cyberpunk upload fix** (`cyberpunk-save-upload-fix`, above) once it's merged: redeploy
-   the console AND ship a new Windows agent build. Deploying only one half still leaves the maintainer's
-   own Cyberpunk sync broken — the fallback means a new agent against an old server just reproduces
-   today's failure, and an old agent against a new server never learns the new routes exist.
-1. **Roll out v0.5.8.** Redeploy the console (`docker compose pull && docker compose up -d`), then
-   upload **both** agent packages in Config → Agent updates — the Windows installer and the Linux
-   tarball — because neither fleet is offered anything until those rows are filled ([[Build and Run]]
-   → *Rolling a release out*). The Deck should then update itself again, unattended, which is now the
-   second time that has been watched rather than the first.
-2. **Prove Phase 5 on the Deck — the release to carry it now exists.** The harness covers the agent's
-   half with a fake plugin directory; what it cannot cover is the part that makes the feature work at
-   all — Decky noticing the files change and reloading. That mechanism *was* observed by hand during
-   Phase 4 (`touch` as the desktop user, and repeated `scp`s of real builds), so this is not a guess,
-   but the agent doing it by itself has never happened on hardware, and neither has the server
-   hosting a real plugin zip. **Upload SaveLocker-Decky v0.2.1's `SaveLocker.zip` in Config → Agent
-   updates → Decky plugin** (type the version — Decky's artifact is always `SaveLocker.zip`) and
-   watch the Deck pick it up. The Deck is on plugin v0.2.0, so it is genuinely behind. A manual
-   reinstall through Decky always works, and is what the refusal path tells the user to do. Details
-   and the two deviations from the plan: `logs/2026-08-15_decky-plugin.md`.
-   <br>**Do 1 before this**, or the button v0.2.1 adds stays invisible and the pass proves only half
-   of what it could: the plugin reads `stagedVersion`, which only a v0.5.8 agent publishes.
-3. **Whenever the next release after v0.5.8 is cut, fold in the console UI/audit cleanup above** —
-   it's on `main` but landed after v0.5.8 was tagged, so its release notes say nothing about it.
-3. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
+1. **Prove Decky Phase 5 on the Deck — unblocked now that the v0.5.8+ rollout is done.** The harness
+   covers the agent's half with a fake plugin directory; what it cannot cover is the part that makes
+   the feature work at all — Decky noticing the files change and reloading. That mechanism *was*
+   observed by hand during Phase 4 (`touch` as the desktop user, and repeated `scp`s of real builds),
+   so this is not a guess, but the agent doing it by itself has never happened on hardware, and
+   neither has the server hosting a real plugin zip. **Upload SaveLocker-Decky v0.2.1's
+   `SaveLocker.zip` in Config → Agent updates → Decky plugin** (type the version — Decky's artifact is
+   always `SaveLocker.zip`) and watch the Deck pick it up. The Deck is on plugin v0.2.0, so it is
+   genuinely behind. A manual reinstall through Decky always works, and is what the refusal path tells
+   the user to do. Details and the two deviations from the plan: `logs/2026-08-15_decky-plugin.md`.
+2. **Check the live server for duplicate games.** Canonical naming stops *new* splits; it does not
    merge what a server already holds under two spellings, and there is no merge tool — scoped
    alongside a related but distinct agent-side gap in [[Backlog]] → *One game, several real sources*.
-4. **Merge `claude/steam-deck-save-detection-68b6c5` and fold the MoonDeck fix into the next Linux
-   release notes.** Code is done and verified on hardware (above); nothing about it has shipped yet.
-   Worth pairing with a look at whether the six duplicate-shortcut names it found are worth a
-   heads-up to the maintainer directly, independent of any code change.
-5. **Merge `claude/wine-proton-case-insensitive-paths-815ba3` and fold the case-insensitive-matching
-   fix into the next Linux release notes.** Code is done, tested (`run-linux-tests` 234 → 237), and
-   verified by hand against both new fixtures — but **not yet exercised on the real Deck**, unlike the
-   MoonDeck fix above. Worth a real-hardware pass if a mis-cased prefix can be found or reproduced
-   there before this ships, since everything so far is fixture-only.
+3. **Give the six duplicate-shortcut names found during the MoonDeck investigation a look** — worth a
+   heads-up to the maintainer directly (HITMAN 3, Minit, Moving Out, Animal Crossing, Metal Gear,
+   Waydroid on the maintainer's own Deck), independent of any code change; the code fix for the
+   related dedupe tie-break already shipped (`logs/shipped-2026-08.md`).
 
 Everything else — the WA-03 second-account ACL test, the remaining Windows manual gates, the LAN
-enrollment-URL check, the missing LA-04/05/06/07 regression tests, and the `WA-01`/113-of-114
-baseline drift — is prioritised in [[Backlog]].
+enrollment-URL check, the missing LA-04/05/06/07 regression tests, the `WA-01`/113-of-114 baseline
+drift, and the rest of *One game, several real sources* (steps 2–4) — is prioritised in [[Backlog]].
+`claude/steam-deck-save-detection-68b6c5` and `claude/wine-proton-case-insensitive-paths-815ba3` are
+both merged to `main` and shipped in v0.5.10 — see `logs/shipped-2026-08.md`.
 
 ## Handoff: working on the Decky plugin
 

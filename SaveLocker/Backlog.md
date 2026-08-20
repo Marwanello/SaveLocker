@@ -1,7 +1,7 @@
 # Backlog
 
-Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md`
-(full detail in `logs/sessions.md`).
+Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` and
+`logs/shipped-2026-08.md` (full detail in `logs/sessions.md`).
 
 ---
 
@@ -14,10 +14,6 @@ verification that did not happen before the tag. Write-ups:
 
 - **v0.5.0 post-release verification.** Ordered by what carries the most risk of the release notes
   being wrong:
-  - ~~**Run `tests/linux/run-linux-tests.sh` in WSL** (40 checks)~~ — **DONE 2026-08-08, 40/40.**
-    It had never passed: `Storage__AgentInstallerRoot` was unset, so the server died at startup
-    *after* migrations and 16 server-dependent checks failed as though the agent were broken. Fixed
-    in the harness (PR #36). This closes the Linux auto-start and `doctor` gap.
   - **Deck verification** — the five scenarios in `logs/2026-07-29_linuxagent-bugbounty.md` →
     Verification. Hardware available since 2026-07-19. Fold in the two v0.5.1 Deck fixes while
     there (one ring on open with A working; a resting cursor must not paint a second selector) and
@@ -322,15 +318,21 @@ verification that did not happen before the tag. Write-ups:
   Reuses the Help KB shell (`web/src/help/`) for the article surface; the checks are `/api/overview`
   + machines. Deck Game Mode already has a "Next step" card (`Ui/UiApp.cs`) — same idea, wider scope.
 
-- **Decky plugin — Phase 5 only.** Phases 1–4 are **done and verified on hardware** (shipped in
-  v0.5.6 and plugin v0.2.0); the plugin lives at <https://github.com/SkorcherX/SaveLocker-Decky>.
-  What remains is **the agent keeping the plugin updated**, so users are not stuck choosing between
-  Decky's custom-store setting — which replaces the official store while it is set, so nobody leaves
-  it there — and never being told an update exists. The mechanism is already proven on a Deck: a
-  non-`_root` plugin's files are chowned to the desktop user, and with the `debug` flag Decky hot
-  reloads within a second of a file changing, so the agent can update the plugin with no sudo and no
-  restart. First install still needs Decky (one paste), and `plugin.json` is root-owned so the agent
-  can never replace it. Plan and corrections: `logs/2026-08-15_decky-plugin.md` → Phase 5.
+- **Decky plugin Phase 5 — prove it on real hardware.** The code is done (Phases 1–4 done and
+  verified on hardware, shipped in v0.5.6 and plugin v0.2.0; Phase 5 itself shipped in v0.5.6/plugin
+  v0.2.1, `run-linux-tests` 161 → 197/197) — the plugin lives at
+  <https://github.com/SkorcherX/SaveLocker-Decky>. What's left is entirely a hardware pass: **upload
+  SaveLocker-Decky v0.2.1's `SaveLocker.zip` in Config → Agent updates → Decky plugin** (the Deck is
+  still on plugin v0.2.0, so it's genuinely behind) and watch the Deck pick it up on its own. The
+  harness covers the agent's half with a fake plugin directory; what it cannot cover is the part that
+  makes the feature work at all — Decky noticing the files change and hot-reloading, via the `debug`
+  flag in `plugin.json`. That mechanism *was* observed by hand during Phase 4 (manual `scp` +
+  `touch`), so this is not a guess, but the agent doing it unattended has never happened on hardware,
+  and neither has the server hosting a real plugin zip. Requires the v0.5.8+ agent rollout first —
+  the plugin reads `stagedVersion`, which only a v0.5.8-or-later agent publishes (**that rollout is
+  now done**, so this is unblocked). A manual reinstall through Decky always works as a fallback, and
+  is what the refusal path tells the user to do if this pass fails. Plan and corrections:
+  `logs/2026-08-15_decky-plugin.md` → Phase 5.
 
 - **Decky plugin: left-stick scrolling in the QAM is steppy.** The D-pad is fine. Steam scrolls by
   moving focus, so the stick steps between focus targets rather than scrolling freely, and the panel
@@ -357,33 +359,6 @@ verification that did not happen before the tag. Write-ups:
   settle first (copy-forward reconstruction vs. a content-addressable store, and where the
   fast-forward-only scope boundary sits) and the measurement that proves it:
   `tasks/PerFileDeltaUpload.md`.
-
-- **Linux auto-update.** The update channel (`/api/agent/latest`) is installer-shaped and Windows-only. A Deck user currently re-runs `install.sh` from a newer tarball. Worth doing before there are many Deck users — a headless device that never updates is one nobody will notice is stale.
-  <br>**Planned 2026-08-14 → `tasks/LinuxAutoUpdate.md`** (four phases, one per session). It absorbs
-  the two items below it — the unit hardening because Phase 3 edits both unit sources anyway, and
-  release provenance because it is the same trust story. Two things the plan turns on: `systemctl
-  --user stop` kills the whole cgroup, so the apply cannot run as a child of the daemon; and the
-  Linux install prefix **is** the state dir, so an update is a per-file copy and never a directory
-  swap.
-
-- ~~**Harden the `systemd --user` unit.**~~ **DONE** — shipped in v0.5.5, and measured on the Deck
-  2026-08-15: `systemd-analyze --user security savelocker.service` → **8.5 EXPOSED**. All seven
-  settings are confirmed in effect (`NoNewPrivileges`, `PrivateTmp`, `LockPersonality`,
-  `RestrictSUIDSGID`, `UMask`, `PrivateMounts` and the `RestrictAddressFamilies` allow-list — the
-  blocked families read ✓ and the three we permit read ✗, which is the allow-list working).
-  `ProtectSystem=full` reads ✗ only because it is not `strict`; its description confirms it is set.
-  <br>**Do not chase the 8.5.** The score is dominated by rows that do not apply to a `--user` unit
-  or that were rejected on purpose — see [[Gotchas]] → *Testing*. `ProtectHome`, `ProtectProc` and
-  `MemoryDenyWriteExecute` remain refused for the documented reasons (save access, the writer probe,
-  the .NET JIT).
-  <br>**If it is ever revisited**, the honest candidates are `SystemCallArchitectures=native`,
-  `RestrictNamespaces`, `ProtectKernelTunables/Logs/Modules`, `ProtectControlGroups`, `ProtectClock`,
-  `ProtectHostname`, `RestrictRealtime` and `SystemCallFilter=@system-service`. None is free: the
-  daemon spawns processes (the staged binary's smoke test, `systemctl`), and the unit file's own
-  comment is the standing warning — a device that will not start at all is far worse than one that
-  scores badly. Each needs a Deck test, not a reading.
-
-- **Linux release provenance.** *(Folded into `tasks/LinuxAutoUpdate.md` Phase 4 — note the update channel does NOT depend on it: the server hashes the bytes it stored.)* Pin GitHub Actions in `release.yml` to full commit SHAs; publish SHA-256 checksums and a GitHub artifact attestation for the tarball; use draft → attach all assets → publish flow. Document the verification command beside the Deck install instructions.
 
 - **Constrain external manifest paths.** The Ludusavi manifest is downloaded from mutable `master`; expanded templates are not proven to stay inside the intended Proton prefix. Pin or integrity-verify an approved manifest revision, canonicalize resolved paths, reject `..`/symlink escapes outside allowed roots, test a hostile manifest entry. Preserve explicit manually mapped portable-save paths as a separate trusted-user path.
 
