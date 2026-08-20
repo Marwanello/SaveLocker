@@ -333,13 +333,35 @@ function Get-DeckyPluginRepo {
 
 function Build-DeckyPlugin {
     $repo = Get-DeckyPluginRepo
-    Say "building the Decky plugin from $repo"
+    $pluginJsonPath = Join-Path $repo 'plugin.json'
+    $original = Get-Content $pluginJsonPath -Raw
+
+    Say "building the Decky plugin from $repo as '$deckyTestPluginName'"
     Push-Location $repo
     try {
+        # @decky/rollup (node_modules/@decky/rollup/src/index.js) reads plugin.json AT BUILD TIME and
+        # bakes its "name" straight into the bundle - as the `@decky/manifest` virtual module, and
+        # into every asset/sourcemap URL (`http://127.0.0.1:1337/plugins/${manifest.name}/`). That
+        # baked-in name is what Decky Loader appears to use to route this plugin's own callable() IPC
+        # calls, NOT the plugin.json shipped alongside dist/ afterward. Renaming only the staged copy
+        # post-build (the original version of this function) left the bundle itself still identifying
+        # as "SaveLocker" - confirmed on hardware: every callable() from the "test" build's frontend
+        # was answered by the REAL SaveLocker's backend, so the panel showed the real agent's 34
+        # tracked games instead of the test daemon's zero. So the rename has to happen on the real
+        # plugin.json, before the build sees it - and be restored immediately after regardless of
+        # outcome, so the repo's own working tree never actually carries the test name.
+        $renamed = $original.Replace('"name": "SaveLocker"', "`"name`": `"$deckyTestPluginName`"")
+        if ($renamed -eq $original) { throw 'plugin.json: "name": "SaveLocker" not found - build aborted' }
+        Set-Content $pluginJsonPath $renamed -NoNewline
+
         if (-not (Test-Path 'node_modules')) { & npm install --no-audit --no-fund | Out-Null }
         & npm run build
-        if ($LASTEXITCODE -ne 0) { throw 'decky plugin build failed' }
-    } finally { Pop-Location }
+        $buildExitCode = $LASTEXITCODE
+    } finally {
+        Set-Content $pluginJsonPath $original -NoNewline
+        Pop-Location
+    }
+    if ($buildExitCode -ne 0) { throw 'decky plugin build failed' }
 }
 
 # Stages plugin.json/package.json/main.py/dist into a throwaway directory and rewrites exactly the
@@ -388,9 +410,13 @@ function New-DeckyPluginTestStage {
     if ($pluginJsonNew -eq $pluginJson) { throw 'plugin.json: "name": "SaveLocker" not found - stage aborted' }
     Set-Content $pluginJsonPath $pluginJsonNew -NoNewline
 
+    # Both quote styles: the toaster.toast() titles in index.tsx are single-quoted string literals
+    # and survive the build that way, but the QAM titleView's JSX text child - <div>SaveLocker</div>
+    # - compiles through a different path and comes out double-quoted instead. Missing this one was
+    # exactly why the panel's own header kept reading "SaveLocker" after every other fix landed.
     $bundlePath = Join-Path $stage 'dist\index.js'
     $bundle = Get-Content $bundlePath -Raw
-    $bundleNew = $bundle.Replace("'SaveLocker'", "'$deckyTestPluginName'")
+    $bundleNew = $bundle.Replace("'SaveLocker'", "'$deckyTestPluginName'").Replace('"SaveLocker"', "`"$deckyTestPluginName`"")
     if ($bundleNew -eq $bundle) { throw "dist/index.js: literal 'SaveLocker' not found - stage aborted" }
     Set-Content $bundlePath $bundleNew -NoNewline
 
