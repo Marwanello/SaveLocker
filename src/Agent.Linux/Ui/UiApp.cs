@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.Numerics;
 using Silk.NET.Input;
 using Silk.NET.Maths;
@@ -35,6 +36,24 @@ sealed class UiApp
     private IReadOnlyList<LeaseWarningStore.Entry> _warnings = Array.Empty<LeaseWarningStore.Entry>();
     private long _warningsReadAt;
     private const long WarningsPollMs = 2000;
+
+    // Same reasoning as the lease warnings above, on a shorter poll: this is what is driving a
+    // progress bar, and the daemon — a separate process, actually doing the syncing — is the only
+    // thing that knows the byte counts (SyncActivityStore).
+    private readonly SyncActivityStore _activityStore;
+    private SyncActivitySnapshot? _activityCurrent;
+    private IReadOnlyList<ActivityLogEntry> _activityRecent = Array.Empty<ActivityLogEntry>();
+    private long _activityReadAt;
+    private const long ActivityPollMs = 400;
+
+    // "Sync now": the one action this otherwise read-only screen may still take, because it does not
+    // do the syncing itself — it asks the daemon's own local API to, the same call the browser UI's
+    // button makes. _apiPort/_localAuth are what let this process (a separate one from the daemon)
+    // reach and authenticate to it.
+    private readonly int _apiPort;
+    private readonly LocalAuth _localAuth;
+    private Task<string>? _syncNowTask;
+    private string? _syncNowMessage;
 
     private IWindow _window = null!;
     private GL _gl = null!;
@@ -104,7 +123,7 @@ sealed class UiApp
     /// it can be narrowed. Mirrors the browser UI's filter chips, minus the store axis — Heroic's
     /// storefronts are a Desktop Mode concern and each extra pill costs a d-pad press here.
     /// </summary>
-    private enum AddFilter { Suggested, All, Steam, Shortcut, Heroic, NoPath }
+    private enum AddFilter { Suggested, All, Steam, Shortcut, Heroic }
     private AddFilter _addFilter = AddFilter.Suggested;
 
     private static bool MatchesFilter(ScanCandidate c, AddFilter f) => f switch
@@ -113,7 +132,6 @@ sealed class UiApp
         AddFilter.Steam => c.Source == ScanSource.SteamInstalled,
         AddFilter.Shortcut => c.Source == ScanSource.SteamShortcut,
         AddFilter.Heroic => c.Source == ScanSource.Heroic,
-        AddFilter.NoPath => string.IsNullOrEmpty(c.SuggestedSaveDir),
         _ => true,
     };
 
@@ -123,7 +141,29 @@ sealed class UiApp
         AddFilter.Steam => "Steam",
         AddFilter.Shortcut => "Added to Steam",
         AddFilter.Heroic => "Heroic",
-        AddFilter.NoPath => "Needs path",
+        _ => "All",
+    };
+
+    /// <summary>
+    /// Save-path detection as its own axis, not a source filter — this used to be an
+    /// <c>AddFilter.NoPath</c> entry, which meant it competed with Steam/Heroic/etc. instead of
+    /// combining with them: there was no way to land on "Heroic games still missing a path". Mirrors
+    /// the browser agent UI's "Path:" row (AddGamesView.tsx) for the same reason it exists there.
+    /// </summary>
+    private enum PathMode { All, Has, Missing }
+    private PathMode _pathMode = PathMode.All;
+
+    private static bool MatchesPath(ScanCandidate c, PathMode m) => m switch
+    {
+        PathMode.Has => !string.IsNullOrEmpty(c.SuggestedSaveDir),
+        PathMode.Missing => string.IsNullOrEmpty(c.SuggestedSaveDir),
+        _ => true,
+    };
+
+    private static string PathModeLabel(PathMode m) => m switch
+    {
+        PathMode.Has => "Detected",
+        PathMode.Missing => "Not detected",
         _ => "All",
     };
 
@@ -154,7 +194,7 @@ sealed class UiApp
     // actually drawn, and tweens land near their targets, before the framebuffer is read.
     private const int ScreenshotSettleFrames = 20;
 
-    private UiApp(AgentConfig config, Vector2D<int> size, string? screenshotPath)
+    private UiApp(AgentConfig config, Vector2D<int> size, string? screenshotPath, int apiPort)
     {
         _config = config;
         _size = size;
@@ -164,11 +204,18 @@ sealed class UiApp
         _launch = Daemon.LinuxLaunchCommand();
         _settings = new SettingsScreen(config, new SystemdAutoStart());
         _leaseWarnings = LeaseWarningStore.For(config);
+        _activityStore = SyncActivityStore.For(config);
+        // "Sync now" reaches the daemon over its own local API — the daemon holds the one SyncEngine
+        // that may safely act (Decisions §2), so this is the same LAN-of-one call the browser UI's
+        // button already makes, not a duplicated sync path.
+        _apiPort = apiPort;
+        _localAuth = LocalAuth.LoadOrCreate(config.ConfigPath);
     }
 
     public static int Run(AgentConfig config, string? sizeOverride = null, string? screenshotPath = null,
         bool gallery = false, string? startScreen = null, bool autoScan = false,
-        string? navScript = null, bool navDebug = false, string? pointerAt = null)
+        string? navScript = null, bool navDebug = false, string? pointerAt = null,
+        int apiPort = Daemon.DefaultApiPort)
     {
         NavDebug.Enabled = navDebug;
         _pointerPark = ParsePointer(pointerAt);
@@ -177,7 +224,7 @@ sealed class UiApp
         // cannot open a display — which is how a self-contained publish gets checked on a Deck.
         if (navDebug) Console.WriteLine("nav api: " + ImGuiInternal.Status);
 
-        var app = new UiApp(config, ParseSize(sizeOverride), screenshotPath);
+        var app = new UiApp(config, ParseSize(sizeOverride), screenshotPath, apiPort);
         if (gallery) app._screen = Screen.Gallery;
         else if (startScreen is not null)
         {
@@ -447,6 +494,7 @@ sealed class UiApp
         // A mid-transition capture would be a dim, offset frame — the fade counts as work in
         // progress for screenshot purposes.
         var busy = _scanTask is { IsCompleted: false } || _enrollTask is { IsCompleted: false }
+                   || _syncNowTask is { IsCompleted: false }
                    || _pendingFolderScreen || _screenFade < 1f || _navScript.Count > 0;
         _settleFrames = busy ? 0 : _settleFrames + 1;
 
@@ -897,6 +945,13 @@ sealed class UiApp
 
         Widgets.Gap(Theme.Space.Lg);
 
+        // What is happening right now, mirroring the browser agent UI's Activity card. No "Sync
+        // now" here on purpose: the daemon — a separate process — is the one that actually holds
+        // the sync engine and its lease state, so this screen stays a view over what it reports
+        // (SyncActivityStore) rather than a second place that can kick off a push or pull.
+        DrawActivity();
+        Widgets.Gap(Theme.Space.Lg);
+
         Widgets.TwoColumn("status", 0.58f,
             left: () =>
             {
@@ -963,6 +1018,119 @@ sealed class UiApp
                 if (Widgets.PillButton("Steam setup", Widgets.ButtonKind.Secondary, Icons.Settings))
                     Go(Screen.LaunchSetup);
             });
+    }
+
+    /// <summary>
+    /// What is syncing right now, read from the daemon's <see cref="SyncActivityStore"/> — a byte
+    /// progress bar for a push (the direction slow enough to want one) and a short rolling log of
+    /// what just happened, the same feed the browser agent UI's Activity card shows.
+    /// </summary>
+    private void DrawActivity()
+    {
+        var now = Environment.TickCount64;
+        if (now - _activityReadAt > ActivityPollMs || _activityReadAt == 0)
+        {
+            (_activityCurrent, _activityRecent) = _activityStore.Read();
+            _activityReadAt = now;
+        }
+
+        if (_syncNowTask is { IsCompleted: true })
+        {
+            _syncNowMessage = _syncNowTask.IsCompletedSuccessfully
+                ? _syncNowTask.Result
+                : "Sync failed: " + (_syncNowTask.Exception?.GetBaseException().Message ?? "unknown error");
+            _syncNowTask = null;
+        }
+
+        Widgets.BeginCard("activity", new Vector2(0, 0));
+        Widgets.SectionHeader("Activity");
+
+        bool syncing = _syncNowTask is { IsCompleted: false };
+        if (Widgets.PillButton(syncing ? "Syncing..." : "Sync now", Widgets.ButtonKind.Secondary,
+                enabled: !syncing && Connected))
+        {
+            _syncNowMessage = null;
+            _syncNowTask = SyncNowAsync();
+        }
+        if (!string.IsNullOrEmpty(_syncNowMessage))
+        {
+            ImGui.SameLine(0, Theme.Space.Md);
+            ImGui.AlignTextToFramePadding();
+            Widgets.Text(_syncNowMessage, Theme.TextMuted, Theme.Caption);
+        }
+        Widgets.Gap(Theme.Space.Sm);
+
+        var current = _activityCurrent;
+        var active = current is { Phase: not SyncPhase.Idle };
+
+        if (!active)
+        {
+            Widgets.StatusDot(Theme.TextDim, 7f);
+            ImGui.SameLine(0, Theme.Space.Sm);
+            ImGui.AlignTextToFramePadding();
+            // A plain hyphen, not an em dash: the embedded font's glyph atlas is ASCII + Latin-1
+            // only (Theme.LoadFonts), so U+2014 renders as a missing-glyph box on this screen —
+            // every other real (non-comment) string in this file already avoids it for that reason.
+            Widgets.Text("Idle - nothing syncing right now.", Theme.TextMuted, Theme.Caption);
+        }
+        else
+        {
+            var verb = current!.Phase switch
+            {
+                SyncPhase.Pushing => "Pushing",
+                SyncPhase.Pulling => "Pulling",
+                _ => "Settling",
+            };
+            Widgets.StatusDot(Theme.AccentGreen, 7f);
+            ImGui.SameLine(0, Theme.Space.Sm);
+            ImGui.AlignTextToFramePadding();
+            Widgets.Text($"{verb} {current.GameName}...", Theme.TextPrimary, Theme.Caption);
+
+            if (current.Phase == SyncPhase.Pushing && current.BytesTotal > 0)
+            {
+                Widgets.Gap(Theme.Space.Xs);
+                var pct = (float)current.BytesDone / current.BytesTotal;
+                Widgets.ProgressBar(pct, ImGui.GetContentRegionAvail().X);
+                Widgets.Gap(Theme.Space.Xs);
+                Widgets.Text($"{FormatBytes(current.BytesDone)} / {FormatBytes(current.BytesTotal)}",
+                    Theme.TextDim, Theme.Caption);
+            }
+        }
+
+        // Room for a handful of lines only — this is a status card on an Overview screen, not the
+        // log itself, so it shows just enough to answer "did the last thing work" at a glance.
+        if (_activityRecent.Count > 0)
+        {
+            Widgets.Gap(Theme.Space.Sm);
+            foreach (var e in _activityRecent.Take(3))
+                Widgets.Text($"{e.TimestampUtc.ToLocalTime():HH:mm:ss}  {e.Message}", Theme.TextDim, Theme.Caption);
+        }
+
+        Widgets.EndCard();
+    }
+
+    /// <summary>
+    /// POSTs to the daemon's own <c>/api/sync</c> — the exact route and token scheme
+    /// <see cref="AgentApiServer"/> already serves the browser UI's "Sync now" button, on
+    /// <c>localhost</c> only and gated on <see cref="LocalAuth"/>. This process never builds a
+    /// second <see cref="SyncEngine"/>: the daemon is the one long-lived holder of lease state, so
+    /// asking it to sync is the only safe way for a second process to make one happen at all.
+    /// </summary>
+    private async Task<string> SyncNowAsync()
+    {
+        using var http = new HttpClient { BaseAddress = new Uri($"http://localhost:{_apiPort}/") };
+        http.DefaultRequestHeaders.Add(LocalAuth.HeaderName, _localAuth.Token);
+        using var response = await http.PostAsync("api/sync", content: null);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<SyncNowResponse>();
+        return body?.Message ?? "Done.";
+    }
+
+    private static string FormatBytes(long n)
+    {
+        if (n < 1024) return $"{n} B";
+        if (n < 1024 * 1024) return $"{n / 1024.0:0.0} KB";
+        return $"{n / (1024.0 * 1024.0):0.0} MB";
     }
 
     /// <summary>
@@ -1113,10 +1281,28 @@ sealed class UiApp
                     _addFilter = f;
             }
             Widgets.Gap(Theme.Space.Sm);
+
+            // Path detection, a second row: always shown (unlike the source row, it is not specific
+            // to one source), and counted against the source-filtered set so "Detected"/"Not
+            // detected" describe what the row above is already narrowed to.
+            var sourceFiltered = Enumerable.Range(0, _candidates.Count)
+                .Where(i => MatchesFilter(_candidates[i], _addFilter))
+                .ToList();
+            Widgets.Text("Path", Theme.TextDim, Theme.Caption);
+            foreach (var m in Enum.GetValues<PathMode>())
+            {
+                ImGui.SameLine(0, Theme.Space.Sm);
+                var pillLabel = m == PathMode.All
+                    ? PathModeLabel(m)
+                    : $"{PathModeLabel(m)}  {sourceFiltered.Count(i => MatchesPath(_candidates[i], m))}";
+                var kind = _pathMode == m ? Widgets.ButtonKind.Primary : Widgets.ButtonKind.Ghost;
+                if (Widgets.PillButton(pillLabel, kind)) _pathMode = m;
+            }
+            Widgets.Gap(Theme.Space.Sm);
         }
 
         var shown = Enumerable.Range(0, _candidates.Count)
-            .Where(i => MatchesFilter(_candidates[i], _addFilter))
+            .Where(i => MatchesFilter(_candidates[i], _addFilter) && MatchesPath(_candidates[i], _pathMode))
             .ToList();
 
         // The section header is drawn BEFORE the list height is measured: measuring first and then
@@ -1149,7 +1335,10 @@ sealed class UiApp
         }
         else if (_candidates.Count > 0)
         {
-            Widgets.Text($"No games match “{FilterLabel(_addFilter)}”. Choose All to see every one.",
+            var pathSuffix = _pathMode == PathMode.All ? "" : $" + {PathModeLabel(_pathMode)}";
+            // Plain quotes, not curly ones: the embedded font's glyph atlas is ASCII + Latin-1 only
+            // (Theme.LoadFonts), so U+201C/U+201D rendered as missing-glyph boxes here.
+            Widgets.Text($"No games match \"{FilterLabel(_addFilter)}{pathSuffix}\". Choose All to see every one.",
                 Theme.TextMuted);
         }
         else
