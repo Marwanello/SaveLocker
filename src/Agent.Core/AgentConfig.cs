@@ -440,6 +440,47 @@ public sealed class AgentConfig
         LastSyncTime = onDisk.LastSyncTime;
     }
 
+    /// <summary>
+    /// Persist one game's alias override without clobbering concurrent changes to anything else.
+    ///
+    /// Same re-read-under-lock shape as <see cref="SaveGameSyncState"/>, and for the same reason:
+    /// the local API handler that calls this can run concurrently with a folder watcher's own
+    /// <see cref="Save"/> on another thread of the same daemon, or with the launch wrapper's separate
+    /// process. A plain mutate-then-<see cref="Save"/> would risk either one losing the other's write.
+    /// </summary>
+    public void SaveGameAlias(Guid gameId, string? alias)
+    {
+        using var guard = AgentStateLock.Acquire("config", StateDir);
+
+        AgentConfig onDisk;
+        try
+        {
+            onDisk = File.Exists(ConfigPath)
+                ? JsonSerializer.Deserialize<AgentConfig>(File.ReadAllText(ConfigPath), JsonOpts) ?? this
+                : this;
+        }
+        catch
+        {
+            // Unreadable on disk — our in-memory copy is the best truth available.
+            onDisk = this;
+        }
+        onDisk.ConfigPath = ConfigPath;
+
+        var target = onDisk.Games.FirstOrDefault(g => g.GameId == gameId);
+        if (target is null) return; // Nothing to update — the game is gone or was never here.
+
+        target.Alias = string.IsNullOrWhiteSpace(alias) ? null : alias.Trim();
+
+        AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(onDisk, JsonOpts),
+            restrictPermissions: true);
+
+        // Keep our own in-memory copy consistent with what was just written, so a later plain
+        // Save() from this process does not push a stale (pre-write) alias back over it — the same
+        // reasoning SaveGameSyncState applies to its own fields.
+        var mine = Games.FirstOrDefault(g => g.GameId == gameId);
+        if (mine is not null) mine.Alias = target.Alias;
+    }
+
     public TrackedGame? FindGame(string name) =>
         Games.FirstOrDefault(g => string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase));
 }
@@ -450,6 +491,15 @@ public sealed class TrackedGame
     public Guid GameId { get; set; }
     public string Name { get; set; } = "";
     public string? ManifestKey { get; set; }
+    /// <summary>
+    /// A manual override for the name this game is matched against outside SaveLocker's own naming —
+    /// today, only Steam's own display name for a game whose Steam AppID this agent has not resolved
+    /// (see <see cref="ResolveSteamAppId"/>), so a Decky plugin's Gaming-Mode launch detection has
+    /// nothing to match on except a name. Null means "no override": match on <see cref="Name"/>
+    /// itself. Only ever written by a Decky plugin, via the local API's alias route — this agent has
+    /// no UI of its own to set it from.
+    /// </summary>
+    public string? Alias { get; set; }
     /// <summary>The local save directory to archive/restore.</summary>
     public string SaveDirectory { get; set; } = "";
     /// <summary>Process names (without .exe) that, when running, mean the game is in use.</summary>

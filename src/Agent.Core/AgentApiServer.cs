@@ -336,7 +336,7 @@ public sealed class AgentApiServer : IDisposable
 
         app.MapGet("/api/games", () => _config.Games
             .Select(g => new TrackedGameDto(
-                g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray()))
+                g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray(), g.Alias))
             .ToArray()).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
@@ -359,6 +359,19 @@ public sealed class AgentApiServer : IDisposable
 
             _config.Save();
             _onGamesChanged?.Invoke();
+            return TypedResults.Ok(new OkResponse());
+        }).Produces<OkResponse>();
+
+        // The Decky plugin's per-game alias editor: a manual override for name-based matching, for
+        // when this agent has not resolved a Steam AppID for the game (see TrackedGame.Alias). Goes
+        // through SaveGameAlias rather than a plain mutate + Save() like /processes above — unlike
+        // that route, this one can be hit by the Decky plugin's HTTP request on one thread at the
+        // same moment a folder watcher on another thread calls its own Save(), and only the re-read-
+        // under-lock, single-field write actually survives that race. Silently OK on an unknown id,
+        // same as /processes — SaveGameAlias itself no-ops when the id isn't found on disk.
+        app.MapPost("/api/games/{id:guid}/alias", (Guid id, AliasRequest body) =>
+        {
+            _config.SaveGameAlias(id, body.Alias);
             return TypedResults.Ok(new OkResponse());
         }).Produces<OkResponse>();
 
@@ -751,9 +764,13 @@ public sealed record CandidateDto(
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the
 /// UI must say so rather than imply automatic sync is working. WA-08.
 /// </param>
-public sealed record TrackedGameDto(Guid Id, string Name, string Path, string[] ProcessNames);
+/// <param name="Alias">
+/// The manual name-match override, or null when none is set — see <see cref="TrackedGame.Alias"/>.
+/// </param>
+public sealed record TrackedGameDto(Guid Id, string Name, string Path, string[] ProcessNames, string? Alias);
 
 public sealed record ProcessNamesRequest(string[]? ProcessNames);
+public sealed record AliasRequest(string? Alias);
 public sealed record AgentConfigDto(
     string ServerUrl,
     string MachineName,
