@@ -39,7 +39,19 @@
 # testenv.local.ps1 is loaded automatically below if present — re-edit it whenever the Deck's IP
 # changes rather than re-typing an env var every shell. An explicit -DeckHost/-DeckServerUrl on the
 # command line always wins over it. Leaving both unset skips the Deck everywhere `-Only` defaults
-# to 'all'; passing `-Only deck` explicitly without them is an error instead of a silent no-op. The
+# to 'all'; passing `-Only deck` explicitly without them is an error instead of a silent no-op.
+#
+# Installing the Decky plugin needs root (~/homebrew/plugins is root-owned), and this script's SSH
+# calls are non-interactive — no PTY, so sudo cannot prompt for a password and just fails with "a
+# terminal is required to read the password". One-time fix, ON THE DECK (Desktop Mode, a terminal):
+#   sudo visudo -f /etc/sudoers.d/savelocker-testenv
+# and add (adjust the /home/deck paths if your Deck's user differs):
+#   deck ALL=(ALL) NOPASSWD: /usr/bin/rm -rf /home/deck/homebrew/plugins/SaveLocker-Test
+#   deck ALL=(ALL) NOPASSWD: /usr/bin/cp -r /home/deck/.savelocker-testenv-decky-stage /home/deck/homebrew/plugins/SaveLocker-Test
+#   deck ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart plugin_loader
+# Scoped to exactly these three commands, not blanket passwordless sudo - the same trade every
+# `sudo cp ...; sudo systemctl restart plugin_loader` in this project's own README makes, just made
+# non-interactive so `up`/`clean` can run unattended. The
 # Deck is "awake only when the maintainer wakes it" (CONTEXT.md), so every SSH call has a short
 # connect timeout and reports unreachable rather than hanging or aborting the rest of the rig.
 [CmdletBinding()]
@@ -134,6 +146,11 @@ $winState  = Join-Path $StateRoot 'SaveLocker'
 # installed on the same Deck at once without Decky treating them as the same plugin and without a
 # toast leaving you guessing which install just fired.
 $deckyTestPluginName = 'SaveLocker-Test'
+# Where `build` leaves the staged, rewritten plugin for `up` to install — same shape as the Deck
+# agent's own $env:TEMP\savelocker-testenv-artifacts tarball: build writes it once, up/clean read it,
+# neither rebuilds. A fixed path rather than a return value threaded through, so 'up' on its own
+# (without a fresh 'build' first) can say plainly what's missing instead of silently rebuilding.
+$deckyStagePath = Join-Path $env:TEMP 'savelocker-testenv-decky-stage'
 
 $inProgramFiles = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
 if (Test-Path $inProgramFiles) { $dotnet = $inProgramFiles } else { $dotnet = 'dotnet' }
@@ -334,16 +351,18 @@ function Build-DeckyPlugin {
 # copy of the string, not guessed) rather than a loose pattern, specifically so a future edit to
 # main.py's wording makes this silently NOT match — and the `throw` after each one below turns that
 # into a loud failure instead of a stage that quietly ships the real agent's port to a "test" plugin.
+# Called from the `build` switch case ONLY - `up` installs whatever this last left at
+# $deckyStagePath and never calls this itself, same division of labour as Build-Deck/Start-Deck.
 function New-DeckyPluginTestStage {
     $repo = Get-DeckyPluginRepo
     # | Out-Null, not a bare call: npm's own stdout is otherwise the LAST thing written to the
     # success stream before `return $stage` below, and a caller doing `$s = New-DeckyPluginTestStage`
     # would silently get npm's build log instead of the stage path - reproduced and fixed while
-    # testing this function directly (Build-DeckyPlugin is fine called on its own, e.g. from the
-    # `build` switch case below, where nothing captures its return value).
+    # testing this function directly (Build-DeckyPlugin is fine called on its own where nothing
+    # captures its return value).
     Build-DeckyPlugin | Out-Null
 
-    $stage = Join-Path $env:TEMP 'savelocker-testenv-decky-stage'
+    $stage = $deckyStagePath
     if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
     Copy-Item (Join-Path $repo 'plugin.json') $stage
@@ -409,27 +428,39 @@ function New-DeckyPluginTestStage {
 
 function Install-DeckyPluginOnDeck {
     if (-not $DeckHost) { throw "No Deck configured - set -DeckHost or `$env:SAVELOCKER_DECK_HOST." }
-    $stage = New-DeckyPluginTestStage
+    if (-not (Test-Path $deckyStagePath)) {
+        throw "decky plugin not built - run: .\tests\testenv.ps1 build -Only deck (then up again)"
+    }
 
     Say "installing '$deckyTestPluginName' to $DeckHost (separate from any real SaveLocker plugin)"
     $remoteStage = '~/.savelocker-testenv-decky-stage'
     & ssh -o ConnectTimeout=5 $DeckHost "rm -rf $remoteStage"
     if ($LASTEXITCODE -ne 0) { throw "cannot reach $DeckHost (asleep?)" }
-    & scp -o ConnectTimeout=5 -q -r $stage "${DeckHost}:$remoteStage"
+    & scp -o ConnectTimeout=5 -q -r $deckyStagePath "${DeckHost}:$remoteStage"
     if ($LASTEXITCODE -ne 0) { throw "scp to $DeckHost failed" }
 
     # sudo, not the plugin_loader restart alone: ~/homebrew/plugins is root-owned (Gotchas.md ->
-    # Decky plugin), same as the README's own manual-install command this mirrors.
+    # Decky plugin), same as the README's own manual-install command this mirrors. This is a
+    # non-interactive `ssh host cmd` (no PTY), so sudo can only succeed here without a password
+    # prompt - i.e. the Deck needs a NOPASSWD sudoers rule for exactly these three commands. See the
+    # header comment for the exact /etc/sudoers.d snippet; without it this throws with sudo's own
+    # "a terminal is required to read the password" rather than hanging.
     $remoteTarget = "~/homebrew/plugins/$deckyTestPluginName"
     & ssh -o ConnectTimeout=5 $DeckHost "sudo rm -rf $remoteTarget && sudo cp -r $remoteStage $remoteTarget && sudo systemctl restart plugin_loader"
-    if ($LASTEXITCODE -ne 0) { throw "install on $DeckHost failed" }
+    if ($LASTEXITCODE -ne 0) {
+        throw "install on $DeckHost failed - if sudo asked for a password, see this file's header " +
+              "comment for the NOPASSWD sudoers rule this step needs"
+    }
     Write-Host "  installed as '$deckyTestPluginName' - open Decky's menu on the Deck to find it, listed separately from any real SaveLocker entry"
 }
 
 function Remove-DeckyPluginFromDeck {
     $remoteTarget = "~/homebrew/plugins/$deckyTestPluginName"
     & ssh -o ConnectTimeout=5 $DeckHost "sudo rm -rf $remoteTarget && sudo systemctl restart plugin_loader"
-    if ($LASTEXITCODE -ne 0) { throw "removing '$deckyTestPluginName' from $DeckHost failed" }
+    if ($LASTEXITCODE -ne 0) {
+        throw "removing '$deckyTestPluginName' from $DeckHost failed - if sudo asked for a password, " +
+              "see this file's header comment for the NOPASSWD sudoers rule this step needs"
+    }
     Write-Host "  removed '$deckyTestPluginName' from $DeckHost"
 }
 
@@ -661,7 +692,7 @@ switch ($Command) {
         if ($Only -eq 'all' -or $Only -eq 'linux')   { Build-AgentUi; Invoke-Wsl 'build' }
         if (Use-Deck) {
             Build-Deck
-            try { Build-DeckyPlugin } catch { Warn "decky plugin: $($_.Exception.Message)" }
+            try { New-DeckyPluginTestStage | Out-Null } catch { Warn "decky plugin: $($_.Exception.Message)" }
         }
         if ($Only -eq 'all' -or $Only -eq 'console') { Build-Console }
     }
