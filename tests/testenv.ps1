@@ -1,16 +1,23 @@
 ﻿# One place to drive the throwaway test environment: a Windows agent, a headless WSL agent, a
 # Steam Deck (or any SSH-reachable Linux box) and a dashboard container, all running beside — never
-# instead of — the installed release agent.
+# instead of — the installed release agent. When the Deck is configured, `build`/`up` also build
+# and install the SaveLocker-Decky plugin from the sibling repo, staged and installed as a SEPARATE
+# Decky plugin ("SaveLocker-Test") — never the real "SaveLocker" entry — pointed at this rig's test
+# daemon (:5177 / ~/savelocker-test-state), never the real installed agent (:5178). See
+# Get-DeckyPluginRepo / New-DeckyPluginTestStage below for exactly what that isolation covers.
 #
-#   .\tests\testenv.ps1 build     build all four from this working tree
-#   .\tests\testenv.ps1 up        start them (registers on first run)
+#   .\tests\testenv.ps1 build     build all four from this working tree (+ the Decky plugin, if -Only
+#                                 is 'all'/'deck' and a Deck is configured)
+#   .\tests\testenv.ps1 up        start them (registers on first run); installs/reinstalls the test
+#                                 Decky plugin on the Deck alongside the test daemon
 #   .\tests\testenv.ps1 down      stop them; the installed agent is never touched
 #   .\tests\testenv.ps1 status    what is running, and which build
 #   .\tests\testenv.ps1 test      run the suites
 #   .\tests\testenv.ps1 sync      copy this tree's uncommitted changes into the WSL clone
 #   .\tests\testenv.ps1 logs      tail every log the rig writes
 #   .\tests\testenv.ps1 clean     down, then DELETE every test build and all its state — WSL,
-#                                 Windows, the Deck and the dashboard container/image/volume
+#                                 Windows, the Deck, the test Decky plugin and the dashboard
+#                                 container/image/volume
 #   .\tests\testenv.ps1 deck-config -DeckHost deck@<ip> [-DeckServerUrl http://<lan-ip>:5080]
 #                                 write/update tests/testenv.local.ps1 (below) instead of hand-
 #                                 editing it; no args just prints what's currently saved
@@ -78,6 +85,12 @@ param(
     # "$DeckPrefix-state" (set as XDG_DATA_HOME by testenv-deck.sh) — see header comment.
     [string]$DeckPrefix = '~/savelocker-test',
     [string]$DeckServerUrl = $env:SAVELOCKER_DECK_SERVER_URL,
+    # SaveLocker-Decky is its own repo, not a subdirectory of this one (Decky's plugin database
+    # requires a plugin's repo root to BE the plugin). Defaults to the sibling checkout every
+    # contributor already has next to this one; override for a non-standard layout. Not saved by
+    # `deck-config` — unlike DeckHost/DeckServerUrl this doesn't name your LAN, so an env var or an
+    # explicit flag is enough.
+    [string]$DeckyPluginRepo = $env:SAVELOCKER_DECKY_PLUGIN_REPO,
 
     [ValidateSet('all', 'windows', 'linux', 'deck', 'console')]
     [string]$Only = 'all',
@@ -115,6 +128,12 @@ $image     = 'savelocker:test'
 $volume    = 'savelocker-test-data'
 $serverUrl = "http://localhost:$ConsolePort"
 $winState  = Join-Path $StateRoot 'SaveLocker'
+
+# The directory name Decky loads plugins by AND the display name plugin.json/the bundle carry once
+# staged — both deliberately different from the real plugin ("SaveLocker"), so the two can be
+# installed on the same Deck at once without Decky treating them as the same plugin and without a
+# toast leaving you guessing which install just fired.
+$deckyTestPluginName = 'SaveLocker-Test'
 
 $inProgramFiles = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
 if (Test-Path $inProgramFiles) { $dotnet = $inProgramFiles } else { $dotnet = 'dotnet' }
@@ -260,6 +279,159 @@ function Start-Deck {
 }
 
 function Stop-Deck { Invoke-Deck 'down' }
+
+# Resolves and validates the sibling SaveLocker-Decky checkout. Guessed as ..\SaveLocker-Decky next
+# to the MAIN checkout (how every contributor's checkout is actually laid out today) rather than
+# defaulted to nothing like DeckHost — unlike a LAN address there IS a "this machine" answer worth
+# trying first. "Next to the main checkout", not next to $root: $root is THIS worktree's own
+# directory when testenv.ps1 runs from one (e.g. .claude\worktrees\<name>), and guessing off that
+# would look one level above the worktrees folder instead of one level above the repo. The git
+# COMMON dir is shared by every worktree and always resolves back to the main checkout, same trick
+# 'sync' above already uses for SAVELOCKER_WIN_GITDIR.
+function Get-DeckyPluginRepo {
+    $candidate = if ($DeckyPluginRepo) { $DeckyPluginRepo }
+                 else {
+                     $commonDir = (& git -C $root rev-parse --path-format=absolute --git-common-dir)
+                     $mainCheckout = Split-Path $commonDir -Parent
+                     Join-Path (Split-Path $mainCheckout -Parent) 'SaveLocker-Decky'
+                 }
+    if (-not (Test-Path (Join-Path $candidate 'plugin.json'))) {
+        throw "no SaveLocker-Decky checkout at '$candidate' (no plugin.json there) - " +
+              "set -DeckyPluginRepo or `$env:SAVELOCKER_DECKY_PLUGIN_REPO"
+    }
+    return $candidate
+}
+
+function Build-DeckyPlugin {
+    $repo = Get-DeckyPluginRepo
+    Say "building the Decky plugin from $repo"
+    Push-Location $repo
+    try {
+        if (-not (Test-Path 'node_modules')) { & npm install --no-audit --no-fund | Out-Null }
+        & npm run build
+        if ($LASTEXITCODE -ne 0) { throw 'decky plugin build failed' }
+    } finally { Pop-Location }
+}
+
+# Stages plugin.json/package.json/main.py/dist into a throwaway directory and rewrites exactly the
+# handful of literal strings that matter for isolation and labelling — never the checkout itself, so
+# the real repo never carries a test-only string and a build for the Deck can't accidentally leave
+# something behind in source.
+#
+#   - plugin.json "name" and the bundle's own "SaveLocker" literal (its QAM title AND every toast) ->
+#     $deckyTestPluginName, so the two installs are visibly distinct everywhere the plugin speaks.
+#   - main.py's AGENT constant: :5178 (the real agent) -> :5177 (testenv-deck.sh's daemon port).
+#   - main.py's state dir: ~/.local/share/SaveLocker (the real install's state) -> the same
+#     "$DeckPrefix-state/SaveLocker" testenv-deck.sh itself uses (XDG_DATA_HOME=$DeckPrefix-state).
+#   - main.py's agent-binary search: only "$DeckPrefix/savelocker" - the real fallback paths would
+#     find the real installed binary and defeat the whole point.
+#   - main.py's restart_agent: short-circuited. The test daemon is a transient
+#     `systemd-run --user --scope`, not the savelocker.service unit - letting this method reach for
+#     that name from the test plugin would restart the real, live agent instead of doing anything to
+#     this one.
+#
+# Every substitution targets an exact, current literal from main.py (verified against this repo's
+# copy of the string, not guessed) rather than a loose pattern, specifically so a future edit to
+# main.py's wording makes this silently NOT match — and the `throw` after each one below turns that
+# into a loud failure instead of a stage that quietly ships the real agent's port to a "test" plugin.
+function New-DeckyPluginTestStage {
+    $repo = Get-DeckyPluginRepo
+    # | Out-Null, not a bare call: npm's own stdout is otherwise the LAST thing written to the
+    # success stream before `return $stage` below, and a caller doing `$s = New-DeckyPluginTestStage`
+    # would silently get npm's build log instead of the stage path - reproduced and fixed while
+    # testing this function directly (Build-DeckyPlugin is fine called on its own, e.g. from the
+    # `build` switch case below, where nothing captures its return value).
+    Build-DeckyPlugin | Out-Null
+
+    $stage = Join-Path $env:TEMP 'savelocker-testenv-decky-stage'
+    if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $stage | Out-Null
+    Copy-Item (Join-Path $repo 'plugin.json') $stage
+    Copy-Item (Join-Path $repo 'package.json') $stage
+    Copy-Item (Join-Path $repo 'main.py') $stage
+    Copy-Item (Join-Path $repo 'dist') (Join-Path $stage 'dist') -Recurse
+
+    $pluginJsonPath = Join-Path $stage 'plugin.json'
+    $pluginJson = Get-Content $pluginJsonPath -Raw
+    $pluginJsonNew = $pluginJson.Replace('"name": "SaveLocker"', "`"name`": `"$deckyTestPluginName`"")
+    if ($pluginJsonNew -eq $pluginJson) { throw 'plugin.json: "name": "SaveLocker" not found - stage aborted' }
+    Set-Content $pluginJsonPath $pluginJsonNew -NoNewline
+
+    $bundlePath = Join-Path $stage 'dist\index.js'
+    $bundle = Get-Content $bundlePath -Raw
+    $bundleNew = $bundle.Replace("'SaveLocker'", "'$deckyTestPluginName'")
+    if ($bundleNew -eq $bundle) { throw "dist/index.js: literal 'SaveLocker' not found - stage aborted" }
+    Set-Content $bundlePath $bundleNew -NoNewline
+
+    $mainPyPath = Join-Path $stage 'main.py'
+    $mainPy = Get-Content $mainPyPath -Raw
+
+    $agentOld = 'AGENT = "http://127.0.0.1:5178"'
+    $agentNew = 'AGENT = "http://127.0.0.1:5177"'
+    if (-not $mainPy.Contains($agentOld)) { throw "main.py: '$agentOld' not found - stage aborted" }
+    $mainPy = $mainPy.Replace($agentOld, $agentNew)
+
+    $stateDirOld = '    return os.path.join(home, ".local", "share", "SaveLocker")'
+    $stateDirNew = '    return os.path.join(home, "savelocker-test-state", "SaveLocker")'
+    if (-not $mainPy.Contains($stateDirOld)) { throw "main.py: _state_dir's return line not found - stage aborted" }
+    $mainPy = $mainPy.Replace($stateDirOld, $stateDirNew)
+
+    $binaryOld = @"
+    for candidate in (
+        os.path.join(home, ".local", "share", "SaveLocker", "savelocker"),
+        os.path.join(home, ".local", "bin", "savelocker"),
+    ):
+"@
+    $binaryNew = @"
+    for candidate in (
+        os.path.join(home, "savelocker-test", "savelocker"),
+    ):
+"@
+    if (-not $mainPy.Contains($binaryOld)) { throw "main.py: _agent_binary's candidate tuple not found - stage aborted" }
+    $mainPy = $mainPy.Replace($binaryOld, $binaryNew)
+
+    # `r`n, not `n: main.py is checked out CRLF (Windows git), and .Contains/.Replace are literal -
+    # an LF-only needle never matches a CRLF haystack, which is exactly how the first version of
+    # this silently no-op'd instead of throwing (caught by actually running this against a real
+    # checkout, not by inspection).
+    $restartOld = "    async def restart_agent(self):`r`n"
+    $restartGuard = "    async def restart_agent(self):`r`n" +
+        "        # Test build (testenv.ps1): the Deck test daemon is a transient systemd --user scope, not`r`n" +
+        "        # savelocker.service, so this must never reach for that unit - it would restart the real,`r`n" +
+        "        # live agent instead of anything belonging to this plugin.`r`n" +
+        "        return {`"ok`": False, `"reason`": `"test-build-no-restart`"}`r`n"
+    if (-not $mainPy.Contains($restartOld)) { throw "main.py: restart_agent's def line not found - stage aborted" }
+    $mainPy = $mainPy.Replace($restartOld, $restartGuard)
+
+    Set-Content $mainPyPath $mainPy -NoNewline
+    return $stage
+}
+
+function Install-DeckyPluginOnDeck {
+    if (-not $DeckHost) { throw "No Deck configured - set -DeckHost or `$env:SAVELOCKER_DECK_HOST." }
+    $stage = New-DeckyPluginTestStage
+
+    Say "installing '$deckyTestPluginName' to $DeckHost (separate from any real SaveLocker plugin)"
+    $remoteStage = '~/.savelocker-testenv-decky-stage'
+    & ssh -o ConnectTimeout=5 $DeckHost "rm -rf $remoteStage"
+    if ($LASTEXITCODE -ne 0) { throw "cannot reach $DeckHost (asleep?)" }
+    & scp -o ConnectTimeout=5 -q -r $stage "${DeckHost}:$remoteStage"
+    if ($LASTEXITCODE -ne 0) { throw "scp to $DeckHost failed" }
+
+    # sudo, not the plugin_loader restart alone: ~/homebrew/plugins is root-owned (Gotchas.md ->
+    # Decky plugin), same as the README's own manual-install command this mirrors.
+    $remoteTarget = "~/homebrew/plugins/$deckyTestPluginName"
+    & ssh -o ConnectTimeout=5 $DeckHost "sudo rm -rf $remoteTarget && sudo cp -r $remoteStage $remoteTarget && sudo systemctl restart plugin_loader"
+    if ($LASTEXITCODE -ne 0) { throw "install on $DeckHost failed" }
+    Write-Host "  installed as '$deckyTestPluginName' - open Decky's menu on the Deck to find it, listed separately from any real SaveLocker entry"
+}
+
+function Remove-DeckyPluginFromDeck {
+    $remoteTarget = "~/homebrew/plugins/$deckyTestPluginName"
+    & ssh -o ConnectTimeout=5 $DeckHost "sudo rm -rf $remoteTarget && sudo systemctl restart plugin_loader"
+    if ($LASTEXITCODE -ne 0) { throw "removing '$deckyTestPluginName' from $DeckHost failed" }
+    Write-Host "  removed '$deckyTestPluginName' from $DeckHost"
+}
 
 # The installed release agent runs as SaveLocker.Agent.exe, so a dotnet.exe host with the agent DLL
 # on its command line can only ever be a build from this tree. Nothing here can reach the real one.
@@ -487,7 +659,10 @@ switch ($Command) {
     'build' {
         if ($Only -eq 'all' -or $Only -eq 'windows') { Build-Windows }
         if ($Only -eq 'all' -or $Only -eq 'linux')   { Build-AgentUi; Invoke-Wsl 'build' }
-        if (Use-Deck) { Build-Deck }
+        if (Use-Deck) {
+            Build-Deck
+            try { Build-DeckyPlugin } catch { Warn "decky plugin: $($_.Exception.Message)" }
+        }
         if ($Only -eq 'all' -or $Only -eq 'console') { Build-Console }
     }
 
@@ -497,6 +672,7 @@ switch ($Command) {
         if ($Only -eq 'all' -or $Only -eq 'linux')   { Invoke-Wsl 'up' }
         if (Use-Deck) {
             try { Start-Deck } catch { Warn "deck: $($_.Exception.Message)" }
+            try { Install-DeckyPluginOnDeck } catch { Warn "decky plugin: $($_.Exception.Message)" }
         }
         Show-RealGameMappings
         Write-Host ''
@@ -532,6 +708,9 @@ switch ($Command) {
             try {
                 Invoke-Deck 'status'
                 Write-Host "deck UI      $(Get-DeckUiHint)"
+                $installed = & ssh -o ConnectTimeout=5 $DeckHost `
+                    "test -d ~/homebrew/plugins/$deckyTestPluginName && echo yes || echo no"
+                Write-Host "decky plugin '$deckyTestPluginName' installed: $installed"
             } catch { Warn "deck: $($_.Exception.Message)" }
         } else {
             Write-Host 'deck         not configured (set -DeckHost or $env:SAVELOCKER_DECK_HOST)'
@@ -592,6 +771,7 @@ switch ($Command) {
 
         if (Test-DeckConfigured) {
             try { Invoke-Deck 'clean' } catch { Warn "deck: $($_.Exception.Message)" }
+            try { Remove-DeckyPluginFromDeck } catch { Warn "decky plugin: $($_.Exception.Message)" }
         }
 
         if (-not $AgentsOnly) {
