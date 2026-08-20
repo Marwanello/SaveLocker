@@ -152,6 +152,26 @@ same as any other Cloud-covered installed game.
 `192.168.68.x` addresses below. Update this file's own IPs the next time they're touched by hand;
 `deck-config` (no args) always prints the current, real values.
 
+**One of the two follow-ups above shipped (2026-08-20, branch
+`claude/wine-proton-case-insensitive-paths-815ba3`, no task file): case-insensitive path matching
+inside a Wine/Proton prefix.** `PathResolver.Wine()`/`.Proton()` now fall back to a segment-by-segment
+walk against the real directory listing when the naive exact-case path doesn't resolve, anchored at
+the longest matching token root; `Windows()` never reaches it (NTFS handles this at the OS level).
+Newest-mtime wins when a parent holds more than one case-insensitively-matching sibling neither of
+which is exact. `run-linux-tests` 234 → 237 (235 pass; the 2 failures are the pre-existing, unrelated
+Decky "no plugin installed" messaging noted in `logs/2026-08-19_moondeck-save-detection.md`, still not
+investigated). Confirmed by hand against both new fixtures with `savelocker resolve --prefix`, the
+same method used to root-cause the original bug. Full write-up, including a dead-code correction found
+by tracing the algorithm before running it:
+`logs/2026-08-20_wine-case-insensitive-and-scoping.md`.
+<br>**The other two items asked about the same session — multiple save paths per game, and
+registry-based saves — were investigated in depth but deliberately NOT built.** Both turned out to be
+genuine schema/architecture changes once the whole codebase was actually traced (a database
+primary-key shape and an archive-format extensibility gap, not resolver tweaks), so building either is
+a maintainer scope decision, not something to just do. Phased plans, detailed enough to act on without
+re-deriving this session's research, now in [[Backlog]] → *Multiple save paths per game* and
+*Registry-based saves*.
+
 **Cyberpunk 2077 uploads root-caused, fixed, and confirmed on the maintainer's own hardware
 (2026-08-18, branch `cyberpunk-save-upload-fix`).** "Always fails to upload" was never an agent bug —
 the maintainer's save is a genuine 100+ MB archive and `maro.savelocker.dpdns.org` is Cloudflare-
@@ -268,6 +288,11 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
    release notes.** Code is done and verified on hardware (above); nothing about it has shipped yet.
    Worth pairing with a look at whether the six duplicate-shortcut names it found are worth a
    heads-up to the maintainer directly, independent of any code change.
+5. **Merge `claude/wine-proton-case-insensitive-paths-815ba3` and fold the case-insensitive-matching
+   fix into the next Linux release notes.** Code is done, tested (`run-linux-tests` 234 → 237), and
+   verified by hand against both new fixtures — but **not yet exercised on the real Deck**, unlike the
+   MoonDeck fix above. Worth a real-hardware pass if a mis-cased prefix can be found or reproduced
+   there before this ships, since everything so far is fixture-only.
 
 Everything else — the WA-03 second-account ACL test, the remaining Windows manual gates, the LAN
 enrollment-URL check, the missing LA-04/05/06/07 regression tests, and the `WA-01`/113-of-114
