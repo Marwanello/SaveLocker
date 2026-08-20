@@ -95,24 +95,41 @@ Mint a single-use enrollment file (no API key ever leaves the console), and watc
 
 The server ships as a Docker image built and pushed automatically on every commit to `main`.
 
-**Docker Compose (recommended):**
+**Docker Compose (recommended)** — `docker-compose.unraid.yml` in the repo root is ready to use as-is:
 
 ```yaml
 services:
   savelocker:
-    image: ghcr.io/skorcherx/savelocker:latest
+    image: ghcr.io/marwanello/savelocker:latest
     container_name: savelocker-server
     ports:
       - "5080:8080"
+    environment:
+      - TZ=America/Los_Angeles
+      - AgentUpdate__GitHubRepo=Marwanello/SaveLocker
+      - AgentUpdate__Plugin__GitHubRepo=Marwanello/SaveLocker-Decky
+      # Optional: periodically fetch newer GitHub release installers (hours; 0 = disabled).
+      # - AgentUpdate__AutoFetchHours=24
     volumes:
       - /mnt/user/appdata/savelocker:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
 ```
 
 ```sh
-docker compose up -d
+docker compose -f docker-compose.unraid.yml up -d
 # Dashboard at http://<server-ip>:5080
 ```
+
+Set `TZ` to your own timezone (used for the weekly/monthly agent-update auto-fetch schedule).
+`AgentUpdate__GitHubRepo` / `AgentUpdate__Plugin__GitHubRepo` point the dashboard's "fetch agent
+version" feature and the auto-fetch poller at **this fork's** own GitHub Releases — change them if
+you've forked SaveLocker again yourself and want your own fork's releases offered to your fleet.
 
 **Environment variables:**
 
@@ -122,6 +139,10 @@ docker compose up -d
 | `Storage__ArchiveRoot` | `/data/archives` | Save archive directory |
 | `Storage__RetainVersionsPerGame` | `10` | Default versions kept per game |
 | `SteamGridDB__ApiKey` | *(unset)* | Cover art — set here or in the dashboard |
+| `TZ` | *(unset)* | Server timezone — used for weekly/monthly agent-update schedules |
+| `AgentUpdate__GitHubRepo` | `SkorcherX/SaveLocker` | Repo the agent-update poller/fetch checks for new Windows/Linux releases |
+| `AgentUpdate__Plugin__GitHubRepo` | *(unset)* | Repo the Decky-plugin update channel checks (e.g. `Marwanello/SaveLocker-Decky`) |
+| `AgentUpdate__AutoFetchHours` | `0` (disabled) | Poll the GitHub repo(s) above for a newer release this often |
 
 ### 2 — Create an enrollment file
 
@@ -129,7 +150,7 @@ In the dashboard: **Configuration → Enroll a machine**. Optionally name the ma
 
 ### 3 — Install and enroll the agent
 
-**Windows** — download `SaveLocker-Agent-Setup-x.x.x.exe` from [Releases](https://github.com/SkorcherX/SaveLocker/releases) and run it. On the **Enroll this machine** page, browse to the policy file; the installer shows which server and machine name it will join, and the machine is **online in the console before the installer closes**. (SmartScreen warns because the installer isn't code-signed yet — *More info → Run anyway*.) For unattended installs: `Setup.exe /SILENT /ENROLL="C:\path\policy.json"`.
+**Windows** — download `SaveLocker-Agent-Setup-x.x.x.exe` from [Releases](https://github.com/Marwanello/SaveLocker/releases) and run it. On the **Enroll this machine** page, browse to the policy file; the installer shows which server and machine name it will join, and the machine is **online in the console before the installer closes**. (SmartScreen warns because the installer isn't code-signed yet — *More info → Run anyway*.) For unattended installs: `Setup.exe /SILENT /ENROLL="C:\path\policy.json"`.
 
 **Linux / Steam Deck** — the agent is headless; the console is its UI. In Desktop Mode:
 
@@ -153,7 +174,7 @@ In the agent window → **Add Games**: the agent scans for Steam titles and game
 **Requirements:** .NET 10 SDK, Node 22+, npm
 
 ```sh
-git clone https://github.com/SkorcherX/SaveLocker.git
+git clone https://github.com/Marwanello/SaveLocker.git
 cd SaveLocker
 ```
 
@@ -209,7 +230,7 @@ Requires [Inno Setup 6](https://jrsoftware.org/isinfo.php).
 
 ## CI / CD
 
-Every push to `main` builds the dashboard, publishes the ASP.NET server, and pushes a Docker image to `ghcr.io/skorcherx/savelocker:latest`. To deploy on unRAID: `docker compose pull && docker compose up -d`.
+Every push to `main` builds the dashboard, publishes the ASP.NET server, and pushes a Docker image to `ghcr.io/marwanello/savelocker:latest`. To deploy on unRAID: `docker compose pull && docker compose up -d`.
 
 Tagging `vX.Y.Z` builds **both** agents on a release runner and attaches them to a GitHub Release — the Windows installer (`windows-latest`) and the Linux tarball (`ubuntu-latest`).
 
