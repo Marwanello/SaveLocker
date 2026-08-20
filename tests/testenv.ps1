@@ -44,14 +44,20 @@
 # Installing the Decky plugin needs root (~/homebrew/plugins is root-owned), and this script's SSH
 # calls are non-interactive — no PTY, so sudo cannot prompt for a password and just fails with "a
 # terminal is required to read the password". One-time fix, ON THE DECK (Desktop Mode, a terminal):
-#   sudo visudo -f /etc/sudoers.d/savelocker-testenv
+#   sudo visudo -f /etc/sudoers.d/zz-savelocker-testenv
 # and add (adjust the /home/deck paths if your Deck's user differs):
 #   deck ALL=(ALL) NOPASSWD: /usr/bin/rm -rf /home/deck/homebrew/plugins/SaveLocker-Test
 #   deck ALL=(ALL) NOPASSWD: /usr/bin/cp -r /home/deck/.savelocker-testenv-decky-stage /home/deck/homebrew/plugins/SaveLocker-Test
 #   deck ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart plugin_loader
 # Scoped to exactly these three commands, not blanket passwordless sudo - the same trade every
 # `sudo cp ...; sudo systemctl restart plugin_loader` in this project's own README makes, just made
-# non-interactive so `up`/`clean` can run unattended. The
+# non-interactive so `up`/`clean` can run unattended. The `zz-` PREFIX MATTERS, not just the
+# filename: /etc/sudoers.d/ is read in ASCII order, sudo uses the LAST matching rule for a given
+# command, and stock SteamOS ships /etc/sudoers.d/wheel granting the wheel group (deck's own group)
+# `ALL=(ALL) ALL` — password required. A file named e.g. "savelocker-testenv" sorts BEFORE "wheel"
+# alphabetically and gets silently overridden by it (confirmed on hardware: sudo -l correctly listed
+# the NOPASSWD rules, and sudo still prompted anyway) — "zz-" sorts after everything else present by
+# default, so this file's NOPASSWD wins instead. The
 # Deck is "awake only when the maintainer wakes it" (CONTEXT.md), so every SSH call has a short
 # connect timeout and reports unreachable rather than hanging or aborting the rest of the rig.
 [CmdletBinding()]
