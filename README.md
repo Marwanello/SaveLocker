@@ -102,27 +102,18 @@ services:
   savelocker:
     image: ghcr.io/marwanello/savelocker:latest
     container_name: savelocker-server
-    ports:
-      - "5080:8080"
     environment:
-      - TZ=America/Los_Angeles
       - AgentUpdate__GitHubRepo=Marwanello/SaveLocker
       - AgentUpdate__Plugin__GitHubRepo=Marwanello/SaveLocker-Decky
-      # Optional: periodically fetch newer GitHub release installers (hours; 0 = disabled).
-      # - AgentUpdate__AutoFetchHours=24
+    ports:
+      - "5080:8080"
     volumes:
       - /mnt/user/appdata/savelocker:/data
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
     restart: unless-stopped
 ```
 
 ```sh
-docker compose -f docker-compose.unraid.yml up -d
+docker compose up -d
 # Dashboard at http://<server-ip>:5080
 ```
 
