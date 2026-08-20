@@ -27,7 +27,7 @@ const BTN_BASE: React.CSSProperties = {
  * the part the Linux agent was missing entirely: it filtered Cloud games out with no control to
  * bring them back, so an installed Steam game could not be reached at all.
  */
-type FilterId = 'suggested' | 'all' | 'steam' | 'shortcut' | 'heroic' | 'nopath'
+type FilterId = 'suggested' | 'all' | 'steam' | 'shortcut' | 'heroic'
 
 const FILTERS: { id: FilterId; label: string; hint: string; match: (c: Candidate) => boolean }[] = [
   { id: 'suggested', label: 'Suggested', hint: 'Everything except games Steam Cloud already backs up', match: c => !c.hasSteamCloud },
@@ -35,9 +35,20 @@ const FILTERS: { id: FilterId; label: string; hint: string; match: (c: Candidate
   { id: 'steam', label: 'Steam', hint: 'Games installed from the Steam store', match: c => c.source === 'SteamInstalled' },
   { id: 'shortcut', label: 'Added to Steam', hint: 'Non-Steam games you added to your Steam library', match: c => c.source === 'SteamShortcut' },
   { id: 'heroic', label: 'Heroic', hint: 'Games installed through Heroic Games Launcher', match: c => c.source === 'Heroic' },
-  // Not a source but a state, and the one that costs the user the most time: these are the games
-  // absent from the Ludusavi manifest, so each needs a save folder set by hand before it can enroll.
-  { id: 'nopath', label: 'Needs path', hint: 'No save folder could be detected — set one by hand', match: c => !c.path },
+]
+
+/**
+ * Path-detection state as its own axis, not a source filter — it used to be a `nopath` entry in
+ * FILTERS ("Needs path"), which meant it competed with Steam/Heroic/etc. instead of combining with
+ * them: there was no way to ask for "Heroic games still missing a path". Always visible, same idea
+ * as the Store row under Heroic, and stacks with the source filter and store above.
+ */
+type PathMode = 'all' | 'has' | 'missing'
+
+const PATH_MODES: { id: PathMode; label: string; match: (c: Candidate) => boolean }[] = [
+  { id: 'all', label: 'All', match: () => true },
+  { id: 'has', label: 'Detected', match: c => !!c.path },
+  { id: 'missing', label: 'Not detected', match: c => !c.path },
 ]
 
 /** Heroic's storefronts, as a second axis under the Heroic filter. `Unknown` covers a runner we don't map. */
@@ -66,6 +77,7 @@ export function AddGamesView({ onEnrolled }: Props) {
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [filter, setFilter] = useState<FilterId>('suggested')
   const [store, setStore] = useState<string | null>(null)
+  const [pathMode, setPathMode] = useState<PathMode>('all')
   const [scanning, setScanning] = useState(false)
   const [enrolling, setEnrolling] = useState(false)
   const [status, setStatus] = useState('')
@@ -167,9 +179,13 @@ export function AddGamesView({ onEnrolled }: Props) {
   }, [candidates, filter])
 
   const active = FILTERS.find(f => f.id === filter) ?? FILTERS[0]
-  const visible = candidates
+  // Filtered by source (+ store) but not yet by path — the base the path row's own counts are
+  // drawn against, so "Detected" and "Not detected" describe the set the user is already looking at.
+  const sourceFiltered = candidates
     .filter(active.match)
     .filter(c => !(filter === 'heroic' && store) || c.store === store)
+  const activePathMode = PATH_MODES.find(p => p.id === pathMode) ?? PATH_MODES[0]
+  const visible = sourceFiltered.filter(activePathMode.match)
 
   const enrollBlocked = missing.length > 0
   // Named, not just counted. A user looking for a game they can plainly see in Steam needs to be
@@ -241,6 +257,22 @@ export function AddGamesView({ onEnrolled }: Props) {
           ))}
         </div>
       )}
+
+      {/* Save-path detection — a second axis like Store, so it stacks with the source filter
+          instead of replacing it. Always visible: unlike Store it isn't specific to one source. */}
+      <div style={{ display: 'flex', gap: 5, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center', paddingLeft: 2 }}>
+        <span style={{ color: '#6B7280', fontSize: 11 }}>Path:</span>
+        {PATH_MODES.map(p => (
+          <button key={p.id} onClick={() => setPathMode(p.id)} style={chipStyle(pathMode === p.id)}>
+            <span>{p.label}</span>
+            {p.id !== 'all' && (
+              <span style={{ opacity: 0.65, fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace", fontSize: 10.5 }}>
+                {sourceFiltered.filter(p.match).length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
 
       {/* Game list */}
       <div style={{

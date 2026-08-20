@@ -84,7 +84,11 @@ static class Program
                     opts.ContainsKey("autoscan"),
                     opts.GetValueOrDefault("nav"),
                     opts.ContainsKey("nav-debug"),
-                    opts.GetValueOrDefault("pointer"));
+                    opts.GetValueOrDefault("pointer"),
+                    // Where the "Sync now" button reaches the daemon's local API — same default the
+                    // daemon itself binds to, overridable for a test daemon on a non-default port
+                    // (testenv's Deck target runs one alongside the real install).
+                    ParsePort(opts));
 
             case "autostart":
             {
@@ -417,6 +421,8 @@ static class Program
                                                            --size tests the layout off-device (default 1280x800)
                                                            --screenshot captures a PNG and exits
                                                            --nav-debug overlays the live nav cursor state
+                                                           --port <n> where "Sync now" reaches the daemon's
+                                                           local API (default 5178, same as `daemon --port`)
 
         Add this to a game's Steam launch options to sync it automatically:
           savelocker run -- %command%
