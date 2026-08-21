@@ -317,6 +317,18 @@ function Stop-Deck { Invoke-Deck 'down' }
 # would look one level above the worktrees folder instead of one level above the repo. The git
 # COMMON dir is shared by every worktree and always resolves back to the main checkout, same trick
 # 'sync' above already uses for SAVELOCKER_WIN_GITDIR.
+# Same convention as the top-level $Version default: never a real release number, so Decky's own
+# update check can't ever compare it equal to (or newer than) whatever's actually published, and the
+# "-test" suffix makes the plugin browser's own "INSTALLED vX.Y.Z" line say, at a glance, that this
+# is the isolated test build talking to the test daemon - not the real SaveLocker plugin's version
+# talking to the real, live agent.
+function Get-DeckyTestPluginVersion {
+    param([Parameter(Mandatory)][string]$CurrentVersion)
+    $parts = $CurrentVersion -split '\.'
+    $parts[-1] = [string]([int]$parts[-1] + 1)
+    return ($parts -join '.') + '-test'
+}
+
 function Get-DeckyPluginRepo {
     $candidate = if ($DeckyPluginRepo) { $DeckyPluginRepo }
                  else {
@@ -409,6 +421,19 @@ function New-DeckyPluginTestStage {
     $pluginJsonNew = $pluginJson.Replace('"name": "SaveLocker"', "`"name`": `"$deckyTestPluginName`"")
     if ($pluginJsonNew -eq $pluginJson) { throw 'plugin.json: "name": "SaveLocker" not found - stage aborted' }
     Set-Content $pluginJsonPath $pluginJsonNew -NoNewline
+
+    # Decky's plugin browser reads its "INSTALLED vX.Y.Z" line straight off package.json's "version" -
+    # bump it the same way build/up/tests stamp the agent and dashboard, so a glance at the Deck's
+    # plugin list is enough to tell this apart from a real release.
+    $packageJsonPath = Join-Path $stage 'package.json'
+    $packageJson = Get-Content $packageJsonPath -Raw
+    if ($packageJson -notmatch '"version":\s*"([^"]+)"') {
+        throw 'package.json: "version" not found - stage aborted'
+    }
+    $testVersion = Get-DeckyTestPluginVersion -CurrentVersion $Matches[1]
+    $packageJsonNew = $packageJson -replace '"version":\s*"[^"]+"', "`"version`": `"$testVersion`""
+    Set-Content $packageJsonPath $packageJsonNew -NoNewline
+    Say "staged package.json version: $testVersion"
 
     # Both quote styles: the toaster.toast() titles in index.tsx are single-quoted string literals
     # and survive the build that way, but the QAM titleView's JSX text child - <div>SaveLocker</div>
