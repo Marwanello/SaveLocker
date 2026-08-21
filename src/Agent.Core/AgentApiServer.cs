@@ -790,7 +790,7 @@ public sealed record CandidateDto(
 /// <see cref="TrackedGame.PullBeforeLaunchEnabled"/>.
 /// </param>
 public sealed record TrackedGameDto(
-    Guid Id, string Name, string Path, string[] ProcessNames, string? Alias,
+    Guid GameId, string Name, string SaveDirectory, string[] ProcessNames, string? Alias,
     uint? SteamAppId, bool? PullBeforeLaunchEnabled);
 
 public sealed record ProcessNamesRequest(string[]? ProcessNames);
