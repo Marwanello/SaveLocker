@@ -17,6 +17,10 @@ namespace SaveLocker.Agent;
 public sealed class AgentApiServer : IDisposable
 {
     private readonly AgentConfig _config;
+    // Own instance rather than a shared one from the scanner: cheap to construct (just wraps
+    // _config), and its manifest caches in memory after the first load, same as any other Detection
+    // instance - see GET /api/games below, the only place this is used.
+    private readonly Detection _detection;
     private readonly Func<Task<IReadOnlyList<ScanCandidate>>> _doScan;
     private readonly Func<IReadOnlyList<ScanCandidate>, int[], Task<(int enrolled, int skipped)>> _enroll;
     private readonly IAutoStart _autoStart;
@@ -72,6 +76,7 @@ public sealed class AgentApiServer : IDisposable
         _browser = new PathBrowser(browseRoots);
         Port = port;
         _config = config;
+        _detection = new Detection(config);
         _doScan = doScan;
         _enroll = enroll;
         _autoStart = autoStart;
@@ -334,11 +339,30 @@ public sealed class AgentApiServer : IDisposable
             }
         });
 
-        app.MapGet("/api/games", () => _config.Games
-            .Select(g => new TrackedGameDto(
+        // Async, not the plain Select the rest of this file uses: whether a game "HasSteamCloud" is
+        // a manifest lookup (Detection.HasSteamCloudAsync, the exact same signal GameScanner already
+        // uses to warn about candidates during enrollment), not something TrackedGame stores itself.
+        // The compatdata-prefix AppID resolution below (SteamAppId) is a DIFFERENT question and the
+        // wrong one for "does this need Steam Cloud handled" - a non-Steam shortcut run under Proton
+        // gets its own compatdata prefix too, so it also resolves a non-null AppID despite never
+        // having Steam Cloud at all.
+        app.MapGet("/api/games", async (CancellationToken ct) =>
+        {
+            var games = _config.Games;
+            var hasCloud = await Task.WhenAll(games.Select(g => _detection.HasSteamCloudAsync(g.Name, ct)));
+            return games.Zip(hasCloud, (g, cloud) => new TrackedGameDto(
                 g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray(), g.Alias,
-                SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()), g.PullBeforeLaunchEnabled))
-            .ToArray()).Produces<TrackedGameDto[]>();
+                SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()), g.PullBeforeLaunchEnabled,
+                // Unconfirmed (manifest doesn't know this game - most tracked titles, in practice)
+                // errs toward "no cloud" here, the OPPOSITE of GameScanner's own bias for a fresh
+                // candidate. That asymmetry is deliberate: GameScanner is deciding whether to warn
+                // about enrolling a game AT ALL, where wrongly assuming no cloud risks a real
+                // conflict. This is only ever the default for Gaming Mode's OWN pre-launch pull on an
+                // ALREADY-tracked game - wrongly defaulting a genuine non-cloud title to "skip the
+                // pull" silently drops the one thing Gaming Mode exists to do for it, where wrongly
+                // pulling for an actual Steam Cloud title costs nothing but one redundant pull.
+                cloud ?? false)).ToArray();
+        }).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
         // non-Steam shortcut, so for everything else the user needs a way to supply them — and the
@@ -779,19 +803,30 @@ public sealed record CandidateDto(
 /// The manual name-match override, or null when none is set — see <see cref="TrackedGame.Alias"/>.
 /// </param>
 /// <param name="SteamAppId">
-/// This game's resolved Steam AppID, or null when it has none — the same resolution
-/// <see cref="TrackedGame.ResolveSteamAppId"/> and the launch-options rows use, so a Decky plugin can
-/// tell a Steam game from a non-Steam one without depending on the launch-options wrapper being
-/// installed at all (that list comes back empty whenever the wrapper binary is missing, which is not
-/// the same thing as "not a Steam game").
+/// This game's resolved compatdata-prefix AppID, or null when it has none — the same resolution
+/// <see cref="TrackedGame.ResolveSteamAppId"/> and the launch-options rows use. <b>Not</b> a "is this
+/// a Steam Store game" signal: a non-Steam shortcut run under Proton gets its own compatdata prefix
+/// too, so it resolves a non-null value here despite never having Steam Cloud. Use
+/// <paramref name="HasSteamCloud"/> for that question instead.
 /// </param>
 /// <param name="PullBeforeLaunchEnabled">
 /// The Gaming Mode pull-before-launch override, or null when none is set — see
 /// <see cref="TrackedGame.PullBeforeLaunchEnabled"/>.
 /// </param>
+/// <param name="HasSteamCloud">
+/// Whether this title is known to have Steam Cloud saves, per the same manifest lookup
+/// (<see cref="Detection.HasSteamCloudAsync"/>) <c>GameScanner</c> already uses to flag a fresh
+/// candidate — never persisted on <see cref="TrackedGame"/> itself, since the manifest can be
+/// re-checked cheaply and stays current with it rather than freezing whatever was true at enrollment.
+/// A Decky plugin needs this, not <paramref name="SteamAppId"/>, to decide whether its own
+/// pre-launch pull would race Steam's own Cloud sync. Unconfirmed resolves to <c>false</c> here (see
+/// the <c>/api/games</c> handler) — the opposite bias from <c>GameScanner</c>'s own use of this same
+/// lookup, deliberately: that call is deciding whether to warn about enrolling a game at all, this
+/// one is only ever deciding a default for a game already being tracked.
+/// </param>
 public sealed record TrackedGameDto(
     Guid GameId, string Name, string SaveDirectory, string[] ProcessNames, string? Alias,
-    uint? SteamAppId, bool? PullBeforeLaunchEnabled);
+    uint? SteamAppId, bool? PullBeforeLaunchEnabled, bool HasSteamCloud);
 
 public sealed record ProcessNamesRequest(string[]? ProcessNames);
 public sealed record AliasRequest(string? Alias);
