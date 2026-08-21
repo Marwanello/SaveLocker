@@ -336,7 +336,8 @@ public sealed class AgentApiServer : IDisposable
 
         app.MapGet("/api/games", () => _config.Games
             .Select(g => new TrackedGameDto(
-                g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray(), g.Alias))
+                g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray(), g.Alias,
+                SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()), g.PullBeforeLaunchEnabled))
             .ToArray()).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
@@ -372,6 +373,16 @@ public sealed class AgentApiServer : IDisposable
         app.MapPost("/api/games/{id:guid}/alias", (Guid id, AliasRequest body) =>
         {
             _config.SaveGameAlias(id, body.Alias);
+            return TypedResults.Ok(new OkResponse());
+        }).Produces<OkResponse>();
+
+        // The Decky plugin's per-game Gaming Mode pull toggle. Server-side for the same reason the
+        // alias route above is: it is the one place every machine syncing this game (and a Decky
+        // plugin reinstall on this one) can agree on the setting, rather than it living only in that
+        // plugin's own local settings file. `enabled: null` clears the override.
+        app.MapPost("/api/games/{id:guid}/pull-before-launch", (Guid id, PullBeforeLaunchRequest body) =>
+        {
+            _config.SaveGamePullBeforeLaunch(id, body.Enabled);
             return TypedResults.Ok(new OkResponse());
         }).Produces<OkResponse>();
 
@@ -767,10 +778,24 @@ public sealed record CandidateDto(
 /// <param name="Alias">
 /// The manual name-match override, or null when none is set — see <see cref="TrackedGame.Alias"/>.
 /// </param>
-public sealed record TrackedGameDto(Guid Id, string Name, string Path, string[] ProcessNames, string? Alias);
+/// <param name="SteamAppId">
+/// This game's resolved Steam AppID, or null when it has none — the same resolution
+/// <see cref="TrackedGame.ResolveSteamAppId"/> and the launch-options rows use, so a Decky plugin can
+/// tell a Steam game from a non-Steam one without depending on the launch-options wrapper being
+/// installed at all (that list comes back empty whenever the wrapper binary is missing, which is not
+/// the same thing as "not a Steam game").
+/// </param>
+/// <param name="PullBeforeLaunchEnabled">
+/// The Gaming Mode pull-before-launch override, or null when none is set — see
+/// <see cref="TrackedGame.PullBeforeLaunchEnabled"/>.
+/// </param>
+public sealed record TrackedGameDto(
+    Guid Id, string Name, string Path, string[] ProcessNames, string? Alias,
+    uint? SteamAppId, bool? PullBeforeLaunchEnabled);
 
 public sealed record ProcessNamesRequest(string[]? ProcessNames);
 public sealed record AliasRequest(string? Alias);
+public sealed record PullBeforeLaunchRequest(bool? Enabled);
 public sealed record AgentConfigDto(
     string ServerUrl,
     string MachineName,

@@ -481,6 +481,40 @@ public sealed class AgentConfig
         if (mine is not null) mine.Alias = target.Alias;
     }
 
+    /// <summary>
+    /// Persist one game's pull-before-launch override without clobbering concurrent changes to
+    /// anything else. Same re-read-under-lock shape as <see cref="SaveGameAlias"/>, and for the same
+    /// reason.
+    /// </summary>
+    public void SaveGamePullBeforeLaunch(Guid gameId, bool? enabled)
+    {
+        using var guard = AgentStateLock.Acquire("config", StateDir);
+
+        AgentConfig onDisk;
+        try
+        {
+            onDisk = File.Exists(ConfigPath)
+                ? JsonSerializer.Deserialize<AgentConfig>(File.ReadAllText(ConfigPath), JsonOpts) ?? this
+                : this;
+        }
+        catch
+        {
+            onDisk = this;
+        }
+        onDisk.ConfigPath = ConfigPath;
+
+        var target = onDisk.Games.FirstOrDefault(g => g.GameId == gameId);
+        if (target is null) return;
+
+        target.PullBeforeLaunchEnabled = enabled;
+
+        AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(onDisk, JsonOpts),
+            restrictPermissions: true);
+
+        var mine = Games.FirstOrDefault(g => g.GameId == gameId);
+        if (mine is not null) mine.PullBeforeLaunchEnabled = enabled;
+    }
+
     public TrackedGame? FindGame(string name) =>
         Games.FirstOrDefault(g => string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase));
 }
@@ -500,6 +534,16 @@ public sealed class TrackedGame
     /// no UI of its own to set it from.
     /// </summary>
     public string? Alias { get; set; }
+    /// <summary>
+    /// Whether Gaming Mode's pre-launch pull should run for this game — set only by a Decky plugin,
+    /// via the local API's pull-before-launch route. Null means "no override": the plugin computes
+    /// its own default (off for a game with a resolved <see cref="SteamAppId"/>, so it never fights
+    /// Steam's own Cloud sync for an ordinary Steam library game; on otherwise). Kept here rather than
+    /// in the plugin's own local settings file for the same reason <see cref="Alias"/> is — this is
+    /// the one place a Deck's plugin and every other machine syncing this game can agree on it, and it
+    /// survives a plugin reinstall or a settings-file reset that would otherwise silently lose it.
+    /// </summary>
+    public bool? PullBeforeLaunchEnabled { get; set; }
     /// <summary>The local save directory to archive/restore.</summary>
     public string SaveDirectory { get; set; } = "";
     /// <summary>Process names (without .exe) that, when running, mean the game is in use.</summary>
