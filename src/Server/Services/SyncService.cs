@@ -1,4 +1,6 @@
-﻿using SaveLocker.Server.Data;
+﻿using System.IO.Compression;
+using System.Security.Cryptography;
+using SaveLocker.Server.Data;
 using SaveLocker.Shared;
 using Microsoft.EntityFrameworkCore;
 
@@ -561,17 +563,52 @@ public sealed class SyncService
     /// matches the head — the one case chunking can pre-empt before a single byte moves. A conflict
     /// still needs the full archive (an admin may choose it later), so only an exact match skips the
     /// wire.
+    /// <para>
+    /// When <paramref name="files"/> carries the agent's full current manifest, this also decides
+    /// whether a per-file delta is possible: only on a clean fast-forward (not diverged, not forced,
+    /// a real head exists) AND only when that head already has a stored per-file manifest of its own
+    /// (<see cref="SaveVersionFile"/> rows) to diff against. A diverged/forced/first-ever push, or a
+    /// head with no stored manifest yet, always gets the full-archive behavior — those are exactly
+    /// the cases where the server cannot safely assume what "the old content" was to copy forward
+    /// from, and a head with no manifest self-heals the moment one push completes with one.
+    /// </para>
     /// </summary>
-    public async Task<(Guid? SessionId, UploadResult? NoChange)> BeginChunkedUploadAsync(
-        Guid gameId, Guid machineId, Guid? parentVersionId, string contentHash, bool force,
-        CancellationToken ct = default)
+    public async Task<(Guid? SessionId, UploadResult? NoChange, bool UseDeltaPath, string[]? NeedPaths)>
+        BeginChunkedUploadAsync(
+            Guid gameId, Guid machineId, Guid? parentVersionId, string contentHash, bool force,
+            FileManifestEntry[]? files, CancellationToken ct = default)
     {
-        var (_, _, _, noChange) = await PrepareUploadAsync(gameId, parentVersionId, contentHash, force, ct);
-        if (noChange is not null) return (null, noChange);
+        var (_, serverHead, diverged, noChange) =
+            await PrepareUploadAsync(gameId, parentVersionId, contentHash, force, ct);
+        if (noChange is not null) return (null, noChange, false, null);
 
         var versionId = Guid.NewGuid();
         var sessionId = _store.BeginSession(gameId, machineId, versionId, contentHash, parentVersionId, force);
-        return (sessionId, null);
+
+        var useDelta = false;
+        string[]? needPaths = null;
+        Guid? baseVersionId = null;
+
+        if (files is { Length: > 0 } && !diverged && serverHead is not null)
+        {
+            var headManifest = await _db.SaveVersionFiles
+                .Where(f => f.VersionId == serverHead.Id)
+                .ToDictionaryAsync(f => f.Path, f => f.Sha256, ct);
+
+            if (headManifest.Count > 0)
+            {
+                needPaths = files
+                    .Where(f => !headManifest.TryGetValue(f.Path, out var h) ||
+                                !string.Equals(h, f.Sha256, StringComparison.OrdinalIgnoreCase))
+                    .Select(f => f.Path)
+                    .ToArray();
+                useDelta = true;
+                baseVersionId = serverHead.Id;
+            }
+        }
+
+        _store.SetDeltaInfo(sessionId, files, needPaths, baseVersionId);
+        return (sessionId, null, useDelta, needPaths);
     }
 
     /// <summary>Append one chunk. The session's own machine id is checked against the caller's — a
@@ -587,10 +624,20 @@ public sealed class SyncService
     }
 
     /// <summary>
-    /// Finish a chunked upload: publish the staged file and run it through the same conflict-aware
-    /// ingest a single-shot upload gets. Re-checks the head against what it has become since Begin —
-    /// a slow chunked transfer widens the window another machine could have pushed in, and this is
-    /// the last moment that can still matter before something gets published.
+    /// Finish a chunked upload: publish the staged bytes and run the result through the same
+    /// conflict-aware ingest a single-shot upload gets. Re-checks the head against what it has become
+    /// since Begin — a slow chunked transfer widens the window another machine could have pushed in,
+    /// and this is the last moment that can still matter before something gets published.
+    /// <para>
+    /// A session negotiated as a delta (<c>info.BaseVersionId</c> set) needs one more check this
+    /// re-run doesn't already cover: even a clean fast-forward (parent still matches) is only safe to
+    /// reconstruct from if the head is STILL the exact version this delta was diffed against — a
+    /// fast-forwarding push from a different base would silently drop whatever that other push
+    /// changed in files this delta never touched. When that has happened, the staged bytes (only the
+    /// changed files, not a full archive) are useless as a complete version, so the session is
+    /// aborted and the agent is told to retry with a full archive instead — never surfaced past
+    /// <see cref="ApiClient"/>, which does that retry transparently.
+    /// </para>
     /// </summary>
     public async Task<UploadResult> CompleteChunkedUploadAsync(
         Guid gameId, Guid machineId, Guid sessionId, CancellationToken ct = default)
@@ -608,17 +655,202 @@ public sealed class SyncService
             return noChange;
         }
 
-        var (rel, size) = _store.CompleteSession(sessionId);
+        if (info.BaseVersionId is { } negotiatedBase && (diverged || serverHead?.Id != negotiatedBase))
+        {
+            _store.AbortSession(sessionId);
+            return new UploadResult(UploadStatus.RetryFull, null, null);
+        }
+
+        string rel; long size;
         try
         {
-            return await IngestAsync(game, info.VersionId, rel, size, machineId, info.ParentVersionId,
+            (rel, size) = info.BaseVersionId is not null
+                ? await ReconstructDeltaAsync(gameId, sessionId, info, serverHead!, ct)
+                : _store.CompleteSession(sessionId);
+        }
+        catch (SaveArchive.UnsafeArchiveException)
+        {
+            // A delta payload that fails validation is refused before anything is published — same
+            // "never a partial write" guarantee RestoreArchive gives on the pull side. The bytes are
+            // already gone (ReconstructDeltaAsync cleans up its own staging on the way out), so there
+            // is nothing left to un-publish; the agent just needs to know to retry with a full archive.
+            return new UploadResult(UploadStatus.RetryFull, null, null);
+        }
+
+        try
+        {
+            var result = await IngestAsync(game, info.VersionId, rel, size, machineId, info.ParentVersionId,
                 info.ContentHash, serverHead, diverged, info.Force, ct);
+            if (info.Files is { Length: > 0 } manifest)
+            {
+                await PersistVersionManifestAsync(info.VersionId, manifest, ct);
+                if (info.BaseVersionId is not null)
+                {
+                    // The one place this is visible without reading server logs — how many of the
+                    // agent's files actually needed fresh bytes, versus how many it declared in
+                    // total. Answers "why did a push I barely touched anything for still make a new
+                    // version" without guessing: a game that rewrites something on every launch shows
+                    // up here as a small, real, recurring NeedPaths count.
+                    await Audit(machineId, gameId, "upload.delta",
+                        $"{(info.NeedPaths?.Length ?? 0)} of {manifest.Length} file(s) needed fresh bytes");
+                    await _db.SaveChangesAsync(ct);
+                }
+            }
+            return result;
         }
         catch
         {
             _store.TryDelete(rel);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Reconstruct a delta-negotiated version's full archive: copy every file the agent declared
+    /// unchanged straight from the base version's own archive, and take fresh bytes for exactly the
+    /// paths the server asked for at Begin — the agent's manifest is the complete declared truth of
+    /// what should exist (the same rule <see cref="SaveArchive.RestoreArchive"/> already applies on
+    /// the pull side: absent from the declared set means gone), so nothing about deletions needs a
+    /// separate list. Every entry copied is re-hashed against what was already promised — the delta
+    /// payload's own claim for fresh bytes, the base version's stored manifest for carried-forward
+    /// ones — because this is the server's first time ever opening an UPLOADED zip's individual
+    /// entries; nothing here is trusted merely because the aggregate ContentHash matched.
+    /// </summary>
+    private async Task<(string rel, long size)> ReconstructDeltaAsync(
+        Guid gameId, Guid sessionId, ArchiveStore.ChunkedUploadInfo info, SaveVersion baseVersion,
+        CancellationToken ct)
+    {
+        var deltaZipPath = _store.TakeSessionStagedPath(sessionId);
+        var buildPath = _store.NewStagingPath(info.VersionId);
+        try
+        {
+            var needPaths = new HashSet<string>(info.NeedPaths ?? Array.Empty<string>(), StringComparer.Ordinal);
+            var targetFiles = info.Files ?? Array.Empty<FileManifestEntry>();
+
+            // Hostile input the moment the server opens it — the same reasoning RestoreArchive
+            // already applies to a pulled archive, running here for the first time on the upload
+            // side. The allow-list check is stronger than ordinary zip-slip containment: the exact
+            // valid path set is already known, not just "somewhere under the staging directory".
+            ValidateDeltaEntries(deltaZipPath, needPaths);
+
+            var baseManifest = await _db.SaveVersionFiles
+                .Where(f => f.VersionId == baseVersion.Id)
+                .ToDictionaryAsync(f => f.Path, f => f.Sha256, ct);
+
+            long total = 0;
+            using (var baseZip = ZipFile.OpenRead(_store.FullPath(baseVersion.ArchivePath)))
+            using (var deltaZip = ZipFile.OpenRead(deltaZipPath))
+            using (var outZip = ZipFile.Open(buildPath, ZipArchiveMode.Create))
+            {
+                foreach (var target in targetFiles)
+                {
+                    ZipArchiveEntry src;
+                    string expectedHash;
+                    if (needPaths.Contains(target.Path))
+                    {
+                        src = deltaZip.GetEntry(target.Path) ?? throw new SaveArchive.UnsafeArchiveException(
+                            $"Delta payload is missing '{target.Path}', which the server asked for.");
+                        expectedHash = target.Sha256;
+                    }
+                    else
+                    {
+                        src = baseZip.GetEntry(target.Path) ?? throw new SaveArchive.UnsafeArchiveException(
+                            $"'{target.Path}' was declared unchanged but is not in the base version's archive.");
+                        if (!baseManifest.TryGetValue(target.Path, out expectedHash!))
+                            throw new SaveArchive.UnsafeArchiveException(
+                                $"'{target.Path}' has no stored baseline hash to verify against.");
+                    }
+
+                    total += CopyEntryVerified(src, outZip, target.Path, expectedHash, total, SaveArchive.MaxRestoreBytes);
+                }
+            }
+
+            return _store.PublishFile(gameId, info.VersionId, buildPath);
+        }
+        catch
+        {
+            _store.TryDeleteStaged(buildPath);
+            throw;
+        }
+        finally
+        {
+            _store.TryDeleteStaged(deltaZipPath);
+        }
+    }
+
+    /// <summary>Copy one entry's decompressed bytes into <paramref name="dest"/>, re-hashing as they
+    /// go and refusing if the actual bytes don't match <paramref name="expectedHash"/>.</summary>
+    private static long CopyEntryVerified(
+        ZipArchiveEntry src, ZipArchive dest, string path, string expectedHash, long alreadyWritten, long maxBytes)
+    {
+        var entry = dest.CreateEntry(path, CompressionLevel.Optimal);
+        entry.LastWriteTime = src.LastWriteTime;
+
+        using var sha = SHA256.Create();
+        using var srcStream = src.Open();
+        using var dstStream = entry.Open();
+        var buffer = new byte[81920];
+        long written = 0;
+        int read;
+        while ((read = srcStream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            written += read;
+            if (alreadyWritten + written > maxBytes)
+                throw new SaveArchive.UnsafeArchiveException(
+                    $"Delta reconstruction exceeded the {maxBytes / (1024 * 1024)} MB limit. Refusing it.");
+            dstStream.Write(buffer, 0, read);
+            sha.TransformBlock(buffer, 0, read, null, 0);
+        }
+        sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+        var actualHash = Convert.ToHexString(sha.Hash!).ToLowerInvariant();
+        if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+            throw new SaveArchive.UnsafeArchiveException(
+                $"'{path}' does not match its declared content hash. Refusing the reconstruction.");
+
+        return written;
+    }
+
+    /// <summary>Declared-size/count ceiling on the small delta payload, reusing the same restore
+    /// limits the agent already applies to a pulled archive — this is the server's own first time
+    /// opening a client-supplied zip's entries, so the same "attacker-controlled and may lie" caution
+    /// applies. <paramref name="allowedPaths"/> is the stronger-than-usual containment check: every
+    /// entry must be one the server itself asked for, not merely somewhere under a staging root.</summary>
+    private static void ValidateDeltaEntries(string zipPath, HashSet<string> allowedPaths)
+    {
+        using var zip = ZipFile.OpenRead(zipPath);
+        if (zip.Entries.Count > SaveArchive.MaxRestoreEntries)
+            throw new SaveArchive.UnsafeArchiveException(
+                $"Delta payload has {zip.Entries.Count:N0} entries, over the " +
+                $"{SaveArchive.MaxRestoreEntries:N0} limit.");
+
+        long declared = 0;
+        foreach (var entry in zip.Entries)
+        {
+            declared += entry.Length;
+            if (declared > SaveArchive.MaxRestoreBytes)
+                throw new SaveArchive.UnsafeArchiveException(
+                    "Delta payload declares more bytes than the restore limit allows.");
+            if (!allowedPaths.Contains(entry.FullName))
+                throw new SaveArchive.UnsafeArchiveException(
+                    $"Delta payload carries '{entry.FullName}', which was never asked for. Refusing it.");
+        }
+    }
+
+    /// <summary>
+    /// Store the uploading agent's declared per-file manifest as this version's baseline, so the
+    /// NEXT push against it as a base can diff per file instead of re-sending everything. The agent's
+    /// claim is trusted here exactly as much as its aggregate ContentHash already is elsewhere in
+    /// this file — the difference is granularity, not a new trust boundary — but any entry a FUTURE
+    /// delta actually copies forward from this version is re-verified byte-for-byte against it
+    /// (<see cref="CopyEntryVerified"/>), so a wrong claim here can only ever cause a refused
+    /// reconstruction later, never a silently wrong save.
+    /// </summary>
+    private async Task PersistVersionManifestAsync(
+        Guid versionId, IReadOnlyCollection<FileManifestEntry> manifest, CancellationToken ct)
+    {
+        _db.SaveVersionFiles.AddRange(manifest.Select(f =>
+            new SaveVersionFile { VersionId = versionId, Path = f.Path, Sha256 = f.Sha256, Size = f.Size }));
+        await _db.SaveChangesAsync(ct);
     }
 
     /// <summary>

@@ -2524,6 +2524,15 @@
           },
           "force": {
             "type": "boolean"
+          },
+          "files": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/FileManifestEntry"
+            }
           }
         }
       },
@@ -2550,6 +2559,19 @@
                 "$ref": "#/components/schemas/UploadResult"
               }
             ]
+          },
+          "useDeltaPath": {
+            "type": "boolean",
+            "default": false
+          },
+          "needPaths": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -2999,6 +3021,26 @@
             "items": {
               "$ref": "#/components/schemas/EnrollmentGame"
             }
+          }
+        }
+      },
+      "FileManifestEntry": {
+        "required": [
+          "path",
+          "sha256",
+          "size"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -3607,7 +3649,8 @@
         "enum": [
           "Created",
           "NoChange",
-          "Conflict"
+          "Conflict",
+          "RetryFull"
         ]
       }
     }

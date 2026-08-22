@@ -2627,11 +2627,15 @@ export interface components {
             /** Format: uuid */
             parentVersionId: null | string;
             force: boolean;
+            files?: null | components["schemas"]["FileManifestEntry"][];
         };
         BeginUploadResponse: {
             /** Format: uuid */
             sessionId: null | string;
             noChange: null | components["schemas"]["UploadResult"];
+            /** @default false */
+            useDeltaPath: boolean;
+            needPaths?: null | string[];
         };
         ChunkAppendResponse: {
             /** Format: int64 */
@@ -2759,6 +2763,12 @@ export interface components {
             /** Format: int32 */
             settleMaxWaitSeconds?: null | number;
             games?: null | components["schemas"]["EnrollmentGame"][];
+        };
+        FileManifestEntry: {
+            path: string;
+            sha256: string;
+            /** Format: int64 */
+            size: number;
         };
         GameDto: {
             /** Format: uuid */
@@ -2916,7 +2926,7 @@ export interface components {
             conflict: null | components["schemas"]["ConflictDto"];
         };
         /** @enum {unknown} */
-        UploadStatus: "Created" | "NoChange" | "Conflict";
+        UploadStatus: "Created" | "NoChange" | "Conflict" | "RetryFull";
     };
     responses: never;
     parameters: never;

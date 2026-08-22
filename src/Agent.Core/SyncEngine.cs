@@ -233,13 +233,24 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             return new UploadResult(UploadStatus.Conflict, null, null);
         }
 
-        var archive = TempArchive(game.GameId, "push");
-        SaveArchive.CreateArchive(game.SaveDirectory, archive, game.ExcludeGlobs);
+        // A forced push (and everything else force implies — no parent to diff against, admin
+        // override) keeps today's full-archive behavior unconditionally: those are exactly the
+        // cases where the server cannot safely assume what "the old content" was to copy forward
+        // from. Only an ordinary push attempts the per-file delta, and even then it self-selects
+        // back to a full archive below the size/count floor or when the server has no stored
+        // baseline for its head yet — see ApiClient.UploadWithDeltaAsync.
+        var archive = force ? TempArchive(game.GameId, "push") : null;
+        if (archive is not null)
+            SaveArchive.CreateArchive(game.SaveDirectory, archive, game.ExcludeGlobs);
 
         try
         {
-            var result = await _api.UploadAsync(game.GameId, hash, game.LastKnownVersionId, force, archive,
-                onProgress: (done, total) => _activity?.Progress(done, total), ct: ct);
+            var result = archive is not null
+                ? await _api.UploadAsync(game.GameId, hash, game.LastKnownVersionId, force, archive,
+                    onProgress: (done, total) => _activity?.Progress(done, total), ct: ct)
+                : await _api.UploadWithDeltaAsync(game.GameId, hash, game.LastKnownVersionId,
+                    game.SaveDirectory, game.ExcludeGlobs, _tempDir,
+                    onProgress: (done, total) => _activity?.Progress(done, total), ct: ct);
             var countPush = false;
             var touchSyncTime = false;
             switch (result.Status)
@@ -308,7 +319,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         }
         finally
         {
-            if (File.Exists(archive)) File.Delete(archive);
+            if (archive is not null && File.Exists(archive)) File.Delete(archive);
         }
     }
 

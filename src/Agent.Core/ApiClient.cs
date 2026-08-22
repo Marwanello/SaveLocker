@@ -233,21 +233,122 @@ public sealed class ApiClient
         if (begin.NoChange is { } noChange) return noChange;
         var sessionId = begin.SessionId!.Value;
 
-        var totalBytes = new FileInfo(archivePath).Length;
-        onProgress?.Invoke(0, totalBytes);
-        await using (var fs = File.OpenRead(archivePath))
+        await StreamChunksAsync(gameId, sessionId, archivePath, onProgress, ct);
+        return await CompleteChunkedUploadAsync(gameId, sessionId, ct);
+    }
+
+    /// <summary>
+    /// Bytes/count floor below which a per-file delta is pure overhead — a normal request is already
+    /// one round trip and the fixed cost of computing + sending a manifest isn't worth paying for a
+    /// handful of small files. Below it (or on a forced/first-ever push, where there is no server
+    /// head to diff against at all), this is exactly <see cref="UploadAsync"/>: one full archive.
+    /// </summary>
+    private const int DeltaFileCountFloor = 5;
+    private const long DeltaTotalBytesFloor = 2 * 1024 * 1024;
+
+    /// <summary>
+    /// Push local saves, attempting a per-file delta upload when it is likely to pay for itself:
+    /// only a manifest round trip's worth of overhead if the server ends up declining it (a
+    /// diverged/first-ever push, or a head it has no stored per-file baseline for yet), because the
+    /// SAME session then just carries a full archive exactly like <see cref="UploadAsync"/> always has.
+    /// <para>
+    /// <paramref name="tempDir"/> is where this builds whichever zip the negotiation calls for (the
+    /// caller does not pre-build one, unlike <see cref="UploadAsync"/> — which zip is needed isn't
+    /// known until the server answers Begin). Both are cleaned up here regardless of outcome.
+    /// </para>
+    /// </summary>
+    public async Task<UploadResult> UploadWithDeltaAsync(
+        Guid gameId, string contentHash, Guid? parent, string sourceDir, IEnumerable<string>? excludeGlobs,
+        string tempDir, Action<long, long>? onProgress = null, CancellationToken ct = default)
+    {
+        var manifest = SaveArchive.ComputeManifest(sourceDir, excludeGlobs);
+        if (parent is null || manifest.Count < DeltaFileCountFloor ||
+            manifest.Sum(f => f.Size) < DeltaTotalBytesFloor)
         {
-            var buffer = new byte[UploadChunkBytes];
-            long offset = 0;
-            int read;
-            while ((read = await ReadFullyAsync(fs, buffer, ct)) > 0)
+            var archive = Path.Combine(tempDir, $"{gameId:N}-push-{Guid.NewGuid():N}.zip");
+            try
             {
-                await PutChunkWithRetryAsync(gameId, sessionId, offset, buffer, read, ct);
-                offset += read;
-                onProgress?.Invoke(offset, totalBytes);
+                SaveArchive.CreateArchive(sourceDir, archive, excludeGlobs);
+                return await UploadAsync(gameId, contentHash, parent, force: false, archive, onProgress, ct);
             }
+            finally { TryDeleteQuiet(archive); }
         }
 
+        var beginResp = await _http.PostAsJsonAsync(
+            $"/api/games/{gameId}/upload/begin",
+            new BeginUploadRequest(contentHash, parent, Force: false, manifest.ToArray()), ct);
+        if (beginResp.StatusCode == HttpStatusCode.NotFound)
+        {
+            // A server too old to have the chunked routes at all — same fallback UploadAsync uses.
+            var archive = Path.Combine(tempDir, $"{gameId:N}-push-{Guid.NewGuid():N}.zip");
+            try
+            {
+                SaveArchive.CreateArchive(sourceDir, archive, excludeGlobs);
+                return await UploadSingleShotAsync(gameId, contentHash, parent, false, archive, onProgress, ct);
+            }
+            finally { TryDeleteQuiet(archive); }
+        }
+        beginResp.EnsureSuccessStatusCode();
+        var begin = (await beginResp.Content.ReadFromJsonAsync<BeginUploadResponse>(cancellationToken: ct))!;
+        if (begin.NoChange is { } noChange) return noChange;
+        var sessionId = begin.SessionId!.Value;
+
+        var payload = Path.Combine(tempDir, $"{gameId:N}-delta-{Guid.NewGuid():N}.zip");
+        try
+        {
+            if (begin.UseDeltaPath)
+                SaveArchive.CreateArchiveSubset(sourceDir, payload, begin.NeedPaths ?? Array.Empty<string>());
+            else
+                SaveArchive.CreateArchive(sourceDir, payload, excludeGlobs);
+
+            await StreamChunksAsync(gameId, sessionId, payload, onProgress, ct);
+            var result = await CompleteChunkedUploadAsync(gameId, sessionId, ct);
+            if (result.Status != UploadStatus.RetryFull) return result;
+
+            // The negotiated base went stale between Begin and Complete — another machine pushed in
+            // between, so the delta this agent sent no longer reconstructs a complete version. Retry
+            // ONCE with a full archive against the same (now stale) parent: PrepareUploadAsync runs
+            // fresh on the server and correctly reports a conflict if the content genuinely diverged,
+            // or NoChange if it happens to already match — the same two outcomes any ordinary push
+            // could reach. Never surfaced past here: SyncEngine only ever sees the result of this.
+            var fullArchive = Path.Combine(tempDir, $"{gameId:N}-push-retry-{Guid.NewGuid():N}.zip");
+            try
+            {
+                SaveArchive.CreateArchive(sourceDir, fullArchive, excludeGlobs);
+                return await UploadAsync(gameId, contentHash, parent, force: false, fullArchive, onProgress, ct);
+            }
+            finally { TryDeleteQuiet(fullArchive); }
+        }
+        finally { TryDeleteQuiet(payload); }
+    }
+
+    private static void TryDeleteQuiet(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch { /* best-effort cleanup */ }
+    }
+
+    /// <summary>Stream one archive's bytes through the chunk protocol against an already-Begun
+    /// session — shared by the full-archive and delta-payload upload paths, which differ only in
+    /// which zip they hand this.</summary>
+    private async Task StreamChunksAsync(
+        Guid gameId, Guid sessionId, string archivePath, Action<long, long>? onProgress, CancellationToken ct)
+    {
+        var totalBytes = new FileInfo(archivePath).Length;
+        onProgress?.Invoke(0, totalBytes);
+        await using var fs = File.OpenRead(archivePath);
+        var buffer = new byte[UploadChunkBytes];
+        long offset = 0;
+        int read;
+        while ((read = await ReadFullyAsync(fs, buffer, ct)) > 0)
+        {
+            await PutChunkWithRetryAsync(gameId, sessionId, offset, buffer, read, ct);
+            offset += read;
+            onProgress?.Invoke(offset, totalBytes);
+        }
+    }
+
+    private async Task<UploadResult> CompleteChunkedUploadAsync(Guid gameId, Guid sessionId, CancellationToken ct)
+    {
         var completeResp = await _http.PostAsync($"/api/games/{gameId}/upload/{sessionId}/complete", null, ct);
         completeResp.EnsureSuccessStatusCode();
         return (await completeResp.Content.ReadFromJsonAsync<UploadResult>(cancellationToken: ct))!;

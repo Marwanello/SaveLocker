@@ -59,6 +59,11 @@ public static class SaveArchive
     /// Zip a save directory into <paramref name="destinationZip"/>, skipping files that
     /// match <paramref name="excludeGlobs"/>. Returns the content hash of the archived
     /// contents (NOT of the zip bytes) — computed over the same filtered file set.
+    /// <para>
+    /// Hashes while writing the zip, in one pass over each file's bytes, rather than writing the
+    /// archive and then calling <see cref="HashDirectory"/> again — the two used to each read every
+    /// file from disk once, doubling the I/O for no reason since the bytes are identical either way.
+    /// </para>
     /// </summary>
     public static string CreateArchive(string sourceDir, string destinationZip, IEnumerable<string>? excludeGlobs = null)
     {
@@ -74,10 +79,15 @@ public static class SaveArchive
 
         // Add files individually (not ZipFile.CreateFromDirectory) so excluded files are skipped.
         var files = EnumerateRelativeFiles(sourceDir, excludeGlobs);
+        using var sha = SHA256.Create();
         using (var zip = ZipFile.Open(destinationZip, ZipArchiveMode.Create))
         {
             foreach (var rel in files)
             {
+                // Mix in the relative path exactly as HashDirectory does, so the two agree.
+                var pathBytes = Encoding.UTF8.GetBytes(rel + "\n");
+                sha.TransformBlock(pathBytes, 0, pathBytes.Length, null, 0);
+
                 var full = Path.Combine(sourceDir, rel.Replace('/', Path.DirectorySeparatorChar));
                 var entry = zip.CreateEntry(rel, CompressionLevel.Optimal);
                 entry.LastWriteTime = File.GetLastWriteTime(full);
@@ -87,10 +97,67 @@ public static class SaveArchive
                 // gate is what guarantees the writer has actually finished.
                 using var src = OpenShared(full);
                 using var dst = entry.Open();
-                src.CopyTo(dst);
+                var buffer = new byte[81920];
+                int read;
+                while ((read = src.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    dst.Write(buffer, 0, read);
+                    sha.TransformBlock(buffer, 0, read, null, 0);
+                }
             }
         }
-        return HashDirectory(sourceDir, excludeGlobs);
+        sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+        return Convert.ToHexString(sha.Hash!).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Zip only <paramref name="includePaths"/> (relative, forward-slash paths as returned by
+    /// <see cref="ListFiles"/>/<see cref="ComputeManifest"/>) out of <paramref name="sourceDir"/> —
+    /// the delta-upload payload, carrying just the files a per-file diff found changed. An empty
+    /// list produces a valid, empty zip (e.g. a push whose only change is a deletion).
+    /// </summary>
+    public static void CreateArchiveSubset(string sourceDir, string destinationZip, IEnumerable<string> includePaths)
+    {
+        var dir = Path.GetDirectoryName(destinationZip);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+        if (File.Exists(destinationZip))
+            File.Delete(destinationZip);
+
+        using var zip = ZipFile.Open(destinationZip, ZipArchiveMode.Create);
+        foreach (var rel in includePaths)
+        {
+            var full = Path.Combine(sourceDir, rel.Replace('/', Path.DirectorySeparatorChar));
+            var entry = zip.CreateEntry(rel, CompressionLevel.Optimal);
+            entry.LastWriteTime = File.GetLastWriteTime(full);
+            using var src = OpenShared(full);
+            using var dst = entry.Open();
+            src.CopyTo(dst);
+        }
+    }
+
+    /// <summary>
+    /// Per-file identity of every file <see cref="HashDirectory"/>/<see cref="CreateArchive"/> would
+    /// act on — the same ordered, exclude-filtered file set, each with its own SHA-256 and size. This
+    /// is what a per-file delta upload diffs against the server's stored manifest for its current
+    /// head, so only genuinely changed files' bytes ever cross the network.
+    /// </summary>
+    public static IReadOnlyList<FileManifestEntry> ComputeManifest(string sourceDir, IEnumerable<string>? excludeGlobs = null)
+    {
+        if (!Directory.Exists(sourceDir)) return Array.Empty<FileManifestEntry>();
+
+        var files = EnumerateRelativeFiles(sourceDir, excludeGlobs);
+        var result = new List<FileManifestEntry>(files.Count);
+        foreach (var rel in files)
+        {
+            var full = Path.Combine(sourceDir, rel.Replace('/', Path.DirectorySeparatorChar));
+            using var fs = OpenShared(full);
+            var size = fs.Length;
+            using var sha = SHA256.Create();
+            var hash = Convert.ToHexString(sha.ComputeHash(fs)).ToLowerInvariant();
+            result.Add(new FileManifestEntry(rel, hash, size));
+        }
+        return result;
     }
 
     /// <summary>
