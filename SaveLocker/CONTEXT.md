@@ -18,6 +18,33 @@ and 1 — both resolve to the same rollout: the console and fleet are now curren
 which also carries v0.5.9's console UI/audit cleanup and the MoonDeck/case-insensitive save-detection
 fixes. See `logs/shipped-2026-08.md` for the full index of what that covers.
 
+**Per-file delta upload shipped (2026-08-22, this session, branch `worktree-per-file-delta-upload`,
+`f7d2a58`) — on `main` but NOT yet in a tagged release.** The backlog item "upload only changed
+files, not the whole save folder": a normal push now diffs a per-file manifest against the server's
+stored per-file baseline for its current head and sends only what actually changed, instead of
+re-zipping and re-uploading the whole folder on every save (the Cyberpunk/Fallout: New Vegas
+multi-slot-save motivation from `tasks/PerFileDeltaUpload.md`, now moved to
+`logs/2026-08-22_PerFileDeltaUpload.md`). Measured: an 8-slot 3.2 MB fixture with one file changed
+sent ~400 KB instead of ~3.2 MB. New `SaveVersionFile` EF table (migration
+`20260822103632_AddSaveVersionFiles`); `openapi.json`/`web/src/api-types.ts` regenerated (`agent-ui`'s
+is unaffected — it reflects the agent's own local API, not this wire protocol). The same session
+also investigated a second question — whether version-change detection was ever fooled by a
+timestamp rather than real content — and found it was **already correct** before this work
+(`SaveArchive.HashDirectory` hashes path+bytes only); recorded as a settled fact in `Decisions.md`
+rather than a fix. New suite `tests/run-delta-upload-tests.ps1` (17/17); no regression in
+`run-agent-tests` (47/47) or `run-hardening-tests` (33/33). `run-server-bugbounty-tests` reads
+160/164 — the 4 failures are a pre-existing `wsl -d Ubuntu-24.04` distro-name mismatch on this dev
+box's WSL install (registered as plain `Ubuntu`) in that suite's raw-schema helper, unconnected to
+this change; not fixed here since it's a per-machine environment quirk, not a code issue.
+<br>**Not yet run against a real fleet** — verified end-to-end against a throwaway dev server via
+the CLI (register/add-game/push/pull across two machines, a genuine conflict, a forced push, a
+below-floor small game, and a deliberately hostile delta payload), and the security check was
+confirmed to actually catch what it exists for by disabling it and watching the assertion flip
+(then immediately restoring it — the auto-mode classifier blocked a second, redundant run of the
+suite with it disabled, which is exactly the caution you'd want there). Next real-world step: roll
+out with the next release and watch it on the maintainer's own Cyberpunk 2077 / Fallout: New Vegas
+saves — the `upload.delta` audit entry's "N of M files needed fresh bytes" is the thing to read.
+
 v0.5.7's rollout (2026-08-15) is complete: console redeployed, the Windows agent took it from the
 tray's *Check for updates*, and **the Deck updated itself** — see below, it is the first time that
 has happened. The **decky-plugin** row of Config → Agent updates is still **empty**, so no Deck is
