@@ -555,6 +555,20 @@ public sealed class TrackedGame
     /// </summary>
     public string? SteamAppId { get; set; }
     /// <summary>
+    /// Whether this game was actually enrolled AS a Steam install — decided once, at enrollment, from
+    /// the candidate's own <see cref="ScanCandidate.HasSteamCloud"/> (<c>GameScanner</c> only sets
+    /// that true for a candidate discovered as an installed or shortcut Steam game with a confirmed
+    /// manifest Steam Cloud entry; every other source — Heroic, a bare save-root match — gets false
+    /// regardless of what the manifest says about a title's Steam SKU). Deliberately NOT re-derived
+    /// later from a name-only manifest lookup: the manifest answers "does a Steam release of this
+    /// TITLE have Steam Cloud", which is true for plenty of games this machine tracks a Heroic (Epic/
+    /// GOG) install of — Fez, resolved through Heroic, is exactly that case, and a title-only lookup
+    /// wrongly called it a Steam Cloud game. Only ever set true for a genuinely Steam-sourced install.
+    /// A Decky plugin reads this to default its own Gaming Mode pre-launch pull off for a Steam
+    /// title (avoiding a race with Steam's own Cloud sync) and on for everything else.
+    /// </summary>
+    public bool HasSteamCloud { get; set; }
+    /// <summary>
     /// The game's install directory on this machine — what the Ludusavi manifest calls
     /// <c>&lt;base&gt;</c>, and the placeholder its save paths use more than any other. Recorded at
     /// enrollment so a later re-resolve (the poller, the launch wrapper) expands the same templates

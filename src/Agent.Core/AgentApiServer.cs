@@ -17,10 +17,6 @@ namespace SaveLocker.Agent;
 public sealed class AgentApiServer : IDisposable
 {
     private readonly AgentConfig _config;
-    // Own instance rather than a shared one from the scanner: cheap to construct (just wraps
-    // _config), and its manifest caches in memory after the first load, same as any other Detection
-    // instance - see GET /api/games below, the only place this is used.
-    private readonly Detection _detection;
     private readonly Func<Task<IReadOnlyList<ScanCandidate>>> _doScan;
     private readonly Func<IReadOnlyList<ScanCandidate>, int[], Task<(int enrolled, int skipped)>> _enroll;
     private readonly IAutoStart _autoStart;
@@ -76,7 +72,6 @@ public sealed class AgentApiServer : IDisposable
         _browser = new PathBrowser(browseRoots);
         Port = port;
         _config = config;
-        _detection = new Detection(config);
         _doScan = doScan;
         _enroll = enroll;
         _autoStart = autoStart;
@@ -339,30 +334,17 @@ public sealed class AgentApiServer : IDisposable
             }
         });
 
-        // Async, not the plain Select the rest of this file uses: whether a game "HasSteamCloud" is
-        // a manifest lookup (Detection.HasSteamCloudAsync, the exact same signal GameScanner already
-        // uses to warn about candidates during enrollment), not something TrackedGame stores itself.
-        // The compatdata-prefix AppID resolution below (SteamAppId) is a DIFFERENT question and the
-        // wrong one for "does this need Steam Cloud handled" - a non-Steam shortcut run under Proton
-        // gets its own compatdata prefix too, so it also resolves a non-null AppID despite never
-        // having Steam Cloud at all.
-        app.MapGet("/api/games", async (CancellationToken ct) =>
-        {
-            var games = _config.Games;
-            var hasCloud = await Task.WhenAll(games.Select(g => _detection.HasSteamCloudAsync(g.Name, ct)));
-            return games.Zip(hasCloud, (g, cloud) => new TrackedGameDto(
+        // HasSteamCloud is decided once, at enrollment (Enroller.EnrollAsync, from the candidate's
+        // own ScanCandidate.HasSteamCloud) - not re-derived here from a name-only manifest lookup.
+        // That lookup answers "does a Steam release of this TITLE have Steam Cloud", which is true
+        // for plenty of titles this machine tracks a Heroic (Epic/GOG) install of, not "is THIS
+        // install a Steam one" - see TrackedGame.HasSteamCloud's own doc comment.
+        app.MapGet("/api/games", () => _config.Games
+            .Select(g => new TrackedGameDto(
                 g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray(), g.Alias,
                 SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()), g.PullBeforeLaunchEnabled,
-                // Unconfirmed (manifest doesn't know this game - most tracked titles, in practice)
-                // errs toward "no cloud" here, the OPPOSITE of GameScanner's own bias for a fresh
-                // candidate. That asymmetry is deliberate: GameScanner is deciding whether to warn
-                // about enrolling a game AT ALL, where wrongly assuming no cloud risks a real
-                // conflict. This is only ever the default for Gaming Mode's OWN pre-launch pull on an
-                // ALREADY-tracked game - wrongly defaulting a genuine non-cloud title to "skip the
-                // pull" silently drops the one thing Gaming Mode exists to do for it, where wrongly
-                // pulling for an actual Steam Cloud title costs nothing but one redundant pull.
-                cloud ?? false)).ToArray();
-        }).Produces<TrackedGameDto[]>();
+                g.HasSteamCloud))
+            .ToArray()).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
         // non-Steam shortcut, so for everything else the user needs a way to supply them — and the
@@ -814,15 +796,11 @@ public sealed record CandidateDto(
 /// <see cref="TrackedGame.PullBeforeLaunchEnabled"/>.
 /// </param>
 /// <param name="HasSteamCloud">
-/// Whether this title is known to have Steam Cloud saves, per the same manifest lookup
-/// (<see cref="Detection.HasSteamCloudAsync"/>) <c>GameScanner</c> already uses to flag a fresh
-/// candidate — never persisted on <see cref="TrackedGame"/> itself, since the manifest can be
-/// re-checked cheaply and stays current with it rather than freezing whatever was true at enrollment.
-/// A Decky plugin needs this, not <paramref name="SteamAppId"/>, to decide whether its own
-/// pre-launch pull would race Steam's own Cloud sync. Unconfirmed resolves to <c>false</c> here (see
-/// the <c>/api/games</c> handler) — the opposite bias from <c>GameScanner</c>'s own use of this same
-/// lookup, deliberately: that call is deciding whether to warn about enrolling a game at all, this
-/// one is only ever deciding a default for a game already being tracked.
+/// Whether this game was enrolled as a genuinely Steam-sourced install — see
+/// <see cref="TrackedGame.HasSteamCloud"/>, decided once at enrollment, not a live lookup. A Decky
+/// plugin needs this, not <paramref name="SteamAppId"/>, to decide whether its own pre-launch pull
+/// would race Steam's own Cloud sync — an AppID alone can't tell a real Steam install apart from a
+/// non-Steam shortcut run under Proton, which gets a compatdata prefix too.
 /// </param>
 public sealed record TrackedGameDto(
     Guid GameId, string Name, string SaveDirectory, string[] ProcessNames, string? Alias,
