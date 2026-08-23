@@ -197,6 +197,19 @@ snapshot could not be screenshotted locally — loopback is fast enough that a 9
 completes in under a second — but the exact code path that reported it is what the successful push
 itself exercised 20+ times without error.
 
+**Markdown tables now render in the console (2026-08-23, branch `claude/markdown-tables-console-d4a57e`,
+from [[Backlog]]).** `HelpView.tsx` and `WhatsNewView.tsx` were bare `<ReactMarkdown>`; GFM tables
+rendered as raw pipe characters, worst on `cli-reference.md` (almost entirely tables). Added
+`remark-gfm`, plus `rehype-raw` so the `<br>`-separated multi-line option lists in that file's table
+cells render as real line breaks — react-markdown drops raw HTML by default, and without it the fix
+would have swapped one visible bug (raw pipes) for another (literal `<br>` text). `.help-content
+table` is now `display: block; overflow-x: auto` so a table wider than the content pane scrolls
+sideways rather than being silently clipped by the console's fixed-height, `overflow: hidden` root
+(the bounded-flex-column trap in [[Gotchas]]). Verified live in the dev server: all 5 `cli-reference.md`
+tables render correctly, `<br>` produces real breaks, no horizontal page overflow. `npm run build`
+clean. `agent-update.md` was deliberately written with only one table before this landed — left as-is;
+converting more of its bulleted content into tables is an editorial call, not part of this fix.
+
 ---
 
 ## Where things stand
