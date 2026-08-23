@@ -66,8 +66,12 @@ input:focus { border-color: #129271 !important; outline: none; }
 .help-content pre  { background: #1E252A; border: 1px solid #494949; border-radius: 5px; padding: 12px 14px; overflow-x: auto; margin-bottom: 14px; }
 .help-content pre code { background: none; border: none; padding: 0; font-size: 12px; color: #86efac; }
 .help-content blockquote { border-left: 3px solid #129271; margin: 12px 0; padding: 6px 14px; background: #1E252A; border-radius: 0 4px 4px 0; font-size: 13px; color: #8b9aaa; }
-.help-content table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 12px; }
-.help-content th { background: #222d34; color: #8b9aaa; font-weight: 600; padding: 6px 10px; text-align: left; border-bottom: 1px solid #494949; }
+/* `display: block` + `overflow-x: auto` lets a table that's wider than the content pane scroll
+   sideways instead of overflowing it — the content pane sits inside the console's fixed-height,
+   overflow-hidden root (see Gotchas → bounded flex column), so anything that overflows it un-
+   contained is clipped, not reachable via a scrollbar. */
+.help-content table { display: block; overflow-x: auto; width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 12px; }
+.help-content th { background: #222d34; color: #8b9aaa; font-weight: 600; padding: 6px 10px; text-align: left; border-bottom: 1px solid #494949; white-space: nowrap; }
 .help-content td { padding: 6px 10px; border-bottom: 1px solid #252e35; color: #cbd5e1; }
 .help-content a { color: #129271; text-decoration: underline; }
 .help-content a:hover { color: #16b992; }
