@@ -160,6 +160,12 @@ Check "stale conflict reaches the agent notification path" (($conflictPush -join
 $adminConflict = Invoke-RestMethod "$server/api/conflicts" | Select-Object -First 1
 Check "stale conflict is escalated in the console contract" ($adminConflict.escalated -eq $true)
 
+# The conflict card's file-count / newest-mtime delta (derived from the archive on demand, not
+# stored) — pcSave has exactly one file at this point, so the count is exact, not just "present".
+$conflictStats = Invoke-RestMethod "$server/api/games/$($adminConflict.gameId)/versions/$($adminConflict.versionBId)/stats"
+Check "conflict version stats report the real file count" ($conflictStats.fileCount -eq 1)
+Check "conflict version stats report a newest mtime"       ($null -ne $conflictStats.newestFileWriteUtc)
+
 # =====================================================================================
 # 3. Dedupe - a persistent fault must not manufacture a row per poll
 # =====================================================================================

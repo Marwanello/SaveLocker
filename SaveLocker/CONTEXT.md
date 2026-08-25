@@ -210,6 +210,22 @@ tables render correctly, `<br>` produces real breaks, no horizontal page overflo
 clean. `agent-update.md` was deliberately written with only one table before this landed — left as-is;
 converting more of its bulleted content into tables is an editorial call, not part of this fix.
 
+**Conflict Tier 1's last piece shipped in code (2026-08-24, branch `claude/conflict-ui-file-delta-3df975`,
+from [[Backlog]], not merged).** The conflict card showed size and upload time per side but nothing
+that says which machine has "more" progress. `SaveArchive.CreateArchive` has always stamped
+`entry.LastWriteTime` per zip entry, so a new `SaveArchive.GetArchiveStats` reads file count and
+newest mtime straight from a version's archive on demand — no migration, works retroactively on every
+version ever uploaded. Two new endpoints share one `SyncService.GetVersionStatsAsync`:
+`GET /api/versions/{id}/stats` (agent group, unscoped) and
+`GET /api/games/{id}/versions/{versionId}/stats` (admin group, scoped) — the agent route has no UI
+caller yet, built ahead of need because conflict resolution is expected to move to the agent later
+(Steam-Cloud-style), and that will want this same comparison. Console fetches lazily, only for
+versions an open conflict is actually showing, cached by version id (an archive's stats never change
+once uploaded) so the 15s poll never re-fetches. `dotnet build` (Server + Windows Agent) and `web`
+build/lint clean; `openapi.json`/`api-types.ts` regenerated; two new `run-health-tests.ps1` checks off
+a real conflict (21/21 passing); verified live against a real dev server + console with two machines
+pushed into a genuine conflict. Write-up: `logs/2026-08-24_conflict-version-stats.md`.
+
 ---
 
 ## Where things stand

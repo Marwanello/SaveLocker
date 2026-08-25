@@ -907,6 +907,24 @@ public sealed class SyncService
         return (version, _store.OpenRead(version.ArchivePath));
     }
 
+    /// <summary>File count / newest-mtime for one version's archive, for the agent group's flat
+    /// <c>/versions/{id}/stats</c> route — unscoped by game, matching <see cref="DownloadVersionAsync"/>'s
+    /// own precedent (a valid machine key already gates the group).</summary>
+    public Task<VersionStatsDto?> GetVersionStatsAsync(Guid versionId) => GetVersionStatsAsync(null, versionId);
+
+    /// <summary>Same, but scoped to <paramref name="gameId"/> for the admin group's nested
+    /// <c>/games/{id}/versions/{versionId}/stats</c> route, so a caller cannot probe a version
+    /// belonging to a different game through the wrong URL.</summary>
+    public async Task<VersionStatsDto?> GetVersionStatsAsync(Guid? gameId, Guid versionId)
+    {
+        var version = await _db.SaveVersions.FindAsync(versionId);
+        if (version is null || (gameId is not null && version.GameId != gameId) || !_store.Exists(version.ArchivePath))
+            return null;
+
+        var stats = SaveArchive.GetArchiveStats(_store.FullPath(version.ArchivePath));
+        return new VersionStatsDto(stats.FileCount, stats.NewestFileWriteUtc);
+    }
+
     // ----- Admin: conflicts & rollback -----
 
     /// <summary>

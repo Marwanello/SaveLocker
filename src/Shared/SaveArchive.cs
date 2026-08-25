@@ -55,6 +55,30 @@ public static class SaveArchive
         return Convert.ToHexString(sha.ComputeHash(fs)).ToLowerInvariant();
     }
 
+    /// <summary>File count and the newest per-file write time inside a save archive — read
+    /// straight from the zip's own entry metadata, never re-extracted or re-hashed.
+    /// <see cref="CreateArchive"/> has always stamped <c>entry.LastWriteTime</c> from the source
+    /// file, so this works on archives written long before this method existed, not just future
+    /// ones. Meant to help tell two conflicting versions apart beyond a bare size and upload time —
+    /// by a human in the console today, and by whatever decides conflicts automatically later.</summary>
+    public readonly record struct ArchiveStats(int FileCount, DateTime? NewestFileWriteUtc);
+
+    /// <summary>Read <see cref="ArchiveStats"/> from an archive already on disk.</summary>
+    public static ArchiveStats GetArchiveStats(string zipPath)
+    {
+        using var zip = ZipFile.OpenRead(zipPath);
+        var count = 0;
+        DateTime? newest = null;
+        foreach (var entry in zip.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name)) continue; // directory entry, no content
+            count++;
+            var mtime = entry.LastWriteTime.UtcDateTime;
+            if (newest is null || mtime > newest) newest = mtime;
+        }
+        return new ArchiveStats(count, newest);
+    }
+
     /// <summary>
     /// Zip a save directory into <paramref name="destinationZip"/>, skipping files that
     /// match <paramref name="excludeGlobs"/>. Returns the content hash of the archived
