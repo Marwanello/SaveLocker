@@ -1,7 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
+import { HelpMarkdown } from './HelpMarkdown';
 import { articles, categories } from '../help/index';
 
 function getSlugFromHash(): string | null {
@@ -112,7 +110,7 @@ export function HelpView() {
         maxWidth: 780,
       }}>
         <div className="help-content">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{current.content}</ReactMarkdown>
+          <HelpMarkdown>{current.content}</HelpMarkdown>
         </div>
       </main>
     </div>
