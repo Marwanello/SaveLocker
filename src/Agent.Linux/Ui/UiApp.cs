@@ -945,10 +945,11 @@ sealed class UiApp
 
         Widgets.Gap(Theme.Space.Lg);
 
-        // What is happening right now, mirroring the browser agent UI's Activity card. No "Sync
-        // now" here on purpose: the daemon — a separate process — is the one that actually holds
-        // the sync engine and its lease state, so this screen stays a view over what it reports
-        // (SyncActivityStore) rather than a second place that can kick off a push or pull.
+        // What is happening right now, mirroring the browser agent UI's Activity card — including
+        // its "Sync now" button. This screen still never SYNCS: the daemon, a separate process, is
+        // the one that holds the sync engine and its lease state, so the button POSTs to the
+        // daemon's own /api/sync and everything shown here is read back out of SyncActivityStore.
+        // What this screen must not become is a second place that builds an engine of its own.
         DrawActivity();
         Widgets.Gap(Theme.Space.Lg);
 
@@ -1115,10 +1116,21 @@ sealed class UiApp
     /// <c>localhost</c> only and gated on <see cref="LocalAuth"/>. This process never builds a
     /// second <see cref="SyncEngine"/>: the daemon is the one long-lived holder of lease state, so
     /// asking it to sync is the only safe way for a second process to make one happen at all.
+    /// <para>
+    /// The timeout is explicit because <c>/api/sync</c> holds its request open for the WHOLE
+    /// multi-game sync, and HttpClient's own default is 100s — the same fixed ceiling the chunked
+    /// upload protocol exists to get out from under. A large save on a slow uplink took longer than
+    /// that and this screen reported "Sync failed" over a push that was still running and about to
+    /// succeed, which is the one thing a status surface must never do.
+    /// </para>
     /// </summary>
     private async Task<string> SyncNowAsync()
     {
-        using var http = new HttpClient { BaseAddress = new Uri($"http://localhost:{_apiPort}/") };
+        using var http = new HttpClient
+        {
+            BaseAddress = new Uri($"http://localhost:{_apiPort}/"),
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
         http.DefaultRequestHeaders.Add(LocalAuth.HeaderName, _localAuth.Token);
         using var response = await http.PostAsync("api/sync", content: null);
         response.EnsureSuccessStatusCode();
