@@ -44,6 +44,34 @@ confirmed to actually catch what it exists for by disabling it and watching the 
 suite with it disabled, which is exactly the caution you'd want there). Next real-world step: roll
 out with the next release and watch it on the maintainer's own Cyberpunk 2077 / Fallout: New Vegas
 saves — the `upload.delta` audit entry's "N of M files needed fresh bytes" is the thing to read.
+<br>**Reviewed at depth on 2026-08-26 (branch `per-file-delta-upload`); 14 findings, all applied.**
+The three that mattered: the agent zipped whatever paths the *server* named, with no check they were
+files it had itself declared — a server reached by a forged enrollment file could have had any
+readable file on the machine zipped and uploaded (the upload-side mirror of the hostile-archive rule
+[[Decisions]] §4 already applies on pull); a failure while storing the per-file baseline ran inside
+the `catch` that deletes the just-published archive, *after* the version row was committed and the
+head advanced, leaving the head pointing at a file that no longer existed; and `entry.LastWriteTime`
+was set before the source file was opened, so a save file that vanished mid-push raised
+`ArgumentOutOfRangeException` (zip cannot represent the 1601 timestamp a missing file reports)
+instead of a diagnosable `FileNotFoundException`. Also: the server now verifies that a reconstructed
+archive actually hashes to the `ContentHash` the agent declared for it — per-entry hashes only ever
+proved the pieces — bounds it by `Storage:MaxUploadMb` (successive deltas could otherwise grow one
+version past the configured cap a few MB at a time), and validates the client-supplied manifest at
+Begin rather than discovering a duplicate path as a primary-key violation after the commit.
+<br>Structurally, the push decision tree moved out of `ApiClient` into `SyncEngine.SendPushAsync` —
+which is what makes the containment check natural, since that is where the manifest the agent sent
+still is. `SaveArchive.ComputeManifest` now returns the aggregate content hash alongside the
+manifest from **one** pass, so `HashDirectory`'s separate read is gone and `CreateArchive` no longer
+hashes at all; that made the per-file *count* floor deletable, and a game with three 400 MB slots
+now deltas instead of re-uploading 1.2 GB every push. `run-delta-upload-tests` 17 → **29/29** (new:
+the Complete-time `RetryFull` branch, malformed-manifest rejections, and an `HttpListener` stub
+server that asks the agent for a path outside the save folder and asserts nothing is uploaded);
+`run-agent-tests` 47/47 and `run-hardening-tests` 33/33 unchanged. **Note for that suite:**
+`run-agent-tests` does not start its own server and is not idempotent against a dirty one — a reused
+DB produces shifting, misleading failures. Give it a fresh `Storage__DbPath`/`ArchiveRoot`.
+<br>**Untested:** the `Storage:MaxUploadMb` ceiling on a reconstructed archive. Exercising it needs
+either a >200 MB fixture or a second server started with a tiny cap; neither was worth it, but it is
+the one fix here resting on inspection rather than a test.
 
 v0.5.7's rollout (2026-08-15) is complete: console redeployed, the Windows agent took it from the
 tray's *Check for updates*, and **the Deck updated itself** — see below, it is the first time that
