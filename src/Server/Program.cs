@@ -317,6 +317,8 @@ agent.MapPost("/games/{id:guid}/upload/begin", async (
 {
     if (string.IsNullOrWhiteSpace(req.ContentHash))
         return Results.BadRequest("Missing content hash.");
+    if (SyncService.ValidateManifest(req.Files) is { } manifestError)
+        return Results.BadRequest(manifestError);
 
     var machine = http.CurrentMachine();
     var (sessionId, noChange, useDeltaPath, needPaths) = await sync.BeginChunkedUploadAsync(

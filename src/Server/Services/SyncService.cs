@@ -588,12 +588,13 @@ public sealed class SyncService
         var useDelta = false;
         string[]? needPaths = null;
         Guid? baseVersionId = null;
+        Dictionary<string, string>? headManifest = null;
 
         if (files is { Length: > 0 } && !diverged && serverHead is not null)
         {
-            var headManifest = await _db.SaveVersionFiles
+            headManifest = await _db.SaveVersionFiles
                 .Where(f => f.VersionId == serverHead.Id)
-                .ToDictionaryAsync(f => f.Path, f => f.Sha256, ct);
+                .ToDictionaryAsync(f => f.Path, f => f.Sha256, StringComparer.Ordinal, ct);
 
             if (headManifest.Count > 0)
             {
@@ -605,10 +606,47 @@ public sealed class SyncService
                 useDelta = true;
                 baseVersionId = serverHead.Id;
             }
+            else headManifest = null;
         }
 
-        _store.SetDeltaInfo(sessionId, files, needPaths, baseVersionId);
+        // The base manifest rides on the session rather than being re-read at Complete: it is the
+        // same rows, already materialised, and a save with thousands of files made that a second
+        // full query per push for no new information.
+        _store.SetDeltaInfo(sessionId, files, needPaths, baseVersionId, headManifest);
         return (sessionId, null, useDelta, needPaths);
+    }
+
+    /// <summary>Ceiling on entries in one uploaded manifest — the same order as the restore path's
+    /// own entry limit, and far past any real save folder.</summary>
+    private const int MaxManifestEntries = 100_000;
+
+    /// <summary>
+    /// Validate a client-supplied file manifest before ANY of it is trusted. It reaches the per-file
+    /// diff, an in-memory upload session that outlives the request by up to the idle window, and
+    /// eventually <see cref="SaveVersionFile"/> rows whose primary key is (VersionId, Path) — a
+    /// duplicate path there throws AFTER the version is committed, which is a far worse place to
+    /// find out. Returns null when the manifest is acceptable, otherwise the reason to refuse it.
+    /// </summary>
+    public static string? ValidateManifest(FileManifestEntry[]? files)
+    {
+        if (files is null || files.Length == 0) return null;
+        if (files.Length > MaxManifestEntries)
+            return $"File manifest has {files.Length:N0} entries, over the {MaxManifestEntries:N0} limit.";
+
+        var seen = new HashSet<string>(files.Length, StringComparer.Ordinal);
+        foreach (var f in files)
+        {
+            if (string.IsNullOrWhiteSpace(f.Path))
+                return "File manifest contains an empty path.";
+            if (f.Path.Contains('\\') || Path.IsPathRooted(f.Path) ||
+                f.Path.Split('/').Any(s => s.Length == 0 || s == "." || s == ".."))
+                return $"File manifest path '{f.Path}' is not a relative save-folder path.";
+            if (f.Size < 0)
+                return $"File manifest entry '{f.Path}' declares a negative size.";
+            if (!seen.Add(f.Path))
+                return $"File manifest lists '{f.Path}' more than once.";
+        }
+        return null;
     }
 
     /// <summary>Append one chunk. The session's own machine id is checked against the caller's — a
@@ -665,23 +703,41 @@ public sealed class SyncService
         try
         {
             (rel, size) = info.BaseVersionId is not null
-                ? await ReconstructDeltaAsync(gameId, sessionId, info, serverHead!, ct)
+                ? ReconstructDelta(gameId, sessionId, info, serverHead!)
                 : _store.CompleteSession(sessionId);
         }
         catch (SaveArchive.UnsafeArchiveException)
         {
             // A delta payload that fails validation is refused before anything is published — same
             // "never a partial write" guarantee RestoreArchive gives on the pull side. The bytes are
-            // already gone (ReconstructDeltaAsync cleans up its own staging on the way out), so there
+            // already gone (ReconstructDelta cleans up its own staging on the way out), so there
             // is nothing left to un-publish; the agent just needs to know to retry with a full archive.
             return new UploadResult(UploadStatus.RetryFull, null, null);
         }
 
+        UploadResult result;
         try
         {
-            var result = await IngestAsync(game, info.VersionId, rel, size, machineId, info.ParentVersionId,
+            result = await IngestAsync(game, info.VersionId, rel, size, machineId, info.ParentVersionId,
                 info.ContentHash, serverHead, diverged, info.Force, ct);
-            if (info.Files is { Length: > 0 } manifest)
+        }
+        catch
+        {
+            // Nothing here is committed yet, so no row names this archive — deleting it IS the
+            // un-publish, and it must happen before the exception leaves.
+            _store.TryDelete(rel);
+            throw;
+        }
+
+        // Everything past this point runs with the version row COMMITTED and possibly already the
+        // head, so the archive must never be deleted again: rows first, files second, exactly as
+        // ReleaseArchivesAsync spells out. A per-file baseline that fails to store costs the NEXT
+        // push its delta and nothing else — it finds no manifest and sends a full archive, which
+        // stores one, the same self-healing route a pre-delta head already takes. Deleting the
+        // head's archive over it would cost every future pull instead.
+        if (info.Files is { Length: > 0 } manifest)
+        {
+            try
             {
                 await PersistVersionManifestAsync(info.VersionId, manifest, ct);
                 if (info.BaseVersionId is not null)
@@ -696,13 +752,18 @@ public sealed class SyncService
                     await _db.SaveChangesAsync(ct);
                 }
             }
-            return result;
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _db.ChangeTracker.Clear();
+                try
+                {
+                    await Audit(machineId, gameId, "upload.baseline_failed", ex.Message);
+                    await _db.SaveChangesAsync(ct);
+                }
+                catch { /* the audit is a courtesy; never let it mask an upload that succeeded */ }
+            }
         }
-        catch
-        {
-            _store.TryDelete(rel);
-            throw;
-        }
+        return result;
     }
 
     /// <summary>
@@ -716,32 +777,37 @@ public sealed class SyncService
     /// ones — because this is the server's first time ever opening an UPLOADED zip's individual
     /// entries; nothing here is trusted merely because the aggregate ContentHash matched.
     /// </summary>
-    private async Task<(string rel, long size)> ReconstructDeltaAsync(
-        Guid gameId, Guid sessionId, ArchiveStore.ChunkedUploadInfo info, SaveVersion baseVersion,
-        CancellationToken ct)
+    private (string rel, long size) ReconstructDelta(
+        Guid gameId, Guid sessionId, ArchiveStore.ChunkedUploadInfo info, SaveVersion baseVersion)
     {
         var deltaZipPath = _store.TakeSessionStagedPath(sessionId);
         var buildPath = _store.NewStagingPath(info.VersionId);
         try
         {
             var needPaths = new HashSet<string>(info.NeedPaths ?? Array.Empty<string>(), StringComparer.Ordinal);
-            var targetFiles = info.Files ?? Array.Empty<FileManifestEntry>();
+            var baseManifest = info.BaseManifest
+                ?? throw new SaveArchive.UnsafeArchiveException(
+                    "This session has no stored base manifest to verify carried-forward files against.");
 
-            // Hostile input the moment the server opens it — the same reasoning RestoreArchive
-            // already applies to a pulled archive, running here for the first time on the upload
-            // side. The allow-list check is stronger than ordinary zip-slip containment: the exact
-            // valid path set is already known, not just "somewhere under the staging directory".
-            ValidateDeltaEntries(deltaZipPath, needPaths);
-
-            var baseManifest = await _db.SaveVersionFiles
-                .Where(f => f.VersionId == baseVersion.Id)
-                .ToDictionaryAsync(f => f.Path, f => f.Sha256, ct);
+            // Ordinal by path — the order EnumerateRelativeFiles produces, and the only order in
+            // which the aggregate hash below can reproduce what the agent computed.
+            var targetFiles = (info.Files ?? Array.Empty<FileManifestEntry>())
+                .OrderBy(f => f.Path, StringComparer.Ordinal)
+                .ToArray();
 
             long total = 0;
+            using var contentSha = SHA256.Create();
             using (var baseZip = ZipFile.OpenRead(_store.FullPath(baseVersion.ArchivePath)))
             using (var deltaZip = ZipFile.OpenRead(deltaZipPath))
             using (var outZip = ZipFile.Open(buildPath, ZipArchiveMode.Create))
             {
+                // Hostile input the moment the server opens it — the same reasoning RestoreArchive
+                // already applies to a pulled archive, running here for the first time on the upload
+                // side. The allow-list check is stronger than ordinary zip-slip containment: the exact
+                // valid path set is already known, not just "somewhere under the staging directory".
+                // Checked against the archive already open for the copy, not a second read of it.
+                ValidateDeltaEntries(deltaZip, needPaths);
+
                 foreach (var target in targetFiles)
                 {
                     ZipArchiveEntry src;
@@ -761,9 +827,37 @@ public sealed class SyncService
                                 $"'{target.Path}' has no stored baseline hash to verify against.");
                     }
 
-                    total += CopyEntryVerified(src, outZip, target.Path, expectedHash, total, SaveArchive.MaxRestoreBytes);
+                    // Chain path + bytes exactly as SaveArchive.HashDirectory does, so the archive
+                    // this assembles can be checked against the hash the agent declared for it.
+                    var pathBytes = System.Text.Encoding.UTF8.GetBytes(target.Path + "\n");
+                    contentSha.TransformBlock(pathBytes, 0, pathBytes.Length, null, 0);
+
+                    total += CopyEntryVerified(
+                        src, outZip, target.Path, expectedHash, total, SaveArchive.MaxRestoreBytes, contentSha);
                 }
             }
+
+            // Per-entry hashes only prove the pieces are what someone claimed; this proves the WHOLE
+            // is what the version row is about to say it is. Without it a version's stored
+            // ContentHash could silently describe bytes the archive does not contain — and that hash
+            // drives every future NoChange decision and every agent's "have I already synced this?".
+            contentSha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+            var actual = Convert.ToHexString(contentSha.Hash!).ToLowerInvariant();
+            if (!string.Equals(actual, info.ContentHash, StringComparison.OrdinalIgnoreCase))
+                throw new SaveArchive.UnsafeArchiveException(
+                    "The reconstructed archive does not hash to the content hash the agent declared " +
+                    "for it. Refusing the reconstruction.");
+
+            // The upload cap bounds what one push may put on disk. A delta only ever SENDS the
+            // changed files, so AppendChunkAsync's running total never sees the size of the archive
+            // this assembles — successive deltas could otherwise grow a version far past the limit
+            // the operator configured, one small push at a time. Compared against the built zip, the
+            // same compressed unit the cap is expressed in.
+            var builtSize = new FileInfo(buildPath).Length;
+            if (builtSize > _maxUploadBytes)
+                throw new SaveArchive.UnsafeArchiveException(
+                    $"The reconstructed archive is {builtSize / (1024 * 1024)} MB, over the " +
+                    $"{_maxUploadBytes / (1024 * 1024)} MB upload limit. Refusing it.");
 
             return _store.PublishFile(gameId, info.VersionId, buildPath);
         }
@@ -779,9 +873,11 @@ public sealed class SyncService
     }
 
     /// <summary>Copy one entry's decompressed bytes into <paramref name="dest"/>, re-hashing as they
-    /// go and refusing if the actual bytes don't match <paramref name="expectedHash"/>.</summary>
+    /// go and refusing if the actual bytes don't match <paramref name="expectedHash"/>. The same
+    /// bytes are chained into <paramref name="aggregate"/>, which spans the whole archive.</summary>
     private static long CopyEntryVerified(
-        ZipArchiveEntry src, ZipArchive dest, string path, string expectedHash, long alreadyWritten, long maxBytes)
+        ZipArchiveEntry src, ZipArchive dest, string path, string expectedHash, long alreadyWritten,
+        long maxBytes, SHA256 aggregate)
     {
         var entry = dest.CreateEntry(path, CompressionLevel.Optimal);
         entry.LastWriteTime = src.LastWriteTime;
@@ -800,6 +896,7 @@ public sealed class SyncService
                     $"Delta reconstruction exceeded the {maxBytes / (1024 * 1024)} MB limit. Refusing it.");
             dstStream.Write(buffer, 0, read);
             sha.TransformBlock(buffer, 0, read, null, 0);
+            aggregate.TransformBlock(buffer, 0, read, null, 0);
         }
         sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
         var actualHash = Convert.ToHexString(sha.Hash!).ToLowerInvariant();
@@ -815,9 +912,8 @@ public sealed class SyncService
     /// opening a client-supplied zip's entries, so the same "attacker-controlled and may lie" caution
     /// applies. <paramref name="allowedPaths"/> is the stronger-than-usual containment check: every
     /// entry must be one the server itself asked for, not merely somewhere under a staging root.</summary>
-    private static void ValidateDeltaEntries(string zipPath, HashSet<string> allowedPaths)
+    private static void ValidateDeltaEntries(ZipArchive zip, HashSet<string> allowedPaths)
     {
-        using var zip = ZipFile.OpenRead(zipPath);
         if (zip.Entries.Count > SaveArchive.MaxRestoreEntries)
             throw new SaveArchive.UnsafeArchiveException(
                 $"Delta payload has {zip.Entries.Count:N0} entries, over the " +

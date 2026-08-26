@@ -266,6 +266,177 @@ try {
         $versionsAfter = @(Get-Json "/api/games/$gameId/versions")
         Check "the hostile payload published no new version" ($versionsAfter.Count -eq $versionsBefore.Count)
     }
+
+    Write-Host ""
+    Write-Host "==== 7. A head that moves BETWEEN Begin and Complete is refused with RetryFull ===="
+    # Distinct from section 5: that one diverges at Begin, so the server declines the delta before a
+    # byte moves. This is the other window - the delta was legitimately negotiated, and the base it
+    # was diffed against stopped being the head while the chunks were in flight. Reconstructing
+    # against a stale base would silently drop whatever the other push changed in files this delta
+    # never touched, so the only safe answer is "send me a whole archive instead".
+    Agent push $gameName --config $pcCfg | Out-Null          # clean fast-forward state again
+    Agent pull $gameName --config $lapCfg | Out-Null
+
+    $headBefore = (Get-Json "/api/games/$gameId/state").head
+    New-RandomFile (Join-Path $pcSave "slot6.sav")
+    $filesNow = Get-ChildItem $pcSave | Sort-Object Name | ForEach-Object {
+        @{ Path = $_.Name; Sha256 = (Get-Sha256 $_.FullName).ToLower(); Size = $_.Length }
+    }
+    # A REAL content hash, unlike section 6's deliberately-fabricated one. The server now verifies
+    # that a reconstructed archive hashes to what the agent declared, so a fake hash here would be
+    # refused for that reason and this section would "pass" without ever testing the stale-base
+    # branch it exists for. Asking the agent for it also cross-checks that HashDirectory and
+    # ComputeManifest still agree on the same bytes.
+    $realHash7 = ((Agent hash --dir $pcSave) -join "").Trim()
+    $beginBody7 = @{ ContentHash = $realHash7; ParentVersionId = $headBefore.id
+                     Force = $false; Files = $filesNow } | ConvertTo-Json -Depth 5
+    $begin7 = Invoke-RestMethod "$url/api/games/$gameId/upload/begin" -Method Post -Headers $headers -Body $beginBody7
+    Check "section 7 prerequisite: the delta path was granted" ($begin7.useDeltaPath -eq $true)
+
+    if ($begin7.useDeltaPath -eq $true) {
+        # ...now the LAPTOP moves the head, from a different base, while PC's session is open.
+        # Forced so this prerequisite cannot depend on the laptop's own accumulated sync state.
+        New-RandomFile (Join-Path $lapSave "slot2.sav")
+        Agent push $gameName --config $lapCfg --force | Out-Null
+        $headMoved = (Get-Json "/api/games/$gameId/state").head
+        Check "section 7 prerequisite: the head actually moved" ($headMoved.id -ne $headBefore.id)
+
+        $deltaZip7 = Join-Path $scratch "delta7.zip"
+        if (Test-Path $deltaZip7) { Remove-Item $deltaZip7 }
+        $archive7 = [System.IO.Compression.ZipFile]::Open($deltaZip7, "Create")
+        foreach ($needed in $begin7.needPaths) {
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $archive7, (Join-Path $pcSave $needed), $needed) | Out-Null
+        }
+        $archive7.Dispose()
+
+        $bytes7 = [System.IO.File]::ReadAllBytes($deltaZip7)
+        Invoke-WebRequest "$url/api/games/$gameId/upload/$($begin7.sessionId)/chunk?offset=0" -Method Put `
+            -Headers @{ "X-Api-Key" = $pcConfig.ApiKey } -Body $bytes7 `
+            -ContentType "application/octet-stream" -UseBasicParsing | Out-Null
+
+        $versions7Before = @(Get-Json "/api/games/$gameId/versions")
+        $complete7 = Invoke-RestMethod "$url/api/games/$gameId/upload/$($begin7.sessionId)/complete" `
+            -Method Post -Headers @{ "X-Api-Key" = $pcConfig.ApiKey }
+        Check "a delta whose base stopped being the head is refused with RetryFull" `
+            ($complete7.status -eq "RetryFull")
+        Check "the stale delta published no new version" `
+            (@(Get-Json "/api/games/$gameId/versions").Count -eq $versions7Before.Count)
+
+        # And the agent's own next push does NOT silently drop: RetryFull never reaches SyncEngine,
+        # so the full-archive retry runs and the genuine divergence it finds is recorded as such.
+        # A regression that let RetryFull escape would show up here as no audit entry at all.
+        $conflictsBefore = @(Get-Json "/api/audit?limit=50" |
+            Where-Object { $_.gameName -eq $gameName -and $_.action -eq "upload.conflict" }).Count
+        Agent push $gameName --config $pcCfg | Out-Null
+        $conflictsAfter = @(Get-Json "/api/audit?limit=50" |
+            Where-Object { $_.gameName -eq $gameName -and $_.action -eq "upload.conflict" }).Count
+        Check "the agent's retry lands a real outcome, not a silent no-op" `
+            ($conflictsAfter -gt $conflictsBefore)
+    }
+
+    Write-Host ""
+    Write-Host "==== 8. A malformed manifest is refused at Begin, before anything is staged ===="
+    # The manifest reaches an in-memory session that outlives the request and, eventually, rows keyed
+    # (VersionId, Path). A duplicate path used to surface as a primary-key violation AFTER the version
+    # was committed - the worst possible moment to find out.
+    function Try-Begin($files) {
+        $body = @{ ContentHash = ("a" * 64); ParentVersionId = $null; Force = $false; Files = $files } |
+                ConvertTo-Json -Depth 5
+        try {
+            Invoke-RestMethod "$url/api/games/$gameId/upload/begin" -Method Post -Headers $headers -Body $body | Out-Null
+            return 200
+        } catch { return [int]$_.Exception.Response.StatusCode }
+    }
+
+    Check "a manifest listing the same path twice is refused (400)" `
+        ((Try-Begin @(@{ Path = "slot1.sav"; Sha256 = ("b" * 64); Size = 10 },
+                      @{ Path = "slot1.sav"; Sha256 = ("c" * 64); Size = 10 })) -eq 400)
+    Check "a manifest path that escapes the save folder is refused (400)" `
+        ((Try-Begin @(@{ Path = "../escape.sav"; Sha256 = ("b" * 64); Size = 10 })) -eq 400)
+    Check "a manifest entry with a negative size is refused (400)" `
+        ((Try-Begin @(@{ Path = "slot1.sav"; Sha256 = ("b" * 64); Size = -1 })) -eq 400)
+    Check "an empty manifest path is refused (400)" `
+        ((Try-Begin @(@{ Path = ""; Sha256 = ("b" * 64); Size = 10 })) -eq 400)
+
+    Write-Host ""
+    Write-Host "==== 9. The AGENT refuses a server that asks for a file outside the save folder ===="
+    # Every other section here checks that the server rejects a bad payload. This is the other
+    # direction, and the one nothing covered: the server names the paths a delta carries, so a
+    # server the agent was pointed at by a forged enrollment file (Decisions.md 4) could name a
+    # path that is not a save file at all and have the agent zip it up and upload it.
+    $stubPort = 5186
+    $stubUrl  = "http://localhost:$stubPort/"
+    $listener = [System.Net.HttpListener]::new()
+    $listener.Prefixes.Add($stubUrl)
+    $listenerOk = $true
+    try { $listener.Start() } catch { $listenerOk = $false }
+
+    if (-not $listenerOk) {
+        Write-Host "SKIP: HttpListener could not bind $stubUrl (needs a urlacl or an elevated shell)."
+    }
+    else {
+        try {
+            # A real file OUTSIDE the save folder. Without it, a FileNotFoundException would stop the
+            # upload too, and this section would pass without proving the agent refused anything.
+            $bait = Join-Path $scratch "hostile-target.txt"
+            Set-Content -Path $bait -Value "a secret this server must never receive" -Encoding utf8
+
+            # A genuine local change first: without one the push short-circuits on
+            # "no local changes since last sync" and never contacts the stub at all.
+            New-RandomFile (Join-Path $pcSave "slot5.sav")
+
+            $stubCfg = Join-Path $scratch "stub-config.json"
+            $cfgObj = Get-Content $pcCfg -Raw | ConvertFrom-Json
+            $cfgObj.ServerUrl = "http://localhost:$stubPort"
+            $cfgObj | ConvertTo-Json -Depth 10 | Set-Content -Path $stubCfg -Encoding utf8
+
+            $stubOut = Join-Path $scratch "stub-push-out.txt"
+            $proc = Start-Process -FilePath $dotnet -PassThru -NoNewWindow -RedirectStandardOutput $stubOut `
+                -ArgumentList @($agentDll, "push", $gameName, "--config", $stubCfg)
+
+            $beginSeen = $false; $chunkSeen = $false
+            $deadline = (Get-Date).AddSeconds(90)
+            while (-not $proc.HasExited -and (Get-Date) -lt $deadline) {
+                $task = $listener.GetContextAsync()
+                while (-not $task.AsyncWaitHandle.WaitOne(250)) {
+                    if ($proc.HasExited -or (Get-Date) -ge $deadline) { break }
+                }
+                if (-not $task.IsCompleted) { break }
+
+                $ctx  = $task.Result
+                $path = $ctx.Request.Url.AbsolutePath
+                if ($path -like "*/upload/begin") {
+                    $beginSeen = $true
+                    $json = @{ sessionId = [guid]::NewGuid().ToString(); noChange = $null
+                               useDeltaPath = $true; needPaths = @("../hostile-target.txt") } |
+                            ConvertTo-Json -Compress
+                }
+                elseif ($path -like "*/chunk") { $chunkSeen = $true; $json = '{"bytesReceived":0}' }
+                # The push is followed by a heartbeat; answer it in the shape the reporter expects so
+                # a stub-shaped null does not crash the agent before its output can be read.
+                else { $json = '{"escalatedConflicts":[],"commands":[],"acknowledged":[]}' }
+
+                $buf = [System.Text.Encoding]::UTF8.GetBytes($json)
+                $ctx.Response.StatusCode = 200
+                $ctx.Response.ContentType = "application/json"
+                $ctx.Response.ContentLength64 = $buf.Length
+                $ctx.Response.OutputStream.Write($buf, 0, $buf.Length)
+                $ctx.Response.Close()
+            }
+            if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+
+            # beginSeen is asserted too: without it, an agent that failed for some unrelated reason
+            # would never reach the chunk request either, and this would pass having proved nothing.
+            Check "section 9 prerequisite: the agent did negotiate with the stub server" $beginSeen
+            Check "the agent uploaded NOTHING after being asked for a path outside the save folder" `
+                (-not $chunkSeen)
+
+            $pushOut = if (Test-Path $stubOut) { Get-Content $stubOut -Raw } else { "" }
+            Check "the refusal is reported, not silently swallowed" ($pushOut -match "REFUSED")
+        }
+        finally { $listener.Stop(); $listener.Close() }
+    }
 }
 finally {
     if ($serverProc -and -not $serverProc.HasExited) { Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue }

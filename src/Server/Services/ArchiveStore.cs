@@ -101,6 +101,10 @@ public sealed class ArchiveStore
         /// bytes are a full archive, exactly like a pre-delta session. Re-checked at Complete: if the
         /// head has moved on since, the negotiated diff is stale and must not be trusted.</summary>
         public Guid? BaseVersionId;
+        /// <summary>Path → SHA-256 of the base version, as the diff at Begin already read it. Carried
+        /// on the session so Complete can verify every carried-forward entry without re-querying the
+        /// same rows a second time. Set together with <see cref="BaseVersionId"/>.</summary>
+        public IReadOnlyDictionary<string, string>? BaseManifest;
     }
 
     /// <summary>Read-only view of a session handed back across the ArchiveStore/SyncService boundary
@@ -109,7 +113,8 @@ public sealed class ArchiveStore
     public sealed record ChunkedUploadInfo(
         Guid GameId, Guid MachineId, Guid VersionId, long BytesReceived,
         string ContentHash, Guid? ParentVersionId, bool Force,
-        FileManifestEntry[]? Files, string[]? NeedPaths, Guid? BaseVersionId);
+        FileManifestEntry[]? Files, string[]? NeedPaths, Guid? BaseVersionId,
+        IReadOnlyDictionary<string, string>? BaseManifest);
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, UploadSession> _sessions = new();
 
@@ -150,7 +155,8 @@ public sealed class ArchiveStore
         {
             info = new ChunkedUploadInfo(
                 s.GameId, s.MachineId, s.VersionId, Interlocked.Read(ref s.BytesReceived),
-                s.ContentHash, s.ParentVersionId, s.Force, s.Files, s.NeedPaths, s.BaseVersionId);
+                s.ContentHash, s.ParentVersionId, s.Force, s.Files, s.NeedPaths, s.BaseVersionId,
+                s.BaseManifest);
             return true;
         }
         info = default!;
@@ -164,12 +170,14 @@ public sealed class ArchiveStore
     /// manifest, or the server declined the delta path; either way the session expects a full archive.
     /// </summary>
     public void SetDeltaInfo(
-        Guid sessionId, FileManifestEntry[]? files, string[]? needPaths, Guid? baseVersionId)
+        Guid sessionId, FileManifestEntry[]? files, string[]? needPaths, Guid? baseVersionId,
+        IReadOnlyDictionary<string, string>? baseManifest = null)
     {
         if (!_sessions.TryGetValue(sessionId, out var s)) throw new UnknownUploadSessionException(sessionId);
         s.Files = files;
         s.NeedPaths = needPaths;
         s.BaseVersionId = baseVersionId;
+        s.BaseManifest = baseManifest;
     }
 
     /// <summary>
@@ -338,13 +346,18 @@ public sealed class ArchiveStore
     /// before publishing it (delta reconstruction: copy-forward + new entries into a brand-new zip).
     /// Matches every other publish path's same-volume-rename requirement — a cross-volume move would
     /// not be atomic. The caller publishes it with <see cref="PublishFile"/> or cleans it up with
-    /// <see cref="TryDeleteStaged"/> on failure; nothing sweeps this name pattern automatically
-    /// because a delta build is expected to be short-lived within one request.
+    /// <see cref="TryDeleteStaged"/> on failure.
+    /// <para>
+    /// Carries the same <c>.part</c> extension as a staged upload so <see cref="SweepIncoming"/>
+    /// reclaims it. A build is short-lived within one request only when that request finishes: a
+    /// container restart or an OOM kill mid-reconstruction runs neither the catch nor the finally,
+    /// and an unswept build can be as large as the whole save.
+    /// </para>
     /// </summary>
     public string NewStagingPath(Guid versionId)
     {
         Directory.CreateDirectory(IncomingDir);
-        return Path.Combine(IncomingDir, $"{versionId:N}-{Guid.NewGuid():N}.build");
+        return Path.Combine(IncomingDir, $"{versionId:N}-{Guid.NewGuid():N}.part");
     }
 
     /// <summary>Publish an already-built file (e.g. a delta-reconstructed archive) as a version's
