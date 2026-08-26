@@ -153,6 +153,14 @@ $volume    = 'savelocker-test-data'
 $serverUrl = "http://localhost:$ConsolePort"
 $winState  = Join-Path $StateRoot 'SaveLocker'
 
+# Not a formality — the same check, and the same reason, as testenv-deck.sh's own: `clean` below
+# reaches a `Remove-Item -Recurse -Force` on $StateRoot, and $StateRoot comes from -StateRoot or
+# $env:SAVELOCKER_TEST_ROOT. Refuse anything that doesn't look like a test directory, so a blank or
+# mistyped value can never resolve to something real like %LOCALAPPDATA% itself.
+if ($StateRoot -notlike '*SaveLocker-test*') {
+    throw "refusing to operate - StateRoot '$StateRoot' doesn't look like a test directory (it must contain 'SaveLocker-test')"
+}
+
 # The directory name Decky loads plugins by AND the display name plugin.json/the bundle carry once
 # staged — both deliberately different from the real plugin ("SaveLocker"), so the two can be
 # installed on the same Deck at once without Decky treating them as the same plugin and without a
