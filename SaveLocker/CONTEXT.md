@@ -210,8 +210,8 @@ tables render correctly, `<br>` produces real breaks, no horizontal page overflo
 clean. `agent-update.md` was deliberately written with only one table before this landed — left as-is;
 converting more of its bulleted content into tables is an editorial call, not part of this fix.
 
-**Conflict Tier 1's last piece shipped in code (2026-08-24, branch `claude/conflict-ui-file-delta-3df975`,
-from [[Backlog]], not merged).** The conflict card showed size and upload time per side but nothing
+**Conflict Tier 1's last piece shipped in code (2026-08-24, branch `conflict-version-stats`, from
+[[Backlog]], PR #15).** The conflict card showed size and upload time per side but nothing
 that says which machine has "more" progress. `SaveArchive.CreateArchive` has always stamped
 `entry.LastWriteTime` per zip entry, so a new `SaveArchive.GetArchiveStats` reads file count and
 newest mtime straight from a version's archive on demand — no migration, works retroactively on every
@@ -221,10 +221,47 @@ version ever uploaded. Two new endpoints share one `SyncService.GetVersionStatsA
 caller yet, built ahead of need because conflict resolution is expected to move to the agent later
 (Steam-Cloud-style), and that will want this same comparison. Console fetches lazily, only for
 versions an open conflict is actually showing, cached by version id (an archive's stats never change
-once uploaded) so the 15s poll never re-fetches. `dotnet build` (Server + Windows Agent) and `web`
-build/lint clean; `openapi.json`/`api-types.ts` regenerated; two new `run-health-tests.ps1` checks off
-a real conflict (21/21 passing); verified live against a real dev server + console with two machines
-pushed into a genuine conflict. Write-up: `logs/2026-08-24_conflict-version-stats.md`.
+once uploaded) so the 15s poll never re-fetches. A code review then found the archive's mtime was
+being read back using the reading process's own local timezone instead of the writing agent's
+(wrong by the offset difference between server and agent — fixed to be deterministic instead), a
+failed stats fetch that permanently suppressed itself with no retry (fixed), and added a server-side
+per-version cache plus test coverage for the previously-untested agent-scoped route. `dotnet build`
+(Server + Windows Agent) and `web` build/lint clean; `openapi.json`/`api-types.ts` regenerated;
+`run-health-tests.ps1` covers both stats routes (22/22 passing); verified live against a real dev
+server + console with two machines pushed into a genuine conflict. Write-up:
+`logs/2026-08-24_conflict-version-stats.md`.
+
+**Review fixes for the per-game alias / HasSteamCloud PR (2026-08-25, branch
+`steam-cloud-fallback`, no task file).** A code review of that PR (merged as
+`01f1c56`) found five issues; all five are fixed on this branch, none of it yet released.
+- **`TrackedGame.HasSteamCloud` is now `bool?`, and `null` means "nobody established this"** — not
+  "no Steam Cloud". Only enrollment has a `ScanCandidate` to decide it from; the poller's adopt path
+  and `add-game` have no such signal, and neither does any entry written before the field existed. As
+  a plain `bool` all three read as **false**, which tells a Decky plugin to default its pre-launch
+  pull ON and race Steam's own Cloud sync — on a Deck, where adoption is how games usually arrive,
+  that was most of them. Re-deriving it from a name-only manifest lookup is *not* the fix and stays
+  refused (it is what wrongly called Heroic's Fez a Steam Cloud game). The plugin side still needs
+  updating to read `null` as "use your own heuristic".
+- **`/api/games` keeps its `id` / `path` field names.** The PR had renamed them to
+  `gameId` / `saveDirectory`; that record *is* the wire contract for a consumer shipping from its own
+  repo on its own update channel, so an agent updating ahead of the plugin broke every installed one
+  for no gain. The four new fields are additive — confirmed by diffing the regenerated
+  `agent-ui/src/api-types.ts` against the pre-PR base: **zero deleted lines**.
+- `SaveGameAlias` / `SaveGamePullBeforeLaunch` collapse onto one `MutateGameUnderLock` helper (the
+  re-read-under-lock reasoning had been copy-pasted a third time). Note the `catch` fallback sets
+  `onDisk = this`, so the in-memory mirror is guarded with `ReferenceEquals`, not applied twice.
+- `testenv.ps1`'s Decky staging normalises `main.py` to **LF** before matching. SaveLocker-Decky is a
+  separate repo, so a `*.py text eol=lf` there checks the file out LF and the old CRLF-only needles
+  matched nothing — silently, until the `throw` killed the whole test-plugin build. Verified both
+  ways: the old needles miss on LF input, the new code applies all four substitutions on LF *and*
+  CRLF.
+<br>Full solution builds, `agent-ui` `tsc -b && vite build` passes, `testenv.ps1` parses under
+Windows PowerShell 5.1. **No test suite was run** — worth doing before this merges.
+<br>Two process notes: `api-types.ts` was **regenerated, not hand-edited** (per [[REPO_MAP]]) by
+running a dev daemon on port 5190 against a scratch config, never touching the installed agent on
+:5178; and this worktree's `agent-ui` had never had `npm install` run — the fresh-worktree trap
+already recorded above, which also blocks the Windows agent build since it shells out to
+`npm run build`.
 
 ---
 

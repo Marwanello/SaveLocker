@@ -1,8 +1,10 @@
-# Progress Log
+Running log of session outcomes, newest entries appended at the bottom.
 
-## 2026-08-24/25 — File-count / newest-mtime delta in conflict UI
+---
 
-**Branch:** `conflict-version-stats` (commit `800eed2`). Not merged, not pushed.
+## 2026-08-24/25 — File-count / newest-mtime delta in conflict UI (conflict-version-stats, PR #15)
+
+**Branch:** `conflict-version-stats`. PR: https://github.com/Marwanello/SaveLocker/pull/15.
 
 ### Request sequence
 
@@ -13,7 +15,9 @@
    the codebase into a corner for a future migration where conflict resolution moves from manual
    dashboard clicks to agent-side automatic decisions, the way Steam Cloud auto-resolves save
    conflicts.
-3. Asked to create a new branch using kebab-case naming and commit the changes.
+3. Asked to create a new branch using kebab-case naming and commit the changes, then open a PR.
+4. Requested an xhigh-effort code review of PR #15, then asked for the 7 surviving findings to be
+   applied with minimal edits.
 
 ### What was found
 
@@ -31,10 +35,10 @@ migration or wire-field addition, and works retroactively on every archive ever 
 - `VersionStatsDto(int FileCount, DateTime? NewestFileWriteUtc)` (`src/Shared/Contracts.cs`) — the wire
   shape, kept separate from `SaveVersionDto` so listing versions never has to open a zip for versions
   nobody is looking at.
-- `SyncService.GetVersionStatsAsync` — two overloads sharing one body: an unscoped `(Guid versionId)`
-  for the agent group's flat route (matching `DownloadVersionAsync`'s own precedent — a valid machine
-  key already gates the group), and a game-scoped `(Guid gameId, Guid versionId)` for the admin group,
-  which checks the version actually belongs to that game before answering.
+- `SyncService.GetVersionStatsAsync(Guid? gameId, Guid versionId)` — a nullable-`gameId` overload used
+  by both routes: `null` for the agent group's flat route (matching `DownloadVersionAsync`'s own
+  precedent — a valid machine key already gates the group), and a real game id for the admin group's
+  nested route, which checks the version actually belongs to that game before answering.
 - Two new endpoints backed by the same service call: `GET /api/versions/{versionId}/stats` (agent
   group) and `GET /api/games/{id}/versions/{versionId}/stats` (admin group).
 - Console (`GameDetail.tsx`): conflict card fetches stats lazily for only the two versions an open
@@ -51,32 +55,95 @@ comparison, through the same authenticated call the agent already makes for ever
 shared `SyncService` method with two thin, appropriately-scoped entry points means future work reuses
 this endpoint rather than inventing a second one.
 
+### Code review, xhigh effort — 7 findings, all fixed
+
+An xhigh-effort review of PR #15 (10 finder angles, 2 of which hit a subagent weekly rate limit
+mid-run and were covered manually instead, including writing a standalone .NET test to confirm the
+most severe finding) surfaced 7 findings, all applied with minimal edits:
+
+1. **Timezone skew in the newest-mtime value (confirmed empirically).** `entry.LastWriteTime.UtcDateTime`
+   reconstructs the DOS zip timestamp using the *reading* process's local timezone, not the *writing*
+   agent's — a standalone test proved an 8-hour skew when the writer and reader ran in different
+   zones. Since the two sides of a real conflict usually come from different physical machines, this
+   could flip which save looked "newer." Fixed by treating the stored wall-clock value as UTC directly
+   (`DateTime.SpecifyKind(..., DateTimeKind.Utc)`) instead of reinterpreting it through whichever
+   timezone the server happens to be deployed in — deterministic now, though still bounded by
+   whatever offset the agent's own clock had at upload time (the DOS format can't carry more than
+   that).
+2. **A failed stats fetch permanently hid a version's stats.** `GameDetail.tsx` marked a version id as
+   "requested" before the fetch resolved and never un-marked it on failure. Fixed: the `.catch` now
+   clears the id so the next 15s poll retries.
+3. **The agent-scoped stats route had no test coverage** — only the admin-scoped route was exercised.
+   Added a check that authenticates with a machine's own `ApiKey` (read from its config file) and
+   hits `/api/versions/{id}/stats` directly.
+4. **No server-side caching**, despite the PR's own write-up asserting archive stats never change once
+   uploaded. Added a `ConcurrentDictionary<Guid, VersionStatsDto>` cache on `SyncService`, keyed by
+   version id, cleared only by a restart (fine — a pruned version's id is never reused).
+5. **Two competing idioms for ownership-scoping** existed side by side (a route-level check for
+   download, a service-level check for stats), and the stats overload's doc comment inaccurately
+   claimed to match the download route's precedent. Resolved by dropping the misleading claim; the
+   nullable-`gameId` overload itself was not restructured.
+6. **An unnecessary single-arg forwarding overload** (`GetVersionStatsAsync(Guid) => GetVersionStatsAsync(null, ...)`)
+   existed only so the agent route didn't have to pass `null` explicitly. Removed; the agent route now
+   calls the two-arg overload directly.
+7. **A comment restated what the code does rather than why**, per this repo's CLAUDE.md rule "No
+   comments unless the WHY is non-obvious." Rewritten to explain the actual non-obvious reason the
+   admin route is separate from the agent one (different auth scheme).
+
 ### Verification
 
-- `dotnet build --no-incremental` clean for `SaveLocker.Server` and `SaveLocker.Agent`.
-- `web`: `npm run build` (tsc + vite) and `npm run lint` (oxlint) both clean.
-- `src/Server/openapi.json` regenerated from a live dev server and committed; `web/src/api-types.ts`
-  regenerated via `npm run gen:api` — diff is exactly the two new routes plus the new schema.
-- Manual, live: two throwaway machines registered against a dev server, two divergent archives pushed
-  to force a real conflict, both `/stats` routes confirmed correct, console conflict card visually
-  confirmed in the browser pane. Demo game deleted afterward, no dev-state residue.
-- `tests/run-health-tests.ps1` — two new checks added after the existing "stale conflict is escalated
-  in the console contract" assertion, reusing that test's real-conflict fixture. 21/21 passing, no
-  regressions to the other 19.
+- `dotnet build --no-incremental` clean for `SaveLocker.Server` and `SaveLocker.Agent` (the
+  Windows/WinForms host — the one pre-existing MSB3277 WindowsBase warning, no new ones).
+- `web`: `npm run build` (tsc + vite) and `npm run lint` (oxlint) both clean, both before and after
+  the review fixes.
+- `src/Server/openapi.json` regenerated from a real dev server's `/openapi/v1.json` and committed;
+  `web/src/api-types.ts` regenerated from that snapshot (`npm run gen:api`) — diff is exactly the two
+  new routes and the new schema, nothing else moved.
+- Manual, live: registered two throwaway machines against a dev server, pushed two divergent
+  single-file/two-file archives to force a real conflict, confirmed both `/stats` routes (admin- and
+  agent-scoped) return the right `fileCount`, then loaded the console in the browser pane and
+  confirmed the conflict card rendered `DemoMachineA — current Latest · 1 file · newest change …` and
+  `DemoMachineB · 2 files · newest change …`. Demo game deleted afterward; no dev-state residue.
+- `tests/run-health-tests.ps1` — three checks total for this feature (file count, newest-mtime, and
+  the added agent-scoped-route check), all passing. 22/22 passing overall, no regressions.
 
-### Files changed (14: 13 modified, 1 new)
+### Not done
 
-`src/Shared/SaveArchive.cs`, `src/Shared/Contracts.cs`, `src/Server/Services/SyncService.cs`,
-`src/Server/Program.cs`, `src/Server/openapi.json`, `web/src/api-types.ts`, `web/src/api.ts`,
-`web/src/types.ts`, `web/src/components/GameDetail.tsx`, `tests/run-health-tests.ps1`,
-`SaveLocker/Backlog.md`, `SaveLocker/CONTEXT.md`, `SaveLocker/logs/shipped-2026-08.md`,
-`SaveLocker/logs/2026-08-24_conflict-version-stats.md` (new).
+PR #15 open against `main`, mergeable after resolving a docs-only merge conflict on this file,
+`CONTEXT.md`, and `session_summary.md` against an unrelated PR (#14) that landed on `main` in the
+meantime. No task file existed for this — it was an ad hoc backlog pick. Full technical write-up:
+`logs/2026-08-24_conflict-version-stats.md`.
 
-### Write-up
+---
 
-Full write-up: [`SaveLocker/logs/2026-08-24_conflict-version-stats.md`](logs/2026-08-24_conflict-version-stats.md).
+## 2026-08-26 — PR #12 review, fixes, and PR #14
 
-### Not done / next step
+[PR #14](https://github.com/Marwanello/SaveLocker/pull/14) is open and mergeable.
 
-Branch `conflict-version-stats` is committed locally but not pushed and no PR has been opened — neither
-was requested. No further action planned unless asked.
+**Rename:** `decky-api-contract-and-steam-cloud-fallback` -> **`steam-cloud-fallback`** (43 -> 20
+chars), still kebab-case and in line with repo names like `wine-proton-case-insensitive-paths` and
+`per-file-delta-upload` — a noun phrase naming the headline change.
+
+**PR:** [Marwanello/SaveLocker#14](https://github.com/Marwanello/SaveLocker/pull/14) —
+`steam-cloud-fallback` -> `main`, 8 files, +135/-76, MERGEABLE.
+
+Three things worth knowing about how this was done:
+
+- **Targeted the fork, not upstream.** `gh`'s default repo here resolves to `SkorcherX/SaveLocker`,
+  so a bare `gh pr create` would have opened a PR on the upstream maintainer's repo. `--repo
+  Marwanello/SaveLocker` was passed explicitly. That is also the only correct base: the parent commit
+  `01f1c56` is a fork-only merge, and it was verified to be an ancestor of `origin/main` before
+  creating the PR. Upstream has a *different* PR #12, so a PR there would have diverged.
+- **Amended rather than adding a commit.** The `CONTEXT.md` entry named the old branch, so that one
+  line was fixed. Standard guidance prefers a new commit over amending, but nothing was pushed yet
+  and a separate commit to correct a stale string would have been noise. The commit is now
+  `1ae1538`; nothing else was rewritten.
+- **Local `main` is 1 commit behind `origin/main`** — pre-existing, unrelated to this work.
+  Fast-forward it when convenient: `git -C "D:\Projects\SaveLocker\SaveLocker" pull --ff-only`
+
+Still outstanding: **no test suite has been run** against these changes, and the Decky plugin repo
+needs updating to read `hasSteamCloud: null` as "unknown, use your own heuristic" — the agent can now
+legitimately send it. Both are called out in the PR body.
+
+The empty worktree directory at `.claude\worktrees\review-pr-12-b073b2` could not be deleted from
+that session (the shell's cwd sat in it); `rmdir /s /q` clears it once the session ends.
