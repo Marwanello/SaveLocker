@@ -371,7 +371,7 @@ agent.MapGet("/versions/{versionId:guid}/download", async (Guid versionId, HttpC
 // agent group (not just admin) so an agent can compare a conflict's two sides itself in the future,
 // the same way it already reads everything else about a conflict through this API.
 agent.MapGet("/versions/{versionId:guid}/stats", async (Guid versionId, SyncService sync) =>
-    await sync.GetVersionStatsAsync(versionId) is { } stats ? Results.Ok(stats) : Results.NotFound())
+    await sync.GetVersionStatsAsync(null, versionId) is { } stats ? Results.Ok(stats) : Results.NotFound())
     .Produces<VersionStatsDto>();
 
 // ---- Game creation (agent enrollment) ----
@@ -651,7 +651,9 @@ admin.MapGet("/games/{id:guid}/versions/{versionId:guid}/download", async (
     return StreamVersion(http, dl);
 });
 
-// Same stats as the agent route above, scoped to the game in the URL.
+// A separate route rather than reusing the agent one above: admin requests authenticate via
+// AdminPasswordFilter (session/password), not a machine API key, so the console can't call the
+// agent-group route at all.
 admin.MapGet("/games/{id:guid}/versions/{versionId:guid}/stats", async (
     Guid id, Guid versionId, SyncService sync) =>
     await sync.GetVersionStatsAsync(id, versionId) is { } stats ? Results.Ok(stats) : Results.NotFound())

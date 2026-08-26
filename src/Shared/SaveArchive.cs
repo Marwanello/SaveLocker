@@ -73,7 +73,12 @@ public static class SaveArchive
         {
             if (string.IsNullOrEmpty(entry.Name)) continue; // directory entry, no content
             count++;
-            var mtime = entry.LastWriteTime.UtcDateTime;
+            // entry.LastWriteTime is a DOS-format zip timestamp with no embedded offset — .UtcDateTime
+            // would reinterpret the stored wall-clock value using THIS process's local timezone, which
+            // is wrong whenever the server isn't in the same timezone the agent was in at upload time.
+            // Take the wall-clock value as written and treat it as UTC instead, so the result is at
+            // least deterministic and doesn't additionally depend on the server's configured timezone.
+            var mtime = DateTime.SpecifyKind(entry.LastWriteTime.DateTime, DateTimeKind.Utc);
             if (newest is null || mtime > newest) newest = mtime;
         }
         return new ArchiveStats(count, newest);

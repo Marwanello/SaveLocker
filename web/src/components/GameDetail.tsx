@@ -113,7 +113,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
         requestedStatsRef.current.add(vid);
         api.versionStats(game.id, vid)
           .then(stats => setVersionStats(prev => ({ ...prev, [vid]: stats })))
-          .catch(() => {}); // best-effort — the conflict card is still useful without it
+          .catch(() => { requestedStatsRef.current.delete(vid); }); // best-effort — retry on the next poll
       }
     }
   }, [conflicts, game.id]);
