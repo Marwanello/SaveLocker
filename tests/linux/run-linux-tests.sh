@@ -918,6 +918,10 @@ host_plugin() {   # $1 zip, $2 version
 # ---- No Decky at all: silent, and never an error ----
 # Almost every machine. A plugin updater that complains on a box that has never heard of Decky is
 # one an admin learns to ignore, taking the real reports with it.
+# Fixture setup already created $HOME/homebrew/plugins/moondeck (an unrelated MoonDeck fixture), and
+# DeckyPresent checks for exactly that parent directory's existence — clear it first, or this
+# section finds Decky "present" via someone else's leftover and never reaches the branch under test.
+rm -rf "${HOME}/homebrew"
 out="$(agent plugin-update --config "${deck_cfg}")"; plugin_rc=$?
 check "no Decky: plugin-update exits 0"           "${plugin_rc}"
 check "no Decky: it says why"                     "$(contains "${out}" "Decky Loader is not installed")"

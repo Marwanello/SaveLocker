@@ -220,20 +220,30 @@ try {
     # rows are GameStateDto, so the game itself is one level down.
     $gameRow  = (Invoke-RestMethod "$server/api/overview").game |
                 Where-Object { $_.name -eq $gameName } | Select-Object -First 1
-    Invoke-RestMethod "$server/api/commands" -Method Post `
+    $queued = Invoke-RestMethod "$server/api/commands" -Method Post `
         -Body (@{ machineId = $machineB.id; gameId = $gameRow.id; type = "Pull"; force = $true } | ConvertTo-Json) `
-        -ContentType "application/json" | Out-Null
+        -ContentType "application/json"
 
     $linuxDll = Join-Path $root "src/Agent.Linux/bin/Debug/net10.0/savelocker.dll"
     $daemon = Start-Process -FilePath $dotnet `
         -ArgumentList @($linuxDll, "daemon", "--port", "5190", "--config", $cfgB) `
         -PassThru -WindowStyle Hidden
     # One poller tick is 20 s; 45 s covers the first tick plus the reconcile ahead of it.
+    # Matched by the command's own id, not "the most recent Pull" - /api/commands returns the 50
+    # most recent commands SERVER-WIDE (SyncService.ListCommandsAsync), so matching by type alone
+    # could grab a different Pull command (e.g. from a same-second $stamp collision on a prior run,
+    # or a server-initiated head-pull) instead of the one this test just queued.
+    # Waiting for "not Pending" (rather than a real terminal state) was WA-01's own intermittent
+    # failure (Backlog.md): CommandStatus.Dispatched is a lease, not a result - the agent sets it the
+    # moment it claims the command, before it has actually run the pull and POSTed a result back. A
+    # 1s poll can land in that exact window and grab {status:Dispatched, result:null}, which then
+    # fails "the dashboard is told the real reason" even though the command genuinely succeeds a
+    # moment later. Only Done/Failed carry a final result.
     $pullCmd = $null
     foreach ($i in 1..45) {
         Start-Sleep -Seconds 1
         $pullCmd = (Invoke-RestMethod "$server/api/commands") |
-                   Where-Object { $_.type -eq "Pull" -and $_.status -ne "Pending" } | Select-Object -First 1
+                   Where-Object { $_.id -eq $queued.id -and $_.status -in @("Done", "Failed") } | Select-Object -First 1
         if ($pullCmd) { break }
     }
     Stop-Process -Id $daemon.Id -Force -ErrorAction SilentlyContinue
@@ -1063,9 +1073,15 @@ try {
                 Check "WA-10 the toggle stays OFF after a refused write" (-not (Get-AutoState))
             }
             finally {
-                $acl2 = Get-Acl $asKeyPs
-                $acl2.RemoveAccessRuleAll($deny)
-                Set-Acl -Path $asKeyPs -AclObject $acl2
+                # Best-effort: the Deny rule just added can itself block re-opening the key to
+                # rewrite its ACL (Set-Acl's registry provider requests more than the SetValue/
+                # CreateSubKey rights actually denied). Not fatal either way — the outer finally
+                # below force-deletes this whole test key regardless of what its ACL still says.
+                try {
+                    $acl2 = Get-Acl $asKeyPs
+                    $acl2.RemoveAccessRuleAll($deny)
+                    Set-Acl -Path $asKeyPs -AclObject $acl2
+                } catch { }
             }
         }
         finally {

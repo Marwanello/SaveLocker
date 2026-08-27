@@ -364,6 +364,29 @@ a plugin release is cut there.
 
 ---
 
+**The LA-04/05/06/07 regression suite landed and `WA-01` is fixed (2026-08-27, branch
+`linux-regression-tests`).** The new `tests/linux/run-linux-regression-tests.sh` (four bugs fixed in
+it: a field-name misdiagnosis correctly reverted, a missing `agent register` step, a `wait` deadlocked
+on the wrong PID set, and bash vars silently not expanding inside a single-quoted heredoc) is now
+wired into `testenv.ps1 test` and passes 15/15. Also fixed while triaging a full `testenv.ps1 test`
+run: a real lost-update bug in `AgentCli.cs`'s `add-game` (an unconditional `config.Save()` reopened
+the window `SetTracked`'s own re-read-under-lock had already closed), a hardcoded WSL distro name
+(`Ubuntu-24.04` vs. this machine's `Ubuntu`) in two server-bugbounty scripts, and a `testenv.ps1 sync`
+bug that skipped the git fetch+checkout step on a clean working tree, letting the persistent WSL
+clone silently rot on an old commit. The two long-standing `run-linux-tests.sh` Decky "no plugin
+installed" messaging failures are also fixed (an unrelated MoonDeck fixture directory was making a
+plain directory-existence check read `true`) — 237/0, confirmed no MoonDeck regression. **`WA-01`
+the dashboard is told the real reason** (backlog, found 2026-08-14, intermittent, never
+investigated) is root-caused and fixed: the test's polling loop accepted `CommandStatus.Dispatched` —
+documented as *"a lease, not a terminal state"*, set the instant the agent claims a dashboard command
+— as good enough, so a 1-second poll could occasionally catch the tiny window before the agent
+actually reported a result and grab `{result: null}`. Reproduced live (WA-01 needs no interactive
+desktop, unlike the tray tests later in the same file) and fixed by waiting for the real terminal
+states (`Done`/`Failed`) instead; confirmed 10/10 twice after the fix, having failed once before it.
+Full write-up: `progress.md` and `session_summary.md`.
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three
@@ -447,8 +470,8 @@ Everything shipped before this: `logs/sessions.md` (reverse-chronological) and
    related dedupe tie-break already shipped (`logs/shipped-2026-08.md`).
 
 Everything else — the WA-03 second-account ACL test, the remaining Windows manual gates, the LAN
-enrollment-URL check, the missing LA-04/05/06/07 regression tests, the `WA-01`/113-of-114 baseline
-drift, and the rest of *One game, several real sources* (steps 2–4) — is prioritised in [[Backlog]].
+enrollment-URL check, and the rest of *One game, several real sources* (steps 2–4) — is prioritised
+in [[Backlog]].
 `claude/steam-deck-save-detection-68b6c5` and `claude/wine-proton-case-insensitive-paths-815ba3` are
 both merged to `main` and shipped in v0.5.10 — see `logs/shipped-2026-08.md`.
 

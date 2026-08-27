@@ -201,6 +201,11 @@ cmd_test() {
   bash tests/linux/run-linux-tests.sh 2>&1 | tee "$SUITE_LOG" | tail -25
   local rc=${PIPESTATUS[0]}
 
+  echo "== run-linux-regression-tests.sh (LA-04/05/06/07) =="
+  bash tests/linux/run-linux-regression-tests.sh 2>&1 | tee -a "$SUITE_LOG" | tail -25
+  local rc2=${PIPESTATUS[0]}
+  [ "$rc2" -ne 0 ] && rc=$rc2
+
   if [ -n "$was_up" ]; then
     # The suite builds the agent itself, with no version argument, so the rig would come back
     # reporting .NET's default 1.0.0 and the label would stop naming the build under test.

@@ -259,7 +259,16 @@ public static class AgentCli
                     // Clears any per-machine opt-out as well as adding the entry — explicitly adding
                     // a game back is the one action that means "track this here again".
                     config.SetTracked(game.Id, tracked: true, entry: tracked);
-                    config.Save();
+                    // SetTracked only ADDS a not-yet-present entry — for a brand new game that already
+                    // durably persisted it, re-reading and re-writing fresh under its own lock. Calling
+                    // Save() unconditionally afterward re-opens a lost-update window: Save() writes
+                    // THIS process's in-memory Games, which (for a freshly started CLI process) reflects
+                    // only what was on disk when it loaded plus its own addition — not any sibling
+                    // process's concurrent add that SetTracked's fresh read already captured on disk.
+                    // A re-added EXISTING game is different: SetTracked's add-branch no-ops because the
+                    // GameId is already present, so the field updates above (SaveDirectory, ManifestKey,
+                    // ProcessNames) live only on `tracked` in memory until Save() writes them.
+                    if (existing is not null) config.Save();
                     Console.WriteLine($"Tracking '{name}' -> {dir}");
                     break;
                 }
