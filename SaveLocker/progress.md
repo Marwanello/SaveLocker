@@ -344,3 +344,59 @@ cheap and safe to close regardless. **Confirmed fixed**: reran the isolated WA-0
 ### Not done
 
 - The rest of `run-winagent-tests.ps1` (WA-02 onward) was not rerun end-to-end this session.
+
+---
+
+## 2026-08-28 — Decky conflict-resolution design (planning only, no app code)
+
+### Task
+
+Design moving conflict resolution out of the web dashboard and into the per-platform agents
+(Steam Deck/Decky, Windows/Playnite, Linux). Two passes: (1) an initial 8-document design in
+`docs/design/00`–`07` written *without* the user's real Decky fork; (2) after checking the actual
+fork at `D:\Projects\SaveLocker\SaveLocker-Decky` (v0.2.3), a single consolidated plan reflecting
+reality — `logs/2026-08-28_decky-conflict-resolution.md` — plus a `Backlog.md` entry. No application
+code was modified; this pass produced planning documents only.
+
+### Core architectural correction (from the user)
+
+- **The server never decides a conflict.** It does only two mechanical things: move the head when
+  told, and keep whatever isn't the head as a labeled, recoverable backup. All resolution *logic*
+  (policy evaluation, human chooser, "mine vs. the cloud") lives in **Agent.Core**, the one engine
+  every frontend reaches through the local `:5178` API. This reverses the original design's
+  server-side `NewestWins`/`PreferMachine` auto-win in `SyncService.IngestAsync`.
+- **Conflicts are always local-vs-cloud, never device-vs-device.** The other machine's name is
+  supporting context only. This retires the "who else can resolve this / bystander" question.
+- **"Keep both" = also protect the losing save as a downloadable backup**, surfaced in a *separate*
+  dashboard "Backups" sub-menu — not mixed into normal history. Verified against `Entities.cs`: this
+  needs **no new schema** (a backup is any version that isn't an ancestor of `Game.HeadVersionId`;
+  reuses existing `GET /api/versions/{id}/download` and `POST /api/games/{id}/set-latest`).
+
+### Launch-blocking spec (settled with the user)
+
+When "sync before start" is active and a genuine, confirmed conflict is found as the player presses
+Play — **whether or not "sync on page open" is also on** — the launch is cancelled, a resolve popup
+opens (ASCII mockup in the doc), the player picks local or cloud, the app syncs that choice, then
+auto-relaunches via `SteamClient.Apps.RunGame` — no second Play press. Carve-out: the
+`pageOpenPullIsFresh` skip in `gamingSync.tsx` must NOT apply when the fresh page-open result was a
+conflict. Playnite mirrors this via `OnGameStarting`/`CancelStartup` → dialog → sync →
+`IPlayniteAPI.StartGame(Guid)`.
+
+### Phasing (in the doc)
+
+Phase 0/1 (server + Agent.Core, must ship together) → Phase 2 (Force push/pull bookkeeping fix),
+Phase 7 (cheap sync-status endpoint), Phase 4 (Linux `ProtonRun.cs` gate), Phase 5 (Decky UI),
+Phase 8 (Playnite) all parallelizable off 0/1 → Phase 6 (Decky launch-gate wiring) depends on 5.
+Phase 3 (dashboard Backups tab) has zero dependencies and can ship first.
+
+### Open item flagged, not resolved
+
+The doc's Phase 0/1 claims it is "usable end-to-end from the CLI alone," but no `savelocker
+conflicts` / `savelocker resolve` commands were added to `AgentCli.cs` in that scope. Either add
+those CLI commands to Phase 0/1 or drop the claim — awaiting the user's choice.
+
+### Deliverables (uncommitted, on branch `claude/savelocked-conflict-resolution-16e289`)
+
+- `SaveLocker/logs/2026-08-28_decky-conflict-resolution.md` (new — the consolidated plan)
+- `SaveLocker/Backlog.md` (modified — High-priority entry referencing the plan)
+- `docs/design/00`–`07` (untracked — first-pass reference, partly superseded)

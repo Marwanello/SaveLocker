@@ -7,6 +7,19 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
 
 ## High priority
 
+- **Decky plugin: proper conflict resolution, not just refusals.** Scoped 2026-08-28 (full design:
+  `logs/2026-08-28_decky-conflict-resolution.md`), not built. Today the plugin's only way past a
+  stuck sync is Force push/pull, which bypasses the server's own conflict bookkeeping — an orphaned
+  `ConflictFlag`, an unprotected losing version, a stranded other device. The plan reframes conflicts
+  as local-vs-cloud (never device-vs-device), moves the actual resolution *decision* into the shared
+  agent engine (the server becomes a passive store that also files the losing save away as a
+  separate, downloadable backup rather than mixing it into the normal version history), and adds a
+  real conflict-aware chip and resolve popup to the Deck's library page and QAM. A deliberate
+  behavior change from today's "always launch" philosophy: a *certain* conflict now cancels the
+  launch, shows the popup, syncs the choice, and relaunches automatically — no second Play press.
+  Playnite gets the equivalent treatment via the SDK's `IPlayniteAPI.StartGame`. Phased; several
+  phases are independently mergeable or can proceed in parallel — see the doc.
+
 **All three bug bounties shipped in v0.5.0 (2026-07-29).** Code is on `main`; what remains is the
 verification that did not happen before the tag. Write-ups:
 `logs/2026-07-29_winagent-bugbounty.md`, `logs/2026-07-29_linuxagent-bugbounty.md`,
