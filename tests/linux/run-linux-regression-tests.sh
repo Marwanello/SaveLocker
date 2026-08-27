@@ -80,7 +80,10 @@ agent_dir="${repo_root}/src/Agent.Linux"
 agent() { dotnet run --project "${agent_dir}/SaveLocker.Agent.Linux.csproj" -v quiet --no-build -- "$@" 2>&1; }
 
 echo "==> Building agent"
-dotnet build "${agent_dir}/SaveLocker.Agent.Linux.csproj" -v quiet --nologo >"${scratch}/build.log" 2>&1 \
+# --no-incremental: this suite asserts on the local API's actual JSON field names, so a stale
+# incremental build silently serving an older DTO shape (e.g. after a branch switch on a long-lived
+# clone, per Gotchas.md) fails confusingly here rather than just carrying forward unnoticed.
+dotnet build "${agent_dir}/SaveLocker.Agent.Linux.csproj" --no-incremental -v quiet --nologo >"${scratch}/build.log" 2>&1 \
   || { echo "BUILD FAILED"; tail -30 "${scratch}/build.log"; exit 1; }
 
 # ── Test configuration ──────────────────────────────────────────────────────────────────────
@@ -130,7 +133,7 @@ la04_game_id="$(curl -sf -H "X-SaveLocker-Token: ${la04_token}" "http://localhos
 import json, sys
 d = json.load(sys.stdin)
 g = [x for x in d if x["name"] == "Fake Prefix Game"]
-print(g[0]["gameId"] if g else "")
+print(g[0]["id"] if g else "")
 ')"
 check "LA-04: game id resolved via local API" "$([ -n "${la04_game_id}" ] && echo 0 || echo 1)"
 

@@ -20,7 +20,11 @@
 param(
     [string]$BaselineRef = "961ad35",   # last commit before the CS-01 fix
     [int]$Port = 5183,
-    [switch]$ShowPreFixBehavior
+    [switch]$ShowPreFixBehavior,
+    # Matches testenv.ps1's own default. A distro named differently (or wsl.exe's default distro,
+    # if this is ever unset) needs an override — WSL_E_DISTRO_NOT_FOUND otherwise, silently emptying
+    # every raw-schema check below rather than raising in a way that reads as an environment problem.
+    [string]$WslDistro = "Ubuntu"
 )
 
 $ErrorActionPreference = "Continue"
@@ -106,7 +110,7 @@ con = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
 for row in con.execute(sys.argv[2]):
     print("|".join("" if c is None else str(c) for c in row))
 '@ | Set-Content -Path $py -Encoding utf8
-    return (& wsl -d Ubuntu-24.04 -- python3 (ConvertTo-WslPath $py) (ConvertTo-WslPath $db) $sql)
+    return (& wsl -d $WslDistro -- python3 (ConvertTo-WslPath $py) (ConvertTo-WslPath $db) $sql)
 }
 
 $stamp = Get-Date -Format "HHmmss"

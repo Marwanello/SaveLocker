@@ -31,16 +31,6 @@ verification that did not happen before the tag. Write-ups:
   - **LAN enrollment-URL check** on the real deployment (`logs/2026-07-27_console-bugbounty.md` →
     Verification).
 
-- **`WA-01 the dashboard is told the real reason` fails on pristine `main`** (found 2026-08-14).
-  `run-winagent-tests.ps1` reads **113/114** at `ff4464b` with no local changes — confirmed by
-  building and running a detached worktree, so it is not the `.verify/` trap. The dashboard command
-  executes and returns a result; the result text no longer matches `running`. Either fix it or
-  re-baseline the 114 in [[Build and Run]]. Not investigated.
-  <br>**It did NOT reproduce on 2026-08-15** (full 114 ran, WA-01 passed, the only two failures were
-  an unrelated bug in that session's own change). So it is **intermittent**, not a standing failure —
-  which rules out re-baselining as the fix and makes a timing dependency the thing to look for.
-  Treat a green WA-01 as evidence of nothing until it is understood.
-
 - **v0.5.4 surfaces that shipped without hardware coverage.** Neither can lose save data — worst
   case is a list that filters oddly — which is why they shipped, but both are unverified: the Heroic
   **store** sub-chips (the test Deck has no Heroic games, so the chip correctly never rendered) and
@@ -282,10 +272,6 @@ verification that did not happen before the tag. Write-ups:
   `<base>` as one of several, so they lose a path but keep an answer. That 702 is the ceiling on
   what this item can recover. Counted from `data/manifest.yaml` by trimming each save template at
   its first wildcard, the same rule `PathResolver` applies.
-
-- **Missing regression tests from the Linux bounty — LA-04/05/06/07.** Folder-watcher refresh,
-  multi-game add, the Game Mode window crash and the settings-write clobber all have code fixes and
-  no tests. This is why several items above have to be checked by hand.
 
 - **Self-host the console fonts.** The console loads Inter and JetBrains Mono from Google Fonts at
   runtime, so on a LAN box with no internet it renders in fallback fonts. CS-13 fixed the import

@@ -853,10 +853,16 @@ switch ($Command) {
         $changed = & git -C $root status --porcelain |
             ForEach-Object { $_.Substring(3).Trim('"') } |
             Where-Object { $_ -and (Test-Path (Join-Path $root $_)) }
-        if (-not $changed) { Write-Host 'nothing changed to sync'; break }
+        # The branch fetch+checkout (inside Invoke-Wsl's own 'sync' handling) must run even with a
+        # clean tree — that's exactly the state right after a commit, and skipping it here is what
+        # left the clone stuck on a stale, unrelated commit with no way to reach the current one
+        # short of hand-editing this file's own uncommitted-changes list. Always pass a (possibly
+        # empty) file so cmd_sync's `read` loop hits EOF from a real redirect rather than whatever
+        # this process's own stdin happens to be.
         $list = Join-Path $env:TEMP 'savelocker-testenv-sync.txt'
         Set-Content -Path $list -Value $changed -Encoding ASCII
-        Say "syncing $($changed.Count) changed file(s) into the WSL clone"
+        if ($changed) { Say "syncing $($changed.Count) changed file(s) into the WSL clone" }
+        else { Say 'no uncommitted changes — fetching the current branch into the WSL clone' }
         Invoke-Wsl 'sync' $list
         Remove-Item $list -ErrorAction SilentlyContinue
     }

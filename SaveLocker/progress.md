@@ -251,3 +251,96 @@ Targeted `Marwanello/SaveLocker` explicitly because `gh` has no default repo set
   `SyncService.cs` (all three retained), and both added an enum member (`RetryFull`)
   and a DTO (`VersionStatsDto`) to `web/src/api-types.ts` (both retained).
   Server build clean (0 warnings, 0 errors), agent-ui typecheck clean.
+
+---
+
+## 2026-08-27 — LA-04/05/06/07 regression suite review, full `testenv.ps1 test` triage, and WA-01 fixed
+
+**Worktree/branch:** `linux-regression-tests` (`.claude/worktrees/linux-regression-tests`).
+
+### Request sequence
+
+1. Review the new `tests/linux/run-linux-regression-tests.sh` (LA-04/05/06/07 — the backlog item
+   "Missing regression tests from the Linux bounty"), fix any bugs, wire it into `testenv.ps1 test`,
+   run it, fix failures.
+2. Pasted the full output of `.\tests\testenv.ps1 test` after a real `build`+`up` — asked to
+   investigate and fix every failure shown.
+3. Asked twice for a status check on the rerun; asked "is there anything left to fix?"; then asked
+   directly to fix the two pre-existing `run-linux-tests.sh` Decky-messaging failures, with an
+   explicit constraint given mid-fix: **"don't mess with any other plugin please. moondeck is not any
+   way relevant to this."**
+4. This session: asked to dig into the long-standing intermittent `WA-01` flake and fix it if the fix
+   turned out to be easy.
+
+### Bugs found and fixed
+
+**In the new regression script (`tests/linux/run-linux-regression-tests.sh`):**
+- LA-04: the game id from `GET /api/games` is `id`/`path` (frozen for Decky-plugin back-compat, per
+  `AgentApiServer.cs`'s `TrackedGameDto`) — an earlier attempt to "fix" this to `gameId` was itself
+  wrong and reverted after tracing the real source rather than trusting a stale ad-hoc directory.
+- LA-05: needed an explicit `agent register` before `add-game`; success check corrected from
+  `"mapped"` to `"Tracking"` (the CLI's actual output string).
+- LA-06: a bare `wait` blocks on *every* backgrounded job including the long-lived test server —
+  fixed by capturing each job's own `$!` into an array and waiting on those PIDs specifically.
+- LA-07: bash variables inside a single-quoted heredoc (`<<'PY'`) don't expand — Python was receiving
+  the literal text `${deck_cfg}` as a path. Fixed by passing values as `sys.argv` instead.
+- The agent build step needed `--no-incremental` (this repo's own documented convention) — an
+  incremental build was serving a stale DLL after a branch switch.
+
+**In `tests/testenv.ps1`:** `sync` skipped the git fetch+checkout entirely whenever the working tree
+had no uncommitted changes, so a persistent WSL clone could sit on an ancient commit indefinitely.
+Fixed to always invoke the WSL-side `sync` (with a possibly-empty changed-file list).
+
+**In `tests/run-server-bugbounty-tests.ps1` and `tests/verify-password-compat.ps1`:** both hardcoded
+the WSL distro name `Ubuntu-24.04`; this machine's distro is named `Ubuntu`. Added a `$WslDistro`
+parameter (default `"Ubuntu"`) used by `wsl -d $WslDistro`. Fixed all 4 CS-01 raw-schema failures.
+
+**In `tests/run-winagent-tests.ps1` (WA-10):** an ACL-cleanup `finally` block's `Set-Acl` threw a
+cosmetic, non-fatal error (a Deny-ACE blocking its own later removal, though the parent key is
+force-deleted regardless) — wrapped in `try { } catch { }`.
+
+**In `src/Agent.Core/AgentCli.cs` (`add-game`):** a genuine product bug, not a test bug —
+`config.Save()` was called unconditionally after `SetTracked`, but `SetTracked` already re-reads and
+re-writes fresh under its own lock for a *brand-new* game; calling `Save()` again reopened a
+lost-update window against a sibling process's concurrent add. Fixed to call `Save()` only when
+re-adding an *existing* game (the case where field updates live only in memory until saved).
+
+**Decky "no plugin installed" messaging gap (`tests/linux/run-linux-tests.sh`), fixed on request:**
+root cause was `make-fixtures.py` unconditionally creating `$HOME/homebrew/plugins/moondeck/python`
+(an unrelated MoonDeck fixture), which made `DeckyPlugin.DeckyPresent` (a directory-existence check)
+evaluate `true` even in the "no Decky at all" test section. Fixed with `rm -rf "${HOME}/homebrew"`
+immediately before that section, matching a cleanup pattern the file already used elsewhere. This
+touches only the test harness's disposable fake `$HOME`, never a real install, and every
+MoonDeck-dependent check runs and completes *before* that line — verified by a full rerun with zero
+regressions (235/2 → 237/0), i.e. MoonDeck's own checks (part of the 237) were unaffected.
+
+**`WA-01` (`the dashboard is told the real reason`) — the long-standing intermittent flake, found
+2026-08-14, "not investigated":** reproduced live by extracting just the WA-01 block into a scratch
+script and running it directly against the already-built Windows agent/server/daemon binaries (WA-01
+itself needs no interactive desktop — the tray tests later in the same file do, which is why the
+*whole* file is normally skipped as `-SkipWinAgentSuite`). Debug output on the failing run showed the
+real command snapshot: `{"status":"Dispatched","result":null}`. `CommandStatus.Dispatched` is
+documented as *"a lease, not a terminal state"* — it's set the instant the agent claims the command
+from `/agent/commands`, before it has actually run the pull and POSTed a result back via
+`/agent/commands/{id}/result`. The test's polling loop matched on `status -ne "Pending"`, which
+`Dispatched` satisfies, so a 1-second poll could catch that exact in-between window and grab a
+command with no result yet. Fixed by matching on the real terminal states (`status -in @("Done",
+"Failed")`) instead. While in there, also hardened the match to filter by the command's own `id`
+(captured from the `POST /api/commands` response, previously discarded) rather than "the most recent
+Pull command server-wide" (`GET /api/commands` returns the 50 most recent commands across *all*
+machines/games) — a real but separate robustness gap, unlikely to have been the actual cause here but
+cheap and safe to close regardless. **Confirmed fixed**: reran the isolated WA-01 block twice more —
+10/10 passing both times, where it had reproducibly failed once before the fix.
+
+### Verification
+
+- `run-linux-tests.sh`: 237 passed, 0 failed (was 235/2).
+- `run-linux-regression-tests.sh` (LA-04/05/06/07): 15 passed, 0 failed.
+- `run-server-bugbounty-tests.ps1`: 194 passed, 0 failed (was 190/4).
+- WA-01 (isolated, live, on this Windows host, against the already-built Debug binaries): 10/10,
+  twice in a row after the fix, having reproduced the historical failure once before it.
+- Windows suite otherwise not rerun in full (needs an interactive desktop for the tray blocks).
+
+### Not done
+
+- The rest of `run-winagent-tests.ps1` (WA-02 onward) was not rerun end-to-end this session.

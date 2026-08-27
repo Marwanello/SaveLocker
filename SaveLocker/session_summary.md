@@ -236,3 +236,58 @@ minimal edits, then merge the branch and open a PR.
 ### Known gaps
 - `MaxUploadMb` ceiling on the reconstruction rests on inspection, not a test.
 - Not yet run against a real fleet.
+
+---
+
+## Session Summary — 2026-08-27 (`linux-regression-tests` worktree)
+
+### What was asked
+
+1. Review the new `run-linux-regression-tests.sh` (LA-04/05/06/07), fix bugs, wire it into
+   `testenv.ps1 test`, run it, fix failures.
+2. Investigate and fix every failure in a pasted full `testenv.ps1 test` run.
+3. Fix the two pre-existing `run-linux-tests.sh` Decky-messaging failures — with an explicit
+   constraint given mid-fix not to touch anything MoonDeck-relevant.
+4. Dig into the long-standing intermittent `WA-01` dashboard-pull test and fix it if easy.
+
+### What shipped
+
+- **The new LA-04/05/06/07 regression script**, four real bugs fixed (a reverted field-name
+  misdiagnosis, a missing `agent register` step, a `wait`-deadlock on the wrong PID set, and bash
+  variables silently not expanding inside a single-quoted heredoc), now wired into `testenv.ps1 test`
+  and passing 15/15.
+- **A real product bug in `AgentCli.cs`'s `add-game`**: an unconditional `config.Save()` reopened a
+  lost-update window that `SetTracked`'s own fresh re-read-under-lock had already closed for a
+  brand-new game.
+- **Two WSL-distro-name mismatches** (`Ubuntu-24.04` hardcoded vs. this machine's actual `Ubuntu`)
+  in `run-server-bugbounty-tests.ps1` / `verify-password-compat.ps1`, fixed via a `$WslDistro` param.
+  Fixed all 4 CS-01 failures (194/0, was 190/4).
+- **A `testenv.ps1 sync` bug**: it skipped the git fetch+checkout step whenever the working tree had
+  no uncommitted changes, so the persistent WSL clone could silently sit on an ancient commit.
+- **The two pre-existing Decky "no plugin installed" messaging failures**, root-caused to an
+  unrelated MoonDeck fixture directory (`make-fixtures.py`) that made a plain directory-existence
+  check (`DeckyPlugin.DeckyPresent`) read `true` in the "no Decky at all" test section. Fixed with a
+  cleanup line scoped to only the test harness's disposable fake `$HOME`; verified with a full rerun
+  that every MoonDeck-dependent check still passed (237/0, was 235/2) before touching anything.
+- **`WA-01`'s intermittent flake, reproduced and fixed.** Extracted just the WA-01 block (it needs no
+  interactive desktop, unlike the tray tests later in the same file) and ran it directly against the
+  already-built Windows binaries — it failed on the first live attempt, and debug output showed
+  exactly why: the test's polling loop accepted `CommandStatus.Dispatched` (a lease, set the instant
+  the agent *claims* a dashboard command — not a terminal state) as good enough, so a 1-second poll
+  could catch the tiny window between "claimed" and "result reported" and grab `{result: null}`.
+  Fixed to wait for the real terminal states (`Done`/`Failed`); also hardened the match to use the
+  command's own id instead of "the most recent Pull server-wide". Reran twice after the fix: 10/10
+  both times.
+
+### Verification performed
+
+- `run-linux-tests.sh`: 237/0 (was 235/2).
+- `run-linux-regression-tests.sh`: 15/0.
+- `run-server-bugbounty-tests.ps1`: 194/0 (was 190/4).
+- WA-01, isolated and live on this Windows host: reproduced failing once, then 10/10 twice after the
+  fix.
+
+### Not done
+
+- The rest of `run-winagent-tests.ps1` (WA-02 through the tray-stress blocks) was not rerun this
+  session — those need a real interactive desktop, which this environment doesn't have.
