@@ -40,6 +40,8 @@ public sealed class AgentApiServer : IDisposable
     // "Sync all" for the Overview page's button — same operation the tray menu offers, resolved
     // against whichever engine and game list are current at the moment it is clicked.
     private readonly Func<Task<string>> _syncAll;
+    // One sync at a time, however many surfaces are offering the button — see /api/sync.
+    private readonly SemaphoreSlim _syncGate = new(1, 1);
     private readonly string _uiRoot;
     private readonly LocalAuth _auth;
     // Lease warnings are persisted, not held in memory: the Linux launch wrapper is a separate
@@ -591,8 +593,18 @@ public sealed class AgentApiServer : IDisposable
         // The Overview page's "Sync now" button: pull then push every tracked game, same as the tray
         // menu's "Sync All". Fire-and-poll from the UI's side — the response is a summary line, and
         // progress for whichever game is mid-sync shows up on the next /api/activity poll regardless.
-        app.MapPost("/api/sync", async () => new SyncNowResponse(await _syncAll()))
-            .Produces<SyncNowResponse>();
+        //
+        // Single-flight: this route holds its request open for the whole sync, and there are now
+        // three buttons wired to it (the browser card, Game Mode, and whatever else asks). Two
+        // presses used to start two overlapping SyncAllAsync runs racing each other's leases; the
+        // second caller is now told what is already happening instead.
+        app.MapPost("/api/sync", async () =>
+        {
+            if (!await _syncGate.WaitAsync(0))
+                return new SyncNowResponse("A sync is already running — watch the activity feed.");
+            try { return new SyncNowResponse(await _syncAll()); }
+            finally { _syncGate.Release(); }
+        }).Produces<SyncNowResponse>();
 
         app.MapGet("/api/agent-version", () =>
         {
@@ -796,15 +808,23 @@ public sealed record CandidateDto(
 /// <see cref="TrackedGame.PullBeforeLaunchEnabled"/>.
 /// </param>
 /// <param name="HasSteamCloud">
-/// Whether this game was enrolled as a genuinely Steam-sourced install — see
-/// <see cref="TrackedGame.HasSteamCloud"/>, decided once at enrollment, not a live lookup. A Decky
-/// plugin needs this, not <paramref name="SteamAppId"/>, to decide whether its own pre-launch pull
-/// would race Steam's own Cloud sync — an AppID alone can't tell a real Steam install apart from a
-/// non-Steam shortcut run under Proton, which gets a compatdata prefix too.
+/// Whether this game was enrolled as a genuinely Steam-sourced install, or <b>null when nothing has
+/// established that</b> — see <see cref="TrackedGame.HasSteamCloud"/>, decided once at enrollment,
+/// not a live lookup. A Decky plugin needs this, not <paramref name="SteamAppId"/>, to decide
+/// whether its own pre-launch pull would race Steam's own Cloud sync — an AppID alone can't tell a
+/// real Steam install apart from a non-Steam shortcut run under Proton, which gets a compatdata
+/// prefix too. Null means "unknown, use your own heuristic", not "no Steam Cloud".
 /// </param>
+/// <remarks>
+/// <see cref="Id"/> and <see cref="Path"/> keep those names, rather than the GameId/SaveDirectory
+/// the config-side properties use, because this record IS the <c>/api/games</c> wire contract and
+/// the Decky plugin reading it ships from its own repo on its own update channel. Renaming them
+/// would break every already-installed plugin the moment an agent updated ahead of it, for nothing
+/// — the four fields after them are additive, so an older reader keeps working untouched.
+/// </remarks>
 public sealed record TrackedGameDto(
-    Guid GameId, string Name, string SaveDirectory, string[] ProcessNames, string? Alias,
-    uint? SteamAppId, bool? PullBeforeLaunchEnabled, bool HasSteamCloud);
+    Guid Id, string Name, string Path, string[] ProcessNames, string? Alias,
+    uint? SteamAppId, bool? PullBeforeLaunchEnabled, bool? HasSteamCloud);
 
 public sealed record ProcessNamesRequest(string[]? ProcessNames);
 public sealed record AliasRequest(string? Alias);
