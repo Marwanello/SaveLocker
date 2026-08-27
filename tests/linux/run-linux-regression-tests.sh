@@ -122,36 +122,40 @@ for _ in $(seq 1 40); do
 done
 check "LA-04: daemon started" "$([ -n "${daemon_pid}" ] && kill -0 "${daemon_pid}" 2>/dev/null && echo 0 || echo 1)"
 
+# There is no CLI command for this — the fix lives behind the agent's own local HTTP API
+# (POST /api/games/{id}/folder), which is what the agent UI's folder picker actually calls.
+# It requires the per-machine bearer token (LocalAuth) next to config.json, and a loopback Host.
+la04_token="$(tr -d '\r\n' <"${scratch}/api-token" 2>/dev/null)"
+la04_game_id="$(curl -sf -H "X-SaveLocker-Token: ${la04_token}" "http://localhost:5189/api/games" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+g = [x for x in d if x["name"] == "Fake Prefix Game"]
+print(g[0]["gameId"] if g else "")
+')"
+check "LA-04: game id resolved via local API" "$([ -n "${la04_game_id}" ] && echo 0 || echo 1)"
+
 # Change the game's folder through the local API
-out="$(agent set-folder --config "${deck_cfg}" --name "Fake Prefix Game" --dir "${save_dir_late}")"
-check "LA-04: set-folder to real directory" "$(contains "${out}" "set to")"
+folder_body="$(python3 -c 'import json,sys; print(json.dumps({"path": sys.argv[1], "confirm": True}))' "${save_dir_late}")"
+out="$(curl -sf -X POST -H "X-SaveLocker-Token: ${la04_token}" -H "Content-Type: application/json" \
+        -d "${folder_body}" "http://localhost:5189/api/games/${la04_game_id}/folder")"
+check "LA-04: set-folder to real directory" "$(contains "${out}" '"ok":true')"
 
 # The fix: folder/change endpoint fires onGamesChanged and rebuilds watchers immediately
 # Write something to the new save directory and wait for a push
 echo "daemon-triggered LA-04 change" >"${save_dir_late}/slot1.sav"
 
-# Give the watcher time to detect and push
-found_push=false
+# Give the watcher time to detect and push. The agent log is the ground truth: it always lives
+# under DefaultDir (XDG_DATA_HOME/SaveLocker), never wherever --config points, so this path holds
+# regardless of the custom deck_cfg location used throughout this suite.
+found_push=1
 for _ in $(seq 1 60); do
   sleep 1
-  # Check if a new version was pushed by querying the server
-  versions="$(curl -sf "${server_url}/api/games" | python3 -c '
-import json,sys
-d=json.load(sys.stdin)
-g=[x for x in d if x["name"]=="Fake Prefix Game"]
-if g and g[0].get("versions"):
-    print(g[0]["versions"][0].get("parentVersionId",""))
-')"
-
-  # Or check the agent log for the push
-  if [ -f "${XDG_DATA_HOME}/SaveLocker/agent.log" ]; then
-    if grep -q "pushed new version" "${XDG_DATA_HOME}/SaveLocker/agent.log" 2>/dev/null; then
-      found_push=true
-      break
-    fi
+  if grep -q "pushed new version" "${XDG_DATA_HOME}/SaveLocker/agent.log" 2>/dev/null; then
+    found_push=0
+    break
   fi
 done
-check "LA-04: daemon pushed after folder change (watcher rebuilt)" "$found_push"
+check "LA-04: daemon pushed after folder change (watcher rebuilt)" "${found_push}"
 
 # Stop daemon and verify no stray processes
 kill "${daemon_pid}" 2>/dev/null
@@ -172,6 +176,11 @@ cat >"${deck_cfg}" <<EOF
 }
 EOF
 
+# add-game calls the server (CreateGameAsync), which is API-key-gated — a fresh config with no
+# ApiKey gets a 401 and add-game never even reaches SetTracked. Register first.
+out="$(agent register --config "${deck_cfg}" --name DeckLA05)"
+check "LA-05: register succeeds" "$(contains "${out}" "Registered")"
+
 # Create two save directories
 save_late="${scratch}/late-save-la05"
 mkdir -p "${save_late}"
@@ -184,13 +193,13 @@ echo "early save" >"${save_early}/slot1.sav"
 # Add both games - one with real save, one with nonexistent
 out="$(agent add-game --config "${deck_cfg}" --name "Fake Prefix Game" \
         --dir "${save_early}" --appid "11111111")"
-check "LA-05: first game enrolled successfully" "$(contains "${out}" "mapped")"
+check "LA-05: first game enrolled successfully" "$(contains "${out}" "Tracking")"
 
 # The fix: Enroller persists each candidate via SetTracked before starting the next
 # If we add a second game, the first should remain enrolled even if something fails
 out="$(agent add-game --config "${deck_cfg}" --name "Fake Portable Game" \
         --dir "${save_late}" --appid "22222222")"
-check "LA-05: second game enrolled successfully" "$(contains "${out}" "mapped")"
+check "LA-05: second game enrolled successfully" "$(contains "${out}" "Tracking")"
 
 # Verify both are in config.json
 config_games="$(python3 -c "
@@ -218,16 +227,19 @@ echo "==> LA-06: Thread-safe enrollment (MutateGames copy-on-write)"
 # see inconsistent state or exceptions
 echo "Creating many games rapidly..."
 
+multi_pids=()
 for i in $(seq 1 5); do
   save_multi="${scratch}/multi-save-$i"
   mkdir -p "${save_multi}"
   echo "multi $i" >"${save_multi}/slot1.sav"
   agent add-game --config "${deck_cfg}" --name "MultiGame_$i" \
     --dir "${save_multi}" --appid "3333333$i" >/dev/null 2>&1 &
+  multi_pids+=("$!")
 done
 
-# Wait for all background jobs
-wait
+# Wait for exactly these 5 jobs — a bare `wait` blocks on every background job of this shell,
+# including the server started at the top of this script, which never exits on its own.
+wait "${multi_pids[@]}"
 
 # All games should be in config
 game_count="$(python3 -c "
@@ -268,16 +280,17 @@ check "LA-07: daemon started holding config" "$([ -n "${daemon_pid}" ] && kill -
 
 # Simulate the daemon writing a new game to config (e.g., from CommandPoller reconcile)
 # We'll do this by directly editing the file while the daemon holds its copy
-python3 - "${deck_cfg}" <<'PY'
-import json
-cfg = json.load(open('${deck_cfg}'))
+python3 - "${deck_cfg}" "${save_late}" <<'PY'
+import json, sys
+cfg_path, save_late_dir = sys.argv[1], sys.argv[2]
+cfg = json.load(open(cfg_path))
 cfg['Games'].append({
     'GameId': '55555555-5555-5555-5555-555555555555',
     'Name': 'DaemonAddedGame',
-    'SaveDirectory': '${save_late}',
+    'SaveDirectory': save_late_dir,
     'SteamAppId': '55555555'
 })
-json.dump(cfg, open('${deck_cfg}', 'w'), indent=2)
+json.dump(cfg, open(cfg_path, 'w'), indent=2)
 PY
 
 # The daemon should have its own in-memory copy at this point (stale)
