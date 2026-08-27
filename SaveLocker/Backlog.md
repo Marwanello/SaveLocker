@@ -343,16 +343,6 @@ verification that did not happen before the tag. Write-ups:
 
 - **Linux agent secret permissions and state layout.** `config.json` contains a long-lived machine key; file privacy depends on the launching shell's umask. Enforce `0700` on private state directories and `0600` on config, queue, health, and log files in code, including CLI enrollment paths. Consider separating immutable app files from mutable XDG config/state so upgrades cannot overlap the executable tree.
 
-- **Upload only changed files, not the whole save folder.** Raised 2026-08-19 (maintainer plays
-  Cyberpunk 2077 and Fallout: New Vegas, both of which keep many largely-static per-slot save files —
-  a session that changes one slot still re-zips and re-uploads every other unchanged one today,
-  because change detection is one aggregate hash over the whole folder
-  (`SaveArchive.HashDirectory`), not per-file. Real payoff for a Deck on a constrained uplink, same
-  cost center as the parked `tasks/OfflineBackoff.md` (bytes instead of requests). Decisions to
-  settle first (copy-forward reconstruction vs. a content-addressable store, and where the
-  fast-forward-only scope boundary sits) and the measurement that proves it:
-  `tasks/PerFileDeltaUpload.md`.
-
 - **Constrain external manifest paths.** The Ludusavi manifest is downloaded from mutable `master`; expanded templates are not proven to stay inside the intended Proton prefix. Pin or integrity-verify an approved manifest revision, canonicalize resolved paths, reject `..`/symlink escapes outside allowed roots, test a hostile manifest entry. Preserve explicit manually mapped portable-save paths as a separate trusted-user path.
 
 - **Deferred: one state owner for the Linux agent** — wrapper→daemon IPC over a Unix socket, standalone fallback when no daemon is up. The locking in `Decisions.md` §8 makes the current two-owner model *correct*; IPC would make it *simple*. Worth doing before the state files grow further.

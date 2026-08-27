@@ -194,3 +194,60 @@ Still outstanding, by choice:
   `src/Agent.Linux/DeckyPlugin.cs:66`) from `SkorcherX/SaveLocker-Decky` to
   `Marwanello/SaveLocker-Decky` — the fork's plugin repo exists but has **no releases**, so the
   documented *Install Plugin from URL* flow would 404. The stale-looking URL is the working one.
+
+---
+
+## 2026-08-26/27 — Per-file delta upload review + PR #17
+
+Reviewed the `per-file-delta-upload` branch at xhigh effort, applied 14 findings
+with minimal edits, then merged and opened a PR.
+
+**PR:** https://github.com/Marwanello/SaveLocker/pull/17 (`per-file-delta-upload` → `main`).
+Targeted `Marwanello/SaveLocker` explicitly because `gh` has no default repo set and
+`upstream` resolves to `SkorcherX/SaveLocker`.
+
+**Commits on top of 41b90c2:**
+- `c054676` Fix: 14 review findings on per-file delta upload (src/ + tests/)
+- `5d7174d` Docs: record the delta-upload review, fold two stray vault files into logs/
+
+### The three serious findings
+1. **Arbitrary file exfiltration (highest severity).** Server-controlled `NeedPaths`
+   fed unchecked into local archiving. Fixed at two layers: `SyncEngine.SendPushAsync`
+   intersects requested paths against the manifest it just declared and refuses +
+   alerts on any undeclared path; `SaveArchive.CreateArchiveSubset` adds path
+   containment as a floor.
+2. **Live-head archive could be destroyed.** The archive-deleting `catch` in
+   `CompleteChunkedUploadAsync` was widened to cover post-commit DB work.
+   Restructured so only pre-commit failures un-publish; post-commit manifest/audit
+   failures clear the change-tracker and best-effort audit instead.
+3. **Reconstructed archive was unverified.** Server now re-hashes the rebuilt archive
+   against the agent's declared content hash and enforces the `MaxUploadMb` ceiling
+   before ingest.
+
+### Structural changes
+- Push decision tree moved from `ApiClient` into `SyncEngine.SendPushAsync`, so the
+  agent holds the manifest it sent and can reject rogue `NeedPaths`.
+- `SaveArchive.ComputeManifest` returns manifest + aggregate hash in one pass,
+  making `HashDirectory`'s second pass redundant and the file-count floor deletable
+  (findings 7/9/10 collapsed into one change).
+- Server `ValidateManifest`: rejects duplicate/rooted/`..`/empty/negative-size entries,
+  caps at 100k entries; wired into `POST /upload/begin` as a 400.
+- Staging files renamed `.build` → `.part` so startup `SweepIncoming` reclaims crashes.
+
+### Tests
+- `tests/run-delta-upload-tests.ps1`: 17 → 29 checks. Added section 7 (head moves
+  between Begin/Complete → RetryFull, asserted via `upload.conflict` audit delta),
+  section 8 (manifest validation 400s), section 9 (hostile `../` NeedPaths refused,
+  no chunk sent). Full agent suite 47/47 against a fresh server DB.
+
+### Follow-ups / gaps
+- `MaxUploadMb` ceiling on the reconstructed archive rests on inspection, not a test.
+- None of this has run against a real fleet.
+
+### Merge to open PR #17
+- Local `main` was 3 commits behind `origin/main` (PR #14, #15, #16). Merged
+  `origin/main` into `per-file-delta-upload` after opening the PR when GitHub reported
+  conflicts. Conflicts were mechanical: both branches added imports to
+  `SyncService.cs` (all three retained), and both added an enum member (`RetryFull`)
+  and a DTO (`VersionStatsDto`) to `web/src/api-types.ts` (both retained).
+  Server build clean (0 warnings, 0 errors), agent-ui typecheck clean.

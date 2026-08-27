@@ -191,3 +191,48 @@ conflict, but a clean auto-merge can still be semantically wrong, so it was chec
 trusted: both changesets confirmed present by inspection, PR #14's `HasSteamCloud` still appearing
 10x in `AgentApiServer.cs`, the diff vs `origin/main` unchanged at 15 code files / +526/-55, all five
 C# projects and `agent-ui` rebuilt, and `CS-12` re-run at 30/30.
+
+---
+
+## Session Summary — 2026-08-26/27 (per-file-delta-upload, PR #17)
+
+### Task
+Review the `per-file-delta-upload` branch (xhigh effort), apply the 14 findings with
+minimal edits, then merge the branch and open a PR.
+
+### Outcome
+- **PR #17** open: https://github.com/Marwanello/SaveLocker/pull/17
+  (`per-file-delta-upload` → `main`). Targeted `Marwanello/SaveLocker` explicitly —
+  `gh` has no default repo here and `upstream` resolves to `SkorcherX/SaveLocker`.
+- Two commits: `c054676` (14 fixes, code + tests), `5d7174d` (`Docs:` vault update).
+- Later merged `origin/main` (PR #14/15/16) into the branch to resolve merge conflicts.
+
+### The three serious findings
+1. **Arbitrary file exfiltration** — server-controlled `NeedPaths` was archived
+   unchecked. Fixed in `SyncEngine.SendPushAsync` (intersect + refuse/alert on any
+   undeclared path) with `SaveArchive.CreateArchiveSubset` containment as a floor.
+2. **Live-head archive could be destroyed** — the archive-deleting `catch` covered
+   post-commit DB work. Restructured so only pre-commit failures un-publish.
+3. **Reconstructed archive was unverified** — server now re-hashes the rebuild against
+   the declared content hash and enforces `MaxUploadMb` before ingest.
+
+### Notable structural moves
+- Push decision tree moved `ApiClient` → `SyncEngine`, so the agent can reject rogue
+  `NeedPaths` against the manifest it just sent.
+- `ComputeManifest` returns manifest + aggregate hash in one pass (findings 7/9/10
+  collapsed): the old `HashDirectory` second pass and the file-count floor deleted.
+- `ValidateManifest` on the server rejects duplicate/rooted/`..`/empty/negative-size
+  entries, caps at 100k; wired as a 400 on `POST /upload/begin`.
+- Staging `.build` → `.part` so startup `SweepIncoming` reclaims crashed builds.
+
+### Tests
+- `run-delta-upload-tests.ps1`: 17 → 29 checks (RetryFull on head move, manifest 400s,
+  hostile `../` NeedPaths refused). Agent suite 47/47 on a fresh server DB.
+- Full `testenv.ps1 test` pass showed 2 pre-existing Linux-suite failures (Decky
+  detection, untouched by this branch) and 4 pre-existing server-suite failures
+  (WSL distro name hardcoded to `Ubuntu-24.04` in `tests/run-server-bugbounty-tests.ps1`
+  while the installed distro is plain `Ubuntu`); neither cluster traces to this branch.
+
+### Known gaps
+- `MaxUploadMb` ceiling on the reconstruction rests on inspection, not a test.
+- Not yet run against a real fleet.
