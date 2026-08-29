@@ -364,6 +364,17 @@ public static class AgentCli
                         return 1;
                     }
 
+                    // Keeping local makes this machine the winner, which excludes it from the
+                    // server's post-resolve pull fan-out (SyncService.ResolveConflictAsync) on the
+                    // assumption it already advanced its own parent pointer — true for the agent's
+                    // own auto-policy resolve, not for this CLI path unless it does the same here.
+                    if (keep == "local")
+                    {
+                        game.LastKnownVersionId = winningVersionId;
+                        game.LastSyncedHash = SaveArchive.HashDirectory(game.SaveDirectory, game.ExcludeGlobs);
+                        config.SaveGameSyncState(game);
+                    }
+
                     Console.WriteLine($"Resolved '{game.Name}': kept the {keep} save" +
                         (keepBoth ? " (the other side is kept as a downloadable backup)." : "."));
                     if (keep == "cloud")

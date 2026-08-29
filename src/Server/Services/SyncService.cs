@@ -1347,6 +1347,25 @@ public sealed class SyncService
             await Audit(null, conflict.GameId, "conflict.resolve_rewind_blocked",
                 $"winner={winner.Id} currentHead={currentHead.Id}");
             await _db.SaveChangesAsync();
+
+            // An auto-policy resolve (unlike a human's explicit choice) must not get stuck here:
+            // the head moved past the resolver's own version between its push and this call, so
+            // something newer already won the race. A human still has to look at the conflict
+            // itself — this refusal is unchanged — but the resolver machine needn't sit on stale
+            // content until then, so queue it the same unforced pull an ordinary resolution would,
+            // and it converges to the real head on its own next reconcile.
+            if (resolverMachineId is { } rewoundResolver)
+            {
+                var alreadyQueued = await _db.AgentCommands.AnyAsync(c =>
+                    c.MachineId == rewoundResolver &&
+                    c.GameId == conflict.GameId &&
+                    c.Type == AgentCommandType.Pull &&
+                    c.Status == CommandStatus.Pending);
+                if (!alreadyQueued)
+                    await EnqueueCommandAsync(new EnqueueCommandRequest(
+                        rewoundResolver, conflict.GameId, AgentCommandType.Pull, Force: false));
+            }
+
             return (false,
                 "Latest changed after this conflict opened. Resolving to that older save would rewind it; review the current versions first.");
         }

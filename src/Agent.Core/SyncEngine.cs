@@ -458,7 +458,10 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
 
         ConflictPolicyDto? policy;
         try { policy = await _api.GetConflictPolicyAsync(game.GameId, ct); }
-        catch { return false; }   // transient failure or an older server: leave it for a human
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return false;   // transient failure or an older server: leave it for a human
+        }
         if (policy is null) return false;
 
         var thisMachineWins =
@@ -478,7 +481,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             _log($"[{game.Name}] the save policy could not auto-resolve this divergence: {error}");
             return false;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             _log($"[{game.Name}] the save policy's auto-resolve attempt failed: {ex.Message}");
             return false;
