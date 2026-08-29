@@ -1058,6 +1058,248 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/conflicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConflictDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conflicts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConflictDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conflicts/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LocalResolveRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OkResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/conflict-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConflictPolicyDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetConflictPolicyRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OkResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/sync-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SyncStatusDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1146,6 +1388,44 @@ export interface components {
             /** Format: int32 */
             settleQuietSeconds: null | number;
         };
+        ConflictDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            gameId: string;
+            /** Format: uuid */
+            versionAId: string;
+            /** Format: uuid */
+            versionBId: string;
+            status: components["schemas"]["ConflictStatus"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: uuid */
+            resolvedVersionId: null | string;
+            resolvedBy: null | string;
+            /** Format: date-time */
+            resolvedAt: null | string;
+            /** Format: uuid */
+            machineId?: null | string;
+            /**
+             * Format: int32
+             * @default 1
+             */
+            count: number;
+            /** Format: date-time */
+            lastSeen?: null | string;
+            /** @default false */
+            escalated: boolean;
+        };
+        /** @enum {unknown} */
+        ConflictPolicy: "Manual" | "NewestWins" | "PreferMachine";
+        ConflictPolicyDto: {
+            policy: components["schemas"]["ConflictPolicy"];
+            /** Format: uuid */
+            preferredMachineId?: null | string;
+        };
+        /** @enum {unknown} */
+        ConflictStatus: "Open" | "Resolved";
         DeckyStatusDto: {
             applicable: boolean;
             deckyPresent: boolean;
@@ -1206,6 +1486,12 @@ export interface components {
             gameName: string;
             holderMachine: string;
         };
+        LocalResolveRequest: {
+            /** Format: uuid */
+            winningVersionId: string;
+            /** @default false */
+            keepBoth: boolean;
+        };
         OkResponse: {
             /** @default true */
             ok: boolean;
@@ -1222,20 +1508,31 @@ export interface components {
         RegisterResponse: {
             machineName: string;
         };
-        ResolveLaunchOptionsRequest: {
-            games: null | components["schemas"]["LaunchOptionCurrentDto"][];
-        };
         ResolvedLaunchOptionDto: {
             /** Format: uint32 */
             steamAppId: number;
             desired: string;
             changed: boolean;
         };
+        ResolveLaunchOptionsRequest: {
+            games: null | components["schemas"]["LaunchOptionCurrentDto"][];
+        };
+        SetConflictPolicyRequest: {
+            policy: components["schemas"]["ConflictPolicy"];
+            /** Format: uuid */
+            preferredMachineId?: null | string;
+        };
         SuggestedPathDto: {
             path: null | string;
         };
         SyncNowResponse: {
             message: string;
+        };
+        SyncStatusDto: {
+            inSync: boolean;
+            hasOpenConflict: boolean;
+            /** Format: uuid */
+            conflictId?: null | string;
         };
         TrackedGameDto: {
             /** Format: uuid */

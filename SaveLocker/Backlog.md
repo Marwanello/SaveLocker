@@ -8,17 +8,39 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
 ## High priority
 
 - **Decky plugin: proper conflict resolution, not just refusals.** Scoped 2026-08-28 (full design:
-  `logs/2026-08-28_decky-conflict-resolution.md`), not built. Today the plugin's only way past a
-  stuck sync is Force push/pull, which bypasses the server's own conflict bookkeeping — an orphaned
-  `ConflictFlag`, an unprotected losing version, a stranded other device. The plan reframes conflicts
-  as local-vs-cloud (never device-vs-device), moves the actual resolution *decision* into the shared
-  agent engine (the server becomes a passive store that also files the losing save away as a
-  separate, downloadable backup rather than mixing it into the normal version history), and adds a
+  `logs/2026-08-28_decky-conflict-resolution.md`). **Phase 0/1 shipped 2026-08-29** (server +
+  Agent.Core, this repo only — see below); Phases 2–8 (the Force-push bookkeeping fix, the dashboard
+  Backups tab, the Linux wrapper launch gate, the Decky plugin itself, the sync-status endpoint, and
+  Playnite) remain not built. Today the plugin's only way past a stuck sync is Force push/pull, which
+  bypasses the server's own conflict bookkeeping — an orphaned `ConflictFlag`, an unprotected losing
+  version, a stranded other device (this specific gap is Phase 2, still open). The plan reframes
+  conflicts as local-vs-cloud (never device-vs-device), moves the actual resolution *decision* into
+  the shared agent engine (the server becomes a passive store that also files the losing save away as
+  a separate, downloadable backup rather than mixing it into the normal version history), and adds a
   real conflict-aware chip and resolve popup to the Deck's library page and QAM. A deliberate
   behavior change from today's "always launch" philosophy: a *certain* conflict now cancels the
   launch, shows the popup, syncs the choice, and relaunches automatically — no second Play press.
   Playnite gets the equivalent treatment via the SDK's `IPlayniteAPI.StartGame`. Phased; several
   phases are independently mergeable or can proceed in parallel — see the doc.
+  <br>**Phase 0/1 detail:** `SyncService.IngestAsync` no longer evaluates `ConflictPolicy` itself —
+  every divergence unconditionally records/updates a `ConflictFlag`; `SyncEngine
+  .TryPolicyResolveAsync` is where the decision moved (fetches the game's policy after a push comes
+  back `Conflict`, and — unless it's `Manual` — calls the same mechanical resolve endpoint a human's
+  choice would use). `ResolveConflictAsync` gained a `resolverMachineId` parameter so an agent
+  resolving its own push doesn't get a redundant pull queued for itself, while the admin/console path
+  (passing null) still tells every machine, exactly as before. New agent-group routes
+  (`GET/POST /api/agent/conflicts[...]`, `GET/POST /api/agent/games/{id}/conflict-policy`) and
+  matching local-API proxies on `:5178` (`/api/conflicts[...]`, `/api/games/{id}/conflict-policy`,
+  `/api/games/{id}/sync-status` — decision 6's cheap status check, built alongside since it touches
+  the same files). New CLI commands `conflicts` and `resolve-conflict --keep local|cloud
+  [--keep-both]`, added so the doc's "usable end-to-end from the CLI alone" claim for this phase is
+  actually true (it wasn't, when first drafted — the doc had described the value without the commands
+  existing). Verified: `run-agent-tests` 47/47, `run-server-bugbounty-tests` 194/194 (including the
+  `NewestWins` auto-accept, the "winning uploader gets no redundant pull" assertion specific to this
+  change, and the admin Set-as-Latest fan-out unchanged), `run-health-tests` 22/22; `openapi.json` and
+  both `api-types.ts` (web and agent-ui) regenerated and diff-checked; full solution + both frontends
+  build clean. Not yet run against real hardware or a live fleet — this phase has no UI of its own,
+  so nothing changes for a user until a later phase's GUI work lands.
 
 **All three bug bounties shipped in v0.5.0 (2026-07-29).** Code is on `main`; what remains is the
 verification that did not happen before the tag. Write-ups:

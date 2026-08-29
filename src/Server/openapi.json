@@ -673,6 +673,158 @@
         }
       }
     },
+    "/api/agent/conflicts": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConflictDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/conflicts/{id}": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/conflicts/{id}/resolve": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "keepBoth",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/agent/games/{id}/conflict-policy": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictPolicyDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetConflictPolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/agent/health": {
       "post": {
         "tags": [
@@ -2809,6 +2961,24 @@
           "PreferMachine"
         ],
         "default": "Manual"
+      },
+      "ConflictPolicyDto": {
+        "required": [
+          "policy"
+        ],
+        "type": "object",
+        "properties": {
+          "policy": {
+            "$ref": "#/components/schemas/ConflictPolicy"
+          },
+          "preferredMachineId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
       },
       "ConflictStatus": {
         "enum": [
