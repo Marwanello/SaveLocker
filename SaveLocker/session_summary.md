@@ -291,3 +291,74 @@ minimal edits, then merge the branch and open a PR.
 
 - The rest of `run-winagent-tests.ps1` (WA-02 through the tray-stress blocks) was not rerun this
   session — those need a real interactive desktop, which this environment doesn't have.
+
+---
+
+## Session Summary — 2026-08-29 (PR #20 review + PR #21 SessionStart hook)
+
+### What was asked
+
+1. An xhigh-effort code review of [PR #20](https://github.com/Marwanello/SaveLocker/pull/20)
+   (`save-conflicts-phase-0-1` → `main`), which moves conflict-resolution decisions from the server to
+   the agent (Phase 0/1 of the Decky conflict-resolution plan).
+2. Apply the 6 findings with minimal edits, treating the quoted finding text as a problem description
+   rather than literal instructions, then report them back via `ReportFindings` with the original
+   file/line/summary/failure-scenario echoed verbatim plus a fixed/no_change_needed/skipped outcome.
+3. A `SessionStart` hook so Claude Code on the web has the toolchain to build the repo and run its test
+   suites — implement directly rather than write a task doc, since it turned out not to be a big task.
+4. Push the review-fix commit onto PR #20's *actual* head branch, not the separate workspace branch the
+   fix work had used.
+5. Cut a pure-kebab-case branch (no `claude/` prefix) from `claude/session-start-hook` and open a PR.
+
+### PR #20 review: 6 findings, all fixed
+
+- **`AgentCli.cs`** — `resolve-conflict --keep local` now advances the local parent pointer
+  (`LastKnownVersionId`/`LastSyncedHash`) after a successful resolve, matching what the server's
+  fan-out-skip optimization already assumes for the auto-policy resolver.
+- **`SyncService.ResolveConflictAsync`** — the rewind guard could leave an auto-policy resolver stuck.
+  An earlier attempt reassigned the winning version to the current head to dodge the refusal; caught in
+  self-review that `SyncEngine.PushCoreAsync` assumes `ok=true` always means the resolver's *own*
+  version won, which would have silently corrupted local state in exactly the race being fixed. Landed
+  instead as: keep the refusal unconditional, but queue the stuck machine an unforced `Pull`.
+- **`AgentApiServer.cs`** — three related gaps in the new local conflict routes: `sync-status`'s
+  open-conflict lookup wasn't filtered to the calling machine, exceptions surfaced as unhandled 500s
+  instead of the file's usual typed `ErrorResponse`, and a directory hash ran synchronously on a
+  request thread. Fixed with a `MachineId` filter, try/catch on all 6 conflict routes, and `Task.Run`.
+- **`SyncEngine.TryPolicyResolveAsync`** — catch blocks swallowed cancellation from a retiring engine;
+  added `when (!ct.IsCancellationRequested)` guards to match the file's existing convention.
+
+No .NET SDK was available in the review sandbox, so the fixes were verified by manual brace/paren
+balance checking and careful tracing rather than a real build — disclosed as a limitation at the time.
+
+### Landing the fix on the right branch
+
+The fix had been committed on workspace branch `claude/pr-20-xhigh-review-lrcpdq` (`0551bb7`), but
+PR #20 is backed by `save-conflicts-phase-0-1`. Cherry-picked cleanly onto that branch as `e98f5ef`
+rather than force-pushing; the only wrinkle was a 3-line `agent-ui/src/api-types.ts` diff from
+generation-environment schema-key ordering, resolved the same way an earlier commit (`778a874`) had —
+regenerate on Linux for canonical order.
+
+### SessionStart hook (`.claude/hooks/session-start.sh` + `.claude/settings.json`)
+
+Gated on `CLAUDE_CODE_REMOTE=true`, so local sessions are untouched. Installs the `global.json`-pinned
+.NET SDK via Ubuntu 24.04's own apt archive rather than `dotnet-install.sh` (its
+`builds.dotnet.microsoft.com` download was flatly blocked by this container's network policy — a 403
+on the proxy `CONNECT`), installs PowerShell Core from Microsoft's apt feed, restores only the
+Linux-buildable projects (`src/Server`, `src/Agent.Linux` — the WinForms `src/Agent` can't restore on
+Linux at all), and runs `npm install` in both `web/` and `agent-ui/`.
+
+Validated live: a cold run and an idempotent re-run of the hook, `oxlint` clean in both frontends,
+`dotnet build --no-incremental` clean for Server + Agent.Linux, and
+`pwsh tests/run-hardening-tests.ps1` → 37/37 against a real running server.
+
+### Outcome
+
+- PR #20: 6 review findings fixed on its real head branch, commit `e98f5ef`.
+- Branch `session-start-hook` (kebab-case) cut from `claude/session-start-hook`, pushed; PR
+  [**#21**](https://github.com/Marwanello/SaveLocker/pull/21) opened (`session-start-hook` → `main`).
+
+### Open follow-ups (not started)
+
+- PR #20's `mergeable_state` was `unstable` at end of session — checks/CI hadn't finished settling;
+  not investigated further this session.
+- A real `dotnet build` verification of the PR #20 fixes is still outstanding (manual tracing only).
