@@ -1508,14 +1508,14 @@ export interface components {
         RegisterResponse: {
             machineName: string;
         };
+        ResolveLaunchOptionsRequest: {
+            games: null | components["schemas"]["LaunchOptionCurrentDto"][];
+        };
         ResolvedLaunchOptionDto: {
             /** Format: uint32 */
             steamAppId: number;
             desired: string;
             changed: boolean;
-        };
-        ResolveLaunchOptionsRequest: {
-            games: null | components["schemas"]["LaunchOptionCurrentDto"][];
         };
         SetConflictPolicyRequest: {
             policy: components["schemas"]["ConflictPolicy"];
