@@ -400,3 +400,87 @@ those CLI commands to Phase 0/1 or drop the claim — awaiting the user's choice
 - `SaveLocker/logs/2026-08-28_decky-conflict-resolution.md` (new — the consolidated plan)
 - `SaveLocker/Backlog.md` (modified — High-priority entry referencing the plan)
 - `docs/design/00`–`07` (untracked — first-pass reference, partly superseded)
+
+---
+
+## 2026-08-29 — Conflict resolution Phase 0/1 implemented (server + Agent.Core), PR #20 green
+
+**Branch:** `save-conflicts-phase-0-1`. PR: https://github.com/Marwanello/SaveLocker/pull/20.
+
+### Task
+
+Implement **Phase 0/1** of the Decky conflict-resolution plan
+(`logs/2026-08-28_decky-conflict-resolution.md`): move the conflict-resolution *decision* out of the
+server and into the agent. Server + Agent.Core only — no UI/Decky/Playnite (those are later phases).
+One phase per session, verify it, stop.
+
+### The architectural change, in code
+
+- **Server no longer decides.** Removed the `autoWins` (`NewestWins`/`PreferMachine`) branch from
+  `SyncService.IngestAsync` — every divergence now unconditionally records a `ConflictFlag`, full
+  stop. Server-side auto-policy evaluation is gone.
+- **The agent decides.** `SyncEngine` gained `TryPolicyResolveAsync`, wired into the
+  `UploadStatus.Conflict` path *before* the CONFLICT alert: it fetches the game's policy, evaluates it
+  locally (`thisMachineWins = NewestWins || (PreferMachine && PreferredMachineId == this machine)`),
+  and if this machine wins, calls the resolve endpoint itself. Its success log deliberately avoids the
+  word "conflict" — `"diverged from the server, but the save policy kept this machine's version."`
+- **Comparison is always local-vs-cloud**, never device-vs-device.
+- **`resolverMachineId` fan-out exclusion.** `ResolveConflictAsync` took a new `resolverMachineId`
+  param: when an agent auto-resolves *its own* push, that machine is excluded from the fleet pull
+  fan-out (it already has the winning bytes). The admin/dashboard path passes `null` → everyone,
+  including the winner, is told (preserves the existing "resolving queued a pull for BOTH machines"
+  test). This is what lets a *second* machine learn about a conflict the *first* machine's agent
+  auto-resolved.
+
+### Surfaces added
+
+- **Server agent-group routes** (`Program.cs`, X-Api-Key gated): `GET /agent/conflicts`,
+  `GET /agent/conflicts/{id}`, `POST /agent/conflicts/{id}/resolve` (passes the machine's name and id
+  as resolvedBy/resolverMachineId), `GET/POST /agent/games/{id}/conflict-policy`.
+- **Agent local API** (`AgentApiServer.cs`, loopback :5178, token-gated): `GET /api/conflicts`,
+  `GET /api/conflicts/{id}`, `POST /api/conflicts/{id}/resolve` (`LocalResolveRequest`),
+  `GET/POST /api/games/{id}/conflict-policy`, and the cheap `GET /api/games/{id}/sync-status`
+  (Phase 7, folded in since it touches the same files — local hash vs. head hash, no download).
+- **CLI** (`AgentCli.cs`): `conflicts` and `resolve-conflict` commands (`--keep local`→VersionBId,
+  `--keep cloud`→VersionAId), filtered to this machine — so Phase 0/1 is genuinely usable end-to-end
+  from the CLI alone, closing the open item the design flagged.
+- **Contracts** (`Contracts.cs`): `ConflictPolicyDto`, `SyncStatusDto`.
+- **ApiClient** (`Agent.Core`): the five client methods for the new agent-group routes.
+
+### CI failure and fix (the one non-obvious part)
+
+`package-linux` failed at `agent-ui`'s `npm run gen:api -- --check`: the committed
+`agent-ui/src/api-types.ts` had **Windows** schema ordering. `openapi-typescript` emits
+`components.schemas` in the OpenAPI document's key order, and .NET's OpenAPI generator orders schemas
+by **reflection order — which differs between Windows and Linux**. One existing, unrelated schema
+(`ResolveLaunchOptionsRequest`) sat in a different position than a Linux daemon produces; content was
+identical. Fixed by regenerating the file against a real **Linux** daemon (built + run in WSL), so it
+matches exactly what CI produces. Verified `gen:api -- --check` exits 0 against the Linux daemon
+before pushing (`778a874`). The other two generated artifacts (`src/Server/openapi.json`,
+`web/src/api-types.ts`) were pure additions with no reordering — already canonical.
+
+**Repeat-prone footgun for next time:** any hand-regenerated `agent-ui/src/api-types.ts` must be
+generated against a **Linux** daemon (WSL), not the Windows tray, or `package-linux` will fail on the
+schema-order diff.
+
+### Verification
+
+- All CI checks on PR #20 green: build-dotnet, build-web, build-agent-ui, docker-build,
+  package-linux, agent-tests-linux, and the crossos chain.
+- Design preserves both load-bearing test assertions: run-server-bugbounty CS-04 ("the winning
+  uploader gets no redundant pull") via the `resolverMachineId` exclusion, and run-agent-tests
+  ("resolving queued a pull for BOTH machines") via the admin path's `null` resolverMachineId.
+
+### Notes
+
+- All three GitHub release build paths run `npm install` unconditionally before building
+  (`installer/build-installer.ps1:28`, `packaging/linux/build-linux.sh:39`, `src/Server/Dockerfile`),
+  and `testenv.ps1 build` installs too — so a fresh worktree/CI never ships an unbuilt agent-ui.
+- A pre-existing, unrelated `run-server-bugbounty-tests.ps1` CS-03 flake (Windows Defender briefly
+  holding a just-written zip → `IOException` on line 501) was confirmed out of scope and left as-is.
+
+### Commits on `save-conflicts-phase-0-1`
+
+- `41236fd` Conflict resolution Phase 0/1: move the decision into the agent
+- `778a874` Fix CI: regenerate agent-ui api-types on Linux for canonical schema order
+- (plus the docs commit for the design pass)

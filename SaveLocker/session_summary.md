@@ -1,55 +1,67 @@
-# Session summary — 2026-08-28
+# Session summary — 2026-08-29
 
-Decky conflict-resolution design (planning only; no application code changed).
+Conflict resolution **Phase 0/1** implemented (server + Agent.Core) and shipped as PR #20, all CI green.
 
 ## What was asked
 
-Design moving conflict resolution out of the SaveLocker web dashboard and into the per-platform
-agents (Steam Deck/Decky, Windows/Playnite, Linux). First pass produced 8 design docs in
-`docs/design/00`–`07` without the user's real Decky fork. After checking the actual fork at
-`D:\Projects\SaveLocker\SaveLocker-Decky` (v0.2.3), the deliverable became **one** consolidated plan:
-`SaveLocker/logs/2026-08-28_decky-conflict-resolution.md`, plus a `Backlog.md` entry.
+Implement Phase 0/1 of the Decky conflict-resolution plan
+(`logs/2026-08-28_decky-conflict-resolution.md`): move the conflict-resolution *decision* out of the
+server and into the agent. Server + Agent.Core only — no UI/Decky/Playnite (later phases). Then:
+create a kebab-case branch `save-conflicts-phase-0-1`, open a PR, and investigate/fix its CI failures.
 
-## Corrected architecture (user's direction)
+## The architectural change, in code
 
-- **Server never decides a conflict.** It only moves the head when told and keeps non-head content as
-  a labeled, recoverable backup. All resolution *logic* lives in **Agent.Core**, reached by every
-  frontend through the local `:5178` API. This removes the server-side `NewestWins`/`PreferMachine`
-  auto-win from `SyncService.IngestAsync`.
-- **Conflicts are always local-vs-cloud**, never device-vs-device. Retires the bystander question.
-- **"Keep both" = protect the losing save as a downloadable backup**, shown in a separate dashboard
-  "Backups" sub-menu, not in normal history. Needs **no new schema** (verified against
-  `Entities.cs`): a backup is any version not on the ancestor chain of `Game.HeadVersionId`; reuses
-  existing download and set-latest endpoints.
+- **Server no longer decides.** Removed the `autoWins` (`NewestWins`/`PreferMachine`) branch from
+  `SyncService.IngestAsync` — every divergence now unconditionally records a `ConflictFlag`.
+- **The agent decides.** `SyncEngine.TryPolicyResolveAsync` (wired into the `UploadStatus.Conflict`
+  path before the CONFLICT alert) fetches the game's policy, evaluates it locally
+  (`thisMachineWins = NewestWins || (PreferMachine && PreferredMachineId == this machine)`), and if
+  this machine wins, calls the resolve endpoint itself. Its success log deliberately avoids the word
+  "conflict."
+- **Comparison is always local-vs-cloud**, never device-vs-device.
+- **`resolverMachineId` fan-out exclusion.** `ResolveConflictAsync` gained a `resolverMachineId`
+  param: an agent auto-resolving its own push excludes itself from the fleet pull fan-out (it already
+  has the winning bytes); the admin/dashboard path passes `null` → everyone is told. This is what lets
+  a *second* machine learn about a conflict the *first* machine's agent auto-resolved.
 
-## Launch-blocking behavior (settled)
+## Surfaces added
 
-With "sync before start" on, a confirmed conflict at Play time — regardless of whether "sync on page
-open" is also on — cancels the launch, opens a resolve popup (local vs. cloud, optional "keep both"
-toggle), syncs the choice, then auto-relaunches. No second Play press. The `pageOpenPullIsFresh` skip
-must not apply when the fresh page-open result was a conflict. Playnite mirrors this via
-`OnGameStarting`/`CancelStartup` → dialog → sync → `IPlayniteAPI.StartGame(Guid)`.
+- **Server agent-group routes** (X-Api-Key): `GET /agent/conflicts`, `GET /agent/conflicts/{id}`,
+  `POST /agent/conflicts/{id}/resolve`, `GET/POST /agent/games/{id}/conflict-policy`.
+- **Agent local API** (:5178, token-gated): `GET /api/conflicts`, `GET /api/conflicts/{id}`,
+  `POST /api/conflicts/{id}/resolve` (`LocalResolveRequest`), `GET/POST /api/games/{id}/conflict-policy`,
+  and `GET /api/games/{id}/sync-status` (Phase 7, folded in — local hash vs. head hash, no download).
+- **CLI** (`AgentCli.cs`): `conflicts` and `resolve-conflict` (`--keep local`/`--keep cloud`) — makes
+  Phase 0/1 usable end-to-end from the CLI alone, closing the design's open item.
+- **Contracts**: `ConflictPolicyDto`, `SyncStatusDto`. **ApiClient**: five new client methods.
 
-## Phasing
+## CI failure and fix
 
-- **0/1** — server + Agent.Core, must ship together (removing server auto-policy without the agent
-  replacement would be a regression).
-- **2** — Force push/pull bookkeeping fix. **7** — cheap sync-status endpoint. **4** — Linux
-  `ProtonRun.cs` gate. **5** — Decky UI. **8** — Playnite. All parallelizable off 0/1.
-- **6** — Decky launch-gate wiring; depends on 5.
-- **3** — dashboard Backups tab; zero dependencies, can ship first.
+`package-linux` failed at `agent-ui`'s `npm run gen:api -- --check`: the committed
+`agent-ui/src/api-types.ts` had **Windows** schema ordering. `openapi-typescript` emits
+`components.schemas` in the OpenAPI document's key order, and .NET's OpenAPI generator orders schemas
+by **reflection order, which differs between Windows and Linux** — one unrelated schema
+(`ResolveLaunchOptionsRequest`) sat in a different position; content identical. Fixed by regenerating
+against a real **Linux** daemon (built + run in WSL) so it matches what CI produces; verified
+`gen:api -- --check` exits 0 there before pushing (`778a874`). The other generated artifacts
+(`src/Server/openapi.json`, `web/src/api-types.ts`) were pure additions with no reordering.
 
-## Open item
+**Footgun for next time:** any hand-regenerated `agent-ui/src/api-types.ts` must be generated against
+a **Linux** daemon (WSL), not the Windows tray, or `package-linux` fails on the schema-order diff.
 
-Phase 0/1 claims "usable end-to-end from the CLI alone," but `savelocker conflicts` / `savelocker
-resolve` were never added to `AgentCli.cs` in that scope. Either add them to Phase 0/1 or drop the
-claim — **awaiting the user's choice**.
+## Verification
+
+All CI checks on PR #20 green (build-dotnet, build-web, build-agent-ui, docker-build, package-linux,
+agent-tests-linux, crossos chain). Design preserves both load-bearing assertions: CS-04 ("winning
+uploader gets no redundant pull") via `resolverMachineId` exclusion, and run-agent-tests ("resolving
+queued a pull for BOTH machines") via the admin path's `null`.
 
 ## Status
 
-All deliverables written and on disk, **uncommitted**, on branch
-`claude/savelocked-conflict-resolution-16e289`:
+PR #20 open and green on branch `save-conflicts-phase-0-1`:
 
-- `SaveLocker/logs/2026-08-28_decky-conflict-resolution.md` (new)
-- `SaveLocker/Backlog.md` (modified — High-priority entry referencing the plan)
-- `docs/design/00`–`07` (untracked — first-pass reference, partly superseded)
+- `41236fd` Conflict resolution Phase 0/1: move the decision into the agent
+- `778a874` Fix CI: regenerate agent-ui api-types on Linux for canonical schema order
+
+Phase 0/1 is complete. Later phases (2–8: Force-fix, Backups tab, Linux gate, Decky UI/launch wiring,
+Playnite) remain unbuilt — see `logs/2026-08-28_decky-conflict-resolution.md`.
