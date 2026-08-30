@@ -1,14 +1,23 @@
 # Task: Decky plugin — proper conflict resolution, not just refusals
 
-Planned 2026-08-28. From [[Backlog]] → High priority. Supersedes the conflict-resolution-relevant
-parts of the earlier, fork-blind 8-document pass at
-`docs/design/00-inventory.md` through `07-open-questions.md` (kept as reference; their platform-
-neutral server pieces — the conflict data model's causal, non-clock-based detection, and the
-Windows/Linux-headless material outside Decky/Playnite — are unaffected and not repeated here).
+Planned 2026-08-28; phase list expanded 2026-08-30 (this session, no separate task file — asked
+directly whether any phase built a Decky-equivalent resolve popup on Windows or plain Linux,
+outside Decky and outside a future Playnite plugin. It didn't: the earlier fork-blind plan already
+had the answer — a Linux desktop/headless escalation ladder and a Windows in-app chooser — but it
+had been left as reference material below, not folded into execution). From [[Backlog]] → High
+priority. Supersedes the conflict-resolution-relevant parts of the earlier, fork-blind 8-document
+pass at `docs/design/00-inventory.md` through `07-open-questions.md` (kept as reference) for
+everything **except** the Windows/Linux-headless UI material, which Phases 5–9 and 14 below now
+fold in directly — see the *Scope note* at the end of this document. The conflict data model's
+causal, non-clock-based detection and the Resolution API's layering are still unaffected and not
+repeated here.
 
 **Execute ONE phase per session, verify it, stop** — same discipline as
 `logs/2026-08-15_decky-plugin.md`, the closest precedent for a plan spanning both this repo and the
-separate `SaveLocker-Decky` plugin repo.
+separate `SaveLocker-Decky` plugin repo. Ten of the fourteen phases below are net-new as of
+2026-08-30; the new numbering starts *after* Phase 4, deliberately, so Phases 0–4's existing
+cross-references in [[CONTEXT]]/[[Backlog]] (which already cite them by number) do not need
+updating — only Phase 5 onward is renumbered relative to the original 2026-08-28 plan.
 
 ## The problem
 
@@ -104,6 +113,14 @@ hardware-tested here — the corrections above supersede that document's Decky-s
    StartGame(Guid gameId)` — "Starts game" — is a real, documented SDK method, so cancel → resolve →
    sync → relaunch works there exactly as on the Deck), even though its full plugin build-out is a
    later implementation pass.
+8. **The escalation-ladder / non-Decky, non-Playnite UI work is folded into this plan, not left as
+   deferred reference material.** Decided 2026-08-30, this session, on being asked directly whether
+   a Decky-equivalent popup existed anywhere outside Decky/Playnite (it didn't — see the note at the
+   top of this document). The Windows in-app chooser, the Linux Game Mode conflict screen, the
+   shared `agent-ui` conflicts page, and the optional D-Bus desktop notification all become numbered
+   phases (5–9, 14) below, so "everything has a way of working even without the Decky plugin or a
+   Playnite plugin" is an explicit, planned deliverable rather than an implicit consequence of the
+   API being frontend-agnostic.
 
 ## The corrected resolution architecture
 
@@ -307,46 +324,248 @@ only on Phase 0/1's mechanical resolve internals, invisible to users, lowest-ris
 needs no new server endpoint, just a new view over data that already exists. **Can ship first.**
 
 **Phase 4 — Linux wrapper launch gate (`ProtonRun.cs`).** Depends on Phase 0/1. Independent of every
-Decky-specific phase below — can proceed in parallel with Phases 5–6.
+other phase below — can proceed in parallel with Phases 5–10 — except that Phase 8 later adds a pure
+enhancement on top of it (bringing the Game Mode conflict screen to the foreground on `Blocked`, once
+Phase 8 and Phase 5 both exist) and Phase 11 (Decky launch-gate wiring) depends on this phase's
+`Blocked` decision already existing.
 
-**Phase 5 — Decky: conflict display + resolve UI** (chip, QAM panel, resolve popup, policy dropdown).
-Depends on Phase 0/1. Delivers real, standalone value the moment it ships — a conflict can be seen
-and resolved from the Deck even before Phase 6 wires it into the launch path. Can proceed in parallel
-with Phase 4 and Phase 8.
+**Phase 5 — Linux environment-capability detection (small, standalone module).**
+Depends on Phase 0/1 only. Pure, no behavior change on its own — prep work consumed by Phases 8 and
+9 and by `doctor`. New module (e.g. `src/Agent.Linux/DesktopEnvironment.cs`) implementing rung 1 of
+`03-platform-ux-flows.md`'s escalation ladder exactly as specified there:
+- `$WAYLAND_DISPLAY`/`$DISPLAY` env vars (trivial) → is *some* graphical session present.
+- `$DBUS_SESSION_BUS_ADDRESS` set **and** the socket actually connectable → a session bus exists.
+- Querying `org.freedesktop.DBus` for whether `org.freedesktop.Notifications` is currently owned →
+  distinguishes "bus present, no notification daemon" from "no bus at all," a real and distinct
+  state the reference doc calls out explicitly (a Deck's Game Mode has a session but no notification
+  daemon; Desktop Mode's KDE Plasma session has both).
+- An attached, interactive TTY (`Console.IsInputRedirected`/an `isatty(0)` equivalent).
+- Whether the current process is the `systemd --user` unit vs. an interactive CLI invocation
+  (`$INVOCATION_ID`, or the process's own argv/TTY state — REPO_MAP already notes the daemon runs
+  under `systemd --user` exclusively, so this is really "am I the unit or a human at a terminal").
 
-**Phase 6 — Decky: launch-gate wiring** (the cancel → popup → sync → relaunch sequence, plus the
-fresh-page-open-conflict carve-out). Depends on **both** Phase 0/1 and Phase 5. Deliberately last: the
-highest-hardware-risk piece (`CancelGameAction`'s race-winning reliability is already flagged
-unverified on real hardware, independent of this plan), so shipping Phase 5 first means a working
-fallback already exists if this phase needs a hardware-driven iteration cycle.
+Returns one `DesktopSessionInfo { HasGraphicalSession, HasSessionBus, NotificationDaemonPresent,
+IsInteractiveTty, RunningAsSystemdUnit }` record from a single `Detect()` call — cheap enough to call
+per-decision rather than caching, so a Deck switching between Game Mode and Desktop Mode is never
+read stale.
 
-**Phase 7 — Cheap sync-status endpoint.** Same shape of change as Phase 0/1 and touches the same
-files — cheapest to build alongside it, though functionally independent.
+**Verify:** unit tests feeding synthetic environment-variable/socket states (no real D-Bus needed to
+exercise the "no bus" vs. "bus, nothing listening" distinction — that only needs a fake/absent
+socket), asserting each of the five flags independently and in combination. Confirm on the real Deck
+that Game Mode and Desktop Mode report differently from each other, since that's the entire reason
+this phase exists rather than a single hardcoded assumption.
 
-**Phase 8 — Playnite plugin** (new, separate project). Depends only on Phase 0/1's local API —
-independent of every Decky phase and Phase 3. Can run fully in parallel with all of them. This
-phase's own build-out is explicitly a later pass; this document only locks down the *behavior*
-(confirmed buildable via `IPlayniteAPI.StartGame`) so that later work has a settled target.
+**Phase 6 — Shared `agent-ui` conflicts page (both hosts) + the `doctor`/log gap it closes.**
+Depends on Phase 0/1 only — independent of Phase 5, can run in parallel. This is the single
+highest-leverage new phase: `agent-ui` is served by **both** the Windows tray (WebView2) and the
+Linux daemon (a plain browser at `:5178`), so one component built once gives two platforms a real
+chooser surface simultaneously.
+1. New `agent-ui/src/components/ConflictsView.tsx`, a fourth `Sidebar.tsx` nav entry (today's `NAV`
+   array has only `overview`/`addGames`/`settings`; add `conflicts`, badge-numbered when the open
+   count is non-zero, mirroring the dashboard's own conflict badge). This is genuinely new code, not
+   a port of `web/src/components/GameDetail.tsx`'s conflict card — `agent-ui` has its own
+   `api.ts`/`api-types.ts` generated from the **agent's own** OpenAPI (REPO_MAP: a distinct wire
+   protocol from the dashboard's), so the fetch/DTO layer has to be written fresh even though the
+   visual shape (machine, timestamp, size, file count, newest-change, Keep Local / Keep Cloud / Keep
+   Both) is deliberately copied from the dashboard's already-shipped version for consistency.
+2. Fetches `GET /api/conflicts` and posts `POST /api/conflicts/{id}/resolve` — both already live on
+   the local API (`AgentApiServer.cs:632`, `:653`, shipped in Phase 0/1) — so this phase is
+   client-only, no new server or local-API route.
+3. **Closes a real, confirmed gap found while planning this expansion:** `Doctor.cs` has **no
+   conflict output at all** today — Phase 0/1's own write-up never actually added the line the
+   original reference plan called for (`05-phased-implementation-plan.md` Phase 1 item 5: "`doctor`
+   gains a line per open conflict"). Add it now: one line per open conflict, plus — whenever a
+   conflict is open — the URL to reach this new page (`http://127.0.0.1:5178/#conflicts` or
+   equivalent), printed to both `doctor`'s output and `agent.log`. This is what makes rung 4 of the
+   escalation ladder (the local web chooser, reached over an SSH tunnel on a headless box) actually
+   *discoverable* rather than merely reachable — the reference doc is explicit that rung 2's desktop
+   variant and rung 4 are literally the same surface, so this one page and this one doctor line cover
+   both rungs at once.
+
+**Verify:** extend `run-agent-tests.ps1` (already drives both hosts) with a scenario that opens a
+real conflict and exercises the new route end to end — list, resolve, head actually moves — mirroring
+`run-health-tests.ps1`'s existing conflict coverage. Manual check in a real browser against both a
+running Windows tray and a Linux daemon at `:5178`, per this codebase's "verify live, not just built"
+standard; confirm `doctor`'s new line and URL print correctly with a conflict open and disappear once
+it's resolved.
+
+**Phase 7 — Windows tray/agent UI: automatic chooser + bulk-queue wiring.**
+Depends on Phase 6 (reuses `ConflictsView.tsx` as the single-conflict chooser) and Phase 0/1. This is
+the phase that gives a plain Windows tray user — **no Playnite** — a real popup-at-the-moment-it-
+matters experience for the first time.
+1. Wire the four existing trigger points that already funnel through `SyncEngine` — `Sync All`,
+   per-game Force Pull/Push (`TrayApp.cs`'s menu), `Sync now` (`OverviewView.tsx`/`ActivityCard.tsx`)
+   — so that a result carrying `Conflict` raises `AgentWindow` (opening it if not already visible, via
+   `UiDispatcher`, the single owning thread for every WinForms object per REPO_MAP) directly to the
+   new Conflicts view, instead of requiring the user to notice a badge on their own.
+2. Implement the bulk-operation queue from `03-platform-ux-flows.md`: **a queue, one conflict at a
+   time, with an explicit "apply to all remaining" control that only appears after the first
+   choice** — not a batched list of N independent judgment calls. Concretely: `Sync All` surfacing N
+   open conflicts shows conflict 1 of N in `ConflictsView`; after the first resolve, a follow-up
+   prompt offers "apply the same choice (`keep <machine>'s save`) to the other N-1 conflicts too?"
+   (Yes/No/Review-each) — Yes resolves the rest via the same per-conflict resolve call, no new bulk
+   endpoint needed.
+
+**Verify:** a scripted multi-conflict scenario (three games, three divergent conflicts) driving
+`Sync All` through the queue, confirming "apply to all remaining" resolves the other two via the same
+API calls Phase 0/1 already covers server-side — the exact check the reference plan's own Phase 3
+verification note describes.
+
+**Phase 8 — Linux Game Mode conflict screen (`savelocker ui`).**
+Depends on Phase 0/1 only — independent of Phases 5–7, can run fully in parallel with any of them,
+and with Phase 4. **This is the direct, literal answer to "a conflict popup like the Decky one, but
+in the native Linux/Wayland UI, with no Decky installed"** — the whole reason this expansion exists.
+1. New `Screen` enum value in `Ui/UiApp.cs`, drawn with the existing Dear ImGui/SDL widget set
+   (`Widgets.cs`) and the existing gamepad-focus machinery (`ButtonDown`-driven nav, `Widgets.Hot()`)
+   — no new rendering technology, matching both the reference plan's own recommendation and this
+   codebase's standing "reuse the stack, don't add one" instinct already documented for this exact UI
+   (`Gotchas.md` → ImGui/Deck UI).
+2. Same two-sided comparison as the Decky mockup already specified earlier in this document —
+   machine, timestamp, size/file count, newest-change — Keep Local / Keep Cloud as the two primary
+   actions, a Keep Both toggle, and a "decide later" back-out that never silently defaults to a side.
+3. Reachable proactively from the existing status screen whenever `GET /api/conflicts` (already
+   shipped) returns a non-empty list for a tracked game (a small prompt/badge on that game's row) —
+   no launch has to be attempted first to discover a conflict exists.
+4. A pure enhancement layered on **after** this phase and Phase 5 both exist, not a dependency of
+   either shipping first: once `DesktopEnvironment.Detect()` (Phase 5) can tell the wrapper a Game
+   Mode session is the one running, `ProtonRun.ExecuteAsync` (Phase 4) can bring `savelocker ui`'s
+   process to the foreground directly on this new screen on a `Blocked` decision, instead of merely
+   refusing the launch with a log line. Phase 4 ships standalone first and keeps working exactly as
+   scoped there if this enhancement never lands.
+
+**Verify:** extend the existing `tests/linux/run-ui-wslg.sh` pattern (already drives `savelocker ui`
+under WSLg) with a genuine conflict fixture, confirming the new screen renders and resolves through
+the same local API Phase 6 already exercises; manual gamepad-navigation check on the real Deck (D-pad
+moves focus, A activates, B backs out without resolving anything) — the identical requirement this
+document already states for the Decky modal, applied here to the native screen instead.
+
+**Phase 9 — Desktop notification via D-Bus (optional, spike-gated).**
+Depends on Phase 5 (must confirm a notification daemon is actually present before attempting a call —
+this is precisely the distinction rung 1's detection exists to make) and Phase 6 (the action button's
+target on a desktop session — Phase 8's Game Mode screen is the equivalent target on the Deck).
+**Spike before building, per `07-open-questions.md` §3**: no .NET D-Bus dependency exists in this
+codebase today. Compare, and write down the decision before writing the feature:
+- `Tmds.DBus` — the most common .NET option, a real NuGet dependency this design should flag rather
+  than assume.
+- Shelling out to `dbus-send`/`gdbus` — no new dependency, a process-spawn per notification.
+- A minimal hand-rolled client — SaveLocker only ever needs one method call
+  (`org.freedesktop.Notifications.Notify`), so a full library may be more than this needs.
+
+If built: fires once per conflict becoming open (a `HashSet<Guid>` of already-notified conflict ids,
+cleared on resolve, so the 20s command-poller's own loop doesn't re-notify every tick) with an action
+button that opens Phase 6's `agent-ui` page in the default browser (desktop session) or brings Phase
+8's Game Mode screen to the foreground (Deck). Deliberately the lowest-priority phase before Phase 14:
+rungs 5–7 of the escalation ladder (CLI, `doctor`, and the safe terminal state — an open
+`ConflictFlag`, nothing auto-resolves under `Manual`) already guarantee a conflict is discoverable and
+never silently mishandled with zero risk, regardless of whether this phase ever ships.
+
+**Verify:** manual verification on the real Deck's Desktop Mode (KDE Plasma) session and a plain
+desktop Linux box — screenshot the notification and the action button actually opening the right
+surface, per this codebase's "verify live" standard. A scripted regression test is lower priority
+here than elsewhere in this plan, since the D-Bus surface being exercised belongs to the OS's own
+notification daemon, not to SaveLocker.
+
+**Phase 10 — Decky: conflict display + resolve UI** (chip, QAM panel, resolve popup, policy
+dropdown) — unchanged content, renumbered from the original Phase 5. Depends on Phase 0/1. Delivers
+real, standalone value the moment it ships — a conflict can be seen and resolved from the Deck even
+before Phase 11 wires it into the launch path. Can proceed in parallel with Phase 4 and Phases 5–9.
+
+**Phase 11 — Decky: launch-gate wiring** (the cancel → popup → sync → relaunch sequence, plus the
+fresh-page-open-conflict carve-out) — unchanged content, renumbered from the original Phase 6.
+Depends on **both** Phase 4 (the wrapper is what actually decides `Blocked`; the plugin only displays
+that decision, per this document's own "consistency between the plugin and the wrapper" section) and
+Phase 10. Deliberately late: the highest-hardware-risk piece (`CancelGameAction`'s race-winning
+reliability is already flagged unverified on real hardware, independent of this plan), so shipping
+Phase 10 first means a working fallback already exists if this phase needs a hardware-driven
+iteration cycle.
+
+**Phase 12 — Cheap sync-status endpoint — consumer work only, the endpoint already shipped.**
+Correction while renumbering: `GET /api/games/{id}/sync-status` and `SyncStatusDto` were already
+delivered in Phase 0/1 (`AgentApiServer.cs:696`) — [[CONTEXT]] already noted this ("sync-status,
+already partly done here since the endpoint exists"), a fact [[Backlog]]'s phase-4-through-8 summary
+had not caught up to before this update. What remains is giving it a consumer: Phase 10's Decky chip
+and `agent-ui`'s `StatusHeader.tsx` can poll this one cheap endpoint instead of a full conflict-list
+fetch for the common "am I in sync right now" case. Small enough to fold into Phase 6 or Phase 10 if
+convenient when either is actually built; kept as its own line item only so it isn't lost.
+
+**Phase 13 — Playnite plugin** (new, separate project) — unchanged scope, renumbered from the
+original Phase 8. Depends only on Phase 0/1's local API — independent of every Decky phase and of
+Phase 3. This phase's own build-out is explicitly a later pass; this document only locks down the
+*behavior* (confirmed buildable via `IPlayniteAPI.StartGame`) so that later work has a settled target.
+**New implementation-time option, now that Phase 6 exists:** `OnGameStarting`'s WPF dialog no longer
+has to be built from scratch — embedding a `Microsoft.Web.WebView2` control pointed at the local
+`agent-ui` conflicts page trades a WebView2 dependency in the `.NET Framework 4.6.2` project for zero
+duplicated chooser UI. Flagged as an option to weigh at implementation time, not a hard dependency —
+this phase can still ship with its own minimal native WPF dialog (the original plan) if WebView2 in
+that specific project turns out to be awkward.
+
+**Phase 14 — Optional out-of-band notification (rung 6) and per-game "block launch" opt-in.**
+Folds in the original reference plan's optional Phase 6 and `07-open-questions.md` §2, unchanged in
+substance. Deferred, genuinely optional, depends only on Phase 0. Bundled here because neither piece
+is required for any invariant in this design (`03-platform-ux-flows.md`: "rungs 1-5 already guarantee
+the terminal state" / "a paused-sync launch is already fully safe"):
+1. **Webhook/ntfy/email notify** for genuinely unattended boxes — a new, optional, per-server (not
+   per-agent — the server already knows about every open conflict fleet-wide) `AppSetting` key
+   `conflicts.webhook_url`, fired by the server itself on `ConflictFlag` creation/escalation.
+2. **Per-game "block launch until resolved" setting** — `Game.BlockLaunchOnConflict`
+   (nullable-with-global-default, same pattern as `RetainVersions`), for the minority of players who'd
+   rather lose a play session than risk playing on stale data (e.g. a strict-permadeath run).
+   Deliberately last: it's a settings-surface-multiplying feature (Decky's settings page,
+   `agent-ui`'s `SettingsView.tsx`, a future Playnite settings page all need the toggle) for a use
+   case not yet confirmed to exist, per `07-open-questions.md` §2.
 
 ```
-Phase 0/1 (server + agent core — ship together)
+Phase 0/1 (server + agent core — shipped)
         │
-   ┌────┼────────────┬─────────────┬─────────────┐
-   ▼    ▼             ▼             ▼             ▼
-Phase 2 Phase 7      Phase 4      Phase 5       Phase 8
-(force  (status,    (Linux       (Decky UI,    (Playnite,
- fix)    optional    wrapper)     no launch     separate
-         w/ 0/1)                  wiring yet)    project)
-                                       │
-                                  Phase 6
-                                  (Decky launch
-                                   gate wiring)
+        ├─────────────┬─────────────┬─────────────┬─────────────┬─────────────┐
+        ▼             ▼             ▼             ▼             ▼             ▼
+    Phase 2       Phase 4       Phase 5       Phase 6       Phase 8       Phase 10
+    (force-push   (Linux        (Linux env    (agent-ui     (Game Mode    (Decky UI,
+     bookkeeping   wrapper       capability    conflicts     conflict      no launch
+     fix)          launch gate)  detection)    page +        screen)       wiring yet)
+                                                doctor line)
+                                    │             │  │           │             │
+                                    │      ┌──────┘  └───┐       │             │
+                                    │      ▼             ▼       │             │
+                                    │  Phase 7        Phase 9 ◄──┘             │
+                                    │  (Windows tray   (D-Bus notify,          │
+                                    │   automatic       optional — needs       │
+                                    │   chooser +        Phases 5 AND 6,       │
+                                    │   bulk queue)      opens Phase 8 on      │
+                                    │                    the Deck)            │
+                                    │                                          │
+                                    └──────────────────────┬───────────────────┘
+                                                            ▼
+                                                        Phase 11
+                                                (Decky launch-gate wiring —
+                                                 needs Phase 4 AND Phase 10)
 
-Phase 3 (dashboard Backups tab) — no dependencies, buildable/shippable any time, including first.
+Phase 3 (dashboard Backups tab) — shipped; no dependencies, was buildable/shippable any time.
+Phase 12 (sync-status consumer) — endpoint already shipped in Phase 0/1; low-priority, foldable
+    into Phase 6 or Phase 10 when either is built.
+Phase 13 (Playnite) — depends only on Phase 0/1; can optionally reuse Phase 6's page instead of a
+    from-scratch WPF dialog, decided at implementation time.
+Phase 14 (optional: webhook + block-launch setting) — depends only on Phase 0; last by design.
 ```
 
-## Out of scope for this pass
+## Scope note (updated 2026-08-30)
 
-The Linux-headless escalation ladder (desktop notifications, a local web chooser fallback, out-of-
-band webhook notify) from the earlier 8-document plan is unaffected by this fork-specific check and
-remains future work — referenced there, not repeated here.
+This section used to say the Linux-headless escalation ladder (desktop notifications, a local web
+chooser fallback, out-of-band webhook notify) from the earlier 8-document plan was future work, not
+folded into this one. It now is: Phases 5–9 above bring rungs 1–4 of `03-platform-ux-flows.md`'s
+escalation ladder into this plan directly as concrete, numbered, dependency-ordered phases, and
+Phase 14 folds in rung 6 as an explicit opt-in. Rung 5 (CLI) and rung 7 (the safe terminal state — an
+open `ConflictFlag`, nothing auto-resolves under `Manual`) were already covered, unchanged, by Phase
+0/1's CLI commands and the server's existing behavior — no new phase was needed for either.
+
+**Still deliberately out of scope, and not reconsidered by this update:**
+- A new Unix-socket or D-Bus RPC interface *between* SaveLocker's own processes (wrapper↔daemon, or
+  agent↔dashboard). `03-platform-ux-flows.md`'s own reasoning stands unchanged: the existing `:5178`
+  HTTP API is already the one shared interface every frontend on a box uses, and Phase 9's D-Bus
+  usage is strictly outbound — SaveLocker as a *client* of the desktop's own notification daemon,
+  never a *server* of its own. This keeps the interface count at one.
+- Cross-format save conversion/merging, multiple save paths per game, and registry-based saves — all
+  separately scoped in [[Backlog]], unrelated to conflict *resolution* UI specifically.
+- [[Backlog]]'s already-deferred "one state owner for the Linux agent" (wrapper→daemon IPC over a
+  Unix socket) — a distinct question about state ownership between two local processes, not
+  something any phase above needs answered in order to ship.

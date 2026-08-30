@@ -7,22 +7,39 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
 
 ## High priority
 
-- **Decky plugin: proper conflict resolution, not just refusals.** Scoped 2026-08-28 (full design:
+- **Decky plugin: proper conflict resolution, not just refusals — plan expanded to 15 phases
+  (0–14).** Scoped 2026-08-28, expanded 2026-08-30 (full design:
   `logs/2026-08-28_decky-conflict-resolution.md`). **Phase 0/1 shipped 2026-08-29** (server +
   Agent.Core, this repo only — see below). **Phase 2 (the Force push/pull bookkeeping fix) and Phase 3
-  (the dashboard Backups tab) both shipped 2026-08-30** — see below. Phases 4–8 (the Linux wrapper
-  launch gate, the Decky plugin itself, the sync-status endpoint, and Playnite) remain not built.
-  Before Phase 2, the plugin's only way past a stuck sync was Force push/pull, which bypassed the
-  server's own conflict bookkeeping — an orphaned `ConflictFlag`, an unprotected losing version, a
-  stranded other device. The plan reframes
-  conflicts as local-vs-cloud (never device-vs-device), moves the actual resolution *decision* into
-  the shared agent engine (the server becomes a passive store that also files the losing save away as
-  a separate, downloadable backup rather than mixing it into the normal version history), and adds a
-  real conflict-aware chip and resolve popup to the Deck's library page and QAM. A deliberate
-  behavior change from today's "always launch" philosophy: a *certain* conflict now cancels the
-  launch, shows the popup, syncs the choice, and relaunches automatically — no second Play press.
-  Playnite gets the equivalent treatment via the SDK's `IPlayniteAPI.StartGame`. Phased; several
-  phases are independently mergeable or can proceed in parallel — see the doc.
+  (the dashboard Backups tab) both shipped 2026-08-30** — see below. **Phases 4–14 remain not built**
+  (Phase 12's endpoint is a partial exception — see below). Before Phase 2, the plugin's only way past
+  a stuck sync was Force push/pull, which bypassed the server's own conflict bookkeeping — an orphaned
+  `ConflictFlag`, an unprotected losing version, a stranded other device. The plan reframes conflicts
+  as local-vs-cloud (never device-vs-device), moves the actual resolution *decision* into the shared
+  agent engine (the server becomes a passive store that also files the losing save away as a separate,
+  downloadable backup rather than mixing it into the normal version history), and adds a real
+  conflict-aware chip and resolve popup to the Deck's library page and QAM. A deliberate behavior
+  change from today's "always launch" philosophy: a *certain* conflict now cancels the launch, shows
+  the popup, syncs the choice, and relaunches automatically — no second Play press. Playnite gets the
+  equivalent treatment via the SDK's `IPlayniteAPI.StartGame`.
+  <br>**Expanded 2026-08-30, asked directly**: whether any phase built a Decky-equivalent resolve
+  popup on plain Windows or plain Linux — no Decky, no Playnite. It didn't; the answer had existed
+  since the earlier fork-blind 8-document pass (`docs/design/03-platform-ux-flows.md`'s Linux
+  escalation ladder + Windows in-app chooser) but had been left as reference material, not folded into
+  execution. Five new phases now close that gap: **Phase 5** (Linux environment-capability detection —
+  Wayland/X11 session, D-Bus, notification daemon, TTY), **Phase 6** (a shared `agent-ui` conflicts
+  page, served by both the Windows tray and the Linux daemon at `:5178` — also closes a confirmed gap
+  where `doctor` never actually gained the conflict line the original plan called for), **Phase 7**
+  (Windows tray automatic chooser + bulk "apply to all remaining" queue — the first real popup-at-
+  launch-time experience for a plain Windows user), **Phase 8** (a native Linux **Game Mode conflict
+  screen** in `savelocker ui`, drawn with the existing Dear ImGui stack — the direct, literal
+  Decky-equivalent popup with zero Decky dependency), and **Phase 9** (an optional D-Bus desktop
+  notification, spike-gated per an existing open question about which D-Bus client to use, if any).
+  The old Phase 5–8 are renumbered **10–13** (content unchanged); a new **Phase 14** folds in the
+  optional webhook/ntfy notify and a per-game "block launch" opt-in that were previously a separate
+  open question. Full dependency graph, verification plan, and file-level detail for every new phase:
+  the design doc's *Implementation phases* section and its *Scope note*. Phased; several phases are
+  independently mergeable or can proceed in parallel — see the doc.
   <br>**Phase 0/1 detail:** `SyncService.IngestAsync` no longer evaluates `ConflictPolicy` itself —
   every divergence unconditionally records/updates a `ConflictFlag`; `SyncEngine
   .TryPolicyResolveAsync` is where the decision moved (fetches the game's policy after a push comes
