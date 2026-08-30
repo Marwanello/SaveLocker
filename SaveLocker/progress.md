@@ -575,3 +575,108 @@ frontends, `dotnet build --no-incremental` clean for Server + Agent.Linux, and
   something this session's fixes addressed further.
 - No `dotnet build` verification of the PR #20 fixes was possible in the review sandbox; only manual
   tracing.
+
+---
+
+## 2026-08-30 — Conflict-resolution plan expanded to 15 phases, docs consolidated into `tasks/`, Phase 5 shipped (PR #23)
+
+**Branch:** `save-conflicts-phase-5`. PR: https://github.com/Marwanello/SaveLocker/pull/23.
+
+### Request sequence
+
+1. Investigative question: did any phase of the Decky conflict-resolution plan build a native
+   Linux/Wayland resolve popup equivalent to Decky's, and do conflict popups exist on Windows/Linux
+   outside Decky and a future Playnite plugin — with the constraint that everything should work even
+   without the Decky plugin or Playnite installed.
+2. Asked to close the gap found: add the missing phases, increase the phase count as needed, plan
+   carefully and in detail.
+3. Asked to explain D-Bus and recommend how to group the remaining phases into sessions, factoring in
+   weekly Claude Pro quota usage (reported at 66%).
+4. Asked whether running locally vs. in the cloud is cheaper token-wise, and how that changes the
+   grouping.
+5. Asked to write the grouping into a doc, move all conflict docs into a clearly-named tasks subfolder,
+   and start implementing Group 1.
+6. Asked to create a branch named like the previous two PRs, open a PR on the fork, and explain how to
+   test it manually via `testenv`.
+
+### What was found
+
+- The original plan had no phase producing a resolve UI reachable without Decky or Playnite — a plain
+  Linux desktop or a headless/SSH session had no way to even see a conflict, let alone act on one.
+- `GET /api/games/{id}/sync-status` — described both in the plan and in this session's own first-draft
+  grouping doc as "the cheap sync-status endpoint" — is not cheap. Its handler hashes the entire local
+  save directory and internally calls the same full-state fetch the `status` CLI command already makes.
+  Caught by reading the actual handler before wiring any UI to it, avoiding a real performance
+  regression (a polling badge re-hashing save folders on a timer).
+
+### What was built (design)
+
+- `plan.md` expanded from 9 to 15 phases (0–14): a new "Decisions" §8, a rewritten dependency diagram,
+  and an "escalation ladder" for Linux conflict surfacing — environment detection → native Wayland
+  modal → D-Bus desktop notification → local web chooser → CLI → optional webhook → safe terminal state
+  (never silently pick a side).
+- `SaveLocker/tasks/conflict-resolution-ui/` created as the single home for all conflict-resolution
+  planning docs:
+  - `plan.md` (moved from `logs/2026-08-28_decky-conflict-resolution.md`)
+  - `reference/00-inventory.md` … `07-open-questions.md` (moved from repo-root `docs/design/`)
+  - `README.md` (new — folder index/orientation, explicit note this is not an ordinary single-file
+    tasks item)
+  - `implementation-grouping.md` (new — Groups 1–5, a buildable/verifiable-in-this-environment table,
+    and the finding that local vs. cloud execution costs the same weekly quota, so grouping is driven
+    by real dependencies and what can actually be verified here, never by cost)
+- `logs/2026-08-28_decky-conflict-resolution.md` left as a one-paragraph stub pointing at the new
+  location, matching the vault's existing stub convention.
+- `CONTEXT.md` and `Backlog.md` updated: path references fixed, phase-count/status summary corrected,
+  Phase 12's mischaracterization documented transparently rather than silently fixed.
+
+### What was built (Group 1 / Phase 5)
+
+- `src/Agent.Linux/DesktopEnvironment.cs` (new): `DesktopEnvironment.Detect()` returns a
+  `DesktopSessionInfo` — graphical session (`$WAYLAND_DISPLAY`/`$DISPLAY`), D-Bus session bus
+  reachability (parses `DBUS_SESSION_BUS_ADDRESS`, connects a real `UnixDomainSocketEndPoint`),
+  notification daemon presence (`gdbus call ... org.freedesktop.DBus.NameHasOwner
+  org.freedesktop.Notifications` — chosen over `dbus-send` for its poor `as`/`a{sv}` marshalling),
+  interactive TTY, and whether running as a `systemd --user` unit (`$INVOCATION_ID`). Its subprocess
+  runner mirrors `SystemdAutoStart.Run`'s concurrent-stdout/stderr-drain pattern, plus an added
+  2-second timeout + `Kill(entireProcessTree: true)` so a stale/half-open D-Bus socket can never hang
+  `doctor` or the future launch wrapper.
+- `Doctor.cs`: new purely-informational "Session" section reporting all five signals.
+- `run-linux-tests.sh`: 9 new checks — baseline (no session), a bogus `DBUS_SESSION_BUS_ADDRESS`, a
+  real-but-protocol-incomplete UNIX socket (proves session-bus-reachable and notification-daemon-present
+  are genuinely independent signals), and `INVOCATION_ID` detection.
+
+### Bug caught before running the suite
+
+The three new sub-invocation blocks in `run-linux-tests.sh` initially reused the shared `$out`
+variable, which would have silently broken later, pre-existing MoonDeck assertions in the same script
+that depend on the original `$out`. Renamed to a dedicated `$env_out` before running anything.
+
+### Verification
+
+- `run-linux-tests.sh`: 246 passed (was 237), 0 new failures.
+- Confirmed via `git stash` that a separate, pre-existing 7-failure cluster in the "Decky plugin
+  updates" section predates this session's changes — documented in `Backlog.md` as a known issue, not
+  fixed here (out of scope for Phase 5).
+- `dotnet build --no-incremental` and `tsc -b` both clean after stale-path `sed` fixes across
+  `Program.cs`, `SyncService.cs`, `GameDetail.tsx`, `AgentCli.cs`, `SyncEngine.cs`,
+  `run-server-bugbounty-tests.ps1`.
+
+### PR and manual test instructions
+
+Branch `save-conflicts-phase-5` cut from `claude/save-conflict-resolution-ui-9pjaju` (naming matches
+`save-conflicts-phase-0-1` / `save-conflicts-phase-2-3` from PRs #20/#22); PR
+[**#23**](https://github.com/Marwanello/SaveLocker/pull/23) opened against `main`. Manual verification
+instructions were given for the new `doctor` "Session" block on a real Steam Deck via
+`tests/testenv.ps1` (`build -Only deck` → `up` → SSH in, run `doctor`), including the nuance that an
+SSH login does not inherit the Deck's own desktop session's `DISPLAY`/`WAYLAND_DISPLAY`/
+`DBUS_SESSION_BUS_ADDRESS` — so the "real session present" case needs either a terminal opened directly
+inside Desktop Mode, or importing `systemctl --user show-environment` first.
+
+### Not done
+
+- Phase 12 (sync-status consumer) deliberately deferred — waits for Phase 6/8/10 to add a genuine
+  on-demand trigger.
+- Groups 2–5 (Phases 4, 6, 7, 8, 9-impl, 10, 11, 13, 14) not started this session.
+- Real-hardware confirmation of the "Session" block's values in Game Mode vs. Desktop Mode is still
+  outstanding — flagged in the PR for the user to check.
+- Offered to `subscribe_pr_activity` on PR #23; not yet accepted or declined as of this write-up.
