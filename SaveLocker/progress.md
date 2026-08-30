@@ -484,3 +484,94 @@ schema-order diff.
 - `41236fd` Conflict resolution Phase 0/1: move the decision into the agent
 - `778a874` Fix CI: regenerate agent-ui api-types on Linux for canonical schema order
 - (plus the docs commit for the design pass)
+
+---
+
+## 2026-08-29 — PR #20 xhigh review (6 fixes) + a Claude Code web SessionStart hook (PR #21)
+
+### Request sequence
+
+1. Asked for an xhigh-effort code review of [PR #20](https://github.com/Marwanello/SaveLocker/pull/20)
+   (`save-conflicts-phase-0-1` → `main` — Phase 0/1 of the Decky conflict-resolution plan: the server
+   stops auto-resolving conflicts, and `SyncEngine.TryPolicyResolveAsync` on the agent side becomes the
+   new decision point, calling the same mechanical `ResolveConflictAsync` endpoint a human's choice
+   would use).
+2. Asked to apply the 6 surviving findings with minimal edits — explicitly as a description of each
+   problem, not literal instructions — then report them back via `ReportFindings` echoing the original
+   file/line/summary/failure-scenario text plus a fixed/no_change_needed/skipped outcome per finding.
+3. Asked to set up a `SessionStart` hook so a Claude Code on the web session has the toolchain to build
+   the repo and run its test suites, with instructions to implement directly unless it turned out to be
+   a big task (it didn't).
+4. Asked to push the review-fix commit to PR #20's actual head branch, not the workspace branch the fix
+   had been committed to.
+5. Asked to cut a pure-kebab-case branch (no `claude/` prefix) from `claude/session-start-hook` and open
+   a PR from it.
+
+### PR #20 review — 6 findings, all fixed
+
+1. **`AgentCli.cs` (`resolve-conflict --keep local`)** didn't advance the local parent pointer after a
+   successful resolve, leaving the CLI-driven path out of step with the assumption the server's
+   fan-out-skip optimization already makes for the auto-policy resolver. Fixed by setting
+   `LastKnownVersionId`/`LastSyncedHash` from the resolve response and saving config.
+2. **`SyncService.ResolveConflictAsync`'s rewind guard could strand an auto-policy resolver.** An
+   earlier attempt reassigned the winning version to the current head to dodge the refusal — caught in
+   self-review that `SyncEngine.PushCoreAsync` assumes `ok=true` always means *the resolver's own*
+   version won, so that would have silently corrupted local state in exactly the race the finding
+   described. Fixed instead by keeping the refusal (`ok=false`) unconditional and queuing the stuck
+   machine an unforced `Pull` so it converges on its own.
+3. **`AgentApiServer.cs`, three related gaps** in the new local conflict routes: no filter on
+   `/api/games/{id}/sync-status`'s open-conflict lookup (it could surface another machine's conflict),
+   unhandled exceptions surfacing as bare 500s instead of this file's usual typed `ErrorResponse`
+   shape, and `SaveArchive.HashDirectory` running synchronously on a request thread. Fixed with a
+   `MachineId` filter, try/catch around all 6 conflict routes, and wrapping the hash in `Task.Run`.
+4. **`SyncEngine.TryPolicyResolveAsync`'s catch blocks swallowed cancellation** from a retiring engine
+   instead of letting it propagate, unlike this file's existing convention elsewhere (e.g.
+   `PushCoreAsync`). Fixed by adding `when (!ct.IsCancellationRequested)` guards to match.
+
+No .NET SDK was available in the review sandbox to `dotnet build`; verified by manual brace/paren-
+balance checking and careful tracing instead, and disclosed as a limitation at the time.
+
+### Landing the fix on PR #20's real branch
+
+The review/fix work had been committed on workspace branch `claude/pr-20-xhigh-review-lrcpdq`
+(`0551bb7`), but PR #20 is actually backed by `save-conflicts-phase-0-1`. Cherry-picked `0551bb7` onto
+`save-conflicts-phase-0-1` as `e98f5ef` rather than force-pushing or rewriting history; the cherry-pick
+left a 3-line `agent-ui/src/api-types.ts` diff from schema-key ordering differing between generation
+environments, resolved the same way `778a874` (`Fix CI: regenerate agent-ui api-types on Linux for
+canonical schema order`) already had, by regenerating on Linux.
+
+### SessionStart hook for Claude Code on the web
+
+`.claude/hooks/session-start.sh` (registered via `.claude/settings.json`), gated on
+`CLAUDE_CODE_REMOTE=true` so local sessions are untouched:
+
+- Installs the .NET SDK pinned in `global.json` via Ubuntu 24.04's own apt archive — not
+  `dotnet-install.sh`, which fetches from `builds.dotnet.microsoft.com` and was blocked outright by
+  this container's own network policy (`403` on the proxy `CONNECT`, confirmed via
+  `$HTTPS_PROXY/__agentproxy/status`). Reads the major.minor from the pin dynamically rather than
+  hardcoding it.
+- Installs PowerShell Core from Microsoft's apt feed (not in Ubuntu's default archive, and mixing
+  Microsoft's dotnet feed in alongside Ubuntu's own is a known source of package conflicts, so only
+  PowerShell uses it).
+- Restores `src/Server` and `src/Agent.Linux` specifically, not the full solution —
+  `src/Agent` (WinForms) targets `net10.0-windows` and can't restore on Linux (`NETSDK1100`).
+- Runs `npm install` in both `web/` and `agent-ui/` (the latter is `CONTEXT.md`'s recurring
+  fresh-worktree gotcha).
+
+Validated live end-to-end: cold run and an idempotent re-run of the hook, `oxlint` clean in both
+frontends, `dotnet build --no-incremental` clean for Server + Agent.Linux, and
+`pwsh tests/run-hardening-tests.ps1` → 37/37 against a real running server.
+
+### Outcome
+
+- PR #20: 6 findings fixed on its actual head branch (`save-conflicts-phase-0-1`, commit `e98f5ef`).
+- New branch `session-start-hook` (kebab-case, no `claude/` prefix) cut from `claude/session-start-hook`
+  and pushed; PR [**#21**](https://github.com/Marwanello/SaveLocker/pull/21) opened,
+  `session-start-hook` → `main`.
+
+### Not done
+
+- PR #20's `mergeable_state` was `unstable` as of this session (checks/CI still settling) — not
+  something this session's fixes addressed further.
+- No `dotnet build` verification of the PR #20 fixes was possible in the review sandbox; only manual
+  tracing.
