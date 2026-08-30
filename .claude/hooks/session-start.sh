@@ -29,8 +29,15 @@ export DOTNET_CLI_TELEMETRY_OPTOUT=1
 # Not `dotnet restore SaveLocker.sln`: src/Agent (the WinForms tray) targets net10.0-windows and
 # cannot restore on Linux at all (NETSDK1100). Restoring Server + Agent.Linux pulls in Shared and
 # Agent.Core transitively via project references — the same set CI's Linux jobs build.
-dotnet restore src/Server/SaveLocker.Server.csproj
-dotnet restore src/Agent.Linux/SaveLocker.Agent.Linux.csproj
+# Guarded rather than left to `dotnet restore`'s own failure: the Setup script's cache can lag a
+# global.json SDK bump, or an environment may have none configured at all, and either way we still
+# want the npm installs below to run rather than aborting the whole hook under `set -e`.
+if command -v dotnet >/dev/null 2>&1; then
+  dotnet restore src/Server/SaveLocker.Server.csproj
+  dotnet restore src/Agent.Linux/SaveLocker.Agent.Linux.csproj
+else
+  echo "session-start: dotnet not found on PATH — configure/refresh this environment's Setup script (see comment above)" >&2
+fi
 
 ( cd web && npm install )
 ( cd agent-ui && npm install )
