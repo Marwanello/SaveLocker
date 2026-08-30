@@ -424,6 +424,40 @@ first) or Phase 5/6 (Decky UI) land. Phases 2 (Force-push bookkeeping fix), 4 (L
 
 ---
 
+**Decky conflict-resolution Phase 2 shipped (2026-08-30, this branch, no task file — design already
+settled in `logs/2026-08-28_decky-conflict-resolution.md`).** The Force push/pull bookkeeping fix,
+server-side only. Before this, `PrepareUploadAsync` skipping divergence detection outright on
+`force:true` meant a forced push could land while the game already had an open `ConflictFlag` from an
+earlier, unforced divergence — moving the head to a brand-new version that was neither side of it, so
+the flag was orphaned (its own rewind guard means nothing can ever close it normally again), neither
+of its two versions was protected from ordinary retention, and the other machine it involved was never
+told the head had moved. `SyncService.IngestAsync`'s fast-forward branch now calls a new
+`CloseOrphanedConflictsOnForceAsync` whenever `force` is true: closes every open conflict on that game
+(`Resolved`, tagged `"force-push by {machine}"`), protects **both** sides of each as recoverable
+backups (nobody was actually asked which to keep, so — same as an explicit "keep both" — nothing is
+silently lost), and queues the same unforced pull fan-out a real resolve gets. A no-op when nothing is
+open, so an ordinary forced push looks exactly as it did before — no new routes, DTOs, or UI.
+<br>**Verified:** new `CS-13` section in `run-server-bugbounty-tests.ps1` (open a real conflict, force
+past it, confirm the flag closes, both sides protect, the resolution is audited, the stranded machine
+gets an unforced pull and the forcing machine doesn't, its next push is clean, and a control case
+proving a force push with nothing open adds no bookkeeping) — 207/207 (up from 194, no regressions);
+`run-agent-tests` 47/47 unchanged. `openapi.json`/`api-types.ts` untouched on purpose — no API surface
+changed. Full solution builds clean.
+<br>**Gotcha hit again, same as 2026-08-25/29:** this worktree's `agent-ui` had never had `npm
+install` run, blocking the Windows agent build; see [[Gotchas]].
+<br>**Test bug found and fixed while verifying, not a server bug:** the first CS-13 draft had the
+stranded laptop machine call a plain (non-forced) `pull` to catch up after the resolution. That machine's
+OWN earlier push had been rejected as a conflict, so its `LastSyncedHash` was never advanced past what
+it pulled before — an ordinary pull correctly refuses to overwrite what the agent still sees as its own
+unsynced local content (WA-02's guard), exactly like `run-health-tests.ps1`'s existing "take the server
+copy" `--force` pull. Fixed by adding `--force` to that one step, matching the established idiom rather
+than treating it as a product bug.
+<br>**Not yet run against real hardware or a live fleet** — same as Phase 0/1, invisible until a later
+phase's GUI work lands. Phases 3 (dashboard Backups tab), 4 (Linux wrapper gate), 5/6 (Decky UI), 7
+(sync-status), and 8 (Playnite) remain open — see [[Backlog]].
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three
