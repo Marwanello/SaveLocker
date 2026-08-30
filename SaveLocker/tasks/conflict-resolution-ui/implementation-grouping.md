@@ -30,7 +30,7 @@ built.
 | 4, 5, 6, 12, 14 | Yes | **Yes** — existing Linux fake-game harness (`run-linux-tests.sh`, `run-agent-tests.ps1`) covers all of these |
 | 8 (Game Mode screen) | Yes | Build/compile only — real gamepad-nav / WSLg confirmation needs the Deck or a Windows+WSLg box |
 | 7 (Windows tray wiring) | Yes | **No** — WinForms/WebView2 only runs on Windows |
-| 9 (D-Bus notification impl) | Spike/decision: yes. Full implementation: yes, but nothing to click | **No** — needs a real desktop session with a notification daemon |
+| 9 (D-Bus notification impl) | Yes, once Phase 6 ships — no `SaveLocker-Decky` repo access needed at all, its only real dependencies are Phase 5 (done) and Phase 6 | **No** — needs a real desktop session with a notification daemon to see a popup actually fire |
 | 10, 11 (Decky) | **No** — separate `SaveLocker-Decky` repo not attached to this session | No — needs real Deck hardware regardless of repo access |
 | 13 (Playnite) | Effectively no — `.NET Framework 4.6.2` + Playnite SDK wants a Windows toolchain | No — needs Windows + Playnite installed |
 
@@ -67,29 +67,54 @@ makes conflict resolution end-to-end usable on a plain Linux box for the first t
 any Decky/Windows/Playnite work, since it's the one grouping that delivers real user value with zero
 hardware dependency.
 
-**Group 3 — medium, code-only from here.**
-`Phase 8` (Game Mode conflict screen) — independent of Groups 1–2. Build and compile-check here;
+**Group 3 — small, code-only here, live verification later. Requires Group 2 to have shipped first.**
+`Phase 9`'s actual D-Bus notification implementation. Its real dependencies (per `plan.md`'s own
+dependency diagram) are Phase 5 (done, Group 1) and Phase 6 (Group 2's `agent-ui` conflicts page — the
+action button's target) — nothing else. Buildable and unit-testable here the same way Phase 5 was: the
+`gdbus … org.freedesktop.Notifications.Notify` call, the once-per-conflict `HashSet<Guid>` dedup so the
+20s command-poller doesn't re-fire it every tick, and wiring the action button at Phase 6's page URL,
+all exercisable against a fake/absent D-Bus socket using the same harness pattern `run-linux-tests.sh`
+already established for Phase 5. What can't be checked here is whether a real notification daemon
+actually pops the banner and the button opens the right page — that needs a live Deck Desktop Mode
+session or a plain desktop Linux box, the same class of hardware-only gap Phase 8 has below. See
+"Correction found before Group 3" below for why this is its own group instead of folded into Decky
+work.
+
+### Correction found before Group 3: Phase 9 was miscategorized, not deferred for a real reason
+
+This document originally bundled "Phase 9's actual D-Bus implementation" into the same group as Decky
+(Phase 10/11) and Playnite (Phase 13), on the reasoning that all three "need real hardware." Re-checking
+`plan.md`'s own dependency diagram before starting Group 2 showed that reasoning doesn't hold: Phase 9
+depends only on Phase 5 and Phase 6, never on Decky, Playnite, or the separate `SaveLocker-Decky` repo.
+Grouping it with Decky/Playnite invented a dependency it doesn't have and would have delayed a buildable
+phase behind an unrelated repo-access and Windows/Deck-hardware requirement it never needed. It is *live
+verification* Phase 9 shares with Decky/Playnite work, not a build dependency — so it gets its own
+group, placed right after the one phase (Phase 6) it actually needs, not lumped in with hardware it
+doesn't touch.
+
+**Group 4 — medium, code-only from here.**
+`Phase 8` (Game Mode conflict screen) — independent of Groups 1–3. Build and compile-check here;
 flag verification as pending a WSLg or real-Deck pass, the same honest way every other hardware-gated
 feature in this project ships.
 
-**Group 4 — defer to a session on a Windows-connected machine.**
+**Group 5 — defer to a session on a Windows-connected machine.**
 `Phase 7` (Windows tray automatic chooser + bulk queue) + `Phase 14` (webhook notify + the per-game
 "block launch" setting — bundled with Phase 7 here only because both touch tray/agent-ui settings
 surfaces, not because of a hard dependency). Reason to defer: not cheaper, just **verifiable** —
 shipping WinForms code nobody can run risks paying for it twice (once to write it, again to fix what
 a five-minute manual check would have caught).
 
-**Group 5 — later, needs the separate Decky repo + real hardware (Deck and/or Windows).**
-`Phase 9`'s actual D-Bus implementation (once Group 1's spike has picked a library and there's a real
-desktop session to test against) + `Phase 10`/`Phase 11` (Decky — add the `SaveLocker-Decky` repo to
-whatever session does this) + `Phase 13` (Playnite).
+**Group 6 — later, needs the separate Decky repo + real hardware (Deck and/or Windows).**
+`Phase 10`/`Phase 11` (Decky — add the `SaveLocker-Decky` repo to whatever session does this) +
+`Phase 13` (Playnite).
 
 ```
 Done 2026-08-30       →  Group 1 (5, 9-spike)                  tiny, fully verifiable here
 Following session    →  Group 2 (4, 6)                        medium, biggest value, fully verifiable here
-Following session    →  Group 3 (8)                           medium, code-only here
-Windows machine       →  Group 4 (7, 14)
-Deck + Windows        →  Group 5 (9-impl, 10, 11, 13)
+Following session    →  Group 3 (9-impl)                       small, code-only here, needs Group 2 first
+Following session    →  Group 4 (8)                           medium, code-only here
+Windows machine       →  Group 5 (7, 14)
+Deck + Windows        →  Group 6 (10, 11, 13)
 Whenever 6/8/10 adds a "check now" trigger → Phase 12 (sync-status consumer)
 ```
 
