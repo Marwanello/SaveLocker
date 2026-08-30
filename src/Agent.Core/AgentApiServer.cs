@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi;
+using SaveLocker.Shared;
 
 namespace SaveLocker.Agent;
 
@@ -619,6 +620,105 @@ public sealed class AgentApiServer : IDisposable
                 staged?.Version,
                 staged?.BlockedReason);
         }).Produces<AgentVersionDto>();
+
+        // ---- Conflicts (local API) ----
+        //
+        // Every frontend — the CLI, the Decky plugin, a future Playnite plugin — reaches conflict
+        // resolution through this loopback API, never the server directly, so the resolution logic
+        // has one home (Agent.Core) and nobody reimplements it. These proxy the machine-key
+        // agent-group routes on the server with this machine's own credentials, wrapped in try/catch
+        // like /api/config and /api/register: the upstream server can be as unreachable here as on
+        // any other route in this file, and that must not surface as a bare, bodiless 500.
+        app.MapGet("/api/conflicts",
+            async Task<Results<Ok<ConflictDto[]>, InternalServerError<ErrorResponse>>> () =>
+        {
+            try { return TypedResults.Ok((await ApiClient.For(_config).GetOpenConflictsAsync()).ToArray()); }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        app.MapGet("/api/conflicts/{id:guid}",
+            async Task<Results<Ok<ConflictDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            try
+            {
+                return await ApiClient.For(_config).GetConflictAsync(id) is { } c
+                    ? TypedResults.Ok(c) : TypedResults.NotFound();
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        // The caller names the winning version — it knows which side is its own local save (the
+        // conflict's VersionB, this machine's push) and which is the cloud's (VersionA, the head it
+        // diverged from). keepBoth also protects the loser as a downloadable backup.
+        app.MapPost("/api/conflicts/{id:guid}/resolve",
+            async Task<Results<Ok<OkResponse>, BadRequest<ErrorResponse>>> (Guid id, LocalResolveRequest body) =>
+        {
+            try
+            {
+                var (ok, error) = await ApiClient.For(_config)
+                    .ResolveConflictAsync(id, body.WinningVersionId, body.KeepBoth);
+                return ok
+                    ? TypedResults.Ok(new OkResponse())
+                    : TypedResults.BadRequest(new ErrorResponse(error ?? "Could not resolve the conflict."));
+            }
+            catch (Exception ex) { return TypedResults.BadRequest(new ErrorResponse(ex.Message)); }
+        });
+
+        app.MapGet("/api/games/{id:guid}/conflict-policy",
+            async Task<Results<Ok<ConflictPolicyDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            try
+            {
+                return await ApiClient.For(_config).GetConflictPolicyAsync(id) is { } p
+                    ? TypedResults.Ok(p) : TypedResults.NotFound();
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        app.MapPost("/api/games/{id:guid}/conflict-policy",
+            async Task<Results<Ok<OkResponse>, InternalServerError<ErrorResponse>>>
+                (Guid id, SetConflictPolicyRequest body) =>
+        {
+            try
+            {
+                await ApiClient.For(_config).SetConflictPolicyAsync(id, body.Policy, body.PreferredMachineId);
+                return TypedResults.Ok(new OkResponse());
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        // "Is my local save the same as the cloud's, without downloading it" — cheap on the network
+        // (no bytes cross the wire), NOT cheap on disk: the local hash still walks and reads every
+        // file in the save folder, the same cost a push's own hash pays, so it runs off the request
+        // thread via Task.Run instead of blocking it. The head hash comes from the state the server
+        // already serves; the local hash is computed here, because only the agent can see the save
+        // folder. Decision 6 of the conflict-resolution plan.
+        app.MapGet("/api/games/{id:guid}/sync-status",
+            async Task<Results<Ok<SyncStatusDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.NotFound();
+
+            try
+            {
+                var api = ApiClient.For(_config);
+                var state = await api.GetStateAsync(id);
+                var headHash = state?.Head?.ContentHash;
+                var localHash = !string.IsNullOrWhiteSpace(game.SaveDirectory) && Directory.Exists(game.SaveDirectory)
+                    ? await Task.Run(() => SaveArchive.HashDirectory(game.SaveDirectory, game.ExcludeGlobs))
+                    : null;
+                var inSync = headHash is not null && localHash is not null &&
+                             string.Equals(headHash, localHash, StringComparison.OrdinalIgnoreCase);
+
+                var hasConflict = state?.HasOpenConflict == true;
+                Guid? conflictId = hasConflict
+                    ? (await api.GetOpenConflictsAsync())
+                        .FirstOrDefault(c => c.GameId == id && c.MachineId == _config.MachineId)?.Id
+                    : null;
+                return TypedResults.Ok(new SyncStatusDto(inSync, hasConflict, conflictId));
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
     }
 
     /// <summary>
@@ -933,6 +1033,12 @@ public sealed record RegisterRequest(string? AdminPassword = null);
 /// </param>
 public sealed record FolderRequest(string? Path, bool Confirm = false);
 public sealed record DismissWarningRequest(string? GameName);
+/// <param name="WinningVersionId">
+/// The version to keep — the conflict's VersionB to keep this machine's local save, VersionA to keep
+/// the cloud's. The frontend reads both ids off the conflict.
+/// </param>
+/// <param name="KeepBoth">Also protect the losing version as a downloadable backup.</param>
+public sealed record LocalResolveRequest(Guid WinningVersionId, bool KeepBoth = false);
 public sealed record OkResponse(bool Ok = true);
 public sealed record ErrorResponse(string Error);
 public sealed record EnrollResponse(int Enrolled, int Skipped);

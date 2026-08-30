@@ -585,6 +585,20 @@ public enum ConflictPolicy
 
 public record SetConflictPolicyRequest(ConflictPolicy Policy, Guid? PreferredMachineId = null);
 
+/// <summary>A game's current conflict policy as an agent reads it back to evaluate locally — the
+/// server stores it but no longer acts on it (see <see cref="ConflictPolicy"/>).</summary>
+public record ConflictPolicyDto(ConflictPolicy Policy, Guid? PreferredMachineId = null);
+
+/// <summary>
+/// Whether this machine's local save matches the server's current head, without downloading it —
+/// the cheap "am I in sync?" check a frontend can poll. <paramref name="InSync"/> compares the local
+/// content hash against the head's; <paramref name="HasOpenConflict"/> and
+/// <paramref name="ConflictId"/> surface an open divergence for this game so a chip can link straight
+/// to it. Computed agent-side (only the agent can hash the local folder); the head hash comes from
+/// the state the server already serves.
+/// </summary>
+public record SyncStatusDto(bool InSync, bool HasOpenConflict, Guid? ConflictId = null);
+
 // ----- Server / console build identity -----
 
 /// <summary>

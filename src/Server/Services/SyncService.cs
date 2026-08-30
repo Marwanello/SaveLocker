@@ -981,28 +981,12 @@ public sealed class SyncService
 
         if (diverged)
         {
-            // Check conflict policy before recording a conflict row.
-            var autoWins =
-                game.ConflictPolicy == ConflictPolicy.NewestWins ||
-                (game.ConflictPolicy == ConflictPolicy.PreferMachine &&
-                 game.PreferredMachineId.HasValue &&
-                 machineId == game.PreferredMachineId);
-
-            if (autoWins)
-            {
-                // Policy says the incoming version wins — advance head without creating a conflict.
-                // The machines this just displaced have to be told: the policy decided against their
-                // parent, and nothing in their own sync loop would reveal that until their next push
-                // was rejected. Propagating here is the difference between a policy that resolves
-                // conflicts and one that merely hides the first of them.
-                await SetHeadAndPropagateAsync(game, versionId, "upload.auto_resolved",
-                    $"policy={game.ConflictPolicy} {contentHash}",
-                    propagate: true, exceptMachineId: machineId, ct);
-                await PruneVersionsAsync(gameId, ct);
-                await LoadMachine(version, ct);
-                return new UploadResult(UploadStatus.Created, version.ToDto(), null);
-            }
-
+            // The server no longer evaluates ConflictPolicy itself. Resolution now lives entirely in
+            // the agent: whichever agent's push diverged fetches the game's policy, decides locally,
+            // and — unless the policy is Manual — calls the resolve endpoint itself. The server's only
+            // job on a divergence is to record the conflict and keep both versions; see
+            // logs/2026-08-28_decky-conflict-resolution.md. Every divergence therefore lands here,
+            // including one an auto-policy will resolve a moment later through the resolve endpoint.
             var now = DateTime.UtcNow;
 
             // Fold into the machine's existing open conflict rather than opening another. The head
@@ -1283,6 +1267,25 @@ public sealed class SyncService
             .ToList();
     }
 
+    /// <summary>One conflict by id (open or already resolved), for an agent fetching the detail it
+    /// needs to present a chooser or carry out a policy decision. Null if the id is unknown.</summary>
+    public async Task<ConflictDto?> GetConflictAsync(Guid conflictId)
+    {
+        var c = await _db.Conflicts.FindAsync(conflictId);
+        return c is null ? null : c.ToDto(_conflictEscalation.IsEscalated(c, DateTime.UtcNow));
+    }
+
+    /// <summary>
+    /// A game's current conflict policy. The server stores it (one setting the whole fleet agrees on)
+    /// but no longer acts on it — an agent reads this, evaluates it locally, and resolves. Null when
+    /// the game is unknown.
+    /// </summary>
+    public async Task<ConflictPolicyDto?> GetConflictPolicyAsync(Guid gameId)
+    {
+        var game = await _db.Games.FindAsync(gameId);
+        return game is null ? null : new ConflictPolicyDto(game.ConflictPolicy, game.PreferredMachineId);
+    }
+
     /// <summary>
     /// Admin: apply this game's retention limit right now, without waiting for a push to trigger it.
     /// Returns how many versions were removed.
@@ -1304,11 +1307,21 @@ public sealed class SyncService
     /// Resolve a conflict by promoting the chosen version to head. Refuses to replace a newer head
     /// with an older conflict option.
     /// </summary>
+    /// <param name="resolverMachineId">
+    /// The machine that asked for this resolution, when an agent did (null for the admin/console
+    /// path). It changes only one thing: if that machine is the uploader of the <b>winning</b>
+    /// version, it is excluded from the fan-out below, because it already holds the new head and
+    /// learned of it from its own push/resolve response — queueing it a pull would be pure noise. A
+    /// resolver that kept the OTHER side (the cloud's) is <i>not</i> excluded: it still needs to pull
+    /// the winner over its own local copy. The admin path passes null and every machine is told,
+    /// exactly as before.
+    /// </param>
     public async Task<(bool ok, string? error)> ResolveConflictAsync(
         Guid conflictId,
         Guid winningVersionId,
         string resolvedBy,
-        bool keepBoth = false)
+        bool keepBoth = false,
+        Guid? resolverMachineId = null)
     {
         var conflict = await _db.Conflicts.FindAsync(conflictId);
         if (conflict is null || conflict.Status != ConflictStatus.Open)
@@ -1334,6 +1347,25 @@ public sealed class SyncService
             await Audit(null, conflict.GameId, "conflict.resolve_rewind_blocked",
                 $"winner={winner.Id} currentHead={currentHead.Id}");
             await _db.SaveChangesAsync();
+
+            // An auto-policy resolve (unlike a human's explicit choice) must not get stuck here:
+            // the head moved past the resolver's own version between its push and this call, so
+            // something newer already won the race. A human still has to look at the conflict
+            // itself — this refusal is unchanged — but the resolver machine needn't sit on stale
+            // content until then, so queue it the same unforced pull an ordinary resolution would,
+            // and it converges to the real head on its own next reconcile.
+            if (resolverMachineId is { } rewoundResolver)
+            {
+                var alreadyQueued = await _db.AgentCommands.AnyAsync(c =>
+                    c.MachineId == rewoundResolver &&
+                    c.GameId == conflict.GameId &&
+                    c.Type == AgentCommandType.Pull &&
+                    c.Status == CommandStatus.Pending);
+                if (!alreadyQueued)
+                    await EnqueueCommandAsync(new EnqueueCommandRequest(
+                        rewoundResolver, conflict.GameId, AgentCommandType.Pull, Force: false));
+            }
+
             return (false,
                 "Latest changed after this conflict opened. Resolving to that older save would rewind it; review the current versions first.");
         }
@@ -1371,7 +1403,8 @@ public sealed class SyncService
         // and QueueResolutionPullsAsync identifies the machines to notify by looking those versions
         // up. Prune first and the loser's row is gone before anyone asks who owned it, so only the
         // winner gets told and the loser stays stuck. Caught by run-agent-tests, not by review.
-        await QueueResolutionPullsAsync(conflict);
+        var fanoutExcept = resolverMachineId is { } rm && winner.MachineId == rm ? rm : (Guid?)null;
+        await QueueResolutionPullsAsync(conflict, fanoutExcept);
 
         // Resolution is the first moment a pile of versions stops being pinned by an open conflict,
         // so it is the first moment retention can actually act on them.
@@ -1408,13 +1441,15 @@ public sealed class SyncService
     /// </list>
     /// </para>
     /// </summary>
-    private Task QueueResolutionPullsAsync(ConflictFlag conflict) =>
+    private Task QueueResolutionPullsAsync(ConflictFlag conflict, Guid? exceptMachineId = null) =>
         // Every live machine that syncs the game, not just the conflict's two: the same head change
         // displaces a third machine sitting on the old parent exactly as much as it displaces the
         // loser. QueueHeadPullsAsync already dedupes and already skips machines that are gone —
         // DeleteMachineAsync keeps a deleted machine's versions as history with a null MachineId,
-        // and queueing a command for one would violate the foreign key.
-        QueueHeadPullsAsync(conflict.GameId, exceptMachineId: null, CancellationToken.None);
+        // and queueing a command for one would violate the foreign key. <paramref name="exceptMachineId"/>
+        // is the one machine that already holds the winner (the agent that auto-resolved its own
+        // push); null for the admin path, which tells everyone.
+        QueueHeadPullsAsync(conflict.GameId, exceptMachineId, CancellationToken.None);
 
     /// <summary>Admin: move the head pointer to an earlier version (rollback).</summary>
     public Task<bool> RollbackAsync(Guid gameId, Guid versionId, string by) =>

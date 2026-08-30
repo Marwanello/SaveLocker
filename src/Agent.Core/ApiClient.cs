@@ -405,4 +405,60 @@ public sealed class ApiClient
 
         return (versionId, hash);
     }
+
+    // ---- Conflicts ----
+    //
+    // Resolution lives in the agent now: the server records a divergence and keeps both versions, and
+    // it is the agent that fetches the policy, decides, and calls resolve. These mirror the admin
+    // conflict routes, reached with this machine's own key rather than the admin password.
+
+    /// <summary>Every open conflict the server currently holds, newest-active first.</summary>
+    public async Task<List<ConflictDto>> GetOpenConflictsAsync(CancellationToken ct = default) =>
+        await _http.GetFromJsonAsync<List<ConflictDto>>("/api/agent/conflicts", ct) ?? new();
+
+    /// <summary>One conflict by id, or null if the server does not know it (a stale reference, or a
+    /// server too old to have this route).</summary>
+    public async Task<ConflictDto?> GetConflictAsync(Guid conflictId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/agent/conflicts/{conflictId}", ct);
+        if (resp.StatusCode is HttpStatusCode.NotFound) return null;
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<ConflictDto>(cancellationToken: ct);
+    }
+
+    /// <summary>
+    /// Resolve a conflict by naming the winning version. The caller decides which side wins (its own
+    /// local save or the cloud's); <paramref name="keepBoth"/> also protects the losing version as a
+    /// downloadable backup instead of leaving it as ordinary, prunable history. Returns (false, why)
+    /// rather than throwing on a refusal the server states — most usefully the rewind guard.
+    /// </summary>
+    public async Task<(bool ok, string? error)> ResolveConflictAsync(
+        Guid conflictId, Guid winningVersionId, bool keepBoth = false, CancellationToken ct = default)
+    {
+        var url = $"/api/agent/conflicts/{conflictId}/resolve?version={winningVersionId}";
+        if (keepBoth) url += "&keepBoth=true";
+        var resp = await _http.PostAsync(url, null, ct);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    /// <summary>A game's stored conflict policy, or null if the game or the route is unknown (an
+    /// older server) — the caller treats null as "no auto-policy, leave it for a human".</summary>
+    public async Task<ConflictPolicyDto?> GetConflictPolicyAsync(Guid gameId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/conflict-policy", ct);
+        if (resp.StatusCode is HttpStatusCode.NotFound) return null;
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<ConflictPolicyDto>(cancellationToken: ct);
+    }
+
+    /// <summary>Set a game's conflict policy (Decky settings / CLI). One shared fleet setting.</summary>
+    public async Task SetConflictPolicyAsync(
+        Guid gameId, ConflictPolicy policy, Guid? preferredMachineId, CancellationToken ct = default)
+    {
+        var resp = await _http.PostAsJsonAsync(
+            $"/api/agent/games/{gameId}/conflict-policy",
+            new SetConflictPolicyRequest(policy, preferredMachineId), ct);
+        resp.EnsureSuccessStatusCode();
+    }
 }
