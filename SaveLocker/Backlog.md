@@ -9,7 +9,8 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
 
 - **Decky plugin: proper conflict resolution, not just refusals — plan expanded to 15 phases
   (0–14).** Scoped 2026-08-28, expanded 2026-08-30 (full design:
-  `logs/2026-08-28_decky-conflict-resolution.md`). **Phase 0/1 shipped 2026-08-29** (server +
+  `tasks/conflict-resolution-ui/plan.md`, moved there 2026-08-30 from `logs/` since Phases 4–14 are
+  still open work — see that folder's `README.md`). **Phase 0/1 shipped 2026-08-29** (server +
   Agent.Core, this repo only — see below). **Phase 2 (the Force push/pull bookkeeping fix) and Phase 3
   (the dashboard Backups tab) both shipped 2026-08-30** — see below. **Phases 4–14 remain not built**
   (Phase 12's endpoint is a partial exception — see below). Before Phase 2, the plugin's only way past
@@ -24,7 +25,8 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   equivalent treatment via the SDK's `IPlayniteAPI.StartGame`.
   <br>**Expanded 2026-08-30, asked directly**: whether any phase built a Decky-equivalent resolve
   popup on plain Windows or plain Linux — no Decky, no Playnite. It didn't; the answer had existed
-  since the earlier fork-blind 8-document pass (`docs/design/03-platform-ux-flows.md`'s Linux
+  since the earlier fork-blind 8-document pass (`tasks/conflict-resolution-ui/reference/
+  03-platform-ux-flows.md`'s Linux
   escalation ladder + Windows in-app chooser) but had been left as reference material, not folded into
   execution. Five new phases now close that gap: **Phase 5** (Linux environment-capability detection —
   Wayland/X11 session, D-Bus, notification daemon, TTY), **Phase 6** (a shared `agent-ui` conflicts

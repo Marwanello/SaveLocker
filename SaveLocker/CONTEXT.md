@@ -388,7 +388,7 @@ Full write-up: `progress.md` and `session_summary.md`.
 ---
 
 **Decky conflict-resolution Phase 0/1 shipped (2026-08-29, this branch, no task file — full design in
-`logs/2026-08-28_decky-conflict-resolution.md`).** Server + Agent.Core only; no UI, no Decky/Playnite
+`tasks/conflict-resolution-ui/plan.md`).** Server + Agent.Core only; no UI, no Decky/Playnite
 work — those are later phases. The server no longer decides a conflict: `SyncService.IngestAsync`'s
 `NewestWins`/`PreferMachine` auto-win branch is gone, so every divergence unconditionally records a
 `ConflictFlag`. `SyncEngine.TryPolicyResolveAsync` is the new agent-side decision point — it fires
@@ -425,7 +425,7 @@ first) or Phase 5/6 (Decky UI) land. Phases 2 (Force-push bookkeeping fix), 4 (L
 ---
 
 **Decky conflict-resolution Phase 2 shipped (2026-08-30, this branch, no task file — design already
-settled in `logs/2026-08-28_decky-conflict-resolution.md`).** The Force push/pull bookkeeping fix,
+settled in `tasks/conflict-resolution-ui/plan.md`).** The Force push/pull bookkeeping fix,
 server-side only. Before this, `PrepareUploadAsync` skipping divergence detection outright on
 `force:true` meant a forced push could land while the game already had an open `ConflictFlag` from an
 earlier, unforced divergence — moving the head to a brand-new version that was neither side of it, so
@@ -459,7 +459,7 @@ phase's GUI work lands. Phases 3 (dashboard Backups tab), 4 (Linux wrapper gate)
 ---
 
 **Decky conflict-resolution Phase 3 shipped (2026-08-30, same session as Phase 2, this branch, no task
-file — design already settled in `logs/2026-08-28_decky-conflict-resolution.md`).** The dashboard
+file — design already settled in `tasks/conflict-resolution-ui/plan.md`).** The dashboard
 "Backups" tab, client-side only, zero new server endpoints. A version is "in the main tree" if it's an
 ancestor of the current head — walk `parentVersionId` back from it; anything else the game still has
 is a backup, almost always the losing side of a past conflict. `GameDetail.tsx` already fetched the

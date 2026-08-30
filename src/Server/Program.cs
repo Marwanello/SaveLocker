@@ -432,7 +432,7 @@ agent.MapPost("/agent/games/{id:guid}/template", async (Guid id, string? value, 
 
 // ---- Conflicts (agent) ----
 //
-// Resolution now lives in the agent (logs/2026-08-28_decky-conflict-resolution.md): the server
+// Resolution now lives in the agent (tasks/conflict-resolution-ui/plan.md): the server
 // stores the winning save and files the loser, but never decides. These routes are the machine-key
 // half of the admin conflict routes below — the same SyncService calls, reachable with an X-Api-Key
 // so the CLI, the Decky plugin, and a future Playnite plugin can list and resolve a conflict without

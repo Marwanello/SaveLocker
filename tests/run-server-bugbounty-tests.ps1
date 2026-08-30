@@ -1433,7 +1433,7 @@ try {
     # once something newer already won the race, so nothing could ever close it normally again),
     # neither of its two versions was protected from ordinary retention even though they were now the
     # only record of the losing side, and the other machine involved in it was never told the head
-    # had moved. logs/2026-08-28_decky-conflict-resolution.md calls this "an orphaned ConflictFlag, an
+    # had moved. tasks/conflict-resolution-ui/plan.md calls this "an orphaned ConflictFlag, an
     # unprotected losing version, a stranded other device" — all three are asserted below.
     Write-Host ""
     Write-Host "==== CS-13: a forced push must resolve, not orphan, an already-open conflict ===="

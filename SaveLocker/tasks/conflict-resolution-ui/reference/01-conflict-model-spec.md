@@ -155,7 +155,7 @@ dashboard's fleet-wide view. The agent-local API resolves which of `VersionAId`/
 "local" by comparing against `TrackedGame.LastKnownVersionId`; the server-side agent-group endpoint
 takes the calling machine's id as the reference point for the same reason. No content hash is added
 to the DTO — it was never shown in the dashboard either, and it's not a decision-relevant number for
-a human; `docs/design/02-resolution-api.md` covers where a hash-level diff *would* live if ever
+a human; `02-resolution-api.md` (same folder) covers where a hash-level diff *would* live if ever
 needed (out of scope for phase 1).
 
 ## 4. What's new: a lightweight, session-scoped escalation record (Linux/headless only)

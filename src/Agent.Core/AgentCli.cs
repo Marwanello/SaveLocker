@@ -314,7 +314,7 @@ public static class AgentCli
                 {
                     // Only conflicts this machine is actually a party to — a genuine "my local save
                     // vs. the cloud" divergence, not another machine's. There is no bystander case
-                    // (logs/2026-08-28_decky-conflict-resolution.md decision 2).
+                    // (tasks/conflict-resolution-ui/plan.md decision 2).
                     var open = (await Api().GetOpenConflictsAsync())
                         .Where(c => c.MachineId == config.MachineId)
                         .ToList();

@@ -985,7 +985,7 @@ public sealed class SyncService
             // the agent: whichever agent's push diverged fetches the game's policy, decides locally,
             // and — unless the policy is Manual — calls the resolve endpoint itself. The server's only
             // job on a divergence is to record the conflict and keep both versions; see
-            // logs/2026-08-28_decky-conflict-resolution.md. Every divergence therefore lands here,
+            // tasks/conflict-resolution-ui/plan.md. Every divergence therefore lands here,
             // including one an auto-policy will resolve a moment later through the resolve endpoint.
             var now = DateTime.UtcNow;
 
