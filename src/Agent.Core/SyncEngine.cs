@@ -263,6 +263,26 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                     _health?.MarkSynced(game.GameId);
                     break;
                 case UploadStatus.Conflict:
+                    // The server no longer auto-resolves by policy — it only records the divergence.
+                    // Try to settle it here, from this machine's own policy, before treating it as a
+                    // conflict a human must handle. A policy that names this machine the winner turns
+                    // the divergence into an ordinary accepted push.
+                    if (await TryPolicyResolveAsync(game, result, ct))
+                    {
+                        game.LastKnownVersionId = result.Version!.Id;
+                        game.LastSyncedHash = hash;
+                        game.ConsecutiveConflicts = 0;
+                        countPush = true;
+                        touchSyncTime = true;
+                        _log($"[{game.Name}] diverged from the server, but the save policy kept " +
+                             "this machine's version.");
+                        _health?.MarkSynced(game.GameId);
+                        // Present it to callers as the accepted push it effectively became — the head
+                        // is now this machine's version — not the raw divergence the server first
+                        // answered. Nothing downstream should report a conflict that no longer exists.
+                        result = new UploadResult(UploadStatus.Created, result.Version, null);
+                        break;
+                    }
                     game.ConsecutiveConflicts++;
                     // The server already recorded the ConflictFlag, so the dashboard knows a conflict
                     // exists. What it cannot know is WHICH machine is stuck behind it — that is this.
@@ -416,6 +436,56 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     private static void TryDeleteTemp(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); } catch { /* best-effort cleanup */ }
+    }
+
+    /// <summary>
+    /// The agent half of conflict resolution. When a push comes back <see cref="UploadStatus.Conflict"/>,
+    /// fetch the game's policy and — if it is not <see cref="ConflictPolicy.Manual"/> and it names
+    /// THIS machine the winner — resolve the divergence in this machine's favour through the same
+    /// mechanical endpoint a human's choice would use. The server used to do this itself at ingest
+    /// time; it no longer does (logs/2026-08-28_decky-conflict-resolution.md), so the shared engine
+    /// every host and frontend goes through carries the decision now.
+    /// <para>
+    /// Returns true only when the conflict was actually resolved to this machine's just-pushed
+    /// version. A <see cref="ConflictPolicy.Manual"/> policy, a policy naming another machine, an
+    /// older server with no policy route, or a server-side refusal (most usefully the rewind guard)
+    /// all return false, and the caller then treats the push as the open conflict it is.
+    /// </para>
+    /// </summary>
+    private async Task<bool> TryPolicyResolveAsync(TrackedGame game, UploadResult result, CancellationToken ct)
+    {
+        if (result.Conflict is not { } conflict || result.Version is not { } mine) return false;
+
+        ConflictPolicyDto? policy;
+        try { policy = await _api.GetConflictPolicyAsync(game.GameId, ct); }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return false;   // transient failure or an older server: leave it for a human
+        }
+        if (policy is null) return false;
+
+        var thisMachineWins =
+            policy.Policy == ConflictPolicy.NewestWins ||
+            (policy.Policy == ConflictPolicy.PreferMachine &&
+             policy.PreferredMachineId is { } preferred && preferred == _config.MachineId);
+        if (!thisMachineWins) return false;
+
+        // The winner is this machine's own just-uploaded version (VersionB of the conflict). keepBoth
+        // is false on purpose: an auto-policy means "don't ask me", so the displaced save is left as
+        // ordinary prunable history — protecting it as a backup is the deliberate opposite, and that
+        // is a human's Keep both, never an automatic one.
+        try
+        {
+            var (ok, error) = await _api.ResolveConflictAsync(conflict.Id, mine.Id, keepBoth: false, ct);
+            if (ok) return true;
+            _log($"[{game.Name}] the save policy could not auto-resolve this divergence: {error}");
+            return false;
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            _log($"[{game.Name}] the save policy's auto-resolve attempt failed: {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>Download the server head and restore it locally if it differs.</summary>

@@ -430,6 +430,47 @@ agent.MapPost("/agent/games/{id:guid}/template", async (Guid id, string? value, 
     return await sync.TrySetSaveTemplateAsync(id, value.Trim()) ? Results.Ok() : Results.NoContent();
 });
 
+// ---- Conflicts (agent) ----
+//
+// Resolution now lives in the agent (logs/2026-08-28_decky-conflict-resolution.md): the server
+// stores the winning save and files the loser, but never decides. These routes are the machine-key
+// half of the admin conflict routes below — the same SyncService calls, reachable with an X-Api-Key
+// so the CLI, the Decky plugin, and a future Playnite plugin can list and resolve a conflict without
+// the admin password. The comparison is always this machine's local save vs. the cloud head, so
+// nothing here is scoped to "a conflict about me" — a machine sees every open conflict and its own
+// frontend decides what to show.
+agent.MapGet("/agent/conflicts", async (SyncService sync) =>
+    Results.Ok(await sync.ListOpenConflictsAsync()))
+    .Produces<List<ConflictDto>>();
+
+agent.MapGet("/agent/conflicts/{id:guid}", async (Guid id, SyncService sync) =>
+    await sync.GetConflictAsync(id) is { } c ? Results.Ok(c) : Results.NotFound())
+    .Produces<ConflictDto>();
+
+// The winning version id is computed by the caller (the agent knows which side is its own local save
+// and which is the cloud's). The calling machine is passed as the resolver so that, when it is the
+// winner, it is left out of the pull fan-out — it already holds the new head. resolvedBy is the
+// machine name, so the audit trail reads the same as an admin resolve.
+agent.MapPost("/agent/conflicts/{id:guid}/resolve", async (
+    Guid id, Guid version, bool? keepBoth, HttpContext http, SyncService sync) =>
+{
+    var machine = http.CurrentMachine();
+    var (ok, error) = await sync.ResolveConflictAsync(id, version, machine.Name, keepBoth ?? false, machine.Id);
+    return ok ? Results.Ok() : Results.BadRequest(error ?? "Could not resolve conflict.");
+});
+
+agent.MapGet("/agent/games/{id:guid}/conflict-policy", async (Guid id, SyncService sync) =>
+    await sync.GetConflictPolicyAsync(id) is { } p ? Results.Ok(p) : Results.NotFound())
+    .Produces<ConflictPolicyDto>();
+
+// Editable from the Decky settings page (and the CLI) as well as the dashboard — it is one shared
+// fleet setting, so an agent may write it, the same way an agent may already create games and set
+// save paths on this group.
+agent.MapPost("/agent/games/{id:guid}/conflict-policy", async (
+    Guid id, SetConflictPolicyRequest req, SyncService sync) =>
+    await sync.SetConflictPolicyAsync(id, req.Policy, req.PreferredMachineId)
+        ? Results.Ok() : Results.NotFound());
+
 // ---- Agent health (agent) ----
 // Piggybacks the existing ~20 s poll, so it costs no new schedule. This is the channel that makes a
 // headless spoke visible at all: the Deck cannot toast, so it tells the server and the console shows it.

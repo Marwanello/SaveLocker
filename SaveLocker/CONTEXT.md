@@ -387,6 +387,43 @@ Full write-up: `progress.md` and `session_summary.md`.
 
 ---
 
+**Decky conflict-resolution Phase 0/1 shipped (2026-08-29, this branch, no task file — full design in
+`logs/2026-08-28_decky-conflict-resolution.md`).** Server + Agent.Core only; no UI, no Decky/Playnite
+work — those are later phases. The server no longer decides a conflict: `SyncService.IngestAsync`'s
+`NewestWins`/`PreferMachine` auto-win branch is gone, so every divergence unconditionally records a
+`ConflictFlag`. `SyncEngine.TryPolicyResolveAsync` is the new agent-side decision point — it fires
+after a push comes back `Conflict`, fetches the game's policy, and calls the same mechanical resolve
+endpoint a human would use when the policy isn't `Manual`. `ResolveConflictAsync` gained
+`resolverMachineId` so an agent resolving its own push isn't queued a redundant pull; the admin path
+(null) is unchanged. New routes: server agent-group `/api/agent/conflicts[...]` +
+`/api/agent/games/{id}/conflict-policy`; matching local-API proxies on `:5178`
+(`/api/conflicts[...]`, `/api/games/{id}/conflict-policy`, `/api/games/{id}/sync-status`); new CLI
+`conflicts` / `resolve-conflict --keep local|cloud [--keep-both]` (added so this phase is genuinely
+usable end-to-end from the CLI alone, as the doc claims — it wasn't when first drafted).
+<br>**Verified:** `run-agent-tests` 47/47, `run-server-bugbounty-tests` 194/194 (CS-04's `NewestWins`
+auto-accept and the new "winning uploader gets no redundant pull" assertion both pass; admin
+Set-as-Latest fan-out unchanged), `run-health-tests` 22/22; `openapi.json` and both `api-types.ts`
+(web, agent-ui) regenerated against live scratch instances and diffed (only the intended new
+routes/types appear); full solution and both frontends build clean.
+<br>**Gotcha hit again, same as 2026-08-25:** this worktree's `agent-ui` AND `web` both needed a
+fresh `npm install` — neither had `node_modules`. Blocks the Windows agent build (shells out to
+`agent-ui`'s `npm run build`) and `web`'s own build/typecheck alike; see [[Gotchas]].
+<br>**A pre-existing, unrelated flake found and NOT fixed** (out of this phase's scope): `run-server-
+bugbounty-tests.ps1`'s CS-03 section deterministically throws opening a just-written archive with
+`FileShare.None` (`MethodInvocationException`, uncaught, kills the whole script silently after
+printing a truncated PASS count with exit code 0) — reproduced 2x, most likely Windows Defender
+real-time protection (confirmed active on this box) transiently holding the file. Verified CS-04
+onward (the sections this phase's tests actually live in) by temporarily patching in a retry loop,
+confirming 194/194, then reverting the patch — the test file is untouched in the final diff. Worth a
+real fix in a session that owns test-suite maintenance, not folded into this one.
+<br>**Not yet run against real hardware or a live fleet** — this phase has no UI of its own; nothing
+is visibly different to a user until Phase 3 (dashboard Backups tab, zero dependencies, could ship
+first) or Phase 5/6 (Decky UI) land. Phases 2 (Force-push bookkeeping fix), 4 (Linux wrapper gate), 7
+(sync-status, already partly done here since the endpoint exists), and 8 (Playnite) remain open — see
+[[Backlog]].
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three
