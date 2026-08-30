@@ -458,6 +458,36 @@ phase's GUI work lands. Phases 3 (dashboard Backups tab), 4 (Linux wrapper gate)
 
 ---
 
+**Decky conflict-resolution Phase 3 shipped (2026-08-30, same session as Phase 2, this branch, no task
+file — design already settled in `logs/2026-08-28_decky-conflict-resolution.md`).** The dashboard
+"Backups" tab, client-side only, zero new server endpoints. A version is "in the main tree" if it's an
+ancestor of the current head — walk `parentVersionId` back from it; anything else the game still has
+is a backup, almost always the losing side of a past conflict. `GameDetail.tsx` already fetched the
+full version list and the head id, so this is purely a computed split of data already on hand. The old
+single "Versions" table (`web/src/components/GameDetail.tsx`) is now a `Versions (N)` / `Backups (N)`
+tab toggle over the same table and the same per-row actions — Download, Set as Latest,
+Protect/Unprotect, Delete are unchanged; promoting a backup back to head via Set as Latest also
+resolves any open conflict it was part of, for free, through the existing `SetHeadAsync`
+superseded-conflict logic.
+<br>**Verified live**, not just built: seeded the exact Phase 2 scenario (two machines, a real
+diverged conflict, force-pushed past it) against a throwaway dev server on `:5179` + the dashboard dev
+server on `:5173`, and confirmed in the browser that Versions correctly shows the head's 3-version
+ancestor chain — including the conflict's non-losing side, still `Protected` from Phase 2's fix, even
+though it's on the main tree — and Backups correctly shows the one truly orphaned version (also
+`Protected`) with all four actions present and no console errors. `web` build (`tsc -b && vite build`)
+and lint (`oxlint`) both clean.
+<br>**A minor design note surfaced by seeding a real scenario, not a bug:** both sides of an
+overridden conflict get `Protected` by Phase 2's fix, but only the truly-superseded one necessarily
+lands under Backups — a side that happens to still be an ancestor of the (later-advanced) head shows
+under Versions instead, protected but otherwise ordinary. Expected given the purely head-ancestry-based
+classification; not worth a special case.
+<br>**Not yet run against real hardware or a live fleet** — same as Phases 0–2; this is the first
+phase with a visible UI change, so it's also the first one a maintainer could actually eyeball on a
+real deployment. Phases 4 (Linux wrapper gate), 5/6 (Decky UI), 7 (sync-status), and 8 (Playnite)
+remain open — see [[Backlog]].
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

@@ -9,12 +9,12 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
 
 - **Decky plugin: proper conflict resolution, not just refusals.** Scoped 2026-08-28 (full design:
   `logs/2026-08-28_decky-conflict-resolution.md`). **Phase 0/1 shipped 2026-08-29** (server +
-  Agent.Core, this repo only — see below). **Phase 2 (the Force push/pull bookkeeping fix) shipped
-  2026-08-30** — see below. Phases 3–8 (the dashboard Backups tab, the Linux wrapper launch gate, the
-  Decky plugin itself, the sync-status endpoint, and Playnite) remain not built. Before Phase 2, the
-  plugin's only way past a stuck sync was Force push/pull, which bypassed the server's own conflict
-  bookkeeping — an orphaned `ConflictFlag`, an unprotected losing version, a stranded other device.
-  The plan reframes
+  Agent.Core, this repo only — see below). **Phase 2 (the Force push/pull bookkeeping fix) and Phase 3
+  (the dashboard Backups tab) both shipped 2026-08-30** — see below. Phases 4–8 (the Linux wrapper
+  launch gate, the Decky plugin itself, the sync-status endpoint, and Playnite) remain not built.
+  Before Phase 2, the plugin's only way past a stuck sync was Force push/pull, which bypassed the
+  server's own conflict bookkeeping — an orphaned `ConflictFlag`, an unprotected losing version, a
+  stranded other device. The plan reframes
   conflicts as local-vs-cloud (never device-vs-device), moves the actual resolution *decision* into
   the shared agent engine (the server becomes a passive store that also files the losing save away as
   a separate, downloadable backup rather than mixing it into the normal version history), and adds a
@@ -62,6 +62,19 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   force push with nothing open adds no bookkeeping) — 207/207, up from 194; `run-agent-tests` 47/47
   unchanged. No API/DTO changes, so `openapi.json`/`api-types.ts` needed no regeneration. Not yet run
   against real hardware — like Phase 0/1, invisible until a later phase's GUI work lands.
+  <br>**Phase 3 detail (client-side only, no new server endpoint):** a version is "in the main tree"
+  if it's an ancestor of the current head — walk `parentVersionId` back from it; anything else the
+  game still has is a backup, almost always the losing side of a past conflict. `GameDetail.tsx`
+  already fetched the full version list and the head id, so this is a purely computed split of data
+  already on hand — no new column, no new route. The old single "Versions" table is now a
+  `Versions (N)` / `Backups (N)` tab toggle over the same table and the same per-row actions
+  (Download, Set as Latest, Protect/Unprotect, Delete) — promoting a backup back to head via Set as
+  Latest also resolves any open conflict it was part of, for free, via the existing `SetHeadAsync`
+  superseded-conflict logic. Verified live: seeded the exact Phase 2 scenario (force-pushed past an
+  open conflict) against a throwaway dev server, confirmed in the browser that Versions correctly
+  shows the head's 3-version ancestor chain (one of them still `Protected` from Phase 2) and Backups
+  correctly shows the one truly orphaned version with all four actions present; no console errors.
+  `web` build and lint clean.
 
 **All three bug bounties shipped in v0.5.0 (2026-07-29).** Code is on `main`; what remains is the
 verification that did not happen before the tag. Write-ups:
