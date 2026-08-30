@@ -1423,6 +1423,115 @@ try {
 
     Remove-Item Env:Storage__MaxUploadMb -ErrorAction SilentlyContinue
     Stop-TestServer $srv
+
+    # =====================================================================================
+    # CS-13: a forced push must not orphan an already-open conflict
+    # =====================================================================================
+    # PrepareUploadAsync skips divergence detection outright when force=true, so a forced push used
+    # to land past an already-open ConflictFlag without ever touching it: the flag stayed Open
+    # forever (ResolveConflictAsync's own rewind guard refuses to promote either of its two versions
+    # once something newer already won the race, so nothing could ever close it normally again),
+    # neither of its two versions was protected from ordinary retention even though they were now the
+    # only record of the losing side, and the other machine involved in it was never told the head
+    # had moved. logs/2026-08-28_decky-conflict-resolution.md calls this "an orphaned ConflictFlag, an
+    # unprotected losing version, a stranded other device" — all three are asserted below.
+    Write-Host ""
+    Write-Host "==== CS-13: a forced push must resolve, not orphan, an already-open conflict ===="
+
+    $env:Storage__DbPath      = Join-Path $scratch "forcebook.db"
+    $env:Storage__ArchiveRoot = Join-Path $scratch "forcebook-archives"
+    New-Item -ItemType Directory -Force $env:Storage__ArchiveRoot | Out-Null
+    $srv = Start-TestServer $serverDll "forcebook"
+
+    $fpcName   = "ForcePC-$stamp"
+    $flapName  = "ForceLap-$stamp"
+    $fgameName = "ForceGame-$stamp"
+    $fpcCfg    = Join-Path $scratch "fpc.json"
+    $flapCfg   = Join-Path $scratch "flap.json"
+    $fpcSave   = Join-Path $scratch "fpc_save";  New-Item -ItemType Directory -Force $fpcSave  | Out-Null
+    $flapSave  = Join-Path $scratch "flap_save"; New-Item -ItemType Directory -Force $flapSave | Out-Null
+    foreach ($c in @($fpcCfg, $flapCfg)) {
+        @{ ServerUrl = $url; Games = @() } | ConvertTo-Json | Set-Content -Path $c -Encoding utf8
+    }
+
+    Agent register --name $fpcName  --config $fpcCfg  | Out-Null
+    Agent register --name $flapName --config $flapCfg | Out-Null
+    "force v1" | Set-Content (Join-Path $fpcSave "save.dat") -Encoding utf8
+    Agent add-game --name $fgameName --dir $fpcSave  --config $fpcCfg  | Out-Null
+    Agent add-game --name $fgameName --dir $flapSave --config $flapCfg | Out-Null
+    Agent push $fgameName --config $fpcCfg  | Out-Null    # v1 becomes head
+    Agent pull $fgameName --config $flapCfg | Out-Null    # laptop current on v1
+
+    $fgame = ((Get-Json "/api/overview") | Where-Object { $_.game.name -eq $fgameName }).game
+    $fpc   = (Get-Json "/api/machines") | Where-Object { $_.name -eq $fpcName }
+    $flap  = (Get-Json "/api/machines") | Where-Object { $_.name -eq $flapName }
+
+    function FPendingPulls($machineId) {
+        @(Get-Json "/api/commands" | Where-Object {
+            $_.machineId -eq $machineId -and $_.gameId -eq $fgame.id -and
+            $_.type -eq "Pull" -and $_.status -eq "Pending" })
+    }
+
+    # ---- Open a real conflict: PC advances, laptop still believes the old head is current ----
+    "pc v2" | Set-Content (Join-Path $fpcSave "save.dat") -Encoding utf8
+    Agent push $fgameName --config $fpcCfg | Out-Null             # head = pc v2
+    "laptop divergent v3" | Set-Content (Join-Path $flapSave "save.dat") -Encoding utf8
+    $divergent = Agent push $fgameName --config $flapCfg          # stale parent -> CONFLICT
+    Check "the divergent push reports a conflict" ("$divergent" -match "CONFLICT")
+    Check "a conflict is open before the forced push" `
+        ((Get-Json "/api/games/$($fgame.id)/state").hasOpenConflict -eq $true)
+
+    $openConflict = @(Get-Json "/api/conflicts" | Where-Object { $_.gameId -eq $fgame.id })[0]
+    $conflictVersionIds = @($openConflict.versionAId, $openConflict.versionBId)
+
+    # ---- Force past it: PC overwrites with a THIRD version, neither side of the open conflict ----
+    "pc v4 forced" | Set-Content (Join-Path $fpcSave "save.dat") -Encoding utf8
+    $forced = Agent push $fgameName --config $fpcCfg --force
+    Check "the forced push itself is not reported as a conflict" (-not ("$forced" -match "CONFLICT"))
+
+    $stateAfter = Get-Json "/api/games/$($fgame.id)/state"
+    Check "the forced push became the new head" ($stateAfter.head.machineName -eq $fpcName)
+    Check "the forced push closes the open conflict instead of orphaning it" `
+        ($stateAfter.hasOpenConflict -eq $false)
+    Check "the old conflict is gone from the open list" `
+        (@(Get-Json "/api/conflicts" | Where-Object { $_.id -eq $openConflict.id }).Count -eq 0)
+
+    $versionsAfter = Get-Json "/api/games/$($fgame.id)/versions"
+    $protectedConflictVersions = @($versionsAfter | Where-Object {
+        $conflictVersionIds -contains "$($_.id)" -and $_.protected -eq $true })
+    Check "both sides of the overridden conflict are protected as recoverable backups" `
+        ($protectedConflictVersions.Count -eq 2)
+
+    Check "the forced resolution is audited" `
+        (@(Get-Json "/api/audit?limit=200" | Where-Object { $_.action -eq "conflict.resolve_forced" }).Count -ge 1)
+
+    Check "the stranded laptop is told to pull"    (@(FPendingPulls $flap.id).Count -eq 1)
+    Check "the queued pull is UNFORCED"            ((@(FPendingPulls $flap.id))[0].force -eq $false)
+    Check "the forcing PC gets no redundant pull"  (@(FPendingPulls $fpc.id).Count -eq 0)
+
+    # The point of the fix, proven end to end: the stranded machine can now actually catch up
+    # instead of conflicting again on its very next save. --force here is the laptop's own choice,
+    # not a workaround: its earlier push was REJECTED as a conflict, so its LastSyncedHash was never
+    # advanced past what it pulled before that — an ordinary pull correctly refuses to overwrite what
+    # the agent still sees as its own unsynced local content (the same guard WA-02 covers), same as
+    # any machine recovering from a real conflict (run-health-tests.ps1's identical "take the server
+    # copy" pull).
+    Agent pull $fgameName --config $flapCfg --force | Out-Null
+    "laptop v5 after repair" | Set-Content (Join-Path $flapSave "save.dat") -Encoding utf8
+    $repaired = Agent push $fgameName --config $flapCfg
+    Check "the repaired machine's next push does not conflict" (-not ("$repaired" -match "CONFLICT"))
+
+    # ---- Invisibility check: a force push with nothing open must not fabricate bookkeeping ----
+    # No change to what pressing Force does or looks like: with no open conflict left, PC's stale
+    # parent overwriting the head is an ordinary forced fast-forward and must add nothing new.
+    $auditBefore = @(Get-Json "/api/audit?limit=500" | Where-Object { $_.action -eq "conflict.resolve_forced" }).Count
+    "pc v6 forced, no conflict open" | Set-Content (Join-Path $fpcSave "save.dat") -Encoding utf8
+    Agent push $fgameName --config $fpcCfg --force | Out-Null
+    $auditAfter = @(Get-Json "/api/audit?limit=500" | Where-Object { $_.action -eq "conflict.resolve_forced" }).Count
+    Check "a forced push with no open conflict adds no forced-resolution bookkeeping" `
+        ($auditAfter -eq $auditBefore)
+
+    Stop-TestServer $srv
 }
 finally {
     foreach ($p in $script:servers) { Stop-TestServer $p }

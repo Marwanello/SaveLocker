@@ -1045,6 +1045,14 @@ public sealed class SyncService
             force ? "upload.force" : "upload.create", contentHash,
             propagate: false, exceptMachineId: machineId, ct);
 
+        // A forced push skips divergence detection outright (PrepareUploadAsync), so it can land
+        // while the game still has an open ConflictFlag from an earlier, unforced divergence — one
+        // that flag's own rewind guard can now never let anyone close normally, since neither of its
+        // two versions can ever become head again. Close it the same mechanical way a real resolve
+        // would, rather than leaving it orphaned.
+        if (force)
+            await CloseOrphanedConflictsOnForceAsync(gameId, versionId, machineId, version.MachineName, ct);
+
         await PruneVersionsAsync(gameId, ct);
 
         await LoadMachine(version, ct);
@@ -1410,6 +1418,58 @@ public sealed class SyncService
         // so it is the first moment retention can actually act on them.
         await PruneVersionsAsync(conflict.GameId, CancellationToken.None);
         return (true, null);
+    }
+
+    /// <summary>
+    /// Close every open <see cref="ConflictFlag"/> on a game that a forced push just rode over.
+    /// <para>
+    /// A forced push makes <see cref="PrepareUploadAsync"/> skip divergence detection outright, so
+    /// it can move the head to a brand-new version that is neither side of an already-open conflict
+    /// for this game. Left alone, that conflict is orphaned: <see cref="ResolveConflictAsync"/>'s own
+    /// rewind guard refuses to promote either of its versions once the head has moved past both of
+    /// them, so nothing can ever close it through the ordinary path again — the two machines involved
+    /// stay stuck reporting a conflict the fleet has already moved past, and neither of their versions
+    /// is protected from ordinary retention even though they are now the only record of the losing
+    /// side. This mirrors <see cref="ResolveConflictAsync"/>'s own bookkeeping (mark resolved, protect
+    /// both sides as recoverable backups, tell every other machine to pull) rather than "which of A or
+    /// B wins" — a force overwrite means neither did.
+    /// </para>
+    /// </summary>
+    private async Task CloseOrphanedConflictsOnForceAsync(
+        Guid gameId, Guid winningVersionId, Guid forcingMachineId, string forcingMachineName,
+        CancellationToken ct)
+    {
+        var open = await _db.Conflicts
+            .Where(c => c.GameId == gameId && c.Status == ConflictStatus.Open)
+            .ToListAsync(ct);
+        if (open.Count == 0) return;
+
+        var now = DateTime.UtcNow;
+        var protectIds = new HashSet<Guid>();
+        foreach (var conflict in open)
+        {
+            conflict.Status = ConflictStatus.Resolved;
+            conflict.ResolvedVersionId = winningVersionId;
+            conflict.ResolvedBy = $"force-push by {forcingMachineName}";
+            conflict.ResolvedAt = now;
+            protectIds.Add(conflict.VersionAId);
+            protectIds.Add(conflict.VersionBId);
+            await Audit(forcingMachineId, gameId, "conflict.resolve_forced",
+                $"superseded by a forced push (kept both {conflict.VersionAId} and {conflict.VersionBId} " +
+                "as recoverable backups)");
+        }
+
+        // Neither side of an overridden conflict is "the winner" the way a real resolve has one, so
+        // both are protected unconditionally — the same recoverable-backup guarantee a human's
+        // explicit "keep both" gives, without asking, since nobody was actually asked here.
+        var toProtect = await _db.SaveVersions.Where(v => protectIds.Contains(v.Id)).ToListAsync(ct);
+        foreach (var v in toProtect) v.Protected = true;
+        await _db.SaveChangesAsync(ct);
+
+        // Same fan-out a real resolve gets: an agent's local parent only advances on its own push or
+        // pull, so the other machine(s) this conflict involved need to be told the head moved, or they
+        // stay stuck on stale versions and conflict again on their very next save.
+        await QueueHeadPullsAsync(gameId, forcingMachineId, ct);
     }
 
     /// <summary>
