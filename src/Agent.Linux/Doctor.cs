@@ -34,6 +34,19 @@ public static class Doctor
             $"cannot write to {config.StateDir} — the agent cannot save its config or queue.");
 
         Console.WriteLine();
+        Section("Session");
+        // Purely informational — none of these are a Problem. A bare SSH shell with no graphical
+        // session or notification daemon is a normal, common, entirely valid state; this exists so
+        // "why didn't a popup/notification show up" has an answer that isn't a guess
+        // (tasks/conflict-resolution-ui/plan.md, Phase 5).
+        var env = DesktopEnvironment.Detect();
+        Info("graphical session", env.HasGraphicalSession ? "yes" : "no");
+        Info("D-Bus session bus", env.HasSessionBus ? "yes" : "no");
+        Info("notification daemon", env.NotificationDaemonPresent ? "yes" : "no (or unconfirmed)");
+        Info("interactive terminal", env.IsInteractiveTty ? "yes" : "no");
+        Info("running as", env.RunningAsSystemdUnit ? "systemd --user unit" : "interactive process");
+
+        Console.WriteLine();
         Section("Server");
         Info("url", config.ServerUrl);
         if (string.IsNullOrEmpty(config.ApiKey))

@@ -440,17 +440,29 @@ the same local API Phase 6 already exercises; manual gamepad-navigation check on
 moves focus, A activates, B backs out without resolving anything) — the identical requirement this
 document already states for the Decky modal, applied here to the native screen instead.
 
-**Phase 9 — Desktop notification via D-Bus (optional, spike-gated).**
+**Phase 9 — Desktop notification via D-Bus (optional).**
 Depends on Phase 5 (must confirm a notification daemon is actually present before attempting a call —
 this is precisely the distinction rung 1's detection exists to make) and Phase 6 (the action button's
 target on a desktop session — Phase 8's Game Mode screen is the equivalent target on the Deck).
-**Spike before building, per `07-open-questions.md` §3**: no .NET D-Bus dependency exists in this
-codebase today. Compare, and write down the decision before writing the feature:
-- `Tmds.DBus` — the most common .NET option, a real NuGet dependency this design should flag rather
-  than assume.
-- Shelling out to `dbus-send`/`gdbus` — no new dependency, a process-spawn per notification.
+
+**Tooling decision made 2026-08-30 (Group 1), answering `07-open-questions.md` §3: `gdbus`, not
+`Tmds.DBus` or a hand-rolled client.** Compared:
+- `Tmds.DBus` — the most common .NET option, but a new NuGet dependency for a rarely-fired, entirely
+  optional, best-effort feature (rungs 1-7 already guarantee safety without it — see the Scope note).
+  Adding a persistent dependency for that trade isn't worth it.
 - A minimal hand-rolled client — SaveLocker only ever needs one method call
-  (`org.freedesktop.Notifications.Notify`), so a full library may be more than this needs.
+  (`org.freedesktop.Notifications.Notify`), which sounds minimal, but the D-Bus wire protocol's
+  binary marshalling (type-signature-driven alignment/padding, the variant type, the SASL auth
+  handshake to even open the connection) is genuinely easy to get subtly wrong for real gain over
+  the alternative below — correctness risk for low payoff.
+- **`gdbus` (shelled out), chosen** — already the tool Phase 5's `DesktopEnvironment.NotificationsNameOwned`
+  uses for the `NameHasOwner` probe, so this keeps the codebase to one external D-Bus tool rather than
+  two. Specifically *not* `dbus-send`, despite `dbus-send` shipping with the same base `dbus` package
+  that provides the bus itself (arguably an even safer bet to be present): `dbus-send`'s CLI syntax
+  has poor, easy-to-get-wrong support for array and dict types, and `Notify`'s real signature needs
+  both (`actions: as`, `hints: a{sv}`) — `gdbus`'s GVariant text format handles both natively and is
+  the tool generally recommended for scripting a call with this shape. Process-spawn cost per call is
+  irrelevant given how rarely this fires (once per conflict *becoming* open, not per poll).
 
 If built: fires once per conflict becoming open (a `HashSet<Guid>` of already-notified conflict ids,
 cleared on resolve, so the 20s command-poller's own loop doesn't re-notify every tick) with an action
@@ -480,14 +492,26 @@ reliability is already flagged unverified on real hardware, independent of this 
 Phase 10 first means a working fallback already exists if this phase needs a hardware-driven
 iteration cycle.
 
-**Phase 12 — Cheap sync-status endpoint — consumer work only, the endpoint already shipped.**
-Correction while renumbering: `GET /api/games/{id}/sync-status` and `SyncStatusDto` were already
-delivered in Phase 0/1 (`AgentApiServer.cs:696`) — [[CONTEXT]] already noted this ("sync-status,
-already partly done here since the endpoint exists"), a fact [[Backlog]]'s phase-4-through-8 summary
-had not caught up to before this update. What remains is giving it a consumer: Phase 10's Decky chip
-and `agent-ui`'s `StatusHeader.tsx` can poll this one cheap endpoint instead of a full conflict-list
-fetch for the common "am I in sync right now" case. Small enough to fold into Phase 6 or Phase 10 if
-convenient when either is actually built; kept as its own line item only so it isn't lost.
+**Phase 12 — sync-status endpoint — consumer work only, the endpoint already shipped, but it is
+NOT the cheap poll target this plan originally described it as.** Correction made 2026-08-30 while
+starting Group 1 (`implementation-grouping.md`) and actually reading the handler before wiring
+anything to it: `GET /api/games/{id}/sync-status` and `SyncStatusDto` were already delivered in
+Phase 0/1 (`AgentApiServer.cs:696`), but its own doc comment says plainly what it costs — "cheap on
+the **network** (no bytes cross the wire), NOT cheap on **disk**: the local hash still walks and
+reads every file in the save folder, the same cost a push's own hash pays." It also calls
+`ApiClient.GetStateAsync` internally — the exact same full-state fetch `AgentCli.cs`'s `status`
+command already makes per game — so it is strictly *more* expensive than what a per-game status loop
+does today, not less. **Earlier phrasing in this document and in `implementation-grouping.md`**
+("agent-ui's `StatusHeader.tsx` can poll this one cheap endpoint... for the common 'am I in sync
+right now' case") **was wrong and has been corrected here** — polling it on an interval or attaching
+it to a passive per-game list refresh would re-hash a potentially large save folder on every tick,
+which is exactly the performance footgun the whole per-file delta-upload feature exists to avoid
+elsewhere in this codebase. This endpoint is for a genuine, **user- or wrapper-triggered, occasional**
+"am I actually in sync, worth the disk cost to be sure" check — a manual button, a CLI flag, or a
+one-shot call at a specific decision point (e.g. immediately before a launch gate decision) — never a
+background poll. **Consumer work is correctly still open**, but needs an explicit trigger moment
+decided first, not a UI badge wired to a timer; fold it into whichever of Phase 6, 8, or 10 first has
+a natural "check now" action, rather than building one just to close this line out.
 
 **Phase 13 — Playnite plugin** (new, separate project) — unchanged scope, renumbered from the
 original Phase 8. Depends only on Phase 0/1's local API — independent of every Decky phase and of

@@ -12,8 +12,10 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   `tasks/conflict-resolution-ui/plan.md`, moved there 2026-08-30 from `logs/` since Phases 4–14 are
   still open work — see that folder's `README.md`). **Phase 0/1 shipped 2026-08-29** (server +
   Agent.Core, this repo only — see below). **Phase 2 (the Force push/pull bookkeeping fix) and Phase 3
-  (the dashboard Backups tab) both shipped 2026-08-30** — see below. **Phases 4–14 remain not built**
-  (Phase 12's endpoint is a partial exception — see below). Before Phase 2, the plugin's only way past
+  (the dashboard Backups tab) both shipped 2026-08-30, and Phase 5 (Linux environment-capability
+  detection) shipped 2026-08-30 in the same session the plan was expanded** — see below. **Phases 4,
+  6–11, 13–14 remain not built** (Phase 9's tooling decision is made but not implemented; Phase 12's
+  endpoint exists but has no consumer yet — see below). Before Phase 2, the plugin's only way past
   a stuck sync was Force push/pull, which bypassed the server's own conflict bookkeeping — an orphaned
   `ConflictFlag`, an unprotected losing version, a stranded other device. The plan reframes conflicts
   as local-vs-cloud (never device-vs-device), moves the actual resolution *decision* into the shared
@@ -36,12 +38,42 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   launch-time experience for a plain Windows user), **Phase 8** (a native Linux **Game Mode conflict
   screen** in `savelocker ui`, drawn with the existing Dear ImGui stack — the direct, literal
   Decky-equivalent popup with zero Decky dependency), and **Phase 9** (an optional D-Bus desktop
-  notification, spike-gated per an existing open question about which D-Bus client to use, if any).
+  notification — tooling decision made 2026-08-30: `gdbus`, shelled out, not `Tmds.DBus` or a
+  hand-rolled client; see `tasks/conflict-resolution-ui/plan.md` Phase 9).
   The old Phase 5–8 are renumbered **10–13** (content unchanged); a new **Phase 14** folds in the
   optional webhook/ntfy notify and a per-game "block launch" opt-in that were previously a separate
   open question. Full dependency graph, verification plan, and file-level detail for every new phase:
   the design doc's *Implementation phases* section and its *Scope note*. Phased; several phases are
   independently mergeable or can proceed in parallel — see the doc.
+  <br>**Phase 5 shipped 2026-08-30** (same session as the expansion above, `tasks/conflict-resolution-ui/
+  implementation-grouping.md`'s "Group 1"): new `DesktopEnvironment.Detect()` in `src/Agent.Linux/`
+  answers whether a graphical session, a genuinely connectable D-Bus session bus, a notification
+  daemon (via `gdbus`'s `NameHasOwner`), an interactive terminal, and the `systemd --user` unit itself
+  are each present — surfaced as a new, purely informational "Session" section in `doctor`. The
+  `gdbus` subprocess call is bounded to a 2s timeout (a stale/half-started bus can accept a connection
+  and never complete the handshake; this must never hang `doctor` or, later, the launch wrapper).
+  `tests/linux/run-linux-tests.sh` gained 9 checks covering all five flags, including a real UNIX
+  socket with nothing implementing the D-Bus protocol behind it, to prove `HasSessionBus` and
+  `NotificationDaemonPresent` genuinely disagree in that case rather than one silently implying the
+  other. 246 total (239 passed + 9 new, replacing the prior 237/237 baseline's 0 failures — see the
+  pre-existing-failure note just below, unrelated to this change).
+  <br>**Phase 9's tooling decision made, not yet implemented** — see the plan doc's Phase 9 for the
+  full reasoning (`gdbus` over `Tmds.DBus` or a hand-rolled client).
+  <br>**Phase 12 corrected, pulled back out of "Group 1," and left open**: it was about to be wired to
+  a passive `agent-ui` poll before actually reading `AgentApiServer.cs:696`'s handler — it hashes the
+  entire local save folder on every call ("NOT cheap on disk," its own comment says) and calls the
+  same `GetStateAsync` `AgentCli.cs`'s existing `status` command already uses, so it is *more*
+  expensive than what a per-game status loop does today, not a lighter replacement. `plan.md` and
+  `implementation-grouping.md` are both corrected; a consumer still needs a genuine on-demand trigger
+  (a button, a CLI flag, a specific decision point) rather than a timer, decided when Phase 6, 8, or
+  10 actually builds one.
+  <br>**A pre-existing, unrelated regression found while verifying Phase 5, not caused by it**: the
+  last recorded `run-linux-tests.sh` baseline was 237/237 (`logs/sessions.md`, 2026-08-27); it is now
+  237/230-passing — 7 failures, all in the "Decky plugin updates" section (a top-level-file package
+  refusal path), confirmed via `git stash` to already fail on the code as it stood *before* this
+  session's Phase 5 changes. Not investigated further here — out of this phase's scope — but worth a
+  session that owns test-suite maintenance, similar to the CS-03 `FileShare.None` flake noted
+  2026-08-29.
   <br>**Phase 0/1 detail:** `SyncService.IngestAsync` no longer evaluates `ConflictPolicy` itself —
   every divergence unconditionally records/updates a `ConflictFlag`; `SyncEngine
   .TryPolicyResolveAsync` is where the decision moved (fetches the game's policy after a push comes

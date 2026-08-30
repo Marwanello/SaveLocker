@@ -36,12 +36,29 @@ built.
 
 ## Groups
 
-**Group 1 — small, do this or next session.**
-`Phase 5` (Linux environment-capability detection) + `Phase 12` (sync-status consumer wiring) +
-`Phase 9`'s **D-Bus library spike/decision only** (no notification code — just documenting
-`Tmds.DBus` vs. shelling out vs. hand-rolled, so Phase 9's eventual implementation session doesn't
-re-derive it). All three are mutually independent, touch disjoint files, and are fully buildable and
-testable in this environment. Smaller than the Phase 2+3 precedent.
+**Group 1 — small, done 2026-08-30.**
+`Phase 5` (Linux environment-capability detection) + `Phase 9`'s **D-Bus library spike/decision
+only** (no notification code — just picking the tool, so Phase 9's eventual implementation session
+doesn't re-derive it). Both mutually independent, disjoint files, fully buildable and testable here.
+`Phase 12` was originally planned as this group's third item and turned out **not to be a valid
+small standalone task** — see "Correction found while starting Group 1" below. Smaller than the
+Phase 2+3 precedent even without it.
+
+### Correction found while starting Group 1: Phase 12 pulled from this group
+
+Before wiring any UI to `GET /api/games/{id}/sync-status`, its actual handler was read (rather than
+trusting this document's own earlier description of it as "the cheap sync-status endpoint... poll
+this instead of a full conflict-list fetch"). That description was wrong: the handler's own comment
+says it is "NOT cheap on disk: the local hash still walks and reads every file in the save folder,"
+and it calls `ApiClient.GetStateAsync` internally — the same full-state fetch `AgentCli.cs`'s
+existing `status` command already makes. It is strictly *more* expensive than what a per-game status
+loop does today, not a lighter replacement for one. Wiring any passive UI poll to it (which is what
+"give it a consumer" was about to become, since `agent-ui` has no per-game list surface to attach a
+badge to before Phase 6 exists anyway) would have been re-hashing save folders on a timer — a real
+performance regression, not a small cheap win. `plan.md`'s Phase 12 entry and this file are both
+corrected; Phase 12 now waits for a genuine on-demand trigger (a button, a CLI flag, or a one-shot
+call at a specific decision point) to attach to, decided when Phase 6, 8, or 10 actually builds one —
+not before.
 
 **Group 2 — medium, the biggest value-per-session in the whole plan.**
 `Phase 4` (Linux wrapper launch gate) + `Phase 6` (shared `agent-ui` conflicts page + the confirmed
@@ -68,11 +85,12 @@ desktop session to test against) + `Phase 10`/`Phase 11` (Decky — add the `Sav
 whatever session does this) + `Phase 13` (Playnite).
 
 ```
-This/next session   →  Group 1 (5, 12, 9-spike)              tiny, fully verifiable here
+Done 2026-08-30       →  Group 1 (5, 9-spike)                  tiny, fully verifiable here
 Following session    →  Group 2 (4, 6)                        medium, biggest value, fully verifiable here
 Following session    →  Group 3 (8)                           medium, code-only here
 Windows machine       →  Group 4 (7, 14)
 Deck + Windows        →  Group 5 (9-impl, 10, 11, 13)
+Whenever 6/8/10 adds a "check now" trigger → Phase 12 (sync-status consumer)
 ```
 
 ## Re-evaluate before each new group
