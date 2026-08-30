@@ -54,6 +54,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
   const [savingPolicy, setSavingPolicy] = useState(false);
   const [versionStats, setVersionStats] = useState<Record<string, VersionStats>>({});
   const requestedStatsRef = useRef<Set<string>>(new Set());
+  const [versionsView, setVersionsView] = useState<'main' | 'backups'>('main');
 
   const { game, head, lease, hasOpenConflict } = summary;
 
@@ -85,6 +86,23 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
     if (!latestByMachine[v.machineId]) latestByMachine[v.machineId] = v;
   }
 
+  // A version is "in the main tree" if it's an ancestor of the current head — walk
+  // parentVersionId back from it. Everything else the game still has is a backup, almost always
+  // the losing side of a past conflict: no schema change needed, this is purely a computed split
+  // of the same version list the console already fetches (logs/2026-08-28_decky-conflict-resolution.md).
+  const mainVersionIds = new Set<string>();
+  {
+    const byId = new Map(versions.map(v => [v.id, v]));
+    let cur = headId;
+    while (cur && !mainVersionIds.has(cur)) {
+      mainVersionIds.add(cur);
+      cur = byId.get(cur)?.parentVersionId ?? null;
+    }
+  }
+  const mainVersions = versions.filter(v => mainVersionIds.has(v.id));
+  const backupVersions = versions.filter(v => !mainVersionIds.has(v.id));
+  const shownVersions = versionsView === 'main' ? mainVersions : backupVersions;
+
   // Initial-sync wizard: show when multiple machines have versions
   const contributors = Object.values(latestByMachine);
 
@@ -94,6 +112,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
     api.getGamePaths(game.id).then(setMachinePaths).catch(() => {});
     api.getGamePathCandidates(game.id).then(setPathCandidates).catch(() => {});
     setEditingPathFor(null);
+    setVersionsView('main');
   }, [game.id]);
 
   // Global exclude defaults (read-only display); fetched once.
@@ -309,6 +328,12 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
     borderRadius: 4, fontSize: 10, cursor: 'pointer', ...extra,
   });
   const amberBtn: React.CSSProperties = { padding: '2px 8px', border: '1px solid #f4a60d', color: '#f4a60d', background: 'transparent', borderRadius: 4, fontSize: 10, cursor: 'pointer' };
+  const pillBtn = (active: boolean): React.CSSProperties => ({
+    padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+    border: `1px solid ${active ? '#129271' : '#494949'}`,
+    background: active ? '#129271' : 'transparent',
+    color: active ? '#fff' : '#8b9aaa',
+  });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -747,18 +772,40 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
         </div>
       )}
 
-      {/* ── Versions ── */}
+      {/* ── Versions / Backups ──
+          A backup is anything the game still has that isn't an ancestor of the current head —
+          almost always the losing side of a past conflict (a Force push that rode over one, or an
+          admin/agent resolve that didn't keep both). No new endpoint: same version list the console
+          already fetches, just split by walking parentVersionId back from head. Reuses the existing
+          Download and Set as Latest actions unchanged — logs/2026-08-28_decky-conflict-resolution.md. */}
       <div style={{ ...card, marginBottom: 24 }}>
-        <div style={{ ...cardHeader, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={sectionLabel}>Versions</span>
+        <div style={{ ...cardHeader, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={sectionLabel}>{versionsView === 'main' ? 'Versions' : 'Backups'}</span>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button style={pillBtn(versionsView === 'main')} onClick={() => setVersionsView('main')}>
+                Versions ({mainVersions.length})
+              </button>
+              <button style={pillBtn(versionsView === 'backups')} onClick={() => setVersionsView('backups')}>
+                Backups ({backupVersions.length})
+              </button>
+            </div>
+          </div>
           {/* Retention otherwise runs only as a side effect of an upload, so a game nobody is playing
-              keeps whatever it accumulated — and clearing that used to need the admin API by hand. */}
+              keeps whatever it accumulated — and clearing that used to need the admin API by hand.
+              Applies across both tabs, so it stays visible regardless of which is open. */}
           <button
             style={ghostBtn()}
             title="Apply this game's retention limit now, without waiting for the next upload"
             onClick={handlePruneNow}
           >Prune now</button>
         </div>
+        {versionsView === 'backups' && (
+          <p style={{ padding: '10px 18px 0', margin: 0, fontSize: 11.5, color: '#8b9aaa', lineHeight: 1.5 }}>
+            Not part of the current save's history — nothing here was deleted, it just isn't what
+            machines currently pull. Download one to keep a copy, or "Set as Latest" to bring it back.
+          </p>
+        )}
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: '#222d34' }}>
@@ -772,9 +819,11 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
           <tbody>
             {loadingVersions
               ? <tr><td colSpan={5} style={{ padding: '20px 18px', color: '#556070', fontSize: 13 }}>Loading…</td></tr>
-              : versions.length === 0
-                ? <tr><td colSpan={5} style={{ padding: '20px 18px', color: '#556070', fontSize: 13 }}>No versions yet.</td></tr>
-                : versions.map(v => (
+              : shownVersions.length === 0
+                ? <tr><td colSpan={5} style={{ padding: '20px 18px', color: '#556070', fontSize: 13 }}>
+                    {versionsView === 'main' ? 'No versions yet.' : 'No backups — nothing here yet.'}
+                  </td></tr>
+                : shownVersions.map(v => (
                     <tr key={v.id} style={rowSep}>
                       <td style={{ padding: '11px 18px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>

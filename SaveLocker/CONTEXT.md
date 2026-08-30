@@ -424,6 +424,70 @@ first) or Phase 5/6 (Decky UI) land. Phases 2 (Force-push bookkeeping fix), 4 (L
 
 ---
 
+**Decky conflict-resolution Phase 2 shipped (2026-08-30, this branch, no task file — design already
+settled in `logs/2026-08-28_decky-conflict-resolution.md`).** The Force push/pull bookkeeping fix,
+server-side only. Before this, `PrepareUploadAsync` skipping divergence detection outright on
+`force:true` meant a forced push could land while the game already had an open `ConflictFlag` from an
+earlier, unforced divergence — moving the head to a brand-new version that was neither side of it, so
+the flag was orphaned (its own rewind guard means nothing can ever close it normally again), neither
+of its two versions was protected from ordinary retention, and the other machine it involved was never
+told the head had moved. `SyncService.IngestAsync`'s fast-forward branch now calls a new
+`CloseOrphanedConflictsOnForceAsync` whenever `force` is true: closes every open conflict on that game
+(`Resolved`, tagged `"force-push by {machine}"`), protects **both** sides of each as recoverable
+backups (nobody was actually asked which to keep, so — same as an explicit "keep both" — nothing is
+silently lost), and queues the same unforced pull fan-out a real resolve gets. A no-op when nothing is
+open, so an ordinary forced push looks exactly as it did before — no new routes, DTOs, or UI.
+<br>**Verified:** new `CS-13` section in `run-server-bugbounty-tests.ps1` (open a real conflict, force
+past it, confirm the flag closes, both sides protect, the resolution is audited, the stranded machine
+gets an unforced pull and the forcing machine doesn't, its next push is clean, and a control case
+proving a force push with nothing open adds no bookkeeping) — 207/207 (up from 194, no regressions);
+`run-agent-tests` 47/47 unchanged. `openapi.json`/`api-types.ts` untouched on purpose — no API surface
+changed. Full solution builds clean.
+<br>**Gotcha hit again, same as 2026-08-25/29:** this worktree's `agent-ui` had never had `npm
+install` run, blocking the Windows agent build; see [[Gotchas]].
+<br>**Test bug found and fixed while verifying, not a server bug:** the first CS-13 draft had the
+stranded laptop machine call a plain (non-forced) `pull` to catch up after the resolution. That machine's
+OWN earlier push had been rejected as a conflict, so its `LastSyncedHash` was never advanced past what
+it pulled before — an ordinary pull correctly refuses to overwrite what the agent still sees as its own
+unsynced local content (WA-02's guard), exactly like `run-health-tests.ps1`'s existing "take the server
+copy" `--force` pull. Fixed by adding `--force` to that one step, matching the established idiom rather
+than treating it as a product bug.
+<br>**Not yet run against real hardware or a live fleet** — same as Phase 0/1, invisible until a later
+phase's GUI work lands. Phases 3 (dashboard Backups tab), 4 (Linux wrapper gate), 5/6 (Decky UI), 7
+(sync-status), and 8 (Playnite) remain open — see [[Backlog]].
+
+---
+
+**Decky conflict-resolution Phase 3 shipped (2026-08-30, same session as Phase 2, this branch, no task
+file — design already settled in `logs/2026-08-28_decky-conflict-resolution.md`).** The dashboard
+"Backups" tab, client-side only, zero new server endpoints. A version is "in the main tree" if it's an
+ancestor of the current head — walk `parentVersionId` back from it; anything else the game still has
+is a backup, almost always the losing side of a past conflict. `GameDetail.tsx` already fetched the
+full version list and the head id, so this is purely a computed split of data already on hand. The old
+single "Versions" table (`web/src/components/GameDetail.tsx`) is now a `Versions (N)` / `Backups (N)`
+tab toggle over the same table and the same per-row actions — Download, Set as Latest,
+Protect/Unprotect, Delete are unchanged; promoting a backup back to head via Set as Latest also
+resolves any open conflict it was part of, for free, through the existing `SetHeadAsync`
+superseded-conflict logic.
+<br>**Verified live**, not just built: seeded the exact Phase 2 scenario (two machines, a real
+diverged conflict, force-pushed past it) against a throwaway dev server on `:5179` + the dashboard dev
+server on `:5173`, and confirmed in the browser that Versions correctly shows the head's 3-version
+ancestor chain — including the conflict's non-losing side, still `Protected` from Phase 2's fix, even
+though it's on the main tree — and Backups correctly shows the one truly orphaned version (also
+`Protected`) with all four actions present and no console errors. `web` build (`tsc -b && vite build`)
+and lint (`oxlint`) both clean.
+<br>**A minor design note surfaced by seeding a real scenario, not a bug:** both sides of an
+overridden conflict get `Protected` by Phase 2's fix, but only the truly-superseded one necessarily
+lands under Backups — a side that happens to still be an ancestor of the (later-advanced) head shows
+under Versions instead, protected but otherwise ordinary. Expected given the purely head-ancestry-based
+classification; not worth a special case.
+<br>**Not yet run against real hardware or a live fleet** — same as Phases 0–2; this is the first
+phase with a visible UI change, so it's also the first one a maintainer could actually eyeball on a
+real deployment. Phases 4 (Linux wrapper gate), 5/6 (Decky UI), 7 (sync-status), and 8 (Playnite)
+remain open — see [[Backlog]].
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three
