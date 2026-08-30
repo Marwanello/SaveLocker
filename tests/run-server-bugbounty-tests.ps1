@@ -1521,6 +1521,84 @@ try {
     $repaired = Agent push $fgameName --config $flapCfg
     Check "the repaired machine's next push does not conflict" (-not ("$repaired" -match "CONFLICT"))
 
+    # ---- Multiple conflicts open at once: CloseOrphanedConflictsOnForceAsync loops over every open
+    # conflict on the game, not just the first. Conflicts are keyed per (game, machine), and the head
+    # never advances while any conflict on the game is open, so two machines diverging independently
+    # against the same frozen head is the realistic way to get more than one open at a time — force
+    # must close and protect BOTH, not just whichever the single-conflict case above already covers.
+    $fpc2Name   = "ForcePC2-$stamp"
+    $flap2Name  = "ForceLap2-$stamp"
+    $fdeckName  = "ForceDeck2-$stamp"
+    $fgame2Name = "ForceGame2-$stamp"
+    $fpc2Cfg    = Join-Path $scratch "fpc2.json"
+    $flap2Cfg   = Join-Path $scratch "flap2.json"
+    $fdeckCfg   = Join-Path $scratch "fdeck2.json"
+    $fpc2Save   = Join-Path $scratch "fpc2_save";   New-Item -ItemType Directory -Force $fpc2Save  | Out-Null
+    $flap2Save  = Join-Path $scratch "flap2_save";  New-Item -ItemType Directory -Force $flap2Save | Out-Null
+    $fdeckSave  = Join-Path $scratch "fdeck2_save"; New-Item -ItemType Directory -Force $fdeckSave | Out-Null
+    foreach ($c in @($fpc2Cfg, $flap2Cfg, $fdeckCfg)) {
+        @{ ServerUrl = $url; Games = @() } | ConvertTo-Json | Set-Content -Path $c -Encoding utf8
+    }
+
+    Agent register --name $fpc2Name  --config $fpc2Cfg  | Out-Null
+    Agent register --name $flap2Name --config $flap2Cfg | Out-Null
+    Agent register --name $fdeckName --config $fdeckCfg | Out-Null
+    "v1" | Set-Content (Join-Path $fpc2Save "save.dat") -Encoding utf8
+    Agent add-game --name $fgame2Name --dir $fpc2Save  --config $fpc2Cfg  | Out-Null
+    Agent add-game --name $fgame2Name --dir $flap2Save --config $flap2Cfg | Out-Null
+    Agent add-game --name $fgame2Name --dir $fdeckSave --config $fdeckCfg | Out-Null
+    Agent push $fgame2Name --config $fpc2Cfg  | Out-Null    # v1 becomes head
+    Agent pull $fgame2Name --config $flap2Cfg | Out-Null    # laptop current on v1
+    Agent pull $fgame2Name --config $fdeckCfg | Out-Null    # deck current on v1
+
+    $fgame2 = ((Get-Json "/api/overview") | Where-Object { $_.game.name -eq $fgame2Name }).game
+    $fpc2   = (Get-Json "/api/machines") | Where-Object { $_.name -eq $fpc2Name }
+    $flap2  = (Get-Json "/api/machines") | Where-Object { $_.name -eq $flap2Name }
+    $fdeck2 = (Get-Json "/api/machines") | Where-Object { $_.name -eq $fdeckName }
+
+    function F2PendingPulls($machineId) {
+        @(Get-Json "/api/commands" | Where-Object {
+            $_.machineId -eq $machineId -and $_.gameId -eq $fgame2.id -and
+            $_.type -eq "Pull" -and $_.status -eq "Pending" })
+    }
+
+    # PC fast-forwards; laptop AND deck are both left on the now-stale v1 parent.
+    "pc v2" | Set-Content (Join-Path $fpc2Save "save.dat") -Encoding utf8
+    Agent push $fgame2Name --config $fpc2Cfg | Out-Null            # head = pc v2
+
+    "laptop divergent" | Set-Content (Join-Path $flap2Save "save.dat") -Encoding utf8
+    $lapDiverge = Agent push $fgame2Name --config $flap2Cfg
+    Check "laptop's divergent push reports a conflict" ("$lapDiverge" -match "CONFLICT")
+
+    "deck divergent" | Set-Content (Join-Path $fdeckSave "save.dat") -Encoding utf8
+    $deckDiverge = Agent push $fgame2Name --config $fdeckCfg
+    Check "deck's divergent push reports a conflict" ("$deckDiverge" -match "CONFLICT")
+
+    $openConflicts2 = @(Get-Json "/api/conflicts" | Where-Object { $_.gameId -eq $fgame2.id })
+    Check "two independent conflicts are open, one per diverging machine" ($openConflicts2.Count -eq 2)
+    $allConflictVersionIds2 = @($openConflicts2 | ForEach-Object { $_.versionAId; $_.versionBId }) | Select-Object -Unique
+
+    # ---- Force past BOTH at once ----
+    "pc v3 forced" | Set-Content (Join-Path $fpc2Save "save.dat") -Encoding utf8
+    Agent push $fgame2Name --config $fpc2Cfg --force | Out-Null
+
+    Check "the forced push closes every open conflict, not just the first" `
+        (@(Get-Json "/api/conflicts" | Where-Object { $_.gameId -eq $fgame2.id }).Count -eq 0)
+
+    $versions2After = Get-Json "/api/games/$($fgame2.id)/versions"
+    $protected2 = @($versions2After | Where-Object {
+        $allConflictVersionIds2 -contains "$($_.id)" -and $_.protected -eq $true })
+    Check "every version on both sides of both conflicts is protected" `
+        ($protected2.Count -eq $allConflictVersionIds2.Count)
+
+    Check "a resolve_forced audit entry was recorded for each closed conflict" `
+        (@(Get-Json "/api/audit?limit=200" | Where-Object {
+            $_.action -eq "conflict.resolve_forced" -and $_.gameId -eq $fgame2.id }).Count -eq 2)
+
+    Check "the stranded laptop is queued a pull"  (@(F2PendingPulls $flap2.id).Count -eq 1)
+    Check "the stranded deck is queued a pull"    (@(F2PendingPulls $fdeck2.id).Count -eq 1)
+    Check "the forcing PC gets no redundant pull" (@(F2PendingPulls $fpc2.id).Count -eq 0)
+
     # ---- Invisibility check: a force push with nothing open must not fabricate bookkeeping ----
     # No change to what pressing Force does or looks like: with no open conflict left, PC's stale
     # parent overwriting the head is an ordinary forced fast-forward and must add nothing new.

@@ -1050,8 +1050,28 @@ public sealed class SyncService
         // that flag's own rewind guard can now never let anyone close normally, since neither of its
         // two versions can ever become head again. Close it the same mechanical way a real resolve
         // would, rather than leaving it orphaned.
+        //
+        // The version row and head above are already committed, so this must never be allowed to
+        // reach the archive-deleting catch around this call (UploadAsync / CompleteChunkedUploadAsync)
+        // — same reasoning as the per-file manifest write above: a failure here costs this conflict
+        // its bookkeeping, not the push its just-published archive.
         if (force)
-            await CloseOrphanedConflictsOnForceAsync(gameId, versionId, machineId, version.MachineName, ct);
+        {
+            try
+            {
+                await CloseOrphanedConflictsOnForceAsync(gameId, versionId, machineId, version.MachineName, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _db.ChangeTracker.Clear();
+                try
+                {
+                    await Audit(machineId, gameId, "conflict.resolve_forced_failed", ex.Message);
+                    await _db.SaveChangesAsync(ct);
+                }
+                catch { /* the audit is a courtesy; never let it mask an upload that succeeded */ }
+            }
+        }
 
         await PruneVersionsAsync(gameId, ct);
 
