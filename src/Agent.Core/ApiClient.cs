@@ -461,4 +461,25 @@ public sealed class ApiClient
             new SetConflictPolicyRequest(policy, preferredMachineId), ct);
         resp.EnsureSuccessStatusCode();
     }
+
+    /// <summary>One version's own DTO by id — machine name, timestamp, size — null if the server does
+    /// not know it. A conflict card needs this for both of a conflict's sides; the conflict itself
+    /// only carries version ids.</summary>
+    public async Task<SaveVersionDto?> GetVersionAsync(Guid versionId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/versions/{versionId}", ct);
+        if (resp.StatusCode is HttpStatusCode.NotFound) return null;
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<SaveVersionDto>(cancellationToken: ct);
+    }
+
+    /// <summary>File count / newest-mtime for one version, derived from its archive on demand — the
+    /// same comparison the dashboard's own conflict card already shows.</summary>
+    public async Task<VersionStatsDto?> GetVersionStatsAsync(Guid versionId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/versions/{versionId}/stats", ct);
+        if (resp.StatusCode is HttpStatusCode.NotFound) return null;
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<VersionStatsDto>(cancellationToken: ct);
+    }
 }

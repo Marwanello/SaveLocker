@@ -1292,6 +1292,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/versions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SaveVersionDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/versions/{id}/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VersionStatsDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games/{id}/sync-status": {
         parameters: {
             query?: never;
@@ -1562,6 +1668,24 @@ export interface components {
             desired: string;
             changed: boolean;
         };
+        SaveVersionDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            gameId: string;
+            /** Format: uuid */
+            machineId: null | string;
+            machineName: string;
+            /** Format: date-time */
+            createdAt: string;
+            contentHash: string;
+            /** Format: int64 */
+            size: number;
+            /** Format: uuid */
+            parentVersionId: null | string;
+            /** @default false */
+            protected: boolean;
+        };
         SetConflictPolicyRequest: {
             policy: components["schemas"]["ConflictPolicy"];
             /** Format: uuid */
@@ -1590,6 +1714,12 @@ export interface components {
             steamAppId: null | number;
             pullBeforeLaunchEnabled: null | boolean;
             hasSteamCloud: null | boolean;
+        };
+        VersionStatsDto: {
+            /** Format: int32 */
+            fileCount: number;
+            /** Format: date-time */
+            newestFileWriteUtc: null | string;
         };
     };
     responses: never;

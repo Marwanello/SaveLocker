@@ -488,6 +488,60 @@ remain open — see [[Backlog]].
 
 ---
 
+**Decky conflict-resolution "Group 2" shipped (2026-08-31, this branch, no task file — the practical
+execution grouping in `tasks/conflict-resolution-ui/implementation-grouping.md`, chosen there as "the
+biggest value-per-session in the whole plan").** Phase 4 (Linux wrapper launch gate) + Phase 6 (shared
+`agent-ui` conflicts page + the `doctor`/log gap), together — the pair `implementation-grouping.md`
+picked because it makes conflict resolution end-to-end usable on a plain Linux box for the first time,
+with zero Decky/Windows/Deck-hardware dependency.
+<br>**Phase 4**: new `SyncEngine.PrepareLaunchAsync` (`LaunchDecision`/`LaunchGateResult`) replaces
+`ProtonRun.ExecuteAsync`'s bare `OnGameLaunchAsync` call — Windows' `TrayApp.cs` is untouched on
+purpose, since Phase 7 (Windows tray wiring, still open) is what would touch that, and Windows has no
+pre-launch boundary this certain anyway (`OnGameLaunchAsync`'s own doc comment). Blocks the launch
+outright for exactly one reason — a genuinely confirmed, open `ConflictFlag` — never for the game
+running elsewhere, lock contention, or a network hiccup, which all still proceed exactly as before.
+Two checks, in order: an already-open conflict for the game short-circuits before the lease is even
+taken, and "commit-before-choose" (the plan's own term) attempts an ordinary push first so unsynced
+local changes become a real, hash-verified conflict rather than a bare pull refusal — cheap in the
+overwhelmingly common case, since `PushCoreAsync` already bails on a hash comparison alone with no
+network call at all when nothing changed since the last push. New `AgentEventCodes.LaunchBlocked`.
+<br>**Phase 6**: new `agent-ui/src/components/ConflictsView.tsx` — genuinely new code against the
+agent's own local API (a distinct wire protocol from the dashboard's, per [[REPO_MAP]]), not a port of
+`web/src/components/GameDetail.tsx`'s card, though the visual shape (machine, timestamp, size, file
+count, newest-change, Use as Latest / Keep both) is deliberately copied from it — plus a fourth
+`Sidebar.tsx` nav entry, badge-numbered by open-conflict count. A conflict only ever carried version
+ids, so two new server routes were needed: agent-group `GET /versions/{id}` (mirroring the existing
+`/versions/{id}/stats`, same flat/unscoped trust boundary) and matching local-API proxies
+(`GET /api/versions/{id}`, `GET /api/versions/{id}/stats`) so the card can show machine/timestamp/size
+and file-count/newest-change for both sides. Also closes the confirmed gap Phase 0/1's own write-up
+never actually filled: `Doctor.cs` gained a "Conflicts" section, one line per open conflict plus the
+`http://127.0.0.1:5178/#conflicts` URL — informational, not a `Problem`, the same way an open conflict
+under `Manual` policy already reads elsewhere in this codebase.
+<br>**Verified live, not just built**: seeded a real two-machine divergence (register, add-game,
+diverging pushes) against a throwaway dev server, confirming a genuine `ConflictFlag` existed;
+`doctor` confirmed printing the new Conflicts section with the right game name, "overdue" flag and
+URL; a Playwright screenshot of the actual `agent-ui` page at `:5178/#conflicts` (well, the scratch
+port used here) showed both sides correctly labeled — including "This device (Machine2)" — and
+clicking "Use as Latest" resolved the conflict through the real server: the head moved to the clicked
+version, the sidebar badge cleared, and the empty state rendered. Separately confirmed with
+`savelocker run`: it refused to launch a game with a genuine open conflict (child process never
+started, exit code 1, correct message), launched normally once the conflict was resolved, and — the
+control case — that ordinary lease contention alone (no conflict) still only warns and launches, never
+blocks. `run-agent-tests.ps1` 45/45 and `run-health-tests.ps1` 22/22 unchanged (this session's
+container cannot build or run `run-winagent-tests.ps1`/`run-server-bugbounty-tests.ps1`, both of which
+hard-depend on the Windows-only `src/Agent` build). `openapi.json` and both `api-types.ts` (web,
+agent-ui) regenerated against live scratch server/daemon instances and diffed — only the two intended
+new routes/types appear in each. Every Linux-buildable project (Shared, Server, Agent.Core,
+Agent.Linux) builds clean; `agent-ui`'s `tsc -b && vite build` and `oxlint` are clean (two pre-existing,
+unrelated warnings in `AddGamesView.tsx`/`SettingsView.tsx`).
+<br>**Not yet run against real hardware or a live fleet** — this is the first phase in the expanded
+plan with a real, usable end-to-end conflict-resolution surface on a *plain* Linux box (no Decky), so
+it's the first one worth a maintainer actually trying on the real Deck's Desktop Mode or a WSL rig.
+Phases 7 (Windows tray wiring), 8 (Game Mode screen), 9 (D-Bus notify impl), 10/11 (Decky), 13
+(Playnite), and 14 (webhook + block-launch opt-in) remain open — see [[Backlog]].
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

@@ -687,6 +687,31 @@ public sealed class AgentApiServer : IDisposable
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         });
 
+        // A conflict only carries version ids; these fill in machine name/timestamp/size and the
+        // file-count/newest-change comparison for each side, the same two calls the dashboard's own
+        // conflict card already makes, mirrored here for agent-ui's Conflicts page (Phase 6).
+        app.MapGet("/api/versions/{id:guid}",
+            async Task<Results<Ok<SaveVersionDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            try
+            {
+                return await ApiClient.For(_config).GetVersionAsync(id) is { } v
+                    ? TypedResults.Ok(v) : TypedResults.NotFound();
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        app.MapGet("/api/versions/{id:guid}/stats",
+            async Task<Results<Ok<VersionStatsDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            try
+            {
+                return await ApiClient.For(_config).GetVersionStatsAsync(id) is { } s
+                    ? TypedResults.Ok(s) : TypedResults.NotFound();
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
         // "Is my local save the same as the cloud's, without downloading it" — cheap on the network
         // (no bytes cross the wire), NOT cheap on disk: the local hash still walks and reads every
         // file in the save folder, the same cost a push's own hash pays, so it runs off the request

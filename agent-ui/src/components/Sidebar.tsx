@@ -1,18 +1,20 @@
-import { Monitor, Plus, Settings } from 'lucide-react'
+import { GitBranch, Monitor, Plus, Settings } from 'lucide-react'
 import type { View } from '../types'
 
 interface Props {
   activeView: View
   onNavigate: (v: View) => void
+  conflictCount: number
 }
 
 const NAV: { view: View; label: string; Icon: React.ComponentType<{ size: number; strokeWidth: number; color: string }> }[] = [
   { view: 'overview', label: 'Overview', Icon: Monitor },
   { view: 'addGames', label: 'Add Games', Icon: Plus },
+  { view: 'conflicts', label: 'Conflicts', Icon: GitBranch },
   { view: 'settings', label: 'Settings', Icon: Settings },
 ]
 
-export function Sidebar({ activeView, onNavigate }: Props) {
+export function Sidebar({ activeView, onNavigate, conflictCount }: Props) {
   return (
     <div style={{
       width: 212, minWidth: 212, background: '#1E252A',
@@ -23,6 +25,7 @@ export function Sidebar({ activeView, onNavigate }: Props) {
       <nav style={{ padding: '10px 8px', flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
         {NAV.map(({ view, label, Icon }) => {
           const active = activeView === view
+          const badge = view === 'conflicts' ? conflictCount : 0
           return (
             <div
               key={view}
@@ -38,7 +41,13 @@ export function Sidebar({ activeView, onNavigate }: Props) {
               }}
             >
               <Icon size={14} strokeWidth={1.75} color={active ? '#129271' : '#9CA3AF'} />
-              <span>{label}</span>
+              <span style={{ flex: 1 }}>{label}</span>
+              {badge > 0 && (
+                <span style={{
+                  background: '#e5534b', color: '#fff', fontSize: 10, fontWeight: 700,
+                  borderRadius: 8, padding: '1px 6px', lineHeight: 1.4,
+                }}>{badge}</span>
+              )}
             </div>
           )
         })}

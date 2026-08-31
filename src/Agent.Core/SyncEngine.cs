@@ -2,6 +2,28 @@
 
 namespace SaveLocker.Agent;
 
+/// <summary>What <see cref="SyncEngine.PrepareLaunchAsync"/> decided. Only <see cref="Blocked"/>
+/// may stop a launch — every other value still starts the game exactly as before Phase 4.</summary>
+public enum LaunchDecision
+{
+    /// <summary>Nothing stood in the way; the pre-launch pull (if any) already ran.</summary>
+    Proceed,
+    /// <summary>Launching anyway, but the pre-launch pull was skipped — another machine holds the
+    /// lease, so restoring here could race it. The existing lease-warning behaviour, unchanged.</summary>
+    ProceedSyncPaused,
+    /// <summary>A genuinely confirmed, open conflict exists for this game. The caller must not start
+    /// the child process — <see cref="ConflictId"/> is what a resolve UI needs to act on it.</summary>
+    Blocked
+}
+
+/// <summary>Result of <see cref="SyncEngine.PrepareLaunchAsync"/> — the Linux launch wrapper's own
+/// answer to "is it safe to start this game right now" (tasks/conflict-resolution-ui/plan.md, Phase 4).</summary>
+public record LaunchGateResult(
+    LaunchDecision Decision,
+    string? Reason = null,
+    Guid? ConflictId = null,
+    string? HolderMachineName = null);
+
 /// <summary>
 /// Coordinates a tracked game's saves with the server: archive + hash + upload
 /// (push), download + restore (pull), and the pre-launch / post-exit flows.
@@ -754,6 +776,87 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                  "(the game already has its saves open; pull before launching instead).");
 
         return (true, null);
+    }
+
+    /// <summary>
+    /// The Linux launch wrapper's pre-launch gate (tasks/conflict-resolution-ui/plan.md, Phase 4).
+    /// Every other pre-launch outcome — the game running elsewhere, lock contention, a network
+    /// hiccup, another machine holding the lease — still launches exactly as <see cref="OnGameLaunchAsync"/>
+    /// always has. <see cref="LaunchDecision.Blocked"/> is the one new outcome, and it fires for
+    /// exactly one reason: a genuinely confirmed conflict, a real hash-verified divergence between
+    /// this machine's save and the cloud's, never a mere warning. Only <c>ProtonRun</c> calls this —
+    /// Windows has no boundary this certain (<see cref="OnGameLaunchAsync"/>'s own doc comment), so it
+    /// keeps calling that method with <c>preLaunch: false</c> and never blocks (Phase 7, deferred).
+    /// </summary>
+    public async Task<LaunchGateResult> PrepareLaunchAsync(TrackedGame game, CancellationToken ct = default)
+    {
+        if (RefuseIfRetired(game, "launch handling"))
+            return new LaunchGateResult(LaunchDecision.Proceed);
+        using var linked = LinkRetirement(ct);
+        ct = linked.Token;
+
+        // Already known and still open — no lease or pull needed to learn this. Whichever machine's
+        // push originally diverged, the head is ambiguous until a human or a policy resolves it, so
+        // nothing may safely launch into it.
+        if (await FindOpenConflictAsync(game) is { } already)
+            return Blocked(game, already);
+
+        var lease = await _api.AcquireLeaseAsync(game.GameId);
+        if (!lease.Granted)
+        {
+            var holder = lease.Lease.HolderMachineName;
+            Alert($"[{game.Name}] WARNING: saves are checked out by '{holder}'. " +
+                 "Launched without pulling — a conflict may occur on exit.",
+                AgentEventCodes.LeaseHeldElsewhere, AgentEventSeverity.Warning, game.GameId);
+            return new LaunchGateResult(LaunchDecision.ProceedSyncPaused,
+                $"saves are checked out by '{holder}' — launching without pulling.",
+                HolderMachineName: holder);
+        }
+        StartLeaseRenewer(game);
+
+        // Commit-before-choose: an ordinary push first, so a local save with changes never yet
+        // pushed becomes a real, hash-verified conflict instead of leaving the pull below to refuse
+        // with nothing recoverable to show for it. Cheap in the overwhelmingly common case — nothing
+        // changed since the last push, so this bails on a hash comparison alone with no network call
+        // at all (PushCoreAsync). A policy that names this machine the winner resolves it invisibly,
+        // exactly as it already does for any other push (TryPolicyResolveAsync); only a genuine,
+        // still-open divergence reaches here as UploadStatus.Conflict.
+        var pushResult = await PushAsync(game, force: false, settle: false, ct);
+        if (pushResult?.Status == UploadStatus.Conflict && pushResult.Conflict is { } fresh)
+            return Blocked(game, fresh);
+
+        await PullAsync(game, force: false, ct);
+        return new LaunchGateResult(LaunchDecision.Proceed);
+    }
+
+    /// <summary>The open conflict already recorded for this game, if any — checked before touching
+    /// the lease or attempting anything, since nothing else needs to run to answer this.</summary>
+    private async Task<ConflictDto?> FindOpenConflictAsync(TrackedGame game)
+    {
+        try
+        {
+            var state = await _api.GetStateAsync(game.GameId);
+            if (state?.HasOpenConflict != true) return null;
+            var conflicts = await _api.GetOpenConflictsAsync();
+            return conflicts.FirstOrDefault(c => c.GameId == game.GameId);
+        }
+        catch (Exception ex)
+        {
+            // Fails open, like every other pre-launch check in this method: a server the agent
+            // cannot currently reach must not be the reason a player can't play at all.
+            _log($"[{game.Name}] could not check for an open conflict before launch: {ex.Message}");
+            return null;
+        }
+    }
+
+    private LaunchGateResult Blocked(TrackedGame game, ConflictDto conflict)
+    {
+        Alert($"[{game.Name}] BLOCKED launch: your save has diverged from the cloud and this is a " +
+             "confirmed, unresolved conflict. Resolve it at http://127.0.0.1:5178/#conflicts, with " +
+             "`savelocker conflicts` / `savelocker resolve-conflict`, or in the dashboard — then launch again.",
+            AgentEventCodes.LaunchBlocked, AgentEventSeverity.Error, game.GameId);
+        return new LaunchGateResult(LaunchDecision.Blocked,
+            "a confirmed conflict is open for this game", conflict.Id);
     }
 
     /// <summary>Post-exit: push the final save and release the lease.</summary>

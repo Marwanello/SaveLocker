@@ -1,23 +1,31 @@
 import { useEffect, useState, useCallback } from 'react'
 import { HardDrive } from 'lucide-react'
-import type { View, AgentState } from './types'
+import type { View, AgentState, Conflict, TrackedGame } from './types'
 import { api } from './api'
 import { Sidebar } from './components/Sidebar'
 import { StatusHeader } from './components/StatusHeader'
 import { OverviewView } from './components/OverviewView'
 import { AddGamesView } from './components/AddGamesView'
+import { ConflictsView } from './components/ConflictsView'
 import { SettingsView } from './components/SettingsView'
 import logoUrl from './assets/SaveLocker_Logo_crop.png'
 
 export default function App() {
   const [view, setView] = useState<View>(() => {
     const hash = window.location.hash.slice(1) as View
-    return (['overview', 'addGames', 'settings'] as View[]).includes(hash) ? hash : 'addGames'
+    return (['overview', 'addGames', 'conflicts', 'settings'] as View[]).includes(hash) ? hash : 'addGames'
   })
   const [state, setState] = useState<AgentState | null>(null)
+  const [conflicts, setConflicts] = useState<Conflict[]>([])
+  const [games, setGames] = useState<TrackedGame[]>([])
 
   const refreshState = useCallback(() => {
     api.state().then(setState).catch(console.error)
+  }, [])
+
+  const refreshConflicts = useCallback(() => {
+    api.conflicts().then(setConflicts).catch(console.error)
+    api.games().then(setGames).catch(console.error)
   }, [])
 
   useEffect(() => {
@@ -25,6 +33,12 @@ export default function App() {
     const id = setInterval(refreshState, 10_000)
     return () => clearInterval(id)
   }, [refreshState])
+
+  useEffect(() => {
+    refreshConflicts()
+    const id = setInterval(refreshConflicts, 15_000)
+    return () => clearInterval(id)
+  }, [refreshConflicts])
 
   return (
     <div style={{
@@ -56,11 +70,19 @@ export default function App() {
 
         {/* Main row: sidebar nav + content */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          <Sidebar activeView={view} onNavigate={setView} />
+          <Sidebar activeView={view} onNavigate={setView} conflictCount={conflicts.length} />
 
           <div style={{ flex: 1, minWidth: 0, background: '#2A3238', position: 'relative', overflow: 'hidden' }}>
             {view === 'overview' && <OverviewView state={state} onWarningDismissed={refreshState} />}
             {view === 'addGames' && <AddGamesView onEnrolled={refreshState} />}
+            {view === 'conflicts' && (
+              <ConflictsView
+                conflicts={conflicts}
+                games={games}
+                machineName={state?.machineName ?? ''}
+                onRefresh={refreshConflicts}
+              />
+            )}
             {view === 'settings' && <SettingsView state={state} onSaved={refreshState} />}
           </div>
         </div>

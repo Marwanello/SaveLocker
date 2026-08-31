@@ -1252,6 +1252,20 @@ public sealed class SyncService
         return (version, _store.OpenRead(version.ArchivePath));
     }
 
+    /// <summary>
+    /// One version's own DTO by id — machine name, timestamp, size — the other half of what a
+    /// conflict card needs beside <see cref="GetVersionStatsAsync"/>'s file count / newest-mtime.
+    /// Agent-group and flat, same trust boundary as <see cref="DownloadVersionAsync"/> and the stats
+    /// route beside it: a valid machine key already gates the whole group, so this needs no
+    /// per-game scoping either.
+    /// </summary>
+    public async Task<SaveVersionDto?> GetVersionAsync(Guid versionId)
+    {
+        var version = await _db.SaveVersions.Include(v => v.Machine)
+            .FirstOrDefaultAsync(v => v.Id == versionId);
+        return version?.ToDto();
+    }
+
     /// <summary>File count / newest-mtime for one version's archive, cached per version id (an
     /// archive's contents never change once uploaded). <paramref name="gameId"/> is null for the
     /// agent group's flat <c>/versions/{id}/stats</c> route (a valid machine key already gates the
