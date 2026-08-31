@@ -1,8 +1,37 @@
-# Session summary — 2026-08-30
+# Session summary — 2026-08-30/31
 
 Conflict-resolution plan expanded from 9 to 15 phases to close a real gap (no resolve UI existed
-outside Decky/Playnite), all planning docs consolidated into `tasks/conflict-resolution-ui/`, and
-**Phase 5** (Linux environment-capability detection) implemented and shipped as PR #23.
+outside Decky/Playnite), all planning docs consolidated into `tasks/conflict-resolution-ui/`, **Phase 5**
+(Linux environment-capability detection) implemented and shipped as PR #23, and a grouping mistake for
+Phase 9 caught and corrected before any of its code was written.
+
+## Phase 9 follow-up (2026-08-31)
+
+**Asked:** why wasn't Phase 9 implemented if it was "part of Group 1" — then to implement it if so.
+
+**Found:** only Phase 9's D-Bus **library decision** (`gdbus`) was ever in Group 1; the notification-
+sending code itself was always scoped later. Before writing any of it, its full dependency was checked:
+Phase 9 needs Phase 6 (the `agent-ui` conflicts page — the action button's target), which doesn't exist
+yet. Given three options (build Phase 6 first, implement Phase 9 now with a temporary target, or
+implement just the notification-firing logic with no button), the user chose a fourth: **fix the
+grouping itself**, since re-checking `plan.md`'s dependency diagram showed the *original* grouping had
+already made a mistake — `implementation-grouping.md` had bundled Phase 9's implementation into the same
+group as Decky (10/11) and Playnite (13) under a "needs real hardware" rationale that doesn't actually
+apply to it. Phase 9's only real dependencies are Phase 5 (done) and Phase 6 — never the separate
+`SaveLocker-Decky` repo, never real hardware to *build* (only to verify a popup fires).
+
+**Fixed (docs only, no app code):** `implementation-grouping.md` now has a dedicated **Group 3** for
+Phase 9's implementation, placed right after Group 2 (which ships its actual dependency, Phase 6), with
+the former Groups 3–5 renumbered to 4–6 and a "Correction found" note documenting the mistake — the same
+transparency convention already used for the Phase 12 correction. Phase 9 itself remains unimplemented,
+per instruction. Committed as `764ca3c`.
+
+**Also pulled in:** a review-fix commit (`e63f5c2`) pushed to the same PR by a separate session,
+addressing PR #23 findings — a `Console.IsInputRedirected`-can-throw crash guard, a new shared
+`ProcessRunner.cs` deduplicating the subprocess-run logic `DesktopEnvironment` and `SystemdAutoStart`
+had each implemented separately, a `CLAUDE.md` note documenting `tasks/conflict-resolution-ui/`'s
+deliberate exception to the vault's flat-by-design rule, and a missing `IsInteractiveTty` test
+assertion. Clean fast-forward, no conflicts.
 
 ## What was asked
 

@@ -680,3 +680,78 @@ inside Desktop Mode, or importing `systemctl --user show-environment` first.
 - Real-hardware confirmation of the "Session" block's values in Game Mode vs. Desktop Mode is still
   outstanding — flagged in the PR for the user to check.
 - Offered to `subscribe_pr_activity` on PR #23; not yet accepted or declined as of this write-up.
+
+---
+
+## 2026-08-30/31 — Phase 9 regrouped off Decky/Playnite; PR #23 review-fix pulled in
+
+**Branch:** `save-conflicts-phase-5`. PR: https://github.com/Marwanello/SaveLocker/pull/23.
+
+### Request sequence
+
+1. Asked why Phase 9 wasn't implemented, since it seemed to be part of Group 1 — then asked to
+   implement it if it was.
+2. After being shown Phase 9's full implementation has a second real dependency (Phase 6, not yet
+   built) beyond Phase 5, and asked to choose between building Phase 6 first, implementing Phase 9 now
+   with a temporary action-button target, or implementing just the notification-firing logic with no
+   action button: chose a fourth option — regroup the phases so no dependency conflicts exist, place
+   Phase 9 in the group it actually belongs to, and don't implement it yet.
+3. Asked to pull the latest branch changes, then update both `progress.md` and `session_summary.md`.
+
+### What was found
+
+Only Phase 9's **D-Bus library spike/decision** (picking `gdbus`) was ever part of Group 1 — the
+notification-sending implementation itself was always scoped to a later group. But that later group
+(the original Group 5) bundled it with Decky (Phase 10/11) and Playnite (Phase 13) under a "needs real
+hardware" rationale that, on re-checking `plan.md`'s own dependency diagram, doesn't actually hold:
+Phase 9's only real dependencies are Phase 5 (done) and Phase 6 (not yet built) — never the separate
+`SaveLocker-Decky` repo, never Playnite, and building it doesn't require real hardware at all. Only
+*verifying* a popup actually fires does. The original grouping had silently coupled a buildable,
+hardware-independent phase to an unrelated repo-access and hardware requirement it never needed.
+
+### What was built
+
+`implementation-grouping.md` corrected, no application code touched:
+
+- The "buildable/verifiable here" table's Phase 9 row rewritten to state its real dependencies (Phase 5
+  + Phase 6 only, no Decky repo needed to build).
+- A new **Group 3** created for Phase 9's actual implementation, placed right after Group 2 (which
+  ships Phase 6, the action button's target) rather than after the Decky/hardware groups. Old Groups
+  3–5 renumbered to 4–6 (Phase 8; Phase 7+14 on a Windows machine; Phase 10/11+13 needing the Decky repo
+  and real hardware, with Phase 9 removed from this last group).
+- A new "Correction found before Group 3" subsection documenting the miscategorization and the fix,
+  matching this doc's existing convention for the Phase 12 correction.
+- The final sequencing code block updated to match the new 6-group numbering.
+
+Committed as `764ca3c` ("Docs: regroup Phase 9's implementation away from Decky/Playnite") and pushed.
+
+### Pulled in: PR #23 review-fix commit from another session
+
+`git pull origin save-conflicts-phase-5` fast-forwarded `764ca3c` → `e63f5c2` ("Fix PR #23 review
+findings: crash guard, dedup, doc rule, test coverage"), authored by a separate Claude session working
+the PR's review findings directly (not this session). Four changes:
+
+- **`DesktopEnvironment.IsInteractiveTty`** now wraps `Console.IsInputRedirected` in a try/catch
+  (`IsInteractiveTtySafe`) — it can throw when stdin is in an unusual state (e.g. its file descriptor
+  closed outright), which would have crashed `doctor` outright instead of just reporting "no" like
+  every other probe in the class.
+- **Deduplication:** the process-run-with-drained-streams helper that `DesktopEnvironment.Run` (Phase 5)
+  and `SystemdAutoStart.Run` had each implemented separately is now one shared internal
+  `Agent.Linux/ProcessRunner.cs`, with a default infinite-wait overload (matching
+  `SystemdAutoStart`'s prior behavior) and a timed overload (matching `DesktopEnvironment`'s 2-second
+  D-Bus-hang guard) — so a future deadlock/timeout fix lands once instead of twice.
+- **`CLAUDE.md`** gained a one-paragraph note documenting `tasks/conflict-resolution-ui/` as a
+  deliberate, disclosed exception to the vault's "flat by design" rule — a standing multi-session design
+  doc set read as reference material, not a one-shot `tasks/*.md` file.
+- **`run-linux-tests.sh`**: added the missing `IsInteractiveTty: no` assertion for the baseline "no
+  session" case, pinned deterministically via `< /dev/null` stdin redirection (the check depends on the
+  harness's own stdin, which varies between a developer's terminal and CI's redirected one).
+
+No merge conflicts — a clean fast-forward on top of this session's own regrouping commit.
+
+### Not done
+
+- Phase 9's actual implementation still not started, per this session's explicit instruction.
+- Real-hardware confirmation of the Phase 5 "Session" block (Game Mode vs. Desktop Mode) still
+  outstanding.
+- Whether to `subscribe_pr_activity` on PR #23 remains an open offer.
