@@ -626,6 +626,25 @@ Overview) showing the same restyled card in immediate mode over the full shell. 
 `tsc -b && vite build` and `oxlint` clean (same two pre-existing warnings). No server/`Agent.Core`
 changes.
 
+**`seed-test-conflict.sh` now stages `agent-ui` itself, same session, follow-up to the above** — the
+maintainer hit exactly the documented WSL gotcha (*"WSL usually has no native `node`"*, `Gotchas.md`)
+running the manual copy step by hand: plain WSL has no native Node, so `npm` resolves through Windows
+PATH interop to `/mnt/c/.../npm.exe`, which fails on this shell's UNC-style cwd (`CMD.EXE...UNC paths
+are not supported`, then `'tsc' is not recognized`). New `stage_ui()` (mirrors `testenv.sh`'s own
+function of the same name and purpose) tries, in order: a **native** Linux npm right there (checked by
+resolving `command -v npm` and rejecting anything under `/mnt/*` — that path can only be Windows'
+npm.exe reached through WSL interop); an already-built `agent-ui/dist` on disk; a Windows-side checkout
+via `$SAVELOCKER_WIN_REPO` (same convention `testenv.sh` already established); and only then a refusal
+naming both fixes, rather than starting a daemon whose UI is silently a blank page. Also fixed the copy
+destination itself: `AgentApiServer` serves from `<bin>/agent-ui` directly, not `<bin>/agent-ui/dist` —
+an early manual attempt nested it one level too deep and got a 404, not the old UI. `up`/`again` both
+call it now; no more manual `npm run build` + copy step. Verified live in this session's native-Linux
+container (the one environment here that has a real npm): fresh `clean` → `up` auto-built and staged
+`agent-ui/dist`, the Conflicts page rendered correctly, and a second `again` rebuilt cleanly too. The
+WSL-without-native-node and `SAVELOCKER_WIN_REPO` branches are reasoned through against the documented
+gotcha but not exercised on a real WSL box this session — worth a maintainer confirmation next time
+this is used from Windows.
+
 ---
 
 ## Where things stand

@@ -34,6 +34,8 @@ SERVER_PID="$STATE/server.pid"
 DAEMON_PID="$STATE/daemon.pid"
 MACHINE_A="$STATE/machine-a"   # "Living Room PC" — pushes first, then the daemon runs as THIS one
 MACHINE_B="$STATE/machine-b"   # "This Device" — diverges after A, is what you browse as
+UI_DIST="$REPO/agent-ui/dist"
+BIN_UI="$REPO/src/Agent.Linux/bin/Debug/net10.0/agent-ui"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -54,6 +56,48 @@ cmd_build() {
   echo "== building Server + Agent.Linux (--no-incremental) =="
   dotnet build "$REPO/src/Server/SaveLocker.Server.csproj" --no-incremental -v q --nologo || die "server build failed"
   dotnet build "$REPO/src/Agent.Linux/SaveLocker.Agent.Linux.csproj" --no-incremental -v q --nologo || die "agent build failed"
+}
+
+# True only for a real Linux npm. Under WSL with no native Node installed, `npm` resolves through
+# Windows PATH interop to /mnt/c/.../npm.exe, which fails on this shell's UNC-style cwd — the exact
+# "CMD.EXE... UNC paths are not supported" / "'tsc' is not recognized" failure this exists to dodge.
+is_native_npm() {
+  local p; p="$(command -v npm 2>/dev/null)" || return 1
+  case "$p" in /mnt/*) return 1 ;; *) return 0 ;; esac
+}
+
+# Serving the daemon's UI needs a built agent-ui/dist staged next to the binary (AgentApiServer
+# looks for it at `<bin>/agent-ui`, not `<bin>/agent-ui/dist` — a nested copy silently serves
+# nothing and the page 404s). Three ways to get one, cheapest/freshest first:
+#   1. A native Linux npm right here — build it directly, no Windows round-trip needed at all.
+#   2. No native npm (plain WSL), but $SAVELOCKER_WIN_REPO points at a Windows-side checkout that
+#      already has agent-ui/dist built there (same convention testenv.sh's own stage_ui uses) —
+#      copy it in.
+#   3. Neither — refuse with the actual fix, rather than starting a daemon whose UI is a blank page.
+stage_ui() {
+  if is_native_npm; then
+    echo "== building agent-ui with the native npm at $(command -v npm) =="
+    ( cd "$REPO/agent-ui" && { [ -d node_modules ] || npm install --no-audit --no-fund; } ) \
+      || die "npm install failed"
+    ( cd "$REPO/agent-ui" && npm run build ) || die "agent-ui build failed"
+  elif [ -f "$UI_DIST/index.html" ]; then
+    echo "== no native npm here — reusing the agent-ui/dist already on disk =="
+  elif [ -n "${SAVELOCKER_WIN_REPO:-}" ] && [ -f "$SAVELOCKER_WIN_REPO/agent-ui/dist/index.html" ]; then
+    echo "== no native npm in WSL — staging agent-ui/dist built on Windows at \$SAVELOCKER_WIN_REPO =="
+    rm -rf "$UI_DIST"
+    cp -r "$SAVELOCKER_WIN_REPO/agent-ui/dist" "$UI_DIST"
+  else
+    die "no agent-ui/dist to serve, and no way to build one from here. Either:
+  - install a native Linux Node in WSL, then re-run:
+      curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs
+  - or build agent-ui on Windows (cd agent-ui && npm run build there), then re-run this with:
+      SAVELOCKER_WIN_REPO=/mnt/c/path/to/your/Windows/SaveLocker $0 $CMD"
+  fi
+
+  rm -rf "$BIN_UI"
+  mkdir -p "$(dirname "$BIN_UI")"
+  cp -r "$UI_DIST" "$BIN_UI"
+  echo "staged agent-ui ($(find "$BIN_UI" -type f | wc -l) files)"
 }
 
 start_server() {
@@ -138,6 +182,7 @@ case "$CMD" in
   up)
     [ -f "$REPO/src/Agent.Linux/bin/Debug/net10.0/savelocker.dll" ] && \
       [ -f "$REPO/src/Server/bin/Debug/net10.0/SaveLocker.Server.dll" ] || cmd_build
+    stage_ui
     start_server
     seed_conflict
     start_daemon
@@ -152,9 +197,12 @@ case "$CMD" in
     # head). Reusing the same server state made whichever side pushed first inherit the OTHER run's
     # leftover head and conflict unpredictably. Wiping server-data too keeps this command exactly as
     # deterministic as a fresh `up`.
+    [ -f "$REPO/src/Agent.Linux/bin/Debug/net10.0/savelocker.dll" ] && \
+      [ -f "$REPO/src/Server/bin/Debug/net10.0/SaveLocker.Server.dll" ] || cmd_build
     stop_pidfile "$DAEMON_PID" "daemon"
     stop_pidfile "$SERVER_PID" "server"
     rm -rf "$STATE/save-a" "$STATE/save-b" "$MACHINE_A" "$MACHINE_B" "$STATE/server-data"
+    stage_ui
     start_server
     seed_conflict
     start_daemon
