@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net.Sockets;
 
 namespace SaveLocker.Agent.Linux;
@@ -52,8 +51,19 @@ public static class DesktopEnvironment
             // Only worth asking the bus a question if a bus actually answered above — an
             // unreachable/absent bus can't own anything, and this skips spawning gdbus for nothing.
             NotificationDaemonPresent: hasSessionBus && NotificationsNameOwned(),
-            IsInteractiveTty: !Console.IsInputRedirected,
+            IsInteractiveTty: IsInteractiveTtySafe(),
             RunningAsSystemdUnit: HasEnv("INVOCATION_ID"));
+    }
+
+    /// <summary>
+    /// Console.IsInputRedirected can throw when stdin is in an unusual state (e.g. its file
+    /// descriptor closed outright rather than redirected) — exactly the kind of process context
+    /// doctor may be invoked from. Collapses to "no", matching every other probe in this class.
+    /// </summary>
+    private static bool IsInteractiveTtySafe()
+    {
+        try { return !Console.IsInputRedirected; }
+        catch { return false; }
     }
 
     private static bool HasEnv(string name) =>
@@ -103,59 +113,27 @@ public static class DesktopEnvironment
     /// D-Bus client). <c>gdbus</c> missing, erroring, or printing anything unexpected all collapse to
     /// "can't confirm a notification daemon" — this check exists only to decide whether attempting a
     /// notification is worth it at all, so an inconclusive answer is treated the same as "no."
+    /// <para>
+    /// Bounded to a short timeout: a session bus can accept a connection and then never complete the
+    /// D-Bus handshake (a stale or half-started bus, not merely a test contrivance), and
+    /// <c>gdbus</c> would then hang waiting on it forever. This detection exists specifically so
+    /// callers — <c>doctor</c> today, the launch wrapper and an optional notification later — never
+    /// block on something outside this process's control, the same rule `plan.md`'s "must never
+    /// hang" section already holds the wrapper to.
+    /// </para>
     /// </summary>
     private static bool NotificationsNameOwned()
     {
-        var (exit, stdout, _) = Run("gdbus", "call", "--session",
-            "--dest", "org.freedesktop.DBus",
-            "--object-path", "/org/freedesktop/DBus",
-            "--method", "org.freedesktop.DBus.NameHasOwner",
-            "org.freedesktop.Notifications");
+        var (exit, stdout, _) = ProcessRunner.Run("gdbus",
+            [
+                "call", "--session",
+                "--dest", "org.freedesktop.DBus",
+                "--object-path", "/org/freedesktop/DBus",
+                "--method", "org.freedesktop.DBus.NameHasOwner",
+                "org.freedesktop.Notifications",
+            ],
+            TimeSpan.FromSeconds(2));
         // gdbus prints "(true,)" or "(false,)" to stdout on success.
         return exit == 0 && stdout.Contains("(true", StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// Never throws — a box with no <c>gdbus</c> binary (a minimal distro, a container) simply
-    /// reports the daemon as unconfirmed, mirroring <c>SystemdAutoStart.Run</c>'s same contract for
-    /// the same reason. Both streams are drained concurrently before the wait, for the same deadlock
-    /// reason documented there.
-    /// <para>
-    /// Bounded to a short timeout, unlike that sibling: a session bus can accept a connection and
-    /// then never complete the D-Bus handshake (a stale or half-started bus, not merely a test
-    /// contrivance), and <c>gdbus</c> would then hang waiting on it forever. This detection exists
-    /// specifically so callers — <c>doctor</c> today, the launch wrapper and an optional notification
-    /// later — never block on something outside this process's control, the same rule
-    /// `plan.md`'s "must never hang" section already holds the wrapper to.
-    /// </para>
-    /// </summary>
-    private static (int ExitCode, string StdOut, string StdErr) Run(string file, params string[] args)
-    {
-        try
-        {
-            var psi = new ProcessStartInfo(file)
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            };
-            foreach (var a in args) psi.ArgumentList.Add(a);
-
-            using var p = Process.Start(psi);
-            if (p is null) return (-1, "", "");
-
-            var stdout = p.StandardOutput.ReadToEndAsync();
-            var stderr = p.StandardError.ReadToEndAsync();
-            if (!p.WaitForExit(TimeSpan.FromSeconds(2)))
-            {
-                try { p.Kill(entireProcessTree: true); } catch { /* best effort */ }
-                return (-1, "", "");
-            }
-            return (p.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
-        }
-        catch (Exception)
-        {
-            return (-1, "", "");
-        }
     }
 }

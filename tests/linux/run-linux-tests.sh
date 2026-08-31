@@ -356,6 +356,13 @@ check "no session: notification daemon unconfirmed" "$(contains "${out}" "notifi
 check "no session: reported as an interactive process, not the unit" \
   "$(contains "${out}" "running as: interactive process")"
 
+# IsInteractiveTty depends on the harness's OWN stdin, which varies by how this script is invoked
+# (a developer's real terminal vs. CI's redirected/closed one) — `< /dev/null` pins it here so the
+# check is deterministic regardless.
+out_no_tty="$(agent doctor --config "${deck_cfg}" < /dev/null)"
+check "no session: interactive terminal reported no" \
+  "$(contains "${out_no_tty}" "interactive terminal: no")"
+
 # A bus address set but pointing at nothing real (a stale/copied env var) must not read as a real
 # bus — presence of the variable alone is not the claim this makes. Uses its own variable, not
 # `out`: the MoonDeck checks further below still read `out` from the base doctor call above it.
