@@ -645,6 +645,27 @@ WSL-without-native-node and `SAVELOCKER_WIN_REPO` branches are reasoned through 
 gotcha but not exercised on a real WSL box this session — worth a maintainer confirmation next time
 this is used from Windows.
 
+**`seed-test-conflict.sh` also self-heals npm/cli#4828, hit for real on the maintainer's own WSL
+worktree (`.claude/worktrees/...`, same session, immediate follow-up).** `npm run build` died with
+`Cannot find native binding` — rolldown's (Vite 8's bundler) platform-specific `.node` binary either
+never got installed or went stale in this worktree's `node_modules`, a known npm bug
+(https://github.com/npm/cli/issues/4828) whose own fix is "delete `node_modules` and
+`package-lock.json`, reinstall." New `build_ui_or_recover()` tries a normal build first, greps the
+captured output for that exact message on failure, and only then does the clean
+`node_modules`+`package-lock.json` wipe and reinstall + one retry — a build that fails for any other
+reason still surfaces its real log and dies, so this never masks an actual code problem as "just
+reinstall." Confirmed against a faithful repro, not the error text alone: deleted this repo's own
+`@rolldown/binding-linux-x64-gnu/*.node` (the exact file the real error names) and ran `up` — it
+detected the failure, reinstalled, and rebuilt successfully on the retry. A first attempt at
+reproducing it by corrupting `rolldown`'s `package.json` main field instead threw a *different*
+`ERR_MODULE_NOT_FOUND` earlier in module resolution — not a faithful repro of the reported bug, caught
+by actually reading the diverging error rather than assuming the first repro attempt matching "some
+error" was good enough. `agent-ui/node_modules` and `package-lock.json` restored to their committed
+state afterward (the repro necessarily dirties both; regenerating `package-lock.json` also happens to
+bump transitively-pinned `^`-range packages like `vite` 8.1.3→8.2.2, an expected but noteworthy side
+effect of the real fix a maintainer hitting this for real would see too, worth knowing rather than
+being surprised by).
+
 ---
 
 ## Where things stand

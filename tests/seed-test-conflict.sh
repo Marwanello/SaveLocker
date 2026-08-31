@@ -66,6 +66,28 @@ is_native_npm() {
   case "$p" in /mnt/*) return 1 ;; *) return 0 ;; esac
 }
 
+# Works around npm/cli#4828: npm sometimes fails to install the right platform-specific optional
+# native binding (here, rolldown's — Vite 8's bundler), even though package-lock.json lists it
+# correctly, leaving a node_modules that LOOKS installed but errors on the first real build with
+# "Cannot find native binding". A worktree is exactly where this shows up, since its node_modules
+# can outlive whatever environment first populated it. One retry after a genuinely clean reinstall
+# is the fix npm's own error message gives; do it automatically instead of asking every time.
+build_ui_or_recover() {
+  local log; log="$(mktemp)"
+  if ( cd "$REPO/agent-ui" && npm run build ) >"$log" 2>&1; then
+    cat "$log"; rm -f "$log"; return 0
+  fi
+  if grep -q "Cannot find native binding" "$log"; then
+    echo "== agent-ui build hit npm/cli#4828 (missing native binding) — reinstalling clean and retrying =="
+    rm -f "$log"
+    rm -rf "$REPO/agent-ui/node_modules" "$REPO/agent-ui/package-lock.json"
+    ( cd "$REPO/agent-ui" && npm install --no-audit --no-fund ) || return 1
+    ( cd "$REPO/agent-ui" && npm run build ) || return 1
+    return 0
+  fi
+  cat "$log"; rm -f "$log"; return 1
+}
+
 # Serving the daemon's UI needs a built agent-ui/dist staged next to the binary (AgentApiServer
 # looks for it at `<bin>/agent-ui`, not `<bin>/agent-ui/dist` — a nested copy silently serves
 # nothing and the page 404s). Three ways to get one, cheapest/freshest first:
@@ -79,7 +101,7 @@ stage_ui() {
     echo "== building agent-ui with the native npm at $(command -v npm) =="
     ( cd "$REPO/agent-ui" && { [ -d node_modules ] || npm install --no-audit --no-fund; } ) \
       || die "npm install failed"
-    ( cd "$REPO/agent-ui" && npm run build ) || die "agent-ui build failed"
+    build_ui_or_recover || die "agent-ui build failed"
   elif [ -f "$UI_DIST/index.html" ]; then
     echo "== no native npm here — reusing the agent-ui/dist already on disk =="
   elif [ -n "${SAVELOCKER_WIN_REPO:-}" ] && [ -f "$SAVELOCKER_WIN_REPO/agent-ui/dist/index.html" ]; then
