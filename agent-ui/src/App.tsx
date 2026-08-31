@@ -7,6 +7,7 @@ import { StatusHeader } from './components/StatusHeader'
 import { OverviewView } from './components/OverviewView'
 import { AddGamesView } from './components/AddGamesView'
 import { ConflictsView } from './components/ConflictsView'
+import { SyncConflictModal } from './components/SyncConflictModal'
 import { SettingsView } from './components/SettingsView'
 import logoUrl from './assets/SaveLocker_Logo_crop.png'
 
@@ -18,15 +19,30 @@ export default function App() {
   const [state, setState] = useState<AgentState | null>(null)
   const [conflicts, setConflicts] = useState<Conflict[]>([])
   const [games, setGames] = useState<TrackedGame[]>([])
+  // Non-null only while the sync-time pop-up is up (Overview's "Sync now" surfaced at least one
+  // conflict). Deliberately separate from `conflicts`: the passive 15s poll below must never open
+  // this on its own — only an explicit Sync now does, so nothing interrupts the user unprompted.
+  const [syncQueue, setSyncQueue] = useState<Conflict[] | null>(null)
 
   const refreshState = useCallback(() => {
     api.state().then(setState).catch(console.error)
   }, [])
 
-  const refreshConflicts = useCallback(() => {
-    api.conflicts().then(setConflicts).catch(console.error)
-    api.games().then(setGames).catch(console.error)
+  const refreshConflicts = useCallback(async (): Promise<Conflict[]> => {
+    try {
+      const [cs, gs] = await Promise.all([api.conflicts(), api.games()])
+      setConflicts(cs)
+      setGames(gs)
+      return cs
+    } catch (err) {
+      console.error(err)
+      return []
+    }
   }, [])
+
+  const handleSynced = useCallback(() => {
+    refreshConflicts().then(cs => { if (cs.length > 0) setSyncQueue(cs) })
+  }, [refreshConflicts])
 
   useEffect(() => {
     refreshState()
@@ -73,7 +89,7 @@ export default function App() {
           <Sidebar activeView={view} onNavigate={setView} conflictCount={conflicts.length} />
 
           <div style={{ flex: 1, minWidth: 0, background: '#2A3238', position: 'relative', overflow: 'hidden' }}>
-            {view === 'overview' && <OverviewView state={state} onWarningDismissed={refreshState} />}
+            {view === 'overview' && <OverviewView state={state} onWarningDismissed={refreshState} onSynced={handleSynced} />}
             {view === 'addGames' && <AddGamesView onEnrolled={refreshState} />}
             {view === 'conflicts' && (
               <ConflictsView
@@ -99,6 +115,19 @@ export default function App() {
           </div>
           <div style={{ flex: 1, background: '#2A3238' }} />
         </div>
+
+        {/* position: fixed — a true overlay over the whole shell, sidebar included, not scoped to
+            the content pane. Only resolving a side or "Decide later" dismisses it. */}
+        {syncQueue && (
+          <SyncConflictModal
+            queue={syncQueue}
+            games={games}
+            machineName={state?.machineName ?? ''}
+            onResolved={refreshConflicts}
+            onAllDone={() => setSyncQueue(null)}
+            onLater={() => { setSyncQueue(null); setView('conflicts') }}
+          />
+        )}
     </div>
   )
 }

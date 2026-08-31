@@ -540,6 +540,50 @@ it's the first one worth a maintainer actually trying on the real Deck's Desktop
 Phases 7 (Windows tray wiring), 8 (Game Mode screen), 9 (D-Bus notify impl), 10/11 (Decky), 13
 (Playnite), and 14 (webhook + block-launch opt-in) remain open — see [[Backlog]].
 
+**Conflict UI redesign — local vs. cloud, plus a sync-time pop-up (2026-08-31, same session, this
+branch, asked directly rather than scoped up front — the maintainer reviewed Group 2's card and
+wanted the framing changed before anything else built on it).** Two requests, both mocked up first
+as a published Artifact and approved before any code changed:
+1. **Reframe every conflict card as "This device" / "The cloud," never machine name vs. machine
+   name** — the machine name that raced the cloud is now a small caption ("from \"Living Room PC\"")
+   on whichever side isn't this device, never the panel's own label; the cloud side is *always*
+   labelled "The cloud" regardless of whose push last updated it (plan.md decision 2, which this
+   corrects the UI to actually match — Phase 6's first pass had drifted from it). Recency ("12m ago")
+   is now the headline number in each panel, with a small "newer" tag on whichever side is more
+   recent; the exact timestamp is still there as a hover tooltip. New two-step interaction: click a
+   side (or its "Keep this" button) to select it, a separate "Resolve with {side}" button confirms —
+   replacing the old one-click-does-it four-button layout (Use as Latest / Keep both, ×2 sides).
+2. **A sync-time pop-up**: pressing "Sync now" on the Overview page now pauses on each conflict it
+   surfaces, one at a time, in a `position: fixed` overlay covering the *entire* app shell (sidebar
+   included, not just the content pane) — reusing the same card in a second interaction mode where a
+   side's own button resolves immediately and the queue auto-advances, since the point there is
+   momentum through a queue, not a considered review. A "Decide later" control always has somewhere
+   to go: it dismisses the pop-up and switches straight to the Conflicts view (badge still lit),
+   never just closes back to a spinner with no trace. Deliberately scoped to the agent-ui **Sync now**
+   button only — the passive 15s conflicts poll never opens it, and the Windows tray's own "Sync
+   All"/per-game menu items don't yet either, since making the tray raise this same window is Phase
+   7 (unbuilt, Windows-only, correctly deferred rather than guessed at from this Linux container).
+<br>**Refactored for reuse, not duplicated**: `ConflictCard.tsx` (the local/cloud card itself, taking
+a `mode: 'confirm' | 'immediate'` prop) and `useConflictVersions.ts` (the version/stats fetch-and-cache
+hook) are now shared by `ConflictsView.tsx` and the new `SyncConflictModal.tsx`, so the two surfaces
+cannot drift out of visual sync with each other the way two independent copies eventually would.
+<br>**One design bug caught and fixed during live verification, not left in**: the card's first draft
+pre-selected "This device" by default via a `useState` initializer reading `versionB?.machineName`
+before that version had actually loaded (an async fetch), so the "smart default" silently never fired
+— confirmed on a real screenshot showing neither side selected when it should have been one. Fixed by
+dropping the default entirely rather than chasing the race: no side is ever pre-selected, matching
+this same design's own "never silently default to a side" rule for the Decky-equivalent popup.
+<br>**Verified live against a real dev server + Linux daemon**, not just built: seeded a genuine
+two-machine conflict, screenshotted the pop-up appearing correctly on "Sync now" (both sides
+correctly labelled, "newer" tag on the right side, full-shell dim behind it), confirmed "Decide
+later" lands on the Conflicts view with the same conflict rendered in confirm mode, confirmed the
+confirm-mode Resolve button starts disabled and enables with the right label once a side is picked,
+confirmed a real resolve moves the server head and clears the badge, and separately confirmed
+immediate mode (clicking a side inside the pop-up) resolves right away and closes the pop-up once its
+one-conflict queue empties. `agent-ui` `tsc -b && vite build` and `oxlint` both clean (same two
+pre-existing, unrelated warnings as before). No server/`Agent.Core` changes this round — purely
+`agent-ui`.
+
 ---
 
 ## Where things stand
