@@ -478,6 +478,22 @@ surface, per this codebase's "verify live" standard. A scripted regression test 
 here than elsewhere in this plan, since the D-Bus surface being exercised belongs to the OS's own
 notification daemon, not to SaveLocker.
 
+**Real-hardware correction, 2026-08-31:** this document (and `DesktopEnvironment.cs`'s own doc
+comment) assumed "Game Mode has no session bus at all," used above to justify treating a desktop
+notification as fundamentally a Desktop-Mode-only feature. A `doctor` run over SSH while a real Deck
+was sitting in **Game Mode (Gamescope)** reported both a reachable D-Bus session bus AND something
+already claiming `org.freedesktop.Notifications` ownership on it — SteamOS keeps one persistent
+per-user bus alive via `systemd --user` regardless of graphical mode, and SSH reaches the same bus a
+running Gamescope session already has. That assumption was never actually verified before being
+written down, and it was wrong. **What is still unconfirmed:** who the actual claimant is (Steam's
+own overlay? `xdg-desktop-portal`? something else?), and — the part that actually matters for this
+phase — whether a real `Notify` call renders anything visible in Game Mode, or is silently accepted
+and dropped by whatever holds the name. Until that's checked live on hardware, Phase 9 should still
+target Desktop Mode as its verified surface, but a Game-Mode-visible desktop notification may turn
+out to be reachable sooner than this plan assumed — worth a five-minute live check (fire one test
+`Notify` call over SSH while genuinely in Game Mode, see if anything appears on screen) before ruling
+it out.
+
 **Phase 10 — Decky: conflict display + resolve UI** (chip, QAM panel, resolve popup, policy
 dropdown) — unchanged content, renumbered from the original Phase 5. Depends on Phase 0/1. Delivers
 real, standalone value the moment it ships — a conflict can be seen and resolved from the Deck even

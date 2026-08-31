@@ -16,9 +16,19 @@ namespace SaveLocker.Agent.Linux;
 /// connection — not just that the environment variable is present.</param>
 /// <param name="NotificationDaemonPresent">Something currently owns
 /// <c>org.freedesktop.Notifications</c> on that bus. Deliberately distinct from
-/// <see cref="HasSessionBus"/>: Game Mode has no session bus at all, but a minimal window manager's
-/// Desktop Mode could have a bus with nothing listening for notifications on it — two different
-/// reasons the same feature can't fire.</param>
+/// <see cref="HasSessionBus"/>: a bus can exist with nothing listening for notifications on it — two
+/// different reasons the same feature can't fire.
+/// <para>
+/// <b>Correction, confirmed on real hardware 2026-08-31:</b> this doc comment used to claim "Game
+/// Mode has no session bus at all." That was never actually verified and turned out to be wrong — a
+/// `doctor` run over SSH while the Deck was sitting in Game Mode (Gamescope) reported both
+/// <see cref="HasSessionBus"/> and this field as true. SteamOS keeps one persistent per-user D-Bus
+/// bus alive via <c>systemd --user</c> regardless of which shell (or which graphical mode) reaches
+/// it, so an SSH login shares the same bus a running Gamescope session already has, with something
+/// already claiming <c>org.freedesktop.Notifications</c> ownership on it. What that claimant actually
+/// is, and whether a real <c>Notify</c> call renders anything visible in Game Mode rather than being
+/// silently accepted and dropped, is still unconfirmed — see Phase 9 in
+/// tasks/conflict-resolution-ui/plan.md.</para></param>
 /// <param name="IsInteractiveTty">This process has a real terminal attached, as opposed to running
 /// under a service manager with its standard streams redirected.</param>
 /// <param name="RunningAsSystemdUnit">This process is the <c>systemd --user</c> unit's own main
