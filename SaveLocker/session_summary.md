@@ -1,3 +1,129 @@
+# Session summary — 2026-08-30/31
+
+Conflict-resolution plan expanded from 9 to 15 phases to close a real gap (no resolve UI existed
+outside Decky/Playnite), all planning docs consolidated into `tasks/conflict-resolution-ui/`, **Phase 5**
+(Linux environment-capability detection) implemented and shipped as PR #23, and a grouping mistake for
+Phase 9 caught and corrected before any of its code was written.
+
+## Phase 9 follow-up (2026-08-31)
+
+**Asked:** why wasn't Phase 9 implemented if it was "part of Group 1" — then to implement it if so.
+
+**Found:** only Phase 9's D-Bus **library decision** (`gdbus`) was ever in Group 1; the notification-
+sending code itself was always scoped later. Before writing any of it, its full dependency was checked:
+Phase 9 needs Phase 6 (the `agent-ui` conflicts page — the action button's target), which doesn't exist
+yet. Given three options (build Phase 6 first, implement Phase 9 now with a temporary target, or
+implement just the notification-firing logic with no button), the user chose a fourth: **fix the
+grouping itself**, since re-checking `plan.md`'s dependency diagram showed the *original* grouping had
+already made a mistake — `implementation-grouping.md` had bundled Phase 9's implementation into the same
+group as Decky (10/11) and Playnite (13) under a "needs real hardware" rationale that doesn't actually
+apply to it. Phase 9's only real dependencies are Phase 5 (done) and Phase 6 — never the separate
+`SaveLocker-Decky` repo, never real hardware to *build* (only to verify a popup fires).
+
+**Fixed (docs only, no app code):** `implementation-grouping.md` now has a dedicated **Group 3** for
+Phase 9's implementation, placed right after Group 2 (which ships its actual dependency, Phase 6), with
+the former Groups 3–5 renumbered to 4–6 and a "Correction found" note documenting the mistake — the same
+transparency convention already used for the Phase 12 correction. Phase 9 itself remains unimplemented,
+per instruction. Committed as `764ca3c`.
+
+**Also pulled in:** a review-fix commit (`e63f5c2`) pushed to the same PR by a separate session,
+addressing PR #23 findings — a `Console.IsInputRedirected`-can-throw crash guard, a new shared
+`ProcessRunner.cs` deduplicating the subprocess-run logic `DesktopEnvironment` and `SystemdAutoStart`
+had each implemented separately, a `CLAUDE.md` note documenting `tasks/conflict-resolution-ui/`'s
+deliberate exception to the vault's flat-by-design rule, and a missing `IsInteractiveTty` test
+assertion. Clean fast-forward, no conflicts.
+
+## Real-Deck verification of Phase 5, two bugs found (2026-08-31)
+
+**First bug — a missed testenv step, not a code bug.** The user's first `doctor` run on a real Deck
+showed no `── Session ──` block at all. Root cause: `testenv.ps1 build -Only deck` builds whatever
+commit the WSL clone already has checked out — it never fetches/checks out the branch itself; a
+separate `sync` command does that, which hadn't been run. Fixed by giving the correct sequence and
+documenting the gap in `Build and Run.md`/`Gotchas.md` (`0d36eab`).
+
+**Second bug — a genuinely wrong, never-verified assumption in the code and plan.** After the rebuild,
+the Session block appeared but with a surprising result: **D-Bus session bus: yes** and **notification
+daemon: yes**, over a plain SSH shell. `DesktopEnvironment.cs`'s doc comment claimed "Game Mode has no
+session bus at all" — asserted, never checked on hardware. Before writing anything down, asked the
+user to confirm what mode the Deck was actually in (rather than assume Desktop Mode was silently
+running) — **confirmed Game Mode (Gamescope).** That makes the old assumption simply wrong: SteamOS
+keeps one persistent per-user D-Bus bus alive via `systemd --user` regardless of graphical mode, with
+something already claiming `org.freedesktop.Notifications` on it, reachable from any SSH shell that
+shares the user's session. Corrected `DesktopEnvironment.cs`'s doc comment and `plan.md`'s Phase 9
+section (`71b50fa`) — `Detect()`'s actual code needed no change, only the prose was wrong — and flagged
+the real open question this raises: whether a live `Notify` call would actually render visibly in Game
+Mode, which could mean Phase 9 reaches further than the plan currently assumes. Not yet checked live.
+
+## What was asked
+
+1. Investigate whether any phase built a native Linux/Wayland resolve popup equivalent to Decky's, and
+   whether conflict popups exist on Windows/Linux outside Decky and a future Playnite plugin —
+   everything should work even without either installed.
+2. Close the gap found: add phases, plan carefully and in detail.
+3. Explain D-Bus and recommend a session-grouping plan for the remaining phases, with weekly Claude Pro
+   quota usage in mind (reported at 66%).
+4. Clarify whether local execution is cheaper than cloud execution token-wise, and how that affects
+   grouping.
+5. Write the grouping into a doc, move all conflict docs into a clearly-named tasks subfolder, and
+   start implementing Group 1.
+6. Create a branch named like the previous two PRs, open a PR on the fork, and explain how to test it
+   manually via `testenv`.
+
+## What was found
+
+- No phase produced a resolve UI reachable without Decky or Playnite — a plain Linux desktop or a
+  headless/SSH session had no way to even see a conflict.
+- `GET /api/games/{id}/sync-status` was mischaracterized (in the plan and in this session's own
+  first-draft grouping doc) as "cheap." Its actual handler hashes the whole local save directory and
+  internally calls the same full-state fetch the `status` CLI already makes. Caught by reading the real
+  handler before wiring any UI to it — avoided shipping a polling badge that would have re-hashed save
+  folders on a timer.
+
+## What shipped
+
+- **Design:** `plan.md` expanded to 15 phases (0–14), with a new Decisions §8 and an "escalation
+  ladder" for Linux conflict surfacing (env detection → native Wayland modal → D-Bus notification →
+  local web chooser → CLI → optional webhook → safe terminal state).
+- **Docs consolidated:** new `SaveLocker/tasks/conflict-resolution-ui/` folder — `plan.md` (moved from
+  `logs/2026-08-28_decky-conflict-resolution.md`), `reference/00`–`07.md` (moved from repo-root
+  `docs/design/`), a new `README.md`, and a new `implementation-grouping.md` laying out Groups 1–5 and
+  the finding that local vs. cloud execution costs the same weekly quota — grouping is driven by real
+  dependencies and what this environment can verify, never by cost.
+- **Phase 5 (Group 1) implemented:** `src/Agent.Linux/DesktopEnvironment.cs` — detects graphical
+  session, D-Bus session bus reachability, notification daemon presence (via `gdbus`, chosen over
+  `dbus-send` for marshalling reasons), interactive TTY, and `systemd --user` unit status, with a
+  2-second subprocess timeout so a stale D-Bus socket can never hang `doctor` or a future launch
+  wrapper. Wired into `Doctor.cs` as a new "Session" section. 9 new `run-linux-tests.sh` checks added
+  (246 passing, up from 237).
+
+## Bug caught before it shipped
+
+Three new test sub-invocations in `run-linux-tests.sh` initially clobbered the shared `$out` variable
+that later, pre-existing MoonDeck assertions in the same script depend on — renamed to `$env_out`
+before running.
+
+## Verification
+
+- `run-linux-tests.sh`: 246/0 (was 237), no new failures.
+- Confirmed via `git stash` that a separate, pre-existing 7-failure cluster in "Decky plugin updates"
+  predates this session — documented in `Backlog.md`, not fixed (out of scope for Phase 5).
+- `dotnet build --no-incremental` and `tsc -b` clean after stale-path fixes across `Program.cs`,
+  `SyncService.cs`, `GameDetail.tsx`, `AgentCli.cs`, `SyncEngine.cs`, `run-server-bugbounty-tests.ps1`.
+
+## Status
+
+- Branch `save-conflicts-phase-5` (naming matches `save-conflicts-phase-0-1`/`-2-3` from PRs #20/#22);
+  PR [**#23**](https://github.com/Marwanello/SaveLocker/pull/23) open against `main`.
+- Manual `testenv.ps1` test instructions given for the Deck: `build -Only deck` → `up` → SSH in and run
+  `doctor`, noting SSH doesn't inherit the Deck's own desktop session's `DISPLAY`/`WAYLAND_DISPLAY`/
+  `DBUS_SESSION_BUS_ADDRESS` — the "real session" case needs a terminal opened directly in Desktop Mode,
+  or importing `systemctl --user show-environment` first.
+- Not done: Phase 12 (deferred until Phase 6/8/10 adds a real trigger), Groups 2–5, real-hardware
+  confirmation of Game Mode vs. Desktop Mode values. Offer to `subscribe_pr_activity` on PR #23 still
+  open as of this write-up.
+
+---
+
 # Session summary — 2026-08-29
 
 Conflict resolution **Phase 0/1** implemented (server + Agent.Core) and shipped as PR #20, all CI green.

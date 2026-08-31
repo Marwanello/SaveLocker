@@ -443,7 +443,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// fetch the game's policy and — if it is not <see cref="ConflictPolicy.Manual"/> and it names
     /// THIS machine the winner — resolve the divergence in this machine's favour through the same
     /// mechanical endpoint a human's choice would use. The server used to do this itself at ingest
-    /// time; it no longer does (logs/2026-08-28_decky-conflict-resolution.md), so the shared engine
+    /// time; it no longer does (tasks/conflict-resolution-ui/plan.md), so the shared engine
     /// every host and frontend goes through carries the decision now.
     /// <para>
     /// Returns true only when the conflict was actually resolved to this machine's just-pushed

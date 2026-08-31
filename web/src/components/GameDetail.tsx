@@ -89,7 +89,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
   // A version is "in the main tree" if it's an ancestor of the current head — walk
   // parentVersionId back from it. Everything else the game still has is a backup, almost always
   // the losing side of a past conflict: no schema change needed, this is purely a computed split
-  // of the same version list the console already fetches (logs/2026-08-28_decky-conflict-resolution.md).
+  // of the same version list the console already fetches (tasks/conflict-resolution-ui/plan.md).
   const mainVersionIds = new Set<string>();
   {
     const byId = new Map(versions.map(v => [v.id, v]));
@@ -777,7 +777,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
           almost always the losing side of a past conflict (a Force push that rode over one, or an
           admin/agent resolve that didn't keep both). No new endpoint: same version list the console
           already fetches, just split by walking parentVersionId back from head. Reuses the existing
-          Download and Set as Latest actions unchanged — logs/2026-08-28_decky-conflict-resolution.md. */}
+          Download and Set as Latest actions unchanged — tasks/conflict-resolution-ui/plan.md. */}
       <div style={{ ...card, marginBottom: 24 }}>
         <div style={{ ...cardHeader, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

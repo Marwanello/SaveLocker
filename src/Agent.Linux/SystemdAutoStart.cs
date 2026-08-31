@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace SaveLocker.Agent.Linux;
 
 /// <summary>
@@ -21,7 +19,7 @@ public sealed class SystemdAutoStart : IAutoStart
     public bool IsEnabled()
     {
         if (!File.Exists(UnitPath)) return false;
-        var (exit, stdout, _) = Run("systemctl", "--user", "is-enabled", Unit);
+        var (exit, stdout, _) = ProcessRunner.Run("systemctl", "--user", "is-enabled", Unit);
         return exit == 0 && stdout.Trim() == "enabled";
     }
 
@@ -61,8 +59,8 @@ public sealed class SystemdAutoStart : IAutoStart
             {
                 Directory.CreateDirectory(UnitDir);
                 File.WriteAllText(UnitPath, UnitFile());
-                Run("systemctl", "--user", "daemon-reload");
-                var (exit, _, err) = Run("systemctl", "--user", "enable", "--now", Unit);
+                ProcessRunner.Run("systemctl", "--user", "daemon-reload");
+                var (exit, _, err) = ProcessRunner.Run("systemctl", "--user", "enable", "--now", Unit);
                 if (exit != 0)
                 {
                     AgentLogger.Log($"systemctl --user enable failed (exit {exit}): {err.Trim()}");
@@ -75,7 +73,7 @@ public sealed class SystemdAutoStart : IAutoStart
             // (a Deck reached over SSH without a login session is the common one), systemd absent —
             // and returning true regardless made both the CLI and the Game Mode toggle report a
             // service as disabled while it was still enabled and still running.
-            var (disableExit, _, disableErr) = Run("systemctl", "--user", "disable", "--now", Unit);
+            var (disableExit, _, disableErr) = ProcessRunner.Run("systemctl", "--user", "disable", "--now", Unit);
             if (disableExit != 0)
             {
                 AgentLogger.Log($"systemctl --user disable failed (exit {disableExit}): {disableErr.Trim()}");
@@ -91,8 +89,9 @@ public sealed class SystemdAutoStart : IAutoStart
     }
 
     /// <summary>
-    /// A reason the user can act on. Exit -1 is <see cref="Run"/>'s "could not even start
-    /// systemctl", which on a Deck reached over SSH means no user bus rather than a broken unit —
+    /// A reason the user can act on. Exit -1 is <see cref="ProcessRunner.Run(string, string[])"/>'s
+    /// "could not even start systemctl", which on a Deck reached over SSH means no user bus rather
+    /// than a broken unit —
     /// a distinction worth making, because the two have completely different fixes.
     /// </summary>
     private static string Reason(string verb, int exit, string stderr)
@@ -160,42 +159,5 @@ public sealed class SystemdAutoStart : IAutoStart
         // systemd does not care about CRLF, but a unit file that round-trips through a Windows
         // checkout and back should still read as the file in packaging/.
         return reader.ReadToEnd().Replace("\r\n", "\n");
-    }
-
-    /// <summary>
-    /// Runs the process (in practice, systemctl) and returns its exit code and both streams. Never
-    /// throws — a box without systemd (a container, a minimal chroot) simply reports the toggle as
-    /// unavailable.
-    /// <para>
-    /// Both streams are drained with <b>concurrent</b> async reads before the wait. Reading one to
-    /// the end and only then waiting deadlocks the moment the other fills its pipe buffer: the child
-    /// blocks writing, the parent blocks reading, and neither moves. systemctl writes its failure
-    /// reason to stderr, which is exactly the stream that was redirected and never read.
-    /// </para>
-    /// </summary>
-    private static (int ExitCode, string StdOut, string StdErr) Run(string file, params string[] args)
-    {
-        try
-        {
-            var psi = new ProcessStartInfo(file)
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            };
-            foreach (var a in args) psi.ArgumentList.Add(a);
-
-            using var p = Process.Start(psi);
-            if (p is null) return (-1, "", "");
-
-            var stdout = p.StandardOutput.ReadToEndAsync();
-            var stderr = p.StandardError.ReadToEndAsync();
-            p.WaitForExit();
-            return (p.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
-        }
-        catch (Exception)
-        {
-            return (-1, "", "");
-        }
     }
 }

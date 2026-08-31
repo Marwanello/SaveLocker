@@ -215,6 +215,14 @@ The last command asks for the Deck's password once, to write `authorized_keys`; 
 does. SSH must already be enabled on the Deck (Desktop Mode → Konsole → `passwd` to set one if
 you haven't, then `sudo systemctl enable --now sshd`).
 
+**`build` never fetches or checks out anything by itself** — it builds whatever commit the WSL clone
+already has checked out. Switching branches (or just wanting the latest commit) needs an explicit
+`.\tests\testenv.ps1 sync` first, run from the branch you want on the Windows side; skipping it
+silently ships a stale build with no error, since there's nothing to compare against and complain
+about. Confirmed 2026-08-31: a `doctor` run against a `build -Only deck` that skipped `sync` was
+missing an entire feature (the Phase 5 conflict-resolution "Session" block) that was very much
+present in the source being tested.
+
 `build -Only deck` cross-compiles a **self-contained** linux-x64 publish in WSL (the same packer
 `packaging/linux/build-linux.sh` uses for a real release, just stamped with the test version) —
 SteamOS ships no .NET runtime, so the WSL target's ordinary framework-dependent `dotnet build`
