@@ -90,31 +90,43 @@ export function ConflictCard({
 
   return (
     <div style={{
-      background: '#241a1a', border: `1px solid ${conflict.escalated ? '#e5534b' : '#4a2a2a'}`,
-      borderRadius: 8, padding: '12px 14px', flexShrink: 0,
+      background: '#1E252A', border: '1px solid #34424b',
+      borderRadius: 10, padding: '18px 20px', flexShrink: 0,
     }}>
-      <div style={{ color: '#f4a60d', fontWeight: 700, fontSize: 13 }}>
-        {gameName} — choose the save to keep
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 14.5, fontWeight: 700, color: '#ECEFF1' }}>{gameName}</span>
+        <span style={{
+          fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
+          color: '#f4a60d', background: 'rgba(244,166,13,0.12)',
+          border: '1px solid rgba(244,166,13,0.4)', borderRadius: 20, padding: '2px 8px',
+        }}>Conflict</span>
+      </div>
+      <div style={{ fontSize: 12.5, lineHeight: 1.6, color: '#8b9aaa', marginTop: 8, maxWidth: '54ch' }}>
+        {labelFor('local', versionB)} and {labelFor('cloud', versionA).toLowerCase()} both changed since
+        the last sync. Pick which one to keep — the other is never deleted, just set aside.
       </div>
       {conflict.escalated && (
-        <div style={{ color: '#e5534b', fontSize: 11, fontWeight: 600, marginTop: 5 }}>
+        <div style={{ color: '#e5534b', fontSize: 11, fontWeight: 600, marginTop: 6 }}>
           Overdue — this conflict has been unresolved for more than six hours.
         </div>
       )}
       {conflict.count > 1 && (
-        <div style={{ color: '#8b9aaa', fontSize: 11, marginTop: 5, lineHeight: 1.5 }}>
+        <div style={{ color: '#8b9aaa', fontSize: 11, marginTop: 6, lineHeight: 1.5 }}>
           {conflict.count} divergent saves folded into this conflict — the newest is offered below.
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
         {sides.map(side => {
           const label = labelFor(side.kind, side.v)
           const Icon = side.kind === 'cloud' ? Cloud : HardDrive
           const isSelected = selected === side.id
           const isNewer = newerId === side.id
           const mine = side.v?.machineName === machineName
-          const caption = side.v && !mine ? `from "${side.v.machineName}"` : null
+          const caption = !side.v ? null
+            : side.kind === 'local'
+              ? (mine ? "This is the machine you're using right now." : `Last synced from "${side.v.machineName}"`)
+              : `Last updated from "${side.v.machineName}"`
 
           return (
             <div
@@ -122,35 +134,38 @@ export function ConflictCard({
               onClick={() => act(side.id)}
               style={{
                 flex: '1 1 210px', minWidth: 210, cursor: 'pointer',
-                background: '#1E252A',
-                border: `1px solid ${isSelected ? '#129271' : '#4a2a2a'}`,
-                borderRadius: 6, padding: 10,
-                transition: 'border-color .12s ease',
+                background: isSelected
+                  ? 'linear-gradient(180deg, rgba(18,146,113,0.10), rgba(18,146,113,0.03) 60%)'
+                  : '#222d34',
+                border: `1px solid ${isSelected ? '#129271' : '#3a4750'}`,
+                borderRadius: 8, padding: '14px 15px',
+                display: 'flex', flexDirection: 'column', gap: 10,
+                transition: 'border-color .12s ease, background .12s ease',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{
-                  width: 22, height: 22, borderRadius: 5, flexShrink: 0,
+                  width: 26, height: 26, borderRadius: 6, flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   background: isSelected ? 'rgba(18,146,113,0.18)' : '#2c383f',
                   color: isSelected ? '#16b992' : '#8b9aaa',
                 }}>
-                  <Icon size={12} strokeWidth={2} />
+                  <Icon size={14} strokeWidth={2} />
                 </div>
-                <span style={{ color: '#ECEFF1', fontWeight: 600, fontSize: 12 }}>{label}</span>
+                <span style={{ color: '#ECEFF1', fontWeight: 700, fontSize: 13 }}>{label}</span>
               </div>
 
               <div
                 title={side.v ? absolute(side.v.createdAt) : undefined}
                 style={{
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 600,
-                  color: '#ECEFF1', margin: '6px 0 2px', display: 'flex', alignItems: 'baseline', gap: 6,
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: 15, fontWeight: 600,
+                  color: '#ECEFF1', display: 'flex', alignItems: 'baseline', gap: 7,
                 }}
               >
                 {side.v ? relative(side.v.createdAt) : shortId(side.id)}
                 {isNewer && (
                   <span style={{
-                    fontFamily: "'Inter', sans-serif", fontSize: 9, fontWeight: 700,
+                    fontFamily: "'Inter', sans-serif", fontSize: 9.5, fontWeight: 700,
                     letterSpacing: '0.05em', textTransform: 'uppercase', color: '#16b992',
                     background: 'rgba(18,146,113,0.14)', borderRadius: 10, padding: '1px 6px',
                   }}>newer</span>
@@ -158,21 +173,21 @@ export function ConflictCard({
               </div>
 
               {side.v && (
-                <div style={{ color: '#8b9aaa', fontSize: 10.5, fontFamily: "'JetBrains Mono', monospace" }}>
+                <div style={{ color: '#8b9aaa', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
                   {side.s ? `${side.s.fileCount} file${side.s.fileCount === 1 ? '' : 's'} · ` : ''}
                   {fmtSize(side.v.size)}
                 </div>
               )}
               {caption && (
-                <div style={{ color: '#556070', fontSize: 10.5, marginTop: 3 }}>{caption}</div>
+                <div style={{ color: '#556070', fontSize: 10.5, lineHeight: 1.5 }}>{caption}</div>
               )}
 
               <button
                 disabled={resolving}
                 onClick={e => { e.stopPropagation(); act(side.id) }}
                 style={{
-                  marginTop: 8, alignSelf: 'flex-start',
-                  padding: '5px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+                  marginTop: 2, alignSelf: 'flex-start',
+                  padding: '6px 12px', borderRadius: 5, fontSize: 11.5, fontWeight: 600,
                   cursor: resolving ? 'default' : 'pointer', opacity: resolving ? 0.6 : 1,
                   background: isSelected ? '#129271' : '#2c383f',
                   color: isSelected ? '#fff' : '#8b9aaa',
@@ -187,10 +202,10 @@ export function ConflictCard({
       </div>
 
       <div style={{
-        marginTop: 12, paddingTop: 12, borderTop: '1px dashed #3a4750',
+        marginTop: 14, paddingTop: 14, borderTop: '1px dashed #3a4750',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
       }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11.5, color: '#8b9aaa', cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#8b9aaa', cursor: 'pointer' }}>
           <input
             type="checkbox"
             checked={keepBoth}
@@ -207,7 +222,7 @@ export function ConflictCard({
             disabled={!selected || resolving}
             onClick={() => selected && onResolve(selected, keepBoth)}
             style={{
-              padding: '6px 14px', borderRadius: 5, fontSize: 11.5, fontWeight: 700, border: 'none',
+              padding: '7px 16px', borderRadius: 6, fontSize: 12, fontWeight: 700, border: 'none',
               cursor: selected && !resolving ? 'pointer' : 'default',
               background: selected ? '#129271' : '#384249',
               color: selected ? '#fff' : '#556070',

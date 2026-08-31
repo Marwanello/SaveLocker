@@ -584,6 +584,48 @@ one-conflict queue empties. `agent-ui` `tsc -b && vite build` and `oxlint` both 
 pre-existing, unrelated warnings as before). No server/`Agent.Core` changes this round — purely
 `agent-ui`.
 
+**`ConflictCard` restyled to actually match the approved mockup, plus a repeatable manual test
+path (2026-08-31, same session, asked directly — "the artifact looks much better... it's ugly now
+with the red border").** The redesign above had gotten the local-vs-cloud *framing* right but never
+matched the mockup's actual look: the card had carried a dark reddish tint (`#241a1a` background,
+`#4a2a2a`/danger-red borders) on every conflict, escalated or not — the "ugly red border" — instead
+of the mockup's neutral `#1E252A` card on `#34424b`, panels on `#222d34`/`#3a4750`, an amber
+"CONFLICT" chip, and a plain-language sentence ("This device and the cloud both changed since the
+last sync..."). Red is now reserved for the genuine overdue-escalation line only, same as before.
+`ConflictCard.tsx` was rewritten line-for-line against `tasks/conflict-resolution-ui/`'s published
+"Local vs Cloud" artifact (still live: ask `Artifact` → `list` for the URL) — panel padding/radius,
+the mono "recency" headline with its "newer" tag, the per-side caption wording ("This is the machine
+you're using right now." / `Last updated from "X"`), and the footer's dashed rule + resolve button
+are all copied verbatim rather than approximated. No component structure changed — same
+`ConflictCard`/`useConflictVersions` shared by `ConflictsView` and `SyncConflictModal`, so both
+surfaces picked up the fix for free.
+<br>**New: `tests/seed-test-conflict.sh`** — the manual "how do I see a conflict without my real
+games" path asked for in the same message. Runs entirely against a throwaway scratch server and two
+fake machine configs (`Living Room PC` / `This Device`, dummy `savefile.txt`s under
+`~/savelocker-conflict-test`, isolated the same way `testenv.sh` isolates Linux state via
+`XDG_DATA_HOME`) — never touches a real server, a real Steam save, or `~/.local/share/SaveLocker`.
+`up` builds if needed, starts the scratch server + daemon, seeds a genuine two-machine divergence via
+the CLI (register → add-game → push → diverge → push), and prints the Conflicts-page URL; `again`
+reseeds a fresh one (see below); `down`/`clean` tear down (`clean` also deletes the scratch state).
+<br>**One real bug found writing it, not a test artifact:** the first `again` draft tried to be a
+"lighter" reset — resolve the open conflict, wipe just the two machine configs, reseed — and it
+produced a conflict on the *wrong* side unpredictably. Root cause: a brand-new machine's first-ever
+push is only unconditionally conflict-free when the game has **no head at all yet** (Phase 0/1's own
+rule — even a never-synced machine is compared against the current cloud head, not exempted from it).
+Reusing the same long-lived server DB across `again` calls meant whichever side happened to push
+second inherited a stale head from a *previous* run and conflicted against content that was never
+part of the story it was telling. Fixed by making `again` a full reset (server-data included), not a
+lighter path — deterministic every time, same as a fresh `up`. Also caught before that: `set-server`/
+`register` write to `$XDG_DATA_HOME/SaveLocker/config.json`, not straight under `$XDG_DATA_HOME` —
+an early draft's cleanup path silently missed the config file it meant to delete.
+<br>**Verified live**: ran `up`, screenshotted the Conflicts page (no red anywhere, chip/sentence/
+caption/newer-tag all present, matches the artifact), clicked a side and confirmed the selected-state
+styling (accent border/gradient/icon, "Resolve with This device" enabling), ran `again` and confirmed
+a fresh conflict reseeds deterministically, and screenshotted the sync-time pop-up (`Sync now` on
+Overview) showing the same restyled card in immediate mode over the full shell. `agent-ui`
+`tsc -b && vite build` and `oxlint` clean (same two pre-existing warnings). No server/`Agent.Core`
+changes.
+
 ---
 
 ## Where things stand
