@@ -666,6 +666,30 @@ bump transitively-pinned `^`-range packages like `vite` 8.1.3→8.2.2, an expect
 effect of the real fix a maintainer hitting this for real would see too, worth knowing rather than
 being surprised by).
 
+**`seed-test-conflict.sh` made a genuinely separate parallel app, not just separate state (same
+session, immediate follow-up — the maintainer worried it "messed up" their real remote-server setup
+and asked for testenv-style isolation).** Every earlier version still built Server/Agent.Linux with a
+plain `dotnet build` into their project's own default `bin/Debug/net10.0/`, and staged agent-ui into
+`agent-ui/dist` before copying — the same paths a real dev daemon on the same machine, pointed at a
+real remote server, would be built and running from. Rebuilding those out from under a live process
+is exactly the "messed up my real one" risk, even though the *data* (server DB, machine configs,
+conflicts) was always fully isolated under `$STATE` via `XDG_DATA_HOME`. Fixed by routing every build
+artifact into `$STATE/build/` instead: `dotnet build -o` for Server and Agent.Linux (their `-o`
+argument redirects the final output copy; `obj/` intermediates are still the project's own, but
+those are never what a running process executes from), and `vite build --outDir ... --emptyOutDir`
+for agent-ui, so nothing is ever written to `agent-ui/dist` either. This goes a step further than
+`testenv.sh` itself, which still builds Agent.Linux into the shared default `bin/Debug` path — worth
+knowing if that script is ever run alongside a real dev daemon too.
+<br>**Verified, not assumed**, that `-o` actually avoids the shared path: built Agent.Linux once
+into the default location, recorded `savelocker.dll`'s mtime, then built again with `-o /tmp/...` and
+confirmed the default file's mtime was **unchanged** while the fresh binary appeared only under
+`/tmp/...` — including checking whether the csproj's own `CopyAgentUiDist` MSBuild target (which
+references `$(OutputPath)` directly, a separate property from the `-o` override, and could in
+principle still land in the shared path even with `-o` given) fired against the default directory;
+it didn't. Ran the full `up` → `again` → `clean` cycle afterward against the new isolated paths and
+confirmed the Conflicts page still renders correctly and `clean` removes the entire isolated build
+tree along with the rest of `$STATE`.
+
 ---
 
 ## Where things stand
