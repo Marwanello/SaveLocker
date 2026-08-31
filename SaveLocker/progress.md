@@ -755,3 +755,71 @@ No merge conflicts — a clean fast-forward on top of this session's own regroup
 - Real-hardware confirmation of the Phase 5 "Session" block (Game Mode vs. Desktop Mode) still
   outstanding.
 - Whether to `subscribe_pr_activity` on PR #23 remains an open offer.
+
+---
+
+## 2026-08-31 — Real-Deck doctor verification: a missed `sync`, then a wrong assumption caught
+
+**Branch:** `save-conflicts-phase-5`. PR: https://github.com/Marwanello/SaveLocker/pull/23.
+
+### Request sequence
+
+1. User ran the manual `testenv.ps1` verification instructions from the prior session on a real Deck
+   and reported `doctor`'s output had no `── Session ──` block at all.
+2. After the fix, user re-ran it and reported the block appeared but with unexpected values — asked
+   about the discrepancy.
+3. Answered a clarifying question: confirmed the Deck was genuinely in **Game Mode (Gamescope)**, not
+   Desktop Mode, when the surprising result was captured.
+
+### Bug #1: `testenv.ps1 build` never syncs the WSL clone by itself
+
+Root-caused by re-reading `testenv.ps1` directly: `build -Only deck` shells into WSL and runs
+`build-deck` on whatever commit is *already checked out there* — it never fetches or checks out
+anything itself. That's what the separate `sync` command does. The user's first `build -Only deck`
+ran without a preceding `sync`, so it silently built a commit from before Phase 5 existed — explaining
+the total absence of the Session block, not a code bug. Fixed by giving the correct sequence
+(`git checkout` → `sync` → `build -Only deck` → `up -Only deck`) and documenting the gap in both
+`Build and Run.md` and `Gotchas.md` (commit `0d36eab`) so it isn't repeated.
+
+### Bug #2: a real, confirmed-wrong assumption in the Phase 5 code and plan
+
+After the rebuild, the Session block appeared correctly, but with a result nobody had predicted:
+```
+graphical session: no
+D-Bus session bus: yes
+notification daemon: yes
+interactive terminal: yes
+running as: interactive process
+```
+over a plain SSH shell. `DesktopEnvironment.cs`'s own doc comment asserted "Game Mode has no session
+bus at all" — a claim that had never actually been checked on hardware, only assumed. Rather than
+accept the surprising result at face value or dismiss it as an anomaly, asked the user to confirm what
+mode the Deck was actually in at the time (`AskUserQuestion`) before writing anything down: **the Deck
+was genuinely in Game Mode.** That confirms the assumption was wrong, not that Desktop Mode was
+running unnoticed: SteamOS keeps one persistent per-user D-Bus bus alive via `systemd --user`
+regardless of graphical mode, and SSH reaches the same bus a running Gamescope session already has,
+with something already claiming `org.freedesktop.Notifications` ownership on it.
+
+**Fixed (commit `71b50fa`):** `DesktopEnvironment.cs`'s doc comment and `plan.md`'s Phase 9 section
+both corrected to state what's now actually confirmed, and what's still genuinely open — who the real
+notification-name claimant is, and whether a live `Notify` call would render anything visible in Game
+Mode or get silently dropped. `Detect()`'s code itself needed no change; it already computed the right
+answer (`true`/`true`) — only the prose describing what that meant was wrong. Flagged as a real,
+plan-changing possibility: a Game-Mode-visible desktop notification (not just Desktop-Mode-only, as
+Phase 9 currently scopes it) may be reachable sooner than assumed, pending one more live check (fire a
+test `Notify` call while actually in Game Mode, see if anything appears on screen).
+
+### Verification
+
+- The rebuilt binary's `doctor` output now shows the Session block as expected structurally; its
+  *values* in Game Mode are the new, corrected information above rather than a test failure.
+- No code behavior changed in either fix — both were documentation/assumption corrections traced back
+  to real, reproducible evidence (a stale build in the first case, a live hardware result confirmed by
+  the user in the second) rather than either being taken on faith.
+
+### Not done
+
+- The live "does `Notify` actually render in Game Mode" check flagged in `plan.md` is not yet
+  performed — needs one more manual SSH session against the real Deck.
+- Desktop Mode's own Session-block values (as opposed to Game Mode's, now captured) are still
+  unconfirmed.

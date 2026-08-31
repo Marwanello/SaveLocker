@@ -33,6 +33,27 @@ had each implemented separately, a `CLAUDE.md` note documenting `tasks/conflict-
 deliberate exception to the vault's flat-by-design rule, and a missing `IsInteractiveTty` test
 assertion. Clean fast-forward, no conflicts.
 
+## Real-Deck verification of Phase 5, two bugs found (2026-08-31)
+
+**First bug — a missed testenv step, not a code bug.** The user's first `doctor` run on a real Deck
+showed no `── Session ──` block at all. Root cause: `testenv.ps1 build -Only deck` builds whatever
+commit the WSL clone already has checked out — it never fetches/checks out the branch itself; a
+separate `sync` command does that, which hadn't been run. Fixed by giving the correct sequence and
+documenting the gap in `Build and Run.md`/`Gotchas.md` (`0d36eab`).
+
+**Second bug — a genuinely wrong, never-verified assumption in the code and plan.** After the rebuild,
+the Session block appeared but with a surprising result: **D-Bus session bus: yes** and **notification
+daemon: yes**, over a plain SSH shell. `DesktopEnvironment.cs`'s doc comment claimed "Game Mode has no
+session bus at all" — asserted, never checked on hardware. Before writing anything down, asked the
+user to confirm what mode the Deck was actually in (rather than assume Desktop Mode was silently
+running) — **confirmed Game Mode (Gamescope).** That makes the old assumption simply wrong: SteamOS
+keeps one persistent per-user D-Bus bus alive via `systemd --user` regardless of graphical mode, with
+something already claiming `org.freedesktop.Notifications` on it, reachable from any SSH shell that
+shares the user's session. Corrected `DesktopEnvironment.cs`'s doc comment and `plan.md`'s Phase 9
+section (`71b50fa`) — `Detect()`'s actual code needed no change, only the prose was wrong — and flagged
+the real open question this raises: whether a live `Notify` call would actually render visibly in Game
+Mode, which could mean Phase 9 reaches further than the plan currently assumes. Not yet checked live.
+
 ## What was asked
 
 1. Investigate whether any phase built a native Linux/Wayland resolve popup equivalent to Decky's, and
