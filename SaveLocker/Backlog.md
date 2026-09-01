@@ -113,7 +113,7 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   refusal path), confirmed via `git stash` to already fail on the code as it stood *before* this
   session's Phase 5 changes. Not investigated further here — out of this phase's scope — but worth a
   session that owns test-suite maintenance, similar to the CS-03 `FileShare.None` flake noted
-  2026-08-29.
+  2026-08-29. **Root-caused and fixed 2026-09-01 — see the Group 3 entry below.**
   <br>**Phase 0/1 detail:** `SyncService.IngestAsync` no longer evaluates `ConflictPolicy` itself —
   every divergence unconditionally records/updates a `ConflictFlag`; `SyncEngine
   .TryPolicyResolveAsync` is where the decision moved (fetches the game's policy after a push comes
@@ -189,10 +189,27 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   existing `deck_cfg`/`other_cfg` two-machine fixture into a genuine conflict, started a daemon on the
   stuck machine, and confirmed the log shows the conflict noticed on the next tick — correctly gated
   to the "no notification daemon reachable" branch, since this sandbox has no real D-Bus session bus,
-  same as CI. 244 passed. The 7 failures alongside it are the **same pre-existing Decky-plugin-update
-  flake already recorded above** (Phase 5's entry, still unfixed) — reconfirmed via `git stash`
-  against this session's own pre-change commit: identical 7 failures, identical names, 240 passed
-  without this change, 244 with it (240 + 4 new checks) — not a regression this work introduced.
+  same as CI. 244 passed. The 7 failures alongside it were the **same pre-existing Decky-plugin-update
+  flake already recorded above** (Phase 5's entry) — reconfirmed via `git stash` against this session's
+  own pre-change commit: identical 7 failures, identical names, 240 passed without this change, 244
+  with it (240 + 4 new checks) — not a regression this work introduced.
+  <br>**Then root-caused and fixed, same session, asked directly ("can we fix the 7 failures while
+  we're at it").** All 7 were one cause, not seven: the "package needing a new top-level file is
+  REFUSED" case (`DeckyPlugin.cs`'s `CanReplace`, the check that a root-owned-755 plugin directory
+  refuses a genuinely new file while still allowing an existing one to be overwritten) simulated that
+  constraint with `chmod 555`, and this suite's own dev/CI container runs as **root** — root's
+  `CAP_DAC_OVERRIDE` bypasses ordinary permission bits entirely, so the simulated-refusal write
+  silently succeeded instead of being blocked, corrupting the plugin's on-disk version for every
+  assertion downstream that read it (the other 6 failures were that one bad write cascading, not
+  independent bugs — confirmed by their names: two read the version directly, the rest already passed
+  once the first assertion in the chain did). Fixed by swapping the simulation to the ext4 immutable
+  attribute (`chattr +i`/`chattr -i`), a filesystem-level restriction `CanReplace`'s write-probe cannot
+  bypass even as root — confirmed directly before changing the test: creating a NEW file under an
+  `+i` directory fails for root exactly as it would for an unprivileged user, while overwriting an
+  EXISTING file's content still succeeds, since that never touches the directory's own inode. This
+  reproduces the real root-owned-755 constraint regardless of which user runs the suite, so it's
+  correct for both this sandbox and a normal non-root CI runner. `run-linux-tests.sh` 244/251 (7
+  failing) → **251/251**.
   <br>**Not yet run against real hardware** — same open question `plan.md`'s 2026-08-31 correction
   already named: whether a real `Notify` call renders a visible popup in Desktop Mode and Game Mode
   alike, and whether the action button's click actually opens the browser to the right page. Needs a

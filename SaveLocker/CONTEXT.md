@@ -721,11 +721,23 @@ the two numeric arguments `gdbus` can't reliably infer without introspection (`u
 Game" fixture into a genuine conflict (a divergent push from the machine that never re-pulled),
 started a daemon on the stuck machine, and confirmed the log shows the conflict noticed on the next
 20s tick — correctly gated to the "no notification daemon reachable" branch, since this sandbox (like
-CI) has no real D-Bus session bus. 244 passed. **The 7 failures alongside it are the same pre-existing
-Decky-plugin-update flake already recorded in [[Backlog]] from Phase 5 (2026-08-30), still unfixed —
-reconfirmed by `git stash`-ing this session's own changes and re-running**: identical 7 failures by
-name, 240 passed on the pre-change commit, 244 with this change's 4 new checks added on top — proof
-this session introduced no regression, not an assumption.
+CI) has no real D-Bus session bus. 244 passed. **The 7 failures alongside it were the same pre-existing
+Decky-plugin-update flake already recorded in [[Backlog]] from Phase 5 (2026-08-30) — reconfirmed by
+`git stash`-ing this session's own changes and re-running**: identical 7 failures by name, 240 passed
+on the pre-change commit, 244 with this change's 4 new checks added on top — proof this session
+introduced no regression, not an assumption.
+<br>**Then root-caused and fixed, same session, asked directly.** All 7 were one cause: `DeckyPlugin
+.CanReplace`'s "new top-level file refused" case is simulated in the test with `chmod 555` on the
+plugin directory, and this dev/CI container runs as **root** — root's `CAP_DAC_OVERRIDE` bypasses
+ordinary permission bits, so the simulated write silently succeeded instead of being refused,
+corrupting the plugin's on-disk version for every downstream assertion that read it (the other 6 were
+that one bad write cascading, confirmed by which ones failed: the two that read the version directly,
+plus every check after them in that block). Fixed by swapping the simulation to the ext4 immutable
+attribute (`chattr +i`/`-i`) — a filesystem-level restriction the write-probe cannot bypass even as
+root, confirmed directly before changing the test (a new file under `+i` fails for root exactly as for
+an unprivileged user; overwriting an existing file's content still succeeds, since that never touches
+the directory's own inode), so the same test now reproduces the real root-owned-755 constraint
+regardless of which user runs it. `run-linux-tests.sh` 244/251 → **251/251**.
 <br>**Not yet run against real hardware** — the one thing this sandbox genuinely cannot check, and
 the same open question `plan.md`'s 2026-08-31 correction already named: whether a real `Notify` call
 renders a visible popup in Desktop Mode (and Game Mode, still unconfirmed either way), and whether the
