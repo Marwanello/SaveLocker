@@ -10,7 +10,13 @@ import type { Activity, SyncActivitySnapshot } from '../types'
  * happened. Everything here comes from /api/activity, an in-memory read on the agent's side, so
  * polling it every couple of seconds while this card is mounted costs nothing.
  */
-export function ActivityCard() {
+interface Props {
+  /** Fired once a "Sync now" run finishes, success or failure — the caller checks for any conflict
+   * it surfaced and, if it's showing the sync-time pop-up, decides whether to pause on one. */
+  onSynced?: () => void
+}
+
+export function ActivityCard({ onSynced }: Props) {
   const [activity, setActivity] = useState<Activity | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
@@ -33,6 +39,7 @@ export function ActivityCard() {
       setSyncMessage(err instanceof Error ? err.message : 'Sync failed.')
     } finally {
       setSyncing(false)
+      onSynced?.()
     }
   }
 

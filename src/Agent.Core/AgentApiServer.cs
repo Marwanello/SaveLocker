@@ -632,7 +632,17 @@ public sealed class AgentApiServer : IDisposable
         app.MapGet("/api/conflicts",
             async Task<Results<Ok<ConflictDto[]>, InternalServerError<ErrorResponse>>> () =>
         {
-            try { return TypedResults.Ok((await ApiClient.For(_config).GetOpenConflictsAsync()).ToArray()); }
+            try
+            {
+                // The server route this proxies is deliberately unscoped (a machine key sees every
+                // open conflict; "its own frontend decides what to show" — see Program.cs). This is
+                // that decision: only conflicts this machine is actually a party to, the same "no
+                // bystander case" filter the CLI's `conflicts` command applies.
+                var mine = (await ApiClient.For(_config).GetOpenConflictsAsync())
+                    .Where(c => c.MachineId == _config.MachineId)
+                    .ToArray();
+                return TypedResults.Ok(mine);
+            }
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         });
 
@@ -683,6 +693,31 @@ public sealed class AgentApiServer : IDisposable
             {
                 await ApiClient.For(_config).SetConflictPolicyAsync(id, body.Policy, body.PreferredMachineId);
                 return TypedResults.Ok(new OkResponse());
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        // A conflict only carries version ids; these fill in machine name/timestamp/size and the
+        // file-count/newest-change comparison for each side, the same two calls the dashboard's own
+        // conflict card already makes, mirrored here for agent-ui's Conflicts page (Phase 6).
+        app.MapGet("/api/versions/{id:guid}",
+            async Task<Results<Ok<SaveVersionDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            try
+            {
+                return await ApiClient.For(_config).GetVersionAsync(id) is { } v
+                    ? TypedResults.Ok(v) : TypedResults.NotFound();
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        app.MapGet("/api/versions/{id:guid}/stats",
+            async Task<Results<Ok<VersionStatsDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            try
+            {
+                return await ApiClient.For(_config).GetVersionStatsAsync(id) is { } s
+                    ? TypedResults.Ok(s) : TypedResults.NotFound();
             }
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         });

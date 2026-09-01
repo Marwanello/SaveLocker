@@ -55,18 +55,39 @@ public static class ProtonRun
 
         if (game is not null)
         {
+            LaunchGateResult gate;
             try
             {
-                // The result was previously discarded, so a Deck user who launched a game another
-                // machine had checked out got no warning anywhere: this process is not the daemon,
-                // and Game Mode never shows the console. Persist it so both UIs can surface it.
                 // preLaunch: true — this is the real boundary. Steam ran us instead of the game and
-                // the child below has not started yet, so nothing can have the save open.
-                var (granted, holder) = await engine.OnGameLaunchAsync(game, preLaunch: true);
-                if (!granted && holder is not null)
-                    LeaseWarningStore.For(config).Add(game.Name, holder);
+                // the child below has not started yet, so nothing can have the save open. That
+                // certainty is exactly what makes Blocked safe to act on here and nowhere else
+                // (tasks/conflict-resolution-ui/plan.md, Phase 4).
+                gate = await engine.PrepareLaunchAsync(game);
             }
-            catch (Exception ex) { Log($"pre-launch sync failed, launching anyway: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                Log($"pre-launch sync failed, launching anyway: {ex.Message}");
+                gate = new LaunchGateResult(LaunchDecision.Proceed);
+            }
+
+            // The result of a lease warning was previously discarded, so a Deck user who launched a
+            // game another machine had checked out got no warning anywhere: this process is not the
+            // daemon, and Game Mode never shows the console. Persist it so both UIs can surface it.
+            if (gate.Decision == LaunchDecision.ProceedSyncPaused && gate.HolderMachineName is not null)
+                LeaseWarningStore.For(config).Add(game.Name, gate.HolderMachineName);
+
+            if (gate.Decision == LaunchDecision.Blocked)
+            {
+                // The one refusal in this codebase that stops a launch outright — every other
+                // refusal (running elsewhere, contention, a network hiccup) still launches. The
+                // engine already alerted the console/dashboard; this is what Steam's own log shows.
+                Console.Error.WriteLine(
+                    $"SaveLocker: launch of '{game.Name}' blocked — {gate.Reason}. " +
+                    $"Resolve the conflict (http://127.0.0.1:{config.DaemonApiPort ?? 5178}/#conflicts, `savelocker conflicts`, " +
+                    "or the dashboard), then press Play again.");
+                await health.SendAsync(api, config, offlineQueue, AgentLogger.Log);
+                return 1;
+            }
         }
         else
         {

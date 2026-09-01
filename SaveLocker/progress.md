@@ -823,3 +823,88 @@ test `Notify` call while actually in Game Mode, see if anything appears on scree
   performed — needs one more manual SSH session against the real Deck.
 - Desktop Mode's own Session-block values (as opposed to Game Mode's, now captured) are still
   unconfirmed.
+
+---
+
+## 2026-09-01 — PR #24 xhigh review completed (9 fixes across 11 files), pushed
+
+**Branch:** `save-conflicts-phase-4-6`. PR: https://github.com/Marwanello/SaveLocker/pull/24
+("Conflict resolution Phase 4 + 6, and a local-vs-cloud UI redesign" — the Linux launch gate in
+`SyncEngine.PrepareLaunchAsync`, a new agent-ui Conflicts page, a `doctor` conflicts section, and a
+sync-time conflict pop-up).
+
+### Request sequence
+
+1. `/code-review xhigh --fix PR#24` — 10 parallel finder agents ran across differing review angles and
+   reported ~21 raw candidate findings one at a time.
+2. **"were all of theese fixed?"** — investigation found the review had stalled after Phase 1
+   (finding): no fix commits existed and the two most-corroborated bugs were still present in the code.
+3. **"yes please"** — explicit authorization to resume: finish verification on the outstanding
+   candidates and apply fixes for the ones that survive.
+4. Verified and fixed everything directly (reading code rather than re-spawning finder agents),
+   deduplicating ~21 raw findings down to 9 confirmed fixes; several structural/lower-value findings
+   were explicitly scoped out and documented as skipped rather than fixed.
+
+### The critical bug: a bystander-visible, null-DTO conflict could silently pass the launch gate
+
+`SyncEngine.PrepareLaunchAsync`'s Steam launch gate only ever inspected `pushResult.Conflict`. That DTO
+is populated on the common path, but `PushCoreAsync`'s `ConsecutiveConflicts` rate-limit fast path
+returns `UploadStatus.Conflict` with a **null** DTO and makes no network call at all — so a genuinely
+still-open, confirmed conflict would fall through the `if (fresh is not null)` check as if nothing were
+wrong, defeating the entire point of the gate. Fixed by falling back to `FindOpenConflictAsync(game)`
+whenever `pushResult.Conflict` comes back null.
+
+### The other systemic bug: bystander conflicts leaking into agent-ui everywhere
+
+The server route `/agent/conflicts` is deliberately unscoped by design (a machine key sees every open
+conflict; "its own frontend decides what to show" — `Program.cs`). The CLI's `conflicts` command
+already applied the "no bystander case" `MachineId` filter (`AgentCli.cs`), but the new local HTTP API
+route `/api/conflicts` in `AgentApiServer.cs` — the single endpoint agent-ui exclusively consumes —
+did not, so every conflict in the whole system (not just ones this machine is a party to) was showing
+up in the Conflicts page, the sync pop-up, and `doctor`. Fixed with the same `MachineId` filter at that
+one shared choke point, which fixed all three surfaces at once. `Doctor.cs` had also been applying its
+own separate, redundant filter — consolidated onto the same pattern for consistency.
+
+### Other fixes
+
+- Hardcoded `127.0.0.1:5178` URLs in launch-blocked messages (`SyncEngine.cs`, `ProtonRun.cs`,
+  `Doctor.cs`) replaced with a real, persisted port: new `AgentConfig.DaemonApiPort` field, written by
+  `Daemon.cs` at startup from whatever port it actually bound to (supports `daemon --port <n>` for test
+  harnesses running alongside a real agent), read everywhere a Conflicts-page URL is printed.
+- `SyncConflictModal.tsx` — missing `key={conflict.id}` on `ConflictCard` was letting React reuse
+  component instances across list items, leaking state between unrelated conflict cards.
+- `ConflictCard.tsx` — simplified `mine` computation; added a `resolving` guard against double-submit
+  on the resolve-side click handler.
+- `App.tsx` — the sync-time conflict pop-up could still fire on top of the Conflicts page if the user
+  had already navigated there themselves while a "Sync now" request was in flight; fixed by suppressing
+  the pop-up when `view === 'conflicts'`.
+- `SyncService.cs` — deduplicated a repeated EF Core query pattern (`FindVersionAsync` helper shared by
+  `DownloadVersionAsync` and `GetVersionAsync`).
+- `GameDetail.tsx` (web) — aligned a "diverged" timestamp regex with the one used elsewhere.
+
+### Verification
+
+Full builds, plus three live PowerShell integration suites, all against real running server/agent
+state:
+
+- `run-agent-tests.ps1`: 45/45.
+- `run-health-tests.ps1`: 22/22.
+- `run-local-api-tests.ps1`: 30/30.
+
+Every non-clean run along the way traced to environment setup, not regressions — no server started, a
+dirty DB reused across a `.verify/`-only clear (the documented `Gotchas.md` pitfall, matched exactly),
+and an unstaged/unbuilt agent-ui `dist/`. A `git stash` used mid-session for a control comparison was
+immediately `stash pop`'d back with no work lost.
+
+### Landing the fix
+
+Committed and pushed on top of an intervening unrelated upstream commit (`84b3e0a`, isolating
+`seed-test-conflict.sh`'s build tree) via a clean merge — no rebase, no force-push. Final head:
+`6aab07a`, confirmed via the GitHub API to match PR #24's current head exactly (`open`,
+`mergeable_state: clean`, 8 commits, 1555 additions / 32 deletions / 29 changed files).
+
+### Not done
+
+- Several lower-value/structural findings from the 10 finder agents were deliberately left unfixed
+  (documented at fix time, not re-litigated here) as lower priority or higher risk relative to their
+  value.

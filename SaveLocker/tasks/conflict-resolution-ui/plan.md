@@ -563,8 +563,9 @@ Phase 0/1 (server + agent core — shipped)
     Phase 2       Phase 4       Phase 5       Phase 6       Phase 8       Phase 10
     (force-push   (Linux        (Linux env    (agent-ui     (Game Mode    (Decky UI,
      bookkeeping   wrapper       capability    conflicts     conflict      no launch
-     fix)          launch gate)  detection)    page +        screen)       wiring yet)
-                                                doctor line)
+     fix, shipped) launch gate,  detection,    page +        screen)       wiring yet)
+                   shipped)      shipped)      doctor line,
+                                                shipped)
                                     │             │  │           │             │
                                     │      ┌──────┘  └───┐       │             │
                                     │      ▼             ▼       │             │

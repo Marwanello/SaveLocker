@@ -13,9 +13,11 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   still open work — see that folder's `README.md`). **Phase 0/1 shipped 2026-08-29** (server +
   Agent.Core, this repo only — see below). **Phase 2 (the Force push/pull bookkeeping fix) and Phase 3
   (the dashboard Backups tab) both shipped 2026-08-30, and Phase 5 (Linux environment-capability
-  detection) shipped 2026-08-30 in the same session the plan was expanded** — see below. **Phases 4,
-  6–11, 13–14 remain not built** (Phase 9's tooling decision is made but not implemented; Phase 12's
-  endpoint exists but has no consumer yet — see below). Before Phase 2, the plugin's only way past
+  detection) shipped 2026-08-30 in the same session the plan was expanded, and Phase 4 (Linux wrapper
+  launch gate) + Phase 6 (shared `agent-ui` conflicts page) shipped 2026-08-31 together as
+  `implementation-grouping.md`'s "Group 2"** — see below. **Phases 7–11, 13–14 remain not built**
+  (Phase 9's tooling decision is made but not implemented; Phase 12's endpoint exists but has no
+  consumer yet — see below). Before Phase 2, the plugin's only way past
   a stuck sync was Force push/pull, which bypassed the server's own conflict bookkeeping — an orphaned
   `ConflictFlag`, an unprotected losing version, a stranded other device. The plan reframes conflicts
   as local-vs-cloud (never device-vs-device), moves the actual resolution *decision* into the shared
@@ -67,6 +69,43 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   `implementation-grouping.md` are both corrected; a consumer still needs a genuine on-demand trigger
   (a button, a CLI flag, a specific decision point) rather than a timer, decided when Phase 6, 8, or
   10 actually builds one.
+  <br>**Group 2 shipped 2026-08-31** (`tasks/conflict-resolution-ui/implementation-grouping.md`'s
+  "Group 2" — Phase 4 + Phase 6 together, the grouping document's own "biggest value-per-session"
+  pick, chosen because it makes conflict resolution end-to-end usable on a plain Linux box with zero
+  hardware dependency): **Phase 4**, `SyncEngine.PrepareLaunchAsync` (new `LaunchDecision`/
+  `LaunchGateResult`) replaces `ProtonRun.ExecuteAsync`'s bare `OnGameLaunchAsync` call for the Steam
+  launch wrapper specifically (Windows' `TrayApp.cs` keeps calling `OnGameLaunchAsync` unchanged —
+  Phase 7, still deferred, is what would touch that). Blocks the launch outright for exactly one
+  reason — a genuinely confirmed, open `ConflictFlag` — never for the game running elsewhere, lock
+  contention or a network hiccup (all still `ProceedSyncPaused`/`Proceed`, unchanged). Two checks: an
+  already-open conflict short-circuits before the lease is even taken, and "commit-before-choose" —
+  an ordinary push attempted first, cheap in the overwhelmingly common case (a hash-only bail, no
+  network call, when nothing changed since the last push) — turns unsynced local changes into a real,
+  hash-verified conflict instead of a bare pull refusal with nothing recoverable to show for it. New
+  `AgentEventCodes.LaunchBlocked` event. **Phase 6**: new `agent-ui/src/components/ConflictsView.tsx`
+  (genuinely new code against the agent's own local API, not a port of the dashboard's card, though
+  the visual shape is deliberately copied from it), a fourth `Sidebar.tsx` nav entry badge-numbered by
+  open-conflict count, and two new server routes (agent-group `GET /versions/{id}`, mirroring the
+  existing `/versions/{id}/stats`) + two new local-API proxies (`GET /api/versions/{id}`,
+  `GET /api/versions/{id}/stats`) so a conflict card can show machine/timestamp/size and file-count/
+  newest-change for both sides — a conflict itself only ever carried version ids. Also closes the
+  confirmed `doctor` gap: a new "Conflicts" section, one line per open conflict plus the
+  `:5178/#conflicts` URL, informational (not a `Problem`) the same way an open conflict already reads
+  in the console.
+  <br>**Verified live, not just built**: a real two-machine conflict seeded against a throwaway dev
+  server (register, add-game, diverging pushes, genuine `ConflictFlag`); `doctor` confirmed printing
+  the new Conflicts section correctly; a Playwright screenshot of the real `agent-ui` page at
+  `:5178/#conflicts` showing both sides with the right labels (including "This device (Machine2)"),
+  clicking "Use as Latest" resolved it through the real server (head moved, badge cleared, empty
+  state rendered); `savelocker run` confirmed to refuse a launch outright on a genuine open conflict
+  (child process never started, exit code 1) and to launch normally once resolved, and confirmed
+  lease contention alone (no conflict) still only warns and launches. `run-agent-tests.ps1` 45/45 and
+  `run-health-tests.ps1` 22/22 unchanged (this Linux container cannot build/run the Windows-only
+  `run-winagent-tests.ps1`/`run-server-bugbounty-tests.ps1`, which hard-depend on `src/Agent`).
+  `openapi.json` and both `api-types.ts` (web, agent-ui) regenerated against live scratch instances
+  and diffed — only the intended new route/types appear. Full solution's Linux-buildable projects
+  (Shared, Server, Agent.Core, Agent.Linux) build clean; `agent-ui` `tsc -b && vite build` and
+  `oxlint` clean (two pre-existing unrelated warnings in `AddGamesView.tsx`/`SettingsView.tsx`).
   <br>**A pre-existing, unrelated regression found while verifying Phase 5, not caused by it**: the
   last recorded `run-linux-tests.sh` baseline was 237/237 (`logs/sessions.md`, 2026-08-27); it is now
   237/230-passing — 7 failures, all in the "Decky plugin updates" section (a top-level-file package

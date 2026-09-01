@@ -60,12 +60,18 @@ corrected; Phase 12 now waits for a genuine on-demand trigger (a button, a CLI f
 call at a specific decision point) to attach to, decided when Phase 6, 8, or 10 actually builds one —
 not before.
 
-**Group 2 — medium, the biggest value-per-session in the whole plan.**
+**Group 2 — medium, the biggest value-per-session in the whole plan. Done 2026-08-31.**
 `Phase 4` (Linux wrapper launch gate) + `Phase 6` (shared `agent-ui` conflicts page + the confirmed
 `doctor`/log gap). Independent of each other and of Group 1. Roughly Phase-2+3-sized. This is what
 makes conflict resolution end-to-end usable on a plain Linux box for the first time — do this before
 any Decky/Windows/Playnite work, since it's the one grouping that delivers real user value with zero
-hardware dependency.
+hardware dependency. Shipped as `SyncEngine.PrepareLaunchAsync` (Phase 4, wired into
+`ProtonRun.ExecuteAsync` only — Windows' `TrayApp.cs` is untouched, per Phase 7 below) and
+`agent-ui/src/components/ConflictsView.tsx` + two new version-lookup routes (Phase 6). Verified live:
+a real two-machine conflict seeded against a dev server, resolved through a real browser session
+against the real local API (Playwright screenshot), and `savelocker run` confirmed to refuse a launch
+on the open conflict and proceed normally once resolved. Full write-up: `CONTEXT.md`/`Backlog.md`,
+2026-08-31.
 
 **Group 3 — small, code-only here, live verification later. Requires Group 2 to have shipped first.**
 `Phase 9`'s actual D-Bus notification implementation. Its real dependencies (per `plan.md`'s own
@@ -110,7 +116,7 @@ a five-minute manual check would have caught).
 
 ```
 Done 2026-08-30       →  Group 1 (5, 9-spike)                  tiny, fully verifiable here
-Following session    →  Group 2 (4, 6)                        medium, biggest value, fully verifiable here
+Done 2026-08-31       →  Group 2 (4, 6)                        medium, biggest value, fully verifiable here
 Following session    →  Group 3 (9-impl)                       small, code-only here, needs Group 2 first
 Following session    →  Group 4 (8)                           medium, code-only here
 Windows machine       →  Group 5 (7, 14)

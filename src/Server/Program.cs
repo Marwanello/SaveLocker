@@ -382,6 +382,14 @@ agent.MapGet("/versions/{versionId:guid}/stats", async (Guid versionId, SyncServ
     await sync.GetVersionStatsAsync(null, versionId) is { } stats ? Results.Ok(stats) : Results.NotFound())
     .Produces<VersionStatsDto>();
 
+// A conflict only carries version IDs (ConflictDto.VersionAId/VersionBId) — this is how the agent
+// resolve UI (agent-ui's Conflicts page, tasks/conflict-resolution-ui/plan.md Phase 6) fills in the
+// machine name, timestamp and size for each side, the same way the dashboard's own conflict card
+// already does through the admin-scoped versions list.
+agent.MapGet("/versions/{versionId:guid}", async (Guid versionId, SyncService sync) =>
+    await sync.GetVersionAsync(versionId) is { } v ? Results.Ok(v) : Results.NotFound())
+    .Produces<SaveVersionDto>();
+
 // ---- Game creation (agent enrollment) ----
 // Agents create games during enrollment using their API key.
 // The admin POST /api/games route (below) handles dashboard-side game creation.

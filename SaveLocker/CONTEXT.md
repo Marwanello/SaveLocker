@@ -488,6 +488,210 @@ remain open — see [[Backlog]].
 
 ---
 
+**Decky conflict-resolution "Group 2" shipped (2026-08-31, this branch, no task file — the practical
+execution grouping in `tasks/conflict-resolution-ui/implementation-grouping.md`, chosen there as "the
+biggest value-per-session in the whole plan").** Phase 4 (Linux wrapper launch gate) + Phase 6 (shared
+`agent-ui` conflicts page + the `doctor`/log gap), together — the pair `implementation-grouping.md`
+picked because it makes conflict resolution end-to-end usable on a plain Linux box for the first time,
+with zero Decky/Windows/Deck-hardware dependency.
+<br>**Phase 4**: new `SyncEngine.PrepareLaunchAsync` (`LaunchDecision`/`LaunchGateResult`) replaces
+`ProtonRun.ExecuteAsync`'s bare `OnGameLaunchAsync` call — Windows' `TrayApp.cs` is untouched on
+purpose, since Phase 7 (Windows tray wiring, still open) is what would touch that, and Windows has no
+pre-launch boundary this certain anyway (`OnGameLaunchAsync`'s own doc comment). Blocks the launch
+outright for exactly one reason — a genuinely confirmed, open `ConflictFlag` — never for the game
+running elsewhere, lock contention, or a network hiccup, which all still proceed exactly as before.
+Two checks, in order: an already-open conflict for the game short-circuits before the lease is even
+taken, and "commit-before-choose" (the plan's own term) attempts an ordinary push first so unsynced
+local changes become a real, hash-verified conflict rather than a bare pull refusal — cheap in the
+overwhelmingly common case, since `PushCoreAsync` already bails on a hash comparison alone with no
+network call at all when nothing changed since the last push. New `AgentEventCodes.LaunchBlocked`.
+<br>**Phase 6**: new `agent-ui/src/components/ConflictsView.tsx` — genuinely new code against the
+agent's own local API (a distinct wire protocol from the dashboard's, per [[REPO_MAP]]), not a port of
+`web/src/components/GameDetail.tsx`'s card, though the visual shape (machine, timestamp, size, file
+count, newest-change, Use as Latest / Keep both) is deliberately copied from it — plus a fourth
+`Sidebar.tsx` nav entry, badge-numbered by open-conflict count. A conflict only ever carried version
+ids, so two new server routes were needed: agent-group `GET /versions/{id}` (mirroring the existing
+`/versions/{id}/stats`, same flat/unscoped trust boundary) and matching local-API proxies
+(`GET /api/versions/{id}`, `GET /api/versions/{id}/stats`) so the card can show machine/timestamp/size
+and file-count/newest-change for both sides. Also closes the confirmed gap Phase 0/1's own write-up
+never actually filled: `Doctor.cs` gained a "Conflicts" section, one line per open conflict plus the
+`http://127.0.0.1:5178/#conflicts` URL — informational, not a `Problem`, the same way an open conflict
+under `Manual` policy already reads elsewhere in this codebase.
+<br>**Verified live, not just built**: seeded a real two-machine divergence (register, add-game,
+diverging pushes) against a throwaway dev server, confirming a genuine `ConflictFlag` existed;
+`doctor` confirmed printing the new Conflicts section with the right game name, "overdue" flag and
+URL; a Playwright screenshot of the actual `agent-ui` page at `:5178/#conflicts` (well, the scratch
+port used here) showed both sides correctly labeled — including "This device (Machine2)" — and
+clicking "Use as Latest" resolved the conflict through the real server: the head moved to the clicked
+version, the sidebar badge cleared, and the empty state rendered. Separately confirmed with
+`savelocker run`: it refused to launch a game with a genuine open conflict (child process never
+started, exit code 1, correct message), launched normally once the conflict was resolved, and — the
+control case — that ordinary lease contention alone (no conflict) still only warns and launches, never
+blocks. `run-agent-tests.ps1` 45/45 and `run-health-tests.ps1` 22/22 unchanged (this session's
+container cannot build or run `run-winagent-tests.ps1`/`run-server-bugbounty-tests.ps1`, both of which
+hard-depend on the Windows-only `src/Agent` build). `openapi.json` and both `api-types.ts` (web,
+agent-ui) regenerated against live scratch server/daemon instances and diffed — only the two intended
+new routes/types appear in each. Every Linux-buildable project (Shared, Server, Agent.Core,
+Agent.Linux) builds clean; `agent-ui`'s `tsc -b && vite build` and `oxlint` are clean (two pre-existing,
+unrelated warnings in `AddGamesView.tsx`/`SettingsView.tsx`).
+<br>**Not yet run against real hardware or a live fleet** — this is the first phase in the expanded
+plan with a real, usable end-to-end conflict-resolution surface on a *plain* Linux box (no Decky), so
+it's the first one worth a maintainer actually trying on the real Deck's Desktop Mode or a WSL rig.
+Phases 7 (Windows tray wiring), 8 (Game Mode screen), 9 (D-Bus notify impl), 10/11 (Decky), 13
+(Playnite), and 14 (webhook + block-launch opt-in) remain open — see [[Backlog]].
+
+**Conflict UI redesign — local vs. cloud, plus a sync-time pop-up (2026-08-31, same session, this
+branch, asked directly rather than scoped up front — the maintainer reviewed Group 2's card and
+wanted the framing changed before anything else built on it).** Two requests, both mocked up first
+as a published Artifact and approved before any code changed:
+1. **Reframe every conflict card as "This device" / "The cloud," never machine name vs. machine
+   name** — the machine name that raced the cloud is now a small caption ("from \"Living Room PC\"")
+   on whichever side isn't this device, never the panel's own label; the cloud side is *always*
+   labelled "The cloud" regardless of whose push last updated it (plan.md decision 2, which this
+   corrects the UI to actually match — Phase 6's first pass had drifted from it). Recency ("12m ago")
+   is now the headline number in each panel, with a small "newer" tag on whichever side is more
+   recent; the exact timestamp is still there as a hover tooltip. New two-step interaction: click a
+   side (or its "Keep this" button) to select it, a separate "Resolve with {side}" button confirms —
+   replacing the old one-click-does-it four-button layout (Use as Latest / Keep both, ×2 sides).
+2. **A sync-time pop-up**: pressing "Sync now" on the Overview page now pauses on each conflict it
+   surfaces, one at a time, in a `position: fixed` overlay covering the *entire* app shell (sidebar
+   included, not just the content pane) — reusing the same card in a second interaction mode where a
+   side's own button resolves immediately and the queue auto-advances, since the point there is
+   momentum through a queue, not a considered review. A "Decide later" control always has somewhere
+   to go: it dismisses the pop-up and switches straight to the Conflicts view (badge still lit),
+   never just closes back to a spinner with no trace. Deliberately scoped to the agent-ui **Sync now**
+   button only — the passive 15s conflicts poll never opens it, and the Windows tray's own "Sync
+   All"/per-game menu items don't yet either, since making the tray raise this same window is Phase
+   7 (unbuilt, Windows-only, correctly deferred rather than guessed at from this Linux container).
+<br>**Refactored for reuse, not duplicated**: `ConflictCard.tsx` (the local/cloud card itself, taking
+a `mode: 'confirm' | 'immediate'` prop) and `useConflictVersions.ts` (the version/stats fetch-and-cache
+hook) are now shared by `ConflictsView.tsx` and the new `SyncConflictModal.tsx`, so the two surfaces
+cannot drift out of visual sync with each other the way two independent copies eventually would.
+<br>**One design bug caught and fixed during live verification, not left in**: the card's first draft
+pre-selected "This device" by default via a `useState` initializer reading `versionB?.machineName`
+before that version had actually loaded (an async fetch), so the "smart default" silently never fired
+— confirmed on a real screenshot showing neither side selected when it should have been one. Fixed by
+dropping the default entirely rather than chasing the race: no side is ever pre-selected, matching
+this same design's own "never silently default to a side" rule for the Decky-equivalent popup.
+<br>**Verified live against a real dev server + Linux daemon**, not just built: seeded a genuine
+two-machine conflict, screenshotted the pop-up appearing correctly on "Sync now" (both sides
+correctly labelled, "newer" tag on the right side, full-shell dim behind it), confirmed "Decide
+later" lands on the Conflicts view with the same conflict rendered in confirm mode, confirmed the
+confirm-mode Resolve button starts disabled and enables with the right label once a side is picked,
+confirmed a real resolve moves the server head and clears the badge, and separately confirmed
+immediate mode (clicking a side inside the pop-up) resolves right away and closes the pop-up once its
+one-conflict queue empties. `agent-ui` `tsc -b && vite build` and `oxlint` both clean (same two
+pre-existing, unrelated warnings as before). No server/`Agent.Core` changes this round — purely
+`agent-ui`.
+
+**`ConflictCard` restyled to actually match the approved mockup, plus a repeatable manual test
+path (2026-08-31, same session, asked directly — "the artifact looks much better... it's ugly now
+with the red border").** The redesign above had gotten the local-vs-cloud *framing* right but never
+matched the mockup's actual look: the card had carried a dark reddish tint (`#241a1a` background,
+`#4a2a2a`/danger-red borders) on every conflict, escalated or not — the "ugly red border" — instead
+of the mockup's neutral `#1E252A` card on `#34424b`, panels on `#222d34`/`#3a4750`, an amber
+"CONFLICT" chip, and a plain-language sentence ("This device and the cloud both changed since the
+last sync..."). Red is now reserved for the genuine overdue-escalation line only, same as before.
+`ConflictCard.tsx` was rewritten line-for-line against `tasks/conflict-resolution-ui/`'s published
+"Local vs Cloud" artifact (still live: ask `Artifact` → `list` for the URL) — panel padding/radius,
+the mono "recency" headline with its "newer" tag, the per-side caption wording ("This is the machine
+you're using right now." / `Last updated from "X"`), and the footer's dashed rule + resolve button
+are all copied verbatim rather than approximated. No component structure changed — same
+`ConflictCard`/`useConflictVersions` shared by `ConflictsView` and `SyncConflictModal`, so both
+surfaces picked up the fix for free.
+<br>**New: `tests/seed-test-conflict.sh`** — the manual "how do I see a conflict without my real
+games" path asked for in the same message. Runs entirely against a throwaway scratch server and two
+fake machine configs (`Living Room PC` / `This Device`, dummy `savefile.txt`s under
+`~/savelocker-conflict-test`, isolated the same way `testenv.sh` isolates Linux state via
+`XDG_DATA_HOME`) — never touches a real server, a real Steam save, or `~/.local/share/SaveLocker`.
+`up` builds if needed, starts the scratch server + daemon, seeds a genuine two-machine divergence via
+the CLI (register → add-game → push → diverge → push), and prints the Conflicts-page URL; `again`
+reseeds a fresh one (see below); `down`/`clean` tear down (`clean` also deletes the scratch state).
+<br>**One real bug found writing it, not a test artifact:** the first `again` draft tried to be a
+"lighter" reset — resolve the open conflict, wipe just the two machine configs, reseed — and it
+produced a conflict on the *wrong* side unpredictably. Root cause: a brand-new machine's first-ever
+push is only unconditionally conflict-free when the game has **no head at all yet** (Phase 0/1's own
+rule — even a never-synced machine is compared against the current cloud head, not exempted from it).
+Reusing the same long-lived server DB across `again` calls meant whichever side happened to push
+second inherited a stale head from a *previous* run and conflicted against content that was never
+part of the story it was telling. Fixed by making `again` a full reset (server-data included), not a
+lighter path — deterministic every time, same as a fresh `up`. Also caught before that: `set-server`/
+`register` write to `$XDG_DATA_HOME/SaveLocker/config.json`, not straight under `$XDG_DATA_HOME` —
+an early draft's cleanup path silently missed the config file it meant to delete.
+<br>**Verified live**: ran `up`, screenshotted the Conflicts page (no red anywhere, chip/sentence/
+caption/newer-tag all present, matches the artifact), clicked a side and confirmed the selected-state
+styling (accent border/gradient/icon, "Resolve with This device" enabling), ran `again` and confirmed
+a fresh conflict reseeds deterministically, and screenshotted the sync-time pop-up (`Sync now` on
+Overview) showing the same restyled card in immediate mode over the full shell. `agent-ui`
+`tsc -b && vite build` and `oxlint` clean (same two pre-existing warnings). No server/`Agent.Core`
+changes.
+
+**`seed-test-conflict.sh` now stages `agent-ui` itself, same session, follow-up to the above** — the
+maintainer hit exactly the documented WSL gotcha (*"WSL usually has no native `node`"*, `Gotchas.md`)
+running the manual copy step by hand: plain WSL has no native Node, so `npm` resolves through Windows
+PATH interop to `/mnt/c/.../npm.exe`, which fails on this shell's UNC-style cwd (`CMD.EXE...UNC paths
+are not supported`, then `'tsc' is not recognized`). New `stage_ui()` (mirrors `testenv.sh`'s own
+function of the same name and purpose) tries, in order: a **native** Linux npm right there (checked by
+resolving `command -v npm` and rejecting anything under `/mnt/*` — that path can only be Windows'
+npm.exe reached through WSL interop); an already-built `agent-ui/dist` on disk; a Windows-side checkout
+via `$SAVELOCKER_WIN_REPO` (same convention `testenv.sh` already established); and only then a refusal
+naming both fixes, rather than starting a daemon whose UI is silently a blank page. Also fixed the copy
+destination itself: `AgentApiServer` serves from `<bin>/agent-ui` directly, not `<bin>/agent-ui/dist` —
+an early manual attempt nested it one level too deep and got a 404, not the old UI. `up`/`again` both
+call it now; no more manual `npm run build` + copy step. Verified live in this session's native-Linux
+container (the one environment here that has a real npm): fresh `clean` → `up` auto-built and staged
+`agent-ui/dist`, the Conflicts page rendered correctly, and a second `again` rebuilt cleanly too. The
+WSL-without-native-node and `SAVELOCKER_WIN_REPO` branches are reasoned through against the documented
+gotcha but not exercised on a real WSL box this session — worth a maintainer confirmation next time
+this is used from Windows.
+
+**`seed-test-conflict.sh` also self-heals npm/cli#4828, hit for real on the maintainer's own WSL
+worktree (`.claude/worktrees/...`, same session, immediate follow-up).** `npm run build` died with
+`Cannot find native binding` — rolldown's (Vite 8's bundler) platform-specific `.node` binary either
+never got installed or went stale in this worktree's `node_modules`, a known npm bug
+(https://github.com/npm/cli/issues/4828) whose own fix is "delete `node_modules` and
+`package-lock.json`, reinstall." New `build_ui_or_recover()` tries a normal build first, greps the
+captured output for that exact message on failure, and only then does the clean
+`node_modules`+`package-lock.json` wipe and reinstall + one retry — a build that fails for any other
+reason still surfaces its real log and dies, so this never masks an actual code problem as "just
+reinstall." Confirmed against a faithful repro, not the error text alone: deleted this repo's own
+`@rolldown/binding-linux-x64-gnu/*.node` (the exact file the real error names) and ran `up` — it
+detected the failure, reinstalled, and rebuilt successfully on the retry. A first attempt at
+reproducing it by corrupting `rolldown`'s `package.json` main field instead threw a *different*
+`ERR_MODULE_NOT_FOUND` earlier in module resolution — not a faithful repro of the reported bug, caught
+by actually reading the diverging error rather than assuming the first repro attempt matching "some
+error" was good enough. `agent-ui/node_modules` and `package-lock.json` restored to their committed
+state afterward (the repro necessarily dirties both; regenerating `package-lock.json` also happens to
+bump transitively-pinned `^`-range packages like `vite` 8.1.3→8.2.2, an expected but noteworthy side
+effect of the real fix a maintainer hitting this for real would see too, worth knowing rather than
+being surprised by).
+
+**`seed-test-conflict.sh` made a genuinely separate parallel app, not just separate state (same
+session, immediate follow-up — the maintainer worried it "messed up" their real remote-server setup
+and asked for testenv-style isolation).** Every earlier version still built Server/Agent.Linux with a
+plain `dotnet build` into their project's own default `bin/Debug/net10.0/`, and staged agent-ui into
+`agent-ui/dist` before copying — the same paths a real dev daemon on the same machine, pointed at a
+real remote server, would be built and running from. Rebuilding those out from under a live process
+is exactly the "messed up my real one" risk, even though the *data* (server DB, machine configs,
+conflicts) was always fully isolated under `$STATE` via `XDG_DATA_HOME`. Fixed by routing every build
+artifact into `$STATE/build/` instead: `dotnet build -o` for Server and Agent.Linux (their `-o`
+argument redirects the final output copy; `obj/` intermediates are still the project's own, but
+those are never what a running process executes from), and `vite build --outDir ... --emptyOutDir`
+for agent-ui, so nothing is ever written to `agent-ui/dist` either. This goes a step further than
+`testenv.sh` itself, which still builds Agent.Linux into the shared default `bin/Debug` path — worth
+knowing if that script is ever run alongside a real dev daemon too.
+<br>**Verified, not assumed**, that `-o` actually avoids the shared path: built Agent.Linux once
+into the default location, recorded `savelocker.dll`'s mtime, then built again with `-o /tmp/...` and
+confirmed the default file's mtime was **unchanged** while the fresh binary appeared only under
+`/tmp/...` — including checking whether the csproj's own `CopyAgentUiDist` MSBuild target (which
+references `$(OutputPath)` directly, a separate property from the `-o` override, and could in
+principle still land in the shared path even with `-o` given) fired against the default directory;
+it didn't. Ran the full `up` → `again` → `clean` cycle afterward against the new isolated paths and
+confirmed the Conflicts page still renders correctly and `clean` removes the entire isolated build
+tree along with the rest of `$STATE`.
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

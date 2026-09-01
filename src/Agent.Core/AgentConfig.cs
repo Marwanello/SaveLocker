@@ -15,6 +15,13 @@ public sealed class AgentConfig
     public string? ApiKey { get; set; }
     public Guid? MachineId { get; set; }
     /// <summary>
+    /// The port the Linux daemon's local API last bound to — normally <c>Daemon.DefaultApiPort</c>,
+    /// but overridable via <c>daemon --port</c> for a test harness running alongside the real agent.
+    /// Persisted so anything printing the local Conflicts-page URL (this engine, <c>doctor</c>, the
+    /// launch wrapper) points somewhere actually listening, instead of assuming the default.
+    /// </summary>
+    public int? DaemonApiPort { get; set; }
+    /// <summary>
     /// TOFU pin of the server's TLS public key, recorded at enrollment. Null over plain http, or
     /// for agents registered before enrollment existed. See <see cref="ServerTrust"/>.
     /// </summary>
