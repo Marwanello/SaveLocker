@@ -574,6 +574,43 @@ check "no temp archives leaked" "$([ "${leftover_tmp}" = "0" ] && echo 0 || echo
 kill "${daemon_pid}" 2>/dev/null
 wait "${daemon_pid}" 2>/dev/null
 
+# ── Desktop notification on a real conflict (Phase 9 of tasks/conflict-resolution-ui/plan.md) ─
+# "Desktop" (other_cfg) is the machine left stuck behind: it pulled Fake Prefix Game once, early in
+# this script, and everything since — the daemon+wrapper section just above included — kept
+# advancing the Deck's head without it. Pushing ANY edit from it now, without pulling first,
+# reproduces the exact two-machine divergence run-agent-tests.ps1 already covers server-side; this
+# section instead exercises the AGENT's new reaction to it — ConflictNotifier, wired into
+# CommandPoller's 20s tick in Daemon.cs — which this harness (no real D-Bus session bus) can only
+# ever exercise down the "notification daemon not reachable" branch. The actual gdbus Notify call
+# and its action button need a live desktop session to verify, per the plan's own lower priority
+# on scripted D-Bus coverage.
+echo
+echo "==> Desktop notification on a real conflict (headless harness — no D-Bus session bus)"
+echo "level=other-cfg-stale" >"${scratch}/pulled/slot1.sav"
+conflict_out="$(agent push --config "${other_cfg}" "Fake Prefix Game")"
+check "Desktop's stale push reports CONFLICT" "$(contains "${conflict_out}" "CONFLICT")"
+
+dotnet "${agent_dir}/bin/Debug/net10.0/savelocker.dll" daemon \
+  --config "${other_cfg}" --port 5190 >"${scratch}/notify-daemon.log" 2>&1 &
+notify_daemon_pid=$!
+for _ in $(seq 1 40); do
+  curl -sf "http://localhost:5190/" >/dev/null 2>&1 && break
+  sleep 0.5
+done
+check "notify-daemon started" "$(kill -0 "${notify_daemon_pid}" 2>/dev/null && echo 0 || echo 1)"
+
+# CommandPoller's default tick is 20s and Daemon.cs has no test hook to shorten it, so this waits
+# out one real tick rather than guessing at a faster one.
+sleep 25
+kill "${notify_daemon_pid}" 2>/dev/null
+wait "${notify_daemon_pid}" 2>/dev/null
+
+notify_log="$(cat "${log}" 2>/dev/null)"
+check "conflict notification: new open conflict logged on the next tick" \
+  "$(contains "${notify_log}" "conflict notification: 1 new open conflict")"
+check "conflict notification: no daemon reachable here, reported, not a crash or a hang" \
+  "$(contains "${notify_log}" "no desktop notification daemon reachable")"
+
 # ---------------------------------------------------------------------------
 # autostart must report the REAL outcome (LA-08)
 # ---------------------------------------------------------------------------
