@@ -1091,11 +1091,22 @@ check "a refused plugin update is reported to the console" \
 # The real constraint: the plugin directory itself is root-owned 755, so an existing file can be
 # overwritten but a new top-level one cannot be created. Discovering that partway through would
 # leave a plugin half on one version and half on another, which is worse than an old one.
+#
+# `chmod 555` alone does NOT simulate this when the harness itself runs as root (a real risk here,
+# not a hypothetical: this suite's own dev/CI container commonly does) — root's CAP_DAC_OVERRIDE
+# bypasses ordinary permission bits entirely, so a plain `chmod`-based probe silently lets the write
+# through instead of refusing it, and every assertion downstream that reads the plugin's version then
+# fails as a cascading symptom of that one root cause, not independently. The ext4 immutable attribute
+# is a filesystem-level restriction CanReplace's write-probe cannot bypass even as root (confirmed:
+# creating a new entry under an `+i` directory fails for root exactly as it does for an unprivileged
+# user, while overwriting an EXISTING file's content still succeeds, since that never touches the
+# directory's own inode) — so it reproduces the real root-owned-755 constraint regardless of which
+# user runs this script.
 make_plugin_zip "${scratch}/plugin-0.4.0.zip" "0.4.0" "bundle 0.4.0" "py_modules/helper.py"
 host_plugin "${scratch}/plugin-0.4.0.zip" "0.4.0"
-chmod 555 "${plugin_dir}"
+chattr +i "${plugin_dir}"
 out="$(agent plugin-update --config "${deck_cfg}")"; plugin_rc=$?
-chmod 755 "${plugin_dir}"
+chattr -i "${plugin_dir}"
 check "a package needing a new top-level file is REFUSED" "$(contains "${out}" "py_modules/helper.py")"
 check "the refusal names the reinstall route"      "$(contains "${out}" "Install Plugin from")"
 check "the refusal exits non-zero"                 "$([ "${plugin_rc}" != "0" ] && echo 0 || echo 1)"
