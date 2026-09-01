@@ -1,3 +1,46 @@
+# Session summary — 2026-09-01
+
+`/code-review xhigh --fix` completed end-to-end on PR #24 ("Conflict resolution Phase 4 + 6, and a
+local-vs-cloud UI redesign" — Linux launch gate, agent-ui Conflicts page, `doctor` conflicts section,
+sync-time conflict pop-up), after being caught mid-session as having stalled with zero fixes applied.
+
+**Caught the stall:** 10 parallel finder agents had reported ~21 candidate findings across many turns,
+but "were all of theese fixed?" prompted an investigation showing the review never progressed past
+finding — no fix commits existed, and the two most-corroborated bugs were confirmed still present by
+direct code read. Given explicit go-ahead ("yes please"), verification and fix application were done
+directly against the code rather than by re-spawning finder agents.
+
+**Fixed 9 confirmed findings across 11 files**, headlined by two real bugs:
+
+- **Launch gate could silently let a confirmed conflict through.** `SyncEngine.PrepareLaunchAsync`
+  only checked `pushResult.Conflict`, but `PushCoreAsync`'s `ConsecutiveConflicts` rate-limit fast path
+  returns `UploadStatus.Conflict` with a **null** DTO and no network call — so that path fell through
+  the gate as if nothing were wrong. Fixed with a fallback to `FindOpenConflictAsync(game)`.
+- **Bystander conflicts leaking into every agent-ui surface.** The server's `/agent/conflicts` route is
+  deliberately unscoped by design, and the CLI already filtered to conflicts this machine is a party to
+  — but the new local API route `/api/conflicts` (the one endpoint agent-ui exclusively consumes) never
+  applied that filter, so the Conflicts page, sync pop-up, and `doctor` all showed every open conflict
+  in the system. Fixed at that one shared choke point in `AgentApiServer.cs`, fixing all three surfaces
+  at once; `Doctor.cs`'s own redundant filter consolidated onto the same pattern.
+
+Also fixed: hardcoded `127.0.0.1:5178` URLs replaced with a real persisted port (new
+`AgentConfig.DaemonApiPort`, written by the daemon at startup); a missing React `key` in
+`SyncConflictModal` causing cross-card state leakage; a double-submit guard on conflict resolution; the
+sync pop-up firing on top of an already-open Conflicts page; an EF Core query dedup in `SyncService.cs`;
+and a web-side timestamp regex alignment. Several lower-value/structural findings were deliberately
+left unfixed and documented as such rather than fixed.
+
+**Verified clean** via full builds and three live PowerShell suites against a real server/agent —
+`run-agent-tests.ps1` 45/45, `run-health-tests.ps1` 22/22, `run-local-api-tests.ps1` 30/30 — with every
+non-clean run along the way traced to environment setup (server not started, DB/`.verify/` cleared
+unevenly, agent-ui `dist/` never built) rather than regressions.
+
+**Landed:** merged cleanly against an intervening unrelated upstream commit (no rebase/force-push) and
+pushed as `6aab07a`, confirmed via the GitHub API to be PR #24's exact current head — `open`,
+`mergeable_state: clean`.
+
+---
+
 # Session summary — 2026-08-30/31
 
 Conflict-resolution plan expanded from 9 to 15 phases to close a real gap (no resolve UI existed
