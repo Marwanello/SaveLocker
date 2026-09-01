@@ -122,7 +122,7 @@ export function ConflictCard({
           const Icon = side.kind === 'cloud' ? Cloud : HardDrive
           const isSelected = selected === side.id
           const isNewer = newerId === side.id
-          const mine = side.v?.machineName === machineName
+          const mine = label === 'This device'
           const caption = !side.v ? null
             : side.kind === 'local'
               ? (mine ? "This is the machine you're using right now." : `Last synced from "${side.v.machineName}"`)
@@ -131,9 +131,9 @@ export function ConflictCard({
           return (
             <div
               key={side.id}
-              onClick={() => act(side.id)}
+              onClick={() => { if (!resolving) act(side.id) }}
               style={{
-                flex: '1 1 210px', minWidth: 210, cursor: 'pointer',
+                flex: '1 1 210px', minWidth: 210, cursor: resolving ? 'default' : 'pointer',
                 background: isSelected
                   ? 'linear-gradient(180deg, rgba(18,146,113,0.10), rgba(18,146,113,0.03) 60%)'
                   : '#222d34',

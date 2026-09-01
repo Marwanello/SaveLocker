@@ -1244,10 +1244,12 @@ public sealed class SyncService
         return await DownloadVersionAsync(game.HeadVersionId.Value);
     }
 
+    private Task<SaveVersion?> FindVersionAsync(Guid versionId) =>
+        _db.SaveVersions.Include(v => v.Machine).FirstOrDefaultAsync(v => v.Id == versionId);
+
     public async Task<(SaveVersion version, Stream content)?> DownloadVersionAsync(Guid versionId)
     {
-        var version = await _db.SaveVersions.Include(v => v.Machine)
-            .FirstOrDefaultAsync(v => v.Id == versionId);
+        var version = await FindVersionAsync(versionId);
         if (version is null || !_store.Exists(version.ArchivePath)) return null;
         return (version, _store.OpenRead(version.ArchivePath));
     }
@@ -1259,12 +1261,8 @@ public sealed class SyncService
     /// route beside it: a valid machine key already gates the whole group, so this needs no
     /// per-game scoping either.
     /// </summary>
-    public async Task<SaveVersionDto?> GetVersionAsync(Guid versionId)
-    {
-        var version = await _db.SaveVersions.Include(v => v.Machine)
-            .FirstOrDefaultAsync(v => v.Id == versionId);
-        return version?.ToDto();
-    }
+    public async Task<SaveVersionDto?> GetVersionAsync(Guid versionId) =>
+        (await FindVersionAsync(versionId))?.ToDto();
 
     /// <summary>File count / newest-mtime for one version's archive, cached per version id (an
     /// archive's contents never change once uploaded). <paramref name="gameId"/> is null for the

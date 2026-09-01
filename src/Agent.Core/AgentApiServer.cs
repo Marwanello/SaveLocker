@@ -632,7 +632,17 @@ public sealed class AgentApiServer : IDisposable
         app.MapGet("/api/conflicts",
             async Task<Results<Ok<ConflictDto[]>, InternalServerError<ErrorResponse>>> () =>
         {
-            try { return TypedResults.Ok((await ApiClient.For(_config).GetOpenConflictsAsync()).ToArray()); }
+            try
+            {
+                // The server route this proxies is deliberately unscoped (a machine key sees every
+                // open conflict; "its own frontend decides what to show" — see Program.cs). This is
+                // that decision: only conflicts this machine is actually a party to, the same "no
+                // bystander case" filter the CLI's `conflicts` command applies.
+                var mine = (await ApiClient.For(_config).GetOpenConflictsAsync())
+                    .Where(c => c.MachineId == _config.MachineId)
+                    .ToArray();
+                return TypedResults.Ok(mine);
+            }
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         });
 

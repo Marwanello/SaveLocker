@@ -4,7 +4,7 @@ import type { GameSummary, Machine, Command, Conflict, Version, VersionStats, Ma
 import { toTemplate, isTemplate } from '../savePathTemplate';
 
 const shortId = (id: string | null | undefined) => id ? id.replace(/-/g, '').slice(0, 8) : '—';
-const asUtc = (t: string) => /[Z+]/.test(t.slice(-6)) ? t : t + 'Z';
+const asUtc = (t: string) => /[Z+]|-\d\d:\d\d$/.test(t) ? t : t + 'Z';
 const when = (t: string | null | undefined) => t ? new Date(asUtc(t)).toLocaleString() : '—';
 /**
  * Adaptive, because this is a decision aid. A fixed "MB" renders every small save as "0.00 MB",

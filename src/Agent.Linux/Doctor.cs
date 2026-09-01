@@ -401,7 +401,14 @@ public static class Doctor
         }
 
         List<ConflictDto> conflicts;
-        try { conflicts = await ApiClient.For(config).GetOpenConflictsAsync(); }
+        try
+        {
+            // Only conflicts this machine is actually a party to — the same "no bystander case" filter
+            // `savelocker conflicts` applies (AgentCli.cs), so the two commands agree on the count.
+            conflicts = (await ApiClient.For(config).GetOpenConflictsAsync())
+                .Where(c => c.MachineId == config.MachineId)
+                .ToList();
+        }
         catch (Exception ex)
         {
             Console.WriteLine($"  could not be checked: {ex.Message}");
@@ -420,7 +427,7 @@ public static class Doctor
             Console.WriteLine($"  ! {name} — open since {c.CreatedAt:u}" +
                 $"{(c.Escalated ? " (overdue)" : "")}, {c.Count} divergent save{(c.Count == 1 ? "" : "s")}");
         }
-        const string url = "http://127.0.0.1:5178/#conflicts";
+        var url = $"http://127.0.0.1:{config.DaemonApiPort ?? 5178}/#conflicts";
         Console.WriteLine($"  → resolve at {url}, with `savelocker conflicts` / " +
             "`savelocker resolve-conflict --keep local|cloud`, or in the dashboard.");
         AgentLogger.Log($"[doctor] {conflicts.Count} open conflict(s) — resolve at {url}");

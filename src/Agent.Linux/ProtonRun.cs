@@ -83,7 +83,7 @@ public static class ProtonRun
                 // engine already alerted the console/dashboard; this is what Steam's own log shows.
                 Console.Error.WriteLine(
                     $"SaveLocker: launch of '{game.Name}' blocked — {gate.Reason}. " +
-                    "Resolve the conflict (http://127.0.0.1:5178/#conflicts, `savelocker conflicts`, " +
+                    $"Resolve the conflict (http://127.0.0.1:{config.DaemonApiPort ?? 5178}/#conflicts, `savelocker conflicts`, " +
                     "or the dashboard), then press Play again.");
                 await health.SendAsync(api, config, offlineQueue, AgentLogger.Log);
                 return 1;

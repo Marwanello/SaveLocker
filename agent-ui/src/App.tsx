@@ -41,8 +41,11 @@ export default function App() {
   }, [])
 
   const handleSynced = useCallback(() => {
-    refreshConflicts().then(cs => { if (cs.length > 0) setSyncQueue(cs) })
-  }, [refreshConflicts])
+    // A "Sync now" request can still be in flight after the user has already navigated to the
+    // Conflicts page themselves — it shows the same conflicts already, so popping the overlay on
+    // top of it would only interrupt the user a second time for information they can already see.
+    refreshConflicts().then(cs => { if (cs.length > 0 && view !== 'conflicts') setSyncQueue(cs) })
+  }, [refreshConflicts, view])
 
   useEffect(() => {
     refreshState()

@@ -822,8 +822,16 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         // exactly as it already does for any other push (TryPolicyResolveAsync); only a genuine,
         // still-open divergence reaches here as UploadStatus.Conflict.
         var pushResult = await PushAsync(game, force: false, settle: false, ct);
-        if (pushResult?.Status == UploadStatus.Conflict && pushResult.Conflict is { } fresh)
-            return Blocked(game, fresh);
+        if (pushResult?.Status == UploadStatus.Conflict)
+        {
+            // The common case carries the ConflictDto straight from the push. The ConsecutiveConflicts
+            // fast path in PushCoreAsync doesn't — it returns Conflict with no DTO and no network call
+            // at all — so without this fallback a genuinely still-open conflict would silently pass
+            // through here as if nothing were wrong, which is exactly what this gate exists to prevent.
+            var fresh = pushResult.Conflict ?? await FindOpenConflictAsync(game);
+            if (fresh is not null)
+                return Blocked(game, fresh);
+        }
 
         await PullAsync(game, force: false, ct);
         return new LaunchGateResult(LaunchDecision.Proceed);
@@ -852,7 +860,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     private LaunchGateResult Blocked(TrackedGame game, ConflictDto conflict)
     {
         Alert($"[{game.Name}] BLOCKED launch: your save has diverged from the cloud and this is a " +
-             "confirmed, unresolved conflict. Resolve it at http://127.0.0.1:5178/#conflicts, with " +
+             $"confirmed, unresolved conflict. Resolve it at http://127.0.0.1:{_config.DaemonApiPort ?? 5178}/#conflicts, with " +
              "`savelocker conflicts` / `savelocker resolve-conflict`, or in the dashboard — then launch again.",
             AgentEventCodes.LaunchBlocked, AgentEventSeverity.Error, game.GameId);
         return new LaunchGateResult(LaunchDecision.Blocked,

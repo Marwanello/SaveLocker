@@ -68,6 +68,7 @@ export function SyncConflictModal({ queue, games, machineName, onResolved, onAll
         </div>
 
         <ConflictCard
+          key={conflict.id}
           conflict={conflict}
           gameName={game?.name ?? 'This game'}
           machineName={machineName}
