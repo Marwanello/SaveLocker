@@ -15,9 +15,10 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   (the dashboard Backups tab) both shipped 2026-08-30, and Phase 5 (Linux environment-capability
   detection) shipped 2026-08-30 in the same session the plan was expanded, and Phase 4 (Linux wrapper
   launch gate) + Phase 6 (shared `agent-ui` conflicts page) shipped 2026-08-31 together as
-  `implementation-grouping.md`'s "Group 2"** — see below. **Phases 7–11, 13–14 remain not built**
-  (Phase 9's tooling decision is made but not implemented; Phase 12's endpoint exists but has no
-  consumer yet — see below). Before Phase 2, the plugin's only way past
+  `implementation-grouping.md`'s "Group 2", and Phase 9 (D-Bus desktop notification) shipped
+  2026-09-01 as that document's "Group 3"** — see below. **Phases 7, 8, 10, 11, 13–14 remain not
+  built** (Phase 12's endpoint exists but has no consumer yet — see below). Before Phase 2, the
+  plugin's only way past
   a stuck sync was Force push/pull, which bypassed the server's own conflict bookkeeping — an orphaned
   `ConflictFlag`, an unprotected losing version, a stranded other device. The plan reframes conflicts
   as local-vs-cloud (never device-vs-device), moves the actual resolution *decision* into the shared
@@ -165,6 +166,38 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   shows the head's 3-version ancestor chain (one of them still `Protected` from Phase 2) and Backups
   correctly shows the one truly orphaned version with all four actions present; no console errors.
   `web` build and lint clean.
+  <br>**Group 3 shipped 2026-09-01** (`implementation-grouping.md`'s "Group 3" — Phase 9's actual
+  D-Bus notification implementation, the only phase that group names, since its real dependencies
+  are Phase 5 and Phase 6, both already done): `CommandPoller` (Agent.Core) gained an optional
+  `onConflictsPolled` hook, fired once per 20s tick with this machine's open conflicts (filtered to
+  `MachineId`, the same "no bystander case" filter `doctor`/`savelocker conflicts` already apply) —
+  `null` by default so the Windows agent's tick is unchanged (Phase 7 is what would wire the tray to
+  this). New `src/Agent.Linux/ConflictNotifier.cs` is rung 3 itself: a `HashSet<Guid>` notifies once
+  per conflict id the moment it opens and forgets ids that close (not a timer), gated on Phase 5's
+  `NotificationDaemonPresent` so the common no-desktop case costs nothing beyond a set comparison,
+  and fires `org.freedesktop.Notifications.Notify` via `gdbus` with a "View conflict" action button.
+  A lazily-started `gdbus monitor` (one for the process's life, started on the first notification
+  actually sent) listens for the matching `ActionInvoked` signal and opens Phase 6's `agent-ui`
+  conflicts page via `xdg-open` — deliberately does not bring Phase 8's (unbuilt) Game Mode screen to
+  the foreground, the same way Phase 4 left Windows' tray untouched for Phase 7.
+  <br>**A real bug caught before shipping**: the first draft's GVariant call arguments were bare or
+  naively single-quoted, which breaks the instant a game name contains an apostrophe (Baldur's Gate 3,
+  Assassin's Creed) — extremely common, not an edge case. Fixed with a `GVariantString` helper
+  (double-quoted, `\`/`"`-escaped) plus explicit type annotations gdbus can't reliably infer without
+  introspection (`uint32 0` for `replaces_id`, `@a{sv} {}` for empty hints).
+  <br>**Verified**: all Linux-buildable projects build clean. `run-linux-tests.sh` extended the
+  existing `deck_cfg`/`other_cfg` two-machine fixture into a genuine conflict, started a daemon on the
+  stuck machine, and confirmed the log shows the conflict noticed on the next tick — correctly gated
+  to the "no notification daemon reachable" branch, since this sandbox has no real D-Bus session bus,
+  same as CI. 244 passed. The 7 failures alongside it are the **same pre-existing Decky-plugin-update
+  flake already recorded above** (Phase 5's entry, still unfixed) — reconfirmed via `git stash`
+  against this session's own pre-change commit: identical 7 failures, identical names, 240 passed
+  without this change, 244 with it (240 + 4 new checks) — not a regression this work introduced.
+  <br>**Not yet run against real hardware** — same open question `plan.md`'s 2026-08-31 correction
+  already named: whether a real `Notify` call renders a visible popup in Desktop Mode and Game Mode
+  alike, and whether the action button's click actually opens the browser to the right page. Needs a
+  live Deck Desktop Mode session or a plain desktop Linux box — the plan's own stated lower priority
+  for scripted D-Bus coverage, unchanged by this session.
 
 **All three bug bounties shipped in v0.5.0 (2026-07-29).** Code is on `main`; what remains is the
 verification that did not happen before the tag. Write-ups:

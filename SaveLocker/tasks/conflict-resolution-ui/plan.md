@@ -494,6 +494,12 @@ out to be reachable sooner than this plan assumed — worth a five-minute live c
 `Notify` call over SSH while genuinely in Game Mode, see if anything appears on screen) before ruling
 it out.
 
+**Shipped 2026-09-01** (`implementation-grouping.md`'s "Group 3"): `CommandPoller`'s new
+`onConflictsPolled` hook and `src/Agent.Linux/ConflictNotifier.cs`. The Deck real-hardware question
+above is still unconfirmed either way — this session's sandbox has no D-Bus session bus at all, so it
+could only exercise the "no notification daemon reachable" branch. Full detail: `CONTEXT.md` and
+`Backlog.md`.
+
 **Phase 10 — Decky: conflict display + resolve UI** (chip, QAM panel, resolve popup, policy
 dropdown) — unchanged content, renumbered from the original Phase 5. Depends on Phase 0/1. Delivers
 real, standalone value the moment it ships — a conflict can be seen and resolved from the Deck even
@@ -571,10 +577,11 @@ Phase 0/1 (server + agent core — shipped)
                                     │      ▼             ▼       │             │
                                     │  Phase 7        Phase 9 ◄──┘             │
                                     │  (Windows tray   (D-Bus notify,          │
-                                    │   automatic       optional — needs       │
+                                    │   automatic       shipped — needs       │
                                     │   chooser +        Phases 5 AND 6,       │
                                     │   bulk queue)      opens Phase 8 on      │
-                                    │                    the Deck)            │
+                                    │                    the Deck when it     │
+                                    │                    exists)              │
                                     │                                          │
                                     └──────────────────────┬───────────────────┘
                                                             ▼

@@ -692,6 +692,51 @@ tree along with the rest of `$STATE`.
 
 ---
 
+**Decky conflict-resolution "Group 3" shipped (2026-09-01, this branch, no task file —
+`implementation-grouping.md`'s Group 3: Phase 9's actual D-Bus notification implementation, unblocked
+now that Group 2 shipped Phase 6).** `CommandPoller` (Agent.Core) gained an optional
+`onConflictsPolled` hook, fired once per 20s tick with this machine's open conflicts (filtered to
+`MachineId`, the same "no bystander case" filter `doctor`/`savelocker conflicts` already apply) —
+`null` by default so the Windows agent's tick is byte-for-byte unchanged (Phase 7, wiring the tray to
+this, is still separate and open). New `src/Agent.Linux/ConflictNotifier.cs` is rung 3 of the
+escalation ladder itself: a `HashSet<Guid>` notifies once per conflict id the moment it's seen open
+and forgets ids the moment they close (not on a timer), gated on Phase 5's
+`DesktopEnvironment.NotificationDaemonPresent` so the overwhelmingly common no-desktop case costs
+nothing beyond a set comparison, and fires `org.freedesktop.Notifications.Notify` via `gdbus` (the
+tooling Phase 5's own `NameHasOwner` probe already uses) with a "View conflict" action button. A
+`gdbus monitor` is started lazily on the first notification actually sent — one for the whole life of
+the process, not one per notification — and opens Phase 6's `agent-ui` conflicts page via `xdg-open`
+when its `ActionInvoked` signal matches an outstanding notification id. Deliberately does NOT bring
+Phase 8's Game Mode screen to the foreground on click — that screen doesn't exist yet (Group 4, next)
+— the same way Phase 4 left Windows' tray untouched for Phase 7.
+<br>**A real bug found and fixed before this shipped, not left in**: the first draft's GVariant
+`Notify` arguments were bare or naively single-quoted, which breaks the instant a game name contains
+an apostrophe — Baldur's Gate 3, Assassin's Creed, extremely common titles, not an edge case. A bare
+`SaveLocker` token also isn't valid GVariant STRING syntax at all (strings must be quoted). Fixed with
+a `GVariantString` helper (double-quoted, C-style `\`/`"` escaping) and explicit type annotations for
+the two numeric arguments `gdbus` can't reliably infer without introspection (`uint32 0` for
+`replaces_id`, `@a{sv} {}` for the empty hints dict).
+<br>**Verified**: all Linux-buildable projects (Shared, Server, Agent.Core, Agent.Linux) build clean.
+`run-linux-tests.sh` extended the harness's existing `deck_cfg`/`other_cfg` two-machine "Fake Prefix
+Game" fixture into a genuine conflict (a divergent push from the machine that never re-pulled),
+started a daemon on the stuck machine, and confirmed the log shows the conflict noticed on the next
+20s tick — correctly gated to the "no notification daemon reachable" branch, since this sandbox (like
+CI) has no real D-Bus session bus. 244 passed. **The 7 failures alongside it are the same pre-existing
+Decky-plugin-update flake already recorded in [[Backlog]] from Phase 5 (2026-08-30), still unfixed —
+reconfirmed by `git stash`-ing this session's own changes and re-running**: identical 7 failures by
+name, 240 passed on the pre-change commit, 244 with this change's 4 new checks added on top — proof
+this session introduced no regression, not an assumption.
+<br>**Not yet run against real hardware** — the one thing this sandbox genuinely cannot check, and
+the same open question `plan.md`'s 2026-08-31 correction already named: whether a real `Notify` call
+renders a visible popup in Desktop Mode (and Game Mode, still unconfirmed either way), and whether the
+action button's click actually opens the browser to the right page. Needs a live Deck Desktop Mode
+session or a plain desktop Linux box — the plan's own explicitly lower priority for scripted D-Bus
+coverage, unchanged by this session. Group 4 (Phase 8, the Game Mode conflict screen) is next per
+`implementation-grouping.md`; Phases 7 (Windows tray wiring), 10/11 (Decky), 13 (Playnite), and 14
+(webhook + block-launch opt-in) remain open — see [[Backlog]].
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three
