@@ -795,6 +795,26 @@ bus and a claimant are both there, whether anything renders is unknown), and the
 
 ---
 
+**PR #26 code review (2026-09-02, this branch): 14 findings, 12 fixed, 2 left as design calls —
+one of those two then confirmed on real hardware, same session.** The review's angle-C finding
+called out that `Withdraw()`'s "bonus the ownership rule buys for free" above (line 773) rests on
+undocumented, daemon-specific behavior — killing the connection, not the documented
+`org.freedesktop.Notifications.CloseNotification(id)` — and had zero test coverage. `notify-send`
+now also passes `--print-id`; `ConflictNotifier` captures the id off the same stdout stream the
+action key already comes from, and `Withdraw()` tries `CloseNotification(id)` first. **Confirmed
+directly on the Deck, same session:** backgrounded `notify-send --wait --print-id`, captured the
+printed id, `sleep 5` (popup stayed up the whole time, not a flash — the earlier attempt at this
+test called `CloseNotification` too fast to tell), then `gdbus call ... CloseNotification <id>` —
+the popup vanished exactly at the call and `notify-send` exited on its own (status 0), no `Kill()`
+needed. Kept as belt-and-suspenders regardless: `Withdraw()` still always kills the process too, so
+a daemon that doesn't honor `CloseNotification` falls back to the path already verified above. The
+other left-as-is finding, unifying `ConflictNotifier._notified` with `HealthReporter`'s own
+notify-once `HashSet`, was a design call, not a coverage gap — the two already have different clear
+semantics (per-tick vs. process-lifetime) and forcing one shape onto both was judged to add
+indirection for no real gain.
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

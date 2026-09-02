@@ -225,11 +225,23 @@ public sealed class ConflictNotifier : IDisposable
         }
     }
 
-    /// <summary>Best-effort <c>org.freedesktop.Notifications.CloseNotification</c> — the documented
-    /// way to withdraw a specific notification, vs. Withdraw()'s connection-drop fallback above.
-    /// Never throws (ProcessRunner.Run), and its result is never checked: Withdraw() always also
-    /// kills the process regardless, so a missing/erroring gdbus here just means one fewer path did
-    /// the job rather than none.</summary>
+    /// <summary>
+    /// Best-effort <c>org.freedesktop.Notifications.CloseNotification</c> — the documented way to
+    /// withdraw a specific notification, vs. Withdraw()'s connection-drop fallback above. Never
+    /// throws (ProcessRunner.Run), and its result is never checked: Withdraw() always also kills the
+    /// process regardless, so a missing/erroring gdbus here just means one fewer path did the job
+    /// rather than none.
+    /// <para>
+    /// <b>Confirmed on real hardware 2026-09-02, same session as the Phase 9 fix above.</b> The
+    /// worry was that a "kill the connection" withdraw relies on undocumented, daemon-specific
+    /// behavior — tested directly on the Deck: a backgrounded <c>notify-send --wait --print-id</c>
+    /// stayed visible for a deliberate 5s pause (ruling out a race with a too-fast first attempt),
+    /// then this exact call made it vanish at that moment and the waiting <c>notify-send</c> exited
+    /// on its own (status 0), no <c>Kill()</c> needed. Kept as a fallback rather than a replacement
+    /// regardless — this only proves the documented path also works, not that the connection-drop
+    /// path (already verified above) stops being necessary on some other daemon.
+    /// </para>
+    /// </summary>
     private static void CloseById(uint id) =>
         ProcessRunner.Run("gdbus",
             [
