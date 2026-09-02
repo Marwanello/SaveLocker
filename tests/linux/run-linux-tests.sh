@@ -34,6 +34,31 @@ check() {
   else echo "FAIL: $1"; fail=$((fail + 1)); fi
 }
 contains() { grep -qF -- "$2" <<<"$1" && echo 0 || echo 1; }
+# Poll a loopback port until something answers, or give up after ~20s. Shared by every "wait for a
+# daemon to come up" spot in this file instead of each hand-rolling its own copy of the loop.
+wait_for_port() {
+  local port="$1"
+  for _ in $(seq 1 40); do
+    curl -sf "http://localhost:${port}/" >/dev/null 2>&1 && return 0
+    sleep 0.5
+  done
+  return 1
+}
+# Starts a bare-listening UNIX socket in the background — a bus with nothing implementing the D-Bus
+# protocol behind it. Sets FAKE_SOCK_PID once the socket is confirmed present, so the caller can
+# kill/wait it exactly like a directly-backgrounded job.
+start_fake_unix_socket() {
+  local sock_path="$1" backlog="$2" sleep_seconds="$3"
+  python3 -c "
+import socket, sys, time
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.bind(sys.argv[1])
+s.listen(int(sys.argv[2]))
+time.sleep(int(sys.argv[3]))
+" "${sock_path}" "${backlog}" "${sleep_seconds}" &
+  FAKE_SOCK_PID=$!
+  for _ in $(seq 1 50); do [ -S "${sock_path}" ] && break; sleep 0.1; done
+}
 
 case "${repo_root}" in
   /mnt/*) echo "REFUSING: ${repo_root} is a Windows drive (DrvFs). Run from the WSL ext4 home."; exit 2 ;;
@@ -43,6 +68,9 @@ command -v python3 >/dev/null || { echo "python3 is required to build the fixtur
 
 cleanup() {
   [ -n "${server_pid:-}" ] && kill "${server_pid}" 2>/dev/null
+  # Safety net for the immutable-directory probe below: if the run is interrupted between chattr +i
+  # and the matching -i, this strips the bit anyway so the next run's rm -rf can actually remove it.
+  [ -n "${plugin_dir:-}" ] && chattr -i "${plugin_dir}" 2>/dev/null
   pkill -f "${scratch}" 2>/dev/null   # any straggling slow-game writers
   wait 2>/dev/null
   return 0
@@ -378,15 +406,8 @@ check "a bus address pointing at nothing is reported as no bus" \
 # all" above. The 2s bound on DesktopEnvironment's own gdbus call (not this test) is what keeps
 # this case fast instead of hanging on a handshake nothing will ever complete.
 fake_bus_sock="${scratch}/fake-session-bus.sock"
-python3 -c "
-import socket, sys, time
-s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-s.bind(sys.argv[1])
-s.listen(1)
-time.sleep(30)
-" "${fake_bus_sock}" &
-fake_bus_pid=$!
-for _ in $(seq 1 50); do [ -S "${fake_bus_sock}" ] && break; sleep 0.1; done
+start_fake_unix_socket "${fake_bus_sock}" 1 30
+fake_bus_pid="${FAKE_SOCK_PID}"
 env_out="$(DBUS_SESSION_BUS_ADDRESS="unix:path=${fake_bus_sock}" agent doctor --config "${deck_cfg}")"
 kill "${fake_bus_pid}" 2>/dev/null; wait "${fake_bus_pid}" 2>/dev/null
 check "a connectable socket is reported as a real bus" "$(contains "${env_out}" "D-Bus session bus: yes")"
@@ -573,6 +594,106 @@ check "no temp archives leaked" "$([ "${leftover_tmp}" = "0" ] && echo 0 || echo
 
 kill "${daemon_pid}" 2>/dev/null
 wait "${daemon_pid}" 2>/dev/null
+
+# ── Desktop notification on a real conflict (Phase 9 of tasks/conflict-resolution-ui/plan.md) ─
+# "Desktop" (other_cfg) is the machine left stuck behind: it pulled Fake Prefix Game once, early in
+# this script, and everything since — the daemon+wrapper section just above included — kept
+# advancing the Deck's head without it. Pushing ANY edit from it now, without pulling first,
+# reproduces the exact two-machine divergence run-agent-tests.ps1 already covers server-side; this
+# section instead exercises the AGENT's new reaction to it — ConflictNotifier, wired into
+# CommandPoller's 20s tick in Daemon.cs.
+echo
+echo "==> Desktop notification on a real conflict (headless harness — no D-Bus session bus)"
+echo "level=other-cfg-stale" >"${scratch}/pulled/slot1.sav"
+conflict_out="$(agent push --config "${other_cfg}" "Fake Prefix Game")"
+check "Desktop's stale push reports CONFLICT" "$(contains "${conflict_out}" "CONFLICT")"
+
+SAVELOCKER_POLL_MS=500 dotnet "${agent_dir}/bin/Debug/net10.0/savelocker.dll" daemon \
+  --config "${other_cfg}" --port 5190 >"${scratch}/notify-daemon.log" 2>&1 &
+notify_daemon_pid=$!
+wait_for_port 5190
+check "notify-daemon started" "$(kill -0 "${notify_daemon_pid}" 2>/dev/null && echo 0 || echo 1)"
+
+# SAVELOCKER_POLL_MS above shortens CommandPoller's tick from the real 20s to 500ms for this test
+# run only, so this waits out a couple of ticks with margin rather than a real 20s+ one.
+sleep 2
+kill "${notify_daemon_pid}" 2>/dev/null
+wait "${notify_daemon_pid}" 2>/dev/null
+
+notify_log="$(tail -60 "${log}" 2>/dev/null)"
+check "conflict notification: new open conflict logged on the next tick" \
+  "$(contains "${notify_log}" "conflict notification: 1 new open conflict")"
+check "conflict notification: no daemon reachable here, reported, not a crash or a hang" \
+  "$(contains "${notify_log}" "no desktop notification daemon reachable")"
+
+# ── …and the SHAPE of the command it sends when a daemon IS reachable ────────────────────────
+# This is the branch the first implementation got wrong on real hardware (2026-09-02): it sent the
+# notification with `gdbus call`, which exits the moment it has its reply. A notification carrying
+# ACTIONS is owned by the bus connection that sent it, so the server withdrew the popup within a
+# second — reported success, returned a real id, and vanished. Nothing here checked what was
+# actually being run, which is exactly why it shipped.
+#
+# A real bus is not needed to catch that class of bug: what matters is which binary is invoked and
+# with which arguments. A fake `gdbus` answers the Phase 5 NameHasOwner probe, a real (empty)
+# listening socket makes DesktopEnvironment agree a bus is connectable, and a fake `notify-send`
+# records its own argv — the one that must carry `--wait`, since that flag IS the fix.
+echo
+echo "==> The notification command's shape (fake bus, fake notify-send)"
+fakebin="${scratch}/fakebin"
+notify_args="${scratch}/notify-send-args.txt"
+mkdir -p "${fakebin}"
+rm -f "${notify_args}"
+
+cat >"${fakebin}/gdbus" <<'FAKEGDBUS'
+#!/usr/bin/env bash
+# Only ever asked one question by DesktopEnvironment: does anyone own the Notifications name.
+case "$*" in
+  *NameHasOwner*) echo "(true,)" ;;
+esac
+exit 0
+FAKEGDBUS
+
+cat >"${fakebin}/notify-send" <<FAKENOTIFY
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > "${notify_args}"
+# --wait means the real notify-send stays alive for as long as the notification is up. Staying
+# alive here too keeps the agent's own process bookkeeping on the same path it takes for real.
+sleep 5
+FAKENOTIFY
+chmod +x "${fakebin}/gdbus" "${fakebin}/notify-send"
+
+notify_bus_sock="${scratch}/fake-notify-bus.sock"
+# Backlog deeper than the Phase 5 probe's: nothing ever accepts these connections, and
+# DesktopEnvironment opens a fresh one per check, so a backlog of 1 could refuse a later probe.
+start_fake_unix_socket "${notify_bus_sock}" 64 60
+notify_bus_pid="${FAKE_SOCK_PID}"
+
+PATH="${fakebin}:${PATH}" DBUS_SESSION_BUS_ADDRESS="unix:path=${notify_bus_sock}" \
+  SAVELOCKER_POLL_MS=500 dotnet "${agent_dir}/bin/Debug/net10.0/savelocker.dll" daemon \
+  --config "${other_cfg}" --port 5190 >"${scratch}/notify-daemon2.log" 2>&1 &
+notify_daemon_pid=$!
+wait_for_port 5190
+# SAVELOCKER_POLL_MS above shortens the tick to 500ms for this run only — see the same note above.
+sleep 2
+kill "${notify_daemon_pid}" 2>/dev/null
+wait "${notify_daemon_pid}" 2>/dev/null
+kill "${notify_bus_pid}" 2>/dev/null; wait "${notify_bus_pid}" 2>/dev/null
+
+sent_args="$(cat "${notify_args}" 2>/dev/null)"
+check "a reachable daemon gets a notification at all" \
+  "$([ -n "${sent_args}" ] && echo 0 || echo 1)"
+# THE assertion. Without --wait the sending process exits immediately, and a notification with an
+# action button is withdrawn with it — the exact hardware bug, invisible to every other check here.
+check "the notification is sent with --wait, so its action can outlive the call" \
+  "$(contains "${sent_args}" "--wait")"
+check "the notification requests an id, for the documented CloseNotification withdraw path" \
+  "$(contains "${sent_args}" "--print-id")"
+check "the action button is declared with the key the agent listens for" \
+  "$(contains "${sent_args}" "--action=view=View conflict")"
+check "the notification names the conflicted game" \
+  "$(contains "${sent_args}" "Fake Prefix Game")"
+check "the reachable-daemon path reports sending, not 'no daemon'" \
+  "$(contains "$(tail -60 "${log}" 2>/dev/null)" "conflict notification: sent for")"
 
 # ---------------------------------------------------------------------------
 # autostart must report the REAL outcome (LA-08)
@@ -1054,11 +1175,26 @@ check "a refused plugin update is reported to the console" \
 # The real constraint: the plugin directory itself is root-owned 755, so an existing file can be
 # overwritten but a new top-level one cannot be created. Discovering that partway through would
 # leave a plugin half on one version and half on another, which is worse than an old one.
+#
+# `chmod 555` alone does NOT simulate this when the harness itself runs as root (a real risk here,
+# not a hypothetical: this suite's own dev/CI container commonly does) — root's CAP_DAC_OVERRIDE
+# bypasses ordinary permission bits entirely, so a plain `chmod`-based probe silently lets the write
+# through instead of refusing it, and every assertion downstream that reads the plugin's version then
+# fails as a cascading symptom of that one root cause, not independently. The ext4 immutable attribute
+# is a filesystem-level restriction CanReplace's write-probe cannot bypass even as root (confirmed:
+# creating a new entry under an `+i` directory fails for root exactly as it does for an unprivileged
+# user, while overwriting an EXISTING file's content still succeeds, since that never touches the
+# directory's own inode) — so it reproduces the real root-owned-755 constraint regardless of which
+# user runs this script.
 make_plugin_zip "${scratch}/plugin-0.4.0.zip" "0.4.0" "bundle 0.4.0" "py_modules/helper.py"
 host_plugin "${scratch}/plugin-0.4.0.zip" "0.4.0"
-chmod 555 "${plugin_dir}"
+chattr +i "${plugin_dir}" || {
+  echo "REFUSING: chattr +i on ${plugin_dir} failed — this probe needs CAP_LINUX_IMMUTABLE and a"
+  echo "filesystem that supports the immutable attribute (not tmpfs/overlayfs). Run as root on ext4."
+  exit 2
+}
 out="$(agent plugin-update --config "${deck_cfg}")"; plugin_rc=$?
-chmod 755 "${plugin_dir}"
+chattr -i "${plugin_dir}" || echo "WARNING: chattr -i on ${plugin_dir} failed — cleanup trap will retry on exit."
 check "a package needing a new top-level file is REFUSED" "$(contains "${out}" "py_modules/helper.py")"
 check "the refusal names the reinstall route"      "$(contains "${out}" "Install Plugin from")"
 check "the refusal exits non-zero"                 "$([ "${plugin_rc}" != "0" ] && echo 0 || echo 1)"

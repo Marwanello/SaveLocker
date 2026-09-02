@@ -349,6 +349,13 @@ static class Program
             ? port
             : Daemon.DefaultApiPort;
 
+    /// <summary>Test-only hook so an integration test can run the daemon on a sub-second tick instead
+    /// of waiting out the real 20s poll. Unset in normal operation, so nothing here changes.</summary>
+    private static double? ParsePollMs() =>
+        double.TryParse(Environment.GetEnvironmentVariable("SAVELOCKER_POLL_MS"), out var ms)
+            ? ms
+            : null;
+
     private static async Task RunDaemonAsync(AgentConfig config, int apiPort)
     {
         using var cts = new CancellationTokenSource();
@@ -366,7 +373,7 @@ static class Program
             cts.Cancel();
         });
 
-        await using var daemon = new Daemon(config, apiPort);
+        await using var daemon = new Daemon(config, apiPort, ParsePollMs());
         await daemon.RunAsync(cts.Token);
     }
 
