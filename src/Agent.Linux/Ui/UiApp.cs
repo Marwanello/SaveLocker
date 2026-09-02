@@ -333,11 +333,19 @@ sealed class UiApp
     {
         Window.PrioritizeSdl();
 
+        // Escape hatch for a WSLg dev-preview failure mode: when Weston does not deliver frame
+        // callbacks, SDL's vsync swap can block forever inside SwapBuffers, so the window renders
+        // every frame to the back buffer but never presents and stays blank regardless of the GL
+        // driver (d3d12 OR llvmpipe). Set SAVELOCKER_UI_NO_VSYNC=1 to swap immediately and rule that
+        // out. Default stays vsync-on — it is correct on a real Deck's gamescope; FramesPerSecond
+        // caps the loop either way, so turning it off does not spin the CPU unbounded.
+        var vsync = Environment.GetEnvironmentVariable("SAVELOCKER_UI_NO_VSYNC") is null;
+
         var options = WindowOptions.Default with
         {
             Title = "SaveLocker",
             Size = _size,
-            VSync = true,
+            VSync = vsync,
             // 60 fps flat. The original 30 cap was a battery measure; it was relaxed once the
             // maintainer settled that this is a configuration surface used for minutes at a time,
             // not a game running for hours, with no 3D engine behind it. VSync is what actually
