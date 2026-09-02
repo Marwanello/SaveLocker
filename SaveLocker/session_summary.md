@@ -1,661 +1,79 @@
-# Session summary — 2026-09-01/02
+# Session summary — 2026-09-02
 
-Conflict-resolution **Group 3 = Phase 9** (the Linux desktop notification, rung 3 of the escalation
-ladder) implemented, shipped broken, caught on real hardware, root-caused and fixed — plus the 7
-long-standing `run-linux-tests.sh` failures traced to a single real bug in the harness and fixed.
-Branch `save-conflicts-phase-9`, 6 commits, 618 insertions / 23 deletions across 8 files. No PR opened.
-
-**What was built.** An optional `onConflictsPolled` delegate on `CommandPoller` (null on Windows, so
-the tray path is untouched) fires on the existing 20s tick with the open conflicts this machine is a
-party to, already `MachineId`-filtered. `src/Agent.Linux/ConflictNotifier.cs` notifies once per
-conflict id the first time it is seen open, withdraws the popup when the conflict closes, and opens
-Phase 6's agent-ui conflicts page on click. Guarded by Phase 5's `DesktopEnvironment.Detect()`; every
-failure mode — no `notify-send`, no bus, an indifferent daemon — collapses to "not shown", logged,
-never a crash and never a hang.
-
-**The bug that mattered: it shipped green and did not work.** The first version used `gdbus call`, as
-plan.md's Phase 9 tooling decision specified. Clean build, green suite, passing code review, a log line
-reporting success with a real notification id returned by the daemon — and nothing on screen. A
-notification carrying **actions** is owned by the bus connection that sent it, and the server closes it
-when that connection drops, since nobody is left to receive `ActionInvoked`; `gdbus call` is one-shot
-by construction and can never hold one open. (The `gdbus monitor` used to catch the click was a
-second, different connection, so it could never have owned the notification either.) Established by a
-3-way bisect on hardware: no actions → stays up; app-name + icon → stays up; action button → flashes
-under a second. Same daemon, same bus — not a Deck quirk.
-
-Fixed by rewriting around `notify-send --wait --action`, which holds its connection for as long as the
-notification is displayed and prints the invoked action key to stdout, deleting the monitor path
-entirely. The ownership rule that caused the bug is now used on purpose: killing the child withdraws a
-stale popup when a conflict is resolved elsewhere. `gdbus` remains Phase 5's daemon-presence probe.
-The reasoning is recorded in a doc comment on `ConflictNotifier`, and plan.md's tooling decision was
-corrected in place.
-
-**The lesson, kept explicitly:** build, suite and review all passed while the feature was broken,
-because nothing checked what was actually sent over IPC. A new "notification command's shape" test —
-fake `notify-send` and `gdbus` on `PATH`, asserting the exact argv the daemon emits — closes that gap,
-and was **proved to fail against the pre-fix code** before being kept, not merely passed against the
-fix.
-
-**The 7 "flaky" failures were one real bug with six cascades.** The plugin-refusal test simulated an
-unwritable directory with `chmod 555`, but the harness runs as root, and `CAP_DAC_OVERRIDE` ignores
-mode bits — so the write the test expected to be refused succeeded, corrupting the plugin version for
-every downstream assertion. Fixed with the ext4 immutable attribute (`chattr +i`), which blocks
-new-entry creation even for root; verified empirically before the test was changed. **244/251 →
-251/251**, and **256/256** with the two new Phase 9 sections.
-
-**Verified** on a real Steam Deck in desktop mode via `testenv.ps1 up -Only deck` (isolated
-`~/savelocker-test` tree, port 5177 — never over the installed agent), with a conflict seeded by
-pointing `XDG_DATA_HOME` at a second state root. Notification renders, persists, carries its button.
-
-**Not done:** the old branch `claude/conflict-resolution-next-group-c753nh` could not be deleted from
-origin (HTTP 403, twice; no MCP ref-deletion tool) and needs the GitHub UI. Game Mode rendering and
-`xdg-open`'s landing page on the Deck remain untested. Bringing Game Mode to the foreground on click
-is deliberately Phase 8's, which does not exist yet.
-
-**Design note:** dedup is in-memory and per-process, so a daemon restart re-notifies for anything still
-open — which is why the popup reappears on every `testenv` `up`. Deliberate: persisting "notified once,
-never again" would mean a popup dismissed and forgotten never gets raised again while the game stays
-silently unsynced. Once per daemon run, not once per tick; stops when resolved; replaces rather than
-stacks.
-
----
-
-# Session summary — 2026-09-01
-
-`/code-review xhigh --fix` completed end-to-end on PR #24 ("Conflict resolution Phase 4 + 6, and a
-local-vs-cloud UI redesign" — Linux launch gate, agent-ui Conflicts page, `doctor` conflicts section,
-sync-time conflict pop-up), after being caught mid-session as having stalled with zero fixes applied.
-
-**Caught the stall:** 10 parallel finder agents had reported ~21 candidate findings across many turns,
-but "were all of theese fixed?" prompted an investigation showing the review never progressed past
-finding — no fix commits existed, and the two most-corroborated bugs were confirmed still present by
-direct code read. Given explicit go-ahead ("yes please"), verification and fix application were done
-directly against the code rather than by re-spawning finder agents.
-
-**Fixed 9 confirmed findings across 11 files**, headlined by two real bugs:
-
-- **Launch gate could silently let a confirmed conflict through.** `SyncEngine.PrepareLaunchAsync`
-  only checked `pushResult.Conflict`, but `PushCoreAsync`'s `ConsecutiveConflicts` rate-limit fast path
-  returns `UploadStatus.Conflict` with a **null** DTO and no network call — so that path fell through
-  the gate as if nothing were wrong. Fixed with a fallback to `FindOpenConflictAsync(game)`.
-- **Bystander conflicts leaking into every agent-ui surface.** The server's `/agent/conflicts` route is
-  deliberately unscoped by design, and the CLI already filtered to conflicts this machine is a party to
-  — but the new local API route `/api/conflicts` (the one endpoint agent-ui exclusively consumes) never
-  applied that filter, so the Conflicts page, sync pop-up, and `doctor` all showed every open conflict
-  in the system. Fixed at that one shared choke point in `AgentApiServer.cs`, fixing all three surfaces
-  at once; `Doctor.cs`'s own redundant filter consolidated onto the same pattern.
-
-Also fixed: hardcoded `127.0.0.1:5178` URLs replaced with a real persisted port (new
-`AgentConfig.DaemonApiPort`, written by the daemon at startup); a missing React `key` in
-`SyncConflictModal` causing cross-card state leakage; a double-submit guard on conflict resolution; the
-sync pop-up firing on top of an already-open Conflicts page; an EF Core query dedup in `SyncService.cs`;
-and a web-side timestamp regex alignment. Several lower-value/structural findings were deliberately
-left unfixed and documented as such rather than fixed.
-
-**Verified clean** via full builds and three live PowerShell suites against a real server/agent —
-`run-agent-tests.ps1` 45/45, `run-health-tests.ps1` 22/22, `run-local-api-tests.ps1` 30/30 — with every
-non-clean run along the way traced to environment setup (server not started, DB/`.verify/` cleared
-unevenly, agent-ui `dist/` never built) rather than regressions.
-
-**Landed:** merged cleanly against an intervening unrelated upstream commit (no rebase/force-push) and
-pushed as `6aab07a`, confirmed via the GitHub API to be PR #24's exact current head — `open`,
-`mergeable_state: clean`.
-
----
-
-# Session summary — 2026-08-30/31
-
-Conflict-resolution plan expanded from 9 to 15 phases to close a real gap (no resolve UI existed
-outside Decky/Playnite), all planning docs consolidated into `tasks/conflict-resolution-ui/`, **Phase 5**
-(Linux environment-capability detection) implemented and shipped as PR #23, and a grouping mistake for
-Phase 9 caught and corrected before any of its code was written.
-
-## Phase 9 follow-up (2026-08-31)
-
-**Asked:** why wasn't Phase 9 implemented if it was "part of Group 1" — then to implement it if so.
-
-**Found:** only Phase 9's D-Bus **library decision** (`gdbus`) was ever in Group 1; the notification-
-sending code itself was always scoped later. Before writing any of it, its full dependency was checked:
-Phase 9 needs Phase 6 (the `agent-ui` conflicts page — the action button's target), which doesn't exist
-yet. Given three options (build Phase 6 first, implement Phase 9 now with a temporary target, or
-implement just the notification-firing logic with no button), the user chose a fourth: **fix the
-grouping itself**, since re-checking `plan.md`'s dependency diagram showed the *original* grouping had
-already made a mistake — `implementation-grouping.md` had bundled Phase 9's implementation into the same
-group as Decky (10/11) and Playnite (13) under a "needs real hardware" rationale that doesn't actually
-apply to it. Phase 9's only real dependencies are Phase 5 (done) and Phase 6 — never the separate
-`SaveLocker-Decky` repo, never real hardware to *build* (only to verify a popup fires).
-
-**Fixed (docs only, no app code):** `implementation-grouping.md` now has a dedicated **Group 3** for
-Phase 9's implementation, placed right after Group 2 (which ships its actual dependency, Phase 6), with
-the former Groups 3–5 renumbered to 4–6 and a "Correction found" note documenting the mistake — the same
-transparency convention already used for the Phase 12 correction. Phase 9 itself remains unimplemented,
-per instruction. Committed as `764ca3c`.
-
-**Also pulled in:** a review-fix commit (`e63f5c2`) pushed to the same PR by a separate session,
-addressing PR #23 findings — a `Console.IsInputRedirected`-can-throw crash guard, a new shared
-`ProcessRunner.cs` deduplicating the subprocess-run logic `DesktopEnvironment` and `SystemdAutoStart`
-had each implemented separately, a `CLAUDE.md` note documenting `tasks/conflict-resolution-ui/`'s
-deliberate exception to the vault's flat-by-design rule, and a missing `IsInteractiveTty` test
-assertion. Clean fast-forward, no conflicts.
-
-## Real-Deck verification of Phase 5, two bugs found (2026-08-31)
-
-**First bug — a missed testenv step, not a code bug.** The user's first `doctor` run on a real Deck
-showed no `── Session ──` block at all. Root cause: `testenv.ps1 build -Only deck` builds whatever
-commit the WSL clone already has checked out — it never fetches/checks out the branch itself; a
-separate `sync` command does that, which hadn't been run. Fixed by giving the correct sequence and
-documenting the gap in `Build and Run.md`/`Gotchas.md` (`0d36eab`).
-
-**Second bug — a genuinely wrong, never-verified assumption in the code and plan.** After the rebuild,
-the Session block appeared but with a surprising result: **D-Bus session bus: yes** and **notification
-daemon: yes**, over a plain SSH shell. `DesktopEnvironment.cs`'s doc comment claimed "Game Mode has no
-session bus at all" — asserted, never checked on hardware. Before writing anything down, asked the
-user to confirm what mode the Deck was actually in (rather than assume Desktop Mode was silently
-running) — **confirmed Game Mode (Gamescope).** That makes the old assumption simply wrong: SteamOS
-keeps one persistent per-user D-Bus bus alive via `systemd --user` regardless of graphical mode, with
-something already claiming `org.freedesktop.Notifications` on it, reachable from any SSH shell that
-shares the user's session. Corrected `DesktopEnvironment.cs`'s doc comment and `plan.md`'s Phase 9
-section (`71b50fa`) — `Detect()`'s actual code needed no change, only the prose was wrong — and flagged
-the real open question this raises: whether a live `Notify` call would actually render visibly in Game
-Mode, which could mean Phase 9 reaches further than the plan currently assumes. Not yet checked live.
+PR #26 xhigh code review on `save-conflicts-phase-9`: 14 findings synthesized from 9 parallel review
+agents, 12 fixed with minimal edits, 1 confirmed on real hardware with the user's help, 1 left as a
+design call awaiting the user's decision.
 
 ## What was asked
 
-1. Investigate whether any phase built a native Linux/Wayland resolve popup equivalent to Decky's, and
-   whether conflict popups exist on Windows/Linux outside Decky and a future Playnite plugin —
-   everything should work even without either installed.
-2. Close the gap found: add phases, plan carefully and in detail.
-3. Explain D-Bus and recommend a session-grouping plan for the remaining phases, with weekly Claude Pro
-   quota usage in mind (reported at 66%).
-4. Clarify whether local execution is cheaper than cloud execution token-wise, and how that affects
-   grouping.
-5. Write the grouping into a doc, move all conflict docs into a clearly-named tasks subfolder, and
-   start implementing Group 1.
-6. Create a branch named like the previous two PRs, open a PR on the fork, and explain how to test it
-   manually via `testenv`.
+1. `/code-review xhigh PR#26` — run 9 parallel review agents across differing angles.
+2. Apply all 14 deduplicated findings with minimal edits, report outcomes via `ReportFindings`.
+3. User offered real-hardware testing for the 2 skipped findings (#7 and #10).
+4. Iterative test-script refinement and real-Deck verification for finding #7.
 
-## What was found
+## The 12 fixed findings
 
-- No phase produced a resolve UI reachable without Decky or Playnite — a plain Linux desktop or a
-  headless/SSH session had no way to even see a conflict.
-- `GET /api/games/{id}/sync-status` was mischaracterized (in the plan and in this session's own
-  first-draft grouping doc) as "cheap." Its actual handler hashes the whole local save directory and
-  internally calls the same full-state fetch the `status` CLI already makes. Caught by reading the real
-  handler before wiring any UI to it — avoided shipping a polling badge that would have re-hashed save
-  folders on a timer.
+Concentrated in `ConflictNotifier.cs`, `CommandPoller.cs`, `Daemon.cs`, `Program.cs`, and
+`tests/linux/run-linux-tests.sh`. The headline fixes:
 
-## What shipped
+- **Race between `EnableRaisingEvents` and `_live` dictionary population** (#1/#3 combined): a
+  fast-exiting `notify-send` could fire `Exited` before its own entry existed. Fixed by committing
+  both `_notified.Add` and `_live[id]` under the lock *before* setting `EnableRaisingEvents`, and
+  only after `Process.Start` succeeds.
+- **Fire-and-forget tick disposal race** (#2/#4): `_ = TickAsync()` let `Dispose()` tear down
+  `ConflictNotifier` while a tick was still in flight. Fixed with `_lastTick = TickAsync()` and a new
+  `StopAsync()` that awaits it; `Daemon.DisposeAsync` calls `StopAsync()` before disposing dependents.
+- **`Forget`/`Withdraw` concurrent `Kill()`/`Dispose()` on the same Process** (#5): moved
+  `proc.Dispose()` inside the same lock `Withdraw` uses for `Kill()`.
+- **Sequential independent async work** (#6): `RunCommandsAsync` and `CheckConflictsAsync` now run
+  concurrently via `Task.WhenAll`.
+- **Hardcoded 20s poll interval, untestable** (#12): added `SAVELOCKER_POLL_MS` env-var hook.
+- **Test helpers extracted** (#13): `wait_for_port()`, `start_fake_unix_socket()`; `cat` replaced with
+  `tail -60` on shared logs; `sleep 25` reduced to `sleep 2` + fast polling.
 
-- **Design:** `plan.md` expanded to 15 phases (0–14), with a new Decisions §8 and an "escalation
-  ladder" for Linux conflict surfacing (env detection → native Wayland modal → D-Bus notification →
-  local web chooser → CLI → optional webhook → safe terminal state).
-- **Docs consolidated:** new `SaveLocker/tasks/conflict-resolution-ui/` folder — `plan.md` (moved from
-  `logs/2026-08-28_decky-conflict-resolution.md`), `reference/00`–`07.md` (moved from repo-root
-  `docs/design/`), a new `README.md`, and a new `implementation-grouping.md` laying out Groups 1–5 and
-  the finding that local vs. cloud execution costs the same weekly quota — grouping is driven by real
-  dependencies and what this environment can verify, never by cost.
-- **Phase 5 (Group 1) implemented:** `src/Agent.Linux/DesktopEnvironment.cs` — detects graphical
-  session, D-Bus session bus reachability, notification daemon presence (via `gdbus`, chosen over
-  `dbus-send` for marshalling reasons), interactive TTY, and `systemd --user` unit status, with a
-  2-second subprocess timeout so a stale D-Bus socket can never hang `doctor` or a future launch
-  wrapper. Wired into `Doctor.cs` as a new "Session" section. 9 new `run-linux-tests.sh` checks added
-  (246 passing, up from 237).
+Plus: `Func<string>` → `string` for `_conflictsUrl` (#8/#14), static → instance `Withdraw` (#9),
+`Log` → `AgentLogger.LogException` (#11).
 
-## Bug caught before it shipped
+## Finding #7: confirmed on real hardware
 
-Three new test sub-invocations in `run-linux-tests.sh` initially clobbered the shared `$out` variable
-that later, pre-existing MoonDeck assertions in the same script depend on — renamed to `$env_out`
-before running.
+**The concern:** `Withdraw()`'s `Kill()`-based notification teardown relies on undocumented,
+daemon-specific behavior (the ownership rule that connections dropping tear down their notifications).
 
-## Verification
+**The fix:** strictly additive — added `--print-id` to `notify-send`, parsing the numeric id from
+stdout; `Withdraw()` now calls `CloseNotification(id)` via `gdbus` (using the existing
+`ProcessRunner.Run` helper) *before* the existing `Kill()` fallback, which still always runs
+regardless.
 
-- `run-linux-tests.sh`: 246/0 (was 237), no new failures.
-- Confirmed via `git stash` that a separate, pre-existing 7-failure cluster in "Decky plugin updates"
-  predates this session — documented in `Backlog.md`, not fixed (out of scope for Phase 5).
-- `dotnet build --no-incremental` and `tsc -b` clean after stale-path fixes across `Program.cs`,
-  `SyncService.cs`, `GameDetail.tsx`, `AgentCli.cs`, `SyncEngine.cs`, `run-server-bugbounty-tests.ps1`.
+**Real-hardware confirmation (user on Steam Deck):** after two rounds of test-script refinement
+(fixing my own shell `<id>` placeholder bug, then a timing artifact where the test closed the popup
+too fast to see), the user confirmed:
+- The popup stayed visible steadily for a deliberate 5-second pause.
+- It vanished exactly at the `CloseNotification` call.
+- `notify-send` exited on its own with status 0, no `Kill()` needed.
 
-## Status
+Recorded in `CONTEXT.md` (matching the file's dated hardware-verification convention) and in
+`ConflictNotifier.cs`'s `CloseById` doc comment.
 
-- Branch `save-conflicts-phase-5` (naming matches `save-conflicts-phase-0-1`/`-2-3` from PRs #20/#22);
-  PR [**#23**](https://github.com/Marwanello/SaveLocker/pull/23) open against `main`.
-- Manual `testenv.ps1` test instructions given for the Deck: `build -Only deck` → `up` → SSH in and run
-  `doctor`, noting SSH doesn't inherit the Deck's own desktop session's `DISPLAY`/`WAYLAND_DISPLAY`/
-  `DBUS_SESSION_BUS_ADDRESS` — the "real session" case needs a terminal opened directly in Desktop Mode,
-  or importing `systemctl --user show-environment` first.
-- Not done: Phase 12 (deferred until Phase 6/8/10 adds a real trigger), Groups 2–5, real-hardware
-  confirmation of Game Mode vs. Desktop Mode values. Offer to `subscribe_pr_activity` on PR #23 still
-  open as of this write-up.
+## Finding #10: left as a design call
 
----
-
-# Session summary — 2026-08-29
-
-Conflict resolution **Phase 0/1** implemented (server + Agent.Core) and shipped as PR #20, all CI green.
-
-## What was asked
-
-Implement Phase 0/1 of the Decky conflict-resolution plan
-(`logs/2026-08-28_decky-conflict-resolution.md`): move the conflict-resolution *decision* out of the
-server and into the agent. Server + Agent.Core only — no UI/Decky/Playnite (later phases). Then:
-create a kebab-case branch `save-conflicts-phase-0-1`, open a PR, and investigate/fix its CI failures.
-
-## The architectural change, in code
-
-- **Server no longer decides.** Removed the `autoWins` (`NewestWins`/`PreferMachine`) branch from
-  `SyncService.IngestAsync` — every divergence now unconditionally records a `ConflictFlag`.
-- **The agent decides.** `SyncEngine.TryPolicyResolveAsync` (wired into the `UploadStatus.Conflict`
-  path before the CONFLICT alert) fetches the game's policy, evaluates it locally
-  (`thisMachineWins = NewestWins || (PreferMachine && PreferredMachineId == this machine)`), and if
-  this machine wins, calls the resolve endpoint itself. Its success log deliberately avoids the word
-  "conflict."
-- **Comparison is always local-vs-cloud**, never device-vs-device.
-- **`resolverMachineId` fan-out exclusion.** `ResolveConflictAsync` gained a `resolverMachineId`
-  param: an agent auto-resolving its own push excludes itself from the fleet pull fan-out (it already
-  has the winning bytes); the admin/dashboard path passes `null` → everyone is told. This is what lets
-  a *second* machine learn about a conflict the *first* machine's agent auto-resolved.
-
-## Surfaces added
-
-- **Server agent-group routes** (X-Api-Key): `GET /agent/conflicts`, `GET /agent/conflicts/{id}`,
-  `POST /agent/conflicts/{id}/resolve`, `GET/POST /agent/games/{id}/conflict-policy`.
-- **Agent local API** (:5178, token-gated): `GET /api/conflicts`, `GET /api/conflicts/{id}`,
-  `POST /api/conflicts/{id}/resolve` (`LocalResolveRequest`), `GET/POST /api/games/{id}/conflict-policy`,
-  and `GET /api/games/{id}/sync-status` (Phase 7, folded in — local hash vs. head hash, no download).
-- **CLI** (`AgentCli.cs`): `conflicts` and `resolve-conflict` (`--keep local`/`--keep cloud`) — makes
-  Phase 0/1 usable end-to-end from the CLI alone, closing the design's open item.
-- **Contracts**: `ConflictPolicyDto`, `SyncStatusDto`. **ApiClient**: five new client methods.
-
-## CI failure and fix
-
-`package-linux` failed at `agent-ui`'s `npm run gen:api -- --check`: the committed
-`agent-ui/src/api-types.ts` had **Windows** schema ordering. `openapi-typescript` emits
-`components.schemas` in the OpenAPI document's key order, and .NET's OpenAPI generator orders schemas
-by **reflection order, which differs between Windows and Linux** — one unrelated schema
-(`ResolveLaunchOptionsRequest`) sat in a different position; content identical. Fixed by regenerating
-against a real **Linux** daemon (built + run in WSL) so it matches what CI produces; verified
-`gen:api -- --check` exits 0 there before pushing (`778a874`). The other generated artifacts
-(`src/Server/openapi.json`, `web/src/api-types.ts`) were pure additions with no reordering.
-
-**Footgun for next time:** any hand-regenerated `agent-ui/src/api-types.ts` must be generated against
-a **Linux** daemon (WSL), not the Windows tray, or `package-linux` fails on the schema-order diff.
+`ConflictNotifier._notified` and `HealthReporter._notifiedConflictEscalations` use similar
+`HashSet<Guid>` dedup patterns but have deliberately different lifecycles: `_notified` clears per-id
+when a conflict resolves, `_notifiedConflictEscalations` resets per-tick. Forcing a shared abstraction
+would add indirection without simplifying either call site. **Still awaiting the user's decision** on
+whether to unify anyway or leave as-is.
 
 ## Verification
 
-All CI checks on PR #20 green (build-dotnet, build-web, build-agent-ui, docker-build, package-linux,
-agent-tests-linux, crossos chain). Design preserves both load-bearing assertions: CS-04 ("winning
-uploader gets no redundant pull") via `resolverMachineId` exclusion, and run-agent-tests ("resolving
-queued a pull for BOTH machines") via the admin path's `null`.
+- `dotnet build --no-incremental`: 0 warnings, 0 errors on every build.
+- `bash -n tests/linux/run-linux-tests.sh`: clean.
+- Real Steam Deck hardware testing for finding #7.
 
-## Status
+## Commits
 
-PR #20 open and green on branch `save-conflicts-phase-0-1`:
+- Code-review fixes (12 findings across 5 files)
+- `d9947c8` Docs: record real-hardware confirmation of CloseNotification withdraw
 
-- `41236fd` Conflict resolution Phase 0/1: move the decision into the agent
-- `778a874` Fix CI: regenerate agent-ui api-types on Linux for canonical schema order
+## Not done
 
-Phase 0/1 is complete. Later phases (2–8: Force-fix, Backups tab, Linux gate, Decky UI/launch wiring,
-Playnite) remain unbuilt — see `logs/2026-08-28_decky-conflict-resolution.md`.
-
----
-
-## Session Summary — 2026-08-24/25 (conflict-version-stats, PR #15)
-
-### What was asked
-
-1. **Difficulty check** on a backlog item: "File-count / newest-mtime delta in conflict UI" — the last
-   remaining piece of an otherwise-complete conflict Tier 1. Answered without implementing.
-2. **Implement it**, with a stated future constraint: the maintainer wants conflict management to
-   eventually migrate to the agent, auto-resolving conflicts the way Steam Cloud does, so the
-   implementation shouldn't box that future in.
-3. **Create a kebab-case branch, commit, and open a PR.**
-4. **xhigh-effort code review of the PR**, then apply the surviving findings with minimal edits.
-
-### What shipped
-
-A conflict card in the console currently shows size and upload time per side, but nothing indicating
-which machine actually has more progress — a smaller, newer save can still be the one worth keeping.
-This session added a derived file-count and newest-file-mtime stat to each side of a conflict.
-
-Key finding that simplified the work: `SaveArchive.CreateArchive` has always written each zip entry's
-`LastWriteTime`, so the stat didn't need a new upload-time computation or DB migration — it could be
-derived from any already-uploaded archive on demand, retroactively, for free.
-
-**New capability:** `SaveArchive.GetArchiveStats()` (Shared) → `VersionStatsDto` (Contracts) →
-`SyncService.GetVersionStatsAsync` (a nullable-`gameId` overload used by both an agent-unscoped and an
-admin-scoped route) → two new endpoints (`/api/versions/{id}/stats` agent-group,
-`/api/games/{id}/versions/{id}/stats` admin-group) → console fetches lazily per open conflict, cached
-by version id (immutable once uploaded), rendered as `"N files · newest change <time>"` on the
-conflict card.
-
-**Forward-looking design:** the agent-scoped stats route has no UI caller yet — it's there so a future
-agent-side auto-resolver can reuse the identical authenticated call path instead of requiring new
-server work when that migration happens.
-
-### Code review and fixes
-
-An xhigh-effort review (10 finder angles; 2 hit a subagent rate limit mid-run and were covered
-manually, including a standalone .NET test that empirically confirmed the top finding) surfaced 7
-findings, all fixed:
-
-- The zip's `entry.LastWriteTime.UtcDateTime` silently used the *reading* process's timezone instead
-  of the *writing* agent's — a real bug that could flip which conflict side looked newer. Fixed to be
-  deterministic regardless of server timezone.
-- A failed stats fetch permanently suppressed itself with no retry — fixed.
-- The agent-scoped route had no test coverage — added.
-- No server-side caching despite the archive-stats-never-change invariant the PR itself asserted —
-  added an in-memory cache.
-- Two competing ownership-scoping idioms and a misleading doc comment — the inaccurate claim removed.
-- An unnecessary forwarding overload — removed.
-- A comment that stated what instead of why, per this repo's CLAUDE.md — rewritten.
-
-### Verification performed
-
-- Clean `dotnet build --no-incremental` (Server + Agent), clean `npm run build` / `npm run lint` (web)
-  — both before and after the review fixes.
-- `openapi.json` regenerated from a live server and committed; `api-types.ts` regenerated from it —
-  diff limited to the two new routes and one new schema.
-- Live manual test: two throwaway machines, a forced real conflict, both stats routes confirmed
-  correct, conflict card visually confirmed in-browser. Demo data cleaned up afterward.
-- `tests/run-health-tests.ps1`: 22/22 passing (3 checks for this feature, including the new
-  agent-scoped-route check), zero regressions.
-
-### Outcome
-
-- Branch `conflict-version-stats`, PR https://github.com/Marwanello/SaveLocker/pull/15.
-- Backlog's conflict Tier 1 entry for this item removed; full technical write-up at
-  `SaveLocker/logs/2026-08-24_conflict-version-stats.md`.
-- `SaveLocker/CONTEXT.md` updated with a session narrative paragraph per the vault's session-handoff
-  convention.
-
-### Open follow-ups (not started)
-
-- Actual agent-side auto-resolution logic (the Steam-Cloud-style migration itself) — this session only
-  laid an endpoint the future work can reuse; no agent decision logic was written.
-
----
-
-## Session Summary — 2026-08-26
-
-Code review of merged fork PRs #1-10, fifteen findings applied, shipped as fork PR #16.
-
-- **Branch:** `chunked-upload-integrity-and-review-fixes`
-- **Commits:** `9d08e65` — *Make a chunked upload all-or-nothing, and the rest of the PR #1-10 review*
-  · `6d7c7f3` — *Docs: record the PR #1-10 review and what its fixes cover*
-- **PR:** https://github.com/Marwanello/SaveLocker/pull/16 (-> `main`, 16 files, +570/-55, MERGEABLE)
-- **Base:** `e83da90` — *Fix: null-safe HasSteamCloud and keep /api/games' field names (#14)*
-
----
-
-## The headline bug: a chunked upload could publish a truncated save
-
-Introduced by PR #3, which added the chunked upload protocol so large saves survive Cloudflare's
-fixed ~100s proxied-edge timeout: `begin` -> N x `chunk?offset=` -> `complete`.
-
-The failure chain:
-
-1. A chunk faults part-way through its body. The bytes already written stay on disk, **and are
-   counted** — `BytesReceived` had advanced as the write progressed.
-2. The client retries that chunk at its original offset. The server compares that offset against the
-   inflated `BytesReceived`, sees it as *behind*, and treats it as a harmless duplicate replay.
-3. The remainder of that chunk is therefore never written. The gap is silent.
-4. If it was the final chunk, `complete` publishes the short file **under the content hash of the
-   complete archive**. Every other machine then pulls it believing it is intact.
-
-Two properties of this codebase shaped the fix, and both are worth remembering:
-
-- **`ContentHash` hashes the save *folder*, not the zip** — it comes from
-  `SaveArchive.HashDirectory`. The obvious fix ("re-hash the assembled file and compare against
-  `ContentHash`") is therefore impossible without the server extracting the archive first.
-- **A zip's central directory lives at the *end* of the file.** That is what makes "did every byte
-  arrive" answerable server-side without re-hashing anything: a short assembly cannot produce a
-  readable archive.
-
-So `CompleteSession` now opens the staged file as a zip and reads its entry count before publishing.
-Failure deletes the staging file and throws `CorruptUploadException`, which `Program.cs` maps to
-**422** — deliberately not the 500 an unhandled throw would give, because the agent has to be able to
-distinguish *"those bytes did not arrive intact, resend"* from *"the server is broken"*.
-
-And `AppendChunkAsync` is now all-or-nothing: any fault mid-chunk rolls the file back to the offset
-that chunk started at, and `BytesReceived` advances **only after the write is durable** — the count
-is what a retry is judged against, so it must never describe bytes still in flight. Oversize is the
-one case that aborts the whole session instead of rolling back, since retrying cannot help.
-
-## Proving the tests catch it
-
-30 new `CS-12` checks in `tests/run-server-bugbounty-tests.ps1`: byte-identical happy path,
-`begin` no-change short circuit, whole-chunk replay, gap-ahead 409, cross-machine and unknown-session
-404, truncation 422, a **mid-chunk fault driven through a raw `TcpClient`** that declares a
-`Content-Length` it never delivers and then disconnects, and cumulative over-cap.
-
-The suite was then run against a **reverted** `ArchiveStore.cs` + `Program.cs`: **8 checks fail**,
-including *"the truncated session published no version"*. That is the part that matters — it shows
-the pre-fix server genuinely did publish corrupt archives, so the suite is a regression test rather
-than a tautology. Restored: **30/30**.
-
-## The other fourteen findings
-
-Chunk-retry logic in `ApiClient.cs` only caught `HttpRequestException`, but **`HttpClient.Timeout`
-surfaces as `TaskCanceledException`/`OperationCanceledException`** — and `ServerHttp.Create` sets no
-explicit timeout, so the 100s default applied. Retry now covers transport faults and 5xx/408, with a
-real cancellation still passing straight through.
-
-`SyncActivity.Persist` read shared state outside the lock and could write snapshots out of order;
-it now snapshots under the lock and serialises writes behind a sequence number, with a timer to flush
-throttled updates rather than dropping them. `POST /api/sync` gained a single-flight gate. The Linux
-UI's sync call had the default 100s timeout on an operation that can legitimately exceed it.
-`PathResolver.SafeChildDirectories` was re-enumerating directories per lookup and is now memoised.
-Plus small UI fixes, two `testenv` safety guards (refuse to operate on a state dir that isn't
-obviously a test dir), and repointing three `SkorcherX/SaveLocker` URLs to the fork.
-
-## Gotchas hit
-
-- **PowerShell 5.1 unrolls a `byte[]` returned from a function** into the pipeline, so it arrives as
-  `Object[]` and `Invoke-WebRequest -Body` serialises it as a *string* — a 125-byte slice went out as
-  a 377-byte body. Fix is the load-bearing leading comma: `return ,$s`.
-- **Test fixtures must be incompressible.** The first fixture zip was ~376 bytes because repetitive
-  text compresses away, which is far too small to exercise chunk boundaries. Now 300KB of seeded
-  random bytes.
-- **Kestrel's per-request `MaxRequestBodySize` and `ArchiveStore`'s cumulative `maxBytes` are
-  different limits with different errors.** A single 3MB body against `MaxUploadMb=2` gets a 413 from
-  Kestrel and never reaches `ArchiveTooLargeException`. Exercising the archive cap needs *two* chunks
-  that are each under the request cap but together over the archive cap.
-- **`PathResolver`'s case-insensitive fallback cannot be tested on Windows** — NTFS resolves the
-  mis-cased path directly, so `Directory.Exists(exact)` succeeds and the fallback never runs. Those
-  two "failures" are by design; verification moved to WSL.
-- **`wsl -d Ubuntu -- bash -lc '...$VAR...'`** has `$VAR` eaten by the *outer* Git Bash shell before
-  WSL ever sees it. Use literal paths.
-- Line-ending drift again: a Python write left `ActivityCard.tsx` LF in a CRLF tree. Confirmed fixed
-  by the diff shrinking to +1/-3 (whole-file churn would have shown as a full rewrite).
-
-## Not done, deliberately
-
-- **Retry on `/upload/{sessionId}/complete`.** The endpoint is not idempotent server-side — a second
-  call hits `TryRemove` and 404s — so adding retry today would turn a lost-response *success* into a
-  spurious hard failure. Needs the server to remember completed sessions first.
-- **Repointing the Decky plugin URL** (`web/src/help/decky-plugin.md:28`,
-  `src/Agent.Linux/DeckyPlugin.cs:66`). `Marwanello/SaveLocker-Decky` exists but has **no releases**,
-  so the documented *Install Plugin from URL* flow would 404. The stale-looking URL is the working
-  one; change it when the fork's plugin repo cuts a release.
-
-Both are called out in the PR body.
-
-## Note on the rebase
-
-`origin/main` advanced mid-session (PR #14), touching `AgentApiServer.cs` and `testenv.ps1` — two
-files this work also changed. Rebased rather than opening against a stale base. It applied without
-conflict, but a clean auto-merge can still be semantically wrong, so it was checked rather than
-trusted: both changesets confirmed present by inspection, PR #14's `HasSteamCloud` still appearing
-10x in `AgentApiServer.cs`, the diff vs `origin/main` unchanged at 15 code files / +526/-55, all five
-C# projects and `agent-ui` rebuilt, and `CS-12` re-run at 30/30.
-
----
-
-## Session Summary — 2026-08-26/27 (per-file-delta-upload, PR #17)
-
-### Task
-Review the `per-file-delta-upload` branch (xhigh effort), apply the 14 findings with
-minimal edits, then merge the branch and open a PR.
-
-### Outcome
-- **PR #17** open: https://github.com/Marwanello/SaveLocker/pull/17
-  (`per-file-delta-upload` → `main`). Targeted `Marwanello/SaveLocker` explicitly —
-  `gh` has no default repo here and `upstream` resolves to `SkorcherX/SaveLocker`.
-- Two commits: `c054676` (14 fixes, code + tests), `5d7174d` (`Docs:` vault update).
-- Later merged `origin/main` (PR #14/15/16) into the branch to resolve merge conflicts.
-
-### The three serious findings
-1. **Arbitrary file exfiltration** — server-controlled `NeedPaths` was archived
-   unchecked. Fixed in `SyncEngine.SendPushAsync` (intersect + refuse/alert on any
-   undeclared path) with `SaveArchive.CreateArchiveSubset` containment as a floor.
-2. **Live-head archive could be destroyed** — the archive-deleting `catch` covered
-   post-commit DB work. Restructured so only pre-commit failures un-publish.
-3. **Reconstructed archive was unverified** — server now re-hashes the rebuild against
-   the declared content hash and enforces `MaxUploadMb` before ingest.
-
-### Notable structural moves
-- Push decision tree moved `ApiClient` → `SyncEngine`, so the agent can reject rogue
-  `NeedPaths` against the manifest it just sent.
-- `ComputeManifest` returns manifest + aggregate hash in one pass (findings 7/9/10
-  collapsed): the old `HashDirectory` second pass and the file-count floor deleted.
-- `ValidateManifest` on the server rejects duplicate/rooted/`..`/empty/negative-size
-  entries, caps at 100k; wired as a 400 on `POST /upload/begin`.
-- Staging `.build` → `.part` so startup `SweepIncoming` reclaims crashed builds.
-
-### Tests
-- `run-delta-upload-tests.ps1`: 17 → 29 checks (RetryFull on head move, manifest 400s,
-  hostile `../` NeedPaths refused). Agent suite 47/47 on a fresh server DB.
-- Full `testenv.ps1 test` pass showed 2 pre-existing Linux-suite failures (Decky
-  detection, untouched by this branch) and 4 pre-existing server-suite failures
-  (WSL distro name hardcoded to `Ubuntu-24.04` in `tests/run-server-bugbounty-tests.ps1`
-  while the installed distro is plain `Ubuntu`); neither cluster traces to this branch.
-
-### Known gaps
-- `MaxUploadMb` ceiling on the reconstruction rests on inspection, not a test.
-- Not yet run against a real fleet.
-
----
-
-## Session Summary — 2026-08-27 (`linux-regression-tests` worktree)
-
-### What was asked
-
-1. Review the new `run-linux-regression-tests.sh` (LA-04/05/06/07), fix bugs, wire it into
-   `testenv.ps1 test`, run it, fix failures.
-2. Investigate and fix every failure in a pasted full `testenv.ps1 test` run.
-3. Fix the two pre-existing `run-linux-tests.sh` Decky-messaging failures — with an explicit
-   constraint given mid-fix not to touch anything MoonDeck-relevant.
-4. Dig into the long-standing intermittent `WA-01` dashboard-pull test and fix it if easy.
-
-### What shipped
-
-- **The new LA-04/05/06/07 regression script**, four real bugs fixed (a reverted field-name
-  misdiagnosis, a missing `agent register` step, a `wait`-deadlock on the wrong PID set, and bash
-  variables silently not expanding inside a single-quoted heredoc), now wired into `testenv.ps1 test`
-  and passing 15/15.
-- **A real product bug in `AgentCli.cs`'s `add-game`**: an unconditional `config.Save()` reopened a
-  lost-update window that `SetTracked`'s own fresh re-read-under-lock had already closed for a
-  brand-new game.
-- **Two WSL-distro-name mismatches** (`Ubuntu-24.04` hardcoded vs. this machine's actual `Ubuntu`)
-  in `run-server-bugbounty-tests.ps1` / `verify-password-compat.ps1`, fixed via a `$WslDistro` param.
-  Fixed all 4 CS-01 failures (194/0, was 190/4).
-- **A `testenv.ps1 sync` bug**: it skipped the git fetch+checkout step whenever the working tree had
-  no uncommitted changes, so the persistent WSL clone could silently sit on an ancient commit.
-- **The two pre-existing Decky "no plugin installed" messaging failures**, root-caused to an
-  unrelated MoonDeck fixture directory (`make-fixtures.py`) that made a plain directory-existence
-  check (`DeckyPlugin.DeckyPresent`) read `true` in the "no Decky at all" test section. Fixed with a
-  cleanup line scoped to only the test harness's disposable fake `$HOME`; verified with a full rerun
-  that every MoonDeck-dependent check still passed (237/0, was 235/2) before touching anything.
-- **`WA-01`'s intermittent flake, reproduced and fixed.** Extracted just the WA-01 block (it needs no
-  interactive desktop, unlike the tray tests later in the same file) and ran it directly against the
-  already-built Windows binaries — it failed on the first live attempt, and debug output showed
-  exactly why: the test's polling loop accepted `CommandStatus.Dispatched` (a lease, set the instant
-  the agent *claims* a dashboard command — not a terminal state) as good enough, so a 1-second poll
-  could catch the tiny window between "claimed" and "result reported" and grab `{result: null}`.
-  Fixed to wait for the real terminal states (`Done`/`Failed`); also hardened the match to use the
-  command's own id instead of "the most recent Pull server-wide". Reran twice after the fix: 10/10
-  both times.
-
-### Verification performed
-
-- `run-linux-tests.sh`: 237/0 (was 235/2).
-- `run-linux-regression-tests.sh`: 15/0.
-- `run-server-bugbounty-tests.ps1`: 194/0 (was 190/4).
-- WA-01, isolated and live on this Windows host: reproduced failing once, then 10/10 twice after the
-  fix.
-
-### Not done
-
-- The rest of `run-winagent-tests.ps1` (WA-02 through the tray-stress blocks) was not rerun this
-  session — those need a real interactive desktop, which this environment doesn't have.
-
----
-
-## Session Summary — 2026-08-29 (PR #20 review + PR #21 SessionStart hook)
-
-### What was asked
-
-1. An xhigh-effort code review of [PR #20](https://github.com/Marwanello/SaveLocker/pull/20)
-   (`save-conflicts-phase-0-1` → `main`), which moves conflict-resolution decisions from the server to
-   the agent (Phase 0/1 of the Decky conflict-resolution plan).
-2. Apply the 6 findings with minimal edits, treating the quoted finding text as a problem description
-   rather than literal instructions, then report them back via `ReportFindings` with the original
-   file/line/summary/failure-scenario echoed verbatim plus a fixed/no_change_needed/skipped outcome.
-3. A `SessionStart` hook so Claude Code on the web has the toolchain to build the repo and run its test
-   suites — implement directly rather than write a task doc, since it turned out not to be a big task.
-4. Push the review-fix commit onto PR #20's *actual* head branch, not the separate workspace branch the
-   fix work had used.
-5. Cut a pure-kebab-case branch (no `claude/` prefix) from `claude/session-start-hook` and open a PR.
-
-### PR #20 review: 6 findings, all fixed
-
-- **`AgentCli.cs`** — `resolve-conflict --keep local` now advances the local parent pointer
-  (`LastKnownVersionId`/`LastSyncedHash`) after a successful resolve, matching what the server's
-  fan-out-skip optimization already assumes for the auto-policy resolver.
-- **`SyncService.ResolveConflictAsync`** — the rewind guard could leave an auto-policy resolver stuck.
-  An earlier attempt reassigned the winning version to the current head to dodge the refusal; caught in
-  self-review that `SyncEngine.PushCoreAsync` assumes `ok=true` always means the resolver's *own*
-  version won, which would have silently corrupted local state in exactly the race being fixed. Landed
-  instead as: keep the refusal unconditional, but queue the stuck machine an unforced `Pull`.
-- **`AgentApiServer.cs`** — three related gaps in the new local conflict routes: `sync-status`'s
-  open-conflict lookup wasn't filtered to the calling machine, exceptions surfaced as unhandled 500s
-  instead of the file's usual typed `ErrorResponse`, and a directory hash ran synchronously on a
-  request thread. Fixed with a `MachineId` filter, try/catch on all 6 conflict routes, and `Task.Run`.
-- **`SyncEngine.TryPolicyResolveAsync`** — catch blocks swallowed cancellation from a retiring engine;
-  added `when (!ct.IsCancellationRequested)` guards to match the file's existing convention.
-
-No .NET SDK was available in the review sandbox, so the fixes were verified by manual brace/paren
-balance checking and careful tracing rather than a real build — disclosed as a limitation at the time.
-
-### Landing the fix on the right branch
-
-The fix had been committed on workspace branch `claude/pr-20-xhigh-review-lrcpdq` (`0551bb7`), but
-PR #20 is backed by `save-conflicts-phase-0-1`. Cherry-picked cleanly onto that branch as `e98f5ef`
-rather than force-pushing; the only wrinkle was a 3-line `agent-ui/src/api-types.ts` diff from
-generation-environment schema-key ordering, resolved the same way an earlier commit (`778a874`) had —
-regenerate on Linux for canonical order.
-
-### SessionStart hook (`.claude/hooks/session-start.sh` + `.claude/settings.json`)
-
-Gated on `CLAUDE_CODE_REMOTE=true`, so local sessions are untouched. Installs the `global.json`-pinned
-.NET SDK via Ubuntu 24.04's own apt archive rather than `dotnet-install.sh` (its
-`builds.dotnet.microsoft.com` download was flatly blocked by this container's network policy — a 403
-on the proxy `CONNECT`), installs PowerShell Core from Microsoft's apt feed, restores only the
-Linux-buildable projects (`src/Server`, `src/Agent.Linux` — the WinForms `src/Agent` can't restore on
-Linux at all), and runs `npm install` in both `web/` and `agent-ui/`.
-
-Validated live: a cold run and an idempotent re-run of the hook, `oxlint` clean in both frontends,
-`dotnet build --no-incremental` clean for Server + Agent.Linux, and
-`pwsh tests/run-hardening-tests.ps1` → 37/37 against a real running server.
-
-### Outcome
-
-- PR #20: 6 review findings fixed on its real head branch, commit `e98f5ef`.
-- Branch `session-start-hook` (kebab-case) cut from `claude/session-start-hook`, pushed; PR
-  [**#21**](https://github.com/Marwanello/SaveLocker/pull/21) opened (`session-start-hook` → `main`).
-
-### Open follow-ups (not started)
-
-- PR #20's `mergeable_state` was `unstable` at end of session — checks/CI hadn't finished settling;
-  not investigated further this session.
-- A real `dotnet build` verification of the PR #20 fixes is still outstanding (manual tracing only).
+- Finding #10 unification — open question, not yet answered by the user.
+- No PR created for this branch (existing PR #26 already covers it).
