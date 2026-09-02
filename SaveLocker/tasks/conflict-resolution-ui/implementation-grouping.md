@@ -103,10 +103,22 @@ verification* Phase 9 shares with Decky/Playnite work, not a build dependency �
 group, placed right after the one phase (Phase 6) it actually needs, not lumped in with hardware it
 doesn't touch.
 
-**Group 4 — medium, code-only from here.**
-`Phase 8` (Game Mode conflict screen) — independent of Groups 1–3. Build and compile-check here;
-flag verification as pending a WSLg or real-Deck pass, the same honest way every other hardware-gated
-feature in this project ships.
+**Group 4 — medium, code-only from here. Done 2026-09-03.**
+`Phase 8` (Game Mode conflict screen) — independent of Groups 1–3. Shipped as a new `Screen.Conflicts`
+in `Ui/UiApp.cs`, reusing `ApiClient` directly (in-process, no daemon round trip — resolving a
+conflict is a stateless mechanical server call, unlike "Sync now") for a fourth, badge-numbered rail
+entry and a two-panel local-vs-cloud card mirroring the dashboard/`agent-ui`'s own. Two new hand-drawn
+icons (`Cloud`, `GitBranch`) matching the lucide icons the React surfaces already use. **Verified
+beyond this group's own "code-only" ceiling**: this session ran on a Windows dev box with WSLg, which
+is exactly the environment named above as what a prior cloud-container session couldn't supply — a
+real two-machine conflict seeded via `tests/seed-test-conflict.sh`, a `-r linux-x64` build run under
+it, and a scripted `--nav` D-pad+A sequence that pressed a real Keep button and resolved the conflict
+through the real local `ApiClient` call, confirmed independently via a separate CLI check. A real bug
+was caught doing this: the `--screenshot` capture-and-exit path's busy gate didn't wait on the new
+resolve task, so a scripted press had its in-flight request killed before it reached the server — fixed
+by adding it alongside `_syncNowTask`, the existing analog. Full detail: `Backlog.md`. Still unchecked:
+real Steam Input/gamescope specifically (a WSLg pass never covers those two, on any screen in this
+codebase).
 
 **Group 5 — defer to a session on a Windows-connected machine.**
 `Phase 7` (Windows tray automatic chooser + bulk queue) + `Phase 14` (webhook notify + the per-game
@@ -123,7 +135,7 @@ a five-minute manual check would have caught).
 Done 2026-08-30       →  Group 1 (5, 9-spike)                  tiny, fully verifiable here
 Done 2026-08-31       →  Group 2 (4, 6)                        medium, biggest value, fully verifiable here
 Done 2026-09-01       →  Group 3 (9-impl)                      small, code-only here, needed Group 2 first
-Following session    →  Group 4 (8)                           medium, code-only here
+Done 2026-09-03       →  Group 4 (8)                           medium, verified live under WSLg
 Windows machine       →  Group 5 (7, 14)
 Deck + Windows        →  Group 6 (10, 11, 13)
 Whenever 6/8/10 adds a "check now" trigger → Phase 12 (sync-status consumer)

@@ -815,6 +815,76 @@ indirection for no real gain.
 
 ---
 
+**Decky conflict-resolution "Group 4" shipped (2026-09-03, branch
+`claude/save-conflict-next-group-ebc9b1`, no task file — `implementation-grouping.md`'s Group 4: Phase
+8, the Linux Game Mode conflict screen, unblocked immediately since it depends only on Phase 0/1 and
+runs fully in parallel with every other open phase).** New `Screen.Conflicts` in `src/Agent.Linux/
+Ui/UiApp.cs` — "the direct, literal answer to 'a conflict popup like the Decky one, but in the native
+Linux UI, with no Decky installed'" per the plan doc's own framing for this phase. A fourth rail entry
+(Overview / Add game / **Conflicts** / Steam setup / Settings, matching `agent-ui`'s `Sidebar.tsx`
+order), badge-numbered by open-conflict count, plus a conflict prompt on a tracked game's own row on
+the Overview screen so a conflict is reachable without ever attempting a launch first — exactly what
+the phase spec calls for. The screen polls `GET /api/agent/conflicts` on a 12s timer, filtered to
+`MachineId == config.MachineId` (the same "no bystander case" rule `AgentCli.cs`'s `conflicts` command
+and `Doctor.cs` already apply), and renders each open conflict as the same local-vs-cloud two-panel
+comparison the dashboard/`agent-ui` cards already use: machine, relative time, file count/size, a
+"newer" tag, and Keep Local/Keep Cloud buttons that resolve immediately on press — the sync-pop-up's
+`'immediate'` mode, not the confirm-then-resolve two-step the list pages use, since this is a screen
+to visit, not a queue to advance through — plus a Keep Both toggle. Resolving talks to `ApiClient`
+directly, in-process, rather than round-tripping through the daemon's local `:5178` API: unlike "Sync
+now," which genuinely needs the daemon's own live `SyncEngine`/lease state, resolving a conflict is
+the exact same stateless, mechanical server call `AgentCli.cs`'s `conflicts`/`resolve-conflict`
+commands already make. Two new hand-drawn icons in `Icons.cs` (`Cloud`, approximated as two
+overlapping `PathArcTo` bumps plus a flat base; `GitBranch`, an exact match of lucide's own two-node-
+plus-arc path) so this screen speaks the same icon language as the React surfaces' lucide `Cloud`/
+`GitBranch`, and a new `Theme.AccentRed` (`#E5534B`, matching the dashboard/agent-ui conflict card's
+escalated-border red) reserved for the overdue line only.
+<br>**A real bug found and fixed while verifying, not left in:** the `--screenshot` capture-and-exit
+path's "is anything still busy" gate (`UiApp.OnRender`'s `busy` check) never listed the new resolve
+task, so a scripted `--nav` press on a Keep button had its in-flight `ResolveConflictAsync` call
+killed by `Environment.Exit` before the request ever reached the server — reproduced directly: the
+conflict was still open afterward per an independent `savelocker conflicts` check. This is the exact
+class of bug `_syncNowTask` was already in that gate to prevent; the fix adds `_resolveTask` alongside
+it. Deliberately did NOT add the passive `_conflictsTask`/version-fetch tasks to the same gate — those
+are an ambient background poll, not a user-triggered write, and gating settle on them would make
+every screenshot anywhere in the app wait on a network round trip for no reason.
+<br>**Verified live against a real server, not just built — genuinely beyond this group's own
+"code-only, verify later" ceiling.** `implementation-grouping.md` named "a Windows+WSLg box" as the
+one thing this group needed for live verification that a prior cloud-container session couldn't
+supply; this session ran directly on the maintainer's own Windows dev box, which turned out to
+already be exactly that box (WSL's `Ubuntu` distro, confirmed present in earlier sessions' gotchas,
+carries a working native `dotnet` and WSLg). Built the UI binary with `dotnet build ... -r linux-x64
+--no-self-contained` (RID-specific, matching `tests/linux/run-ui-wslg.sh`'s own documented reasoning
+— a RID-agnostic build never maps `libSDL2` into `deps.json` and fails with a misleading "not
+applicable" platform error) and seeded a genuine two-machine conflict via `tests/
+seed-test-conflict.sh again` (a full reset, not the lighter `up`, after `up` alone was found to reuse
+a prior session's stale scratch state and mis-seed — not a bug in this session's own code, confirmed
+by tracing `SyncService.IngestAsync`'s `MachineId`/`VersionAId`/`VersionBId` assignment directly
+before concluding that). Screenshots confirmed: the populated conflict card (correct machine name,
+relative time, size/file count, the "newer" tag on the actually-newer side, both captions), the
+Overview row's conflict prompt with its chevron and the rail's badge count, and the empty state (a
+green `Cloud` icon, correct copy). A scripted `--nav` sequence (D-pad into the content pane, then to
+the "Keep This device" button, then A) drove a real resolve through the real `ApiClient` call —
+confirmed not by the UI alone but by a separate `savelocker conflicts` CLI invocation afterward
+showing the conflict genuinely gone. Full solution (`dotnet build SaveLocker.sln`, all five projects
+including the Windows-only `Agent`) and the Linux-x64 UI binary both build clean.
+<br>**Gotcha hit again, distinct from the usual "no `npm install`" one:** this worktree's `agent-ui`
+DID have `node_modules`, but it was missing a working `tsc` binary shim (`'tsc' is not recognized`),
+breaking the Windows `Agent` build (which shells out to `agent-ui`'s `npm run build`) even though
+`node_modules` existed — `npm install` again repaired it. Worth knowing this is a distinct failure
+mode from the already-documented "no `node_modules` at all" gotcha, not the same one recurring.
+<br>**Not yet checked:** real gamepad input via Steam Input and gamescope compositing specifically —
+a WSLg pass never validates either, on any screen in this codebase, per `run-ui-wslg.sh`'s own
+documented scope. Also worth knowing for anyone adding a scripted nav regression test to this screen
+later: the async version/stats fetch that gates a Keep button's enabled state needs a little more
+settle time than `--nav`'s default 6-frame gap between steps before the button is genuinely there to
+press — a real person's own reaction time already clears this by a wide margin, so it is a testing-
+tool timing note, not a user-facing bug.
+<br>Phases 7 (Windows tray wiring), 10/11 (Decky), 13 (Playnite), and 14 (webhook + block-launch
+opt-in) remain open — see [[Backlog]].
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

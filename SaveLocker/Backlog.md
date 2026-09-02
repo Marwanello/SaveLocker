@@ -16,7 +16,8 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   detection) shipped 2026-08-30 in the same session the plan was expanded, and Phase 4 (Linux wrapper
   launch gate) + Phase 6 (shared `agent-ui` conflicts page) shipped 2026-08-31 together as
   `implementation-grouping.md`'s "Group 2", and Phase 9 (D-Bus desktop notification) shipped
-  2026-09-01 as that document's "Group 3"** — see below. **Phases 7, 8, 10, 11, 13–14 remain not
+  2026-09-01 as that document's "Group 3", and Phase 8 (the Linux Game Mode conflict screen) shipped
+  2026-09-03 as that document's "Group 4"** — see below. **Phases 7, 10, 11, 13–14 remain not
   built** (Phase 12's endpoint exists but has no consumer yet — see below). Before Phase 2, the
   plugin's only way past
   a stuck sync was Force push/pull, which bypassed the server's own conflict bookkeeping — an orphaned
@@ -236,6 +237,51 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   because nothing checked what was actually sent.
   <br>**Still open on this phase:** Game Mode rendering (unchanged, unknown), and confirming
   `xdg-open` lands on the conflicts page on the Deck specifically.
+  <br>**Group 4 shipped 2026-09-03** (`implementation-grouping.md`'s "Group 4" — Phase 8, the Linux
+  Game Mode conflict screen in `savelocker ui`, independent of every other phase, code-only per the
+  grouping doc's own plan). New `Screen.Conflicts` in `Ui/UiApp.cs`: a fourth rail entry (matching
+  `agent-ui`'s Overview/Add Games/Conflicts order), badge-numbered by open-conflict count exactly like
+  `Sidebar.tsx`, plus a conflict prompt on a tracked game's own row on the Overview screen — reachable
+  without ever attempting a launch, per the phase's own spec. The screen polls `GET /api/agent/
+  conflicts` on a 12s timer (filtered to `MachineId == config.MachineId`, the same "no bystander case"
+  rule `AgentCli.cs`'s `conflicts` command and `Doctor.cs` already apply) and renders the same
+  local-vs-cloud two-panel comparison the dashboard/`agent-ui` cards already use — machine, relative
+  time, file count/size, a "newer" tag, and Keep Local/Keep Cloud buttons that resolve immediately on
+  press (the sync-pop-up's 'immediate' mode, not the confirm-then-resolve two-step the list pages use
+  — this is a screen, not a queue, so there's nothing to advance afterward), plus a Keep Both toggle.
+  Reuses `ApiClient` directly, in-process, rather than round-tripping through the daemon's local API:
+  resolving a conflict is the same stateless mechanical server call `AgentCli.cs`'s CLI commands
+  already make, unlike "Sync now," which genuinely needs the daemon's own live `SyncEngine`/lease
+  state. Two new hand-drawn icons in `Icons.cs` (`Cloud`, `GitBranch`, matching the lucide icons the
+  React surfaces already use for this exact feature) and a new `Theme.AccentRed` for the escalated
+  line, both following the existing stroke-path-over-`ImDrawList` convention rather than adding an
+  atlas.
+  <br>**A real bug found and fixed while verifying, not left in**: the `--screenshot` capture-and-exit
+  path's "is anything still busy" gate never listed the new resolve task, so a scripted `--nav` press
+  on a Keep button had its in-flight `ResolveConflictAsync` call killed by `Environment.Exit` before it
+  ever reached the server — the exact class of bug `_syncNowTask` was already in that gate to prevent,
+  just missing for the new one. Fixed by adding `_resolveTask` alongside it (deliberately NOT the
+  passive `_conflictsTask`/version-fetch tasks, which are an ambient background poll, not a
+  user-triggered write — gating settle on those would make every screenshot anywhere in the app wait
+  on a network round trip).
+  <br>**Verified live against a real server, not just built** — genuinely stronger than this group's
+  own "code-only, verify later" ceiling, using `tests/seed-test-conflict.sh again` (a real two-machine
+  conflict) plus a `-r linux-x64` build run under WSLg on this Windows dev box, the Windows+WSLg
+  environment `implementation-grouping.md` named as the one thing Group 4 needed for live verification
+  that a prior cloud-container session couldn't supply. Screenshots confirmed: the populated conflict
+  card (correct machine/timestamp/size/newer-tag/captions), the Overview row's conflict prompt and
+  rail badge, and the empty state. A scripted `--nav` sequence (D-pad to the "Keep This device" button,
+  A to press it) drove a real resolve through the real local `ApiClient` call, confirmed independently
+  via a separate `savelocker conflicts` CLI invocation showing the conflict gone afterward — not
+  inferred from the UI alone. Full solution (`dotnet build SaveLocker.sln`, all five projects including
+  the Windows-only `Agent`) and the Linux-x64 UI binary both build clean.
+  <br>**Not yet checked**: real gamepad input via Steam Input and gamescope compositing specifically
+  (WSLg validates layout/rendering/interaction, never those two — same caveat every WSLg-verified
+  screen in this codebase already carries), and whether pressing A on a Keep button reads as
+  comfortably fast on real hardware — the WSLg dev pass found the async version/stats fetch that gates
+  a Keep button's enabled state needs a little more settle time than the `--nav` script's default
+  frame gap before the button is genuinely there to press, which a human's own reaction time already
+  clears in practice but is worth knowing if this screen ever grows a scripted regression test.
 
 **All three bug bounties shipped in v0.5.0 (2026-07-29).** Code is on `main`; what remains is the
 verification that did not happen before the tag. Write-ups:
