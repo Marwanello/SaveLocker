@@ -120,6 +120,7 @@ static class Gallery
             ("Alert", Icons.AlertTriangle), ("Folder", Icons.Folder), ("Check", Icons.Check),
             ("X", Icons.X), ("Chevron", Icons.ChevronRight), ("Copy", Icons.Copy),
             ("Trash", Icons.Trash), ("Search", Icons.Search), ("Drive", Icons.HardDrive),
+            ("Cloud", Icons.Cloud), ("Branch", Icons.GitBranch),
         };
 
         for (int i = 0; i < set.Length; i++)
