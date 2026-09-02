@@ -686,6 +686,8 @@ check "a reachable daemon gets a notification at all" \
 # action button is withdrawn with it — the exact hardware bug, invisible to every other check here.
 check "the notification is sent with --wait, so its action can outlive the call" \
   "$(contains "${sent_args}" "--wait")"
+check "the notification requests an id, for the documented CloseNotification withdraw path" \
+  "$(contains "${sent_args}" "--print-id")"
 check "the action button is declared with the key the agent listens for" \
   "$(contains "${sent_args}" "--action=view=View conflict")"
 check "the notification names the conflicted game" \

@@ -55,12 +55,20 @@ public sealed class ConflictNotifier : IDisposable
     private readonly HashSet<Guid> _notified = new();
 
     /// <summary>
-    /// The still-running <c>notify-send --wait</c> per conflict. Killing one withdraws its popup —
-    /// the same ownership rule that broke the first implementation, used deliberately here: a
-    /// conflict resolved from the dashboard, the CLI or another machine takes its now-stale
-    /// notification off this screen instead of leaving a button that resolves nothing.
+    /// The still-running <c>notify-send --wait</c> per conflict, plus the notification id it prints
+    /// via <c>--print-id</c> once the daemon assigns one. Withdraw() uses both: the documented
+    /// <c>CloseNotification(id)</c> call when an id was captured, and killing the process — the same
+    /// ownership rule that broke the first implementation, kept as the always-available fallback —
+    /// either way. A conflict resolved from the dashboard, the CLI or another machine takes its
+    /// now-stale notification off this screen instead of leaving a button that resolves nothing.
     /// </summary>
-    private readonly Dictionary<Guid, Process> _live = new();
+    private readonly Dictionary<Guid, LiveNotification> _live = new();
+
+    private sealed class LiveNotification
+    {
+        public required Process Proc { get; init; }
+        public uint? NotificationId;
+    }
 
     public ConflictNotifier(string conflictsUrl) => _conflictsUrl = conflictsUrl;
 
@@ -75,7 +83,7 @@ public sealed class ConflictNotifier : IDisposable
     {
         var openIds = new HashSet<Guid>(openConflicts.Select(c => c.Id));
         var newlyOpen = new List<ConflictDto>();
-        var resolved = new List<Process>();
+        var resolved = new List<LiveNotification>();
 
         lock (_lock)
         {
@@ -89,7 +97,7 @@ public sealed class ConflictNotifier : IDisposable
                 if (!_notified.Contains(c.Id)) newlyOpen.Add(c);
         }
 
-        foreach (var proc in resolved) Withdraw(proc);
+        foreach (var live in resolved) Withdraw(live);
         if (newlyOpen.Count == 0) return;
 
         // Only worth asking the environment when there is actually something new to say — this is
@@ -129,6 +137,12 @@ public sealed class ConflictNotifier : IDisposable
         // notification carrying actions is already kept until it is answered rather than timed out.
         // Adding an untested flag to a call that has been verified end-to-end buys nothing.
         psi.ArgumentList.Add("--wait");
+        // Lets Withdraw() close this exact notification by id via the documented D-Bus method, for a
+        // daemon that does not tear a notification down just because the connection that sent it
+        // drops (the assumption killing the process alone relies on). Purely additive: printed once,
+        // read from the same stdout the action key already comes from, never blocks or changes the
+        // --wait behavior this call was verified against.
+        psi.ArgumentList.Add("--print-id");
         psi.ArgumentList.Add($"--action={ActionKey}=View conflict");
         psi.ArgumentList.Add("Sync conflict");
         psi.ArgumentList.Add(body);
@@ -154,16 +168,22 @@ public sealed class ConflictNotifier : IDisposable
         // it earlier would permanently skip a conflict whose first notify-send attempt failed to
         // launch. Committed together, before EnableRaisingEvents is set below, so a fast-exiting
         // process can never find _live still missing its own entry when Exited fires.
+        var live = new LiveNotification { Proc = proc };
         lock (_lock)
         {
             _notified.Add(conflict.Id);
-            _live[conflict.Id] = proc;
+            _live[conflict.Id] = live;
         }
 
         proc.EnableRaisingEvents = true;
         proc.OutputDataReceived += (_, e) =>
         {
-            if (string.Equals(e.Data?.Trim(), ActionKey, StringComparison.Ordinal)) OpenConflictsPage();
+            var line = e.Data?.Trim();
+            if (line is null) return;
+            // --print-id's one-line id, printed once as soon as the daemon assigns one — everything
+            // else on this stream is the action key, printed later and only if the button is clicked.
+            if (uint.TryParse(line, out var id)) lock (_lock) live.NotificationId = id;
+            else if (string.Equals(line, ActionKey, StringComparison.Ordinal)) OpenConflictsPage();
         };
         proc.Exited += (_, _) => Forget(conflict.Id, proc);
         proc.BeginOutputReadLine();
@@ -180,21 +200,46 @@ public sealed class ConflictNotifier : IDisposable
         // against each other instead of leaving them to run concurrently and unguarded.
         lock (_lock)
         {
-            if (_live.TryGetValue(conflictId, out var held) && ReferenceEquals(held, proc))
+            if (_live.TryGetValue(conflictId, out var held) && ReferenceEquals(held.Proc, proc))
                 _live.Remove(conflictId);
             try { proc.Dispose(); } catch { /* already gone */ }
         }
     }
 
-    /// <summary>Take a stale popup off the screen by dropping the connection that owns it.</summary>
-    private void Withdraw(Process proc)
+    /// <summary>
+    /// Take a stale popup off the screen. Tries the documented close-by-id call first — outside the
+    /// lock, since it only talks to the session bus and never touches shared state — then always
+    /// falls back to dropping the connection that owns it (the mechanism this call was originally
+    /// verified against), whether or not an id was ever captured or the close-by-id call succeeded.
+    /// </summary>
+    private void Withdraw(LiveNotification live)
     {
+        uint? id;
+        lock (_lock) id = live.NotificationId;
+        if (id is { } notificationId) CloseById(notificationId);
+
         lock (_lock)
         {
-            try { if (!proc.HasExited) proc.Kill(); } catch { /* exited on its own; fine */ }
-            try { proc.Dispose(); } catch { /* already disposed by Exited */ }
+            try { if (!live.Proc.HasExited) live.Proc.Kill(); } catch { /* exited on its own; fine */ }
+            try { live.Proc.Dispose(); } catch { /* already disposed by Exited */ }
         }
     }
+
+    /// <summary>Best-effort <c>org.freedesktop.Notifications.CloseNotification</c> — the documented
+    /// way to withdraw a specific notification, vs. Withdraw()'s connection-drop fallback above.
+    /// Never throws (ProcessRunner.Run), and its result is never checked: Withdraw() always also
+    /// kills the process regardless, so a missing/erroring gdbus here just means one fewer path did
+    /// the job rather than none.</summary>
+    private static void CloseById(uint id) =>
+        ProcessRunner.Run("gdbus",
+            [
+                "call", "--session",
+                "--dest", "org.freedesktop.Notifications",
+                "--object-path", "/org/freedesktop/Notifications",
+                "--method", "org.freedesktop.Notifications.CloseNotification",
+                id.ToString(),
+            ],
+            TimeSpan.FromSeconds(2));
 
     /// <summary>
     /// Opens Phase 6's agent-ui conflicts page in the default browser — the desktop-session half of
@@ -218,7 +263,7 @@ public sealed class ConflictNotifier : IDisposable
 
     public void Dispose()
     {
-        List<Process> live;
+        List<LiveNotification> live;
         lock (_lock)
         {
             live = _live.Values.ToList();
@@ -227,6 +272,6 @@ public sealed class ConflictNotifier : IDisposable
         }
         // A notification whose owner is gone can no longer deliver its own button, so leaving it on
         // screen would only offer an action nothing answers.
-        foreach (var proc in live) Withdraw(proc);
+        foreach (var l in live) Withdraw(l);
     }
 }
