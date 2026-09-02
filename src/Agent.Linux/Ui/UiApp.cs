@@ -6,6 +6,7 @@ using Silk.NET.OpenGL;
 using Silk.NET.OpenGL.Extensions.ImGui;
 using Silk.NET.Windowing;
 using ImGuiNET;
+using SaveLocker.Shared;
 using SdlApi = Silk.NET.SDL.Sdl;
 
 namespace SaveLocker.Agent.Linux.Ui;
@@ -21,7 +22,7 @@ namespace SaveLocker.Agent.Linux.Ui;
 /// </summary>
 sealed class UiApp
 {
-    private enum Screen { Status, AddGame, SetFolder, LaunchSetup, Settings, Gallery }
+    private enum Screen { Status, AddGame, SetFolder, LaunchSetup, Conflicts, Settings, Gallery }
 
     private readonly AgentConfig _config;
     private readonly LinuxGameScanner _scanner;
@@ -54,6 +55,37 @@ sealed class UiApp
     private readonly LocalAuth _localAuth;
     private Task<string>? _syncNowTask;
     private string? _syncNowMessage;
+
+    // Conflicts (tasks/conflict-resolution-ui/plan.md, Phase 8). Unlike the "Sync now" call above,
+    // resolving a conflict never touches the daemon's live SyncEngine/lease state — it is the same
+    // stateless, mechanical server call AgentCli.cs's `conflicts`/`resolve-conflict` commands already
+    // make — so this talks to the remote server directly through Agent.Core's own ApiClient,
+    // in-process, rather than adding a second HTTP hop through the daemon's local API.
+    private ApiClient? _api;
+    private ApiClient Api() => _api ??= ApiClient.For(_config);
+
+    // Polled on a timer, not per frame: unlike the lease-warning/activity files this is a real
+    // network round trip. Filtered to conflicts THIS machine is a party to — same "no bystander
+    // case" rule AgentCli.cs's `conflicts` command and Doctor.cs already apply (plan.md decision 2).
+    private List<ConflictDto> _openConflicts = new();
+    private Task<List<ConflictDto>>? _conflictsTask;
+    private long _conflictsReadAt;
+    private const long ConflictsPollMs = 12000;
+
+    // A conflict only carries version ids; both sides' machine/timestamp/size and file-count are
+    // fetched lazily and cached forever (an archive's stats never change once uploaded), mirroring
+    // agent-ui's useConflictVersions.ts. Every field write happens on the render thread, in
+    // PollConflictState — never inside the async continuation itself — the same discipline
+    // _scanTask/_enrollTask already follow, so there is no cross-thread field mutation here.
+    private readonly Dictionary<Guid, SaveVersionDto> _versions = new();
+    private readonly Dictionary<Guid, VersionStatsDto> _versionStats = new();
+    private readonly Dictionary<Guid, Task<SaveVersionDto?>> _versionTasks = new();
+    private readonly Dictionary<Guid, Task<VersionStatsDto?>> _versionStatsTasks = new();
+
+    private readonly Dictionary<Guid, bool> _conflictKeepBoth = new();
+    private Guid? _resolvingConflictId;
+    private Task<(bool ok, string? error)>? _resolveTask;
+    private string? _resolveError;
 
     private IWindow _window = null!;
     private GL _gl = null!;
@@ -248,6 +280,7 @@ sealed class UiApp
         "add" or "addgame" => Screen.AddGame,
         "folder" or "setfolder" => Screen.SetFolder,
         "launch" or "launchsetup" or "steam" => Screen.LaunchSetup,
+        "conflicts" or "conflict" => Screen.Conflicts,
         "settings" or "config" => Screen.Settings,
         "gallery" => Screen.Gallery,
         _ => Screen.Status,
@@ -426,6 +459,9 @@ sealed class UiApp
         NavDebug.BeginFrame();
         Widgets.BeginFrame();
         FeedImGuiNav();
+        // Rail badge and the status screen's per-game prompt both need this regardless of which
+        // screen is active, so it is polled here rather than inside DrawConflicts.
+        PollConflictState();
         // Before Update, which is what calls NewFrame: a queued mouse position must be in the queue
         // NewFrame drains, because NewFrame is also where HoveredWindow is resolved. MouseDelta read
         // here is last frame's, which costs the highlight a frame nobody can perceive.
@@ -493,8 +529,14 @@ sealed class UiApp
 
         // A mid-transition capture would be a dim, offset frame — the fade counts as work in
         // progress for screenshot purposes.
+        // _conflictsTask/_versionTasks/_versionStatsTasks are deliberately NOT here: they are an
+        // ambient background poll, not a user-triggered write, and gating settle on them would make
+        // every screenshot anywhere in the app wait on a network round trip. _resolveTask IS a
+        // user-triggered write (same category as _syncNowTask) — without it, a scripted --nav that
+        // presses a Keep button gets the process torn down by Environment.Exit below before the
+        // resolve request the button just started ever reaches the server.
         var busy = _scanTask is { IsCompleted: false } || _enrollTask is { IsCompleted: false }
-                   || _syncNowTask is { IsCompleted: false }
+                   || _syncNowTask is { IsCompleted: false } || _resolveTask is { IsCompleted: false }
                    || _pendingFolderScreen || _screenFade < 1f || _navScript.Count > 0;
         _settleFrames = busy ? 0 : _settleFrames + 1;
 
@@ -738,10 +780,14 @@ sealed class UiApp
             ImGuiChildFlags.AlwaysUseWindowPadding, railFlags);
         NavDebug.PushScope("rail");
 
+        // Order matches agent-ui's Sidebar.tsx (Overview, Add Games, Conflicts, ...) so the two
+        // surfaces read as the same product.
+        var conflictsLabel = _openConflicts.Count > 0 ? $"Conflicts ({_openConflicts.Count})" : "Conflicts";
         var items = new (string Label, Icons.Glyph Icon, Screen Target, bool Active)[]
         {
             ("Overview", Icons.Monitor, Screen.Status, _screen == Screen.Status),
             ("Add game", Icons.Plus, Screen.AddGame, _screen is Screen.AddGame or Screen.SetFolder),
+            (conflictsLabel, Icons.GitBranch, Screen.Conflicts, _screen == Screen.Conflicts),
             ("Steam setup", Icons.HardDrive, Screen.LaunchSetup, _screen == Screen.LaunchSetup),
             ("Settings", Icons.Settings, Screen.Settings, _screen == Screen.Settings),
         };
@@ -847,6 +893,7 @@ sealed class UiApp
             case Screen.AddGame: DrawAddGame(); break;
             case Screen.SetFolder: DrawSetFolder(); break;
             case Screen.LaunchSetup: DrawLaunchSetup(); break;
+            case Screen.Conflicts: DrawConflicts(); break;
             case Screen.Settings: _settings.Draw(); break;
         }
 
@@ -969,12 +1016,19 @@ sealed class UiApp
                     foreach (var g in _config.Games)
                     {
                         var missing = string.IsNullOrEmpty(g.SaveDirectory);
-                        Widgets.ListRow($"g{g.Name}", g.Name,
-                            missing ? "No save folder set" : g.SaveDirectory,
-                            missing ? Icons.AlertTriangle : Icons.Folder,
-                            trailing: missing ? "needs setup" : null,
-                            trailingColour: missing ? Theme.AccentAmber : null,
-                            chevron: false);
+                        // A conflict outranks the missing-folder prompt: it is a decision pending
+                        // right now, not a one-time setup step (same priority order as the Decky
+                        // chip states table in tasks/conflict-resolution-ui/reference/03-platform-
+                        // ux-flows.md). Reachable here without ever attempting a launch first.
+                        var conflicted = _openConflicts.Any(c => c.GameId == g.GameId);
+                        var pressed = Widgets.ListRow($"g{g.Name}", g.Name,
+                            conflicted ? "Save conflict - pick which one to keep"
+                                : missing ? "No save folder set" : g.SaveDirectory,
+                            conflicted || missing ? Icons.AlertTriangle : Icons.Folder,
+                            trailing: conflicted ? "conflict" : missing ? "needs setup" : null,
+                            trailingColour: (conflicted || missing) ? Theme.AccentAmber : null,
+                            chevron: conflicted);
+                        if (pressed && conflicted) Go(Screen.Conflicts);
                     }
                     Widgets.Gap(Theme.Space.Md);
                     if (Widgets.PillButton("Add a game", Widgets.ButtonKind.Primary, Icons.Plus))
@@ -1579,6 +1633,262 @@ sealed class UiApp
             "Game Mode does not put ~/.local/bin on PATH.");
         Note("Tick \"Force the use of a specific Steam Play compatibility tool\".",
             "On a non-Steam shortcut, without this Proton never creates a prefix.");
+    }
+
+    /// <summary>
+    /// Drain the fire-and-forget requests <see cref="PollConflictState"/> and
+    /// <see cref="EnsureVersionLoaded"/> start. Every dictionary write in this file happens here, on
+    /// the render thread — never inside an async continuation — the same discipline the scan/enroll
+    /// tasks elsewhere in this screen already follow, so there is no cross-thread field mutation.
+    /// </summary>
+    private void PollConflictState()
+    {
+        var now = Environment.TickCount64;
+        if (Connected && _conflictsTask is null &&
+            (now - _conflictsReadAt > ConflictsPollMs || _conflictsReadAt == 0))
+        {
+            // Stamped before the request completes so a slow or failed round trip does not retry
+            // every single frame while it is in flight.
+            _conflictsReadAt = now;
+            _conflictsTask = FetchOpenConflictsAsync();
+        }
+        if (_conflictsTask is { IsCompletedSuccessfully: true } done)
+        {
+            _openConflicts = done.Result;
+            _conflictsTask = null;
+        }
+        else if (_conflictsTask is { IsFaulted: true })
+        {
+            _conflictsTask = null;   // best-effort — retried on the next poll
+        }
+
+        if (_versionTasks.Count > 0)
+        {
+            foreach (var id in _versionTasks.Keys.ToArray())
+            {
+                var t = _versionTasks[id];
+                if (!t.IsCompleted) continue;
+                if (t.IsCompletedSuccessfully && t.Result is { } v) _versions[id] = v;
+                _versionTasks.Remove(id);   // failure retries next time the card asks for it
+            }
+        }
+        if (_versionStatsTasks.Count > 0)
+        {
+            foreach (var id in _versionStatsTasks.Keys.ToArray())
+            {
+                var t = _versionStatsTasks[id];
+                if (!t.IsCompleted) continue;
+                if (t.IsCompletedSuccessfully && t.Result is { } stats) _versionStats[id] = stats;
+                _versionStatsTasks.Remove(id);
+            }
+        }
+
+        if (_resolveTask is { IsCompleted: true } resolved)
+        {
+            if (resolved.IsCompletedSuccessfully)
+            {
+                var (ok, error) = resolved.Result;
+                if (ok)
+                {
+                    _conflictKeepBoth.Remove(_resolvingConflictId!.Value);
+                    _conflictsReadAt = 0;   // re-poll now so the resolved conflict drops off at once
+                }
+                else _resolveError = error ?? "Could not resolve the conflict.";
+            }
+            else
+            {
+                _resolveError = resolved.Exception?.GetBaseException().Message ?? "Could not resolve the conflict.";
+            }
+            _resolveTask = null;
+            _resolvingConflictId = null;
+        }
+    }
+
+    private async Task<List<ConflictDto>> FetchOpenConflictsAsync()
+    {
+        var all = await Api().GetOpenConflictsAsync();
+        return all.Where(c => c.MachineId == _config.MachineId).ToList();
+    }
+
+    /// <summary>Fire off a version + stats fetch the first time a conflict card asks for this id.</summary>
+    private void EnsureVersionLoaded(Guid versionId)
+    {
+        if (!_versions.ContainsKey(versionId) && !_versionTasks.ContainsKey(versionId))
+            _versionTasks[versionId] = Api().GetVersionAsync(versionId);
+        if (!_versionStats.ContainsKey(versionId) && !_versionStatsTasks.ContainsKey(versionId))
+            _versionStatsTasks[versionId] = Api().GetVersionStatsAsync(versionId);
+    }
+
+    private void ResolveConflict(ConflictDto conflict, Guid winningVersionId)
+    {
+        _resolvingConflictId = conflict.Id;
+        _resolveError = null;
+        var keepBoth = _conflictKeepBoth.GetValueOrDefault(conflict.Id);
+        _resolveTask = Api().ResolveConflictAsync(conflict.Id, winningVersionId, keepBoth);
+    }
+
+    /// <summary>
+    /// The direct answer to "a conflict popup like the Decky one, but in the native Linux UI, with
+    /// no Decky installed" (tasks/conflict-resolution-ui/plan.md, Phase 8). A screen rather than a
+    /// modal, deliberately: leaving it via the rail or B is already the "decide later" back-out the
+    /// plan calls for, so nothing here needs to duplicate that as a second button. Keep Local / Keep
+    /// Cloud resolve immediately on press (mirrors the sync-time pop-up's 'immediate' mode, not the
+    /// confirm-then-resolve two-step the dashboard/agent-ui page uses) — this screen is not a queue,
+    /// so there is nothing to advance afterward.
+    /// </summary>
+    private void DrawConflicts()
+    {
+        if (!Connected)
+        {
+            Widgets.Banner("conflictsblocked", "This device is not enrolled",
+                "Conflicts can only be checked once this device is enrolled. Run  savelocker enroll "
+                + "--file <policy.json>  once in Desktop Mode, then come back here.",
+                Theme.AccentAmber, Icons.AlertTriangle);
+            return;
+        }
+
+        Widgets.Text("Open conflicts", Theme.TextPrimary, Theme.Title);
+        Widgets.TextWrapped(
+            "This device and the cloud both changed the same save before syncing. Pick which one to "
+            + "keep - the other is never deleted, just set aside.",
+            Theme.TextMuted);
+        Widgets.Gap(Theme.Space.Md);
+
+        if (!string.IsNullOrEmpty(_resolveError))
+        {
+            if (Widgets.Banner("resolveerr", "Could not resolve", _resolveError, Theme.AccentAmber,
+                    Icons.AlertTriangle, dismissible: true))
+                _resolveError = null;
+            Widgets.Gap(Theme.Space.Md);
+        }
+
+        if (_openConflicts.Count == 0)
+        {
+            Widgets.Gap(Theme.Space.Xl);
+            Icons.Draw(Icons.Cloud, 40f, Theme.AccentGreen);
+            Widgets.Gap(Theme.Space.Sm);
+            Widgets.Text("Every tracked game's save matches the cloud.", Theme.TextPrimary, Theme.BodyStrong);
+            Widgets.Gap(Theme.Space.Xs);
+            Widgets.TextWrapped(
+                "If this device and the cloud both change the same save before syncing, the choice "
+                + "will show up here.",
+                Theme.TextMuted, Theme.Caption);
+            return;
+        }
+
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
+            new Vector2(Theme.Layout.FocusClearance, Theme.Layout.FocusClearance));
+        ImGui.BeginChild("conflictlist", new Vector2(0, 0), ImGuiChildFlags.None,
+            ImGuiWindowFlags.NavFlattened);
+        NavDebug.PushScope("conflictlist");
+        foreach (var c in _openConflicts) DrawConflictCard(c);
+        NavDebug.PopScope();
+        ImGui.EndChild();
+        NavDebug.NoteContainer("conflictlist");
+        ImGui.PopStyleVar();
+    }
+
+    private void DrawConflictCard(ConflictDto c)
+    {
+        ImGui.PushID(c.Id.ToString());
+
+        EnsureVersionLoaded(c.VersionAId);
+        EnsureVersionLoaded(c.VersionBId);
+        _versions.TryGetValue(c.VersionAId, out var cloudVersion);
+        _versions.TryGetValue(c.VersionBId, out var localVersion);
+        _versionStats.TryGetValue(c.VersionAId, out var cloudStats);
+        _versionStats.TryGetValue(c.VersionBId, out var localStats);
+
+        var gameName = _config.Games.FirstOrDefault(g => g.GameId == c.GameId)?.Name ?? c.GameId.ToString();
+        bool resolving = _resolvingConflictId == c.Id;
+        bool anyResolving = _resolvingConflictId is not null;
+
+        Widgets.BeginCard("card", new Vector2(0, 0), Theme.BgCard, Theme.Border);
+
+        Widgets.Text(gameName, Theme.TextPrimary, Theme.BodyStrong);
+        ImGui.SameLine(0, Theme.Space.Sm);
+        ImGui.AlignTextToFramePadding();
+        Widgets.Badge("CONFLICT", Theme.AccentAmber, Icons.AlertTriangle);
+        if (c.Escalated)
+        {
+            ImGui.SameLine(0, Theme.Space.Sm);
+            ImGui.AlignTextToFramePadding();
+            Widgets.Text("Overdue - unresolved for over six hours.", Theme.AccentRed, Theme.Caption);
+        }
+        Widgets.Gap(Theme.Space.Sm);
+
+        bool newerIsCloud = cloudVersion is not null && localVersion is not null
+            && cloudVersion.CreatedAt > localVersion.CreatedAt;
+        bool newerIsLocal = cloudVersion is not null && localVersion is not null
+            && localVersion.CreatedAt > cloudVersion.CreatedAt;
+
+        var panelWidth = (ImGui.GetContentRegionAvail().X - Theme.Space.Md) / 2f;
+
+        DrawConflictSide("local", "This device", Icons.HardDrive, localVersion, localStats, newerIsLocal,
+            "This is the machine you're using right now.", resolving, anyResolving, panelWidth,
+            () => ResolveConflict(c, c.VersionBId));
+        ImGui.SameLine(0, Theme.Space.Md);
+        DrawConflictSide("cloud", "The cloud", Icons.Cloud, cloudVersion, cloudStats, newerIsCloud,
+            cloudVersion is not null ? $"Last updated from \"{cloudVersion.MachineName}\"" : null,
+            resolving, anyResolving, panelWidth, () => ResolveConflict(c, c.VersionAId));
+
+        Widgets.Gap(Theme.Space.Sm);
+        var keepBoth = _conflictKeepBoth.GetValueOrDefault(c.Id);
+        Widgets.Toggle("Also keep the other one as a backup", ref keepBoth);
+        _conflictKeepBoth[c.Id] = keepBoth;
+
+        if (resolving)
+        {
+            Widgets.Gap(Theme.Space.Xs);
+            Widgets.Text("Resolving...", Theme.TextMuted, Theme.Caption);
+        }
+
+        Widgets.EndCard();
+        Widgets.Gap(Theme.Space.Md);
+        ImGui.PopID();
+    }
+
+    /// <summary>One side of a conflict card — machine, "12m ago", size/file count, and its own Keep
+    /// button, which resolves immediately on press (see <see cref="DrawConflicts"/>'s doc comment).</summary>
+    private void DrawConflictSide(string id, string label, Icons.Glyph icon, SaveVersionDto? version,
+        VersionStatsDto? stats, bool isNewer, string? caption, bool resolving, bool anyResolving,
+        float width, Action onKeep)
+    {
+        ImGui.PushID(id);
+        Widgets.BeginCard("side", new Vector2(width, 0), Theme.BgTableHd, Theme.Border);
+
+        Icons.Draw(icon, ImGui.GetTextLineHeight(), Theme.TextMuted);
+        ImGui.SameLine(0, Theme.Space.Sm);
+        ImGui.AlignTextToFramePadding();
+        Widgets.Text(label, Theme.TextPrimary, Theme.BodyStrong);
+        if (isNewer)
+        {
+            ImGui.SameLine(0, Theme.Space.Sm);
+            ImGui.AlignTextToFramePadding();
+            Widgets.Badge("newer", Theme.AccentGreen);
+        }
+
+        Widgets.Gap(Theme.Space.Xs);
+        if (version is not null)
+        {
+            Widgets.Text(FormatAgo(DateTime.UtcNow - version.CreatedAt), Theme.TextPrimary, Theme.Mono);
+            var fileCount = stats is { FileCount: var fc } ? $"{fc} file{(fc == 1 ? "" : "s")} - " : "";
+            Widgets.Text(fileCount + FormatBytes(version.Size), Theme.TextMuted, Theme.Caption);
+            if (!string.IsNullOrEmpty(caption))
+                Widgets.TextWrapped(caption, Theme.TextDim, Theme.Caption);
+        }
+        else
+        {
+            Widgets.Text("Loading...", Theme.TextDim, Theme.Caption);
+        }
+
+        Widgets.Gap(Theme.Space.Sm);
+        bool enabled = version is not null && !anyResolving;
+        if (Widgets.PillButton($"Keep {label}", Widgets.ButtonKind.Primary, Icons.Check, enabled: enabled))
+            onKeep();
+
+        Widgets.EndCard();
+        ImGui.PopID();
     }
 
     private static void Note(string title, string body)

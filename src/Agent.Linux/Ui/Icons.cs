@@ -198,6 +198,37 @@ static class Icons
     };
 
     /// <summary>
+    /// lucide's cloud is one rounded blob path; approximated here as two overlapping arcs forming
+    /// the twin bumps, closed with a flat base — the same curve-to-polyline tradeoff every other
+    /// rounded glyph in this file already makes, and indistinguishable from the real path at the
+    /// 14-40px this UI ever draws it. Used for "the cloud" side of a conflict (Ui/UiApp.cs) so it
+    /// reads the same as the React surfaces' lucide Cloud icon.
+    /// </summary>
+    public static readonly Glyph Cloud = (dl, p, s, c, w) =>
+    {
+        dl.PathClear();
+        dl.PathArcTo(P(p, s, 9f, 12f), 5f / 24f * s, MathF.PI * 0.60f, MathF.PI * 2.05f, 16);
+        dl.PathArcTo(P(p, s, 15f, 10.5f), 4.3f / 24f * s, MathF.PI * 1.15f, MathF.PI * 2.55f, 16);
+        dl.PathLineTo(P(p, s, 5f, 19f));
+        dl.PathStroke(c, ImDrawFlags.Closed, w);
+    };
+
+    /// <summary>
+    /// Matches lucide's git-branch exactly (two nodes plus one connecting quarter-arc), reused for
+    /// "Conflicts" wherever this UI needs the same icon language as the React sidebar/empty-state
+    /// (agent-ui/src/components/Sidebar.tsx, ConflictsView.tsx).
+    /// </summary>
+    public static readonly Glyph GitBranch = (dl, p, s, c, w) =>
+    {
+        Line(dl, p, s, c, w, 6, 3, 6, 15);
+        dl.AddCircle(P(p, s, 18, 6), 3f / 24f * s, c, 16, w);
+        dl.AddCircle(P(p, s, 6, 18), 3f / 24f * s, c, 16, w);
+        dl.PathClear();
+        dl.PathArcTo(P(p, s, 9, 9), 9f / 24f * s, 0f, MathF.PI / 2f, 16);
+        dl.PathStroke(c, ImDrawFlags.None, w);
+    };
+
+    /// <summary>
     /// A spinner. Unlike the others this is time-dependent: it sweeps an arc whose phase comes from
     /// ImGui's frame clock, so it animates without the caller holding any state.
     /// </summary>

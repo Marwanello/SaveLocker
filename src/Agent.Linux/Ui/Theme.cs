@@ -34,6 +34,9 @@ static class Theme
     public static readonly Vector4 AccentGreen   = Rgb(0x129271);
     public static readonly Vector4 AccentAmber   = Rgb(0xF4A60D);
     public static readonly Vector4 AccentAmberLt = Rgb(0xFDCE63);
+    // Matches the dashboard/agent-ui conflict card's escalated-border red (ConflictCard.tsx) — the
+    // one accent this screen reserves for "overdue," never for an ordinary conflict.
+    public static readonly Vector4 AccentRed     = Rgb(0xE5534B);
 
     public static readonly Vector4 Border        = Rgb(0x494949);
 
