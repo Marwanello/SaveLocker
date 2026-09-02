@@ -580,10 +580,7 @@ wait "${daemon_pid}" 2>/dev/null
 # advancing the Deck's head without it. Pushing ANY edit from it now, without pulling first,
 # reproduces the exact two-machine divergence run-agent-tests.ps1 already covers server-side; this
 # section instead exercises the AGENT's new reaction to it — ConflictNotifier, wired into
-# CommandPoller's 20s tick in Daemon.cs — which this harness (no real D-Bus session bus) can only
-# ever exercise down the "notification daemon not reachable" branch. The actual gdbus Notify call
-# and its action button need a live desktop session to verify, per the plan's own lower priority
-# on scripted D-Bus coverage.
+# CommandPoller's 20s tick in Daemon.cs.
 echo
 echo "==> Desktop notification on a real conflict (headless harness — no D-Bus session bus)"
 echo "level=other-cfg-stale" >"${scratch}/pulled/slot1.sav"
@@ -610,6 +607,82 @@ check "conflict notification: new open conflict logged on the next tick" \
   "$(contains "${notify_log}" "conflict notification: 1 new open conflict")"
 check "conflict notification: no daemon reachable here, reported, not a crash or a hang" \
   "$(contains "${notify_log}" "no desktop notification daemon reachable")"
+
+# ── …and the SHAPE of the command it sends when a daemon IS reachable ────────────────────────
+# This is the branch the first implementation got wrong on real hardware (2026-09-02): it sent the
+# notification with `gdbus call`, which exits the moment it has its reply. A notification carrying
+# ACTIONS is owned by the bus connection that sent it, so the server withdrew the popup within a
+# second — reported success, returned a real id, and vanished. Nothing here checked what was
+# actually being run, which is exactly why it shipped.
+#
+# A real bus is not needed to catch that class of bug: what matters is which binary is invoked and
+# with which arguments. A fake `gdbus` answers the Phase 5 NameHasOwner probe, a real (empty)
+# listening socket makes DesktopEnvironment agree a bus is connectable, and a fake `notify-send`
+# records its own argv — the one that must carry `--wait`, since that flag IS the fix.
+echo
+echo "==> The notification command's shape (fake bus, fake notify-send)"
+fakebin="${scratch}/fakebin"
+notify_args="${scratch}/notify-send-args.txt"
+mkdir -p "${fakebin}"
+rm -f "${notify_args}"
+
+cat >"${fakebin}/gdbus" <<'FAKEGDBUS'
+#!/usr/bin/env bash
+# Only ever asked one question by DesktopEnvironment: does anyone own the Notifications name.
+case "$*" in
+  *NameHasOwner*) echo "(true,)" ;;
+esac
+exit 0
+FAKEGDBUS
+
+cat >"${fakebin}/notify-send" <<FAKENOTIFY
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > "${notify_args}"
+# --wait means the real notify-send stays alive for as long as the notification is up. Staying
+# alive here too keeps the agent's own process bookkeeping on the same path it takes for real.
+sleep 5
+FAKENOTIFY
+chmod +x "${fakebin}/gdbus" "${fakebin}/notify-send"
+
+notify_bus_sock="${scratch}/fake-notify-bus.sock"
+# Backlog deeper than the Phase 5 probe's: nothing ever accepts these connections, and
+# DesktopEnvironment opens a fresh one per check, so a backlog of 1 could refuse a later probe.
+python3 -c "
+import socket, sys, time
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.bind(sys.argv[1])
+s.listen(64)
+time.sleep(60)
+" "${notify_bus_sock}" &
+notify_bus_pid=$!
+for _ in $(seq 1 50); do [ -S "${notify_bus_sock}" ] && break; sleep 0.1; done
+
+PATH="${fakebin}:${PATH}" DBUS_SESSION_BUS_ADDRESS="unix:path=${notify_bus_sock}" \
+  dotnet "${agent_dir}/bin/Debug/net10.0/savelocker.dll" daemon \
+  --config "${other_cfg}" --port 5190 >"${scratch}/notify-daemon2.log" 2>&1 &
+notify_daemon_pid=$!
+for _ in $(seq 1 40); do
+  curl -sf "http://localhost:5190/" >/dev/null 2>&1 && break
+  sleep 0.5
+done
+sleep 25
+kill "${notify_daemon_pid}" 2>/dev/null
+wait "${notify_daemon_pid}" 2>/dev/null
+kill "${notify_bus_pid}" 2>/dev/null; wait "${notify_bus_pid}" 2>/dev/null
+
+sent_args="$(cat "${notify_args}" 2>/dev/null)"
+check "a reachable daemon gets a notification at all" \
+  "$([ -n "${sent_args}" ] && echo 0 || echo 1)"
+# THE assertion. Without --wait the sending process exits immediately, and a notification with an
+# action button is withdrawn with it — the exact hardware bug, invisible to every other check here.
+check "the notification is sent with --wait, so its action can outlive the call" \
+  "$(contains "${sent_args}" "--wait")"
+check "the action button is declared with the key the agent listens for" \
+  "$(contains "${sent_args}" "--action=view=View conflict")"
+check "the notification names the conflicted game" \
+  "$(contains "${sent_args}" "Fake Prefix Game")"
+check "the reachable-daemon path reports sending, not 'no daemon'" \
+  "$(contains "$(cat "${log}" 2>/dev/null)" "conflict notification: sent for")"
 
 # ---------------------------------------------------------------------------
 # autostart must report the REAL outcome (LA-08)

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.RegularExpressions;
 using SaveLocker.Shared;
 
 namespace SaveLocker.Agent.Linux;
@@ -11,9 +10,27 @@ namespace SaveLocker.Agent.Linux;
 /// agent-ui conflicts page in the default browser. Genuinely optional — rungs 1-2 and 5-7 (CLI,
 /// <c>doctor</c>, and the safe <c>ConflictFlag.Open</c> terminal state) already guarantee a conflict
 /// is discoverable and never silently mishandled whether or not this ever fires. Every failure mode
-/// here — a missing <c>gdbus</c>, an unreachable bus, a daemon that doesn't understand the call —
-/// collapses to "notification not shown," logged, never a crash and never a hang: <see cref="CommandPoller"/>'s
-/// own tick timing depends on this returning promptly.
+/// here — a missing <c>notify-send</c>, an unreachable bus, a daemon that ignores the call —
+/// collapses to "notification not shown," logged, never a crash and never a hang:
+/// <see cref="CommandPoller"/>'s own tick timing depends on this returning promptly, so nothing here
+/// ever waits on the child process it starts.
+/// <para>
+/// <b>Why <c>notify-send --wait</c> and not <c>gdbus call</c>, corrected on real hardware
+/// 2026-09-02.</b> plan.md's Phase 9 tooling decision picked <c>gdbus</c>, and the first
+/// implementation shipped that way: it reported success, returned a real notification id, and the
+/// popup was withdrawn again within a second — a notification carrying <b>actions</b> is owned by the
+/// bus connection that sent it, and a notification server closes it when that connection drops,
+/// because nobody is left to receive <c>ActionInvoked</c>. <c>gdbus call</c> is one-shot by
+/// construction: it sends, takes its reply and exits, so it can never hold a notification open. Not a
+/// Deck quirk — bisected against the same daemon on the same bus, where the identical call without
+/// actions stayed up and with actions flashed. <c>notify-send --wait</c> keeps its connection alive
+/// for as long as the notification is displayed, which fixes the popup AND makes the button work, and
+/// it prints the invoked action key straight to stdout — so the separate <c>gdbus monitor</c> the
+/// first version needed to catch the click (a second connection, which could never have owned the
+/// notification anyway) is gone entirely. <c>gdbus</c> is still what Phase 5's
+/// <see cref="DesktopEnvironment"/> probe uses to ask whether a notification daemon is there at all;
+/// that part was never in question.
+/// </para>
 /// <para>
 /// Deliberately does NOT bring the Deck's Game Mode screen to the foreground on click — that is
 /// Phase 8's screen, which does not exist yet. Only the desktop-session half of the plan's "action
@@ -23,19 +40,27 @@ namespace SaveLocker.Agent.Linux;
 /// </summary>
 public sealed class ConflictNotifier : IDisposable
 {
+    /// <summary>The action's key, which <c>notify-send --wait</c> prints on stdout when clicked.</summary>
+    private const string ActionKey = "view";
+
     private readonly Func<string> _conflictsUrl;
     private readonly object _lock = new();
 
-    /// <summary>Conflict ids already notified about. Cleared per id the moment it stops being open,
-    /// so a fresh conflict (a new id — conflicts are never reused) always notifies again.</summary>
+    /// <summary>
+    /// Conflict ids already notified about. Cleared per id the moment it stops being open, so a fresh
+    /// conflict (a new id — conflicts are never reused) always notifies again. Deliberately separate
+    /// from <see cref="_live"/>: a notification the user dismissed leaves this set alone, or every
+    /// dismissal would be undone by the next 20s tick putting the same popup back.
+    /// </summary>
     private readonly HashSet<Guid> _notified = new();
 
-    /// <summary>D-Bus notification ids sent by this process that are still waiting on a click, so
-    /// the monitor below can tell "our notification's action" apart from every other app's.</summary>
-    private readonly HashSet<uint> _awaitingAction = new();
-
-    private Process? _monitor;
-    private bool _monitorStarted;
+    /// <summary>
+    /// The still-running <c>notify-send --wait</c> per conflict. Killing one withdraws its popup —
+    /// the same ownership rule that broke the first implementation, used deliberately here: a
+    /// conflict resolved from the dashboard, the CLI or another machine takes its now-stale
+    /// notification off this screen instead of leaving a button that resolves nothing.
+    /// </summary>
+    private readonly Dictionary<Guid, Process> _live = new();
 
     public ConflictNotifier(Func<string> conflictsUrl) => _conflictsUrl = conflictsUrl;
 
@@ -48,14 +73,23 @@ public sealed class ConflictNotifier : IDisposable
     /// </summary>
     public void CheckConflicts(IReadOnlyList<ConflictDto> openConflicts, Func<Guid, string> gameName)
     {
+        var openIds = new HashSet<Guid>(openConflicts.Select(c => c.Id));
         var newlyOpen = new List<ConflictDto>();
+        var resolved = new List<Process>();
+
         lock (_lock)
         {
-            var openIds = new HashSet<Guid>(openConflicts.Select(c => c.Id));
             _notified.RemoveWhere(id => !openIds.Contains(id));
+            foreach (var id in _live.Keys.Where(id => !openIds.Contains(id)).ToList())
+            {
+                resolved.Add(_live[id]);
+                _live.Remove(id);
+            }
             foreach (var c in openConflicts)
                 if (_notified.Add(c.Id)) newlyOpen.Add(c);
         }
+
+        foreach (var proc in resolved) Withdraw(proc);
         if (newlyOpen.Count == 0) return;
 
         // Only worth asking the environment when there is actually something new to say — this is
@@ -70,110 +104,81 @@ public sealed class ConflictNotifier : IDisposable
             return;
         }
 
-        foreach (var c in newlyOpen) Notify(gameName(c.GameId));
+        foreach (var c in newlyOpen) Notify(c, gameName(c.GameId));
     }
 
-    private void Notify(string gameName)
+    /// <summary>
+    /// Starts one <c>notify-send --wait</c> and returns immediately — the child is what waits, not
+    /// this thread. Arguments go through <c>ArgumentList</c>, so a game name containing an apostrophe
+    /// or a quote is just text (the escaping the GVariant-literal version had to do by hand does not
+    /// arise here at all).
+    /// </summary>
+    private void Notify(ConflictDto conflict, string gameName)
     {
         var body = $"'{gameName}' changed on this device and in the cloud since the last " +
             "sync — resolve it before playing again.";
 
-        var (exit, stdout, _) = ProcessRunner.Run("gdbus",
-            [
-                "call", "--session",
-                "--dest", "org.freedesktop.Notifications",
-                "--object-path", "/org/freedesktop/Notifications",
-                "--method", "org.freedesktop.Notifications.Notify",
-                GVariantString("SaveLocker"),
-                "uint32 0",
-                GVariantString("dialog-warning"),
-                GVariantString("Sync conflict"),
-                GVariantString(body),
-                "['view', 'View conflict']",
-                "@a{sv} {}",
-                "0",
-            ],
-            TimeSpan.FromSeconds(2));
-
-        if (exit != 0)
+        var psi = new ProcessStartInfo("notify-send")
         {
-            AgentLogger.Log($"conflict notification: gdbus call failed for '{gameName}' (exit {exit}).");
-            return;
-        }
-        AgentLogger.Log($"conflict notification: sent for '{gameName}'.");
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+        };
+        psi.ArgumentList.Add("--app-name=SaveLocker");
+        psi.ArgumentList.Add("--icon=dialog-warning");
+        // No --expire-time: this is the exact shape confirmed working on real hardware, and a
+        // notification carrying actions is already kept until it is answered rather than timed out.
+        // Adding an untested flag to a call that has been verified end-to-end buys nothing.
+        psi.ArgumentList.Add("--wait");
+        psi.ArgumentList.Add($"--action={ActionKey}=View conflict");
+        psi.ArgumentList.Add("Sync conflict");
+        psi.ArgumentList.Add(body);
 
-        if (TryParseNotificationId(stdout) is { } id)
-        {
-            lock (_lock) _awaitingAction.Add(id);
-            EnsureMonitorStarted();
-        }
-    }
-
-    /// <summary>
-    /// A GVariant text-format STRING literal, safe for content this codebase does not otherwise
-    /// control — a game's manifest/user-set name commonly contains an apostrophe (Baldur's Gate 3,
-    /// Assassin's Creed), which would break a naively single-quoted literal. Double-quoted GVariant
-    /// strings use C-style escaping, so only `\` and `"` need escaping here.
-    /// </summary>
-    private static string GVariantString(string s) =>
-        "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
-
-    /// <summary>gdbus prints a successful Notify call's reply as e.g. <c>(uint32 42,)</c>.</summary>
-    private static uint? TryParseNotificationId(string stdout)
-    {
-        var m = Regex.Match(stdout, @"uint32\s+(\d+)");
-        return m.Success && uint.TryParse(m.Groups[1].Value, out var id) ? id : null;
-    }
-
-    /// <summary>
-    /// One long-lived <c>gdbus monitor</c> for the whole life of the process, started lazily on the
-    /// first notification actually sent — most installs never open a conflict, and this is the one
-    /// part of the feature that keeps a child process running rather than making a single bounded
-    /// call. It never exits on its own, so nothing here waits on it; a line it doesn't recognise
-    /// (any other app's notification activity on the same bus) is simply ignored.
-    /// </summary>
-    private void EnsureMonitorStarted()
-    {
-        lock (_lock)
-        {
-            if (_monitorStarted) return;
-            _monitorStarted = true;
-        }
-
+        Process? proc;
         try
         {
-            var psi = new ProcessStartInfo("gdbus") { RedirectStandardOutput = true, UseShellExecute = false };
-            psi.ArgumentList.Add("monitor");
-            psi.ArgumentList.Add("--session");
-            psi.ArgumentList.Add("--dest");
-            psi.ArgumentList.Add("org.freedesktop.Notifications");
-
-            var proc = Process.Start(psi);
-            if (proc is null) return;
-            proc.OutputDataReceived += (_, e) => { if (e.Data is not null) OnMonitorLine(e.Data); };
-            proc.BeginOutputReadLine();
-            _monitor = proc;
+            proc = Process.Start(psi);
         }
         catch (Exception ex)
         {
-            // No monitor means a clicked action button silently does nothing — degraded, not broken:
-            // the notification itself already told the user a conflict exists, and every other rung
-            // (doctor, the agent UI, the CLI) still reaches it.
-            AgentLogger.LogException("ConflictNotifier.EnsureMonitorStarted", ex);
+            AgentLogger.Log($"conflict notification: could not start notify-send for '{gameName}' — {ex.Message}");
+            return;
         }
+
+        if (proc is null)
+        {
+            AgentLogger.Log($"conflict notification: notify-send did not start for '{gameName}'.");
+            return;
+        }
+
+        proc.EnableRaisingEvents = true;
+        proc.OutputDataReceived += (_, e) =>
+        {
+            if (string.Equals(e.Data?.Trim(), ActionKey, StringComparison.Ordinal)) OpenConflictsPage();
+        };
+        proc.Exited += (_, _) => Forget(conflict.Id, proc);
+        proc.BeginOutputReadLine();
+
+        lock (_lock) _live[conflict.Id] = proc;
+        AgentLogger.Log($"conflict notification: sent for '{gameName}'.");
     }
 
-    private void OnMonitorLine(string line)
+    /// <summary>Drop a finished notification's process, without disturbing a newer one for the same
+    /// conflict (there should never be one, but identity is cheaper to check than to reason about).</summary>
+    private void Forget(Guid conflictId, Process proc)
     {
-        var m = Regex.Match(line, @"\.(ActionInvoked|NotificationClosed) \(uint32 (\d+)");
-        if (!m.Success) return;
-        if (!uint.TryParse(m.Groups[2].Value, out var id)) return;
+        lock (_lock)
+        {
+            if (_live.TryGetValue(conflictId, out var held) && ReferenceEquals(held, proc))
+                _live.Remove(conflictId);
+        }
+        try { proc.Dispose(); } catch { /* already gone */ }
+    }
 
-        bool wasOurs;
-        lock (_lock) wasOurs = _awaitingAction.Remove(id);
-        if (!wasOurs) return;
-
-        if (m.Groups[1].Value == "ActionInvoked") OpenConflictsPage();
+    /// <summary>Take a stale popup off the screen by dropping the connection that owns it.</summary>
+    private static void Withdraw(Process proc)
+    {
+        try { if (!proc.HasExited) proc.Kill(); } catch { /* exited on its own; fine */ }
+        try { proc.Dispose(); } catch { /* already disposed by Exited */ }
     }
 
     /// <summary>
@@ -198,7 +203,15 @@ public sealed class ConflictNotifier : IDisposable
 
     public void Dispose()
     {
-        try { _monitor?.Kill(entireProcessTree: true); } catch { /* best effort */ }
-        _monitor?.Dispose();
+        List<Process> live;
+        lock (_lock)
+        {
+            live = _live.Values.ToList();
+            _live.Clear();
+            _notified.Clear();
+        }
+        // A notification whose owner is gone can no longer deliver its own button, so leaving it on
+        // screen would only offer an action nothing answers.
+        foreach (var proc in live) Withdraw(proc);
     }
 }
