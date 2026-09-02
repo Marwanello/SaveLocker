@@ -1,3 +1,68 @@
+# Session summary — 2026-09-02 (cont'd)
+
+Follow-on to the same day's Checkpoint UI redesign session: the implementation plan got a
+session-by-session grouping, three factual errors in it were caught and corrected, a documentation
+mistake from earlier in the session was found and repaired, and the two remaining artifact-only
+mockups were committed to the repo. **Still design/docs only — no application code was changed.**
+
+**Branch:** `ui-redesign-plan`, created off `claude/dashboard-agent-ui-redesign-992386`.
+**Commits:** `fe86729`, `ab4c957`, `de2cfd5`.
+
+## Implementation grouping
+
+Added `implementation-grouping.md` to `SaveLocker/tasks/checkpoint-ui/`, matching the
+`tasks/conflict-resolution-ui/` precedent for a standing multi-session design folder. It regroups the
+8 phases **by surface** instead of by phase number — Sync all and the notifications bell both land in
+the top bar Phase 2 already rewrites, so splitting them by phase number would mean editing
+`NavBar.tsx` twice. Seven groups; Phase 8 (assets) pulled forward into Group 1 since the art is
+already designed and the favicon is the cheapest end-to-end proof the token pipeline works. Group 5
+(pushing appearance to agents over the heartbeat) is the only wire-format change and stays alone.
+Groups 6 (Deck) and 7 (Linux notifications) compile here but need real hardware or a live desktop
+session to verify.
+
+## Three corrections, found by reading source instead of trusting the earlier doc
+
+- **`agent-ui` has no Tailwind and no `.css` file at all** — 215 inline `style={{}}` sites, zero
+  classNames. It can't "import the same file" as the console. How it receives design tokens is now
+  an explicit Group 1 decision (recommended: a plain CSS custom-property file both apps import).
+- **`ArtService` already fetches the 600×900 `grid` kind** plus `hero`/`logo`/`icon`, with all four
+  URLs already on the game DTO. The grid wall needs zero server work.
+- **`GET /api/games/{id}/sync-status` must not back a list view.** Its own handler comment warns it
+  walks and reads every file in the save folder, plus a full `GetStateAsync`. Polling it per game in
+  the agent's new Games tab would re-hash every save folder on a timer — the same mistake the
+  conflict-resolution plan caught and pulled its own Phase 12 for.
+
+Also counted the real scale of the inline-style problem: 388 sites in `web/src` against 4 classNames,
+215 in `agent-ui/src` against 0. Reframes Phase 1: layering the CSS reset unblocks Tailwind utilities
+but converts nothing — the migration rides inside later groups one surface at a time, deliberately
+with no dedicated "migrate everything" session.
+
+## Incident: this file's own history was clobbered, then restored
+
+While writing the prior turn's summary entry, this file — a running log, newest-first — was
+overwritten with a truncating redirect instead of prepended, dropping four prior entries
+(2026-09-01, 2026-08-30/31, 2026-08-29, and earlier). Caught from an unexpectedly large deletion
+count on the next commit. Restored every prior entry byte-identical (verified by diff) and prepended
+the new entry in the file's own order. Commit `ab4c957`. This entry is being written with the same
+read-then-prepend method specifically to not repeat that mistake.
+
+## Mockups committed to the repo
+
+Copied the two remaining artifact-only deliverables into `SaveLocker/tasks/checkpoint-ui/` so nothing
+depends on the live artifact links: `prototype.html` (the interactive mockup) and
+`identity-options.html` (the five identity pitches Checkpoint was chosen from). `brand-kit.html` was
+already committed earlier in the day. `README.md` and `plan.md` updated to point at the local files
+as the primary reference, keeping the artifact URLs as link-sharing mirrors only. Commit `de2cfd5`.
+
+## Status
+
+`SaveLocker/tasks/checkpoint-ui/` now holds the complete design-phase deliverable set locally:
+`plan.md`, `implementation.md`, `implementation-grouping.md`, `README.md`, `prototype.html`,
+`identity-options.html`, `brand-kit.html`. Everything is on branch `ui-redesign-plan`, local only,
+not pushed, no PR opened. `CONTEXT.md` still hasn't been updated with a handoff entry.
+
+---
+
 # Session summary — 2026-09-02
 
 A full UI redesign of the console and agent UI, taken from five identity pitches to an agreed

@@ -993,3 +993,67 @@ pairs), paste-ready tokens with the unlayered-reset warning.
 Design phase complete. All deliverables committed locally. `CONTEXT.md` not yet updated with handoff
 entry. Next step: update `CONTEXT.md` per session-end convention, then begin Phase 1 implementation
 when ready.
+
+---
+
+## 2026-09-02 (cont'd) — Checkpoint UI phase grouping, corrections, and mockups committed
+
+**Branch:** `ui-redesign-plan`, created off `claude/dashboard-agent-ui-redesign-992386`.
+**Commits:** `fe86729`, `ab4c957`, `de2cfd5`.
+
+### Implementation grouping
+
+Added `SaveLocker/tasks/checkpoint-ui/implementation-grouping.md` and a folder `README.md`, matching
+the `tasks/conflict-resolution-ui/` precedent for a multi-session design effort. The grouping regroups
+the 8 phases **by surface** rather than by phase number, since several phases edit the same
+components — Sync all and the notifications bell both land in the top bar Phase 2 already rewrites,
+so they ship together or `NavBar.tsx` gets edited twice. Seven groups; Phase 8 (assets) pulled forward
+into Group 1 since the art is already designed and the favicon is the cheapest end-to-end proof the
+token pipeline works. Group 5 (appearance pushed to agents over the heartbeat) is the only wire-format
+change and stays alone. Groups 6 (Deck) and 7 (Linux notifications) are buildable here but need real
+hardware/a live desktop session to verify.
+
+### Three corrections to `implementation.md`, found by checking source instead of assuming
+
+- **`agent-ui` has no Tailwind and no `.css` file at all** — 215 inline `style={{}}` sites, zero
+  classNames. It cannot "import the same file" as the console. How it receives design tokens is now
+  an explicit Group 1 decision (recommended: a plain CSS custom-property file both apps import, since
+  the agent's inline styles can consume `var(--…)` with no conversion).
+- **`ArtService` already fetches the 600×900 `grid` kind** plus `hero`/`logo`/`icon`, with all four
+  URLs already on the game DTO. The grid wall needs zero server work.
+- **`GET /api/games/{id}/sync-status` must not back a list view.** Its own handler comment says it
+  walks and reads every file in the save folder, plus a full `GetStateAsync`. Polling it per game in
+  the new agent Games tab would re-hash every save folder on a timer — the same mistake the
+  conflict-resolution plan caught and pulled its own Phase 12 for.
+
+Also counted the real scale of the inline-style problem: **388** sites in `web/src` against 4
+classNames, **215** in `agent-ui/src` against 0. Tailwind is installed in `web` and effectively
+unused. This reframes Phase 1 — layering the CSS reset unblocks utilities but converts nothing, so
+the migration rides inside later groups one surface at a time; there is deliberately no
+"migrate all inline styles" session.
+
+### Incident: `session_summary.md` history clobbered, then restored
+
+While writing the previous turn's summary, `session_summary.md` — a running log, newest-first, the
+mirror of `progress.md`'s newest-last convention — was overwritten with a truncating redirect instead
+of prepended, dropping four prior entries (2026-09-01, 2026-08-30/31, 2026-08-29, and earlier). Caught
+via an unexpectedly large deletion count on the next commit. Restored every prior entry byte-identical
+(verified by diff) and prepended the new entry in the file's own order. Commit `ab4c957`.
+
+### Mockups committed to the repo
+
+Copied the two remaining artifact-only deliverables into `SaveLocker/tasks/checkpoint-ui/` so nothing
+depends on the live artifact links: `prototype.html` (the interactive mockup — Console, Agent,
+Deck/Wayland, Notifications, Marks & art, Flows, both themes, five accents, three marks) and
+`identity-options.html` (the five identity pitches Checkpoint was chosen from). `brand-kit.html` was
+already committed in the prior session. `README.md` and `plan.md` updated to point at the local files
+as the primary reference, keeping the artifact URLs as link-sharing mirrors only. Commit `de2cfd5`.
+
+### Status
+
+`SaveLocker/tasks/checkpoint-ui/` now holds the complete design-phase deliverable set locally: `plan.md`,
+`implementation.md`, `implementation-grouping.md`, `README.md`, `prototype.html`, `identity-options.html`,
+`brand-kit.html`. All work is on branch `ui-redesign-plan`, local only, not pushed, no PR opened.
+`CONTEXT.md` still not updated with the handoff entry. Next step: either update `CONTEXT.md`, or begin
+Group 1 of the implementation grouping (layer the CSS reset, land Checkpoint tokens, build shared
+primitives, export marks, decide how `agent-ui` receives tokens).
