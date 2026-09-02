@@ -7,6 +7,165 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
 
 ## High priority
 
+- **Decky plugin: proper conflict resolution, not just refusals — plan expanded to 15 phases
+  (0–14).** Scoped 2026-08-28, expanded 2026-08-30 (full design:
+  `tasks/conflict-resolution-ui/plan.md`, moved there 2026-08-30 from `logs/` since Phases 4–14 are
+  still open work — see that folder's `README.md`). **Phase 0/1 shipped 2026-08-29** (server +
+  Agent.Core, this repo only — see below). **Phase 2 (the Force push/pull bookkeeping fix) and Phase 3
+  (the dashboard Backups tab) both shipped 2026-08-30, and Phase 5 (Linux environment-capability
+  detection) shipped 2026-08-30 in the same session the plan was expanded, and Phase 4 (Linux wrapper
+  launch gate) + Phase 6 (shared `agent-ui` conflicts page) shipped 2026-08-31 together as
+  `implementation-grouping.md`'s "Group 2"** — see below. **Phases 7–11, 13–14 remain not built**
+  (Phase 9's tooling decision is made but not implemented; Phase 12's endpoint exists but has no
+  consumer yet — see below). Before Phase 2, the plugin's only way past
+  a stuck sync was Force push/pull, which bypassed the server's own conflict bookkeeping — an orphaned
+  `ConflictFlag`, an unprotected losing version, a stranded other device. The plan reframes conflicts
+  as local-vs-cloud (never device-vs-device), moves the actual resolution *decision* into the shared
+  agent engine (the server becomes a passive store that also files the losing save away as a separate,
+  downloadable backup rather than mixing it into the normal version history), and adds a real
+  conflict-aware chip and resolve popup to the Deck's library page and QAM. A deliberate behavior
+  change from today's "always launch" philosophy: a *certain* conflict now cancels the launch, shows
+  the popup, syncs the choice, and relaunches automatically — no second Play press. Playnite gets the
+  equivalent treatment via the SDK's `IPlayniteAPI.StartGame`.
+  <br>**Expanded 2026-08-30, asked directly**: whether any phase built a Decky-equivalent resolve
+  popup on plain Windows or plain Linux — no Decky, no Playnite. It didn't; the answer had existed
+  since the earlier fork-blind 8-document pass (`tasks/conflict-resolution-ui/reference/
+  03-platform-ux-flows.md`'s Linux
+  escalation ladder + Windows in-app chooser) but had been left as reference material, not folded into
+  execution. Five new phases now close that gap: **Phase 5** (Linux environment-capability detection —
+  Wayland/X11 session, D-Bus, notification daemon, TTY), **Phase 6** (a shared `agent-ui` conflicts
+  page, served by both the Windows tray and the Linux daemon at `:5178` — also closes a confirmed gap
+  where `doctor` never actually gained the conflict line the original plan called for), **Phase 7**
+  (Windows tray automatic chooser + bulk "apply to all remaining" queue — the first real popup-at-
+  launch-time experience for a plain Windows user), **Phase 8** (a native Linux **Game Mode conflict
+  screen** in `savelocker ui`, drawn with the existing Dear ImGui stack — the direct, literal
+  Decky-equivalent popup with zero Decky dependency), and **Phase 9** (an optional D-Bus desktop
+  notification — tooling decision made 2026-08-30: `gdbus`, shelled out, not `Tmds.DBus` or a
+  hand-rolled client; see `tasks/conflict-resolution-ui/plan.md` Phase 9).
+  The old Phase 5–8 are renumbered **10–13** (content unchanged); a new **Phase 14** folds in the
+  optional webhook/ntfy notify and a per-game "block launch" opt-in that were previously a separate
+  open question. Full dependency graph, verification plan, and file-level detail for every new phase:
+  the design doc's *Implementation phases* section and its *Scope note*. Phased; several phases are
+  independently mergeable or can proceed in parallel — see the doc.
+  <br>**Phase 5 shipped 2026-08-30** (same session as the expansion above, `tasks/conflict-resolution-ui/
+  implementation-grouping.md`'s "Group 1"): new `DesktopEnvironment.Detect()` in `src/Agent.Linux/`
+  answers whether a graphical session, a genuinely connectable D-Bus session bus, a notification
+  daemon (via `gdbus`'s `NameHasOwner`), an interactive terminal, and the `systemd --user` unit itself
+  are each present — surfaced as a new, purely informational "Session" section in `doctor`. The
+  `gdbus` subprocess call is bounded to a 2s timeout (a stale/half-started bus can accept a connection
+  and never complete the handshake; this must never hang `doctor` or, later, the launch wrapper).
+  `tests/linux/run-linux-tests.sh` gained 9 checks covering all five flags, including a real UNIX
+  socket with nothing implementing the D-Bus protocol behind it, to prove `HasSessionBus` and
+  `NotificationDaemonPresent` genuinely disagree in that case rather than one silently implying the
+  other. 246 total (239 passed + 9 new, replacing the prior 237/237 baseline's 0 failures — see the
+  pre-existing-failure note just below, unrelated to this change).
+  <br>**Phase 9's tooling decision made, not yet implemented** — see the plan doc's Phase 9 for the
+  full reasoning (`gdbus` over `Tmds.DBus` or a hand-rolled client).
+  <br>**Phase 12 corrected, pulled back out of "Group 1," and left open**: it was about to be wired to
+  a passive `agent-ui` poll before actually reading `AgentApiServer.cs:696`'s handler — it hashes the
+  entire local save folder on every call ("NOT cheap on disk," its own comment says) and calls the
+  same `GetStateAsync` `AgentCli.cs`'s existing `status` command already uses, so it is *more*
+  expensive than what a per-game status loop does today, not a lighter replacement. `plan.md` and
+  `implementation-grouping.md` are both corrected; a consumer still needs a genuine on-demand trigger
+  (a button, a CLI flag, a specific decision point) rather than a timer, decided when Phase 6, 8, or
+  10 actually builds one.
+  <br>**Group 2 shipped 2026-08-31** (`tasks/conflict-resolution-ui/implementation-grouping.md`'s
+  "Group 2" — Phase 4 + Phase 6 together, the grouping document's own "biggest value-per-session"
+  pick, chosen because it makes conflict resolution end-to-end usable on a plain Linux box with zero
+  hardware dependency): **Phase 4**, `SyncEngine.PrepareLaunchAsync` (new `LaunchDecision`/
+  `LaunchGateResult`) replaces `ProtonRun.ExecuteAsync`'s bare `OnGameLaunchAsync` call for the Steam
+  launch wrapper specifically (Windows' `TrayApp.cs` keeps calling `OnGameLaunchAsync` unchanged —
+  Phase 7, still deferred, is what would touch that). Blocks the launch outright for exactly one
+  reason — a genuinely confirmed, open `ConflictFlag` — never for the game running elsewhere, lock
+  contention or a network hiccup (all still `ProceedSyncPaused`/`Proceed`, unchanged). Two checks: an
+  already-open conflict short-circuits before the lease is even taken, and "commit-before-choose" —
+  an ordinary push attempted first, cheap in the overwhelmingly common case (a hash-only bail, no
+  network call, when nothing changed since the last push) — turns unsynced local changes into a real,
+  hash-verified conflict instead of a bare pull refusal with nothing recoverable to show for it. New
+  `AgentEventCodes.LaunchBlocked` event. **Phase 6**: new `agent-ui/src/components/ConflictsView.tsx`
+  (genuinely new code against the agent's own local API, not a port of the dashboard's card, though
+  the visual shape is deliberately copied from it), a fourth `Sidebar.tsx` nav entry badge-numbered by
+  open-conflict count, and two new server routes (agent-group `GET /versions/{id}`, mirroring the
+  existing `/versions/{id}/stats`) + two new local-API proxies (`GET /api/versions/{id}`,
+  `GET /api/versions/{id}/stats`) so a conflict card can show machine/timestamp/size and file-count/
+  newest-change for both sides — a conflict itself only ever carried version ids. Also closes the
+  confirmed `doctor` gap: a new "Conflicts" section, one line per open conflict plus the
+  `:5178/#conflicts` URL, informational (not a `Problem`) the same way an open conflict already reads
+  in the console.
+  <br>**Verified live, not just built**: a real two-machine conflict seeded against a throwaway dev
+  server (register, add-game, diverging pushes, genuine `ConflictFlag`); `doctor` confirmed printing
+  the new Conflicts section correctly; a Playwright screenshot of the real `agent-ui` page at
+  `:5178/#conflicts` showing both sides with the right labels (including "This device (Machine2)"),
+  clicking "Use as Latest" resolved it through the real server (head moved, badge cleared, empty
+  state rendered); `savelocker run` confirmed to refuse a launch outright on a genuine open conflict
+  (child process never started, exit code 1) and to launch normally once resolved, and confirmed
+  lease contention alone (no conflict) still only warns and launches. `run-agent-tests.ps1` 45/45 and
+  `run-health-tests.ps1` 22/22 unchanged (this Linux container cannot build/run the Windows-only
+  `run-winagent-tests.ps1`/`run-server-bugbounty-tests.ps1`, which hard-depend on `src/Agent`).
+  `openapi.json` and both `api-types.ts` (web, agent-ui) regenerated against live scratch instances
+  and diffed — only the intended new route/types appear. Full solution's Linux-buildable projects
+  (Shared, Server, Agent.Core, Agent.Linux) build clean; `agent-ui` `tsc -b && vite build` and
+  `oxlint` clean (two pre-existing unrelated warnings in `AddGamesView.tsx`/`SettingsView.tsx`).
+  <br>**A pre-existing, unrelated regression found while verifying Phase 5, not caused by it**: the
+  last recorded `run-linux-tests.sh` baseline was 237/237 (`logs/sessions.md`, 2026-08-27); it is now
+  237/230-passing — 7 failures, all in the "Decky plugin updates" section (a top-level-file package
+  refusal path), confirmed via `git stash` to already fail on the code as it stood *before* this
+  session's Phase 5 changes. Not investigated further here — out of this phase's scope — but worth a
+  session that owns test-suite maintenance, similar to the CS-03 `FileShare.None` flake noted
+  2026-08-29.
+  <br>**Phase 0/1 detail:** `SyncService.IngestAsync` no longer evaluates `ConflictPolicy` itself —
+  every divergence unconditionally records/updates a `ConflictFlag`; `SyncEngine
+  .TryPolicyResolveAsync` is where the decision moved (fetches the game's policy after a push comes
+  back `Conflict`, and — unless it's `Manual` — calls the same mechanical resolve endpoint a human's
+  choice would use). `ResolveConflictAsync` gained a `resolverMachineId` parameter so an agent
+  resolving its own push doesn't get a redundant pull queued for itself, while the admin/console path
+  (passing null) still tells every machine, exactly as before. New agent-group routes
+  (`GET/POST /api/agent/conflicts[...]`, `GET/POST /api/agent/games/{id}/conflict-policy`) and
+  matching local-API proxies on `:5178` (`/api/conflicts[...]`, `/api/games/{id}/conflict-policy`,
+  `/api/games/{id}/sync-status` — decision 6's cheap status check, built alongside since it touches
+  the same files). New CLI commands `conflicts` and `resolve-conflict --keep local|cloud
+  [--keep-both]`, added so the doc's "usable end-to-end from the CLI alone" claim for this phase is
+  actually true (it wasn't, when first drafted — the doc had described the value without the commands
+  existing). Verified: `run-agent-tests` 47/47, `run-server-bugbounty-tests` 194/194 (including the
+  `NewestWins` auto-accept, the "winning uploader gets no redundant pull" assertion specific to this
+  change, and the admin Set-as-Latest fan-out unchanged), `run-health-tests` 22/22; `openapi.json` and
+  both `api-types.ts` (web and agent-ui) regenerated and diff-checked; full solution + both frontends
+  build clean. Not yet run against real hardware or a live fleet — this phase has no UI of its own,
+  so nothing changes for a user until a later phase's GUI work lands.
+  <br>**Phase 2 detail (server-side only, no new routes or DTOs):** `PrepareUploadAsync` still skips
+  divergence detection outright when `force:true`, so a forced push could land while the game already
+  had an open `ConflictFlag` from an earlier, unforced divergence — moving the head to a brand-new
+  version that is neither side of that conflict. Left alone, the flag was orphaned:
+  `ResolveConflictAsync`'s own rewind guard refuses to promote either of its two versions once
+  something newer already won the race, so nothing could ever close it through the ordinary path
+  again, neither version was protected from ordinary retention even though it was now the only record
+  of the losing side, and the other machine involved was never told the head had moved.
+  `IngestAsync`'s fast-forward branch now calls a new `CloseOrphanedConflictsOnForceAsync` whenever
+  `force` is true: it closes every open conflict on that game (`Resolved`, tagged `"force-push by
+  {machine}"`), protects **both** sides of each as recoverable backups (the same guarantee a human's
+  explicit "keep both" gives — nobody was actually asked here, so nothing is silently lost), and
+  queues the fleet the same unforced pull fan-out a real resolve gets. A no-op when there's nothing
+  open, so an ordinary forced push looks exactly as it did before. Verified with a new `CS-13` section
+  in `run-server-bugbounty-tests.ps1` (open a real conflict, force past it, confirm the flag closes,
+  both sides protect, the resolution is audited, the stranded machine gets an unforced pull and the
+  forcing machine doesn't, the stranded machine's next push is clean, and a control case proving a
+  force push with nothing open adds no bookkeeping) — 207/207, up from 194; `run-agent-tests` 47/47
+  unchanged. No API/DTO changes, so `openapi.json`/`api-types.ts` needed no regeneration. Not yet run
+  against real hardware — like Phase 0/1, invisible until a later phase's GUI work lands.
+  <br>**Phase 3 detail (client-side only, no new server endpoint):** a version is "in the main tree"
+  if it's an ancestor of the current head — walk `parentVersionId` back from it; anything else the
+  game still has is a backup, almost always the losing side of a past conflict. `GameDetail.tsx`
+  already fetched the full version list and the head id, so this is a purely computed split of data
+  already on hand — no new column, no new route. The old single "Versions" table is now a
+  `Versions (N)` / `Backups (N)` tab toggle over the same table and the same per-row actions
+  (Download, Set as Latest, Protect/Unprotect, Delete) — promoting a backup back to head via Set as
+  Latest also resolves any open conflict it was part of, for free, via the existing `SetHeadAsync`
+  superseded-conflict logic. Verified live: seeded the exact Phase 2 scenario (force-pushed past an
+  open conflict) against a throwaway dev server, confirmed in the browser that Versions correctly
+  shows the head's 3-version ancestor chain (one of them still `Protected` from Phase 2) and Backups
+  correctly shows the one truly orphaned version with all four actions present; no console errors.
+  `web` build and lint clean.
+
 **All three bug bounties shipped in v0.5.0 (2026-07-29).** Code is on `main`; what remains is the
 verification that did not happen before the tag. Write-ups:
 `logs/2026-07-29_winagent-bugbounty.md`, `logs/2026-07-29_linuxagent-bugbounty.md`,
@@ -30,16 +189,6 @@ verification that did not happen before the tag. Write-ups:
     path through a refused launch, because the prompt is a modal dialog no test can answer).
   - **LAN enrollment-URL check** on the real deployment (`logs/2026-07-27_console-bugbounty.md` →
     Verification).
-
-- **`WA-01 the dashboard is told the real reason` fails on pristine `main`** (found 2026-08-14).
-  `run-winagent-tests.ps1` reads **113/114** at `ff4464b` with no local changes — confirmed by
-  building and running a detached worktree, so it is not the `.verify/` trap. The dashboard command
-  executes and returns a result; the result text no longer matches `running`. Either fix it or
-  re-baseline the 114 in [[Build and Run]]. Not investigated.
-  <br>**It did NOT reproduce on 2026-08-15** (full 114 ran, WA-01 passed, the only two failures were
-  an unrelated bug in that session's own change). So it is **intermittent**, not a standing failure —
-  which rules out re-baselining as the fix and makes a timing dependency the thing to look for.
-  Treat a green WA-01 as evidence of nothing until it is understood.
 
 - **v0.5.4 surfaces that shipped without hardware coverage.** Neither can lose save data — worst
   case is a list that filters oddly — which is why they shipped, but both are unverified: the Heroic
@@ -283,10 +432,6 @@ verification that did not happen before the tag. Write-ups:
   what this item can recover. Counted from `data/manifest.yaml` by trimming each save template at
   its first wildcard, the same rule `PathResolver` applies.
 
-- **Missing regression tests from the Linux bounty — LA-04/05/06/07.** Folder-watcher refresh,
-  multi-game add, the Game Mode window crash and the settings-write clobber all have code fixes and
-  no tests. This is why several items above have to be checked by hand.
-
 - **Self-host the console fonts.** The console loads Inter and JetBrains Mono from Google Fonts at
   runtime, so on a LAN box with no internet it renders in fallback fonts. CS-13 fixed the import
   being *discarded*, not the dependency. Needs woff2 subsets for five Inter weights; the Deck UI
@@ -343,16 +488,6 @@ verification that did not happen before the tag. Write-ups:
 
 - **Linux agent secret permissions and state layout.** `config.json` contains a long-lived machine key; file privacy depends on the launching shell's umask. Enforce `0700` on private state directories and `0600` on config, queue, health, and log files in code, including CLI enrollment paths. Consider separating immutable app files from mutable XDG config/state so upgrades cannot overlap the executable tree.
 
-- **Upload only changed files, not the whole save folder.** Raised 2026-08-19 (maintainer plays
-  Cyberpunk 2077 and Fallout: New Vegas, both of which keep many largely-static per-slot save files —
-  a session that changes one slot still re-zips and re-uploads every other unchanged one today,
-  because change detection is one aggregate hash over the whole folder
-  (`SaveArchive.HashDirectory`), not per-file. Real payoff for a Deck on a constrained uplink, same
-  cost center as the parked `tasks/OfflineBackoff.md` (bytes instead of requests). Decisions to
-  settle first (copy-forward reconstruction vs. a content-addressable store, and where the
-  fast-forward-only scope boundary sits) and the measurement that proves it:
-  `tasks/PerFileDeltaUpload.md`.
-
 - **Constrain external manifest paths.** The Ludusavi manifest is downloaded from mutable `master`; expanded templates are not proven to stay inside the intended Proton prefix. Pin or integrity-verify an approved manifest revision, canonicalize resolved paths, reject `..`/symlink escapes outside allowed roots, test a hostile manifest entry. Preserve explicit manually mapped portable-save paths as a separate trusted-user path.
 
 - **Deferred: one state owner for the Linux agent** — wrapper→daemon IPC over a Unix socket, standalone fallback when no daemon is up. The locking in `Decisions.md` §8 makes the current two-owner model *correct*; IPC would make it *simple*. Worth doing before the state files grow further.
@@ -369,6 +504,5 @@ verification that did not happen before the tag. Write-ups:
   per-store flag on `ScanCandidate` rather than a second bool, and a decision about whether the
   default view should hide those too (Galaxy sync is opt-in per game, unlike Steam Cloud — so
   probably not, which is why this is not high priority).
-- **File-count / newest-mtime delta in conflict UI** — would help disambiguate conflict options. The server does not store it; needs computing at upload time or deriving from the archive on demand. Not done; everything else in conflict Tier 1 is complete.
 
 _Dropped items (won't-do) are recorded in `logs/shipped-2026-07.md`._

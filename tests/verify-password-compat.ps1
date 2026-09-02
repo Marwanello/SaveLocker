@@ -18,7 +18,10 @@
 # Usage:  .\tests\verify-password-compat.ps1  [-BaselineRef origin/main]
 param(
     [string]$BaselineRef = "origin/main",
-    [int]$Port = 5179
+    [int]$Port = 5179,
+    # Matches testenv.ps1's own default and run-server-bugbounty-tests.ps1's fix for the same trap:
+    # a distro named differently is WSL_E_DISTRO_NOT_FOUND, not a quiet no-op.
+    [string]$WslDistro = "Ubuntu"
 )
 
 $ErrorActionPreference = "Stop"
@@ -77,7 +80,7 @@ row = con.execute("SELECT Value FROM Settings WHERE Key = 'Admin:PasswordHash'")
 print(row[0] if row else "(none)")
 '@ | Set-Content -Path $py -Encoding utf8
 
-    return (& wsl -d Ubuntu-24.04 -- python3 (ConvertTo-WslPath $py) (ConvertTo-WslPath $dbPath)).Trim()
+    return (& wsl -d $WslDistro -- python3 (ConvertTo-WslPath $py) (ConvertTo-WslPath $dbPath)).Trim()
 }
 
 function Set-AdminPassword($pw, $currentPw) {

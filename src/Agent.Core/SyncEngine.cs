@@ -2,6 +2,28 @@
 
 namespace SaveLocker.Agent;
 
+/// <summary>What <see cref="SyncEngine.PrepareLaunchAsync"/> decided. Only <see cref="Blocked"/>
+/// may stop a launch — every other value still starts the game exactly as before Phase 4.</summary>
+public enum LaunchDecision
+{
+    /// <summary>Nothing stood in the way; the pre-launch pull (if any) already ran.</summary>
+    Proceed,
+    /// <summary>Launching anyway, but the pre-launch pull was skipped — another machine holds the
+    /// lease, so restoring here could race it. The existing lease-warning behaviour, unchanged.</summary>
+    ProceedSyncPaused,
+    /// <summary>A genuinely confirmed, open conflict exists for this game. The caller must not start
+    /// the child process — <see cref="ConflictId"/> is what a resolve UI needs to act on it.</summary>
+    Blocked
+}
+
+/// <summary>Result of <see cref="SyncEngine.PrepareLaunchAsync"/> — the Linux launch wrapper's own
+/// answer to "is it safe to start this game right now" (tasks/conflict-resolution-ui/plan.md, Phase 4).</summary>
+public record LaunchGateResult(
+    LaunchDecision Decision,
+    string? Reason = null,
+    Guid? ConflictId = null,
+    string? HolderMachineName = null);
+
 /// <summary>
 /// Coordinates a tracked game's saves with the server: archive + hash + upload
 /// (push), download + restore (pull), and the pre-launch / post-exit flows.
@@ -216,7 +238,10 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         // ever set Settling in the first place when it was going to run at all.
         _activity?.SetPhase(SyncPhase.Pushing);
 
-        var hash = SaveArchive.HashDirectory(game.SaveDirectory, game.ExcludeGlobs);
+        // One pass over the save folder answers both questions a push asks of it: the aggregate
+        // content hash (has anything changed at all?) and the per-file manifest a delta negotiates
+        // with. Hashing the directory and then building a manifest read every byte twice.
+        var (manifest, hash) = SaveArchive.ComputeManifest(game.SaveDirectory, game.ExcludeGlobs);
         if (!force && hash == game.LastSyncedHash)
         {
             _log($"[{game.Name}] no local changes since last sync.");
@@ -233,13 +258,11 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             return new UploadResult(UploadStatus.Conflict, null, null);
         }
 
-        var archive = TempArchive(game.GameId, "push");
-        SaveArchive.CreateArchive(game.SaveDirectory, archive, game.ExcludeGlobs);
-
         try
         {
-            var result = await _api.UploadAsync(game.GameId, hash, game.LastKnownVersionId, force, archive,
-                onProgress: (done, total) => _activity?.Progress(done, total), ct: ct);
+            var result = await SendPushAsync(game, hash, manifest, force, ct);
+            if (result is null) return null;   // refused outright; SendPushAsync already alerted
+
             var countPush = false;
             var touchSyncTime = false;
             switch (result.Status)
@@ -262,6 +285,26 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                     _health?.MarkSynced(game.GameId);
                     break;
                 case UploadStatus.Conflict:
+                    // The server no longer auto-resolves by policy — it only records the divergence.
+                    // Try to settle it here, from this machine's own policy, before treating it as a
+                    // conflict a human must handle. A policy that names this machine the winner turns
+                    // the divergence into an ordinary accepted push.
+                    if (await TryPolicyResolveAsync(game, result, ct))
+                    {
+                        game.LastKnownVersionId = result.Version!.Id;
+                        game.LastSyncedHash = hash;
+                        game.ConsecutiveConflicts = 0;
+                        countPush = true;
+                        touchSyncTime = true;
+                        _log($"[{game.Name}] diverged from the server, but the save policy kept " +
+                             "this machine's version.");
+                        _health?.MarkSynced(game.GameId);
+                        // Present it to callers as the accepted push it effectively became — the head
+                        // is now this machine's version — not the raw divergence the server first
+                        // answered. Nothing downstream should report a conflict that no longer exists.
+                        result = new UploadResult(UploadStatus.Created, result.Version, null);
+                        break;
+                    }
                     game.ConsecutiveConflicts++;
                     // The server already recorded the ConflictFlag, so the dashboard knows a conflict
                     // exists. What it cannot know is WHICH machine is stuck behind it — that is this.
@@ -306,9 +349,164 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             _offlineQueue?.Enqueue(game.GameId, game.Name, force);
             return null;
         }
-        finally
+    }
+
+    /// <summary>
+    /// Bytes below which a per-file delta is pure overhead: an ordinary push is already one round
+    /// trip, and the manifest it would carry is not worth paying for on a save this small.
+    /// <para>
+    /// There is deliberately no file-COUNT floor beside it. A game keeping three 400 MB slots is
+    /// exactly the case a delta exists for, and a count floor would send it down the full-archive
+    /// path forever — re-uploading gigabytes to change one slot.
+    /// </para>
+    /// </summary>
+    private const long DeltaTotalBytesFloor = 2 * 1024 * 1024;
+
+    /// <summary>
+    /// Decide what this push actually sends, and send it. A forced push — and a first-ever one, with
+    /// no parent to diff against — is unconditionally a full archive: those are exactly the cases
+    /// where the server cannot assume what "the old content" was to copy forward from. Everything
+    /// else negotiates a per-file delta, and falls back to a full archive within the SAME session
+    /// whenever the server declines one.
+    /// <para>
+    /// This lives here rather than in <see cref="ApiClient"/> because it is a sync-policy question,
+    /// not a transport one; ApiClient's job is Begin, stream, Complete. Returns null when the push
+    /// was refused outright and the caller should treat it as a failed attempt.
+    /// </para>
+    /// </summary>
+    private async Task<UploadResult?> SendPushAsync(
+        TrackedGame game, string hash, IReadOnlyList<FileManifestEntry> manifest, bool force,
+        CancellationToken ct)
+    {
+        void Progress(long done, long total) => _activity?.Progress(done, total);
+
+        var deltaWorthwhile = !force
+            && game.LastKnownVersionId is not null
+            && manifest.Sum(f => f.Size) >= DeltaTotalBytesFloor;
+        if (!deltaWorthwhile)
+            return await SendFullArchiveAsync(game, hash, force, Progress, ct);
+
+        var begin = await _api.BeginUploadAsync(
+            game.GameId, hash, game.LastKnownVersionId, force: false, manifest.ToArray(), ct);
+        if (begin is null)                                    // server predates the chunked routes
+            return await SendFullArchiveAsync(game, hash, force, Progress, ct);
+        if (begin.NoChange is { } noChange) return noChange;
+
+        var payload = TempArchive(game.GameId, "delta");
+        try
         {
-            if (File.Exists(archive)) File.Delete(archive);
+            if (begin.UseDeltaPath)
+            {
+                var needPaths = begin.NeedPaths ?? Array.Empty<string>();
+                if (FirstUndeclaredPath(needPaths, manifest) is { } rogue)
+                {
+                    // The server may only ask for files this agent just told it about. Anything else
+                    // is a server reaching for a file on this machine that is not part of the save —
+                    // the upload-side mirror of the hostile-archive rule RestoreArchive applies on
+                    // pull (Decisions.md §4), and the same reason an enrollment file cannot be taken
+                    // at face value. Refused outright rather than quietly falling back to a full
+                    // archive, because a fallback would still answer a request that should never
+                    // have been made, and nothing would ever say so.
+                    Alert($"[{game.Name}] REFUSED the server's delta request: it asked for " +
+                          $"'{rogue}', which is not part of this game's saves. Nothing was uploaded.",
+                        AgentEventCodes.PushFailed, AgentEventSeverity.Error, game.GameId);
+                    return null;
+                }
+                SaveArchive.CreateArchiveSubset(game.SaveDirectory, payload, needPaths);
+            }
+            else
+            {
+                SaveArchive.CreateArchive(game.SaveDirectory, payload, game.ExcludeGlobs);
+            }
+
+            var result = await _api.UploadSessionPayloadAsync(game.GameId, begin.SessionId!.Value,
+                payload, Progress, ct);
+            if (result.Status != UploadStatus.RetryFull) return result;
+        }
+        finally { TryDeleteTemp(payload); }
+
+        // The negotiated base went stale between Begin and Complete — another machine pushed in
+        // between, so the delta no longer reconstructs a complete version. Retry ONCE with a full
+        // archive against the same (now stale) parent: the server re-runs its checks fresh and
+        // reports a conflict if the content genuinely diverged, or NoChange if it happens to match
+        // — the two outcomes any ordinary push could reach. RetryFull never escapes this method.
+        return await SendFullArchiveAsync(game, hash, force, Progress, ct);
+    }
+
+    private async Task<UploadResult> SendFullArchiveAsync(
+        TrackedGame game, string hash, bool force, Action<long, long> onProgress, CancellationToken ct)
+    {
+        var archive = TempArchive(game.GameId, "push");
+        try
+        {
+            SaveArchive.CreateArchive(game.SaveDirectory, archive, game.ExcludeGlobs);
+            return await _api.UploadAsync(
+                game.GameId, hash, game.LastKnownVersionId, force, archive, onProgress, ct);
+        }
+        finally { TryDeleteTemp(archive); }
+    }
+
+    /// <summary>The first path the server asked for that this agent never declared, or null if the
+    /// request is entirely within what was offered.</summary>
+    private static string? FirstUndeclaredPath(
+        IEnumerable<string> needPaths, IReadOnlyList<FileManifestEntry> manifest)
+    {
+        var declared = new HashSet<string>(manifest.Select(f => f.Path), StringComparer.Ordinal);
+        return needPaths.FirstOrDefault(p => !declared.Contains(p));
+    }
+
+    private static void TryDeleteTemp(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch { /* best-effort cleanup */ }
+    }
+
+    /// <summary>
+    /// The agent half of conflict resolution. When a push comes back <see cref="UploadStatus.Conflict"/>,
+    /// fetch the game's policy and — if it is not <see cref="ConflictPolicy.Manual"/> and it names
+    /// THIS machine the winner — resolve the divergence in this machine's favour through the same
+    /// mechanical endpoint a human's choice would use. The server used to do this itself at ingest
+    /// time; it no longer does (tasks/conflict-resolution-ui/plan.md), so the shared engine
+    /// every host and frontend goes through carries the decision now.
+    /// <para>
+    /// Returns true only when the conflict was actually resolved to this machine's just-pushed
+    /// version. A <see cref="ConflictPolicy.Manual"/> policy, a policy naming another machine, an
+    /// older server with no policy route, or a server-side refusal (most usefully the rewind guard)
+    /// all return false, and the caller then treats the push as the open conflict it is.
+    /// </para>
+    /// </summary>
+    private async Task<bool> TryPolicyResolveAsync(TrackedGame game, UploadResult result, CancellationToken ct)
+    {
+        if (result.Conflict is not { } conflict || result.Version is not { } mine) return false;
+
+        ConflictPolicyDto? policy;
+        try { policy = await _api.GetConflictPolicyAsync(game.GameId, ct); }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return false;   // transient failure or an older server: leave it for a human
+        }
+        if (policy is null) return false;
+
+        var thisMachineWins =
+            policy.Policy == ConflictPolicy.NewestWins ||
+            (policy.Policy == ConflictPolicy.PreferMachine &&
+             policy.PreferredMachineId is { } preferred && preferred == _config.MachineId);
+        if (!thisMachineWins) return false;
+
+        // The winner is this machine's own just-uploaded version (VersionB of the conflict). keepBoth
+        // is false on purpose: an auto-policy means "don't ask me", so the displaced save is left as
+        // ordinary prunable history — protecting it as a backup is the deliberate opposite, and that
+        // is a human's Keep both, never an automatic one.
+        try
+        {
+            var (ok, error) = await _api.ResolveConflictAsync(conflict.Id, mine.Id, keepBoth: false, ct);
+            if (ok) return true;
+            _log($"[{game.Name}] the save policy could not auto-resolve this divergence: {error}");
+            return false;
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            _log($"[{game.Name}] the save policy's auto-resolve attempt failed: {ex.Message}");
+            return false;
         }
     }
 
@@ -578,6 +776,95 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                  "(the game already has its saves open; pull before launching instead).");
 
         return (true, null);
+    }
+
+    /// <summary>
+    /// The Linux launch wrapper's pre-launch gate (tasks/conflict-resolution-ui/plan.md, Phase 4).
+    /// Every other pre-launch outcome — the game running elsewhere, lock contention, a network
+    /// hiccup, another machine holding the lease — still launches exactly as <see cref="OnGameLaunchAsync"/>
+    /// always has. <see cref="LaunchDecision.Blocked"/> is the one new outcome, and it fires for
+    /// exactly one reason: a genuinely confirmed conflict, a real hash-verified divergence between
+    /// this machine's save and the cloud's, never a mere warning. Only <c>ProtonRun</c> calls this —
+    /// Windows has no boundary this certain (<see cref="OnGameLaunchAsync"/>'s own doc comment), so it
+    /// keeps calling that method with <c>preLaunch: false</c> and never blocks (Phase 7, deferred).
+    /// </summary>
+    public async Task<LaunchGateResult> PrepareLaunchAsync(TrackedGame game, CancellationToken ct = default)
+    {
+        if (RefuseIfRetired(game, "launch handling"))
+            return new LaunchGateResult(LaunchDecision.Proceed);
+        using var linked = LinkRetirement(ct);
+        ct = linked.Token;
+
+        // Already known and still open — no lease or pull needed to learn this. Whichever machine's
+        // push originally diverged, the head is ambiguous until a human or a policy resolves it, so
+        // nothing may safely launch into it.
+        if (await FindOpenConflictAsync(game) is { } already)
+            return Blocked(game, already);
+
+        var lease = await _api.AcquireLeaseAsync(game.GameId);
+        if (!lease.Granted)
+        {
+            var holder = lease.Lease.HolderMachineName;
+            Alert($"[{game.Name}] WARNING: saves are checked out by '{holder}'. " +
+                 "Launched without pulling — a conflict may occur on exit.",
+                AgentEventCodes.LeaseHeldElsewhere, AgentEventSeverity.Warning, game.GameId);
+            return new LaunchGateResult(LaunchDecision.ProceedSyncPaused,
+                $"saves are checked out by '{holder}' — launching without pulling.",
+                HolderMachineName: holder);
+        }
+        StartLeaseRenewer(game);
+
+        // Commit-before-choose: an ordinary push first, so a local save with changes never yet
+        // pushed becomes a real, hash-verified conflict instead of leaving the pull below to refuse
+        // with nothing recoverable to show for it. Cheap in the overwhelmingly common case — nothing
+        // changed since the last push, so this bails on a hash comparison alone with no network call
+        // at all (PushCoreAsync). A policy that names this machine the winner resolves it invisibly,
+        // exactly as it already does for any other push (TryPolicyResolveAsync); only a genuine,
+        // still-open divergence reaches here as UploadStatus.Conflict.
+        var pushResult = await PushAsync(game, force: false, settle: false, ct);
+        if (pushResult?.Status == UploadStatus.Conflict)
+        {
+            // The common case carries the ConflictDto straight from the push. The ConsecutiveConflicts
+            // fast path in PushCoreAsync doesn't — it returns Conflict with no DTO and no network call
+            // at all — so without this fallback a genuinely still-open conflict would silently pass
+            // through here as if nothing were wrong, which is exactly what this gate exists to prevent.
+            var fresh = pushResult.Conflict ?? await FindOpenConflictAsync(game);
+            if (fresh is not null)
+                return Blocked(game, fresh);
+        }
+
+        await PullAsync(game, force: false, ct);
+        return new LaunchGateResult(LaunchDecision.Proceed);
+    }
+
+    /// <summary>The open conflict already recorded for this game, if any — checked before touching
+    /// the lease or attempting anything, since nothing else needs to run to answer this.</summary>
+    private async Task<ConflictDto?> FindOpenConflictAsync(TrackedGame game)
+    {
+        try
+        {
+            var state = await _api.GetStateAsync(game.GameId);
+            if (state?.HasOpenConflict != true) return null;
+            var conflicts = await _api.GetOpenConflictsAsync();
+            return conflicts.FirstOrDefault(c => c.GameId == game.GameId);
+        }
+        catch (Exception ex)
+        {
+            // Fails open, like every other pre-launch check in this method: a server the agent
+            // cannot currently reach must not be the reason a player can't play at all.
+            _log($"[{game.Name}] could not check for an open conflict before launch: {ex.Message}");
+            return null;
+        }
+    }
+
+    private LaunchGateResult Blocked(TrackedGame game, ConflictDto conflict)
+    {
+        Alert($"[{game.Name}] BLOCKED launch: your save has diverged from the cloud and this is a " +
+             $"confirmed, unresolved conflict. Resolve it at http://127.0.0.1:{_config.DaemonApiPort ?? 5178}/#conflicts, with " +
+             "`savelocker conflicts` / `savelocker resolve-conflict`, or in the dashboard — then launch again.",
+            AgentEventCodes.LaunchBlocked, AgentEventSeverity.Error, game.GameId);
+        return new LaunchGateResult(LaunchDecision.Blocked,
+            "a confirmed conflict is open for this game", conflict.Id);
     }
 
     /// <summary>Post-exit: push the final save and release the lease.</summary>

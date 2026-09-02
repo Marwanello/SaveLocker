@@ -107,6 +107,12 @@ public sealed class Daemon : IAsyncDisposable
     {
         AgentLogger.Log($"SaveLocker daemon starting — machine '{_config.MachineName}', server {_config.ServerUrl}");
 
+        if (_config.DaemonApiPort != _apiPort)
+        {
+            _config.DaemonApiPort = _apiPort;
+            _config.Save();
+        }
+
         BackfillSteamAppIds();
 
         _apiServer = new AgentApiServer(

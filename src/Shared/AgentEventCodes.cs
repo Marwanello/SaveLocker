@@ -89,4 +89,13 @@ public static class AgentEventCodes
     /// the old plugin keeps working, so the device simply stops keeping up, indefinitely.
     /// </summary>
     public const string PluginUpdateFailed = "plugin.update_failed";
+
+    /// <summary>
+    /// The Linux launch wrapper refused to start a game because it has a genuinely confirmed,
+    /// open conflict — a real, hash-verified divergence between this machine's save and the cloud's,
+    /// never a mere lease warning or lock contention (tasks/conflict-resolution-ui/plan.md, Phase 4).
+    /// The one refusal in this codebase that can stop a launch outright, so it must be loud: nothing
+    /// else will tell the player why "Play" appeared to do nothing.
+    /// </summary>
+    public const string LaunchBlocked = "launch.blocked_conflict";
 }

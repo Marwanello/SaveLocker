@@ -15,6 +15,7 @@ public static class AgentCli
     public static bool Handles(string command) => command is
         "register" or "enroll" or "trust" or "set-server" or "whoami" or "search" or "scan" or
         "resolve" or "add-game" or "remove-game" or "list" or "status" or "push" or "pull" or
+        "conflicts" or "resolve-conflict" or
         "refresh-manifest" or "log" or "hash" or "check-update";
 
     /// <summary>Run one command. Returns the process exit code.</summary>
@@ -234,6 +235,10 @@ public static class AgentCli
 
                     var game = await Api().CreateGameAsync(new CreateGameRequest(serverName, manifestKey, null));
                     var existing = config.FindGame(name) ?? config.FindGame(serverName);
+                    // HasSteamCloud is deliberately left alone: null on a fresh entry ("nobody
+                    // established this"), and untouched on an existing one so re-adding a game does
+                    // not erase what enrollment already decided. `--appid` cannot stand in for it —
+                    // a non-Steam shortcut run under Proton has an AppID too. See TrackedGame.
                     var tracked = existing ?? new TrackedGame();
                     tracked.GameId = game.Id;
                     tracked.Name = game.Name;
@@ -255,7 +260,16 @@ public static class AgentCli
                     // Clears any per-machine opt-out as well as adding the entry — explicitly adding
                     // a game back is the one action that means "track this here again".
                     config.SetTracked(game.Id, tracked: true, entry: tracked);
-                    config.Save();
+                    // SetTracked only ADDS a not-yet-present entry — for a brand new game that already
+                    // durably persisted it, re-reading and re-writing fresh under its own lock. Calling
+                    // Save() unconditionally afterward re-opens a lost-update window: Save() writes
+                    // THIS process's in-memory Games, which (for a freshly started CLI process) reflects
+                    // only what was on disk when it loaded plus its own addition — not any sibling
+                    // process's concurrent add that SetTracked's fresh read already captured on disk.
+                    // A re-added EXISTING game is different: SetTracked's add-branch no-ops because the
+                    // GameId is already present, so the field updates above (SaveDirectory, ManifestKey,
+                    // ProcessNames) live only on `tracked` in memory until Save() writes them.
+                    if (existing is not null) config.Save();
                     Console.WriteLine($"Tracking '{name}' -> {dir}");
                     break;
                 }
@@ -293,6 +307,78 @@ public static class AgentCli
                         var conflict = s?.HasOpenConflict == true ? "  *** CONFLICT ***" : "";
                         Console.WriteLine($"  {g.Name}: head={head}, {lease}{conflict}");
                     }
+                    break;
+                }
+
+                case "conflicts":
+                {
+                    // Only conflicts this machine is actually a party to — a genuine "my local save
+                    // vs. the cloud" divergence, not another machine's. There is no bystander case
+                    // (tasks/conflict-resolution-ui/plan.md decision 2).
+                    var open = (await Api().GetOpenConflictsAsync())
+                        .Where(c => c.MachineId == config.MachineId)
+                        .ToList();
+                    if (open.Count == 0)
+                    {
+                        Console.WriteLine("No open conflicts on this machine.");
+                        break;
+                    }
+                    foreach (var c in open)
+                    {
+                        var name = config.Games.FirstOrDefault(g => g.GameId == c.GameId)?.Name
+                                   ?? c.GameId.ToString();
+                        Console.WriteLine($"  {name}");
+                        Console.WriteLine($"    local (this machine's save):   {c.VersionBId}");
+                        Console.WriteLine($"    cloud (the server's save):     {c.VersionAId}");
+                        Console.WriteLine($"    diverged {c.Count} time(s), last {c.LastSeen:u}" +
+                                           (c.Escalated ? "  — escalated" : ""));
+                        Console.WriteLine($"    resolve-conflict \"{name}\" --keep local|cloud [--keep-both]");
+                    }
+                    break;
+                }
+
+                case "resolve-conflict":
+                {
+                    var name = opts.GetValueOrDefault("game") ?? positionals.FirstOrDefault()
+                               ?? throw new ArgumentException(
+                                   "Pass a game name and --keep local|cloud, " +
+                                   "e.g. resolve-conflict SyncGame --keep local");
+                    var game = config.FindGame(name)
+                               ?? throw new InvalidOperationException($"'{name}' is not tracked here.");
+
+                    var keep = (opts.GetValueOrDefault("keep") ?? "").Trim().ToLowerInvariant();
+                    if (keep is not ("local" or "cloud"))
+                        throw new ArgumentException("Pass --keep local or --keep cloud.");
+                    var keepBoth = opts.ContainsKey("keep-both");
+
+                    var conflict = (await Api().GetOpenConflictsAsync())
+                        .FirstOrDefault(c => c.GameId == game.GameId && c.MachineId == config.MachineId)
+                        ?? throw new InvalidOperationException(
+                            $"No open conflict for '{game.Name}' on this machine.");
+
+                    var winningVersionId = keep == "local" ? conflict.VersionBId : conflict.VersionAId;
+                    var (ok, error) = await Api().ResolveConflictAsync(conflict.Id, winningVersionId, keepBoth);
+                    if (!ok)
+                    {
+                        Console.Error.WriteLine($"Could not resolve: {error}");
+                        return 1;
+                    }
+
+                    // Keeping local makes this machine the winner, which excludes it from the
+                    // server's post-resolve pull fan-out (SyncService.ResolveConflictAsync) on the
+                    // assumption it already advanced its own parent pointer — true for the agent's
+                    // own auto-policy resolve, not for this CLI path unless it does the same here.
+                    if (keep == "local")
+                    {
+                        game.LastKnownVersionId = winningVersionId;
+                        game.LastSyncedHash = SaveArchive.HashDirectory(game.SaveDirectory, game.ExcludeGlobs);
+                        config.SaveGameSyncState(game);
+                    }
+
+                    Console.WriteLine($"Resolved '{game.Name}': kept the {keep} save" +
+                        (keepBoth ? " (the other side is kept as a downloadable backup)." : "."));
+                    if (keep == "cloud")
+                        Console.WriteLine("Pull now to bring this machine's local save in line with it.");
                     break;
                 }
 

@@ -1,4 +1,4 @@
-import type { Activity, AgentState, AgentVersion, BrowseListing, Candidate, DeckyStatus, TrackedGame } from './types'
+import type { Activity, AgentState, AgentVersion, BrowseListing, Candidate, Conflict, DeckyStatus, SaveVersion, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -77,4 +77,14 @@ export const api = {
   // Pull then push every tracked game, same as the tray menu's "Sync All". The response is a
   // one-line summary; progress for whichever game is mid-sync shows up on the next activity() poll.
   syncNow: () => post<{ message: string }>('/api/sync'),
+  // Conflict resolution (tasks/conflict-resolution-ui/plan.md, Phase 6) — every open conflict on the
+  // server this machine's key can see, not only this machine's own. Resolution itself already lives
+  // in Agent.Core (Phase 0/1); this just gives it a UI both hosts can reach.
+  conflicts: () => req<Conflict[]>('/api/conflicts'),
+  resolveConflict: (id: string, winningVersionId: string, keepBoth: boolean) =>
+    post(`/api/conflicts/${id}/resolve`, { winningVersionId, keepBoth }),
+  // Machine name, timestamp and size for one side of a conflict — a conflict only carries version
+  // ids. Cached by the caller: an archive's stats never change once uploaded.
+  version: (id: string) => req<SaveVersion>(`/api/versions/${id}`),
+  versionStats: (id: string) => req<VersionStats>(`/api/versions/${id}/stats`),
 }

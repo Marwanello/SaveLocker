@@ -1,4 +1,7 @@
-﻿using SaveLocker.Server.Data;
+﻿using System.Collections.Concurrent;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using SaveLocker.Server.Data;
 using SaveLocker.Shared;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,6 +17,10 @@ public sealed class SyncService
     private readonly ArchiveStore _store;
     private readonly ConflictEscalationPolicy _conflictEscalation;
     private readonly TimeSpan _leaseDuration = TimeSpan.FromHours(6);
+    // A version's archive never changes once uploaded, so its stats are cached for the process
+    // lifetime the first time anyone asks — cleared only by a restart, which is fine since a
+    // pruned/deleted version's id is never reused.
+    private readonly ConcurrentDictionary<Guid, VersionStatsDto> _versionStatsCache = new();
     private readonly int _retainPerGame;
     /// <summary>
     /// How long a claimed command stays invisible to other claims. It has to outlast a real
@@ -561,17 +568,90 @@ public sealed class SyncService
     /// matches the head — the one case chunking can pre-empt before a single byte moves. A conflict
     /// still needs the full archive (an admin may choose it later), so only an exact match skips the
     /// wire.
+    /// <para>
+    /// When <paramref name="files"/> carries the agent's full current manifest, this also decides
+    /// whether a per-file delta is possible: only on a clean fast-forward (not diverged, not forced,
+    /// a real head exists) AND only when that head already has a stored per-file manifest of its own
+    /// (<see cref="SaveVersionFile"/> rows) to diff against. A diverged/forced/first-ever push, or a
+    /// head with no stored manifest yet, always gets the full-archive behavior — those are exactly
+    /// the cases where the server cannot safely assume what "the old content" was to copy forward
+    /// from, and a head with no manifest self-heals the moment one push completes with one.
+    /// </para>
     /// </summary>
-    public async Task<(Guid? SessionId, UploadResult? NoChange)> BeginChunkedUploadAsync(
-        Guid gameId, Guid machineId, Guid? parentVersionId, string contentHash, bool force,
-        CancellationToken ct = default)
+    public async Task<(Guid? SessionId, UploadResult? NoChange, bool UseDeltaPath, string[]? NeedPaths)>
+        BeginChunkedUploadAsync(
+            Guid gameId, Guid machineId, Guid? parentVersionId, string contentHash, bool force,
+            FileManifestEntry[]? files, CancellationToken ct = default)
     {
-        var (_, _, _, noChange) = await PrepareUploadAsync(gameId, parentVersionId, contentHash, force, ct);
-        if (noChange is not null) return (null, noChange);
+        var (_, serverHead, diverged, noChange) =
+            await PrepareUploadAsync(gameId, parentVersionId, contentHash, force, ct);
+        if (noChange is not null) return (null, noChange, false, null);
 
         var versionId = Guid.NewGuid();
         var sessionId = _store.BeginSession(gameId, machineId, versionId, contentHash, parentVersionId, force);
-        return (sessionId, null);
+
+        var useDelta = false;
+        string[]? needPaths = null;
+        Guid? baseVersionId = null;
+        Dictionary<string, string>? headManifest = null;
+
+        if (files is { Length: > 0 } && !diverged && serverHead is not null)
+        {
+            headManifest = await _db.SaveVersionFiles
+                .Where(f => f.VersionId == serverHead.Id)
+                .ToDictionaryAsync(f => f.Path, f => f.Sha256, StringComparer.Ordinal, ct);
+
+            if (headManifest.Count > 0)
+            {
+                needPaths = files
+                    .Where(f => !headManifest.TryGetValue(f.Path, out var h) ||
+                                !string.Equals(h, f.Sha256, StringComparison.OrdinalIgnoreCase))
+                    .Select(f => f.Path)
+                    .ToArray();
+                useDelta = true;
+                baseVersionId = serverHead.Id;
+            }
+            else headManifest = null;
+        }
+
+        // The base manifest rides on the session rather than being re-read at Complete: it is the
+        // same rows, already materialised, and a save with thousands of files made that a second
+        // full query per push for no new information.
+        _store.SetDeltaInfo(sessionId, files, needPaths, baseVersionId, headManifest);
+        return (sessionId, null, useDelta, needPaths);
+    }
+
+    /// <summary>Ceiling on entries in one uploaded manifest — the same order as the restore path's
+    /// own entry limit, and far past any real save folder.</summary>
+    private const int MaxManifestEntries = 100_000;
+
+    /// <summary>
+    /// Validate a client-supplied file manifest before ANY of it is trusted. It reaches the per-file
+    /// diff, an in-memory upload session that outlives the request by up to the idle window, and
+    /// eventually <see cref="SaveVersionFile"/> rows whose primary key is (VersionId, Path) — a
+    /// duplicate path there throws AFTER the version is committed, which is a far worse place to
+    /// find out. Returns null when the manifest is acceptable, otherwise the reason to refuse it.
+    /// </summary>
+    public static string? ValidateManifest(FileManifestEntry[]? files)
+    {
+        if (files is null || files.Length == 0) return null;
+        if (files.Length > MaxManifestEntries)
+            return $"File manifest has {files.Length:N0} entries, over the {MaxManifestEntries:N0} limit.";
+
+        var seen = new HashSet<string>(files.Length, StringComparer.Ordinal);
+        foreach (var f in files)
+        {
+            if (string.IsNullOrWhiteSpace(f.Path))
+                return "File manifest contains an empty path.";
+            if (f.Path.Contains('\\') || Path.IsPathRooted(f.Path) ||
+                f.Path.Split('/').Any(s => s.Length == 0 || s == "." || s == ".."))
+                return $"File manifest path '{f.Path}' is not a relative save-folder path.";
+            if (f.Size < 0)
+                return $"File manifest entry '{f.Path}' declares a negative size.";
+            if (!seen.Add(f.Path))
+                return $"File manifest lists '{f.Path}' more than once.";
+        }
+        return null;
     }
 
     /// <summary>Append one chunk. The session's own machine id is checked against the caller's — a
@@ -587,10 +667,20 @@ public sealed class SyncService
     }
 
     /// <summary>
-    /// Finish a chunked upload: publish the staged file and run it through the same conflict-aware
-    /// ingest a single-shot upload gets. Re-checks the head against what it has become since Begin —
-    /// a slow chunked transfer widens the window another machine could have pushed in, and this is
-    /// the last moment that can still matter before something gets published.
+    /// Finish a chunked upload: publish the staged bytes and run the result through the same
+    /// conflict-aware ingest a single-shot upload gets. Re-checks the head against what it has become
+    /// since Begin — a slow chunked transfer widens the window another machine could have pushed in,
+    /// and this is the last moment that can still matter before something gets published.
+    /// <para>
+    /// A session negotiated as a delta (<c>info.BaseVersionId</c> set) needs one more check this
+    /// re-run doesn't already cover: even a clean fast-forward (parent still matches) is only safe to
+    /// reconstruct from if the head is STILL the exact version this delta was diffed against — a
+    /// fast-forwarding push from a different base would silently drop whatever that other push
+    /// changed in files this delta never touched. When that has happened, the staged bytes (only the
+    /// changed files, not a full archive) are useless as a complete version, so the session is
+    /// aborted and the agent is told to retry with a full archive instead — never surfaced past
+    /// <see cref="ApiClient"/>, which does that retry transparently.
+    /// </para>
     /// </summary>
     public async Task<UploadResult> CompleteChunkedUploadAsync(
         Guid gameId, Guid machineId, Guid sessionId, CancellationToken ct = default)
@@ -608,17 +698,260 @@ public sealed class SyncService
             return noChange;
         }
 
-        var (rel, size) = _store.CompleteSession(sessionId);
+        if (info.BaseVersionId is { } negotiatedBase && (diverged || serverHead?.Id != negotiatedBase))
+        {
+            _store.AbortSession(sessionId);
+            return new UploadResult(UploadStatus.RetryFull, null, null);
+        }
+
+        string rel; long size;
         try
         {
-            return await IngestAsync(game, info.VersionId, rel, size, machineId, info.ParentVersionId,
+            (rel, size) = info.BaseVersionId is not null
+                ? ReconstructDelta(gameId, sessionId, info, serverHead!)
+                : _store.CompleteSession(sessionId);
+        }
+        catch (SaveArchive.UnsafeArchiveException)
+        {
+            // A delta payload that fails validation is refused before anything is published — same
+            // "never a partial write" guarantee RestoreArchive gives on the pull side. The bytes are
+            // already gone (ReconstructDelta cleans up its own staging on the way out), so there
+            // is nothing left to un-publish; the agent just needs to know to retry with a full archive.
+            return new UploadResult(UploadStatus.RetryFull, null, null);
+        }
+
+        UploadResult result;
+        try
+        {
+            result = await IngestAsync(game, info.VersionId, rel, size, machineId, info.ParentVersionId,
                 info.ContentHash, serverHead, diverged, info.Force, ct);
         }
         catch
         {
+            // Nothing here is committed yet, so no row names this archive — deleting it IS the
+            // un-publish, and it must happen before the exception leaves.
             _store.TryDelete(rel);
             throw;
         }
+
+        // Everything past this point runs with the version row COMMITTED and possibly already the
+        // head, so the archive must never be deleted again: rows first, files second, exactly as
+        // ReleaseArchivesAsync spells out. A per-file baseline that fails to store costs the NEXT
+        // push its delta and nothing else — it finds no manifest and sends a full archive, which
+        // stores one, the same self-healing route a pre-delta head already takes. Deleting the
+        // head's archive over it would cost every future pull instead.
+        if (info.Files is { Length: > 0 } manifest)
+        {
+            try
+            {
+                await PersistVersionManifestAsync(info.VersionId, manifest, ct);
+                if (info.BaseVersionId is not null)
+                {
+                    // The one place this is visible without reading server logs — how many of the
+                    // agent's files actually needed fresh bytes, versus how many it declared in
+                    // total. Answers "why did a push I barely touched anything for still make a new
+                    // version" without guessing: a game that rewrites something on every launch shows
+                    // up here as a small, real, recurring NeedPaths count.
+                    await Audit(machineId, gameId, "upload.delta",
+                        $"{(info.NeedPaths?.Length ?? 0)} of {manifest.Length} file(s) needed fresh bytes");
+                    await _db.SaveChangesAsync(ct);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _db.ChangeTracker.Clear();
+                try
+                {
+                    await Audit(machineId, gameId, "upload.baseline_failed", ex.Message);
+                    await _db.SaveChangesAsync(ct);
+                }
+                catch { /* the audit is a courtesy; never let it mask an upload that succeeded */ }
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Reconstruct a delta-negotiated version's full archive: copy every file the agent declared
+    /// unchanged straight from the base version's own archive, and take fresh bytes for exactly the
+    /// paths the server asked for at Begin — the agent's manifest is the complete declared truth of
+    /// what should exist (the same rule <see cref="SaveArchive.RestoreArchive"/> already applies on
+    /// the pull side: absent from the declared set means gone), so nothing about deletions needs a
+    /// separate list. Every entry copied is re-hashed against what was already promised — the delta
+    /// payload's own claim for fresh bytes, the base version's stored manifest for carried-forward
+    /// ones — because this is the server's first time ever opening an UPLOADED zip's individual
+    /// entries; nothing here is trusted merely because the aggregate ContentHash matched.
+    /// </summary>
+    private (string rel, long size) ReconstructDelta(
+        Guid gameId, Guid sessionId, ArchiveStore.ChunkedUploadInfo info, SaveVersion baseVersion)
+    {
+        var deltaZipPath = _store.TakeSessionStagedPath(sessionId);
+        var buildPath = _store.NewStagingPath(info.VersionId);
+        try
+        {
+            var needPaths = new HashSet<string>(info.NeedPaths ?? Array.Empty<string>(), StringComparer.Ordinal);
+            var baseManifest = info.BaseManifest
+                ?? throw new SaveArchive.UnsafeArchiveException(
+                    "This session has no stored base manifest to verify carried-forward files against.");
+
+            // Ordinal by path — the order EnumerateRelativeFiles produces, and the only order in
+            // which the aggregate hash below can reproduce what the agent computed.
+            var targetFiles = (info.Files ?? Array.Empty<FileManifestEntry>())
+                .OrderBy(f => f.Path, StringComparer.Ordinal)
+                .ToArray();
+
+            long total = 0;
+            using var contentSha = SHA256.Create();
+            using (var baseZip = ZipFile.OpenRead(_store.FullPath(baseVersion.ArchivePath)))
+            using (var deltaZip = ZipFile.OpenRead(deltaZipPath))
+            using (var outZip = ZipFile.Open(buildPath, ZipArchiveMode.Create))
+            {
+                // Hostile input the moment the server opens it — the same reasoning RestoreArchive
+                // already applies to a pulled archive, running here for the first time on the upload
+                // side. The allow-list check is stronger than ordinary zip-slip containment: the exact
+                // valid path set is already known, not just "somewhere under the staging directory".
+                // Checked against the archive already open for the copy, not a second read of it.
+                ValidateDeltaEntries(deltaZip, needPaths);
+
+                foreach (var target in targetFiles)
+                {
+                    ZipArchiveEntry src;
+                    string expectedHash;
+                    if (needPaths.Contains(target.Path))
+                    {
+                        src = deltaZip.GetEntry(target.Path) ?? throw new SaveArchive.UnsafeArchiveException(
+                            $"Delta payload is missing '{target.Path}', which the server asked for.");
+                        expectedHash = target.Sha256;
+                    }
+                    else
+                    {
+                        src = baseZip.GetEntry(target.Path) ?? throw new SaveArchive.UnsafeArchiveException(
+                            $"'{target.Path}' was declared unchanged but is not in the base version's archive.");
+                        if (!baseManifest.TryGetValue(target.Path, out expectedHash!))
+                            throw new SaveArchive.UnsafeArchiveException(
+                                $"'{target.Path}' has no stored baseline hash to verify against.");
+                    }
+
+                    // Chain path + bytes exactly as SaveArchive.HashDirectory does, so the archive
+                    // this assembles can be checked against the hash the agent declared for it.
+                    var pathBytes = System.Text.Encoding.UTF8.GetBytes(target.Path + "\n");
+                    contentSha.TransformBlock(pathBytes, 0, pathBytes.Length, null, 0);
+
+                    total += CopyEntryVerified(
+                        src, outZip, target.Path, expectedHash, total, SaveArchive.MaxRestoreBytes, contentSha);
+                }
+            }
+
+            // Per-entry hashes only prove the pieces are what someone claimed; this proves the WHOLE
+            // is what the version row is about to say it is. Without it a version's stored
+            // ContentHash could silently describe bytes the archive does not contain — and that hash
+            // drives every future NoChange decision and every agent's "have I already synced this?".
+            contentSha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+            var actual = Convert.ToHexString(contentSha.Hash!).ToLowerInvariant();
+            if (!string.Equals(actual, info.ContentHash, StringComparison.OrdinalIgnoreCase))
+                throw new SaveArchive.UnsafeArchiveException(
+                    "The reconstructed archive does not hash to the content hash the agent declared " +
+                    "for it. Refusing the reconstruction.");
+
+            // The upload cap bounds what one push may put on disk. A delta only ever SENDS the
+            // changed files, so AppendChunkAsync's running total never sees the size of the archive
+            // this assembles — successive deltas could otherwise grow a version far past the limit
+            // the operator configured, one small push at a time. Compared against the built zip, the
+            // same compressed unit the cap is expressed in.
+            var builtSize = new FileInfo(buildPath).Length;
+            if (builtSize > _maxUploadBytes)
+                throw new SaveArchive.UnsafeArchiveException(
+                    $"The reconstructed archive is {builtSize / (1024 * 1024)} MB, over the " +
+                    $"{_maxUploadBytes / (1024 * 1024)} MB upload limit. Refusing it.");
+
+            return _store.PublishFile(gameId, info.VersionId, buildPath);
+        }
+        catch
+        {
+            _store.TryDeleteStaged(buildPath);
+            throw;
+        }
+        finally
+        {
+            _store.TryDeleteStaged(deltaZipPath);
+        }
+    }
+
+    /// <summary>Copy one entry's decompressed bytes into <paramref name="dest"/>, re-hashing as they
+    /// go and refusing if the actual bytes don't match <paramref name="expectedHash"/>. The same
+    /// bytes are chained into <paramref name="aggregate"/>, which spans the whole archive.</summary>
+    private static long CopyEntryVerified(
+        ZipArchiveEntry src, ZipArchive dest, string path, string expectedHash, long alreadyWritten,
+        long maxBytes, SHA256 aggregate)
+    {
+        var entry = dest.CreateEntry(path, CompressionLevel.Optimal);
+        entry.LastWriteTime = src.LastWriteTime;
+
+        using var sha = SHA256.Create();
+        using var srcStream = src.Open();
+        using var dstStream = entry.Open();
+        var buffer = new byte[81920];
+        long written = 0;
+        int read;
+        while ((read = srcStream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            written += read;
+            if (alreadyWritten + written > maxBytes)
+                throw new SaveArchive.UnsafeArchiveException(
+                    $"Delta reconstruction exceeded the {maxBytes / (1024 * 1024)} MB limit. Refusing it.");
+            dstStream.Write(buffer, 0, read);
+            sha.TransformBlock(buffer, 0, read, null, 0);
+            aggregate.TransformBlock(buffer, 0, read, null, 0);
+        }
+        sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+        var actualHash = Convert.ToHexString(sha.Hash!).ToLowerInvariant();
+        if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+            throw new SaveArchive.UnsafeArchiveException(
+                $"'{path}' does not match its declared content hash. Refusing the reconstruction.");
+
+        return written;
+    }
+
+    /// <summary>Declared-size/count ceiling on the small delta payload, reusing the same restore
+    /// limits the agent already applies to a pulled archive — this is the server's own first time
+    /// opening a client-supplied zip's entries, so the same "attacker-controlled and may lie" caution
+    /// applies. <paramref name="allowedPaths"/> is the stronger-than-usual containment check: every
+    /// entry must be one the server itself asked for, not merely somewhere under a staging root.</summary>
+    private static void ValidateDeltaEntries(ZipArchive zip, HashSet<string> allowedPaths)
+    {
+        if (zip.Entries.Count > SaveArchive.MaxRestoreEntries)
+            throw new SaveArchive.UnsafeArchiveException(
+                $"Delta payload has {zip.Entries.Count:N0} entries, over the " +
+                $"{SaveArchive.MaxRestoreEntries:N0} limit.");
+
+        long declared = 0;
+        foreach (var entry in zip.Entries)
+        {
+            declared += entry.Length;
+            if (declared > SaveArchive.MaxRestoreBytes)
+                throw new SaveArchive.UnsafeArchiveException(
+                    "Delta payload declares more bytes than the restore limit allows.");
+            if (!allowedPaths.Contains(entry.FullName))
+                throw new SaveArchive.UnsafeArchiveException(
+                    $"Delta payload carries '{entry.FullName}', which was never asked for. Refusing it.");
+        }
+    }
+
+    /// <summary>
+    /// Store the uploading agent's declared per-file manifest as this version's baseline, so the
+    /// NEXT push against it as a base can diff per file instead of re-sending everything. The agent's
+    /// claim is trusted here exactly as much as its aggregate ContentHash already is elsewhere in
+    /// this file — the difference is granularity, not a new trust boundary — but any entry a FUTURE
+    /// delta actually copies forward from this version is re-verified byte-for-byte against it
+    /// (<see cref="CopyEntryVerified"/>), so a wrong claim here can only ever cause a refused
+    /// reconstruction later, never a silently wrong save.
+    /// </summary>
+    private async Task PersistVersionManifestAsync(
+        Guid versionId, IReadOnlyCollection<FileManifestEntry> manifest, CancellationToken ct)
+    {
+        _db.SaveVersionFiles.AddRange(manifest.Select(f =>
+            new SaveVersionFile { VersionId = versionId, Path = f.Path, Sha256 = f.Sha256, Size = f.Size }));
+        await _db.SaveChangesAsync(ct);
     }
 
     /// <summary>
@@ -648,28 +981,12 @@ public sealed class SyncService
 
         if (diverged)
         {
-            // Check conflict policy before recording a conflict row.
-            var autoWins =
-                game.ConflictPolicy == ConflictPolicy.NewestWins ||
-                (game.ConflictPolicy == ConflictPolicy.PreferMachine &&
-                 game.PreferredMachineId.HasValue &&
-                 machineId == game.PreferredMachineId);
-
-            if (autoWins)
-            {
-                // Policy says the incoming version wins — advance head without creating a conflict.
-                // The machines this just displaced have to be told: the policy decided against their
-                // parent, and nothing in their own sync loop would reveal that until their next push
-                // was rejected. Propagating here is the difference between a policy that resolves
-                // conflicts and one that merely hides the first of them.
-                await SetHeadAndPropagateAsync(game, versionId, "upload.auto_resolved",
-                    $"policy={game.ConflictPolicy} {contentHash}",
-                    propagate: true, exceptMachineId: machineId, ct);
-                await PruneVersionsAsync(gameId, ct);
-                await LoadMachine(version, ct);
-                return new UploadResult(UploadStatus.Created, version.ToDto(), null);
-            }
-
+            // The server no longer evaluates ConflictPolicy itself. Resolution now lives entirely in
+            // the agent: whichever agent's push diverged fetches the game's policy, decides locally,
+            // and — unless the policy is Manual — calls the resolve endpoint itself. The server's only
+            // job on a divergence is to record the conflict and keep both versions; see
+            // tasks/conflict-resolution-ui/plan.md. Every divergence therefore lands here,
+            // including one an auto-policy will resolve a moment later through the resolve endpoint.
             var now = DateTime.UtcNow;
 
             // Fold into the machine's existing open conflict rather than opening another. The head
@@ -727,6 +1044,34 @@ public sealed class SyncService
         await SetHeadAndPropagateAsync(game, versionId,
             force ? "upload.force" : "upload.create", contentHash,
             propagate: false, exceptMachineId: machineId, ct);
+
+        // A forced push skips divergence detection outright (PrepareUploadAsync), so it can land
+        // while the game still has an open ConflictFlag from an earlier, unforced divergence — one
+        // that flag's own rewind guard can now never let anyone close normally, since neither of its
+        // two versions can ever become head again. Close it the same mechanical way a real resolve
+        // would, rather than leaving it orphaned.
+        //
+        // The version row and head above are already committed, so this must never be allowed to
+        // reach the archive-deleting catch around this call (UploadAsync / CompleteChunkedUploadAsync)
+        // — same reasoning as the per-file manifest write above: a failure here costs this conflict
+        // its bookkeeping, not the push its just-published archive.
+        if (force)
+        {
+            try
+            {
+                await CloseOrphanedConflictsOnForceAsync(gameId, versionId, machineId, version.MachineName, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _db.ChangeTracker.Clear();
+                try
+                {
+                    await Audit(machineId, gameId, "conflict.resolve_forced_failed", ex.Message);
+                    await _db.SaveChangesAsync(ct);
+                }
+                catch { /* the audit is a courtesy; never let it mask an upload that succeeded */ }
+            }
+        }
 
         await PruneVersionsAsync(gameId, ct);
 
@@ -899,12 +1244,44 @@ public sealed class SyncService
         return await DownloadVersionAsync(game.HeadVersionId.Value);
     }
 
+    private Task<SaveVersion?> FindVersionAsync(Guid versionId) =>
+        _db.SaveVersions.Include(v => v.Machine).FirstOrDefaultAsync(v => v.Id == versionId);
+
     public async Task<(SaveVersion version, Stream content)?> DownloadVersionAsync(Guid versionId)
     {
-        var version = await _db.SaveVersions.Include(v => v.Machine)
-            .FirstOrDefaultAsync(v => v.Id == versionId);
+        var version = await FindVersionAsync(versionId);
         if (version is null || !_store.Exists(version.ArchivePath)) return null;
         return (version, _store.OpenRead(version.ArchivePath));
+    }
+
+    /// <summary>
+    /// One version's own DTO by id — machine name, timestamp, size — the other half of what a
+    /// conflict card needs beside <see cref="GetVersionStatsAsync"/>'s file count / newest-mtime.
+    /// Agent-group and flat, same trust boundary as <see cref="DownloadVersionAsync"/> and the stats
+    /// route beside it: a valid machine key already gates the whole group, so this needs no
+    /// per-game scoping either.
+    /// </summary>
+    public async Task<SaveVersionDto?> GetVersionAsync(Guid versionId) =>
+        (await FindVersionAsync(versionId))?.ToDto();
+
+    /// <summary>File count / newest-mtime for one version's archive, cached per version id (an
+    /// archive's contents never change once uploaded). <paramref name="gameId"/> is null for the
+    /// agent group's flat <c>/versions/{id}/stats</c> route (a valid machine key already gates the
+    /// group, the same way it does for <see cref="DownloadVersionAsync"/>) and non-null for the
+    /// admin group's nested <c>/games/{id}/versions/{versionId}/stats</c> route, so a caller cannot
+    /// probe a version belonging to a different game through the wrong URL.</summary>
+    public async Task<VersionStatsDto?> GetVersionStatsAsync(Guid? gameId, Guid versionId)
+    {
+        var version = await _db.SaveVersions.FindAsync(versionId);
+        if (version is null || (gameId is not null && version.GameId != gameId) || !_store.Exists(version.ArchivePath))
+            return null;
+
+        if (_versionStatsCache.TryGetValue(versionId, out var cached)) return cached;
+
+        var stats = SaveArchive.GetArchiveStats(_store.FullPath(version.ArchivePath));
+        var dto = new VersionStatsDto(stats.FileCount, stats.NewestFileWriteUtc);
+        _versionStatsCache[versionId] = dto;
+        return dto;
     }
 
     // ----- Admin: conflicts & rollback -----
@@ -930,6 +1307,25 @@ public sealed class SyncService
             .ToList();
     }
 
+    /// <summary>One conflict by id (open or already resolved), for an agent fetching the detail it
+    /// needs to present a chooser or carry out a policy decision. Null if the id is unknown.</summary>
+    public async Task<ConflictDto?> GetConflictAsync(Guid conflictId)
+    {
+        var c = await _db.Conflicts.FindAsync(conflictId);
+        return c is null ? null : c.ToDto(_conflictEscalation.IsEscalated(c, DateTime.UtcNow));
+    }
+
+    /// <summary>
+    /// A game's current conflict policy. The server stores it (one setting the whole fleet agrees on)
+    /// but no longer acts on it — an agent reads this, evaluates it locally, and resolves. Null when
+    /// the game is unknown.
+    /// </summary>
+    public async Task<ConflictPolicyDto?> GetConflictPolicyAsync(Guid gameId)
+    {
+        var game = await _db.Games.FindAsync(gameId);
+        return game is null ? null : new ConflictPolicyDto(game.ConflictPolicy, game.PreferredMachineId);
+    }
+
     /// <summary>
     /// Admin: apply this game's retention limit right now, without waiting for a push to trigger it.
     /// Returns how many versions were removed.
@@ -951,11 +1347,21 @@ public sealed class SyncService
     /// Resolve a conflict by promoting the chosen version to head. Refuses to replace a newer head
     /// with an older conflict option.
     /// </summary>
+    /// <param name="resolverMachineId">
+    /// The machine that asked for this resolution, when an agent did (null for the admin/console
+    /// path). It changes only one thing: if that machine is the uploader of the <b>winning</b>
+    /// version, it is excluded from the fan-out below, because it already holds the new head and
+    /// learned of it from its own push/resolve response — queueing it a pull would be pure noise. A
+    /// resolver that kept the OTHER side (the cloud's) is <i>not</i> excluded: it still needs to pull
+    /// the winner over its own local copy. The admin path passes null and every machine is told,
+    /// exactly as before.
+    /// </param>
     public async Task<(bool ok, string? error)> ResolveConflictAsync(
         Guid conflictId,
         Guid winningVersionId,
         string resolvedBy,
-        bool keepBoth = false)
+        bool keepBoth = false,
+        Guid? resolverMachineId = null)
     {
         var conflict = await _db.Conflicts.FindAsync(conflictId);
         if (conflict is null || conflict.Status != ConflictStatus.Open)
@@ -981,6 +1387,25 @@ public sealed class SyncService
             await Audit(null, conflict.GameId, "conflict.resolve_rewind_blocked",
                 $"winner={winner.Id} currentHead={currentHead.Id}");
             await _db.SaveChangesAsync();
+
+            // An auto-policy resolve (unlike a human's explicit choice) must not get stuck here:
+            // the head moved past the resolver's own version between its push and this call, so
+            // something newer already won the race. A human still has to look at the conflict
+            // itself — this refusal is unchanged — but the resolver machine needn't sit on stale
+            // content until then, so queue it the same unforced pull an ordinary resolution would,
+            // and it converges to the real head on its own next reconcile.
+            if (resolverMachineId is { } rewoundResolver)
+            {
+                var alreadyQueued = await _db.AgentCommands.AnyAsync(c =>
+                    c.MachineId == rewoundResolver &&
+                    c.GameId == conflict.GameId &&
+                    c.Type == AgentCommandType.Pull &&
+                    c.Status == CommandStatus.Pending);
+                if (!alreadyQueued)
+                    await EnqueueCommandAsync(new EnqueueCommandRequest(
+                        rewoundResolver, conflict.GameId, AgentCommandType.Pull, Force: false));
+            }
+
             return (false,
                 "Latest changed after this conflict opened. Resolving to that older save would rewind it; review the current versions first.");
         }
@@ -1018,12 +1443,65 @@ public sealed class SyncService
         // and QueueResolutionPullsAsync identifies the machines to notify by looking those versions
         // up. Prune first and the loser's row is gone before anyone asks who owned it, so only the
         // winner gets told and the loser stays stuck. Caught by run-agent-tests, not by review.
-        await QueueResolutionPullsAsync(conflict);
+        var fanoutExcept = resolverMachineId is { } rm && winner.MachineId == rm ? rm : (Guid?)null;
+        await QueueResolutionPullsAsync(conflict, fanoutExcept);
 
         // Resolution is the first moment a pile of versions stops being pinned by an open conflict,
         // so it is the first moment retention can actually act on them.
         await PruneVersionsAsync(conflict.GameId, CancellationToken.None);
         return (true, null);
+    }
+
+    /// <summary>
+    /// Close every open <see cref="ConflictFlag"/> on a game that a forced push just rode over.
+    /// <para>
+    /// A forced push makes <see cref="PrepareUploadAsync"/> skip divergence detection outright, so
+    /// it can move the head to a brand-new version that is neither side of an already-open conflict
+    /// for this game. Left alone, that conflict is orphaned: <see cref="ResolveConflictAsync"/>'s own
+    /// rewind guard refuses to promote either of its versions once the head has moved past both of
+    /// them, so nothing can ever close it through the ordinary path again — the two machines involved
+    /// stay stuck reporting a conflict the fleet has already moved past, and neither of their versions
+    /// is protected from ordinary retention even though they are now the only record of the losing
+    /// side. This mirrors <see cref="ResolveConflictAsync"/>'s own bookkeeping (mark resolved, protect
+    /// both sides as recoverable backups, tell every other machine to pull) rather than "which of A or
+    /// B wins" — a force overwrite means neither did.
+    /// </para>
+    /// </summary>
+    private async Task CloseOrphanedConflictsOnForceAsync(
+        Guid gameId, Guid winningVersionId, Guid forcingMachineId, string forcingMachineName,
+        CancellationToken ct)
+    {
+        var open = await _db.Conflicts
+            .Where(c => c.GameId == gameId && c.Status == ConflictStatus.Open)
+            .ToListAsync(ct);
+        if (open.Count == 0) return;
+
+        var now = DateTime.UtcNow;
+        var protectIds = new HashSet<Guid>();
+        foreach (var conflict in open)
+        {
+            conflict.Status = ConflictStatus.Resolved;
+            conflict.ResolvedVersionId = winningVersionId;
+            conflict.ResolvedBy = $"force-push by {forcingMachineName}";
+            conflict.ResolvedAt = now;
+            protectIds.Add(conflict.VersionAId);
+            protectIds.Add(conflict.VersionBId);
+            await Audit(forcingMachineId, gameId, "conflict.resolve_forced",
+                $"superseded by a forced push (kept both {conflict.VersionAId} and {conflict.VersionBId} " +
+                "as recoverable backups)");
+        }
+
+        // Neither side of an overridden conflict is "the winner" the way a real resolve has one, so
+        // both are protected unconditionally — the same recoverable-backup guarantee a human's
+        // explicit "keep both" gives, without asking, since nobody was actually asked here.
+        var toProtect = await _db.SaveVersions.Where(v => protectIds.Contains(v.Id)).ToListAsync(ct);
+        foreach (var v in toProtect) v.Protected = true;
+        await _db.SaveChangesAsync(ct);
+
+        // Same fan-out a real resolve gets: an agent's local parent only advances on its own push or
+        // pull, so the other machine(s) this conflict involved need to be told the head moved, or they
+        // stay stuck on stale versions and conflict again on their very next save.
+        await QueueHeadPullsAsync(gameId, forcingMachineId, ct);
     }
 
     /// <summary>
@@ -1055,13 +1533,15 @@ public sealed class SyncService
     /// </list>
     /// </para>
     /// </summary>
-    private Task QueueResolutionPullsAsync(ConflictFlag conflict) =>
+    private Task QueueResolutionPullsAsync(ConflictFlag conflict, Guid? exceptMachineId = null) =>
         // Every live machine that syncs the game, not just the conflict's two: the same head change
         // displaces a third machine sitting on the old parent exactly as much as it displaces the
         // loser. QueueHeadPullsAsync already dedupes and already skips machines that are gone —
         // DeleteMachineAsync keeps a deleted machine's versions as history with a null MachineId,
-        // and queueing a command for one would violate the foreign key.
-        QueueHeadPullsAsync(conflict.GameId, exceptMachineId: null, CancellationToken.None);
+        // and queueing a command for one would violate the foreign key. <paramref name="exceptMachineId"/>
+        // is the one machine that already holds the winner (the agent that auto-resolved its own
+        // push); null for the admin path, which tells everyone.
+        QueueHeadPullsAsync(conflict.GameId, exceptMachineId, CancellationToken.None);
 
     /// <summary>Admin: move the head pointer to an earlier version (rollback).</summary>
     public Task<bool> RollbackAsync(Guid gameId, Guid versionId, string by) =>

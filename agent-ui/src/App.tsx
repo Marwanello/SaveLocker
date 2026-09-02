@@ -1,30 +1,63 @@
 import { useEffect, useState, useCallback } from 'react'
 import { HardDrive } from 'lucide-react'
-import type { View, AgentState } from './types'
+import type { View, AgentState, Conflict, TrackedGame } from './types'
 import { api } from './api'
 import { Sidebar } from './components/Sidebar'
 import { StatusHeader } from './components/StatusHeader'
 import { OverviewView } from './components/OverviewView'
 import { AddGamesView } from './components/AddGamesView'
+import { ConflictsView } from './components/ConflictsView'
+import { SyncConflictModal } from './components/SyncConflictModal'
 import { SettingsView } from './components/SettingsView'
 import logoUrl from './assets/SaveLocker_Logo_crop.png'
 
 export default function App() {
   const [view, setView] = useState<View>(() => {
     const hash = window.location.hash.slice(1) as View
-    return (['overview', 'addGames', 'settings'] as View[]).includes(hash) ? hash : 'addGames'
+    return (['overview', 'addGames', 'conflicts', 'settings'] as View[]).includes(hash) ? hash : 'addGames'
   })
   const [state, setState] = useState<AgentState | null>(null)
+  const [conflicts, setConflicts] = useState<Conflict[]>([])
+  const [games, setGames] = useState<TrackedGame[]>([])
+  // Non-null only while the sync-time pop-up is up (Overview's "Sync now" surfaced at least one
+  // conflict). Deliberately separate from `conflicts`: the passive 15s poll below must never open
+  // this on its own — only an explicit Sync now does, so nothing interrupts the user unprompted.
+  const [syncQueue, setSyncQueue] = useState<Conflict[] | null>(null)
 
   const refreshState = useCallback(() => {
     api.state().then(setState).catch(console.error)
   }, [])
+
+  const refreshConflicts = useCallback(async (): Promise<Conflict[]> => {
+    try {
+      const [cs, gs] = await Promise.all([api.conflicts(), api.games()])
+      setConflicts(cs)
+      setGames(gs)
+      return cs
+    } catch (err) {
+      console.error(err)
+      return []
+    }
+  }, [])
+
+  const handleSynced = useCallback(() => {
+    // A "Sync now" request can still be in flight after the user has already navigated to the
+    // Conflicts page themselves — it shows the same conflicts already, so popping the overlay on
+    // top of it would only interrupt the user a second time for information they can already see.
+    refreshConflicts().then(cs => { if (cs.length > 0 && view !== 'conflicts') setSyncQueue(cs) })
+  }, [refreshConflicts, view])
 
   useEffect(() => {
     refreshState()
     const id = setInterval(refreshState, 10_000)
     return () => clearInterval(id)
   }, [refreshState])
+
+  useEffect(() => {
+    refreshConflicts()
+    const id = setInterval(refreshConflicts, 15_000)
+    return () => clearInterval(id)
+  }, [refreshConflicts])
 
   return (
     <div style={{
@@ -56,11 +89,19 @@ export default function App() {
 
         {/* Main row: sidebar nav + content */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          <Sidebar activeView={view} onNavigate={setView} />
+          <Sidebar activeView={view} onNavigate={setView} conflictCount={conflicts.length} />
 
           <div style={{ flex: 1, minWidth: 0, background: '#2A3238', position: 'relative', overflow: 'hidden' }}>
-            {view === 'overview' && <OverviewView state={state} onWarningDismissed={refreshState} />}
+            {view === 'overview' && <OverviewView state={state} onWarningDismissed={refreshState} onSynced={handleSynced} />}
             {view === 'addGames' && <AddGamesView onEnrolled={refreshState} />}
+            {view === 'conflicts' && (
+              <ConflictsView
+                conflicts={conflicts}
+                games={games}
+                machineName={state?.machineName ?? ''}
+                onRefresh={refreshConflicts}
+              />
+            )}
             {view === 'settings' && <SettingsView state={state} onSaved={refreshState} />}
           </div>
         </div>
@@ -77,6 +118,19 @@ export default function App() {
           </div>
           <div style={{ flex: 1, background: '#2A3238' }} />
         </div>
+
+        {/* position: fixed — a true overlay over the whole shell, sidebar included, not scoped to
+            the content pane. Only resolving a side or "Decide later" dismisses it. */}
+        {syncQueue && (
+          <SyncConflictModal
+            queue={syncQueue}
+            games={games}
+            machineName={state?.machineName ?? ''}
+            onResolved={refreshConflicts}
+            onAllDone={() => setSyncQueue(null)}
+            onLater={() => { setSyncQueue(null); setView('conflicts') }}
+          />
+        )}
     </div>
   )
 }

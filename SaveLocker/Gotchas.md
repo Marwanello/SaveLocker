@@ -129,6 +129,14 @@ Set them per-process and clear them afterwards — leaving either set in a shell
 behave in ways that look like bugs.
 
 ## `tests/testenv.ps1` (throwaway test rig)
+- **`build` (any `-Only` target) never fetches or checks out anything itself — it builds whatever
+  commit the WSL clone already has.** `sync` is a separate command that does the fetch+checkout (see
+  *Sync the WSL clone from `git status`* below); running `build -Only deck` right after switching
+  branches on Windows, without an intervening `sync`, silently ships a stale build with no warning —
+  there is nothing in `build` that compares the WSL clone's commit against anything. Confirmed
+  2026-08-31: a `doctor` run against exactly this sequence was missing an entire feature that was
+  very much present in the branch being "tested." Always `sync` before `build` when the branch under
+  test just changed.
 - **The Steam Deck target has no default and must be opted into** — `$env:SAVELOCKER_DECK_HOST` /
   `$env:SAVELOCKER_DECK_SERVER_URL`, unlike every other target here which has a workable Windows/WSL
   default. Leaving `SAVELOCKER_DECK_HOST` unset is the normal state for a session not touching the

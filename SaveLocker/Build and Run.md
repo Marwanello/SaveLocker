@@ -215,6 +215,14 @@ The last command asks for the Deck's password once, to write `authorized_keys`; 
 does. SSH must already be enabled on the Deck (Desktop Mode → Konsole → `passwd` to set one if
 you haven't, then `sudo systemctl enable --now sshd`).
 
+**`build` never fetches or checks out anything by itself** — it builds whatever commit the WSL clone
+already has checked out. Switching branches (or just wanting the latest commit) needs an explicit
+`.\tests\testenv.ps1 sync` first, run from the branch you want on the Windows side; skipping it
+silently ships a stale build with no error, since there's nothing to compare against and complain
+about. Confirmed 2026-08-31: a `doctor` run against a `build -Only deck` that skipped `sync` was
+missing an entire feature (the Phase 5 conflict-resolution "Session" block) that was very much
+present in the source being tested.
+
 `build -Only deck` cross-compiles a **self-contained** linux-x64 publish in WSL (the same packer
 `packaging/linux/build-linux.sh` uses for a real release, just stamped with the test version) —
 SteamOS ships no .NET runtime, so the WSL target's ordinary framework-dependent `dotnet build`
@@ -247,7 +255,7 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 
 | Where | Counts |
 |---|---|
-| Windows, local | win agent bug bounty **114** (reads **113/114** since 2026-08-14 — see [[Backlog]]) · server bug bounty **164** · agent 47 · hardening 33 · local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6 |
+| Windows, local | win agent bug bounty **114** (reads **113/114** since 2026-08-14 — see [[Backlog]]) · server bug bounty **164** · agent 47 · delta upload **17** (new 2026-08-22, `run-delta-upload-tests.ps1`) · hardening 33 · local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6 |
 | Linux, local (WSL ext4) | `run-linux-tests` **63** on `main`, **69** at `4c9f5f5`, **84** after Phase 2, **117** after Phase 3, **123** after Phase 4 of the auto-update work, **137** after Phase 1, **154** after Phase 2, **161** after the Deck hardware pass, **197** after Phase 5 and **208** once the agent UI read the plugin's state live, both of `logs/2026-08-15_decky-plugin.md`, then **216** after `logs/2026-08-15_install-update-now.md` (2026-08-15, same clone) |
 | Linux, in CI | agent 43 · hardening 37 · local-api 30 · concurrency 23 · health 19 · enrollment 16 |
 | Detection | sweep **271/298 (90.9%)** at the default 300 sample, 17 pinned |

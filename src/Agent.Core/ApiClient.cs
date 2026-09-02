@@ -224,30 +224,68 @@ public sealed class ApiClient
         Guid gameId, string contentHash, Guid? parent, bool force, string archivePath,
         Action<long, long>? onProgress = null, CancellationToken ct = default)
     {
-        var beginResp = await _http.PostAsJsonAsync(
-            $"/api/games/{gameId}/upload/begin", new BeginUploadRequest(contentHash, parent, force), ct);
-        if (beginResp.StatusCode == HttpStatusCode.NotFound)
+        var begin = await BeginUploadAsync(gameId, contentHash, parent, force, files: null, ct);
+        if (begin is null)
             return await UploadSingleShotAsync(gameId, contentHash, parent, force, archivePath, onProgress, ct);
-        beginResp.EnsureSuccessStatusCode();
-        var begin = (await beginResp.Content.ReadFromJsonAsync<BeginUploadResponse>(cancellationToken: ct))!;
         if (begin.NoChange is { } noChange) return noChange;
-        var sessionId = begin.SessionId!.Value;
 
+        return await UploadSessionPayloadAsync(gameId, begin.SessionId!.Value, archivePath, onProgress, ct);
+    }
+
+    /// <summary>
+    /// Open an upload session, optionally declaring the agent's full per-file manifest so the server
+    /// can answer with the subset it actually needs fresh bytes for.
+    /// <para>
+    /// Returns <c>null</c> — rather than throwing — when the server has no chunked routes at all, so
+    /// the caller can fall back to <see cref="UploadAsync"/>'s single-shot path. This is deliberately
+    /// only the Begin half: what to build and send afterwards is a sync-policy decision, and it lives
+    /// with the rest of that policy in <c>SyncEngine</c>, not in the HTTP client.
+    /// </para>
+    /// </summary>
+    public async Task<BeginUploadResponse?> BeginUploadAsync(
+        Guid gameId, string contentHash, Guid? parent, bool force, FileManifestEntry[]? files,
+        CancellationToken ct = default)
+    {
+        var resp = await _http.PostAsJsonAsync(
+            $"/api/games/{gameId}/upload/begin",
+            new BeginUploadRequest(contentHash, parent, force, files), ct);
+        if (resp.StatusCode == HttpStatusCode.NotFound) return null;
+        resp.EnsureSuccessStatusCode();
+        return (await resp.Content.ReadFromJsonAsync<BeginUploadResponse>(cancellationToken: ct))!;
+    }
+
+    /// <summary>Send one already-built payload against an already-Begun session and finish it.
+    /// Whether that payload is a full archive or a per-file delta is the caller's business.</summary>
+    public async Task<UploadResult> UploadSessionPayloadAsync(
+        Guid gameId, Guid sessionId, string payloadPath,
+        Action<long, long>? onProgress = null, CancellationToken ct = default)
+    {
+        await StreamChunksAsync(gameId, sessionId, payloadPath, onProgress, ct);
+        return await CompleteChunkedUploadAsync(gameId, sessionId, ct);
+    }
+
+    /// <summary>Stream one archive's bytes through the chunk protocol against an already-Begun
+    /// session — shared by the full-archive and delta-payload upload paths, which differ only in
+    /// which zip they hand this.</summary>
+    private async Task StreamChunksAsync(
+        Guid gameId, Guid sessionId, string archivePath, Action<long, long>? onProgress, CancellationToken ct)
+    {
         var totalBytes = new FileInfo(archivePath).Length;
         onProgress?.Invoke(0, totalBytes);
-        await using (var fs = File.OpenRead(archivePath))
+        await using var fs = File.OpenRead(archivePath);
+        var buffer = new byte[UploadChunkBytes];
+        long offset = 0;
+        int read;
+        while ((read = await ReadFullyAsync(fs, buffer, ct)) > 0)
         {
-            var buffer = new byte[UploadChunkBytes];
-            long offset = 0;
-            int read;
-            while ((read = await ReadFullyAsync(fs, buffer, ct)) > 0)
-            {
-                await PutChunkWithRetryAsync(gameId, sessionId, offset, buffer, read, ct);
-                offset += read;
-                onProgress?.Invoke(offset, totalBytes);
-            }
+            await PutChunkWithRetryAsync(gameId, sessionId, offset, buffer, read, ct);
+            offset += read;
+            onProgress?.Invoke(offset, totalBytes);
         }
+    }
 
+    private async Task<UploadResult> CompleteChunkedUploadAsync(Guid gameId, Guid sessionId, CancellationToken ct)
+    {
         var completeResp = await _http.PostAsync($"/api/games/{gameId}/upload/{sessionId}/complete", null, ct);
         completeResp.EnsureSuccessStatusCode();
         return (await completeResp.Content.ReadFromJsonAsync<UploadResult>(cancellationToken: ct))!;
@@ -285,21 +323,49 @@ public sealed class ApiClient
     {
         for (var attempt = 1; ; attempt++)
         {
+            var last = attempt >= UploadChunkMaxAttempts;
+            HttpResponseMessage resp;
             try
             {
                 using var content = new ByteArrayContent(buffer, 0, count);
                 content.Headers.ContentType = new("application/octet-stream");
-                var resp = await _http.PutAsync(
+                resp = await _http.PutAsync(
                     $"/api/games/{gameId}/upload/{sessionId}/chunk?offset={offset}", content, ct);
-                resp.EnsureSuccessStatusCode();
-                return;
             }
-            catch (HttpRequestException) when (attempt < UploadChunkMaxAttempts && !ct.IsCancellationRequested)
+            // OperationCanceledException as well as HttpRequestException: ServerHttp sets no
+            // Timeout, so a chunk that stalls mid-body trips HttpClient's own 100s default and
+            // surfaces as a CANCELLATION, not as a request exception — which is precisely the
+            // transient stall this retry layer exists for, and it used to fall straight through
+            // it. A cancellation the caller actually asked for is still fatal: the filter checks.
+            catch (Exception ex) when (!last && IsTransientTransportFailure(ex, ct))
             {
                 await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), ct);
+                continue;
             }
+
+            // The status is judged here rather than by EnsureSuccessStatusCode inside the try, so
+            // that a refusal the server will repeat verbatim is not slept on three times first and
+            // cannot be mistaken for a transport hiccup by the filter above. A 409 (offset
+            // mismatch) or 413 (over the cap) is the server's settled answer about this session.
+            using (resp)
+            {
+                if (resp.IsSuccessStatusCode) return;
+                if (last || !IsRetryableStatus(resp.StatusCode)) resp.EnsureSuccessStatusCode();
+            }
+            await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), ct);
         }
     }
+
+    /// <summary>A failure to get any answer at all, worth another attempt. A cancellation the
+    /// CALLER requested is excluded — that is a shutdown, not a hiccup.</summary>
+    private static bool IsTransientTransportFailure(Exception ex, CancellationToken ct) =>
+        !ct.IsCancellationRequested &&
+        (ex is HttpRequestException || ex is OperationCanceledException || ex is IOException);
+
+    /// <summary>Worth another attempt with the same bytes at the same offset. Everything else the
+    /// server answers about a chunk is a decision, not a hiccup.</summary>
+    private static bool IsRetryableStatus(HttpStatusCode status) =>
+        (int)status >= 500 || status == HttpStatusCode.RequestTimeout;
 
     /// <summary>
     /// Fill <paramref name="buffer"/> as full as the stream allows before returning. A single
@@ -338,5 +404,82 @@ public sealed class ApiClient
             await resp.Content.CopyToAsync(fs, ct);
 
         return (versionId, hash);
+    }
+
+    // ---- Conflicts ----
+    //
+    // Resolution lives in the agent now: the server records a divergence and keeps both versions, and
+    // it is the agent that fetches the policy, decides, and calls resolve. These mirror the admin
+    // conflict routes, reached with this machine's own key rather than the admin password.
+
+    /// <summary>Every open conflict the server currently holds, newest-active first.</summary>
+    public async Task<List<ConflictDto>> GetOpenConflictsAsync(CancellationToken ct = default) =>
+        await _http.GetFromJsonAsync<List<ConflictDto>>("/api/agent/conflicts", ct) ?? new();
+
+    /// <summary>One conflict by id, or null if the server does not know it (a stale reference, or a
+    /// server too old to have this route).</summary>
+    public async Task<ConflictDto?> GetConflictAsync(Guid conflictId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/agent/conflicts/{conflictId}", ct);
+        if (resp.StatusCode is HttpStatusCode.NotFound) return null;
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<ConflictDto>(cancellationToken: ct);
+    }
+
+    /// <summary>
+    /// Resolve a conflict by naming the winning version. The caller decides which side wins (its own
+    /// local save or the cloud's); <paramref name="keepBoth"/> also protects the losing version as a
+    /// downloadable backup instead of leaving it as ordinary, prunable history. Returns (false, why)
+    /// rather than throwing on a refusal the server states — most usefully the rewind guard.
+    /// </summary>
+    public async Task<(bool ok, string? error)> ResolveConflictAsync(
+        Guid conflictId, Guid winningVersionId, bool keepBoth = false, CancellationToken ct = default)
+    {
+        var url = $"/api/agent/conflicts/{conflictId}/resolve?version={winningVersionId}";
+        if (keepBoth) url += "&keepBoth=true";
+        var resp = await _http.PostAsync(url, null, ct);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    /// <summary>A game's stored conflict policy, or null if the game or the route is unknown (an
+    /// older server) — the caller treats null as "no auto-policy, leave it for a human".</summary>
+    public async Task<ConflictPolicyDto?> GetConflictPolicyAsync(Guid gameId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/conflict-policy", ct);
+        if (resp.StatusCode is HttpStatusCode.NotFound) return null;
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<ConflictPolicyDto>(cancellationToken: ct);
+    }
+
+    /// <summary>Set a game's conflict policy (Decky settings / CLI). One shared fleet setting.</summary>
+    public async Task SetConflictPolicyAsync(
+        Guid gameId, ConflictPolicy policy, Guid? preferredMachineId, CancellationToken ct = default)
+    {
+        var resp = await _http.PostAsJsonAsync(
+            $"/api/agent/games/{gameId}/conflict-policy",
+            new SetConflictPolicyRequest(policy, preferredMachineId), ct);
+        resp.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>One version's own DTO by id — machine name, timestamp, size — null if the server does
+    /// not know it. A conflict card needs this for both of a conflict's sides; the conflict itself
+    /// only carries version ids.</summary>
+    public async Task<SaveVersionDto?> GetVersionAsync(Guid versionId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/versions/{versionId}", ct);
+        if (resp.StatusCode is HttpStatusCode.NotFound) return null;
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<SaveVersionDto>(cancellationToken: ct);
+    }
+
+    /// <summary>File count / newest-mtime for one version, derived from its archive on demand — the
+    /// same comparison the dashboard's own conflict card already shows.</summary>
+    public async Task<VersionStatsDto?> GetVersionStatsAsync(Guid versionId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/versions/{versionId}/stats", ct);
+        if (resp.StatusCode is HttpStatusCode.NotFound) return null;
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<VersionStatsDto>(cancellationToken: ct);
     }
 }

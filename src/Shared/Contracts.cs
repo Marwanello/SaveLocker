@@ -212,6 +212,12 @@ public record SaveVersionDto(
     Guid? ParentVersionId,
     bool Protected = false);
 
+/// <summary>File count and newest per-file write time inside one version's archive — derived from
+/// the zip on demand (<see cref="SaveLocker.Shared.SaveArchive.GetArchiveStats"/>), not stored on
+/// <see cref="SaveVersionDto"/>, so fetching it costs nothing for the versions nobody is looking at.
+/// Mainly for telling apart the two sides of an open conflict.</summary>
+public record VersionStatsDto(int FileCount, DateTime? NewestFileWriteUtc);
+
 [JsonConverter(typeof(JsonStringEnumConverter<UploadStatus>))]
 public enum UploadStatus
 {
@@ -220,7 +226,14 @@ public enum UploadStatus
     /// <summary>Incoming content matches the current head; nothing changed.</summary>
     NoChange,
     /// <summary>Incoming version diverged from the head; a conflict was recorded.</summary>
-    Conflict
+    Conflict,
+    /// <summary>
+    /// A delta upload was negotiated against a head that moved before it completed (another
+    /// machine pushed in between) — the partial payload can no longer be safely reconstructed
+    /// against the base it was diffed from. Never surfaced to <c>SyncEngine</c>: <c>ApiClient</c>
+    /// retries transparently with a full archive, the same one a diverged push always sends.
+    /// </summary>
+    RetryFull
 }
 
 public record UploadResult(
@@ -230,11 +243,33 @@ public record UploadResult(
 
 // ----- Upload (chunked) -----
 
-public record BeginUploadRequest(string ContentHash, Guid? ParentVersionId, bool Force);
+/// <summary>One file's identity within a save folder, as the agent currently sees it on disk.
+/// Enough to tell the server which paths it can copy forward from the current head unchanged and
+/// which need fresh bytes, without re-transmitting or re-hashing content that did not change.</summary>
+public record FileManifestEntry(string Path, string Sha256, long Size);
+
+/// <param name="Files">
+/// The agent's COMPLETE current file manifest for this game (every file, not just changed ones) —
+/// optional so an older agent, a forced/first-ever push, or a save below the delta-worthwhile size
+/// floor can omit it and get exactly today's whole-archive behavior. When present it doubles as the
+/// full declared truth of "what should exist" (mirrors how <c>RestoreArchive</c> already treats
+/// "absent from the archive" as a deletion) — no separate removed-paths list is needed.
+/// </param>
+public record BeginUploadRequest(
+    string ContentHash, Guid? ParentVersionId, bool Force, FileManifestEntry[]? Files = null);
 
 /// <summary>Either <see cref="SessionId"/> is set and the caller uploads chunks against it, or
-/// <see cref="NoChange"/> is set and there is nothing to send — the server already has this content.</summary>
-public record BeginUploadResponse(Guid? SessionId, UploadResult? NoChange);
+/// <see cref="NoChange"/> is set and there is nothing to send — the server already has this content.
+/// <para>
+/// <paramref name="UseDeltaPath"/> is only meaningful when a <see cref="SessionId"/> came back and
+/// <see cref="BeginUploadRequest.Files"/> was sent: true means the server has a stored per-file
+/// manifest for its current head and the agent should zip and send only <paramref name="NeedPaths"/>;
+/// false means send the whole archive exactly as before (a diverged/forced/first-ever push, or a
+/// head with no stored manifest yet — self-healing once one push completes with a manifest).
+/// </para>
+/// </summary>
+public record BeginUploadResponse(
+    Guid? SessionId, UploadResult? NoChange, bool UseDeltaPath = false, string[]? NeedPaths = null);
 
 public record ChunkAppendResponse(long BytesReceived);
 
@@ -549,6 +584,20 @@ public enum ConflictPolicy
 }
 
 public record SetConflictPolicyRequest(ConflictPolicy Policy, Guid? PreferredMachineId = null);
+
+/// <summary>A game's current conflict policy as an agent reads it back to evaluate locally — the
+/// server stores it but no longer acts on it (see <see cref="ConflictPolicy"/>).</summary>
+public record ConflictPolicyDto(ConflictPolicy Policy, Guid? PreferredMachineId = null);
+
+/// <summary>
+/// Whether this machine's local save matches the server's current head, without downloading it —
+/// the cheap "am I in sync?" check a frontend can poll. <paramref name="InSync"/> compares the local
+/// content hash against the head's; <paramref name="HasOpenConflict"/> and
+/// <paramref name="ConflictId"/> surface an open divergence for this game so a chip can link straight
+/// to it. Computed agent-side (only the agent can hash the local folder); the head hash comes from
+/// the state the server already serves.
+/// </summary>
+public record SyncStatusDto(bool InSync, bool HasOpenConflict, Guid? ConflictId = null);
 
 // ----- Server / console build identity -----
 

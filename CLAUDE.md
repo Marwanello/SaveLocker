@@ -6,7 +6,10 @@ Read `SaveLocker/CONTEXT.md` and `SaveLocker/REPO_MAP.md` before doing anything 
 
 ## Vault structure
 
-The Obsidian vault is at `SaveLocker/` (repo root). It is flat by design — no deep nesting.
+The Obsidian vault is at `SaveLocker/` (repo root). It is flat by design — no deep nesting — with one
+deliberate exception: `SaveLocker/tasks/conflict-resolution-ui/` holds a standing, multi-session design
+doc set (`plan.md`, `implementation-grouping.md`, `reference/*`) too large for one flat file; it is read
+as reference material, not fed as a one-shot task file the way `tasks/*.md` is.
 
 | File | When to read it |
 |------|----------------|

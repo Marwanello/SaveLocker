@@ -153,6 +153,14 @@ $volume    = 'savelocker-test-data'
 $serverUrl = "http://localhost:$ConsolePort"
 $winState  = Join-Path $StateRoot 'SaveLocker'
 
+# Not a formality — the same check, and the same reason, as testenv-deck.sh's own: `clean` below
+# reaches a `Remove-Item -Recurse -Force` on $StateRoot, and $StateRoot comes from -StateRoot or
+# $env:SAVELOCKER_TEST_ROOT. Refuse anything that doesn't look like a test directory, so a blank or
+# mistyped value can never resolve to something real like %LOCALAPPDATA% itself.
+if ($StateRoot -notlike '*SaveLocker-test*') {
+    throw "refusing to operate - StateRoot '$StateRoot' doesn't look like a test directory (it must contain 'SaveLocker-test')"
+}
+
 # The directory name Decky loads plugins by AND the display name plugin.json/the bundle carry once
 # staged — both deliberately different from the real plugin ("SaveLocker"), so the two can be
 # installed on the same Deck at once without Decky treating them as the same plugin and without a
@@ -446,7 +454,14 @@ function New-DeckyPluginTestStage {
     Set-Content $bundlePath $bundleNew -NoNewline
 
     $mainPyPath = Join-Path $stage 'main.py'
-    $mainPy = Get-Content $mainPyPath -Raw
+    # Normalised to LF up front, and every multi-line needle below normalised the same way, so none
+    # of the .Contains/.Replace calls depends on how main.py happened to be checked out. SaveLocker-
+    # Decky is its OWN repo, so this one's .gitattributes cannot decide that: a `*.py text eol=lf`
+    # there (an ordinary Python convention) checks the file out LF even on Windows, and a CRLF-only
+    # needle would then match nothing. .Contains/.Replace are literal, so the mismatch is silent
+    # until the `throw` after each substitution fires and takes the whole test-plugin build with it.
+    # LF is also simply the right thing to ship: this file is about to be scp'd to a Steam Deck.
+    $mainPy = (Get-Content $mainPyPath -Raw) -replace "`r`n", "`n"
 
     $agentOld = 'AGENT = "http://127.0.0.1:5178"'
     $agentNew = 'AGENT = "http://127.0.0.1:5177"'
@@ -458,30 +473,32 @@ function New-DeckyPluginTestStage {
     if (-not $mainPy.Contains($stateDirOld)) { throw "main.py: _state_dir's return line not found - stage aborted" }
     $mainPy = $mainPy.Replace($stateDirOld, $stateDirNew)
 
-    $binaryOld = @"
+    # Both here-strings carry THIS file's own line endings (CRLF in a Windows checkout), so they get
+    # the same LF normalisation $mainPy did above - otherwise the needle's endings, not main.py's,
+    # decide whether the match lands.
+    $binaryOld = (@"
     for candidate in (
         os.path.join(home, ".local", "share", "SaveLocker", "savelocker"),
         os.path.join(home, ".local", "bin", "savelocker"),
     ):
-"@
-    $binaryNew = @"
+"@) -replace "`r`n", "`n"
+    $binaryNew = (@"
     for candidate in (
         os.path.join(home, "savelocker-test", "savelocker"),
     ):
-"@
+"@) -replace "`r`n", "`n"
     if (-not $mainPy.Contains($binaryOld)) { throw "main.py: _agent_binary's candidate tuple not found - stage aborted" }
     $mainPy = $mainPy.Replace($binaryOld, $binaryNew)
 
-    # `r`n, not `n: main.py is checked out CRLF (Windows git), and .Contains/.Replace are literal -
-    # an LF-only needle never matches a CRLF haystack, which is exactly how the first version of
-    # this silently no-op'd instead of throwing (caught by actually running this against a real
-    # checkout, not by inspection).
-    $restartOld = "    async def restart_agent(self):`r`n"
-    $restartGuard = "    async def restart_agent(self):`r`n" +
-        "        # Test build (testenv.ps1): the Deck test daemon is a transient systemd --user scope, not`r`n" +
-        "        # savelocker.service, so this must never reach for that unit - it would restart the real,`r`n" +
-        "        # live agent instead of anything belonging to this plugin.`r`n" +
-        "        return {`"ok`": False, `"reason`": `"test-build-no-restart`"}`r`n"
+    # `n, matching the LF-normalised $mainPy above. .Contains/.Replace are literal, so needle and
+    # haystack have to agree on line endings; normalising the haystack once is what lets every
+    # needle here be written the simple way instead of guessing the checkout's endings.
+    $restartOld = "    async def restart_agent(self):`n"
+    $restartGuard = "    async def restart_agent(self):`n" +
+        "        # Test build (testenv.ps1): the Deck test daemon is a transient systemd --user scope, not`n" +
+        "        # savelocker.service, so this must never reach for that unit - it would restart the real,`n" +
+        "        # live agent instead of anything belonging to this plugin.`n" +
+        "        return {`"ok`": False, `"reason`": `"test-build-no-restart`"}`n"
     if (-not $mainPy.Contains($restartOld)) { throw "main.py: restart_agent's def line not found - stage aborted" }
     $mainPy = $mainPy.Replace($restartOld, $restartGuard)
 
@@ -836,10 +853,16 @@ switch ($Command) {
         $changed = & git -C $root status --porcelain |
             ForEach-Object { $_.Substring(3).Trim('"') } |
             Where-Object { $_ -and (Test-Path (Join-Path $root $_)) }
-        if (-not $changed) { Write-Host 'nothing changed to sync'; break }
+        # The branch fetch+checkout (inside Invoke-Wsl's own 'sync' handling) must run even with a
+        # clean tree — that's exactly the state right after a commit, and skipping it here is what
+        # left the clone stuck on a stale, unrelated commit with no way to reach the current one
+        # short of hand-editing this file's own uncommitted-changes list. Always pass a (possibly
+        # empty) file so cmd_sync's `read` loop hits EOF from a real redirect rather than whatever
+        # this process's own stdin happens to be.
         $list = Join-Path $env:TEMP 'savelocker-testenv-sync.txt'
         Set-Content -Path $list -Value $changed -Encoding ASCII
-        Say "syncing $($changed.Count) changed file(s) into the WSL clone"
+        if ($changed) { Say "syncing $($changed.Count) changed file(s) into the WSL clone" }
+        else { Say 'no uncommitted changes — fetching the current branch into the WSL clone' }
         Invoke-Wsl 'sync' $list
         Remove-Item $list -ErrorAction SilentlyContinue
     }

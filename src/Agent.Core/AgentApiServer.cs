@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi;
+using SaveLocker.Shared;
 
 namespace SaveLocker.Agent;
 
@@ -40,6 +41,8 @@ public sealed class AgentApiServer : IDisposable
     // "Sync all" for the Overview page's button — same operation the tray menu offers, resolved
     // against whichever engine and game list are current at the moment it is clicked.
     private readonly Func<Task<string>> _syncAll;
+    // One sync at a time, however many surfaces are offering the button — see /api/sync.
+    private readonly SemaphoreSlim _syncGate = new(1, 1);
     private readonly string _uiRoot;
     private readonly LocalAuth _auth;
     // Lease warnings are persisted, not held in memory: the Linux launch wrapper is a separate
@@ -591,8 +594,18 @@ public sealed class AgentApiServer : IDisposable
         // The Overview page's "Sync now" button: pull then push every tracked game, same as the tray
         // menu's "Sync All". Fire-and-poll from the UI's side — the response is a summary line, and
         // progress for whichever game is mid-sync shows up on the next /api/activity poll regardless.
-        app.MapPost("/api/sync", async () => new SyncNowResponse(await _syncAll()))
-            .Produces<SyncNowResponse>();
+        //
+        // Single-flight: this route holds its request open for the whole sync, and there are now
+        // three buttons wired to it (the browser card, Game Mode, and whatever else asks). Two
+        // presses used to start two overlapping SyncAllAsync runs racing each other's leases; the
+        // second caller is now told what is already happening instead.
+        app.MapPost("/api/sync", async () =>
+        {
+            if (!await _syncGate.WaitAsync(0))
+                return new SyncNowResponse("A sync is already running — watch the activity feed.");
+            try { return new SyncNowResponse(await _syncAll()); }
+            finally { _syncGate.Release(); }
+        }).Produces<SyncNowResponse>();
 
         app.MapGet("/api/agent-version", () =>
         {
@@ -607,6 +620,140 @@ public sealed class AgentApiServer : IDisposable
                 staged?.Version,
                 staged?.BlockedReason);
         }).Produces<AgentVersionDto>();
+
+        // ---- Conflicts (local API) ----
+        //
+        // Every frontend — the CLI, the Decky plugin, a future Playnite plugin — reaches conflict
+        // resolution through this loopback API, never the server directly, so the resolution logic
+        // has one home (Agent.Core) and nobody reimplements it. These proxy the machine-key
+        // agent-group routes on the server with this machine's own credentials, wrapped in try/catch
+        // like /api/config and /api/register: the upstream server can be as unreachable here as on
+        // any other route in this file, and that must not surface as a bare, bodiless 500.
+        app.MapGet("/api/conflicts",
+            async Task<Results<Ok<ConflictDto[]>, InternalServerError<ErrorResponse>>> () =>
+        {
+            try
+            {
+                // The server route this proxies is deliberately unscoped (a machine key sees every
+                // open conflict; "its own frontend decides what to show" — see Program.cs). This is
+                // that decision: only conflicts this machine is actually a party to, the same "no
+                // bystander case" filter the CLI's `conflicts` command applies.
+                var mine = (await ApiClient.For(_config).GetOpenConflictsAsync())
+                    .Where(c => c.MachineId == _config.MachineId)
+                    .ToArray();
+                return TypedResults.Ok(mine);
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        app.MapGet("/api/conflicts/{id:guid}",
+            async Task<Results<Ok<ConflictDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            try
+            {
+                return await ApiClient.For(_config).GetConflictAsync(id) is { } c
+                    ? TypedResults.Ok(c) : TypedResults.NotFound();
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        // The caller names the winning version — it knows which side is its own local save (the
+        // conflict's VersionB, this machine's push) and which is the cloud's (VersionA, the head it
+        // diverged from). keepBoth also protects the loser as a downloadable backup.
+        app.MapPost("/api/conflicts/{id:guid}/resolve",
+            async Task<Results<Ok<OkResponse>, BadRequest<ErrorResponse>>> (Guid id, LocalResolveRequest body) =>
+        {
+            try
+            {
+                var (ok, error) = await ApiClient.For(_config)
+                    .ResolveConflictAsync(id, body.WinningVersionId, body.KeepBoth);
+                return ok
+                    ? TypedResults.Ok(new OkResponse())
+                    : TypedResults.BadRequest(new ErrorResponse(error ?? "Could not resolve the conflict."));
+            }
+            catch (Exception ex) { return TypedResults.BadRequest(new ErrorResponse(ex.Message)); }
+        });
+
+        app.MapGet("/api/games/{id:guid}/conflict-policy",
+            async Task<Results<Ok<ConflictPolicyDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            try
+            {
+                return await ApiClient.For(_config).GetConflictPolicyAsync(id) is { } p
+                    ? TypedResults.Ok(p) : TypedResults.NotFound();
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        app.MapPost("/api/games/{id:guid}/conflict-policy",
+            async Task<Results<Ok<OkResponse>, InternalServerError<ErrorResponse>>>
+                (Guid id, SetConflictPolicyRequest body) =>
+        {
+            try
+            {
+                await ApiClient.For(_config).SetConflictPolicyAsync(id, body.Policy, body.PreferredMachineId);
+                return TypedResults.Ok(new OkResponse());
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        // A conflict only carries version ids; these fill in machine name/timestamp/size and the
+        // file-count/newest-change comparison for each side, the same two calls the dashboard's own
+        // conflict card already makes, mirrored here for agent-ui's Conflicts page (Phase 6).
+        app.MapGet("/api/versions/{id:guid}",
+            async Task<Results<Ok<SaveVersionDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            try
+            {
+                return await ApiClient.For(_config).GetVersionAsync(id) is { } v
+                    ? TypedResults.Ok(v) : TypedResults.NotFound();
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        app.MapGet("/api/versions/{id:guid}/stats",
+            async Task<Results<Ok<VersionStatsDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            try
+            {
+                return await ApiClient.For(_config).GetVersionStatsAsync(id) is { } s
+                    ? TypedResults.Ok(s) : TypedResults.NotFound();
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        // "Is my local save the same as the cloud's, without downloading it" — cheap on the network
+        // (no bytes cross the wire), NOT cheap on disk: the local hash still walks and reads every
+        // file in the save folder, the same cost a push's own hash pays, so it runs off the request
+        // thread via Task.Run instead of blocking it. The head hash comes from the state the server
+        // already serves; the local hash is computed here, because only the agent can see the save
+        // folder. Decision 6 of the conflict-resolution plan.
+        app.MapGet("/api/games/{id:guid}/sync-status",
+            async Task<Results<Ok<SyncStatusDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.NotFound();
+
+            try
+            {
+                var api = ApiClient.For(_config);
+                var state = await api.GetStateAsync(id);
+                var headHash = state?.Head?.ContentHash;
+                var localHash = !string.IsNullOrWhiteSpace(game.SaveDirectory) && Directory.Exists(game.SaveDirectory)
+                    ? await Task.Run(() => SaveArchive.HashDirectory(game.SaveDirectory, game.ExcludeGlobs))
+                    : null;
+                var inSync = headHash is not null && localHash is not null &&
+                             string.Equals(headHash, localHash, StringComparison.OrdinalIgnoreCase);
+
+                var hasConflict = state?.HasOpenConflict == true;
+                Guid? conflictId = hasConflict
+                    ? (await api.GetOpenConflictsAsync())
+                        .FirstOrDefault(c => c.GameId == id && c.MachineId == _config.MachineId)?.Id
+                    : null;
+                return TypedResults.Ok(new SyncStatusDto(inSync, hasConflict, conflictId));
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
     }
 
     /// <summary>
@@ -796,15 +943,23 @@ public sealed record CandidateDto(
 /// <see cref="TrackedGame.PullBeforeLaunchEnabled"/>.
 /// </param>
 /// <param name="HasSteamCloud">
-/// Whether this game was enrolled as a genuinely Steam-sourced install — see
-/// <see cref="TrackedGame.HasSteamCloud"/>, decided once at enrollment, not a live lookup. A Decky
-/// plugin needs this, not <paramref name="SteamAppId"/>, to decide whether its own pre-launch pull
-/// would race Steam's own Cloud sync — an AppID alone can't tell a real Steam install apart from a
-/// non-Steam shortcut run under Proton, which gets a compatdata prefix too.
+/// Whether this game was enrolled as a genuinely Steam-sourced install, or <b>null when nothing has
+/// established that</b> — see <see cref="TrackedGame.HasSteamCloud"/>, decided once at enrollment,
+/// not a live lookup. A Decky plugin needs this, not <paramref name="SteamAppId"/>, to decide
+/// whether its own pre-launch pull would race Steam's own Cloud sync — an AppID alone can't tell a
+/// real Steam install apart from a non-Steam shortcut run under Proton, which gets a compatdata
+/// prefix too. Null means "unknown, use your own heuristic", not "no Steam Cloud".
 /// </param>
+/// <remarks>
+/// <see cref="Id"/> and <see cref="Path"/> keep those names, rather than the GameId/SaveDirectory
+/// the config-side properties use, because this record IS the <c>/api/games</c> wire contract and
+/// the Decky plugin reading it ships from its own repo on its own update channel. Renaming them
+/// would break every already-installed plugin the moment an agent updated ahead of it, for nothing
+/// — the four fields after them are additive, so an older reader keeps working untouched.
+/// </remarks>
 public sealed record TrackedGameDto(
-    Guid GameId, string Name, string SaveDirectory, string[] ProcessNames, string? Alias,
-    uint? SteamAppId, bool? PullBeforeLaunchEnabled, bool HasSteamCloud);
+    Guid Id, string Name, string Path, string[] ProcessNames, string? Alias,
+    uint? SteamAppId, bool? PullBeforeLaunchEnabled, bool? HasSteamCloud);
 
 public sealed record ProcessNamesRequest(string[]? ProcessNames);
 public sealed record AliasRequest(string? Alias);
@@ -913,6 +1068,12 @@ public sealed record RegisterRequest(string? AdminPassword = null);
 /// </param>
 public sealed record FolderRequest(string? Path, bool Confirm = false);
 public sealed record DismissWarningRequest(string? GameName);
+/// <param name="WinningVersionId">
+/// The version to keep — the conflict's VersionB to keep this machine's local save, VersionA to keep
+/// the cloud's. The frontend reads both ids off the conflict.
+/// </param>
+/// <param name="KeepBoth">Also protect the losing version as a downloadable backup.</param>
+public sealed record LocalResolveRequest(Guid WinningVersionId, bool KeepBoth = false);
 public sealed record OkResponse(bool Ok = true);
 public sealed record ErrorResponse(string Error);
 public sealed record EnrollResponse(int Enrolled, int Skipped);

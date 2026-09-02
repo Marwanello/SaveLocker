@@ -346,6 +346,57 @@ check "doctor finds the Heroic config root" "$(contains "${out}" "${HEROIC_CONFI
 check "doctor names the wine-shaped prefix"  "$(contains "${out}" "(wine, user deck)")"
 check "doctor names the proton-shaped prefix" "$(contains "${out}" "(proton, user steamuser)")"
 
+# ── Session (DesktopEnvironment, Phase 5 of tasks/conflict-resolution-ui/plan.md) ─────────────
+# This harness runs with no graphical session, no D-Bus session bus, and no INVOCATION_ID — the
+# same shape as a Deck reached over a bare SSH shell. That baseline is exactly what the previous
+# `doctor` call above already captured in `out`, so no extra invocation is needed for it.
+check "no session: graphical session reported no"   "$(contains "${out}" "graphical session: no")"
+check "no session: D-Bus session bus reported no"   "$(contains "${out}" "D-Bus session bus: no")"
+check "no session: notification daemon unconfirmed" "$(contains "${out}" "notification daemon: no (or unconfirmed)")"
+check "no session: reported as an interactive process, not the unit" \
+  "$(contains "${out}" "running as: interactive process")"
+
+# IsInteractiveTty depends on the harness's OWN stdin, which varies by how this script is invoked
+# (a developer's real terminal vs. CI's redirected/closed one) — `< /dev/null` pins it here so the
+# check is deterministic regardless.
+out_no_tty="$(agent doctor --config "${deck_cfg}" < /dev/null)"
+check "no session: interactive terminal reported no" \
+  "$(contains "${out_no_tty}" "interactive terminal: no")"
+
+# A bus address set but pointing at nothing real (a stale/copied env var) must not read as a real
+# bus — presence of the variable alone is not the claim this makes. Uses its own variable, not
+# `out`: the MoonDeck checks further below still read `out` from the base doctor call above it.
+env_out="$(WAYLAND_DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS="unix:path=${scratch}/no-such-bus.sock" \
+  agent doctor --config "${deck_cfg}")"
+check "graphical session set is reported" "$(contains "${env_out}" "graphical session: yes")"
+check "a bus address pointing at nothing is reported as no bus" \
+  "$(contains "${env_out}" "D-Bus session bus: no")"
+
+# A real, connectable socket with nothing implementing the D-Bus protocol behind it: HasSessionBus
+# and NotificationDaemonPresent must disagree — this is the exact "bus present, nothing listening
+# for notifications" state the escalation ladder's rung 1 exists to distinguish from "no bus at
+# all" above. The 2s bound on DesktopEnvironment's own gdbus call (not this test) is what keeps
+# this case fast instead of hanging on a handshake nothing will ever complete.
+fake_bus_sock="${scratch}/fake-session-bus.sock"
+python3 -c "
+import socket, sys, time
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.bind(sys.argv[1])
+s.listen(1)
+time.sleep(30)
+" "${fake_bus_sock}" &
+fake_bus_pid=$!
+for _ in $(seq 1 50); do [ -S "${fake_bus_sock}" ] && break; sleep 0.1; done
+env_out="$(DBUS_SESSION_BUS_ADDRESS="unix:path=${fake_bus_sock}" agent doctor --config "${deck_cfg}")"
+kill "${fake_bus_pid}" 2>/dev/null; wait "${fake_bus_pid}" 2>/dev/null
+check "a connectable socket is reported as a real bus" "$(contains "${env_out}" "D-Bus session bus: yes")"
+check "no real protocol behind it still reads as unconfirmed, not a crash or a hang" \
+  "$(contains "${env_out}" "notification daemon: no (or unconfirmed)")"
+
+env_out="$(INVOCATION_ID=test-unit agent doctor --config "${deck_cfg}")"
+check "INVOCATION_ID is reported as running under the systemd unit" \
+  "$(contains "${env_out}" "running as: systemd --user unit")"
+
 # A MoonDeck shortcut's own AppID never gets a prefix, and doctor must not stop at that — it has to
 # say the real local prefix its LaunchOptions names DOES exist, since that is what makes the "no
 # prefix, launch it once" advice above wrong for this specific shortcut.
@@ -918,6 +969,10 @@ host_plugin() {   # $1 zip, $2 version
 # ---- No Decky at all: silent, and never an error ----
 # Almost every machine. A plugin updater that complains on a box that has never heard of Decky is
 # one an admin learns to ignore, taking the real reports with it.
+# Fixture setup already created $HOME/homebrew/plugins/moondeck (an unrelated MoonDeck fixture), and
+# DeckyPresent checks for exactly that parent directory's existence — clear it first, or this
+# section finds Decky "present" via someone else's leftover and never reaches the branch under test.
+rm -rf "${HOME}/homebrew"
 out="$(agent plugin-update --config "${deck_cfg}")"; plugin_rc=$?
 check "no Decky: plugin-update exits 0"           "${plugin_rc}"
 check "no Decky: it says why"                     "$(contains "${out}" "Decky Loader is not installed")"

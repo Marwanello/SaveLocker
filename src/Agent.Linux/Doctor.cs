@@ -34,6 +34,19 @@ public static class Doctor
             $"cannot write to {config.StateDir} — the agent cannot save its config or queue.");
 
         Console.WriteLine();
+        Section("Session");
+        // Purely informational — none of these are a Problem. A bare SSH shell with no graphical
+        // session or notification daemon is a normal, common, entirely valid state; this exists so
+        // "why didn't a popup/notification show up" has an answer that isn't a guess
+        // (tasks/conflict-resolution-ui/plan.md, Phase 5).
+        var env = DesktopEnvironment.Detect();
+        Info("graphical session", env.HasGraphicalSession ? "yes" : "no");
+        Info("D-Bus session bus", env.HasSessionBus ? "yes" : "no");
+        Info("notification daemon", env.NotificationDaemonPresent ? "yes" : "no (or unconfirmed)");
+        Info("interactive terminal", env.IsInteractiveTty ? "yes" : "no");
+        Info("running as", env.RunningAsSystemdUnit ? "systemd --user unit" : "interactive process");
+
+        Console.WriteLine();
         Section("Server");
         Info("url", config.ServerUrl);
         if (string.IsNullOrEmpty(config.ApiKey))
@@ -42,6 +55,10 @@ public static class Doctor
             Info("machine", $"{config.MachineName} ({config.MachineId})");
         await CheckServerAsync(config);
         await ReportUpdateAsync(config);
+
+        Console.WriteLine();
+        Section("Conflicts");
+        await ReportConflictsAsync(config);
 
         Console.WriteLine();
         Section("Steam");
@@ -364,6 +381,56 @@ public static class Doctor
         {
             Problem($"server answered {(int)status} but the game list could not be read: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// One line per open conflict, plus the URL to resolve it — a gap Phase 0/1 left open despite its
+    /// own write-up calling for it (tasks/conflict-resolution-ui/plan.md, Phase 6). This is what makes
+    /// the local web chooser (agent-ui's Conflicts page, served by this same daemon at :5178 — rung 4
+    /// of the escalation ladder, reachable headless over an SSH tunnel) actually <i>discoverable</i>
+    /// rather than merely reachable. Never a Problem: an open conflict under a Manual policy is a
+    /// safe, expected terminal state, not a fault in the agent — Info-severity events read the same
+    /// way in the console for the same reason.
+    /// </summary>
+    private static async Task ReportConflictsAsync(AgentConfig config)
+    {
+        if (string.IsNullOrEmpty(config.ApiKey))
+        {
+            Console.WriteLine("  (not registered — see Server, above)");
+            return;
+        }
+
+        List<ConflictDto> conflicts;
+        try
+        {
+            // Only conflicts this machine is actually a party to — the same "no bystander case" filter
+            // `savelocker conflicts` applies (AgentCli.cs), so the two commands agree on the count.
+            conflicts = (await ApiClient.For(config).GetOpenConflictsAsync())
+                .Where(c => c.MachineId == config.MachineId)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  could not be checked: {ex.Message}");
+            return;
+        }
+
+        if (conflicts.Count == 0)
+        {
+            Console.WriteLine("  no open conflicts.");
+            return;
+        }
+
+        foreach (var c in conflicts)
+        {
+            var name = config.Games.FirstOrDefault(g => g.GameId == c.GameId)?.Name ?? c.GameId.ToString();
+            Console.WriteLine($"  ! {name} — open since {c.CreatedAt:u}" +
+                $"{(c.Escalated ? " (overdue)" : "")}, {c.Count} divergent save{(c.Count == 1 ? "" : "s")}");
+        }
+        var url = $"http://127.0.0.1:{config.DaemonApiPort ?? 5178}/#conflicts";
+        Console.WriteLine($"  → resolve at {url}, with `savelocker conflicts` / " +
+            "`savelocker resolve-conflict --keep local|cloud`, or in the dashboard.");
+        AgentLogger.Log($"[doctor] {conflicts.Count} open conflict(s) — resolve at {url}");
     }
 
     /// <summary>

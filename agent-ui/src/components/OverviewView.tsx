@@ -8,9 +8,10 @@ import { ActivityCard } from './ActivityCard'
 interface Props {
   state: AgentState | null
   onWarningDismissed: () => void
+  onSynced?: () => void
 }
 
-export function OverviewView({ state, onWarningDismissed }: Props) {
+export function OverviewView({ state, onWarningDismissed, onSynced }: Props) {
   const warnings = state?.leaseWarnings ?? []
 
   async function dismiss(w: LeaseWarning) {
@@ -84,7 +85,7 @@ export function OverviewView({ state, onWarningDismissed }: Props) {
         <DeckyPluginCard />
         {/* Last: what's happening right now is the thing worth checking back on, so it sits where a
             user's eye lands after everything else is already known to be fine. */}
-        <ActivityCard />
+        <ActivityCard onSynced={onSynced} />
       </div>
     </div>
   )

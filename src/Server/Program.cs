@@ -317,11 +317,13 @@ agent.MapPost("/games/{id:guid}/upload/begin", async (
 {
     if (string.IsNullOrWhiteSpace(req.ContentHash))
         return Results.BadRequest("Missing content hash.");
+    if (SyncService.ValidateManifest(req.Files) is { } manifestError)
+        return Results.BadRequest(manifestError);
 
     var machine = http.CurrentMachine();
-    var (sessionId, noChange) = await sync.BeginChunkedUploadAsync(
-        id, machine.Id, req.ParentVersionId, req.ContentHash, req.Force, ct);
-    return Results.Ok(new BeginUploadResponse(sessionId, noChange));
+    var (sessionId, noChange, useDeltaPath, needPaths) = await sync.BeginChunkedUploadAsync(
+        id, machine.Id, req.ParentVersionId, req.ContentHash, req.Force, req.Files, ct);
+    return Results.Ok(new BeginUploadResponse(sessionId, noChange, useDeltaPath, needPaths));
 }).Produces<BeginUploadResponse>();
 
 agent.MapPut("/games/{id:guid}/upload/{sessionId:guid}/chunk", async (
@@ -359,6 +361,12 @@ agent.MapPost("/games/{id:guid}/upload/{sessionId:guid}/complete", async (
         return Results.Ok(await sync.CompleteChunkedUploadAsync(id, machine.Id, sessionId, ct));
     }
     catch (UnknownUploadSessionException ex) { return Results.NotFound(ex.Message); }
+    catch (CorruptUploadException ex)
+    {
+        // 422, not the 500 an unhandled throw would produce: the agent has to be able to tell
+        // "those bytes did not arrive intact, send them again" from "the server is broken".
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status422UnprocessableEntity);
+    }
 }).Produces<UploadResult>();
 
 agent.MapGet("/games/{id:guid}/download", async (Guid id, HttpContext http, SyncService sync) =>
@@ -366,6 +374,21 @@ agent.MapGet("/games/{id:guid}/download", async (Guid id, HttpContext http, Sync
 
 agent.MapGet("/versions/{versionId:guid}/download", async (Guid versionId, HttpContext http, SyncService sync) =>
     StreamVersion(http, await sync.DownloadVersionAsync(versionId)));
+
+// File count / newest-mtime for one version, derived from its archive on demand. Available to the
+// agent group (not just admin) so an agent can compare a conflict's two sides itself in the future,
+// the same way it already reads everything else about a conflict through this API.
+agent.MapGet("/versions/{versionId:guid}/stats", async (Guid versionId, SyncService sync) =>
+    await sync.GetVersionStatsAsync(null, versionId) is { } stats ? Results.Ok(stats) : Results.NotFound())
+    .Produces<VersionStatsDto>();
+
+// A conflict only carries version IDs (ConflictDto.VersionAId/VersionBId) — this is how the agent
+// resolve UI (agent-ui's Conflicts page, tasks/conflict-resolution-ui/plan.md Phase 6) fills in the
+// machine name, timestamp and size for each side, the same way the dashboard's own conflict card
+// already does through the admin-scoped versions list.
+agent.MapGet("/versions/{versionId:guid}", async (Guid versionId, SyncService sync) =>
+    await sync.GetVersionAsync(versionId) is { } v ? Results.Ok(v) : Results.NotFound())
+    .Produces<SaveVersionDto>();
 
 // ---- Game creation (agent enrollment) ----
 // Agents create games during enrollment using their API key.
@@ -414,6 +437,47 @@ agent.MapPost("/agent/games/{id:guid}/template", async (Guid id, string? value, 
     if (string.IsNullOrWhiteSpace(value)) return Results.BadRequest("A template is required.");
     return await sync.TrySetSaveTemplateAsync(id, value.Trim()) ? Results.Ok() : Results.NoContent();
 });
+
+// ---- Conflicts (agent) ----
+//
+// Resolution now lives in the agent (tasks/conflict-resolution-ui/plan.md): the server
+// stores the winning save and files the loser, but never decides. These routes are the machine-key
+// half of the admin conflict routes below — the same SyncService calls, reachable with an X-Api-Key
+// so the CLI, the Decky plugin, and a future Playnite plugin can list and resolve a conflict without
+// the admin password. The comparison is always this machine's local save vs. the cloud head, so
+// nothing here is scoped to "a conflict about me" — a machine sees every open conflict and its own
+// frontend decides what to show.
+agent.MapGet("/agent/conflicts", async (SyncService sync) =>
+    Results.Ok(await sync.ListOpenConflictsAsync()))
+    .Produces<List<ConflictDto>>();
+
+agent.MapGet("/agent/conflicts/{id:guid}", async (Guid id, SyncService sync) =>
+    await sync.GetConflictAsync(id) is { } c ? Results.Ok(c) : Results.NotFound())
+    .Produces<ConflictDto>();
+
+// The winning version id is computed by the caller (the agent knows which side is its own local save
+// and which is the cloud's). The calling machine is passed as the resolver so that, when it is the
+// winner, it is left out of the pull fan-out — it already holds the new head. resolvedBy is the
+// machine name, so the audit trail reads the same as an admin resolve.
+agent.MapPost("/agent/conflicts/{id:guid}/resolve", async (
+    Guid id, Guid version, bool? keepBoth, HttpContext http, SyncService sync) =>
+{
+    var machine = http.CurrentMachine();
+    var (ok, error) = await sync.ResolveConflictAsync(id, version, machine.Name, keepBoth ?? false, machine.Id);
+    return ok ? Results.Ok() : Results.BadRequest(error ?? "Could not resolve conflict.");
+});
+
+agent.MapGet("/agent/games/{id:guid}/conflict-policy", async (Guid id, SyncService sync) =>
+    await sync.GetConflictPolicyAsync(id) is { } p ? Results.Ok(p) : Results.NotFound())
+    .Produces<ConflictPolicyDto>();
+
+// Editable from the Decky settings page (and the CLI) as well as the dashboard — it is one shared
+// fleet setting, so an agent may write it, the same way an agent may already create games and set
+// save paths on this group.
+agent.MapPost("/agent/games/{id:guid}/conflict-policy", async (
+    Guid id, SetConflictPolicyRequest req, SyncService sync) =>
+    await sync.SetConflictPolicyAsync(id, req.Policy, req.PreferredMachineId)
+        ? Results.Ok() : Results.NotFound());
 
 // ---- Agent health (agent) ----
 // Piggybacks the existing ~20 s poll, so it costs no new schedule. This is the channel that makes a
@@ -643,6 +707,14 @@ admin.MapGet("/games/{id:guid}/versions/{versionId:guid}/download", async (
     if (dl is null || dl.Value.version.GameId != id) return Results.NotFound();
     return StreamVersion(http, dl);
 });
+
+// A separate route rather than reusing the agent one above: admin requests authenticate via
+// AdminPasswordFilter (session/password), not a machine API key, so the console can't call the
+// agent-group route at all.
+admin.MapGet("/games/{id:guid}/versions/{versionId:guid}/stats", async (
+    Guid id, Guid versionId, SyncService sync) =>
+    await sync.GetVersionStatsAsync(id, versionId) is { } stats ? Results.Ok(stats) : Results.NotFound())
+    .Produces<VersionStatsDto>();
 
 // Apply retention immediately, instead of only as a side effect of the next upload.
 admin.MapPost("/games/{id:guid}/prune", async (Guid id, SyncService sync) =>
