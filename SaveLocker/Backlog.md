@@ -264,6 +264,14 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   passive `_conflictsTask`/version-fetch tasks, which are an ambient background poll, not a
   user-triggered write — gating settle on those would make every screenshot anywhere in the app wait
   on a network round trip).
+  <br>**The first `Cloud` icon was wrong — caught by the maintainer looking at the screenshots, not
+  by this session's own review — and fixed same session.** The initial version (two `PathArcTo` arc
+  bumps) read as a pair of overlapping speech-bubble blobs at every size, not a cloud. Rewritten as a
+  closed straight-line polygon tracing a proper scalloped-top/flat-bottom silhouette — the same
+  curve-to-polyline technique `Folder`/`Shield` already use — and reverified by adding both new icons
+  to the component gallery's icon strip (`Gallery.cs`, the project's own "every icon reviewed
+  together" surface) and screenshotting it, then rechecking the real conflict card and empty state.
+  `GitBranch` was checked the same way at the same time and was already correct.
   <br>**Verified live against a real server, not just built** — genuinely stronger than this group's
   own "code-only, verify later" ceiling, using `tests/seed-test-conflict.sh again` (a real two-machine
   conflict) plus a `-r linux-x64` build run under WSLg on this Windows dev box, the Windows+WSLg

@@ -834,11 +834,19 @@ to visit, not a queue to advance through — plus a Keep Both toggle. Resolving 
 directly, in-process, rather than round-tripping through the daemon's local `:5178` API: unlike "Sync
 now," which genuinely needs the daemon's own live `SyncEngine`/lease state, resolving a conflict is
 the exact same stateless, mechanical server call `AgentCli.cs`'s `conflicts`/`resolve-conflict`
-commands already make. Two new hand-drawn icons in `Icons.cs` (`Cloud`, approximated as two
-overlapping `PathArcTo` bumps plus a flat base; `GitBranch`, an exact match of lucide's own two-node-
-plus-arc path) so this screen speaks the same icon language as the React surfaces' lucide `Cloud`/
-`GitBranch`, and a new `Theme.AccentRed` (`#E5534B`, matching the dashboard/agent-ui conflict card's
-escalated-border red) reserved for the overdue line only.
+commands already make. Two new hand-drawn icons in `Icons.cs` (`Cloud`, a closed straight-line
+polygon tracing a scalloped-top/flat-bottom cloud silhouette — the same curve-to-polyline technique
+`Folder`/`Shield` already use; `GitBranch`, an exact match of lucide's own two-node-plus-arc path) so
+this screen speaks the same icon language as the React surfaces' lucide `Cloud`/`GitBranch`, and a
+new `Theme.AccentRed` (`#E5534B`, matching the dashboard/agent-ui conflict card's escalated-border
+red) reserved for the overdue line only.
+<br>**The Cloud icon's first version was wrong, caught by the maintainer looking at the screenshots
+above, not by this session's own review.** A `PathArcTo`-bump version shipped first and read as two
+overlapping speech-bubble blobs at every size, not a cloud — confirmed by adding both new icons to
+the component gallery's icon strip (`Gallery.cs`, already the project's own "every icon reviewed
+together" surface) and screenshotting it at 14-40px. Rewritten as the straight-line polygon described
+above and reverified the same way, plus back in the actual conflict card and empty-state screens.
+`GitBranch` was checked at the same time and was already correct, so it's unchanged.
 <br>**A real bug found and fixed while verifying, not left in:** the `--screenshot` capture-and-exit
 path's "is anything still busy" gate (`UiApp.OnRender`'s `busy` check) never listed the new resolve
 task, so a scripted `--nav` press on a Keep button had its in-flight `ResolveConflictAsync` call
