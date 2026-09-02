@@ -749,6 +749,49 @@ coverage, unchanged by this session. Group 4 (Phase 8, the Game Mode conflict sc
 
 ---
 
+**Phase 9 run on the real Deck — the shipped version was broken, root-caused and fixed (2026-09-02,
+this branch, `save-conflicts-phase-9`).** The maintainer deployed the Group 3 build to their Deck via
+`testenv.ps1`'s Deck target (isolated at `~/savelocker-test` / `~/savelocker-test-state` on :5177,
+never the real install), seeded a genuine two-machine conflict, and got `conflict notification: sent
+for 'Notify Test'.` in the log — **and nothing on screen.** In Desktop Mode, with a working
+notification daemon.
+<br>**Root cause: a notification carrying `actions` is owned by the bus connection that sent it, and
+the server withdraws it when that connection drops.** `gdbus call` — the transport plan.md's own
+Phase 9 tooling decision picked — is one-shot by construction: it sends, takes its reply and exits,
+so it can never hold an actionable notification open. Every layer the agent can see reported success:
+exit code 0, a real notification id, a log line saying "sent." Bisected on the hardware against the
+same daemon on the same bus, one variable at a time: `expire_timeout=0` alone renders and persists;
+`app_name`/`icon` alone render (`dialog-warning` correctly draws a caution icon, not a bug);
+**adding the action button is what makes the popup flash and vanish inside a second.**
+<br>**Fixed by rewriting `ConflictNotifier` around `notify-send --wait --action`**, confirmed present
+and working on the Deck before the rewrite (libnotify; the maintainer verified the popup persists and
+clicking the button prints `view`). `--wait` holds the connection open for as long as the
+notification is displayed, which fixes the popup *and* the button, and it prints the invoked action
+key on stdout — so the entire second `gdbus monitor` connection the first version used to catch the
+click (which could never have owned the notification anyway) is **deleted**, not fixed. Net simpler:
+one mechanism instead of two, and the GVariant hand-escaping is gone too, since `notify-send` takes
+plain argv. Bonus the ownership rule buys for free: killing the child withdraws its popup, so a
+conflict resolved from the dashboard, the CLI or another machine now takes its own stale notification
+off the screen instead of leaving a button that resolves nothing. `gdbus` is untouched as Phase 5's
+`NameHasOwner` probe — that part was never in question.
+<br>**The regression test that should have existed**, added with the fix: a fake session bus (a real
+listening socket), a fake `gdbus` answering the `NameHasOwner` probe, and a fake `notify-send`
+recording its own argv, asserting the command carries `--wait`, the `view` action key, and the
+conflicted game's name. **Confirmed to FAIL against the pre-fix code, not assumed to**: `--wait` was
+removed, the daemon re-run, and the recorded argv checked — the assertion flips. `run-linux-tests.sh`
+251 → **256/256**.
+<br>**The lesson worth keeping, bigger than the fix: an exit code from a fire-and-forget IPC call is
+not evidence the other end did anything.** This shipped green through a clean build, a full agent
+suite and a careful read because every check stopped at "the call returned 0." Nothing looked at what
+was actually sent, which is exactly what the new test now does. Also worth knowing for next time: the
+whole diagnosis came from three one-line `gdbus` commands run by hand on the hardware, each changing
+one argument — the bisect was faster and more certain than any amount of reading the code.
+<br>**Still unverified:** Game Mode (the open question `plan.md` has carried since 2026-08-31 — the
+bus and a claimant are both there, whether anything renders is unknown), and the action button's
+`xdg-open` actually landing on the conflicts page on the Deck specifically.
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

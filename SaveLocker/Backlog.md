@@ -215,6 +215,27 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   alike, and whether the action button's click actually opens the browser to the right page. Needs a
   live Deck Desktop Mode session or a plain desktop Linux box — the plan's own stated lower priority
   for scripted D-Bus coverage, unchanged by this session.
+  <br>**Run on the real Deck 2026-09-02 — the shipped version did not work, and is fixed.** Desktop
+  Mode is now a *verified* surface rather than an assumed one, but only after the transport was
+  replaced. The `gdbus call` version (plan.md's own Phase 9 tooling pick) reported exit code 0, a real
+  notification id and `conflict notification: sent for 'X'` in the log, while the popup vanished within
+  a second: **a notification carrying `actions` is owned by the bus connection that sent it, and the
+  server withdraws it when that connection drops** — and `gdbus call` is one-shot, so it can never
+  hold one open. Bisected on the hardware, one argument at a time: timeout `0` alone persists,
+  app-name/icon alone render, the **action button** is what makes it flash. Rewritten around
+  `notify-send --wait --action` (confirmed present on the Deck first): `--wait` keeps the connection
+  alive for the life of the notification and prints the clicked action key on stdout, so the separate
+  `gdbus monitor` connection is **deleted** rather than fixed — one mechanism instead of two, no
+  GVariant hand-escaping, and killing the child now withdraws a stale popup when the conflict is
+  resolved elsewhere. `gdbus` remains Phase 5's `NameHasOwner` probe, untouched.
+  <br>**New regression coverage, proven to bite**: a fake bus socket + fake `gdbus` + fake
+  `notify-send` that records its argv, asserting `--wait`, the action key and the game name. Verified
+  to FAIL against the pre-fix code by removing `--wait` and re-running, not assumed. `run-linux-tests`
+  251 → **256/256**. The transferable lesson: *an exit code from a fire-and-forget IPC call is not
+  evidence the other end did anything* — this passed a clean build, a full suite and a careful read
+  because nothing checked what was actually sent.
+  <br>**Still open on this phase:** Game Mode rendering (unchanged, unknown), and confirming
+  `xdg-open` lands on the conflicts page on the Deck specifically.
 
 **All three bug bounties shipped in v0.5.0 (2026-07-29).** Code is on `main`; what remains is the
 verification that did not happen before the tag. Write-ups:
