@@ -1,0 +1,616 @@
+<title>SaveLocker Five Ways</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,700;12..96,800&family=DM+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,600&family=Public+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600&family=Saira:wght@400;500;600;700&family=Barlow:wght@400;500;600&family=Roboto+Mono:wght@400;500&family=Spline+Sans+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --page-bg:#f2f1ee; --page-panel:#fbfaf8; --page-ink:#1b1c1a; --page-dim:#5d605c;
+  --page-faint:#8e918c; --page-line:#dcdad4; --page-accent:#1f6f5c;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --page-bg:#14161a; --page-panel:#1b1e23; --page-ink:#eef0f2; --page-dim:#a3a9b0;
+    --page-faint:#6f767e; --page-line:#2c3138; --page-accent:#4fbfa0;
+  }
+}
+:root[data-theme="dark"]{
+  --page-bg:#14161a; --page-panel:#1b1e23; --page-ink:#eef0f2; --page-dim:#a3a9b0;
+  --page-faint:#6f767e; --page-line:#2c3138; --page-accent:#4fbfa0;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--page-bg); color:var(--page-ink);
+  font-family:'IBM Plex Sans',system-ui,sans-serif; font-size:15px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1220px;margin:0 auto;padding:0 28px}
+a{color:inherit}
+h1,h2,h3,h4{text-wrap:balance;margin:0}
+
+.mast{padding:72px 0 40px;border-bottom:1px solid var(--page-line)}
+.mast .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--page-faint)}
+.mast h1{font-family:'Archivo',sans-serif;font-weight:700;font-size:clamp(38px,6vw,68px);line-height:.98;letter-spacing:-.03em;margin:18px 0 20px;max-width:16ch}
+.mast p{max-width:64ch;color:var(--page-dim);font-size:16px}
+.mast .meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+.mast .meta span{font-family:'IBM Plex Mono',monospace;font-size:11px;padding:5px 10px;border:1px solid var(--page-line);border-radius:2px;color:var(--page-dim);background:var(--page-panel)}
+.toc{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));border-bottom:1px solid var(--page-line)}
+.toc a{display:block;padding:18px 16px;border-right:1px solid var(--page-line);text-decoration:none;transition:background .18s}
+.toc a:last-child{border-right:0}
+.toc a:hover{background:var(--page-panel)}
+.toc a:focus-visible{outline:2px solid var(--page-accent);outline-offset:-2px}
+.toc .n{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--page-faint);letter-spacing:.14em}
+.toc .t{font-family:'Archivo',sans-serif;font-weight:600;font-size:17px;letter-spacing:-.01em;margin-top:4px}
+.toc .s{font-size:12px;color:var(--page-dim)}
+
+.opt{padding:74px 0 84px;border-bottom:1px solid var(--page-line)}
+.opt-head{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:44px;align-items:start}
+@media (max-width:900px){.opt-head{grid-template-columns:1fr}}
+.opt-num{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--page-faint);text-transform:uppercase}
+.opt-name{font-size:clamp(30px,4vw,46px);line-height:1.02;letter-spacing:-.025em;margin:10px 0 6px}
+.opt-line{font-size:16px;color:var(--page-dim);max-width:52ch}
+.idcard{border:1px solid var(--page-line);background:var(--page-panel);border-radius:3px;padding:20px 22px}
+.idrow{display:grid;grid-template-columns:82px minmax(0,1fr);gap:14px;padding:11px 0;border-bottom:1px dotted var(--page-line);font-size:13px}
+.idrow:last-child{border-bottom:0;padding-bottom:0}
+.idrow:first-child{padding-top:0}
+.idrow dt{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--page-faint);padding-top:3px}
+.idrow dd{margin:0;color:var(--page-dim)}
+.sw{display:flex;flex-wrap:wrap;gap:6px}
+.sw i{display:block;width:30px;height:30px;border-radius:2px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.14)}
+.sw b{font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:400;color:var(--page-faint);display:block;margin-top:4px}
+.frame-label{display:flex;align-items:baseline;gap:12px;margin:46px 0 12px}
+.frame-label h3{font-family:'Archivo',sans-serif;font-size:13px;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.frame-label span{font-size:12.5px;color:var(--page-faint)}
+.frame-label .rule{flex:1;height:1px;background:var(--page-line)}
+.scroller{overflow-x:auto;padding-bottom:6px}
+
+.shot{min-width:960px;border-radius:6px;overflow:hidden;box-shadow:0 1px 2px rgba(10,14,20,.18),0 18px 44px -22px rgba(10,14,20,.55)}
+.shot.agent{min-width:820px;max-width:900px}
+.chrome{display:flex;align-items:center;gap:8px;padding:9px 12px;background:#20232a;border-bottom:1px solid #000}
+.chrome i{width:10px;height:10px;border-radius:50%;background:#3a3f48;display:block}
+.chrome .url{margin-left:8px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#7d858f;background:#171a1f;border-radius:3px;padding:3px 10px}
+
+.ui{--u-radius:5px;font-size:13px;line-height:1.45;background:var(--u-bg);color:var(--u-fg);display:block}
+.ui *{box-sizing:border-box}
+.ui-top{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 18px;height:60px;background:var(--u-surface);border-bottom:1px solid var(--u-line)}
+.ui-brand{display:flex;align-items:center;gap:10px}
+.ui-mark{width:28px;height:28px;border-radius:var(--u-radius);display:grid;place-items:center;background:var(--u-accent);color:var(--u-on-accent);font-family:var(--u-display);font-weight:700;font-size:14px;letter-spacing:-.02em}
+.ui-word{font-family:var(--u-display);font-weight:700;font-size:17px;letter-spacing:var(--u-track)}
+.ui-word em{font-style:normal;color:var(--u-accent)}
+.ui-ver{font-family:var(--u-mono);font-size:10.5px;color:var(--u-dim);border:1px solid var(--u-line);border-radius:20px;padding:2px 9px}
+.ui-nav{display:flex;gap:2px}
+.ui-nav button{font-family:var(--u-body);font-size:12.5px;padding:6px 13px;border:1px solid transparent;background:none;color:var(--u-dim);border-radius:var(--u-radius);cursor:pointer;transition:background .18s,color .18s}
+.ui-nav button:hover{background:var(--u-hover);color:var(--u-fg)}
+.ui-nav button[aria-current]{background:var(--u-accent-soft);color:var(--u-accent-ink);font-weight:600;border-color:var(--u-accent-line)}
+.ui-tools{display:flex;align-items:center;gap:8px}
+.ui-field{display:flex;align-items:center;border:1px solid var(--u-line);border-radius:var(--u-radius);overflow:hidden;background:var(--u-bg)}
+.ui-field span{font-family:var(--u-mono);font-size:9.5px;letter-spacing:.1em;color:var(--u-faint);padding:6px 8px;border-right:1px solid var(--u-line)}
+.ui-field b{font-family:var(--u-mono);font-size:11px;font-weight:400;color:var(--u-dim);padding:6px 10px;letter-spacing:.18em}
+.btn{font-family:var(--u-body);font-size:12.5px;font-weight:500;padding:6px 13px;border-radius:var(--u-radius);border:1px solid var(--u-line);background:transparent;color:var(--u-fg);cursor:pointer;transition:background .18s,transform .1s}
+.btn:hover{background:var(--u-hover)}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--u-accent);outline-offset:2px}
+.btn-primary{background:var(--u-accent);border-color:var(--u-accent);color:var(--u-on-accent);font-weight:600}
+.btn-primary:hover{filter:brightness(1.08);background:var(--u-accent)}
+.btn-alert{background:var(--u-crit-soft);border-color:var(--u-crit);color:var(--u-crit);font-weight:600}
+
+.ui-body{display:grid;grid-template-columns:230px minmax(0,1fr);min-height:520px}
+.ui-body.rail{grid-template-columns:58px minmax(0,1fr)}
+.ui-body.solo{grid-template-columns:minmax(0,1fr)}
+.ui-side{background:var(--u-surface);border-right:1px solid var(--u-line);padding:14px 0;overflow:hidden}
+.ui-side h4{font-family:var(--u-mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--u-faint);padding:0 16px 10px;font-weight:400}
+.side-item{display:flex;align-items:center;gap:10px;padding:8px 16px;cursor:pointer;border-left:2px solid transparent;transition:background .16s}
+.side-item:hover{background:var(--u-hover)}
+.side-item[aria-current]{background:var(--u-accent-soft);border-left-color:var(--u-accent)}
+.side-item .art{width:26px;height:26px;border-radius:3px;flex:0 0 auto;background:var(--u-tile);display:grid;place-items:center;font-family:var(--u-mono);font-size:9px;color:var(--u-faint)}
+.side-item .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px}
+.side-item[aria-current] .nm{font-weight:600}
+.dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+.dot.ok{background:var(--u-ok)} .dot.warn{background:var(--u-warn)} .dot.crit{background:var(--u-crit)} .dot.idle{background:var(--u-faint)}
+
+.ui-main{padding:20px 22px;display:flex;flex-direction:column;gap:16px;min-width:0;overflow:hidden}
+.hl{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.hl h2{font-family:var(--u-display);font-size:24px;letter-spacing:var(--u-track);line-height:1.1}
+.hl .sub{font-family:var(--u-mono);font-size:11px;color:var(--u-faint);margin-top:5px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.chip{font-family:var(--u-mono);font-size:10px;letter-spacing:.06em;padding:3px 8px;border-radius:var(--u-chip-radius,3px);border:1px solid var(--u-line);color:var(--u-dim);text-transform:var(--u-chip-case,none)}
+.chip.ok{color:var(--u-ok);border-color:var(--u-ok-line);background:var(--u-ok-soft)}
+.chip.warn{color:var(--u-warn);border-color:var(--u-warn-line);background:var(--u-warn-soft)}
+.chip.crit{color:var(--u-crit);border-color:var(--u-crit-line);background:var(--u-crit-soft)}
+
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--u-gap,10px);margin:0}
+.stat{background:var(--u-card);border:1px solid var(--u-line);border-radius:var(--u-radius);padding:12px 14px}
+.stat dt{font-family:var(--u-mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--u-faint)}
+.stat dd{margin:6px 0 0;font-family:var(--u-num);font-size:23px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1}
+.stat small{display:block;margin-top:5px;font-size:11px;color:var(--u-dim)}
+
+.card{background:var(--u-card);border:1px solid var(--u-line);border-radius:var(--u-radius);overflow:hidden}
+.card > header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-bottom:1px solid var(--u-line);background:var(--u-head)}
+.card > header h3{font-family:var(--u-body);font-size:11.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--u-dim)}
+.card .pad{padding:13px 14px}
+
+table.t{width:100%;border-collapse:collapse;font-size:12px}
+table.t th{font-family:var(--u-mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--u-faint);text-align:left;font-weight:400;padding:7px 14px;background:var(--u-head);border-bottom:1px solid var(--u-line)}
+table.t td{padding:9px 14px;border-bottom:1px solid var(--u-row);color:var(--u-dim);white-space:nowrap}
+table.t tr:last-child td{border-bottom:0}
+table.t tr:hover td{background:var(--u-hover)}
+table.t td.k{color:var(--u-fg);font-weight:500}
+table.t td.n{font-family:var(--u-num);font-variant-numeric:tabular-nums}
+table.t td.m{font-family:var(--u-mono);font-size:11px}
+
+.path{font-family:var(--u-mono);font-size:11px;color:var(--u-dim);background:var(--u-tile);border:1px solid var(--u-line);border-radius:3px;padding:5px 9px;display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.banner{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:var(--u-radius);border:1px solid var(--u-crit-line);background:var(--u-crit-soft)}
+.banner .txt{flex:1;min-width:0;font-size:12.5px}
+.banner strong{color:var(--u-crit);font-weight:600}
+.banner .txt em{font-style:normal;color:var(--u-dim);display:block;font-size:11.5px;margin-top:2px}
+.split2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--u-gap,10px)}
+.split3{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:var(--u-gap,10px)}
+.stack{display:flex;flex-direction:column;gap:var(--u-gap,10px)}
+
+.kv{display:grid;grid-template-columns:auto 1fr;gap:7px 14px;font-size:12px;margin:0}
+.kv dt{font-family:var(--u-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--u-faint);padding-top:2px}
+.kv dd{margin:0;color:var(--u-fg)}
+.bar{height:6px;border-radius:99px;background:var(--u-tile);overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;background:var(--u-accent)}
+.feed{display:flex;flex-direction:column;margin:0;padding:0}
+.feed li{display:flex;gap:11px;align-items:flex-start;padding:9px 14px;border-bottom:1px solid var(--u-row);list-style:none}
+.feed li:last-child{border-bottom:0}
+.feed .when{font-family:var(--u-mono);font-size:10px;color:var(--u-faint);width:58px;flex:0 0 auto;padding-top:2px;text-align:right}
+.feed .what{font-size:12px;color:var(--u-dim);min-width:0}
+.feed .what b{color:var(--u-fg);font-weight:600}
+
+.agentwin .ui-body{min-height:430px}
+.agentwin .ui-top{height:52px}
+.status-hero{display:flex;align-items:center;gap:16px;padding:16px 18px;border-bottom:1px solid var(--u-line);background:var(--u-head)}
+.pulse{width:44px;height:44px;border-radius:var(--u-radius);display:grid;place-items:center;background:var(--u-ok-soft);border:1px solid var(--u-ok-line);color:var(--u-ok);font-family:var(--u-mono);font-size:9px;letter-spacing:.08em}
+.status-hero .t1{font-family:var(--u-display);font-size:17px;letter-spacing:var(--u-track)}
+.status-hero .t2{font-size:12px;color:var(--u-dim);margin-top:2px}
+.conflict-pick{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pick{border:1px solid var(--u-line);border-radius:var(--u-radius);padding:12px;background:var(--u-tile)}
+.pick.win{border-color:var(--u-accent-line);background:var(--u-accent-soft)}
+.pick h5{font-family:var(--u-body);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--u-faint);font-weight:600;margin:0}
+.pick .big{font-family:var(--u-num);font-size:15px;font-weight:600;margin-top:6px;font-variant-numeric:tabular-nums}
+.pick .sm{font-size:11.5px;color:var(--u-dim);margin-top:3px}
+
+/* 01 COLD STORAGE */
+.id1{
+  --u-display:'Archivo',sans-serif; --u-body:'IBM Plex Sans',sans-serif;
+  --u-mono:'IBM Plex Mono',monospace; --u-num:'IBM Plex Mono',monospace; --u-track:-.02em;
+  --u-bg:#111619; --u-surface:#161c20; --u-card:#161c20; --u-head:#1a2126; --u-tile:#1d2429;
+  --u-fg:#e6ebee; --u-dim:#9aa7ae; --u-faint:#68757d; --u-line:#242d33; --u-row:#1e262b; --u-hover:#1c2429;
+  --u-accent:#c98f2e; --u-accent-ink:#e6b45c; --u-on-accent:#14181a; --u-accent-soft:#2a2318; --u-accent-line:#5c4620;
+  --u-ok:#4c9e86; --u-ok-soft:#16241f; --u-ok-line:#28453c;
+  --u-warn:#d1a03c; --u-warn-soft:#241f14; --u-warn-line:#4a3c1d;
+  --u-crit:#c2604f; --u-crit-soft:#241715; --u-crit-line:#4d2a23;
+  --u-radius:3px; --u-gap:1px;
+}
+.id1 .stats{background:var(--u-line);border:1px solid var(--u-line)}
+.id1 .stat{border:0;border-radius:0}
+
+/* 02 CHECKPOINT */
+.id2{
+  --u-display:'Bricolage Grotesque',sans-serif; --u-body:'Bricolage Grotesque',sans-serif;
+  --u-mono:'DM Mono',monospace; --u-num:'DM Mono',monospace; --u-track:-.03em;
+  --u-bg:#0f0f10; --u-surface:#141416; --u-card:#141416; --u-head:#17181a; --u-tile:#1b1c1f;
+  --u-fg:#f0eee9; --u-dim:#a09d97; --u-faint:#6b6862; --u-line:#242427; --u-row:#1d1d20; --u-hover:#1d1d20;
+  --u-accent:#e0533c; --u-accent-ink:#f0745f; --u-on-accent:#100f0f; --u-accent-soft:#241412; --u-accent-line:#4d221b;
+  --u-ok:#7fa96a; --u-ok-soft:#171d14; --u-ok-line:#2c3b25;
+  --u-warn:#d9a63f; --u-warn-soft:#211c11; --u-warn-line:#453818;
+  --u-crit:#e0533c; --u-crit-soft:#241412; --u-crit-line:#4d221b;
+  --u-radius:12px; --u-chip-radius:99px; --u-gap:12px;
+}
+.id2 .stat{padding:16px}
+.id2 .card > header h3{letter-spacing:.02em;text-transform:none;font-size:13px}
+
+/* 03 LEDGER */
+.id3{
+  --u-display:'Newsreader',serif; --u-body:'Public Sans',sans-serif;
+  --u-mono:'IBM Plex Mono',monospace; --u-num:'IBM Plex Mono',monospace; --u-track:-.015em;
+  --u-bg:#fbfaf7; --u-surface:#f4f2ec; --u-card:#ffffff; --u-head:#f4f2ec; --u-tile:#f0eee7;
+  --u-fg:#1c1b18; --u-dim:#5b5952; --u-faint:#8f8c84; --u-line:#ddd9d0; --u-row:#ece9e2; --u-hover:#f4f2ec;
+  --u-accent:#7c2b25; --u-accent-ink:#7c2b25; --u-on-accent:#fdfcf9; --u-accent-soft:#f6e9e6; --u-accent-line:#d9b8b2;
+  --u-ok:#2f6a4f; --u-ok-soft:#e8f1eb; --u-ok-line:#bcd6c6;
+  --u-warn:#8a6212; --u-warn-soft:#f7efdc; --u-warn-line:#ddc794;
+  --u-crit:#9e2f21; --u-crit-soft:#f8e7e3; --u-crit-line:#e0b7ae;
+  --u-radius:2px; --u-gap:16px;
+}
+.id3 .hl h2{font-weight:600}
+.id3 .stats{gap:0;border:1px solid var(--u-line)}
+.id3 .stat{border:0;border-right:1px solid var(--u-line);border-radius:0;background:transparent}
+.id3 .stat:last-child{border-right:0}
+.id3 .stat dd{font-family:'Newsreader',serif;font-weight:600;font-size:27px}
+
+/* 04 SHELTER */
+.id4{
+  --u-display:'Fraunces',serif; --u-body:'Work Sans',sans-serif;
+  --u-mono:'Spline Sans Mono',monospace; --u-num:'Spline Sans Mono',monospace; --u-track:-.01em;
+  --u-bg:#1a1d18; --u-surface:#20241d; --u-card:#20241d; --u-head:#242920; --u-tile:#272c22;
+  --u-fg:#eceadd; --u-dim:#a7a894; --u-faint:#767a66; --u-line:#2f3428; --u-row:#272c22; --u-hover:#262b21;
+  --u-accent:#9db06b; --u-accent-ink:#b6c78a; --u-on-accent:#1a1d18; --u-accent-soft:#232a1c; --u-accent-line:#465132;
+  --u-ok:#8fae70; --u-ok-soft:#212a1c; --u-ok-line:#3d4b2e;
+  --u-warn:#d3a45c; --u-warn-soft:#2a2418; --u-warn-line:#4d3f24;
+  --u-crit:#c56a52; --u-crit-soft:#2a1d18; --u-crit-line:#4f3227;
+  --u-radius:8px; --u-gap:14px;
+}
+.id4 .ui-main{padding:26px 30px;gap:22px}
+.id4 .hl h2{font-weight:600}
+.id4 .card .pad{padding:18px}
+.id4 .side-item{padding:11px 16px}
+
+/* 05 HANGAR */
+.id5{
+  --u-display:'Saira',sans-serif; --u-body:'Barlow',sans-serif;
+  --u-mono:'Roboto Mono',monospace; --u-num:'Roboto Mono',monospace; --u-track:0em;
+  --u-bg:#0d1116; --u-surface:#11161c; --u-card:#11161c; --u-head:#141b22; --u-tile:#161e26;
+  --u-fg:#dfe7ee; --u-dim:#93a1ad; --u-faint:#5f6d79; --u-line:#1e2831; --u-row:#18212a; --u-hover:#17202a;
+  --u-accent:#3d92b8; --u-accent-ink:#6ab5d6; --u-on-accent:#080d11; --u-accent-soft:#11242e; --u-accent-line:#22485a;
+  --u-ok:#3f9a7a; --u-ok-soft:#0f2320; --u-ok-line:#1e463a;
+  --u-warn:#c39331; --u-warn-soft:#221c10; --u-warn-line:#463819;
+  --u-crit:#c0554f; --u-crit-soft:#241514; --u-crit-line:#4b2523;
+  --u-radius:0px; --u-gap:1px; --u-chip-case:uppercase;
+}
+.id5 .ui-top{height:54px}
+.id5 .ui-word{text-transform:uppercase;letter-spacing:.04em;font-size:15px}
+.id5 .stats{background:var(--u-line);border:1px solid var(--u-line)}
+.id5 .stat{border:0}
+.id5 .ui-main{gap:12px}
+
+.close{padding:70px 0 96px}
+.close h2{font-family:'Archivo',sans-serif;font-size:30px;letter-spacing:-.025em;margin-bottom:16px}
+.close p{max-width:66ch;color:var(--page-dim);margin-bottom:14px}
+.close ul{max-width:66ch;color:var(--page-dim);padding-left:20px}
+.close li{margin-bottom:9px}
+.close strong{color:var(--page-ink)}
+.footnote{margin-top:34px;padding-top:18px;border-top:1px solid var(--page-line);font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--page-faint);max-width:80ch}
+</style>
+
+<main>
+<header class="mast">
+  <div class="wrap">
+    <div class="eyebrow">SaveLocker console + agent &middot; redesign study</div>
+    <h1>Five ways to dress the same save vault</h1>
+    <p>Every screen below is the SaveLocker console and the embedded agent window rebuilt five times &mdash; same
+    routes, same tables, same fleet data the current UI shows today. What changes is the identity: typeface
+    pairing, palette, density, and where navigation lives. Pick one, or pull pieces across.</p>
+    <div class="meta">
+      <span>console v0.5.10</span><span>agent-ui &middot; WebView2 900&times;600</span>
+      <span>React 19 + Tailwind v4</span><span>3 machines &middot; 7 games &middot; 1 open conflict</span>
+    </div>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Identity options">
+  <a href="#id1"><div class="n">01</div><div class="t">Cold Storage</div><div class="s">Brass on slate</div></a>
+  <a href="#id2"><div class="n">02</div><div class="t">Checkpoint</div><div class="s">Soft black, ember accent</div></a>
+  <a href="#id3"><div class="n">03</div><div class="t">Ledger</div><div class="s">Paper light, oxblood rules</div></a>
+  <a href="#id4"><div class="n">04</div><div class="t">Shelter</div><div class="s">Moss and bone, roomy</div></a>
+  <a href="#id5"><div class="n">05</div><div class="t">Hangar</div><div class="s">Instrument panel</div></a>
+</nav>
+
+<div id="options"></div>
+
+<section class="close">
+  <div class="wrap">
+    <h2>How to read these</h2>
+    <p>The five are not one layout in five colourways. Each moves something structural, so you can judge the
+    idea and not just the palette:</p>
+    <ul>
+      <li><strong>Cold Storage</strong> keeps today's two-pane shape but moves the brand off green onto brass,
+      drops radii to 3px and fuses the stat row into one hairline block. Smallest jump from what ships now.</li>
+      <li><strong>Checkpoint</strong> drops the game sidebar for a full-width canvas and pill chips. Fewer rows
+      on screen, but the game you are working on gets the whole window.</li>
+      <li><strong>Ledger</strong> is the only light option and the only serif one. Versions, commands and audit
+      stop being cards and become one continuous ruled stack &mdash; it reads like the record it is.</li>
+      <li><strong>Shelter</strong> doubles padding and halves the column count, and the agent moves to top tabs
+      so no control sits under a thumb resting on a Deck grip.</li>
+      <li><strong>Hangar</strong> goes the other way: zero radius, 1px seams, uppercase state codes, and nav
+      collapsed to a 58px rail so fleet tables get the full width.</li>
+    </ul>
+    <p>All five keep the semantics the console already uses: green or olive is healthy, amber is a warning that
+    self-heals once the machine syncs cleanly, red is a conflict that never does. Accent and status colour stay
+    separate families in every palette, so the brand hue never has to mean "fine".</p>
+    <div class="footnote">Content is the live shape of the current UI: the version table (Version / When / Machine /
+    Size / State / Action), the remote command queue, per-machine save paths, retention and exclude globs, the
+    agent's connection panel, tracked-game list, and the this-device vs the-cloud conflict picker.</div>
+  </div>
+</section>
+</main>
+
+<script>
+const GAMES = [
+  {n:'Cyberpunk 2077', s:'ok'},
+  {n:'Baldur\u2019s Gate 3', s:'crit'},
+  {n:'Fallout: New Vegas', s:'ok'},
+  {n:'Elden Ring', s:'warn'},
+  {n:'Hades II', s:'ok'},
+  {n:'Disco Elysium', s:'idle'},
+  {n:'Stardew Valley', s:'ok'},
+];
+const VERSIONS = [
+  ['v41','22m ago','RIG-ONYX','184.6 MB','Latest'],
+  ['v40','2h ago','STEAMDECK-OLED','184.2 MB','Kept'],
+  ['v39','yesterday','RIG-ONYX','183.9 MB','Kept'],
+  ['v38','2d ago','RIG-ONYX','181.4 MB','Kept'],
+  ['v37','4d ago','LOFT-HTPC','179.8 MB','Pruned'],
+];
+const CMDS = [
+  ['Baldur\u2019s Gate 3','STEAMDECK-OLED','Pull','Dispatched','14:08','\u2014'],
+  ['Cyberpunk 2077','RIG-ONYX','Push','Done','13:47','41 files, 12.3 MB sent'],
+  ['Elden Ring','STEAMDECK-OLED','Push','Failed','09:12','Save folder locked by game'],
+  ['Hades II','LOFT-HTPC','Pull','Done','08:55','No change \u2014 already current'],
+];
+const MACHINES = [
+  ['RIG-ONYX','Windows 11','just now','22m ago','ok'],
+  ['STEAMDECK-OLED','SteamOS 3.7','4m ago','6h ago','warn'],
+  ['LOFT-HTPC','Windows 11','just now','4h ago','ok'],
+];
+const FEED = [
+  ['14:08','<b>Baldur\u2019s Gate 3</b> conflict opened \u2014 STEAMDECK-OLED and RIG-ONYX both wrote since v26'],
+  ['13:47','<b>Cyberpunk 2077</b> pushed from RIG-ONYX \u2014 41 of 1,208 files changed'],
+  ['11:30','<b>Elden Ring</b> push failed on STEAMDECK-OLED \u2014 save folder locked, will retry'],
+  ['09:04','<b>Stardew Valley</b> pulled to LOFT-HTPC \u2014 6.3 MB'],
+  ['03:00','Nightly backup written \u2014 savelocker-2026-09-02.db, 41.2 MB'],
+];
+const TRACKED = [
+  ['Cyberpunk 2077','Steam','C:\\Users\\marwan\\Saved Games\\CD Projekt Red\\Cyberpunk 2077','ok'],
+  ['Baldur\u2019s Gate 3','Steam','C:\\Users\\marwan\\AppData\\Local\\Larian Studios\\Baldur\u2019s Gate 3','crit'],
+  ['Fallout: New Vegas','Steam','C:\\Users\\marwan\\Documents\\My Games\\FalloutNV','ok'],
+  ['Hollow Knight: Silksong','Non-Steam shortcut','No save folder set','warn'],
+];
+
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const chip = (s,txt) => '<span class="chip ' + s + '">' + txt + '</span>';
+
+function sidebarGames(){
+  return GAMES.map((g,i) =>
+    '<div class="side-item" ' + (i===0 ? 'aria-current="true"' : '') + '>' +
+      '<span class="art">' + esc(g.n.slice(0,2).toUpperCase()) + '</span>' +
+      '<span class="nm">' + esc(g.n) + '</span>' +
+      '<span class="dot ' + g.s + '"></span></div>').join('');
+}
+
+function statBlock(){
+  return '<dl class="stats">' +
+    '<div class="stat"><dt>Games tracked</dt><dd>7</dd><small>across 3 machines</small></div>' +
+    '<div class="stat"><dt>Storage used</dt><dd>1.84 GB</dd><small>287 versions kept</small></div>' +
+    '<div class="stat"><dt>Last sync</dt><dd>22m</dd><small>Stardew Valley &middot; LOFT-HTPC</small></div>' +
+    '<div class="stat"><dt>Open conflicts</dt><dd>1</dd><small>overdue by 4h</small></div></dl>';
+}
+
+function versionTable(){
+  return '<table class="t"><thead><tr><th>Version</th><th>When</th><th>Machine</th><th>Size</th><th>State</th><th>Action</th></tr></thead><tbody>' +
+    VERSIONS.map(r =>
+      '<tr><td class="k m">' + r[0] + '</td><td>' + r[1] + '</td><td class="m">' + esc(r[2]) + '</td><td class="n">' + r[3] + '</td>' +
+      '<td>' + (r[4]==='Latest' ? chip('ok','Latest') : chip('', r[4])) + '</td>' +
+      '<td>' + (r[4]==='Latest'
+        ? '<span style="color:var(--u-faint)">&mdash;</span>'
+        : '<button class="btn" style="padding:3px 9px;font-size:11px">Set as Latest</button>') + '</td></tr>').join('') +
+    '</tbody></table>';
+}
+
+function cmdTable(){
+  return '<table class="t"><thead><tr><th>Game</th><th>Machine</th><th>Action</th><th>State</th><th>Created</th><th>Result</th></tr></thead><tbody>' +
+    CMDS.map(r =>
+      '<tr><td class="k">' + esc(r[0]) + '</td><td class="m">' + esc(r[1]) + '</td><td>' + r[2] + '</td>' +
+      '<td>' + (r[3]==='Failed' ? chip('crit','Failed') : r[3]==='Dispatched' ? chip('warn','Dispatched') : chip('ok','Done')) + '</td>' +
+      '<td class="m">' + r[4] + '</td><td>' + esc(r[5]) + '</td></tr>').join('') +
+    '</tbody></table>';
+}
+
+function machineTable(){
+  return '<table class="t"><thead><tr><th>Machine</th><th>Platform</th><th>Last seen</th><th>Last sync</th></tr></thead><tbody>' +
+    MACHINES.map(r =>
+      '<tr><td class="k m">' + esc(r[0]) + '</td><td>' + r[1] + '</td>' +
+      '<td>' + (r[4]==='warn' ? chip('warn', r[2]) : chip('ok', r[2])) + '</td><td>' + r[3] + '</td></tr>').join('') +
+    '</tbody></table>';
+}
+
+function feedList(){
+  return '<ul class="feed">' + FEED.map(r =>
+    '<li><span class="when">' + r[0] + '</span><span class="what">' + r[1] + '</span></li>').join('') + '</ul>';
+}
+
+function conflictBanner(){
+  return '<div class="banner"><span class="dot crit"></span>' +
+    '<span class="txt"><strong>Baldur\u2019s Gate 3 &mdash; both machines wrote since v26.</strong>' +
+    '<em>Open 4h 12m. STEAMDECK-OLED holds 92.4 MB from 14:08; RIG-ONYX holds 91.1 MB from 09:37.</em></span>' +
+    '<button class="btn">Compare</button><button class="btn btn-primary">Resolve</button></div>';
+}
+
+function savePathsCard(){
+  return '<div class="card"><header><h3>Save paths per machine</h3>' +
+    '<button class="btn" style="padding:3px 9px;font-size:11px">Use as template</button></header>' +
+    '<div class="pad" style="display:flex;flex-direction:column;gap:10px">' +
+    '<div><div style="font-size:11px;color:var(--u-faint);font-family:var(--u-mono)">RIG-ONYX</div>' +
+    '<span class="path">C:\\Users\\marwan\\Saved Games\\CD Projekt Red\\Cyberpunk 2077</span></div>' +
+    '<div><div style="font-size:11px;color:var(--u-faint);font-family:var(--u-mono)">STEAMDECK-OLED</div>' +
+    '<span class="path">~/.steam/steam/steamapps/compatdata/1091500/pfx/drive_c/users/steamuser/Saved Games</span></div>' +
+    '</div></div>';
+}
+
+function retentionCard(){
+  return '<div class="card"><header><h3>Retention &amp; excludes</h3></header><div class="pad">' +
+    '<dl class="kv"><dt>Keep</dt><dd>40 versions <span style="color:var(--u-faint)">&middot; 5 over the limit</span></dd>' +
+    '<dt>Policy</dt><dd>Newest wins &mdash; latest upload always wins</dd>' +
+    '<dt>Excludes</dt><dd style="font-family:var(--u-mono);font-size:11px">*.tmp, *.log, cache/**</dd></dl>' +
+    '<div class="bar"><i style="width:74%"></i></div>' +
+    '<div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--u-faint);font-family:var(--u-mono)">' +
+    '<span>1.84 GB of 2.50 GB</span><span>next prune 03:00</span></div>' +
+    '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn">Prune now</button>' +
+    '<button class="btn">Save patterns</button></div></div></div>';
+}
+
+function dashboard(opt){
+  const nav = ['Games','Configuration','Audit Log','Help','What\u2019s New'];
+  const top =
+    '<div class="ui-top"><div class="ui-brand"><span class="ui-mark">SL</span>' +
+    '<span class="ui-word">Save<em>Locker</em></span><span class="ui-ver">v0.5.10</span></div>' +
+    '<div class="ui-nav">' + nav.map((n,i) =>
+      '<button ' + (i===0 ? 'aria-current="page"' : '') + '>' + n + '</button>').join('') + '</div>' +
+    '<div class="ui-tools"><span class="ui-field"><span>PASSWORD</span><b>\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022</b></span>' +
+    '<button class="btn btn-primary">Connect</button>' +
+    '<button class="btn btn-alert">1 overdue conflict</button></div></div>';
+
+  const head =
+    '<div class="hl"><div><h2>Cyberpunk 2077</h2>' +
+    '<div class="sub">steam:1091500 &middot; 41 versions &middot; 184.6 MB</div></div>' +
+    '<div class="chips">' + chip('ok','Synced 22m ago') + chip('','Newest wins') + chip('','Keep 40') +
+    '<button class="btn">Push</button><button class="btn">Pull</button>' +
+    '<button class="btn btn-primary">Refresh art</button></div></div>';
+
+  if (opt.variant === 'canvas'){
+    return top + '<div class="ui-body solo"><div class="ui-main">' + head + conflictBanner() + statBlock() +
+      '<div class="split3"><div class="card"><header><h3>Versions</h3>' + chip('','41 kept') + '</header>' + versionTable() + '</div>' +
+      '<div class="stack">' + savePathsCard() + retentionCard() + '</div></div>' +
+      '<div class="split2"><div class="card"><header><h3>Recent remote commands</h3></header>' + cmdTable() + '</div>' +
+      '<div class="card"><header><h3>Activity</h3></header>' + feedList() + '</div></div></div></div>';
+  }
+
+  if (opt.variant === 'ledger'){
+    return top + '<div class="ui-body solo"><div class="ui-main">' + head + conflictBanner() + statBlock() +
+      '<div class="card"><header><h3>Versions</h3>' + chip('','41 kept &middot; oldest 12 Jun') + '</header>' + versionTable() + '</div>' +
+      '<div class="card"><header><h3>Recent remote commands</h3></header>' + cmdTable() + '</div>' +
+      '<div class="split2"><div class="card"><header><h3>Machines</h3></header>' + machineTable() + '</div>' +
+      retentionCard() + '</div>' +
+      '<div class="card"><header><h3>Audit log</h3><button class="btn" style="padding:3px 9px;font-size:11px">Export</button></header>' +
+      feedList() + '</div></div></div>';
+  }
+
+  if (opt.variant === 'rail'){
+    const icons = ['\u25C6','\u2726','\u25A3','\u25CE','\u2261'];
+    return top + '<div class="ui-body rail"><nav class="ui-side" style="padding:12px 0">' +
+      icons.map((c,i) =>
+        '<div class="side-item" style="justify-content:center;padding:12px 0" ' + (i===0 ? 'aria-current="true"' : '') +
+        '><span style="font-size:15px;color:' + (i===0 ? 'var(--u-accent)' : 'var(--u-faint)') + '">' + c + '</span></div>').join('') +
+      '</nav><div class="ui-main">' + head + conflictBanner() + statBlock() +
+      '<div class="split3"><div class="card"><header><h3>Versions</h3></header>' + versionTable() + '</div>' +
+      '<div class="card"><header><h3>Machines</h3></header>' + machineTable() + '</div></div>' +
+      '<div class="split2">' + savePathsCard() + retentionCard() + '</div>' +
+      '<div class="card"><header><h3>Recent remote commands</h3></header>' + cmdTable() + '</div></div></div>';
+  }
+
+  return top + '<div class="ui-body"><nav class="ui-side"><h4>Games &middot; 7</h4>' + sidebarGames() +
+    '<div style="padding:12px 16px 0"><button class="btn" style="width:100%">+ Add game</button></div></nav>' +
+    '<div class="ui-main">' + head + conflictBanner() + statBlock() +
+    '<div class="card"><header><h3>Versions</h3>' + chip('','41 kept') + '</header>' + versionTable() + '</div>' +
+    '<div class="split2">' + savePathsCard() + retentionCard() + '</div>' +
+    '<div class="split3"><div class="card"><header><h3>Recent remote commands</h3></header>' + cmdTable() + '</div>' +
+    '<div class="card"><header><h3>Machines</h3></header>' + machineTable() + '</div></div></div></div>';
+}
+
+function agent(opt){
+  const items = ['Overview','Add Games','Conflicts','Settings','Activity'];
+  const top =
+    '<div class="ui-top"><div class="ui-brand"><span class="ui-mark">SL</span>' +
+    '<span class="ui-word">Save<em>Locker</em></span><span class="ui-ver">agent 0.5.10</span></div>' +
+    '<div class="ui-tools">' + chip('ok','Connected') + '<button class="btn btn-primary">Sync now</button></div></div>';
+
+  const hero =
+    '<div class="status-hero"><span class="pulse">IDLE</span><div style="flex:1;min-width:0">' +
+    '<div class="t1">Idle &mdash; nothing syncing right now.</div>' +
+    '<div class="t2">RIG-ONYX &middot; last push 22m ago &middot; settle window 8s &middot; offline queue empty</div></div>' +
+    '<div class="chips">' + chip('warn','1 conflict') + chip('','4 games') + '</div></div>';
+
+  const tracked =
+    '<div class="card"><header><h3>Currently tracked games</h3>' +
+    '<button class="btn" style="padding:3px 9px;font-size:11px">Rescan</button></header>' +
+    '<table class="t"><thead><tr><th>Game</th><th>Store</th><th>Save folder</th><th>State</th></tr></thead><tbody>' +
+    TRACKED.map(r =>
+      '<tr><td class="k">' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td>' +
+      '<td class="m" style="max-width:290px;overflow:hidden;text-overflow:ellipsis">' + esc(r[2]) + '</td>' +
+      '<td>' + (r[3]==='ok' ? chip('ok','Detected') : r[3]==='crit' ? chip('crit','Conflict') : chip('warn','Not detected')) +
+      '</td></tr>').join('') + '</tbody></table></div>';
+
+  const conflict =
+    '<div class="card"><header><h3>Sync paused &mdash; conflict found</h3>' + chip('crit','Baldur\u2019s Gate 3') + '</header>' +
+    '<div class="pad"><p style="font-size:12.5px;color:var(--u-dim);margin:0 0 12px">Both copies changed since the last sync. ' +
+    'Keep one; the other stays in your history and can still be restored.</p><div class="conflict-pick">' +
+    '<div class="pick win"><h5>This device</h5><div class="big">92.4 MB &middot; 14:08</div>' +
+    '<div class="sm">Act 3, Wyrm\u2019s Rock &mdash; 61h played</div>' +
+    '<button class="btn btn-primary" style="margin-top:10px;width:100%">Keep this</button></div>' +
+    '<div class="pick"><h5>The cloud</h5><div class="big">91.1 MB &middot; 09:37</div>' +
+    '<div class="sm">From RIG-ONYX &mdash; Act 3, 59h played</div>' +
+    '<button class="btn" style="margin-top:10px;width:100%">Keep the cloud</button></div></div></div></div>';
+
+  const settings =
+    '<div class="card"><header><h3>Connection &amp; safety</h3></header><div class="pad"><dl class="kv">' +
+    '<dt>Machine</dt><dd>RIG-ONYX</dd>' +
+    '<dt>Server</dt><dd style="font-family:var(--u-mono);font-size:11.5px">https://savelocker.lan:8443</dd>' +
+    '<dt>Settle</dt><dd>Wait 8 seconds after the game stops writing</dd>' +
+    '<dt>Startup</dt><dd>Start with Windows &mdash; on</dd></dl></div></div>';
+
+  const activity = '<div class="card"><header><h3>Activity</h3></header>' + feedList() + '</div>';
+  const main = '<div class="ui-main">' + conflict + tracked + '<div class="split2">' + settings + activity + '</div></div>';
+
+  if (opt.agentVariant === 'tabs'){
+    const tabs = '<div class="ui-nav" style="padding:0 18px;border-bottom:1px solid var(--u-line);background:var(--u-surface)">' +
+      items.map((n,i) => '<button style="border-radius:0;padding:12px 15px" ' + (i===0 ? 'aria-current="page"' : '') + '>' + n + '</button>').join('') +
+      '</div>';
+    return top + tabs + hero + '<div class="ui-body solo">' + main + '</div>';
+  }
+
+  const side = '<nav class="ui-side"><h4>Agent</h4>' + items.map((n,i) =>
+    '<div class="side-item" ' + (i===0 ? 'aria-current="true"' : '') + '><span class="nm">' + n + '</span>' +
+    (i===2 ? '<span class="dot crit"></span>' : '') + '</div>').join('') + '</nav>';
+
+  return top + hero + '<div class="ui-body">' + side + main + '</div>';
+}
+
+const OPTIONS = [
+  {id:'id1', n:'01', name:'Cold Storage', variant:'panes', agentVariant:'side',
+   line:'The vault taken literally: cold slate, brass hardware, hairline seams. Nothing glows; things are filed.',
+   idea:'Closest to what ships today. Same two-pane shape, but green stops being the brand and becomes status only, brass carries identity, and the stat row fuses into a single hairline block instead of four floating cards.',
+   type:'Archivo 700 for headings, IBM Plex Sans for interface text, IBM Plex Mono for every number, path and machine name.',
+   pal:[['#111619','Slate'],['#1a2126','Shelf'],['#c98f2e','Brass'],['#4c9e86','Held'],['#c2604f','Conflict'],['#e6ebee','Label']],
+   voice:'Terse and factual. "41 of 1,208 files changed." No reassurance, no exclamation marks.'},
+
+  {id:'id2', n:'02', name:'Checkpoint', variant:'canvas', agentVariant:'tabs',
+   line:'Named for the thing the product actually protects. Soft black, one ember accent, generous corners.',
+   idea:'Drops the game sidebar entirely: one game fills the canvas and switching happens from the top nav. 12px radii and pill chips make it read as something you own, not something you administer.',
+   type:'Bricolage Grotesque throughout \u2014 tight at display sizes, loose in body \u2014 with DM Mono for data.',
+   pal:[['#0f0f10','Ink'],['#141416','Panel'],['#e0533c','Ember'],['#7fa96a','Safe'],['#d9a63f','Watch'],['#f0eee9','Bone']],
+   voice:'Plain and warm. "Both copies changed since the last sync. Keep one."'},
+
+  {id:'id3', n:'03', name:'Ledger', variant:'ledger', agentVariant:'side',
+   line:'The only light option, and the only serif one. A save history is a record, so it is set like one.',
+   idea:'Cards nearly disappear. Versions, commands, machines and the audit log become one continuous ruled stack, so scanning a history never crosses a container edge. Oxblood is reserved for anything that needs a decision.',
+   type:'Newsreader for headings and figures, Public Sans for interface text, IBM Plex Mono for paths.',
+   pal:[['#fbfaf7','Paper'],['#f4f2ec','Margin'],['#7c2b25','Oxblood'],['#2f6a4f','Clean'],['#8a6212','Note'],['#1c1b18','Ink']],
+   voice:'Archival. Headers stay nouns; results read as entries in a log, not notifications.'},
+
+  {id:'id4', n:'04', name:'Shelter', variant:'panes', agentVariant:'tabs',
+   line:'Deck-first: fewer things per screen, bigger targets, a warm palette that holds up on an OLED at 40% brightness.',
+   idea:'Doubles padding and halves the column count. The agent window moves to top tabs so no control sits under a thumb resting on the left grip, and every row is tall enough to hit without aiming.',
+   type:'Fraunces 600 for headings, Work Sans for interface text, Spline Sans Mono for data.',
+   pal:[['#1a1d18','Moss'],['#20241d','Canvas'],['#9db06b','Lichen'],['#8fae70','Synced'],['#d3a45c','Waiting'],['#eceadd','Bone']],
+   voice:'Reassuring without chatter. "Kept. The other copy is still in your history."'},
+
+  {id:'id5', n:'05', name:'Hangar', variant:'rail', agentVariant:'side',
+   line:'An instrument panel. Zero radius, 1px seams, uppercase state codes, everything on one screen.',
+   idea:'Navigation collapses to a 58px icon rail so fleet tables get the full width, and nothing rounds off. Pick this if you mostly watch three machines rather than manage one game.',
+   type:'Saira for headings and the uppercase wordmark, Barlow for interface text, Roboto Mono for every value.',
+   pal:[['#0d1116','Graphite'],['#141b22','Bay'],['#3d92b8','Signal'],['#3f9a7a','Nominal'],['#c39331','Caution'],['#dfe7ee','Readout']],
+   voice:'Operational. States are codes \u2014 DISPATCHED, FAILED, LATEST \u2014 and failures name the cause first.'},
+];
+
+document.getElementById('options').innerHTML = OPTIONS.map(o =>
+  '<section class="opt ' + o.id + '" id="' + o.id + '"><div class="wrap">' +
+    '<div class="opt-head"><div>' +
+      '<div class="opt-num">Option ' + o.n + '</div>' +
+      '<h2 class="opt-name" style="font-family:var(--u-display)">' + o.name + '</h2>' +
+      '<p class="opt-line">' + o.line + '</p>' +
+      '<p class="opt-line" style="margin-top:14px;font-size:14px">' + o.idea + '</p>' +
+    '</div><div class="idcard"><dl style="margin:0">' +
+      '<div class="idrow"><dt>Palette</dt><dd><div class="sw">' +
+        o.pal.map(p => '<div><i style="background:' + p[0] + '"></i><b>' + p[1] + '</b></div>').join('') +
+      '</div></dd></div>' +
+      '<div class="idrow"><dt>Type</dt><dd>' + o.type + '</dd></div>' +
+      '<div class="idrow"><dt>Voice</dt><dd>' + o.voice + '</dd></div>' +
+    '</dl></div></div>' +
+    '<div class="frame-label"><h3>Console</h3><span>Games &rarr; Cyberpunk 2077</span><span class="rule"></span></div>' +
+    '<div class="scroller"><div class="shot"><div class="chrome"><i></i><i></i><i></i>' +
+      '<span class="url">savelocker.lan:8443/#/games</span></div>' +
+      '<div class="ui">' + dashboard(o) + '</div></div></div>' +
+    '<div class="frame-label"><h3>Agent window</h3><span>RIG-ONYX &middot; 900&times;600 WebView2</span><span class="rule"></span></div>' +
+    '<div class="scroller"><div class="shot agent"><div class="chrome"><i></i><i></i><i></i>' +
+      '<span class="url">SaveLocker \u2014 agent</span></div>' +
+      '<div class="ui agentwin">' + agent(o) + '</div></div></div>' +
+  '</div></section>').join('');
+</script>

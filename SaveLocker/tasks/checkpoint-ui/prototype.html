@@ -1,0 +1,2302 @@
+<title>Checkpoint Prototype</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Azeret+Mono:wght@300;400;500&family=Chivo:wght@400;500;600;700&family=Sora:wght@400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=Archivo:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --shell-bg:#f4f2ef; --shell-panel:#faf9f7; --shell-ink:#191817; --shell-dim:#5c5954;
+  --shell-faint:#8d8983; --shell-line:#ded9d2; --shell-accent:#c0432c;
+  --shell-mono:'Azeret Mono',ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --shell-bg:#0b0b0c; --shell-panel:#141416; --shell-ink:#f0eee9; --shell-dim:#a09d97;
+    --shell-faint:#6b6862; --shell-line:#232326; --shell-accent:#e0533c;
+  }
+}
+:root[data-theme="dark"]{
+  --shell-bg:#0b0b0c; --shell-panel:#141416; --shell-ink:#f0eee9; --shell-dim:#a09d97;
+  --shell-faint:#6b6862; --shell-line:#232326; --shell-accent:#e0533c;
+}
+*{box-sizing:border-box}
+body{background:var(--shell-bg);color:var(--shell-ink);font-family:var(--ui-disp,'Bricolage Grotesque',system-ui,sans-serif);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,h5{margin:0;text-wrap:balance}
+p{margin:0}
+.wrap{max-width:1320px;margin:0 auto;padding:0 24px}
+
+.mast{padding:52px 0 20px}
+.mast .eyebrow{font-family:var(--shell-mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--shell-faint)}
+.mast h1{font-size:clamp(32px,5vw,52px);font-weight:800;letter-spacing:-.035em;line-height:1;margin:14px 0 14px}
+.mast p{max-width:70ch;color:var(--shell-dim)}
+.bar{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:24px 0 16px;padding:13px 16px;
+  border:1px solid var(--shell-line);border-radius:16px;background:var(--shell-panel)}
+.bar .grp{display:flex;gap:6px;align-items:center}
+.bar .lab{font-family:var(--shell-mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--shell-faint);margin-right:2px}
+.pill{font-family:inherit;font-size:13px;font-weight:600;padding:7px 14px;border-radius:99px;border:1px solid var(--shell-line);background:transparent;color:var(--shell-dim);cursor:pointer;
+  transition:background-color .18s cubic-bezier(.2,.8,.25,1),color .18s,border-color .18s,transform .12s}
+.pill:hover{color:var(--shell-ink)}
+.pill:active{transform:scale(.96)}
+.pill[aria-pressed="true"]{background:var(--shell-ink);border-color:var(--shell-ink);color:var(--shell-bg)}
+.pill:focus-visible,.acc:focus-visible{outline:2px solid var(--shell-accent);outline-offset:2px}
+.acc{width:28px;height:28px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.2);transition:transform .18s cubic-bezier(.34,1.4,.5,1),border-color .18s}
+.acc:hover{transform:scale(1.12)}
+.acc[aria-pressed="true"]{border-color:var(--shell-ink)}
+.bar .cap{margin-left:auto;font-family:var(--shell-mono);font-size:10.5px;color:var(--shell-faint);text-align:right}
+.stage{padding-bottom:60px}
+.stage-scroll{overflow-x:auto;padding-bottom:8px}
+
+/* ================================ CHECKPOINT ================================ */
+.cp{
+  --mono:var(--ui-mono,'Azeret Mono',ui-monospace,monospace);
+  --accent-ink:color-mix(in oklab, var(--accent) 80%, var(--fg));
+  --accent-soft:color-mix(in oklab, var(--accent) 14%, var(--panel));
+  --accent-line:color-mix(in oklab, var(--accent) 42%, var(--panel));
+  --safe-soft:color-mix(in oklab, var(--safe) 14%, var(--panel));
+  --safe-line:color-mix(in oklab, var(--safe) 40%, var(--panel));
+  --safe-ink:color-mix(in oklab, var(--safe) 82%, var(--fg));
+  --watch-soft:color-mix(in oklab, var(--watch) 14%, var(--panel));
+  --watch-line:color-mix(in oklab, var(--watch) 40%, var(--panel));
+  --watch-ink:color-mix(in oklab, var(--watch) 82%, var(--fg));
+  --ease:cubic-bezier(.2,.8,.25,1);
+  color:var(--fg);background:var(--ink);font-size:13.5px;line-height:1.5;
+}
+.cp.dark,.deck{
+  --ink:#0f0f10; --panel:#141416; --raise:#191a1c; --tile:#1b1c1f; --hover:#202124;
+  --fg:#f0eee9; --dim:#a09d97; --faint:#6b6862; --line:#242427; --row:#1d1d20;
+  --safe:#7fa96a; --watch:#d9a63f; --chrome:#09090a; --knob:#4a4b52;
+  --shadow:0 2px 4px rgba(0,0,0,.45),0 30px 70px -34px rgba(0,0,0,.9);
+}
+.cp.light{
+  --ink:#f5f3ef; --panel:#fffefc; --raise:#f0ede8; --tile:#ebe7e0; --hover:#e8e3dc;
+  --fg:#191719; --dim:#57534d; --faint:#8b8780; --line:#e2ddd5; --row:#eeeae3;
+  --safe:#4c7b3e; --watch:#8a6212; --chrome:#e5e0d8; --knob:#c2bcb2;
+  --shadow:0 2px 4px rgba(70,60,50,.12),0 26px 60px -30px rgba(70,60,50,.42);
+}
+.cp *,.deck *{box-sizing:border-box}
+.frame{border-radius:16px;overflow:hidden;background:var(--ink);box-shadow:var(--shadow);position:relative;
+  transition:background-color .3s ease}
+.frame.console{min-width:1180px}
+.frame.agent{width:960px;min-width:960px}
+.frame.sheet{min-width:1060px}
+.titlebar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--chrome);border-bottom:1px solid var(--line);transition:background-color .3s ease}
+.titlebar i{width:10px;height:10px;border-radius:50%;background:color-mix(in oklab,var(--fg) 22%,var(--chrome));display:block}
+.titlebar .addr{margin-left:10px;font-family:var(--mono);font-size:10.5px;color:var(--faint);background:var(--panel);border-radius:99px;padding:4px 12px}
+.titlebar .right{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint)}
+
+.topbar{display:flex;align-items:center;gap:14px;padding:0 20px;height:64px;background:var(--panel);border-bottom:1px solid var(--line);transition:background-color .3s ease,border-color .3s ease}
+.brand{display:flex;align-items:center;gap:11px}
+.word{font-weight:700;font-size:18px;letter-spacing:-.035em}
+.word em{font-style:normal;color:var(--accent);transition:color .3s ease}
+.verpill{font-family:var(--mono);font-size:10.5px;color:var(--dim);border:1px solid var(--line);border-radius:99px;padding:3px 10px;background:var(--raise)}
+.verpill .d{width:6px;height:6px;border-radius:50%;background:var(--accent);display:inline-block;margin-left:6px;vertical-align:middle}
+nav.tabs{display:flex;gap:3px;margin-left:4px}
+nav.tabs button{font-family:inherit;font-size:13.5px;font-weight:500;padding:8px 14px;border-radius:99px;border:1px solid transparent;background:none;color:var(--dim);cursor:pointer;
+  transition:background-color .18s var(--ease),color .18s var(--ease),transform .12s var(--ease)}
+nav.tabs button:hover{background:var(--raise);color:var(--fg)}
+nav.tabs button:active{transform:scale(.97)}
+nav.tabs button[aria-current]{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink);font-weight:600}
+nav.tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.topbar .tools{margin-left:auto;display:flex;align-items:center;gap:9px}
+.keyfield{display:flex;align-items:center;background:var(--raise);border:1px solid var(--line);border-radius:99px;overflow:hidden}
+.keyfield span{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;color:var(--faint);padding:7px 10px}
+.keyfield b{font-family:var(--mono);font-size:11px;font-weight:400;color:var(--dim);padding:7px 12px 7px 0;letter-spacing:.2em}
+
+.b{font-family:inherit;font-size:13px;font-weight:500;padding:8px 15px;border-radius:99px;border:1px solid var(--line);background:var(--raise);color:var(--fg);cursor:pointer;white-space:nowrap;
+  transition:background-color .16s var(--ease),border-color .16s var(--ease),transform .13s var(--ease),box-shadow .16s var(--ease)}
+.b:hover{background:var(--hover);transform:translateY(-1px)}
+.b:active{transform:scale(.96) translateY(0)}
+.b:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.b.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.b.primary:hover{filter:brightness(1.08);background:var(--accent);box-shadow:0 6px 18px -8px var(--accent)}
+.b.alert{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink);font-weight:600}
+.b.sm{padding:5px 11px;font-size:12px}
+.b.icon{display:inline-flex;align-items:center;gap:7px}
+.b[disabled]{opacity:.45;cursor:not-allowed}
+.b[disabled]:hover{transform:none;background:var(--raise)}
+
+.chip{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);color:var(--dim);background:var(--raise);white-space:nowrap;
+  transition:background-color .25s ease,color .25s ease,border-color .25s ease}
+.chip.ok{color:var(--safe-ink);border-color:var(--safe-line);background:var(--safe-soft)}
+.chip.warn{color:var(--watch-ink);border-color:var(--watch-line);background:var(--watch-soft)}
+.chip.crit{color:var(--accent-ink);border-color:var(--accent-line);background:var(--accent-soft)}
+.dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;display:inline-block}
+.dot.ok{background:var(--safe)}.dot.warn{background:var(--watch)}.dot.crit{background:var(--accent)}.dot.idle{background:var(--faint)}
+.dot.live{animation:pulse 1.4s ease-in-out infinite}
+
+.seg{display:inline-flex;background:var(--raise);border:1px solid var(--line);border-radius:99px;padding:2px;gap:2px}
+.seg button{font-family:inherit;font-size:11.5px;font-weight:500;padding:5px 11px;border-radius:99px;border:0;background:none;color:var(--faint);cursor:pointer;display:inline-flex;align-items:center;gap:6px;
+  transition:background-color .18s var(--ease),color .18s var(--ease)}
+.seg button:hover{color:var(--fg)}
+.seg button[aria-pressed="true"]{background:var(--panel);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.18)}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+/* progress rail under the top bar */
+.rail{height:3px;background:var(--tile);position:relative;overflow:hidden}
+.rail i{display:block;height:100%;background:var(--accent);width:0;transition:width .55s cubic-bezier(.3,.9,.3,1)}
+.rail.idle{display:none}
+.rail::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,color-mix(in oklab,var(--accent) 55%,transparent),transparent);transform:translateX(-100%);animation:sweep 1.5s linear infinite}
+
+.split{display:grid;grid-template-columns:250px minmax(0,1fr);min-height:620px}
+.split.solo{grid-template-columns:minmax(0,1fr)}
+.gside{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;transition:background-color .3s ease}
+.gside header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:13px 14px;border-bottom:1px solid var(--line)}
+.gside header h4{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:400}
+.gside .list{overflow:auto;flex:1;padding:6px;display:flex;flex-direction:column;gap:2px}
+.gside footer{padding:10px 12px;border-top:1px solid var(--line)}
+
+/* two-line row: subtext always sits UNDER the name */
+.grow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:auto auto;
+  column-gap:11px;row-gap:3px;width:100%;text-align:left;font-family:inherit;padding:9px 10px;
+  border:1px solid transparent;border-radius:11px;background:none;color:var(--fg);cursor:pointer;
+  transition:background-color .16s var(--ease),border-color .16s var(--ease),transform .16s var(--ease)}
+.grow:hover{background:var(--raise);transform:translateX(2px)}
+.grow[aria-current]{background:var(--accent-soft);border-color:var(--accent-line)}
+.grow:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.grow .cov{grid-row:1 / span 2}
+.grow .t1{grid-column:2;font-size:13px;font-weight:600;letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;align-self:end}
+.grow .end{grid-column:3;grid-row:1 / span 2;align-self:center;display:flex;align-items:center;gap:7px}
+.grow .t2{grid-column:2;font-family:var(--mono);font-size:10px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;align-self:start}
+.grow.big{padding:12px 14px;border-radius:12px;column-gap:13px}
+.grow.big .t1{font-size:14px}
+.grow.big .t2{font-size:10.5px}
+
+.cov{position:relative;border-radius:9px;overflow:hidden;flex:0 0 auto;
+  background:linear-gradient(155deg,hsl(var(--h1) 42% 34%),hsl(var(--h2) 44% 13%));
+  display:grid;place-items:center;color:rgba(255,255,255,.92)}
+.cov::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(112deg,rgba(255,255,255,.16),rgba(255,255,255,0) 42%),
+             repeating-linear-gradient(180deg,rgba(0,0,0,.14) 0 1px,rgba(0,0,0,0) 1px 3px)}
+.cov span{position:relative;z-index:1;font-family:var(--mono);font-weight:500;letter-spacing:.04em;text-shadow:0 1px 3px rgba(0,0,0,.55)}
+.cov.s{width:38px;height:38px;font-size:11px}
+.cov.m{width:100%;aspect-ratio:3/4;font-size:26px}
+.cov.l{width:74px;height:98px;font-size:20px;border-radius:11px}
+
+.gridwall{display:grid;grid-template-columns:repeat(auto-fill,minmax(184px,1fr));gap:18px}
+.gtile{padding:0;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--panel);cursor:pointer;font-family:inherit;color:var(--fg);text-align:left;display:block;
+  transition:transform .2s var(--ease),border-color .2s var(--ease),box-shadow .2s var(--ease)}
+.gtile:hover{transform:translateY(-4px);border-color:var(--accent-line);box-shadow:var(--shadow)}
+.gtile:active{transform:translateY(-1px) scale(.99)}
+.gtile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.gtile .shot{position:relative;padding:8px 8px 0}
+.gtile .badge{position:absolute;top:15px;right:15px;z-index:2}
+.gtile .meta{padding:12px 14px 14px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.gtile .t1{font-size:13.5px;font-weight:600;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.gtile .t2{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:10px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.gtile .t2 b{font-weight:400;color:var(--dim);flex:0 0 auto}
+
+.canvas{padding:22px 24px 28px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.canvas > *{animation:rise .26s var(--ease) both}
+.canvas > *:nth-child(1){animation-delay:0ms}
+.canvas > *:nth-child(2){animation-delay:26ms}
+.canvas > *:nth-child(3){animation-delay:52ms}
+.canvas > *:nth-child(4){animation-delay:78ms}
+.canvas > *:nth-child(5){animation-delay:104ms}
+.canvas > *:nth-child(6){animation-delay:130ms}
+.canvas > *:nth-child(n+7){animation-delay:150ms}
+.gtile{animation:pop .3s var(--ease) both}
+.gtile:nth-child(2){animation-delay:35ms}.gtile:nth-child(3){animation-delay:70ms}
+.gtile:nth-child(4){animation-delay:105ms}.gtile:nth-child(5){animation-delay:140ms}
+.gtile:nth-child(6){animation-delay:175ms}.gtile:nth-child(n+7){animation-delay:205ms}
+
+.pagehead{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.pagehead h2{font-size:27px;font-weight:700;letter-spacing:-.035em;line-height:1.05}
+.pagehead .sub{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:6px}
+.pagehead .acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.grid31{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:12px}
+.stack{display:flex;flex-direction:column;gap:12px}
+
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px 16px;transition:background-color .3s ease,border-color .3s ease}
+.stat dt{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.stat dd{margin:8px 0 0;font-size:25px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1}
+.stat small{display:block;margin-top:6px;font-size:11.5px;color:var(--dim)}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;transition:background-color .3s ease,border-color .3s ease}
+.card > header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.card > header h3{font-size:14px;font-weight:600;letter-spacing:-.02em}
+.card .pad{padding:15px 16px}
+.card .pad + .pad{border-top:1px solid var(--line)}
+
+table.t{width:100%;border-collapse:collapse;font-size:12.5px}
+table.t th{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);text-align:left;font-weight:400;padding:8px 16px;border-bottom:1px solid var(--line)}
+table.t td{padding:10px 16px;border-bottom:1px solid var(--row);color:var(--dim);white-space:nowrap;transition:background-color .16s var(--ease)}
+table.t tr:last-child td{border-bottom:0}
+table.t tbody tr:hover td{background:var(--raise)}
+table.t td.k{color:var(--fg);font-weight:600}
+table.t td.m{font-family:var(--mono);font-size:11.5px}
+table.t td.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+table.t td.wrap{white-space:normal}
+
+.path{font-family:var(--mono);font-size:11px;color:var(--dim);background:var(--tile);border:1px solid var(--line);border-radius:8px;padding:7px 10px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px 16px;font-size:12.5px;margin:0}
+.kv dt{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);padding-top:3px}
+.kv dd{margin:0;color:var(--fg);min-width:0}
+.meter{height:7px;border-radius:99px;background:var(--tile);overflow:hidden;margin-top:10px}
+.meter i{display:block;height:100%;background:var(--accent);border-radius:99px;transition:width .55s cubic-bezier(.3,.9,.3,1)}
+
+.banner{display:flex;align-items:center;gap:13px;padding:13px 16px;border-radius:14px;border:1px solid var(--accent-line);background:var(--accent-soft);transition:background-color .3s ease,border-color .3s ease}
+.banner .txt{flex:1;min-width:0}
+.banner .txt strong{color:var(--accent-ink);font-weight:600;font-size:13.5px}
+.banner .txt em{font-style:normal;display:block;color:var(--dim);font-size:12px;margin-top:3px}
+
+.feed{list-style:none;margin:0;padding:0}
+.feed li{display:flex;gap:12px;padding:11px 16px;border-bottom:1px solid var(--row)}
+.feed li:last-child{border-bottom:0}
+.feed .when{font-family:var(--mono);font-size:10.5px;color:var(--faint);width:60px;flex:0 0 auto;text-align:right;padding-top:2px}
+.feed .what{font-size:12.5px;color:var(--dim);min-width:0}
+.feed .what b{color:var(--fg);font-weight:600}
+.feed .what code{font-family:var(--mono);font-size:11px;color:var(--faint)}
+
+.filters{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.fchip{font-family:inherit;font-size:12.5px;padding:6px 13px;border-radius:99px;border:1px solid var(--line);background:var(--raise);color:var(--dim);cursor:pointer;
+  transition:background-color .16s var(--ease),color .16s var(--ease),transform .13s var(--ease)}
+.fchip:hover{color:var(--fg)}
+.fchip:active{transform:scale(.96)}
+.fchip[aria-pressed="true"]{background:var(--fg);border-color:var(--fg);color:var(--ink);font-weight:600}
+.fchip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.fchip .ct{font-family:var(--mono);font-size:10px;opacity:.62;margin-left:5px}
+.search{display:flex;align-items:center;gap:8px;background:var(--raise);border:1px solid var(--line);border-radius:99px;padding:0 14px;transition:border-color .18s var(--ease)}
+.search svg{flex:0 0 auto;color:var(--faint)}
+.search input{background:none;border:0;color:var(--fg);font-family:inherit;font-size:12.5px;padding:8px 0;width:210px;outline:none}
+.search input::placeholder{color:var(--faint)}
+.search:focus-within{border-color:var(--accent-line)}
+
+.hero{display:flex;align-items:center;gap:16px;padding:18px 20px;background:var(--panel);border-bottom:1px solid var(--line);transition:background-color .3s ease}
+.hero .badge{width:54px;height:54px;border-radius:15px;display:grid;place-items:center;font-family:var(--mono);font-size:10px;letter-spacing:.1em;background:var(--safe-soft);border:1px solid var(--safe-line);color:var(--safe-ink);flex:0 0 auto;
+  transition:background-color .3s ease,border-color .3s ease,color .3s ease}
+.hero .badge.stop{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink)}
+.hero .badge.busy{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink)}
+.hero .badge.busy svg{animation:spin 1.1s linear infinite}
+.hero h2{font-size:19px;font-weight:700;letter-spacing:-.03em}
+.hero .line2{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:4px}
+.hero .right{margin-left:auto;display:flex;gap:8px;align-items:center;flex:0 0 auto}
+.hero .prog{margin-top:9px}
+.hero .prog .meter{margin-top:0}
+.hero .prog .legend{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:6px}
+.aside{background:var(--panel);border-right:1px solid var(--line);padding:14px 10px;display:flex;flex-direction:column;gap:3px;transition:background-color .3s ease}
+.aside button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;font-family:inherit;font-size:13.5px;padding:9px 12px;border-radius:10px;border:1px solid transparent;background:none;color:var(--dim);cursor:pointer;
+  transition:background-color .16s var(--ease),color .16s var(--ease),transform .16s var(--ease)}
+.aside button:hover{background:var(--raise);color:var(--fg);transform:translateX(2px)}
+.aside button[aria-current]{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink);font-weight:600}
+.aside button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.aside .count{margin-left:auto;font-family:var(--mono);font-size:10px}
+.aside .spacer{flex:1}
+.aside .foot{font-family:var(--mono);font-size:10px;color:var(--faint);padding:10px 12px;border-top:1px solid var(--line)}
+.abody{display:grid;grid-template-columns:196px minmax(0,1fr);min-height:560px}
+
+.picker{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.pick{border:1px solid var(--line);border-radius:14px;padding:15px;background:var(--tile);transition:border-color .18s var(--ease),transform .18s var(--ease)}
+.pick:hover{transform:translateY(-2px)}
+.pick.here{border-color:var(--accent-line);background:var(--accent-soft)}
+.pick h5{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:400}
+.pick .big{font-size:17px;font-weight:700;letter-spacing:-.03em;margin-top:8px;font-variant-numeric:tabular-nums}
+.pick .sm{font-size:12px;color:var(--dim);margin-top:4px}
+.pick .b{margin-top:14px;width:100%}
+
+.check{display:flex;align-items:center;gap:11px;padding:11px 16px;border-bottom:1px solid var(--row);transition:background-color .16s var(--ease)}
+.check:hover{background:var(--raise)}
+.check:last-child{border-bottom:0}
+.check input{width:16px;height:16px;accent-color:var(--accent);flex:0 0 auto;cursor:pointer}
+.check .col{min-width:0;flex:1}
+.check .t1{font-size:13px;font-weight:600}
+.check .t2{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.footbar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--line);background:var(--raise)}
+.footbar .msg{font-size:12.5px;color:var(--dim);flex:1}
+
+.toggle{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--row)}
+.toggle:last-child{border-bottom:0}
+.toggle .lbl{font-size:13px}
+.toggle .lbl small{display:block;color:var(--faint);font-size:11.5px;margin-top:3px}
+.sw{width:42px;height:24px;border-radius:99px;border:1px solid var(--line);background:var(--tile);position:relative;cursor:pointer;flex:0 0 auto;transition:background-color .22s var(--ease),border-color .22s var(--ease)}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--knob);transition:transform .26s cubic-bezier(.34,1.45,.5,1),background-color .22s}
+.sw[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent-line)}
+.sw[aria-pressed="true"]::after{transform:translateX(18px);background:var(--accent)}
+.sw:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.docs{display:grid;grid-template-columns:240px minmax(0,1fr);gap:12px}
+.doclist{display:flex;flex-direction:column;max-height:540px;overflow:auto}
+.doclist button{text-align:left;font-family:inherit;font-size:12.5px;padding:9px 14px;border:0;border-bottom:1px solid var(--row);background:none;color:var(--dim);cursor:pointer;transition:background-color .16s var(--ease),color .16s,padding-left .16s var(--ease)}
+.doclist button:hover{background:var(--raise);color:var(--fg);padding-left:17px}
+.doclist button[aria-current]{background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
+.prose{padding:20px 22px;max-width:68ch}
+.prose h4{font-size:19px;font-weight:700;letter-spacing:-.03em;margin-bottom:12px}
+.prose h5{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:20px 0 8px}
+.prose p{font-size:13.5px;color:var(--dim);margin-bottom:12px}
+.prose ul{margin:0 0 14px 18px;padding:0;color:var(--dim);font-size:13.5px}
+.prose li{margin-bottom:6px}
+.prose code{font-family:var(--mono);font-size:11.5px;background:var(--tile);border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--safe-ink)}
+.prose strong{color:var(--fg);font-weight:600}
+.prose blockquote{border-left:2px solid var(--accent);margin:0 0 14px;padding:8px 14px;background:var(--tile);border-radius:0 10px 10px 0;font-size:13px;color:var(--dim)}
+
+.rel{display:flex;gap:16px;padding:16px;border-bottom:1px solid var(--row)}
+.rel:last-child{border-bottom:0}
+.rel .ver{width:92px;flex:0 0 auto;font-family:var(--mono);font-size:12px;color:var(--fg)}
+.rel .ver small{display:block;color:var(--faint);font-size:10px;margin-top:4px}
+.rel .body h4{font-size:15px;font-weight:600;letter-spacing:-.02em;margin-bottom:6px}
+.rel .body p{font-size:12.5px;color:var(--dim)}
+
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.steps li{background:var(--panel);padding:16px 18px;display:grid;grid-template-columns:34px minmax(0,1fr);gap:14px}
+.steps .n{font-family:var(--mono);font-size:11px;color:var(--accent-ink);border:1px solid var(--accent-line);background:var(--accent-soft);border-radius:8px;height:26px;display:grid;place-items:center}
+.steps h4{font-size:14.5px;font-weight:600;letter-spacing:-.02em}
+.steps p{font-size:12.5px;color:var(--dim);margin-top:5px}
+.steps .where{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:7px}
+
+.toast{position:absolute;right:18px;bottom:18px;background:color-mix(in oklab,var(--fg) 12%,var(--panel));border:1px solid var(--line);color:var(--fg);font-size:12.5px;padding:11px 16px;border-radius:12px;box-shadow:var(--shadow);opacity:0;transform:translateY(10px) scale(.98);
+  transition:opacity .2s var(--ease),transform .34s cubic-bezier(.2,1.3,.35,1);pointer-events:none;max-width:340px;z-index:9}
+.toast.on{opacity:1;transform:none}
+.empty{padding:40px 20px;text-align:center;color:var(--faint);font-size:13px}
+.empty b{display:block;color:var(--fg);font-size:15px;font-weight:600;margin-bottom:6px}
+
+/* ================================ STEAM / DECKY ================================ */
+.steam{
+  --st-ink:#0b0e12; --st-panel:#23262e; --st-row:rgba(255,255,255,.06); --st-rowhi:#3d4450;
+  --st-fg:#dfe3e6; --st-dim:#8b929a; --st-line:rgba(255,255,255,.08); --st-blue:#1a9fff;
+  font-family:'Motiva Sans',Arial,Helvetica,sans-serif;color:var(--st-fg);
+  font-size:13px;line-height:1.4;-webkit-font-smoothing:antialiased}
+.steam *{box-sizing:border-box}
+.qam{width:322px;min-width:322px;background:linear-gradient(180deg,#171a21,#10131a);
+  border-radius:8px;overflow:hidden;box-shadow:0 20px 50px -20px rgba(0,0,0,.9);border:1px solid #000}
+.qam .qhead{display:flex;align-items:center;gap:10px;padding:12px 14px;background:#0d1014;border-bottom:1px solid #000}
+.qam .qhead .nm{font-size:15px;font-weight:700;letter-spacing:.2px}
+.qam .qscroll{max-height:640px;overflow:auto;padding:6px 0 12px}
+.psec{padding:6px 12px 12px}
+.psec > h4{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#7d8590;padding:10px 4px 8px}
+.prow{background:var(--st-row);border-radius:4px;padding:9px 11px;margin-bottom:6px;font-size:12.5px}
+.prow.ro{background:transparent;padding:4px 4px 8px}
+.pline{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:2px 0}
+.pline span:first-child{opacity:.7}
+.pline span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pbtn{display:block;width:100%;text-align:center;font-family:inherit;font-size:13px;font-weight:500;
+  padding:10px 12px;border:0;border-radius:4px;background:var(--st-row);color:var(--st-fg);cursor:pointer;margin-bottom:6px;
+  transition:background-color .12s linear,color .12s linear,transform .12s var(--ease)}
+.pbtn:hover{background:rgba(255,255,255,.11)}
+.pbtn.focus{background:#fff;color:#0b0e12;font-weight:700;box-shadow:0 0 0 2px rgba(255,255,255,.35),0 0 22px rgba(255,255,255,.28)}
+.pbtn.danger{color:#e07272}
+.pbtn:focus-visible{outline:2px solid var(--st-blue);outline-offset:2px}
+.prowsplit{display:flex;gap:6px;margin-bottom:6px}
+.prowsplit .pbtn{margin-bottom:0}
+.pdrop{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--st-row);
+  border-radius:4px;padding:10px 12px;margin-bottom:6px;font-size:13px;cursor:pointer}
+.pdrop .lbl{opacity:.7;font-size:12px}
+.ptoggle{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:var(--st-row);
+  border-radius:4px;padding:10px 12px;margin-bottom:6px}
+.ptoggle .d{font-size:11.5px;color:var(--st-dim);margin-top:4px;max-width:32ch}
+.stsw{width:38px;height:20px;border-radius:2px;background:#0d1014;border:1px solid rgba(255,255,255,.14);position:relative;flex:0 0 auto;margin-top:2px}
+.stsw i{position:absolute;top:2px;left:2px;width:15px;height:14px;background:#67707b;border-radius:1px;transition:transform .16s linear,background-color .16s}
+.stsw.on{background:#1a9fff33;border-color:#1a9fff88}
+.stsw.on i{transform:translateX(17px);background:var(--st-blue)}
+.pwarn{background:#3a2f16;border-radius:4px;padding:11px 12px;margin-bottom:6px}
+.pwarn b{color:#e0b355}
+.pwarn p{font-size:11.5px;color:#cfd3d8;opacity:.85;margin-top:4px}
+.pprog{height:5px;border-radius:3px;background:rgba(255,255,255,.15);overflow:hidden;margin-top:6px}
+.pprog i{display:block;height:100%;background:rgba(255,255,255,.6);transition:width .5s linear}
+.plog{font-family:ui-monospace,monospace;font-size:10.5px;color:#a9b0b8;white-space:pre-wrap;padding:2px 4px}
+.kindrow{display:flex;gap:10px;flex-wrap:wrap}
+.kind{display:flex;align-items:center;gap:9px;background:var(--st-panel);border-radius:6px;padding:9px 12px;font-size:12px}
+.kind i{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:13px;flex:0 0 auto}
+.sttoast{width:330px;background:#23262ef2;border-radius:6px;display:flex;align-items:center;
+  box-shadow:0 10px 30px -10px rgba(0,0,0,.8);border:1px solid rgba(255,255,255,.06);backdrop-filter:blur(6px)}
+.sttoast .body{padding:11px 14px 11px 0;min-width:0}
+.sttoast .t{font-size:12.5px;font-weight:700}
+.sttoast .b{font-size:12.5px;color:#cfd3d8;margin-top:2px}
+.sttoast .s{font-size:11px;color:#8b929a;margin-top:3px}
+.libchip{display:inline-flex;align-items:center;gap:8px;border-radius:14px;padding:6px 13px;font-size:12.5px;font-weight:600}
+.playbtn{background:linear-gradient(180deg,#69bf40,#4c8c2b);color:#fff;font-weight:700;font-size:15px;
+  padding:11px 34px;border-radius:3px;border:0;letter-spacing:.4px}
+
+/* notifications menu (console header) */
+.bell{position:relative}
+.bell .count{position:absolute;top:-5px;right:-5px;min-width:17px;height:17px;border-radius:99px;
+  background:var(--accent);color:var(--on-accent);font-size:10px;font-weight:700;display:grid;place-items:center;padding:0 4px;
+  border:2px solid var(--panel)}
+.bell .count.warn{background:var(--watch);color:#1a1408}
+.menu{position:absolute;top:calc(100% + 10px);right:0;width:392px;background:var(--panel);
+  border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);z-index:30;overflow:hidden;
+  animation:drop .18s var(--ease) both}
+@keyframes drop{from{opacity:0;transform:translateY(-6px) scale(.985)}to{opacity:1;transform:none}}
+.menu header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.menu header h4{font-size:13.5px;font-weight:600;letter-spacing:-.02em}
+.menu .list{max-height:388px;overflow:auto}
+.nrow{display:grid;grid-template-columns:9px minmax(0,1fr) auto;gap:11px;padding:12px 14px;border-bottom:1px solid var(--row);
+  transition:background-color .16s var(--ease)}
+.nrow:last-child{border-bottom:0}
+.nrow:hover{background:var(--raise)}
+.nrow .sev{width:9px;height:9px;border-radius:50%;margin-top:5px}
+.nrow .t1{font-size:13px;font-weight:600;letter-spacing:-.015em}
+.nrow .t2{font-size:12px;color:var(--dim);margin-top:3px}
+.nrow .t3{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:6px;display:flex;gap:8px;flex-wrap:wrap}
+.nrow .side{display:flex;flex-direction:column;align-items:flex-end;gap:7px}
+.nrow .x{width:24px;height:24px;border-radius:7px;border:1px solid transparent;background:none;color:var(--faint);cursor:pointer;font-size:14px;line-height:1;
+  transition:background-color .16s,color .16s}
+.nrow .x:hover{background:var(--tile);color:var(--fg)}
+.menu footer{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-top:1px solid var(--line);background:var(--raise)}
+.menu .none{padding:34px 20px;text-align:center}
+.menu .none b{display:block;font-size:14px;font-weight:600;margin-bottom:5px}
+.menu .none span{font-size:12.5px;color:var(--faint)}
+
+/* exclude editor */
+.globs{display:flex;flex-wrap:wrap;gap:7px}
+.glob{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11.5px;
+  background:var(--tile);border:1px solid var(--line);border-radius:8px;padding:6px 8px 6px 11px;color:var(--fg)}
+.glob button{width:18px;height:18px;border-radius:5px;border:0;background:none;color:var(--faint);cursor:pointer;font-size:13px;line-height:1;
+  transition:background-color .16s,color .16s}
+.glob button:hover{background:var(--panel);color:var(--accent-ink)}
+.glob.inherited{background:transparent;border-style:dashed;color:var(--dim)}
+.globadd{display:flex;align-items:center;gap:8px;background:var(--tile);border:1px dashed var(--line);border-radius:8px;padding:0 10px}
+.globadd input{background:none;border:0;outline:none;color:var(--fg);font-family:var(--mono);font-size:11.5px;padding:7px 0;width:150px}
+.globadd input::placeholder{color:var(--faint)}
+
+/* OS notifications */
+.notif-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;align-items:start}
+.win11{width:360px;background:#2b2b2be6;border:1px solid #3d3d3d;border-radius:8px;padding:14px;
+  font-family:'Segoe UI',system-ui,sans-serif;color:#f3f3f3;backdrop-filter:blur(20px);box-shadow:0 12px 30px -12px rgba(0,0,0,.7)}
+.win11 .app{display:flex;align-items:center;gap:8px;font-size:11.5px;color:#c8c8c8;margin-bottom:9px}
+.win11 .ti{font-size:14px;font-weight:600}
+.win11 .bo{font-size:12.5px;color:#d6d6d6;margin-top:3px}
+.win11 .acts{display:flex;gap:8px;margin-top:12px}
+.win11 button{flex:1;font-family:inherit;font-size:12.5px;padding:7px 10px;border-radius:4px;
+  border:1px solid #4a4a4a;background:#3b3b3b;color:#f3f3f3;cursor:pointer}
+.win11 button.pri{background:#4cc2ff;border-color:#4cc2ff;color:#06212b;font-weight:600}
+.gnome{width:360px;background:#242424;border:1px solid #3a3a3a;border-radius:14px;padding:14px 16px;
+  font-family:'Cantarell',system-ui,sans-serif;color:#f6f5f4;box-shadow:0 14px 34px -14px rgba(0,0,0,.8)}
+.gnome .hd{display:flex;align-items:center;gap:9px;font-size:12px;color:#c0bfbc}
+.gnome .ti{font-size:13.5px;font-weight:700;margin-top:8px}
+.gnome .bo{font-size:12.5px;color:#c0bfbc;margin-top:3px}
+.gnome .acts{display:flex;gap:8px;margin-top:12px}
+.gnome button{flex:1;font-family:inherit;font-size:12.5px;padding:8px;border-radius:8px;border:1px solid #4c4c4c;background:#333;color:#f6f5f4;cursor:pointer}
+
+/* store art */
+.artrow{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.scap{position:relative;border-radius:8px;overflow:hidden;box-shadow:var(--shadow);
+  background:radial-gradient(120% 120% at 22% 8%,color-mix(in oklab,var(--accent) 42%,#101014),#0b0b0e 68%);
+  display:flex;color:#fff}
+.scap::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(115deg,rgba(255,255,255,.05) 0 2px,rgba(255,255,255,0) 2px 9px)}
+.scap .txt{position:relative;z-index:1}
+.scap .nm{font-weight:800;letter-spacing:-.03em;line-height:.98}
+.scap .nm em{font-style:normal;color:var(--accent)}
+.scap .tag{font-family:var(--mono);text-transform:uppercase;letter-spacing:.16em;opacity:.72;margin-top:8px}
+.capcell{display:flex;flex-direction:column;gap:9px}
+.capcell .meta{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+
+/* sign in */
+.signin{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:0;min-height:600px;
+  background:radial-gradient(120% 90% at 18% 0%,color-mix(in oklab,var(--accent) 14%,var(--ink)),var(--ink) 62%)}
+.signcard{align-self:center;justify-self:center;width:100%;max-width:420px;padding:40px 34px}
+.signmark{margin-bottom:22px}
+.signin h2{font-size:29px;font-weight:700;letter-spacing:-.035em}
+.signin .lead{font-size:13.5px;color:var(--dim);margin:10px 0 26px;max-width:44ch}
+.field{display:block;margin-bottom:14px}
+.field span{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);margin-bottom:7px}
+.field input{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:13px 15px;color:var(--fg);font-family:inherit;font-size:14px;outline:none;
+  transition:border-color .18s var(--ease),box-shadow .18s var(--ease)}
+.field input:focus{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in oklab,var(--accent) 20%,transparent)}
+.field.bad input{border-color:var(--accent)}
+.fielderr{font-size:12.5px;color:var(--accent-ink);margin:-6px 0 14px;max-width:44ch}
+.remember{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--dim);margin-bottom:20px}
+.remember input{width:15px;height:15px;accent-color:var(--accent)}
+.signfoot{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
+.signin .hint{font-size:11.5px;color:var(--faint);margin-top:12px;line-height:1.6}
+.signin .hint code{font-family:var(--mono);font-size:10.5px;background:var(--tile);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+.signaside{border-left:1px solid var(--line);background:var(--panel);padding:34px 26px;align-self:stretch}
+.signaside h3{font-size:11.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.signaside ul{margin:16px 0 0;padding-left:17px;color:var(--dim);font-size:12.5px}
+.signaside li{margin-bottom:11px}
+.signstat{display:flex;flex-direction:column;gap:8px;align-items:flex-start;margin-top:22px}
+
+/* logo gallery */
+.marks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.mark-card{border:1px solid var(--line);border-radius:16px;background:var(--panel);padding:0;cursor:pointer;font-family:inherit;color:var(--fg);text-align:left;overflow:hidden;
+  transition:transform .2s var(--ease),border-color .2s var(--ease),box-shadow .2s var(--ease)}
+.mark-card:hover{transform:translateY(-3px);border-color:var(--accent-line);box-shadow:var(--shadow)}
+.mark-card[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.mark-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mark-card .plate{display:grid;place-items:center;padding:26px 0;background:
+  linear-gradient(var(--line) 1px,transparent 1px) 0 0/22px 22px,
+  linear-gradient(90deg,var(--line) 1px,transparent 1px) 0 0/22px 22px,var(--tile)}
+.mark-card .txt{padding:13px 15px 15px}
+.mark-card .nm{font-size:14px;font-weight:600;letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+.mark-card .bl{font-size:12px;color:var(--dim);margin-top:5px}
+.mark-card .sizes{display:flex;align-items:flex-end;gap:10px;margin-top:11px;padding-top:11px;border-top:1px solid var(--row)}
+.spec-cell{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:16px 18px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.spec-cell .cap{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.specimen{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.ladder{display:flex;align-items:flex-end;gap:22px;flex-wrap:wrap}
+.tile-fav{border-radius:11px;display:grid;place-items:center;background:var(--accent)}
+.onlight{background:#f5f3ef;color:#191719}
+.ondark{background:#0f0f10;color:#f0eee9}
+.swatchline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.swatch{width:34px;height:34px;border-radius:10px;border:2px solid transparent;cursor:pointer;padding:0;box-shadow:inset 0 0 0 1px rgba(0,0,0,.18);
+  transition:transform .18s cubic-bezier(.34,1.4,.5,1),border-color .18s}
+.swatch:hover{transform:scale(1.08)}
+.swatch[aria-pressed="true"]{border-color:var(--fg)}
+.swatch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ================================ DECK / WAYLAND ================================ */
+.deck{--mono:var(--ui-mono,'Azeret Mono',monospace);
+  --accent-ink:color-mix(in oklab, var(--accent) 80%, var(--fg));
+  --accent-soft:color-mix(in oklab, var(--accent) 16%, var(--panel));
+  --accent-line:color-mix(in oklab, var(--accent) 44%, var(--panel));
+  --safe-soft:color-mix(in oklab, var(--safe) 15%, var(--panel));
+  --safe-line:color-mix(in oklab, var(--safe) 42%, var(--panel));
+  --safe-ink:color-mix(in oklab, var(--safe) 82%, var(--fg));
+  --watch-soft:color-mix(in oklab, var(--watch) 15%, var(--panel));
+  --watch-line:color-mix(in oklab, var(--watch) 42%, var(--panel));
+  --watch-ink:color-mix(in oklab, var(--watch) 82%, var(--fg));
+  --ease:cubic-bezier(.2,.8,.25,1);
+  background:#08090b;color:var(--fg);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);position:relative}
+.deckframe{width:1180px;min-width:1180px}
+.deck .bezel{padding:14px;background:linear-gradient(160deg,#1a1c20,#0b0c0e);border-radius:16px}
+.deck .screen{border-radius:10px;overflow:hidden;background:var(--ink);border:1px solid #26282d}
+.deck .dtop{display:flex;align-items:center;gap:14px;padding:14px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+.deck .dtop .word{font-size:19px}
+.deck .dtop .clock{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--dim);display:flex;gap:14px;align-items:center}
+.deck .dbody{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:470px}
+.deck .dnav{background:var(--panel);border-right:1px solid var(--line);padding:14px 12px;display:flex;flex-direction:column;gap:6px}
+.deck .dnav button{font-family:inherit;font-size:16px;font-weight:600;letter-spacing:-.01em;text-align:left;padding:13px 15px;border-radius:12px;border:2px solid transparent;background:none;color:var(--dim);cursor:pointer;
+  transition:background-color .18s var(--ease),color .18s,transform .18s var(--ease)}
+.deck .dnav button:hover{background:var(--raise);color:var(--fg)}
+.deck .dnav button[aria-current]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink);
+  box-shadow:0 0 0 4px color-mix(in oklab,var(--accent) 22%,transparent)}
+.deck .dmain{padding:20px 22px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.deck .dstats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.deck .dstat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+.deck .dstat dt{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.deck .dstat dd{margin:9px 0 0;font-size:30px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1}
+.deck .dstat small{display:block;margin-top:6px;font-size:12px;color:var(--dim)}
+.deck .drow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:auto auto;column-gap:14px;row-gap:4px;
+  align-items:center;padding:13px 16px;border:2px solid transparent;border-radius:14px;background:var(--panel);width:100%;text-align:left;font-family:inherit;color:var(--fg);cursor:pointer;
+  transition:transform .18s var(--ease),border-color .18s var(--ease),background-color .18s}
+.deck .drow .cov{grid-row:1 / span 2}
+.deck .drow .t1{grid-column:2;font-size:16px;font-weight:600;letter-spacing:-.02em;align-self:end}
+.deck .drow .t2{grid-column:2;font-family:var(--mono);font-size:11px;color:var(--faint);align-self:start;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.deck .drow .end{grid-column:3;grid-row:1 / span 2}
+.deck .drow[data-focus]{border-color:var(--accent);background:var(--accent-soft);transform:scale(1.012);
+  box-shadow:0 0 0 4px color-mix(in oklab,var(--accent) 20%,transparent)}
+.deck .dfoot{display:flex;align-items:center;gap:20px;padding:12px 20px;background:var(--panel);border-top:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+.deck .key{display:inline-flex;align-items:center;gap:7px}
+.deck .glyph{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:700;background:var(--tile);border:1px solid var(--line);color:var(--fg)}
+.deck .glyph.a{background:var(--safe-soft);border-color:var(--safe-line);color:var(--safe-ink)}
+.deck .glyph.b{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink)}
+.deck .glyph.y{background:var(--watch-soft);border-color:var(--watch-line);color:var(--watch-ink)}
+.deck .glyph.wide{width:auto;padding:0 8px;border-radius:7px}
+
+.qa{width:360px;min-width:360px;border-radius:14px;overflow:hidden;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow)}
+.qa header{display:flex;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid var(--line)}
+.qa .body{padding:15px;display:flex;flex-direction:column;gap:12px}
+.qa .warn{border:1px solid var(--accent-line);background:var(--accent-soft);border-radius:12px;padding:12px 13px}
+.qa .warn h5{font-size:13.5px;font-weight:700;color:var(--accent-ink);letter-spacing:-.02em}
+.qa .warn p{font-size:12px;color:var(--dim);margin-top:5px}
+.qa .qrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--row);font-size:13px}
+.qa .qrow:last-child{border-bottom:0}
+
+.wl{width:940px;min-width:940px;border-radius:14px;overflow:hidden;box-shadow:var(--shadow);background:var(--ink)}
+.wl .hb{display:flex;align-items:center;gap:12px;padding:0 10px 0 16px;height:52px;background:var(--panel);border-bottom:1px solid var(--line)}
+.wl .hb .title{font-size:13.5px;font-weight:600;letter-spacing:-.01em}
+.wl .hb .sub{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+.wl .hb .wc{margin-left:auto;display:flex;gap:9px}
+.wl .hb .wc i{width:22px;height:22px;border-radius:50%;background:var(--tile);border:1px solid var(--line);display:grid;place-items:center;font-size:10px;color:var(--dim)}
+
+@keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+@keyframes pop{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes sweep{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.82)}}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+
+.notes-shell{padding:8px 0 90px}
+.notes-shell h2{font-size:26px;font-weight:700;letter-spacing:-.03em;margin-bottom:14px}
+.notes-shell h3{font-size:15px;font-weight:600;margin:24px 0 8px;letter-spacing:-.01em}
+.notes-shell p,.notes-shell li{color:var(--shell-dim);max-width:72ch}
+.notes-shell ul{padding-left:20px}
+.notes-shell li{margin-bottom:8px}
+.notes-shell strong{color:var(--shell-ink)}
+.notes-shell code{font-family:var(--shell-mono);font-size:12px;background:var(--shell-panel);border:1px solid var(--shell-line);border-radius:5px;padding:1px 5px}
+.notes-shell .foot{margin-top:28px;padding-top:16px;border-top:1px solid var(--shell-line);font-family:var(--shell-mono);font-size:11px;color:var(--shell-faint);max-width:82ch}
+</style>
+
+<main>
+<header class="mast">
+  <div class="wrap">
+    <div class="eyebrow">Checkpoint &middot; revision 3</div>
+    <h1>Checkpoint, wired up</h1>
+    <p>Console, agent window and the Steam Deck / Wayland surface &mdash; all clickable, in light and
+    dark, with six app marks and five accents that are set from inside the app's own settings.</p>
+    <div class="bar">
+      <div class="grp" role="group" aria-label="Surface">
+        <span class="lab">Screen</span>
+        <button class="pill" data-surface="console" aria-pressed="true">Console</button>
+        <button class="pill" data-surface="agent" aria-pressed="false">Agent</button>
+        <button class="pill" data-surface="deck" aria-pressed="false">Deck / Wayland</button>
+        <button class="pill" data-surface="notif" aria-pressed="false">Notifications</button>
+        <button class="pill" data-surface="logo" aria-pressed="false">Marks &amp; art</button>
+        <button class="pill" data-surface="flow" aria-pressed="false">Flows</button>
+      </div>
+      <div class="grp" role="group" aria-label="Theme">
+        <span class="lab">Theme</span>
+        <button class="pill" data-theme-btn="dark" aria-pressed="true">Dark</button>
+        <button class="pill" data-theme-btn="light" aria-pressed="false">Light</button>
+      </div>
+      <div class="grp" role="group" aria-label="Typeface pairing">
+        <span class="lab">Type</span>
+        <button class="pill" data-mono="0" aria-pressed="true">Archivo</button>
+        <button class="pill" data-mono="1" aria-pressed="false">Archivo / Chivo</button>
+        <button class="pill" data-mono="2" aria-pressed="false">Bricolage / Archivo</button>
+        <button class="pill" data-mono="3" aria-pressed="false">Bricolage / Azeret</button>
+      </div>
+      <div class="grp" id="accents" role="group" aria-label="Accent colour"><span class="lab">Accent</span></div>
+      <span class="cap" id="caption"></span>
+    </div>
+  </div>
+</header>
+
+<section class="stage">
+  <div class="wrap"><div class="stage-scroll" id="stage"></div></div>
+</section>
+
+<section class="notes-shell">
+  <div class="wrap">
+    <h2>What changed in this revision</h2>
+    <h3>The notifications menu, which was the actual question</h3>
+    <p>There is now a bell in the console header with a live menu behind it &mdash; open it on the Console
+    screen. Every problem an agent reports lands there, worst first, each with its event code, machine and
+    time. The badge counts only what is actionable, Error and Warning; Info sits in the list without
+    colouring anything. Dismiss hides the notice, not the condition &mdash; if the agent reports it again
+    it comes back. This is the only route a headless Deck's failures have to a person, so it is deliberately
+    the one control that cannot be quiet when something is wrong.</p>
+    <h3>Exclude patterns are editable, and in two places</h3>
+    <p>Per game: <strong>Games &rarr; the game &rarr; Exclude patterns</strong>, next to Rules. Patterns are
+    chips you can remove, with an add field, a preview of what the next push would skip, and the server
+    defaults shown underneath as dashed chips so it is obvious what is inherited rather than set here.
+    Server-wide: <strong>Configuration &rarr; Defaults &amp; maintenance</strong>, where the same editor sets
+    the list every game inherits. They stack &mdash; a game's patterns are added to the defaults, never
+    replace them.</p>
+    <h3>Archivo everywhere</h3>
+    <p>Archivo is now the default for both headings and data, with tabular figures doing the work monospace
+    used to. Three alternates left in the switcher: Archivo / Chivo, Bricolage / Archivo, and Bricolage /
+    Azeret if you want the mono back.</p>
+    <h3>Decky redesign dropped</h3>
+    <p>Removed. The plugin keeps the Steam-native look it already has; nothing in this prototype touches it.
+    Deck / Wayland now shows just the two surfaces that are ours &mdash; the gamepad UI in Game Mode and the
+    agent in a Wayland desktop session.</p>
+    <div class="foot">Notification content uses the real AgentEventCodes vocabulary — sync.conflict,
+    push.failed, savedir.missing, server.unreachable, update.staged — and the same severity rule the console
+    already applies: Info never drives the badge, and a conflict is the one entry that never clears itself.
+    </div>
+</section>
+</main>
+
+<script>
+/* ------------------------------- data ------------------------------- */
+const MACH = {
+  onyx:{id:'RIG-ONYX', os:'Windows 11', seen:'just now'},
+  deck:{id:'STEAMDECK-OLED', os:'SteamOS 3.7', seen:'4m ago'},
+  htpc:{id:'LOFT-HTPC', os:'Windows 11', seen:'just now'},
+};
+
+const GAMES = [
+  {id:'cp77', name:'Cyberpunk 2077', appid:'1091500', state:'ok', size:'184.6 MB', versions:41,
+   last:'22m ago', policy:'Newest wins', keep:40, excludes:'*.tmp, *.log, cache/**', playtime:'96h',
+   h1:48, h2:16, proc:'Cyberpunk2077.exe',
+   paths:{onyx:'C:\\Users\\marwan\\Saved Games\\CD Projekt Red\\Cyberpunk 2077',
+          deck:'~/.steam/steam/steamapps/compatdata/1091500/pfx/drive_c/users/steamuser/Saved Games/CD Projekt Red'},
+   hist:[['v41','22m ago','onyx','184.6 MB','Latest'],['v40','2h ago','deck','184.2 MB','Kept'],
+         ['v39','yesterday','onyx','183.9 MB','Protected'],['v38','2d ago','onyx','181.4 MB','Kept'],
+         ['v37','4d ago','htpc','179.8 MB','Kept']]},
+
+  {id:'bg3', name:'Baldur\u2019s Gate 3', appid:'1086940', state:'crit', size:'92.4 MB', versions:27,
+   last:'conflict 4h', policy:'Manual', keep:25, excludes:'*.tmp', playtime:'61h',
+   h1:268, h2:300, proc:'bg3_dx11.exe',
+   paths:{onyx:'C:\\Users\\marwan\\AppData\\Local\\Larian Studios\\Baldur\u2019s Gate 3\\PlayerProfiles\\Public',
+          deck:'~/.local/share/Steam/steamapps/compatdata/1086940/pfx/drive_c/users/steamuser/AppData/Local/Larian'},
+   hist:[['v27','14:08','deck','92.4 MB','Conflicting'],['v26','09:37','onyx','91.1 MB','Latest'],
+         ['v25','yesterday','onyx','90.8 MB','Kept'],['v24','3d ago','deck','88.2 MB','Kept'],
+         ['v23','5d ago','onyx','87.9 MB','Kept']]},
+
+  {id:'fnv', name:'Fallout: New Vegas', appid:'22380', state:'ok', size:'38.1 MB', versions:113,
+   last:'yesterday', policy:'Newest wins', keep:120, excludes:'*.log', playtime:'212h',
+   h1:36, h2:24, proc:'FalloutNV.exe',
+   paths:{onyx:'C:\\Users\\marwan\\Documents\\My Games\\FalloutNV\\Saves',
+          htpc:'C:\\Users\\marwan\\Documents\\My Games\\FalloutNV\\Saves'},
+   hist:[['v113','yesterday','onyx','38.1 MB','Latest'],['v112','2d ago','onyx','38.0 MB','Kept'],
+         ['v111','2d ago','htpc','37.6 MB','Kept'],['v110','6d ago','onyx','37.1 MB','Kept'],
+         ['v109','8d ago','onyx','36.4 MB','Kept']]},
+
+  {id:'elden', name:'Elden Ring', appid:'1245620', state:'warn', size:'27.9 MB', versions:58,
+   last:'push failed 11:30', policy:'Prefer machine', keep:60, excludes:'*.tmp, *.bak', playtime:'147h',
+   h1:96, h2:70, proc:'eldenring.exe',
+   paths:{deck:'~/.steam/steam/steamapps/compatdata/1245620/pfx/drive_c/users/steamuser/AppData/Roaming/EldenRing',
+          onyx:'C:\\Users\\marwan\\AppData\\Roaming\\EldenRing\\76561198042'},
+   hist:[['v58','3d ago','deck','27.9 MB','Latest'],['v57','3d ago','onyx','27.9 MB','Kept'],
+         ['v56','5d ago','deck','27.4 MB','Kept'],['v55','9d ago','deck','26.8 MB','Kept'],
+         ['v54','12d ago','onyx','26.1 MB','Kept']]},
+
+  {id:'hades2', name:'Hades II', appid:'1145350', state:'ok', size:'2.7 MB', versions:9,
+   last:'4h ago', policy:'Newest wins', keep:20, excludes:'\u2014', playtime:'31h',
+   h1:196, h2:220, proc:'Hades2.exe',
+   paths:{htpc:'C:\\Users\\marwan\\Saved Games\\Hades II',
+          deck:'~/.steam/steam/steamapps/compatdata/1145350/pfx/drive_c/users/steamuser/Saved Games/Hades II'},
+   hist:[['v9','4h ago','htpc','2.7 MB','Latest'],['v8','yesterday','htpc','2.7 MB','Kept'],
+         ['v7','3d ago','deck','2.6 MB','Kept'],['v6','4d ago','deck','2.5 MB','Kept'],
+         ['v5','9d ago','htpc','2.4 MB','Kept']]},
+
+  {id:'disco', name:'Disco Elysium', appid:'632470', state:'idle', size:'14.8 MB', versions:3,
+   last:'11d ago', policy:'Newest wins', keep:20, excludes:'\u2014', playtime:'22h',
+   h1:340, h2:8, proc:'disco.exe',
+   paths:{onyx:'C:\\Users\\marwan\\AppData\\LocalLow\\ZAUM Studio\\Disco Elysium'},
+   hist:[['v3','11d ago','onyx','14.8 MB','Latest'],['v2','19d ago','onyx','14.2 MB','Kept'],
+         ['v1','26d ago','onyx','9.6 MB','Kept']]},
+
+  {id:'stardew', name:'Stardew Valley', appid:'413150', state:'ok', size:'6.3 MB', versions:76,
+   last:'22m ago', policy:'Newest wins', keep:80, excludes:'*.tmp', playtime:'308h',
+   h1:118, h2:150, proc:'Stardew Valley.exe',
+   paths:{htpc:'C:\\Users\\marwan\\AppData\\Roaming\\StardewValley\\Saves',
+          deck:'~/.config/StardewValley/Saves', onyx:'C:\\Users\\marwan\\AppData\\Roaming\\StardewValley\\Saves'},
+   hist:[['v76','22m ago','htpc','6.3 MB','Latest'],['v75','yesterday','deck','6.3 MB','Kept'],
+         ['v74','2d ago','htpc','6.2 MB','Kept'],['v73','2d ago','onyx','6.2 MB','Protected'],
+         ['v72','4d ago','deck','6.1 MB','Kept']]},
+];
+
+const CMDS = [
+  ['bg3','deck','Pull','Dispatched','14:08','\u2014'],
+  ['cp77','onyx','Push','Done','13:47','41 of 1,208 files, 12.3 MB sent'],
+  ['elden','deck','Push','Failed','11:30','Save folder locked by the running game'],
+  ['hades2','htpc','Pull','Done','08:55','No change \u2014 already current'],
+  ['stardew','htpc','Push','Done','08:12','6 files, 812 KB sent'],
+];
+
+const AUDIT = [
+  ['14:08:41','deck','bg3','sync.conflict','Both machines wrote since v26 \u2014 conflict opened'],
+  ['13:47:02','onyx','cp77','upload.delta','41 of 1,208 files changed, 12.3 MB'],
+  ['11:30:56','deck','elden','push.failed','Save folder locked by the running game, retry queued'],
+  ['10:02:19','onyx','cp77','version.protect','v39 marked protected \u2014 retention will skip it'],
+  ['09:41:07','\u2014','stardew','game.retention','Keep versions 60 \u2192 80'],
+  ['09:04:33','htpc','stardew','upload.delta','6 files changed, 812 KB'],
+  ['08:20:15','\u2014','elden','lease.force_release','Stale lease from STEAMDECK-OLED cleared by admin'],
+  ['07:55:48','deck','\u2014','machine.reregister','Re-registered after SteamOS 3.7 update'],
+  ['03:00:02','\u2014','\u2014','backup.write','savelocker-2026-09-02.db, 41.2 MB, VACUUM INTO'],
+  ['yesterday','\u2014','\u2014','enrollment.create','Token for LOFT-HTPC, expires in 30 min'],
+  ['yesterday','htpc','\u2014','enrollment.redeem','Redeemed \u2014 machine key issued'],
+  ['yesterday','\u2014','disco','game.excludes','Exclude patterns cleared'],
+];
+
+const ACTIVITY = [
+  ['14:08','crit','<b>Baldur\u2019s Gate 3</b> \u2014 sync paused, both copies changed since v26 <code>sync.conflict</code>'],
+  ['13:47','ok','<b>Cyberpunk 2077</b> pushed \u2014 41 of 1,208 files, 12.3 MB <code>upload.delta</code>'],
+  ['11:30','warn','<b>Elden Ring</b> push failed \u2014 save folder locked, retrying in 5 min <code>push.failed</code>'],
+  ['09:12','ok','<b>Cyberpunk 2077</b> settled after 8s, pushing'],
+  ['08:55','ok','<b>Hades II</b> pulled \u2014 already current, nothing written'],
+  ['07:40','warn','Server unreachable for 90s \u2014 2 pushes queued offline <code>server.unreachable</code>'],
+  ['07:41','ok','Offline queue drained \u2014 2 pushes sent'],
+];
+
+const CANDIDATES = [
+  {n:'Hollow Knight: Silksong', src:'SteamInstalled', store:'Steam', path:'', cloud:false},
+  {n:'Elden Ring Nightreign', src:'SteamInstalled', store:'Steam', path:'C:\\Users\\marwan\\AppData\\Roaming\\Nightreign', cloud:false},
+  {n:'Dead Cells', src:'SteamInstalled', store:'Steam', path:'C:\\Users\\marwan\\AppData\\Roaming\\GoblinGiant\\DeadCells', cloud:true},
+  {n:'Balatro', src:'SteamInstalled', store:'Steam', path:'C:\\Users\\marwan\\AppData\\Roaming\\Balatro', cloud:true},
+  {n:'Path of Exile 2', src:'SteamShortcut', store:'Steam', path:'', cloud:false},
+  {n:'Cyberpunk 2077 (mod profile)', src:'SteamShortcut', store:'Steam', path:'D:\\Vortex\\profiles\\cp77-4.2', cloud:false},
+  {n:'Alan Wake 2', src:'Heroic', store:'Epic', path:'C:\\Users\\marwan\\Saved Games\\Remedy\\AlanWake2', cloud:false},
+  {n:'Cyberpunk 2077: Phantom Liberty', src:'Heroic', store:'Gog', path:'C:\\Users\\marwan\\Saved Games\\CD Projekt Red\\Cyberpunk 2077', cloud:false},
+  {n:'Fallout 4', src:'Heroic', store:'Amazon', path:'', cloud:false},
+  {n:'OpenMW', src:'Heroic', store:'Sideload', path:'C:\\Users\\marwan\\Documents\\My Games\\OpenMW\\saves', cloud:false},
+];
+
+const BACKUPS = [
+  ['savelocker-2026-09-02.db','03:00','41.2 MB','Nightly'],
+  ['savelocker-2026-09-01.db','yesterday 03:00','41.0 MB','Nightly'],
+  ['savelocker-2026-08-31.db','2d ago 03:00','40.6 MB','Nightly'],
+  ['savelocker-2026-08-30.db','3d ago 14:22','40.6 MB','Before upgrade'],
+  ['savelocker-2026-08-30.db','3d ago 03:00','40.1 MB','Nightly'],
+];
+
+const KB = ['How sync works','Adding games','Conflicts','Restore safety','Save retention','Glob patterns',
+  'Multi-machine setups','Installing the agent','Agent updates','Decky plugin','Deck: supported games',
+  'Emulator backups','Steam library artwork','Save-in-use safety','CLI reference','Troubleshooting'];
+
+const RELEASES = [
+  ['0.5.11','27 Aug 2026','Smaller, safer uploads and a conflict card that says which side is further ahead',
+   'Chunked uploads got a resume path, and the conflict card now shows what each save actually contains instead of just its size.'],
+  ['0.5.10','19 Aug 2026','Large saves upload reliably, Deck detection finds more games',
+   'Uploads go out in ~4 MiB chunks so a 100+ MB save can never hit a proxy\u2019s 100-second request cap. Linux detection stopped missing folders that differ only by letter case.'],
+  ['0.5.9','16 Aug 2026','Console cleanup and MoonDeck fixes',
+   'Console-only: audit export, a quieter problem badge, case-insensitive detection for MoonDeck launches.'],
+  ['0.5.8','16 Aug 2026','A Deck can install a waiting update without a terminal',''],
+  ['0.5.7','15 Aug 2026','The Decky plugin keeps itself up to date',''],
+  ['0.5.6','15 Aug 2026','A tracked Deck game could still never sync \u2014 fixed',''],
+  ['0.5.5','15 Aug 2026','Steam Decks now update themselves',''],
+  ['0.5.4','10 Aug 2026','A release for large libraries: filters in Add games',''],
+  ['0.5.3','9 Aug 2026','Heroic Games Launcher \u2014 Epic, GOG, Amazon, sideloads',''],
+  ['0.5.2','8 Aug 2026','Save-folder detection instead of typing paths by hand',''],
+  ['0.5.1','5 Aug 2026','Follow-up fixes',''],
+  ['0.5.0','29 Jul 2026','The largest release so far, and almost all of it repair',''],
+  ['0.4.1','25 Jul 2026','Fixes for the new Deck app',''],
+  ['0.4.0','25 Jul 2026','The Steam Deck app grows up',''],
+  ['0.3.6','24 Jul 2026','Agent and console fixes',''],
+  ['0.3.5','24 Jul 2026','Server and agents both need updating',''],
+  ['0.3.4','23 Jul 2026','Server-side release',''],
+  ['0.3.3','23 Jul 2026','Fixes',''],
+  ['0.3.2','20 Jul 2026','Fixes',''],
+  ['0.3.0','19 Jul 2026','Setting up a Steam Deck no longer needs a terminal',''],
+];
+
+/* What the console's notification menu holds: agent-reported problems, worst first. Codes are the
+   real AgentEventCodes vocabulary. Info entries never colour the badge. */
+const NOTIFS = [
+  {id:'n1', sev:'Error', code:'sync.conflict', title:'Baldur’s Gate 3 — sync paused',
+   body:'STEAMDECK-OLED and RIG-ONYX both wrote since v26. Nothing syncs for this game until you pick one.',
+   machine:'STEAMDECK-OLED', when:'14:08', act:'Resolve'},
+  {id:'n2', sev:'Error', code:'push.failed', title:'Elden Ring push failed',
+   body:'Save folder locked by the running game. Gave up after 3 retries.',
+   machine:'STEAMDECK-OLED', when:'11:30', act:'Retry'},
+  {id:'n3', sev:'Warning', code:'savedir.missing', title:'Disco Elysium save folder is gone',
+   body:'The tracked path no longer exists on RIG-ONYX. Nothing was deleted on the server.',
+   machine:'RIG-ONYX', when:'09:52', act:'Set folder'},
+  {id:'n4', sev:'Warning', code:'server.unreachable', title:'LOFT-HTPC lost the server for 90s',
+   body:'Two pushes queued offline and drained on their own at 07:41.',
+   machine:'LOFT-HTPC', when:'07:40', act:''},
+  {id:'n5', sev:'Info', code:'update.staged', title:'Agent 0.5.11 staged on LOFT-HTPC',
+   body:'Downloaded and verified. Installs the next time the agent restarts.',
+   machine:'LOFT-HTPC', when:'06:15', act:'Install'},
+];
+
+const ACCENTS = [
+  {id:'ember',   name:'Ember',   dark:'#e0533c', dOn:'#160f0e', light:'#c0432c', lOn:'#fff8f6'},
+  {id:'coolant', name:'Coolant', dark:'#35a5bd', dOn:'#08171b', light:'#12768d', lOn:'#f2fbfd'},
+  {id:'arcade',  name:'Arcade',  dark:'#d4589b', dOn:'#1a0d15', light:'#b23c7c', lOn:'#fff5fa'},
+  {id:'cobalt',  name:'Cobalt',  dark:'#5b81d6', dOn:'#0a0f1c', light:'#3a5cbe', lOn:'#f6f8ff'},
+  {id:'stealth', name:'Stealth', dark:'#dcd7cc', dOn:'#141416', light:'#2e2b28', lOn:'#faf8f5'},
+];
+
+/* type pairings: display face + the face used for values, labels and paths.
+   Only the first is monospaced — the rest keep tabular figures without the mono look. */
+const MONOS = [
+  {name:'Archivo', disp:"'Archivo',system-ui,sans-serif", stack:"'Archivo',system-ui,sans-serif"},
+  {name:'Archivo / Chivo', disp:"'Archivo',system-ui,sans-serif", stack:"'Chivo',system-ui,sans-serif"},
+  {name:'Bricolage / Archivo', disp:"'Bricolage Grotesque',system-ui,sans-serif", stack:"'Archivo',system-ui,sans-serif"},
+  {name:'Bricolage / Azeret', disp:"'Bricolage Grotesque',system-ui,sans-serif", stack:"'Azeret Mono',ui-monospace,monospace"},
+];
+
+/* six app marks, all gaming-first */
+const MARKS = [
+  {id:'cartridge', name:'Cartridge', blurb:'A game cartridge with a keyhole punched through its label. Reads as \u201ca save you can lock\u201d without borrowing a floppy disk.',
+   draw:(a,o) => '<rect x="5" y="5" width="22" height="22" rx="4" fill="' + a + '"/>' +
+     '<rect x="8.5" y="8.5" width="15" height="8" rx="2" fill="' + o + '"/>' +
+     '<circle cx="16" cy="12.5" r="2.1" fill="' + a + '"/>' +
+     '<path d="M10.5 27v-3.4M16 27v-3.4M21.5 27v-3.4" stroke="' + o + '" stroke-width="2" stroke-linecap="round" opacity=".65"/>'},
+
+  {id:'pixel', name:'Pixel lock', blurb:'An 8-bit padlock drawn on a 4px grid. Every edge lands on the grid, so it stays crisp at 16px with no anti-aliasing mush.',
+   draw:(a,o) => '<rect x="12" y="3" width="8" height="4" fill="' + a + '"/>' +
+     '<rect x="8" y="7" width="4" height="5" fill="' + a + '"/><rect x="20" y="7" width="4" height="5" fill="' + a + '"/>' +
+     '<rect x="5" y="12" width="22" height="16" fill="' + a + '"/>' +
+     '<rect x="14" y="16" width="4" height="4" fill="' + o + '"/>' +
+     '<rect x="15" y="20" width="2" height="5" fill="' + o + '"/>'},
+
+  {id:'memcard', name:'Memory card', blurb:'The chamfered memory card, contact pins down its left edge and a keyhole where the label goes. Same chunky family as the other two, but a silhouette nothing else on a Steam shelf has.',
+   draw:(a,o) => '<path d="M11 3.6h13.4A3.6 3.6 0 0 1 28 7.2v17.6a3.6 3.6 0 0 1-3.6 3.6H7.6A3.6 3.6 0 0 1 4 24.8V10.6z" fill="' + a + '"/>' +
+     '<rect x="7.4" y="11.4" width="5.6" height="12.6" rx="1.6" fill="' + o + '"/>' +
+     '<path d="M7.4 15.2h5.6M7.4 18.6h5.6M7.4 22h5.6" stroke="' + a + '" stroke-width="1.5"/>' +
+     '<circle cx="20.6" cy="15.4" r="2.6" fill="' + o + '"/><path d="M19.3 17.4h2.6l.9 5.4h-4.4z" fill="' + o + '"/>'},
+];
+
+/* ------------------------------- state ------------------------------- */
+const S = {
+  surface:'console', theme:'dark', accent:0, mono:0, mark:1,
+  locked:false, loginErr:false, pushAppearance:true, agentFollows:true,
+  notifOpen:false, dismissed:new Set(), globs:{},
+  cView:'games', gameId:'cp77', layout:'list', gridOpen:false,
+  auditQ:'', auditMachine:'all', kb:0, resolving:false, resolved:false,
+  aView:'overview', aGame:'cp77', aLayout:'grid', aOpen:false,
+  addFilter:'suggested', addPath:'all', addStore:'', addQ:'',
+  picked:new Set(['Hollow Knight: Silksong','Elden Ring Nightreign']),
+  toggles:{autoupdate:true, backups:true, startup:true, artwork:true, decky:false},
+  deckView:'overview',
+  sync:null,   /* {scope,i,total,name,phase,sent,done} */
+};
+const g = id => GAMES.find(x => x.id === id);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const initials = n => n.replace(/[^A-Za-z0-9 ]/g,'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+const chip = (cls,txt) => '<span class="chip ' + cls + '">' + txt + '</span>';
+const stateOf = x => (x.id==='bg3' && S.resolved) ? 'ok' : x.state;
+const stateChip = x => { const st = stateOf(x);
+  return st==='ok' ? chip('ok','Synced') : st==='crit' ? chip('crit','Conflict')
+    : st==='warn' ? chip('warn','Needs attention') : chip('','Idle'); };
+const lastOf = x => (x.id==='bg3' && S.resolved) ? 'just now' : x.last;
+const cover = (x,size) => '<span class="cov ' + size + '" style="--h1:' + x.h1 + ';--h2:' + x.h2 + '" aria-hidden="true">' +
+  '<span>' + initials(x.name) + '</span></span>';
+const iconSearch = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5" stroke-linecap="round"/></svg>';
+const iconList = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg>';
+const iconGrid = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>';
+const iconSync = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14-4.5M4 13a8 8 0 0 0 14 4.5" stroke-linecap="round"/><path d="M20 4.5V11h-6M4 19.5V13h6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const iconSyncBig = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14-4.5M4 13a8 8 0 0 0 14 4.5" stroke-linecap="round"/><path d="M20 4.5V11h-6M4 19.5V13h6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function logo(size, mode, id){
+  const m = MARKS.find(x => x.id === (id || MARKS[S.mark].id)) || MARKS[S.mark];
+  const acc = mode === 'mono' ? 'currentColor' : 'var(--accent)';
+  const on  = mode === 'mono' ? 'var(--panel)' : 'var(--on-accent)';
+  return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 32 32" fill="none" role="img" ' +
+    'aria-label="SaveLocker">' + m.draw(acc, on) + '</svg>';
+}
+
+/* ------------------------------- sync engine ------------------------------- */
+let syncTimer = null;
+const SYNC_PHASES = ['settling','hashing','uploading','done'];
+function startSync(scope, only){
+  clearInterval(syncTimer);
+  const pool = only ? [g(only)] : (scope === 'console' ? GAMES : GAMES.filter(x => x.paths.onyx));
+  S.sync = {scope, i:0, total:pool.length, name:pool[0].name, phase:'settling', sent:0, done:false, only:!!only};
+  let step = 0;
+  render();
+  syncTimer = setInterval(() => {
+    step++;
+    const idx = Math.floor(step / 3);
+    if (idx >= pool.length){
+      clearInterval(syncTimer);
+      S.sync = {scope, i:pool.length, total:pool.length, name:'', phase:'done', sent:S.sync.sent, done:true, only:!!only};
+      render();
+      setTimeout(() => { if (S.sync && S.sync.done){ S.sync = null; render(); } }, 4200);
+      return;
+    }
+    S.sync.i = idx;
+    S.sync.name = pool[idx].name;
+    S.sync.phase = SYNC_PHASES[step % 3];
+    if (step % 3 === 2) S.sync.sent += [12.3, 0, 0.8, 4.1, 0, 0.2, 1.9][idx % 7];
+    patchSync();
+  }, 620);
+}
+const syncPct = () => S.sync ? Math.round((S.sync.i + (S.sync.done ? 0 : 0.5)) / S.sync.total * 100) : 0;
+function railHtml(){
+  if (!S.sync || S.sync.done) return '<div class="rail idle"></div>';
+  return '<div class="rail"><i data-sync-rail style="width:' + syncPct() + '%"></i></div>';
+}
+
+/* A progress tick must NOT rebuild the page. It writes into the four nodes that actually changed,
+   so nothing re-mounts and no entrance animation replays — the same thing a React setState on the
+   progress component would do. Falls back to a full render only if the structure is missing. */
+function patchSync(){
+  if (!S.sync) return render();
+  const pct = syncPct();
+  const rail = stage.querySelector('[data-sync-rail]');
+  const title = stage.querySelector('[data-sync-title]');
+  const meter = stage.querySelector('[data-sync-meter]');
+  const legend = stage.querySelector('[data-sync-legend]');
+  const chip = stage.querySelector('[data-sync-chip]');
+  if (!rail && !title && !chip) return render();
+  if (rail) rail.style.width = pct + '%';
+  if (meter) meter.style.width = pct + '%';
+  if (title) title.textContent = 'Syncing ' + (S.sync.i + 1) + ' of ' + S.sync.total + ' — ' + S.sync.name;
+  if (legend) legend.innerHTML = '<span>' + S.sync.phase + '</span><span>' + S.sync.sent.toFixed(1) +
+    ' MB sent</span><span>' + pct + '%</span>';
+  if (chip) chip.textContent = 'Syncing ' + (S.sync.i + 1) + ' of ' + S.sync.total;
+  stage.querySelectorAll('[data-rowend]').forEach(el => { el.innerHTML = rowEnd(g(el.dataset.rowend)); });
+}
+
+/* ------------------------------- notifications menu ------------------------------- */
+const liveNotifs = () => NOTIFS.filter(n => !S.dismissed.has(n.id) && !(n.code === 'sync.conflict' && S.resolved));
+const sevColor = s => s === 'Error' ? 'var(--accent)' : s === 'Warning' ? 'var(--watch)' : 'var(--faint)';
+
+function notifMenu(){
+  const list = liveNotifs();
+  const actionable = list.filter(n => n.sev !== 'Info');
+  const errs = actionable.filter(n => n.sev === 'Error').length;
+  const badge = actionable.length === 0 ? ''
+    : '<span class="count' + (errs ? '' : ' warn') + '">' + actionable.length + '</span>';
+
+  const rows = list.length ? list.map(n =>
+    '<div class="nrow"><span class="sev" style="background:' + sevColor(n.sev) + '"></span>' +
+    '<div><div class="t1">' + esc(n.title) + '</div><div class="t2">' + esc(n.body) + '</div>' +
+    '<div class="t3"><span>' + n.code + '</span><span>' + esc(n.machine) + '</span><span>' + n.when + '</span></div></div>' +
+    '<div class="side"><button class="x" data-dismiss="' + n.id + '" title="Dismiss" aria-label="Dismiss">×</button>' +
+    (n.act ? '<button class="b sm" data-act="notifact" data-arg="' + n.id + '">' + n.act + '</button>' : '') +
+    '</div></div>').join('')
+    : '<div class="none"><b>Nothing to report</b><span>A healthy fleet is quiet. Warnings clear themselves ' +
+      'once a machine syncs cleanly again.</span></div>';
+
+  return '<div class="bell">' +
+    '<button class="b" data-act="notifs" aria-expanded="' + S.notifOpen + '" aria-label="Notifications">' +
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
+    '<path d="M18 9a6 6 0 1 0-12 0c0 5-2 6.5-2 6.5h16S18 14 18 9z" stroke-linejoin="round"/>' +
+    '<path d="M10.5 20a2 2 0 0 0 3 0" stroke-linecap="round"/></svg>' + badge + '</button>' +
+    (S.notifOpen
+      ? '<div class="menu" role="dialog" aria-label="Notifications"><header><h4>Notifications</h4>' +
+        '<div style="display:flex;gap:7px;align-items:center">' +
+        chip('', list.length + ' open') +
+        '<button class="b sm" data-act="dismissall">Dismiss all</button></div></header>' +
+        '<div class="list">' + rows + '</div>' +
+        '<footer><span style="font-family:var(--mono);font-size:10.5px;color:var(--faint)">' +
+        'agents report these; info never colours the badge</span>' +
+        '<button class="b sm" data-act="goaudit">Open audit log</button></footer></div>'
+      : '') + '</div>';
+}
+
+/* ------------------------------- console ------------------------------- */
+function topbar(){
+  const tabs = [['games','Games'],['config','Configuration'],['audit','Audit log'],
+                ['backups','Backups'],['help','Help'],['notes','What\u2019s new']];
+  const syncing = S.sync && S.sync.scope === 'console' && !S.sync.done;
+  return '<div class="topbar"><div class="brand">' + logo(30,'solid') +
+    '<span class="word">Save<em>Locker</em></span>' +
+    '<span class="verpill">v0.5.10<span class="d"></span></span></div>' +
+    '<nav class="tabs">' + tabs.map(t =>
+      '<button data-nav="' + t[0] + '" ' + (S.cView===t[0] ? 'aria-current="page"' : '') + '>' + t[1] + '</button>').join('') +
+    '</nav><div class="tools">' +
+    (S.resolved ? '' : '<button class="b alert" data-act="goconflict">1 conflict &middot; 4h</button>') +
+    (syncing
+      ? '<span class="chip crit"><span class="dot crit live"></span><span data-sync-chip>Syncing ' +
+        (S.sync.i + 1) + ' of ' + S.sync.total + '</span></span>' +
+        '<button class="b" data-act="cancelsync">Cancel</button>'
+      : '<button class="b primary icon" data-act="syncall">' + iconSync + 'Sync all</button>') +
+    notifMenu() +
+    '<button class="b" data-act="lock" title="Lock the console" aria-label="Lock the console">' +
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" aria-hidden="true">' +
+    '<rect x="4" y="10.5" width="16" height="10.5" rx="2.6"/><path d="M8 10.5V7.6a4 4 0 0 1 8 0v2.9" stroke-linecap="round"/>' +
+    '</svg></button>' +
+    '</div></div>' + railHtml();
+}
+
+function layoutSwitch(scope){
+  const cur = scope === 'console' ? S.layout : S.aLayout;
+  return '<div class="seg" role="group" aria-label="Layout">' +
+    '<button data-layout="' + scope + ':list" aria-pressed="' + (cur==='list') + '">' + iconList + 'List</button>' +
+    '<button data-layout="' + scope + ':grid" aria-pressed="' + (cur==='grid') + '">' + iconGrid + 'Grid</button></div>';
+}
+
+function rowEnd(x){
+  const busy = S.sync && !S.sync.done && S.sync.name === x.name;
+  if (busy) return '<span class="chip crit"><span class="dot crit live"></span>' + S.sync.phase + '</span>';
+  return '<span class="dot ' + stateOf(x) + '"></span>';
+}
+
+function gamesSidebar(){
+  return '<aside class="gside"><header><h4>Games &middot; ' + GAMES.length + '</h4>' + layoutSwitch('console') + '</header>' +
+    '<div class="list">' + GAMES.map(x =>
+      '<button class="grow" data-game="' + x.id + '" ' + (S.gameId===x.id ? 'aria-current="true"' : '') + '>' +
+      cover(x,'s') + '<span class="t1">' + esc(x.name) + '</span>' +
+      '<span class="t2">' + esc(lastOf(x)) + ' &middot; ' + x.size + '</span>' +
+      '<span class="end" data-rowend="' + x.id + '">' + rowEnd(x) + '</span></button>').join('') + '</div>' +
+    '<footer><button class="b" style="width:100%" data-act="addgame">+ Add game</button></footer></aside>';
+}
+
+function gridWall(scope){
+  const attr = scope === 'console' ? 'game' : 'agame';
+  const pool = scope === 'console' ? GAMES : GAMES.filter(x => x.paths.onyx);
+  return '<div class="gridwall">' + pool.map(x =>
+    '<button class="gtile" data-' + attr + '="' + x.id + '">' +
+      '<span class="shot">' + cover(x,'m') +
+      '<span class="badge">' + (stateOf(x)==='crit' ? chip('crit','Conflict')
+        : stateOf(x)==='warn' ? chip('warn','Retrying') : '') + '</span></span>' +
+      '<span class="meta"><span class="t1">' + esc(x.name) + '</span>' +
+      '<span class="t2"><span class="dot ' + stateOf(x) + '"></span><b>' + esc(lastOf(x)) + '</b>' +
+      '<span>&middot;</span><span>' + x.size + '</span></span></span></button>').join('') + '</div>';
+}
+
+function versionRows(x){
+  return x.hist.map(h => {
+    const st = (x.id==='bg3' && S.resolved && h[4]==='Conflicting') ? 'Latest'
+      : (x.id==='bg3' && S.resolved && h[4]==='Latest') ? 'Kept' : h[4];
+    const pill = st==='Latest' ? chip('ok','Latest') : st==='Conflicting' ? chip('crit','Conflicting')
+      : st==='Protected' ? chip('warn','Protected') : chip('','Kept');
+    const act = st==='Latest' ? '<span style="color:var(--faint)">&mdash;</span>'
+      : '<button class="b sm" data-act="setlatest" data-arg="' + h[0] + '">Set as Latest</button>';
+    return '<tr><td class="k m">' + h[0] + '</td><td>' + h[1] + '</td><td class="m">' + MACH[h[2]].id + '</td>' +
+      '<td class="n">' + h[3] + '</td><td>' + pill + '</td><td>' + act + '</td></tr>';
+  }).join('');
+}
+
+function conflictPanel(x){
+  if (x.id !== 'bg3' || S.resolved) return '';
+  if (!S.resolving){
+    return '<div class="banner"><span class="dot crit"></span><span class="txt">' +
+      '<strong>Both machines wrote since v26.</strong>' +
+      '<em>Open 4h 12m. STEAMDECK-OLED holds 92.4 MB from 14:08; RIG-ONYX holds 91.1 MB from 09:37.</em></span>' +
+      '<button class="b" data-act="compare">Compare files</button>' +
+      '<button class="b primary" data-act="resolve">Resolve</button></div>';
+  }
+  return '<div class="card" style="border-color:var(--accent-line)">' +
+    '<header><h3>Resolve &mdash; which save is your real progress?</h3>' +
+    '<button class="b sm" data-act="cancelresolve">Cancel</button></header>' +
+    '<div class="pad"><p style="font-size:13px;color:var(--dim);margin-bottom:14px">' +
+    'The one you keep becomes Latest and every machine pulls it. The other stays in the version list &mdash; ' +
+    'nothing is deleted here.</p><div class="picker">' +
+    '<div class="pick here"><h5>STEAMDECK-OLED &middot; v27</h5><div class="big">92.4 MB &middot; today 14:08</div>' +
+    '<div class="sm">Act 3, Wyrm\u2019s Rock &mdash; 61h played, 4 quicksaves ahead</div>' +
+    '<button class="b primary" data-act="keep" data-arg="deck">Keep the Deck save</button></div>' +
+    '<div class="pick"><h5>RIG-ONYX &middot; v26</h5><div class="big">91.1 MB &middot; today 09:37</div>' +
+    '<div class="sm">Act 3, Wyrm\u2019s Rock &mdash; 59h played</div>' +
+    '<button class="b" data-act="keep" data-arg="onyx">Keep the desktop save</button></div></div>' +
+    '<div style="display:flex;gap:10px;margin-top:14px;align-items:center">' +
+    '<button class="b" data-act="keepboth">Keep both, newest wins</button>' +
+    '<span style="font-size:12px;color:var(--faint)">Uploads both and marks the Deck copy Latest.</span>' +
+    '</div></div></div>';
+}
+
+/* Exclude globs. Per-game patterns sit on top of the server defaults, and the defaults are shown
+   here as dashed chips so it is obvious what is inherited rather than set on this game. */
+const SERVER_GLOBS = ['*.tmp','*.log','cache/**','crash/**'];
+function gameGlobs(x){
+  if (S.globs[x.id]) return S.globs[x.id];
+  return x.excludes === '—' ? [] : x.excludes.split(',').map(s => s.trim()).filter(Boolean);
+}
+function excludeCard(x){
+  const own = gameGlobs(x);
+  const skipped = x.id === 'cp77' ? '312 files, 41.7 MB' : x.id === 'elden' ? '18 files, 2.1 MB' : '4 files, 96 KB';
+  return '<div class="card"><header><h3>Exclude patterns</h3>' +
+    '<button class="b sm" data-act="globhelp">Glob syntax</button></header>' +
+    '<div class="pad">' +
+    '<p style="font-size:12.5px;color:var(--dim);margin-bottom:12px">Files matching these never upload. ' +
+    'Patterns are relative to this game’s save folder.</p>' +
+    '<div class="globs">' +
+      (own.length ? own.map(p =>
+        '<span class="glob">' + esc(p) + '<button data-glob="' + x.id + '|' + esc(p) +
+        '" title="Remove ' + esc(p) + '" aria-label="Remove ' + esc(p) + '">×</button></span>').join('') : '') +
+      '<span class="globadd"><input placeholder="add a pattern…" aria-label="Add exclude pattern" data-globadd="' + x.id + '">' +
+      '<span style="font-family:var(--mono);font-size:10px;color:var(--faint)">↵</span></span>' +
+    '</div>' +
+    '<div style="margin-top:14px"><div style="font-family:var(--mono);font-size:10px;letter-spacing:.1em;' +
+    'text-transform:uppercase;color:var(--faint);margin-bottom:8px">Inherited from the server</div>' +
+    '<div class="globs">' + SERVER_GLOBS.map(p => '<span class="glob inherited">' + esc(p) + '</span>').join('') +
+    '</div></div>' +
+    '<div style="display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">' +
+    '<button class="b" data-act="saveglobs">Save patterns</button>' +
+    '<button class="b" data-act="testglobs">Preview what is skipped</button>' +
+    '<span style="font-family:var(--mono);font-size:10.5px;color:var(--faint)">last push skipped ' + skipped + '</span>' +
+    '</div></div></div>';
+}
+
+function gameDetail(x, withBack){
+  const paths = Object.keys(x.paths).map(k =>
+    '<div><div style="font-family:var(--mono);font-size:10px;color:var(--faint);margin-bottom:5px">' +
+    MACH[k].id + '</div><span class="path">' + esc(x.paths[k]) + '</span></div>').join('');
+  const cmds = CMDS.filter(c => c[0]===x.id);
+  const held = x.state==='crit' && !S.resolved;
+
+  return (withBack ? '<div><button class="b sm" data-act="allgames">&larr; All games</button></div>' : '') +
+    '<div class="pagehead"><div><h2>' + esc(x.name) + '</h2>' +
+    '<div class="sub">steam:' + x.appid + ' &middot; ' + x.versions + ' versions &middot; ' + x.size +
+    ' &middot; ' + x.playtime + ' played</div></div><div class="acts">' +
+    stateChip(x) + chip('', x.policy) + chip('','Keep ' + x.keep) +
+    '<button class="b" data-act="push">Push</button>' +
+    '<button class="b" data-act="pull">Pull</button>' +
+    '<button class="b primary" data-act="art">Refresh art</button></div></div>' +
+    conflictPanel(x) +
+    '<div class="grid4">' +
+      '<div class="stat"><dt>Latest version</dt><dd>' + (held ? 'v26' : x.hist[0][0]) + '</dd><small>' +
+        lastOf(x) + ' from ' + MACH[x.hist[0][2]].id + '</small></div>' +
+      '<div class="stat"><dt>Stored</dt><dd>' + x.size + '</dd><small>' + x.versions + ' versions kept</small></div>' +
+      '<div class="stat"><dt>Machines</dt><dd>' + Object.keys(x.paths).length + '</dd><small>' +
+        Object.keys(x.paths).map(k=>MACH[k].id.split('-')[0]).join(', ') + '</small></div>' +
+      '<div class="stat"><dt>Lease</dt><dd>' + (held ? 'Held' : 'Free') + '</dd><small>' +
+        (held ? 'STEAMDECK-OLED, 4h 12m' : 'nothing checked out') + '</small></div>' +
+    '</div>' +
+    '<div class="grid31"><div class="card"><header><h3>Versions</h3>' +
+      '<div style="display:flex;gap:8px;align-items:center">' + chip('', x.versions + ' kept') +
+      '<button class="b sm" data-act="prune">Prune 5 versions</button></div></header>' +
+      '<table class="t"><thead><tr><th>Version</th><th>When</th><th>Machine</th><th>Size</th><th>State</th><th>Action</th></tr></thead>' +
+      '<tbody>' + versionRows(x) + '</tbody></table></div>' +
+      '<div class="stack">' +
+        '<div class="card"><header><h3>Save folders</h3>' +
+        '<button class="b sm" data-act="template">Use as template</button></header>' +
+        '<div class="pad" style="display:flex;flex-direction:column;gap:12px">' + paths + '</div></div>' +
+        '<div class="card"><header><h3>Rules</h3></header><div class="pad"><dl class="kv">' +
+        '<dt>Policy</dt><dd>' + x.policy + '</dd>' +
+        '<dt>Keep</dt><dd>' + x.keep + ' versions</dd>' +
+        '<dt>Process</dt><dd style="font-family:var(--mono);font-size:11.5px">' + esc(x.proc) + '</dd>' +
+        '</dl></div></div>' + excludeCard(x) + '</div></div>' +
+    '<div class="card"><header><h3>Remote commands for this game</h3>' +
+      '<button class="b sm" data-act="refresh">Refresh</button></header>' +
+      (cmds.length ? '<table class="t"><thead><tr><th>Machine</th><th>Action</th><th>State</th><th>Created</th><th>Result</th></tr></thead><tbody>' +
+        cmds.map(c => '<tr><td class="k m">' + MACH[c[1]].id + '</td><td>' + c[2] + '</td><td>' +
+          (c[3]==='Failed' ? chip('crit','Failed') : c[3]==='Dispatched' ? chip('warn','Dispatched') : chip('ok','Done')) +
+          '</td><td class="m">' + c[4] + '</td><td class="wrap">' + esc(c[5]) + '</td></tr>').join('') +
+        '</tbody></table>'
+      : '<div class="empty"><b>No remote commands yet</b>Push or Pull from this page and it shows up here with its result.</div>') +
+    '</div>';
+}
+
+function gamesPage(){
+  if (S.layout === 'grid'){
+    const body = S.gridOpen
+      ? gameDetail(g(S.gameId), true)
+      : '<div class="pagehead"><div><h2>Games</h2><div class="sub">' + GAMES.length +
+        ' tracked &middot; art from SteamGridDB</div></div><div class="acts">' +
+        layoutSwitch('console') + '<button class="b" data-act="addgame">+ Add game</button></div></div>' +
+        gridWall('console');
+    return '<div class="split solo"><div class="canvas">' + body + '</div></div>';
+  }
+  return '<div class="split">' + gamesSidebar() +
+    '<div class="canvas">' + gameDetail(g(S.gameId), false) + '</div></div>';
+}
+
+function appearanceCard(scope){
+  return '<div class="card"><header><h3>Appearance</h3>' + chip('', MARKS[S.mark].name) + '</header>' +
+    '<div class="pad"><dl class="kv"><dt>Theme</dt><dd>' +
+    '<div class="seg" role="group" aria-label="Theme">' +
+    '<button data-theme-set="dark" aria-pressed="' + (S.theme==='dark') + '">Dark</button>' +
+    '<button data-theme-set="light" aria-pressed="' + (S.theme==='light') + '">Light</button>' +
+    '<button aria-pressed="false" data-act="systheme">System</button></div></dd>' +
+    '<dt>Accent</dt><dd><div class="swatchline">' + ACCENTS.map((a,i) =>
+      '<button class="swatch" data-accent-set="' + i + '" aria-pressed="' + (S.accent===i) + '" title="' + a.name +
+      '" aria-label="' + a.name + '" style="background:' + (S.theme==='dark' ? a.dark : a.light) + '"></button>').join('') +
+      '<span style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-left:4px">' +
+      ACCENTS[S.accent].name + '</span></div></dd>' +
+    '<dt>App icon</dt><dd><div class="swatchline">' + MARKS.map((m,i) =>
+      '<button class="swatch" data-mark-set="' + i + '" aria-pressed="' + (S.mark===i) +
+      '" title="' + m.name + '" aria-label="' + m.name + '" style="background:var(--tile);display:grid;place-items:center">' +
+      logo(20,'solid',m.id) + '</button>').join('') + '</div></dd>' +
+    '</dl></div>' +
+    (scope === 'console'
+      ? '<div class="pad"><div class="toggle"><div class="lbl">Push appearance to agents' +
+        '<small>Every enrolled machine picks up this accent and icon on its next heartbeat &mdash; agent ' +
+        'windows, the Deck UI and the Decky panel’s mark.</small></div>' +
+        '<button class="sw" role="switch" data-act="pushappearance" aria-pressed="' + S.pushAppearance +
+        '" aria-label="Push appearance to agents"></button></div>' +
+        '<div style="display:flex;gap:8px;align-items:center;margin-top:10px">' +
+        (S.pushAppearance ? chip('ok','3 machines following') : chip('warn','not shared')) +
+        '<span style="font-family:var(--mono);font-size:10.5px;color:var(--faint)">' +
+        (S.pushAppearance ? 'applied 2m ago &middot; RIG-ONYX, STEAMDECK-OLED, LOFT-HTPC' : 'each machine keeps its own') +
+        '</span></div></div>'
+      : '<div class="pad"><div class="toggle"><div class="lbl">Follow the console' +
+        '<small>Use the accent and icon set on the server. Turn this off to keep a different look on ' +
+        'this machine only.</small></div>' +
+        '<button class="sw" role="switch" data-act="agentfollows" aria-pressed="' + S.agentFollows +
+        '" aria-label="Follow the console"></button></div>' +
+        '<div style="display:flex;gap:8px;align-items:center;margin-top:10px">' +
+        (S.agentFollows ? chip('ok','In sync with the console') : chip('','Local override')) +
+        '<span style="font-family:var(--mono);font-size:10.5px;color:var(--faint)">last pushed 2m ago</span>' +
+        '</div></div>') +
+    '</div>';
+}
+
+function configPage(){
+  const t = (k,label,hint) => '<div class="toggle"><div class="lbl">' + label + '<small>' + hint + '</small></div>' +
+    '<button class="sw" role="switch" data-toggle="' + k + '" aria-pressed="' + (S.toggles[k] ? 'true':'false') +
+    '" aria-label="' + label + '"></button></div>';
+  return '<div class="canvas"><div class="pagehead"><div><h2>Configuration</h2>' +
+    '<div class="sub">server settings &middot; appearance &middot; enrollment &middot; storage</div></div>' +
+    '<div class="acts">' + chip('ok','Connected as admin') + '</div></div>' +
+    '<div class="grid2">' +
+      '<div class="card"><header><h3>Server</h3></header><div class="pad"><dl class="kv">' +
+      '<dt>Public URL</dt><dd style="font-family:var(--mono);font-size:11.5px">https://savelocker.lan:8443</dd>' +
+      '<dt>Storage</dt><dd style="font-family:var(--mono);font-size:11.5px">/data/archives</dd>' +
+      '<dt>Build</dt><dd>v0.5.10 &middot; commit 9f3c1ab &middot; built 19 Aug 2026</dd>' +
+      '<dt>Escalate</dt><dd>Conflicts go overdue after 6 hours</dd></dl>' +
+      '<div class="meter"><i style="width:74%"></i></div>' +
+      '<div style="display:flex;justify-content:space-between;margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--faint)">' +
+      '<span>1.84 GB of 2.50 GB across 7 games</span><span>next prune 03:00</span></div></div>' +
+      '<div class="pad">' + t('artwork','SteamGridDB artwork','Fetch cover art for the game list and grid.') + '</div></div>' +
+      appearanceCard('console') + '</div>' +
+
+    '<div class="grid2">' +
+      '<div class="card"><header><h3>Enroll a machine</h3></header><div class="pad">' +
+      '<p style="font-size:13px;color:var(--dim);margin-bottom:12px">Creates a single-use file the agent reads ' +
+      'on first run. It carries the server URL and a token that expires.</p><dl class="kv">' +
+      '<dt>For</dt><dd>STEAMDECK-OLED-2 <span style="color:var(--faint)">(optional, binds the file)</span></dd>' +
+      '<dt>Expires</dt><dd>30 minutes</dd></dl>' +
+      '<button class="b primary" data-act="enroll" style="margin-top:14px">Create enrollment file</button></div>' +
+      '<div class="pad"><table class="t"><thead><tr><th>Created</th><th>For machine</th><th>Expires</th><th>State</th></tr></thead>' +
+      '<tbody><tr><td class="m">yesterday 21:14</td><td class="k">LOFT-HTPC</td><td class="m">redeemed</td><td>' + chip('ok','Used') + '</td></tr>' +
+      '<tr><td class="m">yesterday 20:02</td><td class="k">\u2014</td><td class="m">expired</td><td>' + chip('','Expired') + '</td></tr>' +
+      '</tbody></table></div></div>' +
+
+      '<div class="card"><header><h3>Defaults &amp; maintenance</h3></header><div class="pad">' +
+      t('autoupdate','Agent auto-update','Poll GitHub for a newer installer and host it for agents.') +
+      t('backups','Nightly database backup','VACUUM INTO a snapshot at 03:00, keep 14 days.') +
+      '</div><div class="pad"><dl class="kv">' +
+      '<dt>Default keep</dt><dd>40 versions per game</dd>' +
+      '<dt>Settle</dt><dd>8 seconds after the game stops writing</dd></dl>' +
+      '<div style="margin-top:14px"><div style="font-family:var(--mono);font-size:10px;letter-spacing:.1em;' +
+      'text-transform:uppercase;color:var(--faint);margin-bottom:8px">Default exclude patterns ' +
+      '<span style="text-transform:none;letter-spacing:0">— every game inherits these</span></div>' +
+      '<div class="globs">' + SERVER_GLOBS.map(p => '<span class="glob">' + p +
+        '<button title="Remove" aria-label="Remove ' + p + '">×</button></span>').join('') +
+      '<span class="globadd"><input placeholder="add a pattern…" aria-label="Add default exclude pattern">' +
+      '<span style="font-family:var(--mono);font-size:10px;color:var(--faint)">↵</span></span></div>' +
+      '<p style="font-size:12px;color:var(--faint);margin-top:10px">Per-game patterns are set on the ' +
+      'game itself, under <strong style="color:var(--dim)">Games → Exclude patterns</strong>, and stack ' +
+      'on top of these.</p></div>' +
+      '<div style="display:flex;gap:8px;margin-top:14px">' +
+      '<button class="b" data-act="savedefglobs">Save defaults</button>' +
+      '<button class="b" data-act="changepw">Change password</button></div></div></div></div>' +
+
+    '<div class="card"><header><h3>Machines</h3></header>' +
+    '<table class="t"><thead><tr><th>Machine</th><th>Platform</th><th>Last seen</th><th>Games</th><th></th></tr></thead><tbody>' +
+    Object.keys(MACH).map(k => {
+      const count = GAMES.filter(x => x.paths[k]).length;
+      return '<tr><td class="k m">' + MACH[k].id + '</td><td>' + MACH[k].os + '</td>' +
+        '<td>' + (k==='deck' ? chip('warn', MACH[k].seen) : chip('ok', MACH[k].seen)) + '</td>' +
+        '<td class="n">' + count + '</td>' +
+        '<td><button class="b sm" data-act="forcerelease" data-arg="' + k + '">Force-release lease</button></td></tr>';
+    }).join('') + '</tbody></table></div></div>';
+}
+
+function auditPage(){
+  const q = S.auditQ.toLowerCase();
+  const rows = AUDIT.filter(r =>
+    (S.auditMachine==='all' || r[1]===S.auditMachine) &&
+    (!q || (r[3] + ' ' + r[4] + ' ' + (r[2]!=='\u2014' ? g(r[2]).name : '')).toLowerCase().includes(q)));
+  const mfilters = [['all','All machines']].concat(Object.keys(MACH).map(k => [k, MACH[k].id]));
+  return '<div class="canvas"><div class="pagehead"><div><h2>Audit log</h2>' +
+    '<div class="sub">' + rows.length + ' of ' + AUDIT.length + ' events &middot; newest first</div></div>' +
+    '<div class="acts"><span class="search">' + iconSearch + '<input type="search" data-search="audit" value="' + esc(S.auditQ) +
+    '" placeholder="Filter by action, game or detail" aria-label="Filter audit events"></span>' +
+    '<button class="b" data-act="export">Export CSV</button></div></div>' +
+    '<div class="filters">' + mfilters.map(m =>
+      '<button class="fchip" data-audit="' + m[0] + '" aria-pressed="' + (S.auditMachine===m[0]) + '">' + m[1] + '</button>').join('') +
+    '</div>' +
+    '<div class="card">' + (rows.length ?
+      '<table class="t"><thead><tr><th>Time</th><th>Machine</th><th>Game</th><th>Action</th><th>Detail</th></tr></thead><tbody>' +
+      rows.map(r => '<tr><td class="m">' + r[0] + '</td>' +
+        '<td class="m">' + (r[1]==='\u2014' ? '<span style="color:var(--faint)">server</span>' : MACH[r[1]].id) + '</td>' +
+        '<td class="k">' + (r[2]==='\u2014' ? '<span style="color:var(--faint)">\u2014</span>' : esc(g(r[2]).name)) + '</td>' +
+        '<td class="m" style="color:' + (/fail|conflict/.test(r[3]) ? 'var(--accent-ink)' : 'var(--dim)') + '">' + r[3] + '</td>' +
+        '<td class="wrap">' + esc(r[4]) + '</td></tr>').join('') + '</tbody></table>'
+      : '<div class="empty"><b>Nothing matches that filter</b>Clear the search or pick a different machine.</div>') +
+    '</div></div>';
+}
+
+function backupsPage(){
+  return '<div class="canvas"><div class="pagehead"><div><h2>Backups</h2>' +
+    '<div class="sub">nightly snapshots of the database &middot; 14-day retention</div></div>' +
+    '<div class="acts">' + chip('ok','Last night 03:00') +
+    '<button class="b primary" data-act="backupnow">Back up now</button></div></div>' +
+    '<div class="grid4">' +
+      '<div class="stat"><dt>Snapshots</dt><dd>14</dd><small>oldest 20 Aug</small></div>' +
+      '<div class="stat"><dt>On disk</dt><dd>567 MB</dd><small>/data/backups</small></div>' +
+      '<div class="stat"><dt>Archives</dt><dd>1.84 GB</dd><small>not included in snapshots</small></div>' +
+      '<div class="stat"><dt>Next run</dt><dd>03:00</dd><small>in 12h 51m</small></div></div>' +
+    '<div class="card"><header><h3>Recent snapshots</h3>' +
+    '<span style="font-family:var(--mono);font-size:11px;color:var(--faint)">VACUUM INTO &middot; safe while running</span></header>' +
+    '<table class="t"><thead><tr><th>File</th><th>Taken</th><th>Size</th><th>Reason</th><th></th></tr></thead><tbody>' +
+    BACKUPS.map(b => '<tr><td class="k m">' + b[0] + '</td><td>' + b[1] + '</td><td class="n">' + b[2] + '</td>' +
+      '<td>' + (b[3]==='Nightly' ? chip('','Nightly') : chip('warn', b[3])) + '</td>' +
+      '<td><button class="b sm" data-act="download">Download</button></td></tr>').join('') +
+    '</tbody></table></div></div>';
+}
+
+function helpPage(){
+  return '<div class="canvas"><div class="pagehead"><div><h2>Help</h2>' +
+    '<div class="sub">' + KB.length + ' articles &middot; ships with the console, works offline</div></div>' +
+    '<div class="acts"><span class="search">' + iconSearch +
+    '<input type="search" placeholder="Search the handbook" aria-label="Search help"></span></div></div>' +
+    '<div class="docs"><div class="card doclist">' + KB.map((k,i) =>
+      '<button data-kb="' + i + '" ' + (S.kb===i ? 'aria-current="true"' : '') + '>' + k + '</button>').join('') + '</div>' +
+    '<div class="card"><div class="prose">' + kbBody(S.kb) + '</div></div></div></div>';
+}
+
+function kbBody(i){
+  if (i === 0) return '<h4>How sync works</h4>' +
+    '<p>SaveLocker is hub and spoke. Every PC runs an agent; the agent watches the save folders you track and ' +
+    'talks to one server. Machines never talk to each other.</p>' +
+    '<h5>A normal push</h5><ul>' +
+    '<li>You quit the game. The agent waits for the <strong>settle window</strong> &mdash; 8 seconds of no writes ' +
+    'and no open handles &mdash; so it never zips a half-written save.</li>' +
+    '<li>It builds a per-file manifest and compares it to the server\u2019s baseline for the current head.</li>' +
+    '<li>Only changed files go up. A 184 MB Cyberpunk save usually sends about 12 MB.</li>' +
+    '<li>The new version becomes <strong>Latest</strong> and other machines pull it before the game next launches.</li></ul>' +
+    '<h5>When it refuses</h5>' +
+    '<p>A pull is blocked while the game is running, and a push is skipped if the folder is still being written.</p>' +
+    '<blockquote>A conflict is the one condition that never clears itself. Everything else auto-resolves once ' +
+    'that machine syncs the game cleanly again.</blockquote>' +
+    '<p>Run <code>savelocker doctor</code> on any machine to print what the agent thinks is true.</p>';
+  if (i === 2) return '<h4>Conflicts</h4>' +
+    '<p>A conflict means two machines both wrote to the same game since the last version they agreed on. ' +
+    'Neither copy is wrong, so the server stops and asks.</p>' +
+    '<h5>What you can do</h5><ul>' +
+    '<li><strong>Keep one.</strong> It becomes Latest; the other stays in the version list and can be restored.</li>' +
+    '<li><strong>Keep both.</strong> Both upload as versions and the newer one becomes Latest.</li>' +
+    '<li><strong>Set a policy.</strong> Newest wins resolves automatically next time; Prefer machine always sides ' +
+    'with the one you name.</li></ul>' +
+    '<p>Unresolved conflicts are marked overdue after six hours and show in the console header.</p>';
+  return '<h4>' + KB[i] + '</h4>' +
+    '<p>This article ships with the console under <code>web/src/help/</code>. In the prototype only ' +
+    '<strong>How sync works</strong> and <strong>Conflicts</strong> are written out in full.</p>';
+}
+
+function notesPage(){
+  const top = RELEASES.slice(0,3);
+  return '<div class="canvas"><div class="pagehead"><div><h2>What\u2019s new</h2>' +
+    '<div class="sub">console on v0.5.10 &middot; v0.5.11 available</div></div>' +
+    '<div class="acts">' + chip('warn','Update available') +
+    '<button class="b" data-act="notes">Read 0.5.11 notes</button></div></div>' +
+    '<div class="card">' + top.map((r,i) =>
+      '<div class="rel"><div class="ver">v' + r[0] + '<small>' + r[1] + '</small>' +
+      (i===0 ? '<div style="margin-top:8px">' + chip('warn','Available') + '</div>'
+             : i===1 ? '<div style="margin-top:8px">' + chip('ok','Running') + '</div>' : '') + '</div>' +
+      '<div class="body"><h4>' + esc(r[2]) + '</h4><p>' + esc(r[3]) + '</p></div></div>').join('') + '</div>' +
+    '<div class="grid2"><div class="card"><header><h3>Release history</h3>' +
+    '<span style="font-family:var(--mono);font-size:11px;color:var(--faint)">' + RELEASES.length +
+    ' releases &middot; since 19 Jul 2026</span></header>' +
+    '<div style="max-height:330px;overflow:auto"><table class="t"><thead><tr><th>Version</th><th>Date</th><th>Headline</th></tr></thead><tbody>' +
+    RELEASES.map(r => '<tr><td class="k m">v' + r[0] + '</td><td class="m">' + r[1] + '</td>' +
+      '<td class="wrap">' + esc(r[2]) + (r[0]==='0.5.10' ? ' ' + chip('ok','Running') : '') + '</td></tr>').join('') +
+    '</tbody></table></div></div>' +
+    '<div class="card"><header><h3>Agent versions</h3></header>' +
+    '<table class="t"><thead><tr><th>Machine</th><th>Agent</th><th>Installer hosted</th><th>State</th></tr></thead><tbody>' +
+    '<tr><td class="k m">RIG-ONYX</td><td class="m">0.5.10</td><td class="m">win-x64 0.5.10</td><td>' + chip('ok','Current') + '</td></tr>' +
+    '<tr><td class="k m">STEAMDECK-OLED</td><td class="m">0.5.10</td><td class="m">linux-x64 0.5.10</td><td>' + chip('ok','Current') + '</td></tr>' +
+    '<tr><td class="k m">LOFT-HTPC</td><td class="m">0.5.9</td><td class="m">win-x64 0.5.10</td><td>' + chip('warn','Update staged') + '</td></tr>' +
+    '</tbody></table><div class="pad" style="font-size:12.5px;color:var(--dim)">Agents update themselves from the ' +
+    'installer the server hosts, so the console is always first on a new version.</div></div></div></div>';
+}
+
+function loginScreen(){
+  return frame('console','savelocker.lan:8443','sign in',
+    '<div class="signin"><div class="signcard">' +
+    '<div class="signmark">' + logo(46,'solid') + '</div>' +
+    '<h2>Unlock SaveLocker</h2>' +
+    '<p class="lead">This console is protected by the admin password set on the server. There are no ' +
+    'accounts and nothing to register &mdash; one password, kept by you.</p>' +
+    '<label class="field' + (S.loginErr ? ' bad' : '') + '"><span>Password</span>' +
+    '<input type="password" data-login placeholder="Enter the admin password" ' +
+    'aria-label="Admin password" autocomplete="current-password"></label>' +
+    (S.loginErr ? '<div class="fielderr">That password didn’t work. It is the one set on the server, ' +
+      'not your Steam or system login.</div>' : '') +
+    '<label class="remember"><input type="checkbox" checked> Remember this browser for 30 days</label>' +
+    '<button class="b primary wide" data-act="unlock" style="width:100%;justify-content:center">Unlock</button>' +
+    '<div class="signfoot"><span>savelocker.lan:8443</span><span>v0.5.10</span></div>' +
+    '<p class="hint">Forgot it? Run <code>savelocker-server passwd</code> on the host, or clear ' +
+    '<code>Admin:PasswordHash</code> in the settings table and restart.</p>' +
+    '</div>' +
+    '<aside class="signaside"><h3>While it is locked</h3><ul>' +
+    '<li>Agents keep syncing. The password guards the console, not the machines.</li>' +
+    '<li>Enrollment tokens already issued stay valid until they expire.</li>' +
+    '<li>Conflicts still open and still wait &mdash; you will see them the moment you unlock.</li>' +
+    '</ul><div class="signstat">' + chip('ok','3 agents connected') + chip('crit','1 conflict waiting') +
+    '</div></aside></div>');
+}
+
+function consoleScreen(){
+  if (S.locked) return loginScreen();
+  const page = S.cView==='games' ? gamesPage() : S.cView==='config' ? configPage()
+    : S.cView==='audit' ? auditPage() : S.cView==='backups' ? backupsPage()
+    : S.cView==='help' ? helpPage() : notesPage();
+  return frame('console','savelocker.lan:8443','console', topbar() + page);
+}
+
+/* ------------------------------- agent ------------------------------- */
+function agentHero(){
+  const sy = S.sync && S.sync.scope === 'agent' ? S.sync : null;
+  if (sy && !sy.done){
+    return '<div class="hero"><span class="badge busy">' + iconSyncBig + '</span>' +
+      '<div style="flex:1;min-width:0"><h2 data-sync-title>Syncing ' + (sy.i + 1) + ' of ' + sy.total +
+      ' \u2014 ' + esc(sy.name) + '</h2>' +
+      '<div class="prog"><div class="meter"><i data-sync-meter style="width:' + syncPct() + '%"></i></div>' +
+      '<div class="legend" data-sync-legend><span>' + sy.phase + '</span><span>' + sy.sent.toFixed(1) +
+      ' MB sent</span><span>' + syncPct() + '%</span></div></div></div>' +
+      '<div class="right"><button class="b" data-act="cancelsync">Cancel</button></div></div>';
+  }
+  if (sy && sy.done){
+    return '<div class="hero"><span class="badge">DONE</span><div style="min-width:0">' +
+      '<h2>Synced ' + sy.total + ' games \u2014 ' + sy.sent.toFixed(1) + ' MB sent</h2>' +
+      '<div class="line2">2 uploaded, 4 already current &middot; finished just now</div></div>' +
+      '<div class="right">' + chip('ok','All clear') +
+      '<button class="b primary icon" data-act="syncall">' + iconSync + 'Sync all</button></div></div>';
+  }
+  const conflict = !S.resolved;
+  return '<div class="hero"><span class="badge ' + (conflict ? 'stop' : '') + '">' +
+    (conflict ? 'HOLD' : 'IDLE') + '</span><div style="min-width:0">' +
+    '<h2>' + (conflict ? 'Sync paused \u2014 Baldur\u2019s Gate 3 needs a decision'
+                       : 'Idle \u2014 nothing syncing right now.') + '</h2>' +
+    '<div class="line2">RIG-ONYX &middot; last push 22m ago &middot; settle 8s &middot; offline queue empty</div></div>' +
+    '<div class="right">' + (conflict ? chip('crit','1 conflict') : chip('ok','All clear')) +
+    '<button class="b primary icon" data-act="syncall">' + iconSync + 'Sync all</button></div></div>';
+}
+
+function agentSide(){
+  const items = [['overview','Overview',''],['games','Games','6'],['add','Add games','10'],
+    ['conflicts','Conflicts', S.resolved ? '' : '1'],['settings','Settings',''],['activity','Activity','7']];
+  return '<div class="aside">' + items.map(i =>
+    '<button data-anav="' + i[0] + '" ' + (S.aView===i[0] ? 'aria-current="page"' : '') + '>' + i[1] +
+    (i[2] ? '<span class="count">' + i[2] + '</span>' : '') + '</button>').join('') +
+    '<div class="spacer"></div><div class="foot">agent 0.5.10<br>savelocker.lan:8443</div></div>';
+}
+
+const localGames = () => GAMES.filter(x => x.paths.onyx);
+
+function agentOverview(){
+  const conflict = !S.resolved;
+  return '<div class="canvas" style="gap:14px">' +
+    '<div class="grid3">' +
+      '<div class="stat"><dt>Tracked here</dt><dd>' + localGames().length + '</dd><small>of 7 on the server</small></div>' +
+      '<div class="stat"><dt>Last sync</dt><dd>22m</dd><small>Cyberpunk 2077, 12.3 MB</small></div>' +
+      '<div class="stat"><dt>Sent today</dt><dd>13.1 MB</dd><small>3 pushes, 1 pull</small></div>' +
+    '</div>' +
+    (conflict
+      ? '<div class="banner"><span class="dot crit"></span><span class="txt">' +
+        '<strong>Baldur\u2019s Gate 3 is waiting on you.</strong>' +
+        '<em>Both this PC and the Deck wrote since v26. Nothing for that game syncs until you pick one.</em>' +
+        '</span><button class="b primary" data-act="goconflicts">Choose</button></div>'
+      : '<div class="banner" style="border-color:var(--safe-line);background:var(--safe-soft)">' +
+        '<span class="dot ok"></span><span class="txt"><strong>Everything is in sync.</strong>' +
+        '<em>Six games tracked on this PC, all matching the server.</em></span></div>') +
+    '<div class="grid2">' +
+      '<div class="card"><header><h3>Next up</h3></header><div class="pad"><dl class="kv">' +
+      '<dt>Watching</dt><dd>' + localGames().length + ' save folders</dd>' +
+      '<dt>On quit</dt><dd>Push after 8 seconds of quiet</dd>' +
+      '<dt>On launch</dt><dd>Pull Latest before the game starts</dd>' +
+      '<dt>Queue</dt><dd>Empty</dd></dl>' +
+      '<div style="display:flex;gap:8px;margin-top:14px">' +
+      '<button class="b" data-act="gogames">Open games</button>' +
+      '<button class="b" data-act="rescan">Rescan library</button></div></div></div>' +
+      '<div class="card"><header><h3>Recent</h3>' +
+      '<button class="b sm" data-act="goactivity">All activity</button></header>' +
+      '<ul class="feed">' + ACTIVITY.slice(0,3).map(a =>
+        '<li><span class="when">' + a[0] + '</span><span class="dot ' + a[1] + '" style="margin-top:5px"></span>' +
+        '<span class="what">' + a[2] + '</span></li>').join('') + '</ul></div>' +
+    '</div></div>';
+}
+
+function agentGames(){
+  const list = localGames();
+  if (S.aOpen){
+    const x = g(S.aGame);
+    const held = x.id==='bg3' && !S.resolved;
+    return '<div class="canvas" style="gap:14px">' +
+      '<div><button class="b sm" data-act="allagames">&larr; All games</button></div>' +
+      '<div class="pagehead"><div style="display:flex;gap:16px">' + cover(x,'l') +
+      '<div><h2>' + esc(x.name) + '</h2>' +
+      '<div class="sub">' + x.playtime + ' played &middot; ' + x.versions + ' versions on the server</div>' +
+      '<div style="margin-top:10px;display:flex;gap:6px">' + stateChip(x) + chip('', x.size) + '</div></div></div>' +
+      '<div class="acts"><button class="b" data-act="pushone" ' + (held ? 'disabled' : '') + '>Push now</button>' +
+      '<button class="b" data-act="pullone" ' + (held ? 'disabled' : '') + '>Pull latest</button>' +
+      '<button class="b primary icon" data-act="syncone" data-arg="' + x.id + '" ' + (held ? 'disabled' : '') + '>' +
+      iconSync + 'Sync this game</button></div></div>' +
+      (held ? '<div class="banner"><span class="dot crit"></span><span class="txt">' +
+        '<strong>Paused \u2014 this game has a conflict.</strong><em>Push and pull stay disabled until you pick a save.</em>' +
+        '</span><button class="b primary" data-act="goconflicts">Choose</button></div>' : '') +
+      '<div class="grid4">' +
+        '<div class="stat"><dt>Save size</dt><dd>' + x.size + '</dd><small>on this PC</small></div>' +
+        '<div class="stat"><dt>Last sync</dt><dd>' + lastOf(x).replace(' ago','') + '</dd><small>' + x.policy + '</small></div>' +
+        '<div class="stat"><dt>Versions</dt><dd>' + x.versions + '</dd><small>keep ' + x.keep + '</small></div>' +
+        '<div class="stat"><dt>Sent last push</dt><dd>' + (x.id==='cp77' ? '12.3 MB' : x.id==='stardew' ? '812 KB' : '\u2014') +
+        '</dd><small>' + (x.id==='cp77' ? '41 of 1,208 files' : 'delta upload') + '</small></div></div>' +
+      '<div class="card"><header><h3>On this machine</h3>' +
+      '<button class="b sm" data-act="changepath">Change folder</button></header><div class="pad"><dl class="kv">' +
+      '<dt>Save folder</dt><dd><span class="path">' + esc(x.paths.onyx) + '</span></dd>' +
+      '<dt>Process</dt><dd style="font-family:var(--mono);font-size:11.5px">' + esc(x.proc) + '</dd>' +
+      '<dt>Excludes</dt><dd style="font-family:var(--mono);font-size:11.5px">' + esc(x.excludes) + '</dd>' +
+      '<dt>Launch</dt><dd style="font-family:var(--mono);font-size:11.5px">savelocker launch -- %command%</dd>' +
+      '</dl><div style="display:flex;gap:8px;margin-top:14px">' +
+      '<button class="b" data-act="openfolder">Open folder</button>' +
+      '<button class="b" data-act="setproc">Set game process</button>' +
+      '<button class="b" data-act="untrack">Stop tracking</button></div></div></div>' +
+      '<div class="card"><header><h3>Versions on the server</h3></header>' +
+      '<table class="t"><thead><tr><th>Version</th><th>When</th><th>From</th><th>Size</th><th>State</th></tr></thead><tbody>' +
+      x.hist.slice(0,4).map(h => '<tr><td class="k m">' + h[0] + '</td><td>' + h[1] + '</td>' +
+        '<td class="m">' + MACH[h[2]].id + '</td><td class="n">' + h[3] + '</td>' +
+        '<td>' + (h[4]==='Latest' ? chip('ok','Latest') : h[4]==='Conflicting' ? chip('crit','Conflicting') : chip('', h[4])) +
+        '</td></tr>').join('') + '</tbody></table></div></div>';
+  }
+
+  const body = S.aLayout === 'grid' ? gridWall('agent')
+    : '<div class="card" style="padding:6px;display:flex;flex-direction:column;gap:2px">' + list.map(x =>
+        '<button class="grow big" data-agame="' + x.id + '">' + cover(x,'s') +
+        '<span class="t1">' + esc(x.name) + '</span>' +
+        '<span class="t2">' + x.size + ' &middot; ' + esc(lastOf(x)) + ' &middot; ' + esc(x.paths.onyx) + '</span>' +
+        '<span class="end">' + (stateOf(x)==='crit' ? chip('crit','Conflict')
+          : stateOf(x)==='warn' ? chip('warn','Retrying') : chip('ok','Synced')) + '</span></button>').join('') + '</div>';
+
+  return '<div class="canvas" style="gap:14px"><div class="pagehead"><div><h2>Games</h2>' +
+    '<div class="sub">' + list.length + ' tracked on this PC &middot; click one for its options</div></div>' +
+    '<div class="acts">' + layoutSwitch('agent') +
+    '<button class="b" data-act="goadd">+ Add games</button></div></div>' + body + '</div>';
+}
+
+function agentAdd(){
+  const FILTERS = [['suggested','Suggested'],['all','All'],['steam','Steam'],
+    ['shortcut','Added to Steam'],['heroic','Heroic']];
+  const bySource = (c,f) => f==='suggested' ? !c.cloud : f==='all' ? true
+    : f==='steam' ? c.src==='SteamInstalled' : f==='shortcut' ? c.src==='SteamShortcut' : c.src==='Heroic';
+  const q = S.addQ.trim().toLowerCase();
+  const list = CANDIDATES.filter(c => bySource(c,S.addFilter))
+    .filter(c => (S.addFilter!=='heroic' || !S.addStore) ? true : c.store===S.addStore)
+    .filter(c => S.addPath==='all' ? true : S.addPath==='has' ? !!c.path : !c.path)
+    .filter(c => !q || c.n.toLowerCase().includes(q) || c.path.toLowerCase().includes(q));
+
+  return '<div class="canvas" style="gap:12px">' +
+    '<div class="pagehead"><div><h2>Add games</h2>' +
+    '<div class="sub">scanned 2m ago &middot; ' + CANDIDATES.length + ' candidates found</div></div>' +
+    '<div class="acts"><span class="search">' + iconSearch +
+    '<input type="search" data-search="add" value="' + esc(S.addQ) +
+    '" placeholder="Search candidates" aria-label="Search candidates"></span>' +
+    '<button class="b" data-act="rescan">Rescan</button></div></div>' +
+    '<div class="filters">' + FILTERS.map(f =>
+      '<button class="fchip" data-add="' + f[0] + '" aria-pressed="' + (S.addFilter===f[0]) + '">' + f[1] +
+      '<span class="ct">' + CANDIDATES.filter(c => bySource(c,f[0])).length + '</span></button>').join('') + '</div>' +
+    '<div class="filters">' +
+      [['all','All'],['has','Detected'],['missing','Not detected']].map(p =>
+      '<button class="fchip" data-addpath="' + p[0] + '" aria-pressed="' + (S.addPath===p[0]) + '">' + p[1] + '</button>').join('') +
+      (S.addFilter==='heroic' ? '<span style="width:12px"></span>' +
+        [['','All stores'],['Epic','Epic'],['Gog','GOG'],['Amazon','Amazon'],['Sideload','Sideloaded']].map(s =>
+        '<button class="fchip" data-addstore="' + s[0] + '" aria-pressed="' + (S.addStore===s[0]) + '">' + s[1] + '</button>').join('') : '') +
+    '</div>' +
+    '<p style="font-size:12.5px;color:var(--faint)">' +
+      (S.addFilter==='suggested' ? 'Everything except games Steam Cloud already backs up.'
+       : S.addFilter==='all' ? 'Every game found, including Steam Cloud titles.'
+       : S.addFilter==='steam' ? 'Games installed from the Steam store.'
+       : S.addFilter==='shortcut' ? 'Non-Steam games you added to your Steam library.'
+       : 'Games installed through Heroic Games Launcher.') +
+      (q ? ' Matching \u201c' + esc(S.addQ) + '\u201d \u2014 ' + list.length + ' of ' + CANDIDATES.length + '.' : '') + '</p>' +
+    '<div class="card">' + (list.length ? list.map(c =>
+      '<label class="check"><input type="checkbox" data-pick="' + esc(c.n) + '" ' +
+      (S.picked.has(c.n) ? 'checked' : '') + '><span class="col">' +
+      '<span class="t1">' + esc(c.n) + '</span>' +
+      '<span class="t2">' + (c.path ? esc(c.path) : 'No save folder detected \u2014 set one after adding') + '</span></span>' +
+      (c.cloud ? chip('','Steam Cloud') : '') +
+      (c.path ? chip('ok','Detected') : chip('warn','Not detected')) + '</label>').join('')
+      : '<div class="empty"><b>Nothing matches</b>Clear the search, or try All if Steam Cloud already covers it.</div>') +
+    '<div class="footbar"><span class="msg">' + S.picked.size + ' selected &middot; ' +
+      'they start syncing after the next time you quit each game</span>' +
+    '<button class="b" data-act="clearpicks">Clear</button>' +
+    '<button class="b primary" data-act="addpicked">Add ' + S.picked.size + ' games</button></div></div></div>';
+}
+
+function agentConflicts(){
+  if (S.resolved) return '<div class="canvas"><div class="card"><div class="empty">' +
+    '<b>No open conflicts</b>Kept the Deck save as v27. The desktop copy is still in the version list ' +
+    'on the console if you want it back.</div></div>' +
+    '<div class="card"><header><h3>Recently resolved</h3></header>' +
+    '<table class="t"><thead><tr><th>Game</th><th>Kept</th><th>Resolved</th><th>By</th></tr></thead><tbody>' +
+    '<tr><td class="k">Baldur\u2019s Gate 3</td><td class="m">v27 &middot; STEAMDECK-OLED</td><td>just now</td>' +
+    '<td>this device</td></tr></tbody></table></div></div>';
+
+  return '<div class="canvas"><div class="pagehead"><div><h2>Sync paused</h2>' +
+    '<div class="sub">1 conflict &middot; open 4h 12m</div></div>' +
+    '<div class="acts">' + chip('crit','Baldur\u2019s Gate 3') + '</div></div>' +
+    '<div class="card"><div class="pad">' +
+    '<p style="font-size:13px;color:var(--dim);margin-bottom:14px">You played on both machines since the last ' +
+    'sync. Pick the one to keep &mdash; the other stays in your history and can be restored from the console.</p>' +
+    '<div class="picker">' +
+    '<div class="pick here"><h5>This device \u2014 RIG-ONYX</h5><div class="big">91.1 MB &middot; today 09:37</div>' +
+    '<div class="sm">Act 3, Wyrm\u2019s Rock &mdash; 59h played</div>' +
+    '<button class="b" data-act="keep" data-arg="onyx">Keep this one</button></div>' +
+    '<div class="pick"><h5>The cloud \u2014 STEAMDECK-OLED</h5><div class="big">92.4 MB &middot; today 14:08</div>' +
+    '<div class="sm">Act 3, Wyrm\u2019s Rock &mdash; 61h played, 4 quicksaves ahead</div>' +
+    '<button class="b primary" data-act="keep" data-arg="deck">Keep the cloud copy</button></div></div>' +
+    '<div style="display:flex;gap:10px;margin-top:14px;align-items:center">' +
+    '<button class="b" data-act="keepboth">Keep both</button>' +
+    '<span style="font-size:12px;color:var(--faint)">Both are uploaded; the newer one becomes Latest.</span></div>' +
+    '</div></div>' +
+    '<div class="card"><header><h3>Why did this happen?</h3></header><div class="pad">' +
+    '<p style="font-size:12.5px;color:var(--dim)">The Deck pushed v27 at 14:08 while this machine had already ' +
+    'written its own changes on top of v26 at 09:37. Neither is a parent of the other, so SaveLocker stopped ' +
+    'instead of picking for you. Setting this game to <strong style="color:var(--fg)">Newest wins</strong> in ' +
+    'the console would resolve it automatically next time.</p></div></div></div>';
+}
+
+function agentSettings(){
+  const t = (k,label,hint) => '<div class="toggle"><div class="lbl">' + label + '<small>' + hint + '</small></div>' +
+    '<button class="sw" role="switch" data-toggle="' + k + '" aria-pressed="' + (S.toggles[k] ? 'true':'false') +
+    '" aria-label="' + label + '"></button></div>';
+  return '<div class="canvas" style="gap:12px">' +
+    '<div class="pagehead"><div><h2>Settings</h2><div class="sub">this machine only</div></div></div>' +
+    '<div class="card"><header><h3>Connection</h3></header><div class="pad"><dl class="kv">' +
+    '<dt>Machine name</dt><dd>RIG-ONYX</dd>' +
+    '<dt>Server URL</dt><dd style="font-family:var(--mono);font-size:11.5px">https://savelocker.lan:8443</dd>' +
+    '<dt>Certificate</dt><dd>' + chip('ok','Pinned on first connect') + '</dd></dl>' +
+    '<div style="display:flex;gap:8px;margin-top:14px">' +
+    '<button class="b primary" data-act="save">Save</button>' +
+    '<button class="b" data-act="test">Test connection</button></div></div></div>' +
+    appearanceCard('agent') +
+    '<div class="card"><header><h3>Sync safety</h3></header><div class="pad">' +
+    '<dl class="kv"><dt>Settle</dt><dd>Wait 8 seconds after the game stops writing</dd></dl>' +
+    '<div style="margin-top:6px">' +
+    t('startup','Start with Windows','Launch the agent when you sign in.') +
+    t('autoupdate','Install agent updates automatically','Staged on download, applied on next restart.') +
+    '</div></div></div>' +
+    '<div class="grid2">' +
+    '<div class="card"><header><h3>Steam launch setup</h3></header><div class="pad">' +
+    '<p style="font-size:12.5px;color:var(--dim);margin-bottom:10px">Same command for every game. Paste it into ' +
+    'Properties &rarr; Launch Options so a pull happens before the game starts.</p>' +
+    '<span class="path">savelocker launch -- %command%</span>' +
+    '<button class="b sm" data-act="copy" style="margin-top:10px">Copy</button></div></div>' +
+    '<div class="card"><header><h3>Decky plugin</h3>' + chip('','Deck only') + '</header><div class="pad">' +
+    '<p style="font-size:12.5px;color:var(--dim);margin-bottom:10px">Push, pull and doctor from the Quick Access ' +
+    'panel, and a warning in Game Mode when a save is checked out elsewhere.</p>' +
+    t('decky','Install on STEAMDECK-OLED','Installs from Decky &rarr; Install Plugin from URL.') +
+    '</div></div></div></div>';
+}
+
+function agentActivity(){
+  return '<div class="canvas" style="gap:12px">' +
+    '<div class="pagehead"><div><h2>Activity</h2><div class="sub">today &middot; kept for 30 days</div></div>' +
+    '<div class="acts"><button class="b" data-act="openlog">Open agent.log</button></div></div>' +
+    '<div class="card"><ul class="feed">' + ACTIVITY.map(a =>
+      '<li><span class="when">' + a[0] + '</span><span class="dot ' + a[1] + '" style="margin-top:5px"></span>' +
+      '<span class="what">' + a[2] + '</span></li>').join('') + '</ul></div>' +
+    '<div class="card"><header><h3>Offline queue</h3></header>' +
+    '<div class="empty"><b>Empty</b>Pushes that fail while the server is unreachable wait here and drain ' +
+    'automatically every 30 seconds.</div></div></div>';
+}
+
+function agentScreen(){
+  const page = S.aView==='overview' ? agentOverview() : S.aView==='games' ? agentGames()
+    : S.aView==='add' ? agentAdd() : S.aView==='conflicts' ? agentConflicts()
+    : S.aView==='settings' ? agentSettings() : agentActivity();
+  const bar = '<div class="topbar" style="height:56px"><div class="brand">' + logo(28,'solid') +
+    '<span class="word">Save<em>Locker</em></span></div><div class="tools">' + chip('ok','Connected') + '</div></div>';
+  return frame('agent','SaveLocker \u2014 RIG-ONYX','960\u00d7640',
+    bar + railHtml() + agentHero() + '<div class="abody">' + agentSide() + page + '</div>');
+}
+
+/* ------------------------------- deck / wayland ------------------------------- */
+function deckScreen(){
+  const a = ACCENTS[S.accent];
+  const style = '--accent:' + (S.theme==='dark' ? a.dark : a.light) +
+                ';--on-accent:' + (S.theme==='dark' ? a.dOn : a.lOn);
+  const nav = [['overview','Overview'],['tracked','Tracked games'],['add','Add a game'],
+               ['activity','Activity'],['settings','Settings']];
+  const rows = GAMES.filter(x => x.paths.deck).map((x,i) =>
+    '<button class="drow" data-deckrow="' + x.id + '" ' + (i===1 ? 'data-focus="1"' : '') + '>' +
+    cover(x,'s') + '<span class="t1">' + esc(x.name) + '</span>' +
+    '<span class="t2">' + x.size + ' &middot; ' + esc(lastOf(x)) + ' &middot; ' + esc(x.paths.deck.slice(0,54)) + '\u2026</span>' +
+    '<span class="end">' + (stateOf(x)==='crit' ? chip('crit','Conflict') : chip('ok','Detected')) + '</span></button>').join('');
+
+  const deckMain = '<div class="dmain">' +
+    '<dl class="dstats">' +
+      '<div class="dstat"><dt>Agent Status</dt><dd style="font-size:22px;color:var(--safe-ink)">CONNECTED</dd><small>savelocker.lan:8443</small></div>' +
+      '<div class="dstat"><dt>Games Tracked</dt><dd>5</dd><small>on this Deck</small></div>' +
+      '<div class="dstat"><dt>Saves Backed Up</dt><dd>214</dd><small>1.84 GB on the server</small></div>' +
+      '<div class="dstat"><dt>Last Sync</dt><dd>6h</dd><small>Baldur\u2019s Gate 3 &middot; paused</small></div>' +
+    '</dl>' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:14px">' +
+    '<h3 style="font-size:17px;font-weight:700;letter-spacing:-.03em">Tracked games</h3>' +
+    '<span style="font-family:var(--mono);font-size:11.5px;color:var(--faint)">Idle - nothing syncing right now.</span></div>' +
+    '<div style="display:flex;flex-direction:column;gap:8px">' + rows + '</div></div>';
+
+  const gameMode = '<div class="deck deckframe" style="' + style + '"><div class="bezel"><div class="screen">' +
+    '<div class="dtop">' + logo(30,'solid') + '<span class="word">Save<em>Locker</em></span>' +
+    '<span class="chip ok">CONNECTED</span>' +
+    '<span class="clock"><button class="b primary icon" style="font-size:14px;padding:9px 18px">' +
+    iconSync + 'Sync all <span style="opacity:.75;font-size:11px;margin-left:4px">Y</span></button>' +
+    '<span>STEAMDECK-OLED</span><span>92%</span><span>14:12</span></span></div>' +
+    '<div class="dbody"><div class="dnav">' + nav.map((n,i) =>
+      '<button ' + (i===0 ? 'aria-current="page"' : '') + '>' + n[1] + '</button>').join('') +
+    '</div>' + deckMain + '</div>' +
+    '<div class="dfoot">' +
+      '<span class="key"><span class="glyph a">A</span>Select</span>' +
+      '<span class="key"><span class="glyph b">B</span>Back</span>' +
+      '<span class="key"><span class="glyph y">Y</span>Sync now</span>' +
+      '<span class="key"><span class="glyph wide">L1 / R1</span>Switch section</span>' +
+      '<span class="key"><span class="glyph wide">\u2630</span>Steam menu</span>' +
+      '<span style="margin-left:auto;font-family:var(--mono)">gamescope 1280&times;800 &middot; Wayland</span>' +
+    '</div></div></div></div>';
+
+  const wayland = '<div class="wl cp ' + S.theme + '" style="' + style + '"><div class="hb">' +
+    logo(22,'solid') + '<div><div class="title">SaveLocker</div>' +
+    '<div class="sub">RIG-DECK \u2014 Wayland session</div></div>' +
+    '<button class="b primary icon" data-act="syncall" style="margin-left:auto">' + iconSync + 'Sync all</button>' +
+    '<div class="wc" style="margin-left:14px"><i>&minus;</i><i>\u25a1</i><i>\u00d7</i></div></div>' +
+    agentHero() + agentOverview() + '</div>';
+
+  const body = '<div class="canvas" style="gap:22px">' +
+    '<div class="pagehead"><div><h2>Deck and Wayland</h2>' +
+    '<div class="sub">gamescope Game Mode &middot; Decky Quick Access &middot; desktop session</div></div>' +
+    '<div class="acts">' + chip('','src/Agent.Linux/Ui') + chip('','gamepad-first') + '</div></div>' +
+    '<div><div style="font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:10px">' +
+    'Game Mode \u2014 1280&times;800, gamepad only</div><div style="overflow-x:auto">' + gameMode + '</div></div>' +
+    '<div class="grid2" style="align-items:start">' +
+    '<div><div style="font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:10px">' +
+    'Notes</div><div class="card"><div class="pad"><dl class="kv">' +
+    '<dt>Focus</dt><dd>One focus ring, 2px accent plus a 4px halo &mdash; visible at arm\u2019s length on a 7" panel.</dd>' +
+    '<dt>Targets</dt><dd>Rows are 62px tall; nothing relies on a pointer, and every action has a face button.</dd>' +
+    '<dt>Text</dt><dd>16px minimum body, mono only for values &mdash; never for whole sentences.</dd>' +
+    '<dt>Colour</dt><dd>Same tokens as the console; the Deck simply never uses the light theme.</dd>' +
+    '<dt>Wayland</dt><dd>Desktop session drops the browser chrome for a header bar, keeps everything else.</dd>' +
+    '</dl></div></div></div></div>' +
+    '<div><div style="font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:10px">' +
+    'Desktop session (Wayland) \u2014 same agent, native window</div><div style="overflow-x:auto">' + wayland + '</div></div>' +
+    '</div>';
+  return frame('sheet','deck + wayland surfaces','linux', body);
+}
+
+/* Status-colour map shared with the Decky plugin's toast.tsx, so a Steam toast and the console
+   never describe the same event with different colours. */
+const KIND_STYLE = {
+  syncing:{bg:'#2a3a45', fg:'#7fb8e0', ico:'⟳'},
+  success:{bg:'#1e3a2a', fg:'#6fce9a', ico:'✓'},
+  blocked:{bg:'#3a2f16', fg:'#e0b355', ico:'⚿'},
+  error:  {bg:'#3a1e1e', fg:'#e07272', ico:'✕'},
+  warning:{bg:'#2f2440', fg:'#b596e6', ico:'!'},
+  info:   {bg:'#26292c', fg:'#9a9a96', ico:'i'},
+};
+const kindDot = k => '<i style="background:' + KIND_STYLE[k].bg + ';color:' + KIND_STYLE[k].fg + '">' +
+  KIND_STYLE[k].ico + '</i>';
+
+/* ------------------------------- notifications ------------------------------- */
+function notifScreen(){
+  const win = (kind,title,body,a1,a2) => '<div class="win11"><div class="app">' +
+    '<span style="color:var(--accent);display:grid;place-items:center">' + logo(14,'mono') + '</span>SaveLocker</div>' +
+    '<div class="ti">' + title + '</div><div class="bo">' + body + '</div>' +
+    '<div class="acts"><button class="pri">' + a1 + '</button><button>' + a2 + '</button></div></div>';
+  const steamToast = (kind,body,sub) => '<div class="steam sttoast">' + kindDot(kind) +
+    '<div class="body"><div class="t">SaveLocker</div><div class="b">' + body + '</div>' +
+    (sub ? '<div class="s">' + sub + '</div>' : '') + '</div></div>';
+
+  /* the console menu, rendered open and inert so both states are visible side by side */
+  const menuShot = (rows, badgeTxt, badgeCls) =>
+    '<div style="position:relative;width:392px"><div style="display:flex;justify-content:flex-end;margin-bottom:10px">' +
+    '<span class="b" style="position:relative;pointer-events:none">' +
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
+    '<path d="M18 9a6 6 0 1 0-12 0c0 5-2 6.5-2 6.5h16S18 14 18 9z" stroke-linejoin="round"/>' +
+    '<path d="M10.5 20a2 2 0 0 0 3 0" stroke-linecap="round"/></svg>' +
+    (badgeTxt ? '<span class="count' + badgeCls + '" style="position:absolute;top:-5px;right:-5px">' +
+      badgeTxt + '</span>' : '') + '</span></div>' +
+    '<div class="menu" style="position:static;width:392px;animation:none"><header><h4>Notifications</h4>' +
+    '<div style="display:flex;gap:7px;align-items:center">' + chip('', (rows === null ? 0 : NOTIFS.length) + ' open') +
+    '<span class="b sm">Dismiss all</span></div></header><div class="list">' +
+    (rows === null
+      ? '<div class="none"><b>Nothing to report</b><span>A healthy fleet is quiet. Warnings clear ' +
+        'themselves once a machine syncs cleanly again.</span></div>'
+      : NOTIFS.map(n => '<div class="nrow"><span class="sev" style="background:' + sevColor(n.sev) + '"></span>' +
+        '<div><div class="t1">' + esc(n.title) + '</div><div class="t2">' + esc(n.body) + '</div>' +
+        '<div class="t3"><span>' + n.code + '</span><span>' + esc(n.machine) + '</span><span>' + n.when + '</span></div></div>' +
+        '<div class="side"><span class="x">×</span>' + (n.act ? '<span class="b sm">' + n.act + '</span>' : '') +
+        '</div></div>').join('')) +
+    '</div><footer><span style="font-family:var(--mono);font-size:10.5px;color:var(--faint)">' +
+    'agents report these; info never colours the badge</span>' +
+    '<span class="b sm">Open audit log</span></footer></div></div>';
+
+  const body = '<div class="canvas" style="gap:20px">' +
+    '<div class="pagehead"><div><h2>Notifications</h2>' +
+    '<div class="sub">the console menu first, then what leaves the browser</div></div>' +
+    '<div class="acts">' + chip('crit','sync.conflict') + chip('warn','push.failed') +
+    chip('','update.staged') + '</div></div>' +
+
+    '<div class="card"><header><h3>The console menu</h3>' +
+    '<span style="font-size:12px;color:var(--faint)">bell, top right &mdash; live in the Console screen</span></header>' +
+    '<div class="pad" style="font-size:13px;color:var(--dim)">Every problem an agent reports lands here, ' +
+    'worst first. The badge counts only what is actionable &mdash; <strong style="color:var(--fg)">Error ' +
+    'and Warning</strong> &mdash; and turns from amber to accent the moment one of them is an Error, so a ' +
+    'headless Deck that cannot toast still reaches a person. Info entries sit in the list without colouring ' +
+    'anything. Dismissing hides the notice, not the condition: if the agent reports it again, it comes back.' +
+    '</div><div class="pad" style="display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start">' +
+    '<div class="capcell">' + menuShot(1,'4','') + '<span class="meta">4 actionable, 1 info</span></div>' +
+    '<div class="capcell">' + menuShot(null,'','') + '<span class="meta">healthy fleet</span></div>' +
+    '</div></div>' +
+
+    '<div class="card"><div class="pad" style="font-size:13px;color:var(--dim)">' +
+    'Outside the console, a notification only fires for something you have to act on or would want to know ' +
+    'happened without you: a conflict, a refused pull, a failed push that has stopped retrying, a staged ' +
+    'update, and the lease warning. Routine successful pushes never notify &mdash; they land in Activity.</div></div>' +
+
+    '<div class="notif-grid">' +
+    '<div><div class="capcell"><span class="meta">Windows toast &mdash; agent</span>' +
+    win('crit','Baldur’s Gate 3 needs a decision',
+      'This PC and STEAMDECK-OLED both wrote since v26. Nothing syncs for this game until you pick one.',
+      'Choose a save','Later') + '</div></div>' +
+
+    '<div><div class="capcell"><span class="meta">Windows toast &mdash; warning</span>' +
+    win('warn','Elden Ring push failed',
+      'The save folder is locked by the running game. Retrying in 5 minutes.','Retry now','Dismiss') +
+    '</div></div>' +
+
+    '<div><div class="capcell"><span class="meta">GNOME / Wayland notification</span>' +
+    '<div class="gnome"><div class="hd"><span style="color:var(--accent);display:grid;place-items:center">' +
+    logo(14,'mono') + '</span>SaveLocker · now</div>' +
+    '<div class="ti">Update 0.5.11 ready</div>' +
+    '<div class="bo">Downloaded and verified. It installs the next time the agent restarts, or now.</div>' +
+    '<div class="acts"><button>Install now</button><button>Later</button></div></div></div></div>' +
+
+    '<div><div class="capcell"><span class="meta">Steam toast &mdash; Game Mode</span>' +
+    '<div style="display:flex;flex-direction:column;gap:10px">' +
+    steamToast('blocked','Baldur’s Gate 3 is checked out on WIDEBOY','Playing here may cause a conflict') +
+    steamToast('syncing','Syncing Elden Ring…') +
+    steamToast('success','Stardew Valley is already up to date') +
+    '</div></div></div></div>' +
+
+    '<div class="grid2" style="align-items:start">' +
+    '<div class="card"><header><h3>Steam toast kinds</h3>' + chip('','from toast.tsx') + '</header>' +
+    '<div class="pad kindrow">' + Object.keys(KIND_STYLE).map(k =>
+      '<span class="steam kind">' + kindDot(k) + k + '</span>').join('') + '</div>' +
+    '<div class="pad" style="font-size:12.5px;color:var(--dim)">These six are already in the plugin’s ' +
+    'shared <code style="font-family:var(--mono);font-size:11px">KIND_STYLE</code> map, and the library ' +
+    'chip reuses the same colours so the chip and the toast for one event never disagree.</div></div>' +
+
+    '<div class="card"><header><h3>Rules</h3></header><div class="pad"><dl class="kv">' +
+    '<dt>Fires</dt><dd>Conflict opened &middot; lease held elsewhere &middot; push failed after its last ' +
+    'retry &middot; pull refused &middot; update staged &middot; server unreachable past 5 minutes</dd>' +
+    '<dt>Silent</dt><dd>Every successful push and pull. Those are the job, not news.</dd>' +
+    '<dt>Once</dt><dd>A standing warning is announced once, not on every poll &mdash; the plugin already ' +
+    'tracks which warnings it has toasted.</dd>' +
+    '<dt>Action</dt><dd>Every notification carries the action that ends it, and clicking the body opens ' +
+    'the exact screen &mdash; not the app’s front page.</dd>' +
+    '<dt>Headless</dt><dd>A box with no desktop session has nothing to toast to, so those events go to ' +
+    'the console’s problem badge and the audit log instead.</dd>' +
+    '</dl></div></div></div></div>';
+  return frame('sheet','notifications','all surfaces', body);
+}
+
+/* ------------------------------- marks sheet ------------------------------- */
+function logoScreen(){
+  const sel = MARKS[S.mark];
+  const cell = (label, inner, cls) => '<div class="spec-cell ' + (cls||'') + '">' + inner +
+    '<span class="cap">' + label + '</span></div>';
+  const body = '<div class="canvas" style="gap:20px">' +
+    '<div class="pagehead"><div><h2>Six marks</h2>' +
+    '<div class="sub">click one to make it the app icon everywhere &mdash; console, agent, Deck</div></div>' +
+    '<div class="acts">' + chip('crit','Using ' + sel.name) + '</div></div>' +
+
+    '<div class="marks">' + MARKS.map((m,i) =>
+      '<button class="mark-card" data-mark-set="' + i + '" aria-pressed="' + (S.mark===i) + '">' +
+      '<span class="plate">' + logo(78,'solid',m.id) + '</span>' +
+      '<span class="txt"><span class="nm">' + m.name +
+      (S.mark===i ? ' ' + chip('crit','In use') : '') + '</span>' +
+      '<span class="bl">' + m.blurb + '</span>' +
+      '<span class="sizes">' + [16,20,24,32].map(s => logo(s,'solid',m.id)).join('') +
+      '<span style="font-family:var(--mono);font-size:9.5px;color:var(--faint);margin-left:auto">16 / 20 / 24 / 32</span>' +
+      '</span></span></button>').join('') + '</div>' +
+
+    '<div class="grid2" style="align-items:start">' +
+    '<div class="card"><header><h3>' + sel.name + ' \u2014 in context</h3></header>' +
+    '<div class="pad specimen">' +
+      cell('Solid', logo(56,'solid')) +
+      cell('Monochrome', '<span style="color:var(--fg)">' + logo(56,'mono') + '</span>') +
+      cell('On light', '<span style="color:#191719">' + logo(56,'mono') + '</span>', 'onlight') +
+      cell('On dark', '<span style="color:#f0eee9">' + logo(56,'mono') + '</span>', 'ondark') +
+      cell('Favicon', '<span class="tile-fav" style="width:56px;height:56px">' +
+        '<span style="display:grid;place-items:center;color:var(--on-accent)">' + logo(36,'mono') + '</span></span>') +
+    '</div>' +
+    '<div class="pad ladder">' + [16,20,24,32,48].map(s =>
+      '<div style="display:flex;flex-direction:column;align-items:center;gap:8px">' + logo(s,'solid') +
+      '<span style="font-family:var(--mono);font-size:9.5px;color:var(--faint)">' + s + 'px</span></div>').join('') +
+    '</div></div>' +
+
+    '<div class="card"><header><h3>Lockups &amp; rules</h3></header>' +
+    '<div class="pad" style="display:flex;flex-direction:column;gap:18px">' +
+    '<div style="display:flex;align-items:center;gap:11px">' + logo(34,'solid') +
+      '<span class="word" style="font-size:22px">Save<em>Locker</em></span></div>' +
+    '<div style="display:flex;flex-direction:column;align-items:flex-start;gap:8px">' + logo(40,'solid') +
+      '<span class="word" style="font-size:17px">Save<em>Locker</em></span>' +
+      '<span style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--faint);text-transform:uppercase">' +
+      'self-hosted save sync</span></div>' +
+    '<div style="display:flex;align-items:center;gap:10px;padding-top:8px;border-top:1px solid var(--row)">' +
+      '<span class="tile-fav" style="width:22px;height:22px"><span style="display:grid;place-items:center;color:var(--on-accent)">' +
+      logo(15,'mono') + '</span></span>' +
+      '<span style="font-size:12.5px;color:var(--dim)">browser tab &middot; tray icon &middot; Game Mode tile</span></div>' +
+    '</div><div class="pad"><dl class="kv">' +
+    '<dt>Grid</dt><dd>32&times;32, edges on whole pixels so 16px stays crisp</dd>' +
+    '<dt>Colour</dt><dd>Body takes the accent; punched shapes take the accent\u2019s ink</dd>' +
+    '<dt>Clearspace</dt><dd>Half the mark\u2019s height on every side</dd>' +
+    '<dt>Never</dt><dd>Don\u2019t recolour the punched shape, rotate the mark, or outline it on a busy photo</dd>' +
+    '</dl></div></div></div>' + storeArt() + '</div>';
+  return frame('sheet','brand \u2014 app marks','marks', body);
+}
+
+/* Steam library artwork, built from the selected mark. Sizes are Steam's real asset ratios,
+   drawn here at a third scale so all three fit on one row. */
+function storeArt(){
+  const cell = (label, size, inner) => '<div class="capcell">' + inner +
+    '<span class="meta">' + label + '</span></div>';
+
+  const vertical = '<div class="scap" style="width:200px;height:300px;flex-direction:column;' +
+    'justify-content:space-between;padding:22px 20px">' +
+    '<div class="txt">' + logo(52,'solid') + '</div>' +
+    '<div class="txt"><div class="nm" style="font-size:30px">Save<em>Locker</em></div>' +
+    '<div class="tag" style="font-size:8px">self-hosted save sync</div></div></div>';
+
+  const wide = '<div class="scap" style="width:400px;height:187px;align-items:center;gap:20px;padding:0 28px">' +
+    '<div class="txt">' + logo(66,'solid') + '</div>' +
+    '<div class="txt"><div class="nm" style="font-size:34px">Save<em>Locker</em></div>' +
+    '<div class="tag" style="font-size:8.5px">your saves, on every machine</div></div></div>';
+
+  const hero = '<div class="scap" style="width:640px;height:207px;align-items:flex-end;padding:0 34px 26px">' +
+    '<div class="txt" style="display:flex;align-items:center;gap:18px">' + logo(58,'solid') +
+    '<div><div class="nm" style="font-size:38px">Save<em>Locker</em></div>' +
+    '<div class="tag" style="font-size:9px">hub-and-spoke save sync &middot; windows &middot; linux &middot; steam deck</div>' +
+    '</div></div></div>';
+
+  const header = '<div class="scap" style="width:230px;height:107px;align-items:center;gap:12px;padding:0 18px">' +
+    '<div class="txt">' + logo(38,'solid') + '</div>' +
+    '<div class="txt"><div class="nm" style="font-size:20px">Save<em>Locker</em></div></div></div>';
+
+  return '<div class="card"><header><h3>Steam library art</h3>' +
+    '<span style="font-family:var(--mono);font-size:11px;color:var(--faint)">shown at \u2153 scale &middot; ' +
+    'follows the selected mark and accent</span></header>' +
+    '<div class="pad artrow">' +
+      cell('Library capsule &mdash; 600\u00d7900', 0, vertical) +
+      cell('Wide capsule &mdash; 1920\u00d7620 grid', 0, wide) +
+      cell('Header capsule &mdash; 460\u00d7215', 0, header) +
+    '</div>' +
+    '<div class="pad artrow">' + cell('Library hero &mdash; 1920\u00d7620', 0, hero) + '</div>' +
+    '<div class="pad" style="font-size:12.5px;color:var(--dim)">Vertical capsule puts the mark at the top ' +
+    'and the wordmark at the bottom, because Steam overlays a progress bar and a Play badge across the ' +
+    'lower third of a grid tile. The wide and hero pieces are the same lockup at two crops, so a shelf ' +
+    'of SaveLocker art reads as one set. Nothing relies on the gradient &mdash; drop the art on a flat ' +
+    'accent and it still holds.</div></div>';
+}
+
+/* ------------------------------- flows ------------------------------- */
+function flowScreen(){
+  const flow = (title, note, steps) =>
+    '<div class="card"><header><h3>' + title + '</h3><span style="font-size:12px;color:var(--faint)">' + note + '</span></header>' +
+    '<div class="pad"><ol class="steps">' + steps.map((s,i) =>
+      '<li><span class="n">' + (i+1) + '</span><div><h4>' + s[0] + '</h4><p>' + s[1] + '</p>' +
+      '<div class="where">' + s[2] + '</div></div></li>').join('') + '</ol></div></div>';
+  const body = '<div class="canvas"><div class="pagehead"><div><h2>How Checkpoint is meant to be used</h2>' +
+    '<div class="sub">three flows &middot; every screen belongs to one of them</div></div></div>' +
+    '<div class="grid2" style="align-items:start">' +
+    flow('Getting a machine on', 'once per PC or Deck', [
+      ['Create the enrollment file','Console &rarr; Configuration. Optionally bind it to a machine name so the token only works there. It expires in 30 minutes.','Console &middot; Configuration'],
+      ['Install the agent and point it at the file','The agent registers and pins the server\u2019s certificate on first connect.','Agent &middot; first run'],
+      ['Scan and pick games','Add games defaults to Suggested, and has a search box for large libraries.','Agent &middot; Add games'],
+      ['Say which save is real','If the game already has versions, the agent asks once which machine has your actual progress.','Agent &middot; Games'],
+    ]) +
+    flow('The everyday loop', 'you should never touch this', [
+      ['Play, then quit','The agent waits 8 seconds of no writes and no open handles before touching anything.','Agent &middot; settle window'],
+      ['Only changes go up','A per-file manifest is diffed against the server baseline. A 184 MB save typically sends 12 MB.','Console &middot; upload.delta'],
+      ['The next machine pulls before launch','If the game is running, the pull is refused rather than overwriting a live save.','Agent &middot; launch'],
+      ['Sync all when you want it now','Top right on every surface, with a progress bar that names the game it is on.','Both &middot; header'],
+    ]) +
+    flow('When something is wrong', 'the only time the UI raises its voice', [
+      ['Amber warns, and clears itself','A failed push, a locked folder, a missing save directory.','Both &middot; Activity'],
+      ['Accent stops and waits','A conflict never self-heals, so it holds that game and shows the same two candidates everywhere.','Both &middot; Conflicts'],
+      ['You choose with facts','Size, time, machine and what the save contains, side by side.','Agent &middot; Conflicts'],
+      ['Nothing is destroyed','The losing copy stays in the version list. Destructive buttons name their effect.','Console &middot; Versions'],
+    ]) +
+    '<div class="card"><header><h3>The rules the whole thing follows</h3></header><div class="pad">' +
+    '<dl class="kv" style="gap:14px 16px">' +
+    '<dt>Green</dt><dd>Server and machine agree. No action offered, because none is needed.</dd>' +
+    '<dt>Amber</dt><dd>Something failed but will retry. Always says what happens next.</dd>' +
+    '<dt>Accent</dt><dd>A decision is waiting. The accent is also the brand colour, so it never decorates.</dd>' +
+    '<dt>Motion</dt><dd>One curve, 160&ndash;300ms, and nothing animates that the eye has to track.</dd>' +
+    '<dt>Rows</dt><dd>Two lines: name, then everything else in mono underneath. Status pinned right.</dd>' +
+    '<dt>Themes</dt><dd>Light and dark are separate palettes; status colours are re-picked, not inverted.</dd>' +
+    '</dl></div></div></div></div>';
+  return frame('sheet','the three flows','annotated', body);
+}
+
+/* ------------------------------- frame + wiring ------------------------------- */
+function frame(kind, addr, right, inner){
+  const a = ACCENTS[S.accent];
+  const style = '--accent:' + (S.theme==='dark' ? a.dark : a.light) +
+                ';--on-accent:' + (S.theme==='dark' ? a.dOn : a.lOn);
+  return '<div class="frame ' + kind + ' cp ' + S.theme + '" style="' + style + '">' +
+    '<div class="titlebar"><i></i><i></i><i></i><span class="addr">' + addr + '</span>' +
+    '<span class="right">' + right + '</span></div>' + inner +
+    '<div class="toast" id="toast"></div></div>';
+}
+
+const stage = document.getElementById('stage');
+const capEl = document.getElementById('caption');
+const accBar = document.getElementById('accents');
+
+accBar.insertAdjacentHTML('beforeend', ACCENTS.map((a,i) =>
+  '<button class="acc" data-accent="' + i + '" title="' + a.name + '" aria-label="' + a.name +
+  '" aria-pressed="' + (i===0) + '" style="background:' + a.dark + '"></button>').join(''));
+
+const CAPTIONS = {
+  console:{games:'Console \u2192 Games',config:'Console \u2192 Configuration',audit:'Console \u2192 Audit log',
+    backups:'Console \u2192 Backups',help:'Console \u2192 Help',notes:'Console \u2192 What\u2019s new'},
+  agent:{overview:'Agent \u2192 Overview',games:'Agent \u2192 Games',add:'Agent \u2192 Add games',
+    conflicts:'Agent \u2192 Conflicts',settings:'Agent \u2192 Settings',activity:'Agent \u2192 Activity'},
+};
+
+let toastTimer;
+function toast(msg){
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg; el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('on'), 2600);
+}
+
+function render(msg){
+  document.documentElement.style.setProperty('--ui-mono', MONOS[S.mono].stack);
+  document.documentElement.style.setProperty('--shell-mono', MONOS[S.mono].stack);
+  document.documentElement.style.setProperty('--ui-disp', MONOS[S.mono].disp);
+  stage.innerHTML = S.surface==='console' ? consoleScreen()
+    : S.surface==='agent' ? agentScreen()
+    : S.surface==='deck' ? deckScreen()
+    : S.surface==='notif' ? notifScreen()
+    : S.surface==='logo' ? logoScreen() : flowScreen();
+  const a = ACCENTS[S.accent];
+  capEl.textContent = (S.surface==='logo' ? 'Marks & Steam art'
+    : S.surface==='deck' ? 'Deck / Wayland \u2014 gamepad + desktop'
+    : S.surface==='decky' ? 'Decky plugin \u2014 Steam UI'
+    : S.surface==='notif' ? 'Notifications \u2014 four surfaces'
+    : S.surface==='flow' ? 'Annotated \u2014 how the pieces fit'
+    : S.surface==='console' && S.locked ? 'Console \u2014 locked'
+    : CAPTIONS[S.surface][S.surface==='console' ? S.cView : S.aView])
+    + '  \u00b7  ' + a.name + ' \u00b7 ' + S.theme + ' \u00b7 ' + MARKS[S.mark].name;
+  document.querySelectorAll('[data-surface]').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.surface === S.surface)));
+  document.querySelectorAll('[data-theme-btn]').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.themeBtn === S.theme)));
+  document.querySelectorAll('[data-mono]').forEach(b =>
+    b.setAttribute('aria-pressed', String(Number(b.dataset.mono) === S.mono)));
+  document.querySelectorAll('[data-accent]').forEach((b,i) => {
+    b.setAttribute('aria-pressed', String(i === S.accent));
+    b.style.background = S.theme==='dark' ? ACCENTS[i].dark : ACCENTS[i].light;
+  });
+  if (msg) toast(msg);
+}
+
+document.querySelector('.bar').addEventListener('click', e => {
+  const b = e.target.closest('[data-surface],[data-theme-btn],[data-accent],[data-mono]');
+  if (!b) return;
+  if (b.dataset.surface) S.surface = b.dataset.surface;
+  else if (b.dataset.themeBtn) S.theme = b.dataset.themeBtn;
+  else if (b.dataset.mono !== undefined && b.hasAttribute('data-mono')) S.mono = Number(b.dataset.mono);
+  else S.accent = Number(b.dataset.accent);
+  render();
+});
+
+stage.addEventListener('click', e => {
+  const t = e.target.closest('[data-nav],[data-anav],[data-game],[data-agame],[data-act],[data-audit],[data-add],[data-addpath],[data-addstore],[data-kb],[data-toggle],[data-layout],[data-theme-set],[data-accent-set],[data-mark-set],[data-deckrow],[data-dismiss],[data-glob]');
+  if (!t){ if (S.notifOpen){ S.notifOpen = false; render(); } return; }
+  const d = t.dataset;
+
+  if (d.dismiss){ S.dismissed.add(d.dismiss); return render(); }
+  if (d.glob){
+    const [gid, pat] = d.glob.split('|');
+    S.globs[gid] = (S.globs[gid] || g(gid).excludes.split(',').map(x => x.trim())).filter(x => x !== pat);
+    return render('Removed ' + pat + '. Files matching it will sync again from the next push.');
+  }
+
+  if (d.nav){ S.cView = d.nav; return render(); }
+  if (d.anav){ S.aView = d.anav; S.aOpen = false; return render(); }
+  if (t.hasAttribute('data-theme-set')){ S.theme = d.themeSet; return render('Theme set to ' + d.themeSet + '.'); }
+  if (t.hasAttribute('data-accent-set')){ S.accent = Number(d.accentSet); return render('Accent set to ' + ACCENTS[S.accent].name + '.'); }
+  if (t.hasAttribute('data-mark-set')){ S.mark = Number(d.markSet); return render('App icon set to ' + MARKS[S.mark].name + '.'); }
+  if (d.layout){
+    const [scope, mode] = d.layout.split(':');
+    if (scope === 'console'){ S.layout = mode; S.gridOpen = false; }
+    else { S.aLayout = mode; S.aOpen = false; }
+    return render();
+  }
+  if (d.game){ S.gameId = d.game; S.resolving = false; if (S.layout==='grid') S.gridOpen = true; return render(); }
+  if (d.agame){ S.aGame = d.agame; S.aOpen = true; return render(); }
+  if (d.deckrow){ return toast('Opens ' + g(d.deckrow).name + ' \u2014 push, pull, change folder.'); }
+  if (d.audit){ S.auditMachine = d.audit; return render(); }
+  if (d.add){ S.addFilter = d.add; if (d.add !== 'heroic') S.addStore = ''; return render(); }
+  if (t.hasAttribute('data-addpath')){ S.addPath = d.addpath; return render(); }
+  if (t.hasAttribute('data-addstore')){ S.addStore = d.addstore; return render(); }
+  if (t.hasAttribute('data-kb')){ S.kb = Number(d.kb); return render(); }
+  if (d.toggle){
+    S.toggles[d.toggle] = !S.toggles[d.toggle];
+    return render(S.toggles[d.toggle] ? 'Turned on.' : 'Turned off.');
+  }
+
+  const A = d.act, arg = d.arg;
+  if (A === 'syncall'){ return startSync(S.surface === 'console' ? 'console' : 'agent'); }
+  if (A === 'syncone'){ return startSync('agent', arg); }
+  if (A === 'cancelsync'){ clearInterval(syncTimer); S.sync = null; return render('Sync cancelled. Nothing was left half-written.'); }
+  if (A === 'goconflict'){ S.cView='games'; S.layout='list'; S.gameId='bg3'; S.resolving=true; return render(); }
+  if (A === 'goconflicts'){ S.aView='conflicts'; S.aOpen=false; return render(); }
+  if (A === 'gogames'){ S.aView='games'; S.aOpen=false; return render(); }
+  if (A === 'goadd'){ S.aView='add'; return render(); }
+  if (A === 'goactivity'){ S.aView='activity'; return render(); }
+  if (A === 'allgames'){ S.gridOpen = false; return render(); }
+  if (A === 'allagames'){ S.aOpen = false; return render(); }
+  if (A === 'resolve'){ S.resolving = true; return render(); }
+  if (A === 'cancelresolve'){ S.resolving = false; return render(); }
+  if (A === 'systheme'){ return toast('Follows the OS setting.'); }
+  if (A === 'notifs'){ S.notifOpen = !S.notifOpen; return render(); }
+  if (A === 'dismissall'){ liveNotifs().forEach(n => S.dismissed.add(n.id)); return render('Cleared. They come back if the condition does.'); }
+  if (A === 'goaudit'){ S.notifOpen = false; S.cView = 'audit'; return render(); }
+  if (A === 'notifact'){
+    const n = NOTIFS.find(x => x.id === arg);
+    S.notifOpen = false;
+    if (n && n.code === 'sync.conflict'){ S.cView='games'; S.layout='list'; S.gameId='bg3'; S.resolving=true; return render(); }
+    if (n && n.code === 'savedir.missing'){ S.cView='games'; S.layout='list'; S.gameId='disco'; return render('Pick the new folder for Disco Elysium.'); }
+    S.dismissed.add(arg);
+    return render(n && n.code === 'push.failed' ? 'Retrying the push on STEAMDECK-OLED.' : 'Installing on next restart.');
+  }
+  if (A === 'lock'){ S.locked = true; S.loginErr = false; return render(); }
+  if (A === 'unlock'){
+    const inp = stage.querySelector('[data-login]');
+    if (!inp || !inp.value.trim()){ S.loginErr = true; return render(); }
+    S.locked = false; S.loginErr = false;
+    return render('Unlocked. Remembered on this browser for 30 days.');
+  }
+  if (A === 'pushappearance'){
+    S.pushAppearance = !S.pushAppearance;
+    return render(S.pushAppearance ? 'Agents will follow the console’s theme, accent and icon.'
+      : 'Each machine keeps its own appearance now.');
+  }
+  if (A === 'agentfollows'){
+    S.agentFollows = !S.agentFollows;
+    return render(S.agentFollows ? 'Following the console.' : 'This machine sets its own appearance.');
+  }
+  if (A === 'keep'){
+    S.resolved = true; S.resolving = false;
+    return render('Kept ' + (arg==='deck' ? 'STEAMDECK-OLED' : 'RIG-ONYX') +
+      '. The other copy is still in the version list.');
+  }
+  if (A === 'keepboth'){
+    S.resolved = true; S.resolving = false;
+    return render('Both uploaded. v27 from STEAMDECK-OLED is now Latest.');
+  }
+  if (A === 'clearpicks'){ S.picked.clear(); return render('Selection cleared.'); }
+
+  const MSG = {
+    push:'Push queued to RIG-ONYX.', pull:'Pull queued to STEAMDECK-OLED.',
+    pushone:'Pushing after the settle window.', pullone:'Pulling Latest.',
+    art:'Fetching cover art from SteamGridDB.', prune:'Pruned 5 versions. 1.79 GB in use.',
+    setlatest:'Set ' + (arg || 'that version') + ' as Latest. Machines pull it before the next launch.',
+    template:'Saved as the template for new machines.', refresh:'Refreshed.',
+    enroll:'Enrollment file created. Expires in 30 minutes.',
+    forcerelease:'Lease force-released on ' + (arg ? MACH[arg].id : 'that machine') + '.',
+    savedefaults:'Defaults saved.', changepw:'Password changed.',
+    export:'Exported 12 events as CSV.', backupnow:'Snapshot written. 41.3 MB.',
+    download:'Downloading snapshot.', rescan:'Rescanned. 10 candidates found.',
+    addgame:'Opens the add-game form.', notes:'Opening the 0.5.11 notes.',
+    addpicked:'Added ' + S.picked.size + ' games. They sync after you next quit each one.',
+    changepath:'Opens the folder browser.', openfolder:'Opening in Explorer.',
+    setproc:'Opens the process picker.', untrack:'Stopped tracking. The server keeps its versions.',
+    save:'Saved.', test:'Server reachable, 41 ms.', copy:'Copied to the clipboard.',
+    openlog:'Opening agent.log.', compare:'Comparing 1,208 files.',
+    globhelp:'Opens Help → Glob patterns.',
+    saveglobs:'Patterns saved. They apply from the next push.',
+    testglobs:'312 files, 41.7 MB would be skipped on the next push.',
+    savedefglobs:'Server defaults saved. Every game inherits them.',
+  };
+  if (MSG[A]) toast(MSG[A]);
+});
+
+stage.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.matches('[data-globadd]')){
+    e.preventDefault();
+    const gid = e.target.dataset.globadd, pat = e.target.value.trim();
+    if (!pat) return;
+    const cur = gameGlobs(g(gid));
+    if (!cur.includes(pat)) S.globs[gid] = cur.concat(pat); else S.globs[gid] = cur;
+    render('Added ' + pat + '. It applies from the next push.');
+    return;
+  }
+  if (e.key === 'Enter' && e.target.matches('[data-login]')){
+    e.preventDefault();
+    if (!e.target.value.trim()){ S.loginErr = true; return render(); }
+    S.locked = false; S.loginErr = false;
+    render('Unlocked. Remembered on this browser for 30 days.');
+  }
+});
+
+stage.addEventListener('change', e => {
+  const cb = e.target.closest('[data-pick]');
+  if (!cb) return;
+  if (cb.checked) S.picked.add(cb.dataset.pick); else S.picked.delete(cb.dataset.pick);
+  render();
+});
+
+stage.addEventListener('input', e => {
+  const s = e.target.closest('[data-search]');
+  if (!s) return;
+  const which = s.dataset.search;
+  if (which === 'audit') S.auditQ = s.value; else if (which === 'add') S.addQ = s.value; else return;
+  const pos = s.selectionStart;
+  render();
+  const again = stage.querySelector('[data-search="' + which + '"]');
+  if (again){ again.focus(); try { again.setSelectionRange(pos, pos); } catch (_){} }
+});
+
+render();
+</script>

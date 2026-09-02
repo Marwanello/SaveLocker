@@ -911,6 +911,152 @@ Committed and pushed on top of an intervening unrelated upstream commit (`84b3e0
 
 ---
 
+## 2026-09-02 — Checkpoint UI redesign: design spec, implementation plan and brand kit
+
+**Branch:** `claude/dashboard-agent-ui-redesign-992386` (local only, not pushed).
+**Commit:** `6963b4c` — "Docs: Checkpoint UI design spec, implementation plan and brand kit"
+
+### Request
+
+Full UI redesign of the SaveLocker dashboard (console) and agent UI, delivered as interactive mockups
+grounded in the app's real data, endpoints and component structure. Iterated across seven turns covering
+identity exploration, layout direction, accent/theme experiments, typography, motion, notifications,
+Steam artwork, marks (logos), and finally the implementation/brand deliverables.
+
+### What was built
+
+**Interactive prototype** — `checkpoint-prototype.html`, published at
+https://claude.ai/code/artifact/b8f247f2-32e5-4808-8e4c-61ba0cc3406f. Surfaces: Console, Agent,
+Deck-Wayland, Notifications, Marks & art, Flows. Light + dark themes, five accents, three marks,
+Archivo typeface throughout. All data pulled from the real API surface (game names, event codes,
+release dates, machine names, version/command/audit tables, Deck UI strings).
+
+**Five identity options** — `savelocker-redesign.html` (Cold Storage / Checkpoint / Ledger / Shelter /
+Hangar), each with palette, type stack, voice and mockups. Checkpoint was chosen.
+
+**Design spec** — `SaveLocker/tasks/checkpoint-ui/plan.md`. Covers: decisions table, both dark/light
+token sets, `color-mix` derivation rule, colour rule (green/amber/accent), type scale, layout rules,
+motion table, voice guidelines, per-surface shell table.
+
+**Implementation plan** — `SaveLocker/tasks/checkpoint-ui/implementation.md`. Opens with "what already
+exists" (maps every prototype element to its real endpoint/component), then eight phases:
+1. Design system foundation (fix unlayered CSS reset, Checkpoint tokens, Archivo import, motion
+   primitives, shared components)
+2. Console shell (two-line rows, grid view, bell menu, sign-in screen, exclude chips, release history)
+3. Sync all + progress (bulk command endpoint, console progress rail, agent progress — with the
+   correctness requirement that progress ticks must not re-render surroundings)
+4. Appearance + fleet sync (server-side settings, heartbeat-carried theme/accent/mark pushed to agents)
+5. Agent UI (Games tab, art proxy, search in Add games)
+6. Deck/Wayland (Checkpoint dark tokens in ImGui, Sync all bound to Y, Wayland window decision)
+7. OS notifications (Windows toast, Linux freedesktop, firing rules)
+8. Assets (marks and Steam art as real files at all required sizes)
+
+**Brand kit** — `SaveLocker/tasks/checkpoint-ui/brand-kit.html`, also published at
+https://claude.ai/code/artifact/b3e0c8a5-70a0-47bf-b4f2-d0dbf4f0b2d5. Eight sections: marks (three
+with size ladders, specimens, clearspace, don'ts), colour (live swatches + derivation + status trio +
+five accents), type (Archivo scale, tabular-figures demo, where mono belongs), components
+(buttons/chips/two-line row/stats/radii), motion, Steam artwork (four crops), voice (not-this/this
+pairs), paste-ready tokens with the unlayered-reset warning.
+
+### Decisions recorded
+
+| Decision | Value |
+|---|---|
+| Direction | Checkpoint |
+| Typeface | Archivo for headings and data; mono only for code/CLI/logs |
+| Accent | Ember `#e0533c` dark / `#c0432c` light, user-changeable (five options) |
+| Themes | Light and dark, both first-class |
+| Marks | Cartridge, Pixel lock (default), Memory card |
+| Steam art | Approved as drawn in prototype |
+| Decky plugin | Untouched — Steam-native look is correct |
+
+### Key findings
+
+- `web/src/index.css` has an unlayered `* { box-sizing; margin: 0; padding: 0 }` reset that beats
+  every Tailwind utility — root cause of the codebase's inline-style pattern. Fixing this (Phase 1)
+  gates the entire redesign.
+- The font `@import` must stay above `@import "tailwindcss"` or it is silently dropped.
+- Phase 4 (appearance sync via heartbeat) is the largest genuinely-new backend piece.
+- Phase 6 item 4 (Wayland desktop window: GTK/WebKit shell vs. browser) is the one open decision.
+
+### Bugs found and fixed in prototypes
+
+- Progress-bar animation rerun: full `innerHTML` rebuild per tick replayed entrance animations. Fixed
+  with targeted DOM patching (`patchSync()`).
+- Brand-kit theme swatches not repainting: `requestAnimationFrame` never fires in a hidden tab. Fixed
+  by calling paint functions synchronously.
+- `.cap` CSS class collision between store-art capsules and spec-cell labels. Fixed by renaming to
+  `.scap`.
+
+### Status
+
+Design phase complete. All deliverables committed locally. `CONTEXT.md` not yet updated with handoff
+entry. Next step: update `CONTEXT.md` per session-end convention, then begin Phase 1 implementation
+when ready.
+
+---
+
+## 2026-09-02 (cont'd) — Checkpoint UI phase grouping, corrections, and mockups committed
+
+**Branch:** `ui-redesign-plan`, created off `claude/dashboard-agent-ui-redesign-992386`.
+**Commits:** `fe86729`, `ab4c957`, `de2cfd5`.
+
+### Implementation grouping
+
+Added `SaveLocker/tasks/checkpoint-ui/implementation-grouping.md` and a folder `README.md`, matching
+the `tasks/conflict-resolution-ui/` precedent for a multi-session design effort. The grouping regroups
+the 8 phases **by surface** rather than by phase number, since several phases edit the same
+components — Sync all and the notifications bell both land in the top bar Phase 2 already rewrites,
+so they ship together or `NavBar.tsx` gets edited twice. Seven groups; Phase 8 (assets) pulled forward
+into Group 1 since the art is already designed and the favicon is the cheapest end-to-end proof the
+token pipeline works. Group 5 (appearance pushed to agents over the heartbeat) is the only wire-format
+change and stays alone. Groups 6 (Deck) and 7 (Linux notifications) are buildable here but need real
+hardware/a live desktop session to verify.
+
+### Three corrections to `implementation.md`, found by checking source instead of assuming
+
+- **`agent-ui` has no Tailwind and no `.css` file at all** — 215 inline `style={{}}` sites, zero
+  classNames. It cannot "import the same file" as the console. How it receives design tokens is now
+  an explicit Group 1 decision (recommended: a plain CSS custom-property file both apps import, since
+  the agent's inline styles can consume `var(--…)` with no conversion).
+- **`ArtService` already fetches the 600×900 `grid` kind** plus `hero`/`logo`/`icon`, with all four
+  URLs already on the game DTO. The grid wall needs zero server work.
+- **`GET /api/games/{id}/sync-status` must not back a list view.** Its own handler comment says it
+  walks and reads every file in the save folder, plus a full `GetStateAsync`. Polling it per game in
+  the new agent Games tab would re-hash every save folder on a timer — the same mistake the
+  conflict-resolution plan caught and pulled its own Phase 12 for.
+
+Also counted the real scale of the inline-style problem: **388** sites in `web/src` against 4
+classNames, **215** in `agent-ui/src` against 0. Tailwind is installed in `web` and effectively
+unused. This reframes Phase 1 — layering the CSS reset unblocks utilities but converts nothing, so
+the migration rides inside later groups one surface at a time; there is deliberately no
+"migrate all inline styles" session.
+
+### Incident: `session_summary.md` history clobbered, then restored
+
+While writing the previous turn's summary, `session_summary.md` — a running log, newest-first, the
+mirror of `progress.md`'s newest-last convention — was overwritten with a truncating redirect instead
+of prepended, dropping four prior entries (2026-09-01, 2026-08-30/31, 2026-08-29, and earlier). Caught
+via an unexpectedly large deletion count on the next commit. Restored every prior entry byte-identical
+(verified by diff) and prepended the new entry in the file's own order. Commit `ab4c957`.
+
+### Mockups committed to the repo
+
+Copied the two remaining artifact-only deliverables into `SaveLocker/tasks/checkpoint-ui/` so nothing
+depends on the live artifact links: `prototype.html` (the interactive mockup — Console, Agent,
+Deck/Wayland, Notifications, Marks & art, Flows, both themes, five accents, three marks) and
+`identity-options.html` (the five identity pitches Checkpoint was chosen from). `brand-kit.html` was
+already committed in the prior session. `README.md` and `plan.md` updated to point at the local files
+as the primary reference, keeping the artifact URLs as link-sharing mirrors only. Commit `de2cfd5`.
+
+### Status
+
+`SaveLocker/tasks/checkpoint-ui/` now holds the complete design-phase deliverable set locally: `plan.md`,
+`implementation.md`, `implementation-grouping.md`, `README.md`, `prototype.html`, `identity-options.html`,
+`brand-kit.html`. All work is on branch `ui-redesign-plan`, local only, not pushed, no PR opened.
+`CONTEXT.md` still not updated with the handoff entry. Next step: either update `CONTEXT.md`, or begin
+Group 1 of the implementation grouping (layer the CSS reset, land Checkpoint tokens, build shared
+primitives, export marks, decide how `agent-ui` receives tokens).
 ## 2026-09-01/02 — Conflict resolution Group 3 / Phase 9: Linux desktop notification (save-conflicts-phase-9)
 
 **Branch:** `save-conflicts-phase-9` (6 commits on top of `debf37e`; 618 insertions / 23 deletions

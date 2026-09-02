@@ -1,0 +1,648 @@
+<title>SaveLocker Brand Kit</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap">
+<style>
+:root{
+  --ink:#f5f3ef; --panel:#fffefc; --raise:#f0ede8; --tile:#ebe7e0; --hover:#e8e3dc;
+  --fg:#191719; --dim:#57534d; --faint:#8b8780; --line:#e2ddd5; --row:#eeeae3;
+  --safe:#4c7b3e; --watch:#8a6212; --accent:#c0432c; --on-accent:#fff8f6;
+  --ease:cubic-bezier(.2,.8,.25,1);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink:#0f0f10; --panel:#141416; --raise:#191a1c; --tile:#1b1c1f; --hover:#202124;
+    --fg:#f0eee9; --dim:#a09d97; --faint:#6b6862; --line:#242427; --row:#1d1d20;
+    --safe:#7fa96a; --watch:#d9a63f; --accent:#e0533c; --on-accent:#160f0e;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#0f0f10; --panel:#141416; --raise:#191a1c; --tile:#1b1c1f; --hover:#202124;
+  --fg:#f0eee9; --dim:#a09d97; --faint:#6b6862; --line:#242427; --row:#1d1d20;
+  --safe:#7fa96a; --watch:#d9a63f; --accent:#e0533c; --on-accent:#160f0e;
+}
+:root{
+  --accent-soft:color-mix(in oklab, var(--accent) 14%, var(--panel));
+  --accent-line:color-mix(in oklab, var(--accent) 42%, var(--panel));
+  --accent-ink:color-mix(in oklab, var(--accent) 80%, var(--fg));
+  --safe-soft:color-mix(in oklab, var(--safe) 14%, var(--panel));
+  --safe-line:color-mix(in oklab, var(--safe) 40%, var(--panel));
+  --safe-ink:color-mix(in oklab, var(--safe) 82%, var(--fg));
+  --watch-soft:color-mix(in oklab, var(--watch) 14%, var(--panel));
+  --watch-line:color-mix(in oklab, var(--watch) 40%, var(--panel));
+  --watch-ink:color-mix(in oklab, var(--watch) 82%, var(--fg));
+}
+*{box-sizing:border-box}
+body{background:var(--ink);color:var(--fg);font-family:'Archivo',system-ui,sans-serif;font-size:15px;
+  line-height:1.55;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+h1,h2,h3,h4,h5{margin:0;text-wrap:balance;letter-spacing:-.03em}
+p{margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+
+.mast{padding:80px 0 48px;border-bottom:1px solid var(--line)}
+.mast .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint)}
+.mast h1{font-size:clamp(40px,7vw,76px);font-weight:800;line-height:.94;margin:20px 0 20px}
+.mast h1 em{font-style:normal;color:var(--accent)}
+.mast p{max-width:62ch;color:var(--dim);font-size:16.5px}
+.mast .row{display:flex;gap:26px;align-items:center;margin-top:32px;flex-wrap:wrap}
+.theme-toggle{display:inline-flex;background:var(--raise);border:1px solid var(--line);border-radius:99px;padding:3px;gap:2px}
+.theme-toggle button{font-family:inherit;font-size:12.5px;font-weight:600;padding:7px 15px;border-radius:99px;border:0;
+  background:none;color:var(--faint);cursor:pointer;transition:background-color .18s var(--ease),color .18s}
+.theme-toggle button[aria-pressed="true"]{background:var(--panel);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.theme-toggle button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+section{padding:64px 0;border-bottom:1px solid var(--line)}
+.shead{display:flex;align-items:baseline;gap:16px;margin-bottom:32px}
+.shead .n{font-size:11px;letter-spacing:.16em;color:var(--faint);width:32px;flex:0 0 auto}
+.shead h2{font-size:31px;font-weight:700}
+.shead p{font-size:14px;color:var(--dim);max-width:52ch;margin-left:auto;text-align:right}
+@media (max-width:820px){.shead{flex-direction:column;gap:8px}.shead p{margin-left:0;text-align:left}}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.card > header{padding:13px 17px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.card > header h3{font-size:14px;font-weight:600}
+.card .pad{padding:18px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.stack{display:flex;flex-direction:column;gap:16px}
+.note{font-size:13px;color:var(--dim);max-width:66ch}
+.note + .note{margin-top:12px}
+.mono{font-family:ui-monospace,'Cascadia Code',Consolas,monospace}
+
+/* marks */
+.markwall{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.markcard{border:1px solid var(--line);border-radius:16px;background:var(--panel);overflow:hidden}
+.markcard .plate{display:grid;place-items:center;padding:38px 0;background:
+  linear-gradient(var(--line) 1px,transparent 1px) 0 0/24px 24px,
+  linear-gradient(90deg,var(--line) 1px,transparent 1px) 0 0/24px 24px,var(--tile)}
+.markcard .txt{padding:16px 18px 18px}
+.markcard h4{font-size:16px;font-weight:600}
+.markcard p{font-size:12.5px;color:var(--dim);margin-top:6px}
+.markcard .sizes{display:flex;align-items:flex-end;gap:14px;margin-top:14px;padding-top:14px;border-top:1px solid var(--row);color:var(--fg)}
+.markcard .sizes span{font-size:9.5px;color:var(--faint);margin-left:auto}
+.speccell{border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;align-items:center;gap:11px;background:var(--panel)}
+.speccell .cap{font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+.onlight{background:#f5f3ef;color:#191719;border-color:#ddd7cd}
+.ondark{background:#0f0f10;color:#f0eee9;border-color:#242427}
+.tile-fav{border-radius:12px;display:grid;place-items:center;background:var(--accent);color:var(--on-accent)}
+.word{font-weight:700;letter-spacing:-.035em}
+.word em{font-style:normal;color:var(--accent)}
+.clear{position:relative;display:inline-grid;place-items:center;padding:38px;border:1px dashed var(--accent-line);border-radius:12px}
+.clear::before{content:"";position:absolute;inset:38px;border:1px solid var(--accent-line);border-radius:6px;opacity:.55}
+
+/* colour */
+.sw{border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.sw .chip-color{height:74px}
+.sw .meta{padding:10px 12px;background:var(--panel)}
+.sw .nm{font-size:13px;font-weight:600}
+.sw .hex{font-size:11px;color:var(--faint);margin-top:3px}
+.swgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.accrow{display:flex;gap:14px;flex-wrap:wrap}
+.acccell{border:1px solid var(--line);border-radius:12px;overflow:hidden;width:164px;background:var(--panel)}
+.acccell .band{height:56px;display:grid;place-items:center;font-size:12px;font-weight:600}
+.acccell .meta{padding:9px 11px;font-size:12px}
+.acccell .meta small{display:block;color:var(--faint);font-size:10.5px;margin-top:3px}
+.statusrow{display:flex;gap:12px;flex-wrap:wrap}
+.statuscard{flex:1;min-width:210px;border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--panel)}
+.statuscard h5{font-size:13px;font-weight:600;display:flex;align-items:center;gap:9px}
+.statuscard p{font-size:12.5px;color:var(--dim);margin-top:7px}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:0 0 auto}
+
+/* type */
+.typerow{display:grid;grid-template-columns:170px minmax(0,1fr);gap:20px;padding:16px 0;border-bottom:1px solid var(--row);align-items:baseline}
+.typerow:last-child{border-bottom:0}
+.typerow .lbl{font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--faint)}
+.typerow .lbl small{display:block;text-transform:none;letter-spacing:0;font-size:11px;margin-top:5px;color:var(--faint)}
+.numdemo{width:100%;border-collapse:collapse;font-size:13px}
+.numdemo td{padding:7px 0;border-bottom:1px solid var(--row);color:var(--dim)}
+.numdemo td:last-child{text-align:right;color:var(--fg);font-weight:500}
+.numdemo tr:last-child td{border-bottom:0}
+
+/* components */
+.b{font-family:inherit;font-size:13px;font-weight:500;padding:8px 15px;border-radius:99px;border:1px solid var(--line);
+  background:var(--raise);color:var(--fg);cursor:pointer;
+  transition:background-color .16s var(--ease),transform .13s var(--ease),box-shadow .16s var(--ease)}
+.b:hover{background:var(--hover);transform:translateY(-1px)}
+.b:active{transform:scale(.96)}
+.b:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.b.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.b.primary:hover{filter:brightness(1.08);box-shadow:0 6px 18px -8px var(--accent)}
+.b.alert{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink);font-weight:600}
+.b.quiet{background:transparent;border-color:transparent;color:var(--dim)}
+.b.sm{padding:5px 11px;font-size:12px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;padding:4px 10px;border-radius:99px;
+  border:1px solid var(--line);color:var(--dim);background:var(--raise)}
+.chip.ok{color:var(--safe-ink);border-color:var(--safe-line);background:var(--safe-soft)}
+.chip.warn{color:var(--watch-ink);border-color:var(--watch-line);background:var(--watch-soft)}
+.chip.crit{color:var(--accent-ink);border-color:var(--accent-line);background:var(--accent-soft)}
+.row2{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:auto auto;column-gap:12px;row-gap:3px;
+  padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);align-items:center}
+.row2 .cov{grid-row:1 / span 2;width:38px;height:38px;border-radius:9px;display:grid;place-items:center;
+  background:linear-gradient(155deg,hsl(48 42% 34%),hsl(16 44% 13%));color:#fff;font-size:11px;font-weight:600}
+.row2 .t1{grid-column:2;font-size:13px;font-weight:600;align-self:end}
+.row2 .t2{grid-column:2;font-size:10.5px;color:var(--faint);align-self:start}
+.row2 .end{grid-column:3;grid-row:1 / span 2}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px 16px}
+.stat dt{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.stat dd{margin:8px 0 0;font-size:25px;font-weight:700;letter-spacing:-.03em;line-height:1}
+.stat small{display:block;margin-top:6px;font-size:11.5px;color:var(--dim)}
+.radii{display:flex;gap:14px;flex-wrap:wrap}
+.radii div{background:var(--tile);border:1px solid var(--line);display:grid;place-items:center;
+  width:88px;height:66px;font-size:10.5px;color:var(--faint)}
+
+/* motion */
+.motion td{padding:11px 0;border-bottom:1px solid var(--row);font-size:13px;color:var(--dim)}
+.motion tr:last-child td{border-bottom:0}
+.motion td:first-child{color:var(--fg);font-weight:500;width:200px}
+.motion td:last-child{text-align:right;font-size:12px}
+
+/* store art */
+.artrow{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.artcell{display:flex;flex-direction:column;gap:9px}
+.artcell .meta{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.scap{position:relative;border-radius:8px;overflow:hidden;display:flex;color:#fff;
+  background:radial-gradient(120% 120% at 22% 8%,color-mix(in oklab,var(--accent) 42%,#101014),#0b0b0e 68%);
+  box-shadow:0 18px 40px -22px rgba(0,0,0,.7)}
+.scap::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(115deg,rgba(255,255,255,.05) 0 2px,rgba(255,255,255,0) 2px 9px)}
+.scap .txt{position:relative;z-index:1}
+.scap .nm{font-weight:800;letter-spacing:-.03em;line-height:.98}
+.scap .nm em{font-style:normal;color:var(--accent)}
+.scap .tag{text-transform:uppercase;letter-spacing:.16em;opacity:.72;margin-top:8px}
+
+/* voice */
+.vrow{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:14px 0;border-bottom:1px solid var(--row)}
+.vrow:last-child{border-bottom:0}
+.vcell{font-size:13.5px}
+.vcell .tag{font-size:10px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:7px}
+.no .tag{color:var(--accent-ink)} .yes .tag{color:var(--safe-ink)}
+.no p{color:var(--faint);text-decoration:line-through;text-decoration-color:var(--accent-line)}
+@media (max-width:700px){.vrow{grid-template-columns:1fr}}
+
+pre{background:var(--tile);border:1px solid var(--line);border-radius:12px;padding:16px 18px;overflow-x:auto;
+  font-family:ui-monospace,'Cascadia Code',Consolas,monospace;font-size:12px;line-height:1.7;color:var(--dim);margin:0}
+pre b{color:var(--fg);font-weight:500}
+footer.end{padding:52px 0 96px}
+footer.end p{font-size:12.5px;color:var(--faint);max-width:70ch}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<main>
+<header class="mast">
+  <div class="wrap">
+    <div class="eyebrow">SaveLocker · brand kit v1 · September 2026</div>
+    <h1>Save<em>Locker</em><br>brand kit</h1>
+    <p>Everything needed to build another SaveLocker surface without asking: the marks, the palette
+    and how its steps are derived, the type scale, the component shapes, the motion curve, the Steam
+    artwork, and the voice. Approved from the Checkpoint direction.</p>
+    <div class="row">
+      <div class="theme-toggle" role="group" aria-label="Theme">
+        <button data-theme-btn="light" aria-pressed="false">Light</button>
+        <button data-theme-btn="dark" aria-pressed="false">Dark</button>
+        <button data-theme-btn="system" aria-pressed="true">System</button>
+      </div>
+      <span style="font-size:12.5px;color:var(--faint)">Every swatch and component on this page is
+      live — flip the theme and watch them re-derive.</span>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <div class="shead"><span class="n">01</span><h2>The marks</h2>
+      <p>Three approved marks. Pick one per surface and keep it — a changed icon reads as a different
+      app. Pixel lock is the default.</p></div>
+    <div class="markwall" id="marks"></div>
+
+    <div class="grid3" style="margin-top:16px" id="specimens"></div>
+
+    <div class="grid2" style="margin-top:16px">
+      <div class="card"><header><h3>Lockups</h3></header><div class="pad stack" style="gap:22px">
+        <div style="display:flex;align-items:center;gap:12px"><span id="lock1"></span>
+          <span class="word" style="font-size:23px">Save<em>Locker</em></span></div>
+        <div style="display:flex;flex-direction:column;gap:9px"><span id="lock2"></span>
+          <span class="word" style="font-size:18px">Save<em>Locker</em></span>
+          <span style="font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)">self-hosted save sync</span></div>
+        <div style="display:flex;align-items:center;gap:11px;padding-top:12px;border-top:1px solid var(--row)">
+          <span class="tile-fav" style="width:24px;height:24px" id="lock3"></span>
+          <span style="font-size:12.5px;color:var(--dim)">browser tab · tray icon · Game Mode tile</span></div>
+      </div></div>
+      <div class="card"><header><h3>Rules</h3></header><div class="pad">
+        <div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
+          <span class="clear" id="clearspace"></span>
+          <div class="note" style="flex:1;min-width:220px">
+            <strong>Clearspace</strong> is half the mark's height on every side. Nothing crosses it —
+            not a wordmark, not a badge, not a screenshot edge.</div>
+        </div>
+        <div class="note" style="margin-top:18px"><strong>Never:</strong> recolour the punched shape,
+        rotate the mark, add a stroke to the solid version, place it on a busy photograph, or stretch
+        it to a non-square box. The mark is square; if the space is not, pad it.</div>
+        <div class="note"><strong>Colour:</strong> the body takes the accent, the punched shapes take
+        <span class="mono">--on-accent</span>. The monochrome version is one colour and no punch —
+        use it in a Steam panel, a tray, or anywhere the accent would fight the host.</div>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="shead"><span class="n">02</span><h2>Colour</h2>
+      <p>Twelve tokens and three status hues. Every soft, border and ink step is derived with
+      <span class="mono">color-mix</span>, never hand-picked.</p></div>
+
+    <div class="card"><header><h3>Surface and text</h3>
+      <span style="font-size:12px;color:var(--faint)" id="themename">system</span></header>
+      <div class="pad"><div class="swgrid" id="core"></div></div></div>
+
+    <div class="grid2" style="margin-top:16px">
+      <div class="card"><header><h3>Status</h3></header><div class="pad">
+        <div class="statusrow">
+          <div class="statuscard"><h5><span class="dot" style="background:var(--safe)"></span>Healthy</h5>
+            <p>Server and machine agree. No action is offered, because none is needed.</p></div>
+          <div class="statuscard"><h5><span class="dot" style="background:var(--watch)"></span>Warning</h5>
+            <p>Failed but retrying. The copy always says what happens next. Clears itself.</p></div>
+          <div class="statuscard"><h5><span class="dot" style="background:var(--accent)"></span>Decision</h5>
+            <p>A conflict or a choice. Never self-heals, always carries the control that ends it.</p></div>
+        </div>
+        <div class="note" style="margin-top:16px">The accent doubles as the brand colour, so it can
+        never be used for emphasis or decoration. If something is accent-coloured, it wants an answer.</div>
+      </div></div>
+
+      <div class="card"><header><h3>Derivation</h3></header><div class="pad">
+<pre>--accent-soft: <b>color-mix(in oklab, var(--accent) 14%, var(--panel))</b>;
+--accent-line: <b>color-mix(in oklab, var(--accent) 42%, var(--panel))</b>;
+--accent-ink:  <b>color-mix(in oklab, var(--accent) 80%, var(--fg))</b>;</pre>
+        <div class="note" style="margin-top:14px">The same three lines apply to
+        <span class="mono">--safe</span> and <span class="mono">--watch</span>. Because the mix is
+        against <span class="mono">--panel</span> and <span class="mono">--fg</span>, a soft
+        background stays readable in both themes without a second set of values.</div>
+      </div></div>
+    </div>
+
+    <div class="card" style="margin-top:16px"><header><h3>Accents</h3>
+      <span style="font-size:12px;color:var(--faint)">user-selectable, set in the app's own settings</span></header>
+      <div class="pad"><div class="accrow" id="accents"></div>
+      <div class="note" style="margin-top:16px">None of the five sit in the green or amber hue ranges,
+      so changing the accent can never make something read as healthy or broken. Stealth is the
+      monochrome option: the status trio then carries every colour on screen.</div></div></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="shead"><span class="n">03</span><h2>Type</h2>
+      <p>Archivo does everything. Tabular figures replace the monospace data face — mono is for code,
+      CLI output and log excerpts only.</p></div>
+    <div class="card"><div class="pad">
+      <div class="typerow"><div class="lbl">Page title<small>700 · −0.035em</small></div>
+        <div style="font-size:27px;font-weight:700;letter-spacing:-.035em">Cyberpunk 2077</div></div>
+      <div class="typerow"><div class="lbl">Section<small>700 · −0.03em</small></div>
+        <div style="font-size:19px;font-weight:700;letter-spacing:-.03em">Sync paused — needs a decision</div></div>
+      <div class="typerow"><div class="lbl">Card title<small>600 · −0.02em</small></div>
+        <div style="font-size:14px;font-weight:600;letter-spacing:-.02em">Exclude patterns</div></div>
+      <div class="typerow"><div class="lbl">Body<small>400 · 13.5px</small></div>
+        <div style="font-size:13.5px;color:var(--dim);max-width:56ch">Files matching these never upload.
+        Patterns are relative to this game's save folder, and stack on top of the server defaults.</div></div>
+      <div class="typerow"><div class="lbl">Row name<small>600 · 13px</small></div>
+        <div style="font-size:13px;font-weight:600">Baldur’s Gate 3</div></div>
+      <div class="typerow"><div class="lbl">Row subtext<small>400 · 10.5px · tabular</small></div>
+        <div style="font-size:10.5px;color:var(--faint)">92.4 MB · 14:08 · STEAMDECK-OLED</div></div>
+      <div class="typerow"><div class="lbl">Eyebrow<small>400 · 10px · 0.12em caps</small></div>
+        <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)">Last sync</div></div>
+      <div class="typerow"><div class="lbl">Figure<small>700 · −0.03em · tabular</small></div>
+        <div style="font-size:25px;font-weight:700;letter-spacing:-.03em">1.84 GB</div></div>
+    </div></div>
+
+    <div class="grid2" style="margin-top:16px">
+      <div class="card"><header><h3>Tabular figures</h3></header><div class="pad">
+        <table class="numdemo">
+          <tr><td>Cyberpunk 2077</td><td>184.6 MB</td></tr>
+          <tr><td>Baldur’s Gate 3</td><td>92.4 MB</td></tr>
+          <tr><td>Fallout: New Vegas</td><td>38.1 MB</td></tr>
+          <tr><td>Stardew Valley</td><td>6.3 MB</td></tr>
+          <tr><td>Hades II</td><td>2.7 MB</td></tr>
+        </table>
+        <div class="note" style="margin-top:14px">Set <span class="mono">font-variant-numeric:
+        tabular-nums</span> on <span class="mono">body</span>. Columns line up without a monospace
+        face, which is the whole reason the mono was dropped.</div>
+      </div></div>
+      <div class="card"><header><h3>Where mono still belongs</h3></header><div class="pad">
+<pre>$ savelocker doctor
+<b>RIG-ONYX</b>  connected  savelocker.lan:8443
+cyberpunk 2077   ok    41 versions   184.6 MB
+elden ring       warn  folder locked, retry 5m</pre>
+        <div class="note" style="margin-top:14px">Code blocks, terminal transcripts, log excerpts and
+        raw agent output. Never labels, never table columns, never a whole interface.</div>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="shead"><span class="n">04</span><h2>Components</h2>
+      <p>The shapes every surface reuses. Radii carry the hierarchy: pills for controls, 14px for
+      cards, 9px for covers.</p></div>
+    <div class="grid2">
+      <div class="card"><header><h3>Buttons and chips</h3></header><div class="pad stack" style="gap:16px">
+        <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+          <button class="b primary">Sync all</button>
+          <button class="b">Push</button>
+          <button class="b quiet">Cancel</button>
+          <button class="b alert">1 conflict · 4h</button>
+          <button class="b sm">Set as Latest</button>
+        </div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <span class="chip ok">Synced</span><span class="chip warn">Retrying</span>
+          <span class="chip crit">Conflict</span><span class="chip">Newest wins</span>
+          <span class="chip">41 kept</span>
+        </div>
+        <div class="note">One filled button per view — the thing you most likely came to do. Everything
+        else is outline, quiet, or a text link. Destructive controls name their effect.</div>
+      </div></div>
+
+      <div class="card"><header><h3>Two-line row</h3></header><div class="pad stack" style="gap:12px">
+        <div class="row2"><span class="cov">CY</span>
+          <span class="t1">Cyberpunk 2077</span>
+          <span class="t2">184.6 MB · 22m ago · C:\Users\marwan\Saved Games\CD Projekt Red</span>
+          <span class="end"><span class="chip ok">Synced</span></span></div>
+        <div class="row2"><span class="cov" style="background:linear-gradient(155deg,hsl(268 42% 34%),hsl(300 44% 13%))">BG</span>
+          <span class="t1">Baldur’s Gate 3</span>
+          <span class="t2">92.4 MB · conflict 4h · STEAMDECK-OLED</span>
+          <span class="end"><span class="chip crit">Conflict</span></span></div>
+        <div class="note">Name on line one, everything else underneath, status pinned right and centred
+        across both. Never let metadata trail off the end of a name.</div>
+      </div></div>
+    </div>
+
+    <div class="grid2" style="margin-top:16px">
+      <div class="card"><header><h3>Stats</h3></header><div class="pad">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="stat"><dt>Storage used</dt><dd>1.84 GB</dd><small>287 versions kept</small></div>
+          <div class="stat"><dt>Open conflicts</dt><dd>1</dd><small>overdue by 4h</small></div>
+        </div>
+        <div class="note" style="margin-top:14px">Label in caps, figure large and tabular, one line of
+        context underneath. Four across on a console, three on an agent window.</div>
+      </div></div>
+      <div class="card"><header><h3>Radii</h3></header><div class="pad">
+        <div class="radii">
+          <div style="border-radius:99px">99px<br>controls</div>
+          <div style="border-radius:14px">14px<br>cards</div>
+          <div style="border-radius:12px">12px<br>panels</div>
+          <div style="border-radius:9px">9px<br>covers</div>
+        </div>
+        <div class="note" style="margin-top:14px">Inner elements are always tighter than their
+        container. Nothing is square except the mark's own geometry.</div>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="shead"><span class="n">05</span><h2>Motion</h2>
+      <p>One curve, four durations. Hover the buttons above to feel it — everything uses the same
+      easing so the whole app moves like one object.</p></div>
+    <div class="grid2">
+      <div class="card"><header><h3>The curve</h3></header><div class="pad">
+<pre>--ease: <b>cubic-bezier(.2, .8, .25, 1)</b>;</pre>
+        <table class="motion" style="width:100%;margin-top:14px">
+          <tr><td>Canvas sections</td><td>rise 260ms</td><td>26ms stagger</td></tr>
+          <tr><td>Grid tiles</td><td>pop 300ms</td><td>35ms stagger</td></tr>
+          <tr><td>Rows</td><td>160ms</td><td>2px translate on hover</td></tr>
+          <tr><td>Buttons</td><td>130–160ms</td><td>−1px hover, scale .96 press</td></tr>
+          <tr><td>Toggle knob</td><td>260ms</td><td>slight overshoot</td></tr>
+          <tr><td>Progress</td><td>550ms</td><td>eases, never jumps</td></tr>
+          <tr><td>Toast</td><td>340ms in</td><td>2.6s dwell</td></tr>
+        </table>
+      </div></div>
+      <div class="card"><header><h3>Rules</h3></header><div class="pad">
+        <div class="note"><strong>Stagger the first six children only.</strong> Past that the delay
+        outlives the reader's patience; everything after gets the last delay.</div>
+        <div class="note"><strong>A progress update must not re-render its surroundings.</strong> If a
+        tick rebuilds the view, every entrance animation replays and the page appears to flash. Progress
+        owns its own component; nothing above it re-renders.</div>
+        <div class="note"><strong>Never animate what the eye has to track.</strong> Numbers change
+        instantly; only the bar that represents them moves.</div>
+        <div class="note"><strong>Everything off under</strong>
+        <span class="mono">prefers-reduced-motion</span>, including the staggers.</div>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="shead"><span class="n">06</span><h2>Steam artwork</h2>
+      <p>Four crops of one lockup, generated from the chosen mark and accent. Shown here at roughly a
+      third scale.</p></div>
+    <div class="card"><div class="pad artrow" id="art"></div>
+      <div class="pad" style="border-top:1px solid var(--line)">
+        <div class="note">The vertical capsule puts the mark at the top and the wordmark at the bottom,
+        because Steam overlays a progress bar and a Play badge across the lower third of a grid tile.
+        The wide and hero pieces are the same lockup at two crops, so a shelf of SaveLocker art reads as
+        one set.</div>
+        <div class="note">Keep the sources as SVG plus exported PNG. Nothing depends on the gradient —
+        drop the lockup on a flat accent and it still holds.</div>
+      </div></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="shead"><span class="n">07</span><h2>Voice</h2>
+      <p>Plain, specific, never loud. A control says what happens; a toast confirms in the past tense;
+      an error names the cause first and the fix second.</p></div>
+    <div class="card"><div class="pad">
+      <div class="vrow">
+        <div class="vcell no"><div class="tag">Not this</div><p>Oops! Something went wrong syncing your save.</p></div>
+        <div class="vcell yes"><div class="tag">This</div><p>Elden Ring push failed. The save folder is locked by the running game — retrying in 5 minutes.</p></div>
+      </div>
+      <div class="vrow">
+        <div class="vcell no"><div class="tag">Not this</div><p>Sync completed successfully!</p></div>
+        <div class="vcell yes"><div class="tag">This</div><p>Synced 6 games — 19.3 MB sent, 2 uploaded, 4 already current.</p></div>
+      </div>
+      <div class="vrow">
+        <div class="vcell no"><div class="tag">Not this</div><p>Are you sure you want to delete these versions?</p></div>
+        <div class="vcell yes"><div class="tag">This</div><p>Prune 5 versions — the newest 40 are kept, protected ones are skipped.</p></div>
+      </div>
+      <div class="vrow">
+        <div class="vcell no"><div class="tag">Not this</div><p>Conflict detected. Please resolve.</p></div>
+        <div class="vcell yes"><div class="tag">This</div><p>Both copies changed since the last sync. Keep one — the other stays in your history.</p></div>
+      </div>
+      <div class="vrow">
+        <div class="vcell no"><div class="tag">Not this</div><p>Configure webhook notification preferences</p></div>
+        <div class="vcell yes"><div class="tag">This</div><p>Choose what SaveLocker tells you about</p></div>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="shead"><span class="n">08</span><h2>Tokens to paste</h2>
+      <p>The dark set, the light set, and the derivations. Drop into
+      <span class="mono">web/src/index.css</span> as a Tailwind v4 <span class="mono">@theme</span> block.</p></div>
+    <div class="card"><div class="pad">
+<pre>:root{
+  --ink:#f5f3ef; --panel:#fffefc; --raise:#f0ede8; --tile:#ebe7e0; --hover:#e8e3dc;
+  --fg:#191719; --dim:#57534d; --faint:#8b8780; --line:#e2ddd5; --row:#eeeae3;
+  --safe:#4c7b3e; --watch:#8a6212; --accent:#c0432c; --on-accent:#fff8f6;
+}
+:root:not([data-theme="light"]) <b>@media (prefers-color-scheme: dark)</b>,
+:root[data-theme="dark"]{
+  --ink:#0f0f10; --panel:#141416; --raise:#191a1c; --tile:#1b1c1f; --hover:#202124;
+  --fg:#f0eee9; --dim:#a09d97; --faint:#6b6862; --line:#242427; --row:#1d1d20;
+  --safe:#7fa96a; --watch:#d9a63f; --accent:#e0533c; --on-accent:#160f0e;
+}
+:root{
+  --accent-soft: color-mix(in oklab, var(--accent) 14%, var(--panel));
+  --accent-line: color-mix(in oklab, var(--accent) 42%, var(--panel));
+  --accent-ink:  color-mix(in oklab, var(--accent) 80%, var(--fg));
+  <b>/* same three for --safe and --watch */</b>
+  --ease: cubic-bezier(.2, .8, .25, 1);
+}</pre>
+      <div class="note" style="margin-top:16px"><strong>One trap:</strong> the console's current
+      <span class="mono">index.css</span> has an unlayered <span class="mono">* { padding: 0 }</span>
+      reset that beats every Tailwind utility regardless of specificity — which is why so much of the
+      existing UI is written with inline styles. Move the reset into
+      <span class="mono">@layer base</span> before adopting these tokens, or the same workaround
+      spreads into new code.</div>
+    </div></div>
+  </div>
+</section>
+
+<footer class="end">
+  <div class="wrap">
+    <p>SaveLocker brand kit v1 — derived from the Checkpoint direction and the interactive prototype.
+    Marks: Cartridge, Pixel lock, Memory card. Accent set: Ember, Coolant, Arcade, Cobalt, Stealth.
+    Typeface: Archivo. Companion documents: <span class="mono">SaveLocker/tasks/checkpoint-ui/plan.md</span>
+    and <span class="mono">implementation.md</span>.</p>
+  </div>
+</footer>
+</main>
+
+<script>
+const MARKS = [
+  {id:'cartridge', name:'Cartridge',
+   blurb:'A game cartridge with a keyhole punched through its label. Says “a save you can lock” without borrowing a floppy disk.',
+   draw:(a,o) => '<rect x="5" y="5" width="22" height="22" rx="4" fill="' + a + '"/>' +
+     '<rect x="8.5" y="8.5" width="15" height="8" rx="2" fill="' + o + '"/>' +
+     '<circle cx="16" cy="12.5" r="2.1" fill="' + a + '"/>' +
+     '<path d="M10.5 27v-3.4M16 27v-3.4M21.5 27v-3.4" stroke="' + o + '" stroke-width="2" stroke-linecap="round" opacity=".65"/>'},
+  {id:'pixel', name:'Pixel lock',
+   blurb:'An 8-bit padlock on a 4px grid. Every edge lands on the grid, so it stays crisp at 16px. The default.',
+   draw:(a,o) => '<rect x="12" y="3" width="8" height="4" fill="' + a + '"/>' +
+     '<rect x="8" y="7" width="4" height="5" fill="' + a + '"/><rect x="20" y="7" width="4" height="5" fill="' + a + '"/>' +
+     '<rect x="5" y="12" width="22" height="16" fill="' + a + '"/>' +
+     '<rect x="14" y="16" width="4" height="4" fill="' + o + '"/>' +
+     '<rect x="15" y="20" width="2" height="5" fill="' + o + '"/>'},
+  {id:'memcard', name:'Memory card',
+   blurb:'Chamfered corner, contact pins down the left edge, keyhole where the label goes. A silhouette nothing else on a Steam shelf has.',
+   draw:(a,o) => '<path d="M11 3.6h13.4A3.6 3.6 0 0 1 28 7.2v17.6a3.6 3.6 0 0 1-3.6 3.6H7.6A3.6 3.6 0 0 1 4 24.8V10.6z" fill="' + a + '"/>' +
+     '<rect x="7.4" y="11.4" width="5.6" height="12.6" rx="1.6" fill="' + o + '"/>' +
+     '<path d="M7.4 15.2h5.6M7.4 18.6h5.6M7.4 22h5.6" stroke="' + a + '" stroke-width="1.5"/>' +
+     '<circle cx="20.6" cy="15.4" r="2.6" fill="' + o + '"/><path d="M19.3 17.4h2.6l.9 5.4h-4.4z" fill="' + o + '"/>'},
+];
+const DEFAULT_MARK = 1;
+
+function logo(size, mode, idx){
+  const m = MARKS[idx === undefined ? DEFAULT_MARK : idx];
+  const a = mode === 'mono' ? 'currentColor' : 'var(--accent)';
+  const o = mode === 'mono' ? 'var(--panel)' : 'var(--on-accent)';
+  return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 32 32" fill="none" role="img" ' +
+    'aria-label="SaveLocker mark">' + m.draw(a, o) + '</svg>';
+}
+
+document.getElementById('marks').innerHTML = MARKS.map((m,i) =>
+  '<article class="markcard"><div class="plate">' + logo(84,'solid',i) + '</div>' +
+  '<div class="txt"><h4>' + m.name + (i === DEFAULT_MARK ? ' <span class="chip crit">default</span>' : '') + '</h4>' +
+  '<p>' + m.blurb + '</p>' +
+  '<div class="sizes">' + [16,20,24,32].map(s => logo(s,'solid',i)).join('') +
+  '<span>16 / 20 / 24 / 32</span></div></div></article>').join('');
+
+document.getElementById('specimens').innerHTML = [
+  ['Solid', logo(58,'solid'), ''],
+  ['Monochrome', '<span style="color:var(--fg)">' + logo(58,'mono') + '</span>', ''],
+  ['On light', '<span style="color:#191719">' + logo(58,'mono') + '</span>', 'onlight'],
+  ['On dark', '<span style="color:#f0eee9">' + logo(58,'mono') + '</span>', 'ondark'],
+  ['Favicon tile', '<span class="tile-fav" style="width:58px;height:58px">' + logo(38,'mono') + '</span>', ''],
+  ['16px, real size', '<span style="padding:21px 0">' + logo(16,'solid') + '</span>', ''],
+].map(c => '<div class="speccell ' + c[2] + '">' + c[1] + '<span class="cap">' + c[0] + '</span></div>').join('');
+
+document.getElementById('lock1').innerHTML = logo(34,'solid');
+document.getElementById('lock2').innerHTML = logo(42,'solid');
+document.getElementById('lock3').innerHTML = logo(16,'mono');
+document.getElementById('clearspace').innerHTML = logo(76,'solid');
+
+const CORE = [
+  ['--ink','page ground'],['--panel','cards'],['--raise','controls'],['--tile','insets'],
+  ['--fg','text'],['--dim','secondary text'],['--faint','tertiary text'],['--line','borders'],
+];
+function paintCore(){
+  const cs = getComputedStyle(document.documentElement);
+  document.getElementById('core').innerHTML = CORE.map(([tok,use]) =>
+    '<div class="sw"><div class="chip-color" style="background:var(' + tok + ')"></div>' +
+    '<div class="meta"><div class="nm">' + tok + '</div>' +
+    '<div class="hex">' + cs.getPropertyValue(tok).trim() + ' · ' + use + '</div></div></div>').join('');
+}
+
+const ACCENTS = [
+  ['Ember','#e0533c','#c0432c','the default — reads as heat, not danger'],
+  ['Coolant','#35a5bd','#12768d','calmest of the five, good on light'],
+  ['Arcade','#d4589b','#b23c7c','the loudest; pairs oddly with cover art'],
+  ['Cobalt','#5b81d6','#3a5cbe','closest to a system blue'],
+  ['Stealth','#dcd7cc','#2e2b28','monochrome — status carries all colour'],
+];
+function paintAccents(){
+  const dark = document.documentElement.dataset.theme === 'dark' ||
+    (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.getElementById('accents').innerHTML = ACCENTS.map(a => {
+    const hex = dark ? a[1] : a[2];
+    return '<div class="acccell"><div class="band" style="background:' + hex + ';color:' +
+      (dark ? '#160f0e' : '#fff8f6') + '">' + a[0] + '</div>' +
+      '<div class="meta">' + hex + '<small>' + a[3] + '</small></div></div>';
+  }).join('');
+}
+
+document.getElementById('art').innerHTML = [
+  ['Library capsule · 600×900',
+   '<div class="scap" style="width:196px;height:294px;flex-direction:column;justify-content:space-between;padding:22px 20px">' +
+   '<div class="txt">' + logo(50,'solid') + '</div>' +
+   '<div class="txt"><div class="nm" style="font-size:29px">Save<em>Locker</em></div>' +
+   '<div class="tag" style="font-size:8px">self-hosted save sync</div></div></div>'],
+  ['Wide capsule',
+   '<div class="scap" style="width:384px;height:180px;align-items:center;gap:20px;padding:0 28px">' +
+   '<div class="txt">' + logo(64,'solid') + '</div>' +
+   '<div class="txt"><div class="nm" style="font-size:33px">Save<em>Locker</em></div>' +
+   '<div class="tag" style="font-size:8.5px">your saves, on every machine</div></div></div>'],
+  ['Header capsule · 460×215',
+   '<div class="scap" style="width:224px;height:105px;align-items:center;gap:12px;padding:0 18px">' +
+   '<div class="txt">' + logo(36,'solid') + '</div>' +
+   '<div class="txt"><div class="nm" style="font-size:19px">Save<em>Locker</em></div></div></div>'],
+  ['Library hero · 1920×620',
+   '<div class="scap" style="width:600px;height:194px;align-items:flex-end;padding:0 32px 24px">' +
+   '<div class="txt" style="display:flex;align-items:center;gap:18px">' + logo(56,'solid') +
+   '<div><div class="nm" style="font-size:36px">Save<em>Locker</em></div>' +
+   '<div class="tag" style="font-size:9px">hub-and-spoke save sync · windows · linux · steam deck</div>' +
+   '</div></div></div>'],
+].map(c => '<div class="artcell">' + c[1] + '<span class="meta">' + c[0] + '</span></div>').join('');
+
+const themeName = document.getElementById('themename');
+function setTheme(v){
+  if (v === 'system') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = v;
+  document.querySelectorAll('[data-theme-btn]').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.themeBtn === v)));
+  themeName.textContent = v;
+  /* Synchronous, not rAF: a hidden or backgrounded tab never fires the frame callback, which left
+     the hex readouts and accent swatches showing the previous theme's values. */
+  paintCore(); paintAccents();
+}
+document.querySelectorAll('[data-theme-btn]').forEach(b =>
+  b.addEventListener('click', () => setTheme(b.dataset.themeBtn)));
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (!document.documentElement.dataset.theme){ paintCore(); paintAccents(); }
+});
+
+paintCore(); paintAccents();
+</script>
