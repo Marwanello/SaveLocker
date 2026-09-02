@@ -908,3 +908,130 @@ Committed and pushed on top of an intervening unrelated upstream commit (`84b3e0
 - Several lower-value/structural findings from the 10 finder agents were deliberately left unfixed
   (documented at fix time, not re-litigated here) as lower priority or higher risk relative to their
   value.
+
+---
+
+## 2026-09-01/02 — Conflict resolution Group 3 / Phase 9: Linux desktop notification (save-conflicts-phase-9)
+
+**Branch:** `save-conflicts-phase-9` (6 commits on top of `debf37e`; 618 insertions / 23 deletions
+across 8 files). No PR opened. Group 3 of `tasks/conflict-resolution-ui/implementation-grouping.md`
+= Phase 9 = rung 3 of the Linux escalation ladder in `reference/03-platform-ux-flows.md`.
+
+### Request sequence
+
+1. **"what is the next group to implement in conflict resolution? and does it need my windows pc or
+   can it run on cloud"** — answered from the plan docs: Group 3 (Phase 9, the D-Bus desktop
+   notification), Linux-only, fully buildable and testable in the cloud; only live popup rendering
+   needs real hardware.
+2. **"lets start implementing Group 3"**.
+3. **"can we fix the 7 faliures while we are at it / and tell me how to test manually on a real steam
+   deck"** — the pre-existing `run-linux-tests.sh` failures, plus written Deck instructions.
+4. **"i want to test using testenv to put a build separate from the real build on the deck"** —
+   deploy via `tests/testenv.ps1` into the isolated `~/savelocker-test` tree rather than over the
+   installed agent.
+5. **"create a new branch called save-conflicts-phase-9 and push. delete
+   `claude/conflict-resolution-next-group-c753nh` from origin"**.
+6. Live-hardware debugging: the log said the notification was sent, nothing appeared on screen.
+7. **"should the notification show up every time I `up` the deck build?"**
+
+### What shipped
+
+- **`src/Agent.Core/CommandPoller.cs`** — an optional `Action<IReadOnlyList<ConflictDto>>?
+  onConflictsPolled` delegate, appended last in the constructor and invoked after `RunCommandsAsync()`
+  on the existing 20s tick. `CheckConflictsAsync` fetches open conflicts and applies the standard "no
+  bystander case" `MachineId` filter before handing them over. Null on Windows, so the tray path is
+  bit-for-bit unchanged.
+- **`src/Agent.Linux/ConflictNotifier.cs`** (new, 217 lines) — notifies once per conflict id the first
+  time it is seen open, withdraws the popup when the conflict closes, and opens Phase 6's agent-ui
+  conflicts page via `xdg-open` when the action button is clicked. Guarded by Phase 5's
+  `DesktopEnvironment.Detect()`; a missing daemon logs and returns rather than throwing. Nothing in
+  the poll loop ever waits on the child process it starts.
+- **`src/Agent.Linux/Daemon.cs`** — constructs the notifier with the real bound API port, wires the
+  delegate with a `GameId → Name` lookup off `_config.Games`, disposes it in `DisposeAsync`.
+- **`tests/linux/run-linux-tests.sh`** — two new sections plus one fix (below): a Phase 9 end-to-end
+  section (divergent push from a second config, daemon on :5190, asserts the "no desktop notification
+  daemon reachable" log line) and a "notification command's shape" section that puts a fake
+  `notify-send` and `gdbus` on `PATH` and asserts the exact argv the daemon emits.
+
+### The bug that mattered: it shipped green and did not work
+
+The first implementation used `gdbus call` — the tooling plan.md's Phase 9 had specified. It built
+clean, passed a green suite, survived code review, logged `conflict notification: sent for '...'` with
+a real notification id returned by the daemon — and rendered nothing on the Deck.
+
+**Root cause:** a notification carrying **actions** is owned by the bus connection that sent it, and
+the notification server closes it when that connection drops, because nobody is left to receive
+`ActionInvoked`. `gdbus call` is one-shot by construction — it sends, takes its reply, exits — so it
+can never hold a notification open. The `gdbus monitor` the first version used to catch the click was
+a *second, different* connection, and could never have owned the notification either.
+
+Diagnosed by a 3-way bisect run on real hardware: (A) the same call with `timeout=0` and no actions →
+stays up; (C) with app-name and icon → stays up; (B) with an action button → flashes for under a
+second. Same daemon, same bus, so not a Deck quirk.
+
+**Fix:** rewritten around `notify-send --wait --action=view=View conflict`, which keeps its connection
+alive for as long as the notification is displayed (fixing the popup *and* making the button work) and
+prints the invoked action key straight to stdout, deleting the `gdbus monitor` path entirely. The
+ownership rule that caused the bug is now used deliberately: killing the child withdraws a stale popup
+when a conflict is resolved elsewhere. `gdbus` remains what Phase 5's `DesktopEnvironment` probe uses
+to ask whether a daemon exists at all; that part was never in question.
+
+The reasoning is recorded in a doc comment on `ConflictNotifier` ("Why `notify-send --wait` and not
+`gdbus call`, corrected on real hardware 2026-09-02") so the next person reading plan.md's original
+tooling decision does not re-derive it, and plan.md itself was corrected.
+
+**The lesson, kept explicitly:** a clean build, a green suite, and a passing code review all held while
+the feature was broken, because nothing checked what was actually sent over IPC. The new
+"notification command's shape" test closes exactly that gap — and was proved to fail against the
+pre-fix code (`--wait` removed, daemon re-run, recorded argv confirmed to lack it, assertion flips)
+rather than merely passing against the fixed code.
+
+### The 7 pre-existing test failures: one cause, six cascades
+
+`run-linux-tests.sh` had 7 failures documented in `Backlog.md` as a Decky-plugin-update flake. They
+were not a flake. The test simulated an unwritable plugin directory with `chmod 555`, but the harness
+runs as root, and root's `CAP_DAC_OVERRIDE` ignores mode bits — so the write the test expected to be
+refused *succeeded*, corrupting the plugin version for every downstream assertion. Fixed by switching
+to the ext4 immutable attribute (`chattr +i` / `chattr -i`), which blocks new-entry creation even for
+root. Verified empirically before changing the test, not assumed.
+
+**244/251 → 251/251**, and 256/256 with the two new Phase 9 sections.
+
+### Verification
+
+- All Linux-buildable projects build clean.
+- `tests/linux/run-linux-tests.sh`: **256 passed, 0 failed**.
+- Real Steam Deck, desktop mode, via `tests/testenv.ps1 up -Only deck` (isolated `~/savelocker-test`
+  + `~/savelocker-test-state`, port 5177, `systemd-run --user --scope`) with a conflict seeded by
+  pointing `XDG_DATA_HOME` at a second state root: notification renders, persists, and carries its
+  action button.
+- Regression test proved failing against the pre-fix code before being kept.
+
+### Gotchas hit
+
+- **`git checkout <file>` destroyed an uncommitted rewrite.** Used to undo a temporary edit; it
+  restored the last *committed* version, which was the old gdbus one. Rewritten from the earlier
+  content and re-verified.
+- **`pkill -f "SaveLocker.Server"` killed its own wrapper shell** (exit 144, no log written) — the
+  pattern matched the wrapper's own command line. Fixed with `pkill -f "SaveLocker[.]Server[.]dll"`;
+  the bracket makes the regex not match its own literal text.
+
+### Not done
+
+- **`git push origin --delete claude/conflict-resolution-next-group-c753nh` refused with HTTP 403**
+  (twice), and no GitHub MCP branch/ref-deletion tool exists. The branch must be deleted from the
+  GitHub UI or a machine with full credentials.
+- **Game Mode notification rendering is unverified** — only desktop mode was tested. Bringing the
+  Deck's Game Mode screen to the foreground on click is deliberately out of scope: that is Phase 8's
+  screen, which does not exist yet, the same way Phase 4 left Windows' tray to Phase 7.
+- **`xdg-open` landing on the conflicts page on the Deck** is untested.
+
+### Design note recorded at the end
+
+Notification dedup (`_notified`) is in-memory and per-process, so a daemon restart re-notifies for
+whatever is still open — and `testenv-deck.sh`'s `cmd_up` restarts the daemon every time, which is why
+the popup reappears on every `up`. Deliberate: a persisted "notified once, never again" would mean a
+popup dismissed weeks ago and forgotten never gets raised again while the game silently stays
+unsynced. Within one daemon run it fires once, not once per tick; it stops entirely once the conflict
+is resolved; a still-open popup is withdrawn and replaced rather than stacked. The honest downside is
+one notification per restart if the daemon ever crash-loops.
