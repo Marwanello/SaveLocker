@@ -908,3 +908,88 @@ Committed and pushed on top of an intervening unrelated upstream commit (`84b3e0
 - Several lower-value/structural findings from the 10 finder agents were deliberately left unfixed
   (documented at fix time, not re-litigated here) as lower priority or higher risk relative to their
   value.
+
+---
+
+## 2026-09-02 — Checkpoint UI redesign: design spec, implementation plan and brand kit
+
+**Branch:** `claude/dashboard-agent-ui-redesign-992386` (local only, not pushed).
+**Commit:** `6963b4c` — "Docs: Checkpoint UI design spec, implementation plan and brand kit"
+
+### Request
+
+Full UI redesign of the SaveLocker dashboard (console) and agent UI, delivered as interactive mockups
+grounded in the app's real data, endpoints and component structure. Iterated across seven turns covering
+identity exploration, layout direction, accent/theme experiments, typography, motion, notifications,
+Steam artwork, marks (logos), and finally the implementation/brand deliverables.
+
+### What was built
+
+**Interactive prototype** — `checkpoint-prototype.html`, published at
+https://claude.ai/code/artifact/b8f247f2-32e5-4808-8e4c-61ba0cc3406f. Surfaces: Console, Agent,
+Deck-Wayland, Notifications, Marks & art, Flows. Light + dark themes, five accents, three marks,
+Archivo typeface throughout. All data pulled from the real API surface (game names, event codes,
+release dates, machine names, version/command/audit tables, Deck UI strings).
+
+**Five identity options** — `savelocker-redesign.html` (Cold Storage / Checkpoint / Ledger / Shelter /
+Hangar), each with palette, type stack, voice and mockups. Checkpoint was chosen.
+
+**Design spec** — `SaveLocker/tasks/checkpoint-ui/plan.md`. Covers: decisions table, both dark/light
+token sets, `color-mix` derivation rule, colour rule (green/amber/accent), type scale, layout rules,
+motion table, voice guidelines, per-surface shell table.
+
+**Implementation plan** — `SaveLocker/tasks/checkpoint-ui/implementation.md`. Opens with "what already
+exists" (maps every prototype element to its real endpoint/component), then eight phases:
+1. Design system foundation (fix unlayered CSS reset, Checkpoint tokens, Archivo import, motion
+   primitives, shared components)
+2. Console shell (two-line rows, grid view, bell menu, sign-in screen, exclude chips, release history)
+3. Sync all + progress (bulk command endpoint, console progress rail, agent progress — with the
+   correctness requirement that progress ticks must not re-render surroundings)
+4. Appearance + fleet sync (server-side settings, heartbeat-carried theme/accent/mark pushed to agents)
+5. Agent UI (Games tab, art proxy, search in Add games)
+6. Deck/Wayland (Checkpoint dark tokens in ImGui, Sync all bound to Y, Wayland window decision)
+7. OS notifications (Windows toast, Linux freedesktop, firing rules)
+8. Assets (marks and Steam art as real files at all required sizes)
+
+**Brand kit** — `SaveLocker/tasks/checkpoint-ui/brand-kit.html`, also published at
+https://claude.ai/code/artifact/b3e0c8a5-70a0-47bf-b4f2-d0dbf4f0b2d5. Eight sections: marks (three
+with size ladders, specimens, clearspace, don'ts), colour (live swatches + derivation + status trio +
+five accents), type (Archivo scale, tabular-figures demo, where mono belongs), components
+(buttons/chips/two-line row/stats/radii), motion, Steam artwork (four crops), voice (not-this/this
+pairs), paste-ready tokens with the unlayered-reset warning.
+
+### Decisions recorded
+
+| Decision | Value |
+|---|---|
+| Direction | Checkpoint |
+| Typeface | Archivo for headings and data; mono only for code/CLI/logs |
+| Accent | Ember `#e0533c` dark / `#c0432c` light, user-changeable (five options) |
+| Themes | Light and dark, both first-class |
+| Marks | Cartridge, Pixel lock (default), Memory card |
+| Steam art | Approved as drawn in prototype |
+| Decky plugin | Untouched — Steam-native look is correct |
+
+### Key findings
+
+- `web/src/index.css` has an unlayered `* { box-sizing; margin: 0; padding: 0 }` reset that beats
+  every Tailwind utility — root cause of the codebase's inline-style pattern. Fixing this (Phase 1)
+  gates the entire redesign.
+- The font `@import` must stay above `@import "tailwindcss"` or it is silently dropped.
+- Phase 4 (appearance sync via heartbeat) is the largest genuinely-new backend piece.
+- Phase 6 item 4 (Wayland desktop window: GTK/WebKit shell vs. browser) is the one open decision.
+
+### Bugs found and fixed in prototypes
+
+- Progress-bar animation rerun: full `innerHTML` rebuild per tick replayed entrance animations. Fixed
+  with targeted DOM patching (`patchSync()`).
+- Brand-kit theme swatches not repainting: `requestAnimationFrame` never fires in a hidden tab. Fixed
+  by calling paint functions synchronously.
+- `.cap` CSS class collision between store-art capsules and spec-cell labels. Fixed by renaming to
+  `.scap`.
+
+### Status
+
+Design phase complete. All deliverables committed locally. `CONTEXT.md` not yet updated with handoff
+entry. Next step: update `CONTEXT.md` per session-end convention, then begin Phase 1 implementation
+when ready.

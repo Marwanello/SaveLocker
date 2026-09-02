@@ -1,7 +1,9 @@
 # Checkpoint — UI design spec
 
 The agreed visual direction for the console, the agent window and the Deck UI. This file is the
-*what*; [[implementation]] in this folder is the *how* and the phasing.
+*what*; [[implementation]] in this folder is the *how* and the phasing, and
+[[implementation-grouping]] is the session-by-session execution order on top of it. Start at
+[[README]] if you're new to this folder.
 
 Interactive prototype: <https://claude.ai/code/artifact/b8f247f2-32e5-4808-8e4c-61ba0cc3406f>
 (Console / Agent / Deck-Wayland / Notifications / Marks & art / Flows, light + dark, five accents.)
