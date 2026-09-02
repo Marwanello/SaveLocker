@@ -786,6 +786,9 @@ suite and a careful read because every check stopped at "the call returned 0." N
 was actually sent, which is exactly what the new test now does. Also worth knowing for next time: the
 whole diagnosis came from three one-line `gdbus` commands run by hand on the hardware, each changing
 one argument — the bisect was faster and more certain than any amount of reading the code.
+<br>**Confirmed on real hardware 2026-09-02:** the shipped `notify-send --wait` build renders on
+a Deck in desktop mode via `testenv.ps1 up -Only deck` — user-confirmed on the actual fix, not
+inferred from the three bisect variants that led to it.
 <br>**Still unverified:** Game Mode (the open question `plan.md` has carried since 2026-08-31 — the
 bus and a claimant are both there, whether anything renders is unknown), and the action button's
 `xdg-open` actually landing on the conflicts page on the Deck specifically.

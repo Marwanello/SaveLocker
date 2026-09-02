@@ -1004,7 +1004,7 @@ root. Verified empirically before changing the test, not assumed.
 - Real Steam Deck, desktop mode, via `tests/testenv.ps1 up -Only deck` (isolated `~/savelocker-test`
   + `~/savelocker-test-state`, port 5177, `systemd-run --user --scope`) with a conflict seeded by
   pointing `XDG_DATA_HOME` at a second state root: notification renders, persists, and carries its
-  action button.
+  action button — user-confirmed on the shipped build, 2026-09-02.
 - Regression test proved failing against the pre-fix code before being kept.
 
 ### Gotchas hit
