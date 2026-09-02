@@ -464,6 +464,27 @@ target on a desktop session — Phase 8's Game Mode screen is the equivalent tar
   the tool generally recommended for scripting a call with this shape. Process-spawn cost per call is
   irrelevant given how rarely this fires (once per conflict *becoming* open, not per poll).
 
+**Corrected on real hardware 2026-09-02, after Group 3 shipped the above and it did not work:
+`notify-send --wait`, not `gdbus call`, for *sending*. `gdbus` stays for the Phase 5 probe.** The
+comparison above weighed the three options on argument syntax and dependency cost and never asked the
+question that actually decides it: **who owns the notification once it is posted.** A notification
+carrying `actions` belongs to the bus connection that sent it, and a notification server withdraws it
+when that connection drops — nobody is left to receive `ActionInvoked`. `gdbus call` is one-shot by
+construction (send, take the reply, exit), so it can *never* hold an actionable notification open. On
+the maintainer's Deck in Desktop Mode this looked like success at every layer the agent can see: exit
+code 0, a real notification id returned, `conflict notification: sent for 'X'` in the log — and a
+popup that appeared and vanished inside a second. Bisected against the same daemon on the same bus,
+one variable at a time: `expire_timeout=0` alone renders and persists; `app_name`/`icon` alone render
+(`dialog-warning` correctly draws a caution icon); **adding the action button is what makes it flash
+and disappear.** `notify-send --wait` holds its connection open for as long as the notification is
+displayed, which fixes both the popup and the button, and prints the invoked action key on stdout —
+so the second `gdbus monitor` connection the first implementation used to catch the click (which could
+never have owned the notification anyway) is deleted rather than fixed. `notify-send` comes from
+libnotify, present on any desktop that has a notification daemon at all, and was confirmed on the Deck
+before the rewrite. The general lesson, worth more than the specific fix: **an exit code from a
+fire-and-forget IPC call is not evidence the other end did anything** — this shipped green through a
+build, a full agent test suite and a code review because nothing checked what was actually sent.
+
 If built: fires once per conflict becoming open (a `HashSet<Guid>` of already-notified conflict ids,
 cleared on resolve, so the 20s command-poller's own loop doesn't re-notify every tick) with an action
 button that opens Phase 6's `agent-ui` page in the default browser (desktop session) or brings Phase
@@ -493,6 +514,21 @@ target Desktop Mode as its verified surface, but a Game-Mode-visible desktop not
 out to be reachable sooner than this plan assumed — worth a five-minute live check (fire one test
 `Notify` call over SSH while genuinely in Game Mode, see if anything appears on screen) before ruling
 it out.
+
+**Shipped 2026-09-01** (`implementation-grouping.md`'s "Group 3"): `CommandPoller`'s new
+`onConflictsPolled` hook and `src/Agent.Linux/ConflictNotifier.cs`.
+
+**Verified on the maintainer's Deck 2026-09-02 — and it was broken, then fixed.** Desktop Mode was
+confirmed as a working surface (the notification renders, persists, and its action button is
+clickable), so this phase's target surface is no longer an assumption. Getting there took the
+transport correction recorded above: the shipped `gdbus call` version reported success and flashed the
+popup out of existence, and the first thing the live run proved was that the agent's own log line is
+not evidence of anything a user can see. Game Mode remains unchecked. The rewrite carries a
+regression test that could have caught this before hardware ever saw it — a fake bus, a fake `gdbus`
+answering the `NameHasOwner` probe, and a fake `notify-send` recording its own argv, asserting the
+command carries `--wait` and the action key. It was confirmed to FAIL against the pre-fix code
+(`--wait` removed, argv recorded without it) rather than assumed to. Full detail: `CONTEXT.md` and
+`Backlog.md`.
 
 **Phase 10 — Decky: conflict display + resolve UI** (chip, QAM panel, resolve popup, policy
 dropdown) — unchanged content, renumbered from the original Phase 5. Depends on Phase 0/1. Delivers
@@ -571,10 +607,11 @@ Phase 0/1 (server + agent core — shipped)
                                     │      ▼             ▼       │             │
                                     │  Phase 7        Phase 9 ◄──┘             │
                                     │  (Windows tray   (D-Bus notify,          │
-                                    │   automatic       optional — needs       │
+                                    │   automatic       shipped — needs       │
                                     │   chooser +        Phases 5 AND 6,       │
                                     │   bulk queue)      opens Phase 8 on      │
-                                    │                    the Deck)            │
+                                    │                    the Deck when it     │
+                                    │                    exists)              │
                                     │                                          │
                                     └──────────────────────┬───────────────────┘
                                                             ▼

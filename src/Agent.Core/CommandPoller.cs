@@ -28,8 +28,17 @@ public sealed class CommandPoller : IDisposable
     private readonly OfflineQueue? _offlineQueue;
     /// <summary>compatdata path for a Steam AppID. Host-supplied — Core cannot see Steam's layout.</summary>
     private readonly Func<string, string?>? _prefixForAppId;
+    /// <summary>
+    /// Host-supplied sink for this machine's open conflicts, polled once per tick alongside
+    /// everything else — <c>null</c> on Windows (Phase 7, wiring the tray to this, is separate and
+    /// still open) so a host that never supplies one pays nothing extra: the conflicts fetch below
+    /// is skipped outright rather than run and ignored. The Linux daemon passes its
+    /// <c>ConflictNotifier</c> here (tasks/conflict-resolution-ui/plan.md, Phase 9).
+    /// </summary>
+    private readonly Action<IReadOnlyList<ConflictDto>>? _onConflictsPolled;
     private readonly System.Timers.Timer _timer;
     private int _busy; // 0/1 guard so slow ticks don't overlap
+    private Task _lastTick = Task.CompletedTask;
 
     /// <summary>How often an unmapped game is worth re-scanning for. See UpdatePathCandidatesAsync.</summary>
     private static readonly TimeSpan CandidateScanInterval = TimeSpan.FromMinutes(15);
@@ -46,7 +55,8 @@ public sealed class CommandPoller : IDisposable
         double pollMs = 20000,
         HealthReporter? health = null,
         OfflineQueue? offlineQueue = null,
-        Func<string, string?>? prefixForAppId = null)
+        Func<string, string?>? prefixForAppId = null,
+        Action<IReadOnlyList<ConflictDto>>? onConflictsPolled = null)
     {
         _prefixForAppId = prefixForAppId;
         _config = config;
@@ -58,8 +68,9 @@ public sealed class CommandPoller : IDisposable
         _onGamesChanged = onGamesChanged;
         _health = health;
         _offlineQueue = offlineQueue;
+        _onConflictsPolled = onConflictsPolled;
         _timer = new System.Timers.Timer(pollMs) { AutoReset = true };
-        _timer.Elapsed += (_, _) => _ = TickAsync();
+        _timer.Elapsed += (_, _) => _lastTick = TickAsync();
     }
 
     public void Start() => _timer.Start();
@@ -73,7 +84,13 @@ public sealed class CommandPoller : IDisposable
         {
             await ReconcileGamesAsync();
             await UpdatePathCandidatesAsync();
-            await RunCommandsAsync();
+            // Independent of each other — RunCommandsAsync executes dashboard commands,
+            // CheckConflictsAsync only reads _config.Games and hits its own endpoint — so run them
+            // concurrently rather than paying their two round-trips back to back.
+            if (_onConflictsPolled is not null)
+                await Task.WhenAll(RunCommandsAsync(), CheckConflictsAsync());
+            else
+                await RunCommandsAsync();
         }
         catch (Exception ex)
         {
@@ -386,6 +403,30 @@ public sealed class CommandPoller : IDisposable
             catch (Exception ex) { AgentLogger.LogException("CommandPoller.ReportPath", ex); }
         });
 
+    // ----- conflict notification (Phase 9) -----
+
+    /// <summary>
+    /// Only conflicts this machine is actually a party to — the same "no bystander case" filter
+    /// <c>doctor</c> and <c>savelocker conflicts</c> already apply (Doctor.cs, AgentCli.cs), so all
+    /// three agree on what counts. Wrapped in its own try/catch, separate from the outer tick's:
+    /// a failure here must never stop the other steps a tick already ran, and never surface as
+    /// anything worse than a logged line — this whole path is best-effort by design.
+    /// </summary>
+    private async Task CheckConflictsAsync()
+    {
+        try
+        {
+            var conflicts = (await _api().GetOpenConflictsAsync())
+                .Where(c => c.MachineId == _config.MachineId)
+                .ToList();
+            _onConflictsPolled!(conflicts);
+        }
+        catch (Exception ex)
+        {
+            AgentLogger.LogException("CommandPoller.CheckConflicts", ex);
+        }
+    }
+
     // ----- command execution -----
 
     private async Task RunCommandsAsync()
@@ -511,4 +552,15 @@ public sealed class CommandPoller : IDisposable
     }
 
     public void Dispose() => _timer.Dispose();
+
+    /// <summary>
+    /// Stops the timer and waits out a tick already in flight, so a caller that disposes objects
+    /// this poller's tick uses (e.g. the host's ConflictNotifier) never races that tick still using
+    /// them after this returns.
+    /// </summary>
+    public async Task StopAsync()
+    {
+        _timer.Stop();
+        await _lastTick;
+    }
 }

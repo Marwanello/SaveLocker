@@ -73,18 +73,23 @@ against the real local API (Playwright screenshot), and `savelocker run` confirm
 on the open conflict and proceed normally once resolved. Full write-up: `CONTEXT.md`/`Backlog.md`,
 2026-08-31.
 
-**Group 3 — small, code-only here, live verification later. Requires Group 2 to have shipped first.**
-`Phase 9`'s actual D-Bus notification implementation. Its real dependencies (per `plan.md`'s own
-dependency diagram) are Phase 5 (done, Group 1) and Phase 6 (Group 2's `agent-ui` conflicts page — the
-action button's target) — nothing else. Buildable and unit-testable here the same way Phase 5 was: the
-`gdbus … org.freedesktop.Notifications.Notify` call, the once-per-conflict `HashSet<Guid>` dedup so the
-20s command-poller doesn't re-fire it every tick, and wiring the action button at Phase 6's page URL,
-all exercisable against a fake/absent D-Bus socket using the same harness pattern `run-linux-tests.sh`
-already established for Phase 5. What can't be checked here is whether a real notification daemon
-actually pops the banner and the button opens the right page — that needs a live Deck Desktop Mode
-session or a plain desktop Linux box, the same class of hardware-only gap Phase 8 has below. See
-"Correction found before Group 3" below for why this is its own group instead of folded into Decky
-work.
+**Group 3 — small, code-only here, live verification later. Requires Group 2 to have shipped first.
+Done 2026-09-01.** `Phase 9`'s actual D-Bus notification implementation. Its real dependencies (per
+`plan.md`'s own dependency diagram) are Phase 5 (done, Group 1) and Phase 6 (Group 2's `agent-ui`
+conflicts page — the action button's target) — nothing else. Buildable and unit-testable here the same
+way Phase 5 was: the `gdbus … org.freedesktop.Notifications.Notify` call, the once-per-conflict
+`HashSet<Guid>` dedup so the 20s command-poller doesn't re-fire it every tick, and wiring the action
+button at Phase 6's page URL, all exercisable against a fake/absent D-Bus socket using the same harness
+pattern `run-linux-tests.sh` already established for Phase 5. What can't be checked here is whether a
+real notification daemon actually pops the banner and the button opens the right page — that needs a
+live Deck Desktop Mode session or a plain desktop Linux box, the same class of hardware-only gap
+Phase 8 has below. See "Correction found before Group 3" below for why this is its own group instead of
+folded into Decky work.
+<br>**Shipped as:** `CommandPoller`'s new optional `onConflictsPolled` hook (null on Windows — Phase 7
+still owns wiring the tray) and `src/Agent.Linux/ConflictNotifier.cs`. Full detail, the GVariant
+string-escaping bug caught before shipping, and the before/after `git stash` comparison proving the
+pre-existing 7-failure Decky-plugin-update flake (`Backlog.md`, Phase 5) is unrelated: `CONTEXT.md` and
+`Backlog.md`, 2026-09-01. Not yet run against real hardware — same as every phase below.
 
 ### Correction found before Group 3: Phase 9 was miscategorized, not deferred for a real reason
 
@@ -117,7 +122,7 @@ a five-minute manual check would have caught).
 ```
 Done 2026-08-30       →  Group 1 (5, 9-spike)                  tiny, fully verifiable here
 Done 2026-08-31       →  Group 2 (4, 6)                        medium, biggest value, fully verifiable here
-Following session    →  Group 3 (9-impl)                       small, code-only here, needs Group 2 first
+Done 2026-09-01       →  Group 3 (9-impl)                      small, code-only here, needed Group 2 first
 Following session    →  Group 4 (8)                           medium, code-only here
 Windows machine       →  Group 5 (7, 14)
 Deck + Windows        →  Group 6 (10, 11, 13)
