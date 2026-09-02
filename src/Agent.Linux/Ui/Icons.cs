@@ -198,16 +198,22 @@ static class Icons
     };
 
     /// <summary>
-    /// lucide's cloud is one rounded blob path; approximated here as a scalloped straight-line
-    /// polygon (three bumps over a flat base), the same curve-to-polyline tradeoff <see cref="Folder"/>
-    /// and <see cref="Shield"/> already make for their own rounded outlines. Used for "the cloud" side
-    /// of a conflict (Ui/UiApp.cs) so it reads the same as the React surfaces' lucide Cloud icon.
+    /// lucide's cloud (<c>M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z</c>) is two circular
+    /// arcs — a big radius-7 lobe on the left/top and a small radius-4.5 lobe on the right — joined by
+    /// a flat top strip and a flat bottom edge. The two prior attempts here (hand-guessed bumps) both
+    /// produced a lopsided, dented outline, most visible as a concave notch on the right side, because
+    /// they were drawn from eyeballing rather than the path's actual geometry. These points are
+    /// sampled directly off the two SVG arcs (solved for their centres and sweep by hand), so the
+    /// outline is a faithful straight-line approximation rather than a guess — same curve-to-polyline
+    /// tradeoff <see cref="Folder"/> and <see cref="Shield"/> already make for their own rounded
+    /// outlines. Used for "the cloud" side of a conflict (Ui/UiApp.cs) so it reads the same as the
+    /// React surfaces' lucide Cloud icon.
     /// </summary>
     public static readonly Glyph Cloud = (dl, p, s, c, w) =>
         Poly(dl, p, s, c, w, true,
-            5, 19, 4, 17.6f, 4.1f, 15.8f, 5.3f, 14.3f, 7, 13.9f,
-            7.6f, 11.9f, 9.6f, 10.2f, 12, 9.7f, 14.3f, 10.4f, 15.6f, 12.1f,
-            17.3f, 12.1f, 18.9f, 13.3f, 19.4f, 15f, 18.7f, 16.8f, 19f, 19f);
+            9, 19, 5.33f, 17.96f, 2.74f, 15.14f, 2.03f, 11.39f, 3.39f, 7.82f,
+            6.41f, 5.5f, 10.22f, 5.11f, 13.65f, 6.77f, 15.71f, 9.99f, 17.5f, 10,
+            20.68f, 11.32f, 22, 14.5f, 20.68f, 17.68f, 17.5f, 19);
 
     /// <summary>
     /// Matches lucide's git-branch exactly (two nodes plus one connecting quarter-arc), reused for

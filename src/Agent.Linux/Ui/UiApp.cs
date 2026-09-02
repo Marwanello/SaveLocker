@@ -1857,9 +1857,13 @@ sealed class UiApp
         ImGui.PushID(id);
         Widgets.BeginCard("side", new Vector2(width, 0), Theme.BgTableHd, Theme.Border);
 
+        // No AlignTextToFramePadding here: the icon's Dummy is exactly one text line tall (see
+        // Icons.Draw's size argument below), so it is already level with the label without it. That
+        // call is for lining plain text up against a *taller*, frame-padded sibling (see Toggle/
+        // HintLabel) - adding it here when nothing on the line is taller just pushes the label down
+        // by FramePadding.y for no reason, which is what put the icon and label visibly out of line.
         Icons.Draw(icon, ImGui.GetTextLineHeight(), Theme.TextMuted);
         ImGui.SameLine(0, Theme.Space.Sm);
-        ImGui.AlignTextToFramePadding();
         Widgets.Text(label, Theme.TextPrimary, Theme.BodyStrong);
         if (isNewer)
         {
