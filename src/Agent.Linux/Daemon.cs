@@ -42,14 +42,18 @@ public sealed class Daemon : IAsyncDisposable
     // the CommandPoller tick below. Its own dedup is in-memory and per-process, same lifetime as
     // everything else here — a restart re-notifies for whatever is still open, which is correct.
     private readonly ConflictNotifier _conflictNotifier;
+    private readonly double? _pollMs;
 
     /// <summary>
     /// <paramref name="apiPort"/> is overridable so a test harness can run a daemon alongside the
     /// real agent. It is still loopback-only — the port moves, the exposure does not.
+    /// <paramref name="pollMs"/> likewise exists for a test harness: null keeps CommandPoller's own
+    /// default (the real 20s tick), so nothing in normal operation is affected.
     /// </summary>
-    public Daemon(AgentConfig config, int apiPort = DefaultApiPort)
+    public Daemon(AgentConfig config, int apiPort = DefaultApiPort, double? pollMs = null)
     {
         _apiPort = apiPort;
+        _pollMs = pollMs;
         _config = config;
         _offlineQueue = OfflineQueue.For(config);
         _health = HealthReporter.For(config);
@@ -57,7 +61,7 @@ public sealed class Daemon : IAsyncDisposable
         _scanner = new LinuxGameScanner(_detection);
         _activityStore = SyncActivityStore.For(config);
         _activity = new SyncActivityTracker(_activityStore.Write);
-        _conflictNotifier = new ConflictNotifier(() => $"http://127.0.0.1:{_apiPort}/#conflicts");
+        _conflictNotifier = new ConflictNotifier($"http://127.0.0.1:{_apiPort}/#conflicts");
         _engine = BuildEngine();
     }
 
@@ -176,6 +180,7 @@ public sealed class Daemon : IAsyncDisposable
             _scanner,
             Notify,
             onGamesChanged: StartFolderWatchers,
+            pollMs: _pollMs ?? 20000,
             health: _health,
             offlineQueue: _offlineQueue,
             // Lets a templated save path expand inside the game's own Proton prefix. Core has no
@@ -362,6 +367,10 @@ public sealed class Daemon : IAsyncDisposable
         foreach (var w in _folderWatchers) w.Dispose();
         _updateTimer?.Dispose();
         _updateChecker?.Dispose();
+        // Waits out a tick already in flight before anything it might still be using (in particular
+        // _conflictNotifier, below) gets torn down — otherwise a tick that already started a
+        // notify-send but hasn't recorded it yet can outlive ConflictNotifier.Dispose()'s snapshot.
+        if (_commandPoller is not null) await _commandPoller.StopAsync();
         _commandPoller?.Dispose();
         _drainer?.Dispose();
         _apiServer?.Dispose();

@@ -43,7 +43,7 @@ public sealed class ConflictNotifier : IDisposable
     /// <summary>The action's key, which <c>notify-send --wait</c> prints on stdout when clicked.</summary>
     private const string ActionKey = "view";
 
-    private readonly Func<string> _conflictsUrl;
+    private readonly string _conflictsUrl;
     private readonly object _lock = new();
 
     /// <summary>
@@ -62,7 +62,7 @@ public sealed class ConflictNotifier : IDisposable
     /// </summary>
     private readonly Dictionary<Guid, Process> _live = new();
 
-    public ConflictNotifier(Func<string> conflictsUrl) => _conflictsUrl = conflictsUrl;
+    public ConflictNotifier(string conflictsUrl) => _conflictsUrl = conflictsUrl;
 
     /// <summary>
     /// Called once per <see cref="CommandPoller"/> tick with the open conflicts this machine is a
@@ -86,7 +86,7 @@ public sealed class ConflictNotifier : IDisposable
                 _live.Remove(id);
             }
             foreach (var c in openConflicts)
-                if (_notified.Add(c.Id)) newlyOpen.Add(c);
+                if (!_notified.Contains(c.Id)) newlyOpen.Add(c);
         }
 
         foreach (var proc in resolved) Withdraw(proc);
@@ -140,7 +140,7 @@ public sealed class ConflictNotifier : IDisposable
         }
         catch (Exception ex)
         {
-            AgentLogger.Log($"conflict notification: could not start notify-send for '{gameName}' — {ex.Message}");
+            AgentLogger.LogException($"ConflictNotifier.Notify '{gameName}'", ex);
             return;
         }
 
@@ -148,6 +148,16 @@ public sealed class ConflictNotifier : IDisposable
         {
             AgentLogger.Log($"conflict notification: notify-send did not start for '{gameName}'.");
             return;
+        }
+
+        // Recorded as notified — and live — only now that the process has actually started: marking
+        // it earlier would permanently skip a conflict whose first notify-send attempt failed to
+        // launch. Committed together, before EnableRaisingEvents is set below, so a fast-exiting
+        // process can never find _live still missing its own entry when Exited fires.
+        lock (_lock)
+        {
+            _notified.Add(conflict.Id);
+            _live[conflict.Id] = proc;
         }
 
         proc.EnableRaisingEvents = true;
@@ -158,7 +168,6 @@ public sealed class ConflictNotifier : IDisposable
         proc.Exited += (_, _) => Forget(conflict.Id, proc);
         proc.BeginOutputReadLine();
 
-        lock (_lock) _live[conflict.Id] = proc;
         AgentLogger.Log($"conflict notification: sent for '{gameName}'.");
     }
 
@@ -166,19 +175,25 @@ public sealed class ConflictNotifier : IDisposable
     /// conflict (there should never be one, but identity is cheaper to check than to reason about).</summary>
     private void Forget(Guid conflictId, Process proc)
     {
+        // Killing (Withdraw) and a process exiting on its own (this handler) can race for the same
+        // Process object from two threads — sharing _lock with Withdraw serializes Kill/Dispose
+        // against each other instead of leaving them to run concurrently and unguarded.
         lock (_lock)
         {
             if (_live.TryGetValue(conflictId, out var held) && ReferenceEquals(held, proc))
                 _live.Remove(conflictId);
+            try { proc.Dispose(); } catch { /* already gone */ }
         }
-        try { proc.Dispose(); } catch { /* already gone */ }
     }
 
     /// <summary>Take a stale popup off the screen by dropping the connection that owns it.</summary>
-    private static void Withdraw(Process proc)
+    private void Withdraw(Process proc)
     {
-        try { if (!proc.HasExited) proc.Kill(); } catch { /* exited on its own; fine */ }
-        try { proc.Dispose(); } catch { /* already disposed by Exited */ }
+        lock (_lock)
+        {
+            try { if (!proc.HasExited) proc.Kill(); } catch { /* exited on its own; fine */ }
+            try { proc.Dispose(); } catch { /* already disposed by Exited */ }
+        }
     }
 
     /// <summary>
@@ -192,7 +207,7 @@ public sealed class ConflictNotifier : IDisposable
         try
         {
             var psi = new ProcessStartInfo("xdg-open") { UseShellExecute = false };
-            psi.ArgumentList.Add(_conflictsUrl());
+            psi.ArgumentList.Add(_conflictsUrl);
             Process.Start(psi);
         }
         catch (Exception ex)

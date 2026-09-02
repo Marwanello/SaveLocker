@@ -38,6 +38,7 @@ public sealed class CommandPoller : IDisposable
     private readonly Action<IReadOnlyList<ConflictDto>>? _onConflictsPolled;
     private readonly System.Timers.Timer _timer;
     private int _busy; // 0/1 guard so slow ticks don't overlap
+    private Task _lastTick = Task.CompletedTask;
 
     /// <summary>How often an unmapped game is worth re-scanning for. See UpdatePathCandidatesAsync.</summary>
     private static readonly TimeSpan CandidateScanInterval = TimeSpan.FromMinutes(15);
@@ -69,7 +70,7 @@ public sealed class CommandPoller : IDisposable
         _offlineQueue = offlineQueue;
         _onConflictsPolled = onConflictsPolled;
         _timer = new System.Timers.Timer(pollMs) { AutoReset = true };
-        _timer.Elapsed += (_, _) => _ = TickAsync();
+        _timer.Elapsed += (_, _) => _lastTick = TickAsync();
     }
 
     public void Start() => _timer.Start();
@@ -83,8 +84,13 @@ public sealed class CommandPoller : IDisposable
         {
             await ReconcileGamesAsync();
             await UpdatePathCandidatesAsync();
-            await RunCommandsAsync();
-            if (_onConflictsPolled is not null) await CheckConflictsAsync();
+            // Independent of each other — RunCommandsAsync executes dashboard commands,
+            // CheckConflictsAsync only reads _config.Games and hits its own endpoint — so run them
+            // concurrently rather than paying their two round-trips back to back.
+            if (_onConflictsPolled is not null)
+                await Task.WhenAll(RunCommandsAsync(), CheckConflictsAsync());
+            else
+                await RunCommandsAsync();
         }
         catch (Exception ex)
         {
@@ -546,4 +552,15 @@ public sealed class CommandPoller : IDisposable
     }
 
     public void Dispose() => _timer.Dispose();
+
+    /// <summary>
+    /// Stops the timer and waits out a tick already in flight, so a caller that disposes objects
+    /// this poller's tick uses (e.g. the host's ConflictNotifier) never races that tick still using
+    /// them after this returns.
+    /// </summary>
+    public async Task StopAsync()
+    {
+        _timer.Stop();
+        await _lastTick;
+    }
 }
