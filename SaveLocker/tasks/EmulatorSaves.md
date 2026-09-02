@@ -138,6 +138,21 @@ Wire `CandidateDto` (`src/Agent.Core/AgentApiServer.cs`) gains `EmulatorName`/`E
 
 ## Execution order (one phase per session)
 
+Phases are grouped into five implementation groups. Each group is a coherent, independently
+verifiable chunk — finish a group's phase(s), commit, before starting the next group.
+
+| Group | Phases | Theme |
+|-------|--------|-------|
+| **A — Foundation** | 1 | `SaveArchive` include-glob primitive + RetroArch, both OSes |
+| **B — Memory-card safety** | 2 | PCSX2/Dolphin/DuckStation + the shared-card `SaveDirSanity` warning |
+| **C — Name enrichment** | 3 | `gamelist.xml` real-title lookup |
+| **D — Extended emulators** | 4, 5, 6 | PrimeHack, RPCS3/Xenia, Switch (Eden) — each reuses Group A/B/C |
+| **E — UI** | 7 | Emulator filter row, both frontends |
+
+---
+
+### Group A — Foundation
+
 ### Phase 1 — `SaveArchive` include-glob support, then RetroArch (both OSes), save files only
 
 The anchor phase: RetroArch has a real per-ROM library (its own `playlists/*.lpl` JSON files, one
@@ -182,6 +197,8 @@ Phase 2. It's also the default frontend for most of what EmuDeck actually runs.
   own fixture tests) for the parser and dedupe logic.
 - Real hardware pass against an actual EmuDeck (Deck) and EmuDeck-for-Windows install.
 
+### Group B — Memory-card safety
+
 ### Phase 2 — PCSX2 / Dolphin / DuckStation + the shared-memory-card `SaveDirSanity` warning
 
 This is where the real data-safety risk in the whole task lives, so it comes right after the
@@ -220,6 +237,8 @@ anchor phase, before anything else builds on top of unproven scaffolding.
 `SaveDirSanity` check against synthetic shared-file and per-game-folder layouts; real-hardware pass
 on whichever emulator(s) are actually available.
 
+### Group C — Name enrichment
+
 ### Phase 3 — `gamelist.xml` name enrichment (EmulationStation / EmuDeck's frontend)
 
 Pure name-quality improvement on top of already-working Phase 1–2 detection — real titles instead of
@@ -232,6 +251,8 @@ already have real names from playlists).
 3. Files: new `src/Agent.Core/GamelistXml.cs`.
 
 **Verify:** fixture `gamelist.xml` samples; name-match test against Phase 2's filename-derived names.
+
+### Group D — Extended emulators
 
 ### Phase 4 — PrimeHack (reuses Phase 2's Dolphin reader against a second config root)
 
@@ -314,6 +335,8 @@ touching the scanner's shape.
 
 **Verify:** fixture tests only after a real Eden install's layout has been captured — this phase
 should not proceed past that capture step on assumption alone.
+
+### Group E — UI
 
 ### Phase 7 — UI: Emulator filter + Game Mode mirror
 
