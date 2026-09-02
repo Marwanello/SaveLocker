@@ -1293,3 +1293,125 @@ one notification per restart if the daemon ever crash-loops.
 ### Not done
 
 - Finding #10 (dedup-set unification) left as an open question to the user — not yet answered.
+
+---
+
+## 2026-09-03 — Phase 8 (Game Mode Conflicts screen) shipped, verified live under WSLg; Cloud icon fixed on user feedback
+
+**Branch:** `claude/save-conflict-next-group-ebc9b1`.
+
+### Request sequence
+
+1. Session opened after a usage-limit reset with "continue from where you left off," carrying no
+   uncommitted work — the actual task was derived by following `CLAUDE.md`'s mandatory session-start
+   read (`CONTEXT.md`, `REPO_MAP.md`) plus `tasks/conflict-resolution-ui/implementation-grouping.md`:
+   **Group 4 / Phase 8**, the native Linux Game Mode conflict screen — "the direct, literal answer to
+   'a conflict popup like the Decky one, but in the native Linux/Wayland UI, with no Decky installed.'"
+   The grouping doc scoped this as code-only, verification deferred to "a WSLg or real-Deck pass."
+2. After screenshots of the finished feature were sent, the user replied: **"the icons here looks off
+   / please fix them"** — pointing at the hand-drawn `Cloud` icon, which rendered as an unrecognizable
+   double-blob shape rather than a cloud.
+
+### What was found
+
+This session runs on the maintainer's actual Windows dev box with a working WSL `Ubuntu` distro (a
+native `~/.dotnet/dotnet`, a real WSLg display) — the exact capability
+`implementation-grouping.md` had assumed this environment lacked for Group 4. That let the whole
+feature be verified live with real screenshots rather than left as a code-only, build-checked deferral.
+
+### What was built (Phase 8)
+
+- `src/Agent.Linux/Ui/UiApp.cs`: new `Screen.Conflicts` screen, reusing the same in-process
+  `ApiClient` pattern `AgentCli.cs` already uses and the same fire-and-forget-`Task`-field draining
+  convention as `_scanTask`/`_enrollTask`/`_syncNowTask` (`_conflictsTask`, `_versionTasks`,
+  `_versionStatsTasks`, `_resolveTask`, all mutated only on the render thread). `PollConflictState()`
+  runs once per frame; `DrawConflicts()`/`DrawConflictCard()`/`DrawConflictSide()` render a card per
+  open conflict with per-side stats (file count / newest-mtime, reusing the existing
+  `VersionStatsDto` endpoint) and Keep-local / Keep-cloud buttons, visually and interactionally
+  matching the already-shipped React `ConflictCard`/`ConflictsView`. A `"Conflicts (N)"` badge entry
+  was added to the rail, and `DrawStatus()`'s tracked-games loop gained a conflict-priority badge.
+- `src/Agent.Linux/Ui/Icons.cs`: added `Cloud` and `GitBranch` glyphs (`GitBranch` correct on the
+  first pass, matching lucide's git-branch exactly).
+- `src/Agent.Linux/Ui/Theme.cs`: added `AccentRed`, matching the dashboard/agent-ui conflict card's
+  escalated-border red, reserved for the overdue line only.
+- A real, previously-latent bug fixed in the `--screenshot` dev tool: the `busy` gate in `OnRender`
+  didn't wait on `_resolveTask`, so a scripted `--nav` press of a Keep button could have its in-flight
+  `ResolveConflictAsync` HTTP call killed by `Environment.Exit` before it reached the server. Fixed by
+  adding `_resolveTask is { IsCompleted: false }` to the gate — deliberately *not* adding the ambient
+  `_conflictsTask`/version-fetch polls, which would slow every screenshot in the app for no reason.
+
+### The Cloud icon bug (user-caught), and a second miss on the first fix
+
+The first `Cloud` glyph was two `PathArcTo` arc bumps plus a `PathLineTo` base — it rendered as an
+unrecognizable "double speech-bubble blob" at every size, confirmed by the user's screenshots and by
+adding it to `Gallery.cs`'s icon strip and screenshotting `--gallery` at multiple sizes. The first
+replacement (a hand-guessed 15-point closed polygon) was a real improvement but still eyeballed, not
+derived — the user caught it a second time ("the cloud icon still looks wierd on the right side"),
+pointing at a visible concave dent on the right lobe where the hand-picked points bent inward instead
+of bulging out.
+
+**The actual fix** solved lucide's real `cloud` SVG path
+(`M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z`) by hand, rather than guessing points from
+looking at the rendered shape: applied the SVG elliptical-arc-to-center formula to both arcs (a
+radius-7 lobe centred at (9,12) sweeping 253° for the main body, a radius-4.5 lobe centred at
+(17.5,14.5) sweeping a clean 180° for the right bump), then sampled each arc at even parametric steps
+to build a 13-point closed polygon that traces the *actual* curve instead of an approximation of it.
+This is the same curve-to-polyline tradeoff `Folder`/`Shield` already make, just derived exactly
+instead of by eye — worth remembering as the right approach for any future hand-drawn icon that keeps
+missing on look-and-adjust alone. Verified via an 8×-upscaled crop of the gallery screenshot (a smooth,
+undented cloud silhouette) and in both real product screens.
+
+**A second, unrelated bug** in the same feedback: "the alignment of the this device icon and cloud
+icon in conflict screen is off from the text." Root cause was in `DrawConflictSide` (`UiApp.cs`), not
+the icon geometry: `ImGui.AlignTextToFramePadding()` was called before the label text even though the
+preceding icon `Dummy` is exactly one text-line tall — that call exists to align plain text against a
+*taller*, frame-padded sibling on the same line (see `Toggle`/`HintLabel`, where the preceding widget
+genuinely is taller), and calling it here just pushed the label down by `FramePadding.y` for no reason,
+visibly separating it from the icon. Fixed by removing the stray call; confirmed pixel-level in a
+zoomed crop of a real conflict card that the icon and label now share a baseline.
+
+`Gallery.cs` was trimmed back afterward to just the two new icon-strip entries, matching the file's
+existing minimal-ramp convention (no leftover debug code from either diagnosis pass).
+
+### Side quest: `agent-ui` build breakage from mixed WSL/Windows npm
+
+`dotnet build SaveLocker.sln` failed twice with `'tsc' is not recognized` — both times because running
+WSL's native npm (via `tests/seed-test-conflict.sh`) against `agent-ui/` on the shared `/mnt/d/...`
+Windows path had reinstalled `node_modules` with Linux-native optional bindings, which break the
+Windows-side `tsc` binary shim. A first `rm -rf node_modules package-lock.json && npm install` fixed
+the build but rewrote `package-lock.json` with a 640-line unwanted diff; corrected via
+`git checkout -- agent-ui/package-lock.json` followed by `rm -rf node_modules && npm ci` (respects the
+existing lockfile exactly, no diff). This is a distinct gotcha from the vault's existing "no
+`node_modules` at all in a fresh worktree" note — worth remembering as its own case.
+
+### Verification
+
+- Full Phase 8 flow exercised live under WSLg against a genuinely seeded two-machine conflict on a
+  real scratch server: `--gallery` and in-context screenshots (`conflicts.png`, `conflicts-empty.png`,
+  `status.png`), plus a scripted `--nav` resolve confirmed via an independent CLI check that the
+  conflict was actually closed server-side.
+- The arc-derived Cloud geometry and the alignment fix were each re-verified the same way, live: an
+  8×-upscaled crop of the `--gallery` icon strip for the shape, and an upscaled crop of a real,
+  freshly-seeded conflict card's "This device"/"The cloud" rows for the baseline alignment.
+- `dotnet build` clean (Windows `Agent.Linux` project, full `SaveLocker.sln`, and the linux-x64 UI
+  binary) — 0 errors on every build, including after the second reseed re-triggered the WSL/Windows
+  `node_modules` gotcha a second time (same fix: revert `package-lock.json`, `npm ci` from Windows).
+- `git status --short` clean; `agent-ui/package-lock.json` confirmed unchanged from `main` both times.
+
+### Commits
+
+- `9af2a0c` Phase 8 code (Game Mode Conflicts screen)
+- `d13a954` Phase 8 docs (`CONTEXT.md`, `Backlog.md`, `implementation-grouping.md` marked done)
+- `141d747` Fix the Cloud icon on the Game Mode conflicts screen (superseded by the arc-derived fix
+  above, not yet committed as of this write-up)
+- `ee7cb3d` Docs: correct the Cloud icon write-up after the maintainer's fix
+
+### Not done
+
+- Group 5 (Phase 7 Windows tray wiring + Phase 14 webhook/block-launch opt-in), the next item in
+  `implementation-grouping.md`, was only mentioned as available future work — not started, not
+  requested.
+- A `--nav`-script timing quirk was found (a 2-step nav script can miss the Keep button because early
+  frames land focus before the async version/stats fetch completes) and deliberately left unfixed —
+  it's a scripted-test artifact far inside normal human reaction time, not a functional bug affecting
+  real gamepad use.
