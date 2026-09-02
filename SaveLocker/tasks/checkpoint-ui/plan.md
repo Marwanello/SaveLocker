@@ -5,11 +5,15 @@ The agreed visual direction for the console, the agent window and the Deck UI. T
 [[implementation-grouping]] is the session-by-session execution order on top of it. Start at
 [[README]] if you're new to this folder.
 
-Interactive prototype: <https://claude.ai/code/artifact/b8f247f2-32e5-4808-8e4c-61ba0cc3406f>
-(Console / Agent / Deck-Wayland / Notifications / Marks & art / Flows, light + dark, five accents.)
+Interactive prototype: `prototype.html`, beside this file (also mirrored at
+<https://claude.ai/code/artifact/b8f247f2-32e5-4808-8e4c-61ba0cc3406f>). Console / Agent /
+Deck-Wayland / Notifications / Marks & art / Flows, light + dark, five accents. Open it directly in
+a browser — no build step.
 
-Brand kit: <https://claude.ai/code/artifact/b3e0c8a5-70a0-47bf-b4f2-d0dbf4f0b2d5> — also committed
-beside this file as `brand-kit.html`, so it survives without the link.
+Five identity pitches this direction was chosen from: `identity-options.html`, beside this file.
+
+Brand kit: `brand-kit.html`, beside this file (also mirrored at
+<https://claude.ai/code/artifact/b3e0c8a5-70a0-47bf-b4f2-d0dbf4f0b2d5>).
 
 ## The idea in one line
 
