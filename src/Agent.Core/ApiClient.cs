@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Net.Security;
 using System.Text.Json;
 using SaveLocker.Shared;
+using System.Linq;
 
 namespace SaveLocker.Agent;
 
@@ -415,6 +416,14 @@ public sealed class ApiClient
     /// <summary>Every open conflict the server currently holds, newest-active first.</summary>
     public async Task<List<ConflictDto>> GetOpenConflictsAsync(CancellationToken ct = default) =>
         await _http.GetFromJsonAsync<List<ConflictDto>>("/api/agent/conflicts", ct) ?? new();
+
+    /// <summary>Open conflicts this machine is actually a party to — a genuine "my local save vs.
+    /// the cloud" divergence, not another machine's. There is no bystander case (tasks/conflict-
+    /// resolution-ui/plan.md decision 2). Callers that already hand-filtered <see
+    /// cref="GetOpenConflictsAsync"/>'s result the same way should call this instead.</summary>
+    public async Task<List<ConflictDto>> GetOpenConflictsForMachineAsync(
+        Guid? machineId, CancellationToken ct = default) =>
+        (await GetOpenConflictsAsync(ct)).Where(c => c.MachineId == machineId).ToList();
 
     /// <summary>One conflict by id, or null if the server does not know it (a stale reference, or a
     /// server too old to have this route).</summary>

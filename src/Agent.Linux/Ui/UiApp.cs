@@ -61,8 +61,11 @@ sealed class UiApp
     // stateless, mechanical server call AgentCli.cs's `conflicts`/`resolve-conflict` commands already
     // make — so this talks to the remote server directly through Agent.Core's own ApiClient,
     // in-process, rather than adding a second HTTP hop through the daemon's local API.
-    private ApiClient? _api;
-    private ApiClient Api() => _api ??= ApiClient.For(_config);
+    //
+    // Built fresh per call, not cached: every other ApiClient.For(_config) call site (AgentCli.cs's
+    // Api(), AgentApiServer.cs's route handlers) does the same, so a config identity change made
+    // elsewhere in the process is always picked up on the next call.
+    private ApiClient Api() => ApiClient.For(_config);
 
     // Polled on a timer, not per frame: unlike the lease-warning/activity files this is a real
     // network round trip. Filtered to conflicts THIS machine is a party to — same "no bystander
@@ -71,19 +74,29 @@ sealed class UiApp
     private Task<List<ConflictDto>>? _conflictsTask;
     private long _conflictsReadAt;
     private const long ConflictsPollMs = 12000;
+    private string? _conflictsError;
 
     // A conflict only carries version ids; both sides' machine/timestamp/size and file-count are
     // fetched lazily and cached forever (an archive's stats never change once uploaded), mirroring
     // agent-ui's useConflictVersions.ts. Every field write happens on the render thread, in
     // PollConflictState — never inside the async continuation itself — the same discipline
     // _scanTask/_enrollTask already follow, so there is no cross-thread field mutation here.
+    // All five caches below are pruned in PollConflictState whenever a conflict or version they
+    // reference is no longer open, regardless of which surface (this screen, the CLI, or the
+    // dashboard) actually resolved it — otherwise they would grow for the life of the process.
     private readonly Dictionary<Guid, SaveVersionDto> _versions = new();
     private readonly Dictionary<Guid, VersionStatsDto> _versionStats = new();
     private readonly Dictionary<Guid, Task<SaveVersionDto?>> _versionTasks = new();
     private readonly Dictionary<Guid, Task<VersionStatsDto?>> _versionStatsTasks = new();
+    // A failed/missing fetch is retried on a cooldown, not every frame — set whenever a version or
+    // stats task completes without a result (404, or any other failure).
+    private readonly Dictionary<Guid, long> _versionRetryAt = new();
+    private const long VersionRetryCooldownMs = 10000;
 
     private readonly Dictionary<Guid, bool> _conflictKeepBoth = new();
     private Guid? _resolvingConflictId;
+    private ConflictDto? _resolvingConflict;
+    private Guid? _resolvingWinningVersionId;
     private Task<(bool ok, string? error)>? _resolveTask;
     private string? _resolveError;
 
@@ -818,7 +831,8 @@ sealed class UiApp
                 _focusRailOnce = false;
                 ImGui.SetKeyboardFocusHere();
             }
-            if (Widgets.RailItem(label, icon, active)) Go(target);
+            if (Widgets.RailItem(label, icon, active, id: target == Screen.Conflicts ? "Conflicts" : label))
+                Go(target);
             if (active) _activeRailId = Widgets.LastRailItemId;
         }
 
@@ -1029,11 +1043,16 @@ sealed class UiApp
                         // chip states table in tasks/conflict-resolution-ui/reference/03-platform-
                         // ux-flows.md). Reachable here without ever attempting a launch first.
                         var conflicted = _openConflicts.Any(c => c.GameId == g.GameId);
+                        // Conflict outranks the message/icon, but a game can be both conflicted AND
+                        // missing a folder (e.g. untracked then re-adopted while its conflict stayed
+                        // open) — the trailing badge names both so the folder problem stays visible
+                        // instead of disappearing behind the conflict.
                         var pressed = Widgets.ListRow($"g{g.Name}", g.Name,
                             conflicted ? "Save conflict - pick which one to keep"
                                 : missing ? "No save folder set" : g.SaveDirectory,
                             conflicted || missing ? Icons.AlertTriangle : Icons.Folder,
-                            trailing: conflicted ? "conflict" : missing ? "needs setup" : null,
+                            trailing: conflicted && missing ? "conflict + needs setup"
+                                : conflicted ? "conflict" : missing ? "needs setup" : null,
                             trailingColour: (conflicted || missing) ? Theme.AccentAmber : null,
                             chevron: conflicted);
                         if (pressed && conflicted) Go(Screen.Conflicts);
@@ -1663,33 +1682,23 @@ sealed class UiApp
         if (_conflictsTask is { IsCompletedSuccessfully: true } done)
         {
             _openConflicts = done.Result;
+            PruneClosedConflictState(_openConflicts);
             _conflictsTask = null;
         }
-        else if (_conflictsTask is { IsFaulted: true })
+        else if (_conflictsTask is { IsCompleted: true } incomplete)
         {
+            // Covers both Faulted and Canceled — an unhandled OperationCanceledException (e.g. from
+            // ServerHttp's HttpClient hitting its own default 100s timeout on an unresponsive
+            // self-hosted server) completes the task as Canceled, not Faulted, and previously fell
+            // through both branches here, leaving _conflictsTask non-null forever and freezing every
+            // future poll (the `is null` guard above never passes again).
+            _conflictsError = incomplete.Exception?.GetBaseException().Message
+                ?? "Could not check for conflicts.";
             _conflictsTask = null;   // best-effort — retried on the next poll
         }
 
-        if (_versionTasks.Count > 0)
-        {
-            foreach (var id in _versionTasks.Keys.ToArray())
-            {
-                var t = _versionTasks[id];
-                if (!t.IsCompleted) continue;
-                if (t.IsCompletedSuccessfully && t.Result is { } v) _versions[id] = v;
-                _versionTasks.Remove(id);   // failure retries next time the card asks for it
-            }
-        }
-        if (_versionStatsTasks.Count > 0)
-        {
-            foreach (var id in _versionStatsTasks.Keys.ToArray())
-            {
-                var t = _versionStatsTasks[id];
-                if (!t.IsCompleted) continue;
-                if (t.IsCompletedSuccessfully && t.Result is { } stats) _versionStats[id] = stats;
-                _versionStatsTasks.Remove(id);
-            }
-        }
+        DrainVersionTasks(_versionTasks, _versions);
+        DrainVersionTasks(_versionStatsTasks, _versionStats);
 
         if (_resolveTask is { IsCompleted: true } resolved)
         {
@@ -1699,6 +1708,21 @@ sealed class UiApp
                 if (ok)
                 {
                     _conflictKeepBoth.Remove(_resolvingConflictId!.Value);
+                    // Keeping local makes this machine the winner, which excludes it from the
+                    // server's post-resolve pull fan-out (SyncService.ResolveConflictAsync) on the
+                    // assumption it already advanced its own parent pointer — mirrors AgentCli.cs's
+                    // resolve-conflict --keep local. Without this, the next sync cycle pushes with a
+                    // stale ParentVersionId; it self-heals to NoChange, but wastes a round trip.
+                    if (_resolvingWinningVersionId == _resolvingConflict!.VersionBId)
+                    {
+                        var game = _config.Games.FirstOrDefault(g => g.GameId == _resolvingConflict.GameId);
+                        if (game is not null)
+                        {
+                            game.LastKnownVersionId = _resolvingWinningVersionId;
+                            game.LastSyncedHash = SaveArchive.HashDirectory(game.SaveDirectory, game.ExcludeGlobs);
+                            _config.SaveGameSyncState(game);
+                        }
+                    }
                     _conflictsReadAt = 0;   // re-poll now so the resolved conflict drops off at once
                 }
                 else _resolveError = error ?? "Could not resolve the conflict.";
@@ -1709,18 +1733,57 @@ sealed class UiApp
             }
             _resolveTask = null;
             _resolvingConflictId = null;
+            _resolvingConflict = null;
+            _resolvingWinningVersionId = null;
         }
     }
 
-    private async Task<List<ConflictDto>> FetchOpenConflictsAsync()
+    /// <summary>Shared drain for the version and stats task dictionaries: cache a successful result,
+    /// otherwise mark the id for a cooldown so <see cref="EnsureVersionLoaded"/> doesn't refire the
+    /// fetch every single frame on a 404 or transient failure.</summary>
+    private void DrainVersionTasks<T>(Dictionary<Guid, Task<T?>> tasks, Dictionary<Guid, T> cache)
+        where T : class
     {
-        var all = await Api().GetOpenConflictsAsync();
-        return all.Where(c => c.MachineId == _config.MachineId).ToList();
+        if (tasks.Count == 0) return;
+        var now = Environment.TickCount64;
+        foreach (var id in tasks.Keys.ToArray())
+        {
+            var t = tasks[id];
+            if (!t.IsCompleted) continue;
+            if (t.IsCompletedSuccessfully && t.Result is { } v) cache[id] = v;
+            else _versionRetryAt[id] = now + VersionRetryCooldownMs;
+            tasks.Remove(id);
+        }
     }
 
-    /// <summary>Fire off a version + stats fetch the first time a conflict card asks for this id.</summary>
+    /// <summary>Drop cached version/stats/retry data for any version no longer referenced by an open
+    /// conflict, and any "keep both" choice for a conflict that is no longer open — otherwise these
+    /// caches grow for the life of the process regardless of which surface (this screen, the CLI, or
+    /// the dashboard) actually resolves the conflict.</summary>
+    private void PruneClosedConflictState(List<ConflictDto> stillOpen)
+    {
+        var liveConflictIds = stillOpen.Select(c => c.Id).ToHashSet();
+        foreach (var id in _conflictKeepBoth.Keys.ToArray())
+            if (!liveConflictIds.Contains(id)) _conflictKeepBoth.Remove(id);
+
+        var liveVersionIds = stillOpen.SelectMany(c => new[] { c.VersionAId, c.VersionBId }).ToHashSet();
+        foreach (var id in _versions.Keys.ToArray())
+            if (!liveVersionIds.Contains(id)) _versions.Remove(id);
+        foreach (var id in _versionStats.Keys.ToArray())
+            if (!liveVersionIds.Contains(id)) _versionStats.Remove(id);
+        foreach (var id in _versionRetryAt.Keys.ToArray())
+            if (!liveVersionIds.Contains(id)) _versionRetryAt.Remove(id);
+    }
+
+    private async Task<List<ConflictDto>> FetchOpenConflictsAsync() =>
+        await Api().GetOpenConflictsForMachineAsync(_config.MachineId);
+
+    /// <summary>Fire off a version + stats fetch the first time a conflict card asks for this id,
+    /// unless it just failed and is still on its retry cooldown.</summary>
     private void EnsureVersionLoaded(Guid versionId)
     {
+        if (_versionRetryAt.TryGetValue(versionId, out var retryAt) && Environment.TickCount64 < retryAt)
+            return;
         if (!_versions.ContainsKey(versionId) && !_versionTasks.ContainsKey(versionId))
             _versionTasks[versionId] = Api().GetVersionAsync(versionId);
         if (!_versionStats.ContainsKey(versionId) && !_versionStatsTasks.ContainsKey(versionId))
@@ -1730,6 +1793,8 @@ sealed class UiApp
     private void ResolveConflict(ConflictDto conflict, Guid winningVersionId)
     {
         _resolvingConflictId = conflict.Id;
+        _resolvingConflict = conflict;
+        _resolvingWinningVersionId = winningVersionId;
         _resolveError = null;
         var keepBoth = _conflictKeepBoth.GetValueOrDefault(conflict.Id);
         _resolveTask = Api().ResolveConflictAsync(conflict.Id, winningVersionId, keepBoth);
@@ -1767,6 +1832,14 @@ sealed class UiApp
             if (Widgets.Banner("resolveerr", "Could not resolve", _resolveError, Theme.AccentAmber,
                     Icons.AlertTriangle, dismissible: true))
                 _resolveError = null;
+            Widgets.Gap(Theme.Space.Md);
+        }
+
+        if (!string.IsNullOrEmpty(_conflictsError))
+        {
+            if (Widgets.Banner("conflictserr", "Could not check for conflicts", _conflictsError,
+                    Theme.AccentAmber, Icons.AlertTriangle, dismissible: true))
+                _conflictsError = null;
             Widgets.Gap(Theme.Space.Md);
         }
 
@@ -1833,12 +1906,12 @@ sealed class UiApp
         var panelWidth = (ImGui.GetContentRegionAvail().X - Theme.Space.Md) / 2f;
 
         DrawConflictSide("local", "This device", Icons.HardDrive, localVersion, localStats, newerIsLocal,
-            "This is the machine you're using right now.", resolving, anyResolving, panelWidth,
+            "This is the machine you're using right now.", anyResolving, panelWidth,
             () => ResolveConflict(c, c.VersionBId));
         ImGui.SameLine(0, Theme.Space.Md);
         DrawConflictSide("cloud", "The cloud", Icons.Cloud, cloudVersion, cloudStats, newerIsCloud,
             cloudVersion is not null ? $"Last updated from \"{cloudVersion.MachineName}\"" : null,
-            resolving, anyResolving, panelWidth, () => ResolveConflict(c, c.VersionAId));
+            anyResolving, panelWidth, () => ResolveConflict(c, c.VersionAId));
 
         Widgets.Gap(Theme.Space.Sm);
         var keepBoth = _conflictKeepBoth.GetValueOrDefault(c.Id);
@@ -1859,7 +1932,7 @@ sealed class UiApp
     /// <summary>One side of a conflict card — machine, "12m ago", size/file count, and its own Keep
     /// button, which resolves immediately on press (see <see cref="DrawConflicts"/>'s doc comment).</summary>
     private void DrawConflictSide(string id, string label, Icons.Glyph icon, SaveVersionDto? version,
-        VersionStatsDto? stats, bool isNewer, string? caption, bool resolving, bool anyResolving,
+        VersionStatsDto? stats, bool isNewer, string? caption, bool anyResolving,
         float width, Action onKeep)
     {
         ImGui.PushID(id);

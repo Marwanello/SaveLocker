@@ -920,13 +920,16 @@ static class Widgets
     /// <summary>Id of the most recently drawn rail entry, so the caller can target it.</summary>
     internal static uint LastRailItemId { get; private set; }
 
-    public static bool RailItem(string label, Icons.Glyph icon, bool active)
+    public static bool RailItem(string label, Icons.Glyph icon, bool active, string? id = null)
     {
         var lineH = ImGui.GetTextLineHeight();
         var height = lineH + Theme.Space.Md * 2;
         var width = ImGui.GetContentRegionAvail().X;
 
-        ImGui.PushID(label);
+        // Id defaults to the label, but a caller whose label carries mutable state (a live badge
+        // count) must pass a stable id — otherwise the widget's own identity changes out from under
+        // a focused nav cursor whenever that state changes.
+        ImGui.PushID(id ?? label);
         LastRailItemId = ImGui.GetID("##rail");
         ClaimFocus(LastRailItemId);
         var pressed = ImGui.InvisibleButton("##rail", new Vector2(width, height));
