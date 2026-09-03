@@ -119,6 +119,13 @@ resolve task, so a scripted press had its in-flight request killed before it rea
 by adding it alongside `_syncNowTask`, the existing analog. Full detail: `Backlog.md`. Still unchecked:
 real Steam Input/gamescope specifically (a WSLg pass never covers those two, on any screen in this
 codebase).
+<br>**A recall review of this PR (2026-09-03) found and fixed 11 issues** (a per-frame retry storm on
+a failed version fetch, a slow-server task-cancellation that froze conflict polling permanently, a
+missed local-state sync on "keep local," an unbounded version/stats cache leak, and others — commit
+`0b8a608` on `save-conflicts-phase-8-review-fixes`). **Three findings were left as future work, now
+tracked in `plan.md`**: no `ConflictsScreen` class (Phase 8 section), this screen polling the remote
+server directly instead of through the daemon's local API (Phase 8 section), and no shared
+`Agent.Core` version/stats cache for Phase 7 to reuse (Phase 7 section).
 
 **Group 5 — defer to a session on a Windows-connected machine.**
 `Phase 7` (Windows tray automatic chooser + bulk queue) + `Phase 14` (webhook notify + the per-game
