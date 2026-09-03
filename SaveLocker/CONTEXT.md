@@ -893,6 +893,65 @@ opt-in) remain open — see [[Backlog]].
 
 ---
 
+**Decky conflict-resolution "Group 5" shipped — Phase 7 only (2026-09-03, branch
+`claude/save-conflict-next-group-ebc9b1`, no task file — `implementation-grouping.md`'s Group 5: the
+Windows tray automatic chooser + bulk "apply to all remaining" queue).** Originally deferred pending a
+Windows-connected session; this one runs directly on the maintainer's Windows dev box, so it shipped.
+Group 5 also bundles Phase 14 (webhook notify + a per-game block-launch setting), but that was asked
+about directly and scoped **out** of this session on purpose: its block-launch half has a real,
+unresolved design fork against already-shipped, hardware-verified Phase 4 behavior — Phase 4 blocks a
+Linux launch unconditionally on any confirmed conflict, while the original open question
+(`07-open-questions.md` §2) assumed the opposite default (block is opt-in). Building it without that
+decision risked silently walking back verified behavior; deferred to a maintainer call rather than
+guessed at.
+<br>**Shipped**: `TrayApp.cs`'s three native trigger points that can leave this machine with an open
+conflict — `SyncAll()` (the "Sync All" menu item), per-game Force Pull, per-game Force Push — now call
+a new `CheckConflictsAndRaiseAsync()` afterward. A best-effort `ApiClient.GetOpenConflictsForMachineAsync`
+check that, on a hit, raises `AgentWindow` straight to a new `#conflicts:queue` deep link — reusing the
+exact `_ui.Post(() => OpenWindow(...))` pattern already proven twice elsewhere in the same file (the
+first-run prompt, the lease-warning path) rather than inventing a new mechanism. `agent-ui`'s `App.tsx`
+recognizes that one specific hash suffix (ordinary `#conflicts` is untouched) and auto-opens the same
+`SyncConflictModal` queue pop-up the browser-side "Sync now" button already shows — one queue UI
+regardless of which of the four trigger points found the conflict, matching the plan's own framing of
+"the phase that gives a plain Windows tray user a real popup-at-the-moment-it-matters experience for
+the first time."
+<br>**The bulk-queue half (plan.md Phase 7 item 2) is genuinely new code, not already covered by the
+existing pop-up.** `SyncConflictModal.tsx` now asks, once, right after the first resolve in a
+multi-conflict queue, whether to apply that same choice — keep this device's save, or keep the
+cloud's — to every remaining conflict in one step: "Apply to all remaining" resolves the rest via the
+same per-conflict `resolveConflict` call Phase 0/1 already covers server-side (no new endpoint);
+"Review each" falls back to the pre-existing one-at-a-time immediate-resolve flow with no further
+prompting. The choice is transferable across every conflict in the queue because they all share one
+shape — `versionA` is always "the cloud", `versionB` is always this machine's own diverged push — a
+fact already established by how `/api/conflicts` filters to this machine's own conflicts before the UI
+ever sees them.
+<br>**Verified live, not just built**: seeded two genuine divergent conflicts (two separate games)
+against a throwaway scratch server (`dotnet run` on :5199, no Docker) using two CLI-driven machine
+identities — one of them then reused as the real built Windows tray's own registered identity — and
+confirmed, via the tray's actually-served `agent-ui` bundle at exactly the URL
+`CheckConflictsAndRaiseAsync` opens (`http://localhost:<port>/#conflicts:queue`), that the queue
+pop-up auto-opens showing "1 of 2" with both conflicts correctly framed as local-vs-cloud; that
+resolving the first conflict surfaces "Apply to the rest too?" with correct singular/plural wording for
+one remaining conflict; and that "Apply to all remaining" resolves the second conflict too and returns
+to the empty Conflicts state with the sidebar badge cleared. Confirmed the **correct** side won — not
+merely that some resolution happened — by pulling on the other machine afterward and checking its
+restored file content matched what the tray's own machine had pushed, for both games. Full solution
+(`dotnet build SaveLocker.sln`, all five projects including the Windows-only `Agent`) and `agent-ui`
+(`tsc -b && vite build`) both build clean.
+<br>**Not literally exercised: a real click on the NotifyIcon's own context menu.** No tool available
+in this environment drives native Win32 system-tray UI — the Browser pane only drives Chromium tabs,
+and `AgentWindow`'s WebView2 content is exactly what got exercised above, just not by way of an actual
+mouse click on the tray icon's menu. The two pieces that click assembles were each verified directly
+instead: the conflict-fetch call via the equivalent live query proven above, and `OpenWindow`'s
+downstream effect via the direct-navigation check above. Both call sites are otherwise low-risk reuse
+of code patterns already proven correct in this exact file. Worth a five-minute manual click-through
+on a real desktop (Sync All / Force Pull / Force Push from the actual tray icon) before treating this
+as fully confirmed.
+<br>Phases 10/11 (Decky), 13 (Playnite), and 14 (webhook + block-launch opt-in, pending the design
+decision above) remain open — see [[Backlog]].
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

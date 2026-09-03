@@ -17,8 +17,11 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   launch gate) + Phase 6 (shared `agent-ui` conflicts page) shipped 2026-08-31 together as
   `implementation-grouping.md`'s "Group 2", and Phase 9 (D-Bus desktop notification) shipped
   2026-09-01 as that document's "Group 3", and Phase 8 (the Linux Game Mode conflict screen) shipped
-  2026-09-03 as that document's "Group 4"** — see below. **Phases 7, 10, 11, 13–14 remain not
-  built** (Phase 12's endpoint exists but has no consumer yet — see below). Before Phase 2, the
+  2026-09-03 as that document's "Group 4", and Phase 7 (Windows tray automatic chooser + bulk
+  "apply to all remaining" queue) shipped 2026-09-03 as that document's "Group 5"** — see below.
+  **Phases 10, 11, 13–14 remain not built** (Phase 12's endpoint exists but has no consumer yet, and
+  Phase 14 was deliberately scoped out of the Group 5 session pending a maintainer decision on its
+  block-launch default — see below). Before Phase 2, the
   plugin's only way past
   a stuck sync was Force push/pull, which bypassed the server's own conflict bookkeeping — an orphaned
   `ConflictFlag`, an unprotected losing version, a stranded other device. The plan reframes conflicts
@@ -290,6 +293,41 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   a Keep button's enabled state needs a little more settle time than the `--nav` script's default
   frame gap before the button is genuinely there to press, which a human's own reaction time already
   clears in practice but is worth knowing if this screen ever grows a scripted regression test.
+  <br>**Group 5 (Phase 7 only) shipped 2026-09-03** (`implementation-grouping.md`'s "Group 5" —
+  originally deferred waiting on a Windows-connected session, which this one was; asked directly
+  whether Phase 14 was in scope too and it was scoped out on purpose, since its block-launch half
+  conflicts with already-shipped Phase 4 behavior and needs a maintainer decision first — see the plan
+  doc's Status section). `TrayApp.cs`'s three native trigger points that can leave this machine with
+  an open conflict — `SyncAll()`, per-game Force Pull, per-game Force Push — now call a new
+  `CheckConflictsAndRaiseAsync()` afterward, which raises `AgentWindow` straight to a new
+  `#conflicts:queue` deep link on a hit, reusing the exact `_ui.Post(() => OpenWindow(...))` pattern
+  already proven elsewhere in the same file rather than inventing a new one. `App.tsx` recognizes that
+  one hash suffix and auto-opens the same `SyncConflictModal` queue pop-up "Sync now" already shows —
+  one queue UI regardless of which of the four trigger points (the three native ones, or the
+  pre-existing browser-side "Sync now") found the conflict.
+  <br>The bulk-queue half is genuinely new: `SyncConflictModal.tsx` now asks, once, right after the
+  first resolve in a multi-conflict queue, whether to apply that same choice (keep this device's save,
+  or keep the cloud's) to every remaining conflict — "Apply to all remaining" resolves the rest via the
+  same per-conflict `resolveConflict` call Phase 0/1 already covers server-side (no new endpoint);
+  "Review each" falls back to the pre-existing one-at-a-time flow with no further prompting. The choice
+  transfers across conflicts because every conflict in this machine's own queue has the same shape
+  (`versionA` is always "the cloud", `versionB` is always this machine's own diverged push).
+  <br>**Verified live, not just built**: seeded two genuine divergent conflicts (two games) against a
+  throwaway scratch server using two CLI-driven machine identities, one of them then reused as the real
+  built Windows tray's own identity, and confirmed via the tray's real served `agent-ui` bundle at
+  exactly the URL the new code opens (`http://localhost:<port>/#conflicts:queue`) that the queue
+  pop-up auto-opens showing "1 of 2", resolving the first conflict surfaces the "Apply to the rest too?"
+  prompt with correct singular/plural wording, and "Apply to all remaining" resolves the second
+  conflict and returns to the empty Conflicts state with the sidebar badge cleared. Confirmed the
+  *correct* side won — not just that some resolution happened — by pulling on the other machine
+  afterward and checking its restored content matched what the tray's machine had pushed, for both
+  games. Full solution and `agent-ui` both build clean.
+  <br>**Not literally exercised: a real click on the NotifyIcon's context menu itself** — no tool in
+  this environment drives native Win32 tray UI (the Browser pane only drives Chromium tabs). The two
+  pieces the click assembles were each verified directly instead (the conflict-fetch call via the
+  equivalent live query above; `OpenWindow`'s downstream effect via the direct-navigation check above),
+  and both call sites are otherwise low-risk reuse of code already proven in the same file. Worth a
+  five-minute manual click-through on a real desktop before relying on this as the only signal.
 
 **All three bug bounties shipped in v0.5.0 (2026-07-29).** Code is on `main`; what remains is the
 verification that did not happen before the tag. Write-ups:
