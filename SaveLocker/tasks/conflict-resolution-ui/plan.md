@@ -412,6 +412,16 @@ matters experience for the first time.
 API calls Phase 0/1 already covers server-side — the exact check the reference plan's own Phase 3
 verification note describes.
 
+**Flagged during Phase 8's review (2026-09-03), not yet built: no reusable version/stats
+fetch-and-cache exists for a native (non-browser) surface.** Phase 8's `Ui/UiApp.cs` ended up
+hand-rolling, in C#, the same "fetch a version + its stats once, cache forever, dedup in-flight
+requests" protocol `agent-ui`'s `useConflictVersions.ts` already implements in TypeScript for the
+browser surface — `Agent.Core`'s `ApiClient` (`GetVersionAsync`/`GetVersionStatsAsync`) is a bare
+HTTP wrapper with no caching of its own. This phase's chooser needs the identical comparison (both
+sides' machine/timestamp/size/file-count), so before wiring it, either reuse a small shared
+`Agent.Core` cache component if one gets extracted from Phase 8's version first, or accept a third
+from-scratch copy of the same protocol in `TrayApp.cs`/`AgentWindow`.
+
 **Phase 8 — Linux Game Mode conflict screen (`savelocker ui`).**
 Depends on Phase 0/1 only — independent of Phases 5–7, can run fully in parallel with any of them,
 and with Phase 4. **This is the direct, literal answer to "a conflict popup like the Decky one, but
@@ -439,6 +449,25 @@ under WSLg) with a genuine conflict fixture, confirming the new screen renders a
 the same local API Phase 6 already exercises; manual gamepad-navigation check on the real Deck (D-pad
 moves focus, A activates, B backs out without resolving anything) — the identical requirement this
 document already states for the Decky modal, applied here to the native screen instead.
+
+**Two findings from Phase 8's review (2026-09-03), deliberately not fixed as part of that review's
+minimal-edit pass — real, left for a future touch of this phase:**
+1. **Shipped code deviates from this section's own item 3: it talks to the remote server directly,
+   not through the local API.** `UiApp.cs`'s conflict polling builds its own in-process `ApiClient`
+   straight to the remote SaveLocker server, not the `GET /api/conflicts` local route this plan
+   originally specified (item 3 above) and Phase 6/7 both use. The PR's rationale (resolving a
+   conflict is a stateless, mechanical server call, unlike "Sync now") is defensible, but it means
+   `savelocker ui` and `savelocker daemon` (when both run, the normal Deck setup) now poll the same
+   remote endpoint independently rather than the screen reading through the daemon's already-fetched
+   state — the "view over shared state, not a second API client" rule `LeaseWarningStore`/
+   `SyncActivityTracker` were built to. Worth reconciling before Phase 10/11 (Decky) copies whichever
+   pattern this phase actually shipped.
+2. **The whole screen (`PollConflictState`, `FetchOpenConflictsAsync`, `EnsureVersionLoaded`,
+   `ResolveConflict`, `DrawConflicts`, `DrawConflictCard`, `DrawConflictSide` — ~250 lines, 10 fields)
+   lives directly on `UiApp` instead of its own class.** `Ui/SettingsScreen.cs` is the established
+   precedent for factoring a self-contained screen's state out of `UiApp` (held as a field, drawn via
+   `_settings.Draw()`); this phase didn't follow it. A future pass extracting a `ConflictsScreen`
+   class would also be the natural place to fix finding 1 above, since it's the same seam.
 
 **Phase 9 — Desktop notification via D-Bus (optional).**
 Depends on Phase 5 (must confirm a notification daemon is actually present before attempting a call —
