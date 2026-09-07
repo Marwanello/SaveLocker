@@ -126,6 +126,54 @@ cmd_up() {
   show_real_game_mappings
 }
 
+# Seeds the Deck's side of a throwaway "Conflict Game" game. Mirrors testenv.ps1's own
+# New-ConflictOnWindows — same reasoning, different transport: whichever side seeds FIRST creates
+# the game on the server with nothing to conflict against yet; the side that seeds SECOND (normally
+# this one — testenv.ps1's 'conflict' case always runs Windows first) independently discovers its
+# own local file with no knowledge of what the server now holds, and that push is what the server
+# records as a genuine, unresolved local-vs-cloud divergence.
+cmd_conflict() {
+  [ -x "$BIN" ] || die "not installed — run: testenv.ps1 build -Only deck; testenv.ps1 up -Only deck (once) before seeding a conflict"
+  [ -n "$SERVER_URL" ] || die "SAVELOCKER_SERVER_URL not set — pass -DeckServerUrl (this PC's LAN IP)"
+
+  # Standing rule from the Phase 7 hardware verification: CLI seeding must never race a live
+  # daemon — same reasoning as testenv.ps1's own tray-stop before seeding Windows.
+  cmd_down >/dev/null 2>&1
+
+  echo "== seeding a conflicting save on the deck for 'Conflict Game' =="
+  local dir="$XDG_DATA_HOME/conflict-save"
+  mkdir -p "$dir"
+  echo "deck save v1 - DIFFERENT" > "$dir/save.txt"
+
+  if ! grep -qi '"apikey"' "$STATE/config.json" 2>/dev/null; then
+    echo "== registering '$MACHINE' against $SERVER_URL =="
+    "$BIN" set-server --url "$SERVER_URL" >/dev/null || die "set-server failed"
+    "$BIN" register --name "$MACHINE" | head -2
+  fi
+
+  "$BIN" add-game --name "Conflict Game" --dir "$dir"
+  "$BIN" push "Conflict Game"
+
+  # Adds the Steam library entry the conflict can actually be launched from — DevSteamShortcut.cs
+  # (Agent.Linux) backs up the real shortcuts.vdf before touching it; cmd_clean's own shortcut
+  # removal below restores it. Not fatal on failure: the CLI-only conflict above already succeeded,
+  # this is strictly additional. LaunchOptions is deliberately left blank for now — no launch-gate
+  # wrapper — so pressing Play just runs the fake game directly with no sync/conflict interception.
+  # Named identically to the tracked game on purpose: the Decky plugin's own fallback match (used
+  # whenever its primary AppID-based match can't find a row — see gamingSync.tsx's resolveMatchSync)
+  # compares Steam's displayed name for the launched app against the tracked game's name, so a
+  # mismatch here silently breaks the library-page chip even when everything else is correct.
+  echo "== adding a Steam shortcut 'Conflict Game' =="
+  local appid
+  appid=$("$BIN" dev-shortcut-add --prefix "$PREFIX" | sed -n 's/^APPID=//p')
+  if [ -n "$appid" ]; then
+    "$BIN" add-game --name "Conflict Game" --dir "$dir" --appid "$appid" >/dev/null
+    echo "shortcut ready (appid $appid). Restart Steam on the Deck to see 'Conflict Game' in your library."
+  else
+    echo "WARNING: could not add the Steam shortcut - the conflict is still seeded and resolvable from the CLI, just not launchable from Steam yet." >&2
+  fi
+}
+
 cmd_down() {
   # Capture pids BEFORE stopping anything, so the report below reflects what was actually running
   # rather than what's left after the systemctl stop below already reaped it.
@@ -171,18 +219,25 @@ cmd_logs() {
 
 cmd_clean() {
   cmd_down >/dev/null 2>&1
+  # Must run BEFORE the binary is deleted below — dev-shortcut-remove restores shortcuts.vdf from
+  # cmd_conflict's own backup (or deletes it, if SaveLocker created it fresh). A no-op if
+  # `conflict` was never run, so an ordinary clean on a rig that never added the shortcut does
+  # nothing here.
+  if [ -x "$BIN" ]; then "$BIN" dev-shortcut-remove; fi
   rm -f "$TARBALL"
   if [ -d "$PREFIX" ]; then rm -rf "$PREFIX"; echo "removed $PREFIX"; fi
+  # $XDG_DATA_HOME also holds cmd_conflict's own "conflict-save" folder — one rm -rf clears both.
   if [ -d "$XDG_DATA_HOME" ]; then rm -rf "$XDG_DATA_HOME"; echo "removed $XDG_DATA_HOME"; fi
   rm -f "$DAEMON_LOG"
 }
 
 case "$CMD" in
-  install) cmd_install ;;
-  up)      cmd_up ;;
-  down)    cmd_down ;;
-  status)  cmd_status ;;
-  logs)    cmd_logs ;;
-  clean)   cmd_clean ;;
-  *)       die "unknown command '$CMD'" ;;
+  install)  cmd_install ;;
+  up)       cmd_up ;;
+  down)     cmd_down ;;
+  status)   cmd_status ;;
+  logs)     cmd_logs ;;
+  conflict) cmd_conflict ;;
+  clean)    cmd_clean ;;
+  *)        die "unknown command '$CMD'" ;;
 esac

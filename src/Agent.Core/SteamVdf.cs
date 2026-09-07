@@ -81,4 +81,71 @@ public static class SteamVdf
         pos += 4;
         return v;
     }
+
+    /// <summary>
+    /// For inserting a new child into the root "shortcuts" object without touching (or fully
+    /// understanding) anything else in the file: returns the byte offset of the <c>0x08</c> that
+    /// closes THAT object — i.e. where a new child goes so it becomes the last member of
+    /// "shortcuts" — plus the next free integer key, matching how every real writer (Steam itself,
+    /// and every third-party tool) assigns sequential "0", "1", "2"… keys rather than an arbitrary
+    /// one.
+    /// <para>
+    /// This is NOT simply "the last byte of the file". Real shortcuts.vdf files commonly have
+    /// MULTIPLE trailing <c>0x08</c> bytes in a row — confirmed on a real 135-shortcut file, which
+    /// closes as <c>… 0x08 0x08 0x08 0x08</c> (the last entry's empty "tags" object, the entry
+    /// itself, "shortcuts" itself, and one more from an outer wrapper some third-party writers add
+    /// when serializing <c>{shortcuts: [...]}</c> generically). Splicing before "the last byte"
+    /// places a new entry as a SIBLING of "shortcuts", not a member inside it — syntactically valid
+    /// VDF, invisible to Steam. This walks the exact same structure <see cref="Parse"/> already
+    /// walks (skip-only, values discarded) to find the true boundary.
+    /// </para>
+    /// </summary>
+    public static (int InsertPos, int NextIndex) AnalyzeShortcuts(byte[] data)
+    {
+        var pos = 0;
+        var type = data[pos++];
+        if (type != 0x00)
+            throw new InvalidDataException($"Expected a root object (0x00), got 0x{type:X2}.");
+        ReadCString(data, ref pos); // root key, e.g. "shortcuts" — discarded.
+
+        var maxIndex = -1;
+        while (true)
+        {
+            var childType = data[pos++];
+            if (childType == 0x08) break; // end of "shortcuts" itself — pos is just past it
+
+            var key = ReadCString(data, ref pos);
+            if (int.TryParse(key, out var n) && n > maxIndex) maxIndex = n;
+            switch (childType)
+            {
+                case 0x00: SkipObject(data, ref pos); break;
+                case 0x01: ReadCString(data, ref pos); break;
+                case 0x02: pos += 4; break;
+                default: throw new InvalidDataException(
+                    $"Unsupported VDF node type 0x{childType:X2} at offset {pos - 1}.");
+            }
+        }
+
+        return (pos - 1, maxIndex + 1);
+    }
+
+    /// <summary>Walks (without storing) child nodes until the 0x08 end marker — the position-only
+    /// counterpart to <see cref="ReadObject"/>, used by <see cref="AnalyzeShortcuts"/>.</summary>
+    private static void SkipObject(byte[] data, ref int pos)
+    {
+        while (true)
+        {
+            var type = data[pos++];
+            if (type == 0x08) return;
+            ReadCString(data, ref pos);
+            switch (type)
+            {
+                case 0x00: SkipObject(data, ref pos); break;
+                case 0x01: ReadCString(data, ref pos); break;
+                case 0x02: pos += 4; break;
+                default: throw new InvalidDataException(
+                    $"Unsupported VDF node type 0x{type:X2} at offset {pos - 1}.");
+            }
+        }
+    }
 }

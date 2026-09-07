@@ -15,8 +15,27 @@
 #   .\tests\testenv.ps1 test      run the suites
 #   .\tests\testenv.ps1 sync      copy this tree's uncommitted changes into the WSL clone
 #   .\tests\testenv.ps1 logs      tail every log the rig writes
+#   .\tests\testenv.ps1 conflict [-Windows] [-Deck]
+#                                 seed a genuine local-vs-cloud conflict on a throwaway "Conflict Game"
+#                                 game — Windows first (creates it), then the Deck (diverges it) — the
+#                                 same two hand-typed CLI sequences this rig used to need by hand.
+#                                 Neither switch given = both (a conflict needs two disagreeing
+#                                 sides). Starts the console first if it isn't already up (both sides
+#                                 register/push against it over HTTP), then stops any already-running
+#                                 Windows tray / Deck daemon — CLI seeding must never race a live
+#                                 tray/daemon's own config Save(). Needs `build` run at least once
+#                                 first. Run this BEFORE `up`, then `up` last so the tray/daemon start
+#                                 clean (the console itself is left running either way).
+#                                 The Deck side also adds a real Steam shortcut, "Conflict Game",
+#                                 pointing at a fullscreen placeholder "game" (`savelocker fake-
+#                                 game`) — so the conflict is launchable from Steam's own library,
+#                                 not just resolvable from the CLI. Its Launch Options are left
+#                                 blank on purpose (no sync/launch-gate wrapper yet); the real
+#                                 shortcuts.vdf is backed up first and restored by `clean`.
 #   .\tests\testenv.ps1 clean     down, then DELETE every test build and all its state — WSL,
-#                                 Windows, the Deck, the test Decky plugin and the dashboard
+#                                 Windows, the Deck, the test Decky plugin, any seeded conflict
+#                                 folders, the "Conflict Game" Steam shortcut (shortcuts.vdf
+#                                 restored from its pre-conflict backup), and the dashboard
 #                                 container/image/volume
 #   .\tests\testenv.ps1 deck-config -DeckHost deck@<ip> [-DeckServerUrl http://<lan-ip>:5080]
 #                                 write/update tests/testenv.local.ps1 (below) instead of hand-
@@ -69,7 +88,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'clean', 'deck-config')]
+    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'conflict', 'clean', 'deck-config')]
     [string]$Command = 'status',
 
     # Never a released version number. A test build stamped with one compares equal to the real
@@ -124,7 +143,12 @@ param(
 
     # Real trays, real waits, ~5 minutes, and it needs an interactive desktop.
     [switch]$SkipWinAgentSuite,
-    [switch]$AgentsOnly
+    [switch]$AgentsOnly,
+
+    # 'conflict' command only: which side(s) to seed. Neither given means both — a conflict needs
+    # two sides that disagree, so seeding only one side alone leaves nothing to resolve.
+    [switch]$Windows,
+    [switch]$Deck
 )
 
 $ErrorActionPreference = 'Continue'
@@ -715,6 +739,43 @@ function Stop-Windows {
     }
 }
 
+# Seeds Windows's side of a throwaway "Conflict Game" game via the CLI (add-game, then push) — the
+# same shape as testenv-deck.sh's cmd_conflict, kept as two independent, order-dependent seedings
+# rather than one shared function because the two run on different machines over different
+# transports (a local process here, SSH there). Whichever side runs FIRST creates the game on the
+# server with no conflict (a brand-new game never conflicts with itself); the side that runs SECOND
+# independently discovers its own local file with no knowledge of what the server now holds, and
+# THAT push is what the server records as a genuine, unresolved local-vs-cloud divergence. The
+# 'conflict' switch case below always runs Windows before the Deck for exactly this reason.
+function New-ConflictOnWindows {
+    if (-not (Test-Path $agentDll)) { throw "not built - run: .\tests\testenv.ps1 build" }
+    if (Get-TestTray) {
+        # Standing rule from the Phase 7 hardware verification (2026-09-03): CLI seeding must never
+        # race a live tray - it holds its own in-memory config, and its next unrelated Save()
+        # silently clobbers whatever the CLI just wrote out-of-band. Stop it rather than warn, so
+        # this command is safe to run whether or not `up` already ran.
+        Say 'stopping the test tray first (CLI seeding must not race a live tray)'
+        Stop-Windows
+    }
+    Say "seeding a conflicting save on Windows for 'Conflict Game'"
+    Use-TestEnvVars
+    try {
+        $dir = Join-Path $env:TEMP 'savelocker-conflict-test\win'
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        'windows save v1' | Set-Content (Join-Path $dir 'save.txt')
+
+        $cfg = Join-Path $winState 'config.json'
+        $registered = (Test-Path $cfg) -and ((Get-Content $cfg -Raw) -match '"apiKey"')
+        if (-not $registered) {
+            Say "registering the Windows test agent against $serverUrl"
+            & $dotnet $agentDll set-server --url $serverUrl | Out-Null
+            & $dotnet $agentDll register --name 'WinTest' | Select-Object -First 1
+        }
+        & $dotnet $agentDll add-game --name 'Conflict Game' --dir $dir | Out-Null
+        & $dotnet $agentDll push 'Conflict Game'
+    } finally { Clear-TestEnvVars }
+}
+
 function Stop-Console {
     & docker stop $container 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { Write-Host "stopped $container" } else { Write-Host 'no console container running' }
@@ -867,6 +928,28 @@ switch ($Command) {
         Remove-Item $list -ErrorAction SilentlyContinue
     }
 
+    'conflict' {
+        if (-not $Windows -and -not $Deck) { $Windows = $true; $Deck = $true }
+
+        # Both sides register/push over HTTP against the console, so it has to be up before either
+        # CLI call — unlike the tray/daemon, starting it here races nothing (it holds no local agent
+        # config), so just bring it up rather than making the user run `up -Only console` by hand.
+        if (-not (Test-ConsoleUp)) { Start-Console } else { Write-Host '  console already up' }
+
+        if ($Windows) { New-ConflictOnWindows }
+        if ($Deck) {
+            if (-not (Test-DeckConfigured)) { throw "No Deck configured - set -DeckHost or `$env:SAVELOCKER_DECK_HOST." }
+            if (-not $DeckServerUrl) {
+                throw "no -DeckServerUrl / `$env:SAVELOCKER_DECK_SERVER_URL - the Deck can't reach 'localhost', it needs this PC's LAN IP (e.g. http://192.168.68.58:$ConsolePort)"
+            }
+            try { Invoke-Deck 'conflict' } catch { Warn "deck: $($_.Exception.Message)" }
+        }
+
+        Write-Host ''
+        Write-Host "seeded 'Conflict Game'. Next: .\tests\testenv.ps1 up   (tray/daemon start LAST, after all seeding)"
+        Write-Host "then check each side's own conflicts view (CLI 'conflicts', doctor, the dashboard, or the Decky/Game-Mode UI)."
+    }
+
     'logs' {
         $winLog = Join-Path $winState 'agent.log'
         if (Test-Path $winLog) { Say "windows test agent — $winLog"; Get-Content $winLog -Tail 20 }
@@ -891,6 +974,14 @@ switch ($Command) {
         if (Test-Path $StateRoot) {
             Remove-Item $StateRoot -Recurse -Force
             Write-Host "  removed $StateRoot"
+        }
+        # The Windows half of `conflict`'s seeded save lives outside $StateRoot (it's the fake
+        # game's own save folder, not agent state), so it needs its own removal here. The Deck half
+        # lives inside $XDG_DATA_HOME, which testenv-deck.sh's own cmd_clean already wipes.
+        $conflictTestDir = Join-Path $env:TEMP 'savelocker-conflict-test'
+        if (Test-Path $conflictTestDir) {
+            Remove-Item $conflictTestDir -Recurse -Force
+            Write-Host "  removed $conflictTestDir"
         }
 
         Invoke-Wsl 'clean'

@@ -90,6 +90,35 @@ static class Program
                     // (testenv's Deck target runs one alongside the real install).
                     ParsePort(opts));
 
+            // Test-only stand-in "game": tests/testenv.ps1's "Conflict Game" Steam shortcut points
+            // here instead of a real title, so a launch-gate popup and sync-before/after-play can
+            // be exercised on real hardware. Just `ui --screen fakegame` under a plain name — never
+            // reachable from a real install's Launch Options, only from the test daemon's own.
+            case "fake-game":
+                return Ui.UiApp.Run(config, opts.GetValueOrDefault("size"),
+                    startScreen: "fakegame", apiPort: ParsePort(opts));
+
+            // Test-only, wired from tests/testenv-deck.sh's cmd_conflict/cmd_clean only. Adds/
+            // removes the one fixed "Conflict Game" shortcut - see DevSteamShortcut's own doc
+            // comment for the backup/restore guarantee this makes about the real shortcuts.vdf.
+            case "dev-shortcut-add":
+            {
+                var prefix = opts.GetValueOrDefault("prefix");
+                if (string.IsNullOrEmpty(prefix))
+                {
+                    Console.Error.WriteLine("dev-shortcut-add needs --prefix <dir>");
+                    return 2;
+                }
+                var appId = DevSteamShortcut.Add(prefix);
+                if (appId is null) return 1;
+                Console.WriteLine($"APPID={appId}");
+                return 0;
+            }
+
+            case "dev-shortcut-remove":
+                DevSteamShortcut.Remove();
+                return 0;
+
             case "autostart":
             {
                 var autoStart = new SystemdAutoStart();

@@ -22,7 +22,7 @@ namespace SaveLocker.Agent.Linux.Ui;
 /// </summary>
 sealed class UiApp
 {
-    private enum Screen { Status, AddGame, SetFolder, LaunchSetup, Conflicts, Settings, Gallery }
+    private enum Screen { Status, AddGame, SetFolder, LaunchSetup, Conflicts, Settings, Gallery, FakeGame }
 
     private readonly AgentConfig _config;
     private readonly LinuxGameScanner _scanner;
@@ -296,6 +296,9 @@ sealed class UiApp
         "conflicts" or "conflict" => Screen.Conflicts,
         "settings" or "config" => Screen.Settings,
         "gallery" => Screen.Gallery,
+        // Test-only, launched as `savelocker ui --screen fakegame` (Program.cs's own "fake-game"
+        // command). Never something a user has any reason to pass either.
+        "fakegame" or "fake-game" or "conflict-game" => Screen.FakeGame,
         _ => Screen.Status,
     };
 
@@ -523,6 +526,12 @@ sealed class UiApp
                 new Vector2(size.X - Theme.Layout.Gutter * 2, size.Y - Theme.Layout.Gutter * 2));
             Gallery.Draw();
             ImGui.EndChild();
+        }
+        else if (_screen == Screen.FakeGame)
+        {
+            // Same reasoning as Gallery above: this stands in for a real game's own window, so it
+            // takes the whole surface with no SaveLocker chrome around it.
+            DrawFakeGame(size);
         }
         else
         {
@@ -1809,6 +1818,33 @@ sealed class UiApp
     /// confirm-then-resolve two-step the dashboard/agent-ui page uses) — this screen is not a queue,
     /// so there is nothing to advance afterward.
     /// </summary>
+    /// <summary>
+    /// Test-only: `savelocker fake-game` (tests/testenv.ps1's "Conflict Game" Steam shortcut).
+    /// Stands in for a real game so a Deck's launch-gate popup, sync-before-play and sync-after-
+    /// play can all be exercised end to end on real hardware without needing an actual title.
+    /// Closing this window (B, Escape, or the button) is what a real game's process exit looks
+    /// like to ProtonRun — that is the whole point of it being a real, separate window rather than
+    /// a message box.
+    /// </summary>
+    private void DrawFakeGame(Vector2 size)
+    {
+        if (_navBackFired || ImGui.IsKeyPressed(ImGuiKey.Escape)) { _window.Close(); return; }
+
+        const string text = "Conflict Game is running";
+        const string sub = "This stands in for a real game - exit to return to Steam.";
+        var textSize = ImGui.CalcTextSize(text);
+        var subSize = ImGui.CalcTextSize(sub);
+
+        ImGui.SetCursorPos(new Vector2((size.X - textSize.X) / 2f, size.Y / 2f - 60));
+        ImGui.Text(text);
+        ImGui.SetCursorPos(new Vector2((size.X - subSize.X) / 2f, size.Y / 2f - 30));
+        ImGui.TextDisabled(sub);
+
+        var buttonSize = new Vector2(200, 44);
+        ImGui.SetCursorPos(new Vector2((size.X - buttonSize.X) / 2f, size.Y / 2f + 20));
+        if (ImGui.Button("Exit game", buttonSize)) _window.Close();
+    }
+
     private void DrawConflicts()
     {
         if (!Connected)

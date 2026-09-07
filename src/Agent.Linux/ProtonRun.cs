@@ -76,6 +76,28 @@ public static class ProtonRun
             if (gate.Decision == LaunchDecision.ProceedSyncPaused && gate.HolderMachineName is not null)
                 LeaseWarningStore.For(config).Add(game.Name, gate.HolderMachineName);
 
+            if (gate.Decision == LaunchDecision.Blocked && DesktopEnvironment.Detect().HasGraphicalSession)
+            {
+                // A Deck player pressing Play sees nothing without this — Steam just fails to
+                // launch, with no on-screen reason. Opens the same native Conflicts screen the
+                // Game Mode nav rail links to (Phase 8) in place of the game, and waits for it to
+                // close. Only attempted with a real display to draw on; over a bare SSH shell the
+                // text refusal below is still the right (and only possible) fallback.
+                Log("launch blocked by a conflict — opening the conflicts screen instead of the game");
+                await TryResolveConflictInteractivelyAsync(config, Log);
+
+                // Re-run the gate rather than trust anything about how the popup closed: closing
+                // the window and actually resolving the conflict are two different user actions,
+                // and this is the same check PrepareLaunchAsync already does at the top of the
+                // method, so a resolved conflict here also gets the lease + pull it would have.
+                try { gate = await engine.PrepareLaunchAsync(game); }
+                catch (Exception ex)
+                {
+                    Log($"post-popup re-check failed, launching anyway: {ex.Message}");
+                    gate = new LaunchGateResult(LaunchDecision.Proceed);
+                }
+            }
+
             if (gate.Decision == LaunchDecision.Blocked)
             {
                 // The one refusal in this codebase that stops a launch outright — every other
@@ -115,6 +137,42 @@ public static class ProtonRun
         await health.SendAsync(api, config, offlineQueue, AgentLogger.Log);
 
         return exitCode;
+    }
+
+    /// <summary>
+    /// Spawns <c>savelocker ui --screen conflicts</c> in place of the game and waits for it to
+    /// close. A fresh process, not an in-process call into <c>Ui.UiApp</c> — the same reason
+    /// Program.cs's own "ui" case only loads SDL/GL/ImGui on demand: this wrapper runs on every
+    /// launch of every tracked game, so those libraries must never load unless a conflict popup is
+    /// actually needed. Always returns after the window closes, however that happened; the caller
+    /// re-checks the launch gate itself rather than infer anything from this returning.
+    /// </summary>
+    private static async Task TryResolveConflictInteractivelyAsync(AgentConfig config, Action<string> log)
+    {
+        var self = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(self))
+        {
+            log("cannot find my own executable path - skipping the conflict popup");
+            return;
+        }
+
+        try
+        {
+            var psi = new ProcessStartInfo(self) { UseShellExecute = false };
+            psi.ArgumentList.Add("ui");
+            psi.ArgumentList.Add("--screen");
+            psi.ArgumentList.Add("conflicts");
+            psi.ArgumentList.Add("--port");
+            psi.ArgumentList.Add((config.DaemonApiPort ?? Daemon.DefaultApiPort).ToString());
+
+            using var ui = Process.Start(psi);
+            if (ui is null) { log("could not start the conflicts popup"); return; }
+            await ui.WaitForExitAsync();
+        }
+        catch (Exception ex)
+        {
+            log($"conflicts popup failed to run: {ex.Message}");
+        }
     }
 
     /// <summary>Run the game and wait for it. Child stdio is inherited so Steam's overlay/logs behave.</summary>
