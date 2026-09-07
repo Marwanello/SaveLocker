@@ -2287,6 +2287,13 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "claimToken": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },
@@ -2853,6 +2860,13 @@
               "null",
               "string"
             ]
+          },
+          "claimToken": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },

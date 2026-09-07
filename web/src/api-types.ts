@@ -2769,6 +2769,8 @@ export interface components {
             claimCount: number;
             /** Format: date-time */
             leaseExpiresAt?: null | string;
+            /** Format: uuid */
+            claimToken?: null | string;
         };
         /** @enum {unknown} */
         AgentCommandType: "Pull" | "Push" | "Sync" | "Scan";
@@ -2926,6 +2928,8 @@ export interface components {
         CommandResultRequest: {
             status: components["schemas"]["CommandStatus"];
             result: null | string;
+            /** Format: uuid */
+            claimToken?: null | string;
         };
         /** @enum {unknown} */
         CommandStatus: "Pending" | "Dispatched" | "Done" | "Failed";
