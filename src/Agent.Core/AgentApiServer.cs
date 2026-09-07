@@ -205,7 +205,8 @@ public sealed class AgentApiServer : IDisposable
                 lastSyncAgo,
                 warnings,
                 _config.SettleQuietSeconds,
-                OperatingSystem.IsWindows() ? "Windows" : "Linux");
+                OperatingSystem.IsWindows() ? "Windows" : "Linux",
+                _config.MachineId);
         }).Produces<AgentStateDto>();
 
         app.MapPost("/api/lease-warnings/dismiss", (DismissWarningRequest body) =>
@@ -916,7 +917,11 @@ public sealed record AgentStateDto(
     string LastSyncAgo,
     LeaseWarningDto[] LeaseWarnings,
     int SettleQuietSeconds,
-    string Platform);
+    string Platform,
+    /// <summary>This device's own machine id, once registered — null before then. Lets a local
+    /// frontend (Decky, agent-ui) offer "prefer THIS device" for <see cref="ConflictPolicy.PreferMachine"/>
+    /// without needing the fleet-wide machine list only the dashboard's admin API exposes.</summary>
+    Guid? MachineId = null);
 /// <param name="ProcessName">
 /// The process discovery is confident means this game is running, or null when it cannot know —
 /// which is every source but a non-Steam shortcut. Null tells the UI that enrolling this candidate

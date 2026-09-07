@@ -1515,6 +1515,8 @@ export interface components {
             /** Format: int32 */
             settleQuietSeconds: number;
             platform: string;
+            /** Format: uuid */
+            machineId?: null | string;
         };
         AgentVersionDto: {
             currentVersion: string;
@@ -1677,14 +1679,14 @@ export interface components {
         RegisterResponse: {
             machineName: string;
         };
-        ResolveLaunchOptionsRequest: {
-            games: null | components["schemas"]["LaunchOptionCurrentDto"][];
-        };
         ResolvedLaunchOptionDto: {
             /** Format: uint32 */
             steamAppId: number;
             desired: string;
             changed: boolean;
+        };
+        ResolveLaunchOptionsRequest: {
+            games: null | components["schemas"]["LaunchOptionCurrentDto"][];
         };
         SaveVersionDto: {
             /** Format: uuid */
