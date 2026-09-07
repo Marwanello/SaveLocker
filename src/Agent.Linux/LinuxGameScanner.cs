@@ -29,6 +29,29 @@ public sealed class LinuxGameScanner : IGameScanner
 
     public async Task<IReadOnlyList<ScanCandidate>> ScanAsync(CancellationToken ct = default)
     {
+        var results = await ScanUnfilteredAsync(ct);
+
+        // Normalised, for the same reason as the Windows scanner: one game, one row, however the
+        // shortcut happens to be spelled.
+        //
+        // This also collapses the Heroic double-listing: "Add to Steam" gives a Heroic game a real
+        // shortcuts.vdf entry, so it is discovered twice. Preferring the row that HAS a save dir
+        // picks the Heroic one — the shortcut's copy cannot resolve, because Steam never made a
+        // compatdata prefix for a game it does not launch.
+        return results
+            .GroupBy(r => ManifestLoader.NormalizeName(r.Candidate.Name), StringComparer.Ordinal)
+            .Select(PickWinner)
+            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Every candidate before the dedupe above. <see cref="Doctor"/> needs the losers too: a game
+    /// found in two places reads as one row post-dedupe, so the choice is invisible without them.
+    /// </summary>
+    internal async Task<List<(ScanCandidate Candidate, bool ViaMoonDeck)>> ScanUnfilteredAsync(
+        CancellationToken ct = default)
+    {
         // Paired with a flag for the final dedupe below: true only when a SteamShortcut candidate
         // resolved through the MoonDeck fallback (a DIFFERENT game's prefix, not its own) rather than
         // its own compatdata or a portable folder. Local to this method on purpose — nothing
@@ -91,7 +114,11 @@ public sealed class LinuxGameScanner : IGameScanner
                     // name is not the game's process name any more than a folder's is.
                     SuggestedProcessName: confirmedInstalled
                         ? null
-                        : GameActivity.ProcessNameFromExe(s.Exe)),
+                        : GameActivity.ProcessNameFromExe(s.Exe),
+                    // The pointer's target, so doctor can name what it streams. Kept even once
+                    // reclassified as SteamInstalled: that is exactly when the row stops looking
+                    // like a shortcut at all.
+                    MoonDeckAppId: s.MoonDeckAppId),
                     // Still tracked even once reclassified: if the real ACF ever becomes reachable
                     // too (the library gets mounted), that direct read is more authoritative than
                     // this inferred stand-in, and should keep winning the dedupe below.
@@ -103,32 +130,32 @@ public sealed class LinuxGameScanner : IGameScanner
 
         results.AddRange((await ScanHeroicAsync(ct)).Select(c => (c, false)));
 
-        // Normalised, for the same reason as the Windows scanner: one game, one row, however the
-        // shortcut happens to be spelled.
-        //
-        // This also collapses the Heroic double-listing: "Add to Steam" gives a Heroic game a real
-        // shortcuts.vdf entry, so it is discovered twice. Preferring the row that HAS a save dir
-        // picks the Heroic one — the shortcut's copy cannot resolve, because Steam never made a
-        // compatdata prefix for a game it does not launch.
-        return results
-            .GroupBy(r => ManifestLoader.NormalizeName(r.Candidate.Name), StringComparer.Ordinal)
-            .Select(g => g
-                .OrderByDescending(r => r.Candidate.SuggestedSaveDir is not null)
-                // A MoonDeck shortcut only ever resolves by pointing at ANOTHER install's real
-                // prefix — it is never itself a local install — so it loses to a genuine one before
-                // the Cloud tie-break below even applies. Without this, a MoonDeck shortcut for a
-                // game that is ALSO genuinely installed with real Steam Cloud would win the Cloud
-                // tie-break purely because a SteamShortcut candidate is unconditionally
-                // HasSteamCloud: false, handing the survivor the streaming pointer's own AppID —
-                // one the launch wrapper only ever sees during a MoonDeck session, never a real one.
-                .ThenBy(r => r.ViaMoonDeck)
-                // A tie goes to the copy Steam does NOT back up. The same game can be both an
-                // installed Steam title and a shortcut the user made to a DRM-free build; enrolling
-                // the one that already has Cloud is the less useful of the two.
-                .ThenBy(r => r.Candidate.HasSteamCloud)
-                .First().Candidate)
-            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        return results;
+    }
+
+    /// <summary>
+    /// Which of several same-named candidates <see cref="ScanAsync"/> keeps. Shared with
+    /// <see cref="Doctor"/> so its "found in N places" note names the same survivor the scan does —
+    /// a second copy of this ordering would drift from the first.
+    /// </summary>
+    internal static ScanCandidate PickWinner(
+        IEnumerable<(ScanCandidate Candidate, bool ViaMoonDeck)> group)
+    {
+        return group
+            .OrderByDescending(r => r.Candidate.SuggestedSaveDir is not null)
+            // A MoonDeck shortcut only ever resolves by pointing at ANOTHER install's real
+            // prefix — it is never itself a local install — so it loses to a genuine one before
+            // the Cloud tie-break below even applies. Without this, a MoonDeck shortcut for a
+            // game that is ALSO genuinely installed with real Steam Cloud would win the Cloud
+            // tie-break purely because a SteamShortcut candidate is unconditionally
+            // HasSteamCloud: false, handing the survivor the streaming pointer's own AppID —
+            // one the launch wrapper only ever sees during a MoonDeck session, never a real one.
+            .ThenBy(r => r.ViaMoonDeck)
+            // A tie goes to the copy Steam does NOT back up. The same game can be both an
+            // installed Steam title and a shortcut the user made to a DRM-free build; enrolling
+            // the one that already has Cloud is the less useful of the two.
+            .ThenBy(r => r.Candidate.HasSteamCloud)
+            .First().Candidate;
     }
 
     /// <summary>

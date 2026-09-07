@@ -1,3 +1,4 @@
+using SaveLocker.Agent;
 using SaveLocker.Shared;
 
 namespace SaveLocker.Agent.Linux;
@@ -113,6 +114,12 @@ public static class Doctor
                      " never backed up. Remove the stale duplicate in Steam, or check which compatdata" +
                      " folder actually has recent files and map that one with --dir.");
         }
+
+        // The note above only compares raw shortcuts against each other. The shape that motivated
+        // it — a MoonDeck pointer and a genuine install of the SAME game — collapses inside the
+        // scan's own dedupe (one row per normalized name), so it is invisible there. Compare the
+        // scan's unfiltered candidates across sources instead.
+        await ReportCrossSourceDuplicatesAsync(config);
 
         foreach (var (root, s) in shortcuts)
         {
@@ -527,6 +534,75 @@ public static class Doctor
             foreach (var s in await SteamShortcuts.ReadAllAsync(root))
                 all.Add((root, s));
         return all;
+    }
+
+    /// <summary>
+    /// One game found in more than one place — a MoonDeck pointer beside a genuine install, the
+    /// same title on Steam and Heroic, a shortcut to a DRM-free build beside the Steam copy.
+    /// A NOTE, never a problem, for the same reason as the duplicate-shortcut note above: the
+    /// scan already picked one, and failing the exit code over a working machine would cry wolf.
+    /// <para>
+    /// Two filters keep this to rows worth reading. A name counts only if at least one origin
+    /// actually resolved — two dead rows are nothing to choose between. And an all-shortcut group
+    /// with different AppIDs is the duplicate-shortcut note's own shape, already reported above;
+    /// repeating it here would nag twice about the same stale entry.
+    /// </para>
+    /// </summary>
+    private static async Task ReportCrossSourceDuplicatesAsync(AgentConfig config)
+    {
+        // The scan enriches every candidate from the manifest, and without a cached copy that
+        // means a 17 MB download inside a diagnostic — on a possibly metered connection, for a
+        // question that only matters once games exist. The daemon populates the cache on its own
+        // scan, so this converges without doctor ever fetching.
+        if (!File.Exists(config.ManifestCachePath))
+        {
+            Console.WriteLine("  (same-game-in-several-places check skipped — no cached manifest yet)");
+            return;
+        }
+
+        List<(ScanCandidate Candidate, bool ViaMoonDeck)> all;
+        try
+        {
+            all = await new LinuxGameScanner(new Detection(config)).ScanUnfilteredAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  (same-game-in-several-places check could not run: {ex.Message})");
+            return;
+        }
+
+        foreach (var g in all
+                     .GroupBy(x => ManifestLoader.NormalizeName(x.Candidate.Name))
+                     .Where(g => g.Key.Length > 0))
+        {
+            if (g.All(x => x.Candidate.Source == ScanSource.SteamShortcut)) continue;
+            if (g.All(x => x.Candidate.SuggestedSaveDir is null)) continue;
+            var origins = g.Select(x => (x.Candidate.Source, x.Candidate.SteamAppId, x.Candidate.MoonDeckAppId, x.ViaMoonDeck))
+                           .Distinct().ToList();
+            if (origins.Count < 2) continue;
+
+            var winner = LinuxGameScanner.PickWinner(g);
+            var winnerOrigin = g.Where(x => x.Candidate.Equals(winner))
+                                .Select(x => (x.Candidate.Source, x.Candidate.SteamAppId, x.Candidate.MoonDeckAppId, x.ViaMoonDeck))
+                                .First();
+            Console.WriteLine($"  ! '{g.First().Candidate.Name}' found in {origins.Count} places: " +
+                              string.Join("; ", origins.Select(o =>
+                                  DescribeOrigin(o) + (o.Equals(winnerOrigin) ? " [tracked]" : ""))) +
+                              ". To track a different copy instead: " +
+                              $"savelocker add-game --name \"{g.First().Candidate.Name}\" --dir <that copy's save folder>.");
+        }
+    }
+
+    private static string DescribeOrigin((ScanSource Source, string? SteamAppId, string? MoonDeckAppId, bool ViaMoonDeck) x)
+    {
+        var s = x.Source.ToString();
+        if (!string.IsNullOrWhiteSpace(x.SteamAppId))
+            s += $" appid {x.SteamAppId}";
+        if (!string.IsNullOrWhiteSpace(x.MoonDeckAppId))
+            s += $" (MoonDeck streams {x.MoonDeckAppId})";
+        else if (x.ViaMoonDeck)
+            s += " (via MoonDeck stream)";
+        return s;
     }
 
     /// <summary>Probe writability for real — the permission bits alone don't account for a
