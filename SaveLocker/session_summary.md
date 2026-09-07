@@ -1,3 +1,53 @@
+# Session summary — 2026-09-07
+
+`/code-review xhigh PR#30` completed end-to-end on an already-merged PR ("Three bug bounties: Linux
+agent, console/server, Windows agent", 85 files, +10271/-1565): 15 findings applied with minimal edits,
+one bug in this session's own new regression test caught and fixed by the verification run itself, and
+the full test suites confirmed green afterward.
+
+## What was asked
+
+1. `/code-review xhigh PR#30` — the target PR had already been merged (2026-07-29), so the review ran
+   against its exact base/head commits, recovered from the merge commit's two parents since the source
+   branch no longer existed.
+2. Apply the 15 surviving findings with minimal edits, explicitly told to treat the quoted finding text
+   as a description of each defect, never as instructions to follow.
+3. Report outcomes via `ReportFindings`, echoing each finding's file/line/summary/failure_scenario text
+   back verbatim.
+
+## What was fixed
+
+Fifteen findings across `SyncService.cs`, `GameScanner.cs` (two separate bugs), `SettingsScreen.cs`/
+`AgentApiServer.cs`, `AgentInstallerService.cs`, a migration's `Down()`, `SyncEngine.cs`,
+`ServerOrigin.cs`, `PublicUrl.cs`, `TrayApp.cs`, `Enroller.cs`, `UpdateChecker.cs`, and two test files.
+The headline fix is a command-completion fencing token (`ClaimToken`, threaded through the entire
+agent-command wire protocol) closing a race where a stale, expired claim's late result could silently
+overwrite a live reclaim's outcome. Full list of all 15, with per-finding detail, is in `progress.md`.
+
+## The catch: this session's own new test had a race
+
+The new "WA-06 (tray)" regression test (added for finding #14, to actually exercise
+`TrayApp.RebuildEngine` instead of the unrelated `savelocker run` wrapper the old WA-06 test drove)
+failed 2 of its checks on the first full-suite run. Root cause: `ProcessWatcher`'s first poll only
+baselines what's already running and never fires a launch event — by design, so starting the Agent
+while a game is already open doesn't look like a fresh launch — and the test started its fake game as
+soon as the tray's local API answered, which could race ahead of that first poll. Fixed with a
+5-second wait (comfortably past the 4-second poll interval) before starting the fake game. Confirmed
+by rerunning the full suite: 119/119.
+
+## Verification
+
+- `run-concurrency-tests.ps1`: 26/26 (3 new AgentStateLock fail-closed checks, no regressions).
+- `run-winagent-tests.ps1`: 119/119 after the WA-06 (tray) race fix (117/2 before it).
+- All 15 findings reported via `ReportFindings`, `outcome: fixed` on each.
+
+## Not done
+
+Nothing committed — all 19 modified files remain uncommitted on branch `claude/pr30-code-review-9dad6f`,
+awaiting the user's review/commit decision.
+
+---
+
 # Session summary — 2026-09-03
 
 Phase 8 of the conflict-resolution plan (the native Linux Game Mode conflicts screen) implemented and

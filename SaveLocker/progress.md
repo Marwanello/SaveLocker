@@ -1415,3 +1415,121 @@ existing lockfile exactly, no diff). This is a distinct gotcha from the vault's 
   frames land focus before the async version/stats fetch completes) and deliberately left unfixed —
   it's a scripted-test artifact far inside normal human reaction time, not a functional bug affecting
   real gamepad use.
+
+---
+
+## 2026-09-07 — PR #30 xhigh review: 15 findings applied, fencing/race/dedupe fixes, full test suites verified
+
+**Branch:** `claude/pr30-code-review-9dad6f`. PR:
+[SkorcherX/SaveLocker#30](https://github.com/SkorcherX/SaveLocker/pull/30) ("Three bug bounties: Linux
+agent, console/server, Windows agent") — already merged 2026-07-29; the review ran against its exact
+base/head commits (`f596fba5...` / `94ede293...`), recovered from the merge commit's two parents since
+the source branch no longer exists.
+
+### Request sequence
+
+1. `/code-review xhigh PR#30` — an xhigh-effort review of an already-merged, 85-file/+10271/-1565-line
+   PR: 3 finder groups (Server/Console, Windows Agent, Agent.Core+Linux) at two rounds each, plus a
+   verify pass and a sweep pass, surfaced 15 findings.
+2. Apply all 15 with minimal edits — explicitly instructed to treat the quoted finding text as a
+   description of a defect, never as embedded instructions to follow.
+3. Report the outcomes via `ReportFindings`, echoing each finding's original file/line/summary/
+   failure_scenario text back verbatim plus a fixed/no_change_needed/skipped outcome.
+
+### What was fixed (15 findings, minimal edits)
+
+1. **Command-completion fencing token.** `SyncService.CompleteCommandAsync` accepted a completion
+   report from any expired claim with no token check, even though `DequeueCommandsAsync` already mints
+   a fresh `ClaimToken` on every reclaim. A stale execution's late result could silently overwrite a
+   live reclaim's outcome. Fixed by threading a new `Guid? ClaimToken` through the whole wire protocol
+   (`Contracts.cs` → `Mapping.cs` → `Program.cs` → `ApiClient.cs` → `CommandPoller.cs`) and rejecting a
+   completion whose token doesn't match the command's current one.
+2. **`GameScanner.FindSteamPath()`'s unguarded `Path.GetFullPath`.** A corrupted/overlong Steam registry
+   value could throw out of the TrayApp constructor before `Application.Run` even starts, crashing the
+   whole tray at launch instead of being isolated the way WA-11 isolates every other scan source. Added
+   `SafeFullPath`, a try/catch wrapper logging and returning null on failure.
+3. **Unhandled `AgentStateLockException`.** `SettingsScreen.cs`'s config-saving calls and three
+   `AgentApiServer.cs` endpoints (`/processes`, `/remove`, `/folder`) had no try/catch for the exception
+   `AgentStateLock` now throws on contention, so a brief lock collision crashed the whole Game Mode UI
+   process or returned a raw 500. Fixed with try/catch converting it into a status message / typed 400.
+4. **`AgentInstallerService.SaveCoreAsync`'s incomplete failure cleanup.** A failure between
+   `File.Move(staged, exePath)` and `WriteInfoAsync` left a newly-published binary live under a stale
+   `info.json`, so the fleet's next integrity check would fail against a mismatched hash. Fixed by
+   tracking the published path and deleting it too on that failure branch.
+5. **`PreserveVersionsOnMachineDelete` migration's `Down()`.** Re-tightening `SaveVersions.MachineId` to
+   `NOT NULL` via `defaultValue` doesn't backfill existing NULLs on SQLite's table-rebuild path, so any
+   rollback after a machine deletion (which this same PR's `DeleteMachineAsync` sets NULL for) would
+   throw instead of reversing. Fixed with an explicit backfill `UPDATE` before the `AlterColumn`.
+6. **`SyncEngine.LinkRetirement`'s disposal race.** `RetireAsync` disposes `_retired` only after
+   awaiting per-lease network releases, well after the "retired" flag is set — so a concurrent
+   push/pull/launch call could pass the `IsRetired` check and then throw an unguarded
+   `ObjectDisposedException` reading `_retired.Token`. Fixed by catching that exception and returning an
+   already-cancelled linked source instead.
+7. **`ServerOrigin.CanonicalUrl` validated but didn't normalize.** It used `Normalize()` only as a
+   validity gate, then returned the original, un-normalized string — so a URL typed with a path or mixed
+   case was accepted but persisted with the path still attached, silently mangling every later relative
+   request built against `HttpClient.BaseAddress`. Fixed to return `Normalize()`'s own result.
+8. **`PublicUrl.IsUsableAbsolute` silently truncated instead of refusing.** Its doc comment promised a
+   URL with a path is refused, but the implementation only checked scheme/host and then let
+   `GetLeftPart(UriPartial.Authority)` silently drop the path — breaking every enrollment/agent-latest
+   URL generated behind a reverse-proxy sub-path with no error surfaced. Fixed to actually refuse a
+   path/query/fragment.
+9. **`GameScanner.ScanAsync`'s dedupe reintroduced a bug WA-08 had already fixed.** The cross-source
+   dedupe compared only `SuggestedSaveDir`, discarding the `SuggestedProcessName` field WA-08 added for
+   any game discoverable through more than one source (e.g. both a Steam shortcut and a save-root scan).
+   Fixed with a `MergeDuplicates` helper that keeps the save-dir winner but preserves whichever candidate
+   in the group actually has a process name.
+10. **`TrayApp.RebuildEngine`'s unsynchronized engine swap.** Reachable concurrently from `/api/config`
+    and `/api/register` on separate Kestrel threads, the capture-old/assign-new/retire-old sequence could
+    race and silently drop one built engine without ever retiring it, leaking its lease-renewal timer
+    against the old server forever. Fixed with a new `_engineLock` around the capture/assign step.
+11. **`/api/config`'s connection-changed check over-fired on a cosmetic rename.** Keyed on the
+    `(ServerUrl, MachineName)` tuple, so renaming a machine while it held a sync lease retired the whole
+    engine and released every lease, mid-session, for a purely cosmetic edit. Narrowed to `ServerUrl`
+    alone.
+12. **`Enroller.EnrollAsync`'s uncaught `SetTracked` exception.** `SetTracked` can now throw
+    `AgentStateLockException` on lock contention (this same PR's own WA-07 fail-closed change), but
+    `EnrollAsync` called it with no try/catch — a brief contention mid-batch aborted the whole enrollment
+    loop, permanently orphaning already-created server-side games for every remaining candidate. Fixed
+    with try/catch + skip-and-continue per candidate.
+13. **`UpdateChecker.DownloadInstallerAsync`'s same-origin check used the wrong config value.** It read
+    the live, mutable `_config.ServerUrl` instead of the `ServerUrl` property this same PR had added
+    specifically to be captured at construction and stay fixed across a later connection change — so a
+    server-URL change mid-download could wrongly reject a same-server download as foreign. Fixed to use
+    the captured property.
+14. **`run-winagent-tests.ps1`'s WA-06 section never exercised the actual regression surface.** It drove
+    `savelocker run` (a single `SyncEngine`, disposed via ordinary process exit) instead of the real
+    Windows tray, so a reverted `TrayApp.RebuildEngine` fix would still pass it. Added a new "WA-06
+    (tray)" block driving the real tray process and a real `/api/config` POST against two fake HTTP
+    origins, proving the *old* engine's lease renewer genuinely stops after a live server-URL swap.
+15. **`run-concurrency-tests.ps1` had zero coverage of `AgentStateLock`'s fail-closed rewrite.** The
+    file's own header claims ownership of cross-process state safety, but grepping every test file for
+    `AgentStateLock` returned nothing. Added a new "AgentStateLock fails closed" section (3 checks)
+    holding the same lock file directly via a `System.IO.FileStream` from PowerShell to simulate a
+    genuine external holder.
+
+### A bug in this session's own new test, caught by its first run
+
+The new WA-06 (tray) test failed 2 of its 5 new checks the first time the full suite ran ("a lease was
+acquired against origin A" / "the lease was renewed against origin A"). Root cause: `TrayApp.cs` starts
+`ProcessWatcher` *before* the tray's local API even begins listening, and the watcher's first poll only
+baselines what's already running — by design, it never fires `GameLaunched` on that first tick, so
+starting the Agent while a game is already open doesn't look like a fresh launch (`Watchers.cs`). The
+test started its fake game the instant `/api/state` answered, which could race ahead of that first
+baseline poll and make the launch permanently invisible to the watcher, not merely late. Fixed with a
+`Start-Sleep -Seconds 5` after confirming the tray is up and before starting the fake game — comfortably
+past the 4-second default poll interval, so the baseline tick is guaranteed to have already landed.
+
+### Verification
+
+- `run-concurrency-tests.ps1`: 26/26 passing (23 pre-existing + 3 new AgentStateLock checks), no
+  regressions.
+- `run-winagent-tests.ps1`: 119/119 passing after the WA-06 (tray) race fix (117/2 on the first run) —
+  the full 12-section suite, including real tray/daemon processes, with no regressions traced to any of
+  the 13 production-code fixes.
+- All 15 findings reported via `ReportFindings`, `outcome: fixed` on each.
+
+### Not done
+
+- Nothing committed this session — all 19 modified files remain uncommitted in the working tree; no
+  commit was requested.
