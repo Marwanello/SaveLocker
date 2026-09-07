@@ -6,7 +6,7 @@
 # is cached across sessions (~7 days) the way this hook, running fresh every session, cannot be.
 # See https://code.claude.com/docs/en/cloud-environments#setup-scripts-vs-sessionstart-hooks.
 # This hook restores the Linux-buildable .NET projects and runs `npm install` in both frontends
-# (agent-ui/ in particular is the recurring gotcha in SaveLocker/CONTEXT.md — a fresh worktree
+# (agent-ui/ in particular is the recurring gotcha in docs/CONTEXT.md — a fresh worktree
 # with no node_modules silently breaks the Windows agent build and the web build/typecheck
 # alike). Local sessions already have all of this; only Claude Code on the web needs it built.
 set -euo pipefail

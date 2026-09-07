@@ -534,7 +534,7 @@ behave in ways that look like bugs.
   filesystem/`git tag -l` before trusting a pointer in `CONTEXT.md`/`Backlog.md` — this vault has
   drifted before (a deleted task still listed as next action; a stale version number).
 - **A `Docs:` commit runs no CI, by design.** `ci.yml` and `docker-publish.yml` both carry the same
-  `paths-ignore` (`SaveLocker/**`, `CLAUDE.md`, `AGENTS.md`, `.agents/**`), so a vault-only push is
+  `paths-ignore` (`docs/**`, `CLAUDE.md`, `AGENTS.md`, `.agents/**`), so a vault-only push is
   skipped by both — a green tick is *absent*, not failing. Two things follow. **Never widen it to
   `'**.md'`:** `web/src/releases/*.md` are bundled into the console image and `web/src/help/*.md`
   are the Help KB, so both are code as far as the build is concerned. And **Actions does not expand

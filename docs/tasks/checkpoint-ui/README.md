@@ -1,7 +1,7 @@
 # Checkpoint UI — working folder
 
 Everything for the console / agent / Deck visual redesign lives here. Like
-`tasks/conflict-resolution-ui/`, this is **not** an ordinary `SaveLocker/tasks/*.md` single-file task
+`tasks/conflict-resolution-ui/`, this is **not** an ordinary single-file task
 — it's a living, multi-session design doc set for a still-open, 8-phase effort (nothing shipped yet
 as of 2026-09-02; the design phase is complete and no implementation phase has started). Don't treat
 `plan.md` as "read once, execute its steps, stop" — it's the canonical reference to re-read at the
@@ -25,5 +25,5 @@ second source of truth: [prototype](https://claude.ai/code/artifact/b8f247f2-32e
 one decision (how `agent-ui` receives the design tokens, given it has no Tailwind and no CSS file)
 that Groups 3 and 4 will otherwise re-litigate.
 
-**Once every phase ships**, move this whole folder to `SaveLocker/logs/` with a date prefix
+**Once every phase ships**, move this whole folder to `docs/logs/` with a date prefix
 (e.g. `logs/2026-MM-DD_checkpoint-ui/`), per the normal task-completion convention.

@@ -29,7 +29,7 @@
 #                         prove the daemon does not ERASE another's version; nothing proved it does
 #                         not USE a dead one. It did, and the server correctly rejected every push
 #                         forever after - 75 conflicts and 2.66 GB on a real Deck. See
-#                         SaveLocker/logs/2026-07-23_conflict-storm.md.
+#                         docs/logs/2026-07-23_conflict-storm.md.
 #   7. Reconcile write  - the daemon's POLL path, which no check above ever exercised: checks 1-5
 #                         only ever drive its PUSH path (SaveGameSyncState). ReconcileGamesAsync
 #                         calls AgentConfig.Save(), which used to serialize the whole in-memory

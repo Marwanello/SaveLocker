@@ -23,7 +23,7 @@ on:
     # the build serving it, which is the one property that design exists to guarantee. Only the
     # Obsidian vault and the agent-instruction files are safe to ignore.
     paths-ignore:
-      - 'SaveLocker/**'
+      - 'docs/**'
       - 'CLAUDE.md'
       - 'AGENTS.md'
       - '.agents/**'
