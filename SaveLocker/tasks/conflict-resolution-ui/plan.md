@@ -35,7 +35,7 @@ updating — only Phase 5 onward is renumbered relative to the original 2026-08-
 | 9 — Desktop notification via D-Bus | ✅ Shipped |
 | 10 — Decky: conflict display + resolve UI | ✅ Shipped 2026-09-07, **hardware-verified 2026-09-07** — chip and Pull/Push/Sync buttons confirmed working on a real Deck after the `gameId`/`saveDirectory` wire-field fix (see this section's own note below) |
 | 11 — Decky: launch-gate wiring | ✅ Shipped 2026-09-07 (code-only — needs a real Deck/Steam+Decky session to verify the cancel→popup→sync→relaunch sequence) |
-| 12 — sync-status endpoint consumer | ⬜ Not started — endpoint shipped in 0/1; needs a genuine "check now" trigger, not a passive poll |
+| 12 — sync-status endpoint consumer | ✅ Shipped 2026-09-07 — a "Check sync status" button on each game's row in the Decky full-screen page (`fullPage.tsx`), on demand only |
 | 13 — Playnite plugin | ⬜ Not started — needs a Windows + Playnite environment |
 | 14 — Webhook notify + per-game block-launch setting | ⬜ Not started — deliberately deferred; see the note below |
 
@@ -729,6 +729,20 @@ one-shot call at a specific decision point (e.g. immediately before a launch gat
 background poll. **Consumer work is correctly still open**, but needs an explicit trigger moment
 decided first, not a UI badge wired to a timer; fold it into whichever of Phase 6, 8, or 10 first has
 a natural "check now" action, rather than building one just to close this line out.
+
+**Shipped 2026-09-07.** Landed on `fullPage.tsx`'s `GameRow` (the Decky full-screen "Overview" tab's
+per-game list, `SaveLocker-Decky` repo) as the trigger moment: a "Check sync status" `DialogButton`
+next to each game's conflict-policy dropdown, calling a new `sync_status` proxy in `main.py` →
+`GET /api/games/{id}/sync-status` only when pressed — never wired to the 5s poll that tab already
+runs for everything else on the page. Chosen over Phase 11's `pre_launch_sync` `Blocked` result
+(floated as a candidate when this phase was scoped) because that path already resolves its own
+conflict inline via the resolve modal; a separate manual check serves the different, genuinely open
+question "is this game still in sync right now, without launching it." A result reports in-sync/
+out-of-sync inline, or — if `hasOpenConflict` comes back true — swaps in an "Open conflict — resolve"
+button that reuses `conflicts.tsx`'s existing `openConflictResolveModal` (no circular import: unlike
+`gamingSync.tsx`, `fullPage.tsx` isn't imported by `conflicts.tsx`, so it imports directly). Verified
+via `tsc --noEmit`, a real `npm run build` (rollup), and `python -m py_compile main.py` — all clean.
+Not yet exercised on real hardware.
 
 **Phase 13 — Playnite plugin** (new, separate project) — unchanged scope, renumbered from the
 original Phase 8. Depends only on Phase 0/1's local API — independent of every Decky phase and of

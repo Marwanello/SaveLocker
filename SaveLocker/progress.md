@@ -1808,3 +1808,203 @@ other file (source or vault docs) still referenced the old name.
 - The open question about whether Steam's live shortcut AppID can diverge from SaveLocker's computed
   one remains unresolved; the rename is a safety net for it, not a resolution of it.
 - No commit made yet for this fix.
+
+---
+
+## 2026-09-07 (cont'd) — Alias-edit fix, chip/button root cause, Phase 11 shipped, testenv `conflict` fix
+
+**Branch:** `claude/savelocker-decky-worktree-d43a9e` (SaveLocker) / `decky-conflict-resolution-ui`
+(SaveLocker-Decky). Continues directly from the ConflictTest → Conflict Game rename above, same day.
+
+### Request sequence
+
+1. "also changing a game alias doesn't work in the decky plugin. please fix it."
+2. "please commit changes / also after your eddit the status chip and sunc button still doen'ty show
+   up in Conflict game. why is that?"
+3. "manual verification complete and everything runs as expected / lets start phase 11 / after
+   implmenting tell me how to verfy it on real hardware using testenv"
+4. "what is phase 12 and when will it be implmented?" / "is it easy to implement?" (Q&A only, no code)
+5. `.\tests\testenv.ps1 conflict` failed on a fresh run — Windows side hit a raw
+   `HttpRequestException` (console not up), Deck side reported "not installed". "please fix this."
+6. "please commit in both savaelocker and savelo0cker deck repo branhces"
+
+### Root cause: `gameId`/`saveDirectory` wire-field mismatch
+
+`TrackedGameDto`'s JSON wire fields are frozen as `id`/`path` for back-compat (per its own C# doc
+comment), but every TS consumer in the Decky plugin (`GamingSyncGame`, `fullPage.tsx`'s game list,
+etc.) expected `gameId`/`saveDirectory`. This made `game.gameId` `undefined` everywhere `/api/games`
+data was consumed, with two separate symptoms:
+
+- **Alias editor:** `setAlias(game.gameId, next)` sent `undefined` → the URL literal `"None"` →
+  404 against `/api/games/None/alias`. The UI only acts `if (r.ok)`, so the edit box just silently
+  stayed open with no error.
+- **Chip/Pull/Push/Sync buttons never appearing at all** (discovered while explaining bug #1's blast
+  radius): the same bug broke `resolveMatchSync`'s *primary* Steam-AppID match path too, not just its
+  name-based fallback — `syncCache.games.find((g) => g.gameId === row.gameId)` always returned
+  `undefined` since `g.gameId` was undefined for every cached game. `OverlayHost` therefore never got
+  a match and `OverlayButtons` never mounted, for any game, regardless of the earlier rename.
+
+**Fix:** one `_normalize_game()` helper added in `SaveLocker-Decky/main.py`, applied inside `games()`
+— a single choke point since both `fullPage.tsx` and `gamingSync.tsx` call the same Python method
+name. Chosen over patching every TS call site since the C# DTO's wire names are a deliberate,
+documented constraint that can't change. User confirmed via manual hardware verification: "manual
+verification complete and everything runs as expected."
+
+### Phase 11 shipped: launch-gate wiring (cancel → popup → sync → relaunch)
+
+Server/agent side (`SyncEngine.cs`, `AgentApiServer.cs`, `Daemon.cs`, `TrayApp.cs`): exposed the
+pre-existing (Phase 4) `SyncEngine.PrepareLaunchAsync` over a new
+`POST /api/games/{id}/pre-launch-sync` route returning `LaunchGateResult` (now serializes
+`LaunchDecision` as a string via `JsonStringEnumConverter`, matching `Contracts.cs`'s existing
+pattern).
+
+Decky plugin side (`main.py`, `gamingSync.tsx`, `conflicts.tsx`, `index.tsx`): new `pre_launch_sync`
+Python proxy; `handleGameActionStart`'s cancel-and-relaunch path and `handleLifetimeChange`'s
+`bRunning` fallback both now call it instead of always relaunching blind after a plain pull. A
+`Blocked` decision opens the conflict-resolve modal and relaunches only once it closes (fail-open on
+any transport error — the plugin's stated philosophy is "delaying a launch is acceptable, silently
+stranding one is not"). Solved a `conflicts.tsx` ⇄ `gamingSync.tsx` circular-import constraint with a
+`ConflictHooks`/`setConflictHooks` registration pattern wired once from `index.tsx`'s
+`definePlugin`, mirroring the codebase's existing `syncStatus.tsx` leaf-module convention.
+`handleGameActionStart` deliberately does **not** apply the same gate to `handleLifetimeChange`'s
+fallback beyond reporting via the chip — that path only fires after the process is already running,
+so it can't meaningfully cancel or gate anything.
+
+**Verification performed:** C# solution build clean, `tsc --noEmit` clean, Decky rollup build clean,
+existing 30-check local-API regression suite 30/30, a standalone smoke test against the new route
+(404 for an unknown game id; clean 500/`ErrorResponse` for a known game against an unreachable fake
+server, confirming the plugin's `!r.ok` fail-open path). **Not done:** real Deck/Steam+Decky hardware
+verification of the actual cancel→popup→sync→relaunch sequence — handed to the user via testenv
+instructions, not fabricated.
+
+### `testenv.ps1 conflict` fix
+
+A fresh run of `.\tests\testenv.ps1 conflict` failed: the Windows leg threw a raw
+`HttpRequestException` stack trace (connection refused on :5080) because the console container
+wasn't running yet, and the command never started it — it assumed `up`/`up -Only console` had already
+been run. (The Deck leg's "not installed" message was separate and correct — that Deck genuinely
+hadn't had `build -Only deck`/`up -Only deck` run yet.)
+
+**Fix:** `tests/testenv.ps1`'s `conflict` case now checks `Test-ConsoleUp` and calls `Start-Console`
+first if it isn't already up (idempotent — skipped when already running), before seeding either side.
+Starting the console here races nothing, unlike the tray/daemon-vs-CLI-seeding race the existing
+ordering rule protects against, since the console holds no local agent config. Doc header updated to
+describe the new auto-start. Verified via
+`[System.Management.Automation.Language.Parser]::ParseFile` — no syntax errors.
+
+### Commits
+
+**SaveLocker** (`claude/savelocker-decky-worktree-d43a9e`), 3 commits, none pushed:
+- `b5988e8` — Add `/api/games/{id}/pre-launch-sync` route for Decky launch-gate wiring (Phase 11)
+- `24071fc` — Add fake-game Steam shortcut test rig; rename ConflictTest to Conflict Game (bundles the
+  earlier rename-fix session's changes, which had not yet been committed)
+- `df7a923` — Docs: record Phase 11 shipped and hardware-verified Phase 10 fixes
+
+**SaveLocker-Decky** (`decky-conflict-resolution-ui`), 1 commit, not pushed:
+- `617f9b3` — Wire pre-launch sync gate into the launch-intercept path (Phase 11)
+
+The alias-fix commit (`b8af1c6`, `_normalize_game()` in `main.py`) was made in the prior segment of
+this same session, before this entry's fixes.
+
+### Not done
+
+- Real-hardware verification of Phase 11's cancel→popup→sync→relaunch sequence on an actual Deck.
+- Neither branch pushed to a remote.
+- Phase 12 (`sync-status` endpoint consumer work) not started — the endpoint and DTO already exist
+  from Phase 0/1; the open decision is picking a genuine one-shot trigger moment (not a timer-polled
+  badge, per the plan's own 2026-08-30 correction). Phase 11's new `pre_launch_sync` `Blocked` result
+  is a plausible natural home for it, though this isn't a decided plan of record.
+- Phases 13 (Playnite, separate project) and 14 (blocked on a maintainer decision) remain queued.
+
+---
+
+## 2026-09-07/08 — Real-hardware fix: Play Anyway/pause never engaged for any game; testenv `-Size`/`-Files`
+
+**Repos:** `SaveLocker-Decky` (`decky-conflict-resolution-ui`) and `SaveLocker`
+(`claude/savelocker-decky-worktree-d43a9e`). Both uncommitted as of this entry.
+
+### Request sequence
+
+1. Reported that after correctly building against the right Decky worktree, real-Deck testing showed
+   no pause and no "Play Anyway" popup at all — a regression from the previously-verified Phase 10/11
+   behavior.
+2. Asked explicitly whether the bug was specific to the "Conflict Game" fake-game test rig or could hit
+   any game — a scope question, not just "fix it."
+3. Live iteration using a CDP console-tailing tool built mid-session (`tail-deck-console.mjs`): pasted
+   raw hardware console logs twice, each preceding a targeted fix.
+4. After the first fix, reported a new symptom ("now the game doesn't open and is cancelled but the
+   popup doesn't show up") — a second root-cause pass.
+5. Confirmed "it works perfectly now," then asked for a new, unrelated feature: `-Size <MB>`/
+   `-Files <count>` options on `testenv.ps1 conflict` to seed realistically-sized conflicting saves
+   instead of one hardcoded line of text.
+
+### Root cause #1: `appId` from `RegisterForGameActionStart` is a packed 64-bit `CGameID`, not a plain AppID
+
+For a non-Steam Steam shortcut, the callback's `appId` string is Steam's packed 64-bit `CGameID`: the
+real 32-bit AppID sits in the **upper** 32 bits, with a `0x02000000` shortcut-type marker in the lower
+32 bits. Proven from real hardware, not guessed: Steam's own debug log showed `13278285201168924672`
+for a launch whose real AppID was `3091591690` (`0xb845f20a`), and
+`BigInt(13278285201168924672n) >> 32n` yields exactly `3091591690`. The old code did
+`Number(appIdStr)`, which silently rounds a value this large to a garbage float — so the fast-path
+appId match failed for **every** non-Steam-shortcut game, not just the fake-game rig. Fixed in
+`src/gamingSync.tsx` with a `parseGameActionAppId()` helper that BigInt-shifts values above
+`0xFFFFFFFF` before converting to `Number`; the raw `appIdStr` is still passed unchanged to
+`SteamClient.Apps.RunGame` in `relaunch()`, which needs the original packed value.
+
+### Root cause #2: `SteamClient.Apps.GetActiveGameActions()` is unreliable in both directions
+
+After fix #1, every hardware attempt logged "cancel lost the race" even when the user directly observed
+the cancel actually working (game did not open). `GetActiveGameActions()` proved unreliable both ways
+on real hardware — an empty result doesn't prove a cancel succeeded (the action can simply progress past
+cancellable state), and a non-empty result doesn't prove it failed (Steam can be slow to prune a
+cancelled action from the list). Fixed by removing this verification entirely from both call sites in
+`handleGameActionStart` (the `knownConflict` branch and the generic `interceptedLaunches` path); both
+now just call `CancelGameAction` inside `try {} catch {}` and proceed unconditionally, relying solely on
+the pre-existing `pendingBlock`/`bRunning` safety net in `handleLifetimeChange` as the real authority.
+
+### Debug tooling built (not part of any repo)
+
+`tail-deck-console.mjs` — a ~70-line, dependency-free Node script (native `fetch`/`WebSocket`) that
+tails a Decky plugin's frontend console live. Decky frontends run inside Steam's `SharedJSContext` CEF
+process, which has no on-disk log file; the script lists CDP targets at `http://localhost:8080/json`
+(reached via `ssh -N -L 8080:127.0.0.1:8080 deck@<ip>`), connects to the matching target's
+`webSocketDebuggerUrl`, and prints every `Runtime.consoleAPICalled`/`Runtime.exceptionThrown` event.
+Kept at the SaveLocker worktree root for reuse in future hardware-debugging sessions.
+
+### `testenv.ps1 conflict -Size <MB> -Files <count>`
+
+Both defaulted (`Size=0`, `Files=1`) so omitting them preserves the old single-tiny-file behavior
+exactly. When given, both platforms split the requested total size across that many randomly-filled
+files (random, not zero-filled, so the two sides genuinely differ even at identical size/count):
+
+- **Windows** (`tests/testenv.ps1`): new `New-SyntheticSaveFiles` function, called from
+  `New-ConflictOnWindows`; uses `[System.Random]::NextBytes` + `[IO.File]::WriteAllBytes`.
+- **Deck** (`tests/testenv-deck.sh`): mirrors the same split using `awk` (float-MB → integer bytes,
+  since POSIX shell arithmetic has no floats) and `head -c <bytes> /dev/urandom`.
+- Forwarded to the Deck side via two new `SAVELOCKER_CONFLICT_SIZE_MB`/`SAVELOCKER_CONFLICT_FILES` env
+  vars in `Invoke-Deck`'s existing `$vars` array.
+- Validated (`-Size >= 0`, `-Files >= 1`) in the `conflict` switch case before seeding.
+
+### Verification
+
+- CGameID/cancel fixes: confirmed on real Steam Deck hardware across three rounds of CDP-instrumented
+  traces; user's final report: "it works perfectly now."
+- Generalization: explicitly confirmed the CGameID bug affects every game the feature targets (Heroic
+  titles, emulators, the fake-game rig) — not fake-game-specific — directly answering the scope question
+  asked.
+- `-Size`/`-Files`: `[System.Management.Automation.Language.Parser]::ParseFile` clean; `bash -n` clean
+  on `testenv-deck.sh`; the byte-splitting arithmetic independently verified correct on both platforms
+  standalone (25 files / 25 MB → exactly 26,214,400 bytes on both PowerShell and Bash). The existing
+  `clean` command's whole-directory `rm -rf` already covers the new multi-file saves with no changes
+  needed.
+
+### Not done
+
+- **Debug instrumentation not yet stripped.** `gamingSync.tsx` still carries a temporary `dbg()` helper
+  and call sites at every decision point, plus a debug-only `getAllOpenConflictGameIds` hook wired
+  through `index.tsx`; `libraryOverlay.tsx` still has one leftover debug `console.log`. All were added
+  during this investigation and are safe to remove now that the fix is hardware-confirmed, but removal
+  hasn't been done yet.
+- **Nothing committed in either repo.** SaveLocker-Decky has the two fixes plus debug instrumentation;
+  SaveLocker has the new `-Size`/`-Files` feature plus earlier still-uncommitted changes (the
+  `Get-DeckyPluginRepo` diagnostic fix, `DrawFakeGame` color-cycling). No commit or push requested yet.

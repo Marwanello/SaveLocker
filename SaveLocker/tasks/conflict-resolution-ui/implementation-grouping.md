@@ -191,10 +191,13 @@ Done 2026-08-31       →  Group 2 (4, 6)                        medium, biggest
 Done 2026-09-01       →  Group 3 (9-impl)                      small, code-only here, needed Group 2 first
 Done 2026-09-03       →  Group 4 (8)                           medium, verified live under WSLg
 Done 2026-09-03       →  Group 5 (7)                           verified live on a real Windows dev box; Phase 14 held back — see above
-Done 2026-09-07*      →  Group 6 (10)                          code-only, Decky repo attached — Deck hardware pass still needed; 11 next
+Done 2026-09-07*      →  Group 6 (10, 11, 12)                  code-only, Decky repo attached — Deck hardware pass still needed for 10/11
 Windows + Playnite     →  Group 7 (13)                          independent of Group 6 — split out 2026-09-07, see above
-Whenever 6/8/10 adds a "check now" trigger → Phase 12 (sync-status consumer)
 ```
+
+Phase 12 (sync-status consumer) shipped 2026-09-07 once Group 6's Decky work gave it a genuine
+on-demand trigger to attach to — a "Check sync status" button on `fullPage.tsx`'s per-game row. See
+`plan.md`'s own Phase 12 write-up for what was built.
 
 ## Re-evaluate before each new group
 

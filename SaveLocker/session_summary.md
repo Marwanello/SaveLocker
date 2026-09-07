@@ -1,3 +1,119 @@
+# Session summary — 2026-09-07/08 — Real-Deck Play Anyway/pause fix (CGameID bug), testenv `-Size`/`-Files`
+
+Root-caused and fixed a two-part bug that silently broke the Decky "Play Anyway" popup and
+pause/resume freeze for **every game**, not just the fake-game test rig — confirmed working on real
+Steam Deck hardware — then implemented an unrelated feature request to seed realistically-sized
+conflicting saves in `testenv.ps1 conflict`.
+
+## What was asked
+
+1. Fix: real-Deck testing showed no pause and no "Play Anyway" popup, despite a correctly-built
+   Decky plugin (ruled out the earlier stale-checkout bug first).
+2. Determine whether the bug was exclusive to the fake-game rig or could hit any game.
+3. Live CDP-log-driven debugging across two rounds (a purpose-built console-tailing tool, then two
+   pasted hardware traces), fixing a second symptom that appeared after the first fix.
+4. Confirmed working; then requested `.\tests\testenv.ps1 conflict -size 25 -files 25` — an option to
+   seed a conflicting save of a configurable size split across a configurable file count.
+
+## What was found and fixed
+
+- **Root cause #1:** `RegisterForGameActionStart`'s `appId` is a packed 64-bit Steam `CGameID` for
+  non-Steam shortcuts (real AppID in the upper 32 bits) — proven from a real hardware log, not
+  guessed. `Number(appIdStr)` silently rounded it to garbage, breaking appId matching for **every**
+  game the feature targets. Fixed with a BigInt-aware `parseGameActionAppId()` in
+  `SaveLocker-Decky/src/gamingSync.tsx`.
+- **Root cause #2:** `SteamClient.Apps.GetActiveGameActions()` proved unreliable in both directions on
+  hardware (empty ≠ cancel succeeded; non-empty ≠ cancel failed). Removed as a verification step
+  entirely; the pre-existing `pendingBlock`/`bRunning` safety net in `handleLifetimeChange` is now the
+  sole authority. User confirmed: "it works perfectly now."
+- Built `tail-deck-console.mjs`, a dependency-free Node CDP client, to tail the Decky frontend's
+  console live over an SSH tunnel — Decky frontends run in Steam's `SharedJSContext` CEF process,
+  which has no on-disk log.
+- Added `-Size <MB>`/`-Files <count>` to `testenv.ps1 conflict` (defaulting to today's tiny-file
+  behavior), mirrored on both the Windows (`New-SyntheticSaveFiles`) and Deck (`awk`+`/dev/urandom`)
+  sides, splitting a total byte count across randomly-filled files. Verified independently on both
+  platforms: 25 files / 25 MB → exactly 26,214,400 bytes.
+
+## Not done
+
+- Temporary debug instrumentation (`dbg()` helper/call sites, a debug-only conflict-id hook) added
+  during the investigation is still in `gamingSync.tsx`/`index.tsx`/`libraryOverlay.tsx` — safe to
+  strip now that the fix is confirmed, but not yet removed.
+- Nothing committed in either repo this segment.
+
+---
+
+# Session summary — 2026-09-07 (cont'd 3) — Alias fix, chip root cause, Phase 11 shipped, testenv fix
+
+Continuing directly from the ConflictTest → Conflict Game rename below: fixed the Decky plugin's
+alias editor, root-caused why the sync-status chip and Pull/Push/Sync buttons weren't appearing at
+all (a deeper case of the same bug), implemented Phase 11 (launch-gate wiring) end-to-end, and fixed
+a `testenv.ps1 conflict` failure on a fresh run. Committed all of it across both repos.
+
+## What was asked
+
+1. Fix the Decky plugin's alias editor (silently doing nothing on edit).
+2. Commit that fix; also explain why the status chip and Pull/Push/Sync buttons still weren't showing
+   up on "Conflict Game" even after the rename.
+3. ("manual verification complete") Implement Phase 11, with real-hardware testenv verification steps.
+4. Q&A on Phase 12's scope and difficulty (no code).
+5. Fix `.\tests\testenv.ps1 conflict` failing on a fresh run (raw HTTP exception + "not installed").
+6. Commit everything in both the SaveLocker and SaveLocker-Decky repos.
+
+## What was found
+
+Both bugs traced to one root cause: `TrackedGameDto`'s JSON wire fields are frozen as `id`/`path`
+(documented back-compat constraint on the C# side), but every TS consumer in the Decky plugin
+expected `gameId`/`saveDirectory` — making `game.gameId` `undefined` everywhere. This broke the alias
+editor (sent a literal `"None"` into the URL, 404'd silently) **and**, more seriously,
+`resolveMatchSync`'s primary Steam-AppID match path — so the chip/buttons never mounted for *any*
+game, not just ones hitting the name-based fallback the earlier rename targeted.
+
+Separately, `testenv.ps1 conflict` assumed the console container was already running (both sides
+register/push against it over HTTP) but never started it itself, surfacing a raw
+`HttpRequestException` instead of a clear error on a fresh environment.
+
+## What was fixed
+
+- One `_normalize_game()` helper in `SaveLocker-Decky/main.py`'s `games()` — a single choke point
+  fixing both bugs at once, since both `fullPage.tsx` and `gamingSync.tsx` call the same Python
+  method. User confirmed via manual hardware verification.
+- **Phase 11** (cancel → popup → sync → relaunch): new `POST /api/games/{id}/pre-launch-sync` route
+  exposing the existing `SyncEngine.PrepareLaunchAsync` over HTTP; Decky plugin's
+  `handleGameActionStart`/`handleLifetimeChange` now call it instead of relaunching blind, opening
+  the conflict-resolve modal on a `Blocked` decision and relaunching once it closes (fail-open on
+  transport errors). A `ConflictHooks`/`setConflictHooks` pattern resolved a circular-import
+  constraint between `gamingSync.tsx` and `conflicts.tsx`.
+- `tests/testenv.ps1`'s `conflict` case now starts the console first if it isn't already up
+  (idempotent), before seeding either side.
+
+Verified via: full C# solution build, `tsc --noEmit`, Decky rollup build, the existing 30-check
+local-API suite (30/30), a standalone smoke test for the new route's edge cases, and the PowerShell
+parser for `testenv.ps1`. Real Deck/Steam+Decky hardware verification of Phase 11's actual
+cancel→popup→sync→relaunch sequence is still outstanding — handed to the user, not assumed.
+
+## Commits
+
+**SaveLocker** (`claude/savelocker-decky-worktree-d43a9e`), not pushed:
+- `b5988e8` pre-launch-sync route (Phase 11 server/agent side)
+- `24071fc` fake-game Steam shortcut test rig + ConflictTest→Conflict Game rename (from the prior
+  segment, not yet committed until now)
+- `df7a923` Docs: Phase 11 shipped, Phase 10 hardware-verified
+
+**SaveLocker-Decky** (`decky-conflict-resolution-ui`), not pushed:
+- `617f9b3` Phase 11 launch-gate wiring
+- (`b8af1c6`, the alias/_normalize_game fix, was already committed in the prior segment)
+
+## Not done
+
+- Real-hardware verification of Phase 11 on an actual Deck.
+- Neither branch pushed.
+- Phase 12 (`sync-status` consumer work) not started — endpoint/DTO already exist; the open question
+  is picking a one-shot trigger moment, not code difficulty. Phase 11's `Blocked` result is a
+  plausible home for it.
+
+---
+
 # Session summary — 2026-09-07 (cont'd 2) — Decky chip name mismatch fixed
 
 The user reported the sync-status chip wasn't appearing on the "Conflict Game" library tile on their
