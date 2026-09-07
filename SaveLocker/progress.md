@@ -822,6 +822,130 @@ test `Notify` call while actually in Game Mode, see if anything appears on scree
 - The live "does `Notify` actually render in Game Mode" check flagged in `plan.md` is not yet
   performed — needs one more manual SSH session against the real Deck.
 - Desktop Mode's own Session-block values (as opposed to Game Mode's, now captured) are still
+
+[continues below — see rest of file for interleaving entries between 2026-08-31 and this one]
+
+---
+
+## 2026-09-07 — Decky Phase 10 shipped, Playnite regrouped, testenv worktree bug fixed
+
+**Main repo branch:** `claude/savelocker-decky-worktree-d43a9e` (worktree
+`.claude/worktrees/save-conflict-next-group-ebc9b1`). **Decky repo branch:**
+`decky-conflict-resolution-ui`, now at `D:\Projects\SaveLocker\SaveLocker-Decky\.claude\worktrees\decky-conflict-resolution-ui`
+(moved there this session — see below).
+
+### Request sequence
+
+1. Implement "the next group" in the conflict-resolution-ui plan, given the Decky plugin repo lives
+   at `D:\Projects\SaveLocker\SaveLocker-Decky`; create a worktree/branch there if needed; flag any
+   step that needs manual hardware verification, with steps.
+2. Asked what was implemented, for a step-by-step `testenv`-based verification walkthrough, and to
+   move Playnite (Phase 13) into its own group so it can be implemented later, independent of Decky.
+3. Ran the given verification steps, hit `fatal: not a git repository: ...` from `.\tests\testenv.ps1
+   sync`; asked why.
+4. Asked to move the Decky worktree from its ad hoc location
+   (`D:\Projects\SaveLocker\SaveLocker-Decky-worktrees\decky-conflict-resolution-ui`) to the standard
+   `.claude\worktrees` location under the Decky repo itself.
+
+### What was built — Decky Phase 10 (conflict display + resolve UI)
+
+Implemented in a new worktree of the Decky repo, branch `decky-conflict-resolution-ui` off `main`:
+
+- `main.py` — 7 new backend methods proxying the local agent API's conflict routes
+  (`conflicts`, `conflict`, `resolve_conflict`, `conflict_policy`, `set_conflict_policy`,
+  `save_version`, `version_stats`).
+- `src/shared.tsx` — `machineId` added to `AgentState`; a new "Conflicts" section with
+  `ConflictPolicyKind`/`Conflict`/`SaveVersion`/`VersionStats`/`ConflictPolicySetting` types and
+  matching fetch/resolve callables, mirroring the local API's camelCase fields exactly.
+- `src/conflicts.tsx` (new, ~300 lines) — 20s poller, chip-merge logic (never overwrites a
+  `'syncing'` chip), and `ConflictResolveModal` (`ModalRoot`/`DialogButton`/`ToggleField`/
+  `Focusable`), with immediate-resolve on card press and a "Keep both" toggle.
+- `src/libraryOverlay.tsx` — the sync chip becomes clickable in the `'conflict'` state, opening the
+  resolve modal for that game.
+- `src/index.tsx` — new QAM "Save conflicts" panel (`ConflictWarnings`), conflict polling
+  registered/unregistered with plugin mount/unmount.
+- `src/fullPage.tsx` — per-game "If a save conflict happens" dropdown (Manual / Newest save always
+  wins / Prefer this device), with a caption when a different machine is currently preferred.
+- `src/toast.tsx` — new `'conflict'` toast kind.
+
+**One small necessary main-repo addition:** `AgentStateDto` (`src/Agent.Core/AgentApiServer.cs`)
+gained a trailing `Guid? MachineId` field, populated from `_config.MachineId` in the `/api/state`
+handler — needed so Decky's "prefer this device" policy option has a machine id to send.
+`agent-ui/src/api-types.ts` regenerated against a scratch dev daemon; diffed to confirm only the
+`machineId` field appeared. Commit `7306968` (main repo). Decky repo: single commit `2f06573`.
+
+Build and type-check both verified clean; one unused-import build error (`fetchState` imported but
+never used in `conflicts.tsx`) caught and fixed before the final build.
+
+### Docs updated
+
+`SaveLocker/Backlog.md`, `SaveLocker/CONTEXT.md`, and
+`SaveLocker/tasks/conflict-resolution-ui/plan.md` all updated with the Phase 10 write-up and a
+five-point manual verification checklist (commit `170cc63`, main repo).
+
+### Playnite split into its own group
+
+Per explicit request, `implementation-grouping.md`'s old combined "Group 6 (Phase 10, 11, 13)" was
+split: **Group 6** now covers Decky only (Phase 10 + 11), and a new **Group 7** covers Playnite only
+(Phase 13) — Playnite has no real dependency on the Decky work, so bundling them under one "needs
+real hardware" rationale was an avoidable coupling, the same category of grouping mistake as the
+earlier Phase 9 miscategorization (see the 2026-08-30/31 entry above). Commit `976b863`.
+
+### Bug found and fixed: cosmetic `fatal: not a git repository` in `testenv.ps1 sync`
+
+The user ran `.\tests\testenv.ps1 sync` from this session's worktree and got:
+
+```
+fatal: not a git repository: /mnt/d/Projects/SaveLocker/SaveLocker/.claude/worktrees/save-conflict-next-group-ebc9b1/D:/Projects/SaveLocker/SaveLocker/.git/worktrees/save-conflict-next-group-ebc9b1
+```
+
+despite the sync completing correctly. Root cause: a git worktree's own `.git` file stores
+`gitdir: D:/Projects/SaveLocker/SaveLocker/.git/worktrees/save-conflict-next-group-ebc9b1` — a
+Windows-native path, correct for Windows git. `testenv.sh`'s `cmd_sync()` runs a
+`git config --global --add safe.directory "$gitdir"` call from inside WSL, whose CWD (via the
+`/mnt/d/...` mount) is that same worktree; WSL's git reads the pointer file, doesn't recognize
+`D:/...` as absolute, and concatenates it onto CWD instead — producing the garbled path in the
+error. Confirmed cosmetic (not blocking) by isolating the exact failing statement via `bash -x`,
+then contrasting `git config --global --add safe.directory ...` (still exits 0 despite printing the
+fatal line) against `git config --global --list --show-origin` from the same CWD (fails outright,
+exit 128) — proving the discovery-triggered fatal message is a side effect specific to the `--add`
+path, unrelated to whether the config write itself succeeds. This is the first session to run
+`testenv.ps1` from a worktree rather than the main checkout, which is why it hadn't shown up before.
+
+**Fix:** added `2>/dev/null` to the previously-unsilenced `--add` line in `tests/testenv.sh`'s
+`cmd_sync()`, matching the sibling `--get-all` line's existing pattern, with an explanatory comment.
+Verified by re-running `.\tests\testenv.ps1 sync` — clean output, no fatal line, and the sync itself
+still correctly picked up the just-edited file. Committed as `6dcfb2a`.
+
+### Decky worktree relocated to the standard location
+
+The Decky-repo worktree had been created at an ad hoc sibling path,
+`D:\Projects\SaveLocker\SaveLocker-Decky-worktrees\decky-conflict-resolution-ui`, instead of the
+project's standard `.claude\worktrees` convention (already used by another worktree in that repo,
+`jovial-mclaren-208112`). Moved in place with `git worktree move` (run from
+`D:\Projects\SaveLocker\SaveLocker-Decky`) to
+`D:\Projects\SaveLocker\SaveLocker-Decky\.claude\worktrees\decky-conflict-resolution-ui` — branch,
+history, and the single commit `2f06573` carried over untouched; `git worktree list` confirmed the
+new path registered correctly. The now-empty old parent directory
+(`SaveLocker-Decky-worktrees`) was removed.
+
+### Verification status
+
+- Decky plugin: build + type-check clean; **not yet verified on real hardware.**
+- Main repo: `AgentStateDto` change + regenerated `api-types.ts` diffed and confirmed minimal.
+- `testenv.ps1 sync` fix: verified via direct re-run (clean output, correct sync behavior).
+
+### Not done
+
+- **Real-hardware verification of Phase 10** — the five-step Decky checklist (QAM "Save conflicts"
+  panel, resolve popup D-pad nav/immediate-resolve/B-cancel, "newer" tag, "keep both" toggle,
+  full-screen settings page's conflict-policy dropdown) has not yet been run against a real Deck via
+  `testenv.ps1 build`/`up`. The user was mid-way through this walkthrough when the `sync` error
+  interrupted it.
+- Phase 11 (Decky launch-gate wiring) — explicitly deferred until Phase 10 is hardware-verified.
+- Phase 13 (Playnite, now Group 7) — explicitly scoped as "implement later," not started.
+- Neither the Decky repo branch nor the main repo branch has been pushed to any remote — no push was
+  requested or authorized this session.
   unconfirmed.
 
 ---
@@ -1619,3 +1743,68 @@ past the 4-second default poll interval, so the baseline tick is guaranteed to h
 - PR [**#31**](https://github.com/Marwanello/SaveLocker/pull/31) opened against `main` — a fresh PR,
   since upstream PR #30 is merged with its branch deleted, and fork PR #30 is the unrelated
   Phase-7 work above. Referenced upstream `SkorcherX/SaveLocker#30` as the source of the findings.
+
+---
+
+## 2026-09-07 — Decky chip name mismatch fixed in the test rig
+
+**Worktree/branch:** `save-conflict-next-group-ebc9b1` (main-repo worktree), continuing the prior
+Phase 10 hardware-verification session.
+
+### Request
+
+User reported that opening "Conflict Game" on their Deck showed no sync-status chip on the library
+tile, and asked whether that was because the CLI-tracked game was named `ConflictTest` while the
+Steam shortcut it created was named "Conflict Game" — and, if so, to make both names match.
+
+### Investigation
+
+Read `gamingSync.tsx`'s `resolveMatchSync` in the Decky plugin (`SaveLocker-Decky` repo) to check the
+hypothesis against the real matching code rather than assuming it. Confirmed there are two match
+paths: a primary match by Steam AppID (via a warm `rows()`/`games()` cache), and a **name-based
+fallback** — comparing Steam's own displayed name for the launched app against the tracked game's
+name — reached only when the primary AppID lookup finds no row at all. A name mismatch breaks that
+fallback outright, and since SaveLocker's own CRC32-based Steam AppID algorithm was reverse-engineered
+from third-party tools (never officially documented by Valve — see the
+`reverse-engineer-formats-from-real-tools` memory), whether Steam's live AppID for a shortcut always
+matches what SaveLocker computed and wrote into `shortcuts.vdf` is a real, still-unverified question.
+If it ever diverges, the name-based fallback is the only thing standing between the mismatch and a
+missing chip — making the rename worth doing regardless of that open question.
+
+### Fix
+
+Renamed the CLI-tracked game from `ConflictTest` to "Conflict Game" everywhere it's created, so it
+matches the Steam shortcut's display name exactly:
+
+- `tests/testenv.ps1` — `New-ConflictOnWindows` (doc comment, `Say` message, `add-game --name`, final
+  status message).
+- `tests/testenv-deck.sh` — `cmd_conflict()` (doc comment, echo messages, `add-game --name`/`push`
+  calls); also simplified a now-redundant echo message and replaced a stale comment with one
+  explaining why the names must match (referencing `resolveMatchSync`'s fallback path).
+
+**Self-caught regression:** the blind rename turned a one-word bareword CLI argument into a two-word
+one in both scripts' `push` calls (`push ConflictTest` → `push Conflict Game`, unquoted) — both
+PowerShell and bash word-split an unquoted multi-word argument into two positional arguments, which
+would have broken `push` (it expects exactly one game-name argument). Caught by re-reading both files
+immediately after the replace, before running anything; fixed by quoting (`'Conflict Game'` in
+PowerShell, `"Conflict Game"` in bash).
+
+`src/Agent.Linux/DevSteamShortcut.cs` needed no change — it already only referenced the fixed
+Steam-side name via its `ShortcutName` constant, never `ConflictTest`. A repo-wide search confirmed no
+other file (source or vault docs) still referenced the old name.
+
+### Verification
+
+- PowerShell parser (`[System.Management.Automation.Language.Parser]::ParseFile`) — no errors on
+  `testenv.ps1`.
+- `bash -n tests/testenv-deck.sh` — clean.
+- No live-hardware re-test performed this session; the user was told to rebuild/reseed and check the
+  Deck.
+
+### Not done
+
+- Live re-verification on the Deck (rebuild → `up` → `conflict` → restart Steam → check the "Conflict
+  Game" tile for the chip) — the user was handed this as the next step, not yet confirmed.
+- The open question about whether Steam's live shortcut AppID can diverge from SaveLocker's computed
+  one remains unresolved; the rename is a safety net for it, not a resolution of it.
+- No commit made yet for this fix.

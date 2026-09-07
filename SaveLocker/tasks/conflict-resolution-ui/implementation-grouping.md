@@ -32,7 +32,7 @@ built.
 | 3 | Phase 9 (D-Bus impl) | ✅ Done 2026-09-01 |
 | 4 | Phase 8 | ✅ Done 2026-09-03 |
 | 5 | Phase 7 | ✅ Phase 7 done 2026-09-03 — Phase 14 deliberately left out of this pass, see `plan.md`'s Status section for why |
-| 6 | Phase 10, 11 (Decky) | 🟡 Phase 10 done 2026-09-07 (code-only, `SaveLocker-Decky` repo attached) — Phase 11 depends on it and is next |
+| 6 | Phase 10, 11 (Decky) | 🟡 Both phases coded and Phase 10 hardware-verified 2026-09-07 (a `gameId`/`saveDirectory` wire-field bug fixed along the way — see `plan.md`) — Phase 11 (the cancel→popup→sync→relaunch gate) still needs its own real-Deck pass |
 | 7 | Phase 13 (Playnite) | ⬜ Not started — split out of the old Group 6 on 2026-09-07 (asked directly): it shares nothing with Decky but a `.NET Framework 4.6.2` + Playnite SDK toolchain, and only Windows + Playnite installed, not the Decky repo or a Deck |
 
 ## Which phases are actually reachable from a cloud/remote session
