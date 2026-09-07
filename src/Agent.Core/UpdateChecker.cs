@@ -234,7 +234,11 @@ public sealed class UpdateChecker : IDisposable
         // Is this our own server, or somewhere else? An off-origin URL is legitimate (an admin can
         // point AgentUpdate:DownloadUrl at a GitHub release) but it is a different trust situation:
         // it gets no credential, no pin, and no benefit of the doubt about integrity.
-        var sameOrigin = ServerOrigin.Same(url.GetLeftPart(UriPartial.Authority), _config.ServerUrl);
+        // Compared against ServerUrl (captured at construction), not the live, mutable
+        // _config.ServerUrl: a connection change mid-download must not flip this checker's own
+        // same-origin decision out from under a request already in flight for the server it was
+        // actually built for.
+        var sameOrigin = ServerOrigin.Same(url.GetLeftPart(UriPartial.Authority), ServerUrl);
 
         if (!sameOrigin && string.IsNullOrWhiteSpace(expectedSha256))
             throw new InvalidOperationException(

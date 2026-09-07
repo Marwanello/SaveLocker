@@ -49,6 +49,11 @@ internal sealed class TrayContext : ApplicationContext
     private readonly ProcessWatcher _processWatcher;
     // Rebuilt from an API request thread; read from watcher/poller threads. See Daemon._engine.
     private volatile SyncEngine _engine = null!;
+    // Guards RebuildEngine's read-old/build-new/swap sequence: /api/config and /api/register can
+    // both call it from separate, overlapping Kestrel request threads, and without this two
+    // overlapping calls could each capture the same "previous" engine and one of the two newly
+    // built engines would be silently overwritten without ever being retired.
+    private readonly object _engineLock = new();
     // Outlives every engine rebuild on purpose — see AgentApiServer's field of the same type.
     private readonly SyncActivityTracker _activity = new();
 
@@ -172,9 +177,13 @@ internal sealed class TrayContext : ApplicationContext
         var api = ApiClient.For(_config);
         // Windows toasts AND reports: the tray tells the user in front of it, health reporting tells
         // the console. One dashboard then shows the whole fleet, Deck and PC alike.
-        var replaced = _engine;
-        _engine = new SyncEngine(_config, api, log: Log, notify: Notify,
-            offlineQueue: _offlineQueue, health: _health, activity: _activity);
+        SyncEngine replaced;
+        lock (_engineLock)
+        {
+            replaced = _engine;
+            _engine = new SyncEngine(_config, api, log: Log, notify: Notify,
+                offlineQueue: _offlineQueue, health: _health, activity: _activity);
+        }
 
         // Retire the engine we just replaced, or its lease timers keep renewing against the old
         // server forever while exit releases against the new one. Off the calling thread because

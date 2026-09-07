@@ -1,4 +1,4 @@
-# Cross-process state safety - 23 checks. Runs on BOTH Windows and Linux.
+# Cross-process state safety - 26 checks. Runs on BOTH Windows and Linux.
 #
 # The agent is not one process. Autorun keeps the daemon alive while Steam starts a SECOND process
 # (`savelocker run -- %command%`), and on Windows the tray runs alongside any CLI command. They share
@@ -39,6 +39,11 @@
 #                         SaveGameSyncState re-added the entry it found missing (against its own
 #                         comment), and reconcile re-adopted the game because it is still on the
 #                         server. So "Removed from this device" in Game Mode did not remove it.
+#   9. Lock fails closed - AgentStateLock itself, contended by a genuinely external holder (a
+#                         FileStream opened FileShare.None on the same lock file). It used to time
+#                         out after 30 s and hand back an UNHELD handle, so a second writer proceeded
+#                         anyway while the file was still contended - a refusal is now required, and
+#                         nothing may have been changed by it.
 #
 # Owns its server on :5183. Usage: .\tests\run-concurrency-tests.ps1 / pwsh tests/run-concurrency-tests.ps1
 
@@ -310,6 +315,41 @@ try {
     # The game is untracked HERE, not deleted: the rest of the fleet still sees it.
     $ovB = (Invoke-RestMethod "$server/api/overview") | Where-Object { $_.game.name -eq $gameB }
     Check "B still exists on the server"           ($null -ne $ovB)
+
+    # =================================================================================
+    # 9. AGENTSTATELOCK FAILS CLOSED - contention refuses rather than proceeding unlocked (WA-07)
+    # =================================================================================
+    # Every check above proves the WRITE side of cross-process safety - two processes racing a
+    # whole-object save. None of them prove the LOCK itself still fails closed: AgentStateLock used
+    # to time out after 30 s and hand back an UNHELD handle, so a second writer proceeded anyway
+    # while the file was demonstrably still contended - the same race this whole suite exists to
+    # catch, just with the lock's own contended-path as the bug. It now throws instead.
+    #
+    # Held here directly at the OS level - a FileStream opened FileShare.None on the exact lock file
+    # AgentConfig locks - so a genuinely external holder contends the "config" lock a CLI write
+    # needs, and a real cross-process refusal is what gets asserted, not a mocked one.
+    $lockDir  = Join-Path $scratch "locks"
+    New-Item -ItemType Directory -Force $lockDir | Out-Null
+    $lockFile = Join-Path $lockDir "config.lock"
+    $externalLock = [System.IO.FileStream]::new(
+        $lockFile, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite,
+        [System.IO.FileShare]::None)
+    try {
+        # StateWriteTimeout is a fixed 60 s with no test override, so this genuinely waits it out
+        # rather than short-circuiting on a smaller number that would pass for the wrong reason.
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        $refusal = Agent remove-game --name $gameC --config $cfg
+        $sw.Stop()
+        Check "AgentStateLock waited out the real 60s timeout, not a short-circuit" ($sw.Elapsed.TotalSeconds -ge 55)
+        Check "the contended write was refused, not silently allowed through" ("$refusal" -match "(?i)busy")
+    }
+    finally {
+        $externalLock.Dispose()
+    }
+
+    # Fails CLOSED, not merely late: nothing was changed by the refused call.
+    $stillTracked = Get-Content $cfg -Raw | ConvertFrom-Json
+    Check "the refused remove-game did NOT untrack C" (@($stillTracked.Games | ForEach-Object { $_.Name }) -contains $gameC)
 
     # =================================================================================
     # 3 + 4. QUEUE and HEALTH survive a second writer WITH THE SERVER DOWN

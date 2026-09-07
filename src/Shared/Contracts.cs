@@ -358,9 +358,21 @@ public record AgentCommandDto(
     /// claim was never acknowledged and the command was reclaimed.</summary>
     int ClaimCount = 0,
     /// <summary>When the current claim stops being exclusive; null unless awaiting a result.</summary>
-    DateTime? LeaseExpiresAt = null);
+    DateTime? LeaseExpiresAt = null,
+    /// <summary>
+    /// The token of the claim this delivery was handed under. Echoed back in
+    /// <see cref="CommandResultRequest"/> so the server can tell a result apart from one reported
+    /// under a claim that has since been reclaimed after its lease expired.
+    /// </summary>
+    Guid? ClaimToken = null);
 
-public record CommandResultRequest(CommandStatus Status, string? Result);
+/// <summary>
+/// <paramref name="ClaimToken"/> must match the command's current claim (the one the agent was
+/// handed in <see cref="AgentCommandDto.ClaimToken"/>) or the result is accepted as a no-op, the
+/// same way an already-terminal command is — a late result from a claim the lease has since moved
+/// past must not finalize a command a newer delivery may still be executing.
+/// </summary>
+public record CommandResultRequest(CommandStatus Status, string? Result, Guid? ClaimToken = null);
 
 /// <summary>How many versions an explicit "prune now" actually removed.</summary>
 public record PruneResult(int Removed);

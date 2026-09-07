@@ -409,7 +409,7 @@ agent.MapGet("/agent/commands", async (HttpContext http, SyncService sync) =>
 
 agent.MapPost("/agent/commands/{id:guid}/result", async (
     Guid id, CommandResultRequest req, HttpContext http, SyncService sync) =>
-    await sync.CompleteCommandAsync(id, http.CurrentMachine().Id, req.Status, req.Result)
+    await sync.CompleteCommandAsync(id, http.CurrentMachine().Id, req.Status, req.Result, req.ClaimToken)
         ? Results.Ok() : Results.NotFound());
 
 agent.MapPost("/agent/path/{gameId:guid}", async (Guid gameId, HttpContext http, string? value, SyncService sync) =>

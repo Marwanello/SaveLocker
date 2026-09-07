@@ -178,6 +178,7 @@ public class AgentInstallerService
         var staged = Path.Combine(slot.Root, $".incoming-{Guid.NewGuid():N}.part");
         long written = 0;
         string digest;
+        string? published = null;
         try
         {
             // Hashed while streaming, not by re-reading afterwards: re-reading would hash whatever
@@ -208,6 +209,7 @@ public class AgentInstallerService
             // metadata naming a file that is not there, which is a broken update channel.
             var exePath = Path.Combine(slot.Root, safeName);
             File.Move(staged, exePath, overwrite: true);
+            published = exePath;
 
             var info = new AgentInstallerStatus(
                 version, safeName, DateTime.UtcNow, written, digest, slot.Platform, source);
@@ -225,6 +227,13 @@ public class AgentInstallerService
         catch
         {
             TryDelete(staged);
+            // The binary was already published when something after the move (writing the new
+            // metadata, or the supersede cleanup) failed. If safeName reused an existing filename,
+            // File.Move(overwrite: true) already destroyed the previous, still-advertised bytes, so
+            // installer-info.json now names a file whose content no longer matches its recorded
+            // hash/version. Removing it makes GetInstallerPath() report "nothing available" instead
+            // of an agent downloading bytes that fail their own integrity check.
+            if (published is not null) TryDelete(published);
             throw;
         }
     }

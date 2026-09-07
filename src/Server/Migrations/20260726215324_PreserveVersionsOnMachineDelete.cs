@@ -58,6 +58,17 @@ namespace SaveLocker.Server.Migrations
                 name: "MachineName",
                 table: "SaveVersions");
 
+            // Up() (and the code it ships) can leave rows with MachineId = NULL — that is the whole
+            // point of this migration. SQLite's ALTER COLUMN is a table-rebuild that copies existing
+            // rows via INSERT...SELECT, which does not apply the column's new DEFAULT to a NULL that
+            // is already there — only to rows inserted afterward — so without this backfill the
+            // rebuild would violate the NOT NULL constraint it is about to add and the downgrade
+            // would throw instead of reversing.
+            migrationBuilder.Sql(@"
+                UPDATE SaveVersions
+                   SET MachineId = '00000000-0000-0000-0000-000000000000'
+                 WHERE MachineId IS NULL;");
+
             migrationBuilder.AlterColumn<Guid>(
                 name: "MachineId",
                 table: "SaveVersions",
