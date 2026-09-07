@@ -20,6 +20,33 @@ separate `SaveLocker-Decky` plugin repo. Ten of the fourteen phases below are ne
 cross-references in [[CONTEXT]]/[[Backlog]] (which already cite them by number) do not need
 updating — only Phase 5 onward is renumbered relative to the original 2026-08-28 plan.
 
+## Status (updated 2026-09-03)
+
+| Phase | Status |
+|---|---|
+| 0/1 — Server + Agent.Core | ✅ Shipped |
+| 2 — Force push/pull bookkeeping fix | ✅ Shipped |
+| 3 — Dashboard "Backups" tab | ✅ Shipped |
+| 4 — Linux wrapper launch gate | ✅ Shipped |
+| 5 — Linux environment-capability detection | ✅ Shipped |
+| 6 — Shared `agent-ui` conflicts page + `doctor` line | ✅ Shipped |
+| 7 — Windows tray: automatic chooser + bulk queue | ✅ Shipped |
+| 8 — Linux Game Mode conflict screen | ✅ Shipped |
+| 9 — Desktop notification via D-Bus | ✅ Shipped |
+| 10 — Decky: conflict display + resolve UI | ⬜ Not started — needs the `SaveLocker-Decky` repo + Deck hardware |
+| 11 — Decky: launch-gate wiring | ⬜ Not started — depends on 10 |
+| 12 — sync-status endpoint consumer | ⬜ Not started — endpoint shipped in 0/1; needs a genuine "check now" trigger, not a passive poll |
+| 13 — Playnite plugin | ⬜ Not started — needs a Windows + Playnite environment |
+| 14 — Webhook notify + per-game block-launch setting | ⬜ Not started — deliberately deferred; see the note below |
+
+**Phase 14 has an open design question, deliberately not resolved by this update.** Its block-launch
+half (`Game.BlockLaunchOnConflict`) was originally scoped as an *opt-in* (`07-open-questions.md` §2,
+"default: don't block"), but Phase 4 already shipped **unconditional** blocking on any confirmed
+Linux conflict — no setting involved. Building Phase 14 as originally written would silently walk
+back already-verified Phase 4 behavior unless a maintainer explicitly decides whether the setting
+should default to today's shipped behavior (opt-*out* of blocking) or the original opt-*in* framing.
+Resolve this before starting Phase 14, not while mid-implementation.
+
 ## The problem
 
 Today the Decky plugin's *only* way past a stuck sync is Force push/pull — a blunt override that
@@ -412,6 +439,43 @@ matters experience for the first time.
 API calls Phase 0/1 already covers server-side — the exact check the reference plan's own Phase 3
 verification note describes.
 
+**Shipped 2026-09-03** (`implementation-grouping.md`'s "Group 5," scoped to Phase 7 alone — Phase 14
+was deliberately left out, see the Status section above). `TrayApp.cs`'s three native trigger points
+that can leave this machine with an open conflict — `SyncAll()`, per-game Force Pull, per-game Force
+Push — now call a new `CheckConflictsAndRaiseAsync()` afterward: a best-effort
+`ApiClient.GetOpenConflictsForMachineAsync` check that raises `AgentWindow` straight to a new
+`#conflicts:queue` deep link when it finds anything, reusing the exact `_ui.Post(() =>
+OpenWindow(...))` pattern already proven elsewhere in the same file (the first-run prompt, the
+lease-warning path) rather than inventing a new one. `App.tsx` recognizes that one specific hash
+suffix (ordinary `#conflicts` is untouched) and auto-opens the same `SyncConflictModal` queue pop-up
+"Sync now" already shows — one queue UI regardless of which of the four trigger points (the three
+native ones, or the pre-existing browser-side "Sync now") found the conflict.
+<br>Item 2 (the bulk-operation queue) is genuinely new: `SyncConflictModal.tsx` now asks, once, right
+after the FIRST resolve in a multi-conflict queue, whether to apply that same choice (keep this
+device's save, or keep the cloud's) to every remaining conflict in the queue — "Apply to all
+remaining" resolves the rest via the same per-conflict `resolveConflict` call Phase 0/1 already
+covers server-side, no new endpoint; "Review each" falls back to the pre-existing one-at-a-time
+immediate-resolve flow with no further prompting. The choice is transferable across conflicts because
+every conflict in this machine's own queue has the same shape (`versionA` is always "the cloud",
+`versionB` is always this machine's own diverged push).
+<br>**Verified live, not just built**: seeded two genuine divergent conflicts against a throwaway
+scratch server (two CLI-driven machines, one of them later reused as the real tray's own identity),
+launched the actual built Windows tray against that state, and confirmed — via the tray's real
+served `agent-ui` bundle at exactly the URL `CheckConflictsAndRaiseAsync` opens
+(`http://localhost:<port>/#conflicts:queue`) — that the queue pop-up opens automatically showing
+"1 of 2", that resolving the first conflict surfaces the "Apply to the rest too?" prompt with correct
+singular/plural wording, and that clicking "Apply to all remaining" resolves the second conflict too
+and returns to the empty Conflicts state with the sidebar badge cleared. Confirmed the *correct* side
+won, not just that resolution happened at all, by pulling on the other machine afterward and checking
+its restored file content matched what the tray's own machine had pushed for both games.
+<br>**Not literally exercised: a real click on the NotifyIcon's context menu itself.** No tool in this
+environment can drive a native Win32 system-tray menu (the Browser pane only drives Chromium tabs).
+The two pieces that click assembles — the conflict-fetch call and the `OpenWindow` pattern — were each
+verified directly instead (the fetch via the equivalent live query above, `OpenWindow`'s downstream
+effect via the direct-navigation check above), and both call sites are otherwise plain, low-risk reuse
+of code already proven in this file. Worth a five-minute manual click-through on a real desktop before
+relying on this as the only signal.
+
 **Flagged during Phase 8's review (2026-09-03), not yet built: no reusable version/stats
 fetch-and-cache exists for a native (non-browser) surface.** Phase 8's `Ui/UiApp.cs` ended up
 hand-rolling, in C#, the same "fetch a version + its stats once, cache forever, dedup in-flight
@@ -638,8 +702,8 @@ Phase 0/1 (server + agent core — shipped)
                                     │  (Windows tray   (D-Bus notify,          │
                                     │   automatic       shipped — needs       │
                                     │   chooser +        Phases 5 AND 6,       │
-                                    │   bulk queue)      opens Phase 8 on      │
-                                    │                    the Deck when it     │
+                                    │   bulk queue,      opens Phase 8 on      │
+                                    │   shipped)         the Deck when it     │
                                     │                    exists)              │
                                     │                                          │
                                     └──────────────────────┬───────────────────┘

@@ -41,10 +41,82 @@ by rerunning the full suite: 119/119.
 - `run-winagent-tests.ps1`: 119/119 after the WA-06 (tray) race fix (117/2 before it).
 - All 15 findings reported via `ReportFindings`, `outcome: fixed` on each.
 
+## Landed
+
+Committed as `97c41b2` (the 15 fixes) and `69cc838` (vault docs) on branch
+`linux-agent-bugbounty-review-fixes`, pushed to `origin` (`Marwanello/SaveLocker`). Opened as a fresh
+PR, [**#31**](https://github.com/Marwanello/SaveLocker/pull/31) — upstream PR #30 is merged with its
+branch deleted, and fork PR #30 is the unrelated Phase 7 work below, so neither could receive these
+commits directly.
+
+---
+
+# Session summary — 2026-09-03 (cont'd) — Phase 7 shipped, PR #30
+
+**Branch:** `save-conflicts-phase-7` (renamed from `claude/save-conflict-next-group-e7bdca`). PR:
+https://github.com/Marwanello/SaveLocker/pull/30.
+
+## What was asked
+
+1. "Implement the next group in the save conflict please. Also add on the start of the phases doc and
+   the grouping doc check markers with the completed groups and phases." Group 5 (Phase 7: Windows tray
+   automatic chooser + bulk queue, plus Phase 14: webhook notify + block-launch setting) was next in
+   sequence, deferred pending a Windows-connected session — this one. User scoped it down to
+   **Phase 7 only** (Phase 14 explicitly excluded).
+2. Follow-up questions on manually verifying via `tests/testenv.ps1`, including remote-network access.
+3. Live terminal output showing seeding failures — diagnosed and fixed.
+4. User's own fix, given as feedback: reversed the provided command order (build, up, then WSL seeding,
+   then Windows seeding) to get the conflict popup to actually appear — asked for a corrected, complete
+   "apply to all remaining" test scenario built around that ordering.
+5. "All verfied. Is this pushed?" then "Do 2 then psuh and create PR" (rename the branch to the
+   `save-conflicts-phase-N` convention, push, open a PR).
+
+## What was built
+
+- **`TrayApp.cs`**: `CheckConflictsAndRaiseAsync()` — after Sync All, Force Pull, or Force Push, checks
+  `GetOpenConflictsForMachineAsync` and raises the agent window straight to `conflicts:queue` if any
+  exist, instead of leaving the user to notice on their own.
+- **`App.tsx`**: parses the `conflicts:queue` hash deep link on startup and auto-populates the sync
+  queue from open conflicts, one-shot.
+- **`SyncConflictModal.tsx`**: after the first resolve in a multi-conflict queue, an `ApplyToAllPrompt`
+  offers to apply the same choice (cloud/local, keep-both) to every remaining conflict in one batch
+  (`applyToAllRemaining()`), or continue reviewing each one individually (`reviewEach()`).
+
+## Bug found and fixed mid-verification: cross-process config lost-update race
+
+Windows `push` failed with `REFUSED push: ... (mapped to '')` right after a successful-looking
+`add-game`. Root cause, found by reading `config.json` directly (`"Games": []`) and cross-checking with
+`tasklist`/`netstat`: a live WinTest tray process from an earlier `testenv.ps1 up` held its own
+in-memory `AgentConfig`, and its own next unrelated `Save()` overwrote the CLI's out-of-band addition
+with its stale `Games: []`. Not a product bug in the sense of the shipped feature — a flaw in the
+manual-test instructions given (seeding against a config file a live tray already had open). Fixed by
+killing the stale tray process and giving corrected seeding-before-tray-start instructions.
+
+**User's own correction, now the standing test-ordering rule for this feature:** do ALL CLI seeding
+(WSL then Windows) before starting the Windows tray at all — start the tray last (`up -Only windows`
+as the final step), not first, so nothing races the seed writes.
+
+## Verification
+
+Manually verified live via a hand-built two-machine `testenv.ps1` scenario (console + Linux agent
+seeded first, both sides seeded with two conflicting games "Bulk Test A"/"Bulk Test B", Windows tray
+started last), confirming both the automatic chooser raise-on-sync and "apply to all remaining" queue
+behavior. User confirmed "All verfied."
+
+## Landed
+
+- Branch renamed `claude/save-conflict-next-group-e7bdca` → `save-conflicts-phase-7`, pushed to
+  `origin` (`Marwanello/SaveLocker`) with upstream tracking.
+- PR [**#30**](https://github.com/Marwanello/SaveLocker/pull/30) opened, `save-conflicts-phase-7` →
+  `main`.
+- Vault updated: `plan.md` and `implementation-grouping.md` gained "Status" tables with ✅/⬜ markers
+  for all phases/groups, `Backlog.md` and `CONTEXT.md` updated with the Group 5 (Phase 7 only) writeup.
+
 ## Not done
 
-Nothing committed — all 19 modified files remain uncommitted on branch `claude/pr30-code-review-9dad6f`,
-awaiting the user's review/commit decision.
+- Phase 14 (webhook notify + block-launch setting) — explicitly excluded from this session's scope,
+  still queued as the remainder of the original Group 5.
+- PR #30 not yet reviewed or merged as of this write-up.
 
 ---
 
