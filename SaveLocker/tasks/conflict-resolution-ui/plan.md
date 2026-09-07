@@ -33,8 +33,8 @@ updating — only Phase 5 onward is renumbered relative to the original 2026-08-
 | 7 — Windows tray: automatic chooser + bulk queue | ✅ Shipped |
 | 8 — Linux Game Mode conflict screen | ✅ Shipped |
 | 9 — Desktop notification via D-Bus | ✅ Shipped |
-| 10 — Decky: conflict display + resolve UI | ⬜ Not started — needs the `SaveLocker-Decky` repo + Deck hardware |
-| 11 — Decky: launch-gate wiring | ⬜ Not started — depends on 10 |
+| 10 — Decky: conflict display + resolve UI | ✅ Shipped 2026-09-07 (code-only — needs a real Deck/Steam+Decky session to verify) |
+| 11 — Decky: launch-gate wiring | ⬜ Not started — depends on 10 (shipped) |
 | 12 — sync-status endpoint consumer | ⬜ Not started — endpoint shipped in 0/1; needs a genuine "check now" trigger, not a passive poll |
 | 13 — Playnite plugin | ⬜ Not started — needs a Windows + Playnite environment |
 | 14 — Webhook notify + per-game block-launch setting | ⬜ Not started — deliberately deferred; see the note below |
@@ -627,6 +627,21 @@ command carries `--wait` and the action key. It was confirmed to FAIL against th
 dropdown) — unchanged content, renumbered from the original Phase 5. Depends on Phase 0/1. Delivers
 real, standalone value the moment it ships — a conflict can be seen and resolved from the Deck even
 before Phase 11 wires it into the launch path. Can proceed in parallel with Phase 4 and Phases 5–9.
+
+**Shipped 2026-09-07** (`implementation-grouping.md`'s "Group 6", in the `SaveLocker-Decky` repo's own
+`decky-conflict-resolution-ui` worktree/branch). `main.py` gained one-line proxies for every route this
+phase needs (`conflicts`, `conflict`, `resolve_conflict`, `conflict_policy`/`set_conflict_policy`,
+`save_version`, `version_stats`) — no new server or local-API surface required, since Phase 0/1 and
+Phase 6 already shipped it all. New `src/conflicts.tsx`: a poller and the resolve popup itself
+(Big Picture-styled `Focusable` cards, immediate-resolve on a side's own button, matching this
+section's own mockup verbatim). Wired into the library-page chip (a new `'conflict'` kind, clickable),
+a new QAM "Save conflicts" panel, and a per-game conflict-policy dropdown on the full-screen settings
+page (framed as "Prefer this device," not a full machine picker — Decky has no fleet-wide machine
+list). One small necessary main-repo addition: `AgentStateDto` gained `MachineId` so "prefer this
+device" has an id to send. Buildable/type-checked (`npm run build`, main repo's full solution +
+`agent-ui`), **not yet verified on real hardware** — see `Backlog.md` for the exact manual pass this
+needs (chip click-through, D-pad nav inside the popup, B-button cancel, the policy dropdown
+round-tripping) before this is trusted as working, not just compiling.
 
 **Phase 11 — Decky: launch-gate wiring** (the cancel → popup → sync → relaunch sequence, plus the
 fresh-page-open-conflict carve-out) — unchanged content, renumbered from the original Phase 6.

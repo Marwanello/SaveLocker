@@ -952,6 +952,47 @@ decision above) remain open — see [[Backlog]].
 
 ---
 
+**Decky conflict-resolution Phase 10 shipped (2026-09-07) — the separate `SaveLocker-Decky` repo,
+attached this session at `D:\Projects\SaveLocker\SaveLocker-Decky`, worked in its own worktree/branch
+`decky-conflict-resolution-ui` (`implementation-grouping.md`'s "Group 6," the phase it names as
+unblocked the moment that repo is available).** `main.py` gained seven one-line `_request(...)` proxy
+methods — `conflicts`, `conflict`, `resolve_conflict`, `conflict_policy`/`set_conflict_policy`,
+`save_version`, `version_stats` — mirroring the local API Phase 0/1 and Phase 6 already shipped
+exactly; no new server or local-API route was needed anywhere. New `src/conflicts.tsx`: a 20s poller
+held at module scope (survives Steam remounting `/library/app/:appid`, same reasoning as
+`syncStatus.tsx`'s chip store), chip-merge logic that never clobbers an actively-`'syncing'` chip, and
+the resolve popup itself — Big Picture-styled `Focusable` cards (D-pad left/right, A resolves
+immediately, B backs out via `ModalRoot`'s cancel handling), local-vs-cloud framing and copy following
+this plan's own mockup verbatim, never pre-selecting a side. Wired into three surfaces: the
+library-page `SyncChip` gains a `'conflict'` kind (magenta-red `FaCodeBranch`, distinct from
+`'blocked'`'s amber lock) that's clickable straight into the popup; a new QAM "Save conflicts" panel
+(structurally identical to the existing `LeaseWarnings`) reaches a conflict without the library page
+open; and a per-game "If a save conflict happens" dropdown on the full-screen settings page, framed as
+"Prefer this device" rather than a full machine picker, since only the dashboard has a fleet-wide
+machine list.
+<br>**One small, genuinely necessary gap closed in the main repo alongside this**: "Prefer this
+device" needs this device's own machine id to send as `PreferredMachineId`, and the local `/api/state`
+route's `AgentStateDto` didn't carry one. Added as an additive, defaulted trailing field
+(`MachineId`); `agent-ui/src/api-types.ts` regenerated against a scratch dev daemon on `:5190` and
+diffed — only the new field (plus unrelated alphabetical churn on two untouched entries) appears.
+Committed separately from the Decky-side work.
+<br>**Buildable and type-checked, not hardware-verified.** `npm run build` in the Decky worktree
+(rollup + `@rollup/plugin-typescript`, which type-checks the whole module graph) is clean; `python -m
+py_compile main.py` is clean; the main repo's full solution and `agent-ui` (`tsc -b && vite build`,
+`oxlint`) both build clean with the `machineId` addition (same two pre-existing, unrelated
+`AddGamesView.tsx`/`SettingsView.tsx` warnings as every prior session). This is a Decky plugin — nothing
+here can render or take D-pad input outside a real Steam Big Picture/Deck session, so **this needs a
+manual pass on real hardware before it's trusted as working, not just compiling** — see [[Backlog]] for
+the exact five-point check (chip click-through, D-pad nav + immediate resolve + B-cancel inside the
+popup, the "newer" tag and keep-both toggle, the policy dropdown round-tripping "prefer this device").
+`ModalRoot`'s B-button/cancel behavior specifically is inferred from this same codebase's existing
+`ConfirmModal` usage, not directly tested — the piece of this popup most likely to need a real-hardware
+fix.
+<br>Phase 11 (Decky launch-gate wiring) depends on this phase and is next; Phase 13 (Playnite) has no
+dependency on it and can be picked up independently — see [[Backlog]].
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

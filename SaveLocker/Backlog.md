@@ -18,10 +18,11 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   `implementation-grouping.md`'s "Group 2", and Phase 9 (D-Bus desktop notification) shipped
   2026-09-01 as that document's "Group 3", and Phase 8 (the Linux Game Mode conflict screen) shipped
   2026-09-03 as that document's "Group 4", and Phase 7 (Windows tray automatic chooser + bulk
-  "apply to all remaining" queue) shipped 2026-09-03 as that document's "Group 5"** — see below.
-  **Phases 10, 11, 13–14 remain not built** (Phase 12's endpoint exists but has no consumer yet, and
-  Phase 14 was deliberately scoped out of the Group 5 session pending a maintainer decision on its
-  block-launch default — see below). Before Phase 2, the
+  "apply to all remaining" queue) shipped 2026-09-03 as that document's "Group 5", and Phase 10 (Decky:
+  conflict display + resolve UI) shipped 2026-09-07 as that document's "Group 6", code-only** — see
+  below. **Phase 11 (Decky launch-gate wiring), 13, 14 remain not built** (Phase 12's endpoint exists
+  but has no consumer yet, and Phase 14 was deliberately scoped out of the Group 5 session pending a
+  maintainer decision on its block-launch default — see below). Before Phase 2, the
   plugin's only way past
   a stuck sync was Force push/pull, which bypassed the server's own conflict bookkeeping — an orphaned
   `ConflictFlag`, an unprotected losing version, a stranded other device. The plan reframes conflicts
@@ -328,6 +329,50 @@ Not-yet-done work only. Shipped items are indexed in `logs/shipped-2026-07.md` a
   equivalent live query above; `OpenWindow`'s downstream effect via the direct-navigation check above),
   and both call sites are otherwise low-risk reuse of code already proven in the same file. Worth a
   five-minute manual click-through on a real desktop before relying on this as the only signal.
+  <br>**Phase 10 (Decky: conflict display + resolve UI) shipped 2026-09-07** (`implementation-
+  grouping.md`'s "Group 6", started now that the separate `SaveLocker-Decky` repo was attached at
+  `D:\Projects\SaveLocker\SaveLocker-Decky` — worked in its own worktree/branch,
+  `decky-conflict-resolution-ui`, per that repo's own convention). `main.py` gained seven one-line
+  proxy methods (`conflicts`, `conflict`, `resolve_conflict`, `conflict_policy`/`set_conflict_policy`,
+  `save_version`, `version_stats`) mirroring Phase 0/1's already-shipped local API exactly — no new
+  server or local-API routes needed. New `src/conflicts.tsx`: a 20s poller (module-scope, survives
+  Steam's remount of `/library/app/:appid`, same reasoning as `syncStatus.tsx`'s chip store), chip-
+  merge logic that never clobbers an actively-`'syncing'` chip, and the resolve popup itself — Big
+  Picture-styled `Focusable` cards (D-pad left/right, A to pick a side and resolve immediately, B backs
+  out via `ModalRoot`'s cancel handling), copy and layout following `plan.md`'s own mockup verbatim,
+  framed as local-vs-cloud and never pre-selecting a side (the same rule the web `ConflictCard` and the
+  Game Mode screen already follow). Wired in three places: the library-page `SyncChip` gains a new
+  `'conflict'` kind (magenta-red `FaCodeBranch`, distinct from `'blocked'`'s amber lock) that's
+  clickable straight into the popup; a new QAM "Save conflicts" panel (structurally identical to
+  `LeaseWarnings`) reaches a conflict without the library page open at all; and a per-game "If a save
+  conflict happens" dropdown on the full-screen settings page (Manual / Newest wins / **Prefer this
+  device** — a single-device framing rather than a full machine picker, since only the dashboard has a
+  fleet-wide machine list).
+  <br>**One small, genuinely necessary main-repo gap closed alongside this**: "Prefer this device"
+  needs this device's own machine id to send as `SetConflictPolicyRequest.PreferredMachineId`, and
+  `AgentStateDto` (the local `/api/state` route every frontend already polls) didn't carry it.
+  Added as an additive, defaulted trailing field (`MachineId`); `agent-ui/src/api-types.ts`
+  regenerated against a scratch dev daemon on `:5190` and diffed — only the new field appears.
+  Committed separately in the main repo (`7306968`) from the Decky-side work.
+  <br>**Buildable and type-checked, not hardware-verified — this is a Decky plugin, so nothing here can
+  render or take D-pad input outside a real Steam Big Picture/Deck session.** `npm run build` (rollup +
+  `@rollup/plugin-typescript`, which type-checks the whole graph) is clean; `python -m py_compile
+  main.py` is clean; the main repo's full solution and `agent-ui` (`tsc -b && vite build`, `oxlint`)
+  both build clean with the `machineId` addition. **Needs a manual pass on a real Deck (or any Steam
+  client with Decky Loader) before this is trusted**: install the plugin from the worktree/branch above,
+  seed a genuine conflict (`tests/seed-test-conflict.sh` in the main repo, or a real two-machine
+  divergence), then confirm — (1) the library-page chip turns into the magenta 'Conflict' state and
+  clicking it opens the popup; (2) the QAM's "Save conflicts" panel appears and its Resolve button opens
+  the same popup; (3) inside the popup, D-pad left/right moves between the two cards, A on a card
+  resolves immediately and the popup shows the "Syncing your choice…" collapse then closes, and B backs
+  out without resolving anything; (4) the "newer" tag lands on the actually-newer side and the "keep
+  both" toggle protects the loser as a backup when checked; (5) the full-screen settings page's
+  per-game conflict-policy dropdown persists across a refresh and "Prefer this device" round-trips
+  correctly (set it, confirm the dashboard shows this device's machine id as the preferred one).
+  `ModalRoot`'s exact B-button/cancel behavior is inferred from this codebase's existing `ConfirmModal`
+  usage, not directly tested — the one piece of this popup most likely to need a real-hardware fix.
+  <br>Phase 11 (Decky launch-gate wiring) depends on this phase and is next; Phase 13 (Playnite) is
+  independent and can be picked up separately. See the plan doc's Status section.
 
 **All three bug bounties shipped in v0.5.0 (2026-07-29).** Code is on `main`; what remains is the
 verification that did not happen before the tag. Write-ups:

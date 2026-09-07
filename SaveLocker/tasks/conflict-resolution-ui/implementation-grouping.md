@@ -32,7 +32,7 @@ built.
 | 3 | Phase 9 (D-Bus impl) | ✅ Done 2026-09-01 |
 | 4 | Phase 8 | ✅ Done 2026-09-03 |
 | 5 | Phase 7 | ✅ Phase 7 done 2026-09-03 — Phase 14 deliberately left out of this pass, see `plan.md`'s Status section for why |
-| 6 | Phase 10, 11, 13 | ⬜ Not started — needs the `SaveLocker-Decky` repo attached, and Deck/Windows hardware |
+| 6 | Phase 10, 11, 13 | 🟡 Phase 10 done 2026-09-07 (code-only, `SaveLocker-Decky` repo attached) — Phase 11 depends on it and is next; Phase 13 (Playnite) independent |
 
 ## Which phases are actually reachable from a cloud/remote session
 
@@ -157,9 +157,15 @@ two-game conflict scenario and the actual built Windows tray — full detail in 
 section and `CONTEXT.md`, including the one thing this environment could not literally automate (a
 click on the NotifyIcon's own context menu — no tool here drives native Win32 tray UI).
 
-**Group 6 — later, needs the separate Decky repo + real hardware (Deck and/or Windows).**
-`Phase 10`/`Phase 11` (Decky — add the `SaveLocker-Decky` repo to whatever session does this) +
-`Phase 13` (Playnite).
+**Group 6 — needs the separate Decky repo (attached 2026-09-07) + real Deck/Windows hardware to verify.**
+`Phase 10`/`Phase 11` (Decky) + `Phase 13` (Playnite).
+<br>**Phase 10 done 2026-09-07**, worked in its own worktree/branch (`decky-conflict-resolution-ui`)
+under the `SaveLocker-Decky` repo, per that repo's own "one branch per phase" convention. Buildable and
+type-checked from this environment (no Steam/Deck available here), so — like Phase 8 before any
+Windows/WSLg access existed — it ships at this group's "code-only" ceiling: full detail, and the exact
+manual verification pass a real Deck session still needs, in `plan.md`'s Phase 10 section and
+`Backlog.md`. Phase 11 depends on it and is next; Phase 13 (Playnite) has no dependency on either and
+can be picked up independently, still gated on a Windows + Playnite environment.
 
 ```
 Done 2026-08-30       →  Group 1 (5, 9-spike)                  tiny, fully verifiable here
@@ -167,7 +173,8 @@ Done 2026-08-31       →  Group 2 (4, 6)                        medium, biggest
 Done 2026-09-01       →  Group 3 (9-impl)                      small, code-only here, needed Group 2 first
 Done 2026-09-03       →  Group 4 (8)                           medium, verified live under WSLg
 Done 2026-09-03       →  Group 5 (7)                           verified live on a real Windows dev box; Phase 14 held back — see above
-Deck + Windows        →  Group 6 (10, 11, 13)
+Done 2026-09-07*      →  Group 6a (10)                         code-only, Decky repo attached — Deck hardware pass still needed
+Deck + Windows        →  Group 6b (11, 13)                     11 depends on 10 (shipped); 13 independent
 Whenever 6/8/10 adds a "check now" trigger → Phase 12 (sync-status consumer)
 ```
 
