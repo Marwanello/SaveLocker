@@ -281,7 +281,8 @@ SaveLocker/
 │
 ├── .agents/AGENTS.md · AGENTS.md · CLAUDE.md   # Agent instructions (paths-ignore'd by both workflows)
 ├── docs/screenshots/                    # README imagery
-├── SaveLocker/                          # THIS Obsidian vault
+├── SaveLocker/                          # THIS Obsidian vault (content in docs/;
+│                                       #   tasks in docs/tasks/; logs in docs/logs/)
 ├── SaveLocker.sln
 ├── global.json                         # Pins the .NET SDK (10.0.x). The Dockerfile COPIES this in,
 │                                       #   so bump it and the sdk:/aspnet: image tags TOGETHER.
