@@ -110,7 +110,8 @@ internal sealed class TrayContext : ApplicationContext
             browseRoots: GameScanner.BrowseRoots(),
             onGamesChanged: () => _ui.Post(() => { RebuildMenu(); StartFolderWatchers(); }),
             activity: _activity,
-            syncAll: () => _engine.SyncAllAsync(_config.Games));
+            syncAll: () => _engine.SyncAllAsync(_config.Games),
+            prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct));
         _apiServer.Start();
 
         _commandPoller = new CommandPoller(

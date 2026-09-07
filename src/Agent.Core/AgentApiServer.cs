@@ -41,6 +41,9 @@ public sealed class AgentApiServer : IDisposable
     // "Sync all" for the Overview page's button — same operation the tray menu offers, resolved
     // against whichever engine and game list are current at the moment it is clicked.
     private readonly Func<Task<string>> _syncAll;
+    // The Decky/Playnite launch gate (Phase 11) — SyncEngine.PrepareLaunchAsync, resolved against
+    // whichever engine is current at the moment it's called, same reasoning as _syncAll above.
+    private readonly Func<TrackedGame, CancellationToken, Task<LaunchGateResult>> _prepareLaunch;
     // One sync at a time, however many surfaces are offering the button — see /api/sync.
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     private readonly string _uiRoot;
@@ -70,7 +73,8 @@ public sealed class AgentApiServer : IDisposable
         Func<DeckyStatusDto>? deckyStatus = null,
         Func<StagedUpdateInfo?>? stagedUpdate = null,
         SyncActivityTracker? activity = null,
-        Func<Task<string>>? syncAll = null)
+        Func<Task<string>>? syncAll = null,
+        Func<TrackedGame, CancellationToken, Task<LaunchGateResult>>? prepareLaunch = null)
     {
         _browser = new PathBrowser(browseRoots);
         Port = port;
@@ -89,6 +93,7 @@ public sealed class AgentApiServer : IDisposable
         _stagedUpdate = stagedUpdate ?? (() => null);
         _activity = activity ?? new SyncActivityTracker();
         _syncAll = syncAll ?? (() => Task.FromResult("Not available."));
+        _prepareLaunch = prepareLaunch ?? ((_, _) => Task.FromResult(new LaunchGateResult(LaunchDecision.Proceed)));
         _uiRoot = Path.Combine(AppContext.BaseDirectory, "agent-ui");
         _auth = LocalAuth.LoadOrCreate(config.ConfigPath);
         _leaseWarnings = LeaseWarningStore.For(config);
@@ -763,6 +768,27 @@ public sealed class AgentApiServer : IDisposable
             }
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         });
+
+        // The Decky/Playnite launch gate (tasks/conflict-resolution-ui/plan.md, Phase 11). Neither
+        // can call SyncEngine.PrepareLaunchAsync in-process the way the Linux wrapper (Phase 4,
+        // ProtonRun.cs) does, so this wraps it for a caller that can only reach the agent over HTTP.
+        // Performs the pull (or the commit-before-choose push, on a diverged local save) as a side
+        // effect exactly like the wrapper's own call — the caller only acts on the returned decision,
+        // never syncs anything itself. LaunchGateResult/LaunchDecision are returned verbatim; nothing
+        // here needs to reshape them.
+        app.MapPost("/api/games/{id:guid}/pre-launch-sync",
+            async Task<Results<Ok<LaunchGateResult>, NotFound, InternalServerError<ErrorResponse>>>
+                (Guid id, CancellationToken ct) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.NotFound();
+
+            try
+            {
+                return TypedResults.Ok(await _prepareLaunch(game, ct));
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        }).Produces<LaunchGateResult>();
     }
 
     /// <summary>
