@@ -20,14 +20,14 @@ on:
     # Repeated verbatim under `push` below: GitHub Actions does not expand YAML anchors, so the
     # two lists cannot be shared and must be edited together.
     paths-ignore:
-      - 'SaveLocker/**'
+      - 'docs/**'
       - 'CLAUDE.md'
       - 'AGENTS.md'
       - '.agents/**'
   push:
     branches: [main]
     paths-ignore:
-      - 'SaveLocker/**'
+      - 'docs/**'
       - 'CLAUDE.md'
       - 'AGENTS.md'
       - '.agents/**'

@@ -25,5 +25,5 @@ second source of truth: [prototype](https://claude.ai/code/artifact/b8f247f2-32e
 one decision (how `agent-ui` receives the design tokens, given it has no Tailwind and no CSS file)
 that Groups 3 and 4 will otherwise re-litigate.
 
-**Once every phase ships**, move this whole folder to `SaveLocker/docs/logs/` with a date prefix
+**Once every phase ships**, move this whole folder to `docs/logs/` with a date prefix
 (e.g. `logs/2026-MM-DD_checkpoint-ui/`), per the normal task-completion convention.
