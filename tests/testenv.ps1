@@ -15,7 +15,7 @@
 #   .\tests\testenv.ps1 test      run the suites
 #   .\tests\testenv.ps1 sync      copy this tree's uncommitted changes into the WSL clone
 #   .\tests\testenv.ps1 logs      tail every log the rig writes
-#   .\tests\testenv.ps1 conflict [-Windows] [-Deck]
+#   .\tests\testenv.ps1 conflict [-Windows] [-Deck] [-Size <MB>] [-Files <count>]
 #                                 seed a genuine local-vs-cloud conflict on a throwaway "Conflict Game"
 #                                 game — Windows first (creates it), then the Deck (diverges it) — the
 #                                 same two hand-typed CLI sequences this rig used to need by hand.
@@ -26,6 +26,12 @@
 #                                 tray/daemon's own config Save(). Needs `build` run at least once
 #                                 first. Run this BEFORE `up`, then `up` last so the tray/daemon start
 #                                 clean (the console itself is left running either way).
+#                                 -Size/-Files replace the default tiny one-line save with $Files
+#                                 randomly-filled files totalling ~$Size MB (each side gets its own
+#                                 random content, so they still genuinely conflict) — e.g.
+#                                 `conflict -Size 25 -Files 25` seeds a 25 MB save split across 25
+#                                 files, for exercising sync progress against a save big enough to
+#                                 actually take a moment. Omit both for today's instant tiny-file seed.
 #                                 The Deck side also adds a real Steam shortcut, "Conflict Game",
 #                                 pointing at a fullscreen placeholder "game" (`savelocker fake-
 #                                 game`) — so the conflict is launchable from Steam's own library,
@@ -148,7 +154,16 @@ param(
     # 'conflict' command only: which side(s) to seed. Neither given means both — a conflict needs
     # two sides that disagree, so seeding only one side alone leaves nothing to resolve.
     [switch]$Windows,
-    [switch]$Deck
+    [switch]$Deck,
+
+    # 'conflict' command only: replaces the default single tiny "save v1" text file with $Files
+    # randomly-filled files totalling ~$Size MB, split as evenly as possible — for exercising sync
+    # progress/UI against a save that actually takes a moment to transfer, rather than every seeded
+    # conflict being an instant no-op transfer. 0 (the default) keeps today's tiny-file behavior
+    # unchanged. Random content, not zeros: real save files are not compressible padding, and it also
+    # guarantees the two sides' seeded content differs even at the same size/file count.
+    [double]$Size = 0,
+    [int]$Files = 1
 )
 
 $ErrorActionPreference = 'Continue'
@@ -306,7 +321,12 @@ function Invoke-Deck {
         "SAVELOCKER_DECK_PREFIX='$DeckPrefix'",
         "SAVELOCKER_DECK_PORT=$DeckPort",
         "SAVELOCKER_SERVER_URL='$DeckServerUrl'",
-        "SAVELOCKER_TEST_VERSION='$Version'"
+        "SAVELOCKER_TEST_VERSION='$Version'",
+        # Only meaningful to 'conflict' (cmd_conflict); every other subcommand ignores them. Passed
+        # unconditionally rather than only when $Command -eq 'conflict' since Invoke-Deck is generic —
+        # simplest to always forward the current -Size/-Files rather than special-case this one call.
+        "SAVELOCKER_CONFLICT_SIZE_MB=$Size",
+        "SAVELOCKER_CONFLICT_FILES=$Files"
     )
     $cmd = "sed 's/\r`$//' /tmp/.savelocker-testenv-deck.raw > /tmp/.savelocker-testenv-deck.sh; " +
            ($vars -join ' ') + " bash /tmp/.savelocker-testenv-deck.sh $Sub"
@@ -372,6 +392,26 @@ function Get-DeckyPluginRepo {
         throw "no SaveLocker-Decky checkout at '$candidate' (no plugin.json there) - " +
               "set -DeckyPluginRepo or `$env:SAVELOCKER_DECKY_PLUGIN_REPO"
     }
+
+    # Silent about WHICH checkout/branch/commit a Deck build actually sources from is exactly how a
+    # whole session's worth of Decky work went untested on hardware: the default candidate above is
+    # SaveLocker-Decky's own default checkout, which is a SEPARATE directory from any worktree a
+    # feature branch happens to live in (e.g. .claude/worktrees/<branch>) — plain `git worktree add`
+    # never touches it, so it silently keeps building whatever that checkout was last on, with no
+    # error, no warning, and a plugin that still installs and runs fine. Printed on every build,
+    # unconditionally, since that is the one thing that would have caught it immediately instead of
+    # after a confusing hardware test.
+    $branch = (& git -C $candidate rev-parse --abbrev-ref HEAD 2>$null)
+    $commit = (& git -C $candidate rev-parse --short HEAD 2>$null)
+    $dirty  = [bool](& git -C $candidate status --porcelain 2>$null)
+    $dirtyNote = if ($dirty) { ', uncommitted changes' } else { '' }
+    Say "Decky plugin source: $candidate  [$branch @ $commit$dirtyNote]"
+    if (-not $DeckyPluginRepo -and $branch -eq 'main') {
+        Warn ('building from SaveLocker-Decky''s default checkout, on ''main''. If the work you want ' +
+              'staged lives on a feature branch or in a worktree instead, pass -DeckyPluginRepo or set ' +
+              '$env:SAVELOCKER_DECKY_PLUGIN_REPO to that path - otherwise none of it reaches the Deck.')
+    }
+
     return $candidate
 }
 
@@ -739,6 +779,32 @@ function Stop-Windows {
     }
 }
 
+# Writes the seeded save's content for one side of a 'conflict' run into $Dir — either today's tiny
+# one-line file ($SizeMb -le 0, the default) or $FileCount randomly-filled files totalling ~$SizeMb
+# MB, split as evenly as possible (the last file absorbs whatever doesn't divide evenly). Random
+# content, not zeros: real saves are not compressible padding, and it's also what guarantees the
+# Windows and Deck sides genuinely differ even when called with identical -Size/-Files.
+function New-SyntheticSaveFiles {
+    param([string]$Dir, [double]$SizeMb, [int]$FileCount)
+    New-Item -ItemType Directory -Force -Path $Dir | Out-Null
+    Get-ChildItem $Dir -File | Remove-Item -Force
+    if ($SizeMb -le 0) {
+        'windows save v1' | Set-Content (Join-Path $Dir 'save.txt')
+        return
+    }
+    if ($FileCount -lt 1) { throw '-Files must be at least 1' }
+    $totalBytes = [int64]([math]::Round($SizeMb * 1MB))
+    $base = [int64]([math]::Floor($totalBytes / $FileCount))
+    $rng = [System.Random]::new()
+    for ($i = 1; $i -le $FileCount; $i++) {
+        $bytes = if ($i -eq $FileCount) { $totalBytes - $base * ($FileCount - 1) } else { $base }
+        $buffer = [byte[]]::new([Math]::Max(0, $bytes))
+        $rng.NextBytes($buffer)
+        [IO.File]::WriteAllBytes((Join-Path $Dir "save-$i.bin"), $buffer)
+    }
+    Say "  seeded $FileCount file(s), ~$SizeMb MB total, in $Dir"
+}
+
 # Seeds Windows's side of a throwaway "Conflict Game" game via the CLI (add-game, then push) — the
 # same shape as testenv-deck.sh's cmd_conflict, kept as two independent, order-dependent seedings
 # rather than one shared function because the two run on different machines over different
@@ -761,8 +827,7 @@ function New-ConflictOnWindows {
     Use-TestEnvVars
     try {
         $dir = Join-Path $env:TEMP 'savelocker-conflict-test\win'
-        New-Item -ItemType Directory -Force -Path $dir | Out-Null
-        'windows save v1' | Set-Content (Join-Path $dir 'save.txt')
+        New-SyntheticSaveFiles -Dir $dir -SizeMb $Size -FileCount $Files
 
         $cfg = Join-Path $winState 'config.json'
         $registered = (Test-Path $cfg) -and ((Get-Content $cfg -Raw) -match '"apiKey"')
@@ -930,6 +995,9 @@ switch ($Command) {
 
     'conflict' {
         if (-not $Windows -and -not $Deck) { $Windows = $true; $Deck = $true }
+        if ($Size -lt 0) { throw '-Size must be 0 or a positive number of MB' }
+        if ($Files -lt 1) { throw '-Files must be at least 1' }
+        if ($Size -gt 0) { Say "seeding $Files file(s) totalling ~$Size MB per side (instead of the default tiny save)" }
 
         # Both sides register/push over HTTP against the console, so it has to be up before either
         # CLI call — unlike the tray/daemon, starting it here races nothing (it holds no local agent

@@ -20,6 +20,9 @@ PORT="${SAVELOCKER_DECK_PORT:-5177}"
 SERVER_URL="${SAVELOCKER_SERVER_URL:-}"
 VERSION="${SAVELOCKER_TEST_VERSION:-0.5.10-test}"
 MACHINE="${SAVELOCKER_DECK_MACHINE:-DeckTest}"
+# cmd_conflict only — mirrors testenv.ps1's -Size/-Files. 0 keeps the original tiny one-line save.
+CONFLICT_SIZE_MB="${SAVELOCKER_CONFLICT_SIZE_MB:-0}"
+CONFLICT_FILES="${SAVELOCKER_CONFLICT_FILES:-1}"
 TARBALL="/tmp/.savelocker-test.tar.gz"
 DAEMON_LOG="$HOME/.savelocker-testenv-deck.log"
 BIN="$PREFIX/savelocker"
@@ -143,7 +146,31 @@ cmd_conflict() {
   echo "== seeding a conflicting save on the deck for 'Conflict Game' =="
   local dir="$XDG_DATA_HOME/conflict-save"
   mkdir -p "$dir"
-  echo "deck save v1 - DIFFERENT" > "$dir/save.txt"
+  rm -f "$dir"/*
+  # Mirrors testenv.ps1's New-SyntheticSaveFiles: CONFLICT_SIZE_MB=0 (the default) keeps today's tiny
+  # one-line save; otherwise CONFLICT_FILES randomly-filled files totalling ~CONFLICT_SIZE_MB MB,
+  # split as evenly as possible (the last file absorbs the remainder). /dev/urandom, not zeros — real
+  # saves are not compressible padding, and it's what guarantees this side's content genuinely
+  # differs from Windows's even when both are seeded with identical -Size/-Files.
+  if [ "$CONFLICT_SIZE_MB" = "0" ]; then
+    echo "deck save v1 - DIFFERENT" > "$dir/save.txt"
+  else
+    [ "$CONFLICT_FILES" -ge 1 ] || die "-Files must be at least 1"
+    local total_bytes base i bytes
+    total_bytes=$(awk "BEGIN { printf \"%d\", $CONFLICT_SIZE_MB * 1024 * 1024 }")
+    base=$(( total_bytes / CONFLICT_FILES ))
+    i=1
+    while [ "$i" -le "$CONFLICT_FILES" ]; do
+      if [ "$i" -eq "$CONFLICT_FILES" ]; then
+        bytes=$(( total_bytes - base * (CONFLICT_FILES - 1) ))
+      else
+        bytes=$base
+      fi
+      head -c "$bytes" /dev/urandom > "$dir/save-$i.bin"
+      i=$(( i + 1 ))
+    done
+    echo "  seeded $CONFLICT_FILES file(s), ~$CONFLICT_SIZE_MB MB total, in $dir"
+  fi
 
   if ! grep -qi '"apikey"' "$STATE/config.json" 2>/dev/null; then
     echo "== registering '$MACHINE' against $SERVER_URL =="
