@@ -1830,6 +1830,17 @@ sealed class UiApp
     {
         if (_navBackFired || ImGui.IsKeyPressed(ImGuiKey.Escape)) { _window.Close(); return; }
 
+        // A continuously cycling background rather than a static one — this stands in for a real
+        // game during Decky launch-gate testing (tasks/conflict-resolution-ui/plan.md, Phase 11's
+        // freeze/resume fallback), and a static screen cannot prove whether a SIGSTOP actually froze
+        // the process: a genuine freeze stops this process's rendering dead mid-frame, so the color
+        // stops moving on whatever hue it was on when the signal landed; a color still cycling on
+        // screen means it never was frozen, no matter what the plugin's own chip claims.
+        const float CycleMs = 3000f;
+        var hue = Environment.TickCount64 % (long)CycleMs / CycleMs;
+        var bg = HsvToRgb(hue, 0.6f, 0.5f);
+        ImGui.GetWindowDrawList().AddRectFilled(Vector2.Zero, size, ImGui.ColorConvertFloat4ToU32(new Vector4(bg, 1f)));
+
         const string text = "Conflict Game is running";
         const string sub = "This stands in for a real game - exit to return to Steam.";
         var textSize = ImGui.CalcTextSize(text);
@@ -1843,6 +1854,27 @@ sealed class UiApp
         var buttonSize = new Vector2(200, 44);
         ImGui.SetCursorPos(new Vector2((size.X - buttonSize.X) / 2f, size.Y / 2f + 20));
         if (ImGui.Button("Exit game", buttonSize)) _window.Close();
+    }
+
+    /// <summary>Hue (0-1, wraps), fixed saturation/value, to plain RGB. ImGuiNET does not bind ImGui's
+    /// own <c>ColorConvertHSVtoRGB</c>, so this is the standard sector-based formula, hand-rolled.</summary>
+    private static Vector3 HsvToRgb(float h, float s, float v)
+    {
+        h = (h % 1f + 1f) % 1f;
+        var sector = (int)(h * 6f);
+        var frac = h * 6f - sector;
+        var p = v * (1f - s);
+        var q = v * (1f - frac * s);
+        var t = v * (1f - (1f - frac) * s);
+        return (sector % 6) switch
+        {
+            0 => new Vector3(v, t, p),
+            1 => new Vector3(q, v, p),
+            2 => new Vector3(p, v, t),
+            3 => new Vector3(p, q, v),
+            4 => new Vector3(t, p, v),
+            _ => new Vector3(v, p, q),
+        };
     }
 
     private void DrawConflicts()
