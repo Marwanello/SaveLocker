@@ -55,20 +55,32 @@ public static class Enroller
             // window closed mid-batch — must not lose the games already created on the server, along
             // with their Steam AppIDs. SetTracked also clears any per-machine opt-out, so re-adding
             // a game removed here earlier actually re-adds it.
-            config.SetTracked(game.Id, tracked: true, entry: new TrackedGame
+            try
             {
-                GameId = game.Id,
-                Name = game.Name,
-                ManifestKey = c.ManifestKey,
-                SaveDirectory = check.Canonical!,
-                SteamAppId = c.SteamAppId,
-                HasSteamCloud = c.HasSteamCloud,
-                InstallDir = c.InstallDir,
-                // Without this the Windows ProcessWatcher excludes the game outright, so lease,
-                // exit-push and the running-game pull refusal never run for anything enrolled
-                // through the UI. Only the CLI's --proc used to populate it. WA-08.
-                ProcessNames = c.SuggestedProcessName is { } proc ? new List<string> { proc } : new(),
-            });
+                config.SetTracked(game.Id, tracked: true, entry: new TrackedGame
+                {
+                    GameId = game.Id,
+                    Name = game.Name,
+                    ManifestKey = c.ManifestKey,
+                    SaveDirectory = check.Canonical!,
+                    SteamAppId = c.SteamAppId,
+                    HasSteamCloud = c.HasSteamCloud,
+                    InstallDir = c.InstallDir,
+                    // Without this the Windows ProcessWatcher excludes the game outright, so lease,
+                    // exit-push and the running-game pull refusal never run for anything enrolled
+                    // through the UI. Only the CLI's --proc used to populate it. WA-08.
+                    ProcessNames = c.SuggestedProcessName is { } proc ? new List<string> { proc } : new(),
+                });
+            }
+            catch (AgentStateLockException ex)
+            {
+                // The game already exists server-side, just not tracked locally yet — leaving it
+                // that way (rather than aborting the rest of this batch) is safe: CommandPoller's
+                // own reconcile adopts any server game not yet tracked locally on its next tick.
+                AgentLogger.LogException($"Enroller.SetTracked '{c.Name}'", ex);
+                skipped++;
+                continue;
+            }
 
             // Report the chosen path to the server now, so it is authoritative from the start. The
             // Windows tray gets away without this because its in-process CommandPoller reports the

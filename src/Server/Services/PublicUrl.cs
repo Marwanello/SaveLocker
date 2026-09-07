@@ -48,6 +48,10 @@ public static class PublicUrl
         if (!Uri.TryCreate(candidate.Trim(), UriKind.Absolute, out var uri)) return false;
         if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return false;
         if (string.IsNullOrWhiteSpace(uri.Host)) return false;
+        // A path/query/fragment silently doesn't survive GetLeftPart(Authority) below — refuse it
+        // rather than truncate it, since a mistyped sub-path would otherwise write a policy file
+        // that quietly points every agent at the bare origin instead of what was actually typed.
+        if (uri.AbsolutePath != "/" || uri.Query.Length > 0 || uri.Fragment.Length > 0) return false;
 
         normalized = uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
         return true;

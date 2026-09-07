@@ -714,6 +714,133 @@ try {
         Remove-Item Env:SAVELOCKER_LEASE_RENEW_SECONDS, Env:SteamAppId -ErrorAction SilentlyContinue
     }
 
+    # ---------------------------------------------------------------------------------
+    # WA-06 (tray). THE SAME GUARANTEE, THROUGH THE ACTUAL REGRESSION SURFACE
+    # ---------------------------------------------------------------------------------
+    # The block above proves DisposeAsync/RetireAsync stops a lease renewer when a single
+    # `savelocker run` process exits - but that path constructs exactly one SyncEngine and disposes
+    # it on process exit, so it never calls TrayApp.RebuildEngine at all. RebuildEngine - which
+    # replaces a LIVE engine while the tray keeps running, the actual code path the WA-06 defect
+    # lived in - could reintroduce the same bug without the block above ever going red. This drives
+    # the real tray, changes its ServerUrl through /api/config while a lease is actively held and
+    # renewing, and confirms the OLD engine's renewer really stops.
+    if (-not [Environment]::UserInteractive) {
+        Write-Host "SKIP: WA-06 (tray) needs an interactive desktop session for the tray."
+    } else {
+        $tlPortA = 5991
+        $tlPortB = 5992
+        $tlUrlA  = "http://localhost:$tlPortA"
+        $tlUrlB  = "http://localhost:$tlPortB"
+        $tlHitsA = @{ acquire = 0; renew = 0 }
+        $tlHitsB = @{ acquire = 0; renew = 0 }
+
+        # Same shape as Pump-Lease above, parameterised so both origins can share it.
+        function Pump-LeaseOrigin($listener, $hits, $seconds) {
+            $deadline = (Get-Date).AddSeconds($seconds)
+            $t = $listener.GetContextAsync()
+            while ((Get-Date) -lt $deadline) {
+                if (-not $t.Wait(200)) { continue }
+                $c = $t.Result
+                $path = $c.Request.Url.AbsolutePath
+                $method = $c.Request.HttpMethod
+                $body = "{}"
+                if ($path -match '/lease/renew$') { $hits.renew++ }
+                elseif ($path -match '/lease$' -and $method -eq 'POST') {
+                    $hits.acquire++
+                    $body = '{"granted":true,"lease":{"gameId":"00000000-0000-0000-0000-000000000000","holderMachineId":null,"holderMachineName":null,"acquiredAt":null,"expiresAt":null}}'
+                }
+                $c.Response.StatusCode = 200
+                $c.Response.ContentType = "application/json"
+                $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+                $c.Response.OutputStream.Write($bytes, 0, $bytes.Length)
+                $c.Response.Close()
+                $t = $listener.GetContextAsync()
+            }
+        }
+
+        $tlListenerA = [System.Net.HttpListener]::new()
+        $tlListenerA.Prefixes.Add("$tlUrlA/")
+        $tlListenerA.Start()
+        $tlListenerB = [System.Net.HttpListener]::new()
+        $tlListenerB.Prefixes.Add("$tlUrlB/")
+        $tlListenerB.Start()
+
+        $tlPort = 5193
+        $tlBase = "http://localhost:$tlPort"
+        $tlCfg  = Join-Path $scratch "tray_lease.json"
+        $tlSave = Join-Path $scratch "tray_lease_save"
+        New-Item -ItemType Directory -Force $tlSave | Out-Null
+        "s" | Set-Content (Join-Path $tlSave "s.dat") -Encoding utf8
+
+        # Hand-crafted, like the CLI-driven config above: the fake origins accept anything, so no
+        # real registration is needed for either.
+        @{
+            ServerUrl = $tlUrlA; MachineName = "WinTrayLease-$stamp"
+            ApiKey = "tray-lease-test-key"; MachineId = [guid]::NewGuid().ToString()
+            Games = @(@{
+                GameId = [guid]::NewGuid().ToString(); Name = "TrayLeaseGame"
+                SaveDirectory = $tlSave; ProcessNames = @($fakeName)
+            })
+        } | ConvertTo-Json -Depth 5 | Set-Content -Path $tlCfg -Encoding utf8
+
+        $env:SAVELOCKER_LEASE_RENEW_SECONDS = "2"
+        $env:SAVELOCKER_TRAY_PORT = "$tlPort"
+        $tlTray = Start-Process -FilePath $dotnet -ArgumentList @($dll, "--config", $tlCfg) `
+                  -PassThru -WindowStyle Hidden
+        $tlFake = $null
+        try {
+            $tlToken = $null
+            $tlUp = $false
+            foreach ($i in 1..40) {
+                Start-Sleep -Milliseconds 700
+                $tp = Join-Path $scratch "api-token"
+                if (Test-Path $tp) { $tlToken = (Get-Content $tp -Raw).Trim() }
+                try {
+                    Invoke-RestMethod "$tlBase/api/state" -Headers @{ "X-SaveLocker-Token" = $tlToken } -TimeoutSec 3 | Out-Null
+                    $tlUp = $true; break
+                } catch { }
+            }
+            Check "WA-06 (tray) the tray started against origin A" $tlUp
+            $TLH = @{ "X-SaveLocker-Token" = $tlToken }
+
+            # ProcessWatcher.Start() runs before the local API even begins listening (TrayApp.cs), so
+            # by the time /api/state answers, its first poll (4 s default) has not necessarily landed
+            # yet. That first poll only baselines what is already running and never fires GameLaunched
+            # (Watchers.cs) - starting the fake game before it lands would make the launch invisible,
+            # not merely late. Outlasting the interval here is what makes the wait deterministic.
+            Start-Sleep -Seconds 5
+
+            # A live game process, so ProcessWatcher's own launch detection acquires the lease -
+            # exactly the path a real user hits, not a direct method call.
+            $tlFake = Start-FakeGame
+            Pump-LeaseOrigin $tlListenerA $tlHitsA 10
+            Check "WA-06 (tray) a lease was acquired against origin A"     ($tlHitsA.acquire -ge 1)
+            Check "WA-06 (tray) the lease was renewed against origin A"   ($tlHitsA.renew -ge 1)
+
+            # THE swap. The same /api/config route Settings uses, so this genuinely drives
+            # TrayApp.RebuildEngine rather than exercising it through a test-only hook.
+            Invoke-RestMethod "$tlBase/api/config" -Method Post -Headers $TLH -TimeoutSec 5 `
+                -Body (@{ serverUrl = $tlUrlB } | ConvertTo-Json) -ContentType "application/json" | Out-Null
+
+            # THE assertion. If RebuildEngine dropped the old engine without retiring it, its timer
+            # keeps firing every ~2 s against origin A regardless of what the new one does.
+            $renewsAtSwap = $tlHitsA.renew
+            Pump-LeaseOrigin $tlListenerA $tlHitsA 10
+            Check "WA-06 (tray) NO further renewal reaches origin A after the swap" ($tlHitsA.renew -eq $renewsAtSwap)
+            Check "WA-06 (tray) the tray survived the swap" (-not $tlTray.HasExited)
+
+            # Drains whatever the new engine sent B's way; not asserted on, just kept from hanging.
+            Pump-LeaseOrigin $tlListenerB $tlHitsB 5
+        }
+        finally {
+            if ($tlFake) { Stop-FakeGame $tlFake }
+            Stop-Process -Id $tlTray.Id -Force -ErrorAction SilentlyContinue
+            $tlListenerA.Stop(); $tlListenerA.Close()
+            $tlListenerB.Stop(); $tlListenerB.Close()
+            Remove-Item Env:SAVELOCKER_LEASE_RENEW_SECONDS, Env:SAVELOCKER_TRAY_PORT -ErrorAction SilentlyContinue
+        }
+    }
+
     # =================================================================================
     # WA-07. SAVE-LOCK CONTENTION FAILS CLOSED
     # =================================================================================

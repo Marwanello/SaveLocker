@@ -66,9 +66,27 @@ public sealed class GameScanner : IGameScanner
         // listed it twice, once with a path and once without.
         return all
             .GroupBy(c => ManifestLoader.NormalizeName(c.Name), StringComparer.Ordinal)
-            .Select(g => g.OrderByDescending(c => c.SuggestedSaveDir is not null).First())
+            .Select(MergeDuplicates)
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    /// <summary>
+    /// Merge candidates the sources agree are the same game: keep the tie-break above (prefer one
+    /// with a suggested save dir) as the base, but backfill <see cref="ScanCandidate.SuggestedProcessName"/>
+    /// from another duplicate that has it. A Steam shortcut is often the only source that knows the
+    /// process name; picking a different duplicate as the winner used to discard it outright,
+    /// reintroducing WA-08's empty watcher mapping for any game discoverable through more than one
+    /// source.
+    /// </summary>
+    private static ScanCandidate MergeDuplicates(IEnumerable<ScanCandidate> group)
+    {
+        var ordered = group.OrderByDescending(c => c.SuggestedSaveDir is not null).ToList();
+        var winner = ordered[0];
+        if (winner.SuggestedProcessName is not null) return winner;
+
+        var processName = ordered.Select(c => c.SuggestedProcessName).FirstOrDefault(p => p is not null);
+        return processName is null ? winner : winner with { SuggestedProcessName = processName };
     }
 
     // ----- Steam location -----
@@ -83,15 +101,33 @@ public sealed class GameScanner : IGameScanner
     {
         // HKCU is set per-user when Steam runs; HKLM is the machine install path.
         var hkcu = ReadRegistryString(Registry.CurrentUser, @"Software\Valve\Steam", "SteamPath");
-        if (!string.IsNullOrEmpty(hkcu) && SafeDirectoryExists(hkcu))
-            return Path.GetFullPath(hkcu);
+        if (!string.IsNullOrEmpty(hkcu) && SafeDirectoryExists(hkcu) && SafeFullPath(hkcu) is { } hkcuFull)
+            return hkcuFull;
 
         var hklm = ReadRegistryString(
             Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath");
-        if (!string.IsNullOrEmpty(hklm) && SafeDirectoryExists(hklm))
-            return Path.GetFullPath(hklm);
+        if (!string.IsNullOrEmpty(hklm) && SafeDirectoryExists(hklm) && SafeFullPath(hklm) is { } hklmFull)
+            return hklmFull;
 
         return null;
+    }
+
+    /// <summary>
+    /// This — and every caller of <see cref="FindSteamPath"/> — runs synchronously and outside the
+    /// per-source isolation <see cref="SafeSourceAsync"/> gives every other discovery source (some
+    /// callers even run before the tray's own message loop starts), so a malformed registry value
+    /// must be absorbed here rather than thrown: <see cref="Path.GetFullPath(string)"/> can throw
+    /// <see cref="ArgumentException"/> or a too-long path <see cref="PathTooLongException"/> for a
+    /// corrupted or overlong <c>SteamPath</c>/<c>InstallPath</c> value.
+    /// </summary>
+    private static string? SafeFullPath(string path)
+    {
+        try { return Path.GetFullPath(path); }
+        catch (Exception ex) when (IsAccessOrIo(ex))
+        {
+            AgentLogger.Log($"Scan: '{path}' is not a usable Steam path ({ex.GetType().Name}). Skipping it.");
+            return null;
+        }
     }
 
     private static string? ReadRegistryString(RegistryKey hive, string subKey, string valueName)

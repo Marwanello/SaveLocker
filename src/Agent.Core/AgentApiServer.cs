@@ -255,7 +255,10 @@ public sealed class AgentApiServer : IDisposable
                         auto.Error ?? "Could not change the startup setting."));
             }
 
-            var before = (_config.ServerUrl, _config.MachineName);
+            // Only the server URL means "connection changed" — the engine's lease/API client are
+            // keyed off it, not off the display name, so renaming this machine must not retire the
+            // current engine and give up whatever lease it holds.
+            var before = _config.ServerUrl;
             // Everything needed to undo a failed transition. Captured BEFORE any mutation, because
             // the point is that a rejected request leaves a config the agent can still start from.
             var previousIdentity = _config.CaptureIdentity();
@@ -283,7 +286,7 @@ public sealed class AgentApiServer : IDisposable
 
                 // Rebuild before the response returns, so no request that starts after the caller
                 // sees 200 can still be addressed to the previous server.
-                if (before != (_config.ServerUrl, _config.MachineName))
+                if (before != _config.ServerUrl)
                     _onConnectionChanged?.Invoke();
             }
             catch (Exception ex)
@@ -352,7 +355,8 @@ public sealed class AgentApiServer : IDisposable
         // Editing the process names is the other half of WA-08: discovery can only know them for a
         // non-Steam shortcut, so for everything else the user needs a way to supply them — and the
         // UI needs to be able to show, honestly, that lifecycle sync is unconfigured until they do.
-        app.MapPost("/api/games/{id:guid}/processes", (Guid id, ProcessNamesRequest body) =>
+        app.MapPost("/api/games/{id:guid}/processes",
+            Results<Ok<OkResponse>, BadRequest<ErrorResponse>> (Guid id, ProcessNamesRequest body) =>
         {
             var game = _config.Games.FirstOrDefault(g => g.GameId == id);
             if (game is null) return TypedResults.Ok(new OkResponse());
@@ -367,7 +371,8 @@ public sealed class AgentApiServer : IDisposable
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            _config.Save();
+            try { _config.Save(); }
+            catch (AgentStateLockException ex) { return TypedResults.BadRequest(new ErrorResponse(ex.Message)); }
             _onGamesChanged?.Invoke();
             return TypedResults.Ok(new OkResponse());
         }).Produces<OkResponse>();
@@ -397,11 +402,13 @@ public sealed class AgentApiServer : IDisposable
 
         // Untracks the game on THIS machine only. It stays on the server for the rest of the fleet;
         // the opt-out is what stops the poller adopting it straight back.
-        app.MapPost("/api/games/{id:guid}/remove", (Guid id) =>
+        app.MapPost("/api/games/{id:guid}/remove",
+            Results<Ok<OkResponse>, BadRequest<ErrorResponse>> (Guid id) =>
         {
-            _config.SetTracked(id, tracked: false);
+            try { _config.SetTracked(id, tracked: false); }
+            catch (AgentStateLockException ex) { return TypedResults.BadRequest(new ErrorResponse(ex.Message)); }
             _onGamesChanged?.Invoke();
-            return new OkResponse();
+            return TypedResults.Ok(new OkResponse());
         }).Produces<OkResponse>();
 
         app.MapPost("/api/games/{id:guid}/folder", async Task<Results<Ok<OkResponse>, BadRequest<ErrorResponse>>>
@@ -434,7 +441,8 @@ public sealed class AgentApiServer : IDisposable
                 game.SaveDirectory = check.Canonical!;
                 // Save first: watchers must be built from the config that is on disk, never from
                 // one a concurrent write is about to supersede.
-                _config.Save();
+                try { _config.Save(); }
+                catch (AgentStateLockException ex) { return TypedResults.BadRequest(new ErrorResponse(ex.Message)); }
                 _onGamesChanged?.Invoke();
 
                 // Tell the server now rather than letting the next poll notice. The server's stored

@@ -682,8 +682,24 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     }
 
     /// <summary>Ties an operation's lifetime to the engine's, so retirement aborts work in flight.</summary>
-    private CancellationTokenSource LinkRetirement(CancellationToken ct) =>
-        CancellationTokenSource.CreateLinkedTokenSource(ct, _retired.Token);
+    private CancellationTokenSource LinkRetirement(CancellationToken ct)
+    {
+        try
+        {
+            return CancellationTokenSource.CreateLinkedTokenSource(ct, _retired.Token);
+        }
+        catch (ObjectDisposedException)
+        {
+            // RetireAsync/Dispose can dispose _retired well after the caller's own RefuseIfRetired
+            // check already passed — releasing each held lease over the network keeps that window
+            // open, it is not instantaneous. The engine is retired either way, so behave as if the
+            // check above had caught it: an already-cancelled source aborts the caller's work
+            // instead of throwing ObjectDisposedException out of an unrelated call site.
+            var cancelled = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cancelled.Cancel();
+            return cancelled;
+        }
+    }
 
     /// <summary>
     /// How long to wait for another process to finish syncing this game, sized to what that process

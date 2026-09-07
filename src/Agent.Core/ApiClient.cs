@@ -148,10 +148,13 @@ public sealed class ApiClient
         await _http.GetFromJsonAsync<List<AgentCommandDto>>("/api/agent/commands", ct) ?? new();
 
     /// <summary>Report a command's outcome back to the server.</summary>
-    public async Task ReportCommandAsync(Guid commandId, CommandStatus status, string? result, CancellationToken ct = default)
+    public async Task ReportCommandAsync(
+        Guid commandId, CommandStatus status, string? result, Guid? claimToken = null,
+        CancellationToken ct = default)
     {
         var resp = await _http.PostAsJsonAsync(
-            $"/api/agent/commands/{commandId}/result", new CommandResultRequest(status, result), ct);
+            $"/api/agent/commands/{commandId}/result",
+            new CommandResultRequest(status, result, claimToken), ct);
         resp.EnsureSuccessStatusCode();
     }
 

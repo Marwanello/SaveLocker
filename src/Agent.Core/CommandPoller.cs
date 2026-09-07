@@ -441,7 +441,7 @@ public sealed class CommandPoller : IDisposable
             }
             catch (Exception ex)
             {
-                await SafeReportFailure(cmd.Id, ex.Message);
+                await SafeReportFailure(cmd.Id, cmd.ClaimToken, ex.Message);
                 _notify($"{cmd.Type} (from dashboard) failed: {ex.Message}");
                 continue;
             }
@@ -449,7 +449,7 @@ public sealed class CommandPoller : IDisposable
             // Separate from the execution try/catch on purpose: the work is already done, so a
             // report that cannot be delivered must not be turned into "the command failed". The
             // server reclaims it when the lease expires and it runs again harmlessly.
-            try { await _api().ReportCommandAsync(cmd.Id, CommandStatus.Done, result); }
+            try { await _api().ReportCommandAsync(cmd.Id, CommandStatus.Done, result, cmd.ClaimToken); }
             catch (Exception ex) { AgentLogger.LogException("CommandPoller.ReportSuccess", ex); }
             _notify(result);
         }
@@ -545,9 +545,9 @@ public sealed class CommandPoller : IDisposable
     /// command comes back rather than being lost. Re-running any command type is safe (see
     /// <c>SyncService.DequeueCommandsAsync</c>).
     /// </summary>
-    private async Task SafeReportFailure(Guid commandId, string message)
+    private async Task SafeReportFailure(Guid commandId, Guid? claimToken, string message)
     {
-        try { await _api().ReportCommandAsync(commandId, CommandStatus.Failed, message); }
+        try { await _api().ReportCommandAsync(commandId, CommandStatus.Failed, message, claimToken); }
         catch (Exception ex) { AgentLogger.LogException("CommandPoller.SafeReportFailure", ex); }
     }
 

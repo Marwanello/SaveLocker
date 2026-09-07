@@ -43,9 +43,14 @@ public static class ServerOrigin
     /// <summary>
     /// The URL to store: validated, canonical, and without a trailing slash (the rest of the agent
     /// concatenates paths onto it). Null if the input is not a usable server URL.
+    /// <para>
+    /// Returns <see cref="Normalize"/>'s own result, not the raw input — <c>Normalize</c> was
+    /// previously used only as a validity gate here, so a URL typed with a path or mixed case
+    /// (e.g. <c>http://Host:5179/some/path</c>) passed validation but was stored verbatim, path and
+    /// all, silently mangling every request built against it later.
+    /// </para>
     /// </summary>
-    public static string? CanonicalUrl(string? url) =>
-        Normalize(url) is null ? null : url!.Trim().TrimEnd('/');
+    public static string? CanonicalUrl(string? url) => Normalize(url);
 
     /// <summary>True when both URLs name the same origin. A null or invalid side is never a match.</summary>
     public static bool Same(string? a, string? b)

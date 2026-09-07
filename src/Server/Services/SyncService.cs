@@ -1761,12 +1761,21 @@ public sealed class SyncService
     /// Agent: report a command's outcome. Terminal states stick — a duplicate or late result for a
     /// command already completed is accepted as a no-op rather than reopening it, so an agent
     /// retrying a lost POST does not have to reason about what happened server-side.
+    /// <para>
+    /// <paramref name="claimToken"/> fences a result against a claim the lease has since moved past:
+    /// if it does not match the command's current <see cref="AgentCommand.ClaimToken"/>, a later
+    /// <see cref="DequeueCommandsAsync"/> reclaimed this command and may already be executing it, so
+    /// the stale result is accepted as a no-op rather than finalizing the command out from under
+    /// that newer delivery.
+    /// </para>
     /// </summary>
-    public async Task<bool> CompleteCommandAsync(Guid commandId, Guid machineId, CommandStatus status, string? result)
+    public async Task<bool> CompleteCommandAsync(
+        Guid commandId, Guid machineId, CommandStatus status, string? result, Guid? claimToken)
     {
         var cmd = await _db.AgentCommands.FindAsync(commandId);
         if (cmd is null || cmd.MachineId != machineId) return false;
         if (cmd.Status is CommandStatus.Done or CommandStatus.Failed) return true;
+        if (cmd.ClaimToken != claimToken) return true;
 
         cmd.Status = status == CommandStatus.Failed ? CommandStatus.Failed : CommandStatus.Done;
         cmd.Result = result;
