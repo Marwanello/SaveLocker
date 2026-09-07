@@ -12,10 +12,17 @@ import { SettingsView } from './components/SettingsView'
 import logoUrl from './assets/SaveLocker_Logo_crop.png'
 
 export default function App() {
+  // The tray's native Sync All / Force Pull / Force Push (TrayApp.cs, Phase 7) open this window at
+  // "#conflicts:queue" rather than the plain "#conflicts" route when they find an open conflict —
+  // the suffix is stripped for routing but remembered below to auto-open the same queue pop-up
+  // OverviewView's own "Sync now" button already shows, so both hosts get one queue UI regardless of
+  // which trigger point found the conflict.
+  const initialHash = window.location.hash.slice(1)
   const [view, setView] = useState<View>(() => {
-    const hash = window.location.hash.slice(1) as View
-    return (['overview', 'addGames', 'conflicts', 'settings'] as View[]).includes(hash) ? hash : 'addGames'
+    const base = initialHash.split(':')[0] as View
+    return (['overview', 'addGames', 'conflicts', 'settings'] as View[]).includes(base) ? base : 'addGames'
   })
+  const [autoQueueRequested] = useState(() => initialHash === 'conflicts:queue')
   const [state, setState] = useState<AgentState | null>(null)
   const [conflicts, setConflicts] = useState<Conflict[]>([])
   const [games, setGames] = useState<TrackedGame[]>([])
@@ -58,6 +65,13 @@ export default function App() {
     const id = setInterval(refreshConflicts, 15_000)
     return () => clearInterval(id)
   }, [refreshConflicts])
+
+  // Runs once, only when a native tray action opened this window looking for a conflict to show.
+  // The passive 15s poll above must never do this on its own — see handleSynced's own comment.
+  useEffect(() => {
+    if (!autoQueueRequested) return
+    refreshConflicts().then(cs => { if (cs.length > 0) setSyncQueue(cs) })
+  }, [autoQueueRequested, refreshConflicts])
 
   return (
     <div style={{

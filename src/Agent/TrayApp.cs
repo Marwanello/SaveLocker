@@ -212,11 +212,16 @@ internal sealed class TrayContext : ApplicationContext
                 }
                 await _engine.PullAsync(game, force: true);
                 Notify($"{game.Name}: force-pulled latest save.");
+                // A force-pull never resolves an open ConflictFlag itself (unlike force-push, which
+                // Phase 2 already closes server-side) — it only overwrites this machine's local copy.
+                // Surface it rather than leave the user thinking Force Pull was the fix.
+                await CheckConflictsAndRaiseAsync();
             }));
             sub.DropDownItems.Add("Force Push (send mine)", null, (_, _) => FireAndForget(async () =>
             {
                 await _engine.PushAsync(game, force: true);
                 Notify($"{game.Name}: force-pushed local save.");
+                await CheckConflictsAndRaiseAsync();
             }));
             menu.Items.Add(sub);
         }
@@ -308,7 +313,31 @@ internal sealed class TrayContext : ApplicationContext
 
     // ─── Tray actions ────────────────────────────────────────────────────────────
 
-    private async Task SyncAll() => Notify(await _engine.SyncAllAsync(_config.Games));
+    private async Task SyncAll()
+    {
+        Notify(await _engine.SyncAllAsync(_config.Games));
+        await CheckConflictsAndRaiseAsync();
+    }
+
+    /// <summary>
+    /// Phase 7: a plain "you have unsynced changes" toast is easy to miss, and nothing before this
+    /// pointed a tray user at the chooser without them noticing the Conflicts badge on their own. Any
+    /// of the three native tray actions that can leave this machine with an open conflict — Sync All,
+    /// Force Pull, Force Push — calls this afterward; a hit raises <see cref="AgentWindow"/> straight
+    /// to the queue pop-up instead of the plain Conflicts list, the same one-conflict-at-a-time
+    /// "apply to all remaining" flow the agent UI's own "Sync now" button already opens. Best-effort:
+    /// a failed conflict check must not turn an otherwise-successful sync into an error toast.
+    /// </summary>
+    private async Task CheckConflictsAndRaiseAsync()
+    {
+        try
+        {
+            var conflicts = await ApiClient.For(_config).GetOpenConflictsForMachineAsync(_config.MachineId);
+            if (conflicts.Count > 0)
+                _ui.Post(() => OpenWindow("conflicts:queue"));
+        }
+        catch (Exception ex) { AgentLogger.LogException("CheckConflictsAndRaise", ex); }
+    }
 
     private void OpenDashboard()
     {

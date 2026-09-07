@@ -23,6 +23,17 @@ entirely by *verifiability*, never by quota. The only quota lever that actually 
 fewer, better-scoped sessions**, and don't ship a phase that can't be checked from wherever it's
 built.
 
+## Status (updated 2026-09-03)
+
+| Group | Contents | Status |
+|---|---|---|
+| 1 | Phase 5, Phase 9 spike | ✅ Done 2026-08-30 |
+| 2 | Phase 4, Phase 6 | ✅ Done 2026-08-31 |
+| 3 | Phase 9 (D-Bus impl) | ✅ Done 2026-09-01 |
+| 4 | Phase 8 | ✅ Done 2026-09-03 |
+| 5 | Phase 7 | ✅ Phase 7 done 2026-09-03 — Phase 14 deliberately left out of this pass, see `plan.md`'s Status section for why |
+| 6 | Phase 10, 11, 13 | ⬜ Not started — needs the `SaveLocker-Decky` repo attached, and Deck/Windows hardware |
+
 ## Which phases are actually reachable from a cloud/remote session
 
 | Phase | Buildable here? | Verifiable here? |
@@ -127,12 +138,24 @@ tracked in `plan.md`**: no `ConflictsScreen` class (Phase 8 section), this scree
 server directly instead of through the daemon's local API (Phase 8 section), and no shared
 `Agent.Core` version/stats cache for Phase 7 to reuse (Phase 7 section).
 
-**Group 5 — defer to a session on a Windows-connected machine.**
+**Group 5 — Phase 7 done 2026-09-03; Phase 14 deliberately not started this pass.**
 `Phase 7` (Windows tray automatic chooser + bulk queue) + `Phase 14` (webhook notify + the per-game
 "block launch" setting — bundled with Phase 7 here only because both touch tray/agent-ui settings
-surfaces, not because of a hard dependency). Reason to defer: not cheaper, just **verifiable** —
-shipping WinForms code nobody can run risks paying for it twice (once to write it, again to fix what
-a five-minute manual check would have caught).
+surfaces, not because of a hard dependency). Originally deferred waiting on a Windows-connected
+session; this one was, so Phase 7 shipped. Phase 14 was asked about directly and scoped OUT of this
+session on purpose (see `plan.md`'s Status section: its block-launch half has a real, unresolved
+design fork against already-shipped Phase 4 behavior that needs a maintainer decision before code, not
+during).
+<br>**Shipped as:** `TrayApp.cs`'s three native trigger points that can leave a conflict open — Sync
+All, Force Pull, Force Push — now check for one afterward and raise `AgentWindow` straight to a new
+`#conflicts:queue` deep link, which `App.tsx` recognizes and uses to auto-open the exact same
+`SyncConflictModal` queue pop-up "Sync now" already shows. `SyncConflictModal.tsx` gained the "apply
+to all remaining" bulk-resolve step item 2 of Phase 7 asked for: after the first resolve in a
+multi-conflict queue, one prompt offers to apply the same choice to every remaining conflict, falling
+back to the existing one-at-a-time flow on "Review each." Verified live against a real two-machine,
+two-game conflict scenario and the actual built Windows tray — full detail in `plan.md`'s own Phase 7
+section and `CONTEXT.md`, including the one thing this environment could not literally automate (a
+click on the NotifyIcon's own context menu — no tool here drives native Win32 tray UI).
 
 **Group 6 — later, needs the separate Decky repo + real hardware (Deck and/or Windows).**
 `Phase 10`/`Phase 11` (Decky — add the `SaveLocker-Decky` repo to whatever session does this) +
@@ -143,7 +166,7 @@ Done 2026-08-30       →  Group 1 (5, 9-spike)                  tiny, fully ver
 Done 2026-08-31       →  Group 2 (4, 6)                        medium, biggest value, fully verifiable here
 Done 2026-09-01       →  Group 3 (9-impl)                      small, code-only here, needed Group 2 first
 Done 2026-09-03       →  Group 4 (8)                           medium, verified live under WSLg
-Windows machine       →  Group 5 (7, 14)
+Done 2026-09-03       →  Group 5 (7)                           verified live on a real Windows dev box; Phase 14 held back — see above
 Deck + Windows        →  Group 6 (10, 11, 13)
 Whenever 6/8/10 adds a "check now" trigger → Phase 12 (sync-status consumer)
 ```
