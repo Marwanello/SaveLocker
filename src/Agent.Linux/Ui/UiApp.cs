@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Numerics;
+using System.Timers;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.OpenGL;
@@ -92,6 +93,9 @@ sealed class UiApp
     // stats task completes without a result (404, or any other failure).
     private readonly Dictionary<Guid, long> _versionRetryAt = new();
     private const long VersionRetryCooldownMs = 10000;
+
+    private readonly System.Timers.Timer _pruneTimer;
+    private bool _needsPrune;
 
     private readonly Dictionary<Guid, bool> _conflictKeepBoth = new();
     private Guid? _resolvingConflictId;
@@ -244,6 +248,14 @@ sealed class UiApp
         _config = config;
         _size = size;
         _screenshotPath = screenshotPath;
+
+        _pruneTimer = new System.Timers.Timer(TimeSpan.FromMinutes(5).TotalMilliseconds)
+        {
+            AutoReset = true,
+            Enabled = true
+        };
+        _pruneTimer.Elapsed += (_, _) => _needsPrune = true;
+
         _scanner = new LinuxGameScanner(new Detection(config));
         _browser = new PathBrowser(SteamRoots.BrowseRoots().Concat(HeroicRoots.BrowseRoots()));
         _launch = Daemon.LinuxLaunchCommand();
@@ -377,6 +389,7 @@ sealed class UiApp
         _window.Closing += () =>
         {
             Sound.Shutdown();
+            _pruneTimer?.Dispose();
             _controller?.Dispose();
             _input?.Dispose();
             _gl?.Dispose();
@@ -483,6 +496,13 @@ sealed class UiApp
         NavDebug.BeginFrame();
         Widgets.BeginFrame();
         FeedImGuiNav();
+
+        if (_needsPrune)
+        {
+            _needsPrune = false;
+            PruneClosedConflictState(_openConflicts);
+        }
+
         // Rail badge and the status screen's per-game prompt both need this regardless of which
         // screen is active, so it is polled here rather than inside DrawConflicts.
         PollConflictState();

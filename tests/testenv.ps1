@@ -326,7 +326,7 @@ function Invoke-Deck {
         # Only meaningful to 'conflict' (cmd_conflict); every other subcommand ignores them. Passed
         # unconditionally rather than only when $Command -eq 'conflict' since Invoke-Deck is generic —
         # simplest to always forward the current -Size/-Files rather than special-case this one call.
-        "SAVELOCKER_CONFLICT_SIZE_MB=$Size",
+        "SAVELOCKER_CONFLICT_SIZE_MB=$($Size.ToString([System.Globalization.CultureInfo]::InvariantCulture))",
         "SAVELOCKER_CONFLICT_FILES=$Files"
     )
     $cmd = "sed 's/\r`$//' /tmp/.savelocker-testenv-deck.raw > /tmp/.savelocker-testenv-deck.sh; " +
@@ -1007,17 +1007,37 @@ switch ($Command) {
         # config), so just bring it up rather than making the user run `up -Only console` by hand.
         if (-not (Test-ConsoleUp)) { Start-Console } else { Write-Host '  console already up' }
 
-        if ($Windows) { New-ConflictOnWindows }
+        $windowsOk = $false
+        $deckOk = $false
+
+        if ($Windows) {
+            try { New-ConflictOnWindows; $windowsOk = $true }
+            catch { Warn "windows: $($_.Exception.Message)" }
+        }
         if ($Deck) {
             if (-not (Test-DeckConfigured)) { throw "No Deck configured - set -DeckHost or `$env:SAVELOCKER_DECK_HOST." }
             if (-not $DeckServerUrl) {
                 throw "no -DeckServerUrl / `$env:SAVELOCKER_DECK_SERVER_URL - the Deck can't reach 'localhost', it needs this PC's LAN IP (e.g. http://192.168.68.58:$ConsolePort)"
             }
-            try { Invoke-Deck 'conflict' } catch { Warn "deck: $($_.Exception.Message)" }
+            try { Invoke-Deck 'conflict'; $deckOk = $true }
+            catch { Warn "deck: $($_.Exception.Message)" }
+        }
+
+        if ($Windows -and $Deck) {
+            if ($windowsOk -and $deckOk) { Write-Host "seeded 'Conflict Game' on both sides." }
+            elseif ($windowsOk) { Write-Host "seeded 'Conflict Game' on Windows ONLY (Deck failed)." }
+            elseif ($deckOk) { Write-Host "seeded 'Conflict Game' on Deck ONLY (Windows failed)." }
+            else { Write-Host "FAILED: both sides failed to seed." }
+        } elseif ($Windows) {
+            if ($windowsOk) { Write-Host "seeded 'Conflict Game' on Windows." }
+            else { Write-Host "FAILED: Windows side failed." }
+        } elseif ($Deck) {
+            if ($deckOk) { Write-Host "seeded 'Conflict Game' on Deck." }
+            else { Write-Host "FAILED: Deck side failed." }
         }
 
         Write-Host ''
-        Write-Host "seeded 'Conflict Game'. Next: .\tests\testenv.ps1 up   (tray/daemon start LAST, after all seeding)"
+        Write-Host "Next: .\tests\testenv.ps1 up   (tray/daemon start LAST, after all seeding)"
         Write-Host "then check each side's own conflicts view (CLI 'conflicts', doctor, the dashboard, or the Decky/Game-Mode UI)."
     }
 

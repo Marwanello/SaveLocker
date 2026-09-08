@@ -18,7 +18,15 @@ namespace SaveLocker.Agent.Linux;
 /// </summary>
 public static class ProtonRun
 {
-    private static readonly TimeSpan ConflictPopupTimeout = TimeSpan.FromMinutes(10);
+    /// <summary>
+/// How long to wait for the user to resolve a conflict in the interactive popup before
+/// giving up and falling back to the text refusal. Controlled by
+/// <c>SAVELOCKER_CONFLICT_POPUP_TIMEOUT_SECONDS</c> (default 600 = 10 minutes).
+/// </summary>
+private static readonly TimeSpan ConflictPopupTimeout = TimeSpan.FromSeconds(
+    int.TryParse(Environment.GetEnvironmentVariable("SAVELOCKER_CONFLICT_POPUP_TIMEOUT_SECONDS"), out var s) && s > 0
+        ? s
+        : 600); // default 10 minutes
 
     /// <summary>
     /// Pull, run the game to completion, then settle-and-push. Returns the game's own exit code —
@@ -95,8 +103,8 @@ public static class ProtonRun
                 try { gate = await engine.PrepareLaunchAsync(game); }
                 catch (Exception ex)
                 {
-                    Log($"post-popup re-check failed, launching anyway: {ex.Message}");
-                    gate = new LaunchGateResult(LaunchDecision.Proceed);
+                    Log($"post-popup re-check failed, keeping launch blocked: {ex.Message}");
+                    gate = new LaunchGateResult(LaunchDecision.Blocked, "Re-check failed after conflict popup: " + ex.Message);
                 }
             }
 
