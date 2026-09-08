@@ -582,9 +582,7 @@ public static class Doctor
             if (origins.Count < 2) continue;
 
             var winner = LinuxGameScanner.PickWinner(g);
-            var winnerOrigin = g.Where(x => x.Candidate.Equals(winner))
-                                .Select(x => (x.Candidate.Source, x.Candidate.SteamAppId, x.Candidate.MoonDeckAppId, x.ViaMoonDeck))
-                                .First();
+            var winnerOrigin = (winner.Candidate.Source, winner.Candidate.SteamAppId, winner.Candidate.MoonDeckAppId, winner.ViaMoonDeck);
             Console.WriteLine($"  ! '{g.First().Candidate.Name}' found in {origins.Count} places: " +
                               string.Join("; ", origins.Select(o =>
                                   DescribeOrigin(o) + (o.Equals(winnerOrigin) ? " [tracked]" : ""))) +

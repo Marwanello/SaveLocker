@@ -40,7 +40,7 @@ public sealed class LinuxGameScanner : IGameScanner
         // compatdata prefix for a game it does not launch.
         return results
             .GroupBy(r => ManifestLoader.NormalizeName(r.Candidate.Name), StringComparer.Ordinal)
-            .Select(PickWinner)
+            .Select(g => PickWinner(g).Candidate)
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
@@ -137,8 +137,10 @@ public sealed class LinuxGameScanner : IGameScanner
     /// Which of several same-named candidates <see cref="ScanAsync"/> keeps. Shared with
     /// <see cref="Doctor"/> so its "found in N places" note names the same survivor the scan does —
     /// a second copy of this ordering would drift from the first.
+    /// Returns the winning tuple, not just the candidate: two candidates can be value-equal
+    /// while differing in <c>ViaMoonDeck</c>, and re-finding the winner by equality would tag the wrong origin.
     /// </summary>
-    internal static ScanCandidate PickWinner(
+    internal static (ScanCandidate Candidate, bool ViaMoonDeck) PickWinner(
         IEnumerable<(ScanCandidate Candidate, bool ViaMoonDeck)> group)
     {
         return group
@@ -155,7 +157,7 @@ public sealed class LinuxGameScanner : IGameScanner
             // installed Steam title and a shortcut the user made to a DRM-free build; enrolling
             // the one that already has Cloud is the less useful of the two.
             .ThenBy(r => r.Candidate.HasSteamCloud)
-            .First().Candidate;
+            .First();
     }
 
     /// <summary>

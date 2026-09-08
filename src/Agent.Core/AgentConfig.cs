@@ -380,7 +380,7 @@ public sealed class AgentConfig
     /// </summary>
     public void RefreshGameList()
     {
-        using var guard = AgentStateLock.TryAcquire("config", StateDir, TimeSpan.FromSeconds(2));
+        using var guard = AgentStateLock.TryAcquire("config", StateDir, TimeSpan.Zero);
         if (guard is null) return;
         var onDisk = ReadOnDisk();
         if (onDisk is null) return;
