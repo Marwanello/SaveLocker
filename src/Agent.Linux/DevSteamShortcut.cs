@@ -194,10 +194,10 @@ public static class DevSteamShortcut
         if (File.Exists(backupPath))
         {
             Console.Error.WriteLine(
-                $"our entry is present but no longer in its written shape and a backup exists - " +
-                $"refusing to restore '{vdfPath}' because shortcuts added since the backup would be lost. " +
-                $"Remove the 'Conflict Game' shortcut from Steam itself, then delete the backup manually: {backupPath}");
-            return;
+                $"our entry is present but no longer in its written shape - restoring '{vdfPath}' from the pre-SaveLocker backup; " +
+                "shortcuts added meanwhile may be lost. Restart Steam afterwards and check the library.");
+            AtomicFile.WriteAllBytes(vdfPath, File.ReadAllBytes(backupPath));
+            File.Delete(backupPath);
         }
         else
         {
