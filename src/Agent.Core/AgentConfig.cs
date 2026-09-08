@@ -361,6 +361,40 @@ public sealed class AgentConfig
     }
 
     /// <summary>
+    /// Convergence for a process that <i>reads</i> the game list but never reconciles it.
+    /// <c>savelocker ui</c> loads <c>config.json</c> at startup and holds it, so a game deleted
+    /// in the console — dropped from disk by the daemon's next reconcile — renders as a ghost
+    /// until the UI restarts. <see cref="UpdateSettings"/> already converges on write; this is
+    /// the read half, for the frames between writes.
+    /// <para>
+    /// Membership only: entries on disk but missing here are added, entries gone from disk are
+    /// dropped, and every surviving entry's fields are left untouched. Save folders and globs
+    /// are the reconciler's to write, and adopting them here would fight the daemon for no
+    /// benefit — the ghost is a membership problem, not a field problem.
+    /// </para>
+    /// <para>
+    /// Skips, rather than waits, when another process holds the lock: this runs on the UI
+    /// render thread every few seconds, and stalling it on a wedged writer would freeze the
+    /// window. The next poll simply retries.
+    /// </para>
+    /// </summary>
+    public void RefreshGameList()
+    {
+        using var guard = AgentStateLock.TryAcquire("config", StateDir, TimeSpan.FromSeconds(2));
+        if (guard is null) return;
+        var onDisk = ReadOnDisk();
+        if (onDisk is null) return;
+        var diskIds = onDisk.Games.Select(g => g.GameId).ToHashSet();
+        if (diskIds.SetEquals(Games.Select(g => g.GameId))) return;
+        MutateGames(list =>
+        {
+            list.RemoveAll(g => !diskIds.Contains(g.GameId));
+            var now = list.Select(g => g.GameId).ToHashSet();
+            list.AddRange(onDisk.Games.Where(g => !now.Contains(g.GameId)));
+        });
+    }
+
+    /// <summary>
     /// Re-read one game's sync bookkeeping from disk into the caller's object.
     ///
     /// The mirror of <see cref="SaveGameSyncState"/>, and the other half of the same bug. That method
