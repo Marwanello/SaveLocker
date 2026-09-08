@@ -953,7 +953,7 @@ decision above) remain open — see [[Backlog]].
 ---
 
 **Easy verification wins triaged, fixed where code was needed, and maintainer-verified live
-(2026-09-08, branch `verify/easy-wins-triage`, three commits, unmerged).** Five backlog items closed
+(2026-09-08, branch `easy-wins`, three commits, unmerged).** Five backlog items closed
 in one pass, two of them verification-only (no code change): self-hosted console fonts (`5ffd7d1`,
 Fontsource Inter/JetBrains Mono, zero Google requests), the WA-03 ACL trap (installer never creates
 `%PROGRAMDATA%\SaveLocker`; `StateDirSecurity.Protect` verified live via `icacls`), the LAN

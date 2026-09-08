@@ -1622,7 +1622,7 @@ past the 4-second default poll interval, so the baseline tick is guaranteed to h
 
 ---
 
-## 2026-09-08 — Easy verification wins triage (`verify/easy-wins-triage`)
+## 2026-09-08 — Easy verification wins triage (`easy-wins`)
 
 Five small backlog items triaged on a dedicated branch + worktree (off `2f3a1a9`, main checkout
 untouched): two needed code (three commits), two were verification-only, all five

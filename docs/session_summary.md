@@ -1,6 +1,6 @@
 # Session summary — 2026-09-08
 
-Five easy-verification backlog items triaged on branch `verify/easy-wins-triage` (dedicated worktree
+Five easy-verification backlog items triaged on branch `easy-wins` (dedicated worktree
 off `2f3a1a9`, main checkout untouched): self-hosted console fonts, installer ACL trap, LAN
 enrollment URL, cross-source doctor note, Game Mode stale list. Three code commits (`5ffd7d1`,
 `bc82708`, `d6d4814`); the ACL and LAN items needed no code change. All five maintainer-verified
