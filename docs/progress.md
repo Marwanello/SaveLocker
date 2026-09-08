@@ -1619,3 +1619,75 @@ past the 4-second default poll interval, so the baseline tick is guaranteed to h
 - PR [**#31**](https://github.com/Marwanello/SaveLocker/pull/31) opened against `main` — a fresh PR,
   since upstream PR #30 is merged with its branch deleted, and fork PR #30 is the unrelated
   Phase-7 work above. Referenced upstream `SkorcherX/SaveLocker#30` as the source of the findings.
+
+---
+
+## 2026-09-08 — Easy verification wins triage (`verify/easy-wins-triage`)
+
+Five small backlog items triaged on a dedicated branch + worktree (off `2f3a1a9`, main checkout
+untouched): two needed code (three commits), two were verification-only, all five
+maintainer-verified live, then archived out of the backlog.
+
+**Commits:** `5ffd7d1` self-hosted console fonts · `bc82708` cross-source doctor note · `d6d4814`
+Game Mode stale-list poll · `6ec250e` vault (archive + `shipped-2026-09.md`). Unmerged, unpushed.
+
+### The five items
+
+1. **Self-hosted console fonts** — Google Fonts `@import` out of `web/src/index.css`; Inter 300–700
+   + JetBrains Mono 400/500 vendored via Fontsource in `web/src/main.tsx`. `npm run build` +
+   `oxlint` clean, zero `googleapis`/`gstatic` in `web/` or `dist/`. Verified in DevTools: zero
+   Google requests, and blocking `*googleapis*`/`*gstatic*` renders identically.
+2. **Installer ACL trap (WA-03)** — no code change. Verified live: `icacls %PROGRAMDATA%\SaveLocker`
+   shows only SYSTEM/Administrators/self, inheritance broken; the WA-03 suite section asserts the
+   same on a scratch dir. Test-location note: the installer never creates the dir and
+   `StateDirSecurity.Protect` runs on whatever `SAVELOCKER_STATE_ROOT` resolves to, so any test dir
+   exercises the identical mechanism.
+3. **LAN enrollment URL** — no code change. Verified `effective-url` (`isLoopback:true` on localhost,
+   `false` with the LAN host), localhost mint without a URL → HTTP 400 before burning the single-use
+   token, explicit LAN URL → 200 with that URL in the policy.
+4. **Cross-source doctor note (one-game-several-sources step 2)** — `ScanCandidate.MoonDeckAppId`,
+   `LinuxGameScanner.ScanUnfilteredAsync` + `PickWinner`,
+   `Doctor.ReportCrossSourceDuplicatesAsync` + `DescribeOrigin`: one line per title found in 2+
+   places, every origin named, `[tracked]` on the scan's pick, plus the `add-game` switch hint. A
+   note, never a problem — exit code unaffected. `run-linux-tests.sh` dual-source checks extended.
+5. **Game Mode stale list** — `AgentConfig.RefreshGameList` (membership-only by `GameId`, surviving
+   entries untouched) polled from `UiApp` every 10s including the first frame; lock contention defers
+   to the next poll, an unreadable file is a no-op. Verified live under WSLg: add appears, delete
+   disappears, no restart.
+
+### Debugging sagas worth keeping
+
+- **A Google Fonts request that wasn't ours.** DevTools showed `Readex Pro` + `Signika` from
+  `fonts.googleapis.com` after the fonts fix; a repo-wide grep for both families returned zero hits
+  — a browser extension or stale keep-log entry, not SaveLocker. The hunt did find a real leftover:
+  `agent-ui/index.html` still loads Inter from Google Fonts (the fonts task covered only the
+  console) — open follow-up, not started.
+- **WSL quoting traps, three of them.** PowerShell 5.1 strips double quotes building native
+  `wsl.exe` command lines (the same trap `testenv.ps1` documents): keep `bash -c` bodies quoteless,
+  never reference `$PATH` (the inherited Windows PATH contains `Program Files (x86)` parens whose
+  expansion breaks parsing), construct `PATH=` explicitly. `tr -d 015` deletes the *digit set*
+  {0,1,5}, not CR — and heredoc-written files lose their quotes the same way; stage files via the
+  temp dir + `cp` instead.
+- **Suite `exit 2` is environmental.** The `chattr +i` tamper probe needs `CAP_LINUX_IMMUTABLE` —
+  root on ext4 (fs confirmed ext4). All six dual-source checks PASS in the suite log, including two
+  doctor-note assertions (`found in two places`, MoonDeck origin named). Root recipe + post-run
+  `chown -R maro:maro` + rig bounce documented for fully-green runs.
+- **The stale-list verification saga.** Rename-vs-delete: renames never propagate (same IDs → early
+  return, by design — the "or shows the new name" instruction was wrong and retracted). A
+  hand-written `GameId` that isn't a real UUID crashes `Load` at startup yet is silently skipped by
+  the poll's `ReadOnDisk` — and `json.tool` VALID doesn't catch it, since the JSON is well-formed. A
+  temporarily instrumented build (`[poll]`/`[refresh]` trace lines, WSL clone only, reverted
+  afterward) confirmed the poll runs every ~10s against the launched `config:` path. Ruled out by
+  code read along the way: the UI never writes the config back (zero `Save` calls in `UiApp.cs`),
+  and the state lock is an OS-level file lock with no stale state.
+- **Two robustness gaps filed as follow-ups, not fixed here:** the `Load`-throws vs
+  `ReadOnDisk`-silent asymmetry above, and rename propagation (safe to add — the UI never writes —
+  but its own task).
+
+### Vault
+
+Five `docs/tasks/*/` folders → `docs/logs/2026-09-08_*/` (git mv, history kept), five lines out of
+`Backlog.md`, new `docs/logs/shipped-2026-09.md` index with precisely-scoped rows — several removed
+backlog lines were broader than what was verified (installer happy-path/expired/skip/silent, Deck
+scenarios, Windows gates, second-machine redeem), and those sub-scopes are named there rather than
+silently dropped. `CONTEXT.md` session entry added.

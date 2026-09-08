@@ -1,3 +1,50 @@
+# Session summary — 2026-09-08
+
+Five easy-verification backlog items triaged on branch `verify/easy-wins-triage` (dedicated worktree
+off `2f3a1a9`, main checkout untouched): self-hosted console fonts, installer ACL trap, LAN
+enrollment URL, cross-source doctor note, Game Mode stale list. Three code commits (`5ffd7d1`,
+`bc82708`, `d6d4814`); the ACL and LAN items needed no code change. All five maintainer-verified
+live, then archived out of the backlog (`docs/logs/2026-09-08_*/`, `shipped-2026-09.md`, vault
+commit `6ec250e`). Unmerged, unpushed.
+
+## The fixes
+
+- **Fonts:** Google Fonts `@import` out of `web/src/index.css`; Inter + JetBrains Mono vendored via
+  Fontsource. Zero Google requests in DevTools; blocking them renders identically.
+- **Doctor:** same game in 2+ scan sources gets one NOTE line naming every origin with `[tracked]`
+  on the scan's pick, plus the `add-game` switch hint. Exit code untouched; suite's dual-source
+  assertions green.
+- **Stale list:** `RefreshGameList` (membership-only by `GameId`) polled every 10s including the
+  first frame. Add appears, delete disappears, no restart — confirmed under WSLg.
+
+## Verification-only
+
+- **ACL trap:** live `icacls` (SYSTEM/Administrators/self only, inheritance broken) + WA-03 suite;
+  any test dir exercises the identical mechanism via `SAVELOCKER_STATE_ROOT`.
+- **LAN URL:** `effective-url` loopback flags, localhost mint → HTTP 400, explicit LAN mint → 200
+  with that URL in the policy.
+
+## Debugging of note
+
+- A `Readex Pro`/`Signika` Google Fonts request in DevTools proved unrelated (zero repo hits) but
+  exposed a real leftover: `agent-ui/index.html` still uses Google Fonts — open follow-up.
+- The stale-list check caught three instructive edges: renames never propagate by design
+  (membership-only); a malformed `GameId` crashes startup `Load` yet is silently skipped by the
+  poll, and `json.tool` VALID doesn't catch it; PowerShell strips double quotes for native
+  `wsl.exe`, so WSL one-liners must be quoteless with an explicit `PATH=`.
+- Suite `exit 2` is environmental (the `chattr +i` probe needs root on ext4), not a failure.
+
+## Not done
+
+- Follow-ups offered, none started: agent-ui font self-hosting, `GameId` robustness gap, rename
+  propagation.
+- Broader sub-scopes from the removed backlog lines (installer happy-path/expired/skip/silent,
+  Deck scenarios, Windows gates, second-machine redeem) are named in `shipped-2026-09.md`,
+  not verified.
+- Branch unmerged, unpushed.
+
+---
+
 # Session summary — 2026-09-07
 
 `/code-review xhigh PR#30` completed end-to-end on an already-merged PR ("Three bug bounties: Linux
