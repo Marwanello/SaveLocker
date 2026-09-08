@@ -94,10 +94,15 @@ static class Program
             // here instead of a real title, so a launch-gate popup and sync-before/after-play can
             // be exercised on real hardware. Just `ui --screen fakegame` under a plain name — never
             // reachable from a real install's Launch Options, only from the test daemon's own.
-            // Refuses outside the test rig: SAVELOCKER_ALLOW_TEST_COMMANDS is set by
-            // tests/testenv-deck.sh, never by any shipped flow.
+            // Deliberately NOT gated behind SAVELOCKER_ALLOW_TEST_COMMANDS like the dev-shortcut-*
+            // commands below: Steam launches this directly as the shortcut's Exe (DevSteamShortcut
+            // leaves LaunchOptions blank, so there is no wrapper to carry the env var), in Steam's
+            // own environment, which never has that variable set. Gating it made the seeded
+            // shortcut fail to launch from Steam's own library with no visible error — exactly the
+            // scenario this command exists for. It has no side effects worth denying outside the
+            // test rig (it only opens a UI window), unlike dev-shortcut-add/remove, which mutate a
+            // real shortcuts.vdf and stay gated.
             case "fake-game":
-                if (!TestCommandsAllowed(out var fakeGameDenial)) { Console.Error.WriteLine(fakeGameDenial); return 2; }
                 return Ui.UiApp.Run(config, opts.GetValueOrDefault("size"),
                     startScreen: "fakegame", apiPort: ParsePort(opts));
 
