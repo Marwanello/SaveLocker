@@ -428,6 +428,20 @@ check "doctor names the actual prefix path" "$(contains "${out}" "${MOONDECK_REA
 # works — scan's dedupe already picked the one that resolves — so it must not fail doctor's exit code.
 check "doctor notes the duplicate MoonDeck shortcut" \
   "$(contains "${out}" "'MoonDeck Streamed Game' has 2 shortcuts with different AppIDs")"
+# Same-name candidates from DIFFERENT origins must be visible too, not just raw shortcut
+# duplicates: the dual-source game is genuinely installed AND pointed at by a MoonDeck shortcut,
+# and both resolve — so doctor names both origins and which one the scan tracks.
+check "doctor notes the dual-source game found in two places" \
+  "$(contains "${out}" "'Fake Dual Source Game' found in 2 places")"
+check "doctor names the MoonDeck origin of the dual-source game" \
+  "$(contains "${out}" "MoonDeck streams ${DUAL_SOURCE_APPID}")"
+check "doctor names which copy the scan tracks" \
+  "$(contains "${out}" "SteamInstalled appid ${DUAL_SOURCE_APPID} [tracked]")"
+# A duplicate that does NOT resolve is covered by the shortcut note above, not this one — counting
+# it here too would nag on every stale entry. The MoonDeck streamed game has exactly one resolving
+# origin, so it must not get the found-in-several-places note.
+check "a single resolving origin gets no found-in-several-places note" \
+  "$([ "$(printf '%s\n' "${out}" | grep -c "'MoonDeck Streamed Game' found in")" = 0 ] && echo 0 || echo 1)"
 
 # A library libraryfolders.vdf still names but that does not exist right now (an SD card that isn't
 # inserted) must be called out by name, not silently skipped the way LibraryPaths correctly skips it

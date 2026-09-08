@@ -76,6 +76,13 @@ sealed class UiApp
     private const long ConflictsPollMs = 12000;
     private string? _conflictsError;
 
+    // The daemon reconciles the game list with the server every 20 s and saves it; this process
+    // loaded config.json once at startup and never re-read it, so a game deleted in the console
+    // rendered as a ghost until restart (tasks/game-mode-stale-list). Re-read on a timer — local
+    // disk only, no server call, so it works offline exactly when the ghost matters most.
+    private long _gamesReadAt;
+    private const long GamesPollMs = 10000;
+
     // A conflict only carries version ids; both sides' machine/timestamp/size and file-count are
     // fetched lazily and cached forever (an archive's stats never change once uploaded), mirroring
     // agent-ui's useConflictVersions.ts. Every field write happens on the render thread, in
@@ -483,6 +490,10 @@ sealed class UiApp
         // Rail badge and the status screen's per-game prompt both need this regardless of which
         // screen is active, so it is polled here rather than inside DrawConflicts.
         PollConflictState();
+        // Same placement, same reason: every screen reads _config.Games, and the daemon may have
+        // reconciled it since the last frame. First frame included (_gamesReadAt == 0), which is
+        // the reconcile-on-launch half — a ghost deleted before startup never paints at all.
+        PollGameList();
         // Before Update, which is what calls NewFrame: a queued mouse position must be in the queue
         // NewFrame drains, because NewFrame is also where HoveredWindow is resolved. MouseDelta read
         // here is last frame's, which costs the highlight a frame nobody can perceive.
@@ -1660,6 +1671,21 @@ sealed class UiApp
             "Game Mode does not put ~/.local/bin on PATH.");
         Note("Tick \"Force the use of a specific Steam Play compatibility tool\".",
             "On a non-Steam shortcut, without this Proton never creates a prefix.");
+    }
+
+    /// <summary>
+    /// Adopt the daemon's game-list membership (added/removed games) into this process's view.
+    /// Synchronous and render-thread-only, like every other field write in this file.
+    /// </summary>
+    private void PollGameList()
+    {
+        var now = Environment.TickCount64;
+        if (_gamesReadAt != 0 && now - _gamesReadAt <= GamesPollMs) return;
+        _gamesReadAt = now;
+        // Synchronous local read, so there is no task to drain and nothing for the screenshot
+        // busy-gate to wait on. Best-effort: contention just defers to the next poll, and a
+        // missing/unreadable file is a no-op (ReadOnDisk returns null) rather than a crash.
+        try { _config.RefreshGameList(); } catch { /* the next poll retries */ }
     }
 
     /// <summary>
