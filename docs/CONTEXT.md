@@ -952,6 +952,23 @@ decision above) remain open — see [[Backlog]].
 
 ---
 
+**Easy verification wins triaged, fixed where code was needed, and maintainer-verified live
+(2026-09-08, branch `verify/easy-wins-triage`, three commits, unmerged).** Five backlog items closed
+in one pass, two of them verification-only (no code change): self-hosted console fonts (`5ffd7d1`,
+Fontsource Inter/JetBrains Mono, zero Google requests), the WA-03 ACL trap (installer never creates
+`%PROGRAMDATA%\SaveLocker`; `StateDirSecurity.Protect` verified live via `icacls`), the LAN
+enrollment URL (inferred-loopback refusal + `effective-url` preview verified against `:5196`),
+the cross-source doctor note (`bc82708`, `[tracked]` winner + `add-game` hint, suite's dual-source
+assertions green), and the Game Mode stale list (`d6d4814`, `RefreshGameList` polled every 10s
+including first frame — add appears and delete disappears under WSLg with no restart, renames
+deliberately out of scope as membership-only). Debugging the last one surfaced two real findings:
+a malformed `GameId` crashes `Load` at startup yet is silently skipped by the poll's `ReadOnDisk`
+(robustness gap, worth its own item), and `agent-ui/index.html` still loads Inter from Google Fonts
+(the fonts fix covered only the console). Folders archived to `logs/2026-09-08_*/`, index in
+`logs/shipped-2026-09.md`.
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three
