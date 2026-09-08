@@ -704,10 +704,17 @@ try/catch and returned as a proper `500`/`ErrorResponse`, not an unhandled crash
 `!r.ok` fail-open path (`handlePreLaunchResult`) still relaunches the game rather than stranding it, so
 the end-to-end behavior stays fail-open even though the server-side response for that case is an error.
 Decky plugin: `npx tsc --noEmit` clean, and a real `npm run build` (rollup) succeeds — the actual bundle
-Decky loads, not just a type-check. **Not yet run on real hardware** — see `CONTEXT.md`/the session
-write-up for the exact manual pass this needs (cancel wins the race, popup auto-opens, A picks a side
-and auto-relaunches, B backs out and stays blocked, the fresh-page-open carve-out doesn't re-check a
-known conflict over the network).
+Decky loads, not just a type-check.
+
+**Real-hardware pass done 2026-09-07/08 — two bugs found and fixed along the way, both confirmed with
+the user's own hardware.** `RegisterForGameActionStart`'s `appId` is a packed 64-bit Steam `CGameID`
+for any non-Steam shortcut (real AppID in the upper 32 bits) — `Number(appIdStr)` silently rounded it
+to garbage, so the fast-path appId match failed for every game this feature targets, not just this
+test rig; fixed with a BigInt-aware `parseGameActionAppId()` in `gamingSync.tsx`. Separately,
+`SteamClient.Apps.GetActiveGameActions()` proved unreliable in both directions on real hardware (empty
+doesn't prove a cancel succeeded; non-empty doesn't prove it failed) and was removed as a verification
+step entirely — `handleLifetimeChange`'s pre-existing `bRunning`/`pendingBlock` check is the real
+safety net. User confirmed: "it works perfectly now."
 
 **Phase 12 — sync-status endpoint — consumer work only, the endpoint already shipped, but it is
 NOT the cheap poll target this plan originally described it as.** Correction made 2026-08-30 while

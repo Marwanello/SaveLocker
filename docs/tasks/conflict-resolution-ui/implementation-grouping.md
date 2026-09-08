@@ -32,7 +32,7 @@ built.
 | 3 | Phase 9 (D-Bus impl) | ✅ Done 2026-09-01 |
 | 4 | Phase 8 | ✅ Done 2026-09-03 |
 | 5 | Phase 7 | ✅ Phase 7 done 2026-09-03 — Phase 14 deliberately left out of this pass, see `plan.md`'s Status section for why |
-| 6 | Phase 10, 11 (Decky) | 🟡 Both phases coded and Phase 10 hardware-verified 2026-09-07 (a `gameId`/`saveDirectory` wire-field bug fixed along the way — see `plan.md`) — Phase 11 (the cancel→popup→sync→relaunch gate) still needs its own real-Deck pass |
+| 6 | Phase 10, 11 (Decky) | ✅ Done — both phases hardware-verified 2026-09-07/08 (a `gameId`/`saveDirectory` wire-field bug, then a packed-`CGameID` decode bug and an unreliable `GetActiveGameActions()` check, all fixed along the way — see `plan.md`) |
 | 7 | Phase 13 (Playnite) | ⬜ Not started — split out of the old Group 6 on 2026-09-07 (asked directly): it shares nothing with Decky but a `.NET Framework 4.6.2` + Playnite SDK toolchain, and only Windows + Playnite installed, not the Decky repo or a Deck |
 
 ## Which phases are actually reachable from a cloud/remote session
@@ -191,7 +191,7 @@ Done 2026-08-31       →  Group 2 (4, 6)                        medium, biggest
 Done 2026-09-01       →  Group 3 (9-impl)                      small, code-only here, needed Group 2 first
 Done 2026-09-03       →  Group 4 (8)                           medium, verified live under WSLg
 Done 2026-09-03       →  Group 5 (7)                           verified live on a real Windows dev box; Phase 14 held back — see above
-Done 2026-09-07*      →  Group 6 (10, 11, 12)                  code-only, Decky repo attached — Deck hardware pass still needed for 10/11
+Done 2026-09-07/08    →  Group 6 (10, 11, 12)                  Decky repo attached, all three hardware-verified on a real Deck
 Windows + Playnite     →  Group 7 (13)                          independent of Group 6 — split out 2026-09-07, see above
 ```
 

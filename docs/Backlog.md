@@ -6,7 +6,7 @@ Not-yet-done work only — one line per item, each pointing at its task folder u
 
 ## High priority
 
-- **Decky conflict resolution (phases 0–14).** Phases 0–9 plus Groups 4–5 shipped; phases 10, 11, 13–14 remain open → `tasks/conflict-resolution-ui/plan.md`.
+- **Decky conflict resolution (phases 0–14).** Phases 0–9 plus Groups 4–6 shipped, Phase 10/11 hardware-verified; phases 13–14 remain open → `tasks/conflict-resolution-ui/plan.md`.
 - **v0.5.0 post-release verification.** Deck scenarios, WA-03 second-account ACL, remaining Windows gates, LAN enrollment URL → `tasks/post-release-verification/summary.md`.
 - **v0.5.4 surfaces without hardware coverage.** Heroic store sub-chips + Game Mode filter-row gamepad nav → `tasks/unverified-ui-surfaces/summary.md`.
 - **Emulator saves.** Per-ROM detection + sync (RetroArch, PCSX2, Dolphin, …), 7 phases, none started → `tasks/emulator-saves/plan.md`.

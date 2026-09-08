@@ -947,8 +947,8 @@ downstream effect via the direct-navigation check above. Both call sites are oth
 of code patterns already proven correct in this exact file. Worth a five-minute manual click-through
 on a real desktop (Sync All / Force Pull / Force Push from the actual tray icon) before treating this
 as fully confirmed.
-<br>Phases 10/11 (Decky), 13 (Playnite), and 14 (webhook + block-launch opt-in, pending the design
-decision above) remain open — see [[Backlog]].
+<br>Phases 10/11 (Decky) shipped and hardware-verified 2026-09-08 — see below. Phases 13 (Playnite) and
+14 (webhook + block-launch opt-in, pending the design decision above) remain open — see [[Backlog]].
 
 ---
 
@@ -990,6 +990,26 @@ popup, the "newer" tag and keep-both toggle, the policy dropdown round-tripping 
 fix.
 <br>Phase 11 (Decky launch-gate wiring) depends on this phase and is next; Phase 13 (Playnite) has no
 dependency on it and can be picked up independently — see [[Backlog]].
+
+---
+
+**Phase 10/11 hardware-verified, two real bugs found and fixed (2026-09-07/08).** Real-Deck testing
+of Phase 11 showed no pause and no "Play Anyway" popup — a regression from what Phase 10's own
+hardware pass had confirmed. Root-caused via a live CDP console trace (Decky frontends run inside
+Steam's `SharedJSContext` CEF process, which has no on-disk log; tailed over an SSH-tunneled
+`ws://localhost:8080` using a throwaway Node script): `RegisterForGameActionStart`'s `appId` is Steam's
+packed 64-bit `CGameID` for any non-Steam shortcut, not a plain AppID — the real AppID sits in the
+upper 32 bits. `Number(appIdStr)` silently rounded it to a garbage float, so the fast-path appId match
+failed for **every** game this feature targets (Heroic titles, emulators, this repo's own fake-game
+rig), not just an edge case. Fixed with a BigInt-aware `parseGameActionAppId()` in `gamingSync.tsx`.
+<br>A second bug surfaced once the first was fixed: every attempt then logged "cancel lost the race"
+even when the cancel visibly worked. `SteamClient.Apps.GetActiveGameActions()` proved unreliable in
+**both** directions on real hardware — an empty result doesn't prove a cancel succeeded (the action can
+simply progress past cancellable state before being checked), and a non-empty result doesn't prove it
+failed (Steam can be slow to prune a cancelled action from the list). Removed as a verification step
+entirely from both call sites in `handleGameActionStart`; the pre-existing `pendingBlock`/`bRunning`
+check in `handleLifetimeChange` is the only authority now. User confirmed on real Steam Deck hardware:
+"it works perfectly now."
 
 ---
 
