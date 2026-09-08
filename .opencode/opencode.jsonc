@@ -1,4 +1,38 @@
 {
-	"$schema": "https://opencode.ai/config.json"
-	// Add MCP servers, tools, plugins here
+	"$schema": "https://opencode.ai/config.json",
+	"model": "opencode/muse-spark-1.3-contributor-free",
+	"small_model": "opencode/nemotron-3.5-lightning-free",
+	"default_agent": "build",
+	"mcp": {
+		"modly": {
+			"enabled": false
+		}
+	},
+	"watcher": {
+		"ignore": [
+			".git/**",
+			"**/node_modules/**",
+			"**/dist/**",
+			"**/build/**",
+			"**/bin/**",
+			"**/obj/**",
+			"src/Server/localstate/**",
+			".claude/worktrees/**",
+			"coverage/**"
+		]
+	},
+	"permission": {
+		"bash": {
+			"rm -rf /": "deny",
+			"rm -rf /*": "deny",
+			"rm -rf ~": "deny",
+			"rm -rf .": "deny",
+			"rm -rf ..": "deny",
+			"rm -rf *": "deny",
+			"rm *": "deny",
+			"git push --force*": "ask",
+			"git push * --force*": "ask",
+			"git push -f*": "ask"
+		}
+	}
 }
