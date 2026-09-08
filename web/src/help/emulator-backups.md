@@ -34,7 +34,7 @@ After updating an emulator or core, create a normal in-game save before the upda
 
 Create a separate SaveLocker game for each emulated title and map only that title's save folder or isolated state folder. SaveLocker maps directories, not individual files. If the emulator uses one memory-card file, place or keep it in a dedicated folder and map that folder.
 
-Avoid mapping the emulator's entire data directory. It may contain ROMs, BIOS files, shader caches, screenshots, logs, configuration, and states for unrelated games. Those files waste storage, can exceed the 200 MB upload limit, and may cause unwanted changes on another machine.
+Avoid mapping the emulator's entire data directory. It may contain ROMs, BIOS files, shader caches, screenshots, logs, configuration, and states for unrelated games. Those files waste storage, can exceed the 500 MB upload limit, and may cause unwanted changes on another machine.
 
 If several games share one memory-card file, treat its containing folder as one sync unit. Do not configure separate SaveLocker games that manage overlapping folders.
 

@@ -26,11 +26,12 @@ namespace SaveLocker.Agent.Linux;
 ///
 /// <para>
 /// <c>shortcuts.vdf</c> is the SAME file Steam uses for every real non-Steam shortcut on this
-/// machine. <see cref="Add"/> backs the file's ORIGINAL bytes up once — a second <c>Add</c>
+/// machine. All writes go through <see cref="AtomicFile"/> so Steam never observes a half-written
+/// file. <see cref="Add"/> backs the file's ORIGINAL bytes up once — a second <c>Add</c>
 /// (re-running <c>conflict</c>) is a pure no-op once the entry is present, so it never gets a
-/// chance to clobber that backup — and <see cref="Remove"/> always restores exactly that backup and
-/// deletes it, so a machine that runs this any number of times, or is cleaned without ever running
-/// <c>conflict</c> at all, ends up byte-for-byte as it started.
+/// chance to clobber that backup — and <see cref="Remove"/> deletes just our entry's own bytes,
+/// leaving shortcuts added meanwhile intact, falling back to the backup only when our entry is
+/// present but misshapen.
 /// </para>
 /// </summary>
 public static class DevSteamShortcut
@@ -78,7 +79,7 @@ public static class DevSteamShortcut
             var fresh = Concat(RootHeader, BuildEntryBytes("0", appId, exeField, prefixDir), [0x08]);
             var createdMarkerPath = vdfPath + CreatedMarkerSuffix;
             File.WriteAllBytes(createdMarkerPath, []);
-            File.WriteAllBytes(vdfPath, fresh);
+            AtomicFile.WriteAllBytes(vdfPath, fresh);
             return appId;
         }
 
@@ -92,7 +93,7 @@ public static class DevSteamShortcut
 
         (int insertPos, int nextIndex) analysis;
         try { analysis = SteamVdf.AnalyzeShortcuts(original); }
-        catch (Exception ex) when (ex is InvalidDataException or IndexOutOfRangeException)
+        catch (InvalidDataException ex)
         {
             Console.Error.WriteLine(
                 $"'{vdfPath}' did not parse the way this code expects a shortcuts.vdf to - refusing to touch it. Nothing was written. ({ex.Message})");
@@ -102,7 +103,7 @@ public static class DevSteamShortcut
         var entryBytes = BuildEntryBytes(analysis.nextIndex.ToString(), appId, exeField, prefixDir);
 
         var backupPath = vdfPath + BackupSuffix;
-        if (!File.Exists(backupPath)) File.WriteAllBytes(backupPath, original);
+        if (!File.Exists(backupPath)) AtomicFile.WriteAllBytes(backupPath, original);
 
         // The insertion point is the exact offset of the 0x08 that closes "shortcuts" itself —
         // found by AnalyzeShortcuts, NOT assumed to be "the last byte of the file" (see this
@@ -113,14 +114,16 @@ public static class DevSteamShortcut
         var from = original.AsSpan(analysis.insertPos).ToArray();
         var updated = Concat(before, entryBytes, from);
 
-        File.WriteAllBytes(vdfPath, updated);
+        AtomicFile.WriteAllBytes(vdfPath, updated);
         return appId;
     }
 
     /// <summary>
-    /// Restores <c>shortcuts.vdf</c> to exactly what it was before <see cref="Add"/> ever ran
-    /// (or deletes it, if <see cref="Add"/> is what created it). Safe to call even if
-    /// <see cref="Add"/> never ran, or never got past its own safety checks — it is then a no-op.
+    /// Removes the "Conflict Game" shortcut again. Deletes just our entry's own bytes when they
+    /// can still be located, so shortcuts Steam or the user added meanwhile survive — the backup
+    /// is only restored when our entry is present but no longer structurally intact (e.g. a writer
+    /// reordered its fields). Refuses to overwrite rather than silently discarding unknown changes.
+    /// Safe to call even if <see cref="Add"/> never ran — it is then a no-op.
     /// </summary>
     public static void Remove()
     {
@@ -130,22 +133,146 @@ public static class DevSteamShortcut
         var backupPath = vdfPath + BackupSuffix;
         var createdMarkerPath = vdfPath + CreatedMarkerSuffix;
 
+        if (!File.Exists(vdfPath))
+        {
+            try { File.Delete(backupPath); } catch { }
+            try { File.Delete(createdMarkerPath); } catch { }
+            Console.WriteLine("no shortcuts.vdf found - nothing to restore.");
+            return;
+        }
+
+        var current = File.ReadAllBytes(vdfPath);
+        if (TryLocateOwnEntry(current, out var start, out var endExclusive))
+        {
+            var updated = Concat(current.AsSpan(0, start).ToArray(), current.AsSpan(endExclusive).ToArray());
+            AtomicFile.WriteAllBytes(vdfPath, updated);
+            try { File.Delete(backupPath); } catch { }
+            try { File.Delete(createdMarkerPath); } catch { }
+            Console.WriteLine($"removed the 'Conflict Game' shortcut from {vdfPath} (other entries untouched).");
+            return;
+        }
+
+        if (IndexOf(current, AppNameMarker) < 0)
+        {
+            if (!File.Exists(backupPath))
+            {
+                if (File.Exists(createdMarkerPath))
+                {
+                    // We created this file and our entry is already gone: only delete the file
+                    // itself when Steam/the user added nothing meanwhile, never their shortcuts.
+                    if (IsEmptyShortcutsFile(current))
+                    {
+                        File.Delete(vdfPath);
+                        Console.WriteLine($"removed {vdfPath} (SaveLocker created it - nothing existed before it).");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"our entry is already gone but {vdfPath} now holds other shortcuts - leaving the file, deleting only our marker.");
+                    }
+                    File.Delete(createdMarkerPath);
+                }
+                else
+                {
+                    Console.WriteLine("no SaveLocker shortcuts.vdf backup found - nothing to restore.");
+                }
+                return;
+            }
+
+            if (current.SequenceEqual(File.ReadAllBytes(backupPath)))
+            {
+                File.Delete(backupPath);
+                Console.WriteLine($"already clean - deleted the stale pre-SaveLocker backup.");
+                return;
+            }
+
+            Console.Error.WriteLine(
+                $"our entry is already gone from '{vdfPath}' but the file differs from the pre-SaveLocker backup - " +
+                "refusing to overwrite, so nothing was written. Delete the backup manually once sure: " + backupPath);
+            return;
+        }
+
         if (File.Exists(backupPath))
         {
-            File.Copy(backupPath, vdfPath, overwrite: true);
+            Console.Error.WriteLine(
+                $"our entry is present but no longer in its written shape - restoring '{vdfPath}' from the pre-SaveLocker backup; " +
+                "shortcuts added meanwhile may be lost. Restart Steam afterwards and check the library.");
+            AtomicFile.WriteAllBytes(vdfPath, File.ReadAllBytes(backupPath));
             File.Delete(backupPath);
-            Console.WriteLine($"restored {vdfPath} from the pre-SaveLocker backup.");
-        }
-        else if (File.Exists(createdMarkerPath))
-        {
-            File.Delete(vdfPath);
-            File.Delete(createdMarkerPath);
-            Console.WriteLine($"removed {vdfPath} (SaveLocker created it - nothing existed before it).");
         }
         else
         {
-            Console.WriteLine("no SaveLocker shortcuts.vdf backup found - nothing to restore.");
+            Console.Error.WriteLine(
+                $"our entry is present but cannot be located precisely and no backup exists - refusing to touch '{vdfPath}'. " +
+                "Remove the 'Conflict Game' shortcut from Steam itself.");
         }
+    }
+
+    private static bool IsEmptyShortcutsFile(byte[] data)
+    {
+        try
+        {
+            var analysis = SteamVdf.AnalyzeShortcuts(data);
+            return analysis.NextIndex == 0;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryLocateOwnEntry(byte[] data, out int start, out int endExclusive)
+    {
+        start = -1;
+        endExclusive = -1;
+        var marker = IndexOf(data, AppNameMarker);
+        if (marker < 0 || IndexOf(data, AppNameMarker, marker + 1) >= 0) return false;
+
+        for (var keyLen = 1; keyLen <= 6; keyLen++)
+        {
+            var s = marker - (1 + (keyLen + 1) + 1 + 6 + 4);
+            if (s < 0 || data[s] != 0x00) continue;
+            var digits = true;
+            for (var i = 0; i < keyLen; i++)
+                if (data[s + 1 + i] is < (byte)'0' or > (byte)'9') { digits = false; break; }
+            if (!digits || data[s + 1 + keyLen] != 0x00 || data[s + 1 + keyLen + 1] != 0x02) continue;
+            if (Encoding.UTF8.GetString(data, s + 1 + keyLen + 2, 6) != "appid\0") continue;
+
+            var pos = s + 1 + (keyLen + 1);
+            try { SkipEntryChildren(data, ref pos); }
+            catch (InvalidDataException) { continue; }
+            start = s;
+            endExclusive = pos;
+            return true;
+        }
+        return false;
+    }
+
+    private static void SkipEntryChildren(byte[] data, ref int pos)
+    {
+        while (true)
+        {
+            if (pos >= data.Length) throw new InvalidDataException("Truncated entry.");
+            var type = data[pos++];
+            if (type == 0x08) return;
+            SkipEntryString(data, ref pos);
+            switch (type)
+            {
+                case 0x00: SkipEntryChildren(data, ref pos); break;
+                case 0x01: SkipEntryString(data, ref pos); break;
+                case 0x02:
+                    if (pos + 4 > data.Length) throw new InvalidDataException("Truncated entry.");
+                    pos += 4;
+                    break;
+                default: throw new InvalidDataException($"Unexpected node type 0x{type:X2}.");
+            }
+        }
+    }
+
+    private static void SkipEntryString(byte[] data, ref int pos)
+    {
+        while (pos < data.Length && data[pos] != 0x00) pos++;
+        if (pos >= data.Length) throw new InvalidDataException("Truncated entry.");
+        pos++;
     }
 
     /// <summary>
@@ -274,10 +401,10 @@ public static class DevSteamShortcut
         return result;
     }
 
-    private static int IndexOf(byte[] haystack, byte[] needle)
+    private static int IndexOf(byte[] haystack, byte[] needle, int startIndex = 0)
     {
         if (needle.Length == 0 || haystack.Length < needle.Length) return -1;
-        for (var i = 0; i <= haystack.Length - needle.Length; i++)
+        for (var i = Math.Max(0, startIndex); i <= haystack.Length - needle.Length; i++)
         {
             var match = true;
             for (var j = 0; j < needle.Length; j++)

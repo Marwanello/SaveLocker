@@ -70,4 +70,21 @@ public static class AtomicFile
             throw;
         }
     }
+
+    public static void WriteAllBytes(string path, byte[] contents)
+    {
+        var dir = Path.GetDirectoryName(path)!;
+        Directory.CreateDirectory(dir);
+        var temp = Path.Combine(dir, $".{Path.GetFileName(path)}.{Environment.ProcessId}.tmp");
+        try
+        {
+            File.WriteAllBytes(temp, contents);
+            File.Move(temp, path, overwrite: true);
+        }
+        catch
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+            throw;
+        }
+    }
 }

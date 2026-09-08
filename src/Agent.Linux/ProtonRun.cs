@@ -18,6 +18,8 @@ namespace SaveLocker.Agent.Linux;
 /// </summary>
 public static class ProtonRun
 {
+    private static readonly TimeSpan ConflictPopupTimeout = TimeSpan.FromMinutes(10);
+
     /// <summary>
     /// Pull, run the game to completion, then settle-and-push. Returns the game's own exit code —
     /// Steam shows it to the user, so we must not swallow or replace it.
@@ -167,7 +169,19 @@ public static class ProtonRun
 
             using var ui = Process.Start(psi);
             if (ui is null) { log("could not start the conflicts popup"); return; }
-            await ui.WaitForExitAsync();
+            // Bounded: an undecided popup holds the launch lease the whole time it is open, so an
+            // abandoned window must not stall this launch forever. On timeout the popup is closed
+            // and the caller falls through to the usual text refusal below.
+            using var cts = new CancellationTokenSource(ConflictPopupTimeout);
+            try
+            {
+                await ui.WaitForExitAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                log("conflicts popup timed out - closing it");
+                try { ui.Kill(); } catch { }
+            }
         }
         catch (Exception ex)
         {

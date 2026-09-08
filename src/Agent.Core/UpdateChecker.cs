@@ -131,7 +131,7 @@ public sealed class UpdateChecker : IDisposable
     /// <summary>The origin this checker was built for. A connection change retires it (see TrayApp).</summary>
     public string ServerUrl { get; }
 
-    /// <summary>Refuse a package larger than this. The server caps uploads at 200 MB by default.</summary>
+    /// <summary>Refuse a package larger than this. The server caps uploads at 500 MB by default.</summary>
     private const long MaxInstallerBytes = 300L * 1024 * 1024;
 
     public UpdateChecker(AgentConfig config)

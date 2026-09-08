@@ -30,6 +30,9 @@ BIN="$PREFIX/savelocker"
 # The whole isolation mechanism: this points the agent's state at a directory that is never
 # ~/.local/share (the real install prefix — Gotchas.md, "the install prefix IS the state
 # directory"), so nothing here can touch a real registration, a real tracked game or a real save.
+# Test-rig commands in the agent binary (dev-shortcut-add/remove) refuse to run without
+# this — it must never be set by any shipped flow, only here.
+export SAVELOCKER_ALLOW_TEST_COMMANDS=1
 export XDG_DATA_HOME="${PREFIX}-state"
 STATE="$XDG_DATA_HOME/SaveLocker"
 
@@ -146,18 +149,24 @@ cmd_conflict() {
   echo "== seeding a conflicting save on the deck for 'Conflict Game' =="
   local dir="$XDG_DATA_HOME/conflict-save"
   mkdir -p "$dir"
-  rm -f "$dir"/*
-  # Mirrors testenv.ps1's New-SyntheticSaveFiles: CONFLICT_SIZE_MB=0 (the default) keeps today's tiny
-  # one-line save; otherwise CONFLICT_FILES randomly-filled files totalling ~CONFLICT_SIZE_MB MB,
-  # split as evenly as possible (the last file absorbs the remainder). /dev/urandom, not zeros — real
-  # saves are not compressible padding, and it's what guarantees this side's content genuinely
-  # differs from Windows's even when both are seeded with identical -Size/-Files.
-  if [ "$CONFLICT_SIZE_MB" = "0" ]; then
+  find "$dir" -mindepth 1 -delete
+  # Validated numerically, not as strings: "0.0" must take the tiny path exactly like "0".
+  # Capped at the test console's default upload cap — seeding more only produces pushes the
+  # server rejects, which looks like a sync bug rather than the requested fixture.
+  local total_bytes
+  total_bytes=$(awk -v mb="$CONFLICT_SIZE_MB" 'BEGIN { if (mb !~ /^[0-9]+(\.[0-9]+)?$/) exit 1; printf "%d", mb * 1024 * 1024 }') \
+    || die "-Size must be 0 or a positive number of MB (got '$CONFLICT_SIZE_MB')"
+  [ "$total_bytes" -le $(( 500 * 1024 * 1024 )) ] || die "-Size must be 0-500 (the test console's default upload cap)"
+  [ "$CONFLICT_FILES" -ge 1 ] 2>/dev/null || die "-Files must be at least 1"
+  # Mirrors testenv.ps1's New-SyntheticSaveFiles: a zero total keeps today's tiny one-line save;
+  # otherwise CONFLICT_FILES randomly-filled files totalling the requested bytes, split as evenly
+  # as possible (the last file absorbs the remainder). /dev/urandom, not zeros — real saves are
+  # not compressible padding, and it's what guarantees this side's content genuinely differs from
+  # Windows's even when both are seeded with identical -Size/-Files.
+  if [ "$total_bytes" -le 0 ]; then
     echo "deck save v1 - DIFFERENT" > "$dir/save.txt"
   else
-    [ "$CONFLICT_FILES" -ge 1 ] || die "-Files must be at least 1"
-    local total_bytes base i bytes
-    total_bytes=$(awk "BEGIN { printf \"%d\", $CONFLICT_SIZE_MB * 1024 * 1024 }")
+    local base i bytes
     base=$(( total_bytes / CONFLICT_FILES ))
     i=1
     while [ "$i" -le "$CONFLICT_FILES" ]; do
@@ -182,8 +191,8 @@ cmd_conflict() {
   "$BIN" push "Conflict Game"
 
   # Adds the Steam library entry the conflict can actually be launched from — DevSteamShortcut.cs
-  # (Agent.Linux) backs up the real shortcuts.vdf before touching it; cmd_clean's own shortcut
-  # removal below restores it. Not fatal on failure: the CLI-only conflict above already succeeded,
+  # (Agent.Linux) splices in the one fixed entry; cmd_clean's shortcut removal below deletes just
+  # that entry again. Not fatal on failure: the CLI-only conflict above already succeeded,
   # this is strictly additional. LaunchOptions is deliberately left blank for now — no launch-gate
   # wrapper — so pressing Play just runs the fake game directly with no sync/conflict interception.
   # Named identically to the tracked game on purpose: the Decky plugin's own fallback match (used
@@ -246,10 +255,9 @@ cmd_logs() {
 
 cmd_clean() {
   cmd_down >/dev/null 2>&1
-  # Must run BEFORE the binary is deleted below — dev-shortcut-remove restores shortcuts.vdf from
-  # cmd_conflict's own backup (or deletes it, if SaveLocker created it fresh). A no-op if
-  # `conflict` was never run, so an ordinary clean on a rig that never added the shortcut does
-  # nothing here.
+  # Must run BEFORE the binary is deleted below — dev-shortcut-remove deletes just the test entry
+  # (other shortcuts untouched). A no-op if `conflict` was never run, so an ordinary clean on a
+  # rig that never added the shortcut does nothing here.
   if [ -x "$BIN" ]; then "$BIN" dev-shortcut-remove; fi
   rm -f "$TARBALL"
   if [ -d "$PREFIX" ]; then rm -rf "$PREFIX"; echo "removed $PREFIX"; fi

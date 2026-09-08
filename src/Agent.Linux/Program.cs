@@ -94,7 +94,10 @@ static class Program
             // here instead of a real title, so a launch-gate popup and sync-before/after-play can
             // be exercised on real hardware. Just `ui --screen fakegame` under a plain name — never
             // reachable from a real install's Launch Options, only from the test daemon's own.
+            // Refuses outside the test rig: SAVELOCKER_ALLOW_TEST_COMMANDS is set by
+            // tests/testenv-deck.sh, never by any shipped flow.
             case "fake-game":
+                if (!TestCommandsAllowed(out var fakeGameDenial)) { Console.Error.WriteLine(fakeGameDenial); return 2; }
                 return Ui.UiApp.Run(config, opts.GetValueOrDefault("size"),
                     startScreen: "fakegame", apiPort: ParsePort(opts));
 
@@ -103,6 +106,7 @@ static class Program
             // comment for the backup/restore guarantee this makes about the real shortcuts.vdf.
             case "dev-shortcut-add":
             {
+                if (!TestCommandsAllowed(out var addDenial)) { Console.Error.WriteLine(addDenial); return 2; }
                 var prefix = opts.GetValueOrDefault("prefix");
                 if (string.IsNullOrEmpty(prefix))
                 {
@@ -116,6 +120,7 @@ static class Program
             }
 
             case "dev-shortcut-remove":
+                if (!TestCommandsAllowed(out var removeDenial)) { Console.Error.WriteLine(removeDenial); return 2; }
                 DevSteamShortcut.Remove();
                 return 0;
 
@@ -410,6 +415,18 @@ static class Program
     private static string? ConfigPath(Dictionary<string, string> opts) =>
         opts.GetValueOrDefault("config")
         ?? Environment.GetEnvironmentVariable("SAVELOCKER_CONFIG");
+
+    private static bool TestCommandsAllowed(out string denial)
+    {
+        if (Environment.GetEnvironmentVariable("SAVELOCKER_ALLOW_TEST_COMMANDS") == "1")
+        {
+            denial = "";
+            return true;
+        }
+        denial = "refusing: this is a test-rig command (tests/testenv.ps1 conflict). " +
+            "Set SAVELOCKER_ALLOW_TEST_COMMANDS=1 to run it deliberately.";
+        return false;
+    }
 
     private static void PrintUsage() => Console.WriteLine(
         """

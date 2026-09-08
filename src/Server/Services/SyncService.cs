@@ -43,7 +43,7 @@ public sealed class SyncService
         _retainPerGame = config.GetValue<int?>("Storage:RetainVersionsPerGame") ?? 10;
         _commandLease = TimeSpan.FromMinutes(
             config.GetValue<double?>("Commands:LeaseMinutes") ?? 10);
-        _maxUploadBytes = (long)(config.GetValue<int?>("Storage:MaxUploadMb") ?? 200) * 1024 * 1024;
+        _maxUploadBytes = (long)(config.GetValue<int?>("Storage:MaxUploadMb") ?? SaveArchive.DefaultMaxUploadMb) * 1024 * 1024;
     }
 
     // ----- Machines -----

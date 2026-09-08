@@ -131,7 +131,7 @@ public sealed class ArchiveStore
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, UploadSession> _sessions = new();
 
     /// <summary>How long an inactive session is allowed to sit before a later Begin call sweeps it.
-    /// Generous on purpose: sized for a full, very slow (~50 KB/s) 200 MB upload with several
+    /// Generous on purpose: sized for a full, very slow (~50 KB/s) 500 MB upload with several
     /// chunk-level retries, not for the common case.</summary>
     private static readonly TimeSpan SessionIdleLimit = TimeSpan.FromMinutes(45);
 

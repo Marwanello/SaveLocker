@@ -35,9 +35,9 @@ Exclude patterns are per-game. In the dashboard:
 
 A global default exclude list applies to all games unless overridden. Configure it in **Configuration → Global exclude patterns**.
 
-## 200 MB upload cap
+## 500 MB upload cap
 
-Regardless of exclude patterns, SaveLocker enforces a **200 MB cap** on archive uploads. If a save archive exceeds 200 MB after applying excludes, the upload is rejected. This usually indicates a misconfigured save path (e.g. pointing at the entire game install directory instead of just the save folder) or a missing exclude for large cache files.
+Regardless of exclude patterns, SaveLocker enforces a **500 MB cap** on archive uploads. If a save archive exceeds 500 MB after applying excludes, the upload is rejected. This usually indicates a misconfigured save path (e.g. pointing at the entire game install directory instead of just the save folder) or a missing exclude for large cache files.
 
 ## Example: typical log/cache excludes
 

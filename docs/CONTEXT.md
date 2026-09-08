@@ -70,7 +70,7 @@ server that asks the agent for a path outside the save folder and asserts nothin
 `run-agent-tests` does not start its own server and is not idempotent against a dirty one — a reused
 DB produces shifting, misleading failures. Give it a fresh `Storage__DbPath`/`ArchiveRoot`.
 <br>**Untested:** the `Storage:MaxUploadMb` ceiling on a reconstructed archive. Exercising it needs
-either a >200 MB fixture or a second server started with a tiny cap; neither was worth it, but it is
+either a >500 MB fixture or a second server started with a tiny cap; neither was worth it, but it is
 the one fix here resting on inspection rather than a test.
 
 v0.5.7's rollout (2026-08-15) is complete: console redeployed, the Windows agent took it from the

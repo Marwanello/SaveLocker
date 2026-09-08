@@ -7,14 +7,14 @@ namespace SaveLocker.Agent;
 /// the save folder buried inside it.
 /// <para>
 /// The failure without this is baffling rather than loud: the agent dutifully archives the entire
-/// multi-gigabyte prefix, the 200 MB upload cap rejects it, and the user is told their *save* is too
+/// multi-gigabyte prefix, the 500 MB upload cap rejects it, and the user is told their *save* is too
 /// big. Naming the actual mistake ("that is the prefix, not the save folder") is the whole point.
 /// </para>
 /// </summary>
 public static class SaveDirSanity
 {
     /// <summary>Matches the server's default <c>Storage:MaxUploadMb</c>. Past this a push cannot succeed.</summary>
-    public const long UploadCapBytes = 200L * 1024 * 1024;
+    public const long UploadCapBytes = SaveArchive.DefaultMaxUploadMb * 1024L * 1024L;
 
     /// <summary>Problems with this save path, worst first. Empty means it looks like a save folder.</summary>
     public static IReadOnlyList<string> Inspect(string? saveDir, IEnumerable<string>? excludeGlobs = null)

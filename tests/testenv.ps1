@@ -160,8 +160,9 @@ param(
     # randomly-filled files totalling ~$Size MB, split as evenly as possible — for exercising sync
     # progress/UI against a save that actually takes a moment to transfer, rather than every seeded
     # conflict being an instant no-op transfer. 0 (the default) keeps today's tiny-file behavior
-    # unchanged. Random content, not zeros: real save files are not compressible padding, and it also
-    # guarantees the two sides' seeded content differs even at the same size/file count.
+    # unchanged. Capped at 500 (the test console's default upload cap). Random content, not zeros:
+    # real save files are not compressible padding, and it also guarantees the two sides' seeded
+    # content differs even at the same size/file count.
     [double]$Size = 0,
     [int]$Files = 1
 )
@@ -787,18 +788,19 @@ function Stop-Windows {
 function New-SyntheticSaveFiles {
     param([string]$Dir, [double]$SizeMb, [int]$FileCount)
     New-Item -ItemType Directory -Force -Path $Dir | Out-Null
-    Get-ChildItem $Dir -File | Remove-Item -Force
+    Get-ChildItem $Dir -Force | Remove-Item -Recurse -Force
     if ($SizeMb -le 0) {
         'windows save v1' | Set-Content (Join-Path $Dir 'save.txt')
         return
     }
     if ($FileCount -lt 1) { throw '-Files must be at least 1' }
+    if ($SizeMb -gt 500) { throw '-Size must be 0-500 (the test console''s default upload cap)' }
     $totalBytes = [int64]([math]::Round($SizeMb * 1MB))
     $base = [int64]([math]::Floor($totalBytes / $FileCount))
     $rng = [System.Random]::new()
     for ($i = 1; $i -le $FileCount; $i++) {
         $bytes = if ($i -eq $FileCount) { $totalBytes - $base * ($FileCount - 1) } else { $base }
-        $buffer = [byte[]]::new([Math]::Max(0, $bytes))
+        $buffer = [byte[]]::new([int][Math]::Max(0, $bytes))
         $rng.NextBytes($buffer)
         [IO.File]::WriteAllBytes((Join-Path $Dir "save-$i.bin"), $buffer)
     }
@@ -995,9 +997,10 @@ switch ($Command) {
 
     'conflict' {
         if (-not $Windows -and -not $Deck) { $Windows = $true; $Deck = $true }
-        if ($Size -lt 0) { throw '-Size must be 0 or a positive number of MB' }
+        if ($Size -lt 0 -or $Size -gt 500) { throw '-Size must be 0-500 (the test console''s default upload cap)' }
         if ($Files -lt 1) { throw '-Files must be at least 1' }
         if ($Size -gt 0) { Say "seeding $Files file(s) totalling ~$Size MB per side (instead of the default tiny save)" }
+        elseif ($Files -gt 1) { Warn '-Files is ignored without -Size (the default tiny save is a single file)' }
 
         # Both sides register/push over HTTP against the console, so it has to be up before either
         # CLI call — unlike the tray/daemon, starting it here races nothing (it holds no local agent

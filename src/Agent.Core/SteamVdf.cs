@@ -37,7 +37,7 @@ public static class SteamVdf
     {
         var pos = 0;
         // The file is a single top-level object node: 0x00, "shortcuts", <children>.
-        var type = data[pos++];
+        var type = ReadTypeByte(data, ref pos);
         if (type != 0x00)
             throw new InvalidDataException($"Expected a root object (0x00), got 0x{type:X2}.");
         ReadCString(data, ref pos); // root key, e.g. "shortcuts" — discarded.
@@ -50,7 +50,7 @@ public static class SteamVdf
         var obj = new VdfObject();
         while (true)
         {
-            var type = data[pos++];
+            var type = ReadTypeByte(data, ref pos);
             if (type == 0x08) break; // end of this object
 
             var key = ReadCString(data, ref pos);
@@ -66,10 +66,19 @@ public static class SteamVdf
         return obj;
     }
 
+    private static byte ReadTypeByte(byte[] data, ref int pos)
+    {
+        if (pos >= data.Length)
+            throw new InvalidDataException("Truncated shortcuts.vdf: expected a node type byte.");
+        return data[pos++];
+    }
+
     private static string ReadCString(byte[] data, ref int pos)
     {
         var start = pos;
         while (pos < data.Length && data[pos] != 0x00) pos++;
+        if (pos >= data.Length)
+            throw new InvalidDataException("Truncated shortcuts.vdf: missing NUL terminator.");
         var s = Encoding.UTF8.GetString(data, start, pos - start);
         pos++; // skip the NUL terminator
         return s;
@@ -77,6 +86,8 @@ public static class SteamVdf
 
     private static int ReadInt32(byte[] data, ref int pos)
     {
+        if (pos + 4 > data.Length)
+            throw new InvalidDataException("Truncated shortcuts.vdf: expected 4 int32 bytes.");
         var v = BitConverter.ToInt32(data, pos);
         pos += 4;
         return v;
@@ -103,7 +114,7 @@ public static class SteamVdf
     public static (int InsertPos, int NextIndex) AnalyzeShortcuts(byte[] data)
     {
         var pos = 0;
-        var type = data[pos++];
+        var type = ReadTypeByte(data, ref pos);
         if (type != 0x00)
             throw new InvalidDataException($"Expected a root object (0x00), got 0x{type:X2}.");
         ReadCString(data, ref pos); // root key, e.g. "shortcuts" — discarded.
@@ -111,7 +122,7 @@ public static class SteamVdf
         var maxIndex = -1;
         while (true)
         {
-            var childType = data[pos++];
+            var childType = ReadTypeByte(data, ref pos);
             if (childType == 0x08) break; // end of "shortcuts" itself — pos is just past it
 
             var key = ReadCString(data, ref pos);
@@ -120,7 +131,7 @@ public static class SteamVdf
             {
                 case 0x00: SkipObject(data, ref pos); break;
                 case 0x01: ReadCString(data, ref pos); break;
-                case 0x02: pos += 4; break;
+                case 0x02: ReadInt32(data, ref pos); break;
                 default: throw new InvalidDataException(
                     $"Unsupported VDF node type 0x{childType:X2} at offset {pos - 1}.");
             }
@@ -135,14 +146,14 @@ public static class SteamVdf
     {
         while (true)
         {
-            var type = data[pos++];
+            var type = ReadTypeByte(data, ref pos);
             if (type == 0x08) return;
             ReadCString(data, ref pos);
             switch (type)
             {
                 case 0x00: SkipObject(data, ref pos); break;
                 case 0x01: ReadCString(data, ref pos); break;
-                case 0x02: pos += 4; break;
+                case 0x02: ReadInt32(data, ref pos); break;
                 default: throw new InvalidDataException(
                     $"Unsupported VDF node type 0x{type:X2} at offset {pos - 1}.");
             }
