@@ -1469,6 +1469,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/pre-launch-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LaunchGateResult"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1631,6 +1684,15 @@ export interface components {
             command: null | string;
             note: null | string;
         };
+        /** @enum {unknown} */
+        LaunchDecision: "Proceed" | "ProceedSyncPaused" | "Blocked";
+        LaunchGateResult: {
+            decision: components["schemas"]["LaunchDecision"];
+            reason?: null | string;
+            /** Format: uuid */
+            conflictId?: null | string;
+            holderMachineName?: null | string;
+        };
         LaunchOptionCurrentDto: {
             /** Format: uint32 */
             steamAppId: number;
@@ -1679,14 +1741,14 @@ export interface components {
         RegisterResponse: {
             machineName: string;
         };
+        ResolveLaunchOptionsRequest: {
+            games: null | components["schemas"]["LaunchOptionCurrentDto"][];
+        };
         ResolvedLaunchOptionDto: {
             /** Format: uint32 */
             steamAppId: number;
             desired: string;
             changed: boolean;
-        };
-        ResolveLaunchOptionsRequest: {
-            games: null | components["schemas"]["LaunchOptionCurrentDto"][];
         };
         SaveVersionDto: {
             /** Format: uuid */
