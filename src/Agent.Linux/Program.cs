@@ -92,8 +92,9 @@ static class Program
 
             // Test-only stand-in "game": tests/testenv.ps1's "Conflict Game" Steam shortcut points
             // here instead of a real title, so a launch-gate popup and sync-before/after-play can
-            // be exercised on real hardware. Just `ui --screen fakegame` under a plain name — never
-            // reachable from a real install's Launch Options, only from the test daemon's own.
+            // be exercised on real hardware. Two spellings of the same FakeGame screen: `fake-game`
+            // is what the seeded shortcut's Exe points at, `ui --screen fakegame` opens it by hand —
+            // neither is ever written into a real install's Launch Options.
             // Deliberately NOT gated behind SAVELOCKER_ALLOW_TEST_COMMANDS like the dev-shortcut-*
             // commands below: Steam launches this directly as the shortcut's Exe (DevSteamShortcut
             // leaves LaunchOptions blank, so there is no wrapper to carry the env var), in Steam's
@@ -118,16 +119,31 @@ static class Program
                     Console.Error.WriteLine("dev-shortcut-add needs --prefix <dir>");
                     return 2;
                 }
-                var appId = DevSteamShortcut.Add(prefix);
-                if (appId is null) return 1;
-                Console.WriteLine($"APPID={appId}");
-                return 0;
+                try
+                {
+                    var appId = DevSteamShortcut.Add(prefix, opts.ContainsKey("with-launch-command"));
+                    if (appId is null) return 1;
+                    Console.WriteLine($"APPID={appId}");
+                    return 0;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"dev-shortcut-add failed: {ex.Message}");
+                    return 1;
+                }
             }
 
             case "dev-shortcut-remove":
                 if (!TestCommandsAllowed(out var removeDenial)) { Console.Error.WriteLine(removeDenial); return 2; }
-                DevSteamShortcut.Remove();
-                return 0;
+                try
+                {
+                    return DevSteamShortcut.Remove() ? 0 : 1;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"dev-shortcut-remove failed: {ex.Message}");
+                    return 1;
+                }
 
             case "autostart":
             {

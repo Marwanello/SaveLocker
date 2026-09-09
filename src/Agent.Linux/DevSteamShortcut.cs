@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace SaveLocker.Agent.Linux;
@@ -31,7 +32,8 @@ namespace SaveLocker.Agent.Linux;
 /// (re-running <c>conflict</c>) is a pure no-op once the entry is present, so it never gets a
 /// chance to clobber that backup — and <see cref="Remove"/> deletes just our entry's own bytes,
 /// leaving shortcuts added meanwhile intact, falling back to the backup only when our entry is
-/// present but misshapen.
+/// present but misshapen (keeping a timestamped pre-restore copy beside the file first, which
+/// clean deliberately leaves behind for manual recovery).
 /// </para>
 /// </summary>
 public static class DevSteamShortcut
@@ -48,14 +50,25 @@ public static class DevSteamShortcut
     // enough on its own to search for.
     private static readonly byte[] AppNameMarker =
         Concat([0x01], CStringBytes("AppName"), CStringBytes(ShortcutName));
+    // The Exe field header: the display name alone could belong to a real user shortcut, so an
+    // entry only counts as ours when its Exe value points at the savelocker binary.
+    private static readonly byte[] ExeKeyMarker =
+        Concat([0x01], CStringBytes("Exe"));
 
     /// <summary>
     /// Adds the shortcut if it is not already present (a second call is a verified no-op, never a
-    /// rewrite). Returns the AppID Steam will use for it — deterministic, since it is derived from
-    /// the fixed name and exe — or null if nothing was found or written.
+    /// rewrite). Returns the AppID Steam will use for it — per-machine deterministic, since it is
+    /// derived from the fixed name and exe (which embeds this machine's prefixDir) — or null if
+    /// nothing was found or written.
     /// </summary>
-    public static int? Add(string prefixDir)
+    public static int? Add(string prefixDir, bool withLaunchCommand = false)
     {
+        if (string.IsNullOrEmpty(prefixDir) || prefixDir.IndexOf('"') >= 0 || prefixDir.Any(char.IsControl))
+        {
+            Console.Error.WriteLine("refusing: --prefix must not be empty or contain quotes/control characters - the Exe and StartDir fields are quoted strings with no escaping. Nothing was written.");
+            return null;
+        }
+
         var vdfPath = FindShortcutsVdf();
         if (vdfPath is null)
         {
@@ -68,7 +81,10 @@ public static class DevSteamShortcut
         // followed by its fixed argument is how every other non-Steam-shortcut tool (Boilr, Lutris,
         // etc.) passes a subcommand this way, since shortcuts.vdf has no separate "arguments" key.
         var exeField = $"\"{exe}\" fake-game";
+        // The AppID stays derived from exeField alone even when a launch command is written — the
+        // LaunchOptions wrapper must not change which shortcut Steam maps this entry to.
         var appId = ComputeShortcutAppId(exeField, ShortcutName);
+        var launchOptions = withLaunchCommand ? $"\"{exe}\" run -- %command%" : string.Empty;
 
         if (!File.Exists(vdfPath))
         {
@@ -76,17 +92,32 @@ public static class DevSteamShortcut
             // closing 0x08 here (not the double-plus this class sees on real, tool-edited files) —
             // the minimal structure SteamVdf.Parse itself already expects and this class's own
             // AnalyzeShortcuts will happily read back on the next Add.
-            var fresh = Concat(RootHeader, BuildEntryBytes("0", appId, exeField, prefixDir), [0x08]);
+            var fresh = Concat(RootHeader, BuildEntryBytes("0", appId, exeField, prefixDir, launchOptions), [0x08]);
             var createdMarkerPath = vdfPath + CreatedMarkerSuffix;
             File.WriteAllBytes(createdMarkerPath, []);
             AtomicFile.WriteAllBytes(vdfPath, fresh);
             return appId;
         }
 
+        if (!OwnedByUs(vdfPath))
+        {
+            Console.Error.WriteLine($"refusing: '{vdfPath}' is not owned by this user - running under sudo or as the wrong user must not rewrite Steam's file. Nothing was written.");
+            return null;
+        }
+
         var original = File.ReadAllBytes(vdfPath);
+        var originalLength = original.Length;
+        var originalMtime = File.GetLastWriteTimeUtc(vdfPath);
 
         if (IndexOf(original, AppNameMarker) >= 0)
         {
+            // The fixed display name alone could belong to a real user shortcut — only an entry
+            // whose Exe points at savelocker is ours to leave alone.
+            if (!TryLocateOwnEntry(original, out var ownStart, out var ownEnd) || !EntryExeLooksOurs(original, ownStart, ownEnd))
+            {
+                Console.Error.WriteLine("refusing: a 'Conflict Game' entry is present but it does not point at savelocker - leaving shortcuts.vdf untouched.");
+                return null;
+            }
             Console.WriteLine("'Conflict Game' shortcut already present - leaving shortcuts.vdf untouched.");
             return appId;
         }
@@ -100,7 +131,15 @@ public static class DevSteamShortcut
             return null;
         }
 
-        var entryBytes = BuildEntryBytes(analysis.nextIndex.ToString(), appId, exeField, prefixDir);
+        // Steam rewrites this file on exit — refuse rather than splice into (or back up) bytes
+        // that changed between our read and our write.
+        if (FileChangedSince(vdfPath, originalLength, originalMtime))
+        {
+            Console.Error.WriteLine($"refusing: '{vdfPath}' changed under us - nothing was written.");
+            return null;
+        }
+
+        var entryBytes = BuildEntryBytes(analysis.nextIndex.ToString(), appId, exeField, prefixDir, launchOptions);
 
         var backupPath = vdfPath + BackupSuffix;
         if (!File.Exists(backupPath)) AtomicFile.WriteAllBytes(backupPath, original);
@@ -124,11 +163,12 @@ public static class DevSteamShortcut
     /// is only restored when our entry is present but no longer structurally intact (e.g. a writer
     /// reordered its fields). Refuses to overwrite rather than silently discarding unknown changes.
     /// Safe to call even if <see cref="Add"/> never ran — it is then a no-op.
+    /// Returns true when the file is clean (or there was nothing to do), false on any refusal.
     /// </summary>
-    public static void Remove()
+    public static bool Remove()
     {
         var vdfPath = FindShortcutsVdf();
-        if (vdfPath is null) return;
+        if (vdfPath is null) return true;
 
         var backupPath = vdfPath + BackupSuffix;
         var createdMarkerPath = vdfPath + CreatedMarkerSuffix;
@@ -138,18 +178,39 @@ public static class DevSteamShortcut
             try { File.Delete(backupPath); } catch { }
             try { File.Delete(createdMarkerPath); } catch { }
             Console.WriteLine("no shortcuts.vdf found - nothing to restore.");
-            return;
+            return true;
+        }
+
+        if (!OwnedByUs(vdfPath))
+        {
+            Console.Error.WriteLine($"refusing: '{vdfPath}' is not owned by this user - running under sudo or as the wrong user must not rewrite Steam's file. Nothing was written.");
+            return false;
         }
 
         var current = File.ReadAllBytes(vdfPath);
+        var currentLength = current.Length;
+        var currentMtime = File.GetLastWriteTimeUtc(vdfPath);
+
         if (TryLocateOwnEntry(current, out var start, out var endExclusive))
         {
+            // Same guard as Add's no-op path: only splice an entry whose Exe points at savelocker,
+            // never a real user shortcut sharing the fixed display name.
+            if (!EntryExeLooksOurs(current, start, endExclusive))
+            {
+                Console.Error.WriteLine("refusing: the located 'Conflict Game' entry does not point at savelocker - leaving shortcuts.vdf untouched.");
+                return false;
+            }
+            if (FileChangedSince(vdfPath, currentLength, currentMtime))
+            {
+                Console.Error.WriteLine($"refusing: '{vdfPath}' changed under us - nothing was written.");
+                return false;
+            }
             var updated = Concat(current.AsSpan(0, start).ToArray(), current.AsSpan(endExclusive).ToArray());
             AtomicFile.WriteAllBytes(vdfPath, updated);
             try { File.Delete(backupPath); } catch { }
             try { File.Delete(createdMarkerPath); } catch { }
             Console.WriteLine($"removed the 'Conflict Game' shortcut from {vdfPath} (other entries untouched).");
-            return;
+            return true;
         }
 
         if (IndexOf(current, AppNameMarker) < 0)
@@ -175,35 +236,74 @@ public static class DevSteamShortcut
                 {
                     Console.WriteLine("no SaveLocker shortcuts.vdf backup found - nothing to restore.");
                 }
-                return;
+                return true;
             }
 
             if (current.SequenceEqual(File.ReadAllBytes(backupPath)))
             {
                 File.Delete(backupPath);
                 Console.WriteLine($"already clean - deleted the stale pre-SaveLocker backup.");
-                return;
+                return true;
             }
 
             Console.Error.WriteLine(
                 $"our entry is already gone from '{vdfPath}' but the file differs from the pre-SaveLocker backup - " +
                 "refusing to overwrite, so nothing was written. Delete the backup manually once sure: " + backupPath);
-            return;
+            return false;
+        }
+
+        // The name is present but the entry is no longer locatable — never splice blindly here.
+        // A duplicate display name (one of them the user's) must not trigger a backup restore.
+        var firstMarker = IndexOf(current, AppNameMarker);
+        if (IndexOf(current, AppNameMarker, firstMarker + 1) >= 0)
+        {
+            Console.Error.WriteLine("refusing: more than one 'Conflict Game' entry is present - remove the unwanted one from Steam itself. Nothing was written.");
+            return false;
+        }
+        if (!FileContainsOwnExe(current))
+        {
+            Console.Error.WriteLine("refusing: a 'Conflict Game' entry is present but no Exe in the file points at savelocker - leaving shortcuts.vdf untouched.");
+            return false;
         }
 
         if (File.Exists(backupPath))
         {
+            if (FileChangedSince(vdfPath, currentLength, currentMtime))
+            {
+                Console.Error.WriteLine($"refusing: '{vdfPath}' changed under us - nothing was written.");
+                return false;
+            }
+            // The restore below discards everything written after the backup was taken, so keep a
+            // timestamped copy of the pre-restore file first. Kept deliberately: clean never
+            // deletes it, it is the manual-recovery path. Never fails the restore — Warn only.
+            string? safetyPath = null;
+            try
+            {
+                safetyPath = vdfPath + ".savelocker-pre-restore-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+                File.Copy(vdfPath, safetyPath, false);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"warning: could not keep a pre-restore safety copy ({ex.Message}) - continuing with the restore.");
+                safetyPath = null;
+            }
+            var backupBytes = File.ReadAllBytes(backupPath);
             Console.Error.WriteLine(
                 $"our entry is present but no longer in its written shape - restoring '{vdfPath}' from the pre-SaveLocker backup; " +
+                (safetyPath is null
+                    ? "no pre-restore safety copy could be kept. "
+                    : $"a pre-restore copy was kept at '{safetyPath}' for manual recovery. ") +
                 "shortcuts added meanwhile may be lost. Restart Steam afterwards and check the library.");
-            AtomicFile.WriteAllBytes(vdfPath, File.ReadAllBytes(backupPath));
+            AtomicFile.WriteAllBytes(vdfPath, backupBytes);
             File.Delete(backupPath);
+            return true;
         }
         else
         {
             Console.Error.WriteLine(
                 $"our entry is present but cannot be located precisely and no backup exists - refusing to touch '{vdfPath}'. " +
                 "Remove the 'Conflict Game' shortcut from Steam itself.");
+            return false;
         }
     }
 
@@ -227,24 +327,138 @@ public static class DevSteamShortcut
         var marker = IndexOf(data, AppNameMarker);
         if (marker < 0 || IndexOf(data, AppNameMarker, marker + 1) >= 0) return false;
 
-        for (var keyLen = 1; keyLen <= 6; keyLen++)
+        // Order-independent: an entry's fields may come in any order (a third-party writer decides),
+        // so instead of assuming appid-then-AppName, scan backwards for every plausible numeric
+        // entry header near the marker and keep the ones whose children — skipped forward without
+        // interpreting values — span the marker exactly.
+        var candidateStart = -1;
+        var candidateEnd = -1;
+        var candidateCount = 0;
+        var windowStart = Math.Max(0, marker - 4096);
+        for (var s = marker - 1; s >= windowStart; s--)
         {
-            var s = marker - (1 + (keyLen + 1) + 1 + 6 + 4);
-            if (s < 0 || data[s] != 0x00) continue;
-            var digits = true;
-            for (var i = 0; i < keyLen; i++)
-                if (data[s + 1 + i] is < (byte)'0' or > (byte)'9') { digits = false; break; }
-            if (!digits || data[s + 1 + keyLen] != 0x00 || data[s + 1 + keyLen + 1] != 0x02) continue;
-            if (Encoding.UTF8.GetString(data, s + 1 + keyLen + 2, 6) != "appid\0") continue;
+            if (data[s] != 0x00) continue;
+            for (var keyLen = 1; keyLen <= 6; keyLen++)
+            {
+                if (s + 1 + keyLen >= data.Length) break;
+                var digits = true;
+                for (var i = 0; i < keyLen; i++)
+                    if (data[s + 1 + i] is < (byte)'0' or > (byte)'9') { digits = false; break; }
+                if (!digits || data[s + 1 + keyLen] != 0x00) continue;
+                var pos = s + 1 + keyLen + 1;
+                int end;
+                try { SkipEntryChildren(data, ref pos); end = pos; }
+                catch (InvalidDataException) { continue; }
+                if (end < marker + AppNameMarker.Length) continue;
+                candidateStart = s;
+                candidateEnd = end;
+                candidateCount++;
+                break;
+            }
+        }
+        // Anything but exactly one spanning entry means overlapping or unlistable bytes — not ours
+        // to cut.
+        if (candidateCount != 1) return false;
+        start = candidateStart;
+        endExclusive = candidateEnd;
+        return true;
+    }
 
-            var pos = s + 1 + (keyLen + 1);
-            try { SkipEntryChildren(data, ref pos); }
-            catch (InvalidDataException) { continue; }
-            start = s;
-            endExclusive = pos;
-            return true;
+    // Only an entry whose Exe value points at the savelocker binary is ours to keep or splice —
+    // the display name alone could belong to a real user shortcut.
+    private static bool EntryExeLooksOurs(byte[] data, int start, int endExclusive)
+    {
+        var value = FindExeValue(data, start, endExclusive);
+        return value is not null && value.Contains("savelocker", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? FindExeValue(byte[] data, int start, int endExclusive)
+    {
+        for (var i = start; i + ExeKeyMarker.Length <= endExclusive; i++)
+        {
+            if (data[i] != ExeKeyMarker[0]) continue;
+            var match = true;
+            for (var j = 1; j < ExeKeyMarker.Length; j++)
+                if (data[i + j] != ExeKeyMarker[j]) { match = false; break; }
+            if (!match) continue;
+            var valueStart = i + ExeKeyMarker.Length;
+            var valueEnd = valueStart;
+            while (valueEnd < endExclusive && data[valueEnd] != 0x00) valueEnd++;
+            if (valueEnd >= endExclusive) return null;
+            return Encoding.UTF8.GetString(data, valueStart, valueEnd - valueStart);
+        }
+        return null;
+    }
+
+    // Fallback-restore guard for when entry boundaries are unrecoverable: at least one Exe in the
+    // file must point at savelocker before the backup may replace the file.
+    private static bool FileContainsOwnExe(byte[] data)
+    {
+        var offset = 0;
+        while (offset + ExeKeyMarker.Length <= data.Length)
+        {
+            var hit = IndexOf(data, ExeKeyMarker, offset);
+            if (hit < 0) return false;
+            var valueStart = hit + ExeKeyMarker.Length;
+            var valueEnd = valueStart;
+            while (valueEnd < data.Length && data[valueEnd] != 0x00) valueEnd++;
+            if (valueEnd < data.Length &&
+                Encoding.UTF8.GetString(data, valueStart, valueEnd - valueStart)
+                    .Contains("savelocker", StringComparison.OrdinalIgnoreCase))
+                return true;
+            offset = valueEnd + 1;
         }
         return false;
+    }
+
+    // statx(2)'s uid fields: unlike libc's struct stat, the layout is the kernel ABI and identical
+    // on every architecture, so this needs no per-arch struct. Only st_uid is ever read.
+    [StructLayout(LayoutKind.Sequential)]
+    private struct StatxMinimal
+    {
+        public uint stx_mask;
+        public uint stx_blksize;
+        public ulong stx_attributes;
+        public uint stx_nlink;
+        public uint stx_uid;
+        public uint stx_gid;
+    }
+
+    [DllImport("libc.so.6", SetLastError = true)]
+    private static extern int statx(int dirfd, string pathname, int flags, uint mask, out StatxMinimal buf);
+
+    [DllImport("libc.so.6")]
+    private static extern uint geteuid();
+
+    private const int AtFdcwd = -100;
+    private const uint StatxUid = 0x0002u;
+
+    // Steam's file must belong to this user before it is rewritten — under sudo or as the wrong
+    // user this refuses instead of shifting ownership on Steam's file. Anything undeterminable
+    // (old libc, non-glibc, vanished path) degrades to allow, never blocks.
+    private static bool OwnedByUs(string path)
+    {
+        if (!OperatingSystem.IsLinux()) return true;
+        try
+        {
+            if (statx(AtFdcwd, path, 0, StatxUid, out var st) != 0) return true;
+            if ((st.stx_mask & StatxUid) == 0) return true;
+            return st.stx_uid == geteuid();
+        }
+        catch { return true; }
+    }
+
+    // Steam rewrites shortcuts.vdf on exit: a size or mtime change since our read means someone
+    // else won the race, so refuse rather than clobber. An unreadable path counts as changed.
+    private static bool FileChangedSince(string path, long length, DateTime mtimeUtc)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists || info.Length != length) return true;
+            return File.GetLastWriteTimeUtc(path) != mtimeUtc;
+        }
+        catch { return true; }
     }
 
     private static void SkipEntryChildren(byte[] data, ref int pos)
@@ -290,7 +504,13 @@ public static class DevSteamShortcut
         var userdata = Path.Combine(steamRoot, "userdata");
         if (!Directory.Exists(userdata)) return null;
 
-        var userDirs = Directory.GetDirectories(userdata);
+        string[] userDirs;
+        try { userDirs = Directory.GetDirectories(userdata); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"could not list '{userdata}' ({ex.Message}) - leaving shortcuts.vdf untouched.");
+            return null;
+        }
         if (userDirs.Length == 0) return null;
 
         var chosen = userDirs.Length == 1
@@ -308,7 +528,8 @@ public static class DevSteamShortcut
     /// Valve's "legacy" non-Steam-shortcut AppID: <c>crc32(exe + appname) | 0x80000000</c>, stored
     /// as a signed int32 the same way <see cref="SteamShortcuts.CompatDataId(int)"/> already reads
     /// one back — the algorithm every third-party shortcut-writing tool (Boilr, SteamGridDB, etc.)
-    /// uses, since Valve has never published it officially. Deterministic for a fixed name+exe.
+    /// uses, since Valve has never published it officially. Per-machine deterministic for a fixed
+    /// name+exe — the exe embeds this machine's prefix path, so another Deck gets another AppID.
     /// </summary>
     private static int ComputeShortcutAppId(string exe, string appName)
     {
@@ -338,7 +559,7 @@ public static class DevSteamShortcut
         return Concat([0x00], CStringBytes("shortcuts"));
     }
 
-    private static byte[] BuildEntryBytes(string key, int appId, string exeField, string startDir)
+    private static byte[] BuildEntryBytes(string key, int appId, string exeField, string startDir, string launchOptions)
     {
         using var ms = new MemoryStream();
         ms.WriteByte(0x00);
@@ -350,9 +571,9 @@ public static class DevSteamShortcut
         WriteString(ms, "StartDir", $"\"{startDir}\"");
         WriteString(ms, "icon", "");
         WriteString(ms, "ShortcutPath", "");
-        // Left empty on purpose for now — no launch-gate wrapper yet, just a plain launch straight
-        // into the fake game. Set to "<exe> run -- %command%" once ready to test the gate itself.
-        WriteString(ms, "LaunchOptions", "");
+        // Blank for a plain launch straight into the fake game; --with-launch-command sets the
+        // launch-gate wrapper ("<exe>" run -- %command%) so Play syncs before/after instead.
+        WriteString(ms, "LaunchOptions", launchOptions);
         WriteInt(ms, "IsHidden", 0);
         WriteInt(ms, "AllowDesktopConfig", 1);
         WriteInt(ms, "AllowOverlay", 1);
