@@ -77,4 +77,12 @@ public sealed record ScanCandidate(
     /// </summary>
     string? SuggestedProcessName = null,
     /// <summary>Which storefront sold the game, when discovery knows. See <see cref="GameStore"/>.</summary>
-    GameStore Store = GameStore.Unknown);
+    GameStore Store = GameStore.Unknown,
+    /// <summary>
+    /// The real Steam AppID a MoonDeck streaming shortcut points at (<c>MOONDECK_STEAM_APP_ID</c>
+    /// in its launch options), when this candidate IS such a shortcut. Carried so <c>doctor</c>
+    /// can say the pointer streams a genuine install rather than showing a bare shortcut AppID —
+    /// the Cyberpunk shape is otherwise a row that looks like any other unresolved shortcut.
+    /// Null for every other source.
+    /// </summary>
+    string? MoonDeckAppId = null);
