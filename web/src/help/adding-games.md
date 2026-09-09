@@ -67,7 +67,7 @@ syncing is affected.
 
 Removing a game from SaveLocker only stops *this machine* syncing it. The game stays installed and
 stays on the server for your other machines. Re-adding it is just **Rescan** → tick → enrol — but it
-only reappears if it is still discoverable by one of the three routes above.
+only reappears if it is still discoverable by one of the four routes above.
 
 ### On Linux / Steam Deck
 
@@ -124,6 +124,6 @@ SaveLocker downloads the [Ludusavi community manifest](https://github.com/mtkenn
 
 ## Tips
 
-- Point the save path at the **save folder**, not the game's install directory. Pointing at the install directory will exceed the 200 MB upload cap and archive unnecessary files.
+- Point the save path at the **save folder**, not the game's install directory. Pointing at the install directory will exceed the 500 MB upload cap and archive unnecessary files.
 - If the game writes saves to multiple folders, map the primary one and exclude irrelevant subdirectories with [glob patterns](#help/glob-patterns).
 - Disabling a game in the dashboard (Configuration → game toggle) pauses sync without deleting history.

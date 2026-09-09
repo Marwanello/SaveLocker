@@ -19,9 +19,31 @@ public static class AtomicFile
     // StateDirSecurity is idempotent, this just avoids asking the filesystem to prove it each time.
     private static readonly HashSet<string> ProtectedDirs = new(StringComparer.OrdinalIgnoreCase);
 
-    public static void WriteAllText(string path, string contents, bool restrictPermissions = false)
+    // One temp-name shape for every writer here: PID separates two processes racing on the same
+    // file, Guid separates two writes from the same process. Same idiom as SyncEngine.TempArchive.
+    private static string NewTempPath(string dir, string path) =>
+        Path.Combine(dir, $".{Path.GetFileName(path)}.{Environment.ProcessId}-{Guid.NewGuid():N}.tmp");
+
+    public static void WriteAllText(string path, string contents, bool restrictPermissions = false) =>
+        WriteAtomic(path, restrictPermissions,
+            temp => File.WriteAllText(temp, contents),
+            stream => { using var writer = new StreamWriter(stream); writer.Write(contents); });
+
+    public static void WriteAllBytes(string path, byte[] contents, bool restrictPermissions = false) =>
+        WriteAtomic(path, restrictPermissions,
+            temp => File.WriteAllBytes(temp, contents),
+            stream => stream.Write(contents, 0, contents.Length));
+
+    // The atomic-write contract, shared by every writer here so a future fix (the WA-03 ACL logic,
+    // temp-cleanup-on-failure) only needs to be made once. Only the actual content write differs
+    // between callers: writeUnrestricted for the common File.WriteAllX(temp, ...) path, and
+    // writeToStream for the Unix-permission-restricted path, which needs an open FileStream to set
+    // UnixCreateMode on creation rather than after the fact.
+    private static void WriteAtomic(
+        string path, bool restrictPermissions, Action<string> writeUnrestricted, Action<FileStream> writeToStream)
     {
-        var dir = Path.GetDirectoryName(path)!;
+        var dir = Path.GetDirectoryName(path);
+        ArgumentException.ThrowIfNullOrEmpty(dir, nameof(path));
         Directory.CreateDirectory(dir);
 
         // Every caller that asks for restricted permissions is writing agent state, and on Windows
@@ -41,7 +63,7 @@ public static class AtomicFile
         // The temp name carries the PID: two processes racing to rewrite the same file must not
         // collide on the intermediate, or one truncates the other's half-written temp and renames
         // the result into place.
-        var temp = Path.Combine(dir, $".{Path.GetFileName(path)}.{Environment.ProcessId}.tmp");
+        var temp = NewTempPath(dir, path);
 
         try
         {
@@ -54,12 +76,11 @@ public static class AtomicFile
                     UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
                 };
                 using var stream = new FileStream(temp, options);
-                using var writer = new StreamWriter(stream);
-                writer.Write(contents);
+                writeToStream(stream);
             }
             else
             {
-                File.WriteAllText(temp, contents);
+                writeUnrestricted(temp);
             }
 
             File.Move(temp, path, overwrite: true);

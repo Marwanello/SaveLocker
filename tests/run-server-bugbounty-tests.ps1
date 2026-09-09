@@ -1405,7 +1405,7 @@ try {
     # ---- 8. Crossing the cap ACROSS chunks is a 413, and the session goes with it ----
     # Cumulative, not per-request: each body here is comfortably under the request-size limit, so
     # Kestrel lets both through and only ArchiveStore's own running total can notice. That is the
-    # shape a real over-cap upload has (4 MiB chunks against a 200 MB cap), and the one where the
+    # shape a real over-cap upload has (4 MiB chunks against a 500 MB cap), and the one where the
     # throw lands MID-chunk with bytes from that same chunk already written.
     #
     # Left alive, the session answered the agent's retry with a replay 200 and then failed the NEXT

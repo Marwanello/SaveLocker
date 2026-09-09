@@ -18,6 +18,11 @@ namespace SaveLocker.Agent;
 /// </summary>
 public static class SteamVdf
 {
+    // A real shortcuts.vdf nests at most a couple of levels deep (shortcuts -> entry -> tags).
+    // Recursing on nested 0x00 objects with no limit turns a corrupted or adversarial file into an
+    // uncatchable StackOverflowException; this bounds it to a clean InvalidDataException instead.
+    private const int MaxObjectDepth = 64;
+
     /// <summary>A binary-VDF object: a case-insensitive map of keys to child nodes.</summary>
     public sealed class VdfObject
     {
@@ -37,39 +42,51 @@ public static class SteamVdf
     {
         var pos = 0;
         // The file is a single top-level object node: 0x00, "shortcuts", <children>.
-        var type = data[pos++];
+        var type = ReadTypeByte(data, ref pos);
         if (type != 0x00)
             throw new InvalidDataException($"Expected a root object (0x00), got 0x{type:X2}.");
         ReadCString(data, ref pos); // root key, e.g. "shortcuts" — discarded.
-        return ReadObject(data, ref pos);
+        return ReadObject(data, ref pos, depth: 0);
     }
 
     /// <summary>Read child nodes until the 0x08 end marker.</summary>
-    private static VdfObject ReadObject(byte[] data, ref int pos)
+    private static VdfObject ReadObject(byte[] data, ref int pos, int depth)
     {
+        if (depth > MaxObjectDepth)
+            throw new InvalidDataException($"shortcuts.vdf nests more than {MaxObjectDepth} objects deep - refusing to parse further.");
         var obj = new VdfObject();
         while (true)
         {
-            var type = data[pos++];
+            var type = ReadTypeByte(data, ref pos);
             if (type == 0x08) break; // end of this object
+            var typePos = pos - 1;
 
             var key = ReadCString(data, ref pos);
             obj.Items[key] = type switch
             {
-                0x00 => ReadObject(data, ref pos),
+                0x00 => ReadObject(data, ref pos, depth + 1),
                 0x01 => ReadCString(data, ref pos),
                 0x02 => ReadInt32(data, ref pos),
                 _ => throw new InvalidDataException(
-                    $"Unsupported VDF node type 0x{type:X2} at offset {pos - 1}.")
+                    $"Unsupported VDF node type 0x{type:X2} at offset {typePos}.")
             };
         }
         return obj;
+    }
+
+    private static byte ReadTypeByte(byte[] data, ref int pos)
+    {
+        if (pos >= data.Length)
+            throw new InvalidDataException("Truncated shortcuts.vdf: expected a node type byte.");
+        return data[pos++];
     }
 
     private static string ReadCString(byte[] data, ref int pos)
     {
         var start = pos;
         while (pos < data.Length && data[pos] != 0x00) pos++;
+        if (pos >= data.Length)
+            throw new InvalidDataException("Truncated shortcuts.vdf: missing NUL terminator.");
         var s = Encoding.UTF8.GetString(data, start, pos - start);
         pos++; // skip the NUL terminator
         return s;
@@ -77,8 +94,81 @@ public static class SteamVdf
 
     private static int ReadInt32(byte[] data, ref int pos)
     {
+        if (pos + 4 > data.Length)
+            throw new InvalidDataException("Truncated shortcuts.vdf: expected 4 int32 bytes.");
         var v = BitConverter.ToInt32(data, pos);
         pos += 4;
         return v;
+    }
+
+    /// <summary>
+    /// For inserting a new child into the root "shortcuts" object without touching (or fully
+    /// understanding) anything else in the file: returns the byte offset of the <c>0x08</c> that
+    /// closes THAT object — i.e. where a new child goes so it becomes the last member of
+    /// "shortcuts" — plus the next free integer key, matching how every real writer (Steam itself,
+    /// and every third-party tool) assigns sequential "0", "1", "2"… keys rather than an arbitrary
+    /// one.
+    /// <para>
+    /// This is NOT simply "the last byte of the file". Real shortcuts.vdf files commonly have
+    /// MULTIPLE trailing <c>0x08</c> bytes in a row — confirmed on a real 135-shortcut file, which
+    /// closes as <c>… 0x08 0x08 0x08 0x08</c> (the last entry's empty "tags" object, the entry
+    /// itself, "shortcuts" itself, and one more from an outer wrapper some third-party writers add
+    /// when serializing <c>{shortcuts: [...]}</c> generically). Splicing before "the last byte"
+    /// places a new entry as a SIBLING of "shortcuts", not a member inside it — syntactically valid
+    /// VDF, invisible to Steam. This walks the exact same structure <see cref="Parse"/> already
+    /// walks (skip-only, values discarded) to find the true boundary.
+    /// </para>
+    /// </summary>
+    public static (int InsertPos, int NextIndex) AnalyzeShortcuts(byte[] data)
+    {
+        var pos = 0;
+        var type = ReadTypeByte(data, ref pos);
+        if (type != 0x00)
+            throw new InvalidDataException($"Expected a root object (0x00), got 0x{type:X2}.");
+        ReadCString(data, ref pos); // root key, e.g. "shortcuts" — discarded.
+
+        var maxIndex = -1;
+        while (true)
+        {
+            var childType = ReadTypeByte(data, ref pos);
+            if (childType == 0x08) break; // end of "shortcuts" itself — pos is just past it
+            var typePos = pos - 1;
+
+            var key = ReadCString(data, ref pos);
+            if (int.TryParse(key, out var n) && n > maxIndex) maxIndex = n;
+            switch (childType)
+            {
+                case 0x00: SkipObject(data, ref pos, depth: 0); break;
+                case 0x01: ReadCString(data, ref pos); break;
+                case 0x02: ReadInt32(data, ref pos); break;
+                default: throw new InvalidDataException(
+                    $"Unsupported VDF node type 0x{childType:X2} at offset {typePos}.");
+            }
+        }
+
+        return (pos - 1, maxIndex + 1);
+    }
+
+    /// <summary>Walks (without storing) child nodes until the 0x08 end marker — the position-only
+    /// counterpart to <see cref="ReadObject"/>, used by <see cref="AnalyzeShortcuts"/>.</summary>
+    private static void SkipObject(byte[] data, ref int pos, int depth)
+    {
+        if (depth > MaxObjectDepth)
+            throw new InvalidDataException($"shortcuts.vdf nests more than {MaxObjectDepth} objects deep - refusing to parse further.");
+        while (true)
+        {
+            var type = ReadTypeByte(data, ref pos);
+            if (type == 0x08) return;
+            var typePos = pos - 1;
+            ReadCString(data, ref pos);
+            switch (type)
+            {
+                case 0x00: SkipObject(data, ref pos, depth + 1); break;
+                case 0x01: ReadCString(data, ref pos); break;
+                case 0x02: ReadInt32(data, ref pos); break;
+                default: throw new InvalidDataException(
+                    $"Unsupported VDF node type 0x{type:X2} at offset {typePos}.");
+            }
+        }
     }
 }

@@ -242,6 +242,13 @@ public static class SaveArchive
         new(path, FileMode.Open, FileAccess.Read,
             FileShare.ReadWrite | FileShare.Delete);
 
+    /// <summary>
+    /// Default for <c>Storage:MaxUploadMb</c>, shipped in the server's <c>appsettings.json</c>. The
+    /// deployed value always wins; this is only the fallback when the key is absent, and what the
+    /// agent's own size backstop assumes. Change the cap in appsettings, never by forking this.
+    /// </summary>
+    public const int DefaultMaxUploadMb = 500;
+
     /// <summary>Thrown when an archive is refused before anything is written. Never a partial restore.</summary>
     public sealed class UnsafeArchiveException(string message) : Exception(message);
 
@@ -253,7 +260,7 @@ public static class SaveArchive
         ReadLimit("SAVELOCKER_MAX_RESTORE_ENTRIES", 100_000);
 
     /// <summary>
-    /// Ceiling on TOTAL UNCOMPRESSED bytes. The upload cap (200 MB) applies to the compressed body,
+    /// Ceiling on TOTAL UNCOMPRESSED bytes. The upload cap (500 MB) applies to the compressed body,
     /// so a legitimate archive can expand well past it — but not without bound. A zip bomb expands a
     /// few KB into terabytes and fills the disk of a Deck that has no screen to complain on.
     /// Override with <c>SAVELOCKER_MAX_RESTORE_MB</c>.

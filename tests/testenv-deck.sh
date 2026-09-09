@@ -20,6 +20,12 @@ PORT="${SAVELOCKER_DECK_PORT:-5177}"
 SERVER_URL="${SAVELOCKER_SERVER_URL:-}"
 VERSION="${SAVELOCKER_TEST_VERSION:-0.5.10-test}"
 MACHINE="${SAVELOCKER_DECK_MACHINE:-DeckTest}"
+# cmd_conflict only — mirrors testenv.ps1's -Size/-Files. 0 keeps the original tiny one-line save.
+CONFLICT_SIZE_MB="${SAVELOCKER_CONFLICT_SIZE_MB:-0}"
+CONFLICT_FILES="${SAVELOCKER_CONFLICT_FILES:-1}"
+# Mirrors testenv.ps1's -AddCommand switch (1 = add the Steam shortcut WITH the launch-gate
+# wrapper). 0 (the default) keeps today's blank-Launch-Options shortcut.
+CONFLICT_ADD_CMD="${SAVELOCKER_CONFLICT_ADD_COMMAND:-0}"
 TARBALL="/tmp/.savelocker-test.tar.gz"
 DAEMON_LOG="$HOME/.savelocker-testenv-deck.log"
 BIN="$PREFIX/savelocker"
@@ -27,6 +33,9 @@ BIN="$PREFIX/savelocker"
 # The whole isolation mechanism: this points the agent's state at a directory that is never
 # ~/.local/share (the real install prefix — Gotchas.md, "the install prefix IS the state
 # directory"), so nothing here can touch a real registration, a real tracked game or a real save.
+# Test-rig commands in the agent binary (dev-shortcut-add/remove) refuse to run without
+# this — it must never be set by any shipped flow, only here.
+export SAVELOCKER_ALLOW_TEST_COMMANDS=1
 export XDG_DATA_HOME="${PREFIX}-state"
 STATE="$XDG_DATA_HOME/SaveLocker"
 
@@ -126,6 +135,99 @@ cmd_up() {
   show_real_game_mappings
 }
 
+# Seeds the Deck's side of a throwaway "Conflict Game" game. Mirrors testenv.ps1's own
+# New-ConflictOnWindows — same reasoning, different transport: whichever side seeds FIRST creates
+# the game on the server with nothing to conflict against yet; the side that seeds SECOND (normally
+# this one — testenv.ps1's 'conflict' case always runs Windows first) independently discovers its
+# own local file with no knowledge of what the server now holds, and that push is what the server
+# records as a genuine, unresolved local-vs-cloud divergence.
+cmd_conflict() {
+  [ -x "$BIN" ] || die "not installed — run: testenv.ps1 build -Only deck; testenv.ps1 up -Only deck (once) before seeding a conflict"
+  [ -n "$SERVER_URL" ] || die "SAVELOCKER_SERVER_URL not set — pass -DeckServerUrl (this PC's LAN IP)"
+
+  # Standing rule from the Phase 7 hardware verification: CLI seeding must never race a live
+  # daemon — same reasoning as testenv.ps1's own tray-stop before seeding Windows.
+  cmd_down >/dev/null 2>&1
+
+  echo "== seeding a conflicting save on the deck for 'Conflict Game' =="
+  local dir="$XDG_DATA_HOME/conflict-save"
+  mkdir -p "$dir"
+  find "$dir" -mindepth 1 -delete
+  # Validated numerically, not as strings: "0.0" must take the tiny path exactly like "0".
+  # Capped at the test console's default upload cap — seeding more only produces pushes the
+  # server rejects, which looks like a sync bug rather than the requested fixture.
+  # 500 mirrors SaveArchive.DefaultMaxUploadMb / Storage:MaxUploadMb in
+  # src/Server/appsettings.json.
+  local total_bytes
+  total_bytes=$(awk -v mb="$CONFLICT_SIZE_MB" 'BEGIN { if (mb !~ /^[0-9]+(\.[0-9]+)?$/) exit 1; printf "%d", mb * 1024 * 1024 }') \
+    || die "-Size must be 0 or a positive number of MB (got '$CONFLICT_SIZE_MB')"
+  [ "$total_bytes" -le $(( 500 * 1024 * 1024 )) ] || die "-Size must be 0-500 (the test console's default upload cap)"
+  [ "$CONFLICT_FILES" -ge 1 ] 2>/dev/null || die "-Files must be at least 1"
+  # -AddCommand and -Size/-Files are mutually exclusive (testenv.ps1 already warns); repeat it
+  # here since these arrive as plain env vars and this script is the last place that sees both.
+  if [ "$CONFLICT_ADD_CMD" = "1" ]; then
+    if [ "$total_bytes" -gt 0 ] || [ "$CONFLICT_FILES" -gt 1 ]; then
+      echo "WARNING: --with-launch-command is mutually exclusive with -Size/-Files; seeding the requested sizes anyway." >&2
+    fi
+  fi
+  # Mirrors testenv.ps1's New-SyntheticSaveFiles: a zero total keeps today's tiny one-line save;
+  # otherwise CONFLICT_FILES randomly-filled files totalling the requested bytes, split as evenly
+  # as possible (the last file absorbs the remainder). /dev/urandom, not zeros — real saves are
+  # not compressible padding, and it's what guarantees this side's content genuinely differs from
+  # Windows's even when both are seeded with identical -Size/-Files.
+  if [ "$total_bytes" -le 0 ]; then
+    echo "deck save v1 - DIFFERENT" > "$dir/save.txt"
+  else
+    local base i bytes
+    base=$(( total_bytes / CONFLICT_FILES ))
+    i=1
+    while [ "$i" -le "$CONFLICT_FILES" ]; do
+      if [ "$i" -eq "$CONFLICT_FILES" ]; then
+        bytes=$(( total_bytes - base * (CONFLICT_FILES - 1) ))
+      else
+        bytes=$base
+      fi
+      head -c "$bytes" /dev/urandom > "$dir/save-$i.bin" || die "seeding $dir failed (disk full?)"
+      i=$(( i + 1 ))
+    done
+    echo "  seeded $CONFLICT_FILES file(s), ~$CONFLICT_SIZE_MB MB total, in $dir"
+  fi
+
+  if ! grep -qi '"apikey"' "$STATE/config.json" 2>/dev/null; then
+    echo "== registering '$MACHINE' against $SERVER_URL =="
+    "$BIN" set-server --url "$SERVER_URL" >/dev/null || die "set-server failed"
+    "$BIN" register --name "$MACHINE" | head -2
+  fi
+
+  "$BIN" add-game --name "Conflict Game" --dir "$dir" || die "add-game failed"
+  "$BIN" push "Conflict Game" || die "push failed"
+
+  # Adds the Steam library entry the conflict can actually be launched from — DevSteamShortcut.cs
+  # (Agent.Linux) splices in the one fixed entry; cmd_clean's shortcut removal below deletes just
+  # that entry again. Not fatal on failure: the CLI-only conflict above already succeeded,
+  # this is strictly additional. LaunchOptions is deliberately left blank for now — no launch-gate
+  # wrapper — so pressing Play just runs the fake game directly with no sync/conflict interception.
+  # Pass -AddCommand on the testenv.ps1 side (CONFLICT_ADD_CMD=1 here) to add it WITH the
+  # sync/launch-gate wrapper (--with-launch-command) instead.
+  # Named identically to the tracked game on purpose: the Decky plugin's own fallback match (used
+  # whenever its primary AppID-based match can't find a row — see gamingSync.tsx's resolveMatchSync)
+  # compares Steam's displayed name for the launched app against the tracked game's name, so a
+  # mismatch here silently breaks the library-page chip even when everything else is correct.
+  echo "== adding a Steam shortcut 'Conflict Game' =="
+  local appid
+  if [ "$CONFLICT_ADD_CMD" = "1" ]; then
+    appid=$("$BIN" dev-shortcut-add --prefix "$PREFIX" --with-launch-command | sed -n 's/^APPID=//p')
+  else
+    appid=$("$BIN" dev-shortcut-add --prefix "$PREFIX" | sed -n 's/^APPID=//p')
+  fi
+  if [ -n "$appid" ]; then
+    "$BIN" add-game --name "Conflict Game" --dir "$dir" --appid "$appid" >/dev/null || echo "WARNING: re-adding 'Conflict Game' with --appid $appid failed; the conflict is still seeded, just not linked to the shortcut." >&2
+    echo "shortcut ready (appid $appid). Restart Steam on the Deck to see 'Conflict Game' in your library."
+  else
+    echo "WARNING: could not add the Steam shortcut - the conflict is still seeded and resolvable from the CLI, just not launchable from Steam yet." >&2
+  fi
+}
+
 cmd_down() {
   # Capture pids BEFORE stopping anything, so the report below reflects what was actually running
   # rather than what's left after the systemctl stop below already reaped it.
@@ -171,18 +273,24 @@ cmd_logs() {
 
 cmd_clean() {
   cmd_down >/dev/null 2>&1
+  # Must run BEFORE the binary is deleted below — dev-shortcut-remove deletes just the test entry
+  # (other shortcuts untouched). A no-op if `conflict` was never run, so an ordinary clean on a
+  # rig that never added the shortcut does nothing here.
+  if [ -x "$BIN" ]; then "$BIN" dev-shortcut-remove; fi
   rm -f "$TARBALL"
   if [ -d "$PREFIX" ]; then rm -rf "$PREFIX"; echo "removed $PREFIX"; fi
+  # $XDG_DATA_HOME also holds cmd_conflict's own "conflict-save" folder — one rm -rf clears both.
   if [ -d "$XDG_DATA_HOME" ]; then rm -rf "$XDG_DATA_HOME"; echo "removed $XDG_DATA_HOME"; fi
   rm -f "$DAEMON_LOG"
 }
 
 case "$CMD" in
-  install) cmd_install ;;
-  up)      cmd_up ;;
-  down)    cmd_down ;;
-  status)  cmd_status ;;
-  logs)    cmd_logs ;;
-  clean)   cmd_clean ;;
-  *)       die "unknown command '$CMD'" ;;
+  install)  cmd_install ;;
+  up)       cmd_up ;;
+  down)     cmd_down ;;
+  status)   cmd_status ;;
+  logs)     cmd_logs ;;
+  conflict) cmd_conflict ;;
+  clean)    cmd_clean ;;
+  *)        die "unknown command '$CMD'" ;;
 esac

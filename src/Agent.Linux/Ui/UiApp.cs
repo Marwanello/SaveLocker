@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Numerics;
+using System.Timers;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.OpenGL;
@@ -22,7 +23,7 @@ namespace SaveLocker.Agent.Linux.Ui;
 /// </summary>
 sealed class UiApp
 {
-    private enum Screen { Status, AddGame, SetFolder, LaunchSetup, Conflicts, Settings, Gallery }
+    private enum Screen { Status, AddGame, SetFolder, LaunchSetup, Conflicts, Settings, Gallery, FakeGame }
 
     private readonly AgentConfig _config;
     private readonly LinuxGameScanner _scanner;
@@ -99,6 +100,15 @@ sealed class UiApp
     // stats task completes without a result (404, or any other failure).
     private readonly Dictionary<Guid, long> _versionRetryAt = new();
     private const long VersionRetryCooldownMs = 10000;
+
+    // Backup prune for the conflict-state caches: PollConflictState already prunes on every
+    // successful poll, but a failed/offline poll never reaches it — so without this, caches for a
+    // conflict resolved elsewhere (CLI, dashboard) would linger until the network recovers. Kept as
+    // a timer rather than folded into the poll for exactly that case; the flag is volatile because
+    // the timer fires on a thread-pool thread while OnRender reads it. Five minutes is plenty: this
+    // only reclaims memory, it never changes what the screen shows.
+    private readonly System.Timers.Timer _pruneTimer;
+    private volatile bool _needsPrune;
 
     private readonly Dictionary<Guid, bool> _conflictKeepBoth = new();
     private Guid? _resolvingConflictId;
@@ -251,6 +261,14 @@ sealed class UiApp
         _config = config;
         _size = size;
         _screenshotPath = screenshotPath;
+
+        _pruneTimer = new System.Timers.Timer(TimeSpan.FromMinutes(5).TotalMilliseconds)
+        {
+            AutoReset = true,
+            Enabled = true
+        };
+        _pruneTimer.Elapsed += (_, _) => _needsPrune = true;
+
         _scanner = new LinuxGameScanner(new Detection(config));
         _browser = new PathBrowser(SteamRoots.BrowseRoots().Concat(HeroicRoots.BrowseRoots()));
         _launch = Daemon.LinuxLaunchCommand();
@@ -303,6 +321,9 @@ sealed class UiApp
         "conflicts" or "conflict" => Screen.Conflicts,
         "settings" or "config" => Screen.Settings,
         "gallery" => Screen.Gallery,
+        // Test-only, launched as `savelocker ui --screen fakegame` (Program.cs's own "fake-game"
+        // command). Never something a user has any reason to pass either.
+        "fakegame" or "fake-game" or "conflict-game" => Screen.FakeGame,
         _ => Screen.Status,
     };
 
@@ -381,6 +402,7 @@ sealed class UiApp
         _window.Closing += () =>
         {
             Sound.Shutdown();
+            _pruneTimer?.Dispose();
             _controller?.Dispose();
             _input?.Dispose();
             _gl?.Dispose();
@@ -487,6 +509,13 @@ sealed class UiApp
         NavDebug.BeginFrame();
         Widgets.BeginFrame();
         FeedImGuiNav();
+
+        if (_needsPrune)
+        {
+            _needsPrune = false;
+            PruneClosedConflictState(_openConflicts);
+        }
+
         // Rail badge and the status screen's per-game prompt both need this regardless of which
         // screen is active, so it is polled here rather than inside DrawConflicts.
         PollConflictState();
@@ -534,6 +563,12 @@ sealed class UiApp
                 new Vector2(size.X - Theme.Layout.Gutter * 2, size.Y - Theme.Layout.Gutter * 2));
             Gallery.Draw();
             ImGui.EndChild();
+        }
+        else if (_screen == Screen.FakeGame)
+        {
+            // Same reasoning as Gallery above: this stands in for a real game's own window, so it
+            // takes the whole surface with no SaveLocker chrome around it.
+            DrawFakeGame(size);
         }
         else
         {
@@ -1824,6 +1859,65 @@ sealed class UiApp
         _resolveError = null;
         var keepBoth = _conflictKeepBoth.GetValueOrDefault(conflict.Id);
         _resolveTask = Api().ResolveConflictAsync(conflict.Id, winningVersionId, keepBoth);
+    }
+
+    /// <summary>
+    /// Test-only: `savelocker fake-game` (tests/testenv.ps1's "Conflict Game" Steam shortcut).
+    /// Stands in for a real game so a Deck's launch-gate popup, sync-before-play and sync-after-
+    /// play can all be exercised end to end on real hardware without needing an actual title.
+    /// Closing this window (B, Escape, or the button) is what a real game's process exit looks
+    /// like to ProtonRun — that is the whole point of it being a real, separate window rather than
+    /// a message box.
+    /// </summary>
+    private void DrawFakeGame(Vector2 size)
+    {
+        if (_navBackFired || ImGui.IsKeyPressed(ImGuiKey.Escape)) { _window.Close(); return; }
+
+        // A continuously cycling background rather than a static one — this stands in for a real
+        // game during Decky launch-gate testing (tasks/conflict-resolution-ui/plan.md, Phase 11's
+        // freeze/resume fallback), and a static screen cannot prove whether a SIGSTOP actually froze
+        // the process: a genuine freeze stops this process's rendering dead mid-frame, so the color
+        // stops moving on whatever hue it was on when the signal landed; a color still cycling on
+        // screen means it never was frozen, no matter what the plugin's own chip claims.
+        const float CycleMs = 3000f;
+        var hue = Environment.TickCount64 % (long)CycleMs / CycleMs;
+        var bg = HsvToRgb(hue, 0.6f, 0.5f);
+        ImGui.GetWindowDrawList().AddRectFilled(Vector2.Zero, size, ImGui.ColorConvertFloat4ToU32(new Vector4(bg, 1f)));
+
+        const string text = "Conflict Game is running";
+        const string sub = "This stands in for a real game - exit to return to Steam.";
+        var textSize = ImGui.CalcTextSize(text);
+        var subSize = ImGui.CalcTextSize(sub);
+
+        ImGui.SetCursorPos(new Vector2((size.X - textSize.X) / 2f, size.Y / 2f - 60));
+        ImGui.Text(text);
+        ImGui.SetCursorPos(new Vector2((size.X - subSize.X) / 2f, size.Y / 2f - 30));
+        ImGui.TextDisabled(sub);
+
+        var buttonSize = new Vector2(200, 44);
+        ImGui.SetCursorPos(new Vector2((size.X - buttonSize.X) / 2f, size.Y / 2f + 20));
+        if (ImGui.Button("Exit game", buttonSize)) _window.Close();
+    }
+
+    /// <summary>Hue (0-1, wraps), fixed saturation/value, to plain RGB. ImGuiNET does not bind ImGui's
+    /// own <c>ColorConvertHSVtoRGB</c>, so this is the standard sector-based formula, hand-rolled.</summary>
+    private static Vector3 HsvToRgb(float h, float s, float v)
+    {
+        h = (h % 1f + 1f) % 1f;
+        var sector = (int)(h * 6f);
+        var frac = h * 6f - sector;
+        var p = v * (1f - s);
+        var q = v * (1f - frac * s);
+        var t = v * (1f - (1f - frac) * s);
+        return (sector % 6) switch
+        {
+            0 => new Vector3(v, t, p),
+            1 => new Vector3(q, v, p),
+            2 => new Vector3(p, v, t),
+            3 => new Vector3(p, q, v),
+            4 => new Vector3(t, p, v),
+            _ => new Vector3(v, p, q),
+        };
     }
 
     /// <summary>

@@ -90,6 +90,61 @@ static class Program
                     // (testenv's Deck target runs one alongside the real install).
                     ParsePort(opts));
 
+            // Test-only stand-in "game": tests/testenv.ps1's "Conflict Game" Steam shortcut points
+            // here instead of a real title, so a launch-gate popup and sync-before/after-play can
+            // be exercised on real hardware. Two spellings of the same FakeGame screen: `fake-game`
+            // is what the seeded shortcut's Exe points at, `ui --screen fakegame` opens it by hand —
+            // neither is ever written into a real install's Launch Options.
+            // Deliberately NOT gated behind SAVELOCKER_ALLOW_TEST_COMMANDS like the dev-shortcut-*
+            // commands below: Steam launches this directly as the shortcut's Exe (DevSteamShortcut
+            // leaves LaunchOptions blank, so there is no wrapper to carry the env var), in Steam's
+            // own environment, which never has that variable set. Gating it made the seeded
+            // shortcut fail to launch from Steam's own library with no visible error — exactly the
+            // scenario this command exists for. It has no side effects worth denying outside the
+            // test rig (it only opens a UI window), unlike dev-shortcut-add/remove, which mutate a
+            // real shortcuts.vdf and stay gated.
+            case "fake-game":
+                return Ui.UiApp.Run(config, opts.GetValueOrDefault("size"),
+                    startScreen: "fakegame", apiPort: ParsePort(opts));
+
+            // Test-only, wired from tests/testenv-deck.sh's cmd_conflict/cmd_clean only. Adds/
+            // removes the one fixed "Conflict Game" shortcut - see DevSteamShortcut's own doc
+            // comment for the backup/restore guarantee this makes about the real shortcuts.vdf.
+            case "dev-shortcut-add":
+            {
+                if (!TestCommandsAllowed(out var addDenial)) { Console.Error.WriteLine(addDenial); return 2; }
+                var prefix = opts.GetValueOrDefault("prefix");
+                if (string.IsNullOrEmpty(prefix))
+                {
+                    Console.Error.WriteLine("dev-shortcut-add needs --prefix <dir>");
+                    return 2;
+                }
+                try
+                {
+                    var appId = DevSteamShortcut.Add(prefix, opts.ContainsKey("with-launch-command"));
+                    if (appId is null) return 1;
+                    Console.WriteLine($"APPID={appId}");
+                    return 0;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"dev-shortcut-add failed: {ex.Message}");
+                    return 1;
+                }
+            }
+
+            case "dev-shortcut-remove":
+                if (!TestCommandsAllowed(out var removeDenial)) { Console.Error.WriteLine(removeDenial); return 2; }
+                try
+                {
+                    return DevSteamShortcut.Remove() ? 0 : 1;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"dev-shortcut-remove failed: {ex.Message}");
+                    return 1;
+                }
+
             case "autostart":
             {
                 var autoStart = new SystemdAutoStart();
@@ -381,6 +436,24 @@ static class Program
     private static string? ConfigPath(Dictionary<string, string> opts) =>
         opts.GetValueOrDefault("config")
         ?? Environment.GetEnvironmentVariable("SAVELOCKER_CONFIG");
+
+    // Gate a command here because of what it DOES, not because it happens to be test-only: this
+    // exists to stop a command from mutating real shared state (shortcuts.vdf, a real Steam
+    // library) outside the test rig, not to block every command the test rig happens to use.
+    // `fake-game` above is test-only too but stays ungated for exactly this reason — it only opens
+    // a UI window, and gating it once broke the one real-world path that invokes it (Steam itself).
+    // The next test-only command belongs here only if it can change something outside the process.
+    private static bool TestCommandsAllowed(out string denial)
+    {
+        if (Environment.GetEnvironmentVariable("SAVELOCKER_ALLOW_TEST_COMMANDS") == "1")
+        {
+            denial = "";
+            return true;
+        }
+        denial = "refusing: this is a test-rig command (tests/testenv.ps1 conflict). " +
+            "Set SAVELOCKER_ALLOW_TEST_COMMANDS=1 to run it deliberately.";
+        return false;
+    }
 
     private static void PrintUsage() => Console.WriteLine(
         """

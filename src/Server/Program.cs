@@ -95,6 +95,13 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 
 var app = builder.Build();
 
+// Fails fast, once, at startup: SyncService.MaxUploadBytes throws for a non-positive
+// Storage:MaxUploadMb (see its own doc comment for why 0 is refused rather than treated as
+// "unlimited"). SyncService is scoped and this same call also runs inside its constructor on
+// every request, so validating it here first turns a misconfiguration into one clear crash at
+// launch instead of an opaque 500 from every one of the ~55 endpoints that inject SyncService.
+SyncService.MaxUploadBytes(app.Configuration);
+
 // Apply EF Core migrations on startup.
 // For DBs created before migrations were introduced (existing deployed machines), the
 // schema is already fully up-to-date but there is no __EFMigrationsHistory table.
@@ -288,10 +295,10 @@ agent.MapPost("/games/{id:guid}/upload", async (
     if (string.IsNullOrWhiteSpace(hash))
         return Results.BadRequest("Missing content hash.");
 
-    // Lift Kestrel's 30 MB default to the configured save-upload cap (default 200 MB).
+    // Lift Kestrel's 30 MB default to the configured save-upload cap (see SyncService.MaxUploadBytes).
     var sizeCap = http.Features.Get<IHttpMaxRequestBodySizeFeature>();
     if (sizeCap is { IsReadOnly: false })
-        sizeCap.MaxRequestBodySize = (long)(cfg.GetValue<int?>("Storage:MaxUploadMb") ?? 200) * 1024 * 1024;
+        sizeCap.MaxRequestBodySize = SyncService.MaxUploadBytes(cfg);
 
     var machine = http.CurrentMachine();
     try
@@ -335,7 +342,7 @@ agent.MapPut("/games/{id:guid}/upload/{sessionId:guid}/chunk", async (
     // should ever approach.
     var sizeCap = http.Features.Get<IHttpMaxRequestBodySizeFeature>();
     if (sizeCap is { IsReadOnly: false })
-        sizeCap.MaxRequestBodySize = (long)(cfg.GetValue<int?>("Storage:MaxUploadMb") ?? 200) * 1024 * 1024;
+        sizeCap.MaxRequestBodySize = SyncService.MaxUploadBytes(cfg);
 
     var machine = http.CurrentMachine();
     try

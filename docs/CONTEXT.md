@@ -70,7 +70,7 @@ server that asks the agent for a path outside the save folder and asserts nothin
 `run-agent-tests` does not start its own server and is not idempotent against a dirty one — a reused
 DB produces shifting, misleading failures. Give it a fresh `Storage__DbPath`/`ArchiveRoot`.
 <br>**Untested:** the `Storage:MaxUploadMb` ceiling on a reconstructed archive. Exercising it needs
-either a >200 MB fixture or a second server started with a tiny cap; neither was worth it, but it is
+either a >500 MB fixture or a second server started with a tiny cap; neither was worth it, but it is
 the one fix here resting on inspection rather than a test.
 
 v0.5.7's rollout (2026-08-15) is complete: console redeployed, the Windows agent took it from the
@@ -947,8 +947,72 @@ downstream effect via the direct-navigation check above. Both call sites are oth
 of code patterns already proven correct in this exact file. Worth a five-minute manual click-through
 on a real desktop (Sync All / Force Pull / Force Push from the actual tray icon) before treating this
 as fully confirmed.
-<br>Phases 10/11 (Decky), 13 (Playnite), and 14 (webhook + block-launch opt-in, pending the design
-decision above) remain open — see [[Backlog]].
+<br>Phases 10/11 (Decky) shipped and hardware-verified 2026-09-08 — see below. Phases 13 (Playnite) and
+14 (webhook + block-launch opt-in, pending the design decision above) remain open — see [[Backlog]].
+
+---
+
+**Decky conflict-resolution Phase 10 shipped (2026-09-07) — the separate `SaveLocker-Decky` repo,
+attached this session at `D:\Projects\SaveLocker\SaveLocker-Decky`, worked in its own worktree/branch
+`decky-conflict-resolution-ui` (`implementation-grouping.md`'s "Group 6," the phase it names as
+unblocked the moment that repo is available).** `main.py` gained seven one-line `_request(...)` proxy
+methods — `conflicts`, `conflict`, `resolve_conflict`, `conflict_policy`/`set_conflict_policy`,
+`save_version`, `version_stats` — mirroring the local API Phase 0/1 and Phase 6 already shipped
+exactly; no new server or local-API route was needed anywhere. New `src/conflicts.tsx`: a 20s poller
+held at module scope (survives Steam remounting `/library/app/:appid`, same reasoning as
+`syncStatus.tsx`'s chip store), chip-merge logic that never clobbers an actively-`'syncing'` chip, and
+the resolve popup itself — Big Picture-styled `Focusable` cards (D-pad left/right, A resolves
+immediately, B backs out via `ModalRoot`'s cancel handling), local-vs-cloud framing and copy following
+this plan's own mockup verbatim, never pre-selecting a side. Wired into three surfaces: the
+library-page `SyncChip` gains a `'conflict'` kind (magenta-red `FaCodeBranch`, distinct from
+`'blocked'`'s amber lock) that's clickable straight into the popup; a new QAM "Save conflicts" panel
+(structurally identical to the existing `LeaseWarnings`) reaches a conflict without the library page
+open; and a per-game "If a save conflict happens" dropdown on the full-screen settings page, framed as
+"Prefer this device" rather than a full machine picker, since only the dashboard has a fleet-wide
+machine list.
+<br>**One small, genuinely necessary gap closed in the main repo alongside this**: "Prefer this
+device" needs this device's own machine id to send as `PreferredMachineId`, and the local `/api/state`
+route's `AgentStateDto` didn't carry one. Added as an additive, defaulted trailing field
+(`MachineId`); `agent-ui/src/api-types.ts` regenerated against a scratch dev daemon on `:5190` and
+diffed — only the new field (plus unrelated alphabetical churn on two untouched entries) appears
+(at tip; Windows-ordering churn at 7306968 removed by 1bf3f8a Linux regen).
+Committed separately from the Decky-side work.
+> Superseded by hardware-verification note below — kept for chronology
+
+<br>**Buildable and type-checked, not hardware-verified.** `npm run build` in the Decky worktree
+(rollup + `@rollup/plugin-typescript`, which type-checks the whole module graph) is clean; `python -m
+py_compile main.py` is clean; the main repo's full solution and `agent-ui` (`tsc -b && vite build`,
+`oxlint`) both build clean with the `machineId` addition (same two pre-existing, unrelated
+`AddGamesView.tsx`/`SettingsView.tsx` warnings as every prior session). This is a Decky plugin — nothing
+here can render or take D-pad input outside a real Steam Big Picture/Deck session, so **this needs a
+manual pass on real hardware before it's trusted as working, not just compiling** — see [[Backlog]] for
+the exact five-point check (chip click-through, D-pad nav + immediate resolve + B-cancel inside the
+popup, the "newer" tag and keep-both toggle, the policy dropdown round-tripping "prefer this device").
+`ModalRoot`'s B-button/cancel behavior specifically is inferred from this same codebase's existing
+`ConfirmModal` usage, not directly tested — the piece of this popup most likely to need a real-hardware
+fix.
+<br>Phase 11 (Decky launch-gate wiring) has since shipped and is hardware-verified (see note below); Phase 13 (Playnite) has no
+dependency on it and can be picked up independently — see [[Backlog]].
+
+---
+
+**Phase 10/11 hardware-verified, two real bugs found and fixed (2026-09-07/08).** Real-Deck testing
+of Phase 11 showed no pause and no "Play Anyway" popup — a regression from what Phase 10's own
+hardware pass had confirmed. Root-caused via a live CDP console trace (Decky frontends run inside
+Steam's `SharedJSContext` CEF process, which has no on-disk log; tailed over an SSH-tunneled
+`ws://localhost:8080` using a throwaway Node script): `RegisterForGameActionStart`'s `appId` is Steam's
+packed 64-bit `CGameID` for any non-Steam shortcut, not a plain AppID — the real AppID sits in the
+upper 32 bits. `Number(appIdStr)` silently rounded it to a garbage float, so the fast-path appId match
+failed for **every** game this feature targets (Heroic titles, emulators, this repo's own fake-game
+rig), not just an edge case. Fixed with a BigInt-aware `parseGameActionAppId()` in `gamingSync.tsx`.
+<br>A second bug surfaced once the first was fixed: every attempt then logged "cancel lost the race"
+even when the cancel visibly worked. `SteamClient.Apps.GetActiveGameActions()` proved unreliable in
+**both** directions on real hardware — an empty result doesn't prove a cancel succeeded (the action can
+simply progress past cancellable state before being checked), and a non-empty result doesn't prove it
+failed (Steam can be slow to prune a cancelled action from the list). Removed as a verification step
+entirely from both call sites in `handleGameActionStart`; the pre-existing `pendingBlock`/`bRunning`
+check in `handleLifetimeChange` is the only authority now. User confirmed on real Steam Deck hardware:
+"it works perfectly now."
 
 ---
 

@@ -33,9 +33,9 @@ updating — only Phase 5 onward is renumbered relative to the original 2026-08-
 | 7 — Windows tray: automatic chooser + bulk queue | ✅ Shipped |
 | 8 — Linux Game Mode conflict screen | ✅ Shipped |
 | 9 — Desktop notification via D-Bus | ✅ Shipped |
-| 10 — Decky: conflict display + resolve UI | ⬜ Not started — needs the `SaveLocker-Decky` repo + Deck hardware |
-| 11 — Decky: launch-gate wiring | ⬜ Not started — depends on 10 |
-| 12 — sync-status endpoint consumer | ⬜ Not started — endpoint shipped in 0/1; needs a genuine "check now" trigger, not a passive poll |
+| 10 — Decky: conflict display + resolve UI | ✅ Shipped 2026-09-07, **hardware-verified 2026-09-07** — chip and Pull/Push/Sync buttons confirmed working on a real Deck after the `gameId`/`saveDirectory` wire-field fix (see this section's own note below) |
+| 11 — Decky: launch-gate wiring | ✅ Shipped 2026-09-07, hardware-verified 2026-09-07/08 |
+| 12 — sync-status endpoint consumer | ✅ Shipped 2026-09-07 (not hardware-verified — see below) — a "Check sync status" button on each game's row in the Decky full-screen page (`fullPage.tsx`), on demand only |
 | 13 — Playnite plugin | ⬜ Not started — needs a Windows + Playnite environment |
 | 14 — Webhook notify + per-game block-launch setting | ⬜ Not started — deliberately deferred; see the note below |
 
@@ -628,6 +628,30 @@ dropdown) — unchanged content, renumbered from the original Phase 5. Depends o
 real, standalone value the moment it ships — a conflict can be seen and resolved from the Deck even
 before Phase 11 wires it into the launch path. Can proceed in parallel with Phase 4 and Phases 5–9.
 
+**Shipped 2026-09-07** (`implementation-grouping.md`'s "Group 6", in the `SaveLocker-Decky` repo's own
+`decky-conflict-resolution-ui` worktree/branch). `main.py` gained one-line proxies for every route this
+phase needs (`conflicts`, `conflict`, `resolve_conflict`, `conflict_policy`/`set_conflict_policy`,
+`save_version`, `version_stats`) — no new server or local-API surface required, since Phase 0/1 and
+Phase 6 already shipped it all. New `src/conflicts.tsx`: a poller and the resolve popup itself
+(Big Picture-styled `Focusable` cards, immediate-resolve on a side's own button, matching this
+section's own mockup verbatim). Wired into the library-page chip (a new `'conflict'` kind, clickable),
+a new QAM "Save conflicts" panel, and a per-game conflict-policy dropdown on the full-screen settings
+page (framed as "Prefer this device," not a full machine picker — Decky has no fleet-wide machine
+list). One small necessary main-repo addition: `AgentStateDto` gained `MachineId` so "prefer this
+device" has an id to send. Buildable/type-checked (`npm run build`, main repo's full solution +
+`agent-ui`), initially shipped **not yet verified on real hardware**.
+
+**Hardware-verified 2026-09-07.** The chip and Pull/Push/Sync buttons did not appear at all on a real
+Deck. Root-caused to a real bug, not a hardware quirk: `TrackedGameDto`'s wire fields are `id`/`path`
+(deliberately frozen for Decky-plugin back-compat — see `AgentApiServer.cs`), but every TS consumer of
+`games()` (`fullPage.tsx`'s `TrackedGame`, `gamingSync.tsx`'s `GamingSyncGame`) read `gameId`/
+`saveDirectory` instead, so `game.gameId` was `undefined` for every game the agent returned. That broke
+the alias editor, pull-before-launch/sync-on-open toggles, the conflict-policy dropdown, AND
+`resolveMatchSync`'s own PRIMARY (AppID) match path — not just its name-based fallback — since it looks
+the matched game up in `syncCache.games` by `gameId` too. Fixed once, in `main.py`'s `games()` (the
+single choke point both `fullPage.tsx` and `gamingSync.tsx` call through): remaps `id`→`gameId`,
+`path`→`saveDirectory` before returning. Confirmed fixed on hardware after a rebuild/redeploy.
+
 **Phase 11 — Decky: launch-gate wiring** (the cancel → popup → sync → relaunch sequence, plus the
 fresh-page-open-conflict carve-out) — unchanged content, renumbered from the original Phase 6.
 Depends on **both** Phase 4 (the wrapper is what actually decides `Blocked`; the plugin only displays
@@ -636,6 +660,61 @@ Phase 10. Deliberately late: the highest-hardware-risk piece (`CancelGameAction`
 reliability is already flagged unverified on real hardware, independent of this plan), so shipping
 Phase 10 first means a working fallback already exists if this phase needs a hardware-driven
 iteration cycle.
+
+**Shipped 2026-09-07.** Server/Agent.Core: `POST /api/games/{id}/pre-launch-sync` (`AgentApiServer.cs`)
+wraps `SyncEngine.PrepareLaunchAsync` — the same call `ProtonRun.cs` (Phase 4) already makes
+in-process — for a caller (Decky, later Playnite) that can only reach the agent over HTTP. Wired via a
+new injected `prepareLaunch` delegate, resolved against whichever engine is current at call time, same
+pattern as the existing `syncAll` delegate; wired identically on both `Daemon.cs` (Linux) and
+`TrayApp.cs` (Windows), so the local API is complete on both even though only Decky calls it today.
+`LaunchDecision` gained `[JsonConverter(typeof(JsonStringEnumConverter<LaunchDecision>))]` so it
+serializes as `"Proceed"`/`"ProceedSyncPaused"`/`"Blocked"`, not an int; `LaunchGateResult` is returned
+to the caller verbatim, no reshaping DTO needed.
+
+Decky plugin: `main.py` gained `pre_launch_sync(game_id)`, on a 600s timeout (not the shared helper's
+default 5s) — this is a real push/pull round trip, not a cheap read. `gamingSync.tsx`'s
+`handleGameActionStart` (the `RegisterForGameActionStart` fast path) now calls it in place of the old
+plain `runPull`: `Proceed`/`ProceedSyncPaused` relaunch immediately as before; `Blocked` does NOT
+relaunch — it opens `conflicts.tsx`'s resolve popup and only relaunches from the popup's own `onClosed`
+callback, and only if the player actually resolved rather than backed out (B / backdrop dismiss stays
+blocked, matching the plan's own mockup: "(B) Decide later — don't launch yet"). The
+fresh-page-open-conflict carve-out is implemented via a new `conflicts.tsx` export,
+`getOpenConflictForGame` — a conflict already known from Phase 10's own 20s poller short-circuits
+straight to cancel-and-resolve using that known id, never attempting a redundant sync over the network,
+which is the literal wording the plan's carve-out section asks for. `handleLifetimeChange` (the
+`bRunning` fallback for launches the fast path missed) also swapped its plain pull for `pre_launch_sync`,
+but never relaunches on `Blocked` — the game is already running by the time that path fires, so there is
+no launch left to gate, only to report (the chip reads `'conflict'` and is already clickable to open the
+same popup).
+
+`gamingSync.tsx` and `conflicts.tsx` needed a way to call into each other's functions without literally
+importing each other (`conflicts.tsx` already imports `gameIdToAppId` FROM `gamingSync.tsx`; the reverse
+import would be circular). Resolved with a small `ConflictHooks` interface and a `setConflictHooks`
+setter in `gamingSync.tsx`, wired once from `index.tsx`'s `definePlugin` setup — the one file that
+already imports both — mirroring the leaf-module-plus-wiring shape `syncStatus.tsx` already established
+for the chip store.
+
+**Verification so far:** `dotnet build --no-incremental` clean for `Agent.Core`/`Agent.Linux`/`Agent`
+(Windows tray) — the one pre-existing `WindowsBase` MSB3277 warning, no new ones.
+`tests/run-local-api-tests.ps1`: 30/30, confirming the new constructor parameter and route didn't
+regress the shared `AgentApiServer` surface. A standalone smoke test against the built daemon confirmed
+the new route's edge cases behave correctly: an unknown game id → clean `404`; a known game with an
+unreachable upstream server → the lease-acquire's `HttpRequestException` is caught by the route's own
+try/catch and returned as a proper `500`/`ErrorResponse`, not an unhandled crash — and the plugin's own
+`!r.ok` fail-open path (`handlePreLaunchResult`) still relaunches the game rather than stranding it, so
+the end-to-end behavior stays fail-open even though the server-side response for that case is an error.
+Decky plugin: `npx tsc --noEmit` clean, and a real `npm run build` (rollup) succeeds — the actual bundle
+Decky loads, not just a type-check.
+
+**Real-hardware pass done 2026-09-07/08 — two bugs found and fixed along the way, both confirmed with
+the user's own hardware.** `RegisterForGameActionStart`'s `appId` is a packed 64-bit Steam `CGameID`
+for any non-Steam shortcut (real AppID in the upper 32 bits) — `Number(appIdStr)` silently rounded it
+to garbage, so the fast-path appId match failed for every game this feature targets, not just this
+test rig; fixed with a BigInt-aware `parseGameActionAppId()` in `gamingSync.tsx`. Separately,
+`SteamClient.Apps.GetActiveGameActions()` proved unreliable in both directions on real hardware (empty
+doesn't prove a cancel succeeded; non-empty doesn't prove it failed) and was removed as a verification
+step entirely — `handleLifetimeChange`'s pre-existing `bRunning`/`pendingBlock` check is the real
+safety net. User confirmed: "it works perfectly now."
 
 **Phase 12 — sync-status endpoint — consumer work only, the endpoint already shipped, but it is
 NOT the cheap poll target this plan originally described it as.** Correction made 2026-08-30 while
@@ -657,6 +736,20 @@ one-shot call at a specific decision point (e.g. immediately before a launch gat
 background poll. **Consumer work is correctly still open**, but needs an explicit trigger moment
 decided first, not a UI badge wired to a timer; fold it into whichever of Phase 6, 8, or 10 first has
 a natural "check now" action, rather than building one just to close this line out.
+
+**Shipped 2026-09-07.** Landed on `fullPage.tsx`'s `GameRow` (the Decky full-screen "Overview" tab's
+per-game list, `SaveLocker-Decky` repo) as the trigger moment: a "Check sync status" `DialogButton`
+next to each game's conflict-policy dropdown, calling a new `sync_status` proxy in `main.py` →
+`GET /api/games/{id}/sync-status` only when pressed — never wired to the 5s poll that tab already
+runs for everything else on the page. Chosen over Phase 11's `pre_launch_sync` `Blocked` result
+(floated as a candidate when this phase was scoped) because that path already resolves its own
+conflict inline via the resolve modal; a separate manual check serves the different, genuinely open
+question "is this game still in sync right now, without launching it." A result reports in-sync/
+out-of-sync inline, or — if `hasOpenConflict` comes back true — swaps in an "Open conflict — resolve"
+button that reuses `conflicts.tsx`'s existing `openConflictResolveModal` (no circular import: unlike
+`gamingSync.tsx`, `fullPage.tsx` isn't imported by `conflicts.tsx`, so it imports directly). Verified
+via `tsc --noEmit`, a real `npm run build` (rollup), and `python -m py_compile main.py` — all clean.
+Not yet exercised on real hardware.
 
 **Phase 13 — Playnite plugin** (new, separate project) — unchanged scope, renumbered from the
 original Phase 8. Depends only on Phase 0/1's local API — independent of every Decky phase and of

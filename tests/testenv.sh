@@ -232,8 +232,21 @@ cmd_sync() {
   local branch="${SAVELOCKER_BRANCH:-}"
   if [ -n "$gitdir" ] && [ -n "$branch" ]; then
     # Fetching a /mnt path otherwise fails with "dubious ownership".
+    #
+    # 2>/dev/null on BOTH calls, not just --get-all: when this script itself runs from a git
+    # WORKTREE (testenv.ps1's own $root can be one — .claude/worktrees/<name> — per its "Resolves
+    # and validates" comment elsewhere in this file's PowerShell half), the worktree's own `.git`
+    # is a pointer FILE holding a Windows-native path ("gitdir: D:/..."), written by Windows git
+    # when the worktree was created. WSL's CWD (via the /mnt/<drive> mount, inherited from the
+    # calling Windows process) is that same worktree, so `git config --global`'s own incidental
+    # repository-discovery reads that file, doesn't recognise "D:/..." as absolute, and resolves it
+    # AS RELATIVE TO CWD instead — producing a nonsense concatenated path and a "fatal: not a git
+    # repository" line. Cosmetic only: the discovery failure doesn't stop `--add` from writing the
+    # config and returning 0 (confirmed directly — `git config --global --list --show-origin` fails
+    # outright from the same CWD, but `--add safe.directory` does not), so this only ever needed
+    # silencing, the same as the `--get-all` line already did.
     git config --global --get-all safe.directory 2>/dev/null | grep -qxF "$gitdir" ||
-      git config --global --add safe.directory "$gitdir"
+      git config --global --add safe.directory "$gitdir" 2>/dev/null
 
     echo "fetching $branch from $gitdir"
     git -C "$REPO" fetch --quiet "$gitdir" "$branch" || die "fetch failed"

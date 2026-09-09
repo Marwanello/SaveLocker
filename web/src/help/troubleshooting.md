@@ -15,9 +15,9 @@
 - Make sure the game is launched through Steam so the agent's process watcher can detect the exit event.
 - Check the agent log for "push" entries to confirm a push was attempted. If you see `still writing after 120s`, something in the save folder is being written continuously — add an [exclude pattern](#help/glob-patterns) for it.
 
-## Upload rejected: "archive exceeds 200 MB"
+## Upload rejected: "archive exceeds 500 MB"
 
-The save archive is larger than the 200 MB limit. Common causes:
+The save archive is larger than the 500 MB limit. Common causes:
 - Save path is pointing at the game install directory instead of the save folder.
 - Large files (screenshots, caches, logs) are being included. Add [exclude patterns](#help/glob-patterns) to filter them out.
 

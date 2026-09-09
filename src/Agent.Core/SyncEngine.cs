@@ -1,9 +1,11 @@
-﻿using SaveLocker.Shared;
+﻿using System.Text.Json.Serialization;
+using SaveLocker.Shared;
 
 namespace SaveLocker.Agent;
 
 /// <summary>What <see cref="SyncEngine.PrepareLaunchAsync"/> decided. Only <see cref="Blocked"/>
 /// may stop a launch — every other value still starts the game exactly as before Phase 4.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<LaunchDecision>))]
 public enum LaunchDecision
 {
     /// <summary>Nothing stood in the way; the pre-launch pull (if any) already ran.</summary>

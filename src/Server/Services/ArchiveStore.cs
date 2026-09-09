@@ -131,8 +131,10 @@ public sealed class ArchiveStore
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, UploadSession> _sessions = new();
 
     /// <summary>How long an inactive session is allowed to sit before a later Begin call sweeps it.
-    /// Generous on purpose: sized for a full, very slow (~50 KB/s) 200 MB upload with several
-    /// chunk-level retries, not for the common case.</summary>
+    /// An IDLE gap, not a total: every appended chunk refreshes the session, so a slow-but-moving
+    /// upload outlives this freely and only a stalled one is reaped. Generous on purpose: sized for
+    /// a very slow (~50 KB/s) link with several chunk-level retries between bytes, not for the
+    /// common case.</summary>
     private static readonly TimeSpan SessionIdleLimit = TimeSpan.FromMinutes(45);
 
     /// <summary>Start a chunked upload: stage an empty file and remember the metadata the eventual

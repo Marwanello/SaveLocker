@@ -15,8 +15,46 @@
 #   .\tests\testenv.ps1 test      run the suites
 #   .\tests\testenv.ps1 sync      copy this tree's uncommitted changes into the WSL clone
 #   .\tests\testenv.ps1 logs      tail every log the rig writes
+#   .\tests\testenv.ps1 conflict [-Windows] [-Deck] [-Size <MB>] [-Files <count>] [-AddCommand]
+#                                 seed a genuine local-vs-cloud conflict on a throwaway "Conflict Game"
+#                                 game — Windows first (creates it), then the Deck (diverges it) — the
+#                                 same two hand-typed CLI sequences this rig used to need by hand.
+#                                 Neither switch given = both (a conflict needs two disagreeing
+#                                 sides). Starts the console first if it isn't already up (both sides
+#                                 register/push against it over HTTP), then stops any already-running
+#                                 Windows tray / Deck daemon — CLI seeding must never race a live
+#                                 tray/daemon's own config Save(). Needs `build` run at least once
+#                                 first. Run this BEFORE `up`, then `up` last so the tray/daemon start
+#                                 clean (the console itself is left running either way).
+#                                 RE-SEEDING NEEDS A FULL `clean` FIRST: a second `conflict` run
+#                                 against the same console DB is NOT fresh — whichever side seeds
+#                                 first no longer creates a headless game, so its push lands on the
+#                                 previous run's stale head and the divergence seeds on the wrong
+#                                 side (or not at all). `clean` wipes the console DB along with the
+#                                 rest of the rig, which is what makes the next seed deterministic.
+#                                 -Size/-Files replace the default tiny one-line save with $Files
+#                                 randomly-filled files totalling ~$Size MB (each side gets its own
+#                                 random content, so they still genuinely conflict) — e.g.
+#                                 `conflict -Size 25 -Files 25` seeds a 25 MB save split across 25
+#                                 files, for exercising sync progress against a save big enough to
+#                                 actually take a moment. Omit both for today's instant tiny-file seed.
+#                                 -Size is MB as a number (0 keeps the tiny save, NaN is rejected);
+#                                 -Files is an integer file count. -AddCommand is mutually exclusive
+#                                 with -Size/-Files (combining them warns and still seeds the
+#                                 requested sizes): the Deck's Steam shortcut is added WITH the
+#                                 sync/launch-gate wrapper instead of blank Launch Options, so the
+#                                 seeded conflict also exercises the launch gate.
+#                                 The Deck side also adds a real Steam shortcut, "Conflict Game",
+#                                 pointing at a fullscreen placeholder "game" (`savelocker fake-
+#                                 game`) — so the conflict is launchable from Steam's own library,
+#                                 not just resolvable from the CLI. Its Launch Options are left
+#                                 blank on purpose unless -AddCommand is given (no sync/launch-gate
+#                                 wrapper yet); the real shortcuts.vdf is backed up first and
+#                                 restored by `clean`.
 #   .\tests\testenv.ps1 clean     down, then DELETE every test build and all its state — WSL,
-#                                 Windows, the Deck, the test Decky plugin and the dashboard
+#                                 Windows, the Deck, the test Decky plugin, any seeded conflict
+#                                 folders, the "Conflict Game" Steam shortcut (shortcuts.vdf
+#                                 restored from its pre-conflict backup), and the dashboard
 #                                 container/image/volume
 #   .\tests\testenv.ps1 deck-config -DeckHost deck@<ip> [-DeckServerUrl http://<lan-ip>:5080]
 #                                 write/update tests/testenv.local.ps1 (below) instead of hand-
@@ -69,7 +107,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'clean', 'deck-config')]
+    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'conflict', 'clean', 'deck-config')]
     [string]$Command = 'status',
 
     # Never a released version number. A test build stamped with one compares equal to the real
@@ -124,7 +162,31 @@ param(
 
     # Real trays, real waits, ~5 minutes, and it needs an interactive desktop.
     [switch]$SkipWinAgentSuite,
-    [switch]$AgentsOnly
+    [switch]$AgentsOnly,
+
+    # 'conflict' command only: which side(s) to seed. Neither given means both — a conflict needs
+    # two sides that disagree, so seeding only one side alone leaves nothing to resolve.
+    [switch]$Windows,
+    [switch]$Deck,
+
+    # 'conflict' command only: replaces the default single tiny "save v1" text file with $Files
+    # randomly-filled files totalling ~$Size MB, split as evenly as possible — for exercising sync
+    # progress/UI against a save that actually takes a moment to transfer, rather than every seeded
+    # conflict being an instant no-op transfer. 0 (the default) keeps today's tiny-file behavior
+    # unchanged. Capped at 500 (mirrors SaveArchive.DefaultMaxUploadMb / Storage:MaxUploadMb in
+    # src/Server/appsettings.json — the test console's default upload cap). Random content, not
+    # zeros: real save files are not compressible padding, and it also guarantees the two sides'
+    # seeded content differs even at the same size/file count. -Size is a number of MB (NaN is
+    # rejected); -Files is an integer file count.
+    [double]$Size = 0,
+    [int]$Files = 1,
+
+    # 'conflict' command only: add the Deck's "Conflict Game" Steam shortcut WITH the
+    # sync/launch-gate wrapper (--with-launch-command) instead of blank Launch Options.
+    # Forwarded to testenv-deck.sh only (SAVELOCKER_CONFLICT_ADD_COMMAND); the Windows side is
+    # unaffected. Mutually exclusive with -Size/-Files — combining them warns (see the
+    # 'conflict' case) and still seeds the requested sizes.
+    [switch]$AddCommand
 )
 
 $ErrorActionPreference = 'Continue'
@@ -282,7 +344,14 @@ function Invoke-Deck {
         "SAVELOCKER_DECK_PREFIX='$DeckPrefix'",
         "SAVELOCKER_DECK_PORT=$DeckPort",
         "SAVELOCKER_SERVER_URL='$DeckServerUrl'",
-        "SAVELOCKER_TEST_VERSION='$Version'"
+        "SAVELOCKER_TEST_VERSION='$Version'",
+        # Only meaningful to 'conflict' (cmd_conflict); every other subcommand ignores them. Passed
+        # unconditionally rather than only when $Command -eq 'conflict' since Invoke-Deck is generic —
+        # simplest to always forward the current -Size/-Files/-AddCommand rather than special-case
+        # this one call.
+        "SAVELOCKER_CONFLICT_SIZE_MB=$($Size.ToString([System.Globalization.CultureInfo]::InvariantCulture))",
+        "SAVELOCKER_CONFLICT_FILES=$Files",
+        "SAVELOCKER_CONFLICT_ADD_COMMAND=$(if ($AddCommand) { '1' } else { '0' })"
     )
     $cmd = "sed 's/\r`$//' /tmp/.savelocker-testenv-deck.raw > /tmp/.savelocker-testenv-deck.sh; " +
            ($vars -join ' ') + " bash /tmp/.savelocker-testenv-deck.sh $Sub"
@@ -348,6 +417,26 @@ function Get-DeckyPluginRepo {
         throw "no SaveLocker-Decky checkout at '$candidate' (no plugin.json there) - " +
               "set -DeckyPluginRepo or `$env:SAVELOCKER_DECKY_PLUGIN_REPO"
     }
+
+    # Silent about WHICH checkout/branch/commit a Deck build actually sources from is exactly how a
+    # whole session's worth of Decky work went untested on hardware: the default candidate above is
+    # SaveLocker-Decky's own default checkout, which is a SEPARATE directory from any worktree a
+    # feature branch happens to live in (e.g. .claude/worktrees/<branch>) — plain `git worktree add`
+    # never touches it, so it silently keeps building whatever that checkout was last on, with no
+    # error, no warning, and a plugin that still installs and runs fine. Printed on every build,
+    # unconditionally, since that is the one thing that would have caught it immediately instead of
+    # after a confusing hardware test.
+    $branch = (& git -C $candidate rev-parse --abbrev-ref HEAD 2>$null)
+    $commit = (& git -C $candidate rev-parse --short HEAD 2>$null)
+    $dirty  = [bool](& git -C $candidate status --porcelain 2>$null)
+    $dirtyNote = if ($dirty) { ', uncommitted changes' } else { '' }
+    Say "Decky plugin source: $candidate  [$branch @ $commit$dirtyNote]"
+    if (-not $DeckyPluginRepo -and $branch -eq 'main') {
+        Warn ('building from SaveLocker-Decky''s default checkout, on ''main''. If the work you want ' +
+              'staged lives on a feature branch or in a worktree instead, pass -DeckyPluginRepo or set ' +
+              '$env:SAVELOCKER_DECKY_PLUGIN_REPO to that path - otherwise none of it reaches the Deck.')
+    }
+
     return $candidate
 }
 
@@ -715,6 +804,91 @@ function Stop-Windows {
     }
 }
 
+# Writes the seeded save's content for one side of a 'conflict' run into $Dir — either today's tiny
+# one-line file ($SizeMb -le 0, the default) or $FileCount randomly-filled files totalling ~$SizeMb
+# MB, split as evenly as possible (the last file absorbs whatever doesn't divide evenly). Random
+# content, not zeros: real saves are not compressible padding, and it's also what guarantees the
+# Windows and Deck sides genuinely differ even when called with identical -Size/-Files.
+function New-SyntheticSaveFiles {
+    param([string]$Dir, [double]$SizeMb, [int]$FileCount)
+    # $Dir is wiped below — refuse anything that doesn't look like this command's own throwaway
+    # seed folder, so a mistyped path can never wipe something real (same reason as the
+    # $StateRoot guard above).
+    if ($Dir -notlike '*savelocker-conflict-test*') {
+        throw "refusing to seed - directory '$Dir' doesn't look like a conflict-test directory (it must contain 'savelocker-conflict-test')"
+    }
+    New-Item -ItemType Directory -Force -Path $Dir | Out-Null
+    Get-ChildItem $Dir -Force | Remove-Item -Recurse -Force
+    if ($SizeMb -le 0) {
+        'windows save v1' | Set-Content (Join-Path $Dir 'save.txt')
+        return
+    }
+    if ($FileCount -lt 1) { throw '-Files must be at least 1' }
+    # 500 mirrors SaveArchive.DefaultMaxUploadMb / Storage:MaxUploadMb in
+    # src/Server/appsettings.json — seeding more only produces pushes the server rejects.
+    # NaN must be rejected explicitly: every comparison against it is $false, so without
+    # IsNaN it would sail through validation and fail obscurely in the size math below.
+    if ([double]::IsNaN($SizeMb) -or $SizeMb -gt 500) { throw '-Size must be 0-500 (the test console''s default upload cap)' }
+    $totalBytes = [int64]([math]::Round($SizeMb * 1MB))
+    $base = [int64]([math]::Floor($totalBytes / $FileCount))
+    $rng = [System.Random]::new()
+    # Streamed 1 MB at a time: one [byte[]] per file would hold up to 500 MB in memory at once.
+    $chunkSize = 1MB
+    $chunk = [byte[]]::new([int]$chunkSize)
+    for ($i = 1; $i -le $FileCount; $i++) {
+        $bytes = if ($i -eq $FileCount) { $totalBytes - $base * ($FileCount - 1) } else { $base }
+        $stream = [System.IO.File]::Open((Join-Path $Dir "save-$i.bin"), [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
+        try {
+            $remaining = $bytes
+            while ($remaining -gt 0) {
+                if ($remaining -lt $chunkSize) { $take = [int]$remaining } else { $take = [int]$chunkSize }
+                $rng.NextBytes($chunk)
+                $stream.Write($chunk, 0, $take)
+                $remaining -= $take
+            }
+        } finally { $stream.Close() }
+    }
+    Say "  seeded $FileCount file(s), ~$SizeMb MB total, in $Dir"
+}
+
+# Seeds Windows's side of a throwaway "Conflict Game" game via the CLI (add-game, then push) — the
+# same shape as testenv-deck.sh's cmd_conflict, kept as two independent, order-dependent seedings
+# rather than one shared function because the two run on different machines over different
+# transports (a local process here, SSH there). Whichever side runs FIRST creates the game on the
+# server with no conflict (a brand-new game never conflicts with itself); the side that runs SECOND
+# independently discovers its own local file with no knowledge of what the server now holds, and
+# THAT push is what the server records as a genuine, unresolved local-vs-cloud divergence. The
+# 'conflict' switch case below always runs Windows before the Deck for exactly this reason.
+function New-ConflictOnWindows {
+    if (-not (Test-Path $agentDll)) { throw "not built - run: .\tests\testenv.ps1 build" }
+    if (Get-TestTray) {
+        # Standing rule from the Phase 7 hardware verification (2026-09-03): CLI seeding must never
+        # race a live tray - it holds its own in-memory config, and its next unrelated Save()
+        # silently clobbers whatever the CLI just wrote out-of-band. Stop it rather than warn, so
+        # this command is safe to run whether or not `up` already ran.
+        Say 'stopping the test tray first (CLI seeding must not race a live tray)'
+        Stop-Windows
+    }
+    Say "seeding a conflicting save on Windows for 'Conflict Game'"
+    Use-TestEnvVars
+    try {
+        $dir = Join-Path $env:TEMP 'savelocker-conflict-test\win'
+        New-SyntheticSaveFiles -Dir $dir -SizeMb $Size -FileCount $Files
+
+        $cfg = Join-Path $winState 'config.json'
+        $registered = (Test-Path $cfg) -and ((Get-Content $cfg -Raw) -match '"apiKey"')
+        if (-not $registered) {
+            Say "registering the Windows test agent against $serverUrl"
+            & $dotnet $agentDll set-server --url $serverUrl | Out-Null
+            & $dotnet $agentDll register --name 'WinTest' | Select-Object -First 1
+        }
+        & $dotnet $agentDll add-game --name 'Conflict Game' --dir $dir | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "add-game failed (exit $LASTEXITCODE)" }
+        & $dotnet $agentDll push 'Conflict Game'
+        if ($LASTEXITCODE -ne 0) { throw "push failed (exit $LASTEXITCODE)" }
+    } finally { Clear-TestEnvVars }
+}
+
 function Stop-Console {
     & docker stop $container 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { Write-Host "stopped $container" } else { Write-Host 'no console container running' }
@@ -867,6 +1041,71 @@ switch ($Command) {
         Remove-Item $list -ErrorAction SilentlyContinue
     }
 
+    'conflict' {
+        if (-not $Windows -and -not $Deck) { $Windows = $true; $Deck = $true }
+        # 500 mirrors SaveArchive.DefaultMaxUploadMb / Storage:MaxUploadMb in
+        # src/Server/appsettings.json — seeding more only produces pushes the server rejects.
+        # NaN must be rejected explicitly: every comparison against it is $false, so without
+        # IsNaN it would sail through validation and fail obscurely while seeding.
+        if ([double]::IsNaN($Size) -or $Size -lt 0 -or $Size -gt 500) { throw '-Size must be 0-500 (the test console''s default upload cap)' }
+        if ($Files -lt 1) { throw '-Files must be at least 1' }
+        if ($AddCommand -and ($Size -gt 0 -or $Files -gt 1)) { Warn '-AddCommand is mutually exclusive with -Size/-Files; seeding the requested sizes anyway.' }
+        if ($Size -gt 0) { Say "seeding $Files file(s) totalling ~$Size MB per side (instead of the default tiny save)" }
+        elseif ($Files -gt 1) { Warn '-Files is ignored without -Size (the default tiny save is a single file)' }
+        Say 're-seeding over a previous run needs a full clean first - a stale console head seeds the next conflict on the wrong side (see the header comment).'
+
+        # Both sides register/push over HTTP against the console, so it has to be up before either
+        # CLI call — unlike the tray/daemon, starting it here races nothing (it holds no local agent
+        # config), so just bring it up rather than making the user run `up -Only console` by hand.
+        if (-not (Test-ConsoleUp)) { Start-Console } else { Write-Host '  console already up' }
+
+        $windowsOk = $false
+        $deckOk = $false
+        $deckSkipped = $false
+
+        if ($Windows) {
+            try { New-ConflictOnWindows; $windowsOk = $true }
+            catch { Warn "windows: $($_.Exception.Message)" }
+        }
+        if ($Deck) {
+            # An explicit -Deck means the Deck side was asked for, so attempt it and report any
+            # failure below; the default both-sides run only warns and skips it, so a missing
+            # Deck never hides whether Windows seeded. Either way the windowsOk/deckOk summary
+            # stays reachable — nothing here throws past it.
+            if ((-not (Test-DeckConfigured)) -and (-not $PSBoundParameters.ContainsKey('Deck'))) {
+                Warn 'no Deck configured - skipping the Deck side (set -DeckHost or $env:SAVELOCKER_DECK_HOST to include it).'
+                $deckSkipped = $true
+            } else {
+                try {
+                    if (-not (Test-DeckConfigured)) { throw "No Deck configured - set -DeckHost or `$env:SAVELOCKER_DECK_HOST." }
+                    if (-not $DeckServerUrl) {
+                        throw "no -DeckServerUrl / `$env:SAVELOCKER_DECK_SERVER_URL - the Deck can't reach 'localhost', it needs this PC's LAN IP (e.g. http://192.168.68.58:$ConsolePort)"
+                    }
+                    Invoke-Deck 'conflict'; $deckOk = $true
+                }
+                catch { Warn "deck: $($_.Exception.Message)" }
+            }
+        }
+
+        if ($Windows -and $Deck) {
+            if ($windowsOk -and $deckOk) { Write-Host "seeded 'Conflict Game' on both sides." }
+            elseif ($windowsOk -and $deckSkipped) { Write-Host "seeded 'Conflict Game' on Windows ONLY (Deck skipped)." }
+            elseif ($windowsOk) { Write-Host "seeded 'Conflict Game' on Windows ONLY (Deck failed)." }
+            elseif ($deckOk) { Write-Host "seeded 'Conflict Game' on Deck ONLY (Windows failed)." }
+            else { Write-Host "FAILED: both sides failed to seed." }
+        } elseif ($Windows) {
+            if ($windowsOk) { Write-Host "seeded 'Conflict Game' on Windows." }
+            else { Write-Host "FAILED: Windows side failed." }
+        } elseif ($Deck) {
+            if ($deckOk) { Write-Host "seeded 'Conflict Game' on Deck." }
+            else { Write-Host "FAILED: Deck side failed." }
+        }
+
+        Write-Host ''
+        Write-Host "Next: .\tests\testenv.ps1 up   (tray/daemon start LAST, after all seeding)"
+        Write-Host "then check each side's own conflicts view (CLI 'conflicts', doctor, the dashboard, or the Decky/Game-Mode UI)."
+    }
+
     'logs' {
         $winLog = Join-Path $winState 'agent.log'
         if (Test-Path $winLog) { Say "windows test agent — $winLog"; Get-Content $winLog -Tail 20 }
@@ -891,6 +1130,14 @@ switch ($Command) {
         if (Test-Path $StateRoot) {
             Remove-Item $StateRoot -Recurse -Force
             Write-Host "  removed $StateRoot"
+        }
+        # The Windows half of `conflict`'s seeded save lives outside $StateRoot (it's the fake
+        # game's own save folder, not agent state), so it needs its own removal here. The Deck half
+        # lives inside $XDG_DATA_HOME, which testenv-deck.sh's own cmd_clean already wipes.
+        $conflictTestDir = Join-Path $env:TEMP 'savelocker-conflict-test'
+        if (Test-Path $conflictTestDir) {
+            Remove-Item $conflictTestDir -Recurse -Force
+            Write-Host "  removed $conflictTestDir"
         }
 
         Invoke-Wsl 'clean'

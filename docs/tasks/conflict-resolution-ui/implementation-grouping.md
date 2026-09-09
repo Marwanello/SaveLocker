@@ -32,7 +32,8 @@ built.
 | 3 | Phase 9 (D-Bus impl) | ✅ Done 2026-09-01 |
 | 4 | Phase 8 | ✅ Done 2026-09-03 |
 | 5 | Phase 7 | ✅ Phase 7 done 2026-09-03 — Phase 14 deliberately left out of this pass, see `plan.md`'s Status section for why |
-| 6 | Phase 10, 11, 13 | ⬜ Not started — needs the `SaveLocker-Decky` repo attached, and Deck/Windows hardware |
+| 6 | Phase 10, 11 (Decky) | ✅ Done — both phases hardware-verified 2026-09-07/08 (a `gameId`/`saveDirectory` wire-field bug, then a packed-`CGameID` decode bug and an unreliable `GetActiveGameActions()` check, all fixed along the way — see `plan.md`) |
+| 7 | Phase 13 (Playnite) | ⬜ Not started — split out of the old Group 6 on 2026-09-07 (asked directly): it shares nothing with Decky but a `.NET Framework 4.6.2` + Playnite SDK toolchain, and only Windows + Playnite installed, not the Decky repo or a Deck |
 
 ## Which phases are actually reachable from a cloud/remote session
 
@@ -42,7 +43,7 @@ built.
 | 8 (Game Mode screen) | Yes | Build/compile only — real gamepad-nav / WSLg confirmation needs the Deck or a Windows+WSLg box |
 | 7 (Windows tray wiring) | Yes | **No** — WinForms/WebView2 only runs on Windows |
 | 9 (D-Bus notification impl) | Yes, once Phase 6 ships — no `SaveLocker-Decky` repo access needed at all, its only real dependencies are Phase 5 (done) and Phase 6 | **No** — needs a real desktop session with a notification daemon to see a popup actually fire |
-| 10, 11 (Decky) | **No** — separate `SaveLocker-Decky` repo not attached to this session | No — needs real Deck hardware regardless of repo access |
+| 10, 11 (Decky) | Yes — `SaveLocker-Decky` repo attached 2026-09-07 | Deck hardware needed to verify |
 | 13 (Playnite) | Effectively no — `.NET Framework 4.6.2` + Playnite SDK wants a Windows toolchain | No — needs Windows + Playnite installed |
 
 ## Groups
@@ -157,9 +158,32 @@ two-game conflict scenario and the actual built Windows tray — full detail in 
 section and `CONTEXT.md`, including the one thing this environment could not literally automate (a
 click on the NotifyIcon's own context menu — no tool here drives native Win32 tray UI).
 
-**Group 6 — later, needs the separate Decky repo + real hardware (Deck and/or Windows).**
-`Phase 10`/`Phase 11` (Decky — add the `SaveLocker-Decky` repo to whatever session does this) +
-`Phase 13` (Playnite).
+**Group 6 — Decky only. Needs the separate Decky repo (attached 2026-09-07) + real Deck hardware to
+verify.** `Phase 10` + `Phase 11`.
+<br>**Phase 10 done 2026-09-07**, worked in its own worktree/branch (`decky-conflict-resolution-ui`)
+under the `SaveLocker-Decky` repo, per that repo's own "one branch per phase" convention. Buildable and
+type-checked from this environment (no Steam/Deck available here), so — like Phase 8 before any
+Windows/WSLg access existed — it ships at this group's "code-only" ceiling: full detail, and the exact
+manual verification pass a real Deck session still needs, in `plan.md`'s Phase 10 section and
+`Backlog.md`. Phase 11 depends on it and is next.
+
+### Correction found 2026-09-07: Playnite pulled into its own group
+
+The original Group 6 lumped Phase 13 (Playnite) in with Phase 10/11 (Decky) on the reasoning that both
+"need hardware not yet attached." Asked directly to split them: Phase 13 shares no files, no
+dependency, and no toolchain with Decky — it needs a `.NET Framework 4.6.2` project + the Playnite SDK
+on a Windows box with Playnite installed, none of which the Decky repo or a Deck provides. Attaching
+the Decky repo (as this session did) unblocks Group 6 but does nothing for Phase 13, and a session with
+Windows + Playnite but no Decky repo can do Phase 13 but nothing for Group 6 — treating them as one
+group would have kept whichever was ready waiting on whichever wasn't. Moved to its own **Group 7**
+below, matching how Phase 9 got pulled out of the original Decky/Playnite grouping for the identical
+reason (see "Correction found before Group 3" above).
+
+**Group 7 — Playnite only. Needs a Windows box with Playnite installed; independent of Decky.**
+`Phase 13`. Depends only on Phase 0/1's local API (shipped) — not on Phase 10/11, not on the
+`SaveLocker-Decky` repo. `plan.md`'s Phase 13 section already locks down the behavior (confirmed
+buildable via `IPlayniteAPI.StartGame`) and notes the WebView2-pointed-at-Phase-6's-page option now
+available instead of a from-scratch WPF dialog — this group is the actual build-out, not yet started.
 
 ```
 Done 2026-08-30       →  Group 1 (5, 9-spike)                  tiny, fully verifiable here
@@ -167,9 +191,13 @@ Done 2026-08-31       →  Group 2 (4, 6)                        medium, biggest
 Done 2026-09-01       →  Group 3 (9-impl)                      small, code-only here, needed Group 2 first
 Done 2026-09-03       →  Group 4 (8)                           medium, verified live under WSLg
 Done 2026-09-03       →  Group 5 (7)                           verified live on a real Windows dev box; Phase 14 held back — see above
-Deck + Windows        →  Group 6 (10, 11, 13)
-Whenever 6/8/10 adds a "check now" trigger → Phase 12 (sync-status consumer)
+Done 2026-09-07/08    →  Group 6 (10, 11)                      Decky repo attached, both hardware-verified on a real Deck; Phase 12 shipped code-only
+Windows + Playnite     →  Group 7 (13)                          independent of Group 6 — split out 2026-09-07, see above
 ```
+
+Phase 12 (sync-status consumer) shipped 2026-09-07 once Group 6's Decky work gave it a genuine
+on-demand trigger to attach to — a "Check sync status" button on `fullPage.tsx`'s per-game row. See
+`plan.md`'s own Phase 12 write-up for what was built.
 
 ## Re-evaluate before each new group
 

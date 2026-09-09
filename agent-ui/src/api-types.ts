@@ -1469,6 +1469,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/pre-launch-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LaunchGateResult"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LaunchGateResult"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1515,6 +1577,8 @@ export interface components {
             /** Format: int32 */
             settleQuietSeconds: number;
             platform: string;
+            /** Format: uuid */
+            machineId?: null | string;
         };
         AgentVersionDto: {
             currentVersion: string;
@@ -1628,6 +1692,15 @@ export interface components {
         LaunchCommandDto: {
             command: null | string;
             note: null | string;
+        };
+        /** @enum {unknown} */
+        LaunchDecision: "Proceed" | "ProceedSyncPaused" | "Blocked";
+        LaunchGateResult: {
+            decision: components["schemas"]["LaunchDecision"];
+            reason?: null | string;
+            /** Format: uuid */
+            conflictId?: null | string;
+            holderMachineName?: null | string;
         };
         LaunchOptionCurrentDto: {
             /** Format: uint32 */

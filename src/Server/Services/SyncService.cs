@@ -31,6 +31,25 @@ public sealed class SyncService
     /// <summary>The documented save-upload cap, enforced while copying rather than only by Kestrel.</summary>
     private readonly long _maxUploadBytes;
 
+    /// <summary>
+    /// The save-upload cap in bytes: <c>Storage:MaxUploadMb</c>, falling back to
+    /// <see cref="SaveArchive.DefaultMaxUploadMb"/> when unconfigured. The single source every
+    /// upload path (single-shot, chunked, Kestrel body limit) reads, so the cap cannot drift
+    /// between them.
+    /// <para>
+    /// A non-positive configured value is refused rather than clamped: <see cref="ArchiveStore"/>
+    /// treats a non-positive limit as "disable the check", so accepting 0 here would silently lift
+    /// the cap entirely instead of tightening it.
+    /// </para>
+    /// </summary>
+    public static long MaxUploadBytes(IConfiguration config)
+    {
+        var mb = config.GetValue<int?>("Storage:MaxUploadMb") ?? SaveArchive.DefaultMaxUploadMb;
+        if (mb <= 0)
+            throw new InvalidOperationException($"Storage:MaxUploadMb must be positive (got {mb}).");
+        return (long)mb * 1024 * 1024;
+    }
+
     public SyncService(
         AppDbContext db,
         ArchiveStore store,
@@ -43,7 +62,7 @@ public sealed class SyncService
         _retainPerGame = config.GetValue<int?>("Storage:RetainVersionsPerGame") ?? 10;
         _commandLease = TimeSpan.FromMinutes(
             config.GetValue<double?>("Commands:LeaseMinutes") ?? 10);
-        _maxUploadBytes = (long)(config.GetValue<int?>("Storage:MaxUploadMb") ?? 200) * 1024 * 1024;
+        _maxUploadBytes = MaxUploadBytes(config);
     }
 
     // ----- Machines -----

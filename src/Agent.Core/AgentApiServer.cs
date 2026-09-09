@@ -41,6 +41,9 @@ public sealed class AgentApiServer : IDisposable
     // "Sync all" for the Overview page's button — same operation the tray menu offers, resolved
     // against whichever engine and game list are current at the moment it is clicked.
     private readonly Func<Task<string>> _syncAll;
+    // The Decky/Playnite launch gate (Phase 11) — SyncEngine.PrepareLaunchAsync, resolved against
+    // whichever engine is current at the moment it's called, same reasoning as _syncAll above.
+    private readonly Func<TrackedGame, CancellationToken, Task<LaunchGateResult>> _prepareLaunch;
     // One sync at a time, however many surfaces are offering the button — see /api/sync.
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     private readonly string _uiRoot;
@@ -70,7 +73,8 @@ public sealed class AgentApiServer : IDisposable
         Func<DeckyStatusDto>? deckyStatus = null,
         Func<StagedUpdateInfo?>? stagedUpdate = null,
         SyncActivityTracker? activity = null,
-        Func<Task<string>>? syncAll = null)
+        Func<Task<string>>? syncAll = null,
+        Func<TrackedGame, CancellationToken, Task<LaunchGateResult>>? prepareLaunch = null)
     {
         _browser = new PathBrowser(browseRoots);
         Port = port;
@@ -89,6 +93,7 @@ public sealed class AgentApiServer : IDisposable
         _stagedUpdate = stagedUpdate ?? (() => null);
         _activity = activity ?? new SyncActivityTracker();
         _syncAll = syncAll ?? (() => Task.FromResult("Not available."));
+        _prepareLaunch = prepareLaunch ?? ((_, _) => Task.FromResult(new LaunchGateResult(LaunchDecision.Proceed)));
         _uiRoot = Path.Combine(AppContext.BaseDirectory, "agent-ui");
         _auth = LocalAuth.LoadOrCreate(config.ConfigPath);
         _leaseWarnings = LeaseWarningStore.For(config);
@@ -205,7 +210,8 @@ public sealed class AgentApiServer : IDisposable
                 lastSyncAgo,
                 warnings,
                 _config.SettleQuietSeconds,
-                OperatingSystem.IsWindows() ? "Windows" : "Linux");
+                OperatingSystem.IsWindows() ? "Windows" : "Linux",
+                _config.MachineId);
         }).Produces<AgentStateDto>();
 
         app.MapPost("/api/lease-warnings/dismiss", (DismissWarningRequest body) =>
@@ -762,6 +768,61 @@ public sealed class AgentApiServer : IDisposable
             }
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         });
+
+        // The Decky/Playnite launch gate (tasks/conflict-resolution-ui/plan.md, Phase 11). Neither
+        // can call SyncEngine.PrepareLaunchAsync in-process the way the Linux wrapper (Phase 4,
+        // ProtonRun.cs) does, so this wraps it for a caller that can only reach the agent over HTTP.
+        // Performs the pull (or the commit-before-choose push, on a diverged local save) as a side
+        // effect exactly like the wrapper's own call — the caller only acts on the returned decision,
+        // never syncs anything itself. LaunchGateResult/LaunchDecision are returned verbatim; nothing
+        // here needs to reshape them.
+        //
+        // Decky/Playnite client contract (comment only — no behavior below enforces it): allow a long
+        // timeout (the underlying push/pull is bounded by ApiClient's own 10-minute HttpClient
+        // timeout, and a big save on a slow link can take minutes) and fail OPEN on anything that is
+        // not an explicit Blocked — transport errors, client timeouts, 5xx, and the 409-busy below
+        // all mean "launch anyway". Only LaunchDecision.Blocked is fail-closed (cancel the launch,
+        // show the resolve UI). A 409 specifically means a /api/sync run already holds the gate; the
+        // running sync still converges, so launching without pulling (ProceedSyncPaused) is safe.
+        app.MapPost("/api/games/{id:guid}/pre-launch-sync",
+            async Task<Results<Ok<LaunchGateResult>, Conflict<LaunchGateResult>, NotFound, InternalServerError<ErrorResponse>>>
+                (Guid id, CancellationToken ct) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.NotFound();
+
+            // Single-flight with /api/sync above: two overlapping SyncAllAsync/PrepareLaunchAsync
+            // runs would race each other's leases. The second caller is told what is already
+            // happening instead — as a fail-open ProceedSyncPaused, so Decky launches without
+            // pulling. /api/sync itself is unchanged (still 200 + SyncNowResponse when busy).
+            if (!await _syncGate.WaitAsync(0))
+                return TypedResults.Conflict(new LaunchGateResult(
+                    LaunchDecision.ProceedSyncPaused,
+                    "A sync is already running — launching without pulling."));
+
+            try
+            {
+                var gate = await _prepareLaunch(game, ct);
+                // The game list can change while the gate was in flight (untracked mid-sync); a
+                // result for a game that no longer exists must not read as a green light for it.
+                if (_config.Games.All(g => g.GameId != id)) return TypedResults.NotFound();
+                // Same warning ProtonRun.cs persists after its own PrepareLaunchAsync call — without
+                // it a Decky/Playnite launch through this route loses the "another machine has this
+                // checked out" banner that a Linux-wrapper launch of the same game would show.
+                if (gate.Decision == LaunchDecision.ProceedSyncPaused && gate.HolderMachineName is not null)
+                    _leaseWarnings.Add(game.Name, gate.HolderMachineName);
+                return TypedResults.Ok(gate);
+            }
+            // Fail OPEN, per this route's own documented client contract above: an exception here is
+            // a transport/transient failure, not a confirmed conflict, so it must read the same as
+            // "launch anyway" rather than as a hard error a naive client could block a launch on.
+            catch (Exception ex)
+            {
+                AgentLogger.LogException("AgentApiServer.pre-launch-sync", ex);
+                return TypedResults.Ok(new LaunchGateResult(LaunchDecision.Proceed));
+            }
+            finally { _syncGate.Release(); }
+        }).Produces<LaunchGateResult>().Produces<LaunchGateResult>(StatusCodes.Status409Conflict);
     }
 
     /// <summary>
@@ -916,7 +977,11 @@ public sealed record AgentStateDto(
     string LastSyncAgo,
     LeaseWarningDto[] LeaseWarnings,
     int SettleQuietSeconds,
-    string Platform);
+    string Platform,
+    /// <summary>This device's own machine id, once registered — null before then. Lets a local
+    /// frontend (Decky, agent-ui) offer "prefer THIS device" for <see cref="ConflictPolicy.PreferMachine"/>
+    /// without needing the fleet-wide machine list only the dashboard's admin API exposes.</summary>
+    Guid? MachineId = null);
 /// <param name="ProcessName">
 /// The process discovery is confident means this game is running, or null when it cannot know —
 /// which is every source but a non-Steam shortcut. Null tells the UI that enrolling this candidate

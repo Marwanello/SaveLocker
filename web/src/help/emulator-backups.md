@@ -34,7 +34,7 @@ After updating an emulator or core, create a normal in-game save before the upda
 
 Create a separate SaveLocker game for each emulated title and map only that title's save folder or isolated state folder. SaveLocker maps directories, not individual files. If the emulator uses one memory-card file, place or keep it in a dedicated folder and map that folder.
 
-Avoid mapping the emulator's entire data directory. It may contain ROMs, BIOS files, shader caches, screenshots, logs, configuration, and states for unrelated games. Those files waste storage, can exceed the 200 MB upload limit, and may cause unwanted changes on another machine.
+Avoid mapping the emulator's entire data directory. It may contain ROMs, BIOS files, shader caches, screenshots, logs, configuration, and states for unrelated games. Those files waste storage, can exceed the 500 MB upload limit, and may cause unwanted changes on another machine.
 
 If several games share one memory-card file, treat its containing folder as one sync unit. Do not configure separate SaveLocker games that manage overlapping folders.
 
@@ -74,7 +74,7 @@ Manual pushes skip the settle wait. Before using one, close the emulator and wai
 
 Do not run the same emulated game on two machines simultaneously. Let the first machine exit and finish pushing before launching on the second machine. The second machine should pull Latest before play.
 
-If both machines create different saves, SaveLocker records a conflict instead of trying to merge binary files. Choose the version you want to keep in the dashboard. See [Understanding sync conflicts](#help/conflicts) and [Best practices for multiple machines](#help/multi-machine).
+If both machines create different saves, SaveLocker records a conflict instead of trying to merge binary files. Choose the version you want to keep in the dashboard, the agent Conflicts page, the Game Mode Conflicts screen, or the Decky plugin's Save conflicts panel. See [Understanding sync conflicts](#help/conflicts) and [Best practices for multiple machines](#help/multi-machine).
 
 ## First-time setup checklist
 

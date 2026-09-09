@@ -32,7 +32,7 @@ Server endpoints (`src/Server/Program.cs`).
   versions are exempt from automatic retention until an admin clears it.
 - `GET /api/games/{id}/path-candidates` → `MachineScanCandidateDto[]` `{ machineId, machineName, suggestedPath, lastSeen }`. What each machine's own scan proposes for this game — what the dashboard offers when mapping a save folder by hand.
 - `POST /api/games/{id}/excludes` body `string[]` → 200 / 404. Per-game exclude globs. Empty array clears them back to `Sync:DefaultExcludeGlobs`.
-- `POST /api/games/{id}/conflict-policy` body `{ policy, preferredMachineId? }` → 200 / 404. `policy` = `Manual` (default — record it and wait for an admin) | `NewestWins` (the incoming version always wins, no conflict row) | `PreferMachine` (the designated machine's pushes advance the head; every other machine follows the `Manual` path). This is what selects the automatic head moves described under **Admin** below.
+- `POST /api/games/{id}/conflict-policy` body `{ policy, preferredMachineId? }` → 200 / 404. `policy` = `Manual` (default — record it and wait for a human) | `NewestWins` | `PreferMachine` (with `preferredMachineId`). The server never auto-resolves: every divergence records a `ConflictFlag` (`SyncService.IngestAsync`), and the diverging agent reads this policy and calls the resolve endpoint itself unless the policy is `Manual`.
 - `POST /api/games/{id}/prune` → `PruneResult { removed }`. Applies retention to this game now, rather than waiting for the next upload to trigger it.
 
 ## Server settings
@@ -47,7 +47,7 @@ Server endpoints (`src/Server/Program.cs`).
 - `DELETE /api/games/{id}/lease/force` → 204 (admin force-release).
 
 ## Sync
-- `POST /api/games/{id}/upload?hash={h}&parent={versionId?}&force={bool?}` body = zip → `UploadResult { status: Created|NoChange|Conflict|RetryFull, version, conflict }`. **413** if the body exceeds `Storage:MaxUploadMb` (default 200), counted while copying rather than from the declared length. The archive is staged and published atomically, so a refused or interrupted upload leaves no version and no file. Single-shot; kept only for an agent/server too old to have the chunked routes below.
+- `POST /api/games/{id}/upload?hash={h}&parent={versionId?}&force={bool?}` body = zip → `UploadResult { status: Created|NoChange|Conflict|RetryFull, version, conflict }`. **413** if the body exceeds `Storage:MaxUploadMb` (default 500), counted while copying rather than from the declared length. The archive is staged and published atomically, so a refused or interrupted upload leaves no version and no file. Single-shot; kept only for an agent/server too old to have the chunked routes below.
 - **Chunked upload** (`Gotchas.md` → *Hosting/network*, "Cloudflare's 100s edge timeout") — the normal path today, one small request per `ApiClient.UploadChunkBytes` (4 MiB) slice instead of one long one:
   - `POST /api/games/{id}/upload/begin` body `BeginUploadRequest { contentHash, parentVersionId?, force, files? }` → `BeginUploadResponse { sessionId?, noChange?, useDeltaPath, needPaths? }`. `files` — the agent's *complete* current per-file manifest (`{path, sha256, size}[]`, forward-slash relative paths) — is optional; omitting it (an old agent, `force`, a first-ever push, or a save below the delta-worthwhile size/count floor) always gets `useDeltaPath: false`, meaning the *next* request must carry the whole archive exactly as before. When `files` is sent and the server has a stored per-file baseline for its current head, `useDeltaPath: true` and `needPaths` names exactly which of the agent's declared paths need fresh bytes — everything else in `files` not in `needPaths` is copy-forwarded server-side from the base version's own archive. `noChange` short-circuits with no session, before a single byte moves, when the content already matches the head.
   - `PUT /api/games/{id}/upload/{sessionId}/chunk?offset={n}` body = raw bytes — either the whole archive (full path) or a small zip containing only `needPaths` (delta path). An offset behind what the session has already received is treated as a harmless retry replay; ahead of it is a conflict (a gap can only mean an earlier chunk never arrived).
@@ -64,10 +64,8 @@ Server endpoints (`src/Server/Program.cs`).
 - `POST /api/games/{id}/rollback?version={versionId}` → 200 / 400.
 - `POST /api/games/{id}/set-latest?version={versionId}` → 200 / 400. Same head-pointer move as rollback; backs the **"Set as Latest"** dashboard action + initial-sync wizard.
 
-Every head change the *server* decides — the two above, `conflicts/{id}/resolve`, and an automatic
-`NewestWins`/`PreferMachine` upload — queues a deduplicated **unforced** `Pull` for each live machine
-that syncs the game (mapped save path or uploaded version), skipping the uploader that already
-learned the new head from its own upload response. Rollback and Set as Latest additionally supersede
+Every head change the *server* applies — the two above and `conflicts/{id}/resolve` (including an agent's auto-policy resolve, which calls the same endpoint when the game's policy isn't `Manual`) — queues a deduplicated **unforced** `Pull` for each live machine
+that syncs the game (mapped save path or uploaded version), skipping the resolver when it kept its own version, since it already holds the new head from its own push/resolve response. Rollback and Set as Latest additionally supersede
 any open conflict that **offers the chosen version** (audited as `conflict.resolve_superseded`);
 conflicts between two other versions stay open. An ordinary push queues nothing. See `Decisions.md`.
 - `POST /api/games/{id}/retain?value={n?}` → 200 / 404. Set per-game version retention limit (null = global default).
