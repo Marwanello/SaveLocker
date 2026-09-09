@@ -776,19 +776,41 @@ public sealed class AgentApiServer : IDisposable
         // effect exactly like the wrapper's own call — the caller only acts on the returned decision,
         // never syncs anything itself. LaunchGateResult/LaunchDecision are returned verbatim; nothing
         // here needs to reshape them.
+        //
+        // Decky/Playnite client contract (comment only — no behavior below enforces it): allow a long
+        // timeout (the underlying push/pull is bounded by ApiClient's own 10-minute HttpClient
+        // timeout, and a big save on a slow link can take minutes) and fail OPEN on anything that is
+        // not an explicit Blocked — transport errors, client timeouts, 5xx, and the 409-busy below
+        // all mean "launch anyway". Only LaunchDecision.Blocked is fail-closed (cancel the launch,
+        // show the resolve UI). A 409 specifically means a /api/sync run already holds the gate; the
+        // running sync still converges, so launching without pulling (ProceedSyncPaused) is safe.
         app.MapPost("/api/games/{id:guid}/pre-launch-sync",
-            async Task<Results<Ok<LaunchGateResult>, NotFound, InternalServerError<ErrorResponse>>>
+            async Task<Results<Ok<LaunchGateResult>, Conflict<LaunchGateResult>, NotFound, InternalServerError<ErrorResponse>>>
                 (Guid id, CancellationToken ct) =>
         {
             var game = _config.Games.FirstOrDefault(g => g.GameId == id);
             if (game is null) return TypedResults.NotFound();
 
+            // Single-flight with /api/sync above: two overlapping SyncAllAsync/PrepareLaunchAsync
+            // runs would race each other's leases. The second caller is told what is already
+            // happening instead — as a fail-open ProceedSyncPaused, so Decky launches without
+            // pulling. /api/sync itself is unchanged (still 200 + SyncNowResponse when busy).
+            if (!await _syncGate.WaitAsync(0))
+                return TypedResults.Conflict(new LaunchGateResult(
+                    LaunchDecision.ProceedSyncPaused,
+                    "A sync is already running — launching without pulling."));
+
             try
             {
-                return TypedResults.Ok(await _prepareLaunch(game, ct));
+                var gate = await _prepareLaunch(game, ct);
+                // The game list can change while the gate was in flight (untracked mid-sync); a
+                // result for a game that no longer exists must not read as a green light for it.
+                if (_config.Games.All(g => g.GameId != id)) return TypedResults.NotFound();
+                return TypedResults.Ok(gate);
             }
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
-        }).Produces<LaunchGateResult>();
+            finally { _syncGate.Release(); }
+        }).Produces<LaunchGateResult>().Produces<LaunchGateResult>(StatusCodes.Status409Conflict);
     }
 
     /// <summary>

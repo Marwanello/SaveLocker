@@ -19,14 +19,15 @@ namespace SaveLocker.Agent.Linux;
 public static class ProtonRun
 {
     /// <summary>
-/// How long to wait for the user to resolve a conflict in the interactive popup before
-/// giving up and falling back to the text refusal. Controlled by
-/// <c>SAVELOCKER_CONFLICT_POPUP_TIMEOUT_SECONDS</c> (default 600 = 10 minutes).
-/// </summary>
-private static readonly TimeSpan ConflictPopupTimeout = TimeSpan.FromSeconds(
-    int.TryParse(Environment.GetEnvironmentVariable("SAVELOCKER_CONFLICT_POPUP_TIMEOUT_SECONDS"), out var s) && s > 0
-        ? s
-        : 600); // default 10 minutes
+    /// How long to wait for the user to resolve a conflict in the interactive popup before
+    /// giving up and falling back to the text refusal. Controlled by
+    /// <c>SAVELOCKER_CONFLICT_POPUP_TIMEOUT_SECONDS</c> (default 600 = 10 minutes, capped at
+    /// 3600 = 1 hour so a stray value cannot stall a launch forever).
+    /// </summary>
+    private static readonly TimeSpan ConflictPopupTimeout = TimeSpan.FromSeconds(
+        int.TryParse(Environment.GetEnvironmentVariable("SAVELOCKER_CONFLICT_POPUP_TIMEOUT_SECONDS"), out var s) && s > 0
+            ? Math.Clamp(s, 1, 3600)
+            : 600); // default 10 minutes
 
     /// <summary>
     /// Pull, run the game to completion, then settle-and-push. Returns the game's own exit code —
@@ -86,15 +87,18 @@ private static readonly TimeSpan ConflictPopupTimeout = TimeSpan.FromSeconds(
             if (gate.Decision == LaunchDecision.ProceedSyncPaused && gate.HolderMachineName is not null)
                 LeaseWarningStore.For(config).Add(game.Name, gate.HolderMachineName);
 
-            if (gate.Decision == LaunchDecision.Blocked && DesktopEnvironment.Detect().HasGraphicalSession)
+            if (gate.Decision == LaunchDecision.Blocked && HasGraphicalSessionFast())
             {
                 // A Deck player pressing Play sees nothing without this — Steam just fails to
                 // launch, with no on-screen reason. Opens the same native Conflicts screen the
                 // Game Mode nav rail links to (Phase 8) in place of the game, and waits for it to
                 // close. Only attempted with a real display to draw on; over a bare SSH shell the
                 // text refusal below is still the right (and only possible) fallback.
-                Log("launch blocked by a conflict — opening the conflicts screen instead of the game");
-                await TryResolveConflictInteractivelyAsync(config, Log);
+                var wayland = Environment.GetEnvironmentVariable("WAYLAND_DISPLAY") ?? "(unset)";
+                var x11 = Environment.GetEnvironmentVariable("DISPLAY") ?? "(unset)";
+                Log($"launch blocked by a conflict — opening the conflicts screen instead of the game " +
+                    $"(WAYLAND_DISPLAY={wayland} DISPLAY={x11})");
+                await TryResolveConflictInteractivelyAsync(config, Log, config.ConfigPath);
 
                 // Re-run the gate rather than trust anything about how the popup closed: closing
                 // the window and actually resolving the conflict are two different user actions,
@@ -106,6 +110,15 @@ private static readonly TimeSpan ConflictPopupTimeout = TimeSpan.FromSeconds(
                     Log($"post-popup re-check failed, keeping launch blocked: {ex.Message}");
                     gate = new LaunchGateResult(LaunchDecision.Blocked, "Re-check failed after conflict popup: " + ex.Message);
                 }
+            }
+            else if (gate.Decision == LaunchDecision.Blocked)
+            {
+                // No display to draw the popup on — log why, with the values, so a headless refusal
+                // is diagnosable from agent.log rather than a silent text-only refusal.
+                var wayland = Environment.GetEnvironmentVariable("WAYLAND_DISPLAY") ?? "(unset)";
+                var x11 = Environment.GetEnvironmentVariable("DISPLAY") ?? "(unset)";
+                Log($"launch blocked by a conflict with no graphical session " +
+                    $"(WAYLAND_DISPLAY={wayland} DISPLAY={x11}) — falling back to the text refusal");
             }
 
             if (gate.Decision == LaunchDecision.Blocked)
@@ -150,6 +163,16 @@ private static readonly TimeSpan ConflictPopupTimeout = TimeSpan.FromSeconds(
     }
 
     /// <summary>
+    /// Cheap graphical-session check for the launch gate: WAYLAND_DISPLAY/DISPLAY only, no D-Bus
+    /// socket probe and no gdbus spawn. DesktopEnvironment.Detect() stays the full probe for
+    /// doctor and anything else that wants the bus/daemon answers; here only "can a popup draw"
+    /// matters, and the gate must never stall a launch on a subprocess outside its control.
+    /// </summary>
+    private static bool HasGraphicalSessionFast() =>
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY")) ||
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"));
+
+    /// <summary>
     /// Spawns <c>savelocker ui --screen conflicts</c> in place of the game and waits for it to
     /// close. A fresh process, not an in-process call into <c>Ui.UiApp</c> — the same reason
     /// Program.cs's own "ui" case only loads SDL/GL/ImGui on demand: this wrapper runs on every
@@ -157,9 +180,13 @@ private static readonly TimeSpan ConflictPopupTimeout = TimeSpan.FromSeconds(
     /// actually needed. Always returns after the window closes, however that happened; the caller
     /// re-checks the launch gate itself rather than infer anything from this returning.
     /// </summary>
-    private static async Task TryResolveConflictInteractivelyAsync(AgentConfig config, Action<string> log)
+    private static async Task TryResolveConflictInteractivelyAsync(
+        AgentConfig config, Action<string> log, string? configPath = null)
     {
-        var self = Environment.ProcessPath;
+        // Same binary, not wherever the runtime thinks it is: prefer /proc/self/exe (what
+        // Daemon.WrapperPath resolves first — correct through install.sh's ~/.local/bin symlink),
+        // falling back to the runtime's own path.
+        var self = Daemon.WrapperPath() ?? Environment.ProcessPath;
         if (string.IsNullOrEmpty(self))
         {
             log("cannot find my own executable path - skipping the conflict popup");
@@ -174,10 +201,26 @@ private static readonly TimeSpan ConflictPopupTimeout = TimeSpan.FromSeconds(
             psi.ArgumentList.Add("conflicts");
             psi.ArgumentList.Add("--port");
             psi.ArgumentList.Add((config.DaemonApiPort ?? Daemon.DefaultApiPort).ToString());
+            // The popup is a fresh process with its own default config resolution: without this it
+            // would open the default config while the wrapper runs on --config/SAVELOCKER_CONFIG.
+            // Program.cs's RunWrapper path owns capturing the original --config value and threading
+            // it here; this only forwards whatever it was given (explicit value first, then the
+            // SAVELOCKER_CONFIG env, then this process's own resolved path when non-default).
+            var forward = !string.IsNullOrEmpty(configPath)
+                ? configPath
+                : Environment.GetEnvironmentVariable("SAVELOCKER_CONFIG");
+            if (string.IsNullOrEmpty(forward) && config.ConfigPath != AgentConfig.DefaultConfigPath)
+                forward = config.ConfigPath;
+            if (!string.IsNullOrEmpty(forward))
+            {
+                psi.ArgumentList.Add("--config");
+                psi.ArgumentList.Add(forward);
+            }
 
             using var ui = Process.Start(psi);
             if (ui is null) { log("could not start the conflicts popup"); return; }
-            // Bounded: an undecided popup holds the launch lease the whole time it is open, so an
+            // Bounded: when the block came from the post-lease path the launch lease is still held
+            // while the popup is open (the pre-lease already-open check holds nothing), so an
             // abandoned window must not stall this launch forever. On timeout the popup is closed
             // and the caller falls through to the usual text refusal below.
             using var cts = new CancellationTokenSource(ConflictPopupTimeout);
@@ -189,6 +232,14 @@ private static readonly TimeSpan ConflictPopupTimeout = TimeSpan.FromSeconds(
             {
                 log("conflicts popup timed out - closing it");
                 try { ui.Kill(); } catch { }
+                // Kill is a request, not a wait: give the window a short grace to actually exit so
+                // a slow close leaves no stale popup over the refusal text (or a later launch).
+                try
+                {
+                    using var killCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    await ui.WaitForExitAsync(killCts.Token);
+                }
+                catch { }
             }
         }
         catch (Exception ex)
