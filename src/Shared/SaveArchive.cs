@@ -242,15 +242,15 @@ public static class SaveArchive
         new(path, FileMode.Open, FileAccess.Read,
             FileShare.ReadWrite | FileShare.Delete);
 
-    /// <summary>Thrown when an archive is refused before anything is written. Never a partial restore.</summary>
-    public sealed class UnsafeArchiveException(string message) : Exception(message);
-
     /// <summary>
     /// Default for <c>Storage:MaxUploadMb</c>, shipped in the server's <c>appsettings.json</c>. The
     /// deployed value always wins; this is only the fallback when the key is absent, and what the
     /// agent's own size backstop assumes. Change the cap in appsettings, never by forking this.
     /// </summary>
     public const int DefaultMaxUploadMb = 500;
+
+    /// <summary>Thrown when an archive is refused before anything is written. Never a partial restore.</summary>
+    public sealed class UnsafeArchiveException(string message) : Exception(message);
 
     /// <summary>
     /// Ceiling on entries in one archive. A restore that needs more than this is not a save folder.

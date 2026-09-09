@@ -131,7 +131,12 @@ public sealed class UpdateChecker : IDisposable
     /// <summary>The origin this checker was built for. A connection change retires it (see TrayApp).</summary>
     public string ServerUrl { get; }
 
-    /// <summary>Refuse a package larger than this. The server caps uploads at 500 MB by default.</summary>
+    /// <summary>Refuse a package larger than this. This is the INSTALLER cap, not the save-upload
+    /// cap (<c>Storage:MaxUploadMb</c>, default <see cref="SaveArchive.DefaultMaxUploadMb"/> MB) — the
+    /// two channels carry different shapes (a ~43 MB installer vs. a save archive that may legitimately
+    /// approach the upload limit), so they are capped separately on purpose. Kept at 300 MB: generous
+    /// for either platform's installer while still bounding what a compromised or misconfigured update
+    /// endpoint can make this machine download and execute.</summary>
     private const long MaxInstallerBytes = 300L * 1024 * 1024;
 
     public UpdateChecker(AgentConfig config)

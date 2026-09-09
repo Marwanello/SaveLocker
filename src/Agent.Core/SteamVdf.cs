@@ -52,6 +52,7 @@ public static class SteamVdf
         {
             var type = ReadTypeByte(data, ref pos);
             if (type == 0x08) break; // end of this object
+            var typePos = pos - 1;
 
             var key = ReadCString(data, ref pos);
             obj.Items[key] = type switch
@@ -60,7 +61,7 @@ public static class SteamVdf
                 0x01 => ReadCString(data, ref pos),
                 0x02 => ReadInt32(data, ref pos),
                 _ => throw new InvalidDataException(
-                    $"Unsupported VDF node type 0x{type:X2} at offset {pos - 1}.")
+                    $"Unsupported VDF node type 0x{type:X2} at offset {typePos}.")
             };
         }
         return obj;
@@ -124,6 +125,7 @@ public static class SteamVdf
         {
             var childType = ReadTypeByte(data, ref pos);
             if (childType == 0x08) break; // end of "shortcuts" itself — pos is just past it
+            var typePos = pos - 1;
 
             var key = ReadCString(data, ref pos);
             if (int.TryParse(key, out var n) && n > maxIndex) maxIndex = n;
@@ -133,7 +135,7 @@ public static class SteamVdf
                 case 0x01: ReadCString(data, ref pos); break;
                 case 0x02: ReadInt32(data, ref pos); break;
                 default: throw new InvalidDataException(
-                    $"Unsupported VDF node type 0x{childType:X2} at offset {pos - 1}.");
+                    $"Unsupported VDF node type 0x{childType:X2} at offset {typePos}.");
             }
         }
 
@@ -148,6 +150,7 @@ public static class SteamVdf
         {
             var type = ReadTypeByte(data, ref pos);
             if (type == 0x08) return;
+            var typePos = pos - 1;
             ReadCString(data, ref pos);
             switch (type)
             {
@@ -155,7 +158,7 @@ public static class SteamVdf
                 case 0x01: ReadCString(data, ref pos); break;
                 case 0x02: ReadInt32(data, ref pos); break;
                 default: throw new InvalidDataException(
-                    $"Unsupported VDF node type 0x{type:X2} at offset {pos - 1}.");
+                    $"Unsupported VDF node type 0x{type:X2} at offset {typePos}.");
             }
         }
     }

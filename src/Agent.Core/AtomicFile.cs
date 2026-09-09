@@ -19,9 +19,15 @@ public static class AtomicFile
     // StateDirSecurity is idempotent, this just avoids asking the filesystem to prove it each time.
     private static readonly HashSet<string> ProtectedDirs = new(StringComparer.OrdinalIgnoreCase);
 
+    // One temp-name shape for every writer here: PID separates two processes racing on the same
+    // file, Guid separates two writes from the same process. Same idiom as SyncEngine.TempArchive.
+    private static string NewTempPath(string dir, string path) =>
+        Path.Combine(dir, $".{Path.GetFileName(path)}.{Environment.ProcessId}-{Guid.NewGuid():N}.tmp");
+
     public static void WriteAllText(string path, string contents, bool restrictPermissions = false)
     {
-        var dir = Path.GetDirectoryName(path)!;
+        var dir = Path.GetDirectoryName(path);
+        ArgumentException.ThrowIfNullOrEmpty(dir, nameof(path));
         Directory.CreateDirectory(dir);
 
         // Every caller that asks for restricted permissions is writing agent state, and on Windows
@@ -41,7 +47,7 @@ public static class AtomicFile
         // The temp name carries the PID: two processes racing to rewrite the same file must not
         // collide on the intermediate, or one truncates the other's half-written temp and renames
         // the result into place.
-        var temp = Path.Combine(dir, $".{Path.GetFileName(path)}.{Environment.ProcessId}.tmp");
+        var temp = NewTempPath(dir, path);
 
         try
         {
@@ -71,14 +77,42 @@ public static class AtomicFile
         }
     }
 
-    public static void WriteAllBytes(string path, byte[] contents)
+    public static void WriteAllBytes(string path, byte[] contents, bool restrictPermissions = false)
     {
-        var dir = Path.GetDirectoryName(path)!;
+        var dir = Path.GetDirectoryName(path);
+        ArgumentException.ThrowIfNullOrEmpty(dir, nameof(path));
         Directory.CreateDirectory(dir);
-        var temp = Path.Combine(dir, $".{Path.GetFileName(path)}.{Environment.ProcessId}.tmp");
+
+        // Same directory protection as the text path above: a restricted byte write is still a
+        // state file, and on Windows the directory is what actually needs protecting. WA-03.
+        if (restrictPermissions && OperatingSystem.IsWindows())
+        {
+            lock (ProtectedDirs)
+            {
+                if (ProtectedDirs.Add(Path.GetFullPath(dir)))
+                    StateDirSecurity.Protect(dir);
+            }
+        }
+
+        var temp = NewTempPath(dir, path);
         try
         {
-            File.WriteAllBytes(temp, contents);
+            if (restrictPermissions && !OperatingSystem.IsWindows())
+            {
+                var options = new FileStreamOptions
+                {
+                    Mode = FileMode.Create,
+                    Access = FileAccess.Write,
+                    UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                };
+                using var stream = new FileStream(temp, options);
+                stream.Write(contents, 0, contents.Length);
+            }
+            else
+            {
+                File.WriteAllBytes(temp, contents);
+            }
+
             File.Move(temp, path, overwrite: true);
         }
         catch

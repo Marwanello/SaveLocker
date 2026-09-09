@@ -288,10 +288,10 @@ agent.MapPost("/games/{id:guid}/upload", async (
     if (string.IsNullOrWhiteSpace(hash))
         return Results.BadRequest("Missing content hash.");
 
-    // Lift Kestrel's 30 MB default to the configured save-upload cap (default 500 MB).
+    // Lift Kestrel's 30 MB default to the configured save-upload cap (see SyncService.MaxUploadBytes).
     var sizeCap = http.Features.Get<IHttpMaxRequestBodySizeFeature>();
     if (sizeCap is { IsReadOnly: false })
-        sizeCap.MaxRequestBodySize = (long)(cfg.GetValue<int?>("Storage:MaxUploadMb") ?? SaveArchive.DefaultMaxUploadMb) * 1024 * 1024;
+        sizeCap.MaxRequestBodySize = SyncService.MaxUploadBytes(cfg);
 
     var machine = http.CurrentMachine();
     try
@@ -335,7 +335,7 @@ agent.MapPut("/games/{id:guid}/upload/{sessionId:guid}/chunk", async (
     // should ever approach.
     var sizeCap = http.Features.Get<IHttpMaxRequestBodySizeFeature>();
     if (sizeCap is { IsReadOnly: false })
-        sizeCap.MaxRequestBodySize = (long)(cfg.GetValue<int?>("Storage:MaxUploadMb") ?? SaveArchive.DefaultMaxUploadMb) * 1024 * 1024;
+        sizeCap.MaxRequestBodySize = SyncService.MaxUploadBytes(cfg);
 
     var machine = http.CurrentMachine();
     try

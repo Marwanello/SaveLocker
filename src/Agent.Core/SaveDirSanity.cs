@@ -13,7 +13,9 @@ namespace SaveLocker.Agent;
 /// </summary>
 public static class SaveDirSanity
 {
-    /// <summary>Matches the server's default <c>Storage:MaxUploadMb</c>. Past this a push cannot succeed.</summary>
+    /// <summary>The agent-side backstop for the server's <c>Storage:MaxUploadMb</c>: mirrors its
+    /// default (<see cref="SaveArchive.DefaultMaxUploadMb"/>). The deployed server value always wins
+    /// at upload time; past this a push cannot succeed.</summary>
     public const long UploadCapBytes = SaveArchive.DefaultMaxUploadMb * 1024L * 1024L;
 
     /// <summary>Problems with this save path, worst first. Empty means it looks like a save folder.</summary>

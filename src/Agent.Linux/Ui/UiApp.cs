@@ -94,8 +94,14 @@ sealed class UiApp
     private readonly Dictionary<Guid, long> _versionRetryAt = new();
     private const long VersionRetryCooldownMs = 10000;
 
+    // Backup prune for the conflict-state caches: PollConflictState already prunes on every
+    // successful poll, but a failed/offline poll never reaches it — so without this, caches for a
+    // conflict resolved elsewhere (CLI, dashboard) would linger until the network recovers. Kept as
+    // a timer rather than folded into the poll for exactly that case; the flag is volatile because
+    // the timer fires on a thread-pool thread while OnRender reads it. Five minutes is plenty: this
+    // only reclaims memory, it never changes what the screen shows.
     private readonly System.Timers.Timer _pruneTimer;
-    private bool _needsPrune;
+    private volatile bool _needsPrune;
 
     private readonly Dictionary<Guid, bool> _conflictKeepBoth = new();
     private Guid? _resolvingConflictId;
@@ -1830,15 +1836,6 @@ sealed class UiApp
     }
 
     /// <summary>
-    /// The direct answer to "a conflict popup like the Decky one, but in the native Linux UI, with
-    /// no Decky installed" (tasks/conflict-resolution-ui/plan.md, Phase 8). A screen rather than a
-    /// modal, deliberately: leaving it via the rail or B is already the "decide later" back-out the
-    /// plan calls for, so nothing here needs to duplicate that as a second button. Keep Local / Keep
-    /// Cloud resolve immediately on press (mirrors the sync-time pop-up's 'immediate' mode, not the
-    /// confirm-then-resolve two-step the dashboard/agent-ui page uses) — this screen is not a queue,
-    /// so there is nothing to advance afterward.
-    /// </summary>
-    /// <summary>
     /// Test-only: `savelocker fake-game` (tests/testenv.ps1's "Conflict Game" Steam shortcut).
     /// Stands in for a real game so a Deck's launch-gate popup, sync-before-play and sync-after-
     /// play can all be exercised end to end on real hardware without needing an actual title.
@@ -1897,6 +1894,15 @@ sealed class UiApp
         };
     }
 
+    /// <summary>
+    /// The direct answer to "a conflict popup like the Decky one, but in the native Linux UI, with
+    /// no Decky installed" (tasks/conflict-resolution-ui/plan.md, Phase 8). A screen rather than a
+    /// modal, deliberately: leaving it via the rail or B is already the "decide later" back-out the
+    /// plan calls for, so nothing here needs to duplicate that as a second button. Keep Local / Keep
+    /// Cloud resolve immediately on press (mirrors the sync-time pop-up's 'immediate' mode, not the
+    /// confirm-then-resolve two-step the dashboard/agent-ui page uses) — this screen is not a queue,
+    /// so there is nothing to advance afterward.
+    /// </summary>
     private void DrawConflicts()
     {
         if (!Connected)
