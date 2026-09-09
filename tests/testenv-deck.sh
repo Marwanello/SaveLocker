@@ -23,6 +23,9 @@ MACHINE="${SAVELOCKER_DECK_MACHINE:-DeckTest}"
 # cmd_conflict only — mirrors testenv.ps1's -Size/-Files. 0 keeps the original tiny one-line save.
 CONFLICT_SIZE_MB="${SAVELOCKER_CONFLICT_SIZE_MB:-0}"
 CONFLICT_FILES="${SAVELOCKER_CONFLICT_FILES:-1}"
+# Mirrors testenv.ps1's -AddCommand switch (1 = add the Steam shortcut WITH the launch-gate
+# wrapper). 0 (the default) keeps today's blank-Launch-Options shortcut.
+CONFLICT_ADD_CMD="${SAVELOCKER_CONFLICT_ADD_COMMAND:-0}"
 TARBALL="/tmp/.savelocker-test.tar.gz"
 DAEMON_LOG="$HOME/.savelocker-testenv-deck.log"
 BIN="$PREFIX/savelocker"
@@ -153,11 +156,20 @@ cmd_conflict() {
   # Validated numerically, not as strings: "0.0" must take the tiny path exactly like "0".
   # Capped at the test console's default upload cap — seeding more only produces pushes the
   # server rejects, which looks like a sync bug rather than the requested fixture.
+  # 500 mirrors SaveArchive.DefaultMaxUploadMb / Storage:MaxUploadMb in
+  # src/Server/appsettings.json.
   local total_bytes
   total_bytes=$(awk -v mb="$CONFLICT_SIZE_MB" 'BEGIN { if (mb !~ /^[0-9]+(\.[0-9]+)?$/) exit 1; printf "%d", mb * 1024 * 1024 }') \
     || die "-Size must be 0 or a positive number of MB (got '$CONFLICT_SIZE_MB')"
   [ "$total_bytes" -le $(( 500 * 1024 * 1024 )) ] || die "-Size must be 0-500 (the test console's default upload cap)"
   [ "$CONFLICT_FILES" -ge 1 ] 2>/dev/null || die "-Files must be at least 1"
+  # -AddCommand and -Size/-Files are mutually exclusive (testenv.ps1 already warns); repeat it
+  # here since these arrive as plain env vars and this script is the last place that sees both.
+  if [ "$CONFLICT_ADD_CMD" = "1" ]; then
+    if [ "$total_bytes" -gt 0 ] || [ "$CONFLICT_FILES" -gt 1 ]; then
+      echo "WARNING: --with-launch-command is mutually exclusive with -Size/-Files; seeding the requested sizes anyway." >&2
+    fi
+  fi
   # Mirrors testenv.ps1's New-SyntheticSaveFiles: a zero total keeps today's tiny one-line save;
   # otherwise CONFLICT_FILES randomly-filled files totalling the requested bytes, split as evenly
   # as possible (the last file absorbs the remainder). /dev/urandom, not zeros — real saves are
@@ -175,7 +187,7 @@ cmd_conflict() {
       else
         bytes=$base
       fi
-      head -c "$bytes" /dev/urandom > "$dir/save-$i.bin"
+      head -c "$bytes" /dev/urandom > "$dir/save-$i.bin" || die "seeding $dir failed (disk full?)"
       i=$(( i + 1 ))
     done
     echo "  seeded $CONFLICT_FILES file(s), ~$CONFLICT_SIZE_MB MB total, in $dir"
@@ -187,23 +199,29 @@ cmd_conflict() {
     "$BIN" register --name "$MACHINE" | head -2
   fi
 
-  "$BIN" add-game --name "Conflict Game" --dir "$dir"
-  "$BIN" push "Conflict Game"
+  "$BIN" add-game --name "Conflict Game" --dir "$dir" || die "add-game failed"
+  "$BIN" push "Conflict Game" || die "push failed"
 
   # Adds the Steam library entry the conflict can actually be launched from — DevSteamShortcut.cs
   # (Agent.Linux) splices in the one fixed entry; cmd_clean's shortcut removal below deletes just
   # that entry again. Not fatal on failure: the CLI-only conflict above already succeeded,
   # this is strictly additional. LaunchOptions is deliberately left blank for now — no launch-gate
   # wrapper — so pressing Play just runs the fake game directly with no sync/conflict interception.
+  # Pass -AddCommand on the testenv.ps1 side (CONFLICT_ADD_CMD=1 here) to add it WITH the
+  # sync/launch-gate wrapper (--with-launch-command) instead.
   # Named identically to the tracked game on purpose: the Decky plugin's own fallback match (used
   # whenever its primary AppID-based match can't find a row — see gamingSync.tsx's resolveMatchSync)
   # compares Steam's displayed name for the launched app against the tracked game's name, so a
   # mismatch here silently breaks the library-page chip even when everything else is correct.
   echo "== adding a Steam shortcut 'Conflict Game' =="
   local appid
-  appid=$("$BIN" dev-shortcut-add --prefix "$PREFIX" | sed -n 's/^APPID=//p')
+  if [ "$CONFLICT_ADD_CMD" = "1" ]; then
+    appid=$("$BIN" dev-shortcut-add --prefix "$PREFIX" --with-launch-command | sed -n 's/^APPID=//p')
+  else
+    appid=$("$BIN" dev-shortcut-add --prefix "$PREFIX" | sed -n 's/^APPID=//p')
+  fi
   if [ -n "$appid" ]; then
-    "$BIN" add-game --name "Conflict Game" --dir "$dir" --appid "$appid" >/dev/null
+    "$BIN" add-game --name "Conflict Game" --dir "$dir" --appid "$appid" >/dev/null || echo "WARNING: re-adding 'Conflict Game' with --appid $appid failed; the conflict is still seeded, just not linked to the shortcut." >&2
     echo "shortcut ready (appid $appid). Restart Steam on the Deck to see 'Conflict Game' in your library."
   else
     echo "WARNING: could not add the Steam shortcut - the conflict is still seeded and resolvable from the CLI, just not launchable from Steam yet." >&2
