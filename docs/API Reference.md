@@ -32,7 +32,7 @@ Server endpoints (`src/Server/Program.cs`).
   versions are exempt from automatic retention until an admin clears it.
 - `GET /api/games/{id}/path-candidates` → `MachineScanCandidateDto[]` `{ machineId, machineName, suggestedPath, lastSeen }`. What each machine's own scan proposes for this game — what the dashboard offers when mapping a save folder by hand.
 - `POST /api/games/{id}/excludes` body `string[]` → 200 / 404. Per-game exclude globs. Empty array clears them back to `Sync:DefaultExcludeGlobs`.
-- `POST /api/games/{id}/conflict-policy` body `{ policy, preferredMachineId? }` → 200 / 404. `policy` = `Manual` (default — record it and wait for an admin) | `NewestWins` (the incoming version always wins, no conflict row) | `PreferMachine` (the designated machine's pushes advance the head; every other machine follows the `Manual` path). This is what selects the automatic head moves described under **Admin** below.
+- `POST /api/games/{id}/conflict-policy` body `{ policy, preferredMachineId? }` → 200 / 404. `policy` = `Manual` (default — record it and wait for a human) | `NewestWins` | `PreferMachine` (with `preferredMachineId`). The server never auto-resolves: every divergence records a `ConflictFlag` (`SyncService.IngestAsync`), and the diverging agent reads this policy and calls the resolve endpoint itself unless the policy is `Manual`.
 - `POST /api/games/{id}/prune` → `PruneResult { removed }`. Applies retention to this game now, rather than waiting for the next upload to trigger it.
 
 ## Server settings
@@ -64,10 +64,8 @@ Server endpoints (`src/Server/Program.cs`).
 - `POST /api/games/{id}/rollback?version={versionId}` → 200 / 400.
 - `POST /api/games/{id}/set-latest?version={versionId}` → 200 / 400. Same head-pointer move as rollback; backs the **"Set as Latest"** dashboard action + initial-sync wizard.
 
-Every head change the *server* decides — the two above, `conflicts/{id}/resolve`, and an automatic
-`NewestWins`/`PreferMachine` upload — queues a deduplicated **unforced** `Pull` for each live machine
-that syncs the game (mapped save path or uploaded version), skipping the uploader that already
-learned the new head from its own upload response. Rollback and Set as Latest additionally supersede
+Every head change the *server* applies — the two above and `conflicts/{id}/resolve` (including an agent's auto-policy resolve, which calls the same endpoint when the game's policy isn't `Manual`) — queues a deduplicated **unforced** `Pull` for each live machine
+that syncs the game (mapped save path or uploaded version), skipping the resolver when it kept its own version, since it already holds the new head from its own push/resolve response. Rollback and Set as Latest additionally supersede
 any open conflict that **offers the chosen version** (audited as `conflict.resolve_superseded`);
 conflicts between two other versions stay open. An ordinary push queues nothing. See `Decisions.md`.
 - `POST /api/games/{id}/retain?value={n?}` → 200 / 404. Set per-game version retention limit (null = global default).

@@ -43,7 +43,7 @@ built.
 | 8 (Game Mode screen) | Yes | Build/compile only — real gamepad-nav / WSLg confirmation needs the Deck or a Windows+WSLg box |
 | 7 (Windows tray wiring) | Yes | **No** — WinForms/WebView2 only runs on Windows |
 | 9 (D-Bus notification impl) | Yes, once Phase 6 ships — no `SaveLocker-Decky` repo access needed at all, its only real dependencies are Phase 5 (done) and Phase 6 | **No** — needs a real desktop session with a notification daemon to see a popup actually fire |
-| 10, 11 (Decky) | **No** — separate `SaveLocker-Decky` repo not attached to this session | No — needs real Deck hardware regardless of repo access |
+| 10, 11 (Decky) | Yes — `SaveLocker-Decky` repo attached 2026-09-07 | Deck hardware needed to verify |
 | 13 (Playnite) | Effectively no — `.NET Framework 4.6.2` + Playnite SDK wants a Windows toolchain | No — needs Windows + Playnite installed |
 
 ## Groups
@@ -191,7 +191,7 @@ Done 2026-08-31       →  Group 2 (4, 6)                        medium, biggest
 Done 2026-09-01       →  Group 3 (9-impl)                      small, code-only here, needed Group 2 first
 Done 2026-09-03       →  Group 4 (8)                           medium, verified live under WSLg
 Done 2026-09-03       →  Group 5 (7)                           verified live on a real Windows dev box; Phase 14 held back — see above
-Done 2026-09-07/08    →  Group 6 (10, 11, 12)                  Decky repo attached, all three hardware-verified on a real Deck
+Done 2026-09-07/08    →  Group 6 (10, 11)                      Decky repo attached, both hardware-verified on a real Deck; Phase 12 shipped code-only
 Windows + Playnite     →  Group 7 (13)                          independent of Group 6 — split out 2026-09-07, see above
 ```
 

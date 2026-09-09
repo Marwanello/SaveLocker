@@ -34,8 +34,8 @@ updating — only Phase 5 onward is renumbered relative to the original 2026-08-
 | 8 — Linux Game Mode conflict screen | ✅ Shipped |
 | 9 — Desktop notification via D-Bus | ✅ Shipped |
 | 10 — Decky: conflict display + resolve UI | ✅ Shipped 2026-09-07, **hardware-verified 2026-09-07** — chip and Pull/Push/Sync buttons confirmed working on a real Deck after the `gameId`/`saveDirectory` wire-field fix (see this section's own note below) |
-| 11 — Decky: launch-gate wiring | ✅ Shipped 2026-09-07 (code-only — needs a real Deck/Steam+Decky session to verify the cancel→popup→sync→relaunch sequence) |
-| 12 — sync-status endpoint consumer | ✅ Shipped 2026-09-07 — a "Check sync status" button on each game's row in the Decky full-screen page (`fullPage.tsx`), on demand only |
+| 11 — Decky: launch-gate wiring | ✅ Shipped 2026-09-07, hardware-verified 2026-09-07/08 |
+| 12 — sync-status endpoint consumer | ✅ Shipped 2026-09-07 (not hardware-verified — see below) — a "Check sync status" button on each game's row in the Decky full-screen page (`fullPage.tsx`), on demand only |
 | 13 — Playnite plugin | ⬜ Not started — needs a Windows + Playnite environment |
 | 14 — Webhook notify + per-game block-launch setting | ⬜ Not started — deliberately deferred; see the note below |
 

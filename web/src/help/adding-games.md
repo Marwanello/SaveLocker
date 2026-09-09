@@ -67,7 +67,7 @@ syncing is affected.
 
 Removing a game from SaveLocker only stops *this machine* syncing it. The game stays installed and
 stays on the server for your other machines. Re-adding it is just **Rescan** → tick → enrol — but it
-only reappears if it is still discoverable by one of the three routes above.
+only reappears if it is still discoverable by one of the four routes above.
 
 ### On Linux / Steam Deck
 

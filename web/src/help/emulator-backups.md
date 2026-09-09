@@ -74,7 +74,7 @@ Manual pushes skip the settle wait. Before using one, close the emulator and wai
 
 Do not run the same emulated game on two machines simultaneously. Let the first machine exit and finish pushing before launching on the second machine. The second machine should pull Latest before play.
 
-If both machines create different saves, SaveLocker records a conflict instead of trying to merge binary files. Choose the version you want to keep in the dashboard. See [Understanding sync conflicts](#help/conflicts) and [Best practices for multiple machines](#help/multi-machine).
+If both machines create different saves, SaveLocker records a conflict instead of trying to merge binary files. Choose the version you want to keep in the dashboard, the agent Conflicts page, the Game Mode Conflicts screen, or the Decky plugin's Save conflicts panel. See [Understanding sync conflicts](#help/conflicts) and [Best practices for multiple machines](#help/multi-machine).
 
 ## First-time setup checklist
 

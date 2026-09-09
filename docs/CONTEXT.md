@@ -974,8 +974,11 @@ machine list.
 device" needs this device's own machine id to send as `PreferredMachineId`, and the local `/api/state`
 route's `AgentStateDto` didn't carry one. Added as an additive, defaulted trailing field
 (`MachineId`); `agent-ui/src/api-types.ts` regenerated against a scratch dev daemon on `:5190` and
-diffed — only the new field (plus unrelated alphabetical churn on two untouched entries) appears.
+diffed — only the new field (plus unrelated alphabetical churn on two untouched entries) appears
+(at tip; Windows-ordering churn at 7306968 removed by 1bf3f8a Linux regen).
 Committed separately from the Decky-side work.
+> Superseded by hardware-verification note below — kept for chronology
+
 <br>**Buildable and type-checked, not hardware-verified.** `npm run build` in the Decky worktree
 (rollup + `@rollup/plugin-typescript`, which type-checks the whole module graph) is clean; `python -m
 py_compile main.py` is clean; the main repo's full solution and `agent-ui` (`tsc -b && vite build`,
@@ -988,7 +991,7 @@ popup, the "newer" tag and keep-both toggle, the policy dropdown round-tripping 
 `ModalRoot`'s B-button/cancel behavior specifically is inferred from this same codebase's existing
 `ConfirmModal` usage, not directly tested — the piece of this popup most likely to need a real-hardware
 fix.
-<br>Phase 11 (Decky launch-gate wiring) depends on this phase and is next; Phase 13 (Playnite) has no
+<br>Phase 11 (Decky launch-gate wiring) has since shipped and is hardware-verified (see note below); Phase 13 (Playnite) has no
 dependency on it and can be picked up independently — see [[Backlog]].
 
 ---
