@@ -95,6 +95,13 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 
 var app = builder.Build();
 
+// Fails fast, once, at startup: SyncService.MaxUploadBytes throws for a non-positive
+// Storage:MaxUploadMb (see its own doc comment for why 0 is refused rather than treated as
+// "unlimited"). SyncService is scoped and this same call also runs inside its constructor on
+// every request, so validating it here first turns a misconfiguration into one clear crash at
+// launch instead of an opaque 500 from every one of the ~55 endpoints that inject SyncService.
+SyncService.MaxUploadBytes(app.Configuration);
+
 // Apply EF Core migrations on startup.
 // For DBs created before migrations were introduced (existing deployed machines), the
 // schema is already fully up-to-date but there is no __EFMigrationsHistory table.

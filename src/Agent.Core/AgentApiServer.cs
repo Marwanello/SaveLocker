@@ -806,9 +806,21 @@ public sealed class AgentApiServer : IDisposable
                 // The game list can change while the gate was in flight (untracked mid-sync); a
                 // result for a game that no longer exists must not read as a green light for it.
                 if (_config.Games.All(g => g.GameId != id)) return TypedResults.NotFound();
+                // Same warning ProtonRun.cs persists after its own PrepareLaunchAsync call — without
+                // it a Decky/Playnite launch through this route loses the "another machine has this
+                // checked out" banner that a Linux-wrapper launch of the same game would show.
+                if (gate.Decision == LaunchDecision.ProceedSyncPaused && gate.HolderMachineName is not null)
+                    _leaseWarnings.Add(game.Name, gate.HolderMachineName);
                 return TypedResults.Ok(gate);
             }
-            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+            // Fail OPEN, per this route's own documented client contract above: an exception here is
+            // a transport/transient failure, not a confirmed conflict, so it must read the same as
+            // "launch anyway" rather than as a hard error a naive client could block a launch on.
+            catch (Exception ex)
+            {
+                AgentLogger.LogException("AgentApiServer.pre-launch-sync", ex);
+                return TypedResults.Ok(new LaunchGateResult(LaunchDecision.Proceed));
+            }
             finally { _syncGate.Release(); }
         }).Produces<LaunchGateResult>().Produces<LaunchGateResult>(StatusCodes.Status409Conflict);
     }

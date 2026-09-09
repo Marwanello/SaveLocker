@@ -1061,6 +1061,7 @@ switch ($Command) {
 
         $windowsOk = $false
         $deckOk = $false
+        $deckSkipped = $false
 
         if ($Windows) {
             try { New-ConflictOnWindows; $windowsOk = $true }
@@ -1073,6 +1074,7 @@ switch ($Command) {
             # stays reachable — nothing here throws past it.
             if ((-not (Test-DeckConfigured)) -and (-not $PSBoundParameters.ContainsKey('Deck'))) {
                 Warn 'no Deck configured - skipping the Deck side (set -DeckHost or $env:SAVELOCKER_DECK_HOST to include it).'
+                $deckSkipped = $true
             } else {
                 try {
                     if (-not (Test-DeckConfigured)) { throw "No Deck configured - set -DeckHost or `$env:SAVELOCKER_DECK_HOST." }
@@ -1087,6 +1089,7 @@ switch ($Command) {
 
         if ($Windows -and $Deck) {
             if ($windowsOk -and $deckOk) { Write-Host "seeded 'Conflict Game' on both sides." }
+            elseif ($windowsOk -and $deckSkipped) { Write-Host "seeded 'Conflict Game' on Windows ONLY (Deck skipped)." }
             elseif ($windowsOk) { Write-Host "seeded 'Conflict Game' on Windows ONLY (Deck failed)." }
             elseif ($deckOk) { Write-Host "seeded 'Conflict Game' on Deck ONLY (Windows failed)." }
             else { Write-Host "FAILED: both sides failed to seed." }

@@ -24,7 +24,23 @@ public static class AtomicFile
     private static string NewTempPath(string dir, string path) =>
         Path.Combine(dir, $".{Path.GetFileName(path)}.{Environment.ProcessId}-{Guid.NewGuid():N}.tmp");
 
-    public static void WriteAllText(string path, string contents, bool restrictPermissions = false)
+    public static void WriteAllText(string path, string contents, bool restrictPermissions = false) =>
+        WriteAtomic(path, restrictPermissions,
+            temp => File.WriteAllText(temp, contents),
+            stream => { using var writer = new StreamWriter(stream); writer.Write(contents); });
+
+    public static void WriteAllBytes(string path, byte[] contents, bool restrictPermissions = false) =>
+        WriteAtomic(path, restrictPermissions,
+            temp => File.WriteAllBytes(temp, contents),
+            stream => stream.Write(contents, 0, contents.Length));
+
+    // The atomic-write contract, shared by every writer here so a future fix (the WA-03 ACL logic,
+    // temp-cleanup-on-failure) only needs to be made once. Only the actual content write differs
+    // between callers: writeUnrestricted for the common File.WriteAllX(temp, ...) path, and
+    // writeToStream for the Unix-permission-restricted path, which needs an open FileStream to set
+    // UnixCreateMode on creation rather than after the fact.
+    private static void WriteAtomic(
+        string path, bool restrictPermissions, Action<string> writeUnrestricted, Action<FileStream> writeToStream)
     {
         var dir = Path.GetDirectoryName(path);
         ArgumentException.ThrowIfNullOrEmpty(dir, nameof(path));
@@ -60,57 +76,11 @@ public static class AtomicFile
                     UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
                 };
                 using var stream = new FileStream(temp, options);
-                using var writer = new StreamWriter(stream);
-                writer.Write(contents);
+                writeToStream(stream);
             }
             else
             {
-                File.WriteAllText(temp, contents);
-            }
-
-            File.Move(temp, path, overwrite: true);
-        }
-        catch
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-            throw;
-        }
-    }
-
-    public static void WriteAllBytes(string path, byte[] contents, bool restrictPermissions = false)
-    {
-        var dir = Path.GetDirectoryName(path);
-        ArgumentException.ThrowIfNullOrEmpty(dir, nameof(path));
-        Directory.CreateDirectory(dir);
-
-        // Same directory protection as the text path above: a restricted byte write is still a
-        // state file, and on Windows the directory is what actually needs protecting. WA-03.
-        if (restrictPermissions && OperatingSystem.IsWindows())
-        {
-            lock (ProtectedDirs)
-            {
-                if (ProtectedDirs.Add(Path.GetFullPath(dir)))
-                    StateDirSecurity.Protect(dir);
-            }
-        }
-
-        var temp = NewTempPath(dir, path);
-        try
-        {
-            if (restrictPermissions && !OperatingSystem.IsWindows())
-            {
-                var options = new FileStreamOptions
-                {
-                    Mode = FileMode.Create,
-                    Access = FileAccess.Write,
-                    UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
-                };
-                using var stream = new FileStream(temp, options);
-                stream.Write(contents, 0, contents.Length);
-            }
-            else
-            {
-                File.WriteAllBytes(temp, contents);
+                writeUnrestricted(temp);
             }
 
             File.Move(temp, path, overwrite: true);

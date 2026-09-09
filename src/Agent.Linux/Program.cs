@@ -437,6 +437,12 @@ static class Program
         opts.GetValueOrDefault("config")
         ?? Environment.GetEnvironmentVariable("SAVELOCKER_CONFIG");
 
+    // Gate a command here because of what it DOES, not because it happens to be test-only: this
+    // exists to stop a command from mutating real shared state (shortcuts.vdf, a real Steam
+    // library) outside the test rig, not to block every command the test rig happens to use.
+    // `fake-game` above is test-only too but stays ungated for exactly this reason — it only opens
+    // a UI window, and gating it once broke the one real-world path that invokes it (Steam itself).
+    // The next test-only command belongs here only if it can change something outside the process.
     private static bool TestCommandsAllowed(out string denial)
     {
         if (Environment.GetEnvironmentVariable("SAVELOCKER_ALLOW_TEST_COMMANDS") == "1")

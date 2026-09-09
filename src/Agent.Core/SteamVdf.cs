@@ -18,6 +18,11 @@ namespace SaveLocker.Agent;
 /// </summary>
 public static class SteamVdf
 {
+    // A real shortcuts.vdf nests at most a couple of levels deep (shortcuts -> entry -> tags).
+    // Recursing on nested 0x00 objects with no limit turns a corrupted or adversarial file into an
+    // uncatchable StackOverflowException; this bounds it to a clean InvalidDataException instead.
+    private const int MaxObjectDepth = 64;
+
     /// <summary>A binary-VDF object: a case-insensitive map of keys to child nodes.</summary>
     public sealed class VdfObject
     {
@@ -41,12 +46,14 @@ public static class SteamVdf
         if (type != 0x00)
             throw new InvalidDataException($"Expected a root object (0x00), got 0x{type:X2}.");
         ReadCString(data, ref pos); // root key, e.g. "shortcuts" — discarded.
-        return ReadObject(data, ref pos);
+        return ReadObject(data, ref pos, depth: 0);
     }
 
     /// <summary>Read child nodes until the 0x08 end marker.</summary>
-    private static VdfObject ReadObject(byte[] data, ref int pos)
+    private static VdfObject ReadObject(byte[] data, ref int pos, int depth)
     {
+        if (depth > MaxObjectDepth)
+            throw new InvalidDataException($"shortcuts.vdf nests more than {MaxObjectDepth} objects deep - refusing to parse further.");
         var obj = new VdfObject();
         while (true)
         {
@@ -57,7 +64,7 @@ public static class SteamVdf
             var key = ReadCString(data, ref pos);
             obj.Items[key] = type switch
             {
-                0x00 => ReadObject(data, ref pos),
+                0x00 => ReadObject(data, ref pos, depth + 1),
                 0x01 => ReadCString(data, ref pos),
                 0x02 => ReadInt32(data, ref pos),
                 _ => throw new InvalidDataException(
@@ -131,7 +138,7 @@ public static class SteamVdf
             if (int.TryParse(key, out var n) && n > maxIndex) maxIndex = n;
             switch (childType)
             {
-                case 0x00: SkipObject(data, ref pos); break;
+                case 0x00: SkipObject(data, ref pos, depth: 0); break;
                 case 0x01: ReadCString(data, ref pos); break;
                 case 0x02: ReadInt32(data, ref pos); break;
                 default: throw new InvalidDataException(
@@ -144,8 +151,10 @@ public static class SteamVdf
 
     /// <summary>Walks (without storing) child nodes until the 0x08 end marker — the position-only
     /// counterpart to <see cref="ReadObject"/>, used by <see cref="AnalyzeShortcuts"/>.</summary>
-    private static void SkipObject(byte[] data, ref int pos)
+    private static void SkipObject(byte[] data, ref int pos, int depth)
     {
+        if (depth > MaxObjectDepth)
+            throw new InvalidDataException($"shortcuts.vdf nests more than {MaxObjectDepth} objects deep - refusing to parse further.");
         while (true)
         {
             var type = ReadTypeByte(data, ref pos);
@@ -154,7 +163,7 @@ public static class SteamVdf
             ReadCString(data, ref pos);
             switch (type)
             {
-                case 0x00: SkipObject(data, ref pos); break;
+                case 0x00: SkipObject(data, ref pos, depth + 1); break;
                 case 0x01: ReadCString(data, ref pos); break;
                 case 0x02: ReadInt32(data, ref pos); break;
                 default: throw new InvalidDataException(

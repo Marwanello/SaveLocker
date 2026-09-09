@@ -84,7 +84,8 @@ public static class DevSteamShortcut
         // The AppID stays derived from exeField alone even when a launch command is written — the
         // LaunchOptions wrapper must not change which shortcut Steam maps this entry to.
         var appId = ComputeShortcutAppId(exeField, ShortcutName);
-        var launchOptions = withLaunchCommand ? $"\"{exe}\" run -- %command%" : string.Empty;
+        // The one place this invocation string is spelled — see LaunchOptions.cs's own doc comment.
+        var launchOptions = withLaunchCommand ? LaunchOptions.Invocation(exe) : string.Empty;
 
         if (!File.Exists(vdfPath))
         {
@@ -206,6 +207,17 @@ public static class DevSteamShortcut
                 return false;
             }
             var updated = Concat(current.AsSpan(0, start).ToArray(), current.AsSpan(endExclusive).ToArray());
+            // Same "leave no trace" rule as the fallback branch below: if SaveLocker created this
+            // file from nothing and removing our entry leaves it empty, delete the file outright
+            // instead of writing back an empty-but-real shortcuts.vdf where none existed before.
+            if (File.Exists(createdMarkerPath) && IsEmptyShortcutsFile(updated))
+            {
+                File.Delete(vdfPath);
+                try { File.Delete(backupPath); } catch { }
+                File.Delete(createdMarkerPath);
+                Console.WriteLine($"removed {vdfPath} (SaveLocker created it - nothing existed before it).");
+                return true;
+            }
             AtomicFile.WriteAllBytes(vdfPath, updated);
             try { File.Delete(backupPath); } catch { }
             try { File.Delete(createdMarkerPath); } catch { }
@@ -213,7 +225,11 @@ public static class DevSteamShortcut
             return true;
         }
 
-        if (IndexOf(current, AppNameMarker) < 0)
+        // Computed once and reused below — TryLocateOwnEntry already scanned for this same marker
+        // internally, but it doesn't report a plain "found at all" answer, so one fresh scan here
+        // is the cheapest way to get it without reshaping that method's contract.
+        var marker = IndexOf(current, AppNameMarker);
+        if (marker < 0)
         {
             if (!File.Exists(backupPath))
             {
@@ -254,8 +270,7 @@ public static class DevSteamShortcut
 
         // The name is present but the entry is no longer locatable — never splice blindly here.
         // A duplicate display name (one of them the user's) must not trigger a backup restore.
-        var firstMarker = IndexOf(current, AppNameMarker);
-        if (IndexOf(current, AppNameMarker, firstMarker + 1) >= 0)
+        if (IndexOf(current, AppNameMarker, marker + 1) >= 0)
         {
             Console.Error.WriteLine("refusing: more than one 'Conflict Game' entry is present - remove the unwanted one from Steam itself. Nothing was written.");
             return false;
@@ -334,8 +349,12 @@ public static class DevSteamShortcut
         var candidateStart = -1;
         var candidateEnd = -1;
         var candidateCount = 0;
-        var windowStart = Math.Max(0, marker - 4096);
-        for (var s = marker - 1; s >= windowStart; s--)
+        // No arbitrary window: an entry's own header can legitimately sit further back than any
+        // fixed distance (a large StartDir/LaunchOptions value written before AppName by some other
+        // writer's field order), and every candidate is already validated by walking its children
+        // forward to confirm it truly spans the marker — the safety here is "exactly one candidate
+        // spans it", not the search radius.
+        for (var s = marker - 1; s >= 0; s--)
         {
             if (data[s] != 0x00) continue;
             for (var keyLen = 1; keyLen <= 6; keyLen++)
@@ -413,7 +432,12 @@ public static class DevSteamShortcut
 
     // statx(2)'s uid fields: unlike libc's struct stat, the layout is the kernel ABI and identical
     // on every architecture, so this needs no per-arch struct. Only st_uid is ever read.
-    [StructLayout(LayoutKind.Sequential)]
+    // Size = 256 is load-bearing, not decorative: the kernel's cp_statx() always copy_to_user's the
+    // FULL sizeof(struct statx) — 256 bytes, per the statx(2) ABI — regardless of the requested
+    // mask or how many fields this struct declares. Without the explicit Size, the CLR would only
+    // reserve the ~28 bytes these six fields need, and the syscall would write ~228 bytes past the
+    // end of that stack allocation on every call.
+    [StructLayout(LayoutKind.Sequential, Size = 256)]
     private struct StatxMinimal
     {
         public uint stx_mask;
@@ -461,8 +485,14 @@ public static class DevSteamShortcut
         catch { return true; }
     }
 
-    private static void SkipEntryChildren(byte[] data, ref int pos)
+    // Same bound as SteamVdf's own object walkers, and for the same reason: an unlimited recursion
+    // on nested 0x00 markers turns a corrupted or adversarial shortcuts.vdf into an uncatchable
+    // StackOverflowException instead of a clean InvalidDataException.
+    private const int MaxEntryDepth = 64;
+
+    private static void SkipEntryChildren(byte[] data, ref int pos, int depth = 0)
     {
+        if (depth > MaxEntryDepth) throw new InvalidDataException("Entry nests too deep.");
         while (true)
         {
             if (pos >= data.Length) throw new InvalidDataException("Truncated entry.");
@@ -471,7 +501,7 @@ public static class DevSteamShortcut
             SkipEntryString(data, ref pos);
             switch (type)
             {
-                case 0x00: SkipEntryChildren(data, ref pos); break;
+                case 0x00: SkipEntryChildren(data, ref pos, depth + 1); break;
                 case 0x01: SkipEntryString(data, ref pos); break;
                 case 0x02:
                     if (pos + 4 > data.Length) throw new InvalidDataException("Truncated entry.");
@@ -533,20 +563,8 @@ public static class DevSteamShortcut
     /// </summary>
     private static int ComputeShortcutAppId(string exe, string appName)
     {
-        var crc = Crc32(Encoding.UTF8.GetBytes(exe + appName));
+        var crc = Ui.Screenshot.Crc32(Encoding.UTF8.GetBytes(exe + appName));
         return unchecked((int)(crc | 0x80000000u));
-    }
-
-    private static uint Crc32(byte[] data)
-    {
-        var crc = 0xFFFFFFFFu;
-        foreach (var b in data)
-        {
-            crc ^= b;
-            for (var i = 0; i < 8; i++)
-                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
-        }
-        return ~crc;
     }
 
     // --- Minimal binary-VDF byte encoding, scoped ONLY to the one fixed entry this class ever

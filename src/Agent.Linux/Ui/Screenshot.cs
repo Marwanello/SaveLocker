@@ -108,4 +108,8 @@ static class Screenshot
         foreach (var x in b) c = CrcTable[(c ^ x) & 0xFF] ^ (c >> 8);
         return c ^ 0xFFFFFFFFu;
     }
+
+    // The standard CRC-32 (poly 0xEDB88320) above, table-accelerated instead of bit-by-bit —
+    // shared with DevSteamShortcut's AppID computation so the two don't carry independent copies.
+    internal static uint Crc32(byte[] data) => Crc32(data, []);
 }

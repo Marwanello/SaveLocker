@@ -111,7 +111,21 @@ internal sealed class TrayContext : ApplicationContext
             onGamesChanged: () => _ui.Post(() => { RebuildMenu(); StartFolderWatchers(); }),
             activity: _activity,
             syncAll: () => _engine.SyncAllAsync(_config.Games),
-            prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct));
+            // Never PrepareLaunchAsync here: that method's own doc comment says it is safe only
+            // because ProtonRun's caller runs INSTEAD of the game, so the pre-launch pull it does
+            // is certain nothing has the save open yet. Windows has no boundary that certain — the
+            // same OnGameLaunchAsync doc comment records this exact mistake already being made and
+            // fixed once ("the restore landed under a live process and the game overwrote it at
+            // exit") — so this route mirrors the tray's own existing preLaunch:false call below.
+            prepareLaunch: async (game, ct) =>
+            {
+                var (granted, holder) = await _engine.OnGameLaunchAsync(game, preLaunch: false, ct);
+                return granted
+                    ? new LaunchGateResult(LaunchDecision.Proceed)
+                    : new LaunchGateResult(LaunchDecision.ProceedSyncPaused,
+                        $"saves are checked out by '{holder}' — launching without pulling.",
+                        HolderMachineName: holder);
+            });
         _apiServer.Start();
 
         _commandPoller = new CommandPoller(
