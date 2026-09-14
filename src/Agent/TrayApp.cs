@@ -104,6 +104,7 @@ internal sealed class TrayContext : ApplicationContext
             doScan: () => _scanner.ScanAsync(),
             enroll: EnrollAsync,
             autoStart: new AutoStart(),
+            detection: _detection,
             pickFolder: () => FolderPicker.ShowAsync(_ui),
             onConnectionChanged: RebuildEngine,
             getUpdateResult: () => LastUpdateResult,
@@ -111,21 +112,17 @@ internal sealed class TrayContext : ApplicationContext
             onGamesChanged: () => _ui.Post(() => { RebuildMenu(); StartFolderWatchers(); }),
             activity: _activity,
             syncAll: () => _engine.SyncAllAsync(_config.Games),
-            // Never PrepareLaunchAsync here: that method's own doc comment says it is safe only
-            // because ProtonRun's caller runs INSTEAD of the game, so the pre-launch pull it does
-            // is certain nothing has the save open yet. Windows has no boundary that certain — the
-            // same OnGameLaunchAsync doc comment records this exact mistake already being made and
-            // fixed once ("the restore landed under a live process and the game overwrote it at
-            // exit") — so this route mirrors the tray's own existing preLaunch:false call below.
-            prepareLaunch: async (game, ct) =>
-            {
-                var (granted, holder) = await _engine.OnGameLaunchAsync(game, preLaunch: false, ct);
-                return granted
-                    ? new LaunchGateResult(LaunchDecision.Proceed)
-                    : new LaunchGateResult(LaunchDecision.ProceedSyncPaused,
-                        $"saves are checked out by '{holder}' — launching without pulling.",
-                        HolderMachineName: holder);
-            });
+            // Now safe to call the real gate (tasks/playnite-plugin/plan.md, Phase 1): nothing
+            // called this route before today, so it was never a genuine pre-launch boundary — the
+            // reactive ProcessWatcher path below (OnLaunched) still needs preLaunch:false, since it
+            // only notices a game after it started. This route is different: it exists specifically
+            // for a caller that fires BEFORE the process starts (Playnite's OnGameStarting, once that
+            // plugin exists), which is exactly the certainty PrepareLaunchAsync's own doc comment
+            // requires. Mirrors Daemon.cs:171's existing Linux wiring.
+            prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct),
+            // POST /api/games/{id}/post-exit-sync (tasks/playnite-plugin/plan.md, Phase 5) — the
+            // Playnite plugin's OnGameStopped equivalent to this route's own OnGameStarting caller.
+            postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct));
         _apiServer.Start();
 
         _commandPoller = new CommandPoller(
@@ -143,12 +140,74 @@ internal sealed class TrayContext : ApplicationContext
         // 24 h periodic update check. First tick fires after 5 s so the tray is fully
         // visible before the balloon appears; subsequent ticks every 24 h.
         _updateTimer = new System.Threading.Timer(
-            _ => FireAndForget(() => CheckForUpdateAsync(silent: true)),
+            _ => FireAndForget(async () =>
+            {
+                // Independent checks: an exception from one (e.g. a locked config file during
+                // CheckForUpdateAsync's Save()) must not silently skip the other for this tick.
+                try { await CheckForUpdateAsync(silent: true); }
+                catch (Exception ex) { AgentLogger.LogException("TrayContext.CheckForUpdate", ex); }
+                try { await CheckPlaynitePluginUpdateAsync(); }
+                catch (Exception ex) { AgentLogger.LogException("TrayContext.CheckPlaynitePluginUpdate", ex); }
+            }),
             null,
             dueTime: TimeSpan.FromSeconds(5),
             period: TimeSpan.FromHours(24));
 
         _ui.Post(MaybeShowFirstRun);
+
+        // Off the calling thread: unlike Daemon.cs's own Linux backfill (a cheap read of an
+        // already-known save path, done before anything else starts), this needs a real scan —
+        // manifest lookups, Steam library enumeration — which must not block the tray from becoming
+        // visible. Silent on failure, like RebuildEngine's own retire-in-background above: a missed
+        // backfill just means matching stays as good as it was, not a user-visible error.
+        _ = Task.Run(async () =>
+        {
+            try { await BackfillSteamAppIdsAsync(); }
+            catch (Exception ex) { AgentLogger.LogException("BackfillSteamAppIds", ex); }
+        });
+    }
+
+    /// <summary>
+    /// Windows analogue of Daemon.cs's own BackfillSteamAppIds (tasks/playnite-plugin/plan.md,
+    /// Phase 2) — for a game tracked before that phase started recording <see
+    /// cref="TrackedGame.SteamAppId"/> at enrollment. Daemon.cs's trick (reading the appid off the
+    /// save path's compatdata folder name) only works for a Proton prefix; nothing Windows saves
+    /// ever have. This runs a real rescan instead and matches purely on <see
+    /// cref="TrackedGame.InstallDir"/>, the one identity signal both a tracked game and a fresh
+    /// <see cref="ScanCandidate"/> for the same install always carry.
+    /// </summary>
+    private async Task BackfillSteamAppIdsAsync()
+    {
+        var missing = _config.Games.Where(g =>
+            string.IsNullOrWhiteSpace(g.SteamAppId) && !string.IsNullOrWhiteSpace(g.InstallDir)).ToList();
+        if (missing.Count == 0) return;
+
+        var candidates = await _scanner.ScanAsync();
+        foreach (var game in missing)
+        {
+            var match = candidates.FirstOrDefault(c =>
+                c.SteamAppId is not null &&
+                string.Equals(c.InstallDir, game.InstallDir, StringComparison.OrdinalIgnoreCase));
+            if (match is null) continue;
+
+            _config.SaveGameSteamAppId(game.GameId, match.SteamAppId!);
+            AgentLogger.Log($"recorded appid {match.SteamAppId} for '{game.Name}' from a rescan — " +
+                            "Steam AppID matching (a Playnite or Decky plugin) could not find this game before");
+        }
+    }
+
+    /// <summary>
+    /// Windows analogue of Daemon.cs's own <c>CheckPluginUpdateAsync</c> (tasks/playnite-plugin/
+    /// plan.md, Phase 7) — checks (and, if <see cref="AgentConfig.AutoUpdate"/> allows it, applies) an
+    /// update to the Playnite plugin, on the same 24 h timer as the agent's own update check. Silent
+    /// on a machine with no Playnite, which is most of them: <see cref="PlaynitePlugin"/> answers
+    /// <see cref="PluginUpdateState.NoPlaynite"/> before it does any work at all.
+    /// </summary>
+    private async Task CheckPlaynitePluginUpdateAsync()
+    {
+        var outcome = await PlaynitePlugin.CheckAsync(_config, AgentLogger.Log, apply: _config.AutoUpdate);
+        if (outcome.State is PluginUpdateState.NoPlaynite) return;
+        AgentLogger.Log($"playnite plugin check: {outcome.Message}");
     }
 
     private void MaybeShowFirstRun()

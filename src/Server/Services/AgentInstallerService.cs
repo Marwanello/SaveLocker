@@ -79,6 +79,7 @@ public class AgentInstallerService
             ?? Path.Combine(AppContext.BaseDirectory, "data", "agent-installer");
         var agentRepo = cfg["AgentUpdate:GitHubRepo"] ?? "SkorcherX/SaveLocker";
         var pluginRepo = cfg["AgentUpdate:Plugin:GitHubRepo"] ?? "SkorcherX/SaveLocker-Decky";
+        var playniteRepo = cfg["AgentUpdate:PlaynitePlugin:GitHubRepo"] ?? "Marwanello/SaveLocker-Playnite";
         _maxBytes = (long)(cfg.GetValue<int?>("AgentUpdate:MaxInstallerMb") ?? 200) * 1024 * 1024;
 
         _slots = new Dictionary<string, Slot>(StringComparer.Ordinal)
@@ -109,6 +110,15 @@ public class AgentInstallerService
                      && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase),
                 "SaveLocker*.zip",
                 pluginRepo),
+
+            [AgentPlatform.PlaynitePlugin] = new(
+                AgentPlatform.PlaynitePlugin,
+                Path.Combine(root, AgentPlatform.PlaynitePlugin),
+                ".zip",
+                name => name.StartsWith("SaveLocker", StringComparison.OrdinalIgnoreCase)
+                     && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase),
+                "SaveLocker*.zip",
+                playniteRepo),
         };
 
         foreach (var slot in _slots.Values) Directory.CreateDirectory(slot.Root);

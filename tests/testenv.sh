@@ -13,6 +13,11 @@ SERVER_URL="${SAVELOCKER_SERVER_URL:-http://localhost:5080}"
 VERSION="${SAVELOCKER_TEST_VERSION:-0.5.10-test}"
 MACHINE="${SAVELOCKER_LINUX_MACHINE:-LinuxTest}"
 
+# cmd_conflict only — mirrors testenv-deck.sh's own env vars (testenv.ps1 forwards the same
+# -Size/-Files it already sends the Deck). 0/1 keeps today's tiny one-line save.
+CONFLICT_SIZE_MB="${SAVELOCKER_CONFLICT_SIZE_MB:-0}"
+CONFLICT_FILES="${SAVELOCKER_CONFLICT_FILES:-1}"
+
 # The whole isolation mechanism on Linux: this moves config.json, api-token, agent.log, the manifest
 # cache and the lock directory together, so nothing here can touch a real install's state.
 export XDG_DATA_HOME="${SAVELOCKER_LINUX_STATE:-$HOME/savelocker-test}"
@@ -160,6 +165,65 @@ cmd_down() {
   echo "stopped daemon (pid $pids)"
 }
 
+# WSL's own version of testenv-deck.sh's cmd_conflict — the CLI-only slice of it (seed a
+# synthetic save, register if needed, add-game + push), with the Steam-shortcut tail dropped
+# entirely: WSL is a headless daemon with no Steam/Decky involved, so there is nothing to add a
+# shortcut to. Used as the "-Windows -Wsl" pairing, or as the automatic fallback second side when
+# the Deck isn't configured or isn't reachable (testenv.ps1's own call site decides which).
+cmd_conflict() {
+  [ -f "$DLL" ] || die "not built — run: testenv.ps1 build -Only linux (or -Only all)"
+
+  # Standing rule from the Phase 7 hardware verification: CLI seeding must never race a live
+  # daemon — same reasoning as testenv.ps1's own tray-stop and testenv-deck.sh's own daemon-stop
+  # before seeding their sides.
+  cmd_down >/dev/null 2>&1
+
+  if ! curl -sf -m 5 "$SERVER_URL/api/admin/status" >/dev/null 2>&1; then
+    die "no test server at $SERVER_URL — start the console first"
+  fi
+
+  echo "== seeding a conflicting save on WSL for 'Conflict Game' =="
+  local dir="$XDG_DATA_HOME/conflict-save"
+  mkdir -p "$dir"
+  find "$dir" -mindepth 1 -delete
+
+  # Same validation and shape as testenv-deck.sh's own cmd_conflict — see its comments for why:
+  # numeric validation (not string), the 500 MB cap mirrors the test console's own upload cap, and
+  # random content (not zeros) guarantees this side's save genuinely differs from Windows's.
+  local total_bytes
+  total_bytes=$(awk -v mb="$CONFLICT_SIZE_MB" 'BEGIN { if (mb !~ /^[0-9]+(\.[0-9]+)?$/) exit 1; printf "%d", mb * 1024 * 1024 }') \
+    || die "-Size must be 0 or a positive number of MB (got '$CONFLICT_SIZE_MB')"
+  [ "$total_bytes" -le $(( 500 * 1024 * 1024 )) ] || die "-Size must be 0-500 (the test console's default upload cap)"
+  [ "$CONFLICT_FILES" -ge 1 ] 2>/dev/null || die "-Files must be at least 1"
+
+  if [ "$total_bytes" -le 0 ]; then
+    echo "wsl save v1 - DIFFERENT" > "$dir/save.txt"
+  else
+    local base i bytes
+    base=$(( total_bytes / CONFLICT_FILES ))
+    i=1
+    while [ "$i" -le "$CONFLICT_FILES" ]; do
+      if [ "$i" -eq "$CONFLICT_FILES" ]; then
+        bytes=$(( total_bytes - base * (CONFLICT_FILES - 1) ))
+      else
+        bytes=$base
+      fi
+      head -c "$bytes" /dev/urandom > "$dir/save-$i.bin" || die "seeding $dir failed (disk full?)"
+      i=$(( i + 1 ))
+    done
+    echo "  seeded $CONFLICT_FILES file(s), ~$CONFLICT_SIZE_MB MB total, in $dir"
+  fi
+
+  if ! grep -qi '"apikey"' "$STATE/config.json" 2>/dev/null; then
+    echo "== registering '$MACHINE' against $SERVER_URL =="
+    dotnet "$DLL" set-server --url "$SERVER_URL" >/dev/null || die "set-server failed"
+    dotnet "$DLL" register --name "$MACHINE" | head -2
+  fi
+
+  dotnet "$DLL" add-game --name "Conflict Game" --dir "$dir" || die "add-game failed"
+  dotnet "$DLL" push "Conflict Game" || die "push failed"
+}
+
 cmd_status() {
   local pids token out
   pids=$(pgrep -f "$DAEMON_PATTERN" | tr '\n' ' ')
@@ -290,6 +354,7 @@ case "$CMD" in
   status)      cmd_status ;;
   test)        cmd_test ;;
   sync)        cmd_sync ;;
+  conflict)    cmd_conflict ;;
   clean)       cmd_clean ;;
   *)           die "unknown command '$CMD'" ;;
 esac

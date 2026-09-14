@@ -23,7 +23,7 @@ entirely by *verifiability*, never by quota. The only quota lever that actually 
 fewer, better-scoped sessions**, and don't ship a phase that can't be checked from wherever it's
 built.
 
-## Status (updated 2026-09-03)
+## Status (updated 2026-09-14 — task complete, see `plan.md`)
 
 | Group | Contents | Status |
 |---|---|---|
@@ -31,9 +31,9 @@ built.
 | 2 | Phase 4, Phase 6 | ✅ Done 2026-08-31 |
 | 3 | Phase 9 (D-Bus impl) | ✅ Done 2026-09-01 |
 | 4 | Phase 8 | ✅ Done 2026-09-03 |
-| 5 | Phase 7 | ✅ Phase 7 done 2026-09-03 — Phase 14 deliberately left out of this pass, see `plan.md`'s Status section for why |
+| 5 | Phase 7 | ✅ Phase 7 done 2026-09-03 — Phase 14 deliberately left out of this pass and later dropped entirely, see `plan.md`'s Status section for why |
 | 6 | Phase 10, 11 (Decky) | ✅ Done — both phases hardware-verified 2026-09-07/08 (a `gameId`/`saveDirectory` wire-field bug, then a packed-`CGameID` decode bug and an unreliable `GetActiveGameActions()` check, all fixed along the way — see `plan.md`) |
-| 7 | Phase 13 (Playnite) | ⬜ Not started — split out of the old Group 6 on 2026-09-07 (asked directly): it shares nothing with Decky but a `.NET Framework 4.6.2` + Playnite SDK toolchain, and only Windows + Playnite installed, not the Decky repo or a Deck |
+| 7 | Phase 13 (Playnite) | ➡️ Moved to its own task 2026-09-14 — `tasks/playnite-plugin/plan.md` + `implementation-grouping.md`. Split out of the old Group 6 on 2026-09-07 first (it shared nothing with Decky but the toolchain), then grew past a sub-phase of this task entirely once planned in depth |
 
 ## Which phases are actually reachable from a cloud/remote session
 
@@ -139,14 +139,14 @@ tracked in `plan.md`**: no `ConflictsScreen` class (Phase 8 section), this scree
 server directly instead of through the daemon's local API (Phase 8 section), and no shared
 `Agent.Core` version/stats cache for Phase 7 to reuse (Phase 7 section).
 
-**Group 5 — Phase 7 done 2026-09-03; Phase 14 deliberately not started this pass.**
-`Phase 7` (Windows tray automatic chooser + bulk queue) + `Phase 14` (webhook notify + the per-game
-"block launch" setting — bundled with Phase 7 here only because both touch tray/agent-ui settings
-surfaces, not because of a hard dependency). Originally deferred waiting on a Windows-connected
-session; this one was, so Phase 7 shipped. Phase 14 was asked about directly and scoped OUT of this
-session on purpose (see `plan.md`'s Status section: its block-launch half has a real, unresolved
-design fork against already-shipped Phase 4 behavior that needs a maintainer decision before code, not
-during).
+**Group 5 — Phase 7 done 2026-09-03; Phase 14 later dropped entirely.**
+`Phase 7` (Windows tray automatic chooser + bulk queue) was originally grouped here alongside
+`Phase 14` (webhook notify + the per-game "block launch" setting) only because both touched
+tray/agent-ui settings surfaces, not because of a hard dependency. Originally deferred waiting on a
+Windows-connected session; this one was, so Phase 7 shipped. Phase 14 was scoped OUT of this session
+on purpose at the time (its block-launch half had a real, unresolved design fork against already-
+shipped Phase 4 behavior), and on 2026-09-14 was dropped outright rather than revisited — see
+`plan.md`'s Status section for the final reasoning.
 <br>**Shipped as:** `TrayApp.cs`'s three native trigger points that can leave a conflict open — Sync
 All, Force Pull, Force Push — now check for one afterward and raise `AgentWindow` straight to a new
 `#conflicts:queue` deep link, which `App.tsx` recognizes and uses to auto-open the exact same
@@ -179,18 +179,18 @@ group would have kept whichever was ready waiting on whichever wasn't. Moved to 
 below, matching how Phase 9 got pulled out of the original Decky/Playnite grouping for the identical
 reason (see "Correction found before Group 3" above).
 
-**Group 7 — Playnite only. Needs a Windows box with Playnite installed; independent of Decky.**
-`Phase 13`. Depends only on Phase 0/1's local API (shipped) — not on Phase 10/11, not on the
-`SaveLocker-Decky` repo. `plan.md`'s Phase 13 section already locks down the behavior (confirmed
-buildable via `IPlayniteAPI.StartGame`) and notes the WebView2-pointed-at-Phase-6's-page option now
-available instead of a from-scratch WPF dialog — this group is the actual build-out, not yet started.
+**Group 7 — Playnite — moved out to its own task, 2026-09-14.** `Phase 13` grew into a full
+standalone task once actually planned in depth (`tasks/playnite-plugin/plan.md` +
+`tasks/playnite-plugin/implementation-grouping.md`, with its own 16-phase numbering and its own
+grouping). Its dependency on this task's Phase 0/1 local API (shipped) is unchanged; everything else
+about sequencing and scope now lives there, not here.
 
 ```
 Done 2026-08-30       →  Group 1 (5, 9-spike)                  tiny, fully verifiable here
 Done 2026-08-31       →  Group 2 (4, 6)                        medium, biggest value, fully verifiable here
 Done 2026-09-01       →  Group 3 (9-impl)                      small, code-only here, needed Group 2 first
 Done 2026-09-03       →  Group 4 (8)                           medium, verified live under WSLg
-Done 2026-09-03       →  Group 5 (7)                           verified live on a real Windows dev box; Phase 14 held back — see above
+Done 2026-09-03       →  Group 5 (7)                           verified live on a real Windows dev box; Phase 14 held back, later dropped
 Done 2026-09-07/08    →  Group 6 (10, 11)                      Decky repo attached, both hardware-verified on a real Deck; Phase 12 shipped code-only
 Windows + Playnite     →  Group 7 (13)                          independent of Group 6 — split out 2026-09-07, see above
 ```

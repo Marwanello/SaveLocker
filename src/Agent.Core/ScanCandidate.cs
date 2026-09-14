@@ -16,7 +16,13 @@ public enum ScanSource
     /// files, not from Steam — Heroic runs its games in prefixes it manages itself, so a Heroic game
     /// added to the Steam library has a shortcut but no compatdata prefix behind it.
     /// </summary>
-    Heroic
+    Heroic,
+    /// <summary>
+    /// A single, targeted resolve built from a Playnite plugin's own library data (name, install dir,
+    /// whichever store hints it has), via <c>POST /api/candidates/lookup</c>
+    /// (tasks/playnite-plugin/plan.md, Phase 5) — not one of this scanner's own broad sweeps.
+    /// </summary>
+    Playnite
 }
 
 /// <summary>
@@ -50,7 +56,12 @@ public sealed record ScanCandidate(
     bool HasSteamCloud,
     string? ManifestKey = null,
     string? InstallDir = null,
-    /// <summary>Unsigned Steam AppID for a non-Steam shortcut — the compatdata folder name.</summary>
+    /// <summary>
+    /// Unsigned Steam AppID — the compatdata folder name for a non-Steam shortcut, or (Windows,
+    /// since tasks/playnite-plugin/plan.md Phase 2) the manifest's own <c>appid</c> for an installed
+    /// Steam game, which used to be read only to filter <see cref="GameScanner"/>'s
+    /// <c>NonGameAppIds</c>/compat-tool check and then discarded.
+    /// </summary>
     string? SteamAppId = null,
     /// <summary>
     /// The game's Wine prefix, when discovery resolved one (Linux only; null on Windows) — Steam's

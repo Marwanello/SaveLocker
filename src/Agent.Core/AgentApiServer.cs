@@ -44,6 +44,14 @@ public sealed class AgentApiServer : IDisposable
     // The Decky/Playnite launch gate (Phase 11) — SyncEngine.PrepareLaunchAsync, resolved against
     // whichever engine is current at the moment it's called, same reasoning as _syncAll above.
     private readonly Func<TrackedGame, CancellationToken, Task<LaunchGateResult>> _prepareLaunch;
+    // POST /api/games/{id}/post-exit-sync (tasks/playnite-plugin/plan.md, Phase 5) — SyncEngine
+    // .OnGameExitAsync, resolved the same way _prepareLaunch is: against whichever engine a settings
+    // change may have rebuilt since the host wired this up.
+    private readonly Func<TrackedGame, CancellationToken, Task> _postExitSync;
+    // Per-game save-dir resolution for /api/candidates/lookup and /api/manifest/search (Phase 5).
+    // Host-agnostic (its own Windows-only checks no-op cleanly on Linux), so it is taken directly
+    // rather than through a delegate — unlike _doScan/_enroll, nothing here differs per host.
+    private readonly Detection _detection;
     // One sync at a time, however many surfaces are offering the button — see /api/sync.
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     private readonly string _uiRoot;
@@ -64,6 +72,7 @@ public sealed class AgentApiServer : IDisposable
         Func<Task<IReadOnlyList<ScanCandidate>>> doScan,
         Func<IReadOnlyList<ScanCandidate>, int[], Task<(int enrolled, int skipped)>> enroll,
         IAutoStart autoStart,
+        Detection detection,
         Func<Task<string?>>? pickFolder = null,
         Action? onConnectionChanged = null,
         Func<UpdateResult?>? getUpdateResult = null,
@@ -74,7 +83,8 @@ public sealed class AgentApiServer : IDisposable
         Func<StagedUpdateInfo?>? stagedUpdate = null,
         SyncActivityTracker? activity = null,
         Func<Task<string>>? syncAll = null,
-        Func<TrackedGame, CancellationToken, Task<LaunchGateResult>>? prepareLaunch = null)
+        Func<TrackedGame, CancellationToken, Task<LaunchGateResult>>? prepareLaunch = null,
+        Func<TrackedGame, CancellationToken, Task>? postExitSync = null)
     {
         _browser = new PathBrowser(browseRoots);
         Port = port;
@@ -94,6 +104,8 @@ public sealed class AgentApiServer : IDisposable
         _activity = activity ?? new SyncActivityTracker();
         _syncAll = syncAll ?? (() => Task.FromResult("Not available."));
         _prepareLaunch = prepareLaunch ?? ((_, _) => Task.FromResult(new LaunchGateResult(LaunchDecision.Proceed)));
+        _postExitSync = postExitSync ?? ((_, _) => Task.CompletedTask);
+        _detection = detection;
         _uiRoot = Path.Combine(AppContext.BaseDirectory, "agent-ui");
         _auth = LocalAuth.LoadOrCreate(config.ConfigPath);
         _leaseWarnings = LeaseWarningStore.For(config);
@@ -355,7 +367,7 @@ public sealed class AgentApiServer : IDisposable
             .Select(g => new TrackedGameDto(
                 g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray(), g.Alias,
                 SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()), g.PullBeforeLaunchEnabled,
-                g.HasSteamCloud))
+                g.HasSteamCloud, g.PushAfterExitEnabled))
             .ToArray()).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
@@ -403,6 +415,16 @@ public sealed class AgentApiServer : IDisposable
         app.MapPost("/api/games/{id:guid}/pull-before-launch", (Guid id, PullBeforeLaunchRequest body) =>
         {
             _config.SaveGamePullBeforeLaunch(id, body.Enabled);
+            return TypedResults.Ok(new OkResponse());
+        }).Produces<OkResponse>();
+
+        // The Decky/Playnite per-game post-exit push toggle (tasks/playnite-plugin/plan.md, Phase 4).
+        // Server-side for the same reason pull-before-launch is above. `enabled: null` clears the
+        // override, which SyncEngine.OnGameExitAsync then reads back as "push" (today's unconditional
+        // behaviour).
+        app.MapPost("/api/games/{id:guid}/push-after-exit", (Guid id, PushAfterExitRequest body) =>
+        {
+            _config.SaveGamePushAfterExit(id, body.Enabled);
             return TypedResults.Ok(new OkResponse());
         }).Produces<OkResponse>();
 
@@ -823,7 +845,133 @@ public sealed class AgentApiServer : IDisposable
             }
             finally { _syncGate.Release(); }
         }).Produces<LaunchGateResult>().Produces<LaunchGateResult>(StatusCodes.Status409Conflict);
+
+        // Mirrors pre-launch-sync above almost exactly (tasks/playnite-plugin/plan.md, Phase 5) —
+        // same single-flight gate, same "game removed mid-flight" re-check, same fail-open-on-
+        // transport-error contract. The one real difference: there is no Blocked decision to fail OUT
+        // of here — OnGameExitAsync's own push either succeeds, is skipped by PushAfterExitEnabled, or
+        // fails softly and gets logged (SyncEngine already handles all three; nothing here needs to
+        // distinguish them for the caller), so this always answers OkResponse rather than a decision
+        // the caller must act on.
+        app.MapPost("/api/games/{id:guid}/post-exit-sync",
+            async Task<Results<Ok<OkResponse>, Conflict<OkResponse>, NotFound>> (Guid id, CancellationToken ct) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.NotFound();
+
+            if (!await _syncGate.WaitAsync(0))
+                return TypedResults.Conflict(new OkResponse());
+
+            try
+            {
+                await _postExitSync(game, ct);
+                // Same re-check pre-launch-sync does above: the game list can change while the
+                // sync was in flight, and a 200 for a game no longer tracked here is misleading.
+                if (_config.Games.All(g => g.GameId != id)) return TypedResults.NotFound();
+            }
+            catch (Exception ex)
+            {
+                AgentLogger.LogException("AgentApiServer.post-exit-sync", ex);
+            }
+            finally { _syncGate.Release(); }
+            return TypedResults.Ok(new OkResponse());
+        }).Produces<OkResponse>().Produces<OkResponse>(StatusCodes.Status409Conflict);
+
+        // A single, targeted resolve for a game a Playnite plugin already knows about — the per-game
+        // resolution ScanInstalledSteamGamesAsync already makes (save-dir, Steam Cloud, canonical
+        // manifest name), just reachable for one caller-supplied game instead of a whole sweep.
+        // Deliberately not a full /api/candidates/rescan (tasks/playnite-plugin/plan.md, Phase 5):
+        // that re-enumerates everything on the machine, which is slow and returns hundreds of
+        // unrelated candidates for what should be a single "is this one game known?" lookup. Appends
+        // to (or replaces a same-name entry in) the SAME _candidateCache /api/enroll already reads, so
+        // the id this returns can be enrolled through that unmodified route.
+        app.MapPost("/api/candidates/lookup",
+            async Task<Results<Ok<CandidateLookupResponse>, BadRequest<ErrorResponse>>>
+                (CandidateLookupRequest body, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(body.Name))
+                return TypedResults.BadRequest(new ErrorResponse("name is required"));
+
+            var name = body.Name.Trim();
+            var installDir = string.IsNullOrWhiteSpace(body.InstallDir) ? null : body.InstallDir.Trim();
+            var store = ParseStore(body.Store);
+
+            // installDir is <base> only, not <root> (the store LIBRARY root) — a Playnite lookup has
+            // no library-root signal to supply, so <root> is left unresolved rather than wrongly
+            // pinned to the game's own install folder (PathResolver.Windows's own distinction).
+            var dirs = await _detection.ResolveWindowsAsync(name, installDir, ct: ct);
+            var suggestedSaveDir = dirs.FirstOrDefault();
+            // Same convention ScanInstalledSteamGamesAsync uses: for a Steam-sourced candidate, no
+            // manifest data defaults to "assume Steam Cloud" (a wrong "no" would let the pre-launch
+            // gate race Steam's own Cloud sync); for anything else, no data defaults to "assume not."
+            var hasSteamCloud = store == GameStore.Steam
+                ? await _detection.HasSteamCloudAsync(name, ct) ?? true
+                : await _detection.HasSteamCloudAsync(name, ct) ?? false;
+            var manifestKey = suggestedSaveDir is null ? null : await _detection.CanonicalNameAsync(name, ct) ?? name;
+
+            var candidate = new ScanCandidate(
+                name, suggestedSaveDir, ScanSource.Playnite, hasSteamCloud,
+                ManifestKey: manifestKey, InstallDir: installDir,
+                SteamAppId: string.IsNullOrWhiteSpace(body.SteamAppId) ? null : body.SteamAppId.Trim(),
+                Store: store);
+
+            // A bare lookup must never be the first thing to populate the cache — GET /api/candidates
+            // and POST /api/enroll both fall back to a real RescanAsync() when it's null, and a
+            // one-entry cache from a single Playnite lookup would silently stand in for that scan on
+            // every later call. Same fallback those routes already use, so an existing cache is still
+            // reused as-is and only a genuinely empty one triggers a scan here.
+            var list = (_candidateCache ?? await RescanAsync()).ToList();
+            var normalized = ManifestLoader.NormalizeName(name);
+            var existing = list.FindIndex(c => ManifestLoader.NormalizeName(c.Name) == normalized);
+            int id;
+            if (existing >= 0)
+            {
+                // A real scan can already carry fields a Playnite-only lookup has no way to supply —
+                // SuggestedProcessName in particular, which WA-08's whole process lifecycle (lease,
+                // exit-push, running-game pull refusal) depends on. Keep them instead of letting this
+                // narrower lookup silently downgrade what enrollment will end up using.
+                var prior = list[existing];
+                candidate = candidate with
+                {
+                    SuggestedSaveDir = prior.SuggestedSaveDir ?? candidate.SuggestedSaveDir,
+                    SuggestedProcessName = prior.SuggestedProcessName ?? candidate.SuggestedProcessName,
+                    PrefixPath = prior.PrefixPath ?? candidate.PrefixPath,
+                    MoonDeckAppId = prior.MoonDeckAppId ?? candidate.MoonDeckAppId,
+                    ManifestKey = prior.ManifestKey ?? candidate.ManifestKey,
+                };
+                list[existing] = candidate;
+                id = existing;
+            }
+            else { list.Add(candidate); id = list.Count - 1; }
+            _candidateCache = list;
+
+            return TypedResults.Ok(new CandidateLookupResponse(
+                id, suggestedSaveDir is not null, ToCandidateDtos(list)[id]));
+        });
+
+        // In-memory substring search over the manifest's ~53,000 names (Detection.SearchAsync,
+        // already existed) — the missing middle tier between automatic matching and a fully manual
+        // path: a human recognises "Civilization" instantly where the automatic lookup's exact,
+        // normalized-token match cannot bridge "Civ VII" to "Sid Meier's Civilization VII"
+        // (tasks/playnite-plugin/plan.md, Phase 5).
+        app.MapGet("/api/manifest/search", async (string? q, CancellationToken ct) =>
+            string.IsNullOrWhiteSpace(q)
+                ? Array.Empty<string>()
+                : (await _detection.SearchAsync(q.Trim(), ct: ct)).ToArray()
+        ).Produces<string[]>();
     }
+
+    /// <summary>Caller-supplied store name to <see cref="GameStore"/>, defaulting anything unrecognised
+    /// (including absent) to <see cref="GameStore.Unknown"/> — a store names how a candidate is
+    /// filtered/labeled, never anything that must be trusted, so silently defaulting is fine here
+    /// unlike a platform string that names a directory.</summary>
+    private static GameStore ParseStore(string? value) =>
+        // Enum.TryParse alone accepts any numeric string (e.g. "99") and returns it as-is even when
+        // no member has that value — Enum.IsDefined is what actually enforces the "unrecognised ->
+        // Unknown" contract the doc comment above promises.
+        Enum.TryParse<GameStore>(value, ignoreCase: true, out var store) && Enum.IsDefined(store)
+            ? store
+            : GameStore.Unknown;
 
     /// <summary>
     /// The installed wrapper binary's path, recovered from the invocation <see cref="_launchInfo"/>
@@ -1023,6 +1171,11 @@ public sealed record CandidateDto(
 /// real Steam install apart from a non-Steam shortcut run under Proton, which gets a compatdata
 /// prefix too. Null means "unknown, use your own heuristic", not "no Steam Cloud".
 /// </param>
+/// <param name="PushAfterExitEnabled">
+/// Whether the post-exit push should run, or null when none is set — see
+/// <see cref="TrackedGame.PushAfterExitEnabled"/>. Added in tasks/playnite-plugin/plan.md Phase 4,
+/// after every field below <see cref="HasSteamCloud"/> — additive, same reasoning as the remark below.
+/// </param>
 /// <remarks>
 /// <see cref="Id"/> and <see cref="Path"/> keep those names, rather than the GameId/SaveDirectory
 /// the config-side properties use, because this record IS the <c>/api/games</c> wire contract and
@@ -1032,11 +1185,27 @@ public sealed record CandidateDto(
 /// </remarks>
 public sealed record TrackedGameDto(
     Guid Id, string Name, string Path, string[] ProcessNames, string? Alias,
-    uint? SteamAppId, bool? PullBeforeLaunchEnabled, bool? HasSteamCloud);
+    uint? SteamAppId, bool? PullBeforeLaunchEnabled, bool? HasSteamCloud,
+    bool? PushAfterExitEnabled = null);
 
 public sealed record ProcessNamesRequest(string[]? ProcessNames);
 public sealed record AliasRequest(string? Alias);
 public sealed record PullBeforeLaunchRequest(bool? Enabled);
+public sealed record PushAfterExitRequest(bool? Enabled);
+
+/// <summary>
+/// Request for <c>POST /api/candidates/lookup</c> (tasks/playnite-plugin/plan.md, Phase 5) — a
+/// single-candidate resolve for a game a Playnite plugin already knows about (name, install dir, and
+/// whichever Steam/store hints it can supply), deliberately not a full rescan. <paramref name="Store"/>
+/// is the caller's own string for <see cref="GameStore"/> (case-insensitive; unrecognised or absent
+/// means <see cref="GameStore.Unknown"/>).
+/// </summary>
+public sealed record CandidateLookupRequest(
+    string Name, string? InstallDir = null, string? SteamAppId = null, string? Store = null);
+
+/// <param name="Resolved">Whether a save directory was found — the same signal a caller would read off
+/// <see cref="CandidateDto.Path"/> being non-empty, surfaced explicitly so it need not parse that.</param>
+public sealed record CandidateLookupResponse(int Id, bool Resolved, CandidateDto Candidate);
 public sealed record AgentConfigDto(
     string ServerUrl,
     string MachineName,

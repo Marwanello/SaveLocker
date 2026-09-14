@@ -1,3 +1,217 @@
+# Session summary — 2026-09-14 (cont'd 2) — Playnite plugin Group 2 shipped, GitHub org default fixed
+
+Implemented Group 2 (Phases 4–7) of the Playnite plugin plan — exit-push toggle, three new local-API
+routes, the `AgentPlatform.PlaynitePlugin` slot, and a Windows plugin self-updater — then debugged the
+user's own live manual verification against it. Five commits, all unpushed.
+
+## What was asked
+
+1. "start implementing group 2 please and after words give me step by step manual verification using
+   test env if needed."
+2. Live debugging as the user ran the verification steps themselves: a 404 on `post-exit-sync`, a
+   question about a `pushAfterExitEnabled` field still reading `null`, a 401 on the server's
+   `/api/agent/latest` route, and a wrong GitHub org baked into the plugin's install link.
+
+## What was built
+
+**Phase 4 — `PushAfterExitEnabled`.** New nullable-bool override mirroring `PullBeforeLaunchEnabled`:
+`null` keeps today's unconditional push-on-exit behavior, an explicit `true`/`false` always wins.
+`SyncEngine.OnGameExitAsync` gates its push call on `game.PushAfterExitEnabled ?? true`.
+
+**Phase 5 — three new local-API routes.** `POST /api/games/{id}/post-exit-sync` (single-flight,
+fail-open); `POST /api/candidates/lookup` (single targeted resolve via a new `Detection` dependency,
+merged into the candidate cache so its id enrolls through the existing `/api/enroll` route); `GET
+/api/manifest/search?q=`.
+
+**Phase 6 — `AgentPlatform.PlaynitePlugin` slot.** New platform end to end: `Contracts.cs`,
+`AgentInstallerService.cs`'s `_slots`, `Program.cs`'s config-fallback switch, and — not anticipated by
+the plan, found this session — a hand-written 4th entry in `web`'s `AgentUpdatesCard.tsx` and
+`types.ts`.
+
+**Phase 7 — Windows plugin self-updater** (`src/Agent/PlaynitePlugin.cs`, new file). Mirrors
+`Agent.Linux/DeckyPlugin.cs`'s shape but simpler, since `%AppData%\Playnite\Extensions\<id>\` is
+entirely user-owned. `src/Agent` doesn't reference `src/Agent.Linux`, so this defines its own local
+`PluginUpdateState`/`PluginUpdateOutcome` types rather than reusing Decky's. Gates every write on
+`IsPlayniteRunning`, since a loaded Playnite extension assembly is typically locked by its own host and
+never hot-reloads.
+
+## Debugging root causes
+
+- **404 on `post-exit-sync`**: likely an empty/stale `$games` array producing a malformed URL; the user
+  resolved it before the next message.
+- **`pushAfterExitEnabled` reading `null` after a successful toggle**: a stale PowerShell variable, not
+  a fresh re-fetch — same class of confusion as last session's `pullBeforeLaunchEnabled` question.
+- **401 on `/api/agent/latest`**: my own instruction error, not a code defect — gave the local agent
+  API's `X-SaveLocker-Token` header for a server route that needs the console's separate `X-Api-Key`.
+- **Wrong GitHub org in the install link, user-caught**: *"the link is will be wrong. the plugin will be
+  in my account not SkorcherX."* Phase 6/7 had copied the already-shipped `SkorcherX/SaveLocker-Decky`
+  default onto the brand-new, not-yet-existing `SaveLocker-Playnite` repo without checking whether that
+  account applies — it doesn't. Fixed both defaults to `Marwanello/SaveLocker-Playnite`; left the
+  existing, already-shipped `SkorcherX` defaults for the agent and Decky plugin untouched.
+
+## Verification
+
+`Agent.Core`, `Server`, `Agent.Linux` built clean directly; `src/Agent` verified via scratch-output
+builds since its normal `bin/` output stayed locked by the user's own live test-tray process.
+
+## Commits (unpushed)
+
+`738d086`, `b5933aa`, `5f6b598`, `49e1e4c`, `c7d5454` — see `progress.md` for the full per-commit
+breakdown.
+
+## Not done
+
+- Phase 7's self-updater is code-complete but unverified against a real install — `SaveLocker-Playnite`
+  doesn't exist as a repo/release yet.
+- The `Co-Authored-By` trailer gap on the prior session's five commits is still unaddressed.
+
+---
+
+# Session summary — 2026-09-14 (cont'd) — Playnite plugin Group 1 shipped, WSL conflict fallback, testenv fixes
+
+Implemented Group 1 (Phases 1–3) of the Playnite plugin plan end to end, debugged the user's own live
+manual verification against it, designed then built a WSL fallback so `testenv.ps1 conflict` can seed a
+genuine conflict without a physical Steam Deck, fixed an unrelated `testenv.ps1 clean` bug found along
+the way, and established the Phase/Group status-table convention as a standing rule in `CLAUDE.md`.
+Five commits, all unpushed.
+
+## What was asked
+
+1. "Start implmenting group 1 and afterwards (only if needed) tell me how to verify manually / And what
+   has changed briefly in technical and no technical terms after implmenting this group."
+2. Live debugging as the user ran the verification steps: a `401 Unauthorized`, then `pre-launch-sync`
+   returning `Proceed` instead of the expected `Blocked`.
+3. "i would prefer to make conflict in testenv has this functionality. if the deck is not reachable use
+   wsl insted / but sugesst how it will work" — a design proposal first, not immediate code.
+4. "implment this / then commit changes in meaningful commits / and add a summery table for implemented
+   phses and groupd in playnite plugin task just like in conflict resolution ui. and make it the
+   standard when creating plan.md and implmentation-grouping.md."
+5. A pasted `testenv.ps1 clean` failure: "why does this happen please fix if you can."
+6. "after those edits tell me a step by step manual verfication using testenv."
+7. Two follow-ups on the real verification output: why `pullBeforeLaunchEnabled` was empty for Steam
+   games and `false` for "Conflict Game"; then "shouldont pull before launch be true in all non steam
+   games?"
+
+## What was built
+
+**Phase 1 — Windows launch-gate rewiring.** `TrayApp.cs`'s `prepareLaunch` delegate now calls
+`_engine.PrepareLaunchAsync(game, ct)` instead of the old never-pull-never-block
+`OnGameLaunchAsync(preLaunch: false)`, mirroring Linux's existing wiring — the first genuine pre-launch
+boundary Windows has ever had, safe because nothing called this route before today.
+
+**Phase 2 — `SteamAppId` population on Windows.** `GameScanner` now records the Steam manifest's own
+`appid` on every installed-Steam-game candidate (previously read only to filter, then discarded), plus a
+startup backfill (`TrayApp.BackfillSteamAppIdsAsync`) matching already-tracked games by `InstallDir`
+against a fresh rescan.
+
+**Phase 3 — `PullBeforeLaunchEnabled` moved server-side.** A new `EffectivePullBeforeLaunch(game) =>
+game.PullBeforeLaunchEnabled ?? game.HasSteamCloud != true` now gates the pre-launch pull inside
+`SyncEngine.PrepareLaunchAsync` itself, so every caller (Linux, Decky, and now Windows/Playnite) gets the
+same "off for Steam Cloud, on otherwise, explicit override always wins" behavior from one place instead
+of each frontend re-implementing it client-side.
+
+**WSL fallback for `testenv.ps1 conflict`.** `.\tests\testenv.ps1 conflict [-Windows] [-Deck] [-Wsl]`:
+`-Wsl` is an explicit second-side choice, and — per the user's literal ask — requesting `-Deck` when the
+Deck turns out unreachable automatically falls back to seeding the WSL side instead, printed clearly
+either way. `tests/testenv.sh` gained a `cmd_conflict()` (WSL never had one) mirroring the existing Deck
+seeding shape. This is what makes a genuine, hardware-independent conflict reproducible at all — a
+conflict needs two sides pushing in a specific order, and without either a real Deck or this fallback
+there was no second side available in this environment.
+
+**`testenv.ps1 clean` fix.** Root cause of a wall of `Remove-Item` "in use" errors under
+`WebView2\EBWebView\...`: `Stop-Windows` killed the tray process but never WebView2's own separate
+helper processes, which don't die synchronously with their parent. Fixed by also killing matching
+`msedgewebview2.exe` processes before deleting, and by making the delete loop actually `throw` on
+persistent failure instead of always claiming success.
+
+**Standing docs convention.** Added a permanent `CLAUDE.md` rule: every `plan.md` gets a `## Status`
+phase table, every `implementation-grouping.md` gets a matching group table, updated the same session
+something ships — not a one-off, a rule for every future task.
+
+## Debugging root causes
+
+- **401s**: missing `X-SaveLocker-Token` header — fixed by reading the test instance's own
+  `api-token` file.
+- **`Proceed` instead of `Blocked`**: my own earlier instruction was incomplete — I'd said to run
+  `conflict -Windows` alone, not realizing a conflict is inherently two-sided and order-dependent
+  (`testenv.ps1`'s own comment: whichever side pushes second is what the server records as a genuine
+  divergence). With no Deck configured, only one side had ever seeded. Acknowledged directly and fixed
+  properly via the WSL fallback above rather than a one-off workaround.
+- **`pullBeforeLaunchEnabled` tri-state**: confirmed to the user that `null` correctly means "no
+  override, gate computes its own default" (which genuinely evaluates to "pull" for a non-Steam-Cloud
+  game) — "Conflict Game" showing a literal `false` was an explicit override this session's own
+  verification steps had set, not evidence the default logic was wrong. Proposed, but did not build, a
+  read-only `effectivePullBeforeLaunch` DTO field so a future settings UI could show the computed value
+  without re-implementing the heuristic.
+
+## Verification
+
+`dotnet build` after each phase; `bash -n`/PowerShell-parser checks on both testenv scripts; then a full
+live walkthrough against a real testenv rig — the user's own pasted output confirmed a genuine
+WSL-seeded conflict correctly returned `Blocked`, and that Phases 1–3 are functioning against real data
+(resolved `steamAppId`s, a correctly-computed pull default, a real block on a real divergence).
+
+## Commits (unpushed)
+
+`0cb12d7`, `cca2836`, `c33bbcb`, `f87ffc8`, `5511244` — see `progress.md` for the full per-commit
+breakdown.
+
+## Not done
+
+- The proposed `effectivePullBeforeLaunch` DTO field — not implemented, no code change requested yet.
+- None of this session's five commits carry the `Co-Authored-By` trailer current attribution
+  instructions require. Fixable (nothing is pushed) but not yet raised with or confirmed by the user.
+
+---
+
+# Session summary — 2026-09-14 — Conflict-resolution-ui closed out, Playnite plugin regrouped
+
+Docs-only session: dropped Phase 14 from the conflict-resolution-ui plan and marked that whole task
+complete, then consolidated the newly-split-out Playnite plugin task's implementation groups from 11
+down to 6. No application code touched; nothing committed.
+
+## What was asked
+
+1. "Ditch phase 14 and mark save conflict as complete with only future user experience review may
+   come."
+2. "And decrease the number of implementation groups in the playnite plugin."
+
+## What was done
+
+**Phase 14 dropped, conflict-resolution-ui marked complete.** `tasks/conflict-resolution-ui/plan.md`'s
+Status section now reads "task complete" — every phase shipped, moved to its own task (Phase 13), or
+was dropped (Phase 14). Phase 14 (webhook/ntfy/email notify + a per-game "block launch until resolved"
+opt-in) is marked dropped rather than deferred: its block-launch half was never reconciled against
+Phase 4's already-shipped *unconditional* block-on-confirmed-conflict behavior, and neither half had
+any confirmed player need behind it. Every downstream mention of Phase 14 as still-pending (the intro,
+two shipped write-ups, the ASCII dependency diagram, the Scope note) was updated to match. Mirrored in
+`implementation-grouping.md`'s own status header. `Backlog.md` lost the "Decky conflict resolution"
+line entirely (nothing left open), and `logs/shipped-2026-09.md` gained a completion row pointing back
+at the task folder for detail.
+
+**Playnite plugin groups consolidated 11 → 6**, same phases and same total session estimates
+(~18–24 sessions, per `plan.md`'s own untouched "Size estimate" section) — only the bucketing changed.
+Two agent-side groups (was four): Group 1 = Phases 1–3 (launch gate, `SteamAppId`, pull-toggle move),
+Group 2 = Phases 4–7 (exit-push, new routes, self-update plumbing). Four plugin-side groups (was
+seven): Group 3 = Phases 8–11 (scaffold, settings, core gate, matching — bundled together, and
+matching moved in specifically so the MVP cut stays a clean "Group 1 + Group 3"), Group 4 = Phase 12
+(enroll/link popup), Group 5 = Phases 13–15 (status chip, self-update consumption, test infra), Group
+6 = Phase 16 (add-on database submission, kept separate — a third-party review timeline is a different
+kind of task from build work). `plan.md`'s "Recommended cut" section updated to cite Group 1 + Group 3
+as the MVP (~7–8.5 sessions, unchanged from before — no phase moved sides of the MVP line, only the
+group boundaries around it did).
+
+## Not done
+
+- `tasks/conflict-resolution-ui/` was not relocated to `docs/logs/` despite the project's own
+  session-handoff convention for completed tasks — `tasks/playnite-plugin/plan.md` still references
+  its path directly, and moving it would break those links. Flagged rather than done silently.
+- Nothing committed yet.
+- The "future user-experience review" now named in conflict-resolution-ui's Status section is
+  intentionally unscoped and unscheduled — just a named possibility, not a task.
+
+---
+
 # Session summary — 2026-09-08
 
 Five easy-verification backlog items triaged on branch `easy-wins` (dedicated worktree

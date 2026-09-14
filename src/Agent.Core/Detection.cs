@@ -14,6 +14,11 @@ public sealed class Detection
 {
     private readonly AgentConfig _config;
     private ManifestLoader? _manifest;
+    // Guards the check-then-load/download below. Detection is a single shared instance now reached
+    // by two new HTTP-triggerable routes (/api/candidates/lookup, /api/manifest/search) alongside
+    // the agent's own background scan/poll, so two first-ever callers racing past the null check
+    // could otherwise both kick off a redundant manifest download.
+    private readonly SemaphoreSlim _manifestLock = new(1, 1);
 
     public Detection(AgentConfig config) => _config = config;
 
@@ -22,12 +27,19 @@ public sealed class Detection
     {
         if (_manifest is not null && !forceRefresh) return _manifest;
 
-        if (!forceRefresh && File.Exists(_config.ManifestCachePath))
-            _manifest = ManifestLoader.LoadFromFile(_config.ManifestCachePath);
-        else
-            _manifest = await ManifestLoader.DownloadAsync(_config.ManifestCachePath, ct: ct);
+        await _manifestLock.WaitAsync(ct);
+        try
+        {
+            if (_manifest is not null && !forceRefresh) return _manifest;
 
-        return _manifest;
+            if (!forceRefresh && File.Exists(_config.ManifestCachePath))
+                _manifest = ManifestLoader.LoadFromFile(_config.ManifestCachePath);
+            else
+                _manifest = await ManifestLoader.DownloadAsync(_config.ManifestCachePath, ct: ct);
+
+            return _manifest;
+        }
+        finally { _manifestLock.Release(); }
     }
 
     /// <summary>

@@ -546,6 +546,23 @@ public sealed class AgentConfig
     public void SaveGamePullBeforeLaunch(Guid gameId, bool? enabled) =>
         MutateGameUnderLock(gameId, g => g.PullBeforeLaunchEnabled = enabled);
 
+    /// <summary>
+    /// Persist one game's push-after-exit override without clobbering concurrent changes to anything
+    /// else (tasks/playnite-plugin/plan.md, Phase 4) — see <see cref="MutateGameUnderLock"/>.
+    /// </summary>
+    public void SaveGamePushAfterExit(Guid gameId, bool? enabled) =>
+        MutateGameUnderLock(gameId, g => g.PushAfterExitEnabled = enabled);
+
+    /// <summary>
+    /// Persist a Windows Steam AppID backfill (tasks/playnite-plugin/plan.md, Phase 2) without
+    /// clobbering concurrent changes to anything else — see <see cref="MutateGameUnderLock"/>. Unlike
+    /// Daemon.cs's own Linux backfill, this runs after the local API server is already accepting
+    /// requests, so a plain mutate-then-<see cref="Save"/> could lose a concurrent write instead of
+    /// only ever adding information nothing else was going to touch.
+    /// </summary>
+    public void SaveGameSteamAppId(Guid gameId, string appId) =>
+        MutateGameUnderLock(gameId, g => g.SteamAppId = appId);
+
     public TrackedGame? FindGame(string name) =>
         Games.FirstOrDefault(g => string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase));
 }
@@ -566,15 +583,27 @@ public sealed class TrackedGame
     /// </summary>
     public string? Alias { get; set; }
     /// <summary>
-    /// Whether Gaming Mode's pre-launch pull should run for this game — set only by a Decky plugin,
-    /// via the local API's pull-before-launch route. Null means "no override": the plugin computes
-    /// its own default (off for a game with a resolved <see cref="SteamAppId"/>, so it never fights
-    /// Steam's own Cloud sync for an ordinary Steam library game; on otherwise). Kept here rather than
-    /// in the plugin's own local settings file for the same reason <see cref="Alias"/> is — this is
-    /// the one place a Deck's plugin and every other machine syncing this game can agree on it, and it
-    /// survives a plugin reinstall or a settings-file reset that would otherwise silently lose it.
+    /// Whether the pre-launch gate should pull before letting a launch proceed — set by a Decky or
+    /// Playnite plugin, via the local API's pull-before-launch route. Null means "no override": the
+    /// gate itself computes the default (<c>SyncEngine.PrepareLaunchAsync</c>'s own
+    /// <c>EffectivePullBeforeLaunch</c>, moved server-side in tasks/playnite-plugin/plan.md Phase 3
+    /// so every caller agrees — off for a confirmed <see cref="HasSteamCloud"/> install, so it never
+    /// fights Steam's own Cloud sync; on otherwise). Kept here rather than in either plugin's own
+    /// local settings file for the same reason <see cref="Alias"/> is — this is the one place every
+    /// machine syncing this game can agree on it, and it survives a plugin reinstall or a
+    /// settings-file reset that would otherwise silently lose it.
     /// </summary>
     public bool? PullBeforeLaunchEnabled { get; set; }
+    /// <summary>
+    /// Whether the post-exit push should run at all — set by a Decky or Playnite plugin, via the
+    /// local API's push-after-exit route. Null means "no override": push (today's existing
+    /// unconditional behaviour, unchanged for anyone who never touches this). Kept here rather than
+    /// in either plugin's own local settings, for the same reason <see cref="PullBeforeLaunchEnabled"/>
+    /// is — a player who disables it for one game (a permadeath run, a known-flaky save) wants that
+    /// respected from every machine that syncs it. Disabling it never skips the lease release, which
+    /// must run whether or not a push happened.
+    /// </summary>
+    public bool? PushAfterExitEnabled { get; set; }
     /// <summary>The local save directory to archive/restore.</summary>
     public string SaveDirectory { get; set; } = "";
     /// <summary>Process names (without .exe) that, when running, mean the game is in use.</summary>
@@ -582,7 +611,10 @@ public sealed class TrackedGame
     /// <summary>
     /// Steam AppID this game launches under, as the <b>unsigned</b> string Steam uses to name
     /// <c>compatdata/&lt;appid&gt;/</c>. Set for non-Steam shortcuts on Linux; the launch wrapper
-    /// matches on it to find the game for the prefix Steam handed it. Null on Windows.
+    /// matches on it to find the game for the prefix Steam handed it. On Windows, set at enrollment
+    /// for a Steam-sourced candidate (both Steam shortcuts and installed Steam games — closed
+    /// 2026-09-14, tasks/playnite-plugin/plan.md Phase 2) and backfilled for anything tracked
+    /// before that, so it is no longer reliably null there.
     /// </summary>
     public string? SteamAppId { get; set; }
     /// <summary>

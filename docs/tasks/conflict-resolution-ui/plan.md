@@ -8,8 +8,8 @@ had been left as reference material below, not folded into execution). From [[Ba
 priority. Supersedes the conflict-resolution-relevant parts of the earlier, fork-blind 8-document
 pass at `reference/00-inventory.md` through `07-open-questions.md` (kept as reference, both now
 alongside this file in this same `tasks/conflict-resolution-ui/` folder) for
-everything **except** the Windows/Linux-headless UI material, which Phases 5–9 and 14 below now
-fold in directly — see the *Scope note* at the end of this document. The conflict data model's
+everything **except** the Windows/Linux-headless UI material, which Phases 5–9 below now fold in
+directly (Phase 14 was later dropped — see Status and the Scope note). The conflict data model's
 causal, non-clock-based detection and the Resolution API's layering are still unaffected and not
 repeated here.
 
@@ -20,7 +20,12 @@ separate `SaveLocker-Decky` plugin repo. Ten of the fourteen phases below are ne
 cross-references in [[CONTEXT]]/[[Backlog]] (which already cite them by number) do not need
 updating — only Phase 5 onward is renumbered relative to the original 2026-08-28 plan.
 
-## Status (updated 2026-09-03)
+## Status (updated 2026-09-14 — task complete)
+
+All planned phases have now shipped, moved out to their own task, or been dropped — no phase remains
+open. The only thing left on the table is an optional **future user-experience review** of the
+shipped conflict-resolution flows: not a numbered phase, nothing currently planned or scheduled,
+just a possible future pass over how it actually feels to use once it's seen more real play.
 
 | Phase | Status |
 |---|---|
@@ -36,16 +41,21 @@ updating — only Phase 5 onward is renumbered relative to the original 2026-08-
 | 10 — Decky: conflict display + resolve UI | ✅ Shipped 2026-09-07, **hardware-verified 2026-09-07** — chip and Pull/Push/Sync buttons confirmed working on a real Deck after the `gameId`/`saveDirectory` wire-field fix (see this section's own note below) |
 | 11 — Decky: launch-gate wiring | ✅ Shipped 2026-09-07, hardware-verified 2026-09-07/08 |
 | 12 — sync-status endpoint consumer | ✅ Shipped 2026-09-07 (not hardware-verified — see below) — a "Check sync status" button on each game's row in the Decky full-screen page (`fullPage.tsx`), on demand only |
-| 13 — Playnite plugin | ⬜ Not started — needs a Windows + Playnite environment |
-| 14 — Webhook notify + per-game block-launch setting | ⬜ Not started — deliberately deferred; see the note below |
+| 13 — Playnite plugin | ➡️ Moved to its own task — `tasks/playnite-plugin/plan.md` |
+| 14 — Webhook notify + per-game block-launch setting | ❌ Dropped 2026-09-14 — see the note below |
 
-**Phase 14 has an open design question, deliberately not resolved by this update.** Its block-launch
-half (`Game.BlockLaunchOnConflict`) was originally scoped as an *opt-in* (`07-open-questions.md` §2,
-"default: don't block"), but Phase 4 already shipped **unconditional** blocking on any confirmed
-Linux conflict — no setting involved. Building Phase 14 as originally written would silently walk
-back already-verified Phase 4 behavior unless a maintainer explicitly decides whether the setting
-should default to today's shipped behavior (opt-*out* of blocking) or the original opt-*in* framing.
-Resolve this before starting Phase 14, not while mid-implementation.
+**Phase 14 was dropped outright, not deferred.** Its block-launch half (`Game.BlockLaunchOnConflict`)
+was originally scoped as an *opt-in* (`07-open-questions.md` §2, "default: don't block"), but Phase 4
+already shipped **unconditional** blocking on any confirmed Linux conflict — no setting involved, and
+Phases 8/10/11 followed that same unconditional-on-a-genuine-conflict shape on every other surface.
+Building Phase 14 as originally written would have meant walking back that already-verified behavior
+behind a new setting, for a use case (a stricter, opt-in permadeath-style mode) with no confirmed
+player demand. Its webhook/ntfy/email-notify half is dropped for the same reason from the other
+direction: rungs 5–7 of the escalation ladder (CLI, `doctor`, and the safe terminal state — an open
+`ConflictFlag`, nothing auto-resolves under `Manual`) already guarantee a conflict is discoverable and
+never silently mishandled, with zero risk, whether or not an out-of-band notification ever exists.
+Phase 14 depended only on Phase 0 and nothing else in this plan depended on it, so dropping it changes
+nothing else here.
 
 ## The problem
 
@@ -440,7 +450,8 @@ API calls Phase 0/1 already covers server-side — the exact check the reference
 verification note describes.
 
 **Shipped 2026-09-03** (`implementation-grouping.md`'s "Group 5," scoped to Phase 7 alone — Phase 14
-was deliberately left out, see the Status section above). `TrayApp.cs`'s three native trigger points
+was deliberately left out of this pass and later dropped entirely, see the Status section above).
+`TrayApp.cs`'s three native trigger points
 that can leave this machine with an open conflict — `SyncAll()`, per-game Force Pull, per-game Force
 Push — now call a new `CheckConflictsAndRaiseAsync()` afterward: a best-effort
 `ApiClient.GetOpenConflictsForMachineAsync` check that raises `AgentWindow` straight to a new
@@ -581,10 +592,10 @@ build, a full agent test suite and a code review because nothing checked what wa
 If built: fires once per conflict becoming open (a `HashSet<Guid>` of already-notified conflict ids,
 cleared on resolve, so the 20s command-poller's own loop doesn't re-notify every tick) with an action
 button that opens Phase 6's `agent-ui` page in the default browser (desktop session) or brings Phase
-8's Game Mode screen to the foreground (Deck). Deliberately the lowest-priority phase before Phase 14:
-rungs 5–7 of the escalation ladder (CLI, `doctor`, and the safe terminal state — an open
-`ConflictFlag`, nothing auto-resolves under `Manual`) already guarantee a conflict is discoverable and
-never silently mishandled with zero risk, regardless of whether this phase ever ships.
+8's Game Mode screen to the foreground (Deck). Deliberately the lowest-priority optional phase: rungs
+5–7 of the escalation ladder (CLI, `doctor`, and the safe terminal state — an open `ConflictFlag`,
+nothing auto-resolves under `Manual`) already guarantee a conflict is discoverable and never silently
+mishandled with zero risk, regardless of whether this phase ever ships.
 
 **Verify:** manual verification on the real Deck's Desktop Mode (KDE Plasma) session and a plain
 desktop Linux box — screenshot the notification and the action button actually opening the right
@@ -751,31 +762,24 @@ button that reuses `conflicts.tsx`'s existing `openConflictResolveModal` (no cir
 via `tsc --noEmit`, a real `npm run build` (rollup), and `python -m py_compile main.py` — all clean.
 Not yet exercised on real hardware.
 
-**Phase 13 — Playnite plugin** (new, separate project) — unchanged scope, renumbered from the
-original Phase 8. Depends only on Phase 0/1's local API — independent of every Decky phase and of
-Phase 3. This phase's own build-out is explicitly a later pass; this document only locks down the
-*behavior* (confirmed buildable via `IPlayniteAPI.StartGame`) so that later work has a settled target.
-**New implementation-time option, now that Phase 6 exists:** `OnGameStarting`'s WPF dialog no longer
-has to be built from scratch — embedding a `Microsoft.Web.WebView2` control pointed at the local
-`agent-ui` conflicts page trades a WebView2 dependency in the `.NET Framework 4.6.2` project for zero
-duplicated chooser UI. Flagged as an option to weigh at implementation time, not a hard dependency —
-this phase can still ship with its own minimal native WPF dialog (the original plan) if WebView2 in
-that specific project turns out to be awkward.
+**Phase 13 — Playnite plugin — moved out to its own standalone task, 2026-09-14.** Originally
+scoped here (renumbered from the original Phase 8), depending only on Phase 0/1's local API and
+independent of every Decky phase and of Phase 3 — that dependency picture turned out still correct,
+but the actual build-out grew well past a single sub-phase of this task once planned in depth (a
+five-tier enrollment/matching flow, a status-and-actions surface in Playnite's own UI, per-game sync
+toggles, and an agent-driven self-updater, on top of the original pre-launch-gate scope). It now has
+its own phase numbering and its own grouping document: `tasks/playnite-plugin/plan.md` and
+`tasks/playnite-plugin/implementation-grouping.md`. Nothing else in this plan depends on it, so
+nothing here needs to change — nothing here waits on it.
 
-**Phase 14 — Optional out-of-band notification (rung 6) and per-game "block launch" opt-in.**
-Folds in the original reference plan's optional Phase 6 and `07-open-questions.md` §2, unchanged in
-substance. Deferred, genuinely optional, depends only on Phase 0. Bundled here because neither piece
-is required for any invariant in this design (`03-platform-ux-flows.md`: "rungs 1-5 already guarantee
-the terminal state" / "a paused-sync launch is already fully safe"):
-1. **Webhook/ntfy/email notify** for genuinely unattended boxes — a new, optional, per-server (not
-   per-agent — the server already knows about every open conflict fleet-wide) `AppSetting` key
-   `conflicts.webhook_url`, fired by the server itself on `ConflictFlag` creation/escalation.
-2. **Per-game "block launch until resolved" setting** — `Game.BlockLaunchOnConflict`
-   (nullable-with-global-default, same pattern as `RetainVersions`), for the minority of players who'd
-   rather lose a play session than risk playing on stale data (e.g. a strict-permadeath run).
-   Deliberately last: it's a settings-surface-multiplying feature (Decky's settings page,
-   `agent-ui`'s `SettingsView.tsx`, a future Playnite settings page all need the toggle) for a use
-   case not yet confirmed to exist, per `07-open-questions.md` §2.
+**Phase 14 — dropped 2026-09-14.** Originally scoped as an optional out-of-band notification (rung 6
+of the escalation ladder) plus a per-game "block launch until resolved" opt-in
+(`Game.BlockLaunchOnConflict`), folding in the original reference plan's optional Phase 6 and
+`07-open-questions.md` §2. Dropped rather than built, for two independent reasons: its block-launch
+half never had its open design conflict against Phase 4's already-shipped *unconditional*
+block-on-confirmed-conflict behavior resolved, and no confirmed player need ever emerged for either
+half — see the Status section above for the reasoning in full. Depended only on Phase 0, and nothing
+else in this plan depended on it, so dropping it changes nothing else here.
 
 ```
 Phase 0/1 (server + agent core — shipped)
@@ -808,20 +812,23 @@ Phase 0/1 (server + agent core — shipped)
 Phase 3 (dashboard Backups tab) — shipped; no dependencies, was buildable/shippable any time.
 Phase 12 (sync-status consumer) — endpoint already shipped in Phase 0/1; low-priority, foldable
     into Phase 6 or Phase 10 when either is built.
-Phase 13 (Playnite) — depends only on Phase 0/1; can optionally reuse Phase 6's page instead of a
-    from-scratch WPF dialog, decided at implementation time.
-Phase 14 (optional: webhook + block-launch setting) — depends only on Phase 0; last by design.
+Phase 13 (Playnite) — moved out to its own task, tasks/playnite-plugin/plan.md, 2026-09-14. Its
+    dependency on this task's Phase 0/1 local API is unchanged; everything else about its scope is
+    tracked there now, not here.
+Phase 14 (optional: webhook + block-launch setting) — dropped 2026-09-14, see Status section; never
+    built.
 ```
 
 ## Scope note (updated 2026-08-30)
 
 This section used to say the Linux-headless escalation ladder (desktop notifications, a local web
 chooser fallback, out-of-band webhook notify) from the earlier 8-document plan was future work, not
-folded into this one. It now is: Phases 5–9 above bring rungs 1–4 of `03-platform-ux-flows.md`'s
-escalation ladder into this plan directly as concrete, numbered, dependency-ordered phases, and
-Phase 14 folds in rung 6 as an explicit opt-in. Rung 5 (CLI) and rung 7 (the safe terminal state — an
-open `ConflictFlag`, nothing auto-resolves under `Manual`) were already covered, unchanged, by Phase
-0/1's CLI commands and the server's existing behavior — no new phase was needed for either.
+folded into this one. It now is, in part: Phases 5–9 above bring rungs 1–4 of
+`03-platform-ux-flows.md`'s escalation ladder into this plan directly as concrete, numbered,
+dependency-ordered phases. Rung 6 (the optional webhook/ntfy/email notify) was scoped as Phase 14 and
+later dropped — see Status — so it never shipped. Rung 5 (CLI) and rung 7 (the safe terminal state —
+an open `ConflictFlag`, nothing auto-resolves under `Manual`) were already covered, unchanged, by
+Phase 0/1's CLI commands and the server's existing behavior — no new phase was needed for either.
 
 **Still deliberately out of scope, and not reconsidered by this update:**
 - A new Unix-socket or D-Bus RPC interface *between* SaveLocker's own processes (wrapper↔daemon, or

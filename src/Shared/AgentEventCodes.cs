@@ -75,18 +75,20 @@ public static class AgentEventCodes
     public const string UpdateRolledBack = "update.rolled_back";
 
     /// <summary>
-    /// The Decky plugin installed on this machine was updated in place by the agent. Informational,
-    /// and the only account anyone gets of it: the plugin is updated without Decky's store, without
-    /// sudo and without a Steam restart, so absolutely nothing else on the device announces that the
-    /// code running inside Steam's UI just changed.
+    /// A plugin installed on this machine — Decky (Linux) or Playnite (Windows) — was updated in
+    /// place by the agent. Informational, and the only account anyone gets of it: either plugin is
+    /// updated outside its own host's store/restart cycle, so nothing else on the device announces
+    /// that its code just changed. Shared by both hosts rather than split per-plugin because the
+    /// event's own Message text already names which one; see DeckyPlugin.cs/PlaynitePlugin.cs.
     /// </summary>
     public const string PluginUpdated = "plugin.updated";
 
     /// <summary>
-    /// A newer Decky plugin was offered but not installed. The commonest cause is not a fault at all
-    /// in the usual sense — a package that needs a file the agent may not create, which means the
-    /// plugin must be reinstalled once through Decky by hand. Reported because nothing else would:
-    /// the old plugin keeps working, so the device simply stops keeping up, indefinitely.
+    /// A newer Decky or Playnite plugin was offered but not installed. The commonest cause is not a
+    /// fault at all in the usual sense — a package that needs something the agent didn't have (a
+    /// file it may not create, or the host app running), which means the plugin must be dealt with
+    /// once by hand. Reported because nothing else would: the old plugin keeps working, so the
+    /// device simply stops keeping up, indefinitely.
     /// </summary>
     public const string PluginUpdateFailed = "plugin.update_failed";
 

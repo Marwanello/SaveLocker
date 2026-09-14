@@ -797,14 +797,16 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
-    /// The Linux launch wrapper's pre-launch gate (tasks/conflict-resolution-ui/plan.md, Phase 4).
-    /// Every other pre-launch outcome — the game running elsewhere, lock contention, a network
-    /// hiccup, another machine holding the lease — still launches exactly as <see cref="OnGameLaunchAsync"/>
-    /// always has. <see cref="LaunchDecision.Blocked"/> is the one new outcome, and it fires for
-    /// exactly one reason: a genuinely confirmed conflict, a real hash-verified divergence between
-    /// this machine's save and the cloud's, never a mere warning. Only <c>ProtonRun</c> calls this —
-    /// Windows has no boundary this certain (<see cref="OnGameLaunchAsync"/>'s own doc comment), so it
-    /// keeps calling that method with <c>preLaunch: false</c> and never blocks (Phase 7, deferred).
+    /// The pre-launch gate (tasks/conflict-resolution-ui/plan.md, Phase 4). Every other pre-launch
+    /// outcome — the game running elsewhere, lock contention, a network hiccup, another machine
+    /// holding the lease — still launches exactly as <see cref="OnGameLaunchAsync"/> always has.
+    /// <see cref="LaunchDecision.Blocked"/> is the one new outcome, and it fires for exactly one
+    /// reason: a genuinely confirmed conflict, a real hash-verified divergence between this machine's
+    /// save and the cloud's, never a mere warning. <c>ProtonRun</c> calls this because Steam's
+    /// <c>%command%</c> wrapper runs instead of the game, a boundary certain enough to trust; Windows
+    /// gained an equally certain one from a genuine pre-launch caller (tasks/playnite-plugin/plan.md,
+    /// Phase 1) rather than the reactive <see cref="OnGameLaunchAsync"/> its own doc comment warns
+    /// against trusting for this.
     /// </summary>
     public async Task<LaunchGateResult> PrepareLaunchAsync(TrackedGame game, CancellationToken ct = default)
     {
@@ -851,9 +853,25 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                 return Blocked(game, fresh);
         }
 
-        await PullAsync(game, force: false, ct);
+        // Moved server-side (tasks/playnite-plugin/plan.md, Phase 3) so every caller of this gate —
+        // the Linux wrapper, Decky, and Windows/Playnite once Phase 1 lands — gets the same
+        // off-for-Steam-Cloud default from one place, instead of each reimplementing it client-side
+        // (previously only Decky's own frontend read PullBeforeLaunchEnabled at all, and only to
+        // decide whether to trigger its own separate pull). The open-conflict check above and the
+        // commit-before-choose push above THAT stay unconditional — disabling the pull only skips
+        // fetching newer data, it must never also skip the safety check for a genuinely diverged save.
+        if (EffectivePullBeforeLaunch(game))
+            await PullAsync(game, force: false, ct);
         return new LaunchGateResult(LaunchDecision.Proceed);
     }
+
+    /// <summary>
+    /// Whether <see cref="PrepareLaunchAsync"/> should pull before letting a launch proceed: an
+    /// explicit per-game override always wins; absent one, off for a confirmed Steam Cloud install
+    /// (avoids racing Steam's own Cloud sync), on otherwise.
+    /// </summary>
+    private static bool EffectivePullBeforeLaunch(TrackedGame game) =>
+        game.PullBeforeLaunchEnabled ?? game.HasSteamCloud != true;
 
     /// <summary>The open conflict already recorded for this game, if any — checked before touching
     /// the lease or attempting anything, since nothing else needs to run to answer this.</summary>
@@ -885,7 +903,8 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             "a confirmed conflict is open for this game", conflict.Id);
     }
 
-    /// <summary>Post-exit: push the final save and release the lease.</summary>
+    /// <summary>Post-exit: push the final save (unless <see cref="TrackedGame.PushAfterExitEnabled"/>
+    /// says not to) and release the lease.</summary>
     public async Task OnGameExitAsync(TrackedGame game, CancellationToken ct = default)
     {
         // The renewer stops even on a retired engine — the timer belongs to this object, and
@@ -895,7 +914,12 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
 
         try
         {
-            await PushAsync(game, force: false, settle: true, ct: ct);
+            // Null (no override) means push — today's existing unconditional behaviour, unchanged
+            // for every game tracked before this field existed (tasks/playnite-plugin/plan.md,
+            // Phase 4). The lease release below is unconditional regardless: skipping the push must
+            // never also leave the game checked out to this machine.
+            if (game.PushAfterExitEnabled ?? true)
+                await PushAsync(game, force: false, settle: true, ct: ct);
         }
         finally
         {

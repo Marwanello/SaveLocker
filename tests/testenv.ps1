@@ -15,17 +15,30 @@
 #   .\tests\testenv.ps1 test      run the suites
 #   .\tests\testenv.ps1 sync      copy this tree's uncommitted changes into the WSL clone
 #   .\tests\testenv.ps1 logs      tail every log the rig writes
-#   .\tests\testenv.ps1 conflict [-Windows] [-Deck] [-Size <MB>] [-Files <count>] [-AddCommand]
+#   .\tests\testenv.ps1 conflict [-Windows] [-Deck] [-Wsl] [-Size <MB>] [-Files <count>] [-AddCommand]
 #                                 seed a genuine local-vs-cloud conflict on a throwaway "Conflict Game"
-#                                 game — Windows first (creates it), then the Deck (diverges it) — the
-#                                 same two hand-typed CLI sequences this rig used to need by hand.
-#                                 Neither switch given = both (a conflict needs two disagreeing
-#                                 sides). Starts the console first if it isn't already up (both sides
-#                                 register/push against it over HTTP), then stops any already-running
-#                                 Windows tray / Deck daemon — CLI seeding must never race a live
-#                                 tray/daemon's own config Save(). Needs `build` run at least once
-#                                 first. Run this BEFORE `up`, then `up` last so the tray/daemon start
-#                                 clean (the console itself is left running either way).
+#                                 game — Windows first (creates it), then a second side (diverges it) —
+#                                 the same hand-typed CLI sequences this rig used to need by hand.
+#                                 The second side is the Deck if one is configured and reachable, WSL
+#                                 (a headless Linux agent, no Steam/Decky involved) otherwise — no
+#                                 physical Deck required to exercise a real conflict end to end.
+#                                 Neither -Windows/-Deck/-Wsl given = Windows + that auto-picked
+#                                 second side (a conflict needs two disagreeing sides). -Wsl forces
+#                                 WSL as the second side even when a Deck IS configured, useful for a
+#                                 quick check without waking it. -Deck asks for the real Deck
+#                                 specifically, but still falls back to WSL if it doesn't answer — a
+#                                 sleeping Deck is this rig's normal state, not a real error. -Deck
+#                                 and -Wsl together is rejected: seeding is order-dependent (whichever
+#                                 side pushes SECOND is what diverges), so two candidate second sides
+#                                 at once would make that order ambiguous. Starts the console first if
+#                                 it isn't already up (every side registers/pushes against it over
+#                                 HTTP), then stops any already-running Windows tray / WSL daemon /
+#                                 Deck daemon on whichever side(s) it touches — CLI seeding must never
+#                                 race a live tray/daemon's own config Save(). Needs `build` run at
+#                                 least once first (Windows, and WSL if WSL might be used — `build`
+#                                 with no `-Only` covers both). Run this BEFORE `up`, then `up` last so
+#                                 the tray/daemon start clean (the console itself is left running
+#                                 either way).
 #                                 RE-SEEDING NEEDS A FULL `clean` FIRST: a second `conflict` run
 #                                 against the same console DB is NOT fresh — whichever side seeds
 #                                 first no longer creates a headless game, so its push lands on the
@@ -164,10 +177,18 @@ param(
     [switch]$SkipWinAgentSuite,
     [switch]$AgentsOnly,
 
-    # 'conflict' command only: which side(s) to seed. Neither given means both — a conflict needs
-    # two sides that disagree, so seeding only one side alone leaves nothing to resolve.
+    # 'conflict' command only: which side(s) to seed. Neither -Windows/-Deck/-Wsl given means
+    # Windows + (Deck if reachable, else WSL) — a conflict needs two sides that disagree, so
+    # seeding only Windows alone leaves nothing to resolve. -Wsl forces WSL as the second side even
+    # when a Deck IS configured (no need to wake it for a quick check); -Deck asks for the real
+    # Deck specifically but still falls back to WSL if it's unreachable, since a sleeping Deck is
+    # the normal state here, not a real error (CONTEXT.md — "awake only when the maintainer wakes
+    # it"). -Deck and -Wsl together is rejected: a conflict's seeding is order-dependent (whichever
+    # side pushes SECOND is the one that diverges), so two candidate "second sides" at once would
+    # make that order ambiguous.
     [switch]$Windows,
     [switch]$Deck,
+    [switch]$Wsl,
 
     # 'conflict' command only: replaces the default single tiny "save v1" text file with $Files
     # randomly-filled files totalling ~$Size MB, split as evenly as possible — for exercising sync
@@ -285,6 +306,12 @@ function Invoke-Wsl {
         # build-deck's only: where to drop the finished tarball so Windows can find it without
         # guessing at a \\wsl$\ UNC path.
         $vars += "SAVELOCKER_ARTIFACT_DIR='$(ConvertTo-WslPath $ArtifactDir)'"
+    }
+    if ($Sub -eq 'conflict') {
+        # Mirrors Invoke-Deck's own forwarding below — same -Size/-Files the 'conflict' switch case
+        # already validates once, for whichever side(s) actually seed.
+        $vars += "SAVELOCKER_CONFLICT_SIZE_MB=$($Size.ToString([System.Globalization.CultureInfo]::InvariantCulture))"
+        $vars += "SAVELOCKER_CONFLICT_FILES=$Files"
     }
 
     # A .sh copied from this (CRLF) tree gives bash "bad interpreter: ...^M", so strip CR on the way
@@ -797,10 +824,30 @@ function Start-Windows {
 
 function Stop-Windows {
     $procs = @(Get-TestTray)
-    if ($procs.Length -eq 0) { Write-Host 'no test tray running'; return }
-    foreach ($p in $procs) {
-        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
-        Write-Host "stopped test tray (pid $($p.ProcessId))"
+    if ($procs.Length -eq 0) { Write-Host 'no test tray running' }
+    else {
+        foreach ($p in $procs) {
+            Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+            Write-Host "stopped test tray (pid $($p.ProcessId))"
+        }
+    }
+
+    # AgentWindow.cs points WebView2 at "$winState\WebView2" as its user-data folder, and WebView2
+    # runs its renderer/GPU/network work in separate msedgewebview2.exe helper processes that do NOT
+    # die synchronously with the tray that spawned them - killing the parent above can leave them
+    # holding EBWebView's cache files open for a moment (or, if one is wedged, indefinitely), which
+    # then fails `clean`'s Remove-Item with "being used by another process". Scoped to THIS test
+    # state's own WebView2 profile path in the command line, so it can never touch the real
+    # installed agent's WebView2 helpers or the user's actual Edge browser.
+    $webviewProcs = Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*$winState\WebView2*" }
+    if ($webviewProcs) {
+        $webviewProcs | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        Write-Host "  stopped $($webviewProcs.Count) WebView2 helper process(es)"
+        # Termination is asynchronous - a killed process can take a moment to actually release its
+        # file handles even after Stop-Process returns, so give it a beat before anything tries to
+        # delete the directory those handles are open under.
+        Start-Sleep -Milliseconds 500
     }
 }
 
@@ -887,6 +934,17 @@ function New-ConflictOnWindows {
         & $dotnet $agentDll push 'Conflict Game'
         if ($LASTEXITCODE -ne 0) { throw "push failed (exit $LASTEXITCODE)" }
     } finally { Clear-TestEnvVars }
+}
+
+# WSL's own second side — used either because -Wsl was asked for explicitly, or as the automatic
+# fallback when the Deck isn't configured or didn't answer. testenv.sh's own cmd_conflict already
+# does the seeding (stop the daemon, seed a synthetic save, register if needed, add-game + push);
+# this just needs the WSL clone built and up to date first, same precondition Invoke-Wsl's other
+# callers already assume.
+function New-ConflictOnWsl {
+    Say "seeding a conflicting save on WSL for 'Conflict Game'"
+    Invoke-Wsl 'conflict'
+    if ($LASTEXITCODE -ne 0) { throw "WSL conflict seeding failed (exit $LASTEXITCODE) - built? .\tests\testenv.ps1 build -Only linux" }
 }
 
 function Stop-Console {
@@ -1042,7 +1100,33 @@ switch ($Command) {
     }
 
     'conflict' {
-        if (-not $Windows -and -not $Deck) { $Windows = $true; $Deck = $true }
+        # A conflict's seeding is order-dependent (whichever side pushes SECOND is the one the
+        # server records as diverged), so exactly one candidate "second side" can be in play at
+        # once — two would make that order ambiguous. See the header comment for the full picture.
+        if ($Deck -and $Wsl) {
+            throw "-Deck and -Wsl are mutually exclusive - pick the one real second side you want (or give neither to auto-pick)."
+        }
+
+        # An explicit -Deck means the Deck side was asked for specifically, so a real failure there
+        # (not configured, unreachable, or a genuine bug in its own seeding) must be reported as a
+        # failure, not silently swapped for WSL and read as success — only the auto-picked default
+        # (below) treats a sleeping/unconfigured Deck as expected and falls back quietly.
+        $deckExplicit = $PSBoundParameters.ContainsKey('Deck')
+
+        # Neither given: seed Windows plus whichever second side is actually usable right now,
+        # so the common case ("just give me a conflict to test against") works with zero setup.
+        # -Wsl still forces WSL even with a Deck configured (no need to wake it for a quick check);
+        # -Deck asks for the real Deck specifically, but still falls back to WSL below if it
+        # doesn't answer - a sleeping Deck is the normal state here (CONTEXT.md - "awake only when
+        # the maintainer wakes it"), not something worth failing the whole seed over.
+        $secondSide = 'none'
+        if (-not $Windows -and -not $Deck -and -not $Wsl) {
+            $Windows = $true
+            $secondSide = if (Test-DeckConfigured) { 'deck' } else { 'wsl' }
+            Say "no -Windows/-Deck/-Wsl given - seeding Windows + $secondSide (auto-picked; pass -Wsl to always prefer WSL over a configured Deck)"
+        } elseif ($Deck) { $secondSide = 'deck' }
+        elseif ($Wsl) { $secondSide = 'wsl' }
+
         # 500 mirrors SaveArchive.DefaultMaxUploadMb / Storage:MaxUploadMb in
         # src/Server/appsettings.json — seeding more only produces pushes the server rejects.
         # NaN must be rejected explicitly: every comparison against it is $false, so without
@@ -1050,60 +1134,70 @@ switch ($Command) {
         if ([double]::IsNaN($Size) -or $Size -lt 0 -or $Size -gt 500) { throw '-Size must be 0-500 (the test console''s default upload cap)' }
         if ($Files -lt 1) { throw '-Files must be at least 1' }
         if ($AddCommand -and ($Size -gt 0 -or $Files -gt 1)) { Warn '-AddCommand is mutually exclusive with -Size/-Files; seeding the requested sizes anyway.' }
+        if ($AddCommand -and $secondSide -eq 'wsl') { Warn '-AddCommand only affects the Deck (Steam shortcut) side; ignored for WSL, which has no Steam/Decky involved.' }
         if ($Size -gt 0) { Say "seeding $Files file(s) totalling ~$Size MB per side (instead of the default tiny save)" }
         elseif ($Files -gt 1) { Warn '-Files is ignored without -Size (the default tiny save is a single file)' }
         Say 're-seeding over a previous run needs a full clean first - a stale console head seeds the next conflict on the wrong side (see the header comment).'
 
-        # Both sides register/push over HTTP against the console, so it has to be up before either
+        # Every side registers/pushes over HTTP against the console, so it has to be up before any
         # CLI call — unlike the tray/daemon, starting it here races nothing (it holds no local agent
         # config), so just bring it up rather than making the user run `up -Only console` by hand.
         if (-not (Test-ConsoleUp)) { Start-Console } else { Write-Host '  console already up' }
 
         $windowsOk = $false
-        $deckOk = $false
-        $deckSkipped = $false
+        $secondOk = $false
+        $usedSide = $secondSide
 
         if ($Windows) {
             try { New-ConflictOnWindows; $windowsOk = $true }
             catch { Warn "windows: $($_.Exception.Message)" }
         }
-        if ($Deck) {
-            # An explicit -Deck means the Deck side was asked for, so attempt it and report any
-            # failure below; the default both-sides run only warns and skips it, so a missing
-            # Deck never hides whether Windows seeded. Either way the windowsOk/deckOk summary
-            # stays reachable — nothing here throws past it.
-            if ((-not (Test-DeckConfigured)) -and (-not $PSBoundParameters.ContainsKey('Deck'))) {
-                Warn 'no Deck configured - skipping the Deck side (set -DeckHost or $env:SAVELOCKER_DECK_HOST to include it).'
-                $deckSkipped = $true
+
+        if ($secondSide -eq 'deck') {
+            if (-not (Test-DeckConfigured)) {
+                if ($deckExplicit) { Warn '-Deck given but no Deck configured (set -DeckHost or $env:SAVELOCKER_DECK_HOST).' }
+                else { Warn 'no Deck configured - falling back to WSL as the second side (set -DeckHost or $env:SAVELOCKER_DECK_HOST to use the real Deck instead).' }
+                $usedSide = if ($deckExplicit) { 'deck' } else { 'wsl' }
+            } elseif (-not $DeckServerUrl) {
+                if ($deckExplicit) { Warn "-Deck given but no -DeckServerUrl / `$env:SAVELOCKER_DECK_SERVER_URL set (the Deck can't reach 'localhost')." }
+                else { Warn "no -DeckServerUrl / `$env:SAVELOCKER_DECK_SERVER_URL set (the Deck can't reach 'localhost') - falling back to WSL as the second side." }
+                $usedSide = if ($deckExplicit) { 'deck' } else { 'wsl' }
             } else {
-                try {
-                    if (-not (Test-DeckConfigured)) { throw "No Deck configured - set -DeckHost or `$env:SAVELOCKER_DECK_HOST." }
-                    if (-not $DeckServerUrl) {
-                        throw "no -DeckServerUrl / `$env:SAVELOCKER_DECK_SERVER_URL - the Deck can't reach 'localhost', it needs this PC's LAN IP (e.g. http://192.168.68.58:$ConsolePort)"
+                try { Invoke-Deck 'conflict'; $secondOk = $true }
+                catch {
+                    if ($deckExplicit) { Warn "deck: $($_.Exception.Message)" }
+                    else {
+                        Warn "deck unreachable ($($_.Exception.Message)) - falling back to WSL as the second side."
+                        $usedSide = 'wsl'
                     }
-                    Invoke-Deck 'conflict'; $deckOk = $true
                 }
-                catch { Warn "deck: $($_.Exception.Message)" }
             }
         }
 
-        if ($Windows -and $Deck) {
-            if ($windowsOk -and $deckOk) { Write-Host "seeded 'Conflict Game' on both sides." }
-            elseif ($windowsOk -and $deckSkipped) { Write-Host "seeded 'Conflict Game' on Windows ONLY (Deck skipped)." }
-            elseif ($windowsOk) { Write-Host "seeded 'Conflict Game' on Windows ONLY (Deck failed)." }
-            elseif ($deckOk) { Write-Host "seeded 'Conflict Game' on Deck ONLY (Windows failed)." }
+        if ($usedSide -eq 'wsl' -and -not $secondOk) {
+            if ($AddCommand -and $secondSide -ne 'wsl') {
+                Warn '-AddCommand only affects the Deck (Steam shortcut) side; ignored now that WSL is standing in for it.'
+            }
+            try { New-ConflictOnWsl; $secondOk = $true }
+            catch { Warn "wsl: $($_.Exception.Message)" }
+        }
+
+        if ($Windows -and $usedSide -ne 'none') {
+            if ($windowsOk -and $secondOk) { Write-Host "seeded 'Conflict Game' on Windows + $usedSide." }
+            elseif ($windowsOk) { Write-Host "seeded 'Conflict Game' on Windows ONLY ($usedSide failed)." }
+            elseif ($secondOk) { Write-Host "seeded 'Conflict Game' on $usedSide ONLY (Windows failed)." }
             else { Write-Host "FAILED: both sides failed to seed." }
         } elseif ($Windows) {
             if ($windowsOk) { Write-Host "seeded 'Conflict Game' on Windows." }
             else { Write-Host "FAILED: Windows side failed." }
-        } elseif ($Deck) {
-            if ($deckOk) { Write-Host "seeded 'Conflict Game' on Deck." }
-            else { Write-Host "FAILED: Deck side failed." }
+        } elseif ($usedSide -ne 'none') {
+            if ($secondOk) { Write-Host "seeded 'Conflict Game' on $usedSide." }
+            else { Write-Host "FAILED: $usedSide side failed." }
         }
 
         Write-Host ''
         Write-Host "Next: .\tests\testenv.ps1 up   (tray/daemon start LAST, after all seeding)"
-        Write-Host "then check each side's own conflicts view (CLI 'conflicts', doctor, the dashboard, or the Decky/Game-Mode UI)."
+        Write-Host "then check each side's own conflicts view (CLI 'conflicts', doctor, the dashboard, or the Decky/Game-Mode/Playnite UI)."
     }
 
     'logs' {
@@ -1128,7 +1222,16 @@ switch ($Command) {
 
         Stop-Windows
         if (Test-Path $StateRoot) {
-            Remove-Item $StateRoot -Recurse -Force
+            # Stop-Windows already waits for WebView2's own helper processes to let go of their
+            # cache files, but antivirus/indexer scans (or a helper that was slower than the fixed
+            # pause above) can still hold a handle open for another moment - retry a few times
+            # rather than fail the whole clean over what is reliably a transient lock.
+            $lastError = $null
+            for ($i = 1; $i -le 5; $i++) {
+                try { Remove-Item $StateRoot -Recurse -Force -ErrorAction Stop; $lastError = $null; break }
+                catch { $lastError = $_; Start-Sleep -Milliseconds 500 }
+            }
+            if ($lastError) { throw $lastError }
             Write-Host "  removed $StateRoot"
         }
         # The Windows half of `conflict`'s seeded save lives outside $StateRoot (it's the fake

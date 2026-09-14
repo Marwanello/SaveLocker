@@ -194,8 +194,9 @@ public sealed class GameScanner : IGameScanner
                 var state = root.Object("AppState");
                 var name = state?.String("name");
                 var installDir = state?.String("installdir");
+                var appid = state?.String("appid");
                 if (string.IsNullOrWhiteSpace(name)) continue;
-                if (state?.String("appid") is { } appid && NonGameAppIds.Contains(appid)) continue;
+                if (appid is not null && NonGameAppIds.Contains(appid)) continue;
 
                 var installPath = installDir is null
                     ? null
@@ -223,7 +224,14 @@ public sealed class GameScanner : IGameScanner
                     trimmed, save, ScanSource.SteamInstalled,
                     HasSteamCloud: await _detection.HasSteamCloudAsync(trimmed, ct) ?? true,
                     ManifestKey: await CanonicalKeyAsync(trimmed, save, ct),
-                    InstallDir: installPath, Store: GameStore.Steam));
+                    InstallDir: installPath, Store: GameStore.Steam,
+                    // Installed Steam games are the majority of most libraries, and this was the one
+                    // Windows source that read the appid (for the NonGameAppIds check above) without
+                    // ever recording it — every Windows-tracked game landed with SteamAppId null, the
+                    // same gap TrackedGame.SteamAppId's own doc comment already calls out. Closing it
+                    // here is what lets Steam AppID matching (tasks/playnite-plugin/plan.md, Phase 2)
+                    // actually work for most players on day one.
+                    SteamAppId: appid));
             }
         }
         return results;

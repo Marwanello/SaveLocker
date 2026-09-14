@@ -31,6 +31,17 @@ When a `docs/tasks/` folder exists for the current work:
 4. Stop and report — do not continue to the next task unless instructed.
 5. We should have a commit for each task we successfully complete.
 
+### `plan.md` / `implementation-grouping.md` status tables
+
+Every `plan.md` gets a `## Status` section (placed right after the intro, before the phase
+write-ups) with a `| Phase | Status |` table — one row per phase, using `✅ Shipped <date>`,
+🚧 `In progress`, `⏳ Not started`, `➡️ Moved` or `❌ Dropped` as needed, plus a short note for
+anything hardware-verified or otherwise noteworthy. Every `implementation-grouping.md` gets the
+matching `| Group | Contents | Status |` table just above `## Groups`. Update both tables the same
+session a phase/group actually ships — never let them go stale. `conflict-resolution-ui/plan.md`
+and `playnite-plugin/plan.md` (plus their own `implementation-grouping.md`) are the reference
+examples.
+
 ## Session handoff (end of session)
 
 Before commiting, update the vault so the next session starts clean:
