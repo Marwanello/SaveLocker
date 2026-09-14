@@ -824,10 +824,30 @@ function Start-Windows {
 
 function Stop-Windows {
     $procs = @(Get-TestTray)
-    if ($procs.Length -eq 0) { Write-Host 'no test tray running'; return }
-    foreach ($p in $procs) {
-        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
-        Write-Host "stopped test tray (pid $($p.ProcessId))"
+    if ($procs.Length -eq 0) { Write-Host 'no test tray running' }
+    else {
+        foreach ($p in $procs) {
+            Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+            Write-Host "stopped test tray (pid $($p.ProcessId))"
+        }
+    }
+
+    # AgentWindow.cs points WebView2 at "$winState\WebView2" as its user-data folder, and WebView2
+    # runs its renderer/GPU/network work in separate msedgewebview2.exe helper processes that do NOT
+    # die synchronously with the tray that spawned them - killing the parent above can leave them
+    # holding EBWebView's cache files open for a moment (or, if one is wedged, indefinitely), which
+    # then fails `clean`'s Remove-Item with "being used by another process". Scoped to THIS test
+    # state's own WebView2 profile path in the command line, so it can never touch the real
+    # installed agent's WebView2 helpers or the user's actual Edge browser.
+    $webviewProcs = Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*$winState\WebView2*" }
+    if ($webviewProcs) {
+        $webviewProcs | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        Write-Host "  stopped $($webviewProcs.Count) WebView2 helper process(es)"
+        # Termination is asynchronous - a killed process can take a moment to actually release its
+        # file handles even after Stop-Process returns, so give it a beat before anything tries to
+        # delete the directory those handles are open under.
+        Start-Sleep -Milliseconds 500
     }
 }
 
@@ -1191,7 +1211,16 @@ switch ($Command) {
 
         Stop-Windows
         if (Test-Path $StateRoot) {
-            Remove-Item $StateRoot -Recurse -Force
+            # Stop-Windows already waits for WebView2's own helper processes to let go of their
+            # cache files, but antivirus/indexer scans (or a helper that was slower than the fixed
+            # pause above) can still hold a handle open for another moment - retry a few times
+            # rather than fail the whole clean over what is reliably a transient lock.
+            $lastError = $null
+            for ($i = 1; $i -le 5; $i++) {
+                try { Remove-Item $StateRoot -Recurse -Force -ErrorAction Stop; $lastError = $null; break }
+                catch { $lastError = $_; Start-Sleep -Milliseconds 500 }
+            }
+            if ($lastError) { throw $lastError }
             Write-Host "  removed $StateRoot"
         }
         # The Windows half of `conflict`'s seeded save lives outside $StateRoot (it's the fake
