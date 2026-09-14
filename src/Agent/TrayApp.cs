@@ -104,6 +104,7 @@ internal sealed class TrayContext : ApplicationContext
             doScan: () => _scanner.ScanAsync(),
             enroll: EnrollAsync,
             autoStart: new AutoStart(),
+            detection: _detection,
             pickFolder: () => FolderPicker.ShowAsync(_ui),
             onConnectionChanged: RebuildEngine,
             getUpdateResult: () => LastUpdateResult,
@@ -118,7 +119,10 @@ internal sealed class TrayContext : ApplicationContext
             // for a caller that fires BEFORE the process starts (Playnite's OnGameStarting, once that
             // plugin exists), which is exactly the certainty PrepareLaunchAsync's own doc comment
             // requires. Mirrors Daemon.cs:171's existing Linux wiring.
-            prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct));
+            prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct),
+            // POST /api/games/{id}/post-exit-sync (tasks/playnite-plugin/plan.md, Phase 5) — the
+            // Playnite plugin's OnGameStopped equivalent to this route's own OnGameStarting caller.
+            postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct));
         _apiServer.Start();
 
         _commandPoller = new CommandPoller(
@@ -136,7 +140,11 @@ internal sealed class TrayContext : ApplicationContext
         // 24 h periodic update check. First tick fires after 5 s so the tray is fully
         // visible before the balloon appears; subsequent ticks every 24 h.
         _updateTimer = new System.Threading.Timer(
-            _ => FireAndForget(() => CheckForUpdateAsync(silent: true)),
+            _ => FireAndForget(async () =>
+            {
+                await CheckForUpdateAsync(silent: true);
+                await CheckPlaynitePluginUpdateAsync();
+            }),
             null,
             dueTime: TimeSpan.FromSeconds(5),
             period: TimeSpan.FromHours(24));
@@ -182,6 +190,20 @@ internal sealed class TrayContext : ApplicationContext
             AgentLogger.Log($"recorded appid {match.SteamAppId} for '{game.Name}' from a rescan — " +
                             "Steam AppID matching (a Playnite or Decky plugin) could not find this game before");
         }
+    }
+
+    /// <summary>
+    /// Windows analogue of Daemon.cs's own <c>CheckPluginUpdateAsync</c> (tasks/playnite-plugin/
+    /// plan.md, Phase 7) — checks (and, if <see cref="AgentConfig.AutoUpdate"/> allows it, applies) an
+    /// update to the Playnite plugin, on the same 24 h timer as the agent's own update check. Silent
+    /// on a machine with no Playnite, which is most of them: <see cref="PlaynitePlugin"/> answers
+    /// <see cref="PluginUpdateState.NoPlaynite"/> before it does any work at all.
+    /// </summary>
+    private async Task CheckPlaynitePluginUpdateAsync()
+    {
+        var outcome = await PlaynitePlugin.CheckAsync(_config, AgentLogger.Log, apply: _config.AutoUpdate);
+        if (outcome.State is PluginUpdateState.NoPlaynite) return;
+        AgentLogger.Log($"playnite plugin check: {outcome.Message}");
     }
 
     private void MaybeShowFirstRun()

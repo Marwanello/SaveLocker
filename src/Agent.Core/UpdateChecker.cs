@@ -123,7 +123,8 @@ public sealed class UpdateChecker : IDisposable
     private static (string Extension, byte[] Magic, string Describe) ShapeOf(PackageKind kind) =>
         kind switch
         {
-            PackageKind.DeckyPlugin => (".zip", [(byte)'P', (byte)'K'], "a zip archive"),
+            PackageKind.DeckyPlugin or PackageKind.PlaynitePlugin
+                => (".zip", [(byte)'P', (byte)'K'], "a zip archive"),
             _ when OperatingSystem.IsWindows() => (".exe", [(byte)'M', (byte)'Z'], "a Windows executable"),
             _ => (".tar.gz", [0x1f, 0x8b], "a gzip archive"),
         };
@@ -395,6 +396,8 @@ public enum PackageKind
     Agent,
     /// <summary>The Decky plugin: a zip, on the one host that installs it.</summary>
     DeckyPlugin,
+    /// <summary>The Playnite plugin: a zip, on the one host (Windows) that installs it.</summary>
+    PlaynitePlugin,
 }
 
 /// <summary>Discriminated union result returned by <see cref="UpdateChecker.CheckAsync"/>.</summary>
