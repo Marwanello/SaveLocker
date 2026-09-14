@@ -2314,3 +2314,96 @@ included) can show "on (default)" vs. "on (forced)" without re-implementing the 
 - None of this session's five commits carry the `Co-Authored-By` trailer the current attribution
   instructions require — none have been pushed, so this is fixable, but has not yet been raised with or
   confirmed by the user.
+
+## 2026-09-14 (cont'd 2) — Playnite plugin Group 2 shipped; GitHub org default fixed
+
+Implemented Group 2 (Phases 4–7) of the Playnite plugin plan — exit-push toggle, three new local-API
+routes, the `AgentPlatform.PlaynitePlugin` slot, and a Windows plugin self-updater — then debugged the
+user's own live manual verification against it, fixing one real bug it caught (a wrong hardcoded GitHub
+org in the plugin's install link) plus two errors in my own verification instructions. Five commits, all
+unpushed.
+
+### What was asked
+
+1. "start implementing group 2 please and after words give me step by step manual verification using
+   test env if needed."
+2. Live debugging as the user ran the verification steps themselves: a 404 on `post-exit-sync`, a
+   question about why `pushAfterExitEnabled` still read `null` after a successful toggle POST, a 401 on
+   the server's `/api/agent/latest` route, and a wrong GitHub org baked into the plugin's install link.
+
+### What was built
+
+- **Phase 4 — `PushAfterExitEnabled`.** New nullable-bool override on `TrackedGame`
+  (`AgentConfig.SaveGamePushAfterExit`), mirroring `PullBeforeLaunchEnabled` exactly: `null` keeps
+  today's unconditional push-on-exit behavior, an explicit `true`/`false` always wins.
+  `SyncEngine.OnGameExitAsync` now gates its push call on `game.PushAfterExitEnabled ?? true`; the lease
+  release in `finally` stays unconditional either way.
+- **Phase 5 — three new local-API routes** (`AgentApiServer.cs`): `POST
+  /api/games/{id}/post-exit-sync` (single-flight via the existing `_syncGate`, fail-open — logs and
+  swallows any exception from the injected `postExitSync` delegate, never surfaces one to the caller);
+  `POST /api/candidates/lookup` (a single targeted resolve against a new `Detection`-typed constructor
+  dependency, merged into `_candidateCache` by normalized name so the returned id enrolls through the
+  existing, unmodified `/api/enroll` route); `GET /api/manifest/search?q=` (thin wrapper over
+  `Detection.SearchAsync`). Added a `Playnite` value to `ScanSource` for the lookup route's synthesized
+  candidate. `Agent.Linux/Daemon.cs` wired the new `detection`/`postExitSync` constructor params;
+  `Agent/TrayApp.cs` got the same wiring bundled into the Phase 7 commit.
+- **Phase 6 — `AgentPlatform.PlaynitePlugin` slot.** New platform constant end to end:
+  `Shared/Contracts.cs` (const + `All` + `Describe`), a new `_slots` entry in
+  `AgentInstallerService.cs` (`.zip`, `SaveLocker*.zip` pattern), `Server/Program.cs`'s static-config
+  fallback switch, and — not anticipated by `plan.md`, found this session — a hand-written 4th entry in
+  `web/src/components/AgentUpdatesCard.tsx`'s `INSTALLER_SLOTS` array plus `web/src/types.ts`'s
+  `AgentPlatform` union. Verified via `npx tsc --noEmit` (clean).
+- **Phase 7 — Windows plugin self-updater** (`src/Agent/PlaynitePlugin.cs`, new file). Mirrors
+  `Agent.Linux/DeckyPlugin.cs`'s shape (`CheckAsync`/`InstallAsync`, plan-before-write, digest
+  verification via `UpdateChecker.DownloadInstallerAsync`) but simpler — `%AppData%\Playnite\
+  Extensions\<id>\` is entirely user-owned, so a full-directory prune replaces Decky's `dist/`-only
+  carve-out. Since `src/Agent` doesn't reference `src/Agent.Linux`, defined fresh local
+  `PluginUpdateState`/`PluginUpdateOutcome` types instead of reusing Decky's, and used a plain
+  `InvalidOperationException` instead of the Linux-only `UpdateRefusedException`. Because a compiled
+  Playnite `GenericPlugin` never hot-reloads and its assembly is typically locked by its own host,
+  `IsPlayniteRunning` (checks `Playnite.DesktopApp`/`Playnite.FullscreenApp`) gates every write, both
+  before download and again immediately before copying files. `TrayApp.cs`'s update timer now also
+  calls a new `CheckPlaynitePluginUpdateAsync()` alongside the existing agent self-check. Added
+  `PackageKind.PlaynitePlugin` to `UpdateChecker.cs`'s shape table.
+
+Verified: `Agent.Core`, `Server`, and `Agent.Linux` all built clean directly; `src/Agent` was verified
+via scratch-output builds (`dotnet build ... -o <scratch>`) rather than its normal `bin/` output, which
+stayed locked by the user's own live test-tray process for most of the session — not something to kill,
+since it was their legitimately running verification instance, not a stale process.
+
+### Debugging during the user's own manual verification
+
+- **404 on `POST /api/games/{id}/post-exit-sync`.** Likely cause: `$id` taken from an empty/stale
+  `$games` array, producing a malformed `.../games//post-exit-sync` URL that fails the `{id:guid}`
+  route constraint. Talked the user through re-checking `$games.Count` and re-fetching; they resolved it
+  on their own before the next message, no further discussion needed.
+- **"shouldn't `pushAfterExitEnabled` be false now, it's null?"** Same class of confusion as last
+  session's `pullBeforeLaunchEnabled` question: the printed `$games` was a stale PowerShell snapshot from
+  before the POST, not a fresh fetch. Explained directly and gave the corrected re-fetch command.
+- **401 on `GET /api/agent/latest?platform=playnite-plugin`.** My own mistake, not a code defect — I'd
+  given a verification step using the local agent API's `X-SaveLocker-Token` header against a *server*
+  route that actually requires the console/dashboard's separate `X-Api-Key` header (the machine's own
+  key from `config.json`). These are two entirely unrelated auth schemes for two separate services;
+  fixed by correcting the instructions, no code changed.
+- **Wrong GitHub org in the plugin's install link — real bug, user-caught.** The user's own Phase 7
+  verification correctly reported the plugin missing, but the printed install URL pointed at
+  `SkorcherX/SaveLocker-Playnite`. Direct correction: *"the link is will be wrong. the plugin will be in
+  my account not SkorcherX."* Root cause: Phase 6/7 had mirrored the already-shipped
+  `SkorcherX/SaveLocker-Decky` default for the brand-new, not-yet-existing `SaveLocker-Playnite` repo
+  without checking whether that account applies here — it doesn't; every PR/commit in this repo's
+  history is under `Marwanello/SaveLocker`. Fixed both defaults (`AgentInstallerService.cs`'s
+  `playniteRepo` fallback and `PlaynitePlugin.cs`'s `InstallUrl` constant) to
+  `Marwanello/SaveLocker-Playnite`. Deliberately left the existing `SkorcherX/SaveLocker` (agent) and
+  `SkorcherX/SaveLocker-Decky` defaults untouched — those are already-shipped and out of scope.
+
+### Commits (this worktree, unpushed)
+
+`738d086` (Phases 4–5) · `b5933aa` (Phase 6) · `5f6b598` (Phase 7) · `49e1e4c` (status-table update) ·
+`c7d5454` (GitHub org fix).
+
+### Not done
+
+- Phase 7's self-updater is code-complete but unverified against a real install, since
+  `SaveLocker-Playnite` doesn't exist as a repo/release yet.
+- The `Co-Authored-By` trailer gap flagged for the prior session's five commits is still unaddressed —
+  not raised again this session, still requires explicit confirmation before any history rewrite.
