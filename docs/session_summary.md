@@ -1,3 +1,100 @@
+# Session summary — 2026-09-14 (cont'd) — Playnite plugin Group 1 shipped, WSL conflict fallback, testenv fixes
+
+Implemented Group 1 (Phases 1–3) of the Playnite plugin plan end to end, debugged the user's own live
+manual verification against it, designed then built a WSL fallback so `testenv.ps1 conflict` can seed a
+genuine conflict without a physical Steam Deck, fixed an unrelated `testenv.ps1 clean` bug found along
+the way, and established the Phase/Group status-table convention as a standing rule in `CLAUDE.md`.
+Five commits, all unpushed.
+
+## What was asked
+
+1. "Start implmenting group 1 and afterwards (only if needed) tell me how to verify manually / And what
+   has changed briefly in technical and no technical terms after implmenting this group."
+2. Live debugging as the user ran the verification steps: a `401 Unauthorized`, then `pre-launch-sync`
+   returning `Proceed` instead of the expected `Blocked`.
+3. "i would prefer to make conflict in testenv has this functionality. if the deck is not reachable use
+   wsl insted / but sugesst how it will work" — a design proposal first, not immediate code.
+4. "implment this / then commit changes in meaningful commits / and add a summery table for implemented
+   phses and groupd in playnite plugin task just like in conflict resolution ui. and make it the
+   standard when creating plan.md and implmentation-grouping.md."
+5. A pasted `testenv.ps1 clean` failure: "why does this happen please fix if you can."
+6. "after those edits tell me a step by step manual verfication using testenv."
+7. Two follow-ups on the real verification output: why `pullBeforeLaunchEnabled` was empty for Steam
+   games and `false` for "Conflict Game"; then "shouldont pull before launch be true in all non steam
+   games?"
+
+## What was built
+
+**Phase 1 — Windows launch-gate rewiring.** `TrayApp.cs`'s `prepareLaunch` delegate now calls
+`_engine.PrepareLaunchAsync(game, ct)` instead of the old never-pull-never-block
+`OnGameLaunchAsync(preLaunch: false)`, mirroring Linux's existing wiring — the first genuine pre-launch
+boundary Windows has ever had, safe because nothing called this route before today.
+
+**Phase 2 — `SteamAppId` population on Windows.** `GameScanner` now records the Steam manifest's own
+`appid` on every installed-Steam-game candidate (previously read only to filter, then discarded), plus a
+startup backfill (`TrayApp.BackfillSteamAppIdsAsync`) matching already-tracked games by `InstallDir`
+against a fresh rescan.
+
+**Phase 3 — `PullBeforeLaunchEnabled` moved server-side.** A new `EffectivePullBeforeLaunch(game) =>
+game.PullBeforeLaunchEnabled ?? game.HasSteamCloud != true` now gates the pre-launch pull inside
+`SyncEngine.PrepareLaunchAsync` itself, so every caller (Linux, Decky, and now Windows/Playnite) gets the
+same "off for Steam Cloud, on otherwise, explicit override always wins" behavior from one place instead
+of each frontend re-implementing it client-side.
+
+**WSL fallback for `testenv.ps1 conflict`.** `.\tests\testenv.ps1 conflict [-Windows] [-Deck] [-Wsl]`:
+`-Wsl` is an explicit second-side choice, and — per the user's literal ask — requesting `-Deck` when the
+Deck turns out unreachable automatically falls back to seeding the WSL side instead, printed clearly
+either way. `tests/testenv.sh` gained a `cmd_conflict()` (WSL never had one) mirroring the existing Deck
+seeding shape. This is what makes a genuine, hardware-independent conflict reproducible at all — a
+conflict needs two sides pushing in a specific order, and without either a real Deck or this fallback
+there was no second side available in this environment.
+
+**`testenv.ps1 clean` fix.** Root cause of a wall of `Remove-Item` "in use" errors under
+`WebView2\EBWebView\...`: `Stop-Windows` killed the tray process but never WebView2's own separate
+helper processes, which don't die synchronously with their parent. Fixed by also killing matching
+`msedgewebview2.exe` processes before deleting, and by making the delete loop actually `throw` on
+persistent failure instead of always claiming success.
+
+**Standing docs convention.** Added a permanent `CLAUDE.md` rule: every `plan.md` gets a `## Status`
+phase table, every `implementation-grouping.md` gets a matching group table, updated the same session
+something ships — not a one-off, a rule for every future task.
+
+## Debugging root causes
+
+- **401s**: missing `X-SaveLocker-Token` header — fixed by reading the test instance's own
+  `api-token` file.
+- **`Proceed` instead of `Blocked`**: my own earlier instruction was incomplete — I'd said to run
+  `conflict -Windows` alone, not realizing a conflict is inherently two-sided and order-dependent
+  (`testenv.ps1`'s own comment: whichever side pushes second is what the server records as a genuine
+  divergence). With no Deck configured, only one side had ever seeded. Acknowledged directly and fixed
+  properly via the WSL fallback above rather than a one-off workaround.
+- **`pullBeforeLaunchEnabled` tri-state**: confirmed to the user that `null` correctly means "no
+  override, gate computes its own default" (which genuinely evaluates to "pull" for a non-Steam-Cloud
+  game) — "Conflict Game" showing a literal `false` was an explicit override this session's own
+  verification steps had set, not evidence the default logic was wrong. Proposed, but did not build, a
+  read-only `effectivePullBeforeLaunch` DTO field so a future settings UI could show the computed value
+  without re-implementing the heuristic.
+
+## Verification
+
+`dotnet build` after each phase; `bash -n`/PowerShell-parser checks on both testenv scripts; then a full
+live walkthrough against a real testenv rig — the user's own pasted output confirmed a genuine
+WSL-seeded conflict correctly returned `Blocked`, and that Phases 1–3 are functioning against real data
+(resolved `steamAppId`s, a correctly-computed pull default, a real block on a real divergence).
+
+## Commits (unpushed)
+
+`0cb12d7`, `cca2836`, `c33bbcb`, `f87ffc8`, `5511244` — see `progress.md` for the full per-commit
+breakdown.
+
+## Not done
+
+- The proposed `effectivePullBeforeLaunch` DTO field — not implemented, no code change requested yet.
+- None of this session's five commits carry the `Co-Authored-By` trailer current attribution
+  instructions require. Fixable (nothing is pushed) but not yet raised with or confirmed by the user.
+
+---
+
 # Session summary — 2026-09-14 — Conflict-resolution-ui closed out, Playnite plugin regrouped
 
 Docs-only session: dropped Phase 14 from the conflict-resolution-ui plan and marked that whole task
