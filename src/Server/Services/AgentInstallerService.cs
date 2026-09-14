@@ -79,7 +79,7 @@ public class AgentInstallerService
             ?? Path.Combine(AppContext.BaseDirectory, "data", "agent-installer");
         var agentRepo = cfg["AgentUpdate:GitHubRepo"] ?? "SkorcherX/SaveLocker";
         var pluginRepo = cfg["AgentUpdate:Plugin:GitHubRepo"] ?? "SkorcherX/SaveLocker-Decky";
-        var playniteRepo = cfg["AgentUpdate:PlaynitePlugin:GitHubRepo"] ?? "SkorcherX/SaveLocker-Playnite";
+        var playniteRepo = cfg["AgentUpdate:PlaynitePlugin:GitHubRepo"] ?? "Marwanello/SaveLocker-Playnite";
         _maxBytes = (long)(cfg.GetValue<int?>("AgentUpdate:MaxInstallerMb") ?? 200) * 1024 * 1024;
 
         _slots = new Dictionary<string, Slot>(StringComparer.Ordinal)

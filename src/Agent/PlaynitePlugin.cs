@@ -62,7 +62,7 @@ public static class PlaynitePlugin
 
     /// <summary>Where a user pastes to install it the first time — the one step this cannot do.</summary>
     public const string InstallUrl =
-        "https://github.com/SkorcherX/SaveLocker-Playnite/releases/latest/download/SaveLocker.zip";
+        "https://github.com/Marwanello/SaveLocker-Playnite/releases/latest/download/SaveLocker.zip";
 
     /// <summary>A package with more entries than this is refused before anything is unpacked.</summary>
     private const int MaxEntries = 5_000;
