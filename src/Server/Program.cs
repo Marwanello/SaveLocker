@@ -521,9 +521,10 @@ agent.MapGet("/agent/latest", (IConfiguration cfg, AgentInstallerService install
     // and answered 204. WA-05's off-origin block is what caught it.
     var section = slot switch
     {
-        AgentPlatform.Linux       => "AgentUpdate:Linux",
-        AgentPlatform.DeckyPlugin => "AgentUpdate:Plugin",
-        _                         => "AgentUpdate",
+        AgentPlatform.Linux          => "AgentUpdate:Linux",
+        AgentPlatform.DeckyPlugin    => "AgentUpdate:Plugin",
+        AgentPlatform.PlaynitePlugin => "AgentUpdate:PlaynitePlugin",
+        _                            => "AgentUpdate",
     };
     var ver = cfg[$"{section}:LatestVersion"];
     var url = cfg[$"{section}:DownloadUrl"];

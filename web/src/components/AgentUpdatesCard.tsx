@@ -33,10 +33,11 @@ function describeSchedule(schedule: AutoFetchSchedule | undefined, nextRunAt: st
 }
 
 /**
- * One row per hosted package (`AgentInstallerService`'s slots — win-x64, linux-x64, decky-plugin).
- * `parseVersion` reads the version out of a release asset's filename, so the admin rarely types it;
- * `decky-plugin` is the one exception (its zip is always literally `SaveLocker.zip`, so the plugin
- * repo's own release has to be typed or read from a GitHub fetch instead).
+ * One row per hosted package (`AgentInstallerService`'s slots — win-x64, linux-x64, decky-plugin,
+ * playnite-plugin). `parseVersion` reads the version out of a release asset's filename, so the admin
+ * rarely types it; `decky-plugin` and `playnite-plugin` are the exceptions (their zips are always
+ * literally `SaveLocker.zip`, so their own repo's release has to be typed or read from a GitHub fetch
+ * instead).
  */
 interface InstallerSlot {
   platform: AgentPlatform;
@@ -64,6 +65,13 @@ const INSTALLER_SLOTS: InstallerSlot[] = [
   {
     platform: 'decky-plugin',
     label: 'Decky plugin',
+    accept: '.zip',
+    fileHint: 'SaveLocker.zip — type the version, it is not in the filename',
+    parseVersion: name => name.match(/^SaveLocker-?(\d[\d.]*)\.zip$/i)?.[1] ?? '',
+  },
+  {
+    platform: 'playnite-plugin',
+    label: 'Playnite plugin',
     accept: '.zip',
     fileHint: 'SaveLocker.zip — type the version, it is not in the filename',
     parseVersion: name => name.match(/^SaveLocker-?(\d[\d.]*)\.zip$/i)?.[1] ?? '',

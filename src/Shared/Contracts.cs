@@ -113,7 +113,15 @@ public static class AgentPlatform
     /// </summary>
     public const string DeckyPlugin = "decky-plugin";
 
-    public static readonly string[] All = [Windows, Linux, DeckyPlugin];
+    /// <summary>
+    /// The Playnite plugin (tasks/playnite-plugin/plan.md, Phase 6). Not a RID and not an agent, for
+    /// exactly the same reason <see cref="DeckyPlugin"/> isn't — a package the WINDOWS agent installs
+    /// into another application's directory on the user's behalf. Its own GitHub asset comes from yet
+    /// another repository (<c>SkorcherX/SaveLocker-Playnite</c>).
+    /// </summary>
+    public const string PlaynitePlugin = "playnite-plugin";
+
+    public static readonly string[] All = [Windows, Linux, DeckyPlugin, PlaynitePlugin];
 
     /// <summary>
     /// Normalizes a caller-supplied platform, defaulting an absent one to <see cref="Windows"/>.
@@ -135,9 +143,10 @@ public static class AgentPlatform
     /// <summary>How a person should see it. Never used as a path or a query value.</summary>
     public static string Describe(string platform) => platform switch
     {
-        Linux       => "Linux",
-        DeckyPlugin => "Decky plugin",
-        _           => "Windows",
+        Linux          => "Linux",
+        DeckyPlugin    => "Decky plugin",
+        PlaynitePlugin => "Playnite plugin",
+        _              => "Windows",
     };
 }
 
