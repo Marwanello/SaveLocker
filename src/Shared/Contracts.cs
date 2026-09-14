@@ -117,7 +117,8 @@ public static class AgentPlatform
     /// The Playnite plugin (tasks/playnite-plugin/plan.md, Phase 6). Not a RID and not an agent, for
     /// exactly the same reason <see cref="DeckyPlugin"/> isn't — a package the WINDOWS agent installs
     /// into another application's directory on the user's behalf. Its own GitHub asset comes from yet
-    /// another repository (<c>SkorcherX/SaveLocker-Playnite</c>).
+    /// another repository (<c>Marwanello/SaveLocker-Playnite</c> — unlike <see cref="DeckyPlugin"/>'s
+    /// SkorcherX-owned one, this plugin's repo lives under this project's own account).
     /// </summary>
     public const string PlaynitePlugin = "playnite-plugin";
 

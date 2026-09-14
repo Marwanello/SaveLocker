@@ -142,8 +142,12 @@ internal sealed class TrayContext : ApplicationContext
         _updateTimer = new System.Threading.Timer(
             _ => FireAndForget(async () =>
             {
-                await CheckForUpdateAsync(silent: true);
-                await CheckPlaynitePluginUpdateAsync();
+                // Independent checks: an exception from one (e.g. a locked config file during
+                // CheckForUpdateAsync's Save()) must not silently skip the other for this tick.
+                try { await CheckForUpdateAsync(silent: true); }
+                catch (Exception ex) { AgentLogger.LogException("TrayContext.CheckForUpdate", ex); }
+                try { await CheckPlaynitePluginUpdateAsync(); }
+                catch (Exception ex) { AgentLogger.LogException("TrayContext.CheckPlaynitePluginUpdate", ex); }
             }),
             null,
             dueTime: TimeSpan.FromSeconds(5),

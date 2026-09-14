@@ -110,10 +110,14 @@ public static class PlaynitePlugin
     {
         try
         {
+            // Dictionary<string, object>, not <string, string>: IgnoreUnmatchedProperties only
+            // applies to POCO targets, so a Dictionary target already tolerates any key — but a
+            // <string, string> target still throws if any OTHER field's value is a YAML mapping or
+            // sequence rather than a scalar. Only Version is ever read, so only it needs to be a string.
             var deserializer = new DeserializerBuilder().IgnoreUnmatchedProperties().Build();
-            var doc = deserializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(ManifestPath));
-            return doc is not null && doc.TryGetValue("Version", out var v) && !string.IsNullOrWhiteSpace(v)
-                ? v.Trim()
+            var doc = deserializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(ManifestPath));
+            return doc is not null && doc.TryGetValue("Version", out var v) && v is string s && !string.IsNullOrWhiteSpace(s)
+                ? s.Trim()
                 : null;
         }
         catch { return null; }

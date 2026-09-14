@@ -1107,6 +1107,12 @@ switch ($Command) {
             throw "-Deck and -Wsl are mutually exclusive - pick the one real second side you want (or give neither to auto-pick)."
         }
 
+        # An explicit -Deck means the Deck side was asked for specifically, so a real failure there
+        # (not configured, unreachable, or a genuine bug in its own seeding) must be reported as a
+        # failure, not silently swapped for WSL and read as success — only the auto-picked default
+        # (below) treats a sleeping/unconfigured Deck as expected and falls back quietly.
+        $deckExplicit = $PSBoundParameters.ContainsKey('Deck')
+
         # Neither given: seed Windows plus whichever second side is actually usable right now,
         # so the common case ("just give me a conflict to test against") works with zero setup.
         # -Wsl still forces WSL even with a Deck configured (no need to wake it for a quick check);
@@ -1149,16 +1155,21 @@ switch ($Command) {
 
         if ($secondSide -eq 'deck') {
             if (-not (Test-DeckConfigured)) {
-                Warn 'no Deck configured - falling back to WSL as the second side (set -DeckHost or $env:SAVELOCKER_DECK_HOST to use the real Deck instead).'
-                $usedSide = 'wsl'
+                if ($deckExplicit) { Warn '-Deck given but no Deck configured (set -DeckHost or $env:SAVELOCKER_DECK_HOST).' }
+                else { Warn 'no Deck configured - falling back to WSL as the second side (set -DeckHost or $env:SAVELOCKER_DECK_HOST to use the real Deck instead).' }
+                $usedSide = if ($deckExplicit) { 'deck' } else { 'wsl' }
             } elseif (-not $DeckServerUrl) {
-                Warn "no -DeckServerUrl / `$env:SAVELOCKER_DECK_SERVER_URL set (the Deck can't reach 'localhost') - falling back to WSL as the second side."
-                $usedSide = 'wsl'
+                if ($deckExplicit) { Warn "-Deck given but no -DeckServerUrl / `$env:SAVELOCKER_DECK_SERVER_URL set (the Deck can't reach 'localhost')." }
+                else { Warn "no -DeckServerUrl / `$env:SAVELOCKER_DECK_SERVER_URL set (the Deck can't reach 'localhost') - falling back to WSL as the second side." }
+                $usedSide = if ($deckExplicit) { 'deck' } else { 'wsl' }
             } else {
                 try { Invoke-Deck 'conflict'; $secondOk = $true }
                 catch {
-                    Warn "deck unreachable ($($_.Exception.Message)) - falling back to WSL as the second side."
-                    $usedSide = 'wsl'
+                    if ($deckExplicit) { Warn "deck: $($_.Exception.Message)" }
+                    else {
+                        Warn "deck unreachable ($($_.Exception.Message)) - falling back to WSL as the second side."
+                        $usedSide = 'wsl'
+                    }
                 }
             }
         }

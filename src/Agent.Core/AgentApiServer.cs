@@ -865,6 +865,9 @@ public sealed class AgentApiServer : IDisposable
             try
             {
                 await _postExitSync(game, ct);
+                // Same re-check pre-launch-sync does above: the game list can change while the
+                // sync was in flight, and a 200 for a game no longer tracked here is misleading.
+                if (_config.Games.All(g => g.GameId != id)) return TypedResults.NotFound();
             }
             catch (Exception ex)
             {
@@ -893,7 +896,10 @@ public sealed class AgentApiServer : IDisposable
             var installDir = string.IsNullOrWhiteSpace(body.InstallDir) ? null : body.InstallDir.Trim();
             var store = ParseStore(body.Store);
 
-            var dirs = await _detection.ResolveWindowsAsync(name, installDir, installDir, ct);
+            // installDir is <base> only, not <root> (the store LIBRARY root) — a Playnite lookup has
+            // no library-root signal to supply, so <root> is left unresolved rather than wrongly
+            // pinned to the game's own install folder (PathResolver.Windows's own distinction).
+            var dirs = await _detection.ResolveWindowsAsync(name, installDir, ct: ct);
             var suggestedSaveDir = dirs.FirstOrDefault();
             // Same convention ScanInstalledSteamGamesAsync uses: for a Steam-sourced candidate, no
             // manifest data defaults to "assume Steam Cloud" (a wrong "no" would let the pre-launch
@@ -909,11 +915,33 @@ public sealed class AgentApiServer : IDisposable
                 SteamAppId: string.IsNullOrWhiteSpace(body.SteamAppId) ? null : body.SteamAppId.Trim(),
                 Store: store);
 
-            var list = (_candidateCache ?? Array.Empty<ScanCandidate>()).ToList();
+            // A bare lookup must never be the first thing to populate the cache — GET /api/candidates
+            // and POST /api/enroll both fall back to a real RescanAsync() when it's null, and a
+            // one-entry cache from a single Playnite lookup would silently stand in for that scan on
+            // every later call. Same fallback those routes already use, so an existing cache is still
+            // reused as-is and only a genuinely empty one triggers a scan here.
+            var list = (_candidateCache ?? await RescanAsync()).ToList();
             var normalized = ManifestLoader.NormalizeName(name);
             var existing = list.FindIndex(c => ManifestLoader.NormalizeName(c.Name) == normalized);
             int id;
-            if (existing >= 0) { list[existing] = candidate; id = existing; }
+            if (existing >= 0)
+            {
+                // A real scan can already carry fields a Playnite-only lookup has no way to supply —
+                // SuggestedProcessName in particular, which WA-08's whole process lifecycle (lease,
+                // exit-push, running-game pull refusal) depends on. Keep them instead of letting this
+                // narrower lookup silently downgrade what enrollment will end up using.
+                var prior = list[existing];
+                candidate = candidate with
+                {
+                    SuggestedSaveDir = prior.SuggestedSaveDir ?? candidate.SuggestedSaveDir,
+                    SuggestedProcessName = prior.SuggestedProcessName ?? candidate.SuggestedProcessName,
+                    PrefixPath = prior.PrefixPath ?? candidate.PrefixPath,
+                    MoonDeckAppId = prior.MoonDeckAppId ?? candidate.MoonDeckAppId,
+                    ManifestKey = prior.ManifestKey ?? candidate.ManifestKey,
+                };
+                list[existing] = candidate;
+                id = existing;
+            }
             else { list.Add(candidate); id = list.Count - 1; }
             _candidateCache = list;
 
@@ -938,7 +966,12 @@ public sealed class AgentApiServer : IDisposable
     /// filtered/labeled, never anything that must be trusted, so silently defaulting is fine here
     /// unlike a platform string that names a directory.</summary>
     private static GameStore ParseStore(string? value) =>
-        Enum.TryParse<GameStore>(value, ignoreCase: true, out var store) ? store : GameStore.Unknown;
+        // Enum.TryParse alone accepts any numeric string (e.g. "99") and returns it as-is even when
+        // no member has that value — Enum.IsDefined is what actually enforces the "unrecognised ->
+        // Unknown" contract the doc comment above promises.
+        Enum.TryParse<GameStore>(value, ignoreCase: true, out var store) && Enum.IsDefined(store)
+            ? store
+            : GameStore.Unknown;
 
     /// <summary>
     /// The installed wrapper binary's path, recovered from the invocation <see cref="_launchInfo"/>
