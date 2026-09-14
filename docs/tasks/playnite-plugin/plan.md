@@ -24,7 +24,7 @@ both `%LocalAppData%\Playnite` and `%AppData%\Playnite`, `dotnet 10.0.400` prese
 cloud/remote sessions `implementation-grouping.md` wrote its "Windows + Playnite installed" caveat
 against. Phase 1 below (scaffold + load) is genuinely attemptable here, not just plannable.
 
-## Status (updated 2026-09-14 — Group 1 shipped)
+## Status (updated 2026-09-14 — Group 2 shipped)
 
 Same status-table convention `conflict-resolution-ui/plan.md` established — kept current as phases
 ship, not written once and left stale. See `implementation-grouping.md` for which phases share a
@@ -35,10 +35,10 @@ session and why.
 | 1 — Windows launch-gate rewiring | ✅ Shipped 2026-09-14 |
 | 2 — Populate `SteamAppId` on Windows | ✅ Shipped 2026-09-14 |
 | 3 — `PullBeforeLaunchEnabled` moves server-side | ✅ Shipped 2026-09-14 |
-| 4 — `PushAfterExitEnabled` | ⏳ Not started |
-| 5 — Three small new local-API routes | ⏳ Not started |
-| 6 — `AgentPlatform.PlaynitePlugin` slot | ⏳ Not started |
-| 7 — Windows plugin self-updater | ⏳ Not started |
+| 4 — `PushAfterExitEnabled` | ✅ Shipped 2026-09-14 |
+| 5 — Three small new local-API routes | ✅ Shipped 2026-09-14 |
+| 6 — `AgentPlatform.PlaynitePlugin` slot | ✅ Shipped 2026-09-14 |
+| 7 — Windows plugin self-updater | ✅ Shipped 2026-09-14 — code-complete; no real plugin package exists yet to test an actual install against |
 | 8 — Scaffold + "hello world" load | ⏳ Not started |
 | 9 — Local API client + settings page | ⏳ Not started |
 | 10 — Core pre-launch/post-exit gate | ⏳ Not started |

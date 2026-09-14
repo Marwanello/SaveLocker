@@ -18,12 +18,12 @@ same three things `conflict-resolution-ui`'s own grouping document weighs togeth
    from (~7–9 sessions agent-side, ~11–15 plugin-side, ~18–24 total — unchanged by this regrouping,
    only the bucketing changed).
 
-## Status (updated 2026-09-14 — Group 1 shipped, see `plan.md`)
+## Status (updated 2026-09-14 — Group 2 shipped, see `plan.md`)
 
 | Group | Contents | Status |
 |---|---|---|
 | 1 | Phases 1–3 (launch gate, `SteamAppId`, pull-toggle move) | ✅ Done 2026-09-14 |
-| 2 | Phases 4–7 (exit-push, new routes, self-update plumbing) | ⏳ Not started |
+| 2 | Phases 4–7 (exit-push, new routes, self-update plumbing) | ✅ Done 2026-09-14 — Phase 7's self-updater is code-complete but unverified against a real package (`SaveLocker-Playnite` doesn't exist yet) |
 | 3 | Phases 8–11 (scaffold, settings, core gate, matching) | ⏳ Not started |
 | 4 | Phase 12 (enroll/link popup) | ⏳ Not started |
 | 5 | Phases 13–15 (status chip/buttons, self-update consumption, test infra) | ⏳ Not started |
