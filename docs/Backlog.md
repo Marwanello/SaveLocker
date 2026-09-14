@@ -6,7 +6,7 @@ Not-yet-done work only — one line per item, each pointing at its task folder u
 
 ## High priority
 
-- **Decky conflict resolution (phases 0–14).** Phases 0–9 plus Groups 4–6 shipped, Phase 10/11 hardware-verified, Phase 12 shipped code-only (not hardware-verified); phases 13–14 remain open → `tasks/conflict-resolution-ui/plan.md`.
+- **Playnite plugin (16 phases, own task since 2026-09-14).** A pre-launch/post-exit sync gate for Windows (Playnite is the first host to give Windows a genuine pre-launch boundary), automatic game matching, a link/enroll popup with Ludusavi manifest search, a status-and-actions panel in Playnite's UI, and an agent-driven self-updater. Sized at ~18–24 sessions full scope, ~7–8.5 for the MVP cut (Groups 1 and 3); none started → `tasks/playnite-plugin/plan.md`.
 - **v0.5.4 surfaces without hardware coverage.** Heroic store sub-chips + Game Mode filter-row gamepad nav → `tasks/unverified-ui-surfaces/summary.md`.
 - **Emulator saves.** Per-ROM detection + sync (RetroArch, PCSX2, Dolphin, …), 7 phases, none started → `tasks/emulator-saves/plan.md`.
 - **Native Linux save support.** Scoped; needs `Game.Platform` isolation before detection lands → `tasks/native-linux-saves/summary.md`.

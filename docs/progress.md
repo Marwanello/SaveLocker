@@ -2080,3 +2080,90 @@ Five `docs/tasks/*/` folders → `docs/logs/2026-09-08_*/` (git mv, history kept
 backlog lines were broader than what was verified (installer happy-path/expired/skip/silent, Deck
 scenarios, Windows gates, second-machine redeem), and those sub-scopes are named there rather than
 silently dropped. `CONTEXT.md` session entry added.
+
+---
+
+## 2026-09-14 — Conflict-resolution-ui closed out (Phase 14 dropped); Playnite plugin groups consolidated 11 → 6
+
+**Docs-only session — no application code changed, nothing committed.** Continuation of the same-day
+Playnite-plugin planning session that split Phase 13 out of `tasks/conflict-resolution-ui/` into its
+own standalone `tasks/playnite-plugin/` task (16 phases, own grouping doc). This entry covers the two
+follow-up requests made once that split had landed.
+
+### What was asked
+
+1. "Ditch phase 14 and mark save conflict as complete with only future user experience review may
+   come."
+2. "And decrease the number of implementation groups in the playnite plugin."
+
+### Phase 14 dropped, conflict-resolution-ui marked complete
+
+- `tasks/conflict-resolution-ui/plan.md`: Status section rewritten to "task complete" — every phase
+  has now shipped, moved to its own task (Phase 13 → `tasks/playnite-plugin/`), or been dropped
+  (Phase 14). Phase 14's row changed from "not started, deferred" to "❌ Dropped 2026-09-14," with the
+  reasoning spelled out: its block-launch half (`Game.BlockLaunchOnConflict`) never had its open design
+  conflict against Phase 4's already-shipped *unconditional* block-on-confirmed-conflict behavior
+  resolved, and neither half — the block-launch opt-in nor the webhook/ntfy/email notify — has any
+  confirmed player need behind it; rungs 5–7 of the escalation ladder (CLI, `doctor`, the safe
+  open-`ConflictFlag` terminal state) already guarantee a conflict is discoverable and never silently
+  mishandled without it. Cleaned up every other place Phase 14 was still described as pending: the
+  intro paragraph, the Phase 7 and Phase 9 shipped write-ups' cross-references, the ASCII dependency
+  diagram, the dedicated Phase 13/14 section body, and the Scope note's rung-6 description.
+- `tasks/conflict-resolution-ui/implementation-grouping.md`: same completion marker added to its own
+  Status header; Group 5's Phase 14 mention updated from "deferred" to "later dropped entirely."
+- `Backlog.md`: removed the "Decky conflict resolution" line from the High-priority not-yet-done list
+  entirely (nothing remains open on it); the Playnite plugin line's group reference updated for the
+  regrouping below.
+- `logs/shipped-2026-09.md`: added one completion row for the whole 14-phase effort, pointing at
+  `tasks/conflict-resolution-ui/plan.md` for full detail rather than trying to re-summarize 14 phases
+  of shipped work into the log table's own cells.
+
+**Deliberately not done:** did not relocate `tasks/conflict-resolution-ui/` into `docs/logs/` despite
+the project's own session-handoff convention for completed task folders — `tasks/playnite-plugin/
+plan.md`'s header and phase-dependency notes reference this folder's path directly, and moving it
+would break those links for no benefit the request asked for. Flagged to the user rather than done
+silently.
+
+### Playnite plugin implementation groups consolidated: 11 → 6
+
+`tasks/playnite-plugin/implementation-grouping.md` rewritten to bundle the same 16 phases into 6
+groups instead of 11, at the same total session-cost estimates — `plan.md`'s own "Size estimate"
+section (~7–9 sessions agent-side, ~11–15 plugin-side, ~18–24 total) was left untouched, since only
+the bucketing changed, not the underlying per-phase numbers:
+
+- **Group 1** (agent-side, ~2–2.5 sessions): Phases 1–3 — launch-gate rewiring, `SteamAppId`
+  population, `PullBeforeLaunchEnabled` move (merges the old Groups 1+2).
+- **Group 2** (agent-side, ~4.5–6 sessions): Phases 4–7 — exit-push toggle, the three new local-API
+  routes, the `AgentPlatform.PlaynitePlugin` slot, and the Windows self-updater (merges the old
+  Groups 3+4).
+- **Group 3** (plugin-side, ~5–6 sessions): Phases 8–11 — scaffold, settings, the core pre-launch
+  gate, and automatic matching (merges the old Groups 5+6+7 — matching was deliberately pulled in
+  here, not left in its own group, specifically so the MVP cut stays a clean "Group 1 + Group 3"
+  rather than half of a merged group).
+- **Group 4** (plugin-side, ~2 sessions): Phase 12 alone — the enroll/link popup (was old Group 8,
+  unchanged).
+- **Group 5** (plugin-side, ~3.5–5 sessions): Phases 13–15 — status chip/buttons, self-update
+  consumption, test infra (merges the old Groups 9+10).
+- **Group 6** (plugin-side, ~0.5–1 session): Phase 16 alone — add-on database submission (was old
+  Group 11, kept separate on purpose: a third-party review timeline is a different kind of task from
+  build work, worth keeping visible rather than buried in a polish group).
+
+`plan.md`'s own "Recommended cut" section was updated to cite the new group numbers: the MVP is now
+simply **Group 1 + Group 3** (~7–8.5 sessions — arithmetically identical to the old five-group MVP of
+Groups 1/2/5/6/7, since no phase moved between the MVP and non-MVP side of the line, only the group
+boundaries around them changed).
+
+### Verification
+
+Docs-only change; verified by grepping both `plan.md` files for stale `Group [0-9]`/`Phase 14`
+references after each edit, and re-reading the edited sections to confirm internal consistency (group
+session totals still sum correctly, and the MVP session count still matches the "≈7–8.5 sessions"
+claim `plan.md` already made before this session touched it).
+
+### Not done
+
+- `tasks/conflict-resolution-ui/` folder not relocated to `docs/logs/` (see above).
+- No commit made — vault edits are uncommitted on the current worktree branch
+  (`phase-13-playnite-plugin`).
+- The "future user-experience review" now named in conflict-resolution-ui's Status section is
+  intentionally left unscoped and unscheduled — a named possibility, not a task.
