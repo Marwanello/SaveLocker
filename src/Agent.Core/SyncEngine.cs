@@ -903,7 +903,8 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             "a confirmed conflict is open for this game", conflict.Id);
     }
 
-    /// <summary>Post-exit: push the final save and release the lease.</summary>
+    /// <summary>Post-exit: push the final save (unless <see cref="TrackedGame.PushAfterExitEnabled"/>
+    /// says not to) and release the lease.</summary>
     public async Task OnGameExitAsync(TrackedGame game, CancellationToken ct = default)
     {
         // The renewer stops even on a retired engine — the timer belongs to this object, and
@@ -913,7 +914,12 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
 
         try
         {
-            await PushAsync(game, force: false, settle: true, ct: ct);
+            // Null (no override) means push — today's existing unconditional behaviour, unchanged
+            // for every game tracked before this field existed (tasks/playnite-plugin/plan.md,
+            // Phase 4). The lease release below is unconditional regardless: skipping the push must
+            // never also leave the game checked out to this machine.
+            if (game.PushAfterExitEnabled ?? true)
+                await PushAsync(game, force: false, settle: true, ct: ct);
         }
         finally
         {

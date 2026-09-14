@@ -16,7 +16,13 @@ public enum ScanSource
     /// files, not from Steam — Heroic runs its games in prefixes it manages itself, so a Heroic game
     /// added to the Steam library has a shortcut but no compatdata prefix behind it.
     /// </summary>
-    Heroic
+    Heroic,
+    /// <summary>
+    /// A single, targeted resolve built from a Playnite plugin's own library data (name, install dir,
+    /// whichever store hints it has), via <c>POST /api/candidates/lookup</c>
+    /// (tasks/playnite-plugin/plan.md, Phase 5) — not one of this scanner's own broad sweeps.
+    /// </summary>
+    Playnite
 }
 
 /// <summary>

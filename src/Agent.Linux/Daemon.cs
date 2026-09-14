@@ -135,6 +135,7 @@ public sealed class Daemon : IAsyncDisposable
                 return result;
             },
             autoStart: new SystemdAutoStart(),
+            detection: _detection,
             pickFolder: null, // headless: no native dialog — the UI browses via /api/browse instead
             // Retire the engine being replaced, off the request thread. Dropping it kept its lease
             // timers renewing against the old server for the life of the process. WA-06.
@@ -168,7 +169,8 @@ public sealed class Daemon : IAsyncDisposable
             stagedUpdate: () => Updater.StagedUpdate(_config),
             activity: _activity,
             syncAll: () => _engine.SyncAllAsync(_config.Games),
-            prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct));
+            prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct),
+            postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct));
         _apiServer.Start();
 
         _drainer = new OfflineQueueDrainer(_offlineQueue, _config, () => _engine, Notify);

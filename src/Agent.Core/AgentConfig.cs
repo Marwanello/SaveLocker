@@ -547,6 +547,13 @@ public sealed class AgentConfig
         MutateGameUnderLock(gameId, g => g.PullBeforeLaunchEnabled = enabled);
 
     /// <summary>
+    /// Persist one game's push-after-exit override without clobbering concurrent changes to anything
+    /// else (tasks/playnite-plugin/plan.md, Phase 4) — see <see cref="MutateGameUnderLock"/>.
+    /// </summary>
+    public void SaveGamePushAfterExit(Guid gameId, bool? enabled) =>
+        MutateGameUnderLock(gameId, g => g.PushAfterExitEnabled = enabled);
+
+    /// <summary>
     /// Persist a Windows Steam AppID backfill (tasks/playnite-plugin/plan.md, Phase 2) without
     /// clobbering concurrent changes to anything else — see <see cref="MutateGameUnderLock"/>. Unlike
     /// Daemon.cs's own Linux backfill, this runs after the local API server is already accepting
@@ -587,6 +594,16 @@ public sealed class TrackedGame
     /// settings-file reset that would otherwise silently lose it.
     /// </summary>
     public bool? PullBeforeLaunchEnabled { get; set; }
+    /// <summary>
+    /// Whether the post-exit push should run at all — set by a Decky or Playnite plugin, via the
+    /// local API's push-after-exit route. Null means "no override": push (today's existing
+    /// unconditional behaviour, unchanged for anyone who never touches this). Kept here rather than
+    /// in either plugin's own local settings, for the same reason <see cref="PullBeforeLaunchEnabled"/>
+    /// is — a player who disables it for one game (a permadeath run, a known-flaky save) wants that
+    /// respected from every machine that syncs it. Disabling it never skips the lease release, which
+    /// must run whether or not a push happened.
+    /// </summary>
+    public bool? PushAfterExitEnabled { get; set; }
     /// <summary>The local save directory to archive/restore.</summary>
     public string SaveDirectory { get; set; } = "";
     /// <summary>Process names (without .exe) that, when running, mean the game is in use.</summary>
