@@ -233,19 +233,28 @@ param(
 
 $ErrorActionPreference = 'Continue'
 
-# Deck settings live here, not just in $env: vars set for one shell — a home LAN's DHCP lease can
-# move the Deck's IP at any time, so this needs to be a place you go edit ONE line and have every
-# future session pick it up, not a shell profile you forget you edited. Gitignored (tests/*.local.ps1):
-# it names your LAN, not the project's. testenv.local.ps1.example is the committed template.
-# Explicit -DeckHost/-DeckServerUrl on the command line still win over whatever this sets.
-$deckConfig = Join-Path $PSScriptRoot 'testenv.local.ps1'
-if (Test-Path $deckConfig) {
-    . $deckConfig
+# Machine-specific settings live here, not just in $env: vars set for one shell — a home LAN's DHCP
+# lease can move the Deck's IP at any time, and a Playnite checkout's path doesn't belong in a shell
+# profile either, so this needs to be a place you go edit ONE line and have every future session pick
+# it up. Gitignored (tests/*.local.ps1): it names your machine, not the project's. testenv.local.ps1.example
+# is the committed template. Explicit command-line flags always win over whatever this sets.
+$localConfig = Join-Path $PSScriptRoot 'testenv.local.ps1'
+if (Test-Path $localConfig) {
+    . $localConfig
     if (-not $PSBoundParameters.ContainsKey('DeckHost') -and $env:SAVELOCKER_DECK_HOST) {
         $DeckHost = $env:SAVELOCKER_DECK_HOST
     }
     if (-not $PSBoundParameters.ContainsKey('DeckServerUrl') -and $env:SAVELOCKER_DECK_SERVER_URL) {
         $DeckServerUrl = $env:SAVELOCKER_DECK_SERVER_URL
+    }
+    # PlaynitePath/PlaynitePluginRepo are param()-block defaults evaluated at parameter-bind time —
+    # before this file is even loaded — so, unlike DeckHost/DeckServerUrl above, setting their $env:
+    # vars here has no effect without an explicit re-check after the fact.
+    if (-not $PSBoundParameters.ContainsKey('PlaynitePath') -and $env:SAVELOCKER_PLAYNITE_PATH) {
+        $PlaynitePath = $env:SAVELOCKER_PLAYNITE_PATH
+    }
+    if (-not $PSBoundParameters.ContainsKey('PlaynitePluginRepo') -and $env:SAVELOCKER_PLAYNITE_PLUGIN_REPO) {
+        $PlaynitePluginRepo = $env:SAVELOCKER_PLAYNITE_PLUGIN_REPO
     }
 }
 
@@ -1435,7 +1444,9 @@ switch ($Command) {
         # $DeckHost/$DeckServerUrl already reflect explicit flag > saved file > env var by this
         # point (the loader above), so writing them straight back merges a one-sided edit — e.g.
         # `deck-config -DeckHost deck@newip` alone keeps whatever SAVELOCKER_DECK_SERVER_URL was
-        # already saved instead of blanking it.
+        # already saved instead of blanking it. NOTE: this still overwrites the whole file — any
+        # SAVELOCKER_PLAYNITE_* lines added to testenv.local.ps1 by hand are lost if deck-config is
+        # run afterward. Re-add them, or skip this command and hand-edit the file directly instead.
         if ($PSBoundParameters.ContainsKey('DeckHost') -or $PSBoundParameters.ContainsKey('DeckServerUrl')) {
             if (-not $DeckHost) { throw 'no -DeckHost given and none saved yet' }
             $lines = @(
@@ -1443,8 +1454,8 @@ switch ($Command) {
                 "`$env:SAVELOCKER_DECK_HOST = '$DeckHost'"
             )
             if ($DeckServerUrl) { $lines += "`$env:SAVELOCKER_DECK_SERVER_URL = '$DeckServerUrl'" }
-            Set-Content -Path $deckConfig -Value $lines -Encoding UTF8
-            Say "saved to $deckConfig"
+            Set-Content -Path $localConfig -Value $lines -Encoding UTF8
+            Say "saved to $localConfig"
         }
 
         Write-Host "deck host:        $(if ($DeckHost) { $DeckHost } else { '(not set)' })"

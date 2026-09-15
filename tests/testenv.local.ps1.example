@@ -1,8 +1,8 @@
-# Copy this file to testenv.local.ps1 (same directory) and fill in your Deck's CURRENT details.
-# testenv.local.ps1 is gitignored — it names your LAN, not the project's — and testenv.ps1 loads it
-# automatically on every run, so this is the one place to edit when the Deck's IP changes rather
-# than a shell profile or a retyped env var. Only the Deck needs this; Windows, WSL and the console
-# all have workable defaults already.
+# Copy this file to testenv.local.ps1 (same directory) and fill in whichever of these apply to your
+# machine. testenv.local.ps1 is gitignored — it names your machine/LAN, not the project's — and
+# testenv.ps1 loads it automatically on every run, so this is the one place to edit rather than a
+# shell profile or a retyped env var. Windows and WSL have workable defaults already; only the Deck
+# and Playnite settings below need to be filled in if you use them.
 
 # SSH target, "user@host" — key auth must already work (ssh deck@<ip> echo ok with no prompt).
 $env:SAVELOCKER_DECK_HOST = 'deck@192.168.1.100'
@@ -11,3 +11,15 @@ $env:SAVELOCKER_DECK_HOST = 'deck@192.168.1.100'
 # console's port. Find it with: Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress
 # -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.InterfaceAlias -notlike 'vEthernet*' }
 $env:SAVELOCKER_DECK_SERVER_URL = 'http://192.168.1.50:5080'
+
+# Playnite install root to build/install/remove the SaveLocker-Playnite plugin against — the folder
+# containing Playnite.DesktopApp.exe (a portable extraction is recommended). No default: leave unset
+# to skip Playnite everywhere -Only defaults to 'all'.
+$env:SAVELOCKER_PLAYNITE_PATH = 'D:\SaveLockerTest\Playnite'
+
+# Checkout of the SaveLocker-Playnite repo, only needed if it isn't the default sibling directory
+# (..\SaveLocker-Playnite next to this repo).
+$env:SAVELOCKER_PLAYNITE_PLUGIN_REPO = 'D:\Projects\SaveLocker\SaveLocker-Playnite'
+
+# NOTE: `testenv.ps1 deck-config` overwrites this whole file with just the two SAVELOCKER_DECK_*
+# lines above — re-add the Playnite lines by hand afterward if you run that command.
