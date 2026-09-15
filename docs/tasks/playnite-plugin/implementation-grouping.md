@@ -18,15 +18,15 @@ same three things `conflict-resolution-ui`'s own grouping document weighs togeth
    from (~7–9 sessions agent-side, ~11–15 plugin-side, ~18–24 total — unchanged by this regrouping,
    only the bucketing changed).
 
-## Status (updated 2026-09-14 — Group 2 shipped, see `plan.md`)
+## Status (updated 2026-09-15 — Group 3 shipped, see `plan.md`)
 
 | Group | Contents | Status |
 |---|---|---|
 | 1 | Phases 1–3 (launch gate, `SteamAppId`, pull-toggle move) | ✅ Done 2026-09-14 |
 | 2 | Phases 4–7 (exit-push, new routes, self-update plumbing) | ✅ Done 2026-09-14 — Phase 7's self-updater is code-complete but unverified against a real package (`SaveLocker-Playnite` doesn't exist yet) |
-| 3 | Phases 8–11 (scaffold, settings, core gate, matching) | ⏳ Not started |
+| 3 | Phases 8–11 (scaffold, settings, core gate, matching) | ✅ Done 2026-09-15 — hardware-verified on a portable Playnite (Harmony theme); Fullscreen-mode popup and the WSL "lease held elsewhere" case were fixed late this session, re-confirmation on hardware still pending |
 | 4 | Phase 12 (enroll/link popup) | ⏳ Not started |
-| 5 | Phases 13–15 (status chip/buttons, self-update consumption, test infra) | ⏳ Not started |
+| 5 | Phases 13–15 + 17 (status chip/buttons, self-update consumption, test infra, release CI) | ⏳ Not started |
 | 6 | Phase 16 (add-on database submission) | ⏳ Not started |
 
 ## Groups
@@ -83,15 +83,18 @@ since it's substantial enough on its own and depends on Group 3's matching chain
 proven out what "no match found" actually looks like in practice, plus agent-side Group 2's two
 lookup/search routes.
 
-**Group 5 — plugin-side, status surface + self-update + test infra. Medium, ~3.5–5 sessions.**
+**Group 5 — plugin-side, status surface + self-update + test infra + release CI. Medium, ~4.5–6 sessions.**
 `Phase 13` (status chip + push/pull/sync buttons via `GetGameViewControl`/`GetGameMenuItems`),
-`Phase 14` (self-update consumption — checks + restart prompt), and `Phase 15` (test infrastructure:
-portable-Playnite `testenv` target, Windows `seed-test-conflict`, a stub-server test project). Grouped
-as "everything that rounds out the plugin once the spine and the popup already exist" — the status
-chip's value is mostly latent until Groups 3–4 exist (a chip that only ever says "not linked," with no
-popup to act on it, teaches the player to ignore it), and the self-update/test-infra pieces are
-supporting work that's more pleasant to build once there's a real, working plugin to test against or
-update, not a hard dependency of either.
+`Phase 14` (self-update consumption — checks + restart prompt), `Phase 15` (test infrastructure:
+portable-Playnite `testenv` target, Windows `seed-test-conflict`, a stub-server test project), and
+`Phase 17` (release CI workflow for `SaveLocker-Playnite`, added 2026-09-15). Grouped as "everything
+that rounds out the plugin once the spine and the popup already exist" — the status chip's value is
+mostly latent until Groups 3–4 exist (a chip that only ever says "not linked," with no popup to act on
+it, teaches the player to ignore it), and the self-update/test-infra/release pieces are supporting work
+that's more pleasant to build once there's a real, working plugin to test against, update, or release,
+not a hard dependency of any of them. Phase 17 belongs here rather than with Group 6: it's genuine build
+work with a concrete, verifiable output (a workflow file, a produced release), not a third-party review
+process with an uncontrolled timeline — the exact distinction Group 6 draws for itself below.
 
 **Group 6 — plugin-side, add-on database submission. Low effort, uncontrolled timeline, ~0.5–1 session.**
 `Phase 16` alone, deliberately last and kept separate rather than folded into Group 5: writing the
@@ -101,8 +104,8 @@ what covers players in the meantime. Worth keeping visible as its own line rathe
 polish group, precisely because "submit and don't wait on it" is a different kind of task from
 building something.
 
-**Plugin-side subtotal: ~11–15 sessions**, matching `plan.md`'s own size estimate, now in four groups
-instead of seven.
+**Plugin-side subtotal: ~12–16 sessions**, matching `plan.md`'s own size estimate (now including
+Phase 17), still in four groups instead of seven.
 
 ## Recommended order and the MVP cut
 
@@ -116,7 +119,8 @@ Group 1 ── Group 2                                               agent-side,
 Group 3 ────────── Group 4 ────────── Group 5                     plugin-side spine
  (scaffold, settings,     (enroll/link           (status chip/
   core gate, matching)     popup)                 buttons, self-
-                                                   update, tests)
+                                                   update, tests,
+                                                   release CI)
                                                         │
                                                         └── Group 6 (submit to add-on DB, last,
                                                              don't wait on it)
