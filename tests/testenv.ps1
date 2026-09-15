@@ -5,11 +5,19 @@
 # Decky plugin ("SaveLocker-Test") — never the real "SaveLocker" entry — pointed at this rig's test
 # daemon (:5177 / ~/savelocker-test-state), never the real installed agent (:5178). See
 # Get-DeckyPluginRepo / New-DeckyPluginTestStage below for exactly what that isolation covers.
+# When a Playnite portable (or real) install path is configured, `build`/`up` likewise build and
+# install the SaveLocker-Playnite plugin from ITS sibling repo, straight into
+# "<PlaynitePath>\Extensions\SaveLocker" — no test-mode string rewriting needed the way Decky's
+# stage does, since that plugin's agent URL/state dir are ordinary settings, filled in once from
+# Playnite's own Add-ons -> SaveLocker -> Settings screen (:5177 / this rig's -StateRoot), not
+# baked in at build time. See Get-PlaynitePluginRepo / Install-PlaynitePlugin below.
 #
 #   .\tests\testenv.ps1 build     build all four from this working tree (+ the Decky plugin, if -Only
-#                                 is 'all'/'deck' and a Deck is configured)
+#                                 is 'all'/'deck' and a Deck is configured; + the Playnite plugin, if
+#                                 -Only is 'all'/'playnite' and -PlaynitePath is configured)
 #   .\tests\testenv.ps1 up        start them (registers on first run); installs/reinstalls the test
-#                                 Decky plugin on the Deck alongside the test daemon
+#                                 Decky plugin on the Deck alongside the test daemon, and the
+#                                 Playnite plugin into -PlaynitePath if configured
 #   .\tests\testenv.ps1 down      stop them; the installed agent is never touched
 #   .\tests\testenv.ps1 status    what is running, and which build
 #   .\tests\testenv.ps1 test      run the suites
@@ -65,10 +73,12 @@
 #                                 wrapper yet); the real shortcuts.vdf is backed up first and
 #                                 restored by `clean`.
 #   .\tests\testenv.ps1 clean     down, then DELETE every test build and all its state — WSL,
-#                                 Windows, the Deck, the test Decky plugin, any seeded conflict
-#                                 folders, the "Conflict Game" Steam shortcut (shortcuts.vdf
-#                                 restored from its pre-conflict backup), and the dashboard
-#                                 container/image/volume
+#                                 Windows, the Deck, the test Decky plugin, the Playnite plugin (if
+#                                 -PlaynitePath is configured — removes
+#                                 "<PlaynitePath>\Extensions\SaveLocker" only, never touches the
+#                                 rest of that Playnite install), any seeded conflict folders, the
+#                                 "Conflict Game" Steam shortcut (shortcuts.vdf restored from its
+#                                 pre-conflict backup), and the dashboard container/image/volume
 #   .\tests\testenv.ps1 deck-config -DeckHost deck@<ip> [-DeckServerUrl http://<lan-ip>:5080]
 #                                 write/update tests/testenv.local.ps1 (below) instead of hand-
 #                                 editing it; no args just prints what's currently saved
@@ -167,7 +177,18 @@ param(
     # explicit flag is enough.
     [string]$DeckyPluginRepo = $env:SAVELOCKER_DECKY_PLUGIN_REPO,
 
-    [ValidateSet('all', 'windows', 'linux', 'deck', 'console')]
+    # Playnite install root to build/install/remove the SaveLocker-Playnite plugin against — the
+    # folder containing Playnite.DesktopApp.exe. A portable extraction is recommended (keeps every
+    # test off your real library), but a real installed one works too. No default, same reasoning
+    # as DeckHost: unlike the Windows/WSL targets there's no safe "this machine" guess, so an unset
+    # path means "don't touch Playnite" rather than assuming your real, everyday install.
+    [string]$PlaynitePath = $env:SAVELOCKER_PLAYNITE_PATH,
+    # SaveLocker-Playnite is its own repo, not a subdirectory of this one (same reasoning as
+    # DeckyPluginRepo above — Playnite's plugin database requires a plugin's own folder to BE the
+    # plugin). Defaults to the sibling checkout every contributor already has next to this one.
+    [string]$PlaynitePluginRepo = $env:SAVELOCKER_PLAYNITE_PLUGIN_REPO,
+
+    [ValidateSet('all', 'windows', 'linux', 'deck', 'console', 'playnite')]
     [string]$Only = 'all',
 
     [ValidateSet('all', 'agents', 'dashboard')]
@@ -669,6 +690,107 @@ function Remove-DeckyPluginFromDeck {
     Write-Host "  removed '$deckyTestPluginName' from $DeckHost"
 }
 
+function Test-PlayniteConfigured { return [bool]$PlaynitePath }
+
+# Gates build/up the same way Use-Deck gates the Deck: explicit '-Only playnite' with no path
+# configured is an error, 'all' with no path configured is a silent skip so the default all-in-one
+# flow still works for whoever hasn't set up a portable Playnite. clean ignores -Only entirely and
+# just checks Test-PlayniteConfigured instead — same split as the Deck's own down/status/clean.
+function Use-Playnite {
+    if ($Only -eq 'playnite') {
+        if (-not $PlaynitePath) { throw "No Playnite configured - set -PlaynitePath or `$env:SAVELOCKER_PLAYNITE_PATH (e.g. C:\SaveLockerTest\Playnite)." }
+        return $true
+    }
+    if ($Only -eq 'all') {
+        if ($PlaynitePath) { return $true }
+        Warn "playnite skipped - set -PlaynitePath or `$env:SAVELOCKER_PLAYNITE_PATH to include it"
+        return $false
+    }
+    return $false
+}
+
+# Resolves and validates the sibling SaveLocker-Playnite checkout — same "next to the MAIN
+# checkout, not next to $root" trick as Get-DeckyPluginRepo above, for the same reason (this
+# worktree's own directory is not where a fresh `git worktree add` sibling checkout would land).
+function Get-PlaynitePluginRepo {
+    $candidate = if ($PlaynitePluginRepo) { $PlaynitePluginRepo }
+                 else {
+                     $commonDir = (& git -C $root rev-parse --path-format=absolute --git-common-dir)
+                     $mainCheckout = Split-Path $commonDir -Parent
+                     Join-Path (Split-Path $mainCheckout -Parent) 'SaveLocker-Playnite'
+                 }
+    if (-not (Test-Path (Join-Path $candidate 'extension.yaml'))) {
+        throw "no SaveLocker-Playnite checkout at '$candidate' (no extension.yaml there) - " +
+              "set -PlaynitePluginRepo or `$env:SAVELOCKER_PLAYNITE_PLUGIN_REPO"
+    }
+
+    # Same silent-staleness trap Get-DeckyPluginRepo's own comment describes — printed unconditionally
+    # so a build from the wrong branch/worktree is obvious immediately, not after an install that
+    # quietly still loads and runs.
+    $branch = (& git -C $candidate rev-parse --abbrev-ref HEAD 2>$null)
+    $commit = (& git -C $candidate rev-parse --short HEAD 2>$null)
+    $dirty  = [bool](& git -C $candidate status --porcelain 2>$null)
+    $dirtyNote = if ($dirty) { ', uncommitted changes' } else { '' }
+    Say "Playnite plugin source: $candidate  [$branch @ $commit$dirtyNote]"
+    if (-not $PlaynitePluginRepo -and $branch -eq 'main') {
+        Warn ('building from SaveLocker-Playnite''s default checkout, on ''main''. If the work you want ' +
+              'installed lives on a feature branch or in a worktree instead, pass -PlaynitePluginRepo or ' +
+              'set $env:SAVELOCKER_PLAYNITE_PLUGIN_REPO to that path - otherwise none of it gets built.')
+    }
+
+    return $candidate
+}
+
+function Build-PlaynitePlugin {
+    $repo = Get-PlaynitePluginRepo
+    Say "building the Playnite plugin from $repo"
+    & $dotnet build (Join-Path $repo 'src\SaveLocker.Playnite.csproj') -c Release --no-incremental -v q --nologo
+    if ($LASTEXITCODE -ne 0) { throw 'playnite plugin build failed' }
+}
+
+# Installs straight into "<PlaynitePath>\Extensions\SaveLocker" — no separate stage directory the
+# way Decky needs, since nothing here has to be rewritten for test isolation: the plugin's agent
+# URL and state directory are ordinary settings filled in once from Playnite's own Add-ons ->
+# SaveLocker -> Settings screen, not literals baked in at build time. Reads build output straight
+# from the plugin repo's own src\bin\Release\net462 (gitignored there) rather than copying it
+# anywhere first — same division of labour as the rest of this script: 'build' must have already
+# run, 'up' only ever installs what it left behind.
+function Install-PlaynitePlugin {
+    if (-not $PlaynitePath) { throw "No Playnite configured - set -PlaynitePath or `$env:SAVELOCKER_PLAYNITE_PATH." }
+    if (-not (Test-Path (Join-Path $PlaynitePath 'Playnite.DesktopApp.exe'))) {
+        Warn "no Playnite.DesktopApp.exe directly under '$PlaynitePath' - confirm this is a Playnite install root."
+    }
+
+    $repo = Get-PlaynitePluginRepo
+    $buildOut = Join-Path $repo 'src\bin\Release\net462'
+    $dll = Join-Path $buildOut 'SaveLocker.Playnite.dll'
+    $manifest = Join-Path $buildOut 'extension.yaml'
+    foreach ($f in @($dll, $manifest)) {
+        if (-not (Test-Path $f)) { throw "not built - run: .\tests\testenv.ps1 build -Only playnite" }
+    }
+
+    $ext = Join-Path $PlaynitePath 'Extensions\SaveLocker'
+    New-Item -ItemType Directory -Force -Path $ext | Out-Null
+    try {
+        Copy-Item $manifest, $dll -Destination $ext -Force
+    } catch {
+        throw "could not copy into '$ext' - if Playnite is running from this path, close it first " +
+              "(it locks the DLL while loaded): $($_.Exception.Message)"
+    }
+    Write-Host "  installed to $ext"
+    Write-Host "  (re)start Playnite at '$PlaynitePath\Playnite.DesktopApp.exe', then Add-ons -> SaveLocker -> Settings -> Agent URL http://127.0.0.1:$WinPort, State directory $winState"
+}
+
+function Remove-PlaynitePlugin {
+    $ext = Join-Path $PlaynitePath 'Extensions\SaveLocker'
+    if (Test-Path $ext) {
+        Remove-Item $ext -Recurse -Force
+        Write-Host "  removed $ext"
+    } else {
+        Write-Host '  playnite plugin not installed'
+    }
+}
+
 # The installed release agent runs as SaveLocker.Agent.exe, so a dotnet.exe host with the agent DLL
 # on its command line can only ever be a build from this tree. Nothing here can reach the real one.
 function Get-TestTray {
@@ -1015,6 +1137,9 @@ switch ($Command) {
             Build-Deck
             try { New-DeckyPluginTestStage | Out-Null } catch { Warn "decky plugin: $($_.Exception.Message)" }
         }
+        if (Use-Playnite) {
+            try { Build-PlaynitePlugin } catch { Warn "playnite plugin: $($_.Exception.Message)" }
+        }
         if ($Only -eq 'all' -or $Only -eq 'console') { Build-Console }
     }
 
@@ -1026,12 +1151,16 @@ switch ($Command) {
             try { Start-Deck } catch { Warn "deck: $($_.Exception.Message)" }
             try { Install-DeckyPluginOnDeck } catch { Warn "decky plugin: $($_.Exception.Message)" }
         }
+        if (Use-Playnite) {
+            try { Install-PlaynitePlugin } catch { Warn "playnite plugin: $($_.Exception.Message)" }
+        }
         Show-RealGameMappings
         Write-Host ''
         Write-Host "console      $serverUrl"
         Write-Host "windows UI   http://localhost:$WinPort"
         Write-Host "linux UI     http://localhost:$LinuxPort   (WSL2 forwards it to Windows)"
         if ($DeckHost) { Write-Host "deck UI      $(Get-DeckUiHint)" }
+        if ($PlaynitePath) { Write-Host "playnite     $PlaynitePath\Playnite.DesktopApp.exe" }
     }
 
     'down' {
@@ -1066,6 +1195,13 @@ switch ($Command) {
             } catch { Warn "deck: $($_.Exception.Message)" }
         } else {
             Write-Host 'deck         not configured (set -DeckHost or $env:SAVELOCKER_DECK_HOST)'
+        }
+
+        if ($PlaynitePath) {
+            $installed = Test-Path (Join-Path $PlaynitePath 'Extensions\SaveLocker\extension.yaml')
+            Write-Host "playnite     plugin installed=$installed  ($PlaynitePath)"
+        } else {
+            Write-Host 'playnite     not configured (set -PlaynitePath or $env:SAVELOCKER_PLAYNITE_PATH)'
         }
 
         $release = Get-Process SaveLocker.Agent -ErrorAction SilentlyContinue
@@ -1248,6 +1384,10 @@ switch ($Command) {
         if (Test-DeckConfigured) {
             try { Invoke-Deck 'clean' } catch { Warn "deck: $($_.Exception.Message)" }
             try { Remove-DeckyPluginFromDeck } catch { Warn "decky plugin: $($_.Exception.Message)" }
+        }
+
+        if (Test-PlayniteConfigured) {
+            try { Remove-PlaynitePlugin } catch { Warn "playnite plugin: $($_.Exception.Message)" }
         }
 
         if (-not $AgentsOnly) {

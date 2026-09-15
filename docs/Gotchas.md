@@ -143,6 +143,14 @@ behave in ways that look like bugs.
   Deck and silently skips it under `-Only all`; only an explicit `-Only deck` with it unset is an
   error. Don't "fix" the skip by inventing a default IP — every LAN differs and a wrong guess would
   silently SSH nowhere useful, or somewhere unintended.
+- **The Playnite target works the same way — no default, opt in with `-PlaynitePath` /
+  `$env:SAVELOCKER_PLAYNITE_PATH`** (the folder containing `Playnite.DesktopApp.exe`; a portable
+  `.7z` extraction is recommended over your real, everyday install). Unlike the Decky plugin, `build`
+  produces no separate rewritten "stage" — the Playnite plugin's agent URL and state directory are
+  ordinary settings (Add-ons → SaveLocker → Settings inside Playnite itself), not literals baked in
+  at build time, so `up` installs straight from the plugin repo's own `src\bin\Release\net462`
+  output. `-PlaynitePluginRepo` / `$env:SAVELOCKER_PLAYNITE_PLUGIN_REPO` overrides the sibling-repo
+  guess (`Get-PlaynitePluginRepo`), same convention and same reasoning as `-DeckyPluginRepo`.
 - **The Deck is only awake when the maintainer wakes it** (CONTEXT.md). Every SSH/`scp` call the
   rig makes carries `-o ConnectTimeout=5` and every caller wraps it in try/catch, reporting
   "unreachable" rather than hanging on the OS default TCP timeout or aborting `up`/`down`/`status`
