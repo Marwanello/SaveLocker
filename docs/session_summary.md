@@ -1,3 +1,127 @@
+# Session summary — 2026-09-15 (cont'd) — WSL lease-test fix, Fullscreen theme investigation, Fullscreen-native conflict popup built
+
+Fixed a broken WSL lease-testing script (it was reading the wrong machine's credentials entirely), then
+investigated and fixed a real Fullscreen-mode theming bug the user confirmed live: the conflict-resolve
+window rendered as an unstyled, non-controller-friendly white box in Fullscreen mode, because
+Fullscreen's theme genuinely has no equivalent of the Desktop popup-brush keys used before. Built a
+separate, Fullscreen-native resolve window instead.
+
+## What was asked
+
+1. A checklist correction: "nothing will wok as the main repo deon't contain the code" — the `cd`
+   target was the main repo root instead of the worktree that actually has this branch.
+2. "convert tis to wsl compatable" for a lease-testing PowerShell script.
+3. "every thing works great execept cant test 3 as i'm leassing the game on the same device need to do
+   it through wsl but i cant figure it out," plus: the Fullscreen conflict popup "looks very bad with
+   no background and not controller friendly" — asked to "create a different popup for fullscreen view
+   whichich looks like the decky plugin popup using the currently applied theme elements."
+
+## What was found and fixed
+
+- **Checklist fix**: `git worktree list` confirmed `playnite-plugin-group-3` exists only in this
+  worktree; the main checkout sits on `main`. Corrected the `cd` target.
+- **WSL lease script was authenticating as the wrong machine.** It read the Windows tray's own local
+  loopback token instead of a server-facing credential — explaining "leasing on the same device."
+  Root-caused via `tests/testenv.sh`: LinuxTest's real server API key lives natively in WSL at
+  `~/savelocker-test/SaveLocker/config.json`. Also confirmed the server's `/api/games` route returns
+  every game to any authenticated machine (no per-machine filter), so the whole test — list games, find
+  Minit, take the lease — now runs entirely inside WSL using only LinuxTest's own key, genuinely
+  exercising a different machine.
+- **Fullscreen mode theming, confirmed rather than guessed**: reflected the real installed
+  `Playnite.SDK.dll` to confirm `PlayniteApi.ApplicationInfo.Mode` detects Fullscreen vs. Desktop, then
+  fetched Playnite's actual GitHub source for its Fullscreen theme. Confirmed `PopupBackgroundBrush`/
+  `PopupBorderBrush` — the keys the Desktop resolve window relies on — simply don't exist in
+  Fullscreen's theme at all (it uses `ControlBackgroundBrush`/`OverlayMenuBackgroundBrush`/
+  `OverlayBrush`/`GlyphBrush` instead), and that Fullscreen merges no window-chrome style dictionary the
+  way Desktop does — reproducing the original "unstyled white box" bug for an entirely new, now-
+  understood reason.
+
+## What was built
+
+`ConflictResolveWindowFullscreen.cs` (new): a borderless, dimmed full-screen overlay with a centered,
+drop-shadowed card — modeled on Decky's own floating-modal look rather than an OS dialog — using
+Fullscreen's real theme keys, bigger touch targets, and explicit Left/Right/Enter/Escape key handling
+(since whether Playnite's gamepad input reaches a plugin-created secondary window at all is unverified).
+`SaveLockerPlugin.cs` now branches on `ApplicationMode` to construct the right window. Build succeeded
+after fixing one namespace slip (`System.Windows.Effects` → `System.Windows.Media.Effects`); installed
+into the portable Playnite.
+
+## Not done
+
+- Neither the Fullscreen window's visual result nor controller-driven navigation has been
+  hardware-verified yet — both are real open questions, not assumed working.
+- The corrected WSL lease script hasn't been re-run by the user yet.
+- Nothing in the `SaveLocker-Playnite` repo was committed as of this write-up.
+
+---
+
+# Session summary — 2026-09-15 — Playnite plugin Group 3 hardware verification: popup root cause, theme-driven resolve window, git housekeeping
+
+Hardware-verified Group 3 (Phases 8–11) of the Playnite plugin against a portable Playnite install and
+`tests/testenv.ps1`. Found and fixed the root cause of a "no conflict popup" report, then went through
+several rounds of theming fixes on the conflict-resolve window in response to live screenshots, ending
+in a structurally robust fix. Pushed both repos and deleted a long-standing duplicate remote branch.
+
+## What was asked
+
+1. Hardware-verify Group 3 against a real Playnite.
+2. "the game starts and no conflict window appears," then a "REFUSED push" toast with "the conflict
+   popup doesn't show up and the game opens stright away."
+3. Once the popup worked: "i don't want it hardcoded. i do want it to match the theme chossen in the
+   the Playnite app."
+4. Three rounds of screenshot feedback on contrast/icons, ending in the explicit correction "nothing
+   chnged please fix it porperly without guessing."
+5. "ar changes don in playnite-plugin-group-3? if not push to this branch and delete
+   claude/playnite-plugin-group-3-acd4eb."
+6. After a usage-limit reset: "continue from where you left off," then a request to log this write-up.
+
+## What was found and fixed
+
+- **No popup, root cause:** this session's own `docs/Build and Run.md` told the user to run `conflict
+  -Wsl` alone, which seeds only WSL — Windows never tracks the game, so the plugin's matcher finds
+  nothing and Playnite silently falls back to a plain launch. Confirmed via `playnite.log`'s
+  `"Using generic controller"` vs. `"Using plugin to start a game."` line. Fixed the doc (now
+  `-Windows -Wsl`) and made `testenv.ps1` warn loudly if `-Windows` is omitted with `-Deck`/`-Wsl`, so
+  this can't silently recur.
+- **Hardcoded colors rejected:** rebuilt the resolve window around `IPlayniteAPI.Dialogs.CreateWindow`
+  (inherits Playnite's own active theme) plus `SetResourceReference` against real theme keys
+  (`TextBrush`, `PopupBackgroundBrush`, `PopupBorderBrush`) confirmed from Playnite's own GitHub source.
+- **Button text unreadable through two attempts:** neither setting `Button.Foreground` nor a custom
+  `ControlTemplate` with an explicit `TemplateBinding` fixed it. Diagnosed with certainty instead of
+  guessing again — confirmed via Microsoft's own WPF precedence docs, discovered the portable install's
+  actual active theme is a third-party "Harmony" theme (not Playnite's own "Default") whose `Button`
+  template apparently ignores `TemplateBinding Foreground`, and ruled out a stale-DLL/stale-token
+  confound via direct `curl` checks against the local API. The robust fix gives every button label its
+  own directly-styled `TextBlock`, bypassing `ContentPresenter`/template inheritance entirely.
+- **Body text (not just buttons) was also unreadable**, found and fixed after the above: Playnite's own
+  `StandardWindowStyle.xaml` (which Harmony falls back to) sets `Background`/`BorderBrush` but never
+  `Foreground` at the `Window` level — the same class of bug as the button fix, just not yet applied
+  file-wide. A `Themed()` helper now wraps every `TextBlock` in the window. Commit `e052283`'s message
+  states this was verified live against the real Harmony-themed Playnite.
+- **Cloud/device icons added**, reproducing `agent-ui`'s Lucide `cloud`/`hard-drive` SVGs as stroke-based
+  WPF `Path` geometry.
+
+## Landed
+
+- Main repo (`playnite-plugin-group-3`): `9453fda` (testenv warning), pushed.
+- `SaveLocker-Playnite` (`playnite-plugin-group-3`): `4da6ace` (theming/icons), `e052283` (body-text
+  fix), both pushed.
+- Deleted the duplicate remote branch `claude/playnite-plugin-group-3-acd4eb` on
+  `Marwanello/SaveLocker`, explicitly authorized this session.
+
+## Not done
+
+- The full 6-step `Build and Run.md` verification is being re-run from a clean rig rebuild — asked the
+  user how much had actually been confirmed on hardware rather than trust memory across the
+  usage-limit gap; they chose to re-verify all 6 steps. Not complete as of this write-up.
+- `docs/CONTEXT.md` (Playnite repo) and the Group 3 row in the main repo's `implementation-grouping.md`
+  remain stale, correctly deferred until the re-verification above finishes.
+- `testenv.ps1 clean`'s inconsistent Windows-state wipe (leaves a stale token after a database wipe,
+  producing 401s on the next `up`) is a real recurring nuisance, worked around manually each time, not
+  yet fixed in code.
+
+---
+
 # Session summary — 2026-09-14 (cont'd 2) — Playnite plugin Group 2 shipped, GitHub org default fixed
 
 Implemented Group 2 (Phases 4–7) of the Playnite plugin plan — exit-push toggle, three new local-API
