@@ -24,7 +24,7 @@ both `%LocalAppData%\Playnite` and `%AppData%\Playnite`, `dotnet 10.0.400` prese
 cloud/remote sessions `implementation-grouping.md` wrote its "Windows + Playnite installed" caveat
 against. Phase 1 below (scaffold + load) is genuinely attemptable here, not just plannable.
 
-## Status (updated 2026-09-15 — Group 3 shipped)
+## Status (updated 2026-09-15 — Group 4/Phase 12 built, not yet hardware-verified)
 
 Same status-table convention `conflict-resolution-ui/plan.md` established — kept current as phases
 ship, not written once and left stale. See `implementation-grouping.md` for which phases share a
@@ -43,7 +43,7 @@ session and why.
 | 9 — Local API client + settings page | ✅ Shipped 2026-09-15 — hardware-verified against a real test agent |
 | 10 — Core pre-launch/post-exit gate | ✅ Shipped 2026-09-15 — hardware-verified: block/resolve on a genuine conflict, post-exit push, fail-open when the agent is down. Resolve window is theme-driven for both Desktop and Fullscreen mode, but the Fullscreen window and the WSL-driven "lease held elsewhere" case were fixed late this session and not yet re-confirmed on hardware |
 | 11 — Automatic matching chain | ✅ Shipped 2026-09-15 — hardware-verified (a real Steam-installed game matched via AppID) |
-| 12 — "Link to SaveLocker" popup | ⏳ Not started |
+| 12 — "Link to SaveLocker" popup | ✅ Built 2026-09-15 — code-complete, builds clean against the real Playnite SDK; not yet hardware-verified (see `SaveLocker-Playnite`'s own `docs/CONTEXT.md`) |
 | 13 — Status chip + action buttons | ⏳ Not started |
 | 14 — Plugin-side self-update consumption | ⏳ Not started |
 | 15 — Test infrastructure | ⏳ Not started |
