@@ -10,6 +10,13 @@ namespace SaveLocker.Agent;
 /// without needing an actual title. Closing this window (Exit, Escape, or the titlebar) is what a
 /// real game's process exit looks like to SaveLocker — the whole point of a real window instead
 /// of a message box.
+///
+/// WARNING: this runs as <c>SaveLocker.Agent.exe</c> — the exact same process name as the real
+/// installed tray (<see cref="Program"/>'s normal entry point), and <c>GameActivity.IsActive</c>
+/// matches purely on <c>Process.ProcessName</c> with no PID/path disambiguation. Never configure a
+/// tracked game's <c>ProcessNames</c> as <c>SaveLocker.Agent</c> to detect this fixture — it would
+/// also match the real tray any time it happens to be running, permanently masking that game's
+/// "exited" state.
 /// </summary>
 static class FakeGame
 {
