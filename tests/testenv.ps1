@@ -783,11 +783,18 @@ function Install-PlaynitePlugin {
 
 function Remove-PlaynitePlugin {
     $ext = Join-Path $PlaynitePath 'Extensions\SaveLocker'
-    if (Test-Path $ext) {
-        Remove-Item $ext -Recurse -Force
+    if (-not (Test-Path $ext)) { Write-Host '  playnite plugin not installed'; return }
+
+    # -ErrorAction Stop matters here, not just style: Remove-Item's own failures (a locked DLL while
+    # Playnite is still running) are non-terminating by default, so without this the surrounding
+    # try/catch in the 'clean' switch case never sees them - confirmed 2026-09-15, where a locked
+    # DLL left a dangling half-removed folder AND still printed "removed" as if nothing went wrong.
+    try {
+        Remove-Item $ext -Recurse -Force -ErrorAction Stop
         Write-Host "  removed $ext"
-    } else {
-        Write-Host '  playnite plugin not installed'
+    } catch {
+        throw "could not remove '$ext' - if Playnite is still running from this path, close it first " +
+              "(it locks the DLL while loaded): $($_.Exception.Message)"
     }
 }
 
@@ -1055,6 +1062,20 @@ function New-ConflictOnWindows {
         if ($LASTEXITCODE -ne 0) { throw "add-game failed (exit $LASTEXITCODE)" }
         & $dotnet $agentDll push 'Conflict Game'
         if ($LASTEXITCODE -ne 0) { throw "push failed (exit $LASTEXITCODE)" }
+
+        # Only meaningful for a Playnite-side conflict test - a Decky/Linux one launches through its
+        # own fake-game equivalent instead. Printed every run rather than once, so there's nothing to
+        # remember: Playnite has no CLI to add a library entry, so this stays a one-time manual step
+        # in the portable Playnite's own UI (Add game -> Custom game) - see docs/Build and Run.md in
+        # the SaveLocker-Playnite repo ("Conflict Game" fake exe) for the full explanation. The entry
+        # persists across `clean`/re-seeding, since clean only wipes SaveLocker-test state, never
+        # Playnite's own library.
+        $agentExe = Join-Path (Split-Path $agentDll -Parent) 'SaveLocker.Agent.exe'
+        Write-Host ''
+        Write-Host "  Playnite 'Conflict Game' entry (one-time, if not already added):"
+        Write-Host "    Name:       Conflict Game"
+        Write-Host "    Executable: $agentExe"
+        Write-Host "    Arguments:  fake-game"
     } finally { Clear-TestEnvVars }
 }
 

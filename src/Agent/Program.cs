@@ -12,6 +12,15 @@ static class Program
     static int Main(string[] args)
     {
         var (command, opts, positionals) = CliArgs.Parse(args);
+
+        // Test-only stand-in "game": tests/testenv.ps1's "Conflict Game" Playnite entry points here
+        // instead of a real title, so the plugin's launch gate and sync-before/after-play can be
+        // exercised end to end without needing an actual title — same idea as Agent.Linux's own
+        // `savelocker fake-game`. Intercepted before AgentConfig.Load/AgentCli: Playnite launches
+        // this directly as the entry's Executable (no wrapper to carry a test-commands env var), so
+        // it stays deliberately ungated, same reasoning as the Linux one.
+        if (command == "fake-game") return FakeGame.Run();
+
         var config = AgentConfig.Load(opts.GetValueOrDefault("config"));
 
         if (command is null)
