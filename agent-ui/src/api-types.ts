@@ -2000,6 +2000,7 @@ export interface components {
             pullBeforeLaunchEnabled: null | boolean;
             hasSteamCloud: null | boolean;
             pushAfterExitEnabled?: null | boolean;
+            installDir?: null | string;
         };
         VersionStatsDto: {
             /** Format: int32 */

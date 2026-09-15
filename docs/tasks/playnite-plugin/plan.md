@@ -24,7 +24,7 @@ both `%LocalAppData%\Playnite` and `%AppData%\Playnite`, `dotnet 10.0.400` prese
 cloud/remote sessions `implementation-grouping.md` wrote its "Windows + Playnite installed" caveat
 against. Phase 1 below (scaffold + load) is genuinely attemptable here, not just plannable.
 
-## Status (updated 2026-09-14 — Group 2 shipped)
+## Status (updated 2026-09-15 — Group 3 shipped)
 
 Same status-table convention `conflict-resolution-ui/plan.md` established — kept current as phases
 ship, not written once and left stale. See `implementation-grouping.md` for which phases share a
@@ -39,15 +39,16 @@ session and why.
 | 5 — Three small new local-API routes | ✅ Shipped 2026-09-14 |
 | 6 — `AgentPlatform.PlaynitePlugin` slot | ✅ Shipped 2026-09-14 |
 | 7 — Windows plugin self-updater | ✅ Shipped 2026-09-14 — code-complete; no real plugin package exists yet to test an actual install against |
-| 8 — Scaffold + "hello world" load | ⏳ Not started |
-| 9 — Local API client + settings page | ⏳ Not started |
-| 10 — Core pre-launch/post-exit gate | ⏳ Not started |
-| 11 — Automatic matching chain | ⏳ Not started |
+| 8 — Scaffold + "hello world" load | ✅ Shipped 2026-09-15 — hardware-verified, loads clean in the real portable Playnite |
+| 9 — Local API client + settings page | ✅ Shipped 2026-09-15 — hardware-verified against a real test agent |
+| 10 — Core pre-launch/post-exit gate | ✅ Shipped 2026-09-15 — hardware-verified: block/resolve on a genuine conflict, post-exit push, fail-open when the agent is down. Resolve window is theme-driven for both Desktop and Fullscreen mode, but the Fullscreen window and the WSL-driven "lease held elsewhere" case were fixed late this session and not yet re-confirmed on hardware |
+| 11 — Automatic matching chain | ✅ Shipped 2026-09-15 — hardware-verified (a real Steam-installed game matched via AppID) |
 | 12 — "Link to SaveLocker" popup | ⏳ Not started |
 | 13 — Status chip + action buttons | ⏳ Not started |
 | 14 — Plugin-side self-update consumption | ⏳ Not started |
 | 15 — Test infrastructure | ⏳ Not started |
 | 16 — Official add-on database submission | ⏳ Not started |
+| 17 — Release CI workflow (`SaveLocker-Playnite`) | ⏳ Not started — added 2026-09-15, found while answering "how does the plugin handle releases" |
 
 ---
 
@@ -492,9 +493,10 @@ first use of any of it in this codebase; verification is hardware-only, no CI):*
 | Status chip + buttons (`GetGameViewControl`) + context menu (`GetGameMenuItems`) | Medium | 1–2 |
 | Plugin-side self-update consumption (checks + restart prompt) | Low-medium | 0.5–1 |
 | Test infra: portable-Playnite `testenv` target, Windows `seed-test-conflict`, a stub-server test project | Medium — genuinely new infra, nothing to extend | 2 |
-| **Subtotal** | | **~11–15 sessions** |
+| Release CI workflow (Phase 17, added 2026-09-15) | Low-medium — small in scope, but no existing workflow in this codebase to closely copy (`SaveLocker-Decky` has none either) | 1 |
+| **Subtotal** | | **~12–16 sessions** |
 
-**Total, full scope as now designed: roughly 18–24 sessions.** At this project's own recent cadence
+**Total, full scope as now designed: roughly 19–25 sessions.** At this project's own recent cadence
 (often close to one substantial session per day), that is realistically **3–4.5 weeks** of active
 work — not a quick add-on.
 
@@ -609,6 +611,24 @@ order. See `implementation-grouping.md` for which phases share a session.
   something that functions, not a scaffold. Review timeline is outside this project's control — see
   "Where this genuinely differs from Decky" above. Phase 7/14's self-update path is what covers users
   in the meantime, so this is not blocking for anything else.
+- **Phase 17 — Release CI workflow for `SaveLocker-Playnite`.** Found 2026-09-15, answering a direct
+  question about how the plugin handles releases: today there is **no `.github/workflows` at all** in
+  that repo — a release means manually running `dotnet build`, hand-zipping per `Build and Run.md`,
+  and uploading somewhere by hand. That's the one piece Phase 6/7's self-updater (which polls GitHub
+  releases at `Marwanello/SaveLocker-Playnite`) and Phase 16's add-on-database listing (whose
+  `InstallerManifestUrl` also has to point at something real) both silently assume exists. Add a
+  GitHub Actions workflow, triggered on a version tag, that builds the plugin (`dotnet build -c
+  Release`), zips `extension.yaml` + the DLL the same way `Install-ToPortable.ps1`/`Build and Run.md`
+  already do by hand, and publishes it as a GitHub Release with a `SHA256SUMS.txt` — matching the
+  hash-verification contract `UpdateChecker.DownloadInstallerAsync` already expects from every other
+  platform slot. Depends on Phase 8 (needs the plugin project to exist to build against); most useful
+  once Phase 10 exists (something worth actually releasing), but not gated on it. **No existing
+  precedent to closely mirror** — checked, and `SaveLocker-Decky` doesn't have an automated release
+  workflow either (its own repo "has no releases" per `progress.md`'s 2026-08-26 entry) — so this is
+  genuinely new infrastructure for this codebase's Windows/Playnite side, not a close copy the way
+  most of this plan's phases are. Verify: push a test tag, confirm the workflow produces a
+  correctly-shaped `.zip` + checksum on the release, and that the agent's self-updater (Phase 7) can
+  actually fetch and verify it end to end — the first real exercise of that code path.
 
 ```
 Phase 1 ──┐                         Phase 6 ── Phase 7
@@ -624,6 +644,8 @@ Phase 8 ── Phase 9 ── Phase 10 ── Phase 16 (needs 10 working)
               └── Phase 15 (also needs Phase 8)
 
 Phase 14 needs Phases 6/7 (agent) + Phase 9 (plugin)
+
+Phase 17 needs Phase 8; most useful once Phase 10 exists, not gated on it
 ```
 
 ---

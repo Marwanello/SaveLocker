@@ -367,7 +367,7 @@ public sealed class AgentApiServer : IDisposable
             .Select(g => new TrackedGameDto(
                 g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray(), g.Alias,
                 SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()), g.PullBeforeLaunchEnabled,
-                g.HasSteamCloud, g.PushAfterExitEnabled))
+                g.HasSteamCloud, g.PushAfterExitEnabled, g.InstallDir))
             .ToArray()).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
@@ -1186,7 +1186,15 @@ public sealed record CandidateDto(
 public sealed record TrackedGameDto(
     Guid Id, string Name, string Path, string[] ProcessNames, string? Alias,
     uint? SteamAppId, bool? PullBeforeLaunchEnabled, bool? HasSteamCloud,
-    bool? PushAfterExitEnabled = null);
+    bool? PushAfterExitEnabled = null,
+    /// <summary>
+    /// Mirrors <see cref="AgentConfig.TrackedGame.InstallDir"/> — the second tier of the
+    /// Playnite plugin's automatic matching chain (tasks/playnite-plugin/plan.md, "Automatic game
+    /// matching"), for anything Steam AppID doesn't resolve (Epic, GOG, a manual install). Null for
+    /// a game discovery never recorded one for (a save-root match, most non-Steam shortcuts before
+    /// this field existed).
+    /// </summary>
+    string? InstallDir = null);
 
 public sealed record ProcessNamesRequest(string[]? ProcessNames);
 public sealed record AliasRequest(string? Alias);

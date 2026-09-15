@@ -2407,3 +2407,241 @@ since it was their legitimately running verification instance, not a stale proce
   `SaveLocker-Playnite` doesn't exist as a repo/release yet.
 - The `Co-Authored-By` trailer gap flagged for the prior session's five commits is still unaddressed —
   not raised again this session, still requires explicit confirmation before any history rewrite.
+
+---
+
+## 2026-09-15 — Playnite plugin Group 3 hardware verification: conflict-popup root cause, theme-driven resolve window, git housekeeping
+
+**Repos:** main `SaveLocker` (branch `playnite-plugin-group-3`, HEAD `9453fda`) and
+`SaveLocker-Playnite` (branch `playnite-plugin-group-3`, HEAD `e052283`), both pushed to their
+respective `Marwanello` forks. Testing used a portable Playnite install at
+`D:\Projects\SaveLocker\Playnite-Test` plus the main repo's `tests/testenv.ps1` rig.
+
+### Request sequence
+
+1. Hardware-verify Group 3 (Phases 8–11: scaffold, settings, core pre-launch/post-exit gate,
+   automatic matching) against a real, running Playnite.
+2. "the game starts and no conflict window appears" — then, after a partial fix, a "REFUSED push"
+   toast plus "the conflict popup doesn't show up and the game opens stright away."
+3. Once the popup worked: "i don't want it hardcoded. i do want it to match the theme chossen in the
+   the Playnite app" — an explicit standing requirement that the window's colors be theme-driven.
+4. Three rounds of visual feedback, each via screenshot: white background against a dark theme; then
+   "the text is black over a dark backround. match the text color to the theme please and also add
+   cloud and device icons just like the one on the agent UI"; then, after a fix attempt, "still the
+   text is black over dark background"; then the explicit correction **"nothing chnged please fix it
+   porperly without guessing."**
+5. "ar changes don in playnite-plugin-group-3? if not push to this branch and delete
+   claude/playnite-plugin-group-3-acd4eb" — git housekeeping, explicitly authorizing deletion of a
+   long-standing duplicate remote branch.
+6. After a usage-limit reset mid-session: "continue from where you left off," followed by a request to
+   append this write-up to `progress.md` and `session_summary.md`.
+
+### Root causes found and fixed
+
+**#1 — "no conflict popup" traced to this session's own earlier doc guidance.**
+`docs/Build and Run.md` (SaveLocker-Playnite repo) told the user to run `.\tests\testenv.ps1 conflict
+-Wsl` alone. `-Wsl` alone seeds only the WSL side — Windows never tracks "Conflict Game" locally, so
+the plugin's `GameMatcher.FindMatch` finds nothing, its launch controller never engages, and Playnite
+silently falls back to a plain launch. Confirmed definitively by cross-referencing Playnite's own
+`playnite.log`: `"Using generic controller start a game."` (no match) vs. the expected `"Using plugin
+to start a game."` (match found, gate engaged) — this log-line contrast is now the documented,
+repeatable diagnostic for this class of bug. **Fixed** two ways: `docs/Build and Run.md` corrected to
+`conflict -Windows -Wsl` with an explanatory paragraph, and `tests/testenv.ps1`'s `conflict` case now
+`Warn`s loudly whenever `-Deck`/`-Wsl` is passed without `-Windows`, so a forgotten flag can't silently
+reproduce this again for a future session.
+
+**#2 — hardcoded dark palette rejected, replaced with real theme resources.** The first theming fix
+used literal RGB values. Per the user's explicit "match the theme, don't hardcode" instruction, rebuilt
+around `IPlayniteAPI.Dialogs.CreateWindow(WindowCreationOptions)` (the SDK-documented way to get a
+`Window` that inherits Playnite's own active-theme chrome) plus `element.SetResourceReference(...)`
+against real theme keys confirmed from Playnite's own GitHub source
+(`Themes/Desktop/Default/Views/TopPanel.xaml`): `TextBrush`, `PopupBackgroundBrush`,
+`PopupBorderBrush`.
+
+**#3 — button label text stayed black on a dark background through two fix attempts.** First attempt
+(`SetResourceReference(Control.ForegroundProperty, "TextBrush")` on the `Button` itself) had no visible
+effect; a second attempt (a custom `ControlTemplate` with an explicit `TemplateBinding Foreground` on
+the `ContentPresenter`) *also* had no visible effect per the user's "nothing chnged" report. Diagnosed
+with certainty rather than guessed again, per the user's explicit instruction: (a) fetched Microsoft's
+own WPF dependency-property-precedence docs, confirming a local value set via `SetResourceReference`
+already outranks template/style triggers in theory; (b) inspected the portable install's actual active
+theme and found it is **not** Playnite's own "Default" theme but a third-party community theme,
+`Harmony_d49ef7bc-49de-4fd0-9a67-bd1f26b56047` — its own `Button` `ControlTemplate` apparently renders
+text without honoring `TemplateBinding Foreground` at all; (c) ruled out two confounds that had made
+the second attempt's "nothing changed" report ambiguous — a stale in-memory plugin DLL (confirmed fresh
+via file timestamp) and a stale local-API token (confirmed via direct `curl` against
+`/api/games` and `/api/games/{id}/pre-launch-sync`, both healthy). The robust fix bypasses
+`Button.Foreground`/`ContentPresenter` inheritance entirely: every button's label is now its own
+directly-constructed `TextBlock` with `Foreground` set via `SetResourceReference` on the `TextBlock`
+itself (`MakeLabel` helper in `ConflictResolveWindow.cs`), never routed through a template at all.
+
+**#4 — found and fixed after the above, before this write-up: body text (not just buttons) was also
+unreadable.** Root-caused to Playnite's own `StandardWindowStyle.xaml` (which `Harmony` falls back to,
+defining no window style of its own): it sets `Background`/`BorderBrush` but never `Foreground` at the
+`Window` level, so every plain `TextBlock` that had been left to inherit `Foreground` rendered in WPF's
+default near-black — the same underlying failure as #3, just not yet applied file-wide. Added a
+`Themed(TextBlock)` helper (the same `SetResourceReference` fix, generalized) and applied it to every
+`TextBlock` in the window, including the previously-unreadable size/file-count/newest-change stat
+lines. Commit `e052283`'s own message states this was verified live against the real portable Playnite
+(Harmony theme) — every line renders correctly.
+
+**Cloud/device icons** added to match `agent-ui`'s `ConflictCard.tsx`: real Lucide `cloud`/`hard-drive`
+SVG path data reproduced as WPF `Path` geometry, `Stretch.Uniform`, stroke-based (not filled) to match
+Lucide's own rendering style.
+
+### Bugs found along the way (operational, not product bugs)
+
+- `testenv.ps1`'s `New-ConflictOnWindows` stops the Windows tray before seeding (avoids racing a live
+  tray's config writes); the tray must be manually restarted (`up -Only windows` or a full `up`)
+  afterward, or the plugin's local-API calls fail. Not obvious from the command's own output; worth a
+  doc note if this recurs.
+- `testenv.ps1 clean`'s Windows-state wipe (`%LOCALAPPDATA%\SaveLocker-test`) is **inconsistent** —
+  more than once it left a stale `ApiKey`/`MachineId` in `config.json` behind after a `clean`+`up`
+  cycle, which is invalid against the freshly-wiped server database and produces `401 from
+  /api/games` (silent match failures) on the next `up`. Worked around manually each time via `rm -rf`
+  of the state dir before re-running `up`. **Not fixed in code** — a real robustness gap in
+  `testenv.ps1 clean`, not yet raised as a task.
+- `CommandPoller.ReconcileGamesAsync` "adopts" a server-known game not yet tracked locally with
+  `SaveDirectory = ""` when auto-detection fails — this is what produced an earlier `"REFUSED push:
+  ...mapped to ''"` toast when Windows hadn't actually been seeded (a symptom of root cause #1 above,
+  not a separate bug).
+
+### Git housekeeping
+
+- Main repo: committed the `testenv.ps1` `-Windows` warning as `9453fda`, fast-forwarded local
+  `playnite-plugin-group-3` onto it, pushed (`f3053ae..9453fda`).
+- `SaveLocker-Playnite` repo: committed the theming/icon work as `4da6ace`, then the body-text fix as
+  `e052283`, pushed directly from `playnite-plugin-group-3` both times.
+- Deleted the duplicate remote branch `claude/playnite-plugin-group-3-acd4eb` on
+  `Marwanello/SaveLocker` (`git push origin --delete`) — flagged earlier in the session, blocked by the
+  harness's destructive-git classifier until explicitly authorized this turn.
+
+### Verification
+
+- Root cause #1: confirmed via `playnite.log` line cross-referencing (see above).
+- Root causes #2–#4: confirmed via user screenshots at each round; #4 specifically confirmed live
+  against the real portable Playnite per commit `e052283`'s own message.
+- Gate correctness (independent of the UI question) verified directly via `curl` against the local API:
+  `/api/games` (200, game matched) and `/api/games/{id}/pre-launch-sync` (`decision: "Blocked"`,
+  `reason: "a confirmed conflict is open for this game"`) — ruling out the stale-token/generic-launch
+  confounds before re-touching styling code a third time.
+- **Full 6-step `Build and Run.md` walkthrough re-verification was requested again this session** (the
+  user, asked how much of it had actually been confirmed on hardware, chose "not sure — let's
+  re-verify" rather than relying on memory) — **in progress as of this write-up**; the test rig
+  (docker containers) was found fully torn down when this segment resumed after the usage-limit reset,
+  so a rebuild is needed before continuing.
+
+### Not done
+
+- The full 6-step manual verification (untracked-game baseline, lease-held-elsewhere notification,
+  post-exit push, agent-down fail-open — steps 1, 3, 5, 6) is being re-run from a clean rebuild; not
+  complete as of this write-up.
+- `docs/CONTEXT.md` (SaveLocker-Playnite repo) and the Group 3 status row in the main repo's
+  `docs/tasks/playnite-plugin/implementation-grouping.md` are still stale (both still say "not yet
+  hardware-verified") — correctly deferred until the re-verification above actually completes.
+- `testenv.ps1 clean`'s inconsistent Windows-state wipe (401-after-clean bug, above) — not fixed in
+  code, only worked around manually each time it recurred.
+- Whether PRs should be opened on either repo (branches are pushed, no PRs opened) has not been raised
+  again since it first came up.
+
+---
+
+## 2026-09-15 (cont'd) — WSL lease-test fix, Fullscreen theme investigation, Fullscreen-native conflict popup built
+
+### Request sequence
+
+1. Checklist correction: the given `cd D:\Projects\SaveLocker\SaveLocker` step was wrong — "nothing
+   will wok as the main repo deon't contain the code." The main checkout sits on `main`; the
+   `playnite-plugin-group-3` branch only exists in this worktree.
+2. "convert tis to wsl compatable" — a PowerShell script (from earlier in the session) that reads
+   Minit's game id from the Windows tray's local API, then POSTs a lease against the test server using
+   "LinuxTest's key from the `up` output above."
+3. "every thing works great execept cant test 3 as i'm leassing the game on the same device need to
+   do it through wsl but i cant figure it out," plus confirmation the Fullscreen-mode conflict popup
+   "looks very bad with no background and not controller friendly" and a request to "create a
+   different popup for fullscreen view whichich looks like the decky plugin popup using the currently
+   applied theme elements."
+
+### Bugs found and fixed
+
+**Worktree-path mistake in the verification checklist (my own error).** `tests/testenv.ps1` (with the
+conflict-seeding fix) exists only on `playnite-plugin-group-3`, which is checked out solely in this
+worktree (`.claude/worktrees/pr37-code-review-1d577d`) — confirmed via `git worktree list`, which also
+showed two OTHER pre-existing worktrees for unrelated branches
+(`phase-13-playnite-plugin-df3530`, `zealous-gagarin-acc5db`). Corrected the checklist to `cd` into
+this worktree, not the main repo root.
+
+**The WSL lease script was reading the wrong machine's credentials.** The original PowerShell version
+read `X-SaveLocker-Token` from `%LOCALAPPDATA%\SaveLocker-test\SaveLocker\api-token` — that's
+**WinTest's own local loopback-API token** (for talking to the Windows tray on `:5188`), not a
+server-facing credential at all. Leasing with it (or with a stale hardcoded "LinuxTest key" copied from
+an old `up` output, now invalid after this session's rig rebuild) meant the lease request never
+actually authenticated as a genuinely different machine — explaining "i'm leasing the game on the same
+device." Root-caused by reading `tests/testenv.sh` directly: LinuxTest's real state lives natively
+inside WSL at `$XDG_DATA_HOME/SaveLocker` (default `$HOME/savelocker-test/SaveLocker`), and its
+`config.json`'s own `ApiKey` field is the correct server-facing credential. Also confirmed
+`SyncService.ListGamesAsync()` (`src/Server/Services/SyncService.cs`) returns **every** game on the
+server with no per-machine filter, and `GameDto` (`src/Shared/Contracts.cs`) serializes as `id`/`name`
+— so the whole round trip (list games, find Minit, take the lease) can run entirely inside WSL using
+only LinuxTest's own key, with zero Windows-side credentials, genuinely testing "held by another
+machine":
+```bash
+STATE="${SAVELOCKER_LINUX_STATE:-$HOME/savelocker-test}/SaveLocker"
+apiKey=$(jq -r '.ApiKey' "$STATE/config.json")
+games=$(curl -s -H "X-Api-Key: $apiKey" http://localhost:5080/api/games)
+minitId=$(echo "$games" | jq -r '.[] | select(.name=="Minit") | .id')
+curl -s -X POST -H "X-Api-Key: $apiKey" "http://localhost:5080/api/games/$minitId/lease"
+```
+
+### Fullscreen-mode investigation and fix
+
+Confirmed rather than guessed, per this session's own established standard:
+
+- **Detecting Fullscreen mode**: reflected the real, installed `Playnite.SDK.dll` directly (same
+  technique the original Group 3 build used for every other SDK signature) — `PlayniteApi
+  .ApplicationInfo.Mode` returns `Playnite.SDK.ApplicationMode.Desktop`/`.Fullscreen`. No code in
+  `SaveLockerPlugin.cs`/`ConflictResolveWindow.cs` had ever checked this.
+- **Why the existing window broke in Fullscreen**: fetched Playnite's own GitHub source
+  (`Playnite.FullscreenApp/App.xaml`, `Themes/Fullscreen/Default/Constants.xaml`,
+  `Themes/Fullscreen/Default/Media.xaml`). Fullscreen's theme resource set genuinely has no
+  `PopupBackgroundBrush`/`PopupBorderBrush` — those are Desktop-only keys — so every `Border`
+  Background/BorderBrush in the existing window resolved to nothing there, reproducing the exact
+  "unstyled white box" bug from earlier in the session for a completely different reason. `TextBrush`
+  does exist under the same name in both theme sets, so text itself was fine; only backgrounds/borders
+  broke. Fullscreen's own real keys: `ControlBackgroundBrush`, `OverlayMenuBackgroundBrush`,
+  `OverlayBrush`, `GlyphBrush` (accent).
+- **Also found**: Fullscreen's `App.xaml` merges no window-chrome-style dictionary at all (Desktop's
+  `StandardWindowStyle.xaml` has no counterpart there) — a normal OS-chrome dialog would look out of
+  place floating over Playnite's own borderless big-picture UI regardless of brush fixes.
+
+**Built** `ConflictResolveWindowFullscreen.cs` (new file, SaveLocker-Playnite repo): a borderless
+(`WindowStyle.None` + `AllowsTransparency`), full-screen dimmed overlay (`OverlayBrush` backdrop) with
+a centered, drop-shadowed card (`OverlayMenuBackgroundBrush`) — shaped like Decky's own floating-modal-
+over-dimmed-backdrop conflict popup rather than an OS dialog. Bigger fonts/touch targets than the
+Desktop version, `GlyphBrush` for the selected-panel accent instead of hardcoded `DodgerBlue`, and
+explicit `PreviewKeyDown` handling for Left/Right (toggle device/cloud)/Enter (resolve)/Escape (cancel)
+— added because whether Playnite's own gamepad-to-input translation reaches a plugin-created secondary
+`Window` at all is genuinely unverified, so real keyboard input is covered directly rather than relying
+solely on WPF's default Tab-focus chain. `SaveLockerPlugin.ResolveConflictInteractively` now branches
+on `PlayniteApi.ApplicationInfo.Mode` to construct the right window class.
+
+One build error caught immediately: `using System.Windows.Effects;` doesn't exist —
+`DropShadowEffect` is in `System.Windows.Media.Effects`. Fixed; `dotnet build --no-incremental`
+succeeded, `Install-ToPortable.ps1 -SkipBuild` installed it into the portable Playnite.
+
+### Verification
+
+- WSL lease script: traced correct paths/fields from `testenv.sh` and `Contracts.cs` source directly;
+  not yet re-run live by the user as of this write-up.
+- Fullscreen window: build-verified only. **Not yet hardware-verified** — neither the visual result nor
+  (critically) whether a real controller actually drives the new keyboard handling. Both flagged as
+  open, not assumed working.
+
+### Not done
+
+- User has not yet re-tested Fullscreen mode with the new window, or confirmed the corrected WSL lease
+  script.
+- Controller-driven navigation of `ConflictResolveWindowFullscreen` is unverified — the biggest
+  remaining unknown in this change.
+- Nothing in the `SaveLocker-Playnite` repo committed yet as of this write-up (uncommitted:
+  `ConflictResolveWindowFullscreen.cs` new, `SaveLockerPlugin.cs` modified).
