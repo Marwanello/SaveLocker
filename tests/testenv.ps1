@@ -1281,8 +1281,19 @@ switch ($Command) {
             $Windows = $true
             $secondSide = if (Test-DeckConfigured) { 'deck' } else { 'wsl' }
             Say "no -Windows/-Deck/-Wsl given - seeding Windows + $secondSide (auto-picked; pass -Wsl to always prefer WSL over a configured Deck)"
-        } elseif ($Deck) { $secondSide = 'deck' }
-        elseif ($Wsl) { $secondSide = 'wsl' }
+        } elseif ($Deck) {
+            $secondSide = 'deck'
+            # A one-sided seed is a real, supported use (re-seeding just this side against an
+            # existing head) - but it's also exactly what a forgotten -Windows produces, and that
+            # failure is silent and confusing: the OTHER agent auto-adopts 'Conflict Game' from the
+            # server with no local folder mapped, refuses to push/pull it, and its own plugin gate
+            # fails open with no conflict shown - reproduced on hardware 2026-09-15 chasing a
+            # "no conflict popup" report that was actually just this. Loud enough not to miss.
+            if (-not $Windows) { Warn '-Windows not given - only seeding Deck. If this is meant to be a fresh two-sided conflict (not re-seeding Deck alone against an existing head), pass -Windows too, or Windows''s own agent will silently fail to gate anything.' }
+        } elseif ($Wsl) {
+            $secondSide = 'wsl'
+            if (-not $Windows) { Warn '-Windows not given - only seeding WSL. If this is meant to be a fresh two-sided conflict (not re-seeding WSL alone against an existing head), pass -Windows too, or Windows''s own agent will silently fail to gate anything.' }
+        }
 
         # 500 mirrors SaveArchive.DefaultMaxUploadMb / Storage:MaxUploadMb in
         # src/Server/appsettings.json — seeding more only produces pushes the server rejects.
