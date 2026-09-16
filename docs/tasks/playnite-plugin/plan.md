@@ -49,6 +49,8 @@ session and why.
 | 15 — Test infrastructure | ✅ Built 2026-09-16 — the portable-Playnite `testenv` target and Windows `seed-test-conflict` equivalent this phase called for already shipped in Group 3's test-rig integration (commit `9397e9d`); this session added the remaining gap, automated coverage (`tests/SaveLocker.Playnite.Tests`, xUnit — GameMatcher + LocalApiClient against an HttpListener stub), 25/25 passing |
 | 16 — Official add-on database submission | ⏳ Not started |
 | 17 — Release CI workflow (`SaveLocker-Playnite`) | ✅ Built 2026-09-16 — `.github/workflows/release.yml`; the Playnite.SDK.dll-fetch step and a build against the freshly-fetched SDK were both actually run and verified, but pushing a real tag to exercise a genuine release end to end was not attempted (needs the user's go-ahead) |
+| 18 — Agent-side Playnite library reader + `agent-ui` tab (no plugin required) | ⏳ Not started — added 2026-09-16, asked directly ("does the agent know which games are installed in Playnite and can enroll from the agent as a tab, like Steam and Heroic on Linux") |
+| 19 — `agent-ui` "Playnite plugin" card: suggest by default, one-click direct install as an explicit opt-in | ⏳ Not started — added 2026-09-16, asked directly ("is there a way to suggest installing the Playnite plugin, or install it directly, and can it be implemented") |
 
 ---
 
@@ -478,7 +480,9 @@ small side task.
 | `GET /api/manifest/search` | Low | 0.5 |
 | `AgentPlatform.PlaynitePlugin` slot + Agent Updates row | Low-medium — mirrors `decky-plugin`'s own addition | 1 |
 | Windows plugin self-updater (`DeckyPlugin.cs` equivalent) | Medium — new class, but closely modeled, actually *simpler* than Decky's (no root/chown constraints) | 1–2 |
-| **Subtotal** | | **~7–9 sessions** |
+| `PlayniteLibrary.cs` direct LiteDB reader + `agent-ui` chip (Phase 18, added 2026-09-16) | Medium-high — first use of LiteDB here, and the shared-connection/version-match risk needs confirming on real hardware before the mapping logic is worth writing | 1.5–2 |
+| `PlaynitePluginCard.tsx` + install/status routes + Phase 17 `.pext` addendum (Phase 19, added 2026-09-16) | Medium — mostly assembly of already-shipped pieces (Phase 7's `InstallAsync`, Phase 18's detection probe), but the first real hardware exercise of `InstallAsync` against a running Playnite is genuine unverified risk | 1–1.5 |
+| **Subtotal** | | **~9.5–12.5 sessions** |
 
 **New repo / plugin itself (unfamiliar toolchain here: `.NET Framework 4.6.2` + Playnite SDK + WPF,
 first use of any of it in this codebase; verification is hardware-only, no CI):**
@@ -496,7 +500,8 @@ first use of any of it in this codebase; verification is hardware-only, no CI):*
 | Release CI workflow (Phase 17, added 2026-09-15) | Low-medium — small in scope, but no existing workflow in this codebase to closely copy (`SaveLocker-Decky` has none either) | 1 |
 | **Subtotal** | | **~12–16 sessions** |
 
-**Total, full scope as now designed: roughly 19–25 sessions.** At this project's own recent cadence
+**Total, full scope as now designed: roughly 22–29 sessions** (the two subtotals above, now
+including Phases 18 and 19). At this project's own recent cadence
 (often close to one substantial session per day), that is realistically **3–4.5 weeks** of active
 work — not a quick add-on.
 
@@ -629,6 +634,163 @@ order. See `implementation-grouping.md` for which phases share a session.
   most of this plan's phases are. Verify: push a test tag, confirm the workflow produces a
   correctly-shaped `.zip` + checksum on the release, and that the agent's self-updater (Phase 7) can
   actually fetch and verify it end to end — the first real exercise of that code path.
+- **Phase 18 — Agent-side Playnite library reader + `agent-ui` tab, no plugin required.** Added
+  2026-09-16, asked directly: does the agent already know which games Playnite has installed, the way
+  it knows Steam's and (on Linux) Heroic's, and can it show them as a filter chip in Add Games for
+  enrollment straight from the agent — no. Every phase above discovers Playnite games through the
+  **plugin**, running live inside Playnite and calling the agent's local API — Phase 11's automatic
+  matching chain and Phase 12's "Link to SaveLocker" popup both depend on that plugin being installed
+  and Playnite being open; `ScanSource.Playnite` today only ever means a single targeted
+  `POST /api/candidates/lookup` the plugin asked for, never a broad sweep. This phase is the
+  Windows-side structural equivalent of `HeroicLibrary.cs` — a new `src/Agent/PlayniteLibrary.cs`
+  that `GameScanner.ScanAsync` calls as a **fourth broad-sweep source**, alongside Steam
+  shortcuts/installed/save-roots, so a Playnite-only game shows
+  up in Add Games with zero dependency on the plugin ever being installed — matching the Linux agent's
+  own relationship to Heroic (there is no companion "Heroic plugin"; the agent just reads Heroic's own
+  files).
+  - **What it reads.** Playnite stores its library in an embedded LiteDB database, conventionally
+    `%AppData%\Playnite\library\games.db` (portable installs keep it beside the executable instead —
+    probe both, skip cleanly if neither exists, the same "steamPath is null → skip entirely" shape
+    `GameScanner.ScanAsync` already applies to the whole Steam branch). Read via the `LiteDB` NuGet
+    package, projecting only `Id`, `Name`, `InstallDirectory`, `IsInstalled`, `GameId` (the owning
+    store's own per-game id — carries the Steam AppID string when the owning plugin is Steam), and
+    `PluginId` (a fixed GUID naming which library plugin owns the entry — Steam/GOG/Epic/Amazon each
+    have a stable, well-known id). Skip anything with `IsInstalled == false` or no
+    `InstallDirectory` — an uninstalled entry has nothing on disk to resolve a save folder against,
+    the same filter `HeroicLibrary.Read`'s own `Where(g => !string.IsNullOrWhiteSpace(g.InstallPath))`
+    already applies.
+  - **The one real risk, and it must be confirmed on real hardware before anything else in this
+    phase**: Playnite holds `games.db` open while it runs, and LiteDB's on-disk format has had
+    breaking changes across its own major versions — a NuGet package version that doesn't match what
+    the installed Playnite currently bundles is a silent, hard-to-diagnose read failure, not a clean
+    error. Two things to verify first, in this order, before writing the mapping logic: (1) what
+    LiteDB version the real Playnite install on this box actually bundles (its own installed files,
+    or release notes, are the authority — do not assume); (2) that opening the file with a
+    shared/read-only LiteDB connection string actually succeeds while Playnite is running and holding
+    it open, rather than throwing a lock exception. This is this phase's equivalent of Phase 8's
+    "highest toolchain-risk" flag — budget accordingly, and if the shared-connection read cannot be
+    made reliable, the honest fallback is skipping the source only while Playnite is detected running
+    (`GameActivity`-style process check) rather than shipping a scan that intermittently loses the
+    Playnite chip.
+  - **Mapping to `ScanCandidate`.** `SuggestedSaveDir` resolves the same way
+    `ScanInstalledSteamGamesAsync` already does — `Detection.ResolveWindowsAsync(name, installDir,
+    storeRoot, ct)` — passing `storeRoot: null` normally, but `GameScanner.FindSteamPath()`'s existing
+    library-root list when the owning `PluginId` is Steam's, so a Steam-owned Playnite entry resolves
+    exactly as strongly as a native Steam-installed candidate already does since Phase 2. `SteamAppId`
+    is set from `GameId` under the same condition. `Store` comes from a small fixed `PluginId →
+    GameStore` map (Steam/Epic/Gog/Amazon covered; everything else — itch.io, a manually-added
+    executable, a plugin this map doesn't know — falls to `GameStore.Unknown`, mirroring Heroic's own
+    fallback exactly). Tag `Source: ScanSource.Playnite` — reusing, not duplicating, the existing enum
+    value; its doc comment widens to cover both "the plugin asked about one game" and "the agent swept
+    the whole library," since both are conceptually "this is how Playnite told us," exactly parallel
+    to how one `Heroic` value already covers four different runners with `GameStore` as the finer
+    axis.
+  - **Fault isolation and dedup are free.** Wrap the whole source in `ScanAsync`'s existing
+    `SafeSourceAsync("Playnite library", …)` — a missing file, a lock, or a schema Playnite has since
+    changed degrades to "no Playnite candidates this scan," never takes down Steam/shortcut/save-root
+    discovery alongside it, the same non-negotiable `ScanAsync`'s own doc comment already states for
+    every source (WA-11). The existing `GroupBy(ManifestLoader.NormalizeName)` + `MergeDuplicates`
+    dedup already handles a game visible through more than one source (a Steam game also present in
+    Playnite) with no new merge logic.
+  - **`agent-ui`.** One new `FILTERS` entry in `AddGamesView.tsx`, copied from the Heroic row —
+    `{ id: 'playnite', label: 'Playnite', hint: 'Games in your Playnite library', match: c => c.source
+    === 'Playnite' }`. The chip auto-hides on a machine with none (existing `chips` filter already
+    does this), the per-row badge already renders `c.source` generically, and the `stores` memo widens
+    from `filter === 'heroic'` to also match `'playnite'` so Steam/Epic/GOG sub-filtering — already
+    built for Heroic — works for a Playnite-sourced list too, for free.
+  - **Relationship to Phases 8–17, stated explicitly so the two don't get confused later:** this does
+    not replace the plugin's own matching (Phase 11) or "Link to SaveLocker" popup (Phase 12) — those
+    remain the more accurate path while Playnite is actually running with the plugin installed,
+    since they read Playnite's *official* SDK object model, not a reverse-engineered on-disk format.
+    Phase 18 covers what the plugin architecture structurally cannot: a machine where the plugin isn't
+    installed at all, and browsing/enrolling Playnite games from the agent-ui the same uniform way
+    Steam and Heroic already work.
+  - **Dependencies:** none structurally — touches only this repo (`GameScanner.cs`,
+    `ScanCandidate.cs`, `AddGamesView.tsx`), not the `SaveLocker-Playnite` repo, and doesn't depend on
+    any of Phases 1–17. Strengthened by Phase 2 (`SteamAppId` population, already shipped): a
+    Steam-owned Playnite entry with a resolved AppID lines up with Phase 11's plugin-side matching
+    chain too, so the two independent discovery paths agree on the same game rather than only one of
+    them recognizing it.
+  - **Verify:** unit-test the LiteDB parsing/mapping against a small fixture database built in the
+    test itself (an actual advantage over `HeroicLibrary`'s manual-only verification — LiteDB is cheap
+    to construct as a fixture, unlike Heroic's real Electron JSON files). Then, on this real Windows
+    box with a real Playnite install already present: confirm a rescan surfaces genuine Playnite
+    library games tagged `Playnite`, resolves save folders for the ones the manifest knows, enrolls
+    correctly end to end, de-dupes correctly against anything also visible via Steam, and — the
+    specific failure mode this phase is riskiest for — confirm Playnite itself keeps running normally
+    with `games.db` open while a scan reads it, with no lock contention in either direction.
+
+- **Phase 19 — `agent-ui` "Playnite plugin" card: suggest by default, one-click direct install as an
+  explicit opt-in.** Added 2026-09-16, asked directly as a follow-up to Phase 18: today nothing in
+  `agent-ui` tells the user the plugin exists at all — `Playnite` appears nowhere in `agent-ui/src`
+  except the generated `api-types.ts`. Phases 6/7/14 already built the server-side hosting slot
+  (`playnite-plugin` row, `AgentUpdatesCard.tsx`) and the agent's *update*-checking half
+  (`GET /api/playnite-plugin`), but there is no surface that offers the plugin to a user who does not
+  already have it, and nothing that installs it the first time. Resolved by asking directly (see the
+  question this phase was scoped from): build both halves, at once — a suggest-only card by default,
+  plus an explicit, separately-clicked "Install automatically" affordance for whoever wants it,
+  rather than picking one philosophy for everyone.
+  - **New `PlaynitePluginCard.tsx`**, added to `OverviewView.tsx` beside `DeckyPluginCard` — same
+    file, same three-state shape (`no Playnite detected` / `Playnite but no plugin` /
+    `plugin installed`), same collapsed-by-default treatment. Unlike `DeckyPluginCard` (which still
+    renders when Decky itself is absent, since Decky is a near-universal Deck accelerator worth
+    pointing a Deck user at), this card renders **nothing at all** when Playnite isn't detected on
+    this machine — Playnite is a much more optional, minority choice on a Windows desktop than Decky
+    is on a Deck, and a card explaining a launcher the user doesn't have is clutter, not a nudge.
+    Detecting "is Playnite here" reuses Phase 18's own data-folder probe (`%AppData%\Playnite\` /
+    portable-beside-exe) rather than duplicating it — the same check `PlayniteLibrary.cs` already has
+    to make to find `games.db` answers this too.
+  - **New local-API route, `GET /api/playnite-plugin/status`**, mirroring `/api/decky`'s shape exactly
+    (`applicable`, `pluginInstalled`, `pluginVersion`, `latestVersion`, `installUrl`) — local reads
+    plus one cheap check against the already-polled installer-status cache Phase 7's `CheckAsync`
+    already maintains, no new network call of its own.
+  - **The suggest half** (always shown when applicable): explains what the plugin adds (pre-launch
+    conflict gate, "Link to SaveLocker," status/sync menu items — Phases 10–13), and a download link
+    for the manual, double-click `.pext` path (`## Installation` above, unchanged). **One real gap
+    found while scoping this**: Phase 17's release workflow only publishes a `.zip`
+    (`extension.yaml` + the DLL); the manual "double-click a `.pext`" install path this card needs to
+    point at requires a `.pext` asset too — which is trivial to add (a `.pext` *is* that same zip
+    under a renamed extension; Playnite draws no other distinction), but Phase 17 as built today does
+    not produce one. Small addendum to Phase 17, not a new phase: add a second, renamed-copy release
+    asset in the same workflow run.
+  - **The install half** (opt-in, one explicit button click, never automatic on its own): calls a new
+    `POST /api/playnite-plugin/install`, which reuses Phase 7's own `InstallAsync`
+    plan-before-write/digest-verification machinery wholesale rather than duplicating it — the only
+    difference from an ordinary self-update is that the destination directory
+    (`%AppData%\Playnite\Extensions\SaveLocker\`) does not exist yet. This is the deliberate reversal
+    of the plan's earlier "first install is always manual" line ("Installation" section above): that
+    line was written against Decky's precedent, where it is a **technical** wall (Decky root-owns the
+    plugin's top-level directory, so the agent literally cannot create one). Confirmed at Phase 8/the
+    "Installation" section that Playnite's `Extensions\` folder carries **no such constraint** — it is
+    plain user-owned, exactly like every file the self-updater already writes for an *update*. So the
+    only thing that was actually stopping a first install was the plan's own policy choice to mirror
+    Decky's UX regardless — and the direct answer to "can it be implemented," asked directly, is yes.
+    What stays intentional is the **consent boundary**: install only ever fires from this one explicit
+    button, never from a background poll or an automatic suggestion, so the agent still never silently
+    drops files into a third-party app's plugin folder without a deliberate per-install click.
+  - **Same restart caveat as an ordinary update** (Phase 14's own finding, unchanged): no hot-reload
+    for a compiled `GenericPlugin`, so a first install still ends with "restart Playnite to finish
+    installing SaveLocker," identical wording to the update case, not a new UX pattern.
+  - **One thing this inherits, not introduces**: Phase 7 is marked shipped but explicitly
+    "code-complete; no real plugin package exists yet to test an actual install against" — so neither
+    an update *nor* Phase 19's first-install button has yet had `InstallAsync` exercised against a
+    real, running Playnite process. Verifying that (file-locking behavior if Playnite has the plugin's
+    DLL loaded, the actual restart-prompt UX) is this phase's real hardware-risk, not new machinery —
+    worth doing for the first-install case specifically, since a first install into a **not-yet-loaded**
+    directory is the easier of the two (nothing has the new DLL open yet), so it is also the better
+    case to prove the underlying write/verify logic works before trusting it for an update that
+    replaces already-loaded files.
+  - **Dependencies:** Phase 18 (shares its Playnite-detection probe; not a hard technical dependency —
+    could duplicate the small probe instead if built first, but sharing it is the point). Also depends
+    on Phases 6/7/14 (already shipped) for the hosting slot and install machinery, and needs the small
+    Phase 17 addendum above before the manual `.pext` link is genuinely double-click-clean.
+  - **Verify:** on this real Windows box with Playnite already installed — confirm the card renders
+    correctly in all three states (uninstall the plugin to see the "suggest" state, reinstall to
+    confirm "installed" reads its real version), confirm the manual `.pext` download link actually
+    double-click-installs cleanly once Phase 17's addendum ships, and confirm the "Install
+    automatically" button writes a working extension, Playnite loads it correctly after the prompted
+    restart, and a second click when already installed correctly reads as "up to date" rather than
+    reinstalling redundantly.
 
 ```
 Phase 1 ──┐                         Phase 6 ── Phase 7
@@ -646,6 +808,11 @@ Phase 8 ── Phase 9 ── Phase 10 ── Phase 16 (needs 10 working)
 Phase 14 needs Phases 6/7 (agent) + Phase 9 (plugin)
 
 Phase 17 needs Phase 8; most useful once Phase 10 exists, not gated on it
+
+Phase 18 — independent of everything above; strengthened by Phase 2 (already shipped)
+
+Phase 19 needs Phases 6/7/14 (already shipped) + the small Phase 17 addendum; shares Phase 18's
+Playnite-detection probe but does not hard-depend on it
 ```
 
 ---
