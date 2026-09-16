@@ -12,7 +12,9 @@ public enum PluginUpdateState
 {
     /// <summary>Playnite is not installed on this machine. Not a fault, not worth a word anywhere.</summary>
     NoPlaynite,
-    /// <summary>Playnite is here but the SaveLocker plugin is not. The first install isn't ours to do.</summary>
+    /// <summary>Playnite is here but the SaveLocker plugin is not. <see cref="CheckAsync"/>'s own
+    /// background timer never installs one on its own initiative — that stays true after Phase 19 —
+    /// but <see cref="InstallFirstTimeAsync"/> now lets an explicit, user-clicked button do it.</summary>
     NotInstalled,
     /// <summary>The installed plugin is current, or the server offers none.</summary>
     UpToDate,
@@ -142,6 +144,88 @@ public static class PlaynitePlugin
     }
 
     /// <summary>
+    /// GET /api/playnite-plugin/status's own answer (tasks/playnite-plugin/plan.md, Phase 19) — the
+    /// agent-ui suggest/install card's data source, shaped like Agent.Core's <c>DeckyStatusDto</c> on
+    /// purpose: same three-state card pattern (not present / present without the plugin / installed),
+    /// different launcher. Unlike <see cref="StatusAsync"/> above (the plugin's OWN self-check, called
+    /// from inside a running Playnite process, which stops at "not installed" because Phase 14 has
+    /// nothing to offer there), this always tries to learn the latest available version too — a card
+    /// that suggests installing the plugin in the first place has nowhere else to get one.
+    /// </summary>
+    public static async Task<PlaynitePluginCardStatusDto> CardStatusAsync(AgentConfig config)
+    {
+        if (!PlaynitePresent) return new(false, false, null, null, InstallUrl);
+
+        var installed = Installed ? InstalledVersion() : null;
+        string? latest = null;
+        if (!string.IsNullOrEmpty(config.ApiKey))
+        {
+            try
+            {
+                using var checker = new UpdateChecker(config);
+                var info = await checker.FetchLatestAsync(AgentPlatform.PlaynitePlugin);
+                latest = info?.LatestVersion;
+            }
+            catch { /* best effort — a card that can't reach the server just omits the version */ }
+        }
+
+        return new(true, Installed, installed, latest, InstallUrl);
+    }
+
+    /// <summary>
+    /// POST /api/playnite-plugin/install's own answer (Phase 19) — an explicit, user-clicked first
+    /// install onto a machine that has Playnite but not yet this plugin. This reverses this file's own
+    /// earlier default (see <see cref="PluginUpdateState.NotInstalled"/>'s doc comment, "the first
+    /// install isn't ours to do"): unlike Decky, which root-owns its plugin directory's top level,
+    /// <see cref="PluginDir"/> carries no ownership constraint that makes a first-time write
+    /// technically impossible, so the only thing stopping it before now was policy, not capability —
+    /// mirroring Decky's UX regardless of that difference. What stays intentional is the consent
+    /// boundary: this only ever runs from an explicit button click (see <c>PlaynitePluginCard.tsx</c>),
+    /// never from the background timer that drives an ordinary update.
+    /// </summary>
+    public static async Task<PlaynitePluginStatusDto> InstallFirstTimeAsync(AgentConfig config, Action<string> log)
+    {
+        var outcome = await InstallFirstTimeCoreAsync(config, log);
+        return new PlaynitePluginStatusDto(
+            outcome.State.ToString(), outcome.Message, outcome.InstalledVersion, outcome.LatestVersion);
+    }
+
+    private static async Task<PluginUpdateOutcome> InstallFirstTimeCoreAsync(AgentConfig config, Action<string> log)
+    {
+        try
+        {
+            if (!PlaynitePresent)
+                return new(PluginUpdateState.NoPlaynite, "Playnite is not installed on this machine.");
+
+            if (Installed)
+            {
+                var current = InstalledVersion();
+                return new(PluginUpdateState.UpToDate,
+                    $"the plugin is already installed (v{current}).", current);
+            }
+
+            if (string.IsNullOrEmpty(config.ApiKey))
+                return new(PluginUpdateState.Failed,
+                    "This machine is not registered, so there is no server to ask.");
+
+            using var checker = new UpdateChecker(config);
+            var info = await checker.FetchLatestAsync(AgentPlatform.PlaynitePlugin);
+            if (info is null || string.IsNullOrWhiteSpace(info.LatestVersion))
+                return new(PluginUpdateState.Failed, "the server hosts no plugin package to install.");
+
+            if (IsPlayniteRunning)
+                return new(PluginUpdateState.Refused,
+                    "Close Playnite first — a first install cannot be applied while it is running.");
+
+            return await InstallAsync(config, checker, info, installed: null, log);
+        }
+        catch (Exception ex)
+        {
+            return new(PluginUpdateState.Failed, ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Ask the server what plugin it is offering and, when <paramref name="apply"/> is true, install
     /// it. Never throws: this runs on a timer nobody is necessarily watching, and a plugin that could
     /// not be updated must not become a reason the agent stops doing anything else.
@@ -200,10 +284,11 @@ public static class PlaynitePlugin
     /// Download, verify, unpack to a staging directory, and only then write. Unlike Decky's plan-
     /// before-write pass, nothing under <see cref="PluginDir"/> is root-owned or otherwise off-limits
     /// — the whole directory is replaced to match the package exactly, including files the old version
-    /// had that the new one doesn't.
+    /// had that the new one doesn't. <paramref name="installed"/> is null for a genuine first install
+    /// (<see cref="InstallFirstTimeCoreAsync"/>) — there is no prior version to name in that case.
     /// </summary>
     private static async Task<PluginUpdateOutcome> InstallAsync(
-        AgentConfig config, UpdateChecker checker, AgentVersionInfo info, string installed, Action<string> log)
+        AgentConfig config, UpdateChecker checker, AgentVersionInfo info, string? installed, Action<string> log)
     {
         var staging = Path.Combine(config.StateDir, "playnite-plugin-update");
         DeleteDirectory(staging);
@@ -263,16 +348,23 @@ public static class PlaynitePlugin
                 }
             }
 
+            var fromClause = installed is null ? "" : $", was v{installed}";
             log($"playnite plugin: v{info.LatestVersion} installed ({newFiles.Count} files" +
-                (pruned > 0 ? $", {pruned} removed" : "") + $"), was v{installed}. Restart Playnite to " +
-                "finish updating.");
+                (pruned > 0 ? $", {pruned} removed" : "") + $"){fromClause}. Restart Playnite to " +
+                "finish " + (installed is null ? "installing." : "updating."));
 
             Report(config, AgentEventCodes.PluginUpdated, AgentEventSeverity.Info,
-                $"The SaveLocker Playnite plugin on this machine was updated from v{installed} to " +
-                $"v{info.LatestVersion}. Restart Playnite to finish updating.");
+                installed is null
+                    ? $"The SaveLocker Playnite plugin was installed on this machine (v{info.LatestVersion}). " +
+                      "Restart Playnite to finish installing."
+                    : $"The SaveLocker Playnite plugin on this machine was updated from v{installed} to " +
+                      $"v{info.LatestVersion}. Restart Playnite to finish updating.");
 
             return new(PluginUpdateState.Updated,
-                $"updated v{installed} → v{info.LatestVersion}", info.LatestVersion, info.LatestVersion);
+                installed is null
+                    ? $"installed v{info.LatestVersion}"
+                    : $"updated v{installed} → v{info.LatestVersion}",
+                info.LatestVersion, info.LatestVersion);
         }
         catch (Exception ex)
         {
@@ -337,10 +429,11 @@ public static class PlaynitePlugin
     }
 
     private static PluginUpdateOutcome Fail(
-        AgentConfig config, string latest, string installed, string reason)
+        AgentConfig config, string latest, string? installed, string reason)
     {
+        var stateClause = installed is null ? "still not installed" : $"still v{installed}";
         Report(config, AgentEventCodes.PluginUpdateFailed, AgentEventSeverity.Warning,
-            $"The SaveLocker Playnite plugin on this machine is still v{installed}: v{latest} was not " +
+            $"The SaveLocker Playnite plugin on this machine is {stateClause}: v{latest} was not " +
             $"installed because {reason}");
         return new(PluginUpdateState.Refused, reason, installed, latest);
     }

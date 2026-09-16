@@ -3,6 +3,7 @@ import type { AgentState, LeaseWarning } from '../types'
 import { api } from '../api'
 import { LaunchSetupCard } from './LaunchSetupCard'
 import { DeckyPluginCard } from './DeckyPluginCard'
+import { PlaynitePluginCard } from './PlaynitePluginCard'
 import { ActivityCard } from './ActivityCard'
 
 interface Props {
@@ -83,6 +84,9 @@ export function OverviewView({ state, onWarningDismissed, onSynced }: Props) {
         {/* After the launch-options card on purpose: the manual step is the supported one, and this
             is the optional thing that can remove it. Both hide themselves on Windows. */}
         <DeckyPluginCard />
+        {/* Playnite's own analogue, right beside it — the two never both render on the same machine
+            (Decky hides on Windows, this hides wherever Playnite's own data folder is absent). */}
+        <PlaynitePluginCard />
         {/* Last: what's happening right now is the thing worth checking back on, so it sits where a
             user's eye lands after everything else is already known to be fine. */}
         <ActivityCard onSynced={onSynced} />
