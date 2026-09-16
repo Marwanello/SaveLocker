@@ -18,9 +18,13 @@ public enum ScanSource
     /// </summary>
     Heroic,
     /// <summary>
-    /// A single, targeted resolve built from a Playnite plugin's own library data (name, install dir,
-    /// whichever store hints it has), via <c>POST /api/candidates/lookup</c>
-    /// (tasks/playnite-plugin/plan.md, Phase 5) — not one of this scanner's own broad sweeps.
+    /// This is how Playnite told us — either of two different ways. A single, targeted resolve built
+    /// from the Playnite plugin's own live data (name, install dir, whichever store hints it has), via
+    /// <c>POST /api/candidates/lookup</c> (tasks/playnite-plugin/plan.md, Phase 5); or a broad sweep of
+    /// Playnite's own library database read directly off disk, with no plugin involved at all
+    /// (<c>GameScanner.ScanPlayniteLibraryAsync</c>, Phase 18). <see cref="GameStore"/> is the finer
+    /// axis that tells the two-store cases apart, the same relationship <see cref="Heroic"/> already
+    /// has to four different runners.
     /// </summary>
     Playnite
 }

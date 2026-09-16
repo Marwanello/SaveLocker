@@ -27,7 +27,7 @@ const BTN_BASE: React.CSSProperties = {
  * the part the Linux agent was missing entirely: it filtered Cloud games out with no control to
  * bring them back, so an installed Steam game could not be reached at all.
  */
-type FilterId = 'suggested' | 'all' | 'steam' | 'shortcut' | 'heroic'
+type FilterId = 'suggested' | 'all' | 'steam' | 'shortcut' | 'heroic' | 'playnite'
 
 const FILTERS: { id: FilterId; label: string; hint: string; match: (c: Candidate) => boolean }[] = [
   { id: 'suggested', label: 'Suggested', hint: 'Everything except games Steam Cloud already backs up', match: c => !c.hasSteamCloud },
@@ -35,6 +35,7 @@ const FILTERS: { id: FilterId; label: string; hint: string; match: (c: Candidate
   { id: 'steam', label: 'Steam', hint: 'Games installed from the Steam store', match: c => c.source === 'SteamInstalled' },
   { id: 'shortcut', label: 'Added to Steam', hint: 'Non-Steam games you added to your Steam library', match: c => c.source === 'SteamShortcut' },
   { id: 'heroic', label: 'Heroic', hint: 'Games installed through Heroic Games Launcher', match: c => c.source === 'Heroic' },
+  { id: 'playnite', label: 'Playnite', hint: 'Games in your Playnite library', match: c => c.source === 'Playnite' },
 ]
 
 /**
@@ -51,8 +52,12 @@ const PATH_MODES: { id: PathMode; label: string; match: (c: Candidate) => boolea
   { id: 'missing', label: 'Not detected', match: c => !c.path },
 ]
 
-/** Heroic's storefronts, as a second axis under the Heroic filter. `Unknown` covers a runner we don't map. */
+/** Storefronts, as a second axis under the Heroic and Playnite filters. `Unknown` covers a runner
+ * or library plugin we don't map. `Steam` only ever has entries under Playnite — Heroic manages no
+ * Steam games — but counting it costs nothing and lets a Playnite user narrow to just their
+ * Steam-owned titles the same way a Heroic user already narrows to Epic/GOG/Amazon. */
 const STORES: { id: string; label: string }[] = [
+  { id: 'Steam', label: 'Steam' },
   { id: 'Epic', label: 'Epic' },
   { id: 'Gog', label: 'GOG' },
   { id: 'Amazon', label: 'Amazon' },
@@ -171,10 +176,11 @@ export function AddGamesView({ onEnrolled }: Props) {
     [candidates])
 
   const stores = useMemo(() => {
-    if (filter !== 'heroic') return []
-    const heroic = candidates.filter(c => c.source === 'Heroic')
+    if (filter !== 'heroic' && filter !== 'playnite') return []
+    const source = filter === 'heroic' ? 'Heroic' : 'Playnite'
+    const inSource = candidates.filter(c => c.source === source)
     return STORES
-      .map(s => ({ ...s, count: heroic.filter(c => c.store === s.id).length }))
+      .map(s => ({ ...s, count: inSource.filter(c => c.store === s.id).length }))
       .filter(s => s.count > 0)
   }, [candidates, filter])
 
@@ -183,7 +189,7 @@ export function AddGamesView({ onEnrolled }: Props) {
   // drawn against, so "Detected" and "Not detected" describe the set the user is already looking at.
   const sourceFiltered = candidates
     .filter(active.match)
-    .filter(c => !(filter === 'heroic' && store) || c.store === store)
+    .filter(c => !((filter === 'heroic' || filter === 'playnite') && store) || c.store === store)
   const activePathMode = PATH_MODES.find(p => p.id === pathMode) ?? PATH_MODES[0]
   const visible = sourceFiltered.filter(activePathMode.match)
 
