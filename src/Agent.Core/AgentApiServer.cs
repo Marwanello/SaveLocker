@@ -24,6 +24,12 @@ public sealed class AgentApiServer : IDisposable
     private readonly Func<Task<string?>> _pickFolder;
     private readonly Func<LaunchCommandDto> _launchInfo;
     private readonly Func<DeckyStatusDto> _deckyStatus;
+    // The Windows analogue of _deckyStatus (tasks/playnite-plugin/plan.md, Phase 14) — but async and
+    // network-touching rather than a local read, because "is a newer plugin package sitting on the
+    // server, unable to auto-apply while Playnite is running" genuinely needs the same server round
+    // trip the agent's own recurring update check makes (Agent.PlaynitePlugin.CheckAsync). Injected
+    // because PlaynitePlugin lives in the Windows-only Agent project: Linux supplies nothing.
+    private readonly Func<Task<PlaynitePluginStatusDto>> _playnitePluginStatus;
     private readonly PathBrowser _browser;
     private readonly Action? _onConnectionChanged;
     // Invoked after the tracked-game list or a save folder changed AND was durably written, so the
@@ -84,7 +90,8 @@ public sealed class AgentApiServer : IDisposable
         SyncActivityTracker? activity = null,
         Func<Task<string>>? syncAll = null,
         Func<TrackedGame, CancellationToken, Task<LaunchGateResult>>? prepareLaunch = null,
-        Func<TrackedGame, CancellationToken, Task>? postExitSync = null)
+        Func<TrackedGame, CancellationToken, Task>? postExitSync = null,
+        Func<Task<PlaynitePluginStatusDto>>? playnitePluginStatus = null)
     {
         _browser = new PathBrowser(browseRoots);
         Port = port;
@@ -97,6 +104,10 @@ public sealed class AgentApiServer : IDisposable
         // Default is "not applicable", which is exactly right for the Windows tray: Decky cannot
         // exist there, so the host injects nothing and the UI hides the card.
         _deckyStatus = deckyStatus ?? (() => new DeckyStatusDto(false, false, false, null, ""));
+        // Default is "not applicable" for the same reason as _deckyStatus above, mirrored: Linux
+        // cannot run Playnite, so Daemon.cs injects nothing and this route answers a neutral status.
+        _playnitePluginStatus = playnitePluginStatus ??
+            (() => Task.FromResult(new PlaynitePluginStatusDto("NotApplicable", "", null, null)));
         _onConnectionChanged = onConnectionChanged;
         _onGamesChanged = onGamesChanged;
         _getUpdateResult = getUpdateResult ?? (() => null);
@@ -565,6 +576,17 @@ public sealed class AgentApiServer : IDisposable
         // v0.2.0" instead of showing install instructions to someone who already followed them.
         // Local file reads only — no network, so polling it costs nothing.
         app.MapGet("/api/decky", () => _deckyStatus()).Produces<DeckyStatusDto>();
+
+        // tasks/playnite-plugin/plan.md, Phase 14: lets the plugin itself (a separate process from
+        // this one, running inside Playnite) ask whether a newer version of ITSELF is waiting on the
+        // server. Always calls PlaynitePlugin.CheckAsync with apply:false — this route only reports,
+        // it never writes; the agent's own recurring timer (TrayApp.CheckPlaynitePluginUpdateAsync)
+        // owns actually installing one. Called from inside a running Playnite process, so
+        // CheckAsync's own IsPlayniteRunning guard always takes its "close Playnite first" branch when
+        // a newer version exists — which is exactly the restart notice Phase 14 wants to surface, with
+        // no separate branching needed here.
+        app.MapGet("/api/playnite-plugin", async () => await _playnitePluginStatus())
+            .Produces<PlaynitePluginStatusDto>();
 
         // ---- Launch options (tasks/DeckyPlugin.md) ----
         //
@@ -1278,6 +1300,17 @@ public sealed record DeckyStatusDto(
     bool PluginInstalled,
     string? PluginVersion,
     string InstallUrl);
+
+/// <summary>
+/// GET /api/playnite-plugin (tasks/playnite-plugin/plan.md, Phase 14) — a Windows-only mirror of
+/// <see cref="DeckyStatusDto"/> for the Playnite plugin's own self-update notice. <paramref
+/// name="State"/> is <c>Agent.PlaynitePluginState</c>'s name as a plain string (<c>NoPlaynite</c>,
+/// <c>NotInstalled</c>, <c>UpToDate</c>, <c>Available</c>, <c>Failed</c>, or <c>NotApplicable</c> on a
+/// host — Linux — that never wires this up at all) rather than the enum type itself, so Agent.Core
+/// never needs to reference the Windows-only Agent project that actually defines it.
+/// </summary>
+public sealed record PlaynitePluginStatusDto(
+    string State, string Message, string? InstalledVersion, string? LatestVersion);
 
 /// <param name="SteamAppId">
 /// The <b>unsigned</b> 32-bit AppID, normalised here so no caller has to know the trap: Steam stores
