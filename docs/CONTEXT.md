@@ -1033,6 +1033,57 @@ a malformed `GameId` crashes `Load` at startup yet is silently skipped by the po
 
 ---
 
+**Playnite plugin work (Groups 1-5, merged PRs #37-#41 on `main`) was never logged in this file —
+noticed and flagged, not backfilled, while adding Group 6 below (2026-09-16).** The full design and
+per-phase status lives entirely in `docs/tasks/playnite-plugin/plan.md` and
+`implementation-grouping.md`, which this file's own session-start instructions never point a fresh
+session at unless it happens to be told to work on Playnite specifically. Worth a real backfill pass
+in a session that owns this file's upkeep — not done here since it wasn't what was asked.
+
+**Playnite plugin Group 6 — Phases 18/19 shipped, Phase 16 prep staged, Phase 17 re-confirmed
+(2026-09-16, branch `claude/playnite-group6-phase17-82e72b`, plus a sibling commit on
+`SaveLocker-Playnite`'s branch `playnite-plugin-group-6`).** Asked directly, alongside a set of
+uncommitted plan-doc edits already sitting on `main`'s working tree (moved to this branch and
+committed first, `c10ecb8`) that had added Phases 18-19 to the plan without yet building them.
+**Phase 18**: `src/Agent/PlayniteLibrary.cs` reads Playnite's own `games.db` (LiteDB) as a fourth
+`GameScanner` broad-sweep source — a Playnite-only game now surfaces in Add Games with zero
+dependency on the Playnite plugin ever being installed, the agent-side structural twin of
+`HeroicLibrary.cs` on Linux. **Verified against this machine's own real, installed Playnite, not a
+synthetic fixture alone — which caught two real bugs the plan's own risk section anticipated but got
+wrong in a first draft**: the real `games.db` is LiteDB **4**'s on-disk format (its header literally
+reads `** This is a LiteDB file **`), not 5's — LiteDB 5.0.21 refused to open it outright — and the
+collection is named `Game` (singular, capital), not `games`. Both fixed against the real file before
+committing; new `tests/SaveLocker.Agent.Tests` (11/11) covers the LiteDB parsing with a fixture. A
+real Epic-owned game on this same machine turned out to use a different, non-official community
+PluginId and correctly falls to `GameStore.Unknown` — an accepted gap mirroring `HeroicLibrary`'s own
+fallback, confirmed rather than assumed.
+<br>**Phase 19**: `agent-ui/src/components/PlaynitePluginCard.tsx` on the Overview page, plus new
+`GET /api/playnite-plugin/status` and `POST /api/playnite-plugin/install`
+(`PlaynitePlugin.InstallFirstTimeAsync`, reusing the existing self-update machinery). Unlike the Decky
+card, this one can genuinely auto-install on request — Playnite's Extensions folder carries none of
+Decky's root-owned-directory constraint — gated behind one explicit button click, never a background
+poll. **Verified live against a real dev daemon on this machine**, which genuinely has Playnite
+installed without the plugin: the card rendered the real not-installed state end to end, and clicking
+Install automatically correctly round-tripped through the new route and surfaced "This machine is not
+registered, so there is no server to ask." inline. `openapi-typescript` regenerated against a scratch
+daemon; diffed to confirm only the two new routes/types appear. Full solution and `agent-ui`
+build/lint clean throughout.
+<br>**Phase 16 (add-on database submission) — prep staged on `SaveLocker-Playnite`, PR deliberately
+NOT opened.** Fetched `JosefNemec/PlayniteAddonDatabase`'s own README directly and cross-checked
+against a real merged entry rather than working from memory; two manifest files staged under that
+repo's `docs/addon-submission/`. The one real blocker: no version tag has ever been pushed to
+`SaveLocker-Playnite`, so the installer manifest's `PackageUrl` has nothing real to point at yet —
+confirmed **Phase 17 needs no further work**, re-reading its actual `release.yml` shows it already
+produces the `.pext` asset a stale paragraph in `plan.md` had claimed was still missing (fixed in the
+same pass). `RequiredApiVersion: 6.17.0` in the staged manifest is not a guess — downloaded Playnite's
+own current release (10.60) and read the real `Playnite.SDK.dll`'s `FileVersion`.
+<br>Full write-up: `SaveLocker-Playnite`'s own `docs/logs/2026-09-16_group-6-phase-16-prep.md`.
+**Not done, on purpose**: opening the add-on-database PR (needs the real tag first) and pushing that
+tag itself (a visible, public GitHub Release — needs the user's own go-ahead, same standing blocker
+Phase 17's own build session already recorded).
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

@@ -47,10 +47,10 @@ session and why.
 | 13 — Status chip + action buttons | ➡️ Moved to menu items — the `GetGameViewControl` status chip was built, then confirmed dead code and removed: Playnite only calls `GetGameViewControl` for a plugin registered via `AddCustomElementSupport` (SaveLocker never has) whose active theme's XAML names a matching slot (no stock theme, Default included, defines one for SaveLocker). `GetGameMenuItems`'s "Sync now"/"Resolve conflict…"/"Link to SaveLocker" and the `SaveLocker: Linked` Tag are the surviving, genuinely theme-independent surfaces. One deliberate deviation still applies to "Sync now": one item instead of separate Push/Pull, since the local API has no per-game push-only/pull-only route |
 | 14 — Plugin-side self-update consumption | ✅ Built 2026-09-16 — new agent-side `GET /api/playnite-plugin` route verified live against a real scratch server + registered Windows agent; the plugin's own consumption (`OnApplicationStarted`) is code-complete but not yet hardware-verified inside a running Playnite |
 | 15 — Test infrastructure | ✅ Built 2026-09-16 — the portable-Playnite `testenv` target and Windows `seed-test-conflict` equivalent this phase called for already shipped in Group 3's test-rig integration (commit `9397e9d`); this session added the remaining gap, automated coverage (`tests/SaveLocker.Playnite.Tests`, xUnit — GameMatcher + LocalApiClient against an HttpListener stub), 25/25 passing |
-| 16 — Official add-on database submission | ⏳ Not started |
-| 17 — Release CI workflow (`SaveLocker-Playnite`) | ✅ Built 2026-09-16 — `.github/workflows/release.yml`; the Playnite.SDK.dll-fetch step and a build against the freshly-fetched SDK were both actually run and verified, but pushing a real tag to exercise a genuine release end to end was not attempted (needs the user's go-ahead) |
-| 18 — Agent-side Playnite library reader + `agent-ui` tab (no plugin required) | ⏳ Not started — added 2026-09-16, asked directly ("does the agent know which games are installed in Playnite and can enroll from the agent as a tab, like Steam and Heroic on Linux") |
-| 19 — `agent-ui` "Playnite plugin" card: suggest by default, one-click direct install as an explicit opt-in | ⏳ Not started — added 2026-09-16, asked directly ("is there a way to suggest installing the Playnite plugin, or install it directly, and can it be implemented") |
+| 16 — Official add-on database submission | 🚧 In progress — prep staged 2026-09-16 (`SaveLocker-Playnite` branch `playnite-plugin-group-6`, `docs/addon-submission/`), PR deliberately NOT opened yet: blocked on a real version tag being pushed so the installer manifest's `PackageUrl` points at something that exists. `RequiredApiVersion` confirmed against the real `Playnite.SDK.dll` bundled in Playnite's current release, not guessed |
+| 17 — Release CI workflow (`SaveLocker-Playnite`) | ✅ Built 2026-09-16 — `.github/workflows/release.yml`; the Playnite.SDK.dll-fetch step and a build against the freshly-fetched SDK were both actually run and verified, but pushing a real tag to exercise a genuine release end to end was not attempted (needs the user's go-ahead). Re-confirmed 2026-09-16 while prepping Phase 16 that it already publishes the `.pext` asset the "Installation" section and Phase 19 both need — no addendum was actually required, unlike this file briefly assumed below |
+| 18 — Agent-side Playnite library reader + `agent-ui` tab (no plugin required) | ✅ Shipped 2026-09-16 — `src/Agent/PlayniteLibrary.cs` + `GameScanner` 4th source + `agent-ui` Playnite filter chip. Hardware-verified against this machine's real, installed Playnite — which caught and fixed two real bugs the risk section below anticipated but got wrong in the first pass: the real `games.db` is LiteDB 4's on-disk format, not 5's, and the collection is named `Game`, not `games`. 11/11 new unit tests passing |
+| 19 — `agent-ui` "Playnite plugin" card: suggest by default, one-click direct install as an explicit opt-in | ✅ Shipped 2026-09-16 — `PlaynitePluginCard.tsx` + `GET /api/playnite-plugin/status` + `POST /api/playnite-plugin/install` (`PlaynitePlugin.InstallFirstTimeAsync`). Verified live against a real dev daemon on this machine (genuinely has Playnite without the plugin): card rendered the real not-installed state, and the install button correctly round-tripped through the new route |
 
 ---
 
@@ -746,13 +746,13 @@ order. See `implementation-grouping.md` for which phases share a session.
     already maintains, no new network call of its own.
   - **The suggest half** (always shown when applicable): explains what the plugin adds (pre-launch
     conflict gate, "Link to SaveLocker," status/sync menu items — Phases 10–13), and a download link
-    for the manual, double-click `.pext` path (`## Installation` above, unchanged). **One real gap
-    found while scoping this**: Phase 17's release workflow only publishes a `.zip`
-    (`extension.yaml` + the DLL); the manual "double-click a `.pext`" install path this card needs to
-    point at requires a `.pext` asset too — which is trivial to add (a `.pext` *is* that same zip
-    under a renamed extension; Playnite draws no other distinction), but Phase 17 as built today does
-    not produce one. Small addendum to Phase 17, not a new phase: add a second, renamed-copy release
-    asset in the same workflow run.
+    for the manual, double-click `.pext` path (`## Installation` above, unchanged). **Checked, not a
+    gap after all**: this paragraph originally assumed Phase 17's release workflow only publishes a
+    `.zip` and would need a small addendum to also produce a `.pext`. Re-read the actual
+    `SaveLocker-Playnite/.github/workflows/release.yml` while building this phase (2026-09-16): its
+    `Package` step already produces and publishes both `SaveLocker.zip` and `SaveLocker.pext`
+    (identical bytes, a renamed copy) — Phase 17's own build session anticipated this need
+    independently. No addendum needed; the plan text above was simply out of date with the code.
   - **The install half** (opt-in, one explicit button click, never automatic on its own): calls a new
     `POST /api/playnite-plugin/install`, which reuses Phase 7's own `InstallAsync`
     plan-before-write/digest-verification machinery wholesale rather than duplicating it — the only
