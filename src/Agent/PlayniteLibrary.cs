@@ -58,15 +58,20 @@ public static class PlayniteLibrary
     private static readonly Guid AmazonPluginId = Guid.Parse("402674cd-4af6-4886-b6ec-0e695bfa0688");
 
     /// <summary>
-    /// Playnite's per-user data root — <c>%AppData%\Playnite</c>. A portable install keeps its data
-    /// beside the executable instead; that layout is not probed here because a portable Playnite has
-    /// no fixed "beside the executable" location the agent could guess without also knowing where
-    /// Playnite itself was unpacked, which nothing on this machine records. Same "steamPath is null →
-    /// skip entirely" shape <see cref="GameScanner.ScanAsync"/> already applies when Steam itself is
-    /// absent.
+    /// Playnite's per-user data root — <c>%AppData%\Playnite</c> for a normal install. A portable
+    /// install keeps its data beside its own executable instead, at a location nothing on the machine
+    /// records — there is no registry key or known-folder the way <see cref="GameScanner.FindSteamPath"/>
+    /// has for Steam, so it genuinely cannot be auto-discovered the way the rest of this scanner's
+    /// sources are. <c>SAVELOCKER_PLAYNITE_PATH</c> is the escape hatch: set it to the Playnite install
+    /// root (the folder holding <c>Playnite.DesktopApp.exe</c>) and this reads from there instead.
+    /// <c>tests/testenv.ps1 -PlaynitePath</c> sets this automatically for its portable test instance —
+    /// confirmed 2026-09-17 that without this override, a portable Playnite is silently invisible to
+    /// this whole source, since its library never lives under <c>%AppData%</c> at all.
     /// </summary>
     public static string DataRoot =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Playnite");
+        Environment.GetEnvironmentVariable("SAVELOCKER_PLAYNITE_PATH") is { Length: > 0 } portableRoot
+            ? portableRoot
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Playnite");
 
     private static string DefaultDatabasePath => Path.Combine(DataRoot, "library", "games.db");
 

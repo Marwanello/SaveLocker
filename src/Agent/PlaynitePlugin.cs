@@ -73,12 +73,21 @@ public static class PlaynitePlugin
     private const long MaxBytes = 64L * 1024 * 1024;
 
     /// <summary>
-    /// Playnite's own per-user data root — <c>%AppData%\Playnite</c>, distinct from
-    /// <c>%LocalAppData%\Playnite</c> (where the application binaries themselves install). Extensions,
-    /// library data and settings all live here regardless of which mode Playnite runs in.
+    /// Playnite's own per-user data root — <c>%AppData%\Playnite</c> for a normal (non-portable)
+    /// install, distinct from <c>%LocalAppData%\Playnite</c> (where the application binaries
+    /// themselves install). Extensions, library data and settings all live here for a normal install
+    /// — but NOT "regardless of which mode Playnite runs in," as this comment used to claim: a
+    /// portable extraction keeps all of it (Extensions included) beside its own executable instead
+    /// (confirmed 2026-09-17 via <c>tests/testenv.ps1</c>'s own portable test instance, and Playnite's
+    /// public docs). <c>SAVELOCKER_PLAYNITE_PATH</c> — the same override <see cref="PlayniteLibrary"/>
+    /// honors, and the one <c>testenv.ps1 -PlaynitePath</c> sets automatically — points this at that
+    /// portable root instead, so a first-install/update test against the disposable portable instance
+    /// can never accidentally write into a real, personal Playnite.
     /// </summary>
     public static string PlayniteDataRoot =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Playnite");
+        Environment.GetEnvironmentVariable("SAVELOCKER_PLAYNITE_PATH") is { Length: > 0 } portableRoot
+            ? portableRoot
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Playnite");
 
     public static string ExtensionsRoot => Path.Combine(PlayniteDataRoot, "Extensions");
     public static string PluginDir => Path.Combine(ExtensionsRoot, PluginName);
