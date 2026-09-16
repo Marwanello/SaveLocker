@@ -1068,6 +1068,25 @@ Install automatically correctly round-tripped through the new route and surfaced
 registered, so there is no server to ask." inline. `openapi-typescript` regenerated against a scratch
 daemon; diffed to confirm only the two new routes/types appear. Full solution and `agent-ui`
 build/lint clean throughout.
+<br>**Re-verified properly through `tests/testenv.ps1` the next day (2026-09-17), per a direct
+standing instruction to always use it for manual tests — and it found a real, THIRD bug the scratch-
+daemon testing above had no way to catch.** This machine already has a real, feature-rich portable
+Playnite test instance at `D:\Projects\SaveLocker\Playnite-Test` (true portable mode — its own
+`library`/`Extensions` folders, not `%AppData%`). Pointing `PlayniteLibrary`/`PlaynitePlugin` at it via
+`testenv.ps1 -PlaynitePath` found nothing at all: both only ever checked `%AppData%\Playnite`, which a
+portable install never uses. Fixed with a `SAVELOCKER_PLAYNITE_PATH` env var override (same name
+`testenv.ps1 -PlaynitePath` already used internally) that both types now honor, wired through
+`Use-TestEnvVars`/`Clear-TestEnvVars` the same way `SAVELOCKER_STATE_ROOT`/`SAVELOCKER_TRAY_PORT`
+already are. Also corrected `PlaynitePlugin.PlayniteDataRoot`'s own doc comment, which had claimed
+portable mode still used `%AppData%` — confirmed here that it doesn't.
+<br>With that fixed: `testenv.ps1 build` + `up` built the plugin from the `SaveLocker-Playnite`
+group-6 worktree and installed it into `Playnite-Test`; the test Windows agent's rescan found all 6
+real Playnite-only games with no read errors; `GET /api/playnite-plugin/status` correctly read back
+the installed `v0.1.0`; and restarting Playnite loaded the plugin cleanly
+(`ExtensionFactory:Loaded plugin: SaveLocker, version 0.1.0` in Playnite's own log) — the first
+confirmed real-Playnite load of this plugin from an actual tagged release build, not a local dev
+build. Full manual click-through (conflict gate, menu items, Link popup) still not done — that
+remains Phase 16's own real gate, tracked in `SaveLocker-Playnite`'s own `docs/CONTEXT.md`.
 <br>**Phase 16 (add-on database submission) — prep staged on `SaveLocker-Playnite`, PR deliberately
 NOT opened.** Fetched `JosefNemec/PlayniteAddonDatabase`'s own README directly and cross-checked
 against a real merged entry rather than working from memory; two manifest files staged under that
