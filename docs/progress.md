@@ -2645,3 +2645,127 @@ succeeded, `Install-ToPortable.ps1 -SkipBuild` installed it into the portable Pl
   remaining unknown in this change.
 - Nothing in the `SaveLocker-Playnite` repo committed yet as of this write-up (uncommitted:
   `ConflictResolveWindowFullscreen.cs` new, `SaveLockerPlugin.cs` modified).
+
+---
+
+## 2026-09-16 — "Link to SaveLocker" UX: menu-action threading fix, non-blocking dialog feedback, SaveLocker tag + startup backfill
+
+**Repo:** `SaveLocker-Playnite`, branch `playnite-plugin-group-4`. Nothing committed yet.
+
+### Request sequence
+
+1. Detailed instructions to test Group 4 (the Phase 12 "Link to SaveLocker" enroll/link popup) via
+   `testenv.ps1`; then where `shown-link-nudges.txt` lives.
+2. "i cant see any of theis when running any game" — asked to verify whether the problem was
+   implementation or instructions, then give corrected instructions.
+3. Tested "Conflict 2", got no notification, then pivoted from a bug report into an explicit feature
+   spec: *"i don't like playing and getting a notification to then link. i want a button to link. just
+   click it it verfyis if there is a an automatic way to enroll and just enroles and if not it shows
+   the popup. if enrolled the button is replaced with a check. similar to the How long to beet button
+   (H) i would love if its on the far right and in the top right will be even better."*
+4. "i cant find the button."
+5. "link to savelocker doen't do anything or shwo anyfeedback."
+6. "when i press Link TO Save locker a dialogue should appear giving me feedback that the linking is
+   in progress and when done another one shows up saying the link is don if it was successful and
+   offering to sync."
+7. "can the progress of linking be shown in the background without intrupting the player and alos can
+   an icon of savclockewr and acheck mark be added to the game (in the list or on the game age to show
+   that this game is enrolled?"
+8. "if i first installed the plugin and have games already linked will the tag be added automaticlly?"
+9. This request: append a summary to `progress.md` and save a standalone summary to
+   `session_summary.md`.
+
+### Bugs found and fixed
+
+**The button (`GetGameViewControl`) was invisible under Harmony.** Read Harmony's own
+`DetailsViewGameOverview.xaml` directly: it hardcodes a fixed allowlist of `{PluginName}_PluginButton`
+elements (HowLongToBeat, SuccessStory, GameActivity, etc.) rather than looping over installed plugins
+generically, and SaveLocker isn't on that list — so `GetGameViewControl` is never invoked under this
+theme at all. Fixed by adding a theme-independent `GetGameMenuItems` right-click menu entry as the
+primary, reliable surface (Playnite renders its own menu regardless of theme), keeping the button as a
+secondary bonus for themes that do support it.
+
+**"Link to SaveLocker" menu item did nothing, no feedback.** Root cause: the menu `Action` wrapped the
+link logic in `Task.Run(async () => ...)`, moving it to a threadpool thread with no
+`SynchronizationContext`. The fallback path opens a real WPF `Window` (the manual picker) via
+`CreateWindow`/`ShowDialog()`, which WPF only allows on the STA UI thread — so the call threw
+immediately and the exception was silently lost inside the unobserved fire-and-forget task. Fixed by
+removing `Task.Run` and running the whole action as a direct `async` lambda kept on the UI thread.
+
+**`ActivateGlobalProgress`'s own modal dialog turned out to be the "interrupting" the player later
+objected to.** After first adding a genuine "linking…"/"linked, sync now?" dialog pair via
+`ActivateGlobalProgress` (mirroring `OnGameStarting`'s pre-launch-sync check), the very next request
+asked for the opposite: progress shown in the background without blocking browsing.
+`ActivateGlobalProgress` is Playnite's own blocking/modal progress overlay — correct for the pre-launch
+gate (nothing should launch before that check finishes) but wrong for a background link check with
+nothing at stake. Reverted the check phase to a plain awaited async chain with a transient toast
+("SaveLocker: linking "X"…", removed via `INotificationsAPI.Remove` once done) — plain `await` never
+blocks the UI message loop, unlike `ActivateGlobalProgress`'s pump. Only the outcome (a real decision
+point — "linked, sync now?" or the manual picker) still shows an actual dialog. Same treatment applied
+to `SyncNowAction`.
+
+### What was built
+
+- `LinkAction.cs` (new) — shared "click and link" logic used by both the button and the menu item:
+  Tier 1 (already-tracked, via `GameMatcher`) → Tier 2 (automatic manifest lookup + immediate enroll,
+  no confirm click) → falls back to the existing 5-tier interactive popup (`LinkToSaveLockerWindow`)
+  only when neither resolves. Shows a background toast while checking, then either a "linked — sync
+  now?" Yes/No dialog or the popup.
+- `LinkStatusButton.cs` (new) — the `GetGameViewControl` button (secondary surface, confirmed inert
+  under Harmony): "Link to SaveLocker" / "✓ Synced" based on `GameMatcher.FindMatch`, delegates its
+  click to `LinkAction`.
+- `SyncNowAction.cs` (new) — the "sync now" a player can opt into from the linked-dialog without
+  waiting for the next real launch. Runs the same pre-launch-sync gate `OnGameStarting` uses (a toast
+  while checking, not a modal), and hands a genuine `Blocked` decision to `ConflictResolver`. Both
+  callers fire it without awaiting (`_ = SyncNowAction.RunAsync(...)`, explicit discard to keep the
+  build warning-free), so it wraps its own top-level try/catch rather than relying on a caller that
+  isn't watching.
+- `ConflictResolver.cs` (new) — the interactive conflict UI extracted out of
+  `SaveLockerPlugin.OnGameStarting` (was a private method there, `ResolveConflictInteractively`) so
+  `SyncNowAction`'s on-demand sync and the real launch-blocking gate share exactly one copy of that
+  handling instead of a second, un-hardware-verified one.
+- `LinkedTag.cs` (new) — since the SDK has no grid/list icon extension point at all (confirmed by
+  reflecting every method on the `Plugin` base class — `GetGameViewControl` is the *only* per-game
+  visual hook, details-page-only, theme-opt-in, and Harmony doesn't opt in), tags linked games with a
+  `SaveLocker: Linked` Tag — Playnite's own generic per-game mechanism, filterable from the sidebar
+  regardless of theme even though Harmony specifically doesn't bind to Tags either (confirmed by
+  inspection: no `Tags`/`TagIds` binding anywhere in its XAML, including its filter panel).
+  `LinkedTag.Ensure()` is idempotent.
+- `SaveLockerPlugin.OnApplicationStarted` (new override) — backfills `LinkedTag` across the whole
+  library once per app start (fetches the tracked-games list, matches every library game via
+  `GameMatcher`, tags any hit), added specifically because the earlier per-launch-only tagging meant an
+  already-linked game wouldn't show the tag until its *next individual launch*. Runs off the UI thread
+  (`Task.Run`); safe, since nothing in it touches WPF.
+- `LocalApiClient.AgentUrl` (new property) — lets `ConflictResolver`'s error-fallback message read the
+  configured agent URL without its own reference to `SaveLockerSettings`.
+- `LinkToSaveLockerWindow.Finish` — now takes the resolved `TrackedGameDto` (when known) and offers the
+  same "sync now?" dialog the automatic path shows, instead of a toast-only close, so all four tiers end
+  the same way.
+
+### Verification
+
+- `dotnet build src/SaveLocker.Playnite.csproj -c Release` clean (0 Warnings, 0 Errors) after every
+  change this session, including two CS4014 "not awaited" warnings caught and fixed via explicit `_ =`
+  discards.
+- Reinstalled into the portable test Playnite (`D:\Projects\SaveLocker\Playnite-Test`) and relaunched
+  after each change; `playnite.log` confirmed `Loaded plugin: SaveLocker, version 0.1.0` with no
+  adjacent errors every time.
+- Both bug root causes (invisible button, silent menu action) were confirmed by reading real source
+  (Harmony's XAML; WPF's STA-thread requirement for window creation) rather than guessed; likewise the
+  "no grid/list icon extension point" and "Harmony doesn't bind Tags" findings were confirmed via SDK
+  reflection and direct XAML inspection, not assumed.
+- **Not yet confirmed live by the user**: the background-toast linking flow, the "linked, sync now?"
+  dialog, the sync-now gate/conflict path, the tag itself, and the startup backfill are all
+  build-verified and installed but not yet click-tested in a running session.
+
+### Not done
+
+- Nothing in `SaveLocker-Playnite` committed yet — everything above is uncommitted working-tree changes
+  on `playnite-plugin-group-4`.
+- The pre-existing port-5188 local-API 401 issue (a stuck test-agent process rejecting its own valid
+  token, from an earlier segment of this same session) remains unresolved — this session couldn't kill
+  the offending process ("Access is denied"); only the user can close it. Blocks live end-to-end testing
+  of the automatic-enroll path until resolved (the code still degrades gracefully to the manual popup
+  either way).
+- `LinkStatusButton`/`GetGameViewControl` remains unverified on any theme that might actually render it
+  (e.g. Playnite's stock Default theme) — confirmed only as a no-op under Harmony.

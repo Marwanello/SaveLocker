@@ -1,3 +1,87 @@
+# Session summary — 2026-09-16 — "Link to SaveLocker" UX overhaul: threading fix, non-blocking dialogs, SaveLocker tag
+
+Fixed why the Playnite plugin's "Link to SaveLocker" action produced no feedback at all (a WPF
+cross-thread bug), redesigned its user-visible feedback twice in response to live user pushback — first
+adding real progress/outcome dialogs, then making the progress half non-blocking again once
+`ActivateGlobalProgress` turned out to be the very thing interrupting the player — and added a
+`SaveLocker: Linked` Tag (plus a startup backfill) as the closest the Playnite SDK actually allows to an
+"enrolled" badge, since the SDK has no per-game grid/list icon extension point at all. Nothing committed
+yet.
+
+## What was asked
+
+1. Testing instructions for Group 4 (the Phase 12 "Link to SaveLocker" popup), then a bug report ("i
+   cant see any of theis when running any game") asking whether the problem was implementation or
+   instructions.
+2. After testing "Conflict 2" got no notification ("tier 2 is not working"), a full feature-redesign
+   request: an always-visible button that tries an automatic link on click, falls back to the manual
+   popup only if that fails, and turns into a checkmark once linked — positioned top-right like the
+   HowLongToBeat plugin's button.
+3. "i cant find the button," then "link to savelocker doen't do anything or shwo anyfeedback."
+4. A UX spec for real dialog feedback: a "linking in progress" dialog, then a "link done, offering to
+   sync" dialog.
+5. A follow-up reversing part of that: could the in-progress dialog run in the background without
+   interrupting the player, and could an icon/checkmark show a game's enrolled status in the library
+   list or on its page?
+6. Whether already-linked games (from before the tag existed) would get it automatically.
+
+## What was found and fixed
+
+- **The button was invisible under Harmony** (the user's active theme): its `DetailsViewGameOverview.xaml`
+  hardcodes a fixed allowlist of plugin-button names that doesn't include SaveLocker, so
+  `GetGameViewControl` is never called at all under this theme. Added a theme-independent
+  `GetGameMenuItems` right-click entry as the reliable primary surface — Playnite renders its own menu
+  regardless of theme.
+- **The menu action did nothing, silently.** It ran the whole link flow inside `Task.Run(...)`, but the
+  fallback path opens a real WPF window, which WPF only allows on the UI thread — so it threw
+  immediately, and the exception vanished inside the unobserved background task. Fixed by running the
+  action as a direct `async` lambda on the UI thread instead.
+- **The fix for "no feedback" (a real progress dialog via `ActivateGlobalProgress`) became the next
+  bug** once tested: that dialog is Playnite's own *modal* progress overlay, so it blocked browsing
+  while the automatic check ran — exactly the "interrupting" complaint that followed. Reverted the
+  check phase to a plain awaited async chain with a background toast instead; only the actual outcome
+  (a real decision — sync now? — or the manual picker) still shows a dialog.
+- **No SDK extension point exists for a grid/list icon, for any plugin, under any theme** — confirmed by
+  reflecting every method on the SDK's `Plugin` base class; `GetGameViewControl` (the button) is the
+  *only* per-game visual hook, and it's details-page-only and theme-opt-in. Even Playnite's own Tag
+  mechanism, which many themes render generically, turned out not to be bound anywhere in Harmony's XAML
+  either (confirmed by inspection). Given the choice, the user picked adding the tag anyway — it's still
+  filterable via Playnite's sidebar regardless of theme, and would render visually under most other
+  themes.
+
+## What was built
+
+- `LinkAction.cs`, `LinkStatusButton.cs` — the shared "click, try to auto-link, fall back to the manual
+  popup" flow behind both the button and the right-click menu item.
+- `SyncNowAction.cs`, `ConflictResolver.cs` — the "sync now" a player can opt into after linking (same
+  pre-launch-sync gate the real launch path uses, extracted so both share one conflict-resolution UI
+  instead of two).
+- `LinkedTag.cs` — tags a linked game `SaveLocker: Linked`, idempotently; wired into both link flows and
+  into `LinkToSaveLockerWindow.Finish`.
+- `SaveLockerPlugin.OnApplicationStarted` — backfills that tag across the whole library once per app
+  start, so games linked before the tag existed (or matched automatically without ever using the Link
+  button) don't have to wait for their own next individual launch to pick it up.
+
+## Verification
+
+`dotnet build -c Release` clean (0 warnings, 0 errors) after every change, reinstalled into the portable
+test Playnite, and `playnite.log` confirmed a clean plugin load each time. Both root causes (the theme
+allowlist, the cross-thread WPF exception) were confirmed by reading real source rather than guessed.
+**Not yet click-tested live by the user** — everything above is build-verified and installed, but the
+actual in-app behavior (toast, dialogs, tag, backfill) is still unconfirmed hands-on.
+
+## Not done
+
+- Nothing committed in `SaveLocker-Playnite` yet — all changes are uncommitted on
+  `playnite-plugin-group-4`.
+- The pre-existing port-5188 local-API 401 (a stuck test-agent process that couldn't be killed this
+  session — "Access is denied") is still unresolved and blocks live testing of the automatic-enroll path
+  specifically; the manual-popup fallback still works either way.
+- `LinkStatusButton` remains unverified on any theme that might actually render it — confirmed only as a
+  no-op under Harmony.
+
+---
+
 # Session summary — 2026-09-15 (cont'd) — WSL lease-test fix, Fullscreen theme investigation, Fullscreen-native conflict popup built
 
 Fixed a broken WSL lease-testing script (it was reading the wrong machine's credentials entirely), then
