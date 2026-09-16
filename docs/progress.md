@@ -2946,3 +2946,33 @@ repos.
 
 - Phase 17's release workflow never exercised by a real tag push.
 - Hardware verification of Group 5 inside a real running Playnite.
+
+---
+
+## 2026-09-17 — Playnite Groups 6/7 + Phase 18/19 testenv re-verification, README update
+
+**Branches:** `claude/playnite-group6-phase17-82e72b` (main repo, worktree `group-5-playnite-plugin-3d3aae`); `playnite-plugin-group-6` (SaveLocker-Playnite, worktree `playnite-plugin-group-6`).
+
+### What was built
+- `PlayniteLibrary.cs` (new): LiteDB 4 reader for Playnite's `games.db` (`Game` collection, shared read-only connection), mapping installed games to `ScanCandidate`s with `Store`/`SteamAppId`/`HasSteamCloud` when the plugin id resolves to a known store.
+- `GameScanner.ScanPlayniteLibraryAsync`: 4th broad-sweep candidate source, fault-isolated via `PlayniteLibrary.SafeRead()`.
+- agent-ui: `Playnite` filter chip in Add Games, `PlaynitePluginCard` (Overview) mirroring `DeckyPluginCard` but with a self-install button.
+- `PlaynitePlugin.CardStatusAsync`/`InstallFirstTimeAsync` + two new local-API routes (`GET/POST /api/playnite-plugin/status`, `/install`).
+- `SAVELOCKER_PLAYNITE_PATH` env var override added to both `PlayniteLibrary.DataRoot` and `PlaynitePlugin.PlayniteDataRoot`, wired through `testenv.ps1`'s `Use-TestEnvVars`/`Clear-TestEnvVars` — fixes portable Playnite installs (library/Extensions live beside the exe, not under `%AppData%`) being invisible without it.
+- `tests/SaveLocker.Agent.Tests` (new xUnit project): 11 tests covering `PlayniteLibrary` mapping/edge cases.
+- SaveLocker-Playnite: `docs/addon-submission/addon-manifest.yaml` + root `installer.yaml` prepared for the JosefNemec/PlayniteAddonDatabase submission (Phase 16 prep); README.md updated with current shipped state, a fork-compatibility note (requires `Marwanello/SaveLocker`, not upstream `SkorcherX/SaveLocker`), and the required paragraph removed per explicit request.
+
+### Bug found via testenv (third one this feature has produced)
+Portable Playnite installs keep their `library`/`Extensions` beside their own executable, not under `%AppData%\Playnite`. Both `PlayniteLibrary.DataRoot` and `PlaynitePlugin.PlayniteDataRoot` only checked `%AppData%`, so testing against `-PlaynitePath` (this project's actual test rig for portable Playnite) made the entire Phase 18 source invisible. Fixed with the `SAVELOCKER_PLAYNITE_PATH` override above; `DataRoot` now checks that env var first, falling back to `%AppData%\Playnite` only when unset.
+
+### Verification — via testenv (per standing instruction)
+- `.\tests\testenv.ps1 build` then `up`, against the real portable `Playnite-Test` instance (`testenv.local.ps1` sets `SAVELOCKER_PLAYNITE_PATH`).
+- Windows test agent (:5188) rescan found all 6 real Playnite-library games, no read errors.
+- `GET /api/playnite-plugin/status` correctly reported the plugin installed once it was; agent-ui Overview card showed "INSTALLED v0.1.0".
+- Restarted `Playnite-Test` and confirmed via its own `playnite.log`: `ExtensionFactory:Loaded plugin: SaveLocker, version 0.1.0` — first confirmed load of a real tagged release build inside a live Playnite process.
+- A pre-existing v0.1.0 GitHub Release (tag + `SaveLocker.zip`/`.pext`/`SHA256SUMS.txt`) was discovered already published; checksum verified against `SHA256SUMS.txt`.
+
+### Not done
+- Full manual click-through inside Playnite (conflict gate blocking a launch, right-click menu items, Link to SaveLocker popup) — still outstanding for Phase 16.
+- `installer.yaml`/plugin changes only pushed to the `playnite-plugin-group-6` branch, not `main` — the `raw.githubusercontent.com` URLs in the submission manifest won't resolve until that lands.
+- The actual PlayniteAddonDatabase fork + submission PR — explicitly deferred pending the click-through above, per "verify first, then submit."

@@ -1814,3 +1814,64 @@ Validated live: a cold run and an idempotent re-run of the hook, `oxlint` clean 
 - PR #20's `mergeable_state` was `unstable` at end of session — checks/CI hadn't finished settling;
   not investigated further this session.
 - A real `dotnet build` verification of the PR #20 fixes is still outstanding (manual tracing only).
+
+---
+
+# Session summary — 2026-09-17 — Playnite Groups 6/7 shipped, testenv re-verification of Phase 18/19, README overhaul
+
+Implemented Playnite plugin Group 6 (Phase 16 add-on-database submission prep) and Group 7 (Phase 17,
+folded into Group 5's earlier work) across both repos, then — per an explicit standing instruction to
+always use `tests/testenv.ps1` for manual verification — redid the manual verification of Phases 18/19
+through testenv against a real portable Playnite instance, which caught a genuine third bug.
+
+## What was asked
+1. Implement Group 6 (Phase 16) and Phase 17, each in its own worktree/branch across both repos; for
+   Phase 16 specifically, prepare everything except actually opening the PR to the Playnite add-on
+   database — verify first, submit later.
+2. Update `SaveLocker-Playnite/README.md`: latest shipped info, a fork-compatibility note (the plugin
+   currently requires `Marwanello/SaveLocker`, not upstream `SkorcherX/SaveLocker`), and remove one
+   specific paragraph verbatim.
+3. Two detailed answers: verification steps for what was implemented, and exactly what's left to finish
+   Phase 16 and submit the PR.
+4. Explicit, standing correction: "please do that using testenv. and always for any manual tests i want
+   to be using testenv" — redo the verification answer through `testenv.ps1`, and treat this as
+   permanent policy for all future manual testing in this project.
+
+## What was found and fixed
+- **Third portable-Playnite bug, found only because testenv was used for real this time**:
+  `PlayniteLibrary.DataRoot`/`PlaynitePlugin.PlayniteDataRoot` only ever checked `%AppData%\Playnite`.
+  `testenv.ps1 -PlaynitePath` targets a real portable install, which keeps its `library`/`Extensions`
+  beside its own executable instead — meaning the entire Phase 18 source was silently invisible under
+  the very test setup meant to exercise it. Fixed with a `SAVELOCKER_PLAYNITE_PATH` env var override,
+  wired into `testenv.ps1`'s env lifecycle functions.
+- **A v0.1.0 GitHub Release for SaveLocker-Playnite already existed**, discovered via direct API
+  investigation rather than assumed absent — reduced Phase 16's real remaining blocker from "no release"
+  to "never click-tested inside a live Playnite."
+- **Wrong default branch name** (`master` vs `main`) in a first draft of `addon-manifest.yaml`'s
+  `InstallerManifestUrl`, copied from an unrelated reference repo without checking this repo's own
+  default branch — caught via `gh repo view --json defaultBranchRef` before anything was submitted.
+
+## What was built
+- `PlayniteLibrary.cs`, `GameScanner.ScanPlayniteLibraryAsync`, agent-ui Playnite filter + plugin card,
+  `PlaynitePlugin.CardStatusAsync`/`InstallFirstTimeAsync` + two new local-API routes, an xUnit test
+  project (11 tests) — see `progress.md` for full detail.
+- SaveLocker-Playnite: `docs/addon-submission/addon-manifest.yaml`, root `installer.yaml` (real values:
+  `RequiredApiVersion: 6.17.0` read directly from a real Playnite.SDK.dll), README.md rewritten per the
+  four points above.
+
+## Verification — via testenv, as explicitly instructed
+`testenv.ps1 build` + `up` against the real portable `Playnite-Test` instance. Rescan found all 6 real
+Playnite games with no errors; the plugin-status card correctly showed "INSTALLED v0.1.0"; and, going
+beyond what was strictly asked, a restart of `Playnite-Test` confirmed the actual tagged v0.1.0 release
+build loads cleanly inside a real running Playnite (`ExtensionFactory:Loaded plugin: SaveLocker, version
+0.1.0` in its own log) — the first such confirmation for this plugin.
+
+## Not done
+- Full manual click-through inside Playnite (conflict gate, right-click menu, Link to SaveLocker popup)
+  — still the real remaining blocker for Phase 16.
+- `installer.yaml`/manifest changes live only on `playnite-plugin-group-6`, not `main` — the submission
+  manifest's `raw.githubusercontent.com` URLs won't resolve until that lands.
+- Forking `JosefNemec/PlayniteAddonDatabase` and opening the actual submission PR — deliberately not
+  done, per "verify first, then submit."
+- The testenv rig (console :5080, Windows tray :5188, WSL daemon :5187, `Playnite-Test` running with the
+  plugin loaded) was left running at the end of the session; tear-down was not requested.
