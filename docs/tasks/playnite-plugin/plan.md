@@ -24,7 +24,7 @@ both `%LocalAppData%\Playnite` and `%AppData%\Playnite`, `dotnet 10.0.400` prese
 cloud/remote sessions `implementation-grouping.md` wrote its "Windows + Playnite installed" caveat
 against. Phase 1 below (scaffold + load) is genuinely attemptable here, not just plannable.
 
-## Status (updated 2026-09-15 — Group 4/Phase 12 built, not yet hardware-verified)
+## Status (updated 2026-09-16 — Group 5/Phases 13-15+17 built, not yet hardware-verified)
 
 Same status-table convention `conflict-resolution-ui/plan.md` established — kept current as phases
 ship, not written once and left stale. See `implementation-grouping.md` for which phases share a
@@ -44,11 +44,11 @@ session and why.
 | 10 — Core pre-launch/post-exit gate | ✅ Shipped 2026-09-15 — hardware-verified: block/resolve on a genuine conflict, post-exit push, fail-open when the agent is down. Resolve window is theme-driven for both Desktop and Fullscreen mode, but the Fullscreen window and the WSL-driven "lease held elsewhere" case were fixed late this session and not yet re-confirmed on hardware |
 | 11 — Automatic matching chain | ✅ Shipped 2026-09-15 — hardware-verified (a real Steam-installed game matched via AppID) |
 | 12 — "Link to SaveLocker" popup | ✅ Built 2026-09-15 — code-complete, builds clean against the real Playnite SDK; not yet hardware-verified (see `SaveLocker-Playnite`'s own `docs/CONTEXT.md`) |
-| 13 — Status chip + action buttons | ⏳ Not started |
-| 14 — Plugin-side self-update consumption | ⏳ Not started |
-| 15 — Test infrastructure | ⏳ Not started |
+| 13 — Status chip + action buttons | ✅ Built 2026-09-16 — code-complete, builds clean; not yet hardware-verified. One deliberate deviation: one "Sync now" button instead of separate Push/Pull (the local API has no per-game push-only/pull-only route) — see `GameStatusControl`'s own doc comment |
+| 14 — Plugin-side self-update consumption | ✅ Built 2026-09-16 — new agent-side `GET /api/playnite-plugin` route verified live against a real scratch server + registered Windows agent; the plugin's own consumption (`OnApplicationStarted`) is code-complete but not yet hardware-verified inside a running Playnite |
+| 15 — Test infrastructure | ✅ Built 2026-09-16 — the portable-Playnite `testenv` target and Windows `seed-test-conflict` equivalent this phase called for already shipped in Group 3's test-rig integration (commit `9397e9d`); this session added the remaining gap, automated coverage (`tests/SaveLocker.Playnite.Tests`, xUnit — GameMatcher + LocalApiClient against an HttpListener stub), 25/25 passing |
 | 16 — Official add-on database submission | ⏳ Not started |
-| 17 — Release CI workflow (`SaveLocker-Playnite`) | ⏳ Not started — added 2026-09-15, found while answering "how does the plugin handle releases" |
+| 17 — Release CI workflow (`SaveLocker-Playnite`) | ✅ Built 2026-09-16 — `.github/workflows/release.yml`; the Playnite.SDK.dll-fetch step and a build against the freshly-fetched SDK were both actually run and verified, but pushing a real tag to exercise a genuine release end to end was not attempted (needs the user's go-ahead) |
 
 ---
 
