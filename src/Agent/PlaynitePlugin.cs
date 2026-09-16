@@ -124,6 +124,24 @@ public static class PlaynitePlugin
     }
 
     /// <summary>
+    /// GET /api/playnite-plugin's own answer (tasks/playnite-plugin/plan.md, Phase 14) — the Playnite
+    /// plugin process itself calling in to ask "is a newer version of me waiting?" Always a
+    /// check-only <see cref="CheckAsync"/> (apply: false): a route must never let an external caller
+    /// trigger a write, and the plugin cannot safely replace its own currently-loaded assembly anyway
+    /// — only the agent's own recurring timer (<c>TrayApp.CheckPlaynitePluginUpdateAsync</c>) installs
+    /// anything. Called from inside a running Playnite process, so <see cref="CheckAsync"/>'s own
+    /// <see cref="IsPlayniteRunning"/> guard always takes its "close Playnite first" branch when a
+    /// newer version genuinely exists — <see cref="PluginUpdateOutcome.Message"/> already reads
+    /// exactly like the restart notice Phase 14 wants, with nothing extra to compose here.
+    /// </summary>
+    public static async Task<PlaynitePluginStatusDto> StatusAsync(AgentConfig config, Action<string> log)
+    {
+        var outcome = await CheckAsync(config, log, apply: false);
+        return new PlaynitePluginStatusDto(
+            outcome.State.ToString(), outcome.Message, outcome.InstalledVersion, outcome.LatestVersion);
+    }
+
+    /// <summary>
     /// Ask the server what plugin it is offering and, when <paramref name="apply"/> is true, install
     /// it. Never throws: this runs on a timer nobody is necessarily watching, and a plugin that could
     /// not be updated must not become a reason the agent stops doing anything else.

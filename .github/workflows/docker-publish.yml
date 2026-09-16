@@ -63,6 +63,11 @@ jobs:
           echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
           echo "Building $version" >> "$GITHUB_STEP_SUMMARY"
 
+      # Required for cache-from/cache-to below: GitHub Actions' cache backend (type=gha) only works
+      # through the docker-container Buildx driver, not the default "docker" driver build-push-action
+      # falls back to without this step.
+      - uses: docker/setup-buildx-action@v3
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -76,6 +81,12 @@ jobs:
           context: .
           file: src/Server/Dockerfile
           push: true
+          # GitHub-hosted runners start with an empty Docker cache every run, so without this every
+          # layer — base images included — rebuilt from scratch on every single push. type=gha stores
+          # layers in GitHub's own Actions cache between runs; mode=max also caches intermediate
+          # build-stage layers (the web-build/build stages), not just the final runtime image's.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           # Versioned alongside :latest so a rollback has something to name.
           tags: |
             ghcr.io/marwanello/savelocker:latest

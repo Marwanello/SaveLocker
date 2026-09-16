@@ -18,7 +18,7 @@ same three things `conflict-resolution-ui`'s own grouping document weighs togeth
    from (~7–9 sessions agent-side, ~11–15 plugin-side, ~18–24 total — unchanged by this regrouping,
    only the bucketing changed).
 
-## Status (updated 2026-09-15 — Group 4/Phase 12 built, see `plan.md`)
+## Status (updated 2026-09-16 — Group 5/Phases 13-15+17 built, see `plan.md`)
 
 | Group | Contents | Status |
 |---|---|---|
@@ -26,7 +26,7 @@ same three things `conflict-resolution-ui`'s own grouping document weighs togeth
 | 2 | Phases 4–7 (exit-push, new routes, self-update plumbing) | ✅ Done 2026-09-14 — Phase 7's self-updater is code-complete but unverified against a real package (`SaveLocker-Playnite` doesn't exist yet) |
 | 3 | Phases 8–11 (scaffold, settings, core gate, matching) | ✅ Done 2026-09-15 — hardware-verified on a portable Playnite (Harmony theme); Fullscreen-mode popup and the WSL "lease held elsewhere" case were fixed late this session, re-confirmation on hardware still pending |
 | 4 | Phase 12 (enroll/link popup) | ✅ Built 2026-09-15 — builds clean against the real Playnite SDK; NOT yet hardware-verified. Also picked up Tier 4 of `GameMatcher`'s matching chain (the link nudge), deferred from Group 3 since it needed this picker. See `SaveLocker-Playnite`'s own `docs/CONTEXT.md`/`docs/logs/2026-09-15_group-4-link-popup.md` |
-| 5 | Phases 13–15 + 17 (status chip/buttons, self-update consumption, test infra, release CI) | ⏳ Not started |
+| 5 | Phases 13–15 + 17 (status chip/buttons, self-update consumption, test infra, release CI) | ✅ Built 2026-09-16, on branch `playnite-plugin-group-5` — code-complete, builds clean, `dotnet test` 25/25; NOT yet hardware-verified inside a running Playnite, and no real tag has been pushed to exercise Phase 17's workflow. Phase 13's `GetGameViewControl` status chip was removed again after being confirmed dead code under every existing theme (Default included, not just Harmony) — `GetGameMenuItems` and the `SaveLocker: Linked` Tag are the surviving theme-independent surfaces. A small companion agent-side change (`GET /api/playnite-plugin`, main repo commit `31f8b9b` on `claude/group-5-playnite-plugin-3d3aae`) was verified live against a real scratch server + agent. See `SaveLocker-Playnite`'s own `docs/CONTEXT.md` |
 | 6 | Phase 16 (add-on database submission) | ⏳ Not started |
 
 ## Groups

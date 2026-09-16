@@ -42,10 +42,15 @@ RUN NUMERIC="${SAVELOCKER_VERSION%%+*}"; \
 # Stage 3: runtime image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
-COPY --from=build /app ./
 
-# curl is needed for the HEALTHCHECK below; keep the layer small.
+# curl is needed for the HEALTHCHECK below; keep the layer small. Installed BEFORE COPY --from=build
+# on purpose: Docker's layer cache is chained per stage, so a layer after one that changed is
+# invalidated too, even if its own command didn't change. The app binary below changes on nearly
+# every build, so with apt-get after it this layer was re-fetching packages from scratch every time
+# for no reason — it has no dependency on the app at all.
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /app ./
 
 # Persisted state (DB + archives) lives on a mounted unRAID share.
 VOLUME ["/data"]

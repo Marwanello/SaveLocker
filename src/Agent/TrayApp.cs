@@ -122,7 +122,10 @@ internal sealed class TrayContext : ApplicationContext
             prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct),
             // POST /api/games/{id}/post-exit-sync (tasks/playnite-plugin/plan.md, Phase 5) — the
             // Playnite plugin's OnGameStopped equivalent to this route's own OnGameStarting caller.
-            postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct));
+            postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
+            // GET /api/playnite-plugin (tasks/playnite-plugin/plan.md, Phase 14) — lets the plugin
+            // itself ask whether a newer version of itself is waiting on the server.
+            playnitePluginStatus: () => PlaynitePlugin.StatusAsync(_config, AgentLogger.Log));
         _apiServer.Start();
 
         _commandPoller = new CommandPoller(

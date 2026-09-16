@@ -2769,3 +2769,180 @@ to `SyncNowAction`.
   either way).
 - `LinkStatusButton`/`GetGameViewControl` remains unverified on any theme that might actually render it
   (e.g. Playnite's stock Default theme) — confirmed only as a no-op under Harmony.
+
+---
+
+## 2026-09-16 (cont'd) — Playnite plugin Group 5 shipped (Phases 13/14/15/17), Docker layer-caching fix, Default-theme dead-code finding, dialog-based sync/conflict feedback
+
+**Repos/branches:** `SaveLocker-Playnite` worktree `.claude/worktrees/playnite-plugin-group-5`, branch
+`playnite-plugin-group-5`. `SaveLocker` worktree `.claude/worktrees/group-5-playnite-plugin-3d3aae`,
+branch `claude/group-5-playnite-plugin-3d3aae`. Neither branch pushed; no PRs opened yet — explicitly
+deferred pending the user's go-ahead.
+
+### Request sequence
+
+1. "Start implementing group 5 knowing that the playnite plugin repo is in
+   D:\Projects\SaveLocker\SaveLocker-Playnite. create a work tree there and an new branch and do the
+   changes needed."
+2. "tell me in non technical terms what was implemented please tell me detailed instructions to how to
+   test this using testenv."
+3. An unrelated Docker question: why the runtime stage's `apt-get install curl` layer took 17.7s and
+   wasn't cached — then "Yes please" to both proposed fixes (Dockerfile reorder + GitHub Actions
+   `type=gha` build cache).
+4. Bug report contradicting an earlier, unverified assumption: "there is no chips or savlocker link
+   button in default theme" (i.e. even Playnite's stock Default theme, not just Harmony).
+5. A UX spec for the "Sync now"/"Resolve conflict…" menu items: "when i click sync before i link a
+   notfication apears that i hasent synced. i want a dialog to open saying the same thign and a link
+   and acancel button. the same for conflicts i whant a dialoge always stating what appned rather than
+   a notification because a notification doesn't give instant feedback. in conflict show the game isnt
+   linked if it wasnt linked and show no conflicts found if its alreadyy linked."
+6. This request: append a summary to `progress.md` and save a standalone summary to
+   `session_summary.md`.
+
+### Group 5 implementation (Phases 13, 14, 15, 17)
+
+**Phase 13 — status chip (`SaveLocker-Playnite`).** `LinkStatusButton.cs` renamed to
+`GameStatusControl.cs` (`git mv`), rebuilt as a `ContentControl` (compile error otherwise: `StackPanel`
+doesn't derive from `Control`, and `GetGameViewControl`'s return type does) hosting a chip + action
+button reflecting Not linked / Agent offline / Not synced yet / In sync / Conflict, backed by two new
+`LocalApiClient` calls (`GetSyncStatusAsync`, `GetPlaynitePluginStatusAsync`) and two new DTOs
+(`SyncStatusDto`, `PlaynitePluginStatusDto`) in `Contracts.cs`.
+
+**Phase 14 — self-update status plumbing (`SaveLocker`, main repo).** `AgentApiServer.cs` gained a
+`PlaynitePluginStatusDto` record, a `_playnitePluginStatus` injected delegate (default:
+`NotApplicable`), and `GET /api/playnite-plugin`. `PlaynitePlugin.cs` (Agent) gained
+`StatusAsync(config, log)` wrapping the existing `CheckAsync(apply: false)`. `TrayApp.cs` wires
+`playnitePluginStatus: () => PlaynitePlugin.StatusAsync(...)` into the `AgentApiServer` constructor.
+On the plugin side, `SaveLockerPlugin.OnApplicationStarted` now also calls a new
+`CheckSelfUpdateAsync()` alongside the existing tag-backfill task — the plugin polls the tray's new
+route and, if a newer plugin version is available, shows a notice telling the player to restart
+Playnite to pick it up, instead of never finding out.
+
+**Phase 15 — automated test infra (`SaveLocker-Playnite`).** New
+`tests/SaveLocker.Playnite.Tests/` xUnit project (net462): `GameMatcherTests.cs` (pure-logic coverage
+of `GameMatcher.FindMatch`/`FindByPathOrName`/`MapStore`, deliberately excluding the Steam-AppID tier
+since `Game.Source` is always null outside a live Playnite DB — confirmed by reflection, not assumed)
+and `LocalApiClientTests.cs` (`HttpListener`-stub-based coverage of `LocalApiClient`, no real backend
+needed). `SaveLocker.Playnite.csproj` gained `<InternalsVisibleTo Include="SaveLocker.Playnite.Tests" />`.
+25/25 passing.
+
+**Phase 17 — release CI (`SaveLocker-Playnite`).** New `.github/workflows/release.yml`: fetches
+`Playnite.SDK.dll` from `JosefNemec/Playnite`'s portable `.7z` release, builds Release, packages
+`SaveLocker.zip`/`SaveLocker.pext`/`SHA256SUMS.txt`, publishes via `softprops/action-gh-release`. Never
+exercised by an actual tag push yet (no real GitHub Release minted) — deferred pending the user's
+go-ahead, same as pushing the branches.
+
+Docs updated in both repos to match: `SaveLocker-Playnite/docs/REPO_MAP.md` (documents
+`GameStatusControl.cs`, `LinkAction.cs`, `LinkedTag.cs`, `SyncNowAction.cs`, `ConflictResolver.cs`, the
+new `tests/` dir, `.github/workflows/release.yml`), `docs/Build and Run.md` (new "Automated tests
+(Phase 15)" section), `docs/CONTEXT.md` (new top section documenting Group 5's status, deviations, and
+a "whoever picks this up next" handoff list); `SaveLocker`'s own `docs/tasks/playnite-plugin/plan.md`
+and `implementation-grouping.md` Status tables updated from "⏳ Not started" to "✅ Built 2026-09-16"
+for Phases 13/14/15/17, with honest caveats (not hardware-verified; status chip confirmed dead code
+under every existing theme — see below).
+
+### Docker layer-caching fix (tangent, `SaveLocker` main repo)
+
+Root cause of the 17.7s uncached `apt-get` layer: `src/Server/Dockerfile`'s runtime stage ran
+`apt-get install curl` *after* `COPY --from=build /app ./`. Docker's build cache is chained per stage —
+any layer after one that's invalidated is invalidated too, regardless of whether its own instruction
+text changed — and the app binary changes on nearly every build, so `apt-get` was re-fetching from
+scratch every single time despite having zero actual dependency on the app. Fixed by moving the
+`apt-get` line before the `COPY --from=build`. Also added `docker/setup-buildx-action@v3` (required for
+the `type=gha` cache backend — the default `docker` Buildx driver can't use it) and
+`cache-from: type=gha` / `cache-to: type=gha,mode=max` to `docker-publish.yml`'s
+`docker/build-push-action@v6` step, so CI benefits the same way local builds now do (GitHub-hosted
+runners otherwise start with an empty Docker cache on every run). Verified locally with a real
+before/after build: `apt-get` now shows `CACHED` after a source-only change that still correctly
+invalidates the `dotnet publish`/`COPY --from=build` layers.
+
+### Default-theme bug: `GameStatusControl` confirmed dead code under any existing theme
+
+The user reported no chip/button under Playnite's *stock Default* theme either — contradicting an
+earlier, unverified assumption in a prior reply that Default would show it (only Harmony's own
+allowlisted-button XAML had actually been checked). Root-caused via `grep.app` code search of
+`JosefNemec/Playnite`'s real source for `ControlTemplateTools.InitializePluginControls`:
+`GetGameViewControl` is only ever invoked for a plugin that (a) registered via
+`AddCustomElementSupport` — SaveLocker never has — **and** (b) whose active theme's XAML contains a
+named `ContentControl` (`"{SourceName}_{ElementName}"`) for that plugin — no stock theme (Default
+included) defines one for SaveLocker. Conclusion: `GameStatusControl`/the `GetGameViewControl` override
+can never render under any theme that exists today; only `GetGameMenuItems` and Tags are genuinely
+theme-independent. **Not yet fixed or removed** — the user was asked whether to delete the dead code or
+leave it in place for a hypothetical future custom theme, and has not yet answered (their next message
+was the dialog-feedback request below instead).
+
+### Dialog-based feedback for "Sync now" / "Resolve conflict…" (`SaveLocker-Playnite`, commit `c3273be`)
+
+Per the user's explicit UX request, replaced notification-based feedback with real dialogs in
+`SaveLockerPlugin.cs`. Reflected `Playnite.SDK.dll` first to confirm the mechanism:
+`IDialogsFactory.ShowMessage(string, string, MessageBoxImage, List<MessageBoxOption>)` returns the
+clicked `MessageBoxOption`, and `MessageBoxOption(title, isDefault, isCancel)` is how a literal
+Link/Cancel button pair is built (rather than the stock Yes/No/OK sets).
+
+- **"Sync now" on an unlinked game** now opens a dialog — *"'{game}' isn't linked to SaveLocker yet."*
+  — with **Link**/**Cancel** buttons instead of a toast; Link runs the same auto-match/enroll chain as
+  the "Link to SaveLocker" menu item (new `OfferLinkAsync(Game game)` helper).
+- **"Resolve conflict…"** always shows a dialog stating the outcome: the same not-linked dialog when
+  unlinked; *"No conflicts found for '{game}'."* when linked with nothing open; the real resolve window,
+  unchanged, when a conflict genuinely exists.
+- **Agent-unreachable** is now also a dialog (`ShowAgentUnreachableDialog()`) instead of a notification,
+  shared by both menu items.
+
+Fixed one compile error along the way: `MessageBoxImage.Information` needed the
+`System.Windows.` prefix (`SaveLockerPlugin.cs` has no `using System.Windows;`), matching the
+fully-qualified style already used elsewhere in the file. `docs/CONTEXT.md` in `SaveLocker-Playnite`
+has **not yet** been updated to mention this follow-up commit — a documentation gap flagged for next
+time.
+
+### Verification
+
+- `dotnet build src/SaveLocker.Playnite.csproj -c Release --no-incremental` clean (0 warnings/errors)
+  after every change this session, including the dialog-feedback follow-up.
+- `dotnet test tests/SaveLocker.Playnite.Tests/... -c Release` — 25/25 passing, including after the
+  dialog-feedback follow-up.
+- Main-repo build/test verification (`AgentApiServer.cs`, `PlaynitePlugin.cs`, `TrayApp.cs`) run from
+  the correct worktree after an earlier mistake was caught and fixed (see below);
+  `agent-ui/src/api-types.ts` regenerated and diffed clean (only the new route/schema, plus pre-existing
+  harmless alphabetical churn).
+- Docker: a real local before/after build confirmed the `apt-get` layer now caches correctly.
+- None of Group 5 has been hardware-verified inside a real running Playnite yet (menu items, dialogs,
+  and the self-update notice are all build-verified/installed but not click-tested live).
+
+### Mistake caught and fixed mid-session
+
+All build/test/verification commands were initially run from `D:/Projects/SaveLocker/SaveLocker` (the
+main checkout, branch `main`) instead of the worktree with the actual Phase 14 edits
+(`.claude/worktrees/group-5-playnite-plugin-3d3aae`) — caught when the new `/api/playnite-plugin` route
+never appeared in a regenerated OpenAPI doc. This also left a dirty, wrongly-regenerated
+`agent-ui/src/api-types.ts` in the main checkout on branch `main`, reverted via
+`git checkout -- agent-ui/src/api-types.ts` after confirming via `git status --short` it was the only
+dirty file there. All builds/verification redone correctly from the worktree afterward (including a
+fresh `npm install` in the worktree's own `agent-ui`, which had no `node_modules` at all — the
+documented recurring fresh-worktree gotcha).
+
+### Follow-up: dead code removed, branches renamed, PRs opened
+
+The user answered the open `GameStatusControl` question directly: "GameStatusControl (the status chip)
+is dead code — it can't render under any theme that exists today, and there's no code fix for that; it
+would need either a theme author to add a `SaveLocker_...` slot for us, or SaveLocker shipping its own
+custom theme. Neither is realistic right now" — and asked to remove it, rename this repo's branch to
+`playnite-plugin-group-5` (matching `SaveLocker-Playnite`'s own branch name), and open a PR in both
+repos.
+
+- **`SaveLocker-Playnite`:** `GameStatusControl.cs` deleted, the `GetGameViewControl` override removed
+  from `SaveLockerPlugin.cs`, and every stale doc-comment cross-reference to it (`LinkAction.cs`,
+  `LinkedTag.cs`, `LocalApiClient.cs`, `docs/REPO_MAP.md`) updated to explain it was tried and removed
+  rather than silently deleted. `GetSyncStatusAsync`/`SyncStatusDto` were kept — the "Resolve
+  conflict…" dialog still calls them. `dotnet build` clean (0/0), `dotnet test` 25/25 unchanged.
+  Committed as `5498ee7` (removal) and `3f9293f` (docs, including the still-pending `c3273be`
+  write-up from the entry above). Branch already named `playnite-plugin-group-5`.
+- **`SaveLocker` (this repo):** branch renamed `claude/group-5-playnite-plugin-3d3aae` →
+  `playnite-plugin-group-5` (`git branch -m`) to match. `plan.md`'s Phase 13 row and
+  `implementation-grouping.md`'s Group 5 row updated to record the removal instead of describing a
+  chip that no longer exists.
+- Both branches pushed; PRs opened in both repos — see the PR links in `CONTEXT.md`/session notes.
+
+### Not done
+
+- Phase 17's release workflow never exercised by a real tag push.
+- Hardware verification of Group 5 inside a real running Playnite.
