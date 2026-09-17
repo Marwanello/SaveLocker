@@ -1162,6 +1162,68 @@ depend on each other; full status table in `tasks/checkpoint-ui/implementation-g
 
 ---
 
+**Checkpoint UI redesign, Group 2 shipped (2026-09-18, same branch, `tasks/checkpoint-ui/` docs
+updated in the same session again).** Asked directly to start Group 2 (console shell + console
+Sync all) once Group 1 landed. Console-side only, per the grouping doc's own scope.
+<br>**Shipped**: `GamesSidebar.tsx` rows converted to the new `ui/Row` primitive; a new
+`GamesGrid.tsx` + `ui/Seg` list/grid switch persisted to `localStorage` (`sl_games_layout`), with a
+cover-art fallback tile; `NotificationsMenu.tsx` (extracted and extended from Group 1's inline
+dropdown) with per-item deep links and a "Dismiss all"; `SignIn.tsx` + a `NavBar` Lock button
+replacing the old always-visible password field, per plan.md's "remove the password field from the
+header"; `SyncAllProgress.tsx`, a self-polling progress rail that owns its own state so a tick never
+re-renders `NavBar`; and the exclude-pattern editor in `GameDetail.tsx` rebuilt as removable chips
+with a live "would additionally exclude N files" dry run.
+<br>**Two gaps found and folded into the plan before building, same as Group 1's font gap.** (1)
+Phase 3 item 1 said Sync all should "enqueue a command per tracked game for the machine that owns
+it" — tracing `CommandPoller.ExecuteAsync` found `TargetGames(cmd.GameId)` already treats a null
+`GameId` as "every game this machine tracks," the same mechanism the tray's own local Sync All uses.
+Built the simpler, correct way: one `Sync` command per **machine** (`GameId: null`) through a new
+`POST /commands/bulk` (`SyncService.EnqueueCommandsAsync`), not one per game. (2) The exclude-chip
+"preview what is skipped" item assumed `/versions/{id}/stats` could drive a client-side dry run —
+its DTO turned out to be `(FileCount, NewestFileWriteUtc)` only, no file list at all. Built a new
+`POST /games/{id}/excludes/preview` instead (`SyncService.PreviewExcludesAsync`), reading the head
+archive's own zip directory and running it through a `SaveArchive.FilterExcluded` extracted from the
+agent's own `EnumerateRelativeFiles` — so the preview can never drift from what the agent actually
+does, and a new `SaveArchive.ListArchiveEntries` reads the zip directory the same way
+`GetArchiveStats` already does. Both gaps, and a third smaller one (`Sync:DefaultExcludeGlobs` is
+`IConfiguration`-only, never wired into `SettingsService`'s DB-backed override — the "editor" item
+shipped read-only), are written up in `implementation.md`/`implementation-grouping.md` rather than
+left as a surprise for whoever reads them next.
+<br>**One item deliberately split off, exactly as `implementation-grouping.md` pre-authorized**: the
+release-history table. `WhatsNewView.tsx`'s existing sidebar-click layout already technically
+surfaces every release; turning it into "3 newest in full, a table of the rest below" is a distinct
+navigation redesign sharing no files with the rest of this group, left for a short follow-up session.
+<br>`openapi.json`/`web/src/api-types.ts` regenerated against a real dev server on `:5179` and
+diffed — only the two new routes/schemas (`ExcludesPreviewDto`, `/commands/bulk`,
+`/games/{id}/excludes/preview`) appear.
+<br>**Verified live against a real throwaway rig, not just built**: `tests/testenv.ps1 build` (all
+three: Windows agent, WSL agent, console) → `conflict -Windows -Wsl` → `up`. The **Windows** side of
+that conflict-seed failed with a 401 on `add-game` — not chased down (looked like a testenv/CLI
+auth-timing issue, not a console bug, and the WSL side alone was enough to test with) — so
+verification ran against one real WSL machine ("LinuxTest") with one real tracked game ("Conflict
+Game") instead of a genuine two-sided conflict. Confirmed live: the list/grid switch and its
+persistence, the "no art" fallback tile, Sync all's bulk enqueue actually completing a real command
+on the real daemon (watched `GET /commands` flip to `Done` with a real result string), Lock → SignIn
+→ reconnect with a blank password, and the exclude preview returning "would additionally exclude 1
+file" after adding `**` as a draft pattern against the one real seeded file — an exact match. The
+notifications menu's conflict deep-link and "Dismiss all" were not exercised live (no real
+problem/conflict existed in the seeded data) — build- and code-review-verified only, noted as such in
+`implementation.md` rather than claimed as tested.
+<br>**A pre-existing, unrelated test-suite finding, not caused by this session**: `run-server-
+bugbounty-tests.ps1` fails the same 6 checks (all in CS-02, "reporting a reclaimed command completes
+it" and its dependents) twice in a row against a freshly wiped `.verify-server-bugbounty` — confirmed
+via `git diff` that nothing this session touched overlaps the command-claim/lease/report code path
+(this session's `SyncService.cs`/`Program.cs`/`Contracts.cs` changes are 100% additive). Flagged as a
+background task rather than fixed here, since it's out of this session's scope. Separately,
+`run-agent-tests.ps1` looked broken the same way at first (3 failures around "Laptop pull restores
+save") but turned out to be **this session's own fault**: `.verify/`'s client-side agent configs
+carried a stale `LastSyncedHash` from an earlier run that a fresh server DB didn't know about —
+exactly the trap `Gotchas.md` already documents ("clear the server DB and `.verify/` together, never
+one alone"), which this session should have read before running suites and didn't. Wiping both
+together gets the documented 47/47 clean. No new Gotchas.md entry needed — it already says this.
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

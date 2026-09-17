@@ -26,5 +26,5 @@ Not-yet-done work only — one line per item, each pointing at its task folder u
 
 ## Planned / future
 
-- **Checkpoint UI redesign.** 8-phase console/agent/Deck visual redesign; Group 1 (web foundation) shipped 2026-09-17, Groups 2-7 open → `tasks/checkpoint-ui/plan.md`.
+- **Checkpoint UI redesign.** 8-phase console/agent/Deck visual redesign; Groups 1 (web foundation) and 2 (console shell) shipped 2026-09-17/18, Groups 3-7 + the release-history table open → `tasks/checkpoint-ui/plan.md`.
 - **Other stores' cloud flags.** GOG/Epic/Origin/Uplay flags for Heroic candidates → `tasks/other-stores-cloud-flags/summary.md`.
