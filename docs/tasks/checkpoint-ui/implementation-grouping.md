@@ -14,17 +14,33 @@ phases to do in one session, in what order, and why. Driven by three things weig
    23 files, multiple review rounds) was a heavy session. Treat ~1,500 insertions as the ceiling for
    a group that still gets reviewed properly.
 
-## Three corrections to `implementation.md`, found while writing this
+## Status (updated 2026-09-17)
+
+| Group | Contents | Status |
+|---|---|---|
+| 1 | Phase 1 (web half) + Phase 8 assets | 🚧 Web foundation ✅ shipped 2026-09-17 (reset layered, tokens, self-hosted Archivo, motion primitives, `ui/` primitives, `NavBar.tsx` converted as proof). Assets partial: 3 marks + SVG favicon shipped; Steam art crops and all PNG/ICO rasterization deferred — no rasterizer available in this environment, see `implementation.md` Phase 8 |
+| 2 | Phase 2 + Phase 3.1/2/4 + `POST /commands/bulk` | ⏳ Not started |
+| 3 | Phase 1 (agent half) + Phase 5 overview trim + Phase 3.3/5 | ⏳ Not started |
+| 4 | Phase 5 Games tab + art proxy + search | ⏳ Not started |
+| 5 | Phase 4 appearance + fleet sync | ⏳ Not started |
+| 6 | Phase 6 items 1-3 (Deck) | ⏳ Not started |
+| 7 | Phase 7 (notifications) | ⏳ Not started |
+
+## Corrections to `implementation.md`, found while writing this (and one found later)
 
 These were checked against the source, not assumed. `implementation.md` has been amended.
 
-**1. `agent-ui` has no Tailwind and no CSS file at all.** `implementation.md` Phase 1 said "the agent
-UI imports the same file". It can't — `agent-ui/package.json` has no `tailwindcss`, and there is no
-`.css` file anywhere in `agent-ui/src/`. It is styled *entirely* by inline style objects with
-hardcoded hex values. So "fix the reset so utilities win" is a **`web`-only** fix; the agent needs a
-different mechanism for the same tokens, and that decision gates its foundation work. The two
-front ends also don't share an icon story: `agent-ui` depends on `lucide-react`, `web` has no icon
-library at all.
+**1. `agent-ui` has no Tailwind and no authored CSS file.** `implementation.md` Phase 1 said "the
+agent UI imports the same file". It can't — `agent-ui/package.json` has no `tailwindcss`, and there
+is no `.css` file *written by this project* anywhere in `agent-ui/src/`. It is styled *entirely* by
+inline style objects with hardcoded hex values. So "fix the reset so utilities win" is a
+**`web`-only** fix; the agent needs a different mechanism for the same tokens, and that decision
+gates its foundation work. The two front ends also don't share an icon story: `agent-ui` depends on
+`lucide-react`, `web` has no icon library at all.
+<br>**Narrowed 2026-09-17, see correction 4 below:** `agent-ui/src/main.tsx` now imports third-party
+CSS (`@fontsource/*`), so "no CSS at all" is no longer literally true — there's a real, already-
+working precedent in this exact codebase for importing a `.css` file from `main.tsx` in `agent-ui`.
+Group 3 should use it for the tokens file rather than treating the mechanism as unproven.
 
 **2. The scale of the inline-style problem is the real Phase 1 risk.** Counted:
 
@@ -43,6 +59,21 @@ styles" session.
 kind needs fetching "alongside the existing kinds". It's already there — `ArtService.Assets` fetches
 `grid` at exactly `dimensions=600x900`, plus `hero`, `logo` and `icon`, and `GridUrl`/`HeroUrl`/
 `LogoUrl`/`IconUrl` are already on the game DTO in `Contracts.cs`. The grid view is pure UI.
+
+**4. Fonts stopped being a Google Fonts import between this file being written and Group 1
+starting — found 2026-09-17, before Group 1 began.** `implementation.md` Phase 1 item 3 said "swap
+the Google Fonts import: Archivo only... drop Inter and JetBrains Mono from the import." Two weeks
+after this grouping file was written, an unrelated session (2026-09-08/09, branch `easy-wins`,
+PR #35) self-hosted both apps' fonts via `@fontsource/*` packages imported in each `main.tsx`, so the
+console and agent no longer render in fallback fonts on a LAN box with no internet — a real
+constraint for this product (`Decisions.md` → self-hosted, bring-your-own-TLS, LAN threat model).
+Neither app's `index.html` has a font `<link>` any more. Swapping to Archivo the way item 3
+originally described it — editing a Google Fonts import — would have reintroduced the exact bug
+that fix closed. Folded into `implementation.md` Phase 1 item 3 directly (self-host
+`@fontsource/archivo` instead) rather than left as a surprise; it doesn't move any work between
+groups, `web`'s half is still Group 1 and the agent's half is still Group 3, only *how* each swaps
+its font changed. This is also the reason correction 1 above was narrowed: the fix touched
+`agent-ui/src/main.tsx` too, which is the same file Group 3 will use for the tokens decision.
 
 ### And one trap to not walk into
 
@@ -74,21 +105,33 @@ unit-test safety net to lean on, which is another reason to keep groups small.
 ## Groups
 
 **Group 1 — Foundation and assets. `web` only. Do this first; it gates everything.**
-Phase 1 (the `web` half) + all of Phase 8. Assets move *up* from last to first: the marks and Steam
-art are already designed, they're cheap to export, and the favicon is the cheapest possible
-end-to-end proof that the token pipeline works. Contents: move the reset into `@layer base`, replace
-the `@theme` block with the Checkpoint tokens for both themes (keeping the old names as aliases for
-one release), swap the font import to Archivo *above* the Tailwind import, add the motion primitives,
-build `web/src/components/ui/`, and ship the mark and Steam files.
+✅ **Shipped 2026-09-17.** Phase 1 (the `web` half) + all of Phase 8. Assets move *up* from last to
+first: the marks and Steam art are already designed, they're cheap to export, and the favicon is the
+cheapest possible end-to-end proof that the token pipeline works. Shipped: the reset moved into
+`@layer base`; the `@theme` block replaced with the Checkpoint tokens for both themes (old names kept
+as aliases); the font swapped to self-hosted Archivo (`@fontsource/archivo`, not a Google Fonts
+import — see correction 4 above); the motion primitives (`rise`/`pop`/`toast-in`, `--ease`,
+`prefers-reduced-motion`); `web/src/components/ui/` (`Card`, `Chip`, `Button`, `Stat`, `Row`, `Seg`,
+`Toast`); and `NavBar.tsx` converted to prove the primitives are usable end to end (both themes,
+keyboard focus visible).
+<br>**Assets shipped partially, and said so rather than silently claiming the whole of Phase 8: the
+three marks (real SVG files) and an SVG favicon, both wired in. The four Steam store crops and every
+PNG/ICO export (sized favicons, the Windows tray icon, the Deck tile) are NOT done** — this
+environment has no SVG rasterizer at all (`magick`, `inkscape`, `rsvg-convert` all absent) — see
+`implementation.md` Phase 8 for the exact list and what the next session needs to bring.
 
-The one decision this group must make, because everything downstream depends on it: **how `agent-ui`
-gets the same tokens** — add Tailwind to it, or emit a plain CSS custom-property file both apps
-import. Recommend the plain CSS file: it's the smaller change, it works for the agent's inline-style
-components *today* via `var(--…)` without converting anything, and it keeps one source of truth.
-Decide it here, in Group 1, or Group 3 will re-litigate it.
+The one decision this group had to make, because everything downstream depends on it: **how
+`agent-ui` gets the same tokens** — add Tailwind to it, or emit a plain CSS custom-property file both
+apps import. **Decided: the plain CSS file**, imported from `agent-ui/src/main.tsx` the same way that
+file already imports `@fontsource/*` CSS (a working precedent in this exact codebase, not a novel
+mechanism) — `web`'s tokens live in `web/src/index.css`'s `@theme` block as the source of truth, and
+`agent-ui/src/tokens.css` is a hand-kept-in-sync copy, per `implementation.md` Phase 1 item 6. Group 3
+executes this; Group 1 only decided it, since Group 1 is scoped `web`-only.
 
 *Done when:* both apps still build, nothing has moved except type and colour, and one converted
-surface (`NavBar.tsx`) proves the primitives are usable.
+surface (`NavBar.tsx`) proves the primitives are usable. — **met**: `web` builds and lints clean;
+`agent-ui` untouched (its half of Phase 1 is Group 3); `NavBar.tsx` verified live in both themes via
+a real throwaway server (`tests/testenv.ps1`), not just built.
 
 **Group 2 — Console shell, including console Sync all.**
 Phase 2 **plus** Phase 3 items 1, 2 and 4. Folded together deliberately: the Sync all button and the
@@ -109,6 +152,12 @@ gets trimmed, and both are small. `POST /api/sync` and `GET /api/activity` alrea
 bytes, so the agent's Sync all is genuinely UI-only. Phase 3 item 4 — *a progress tick must not
 re-render its surroundings* — applies here as a correctness requirement, not polish: progress lives
 in its own component subscribing to the poll.
+<br>Two concrete tasks Group 1 left decided-but-undone, per its own write-up: create
+`agent-ui/src/tokens.css` (the Checkpoint tokens, hand-kept in sync with `web/src/index.css`'s
+`@theme` block — no shared workspace links the two npm packages) and import it from
+`agent-ui/src/main.tsx`; and swap that file's `@fontsource/inter/*.css` imports to
+`@fontsource/archivo/*.css` (400/500/600/700), keeping `@fontsource/jetbrains-mono` as-is. Both
+follow the exact pattern already proven working in that same file — no new mechanism to invent.
 
 **Group 4 — Agent Games tab.**
 The rest of Phase 5: the new Games view (list and grid, cover art, per-game page with Sync/Push/Pull),

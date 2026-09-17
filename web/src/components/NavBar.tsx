@@ -1,7 +1,9 @@
-import { useState, type CSSProperties } from 'react';
+import { useState } from 'react';
 import { getPassword, setPassword as persistPassword } from '../api';
 import type { AgentEvent, Conflict, ServerBuildInfo } from '../types';
 import logoUrl from '../assets/SaveLocker_Logo_crop.png';
+import { Button } from './ui/Button';
+import { Chip } from './ui/Chip';
 
 type View = 'games' | 'config' | 'audit' | 'help' | 'whats-new';
 
@@ -28,6 +30,14 @@ interface Props {
   onDismissProblem?: (id: string) => void;
 }
 
+const NAV_ITEMS: { key: View; label: string }[] = [
+  { key: 'games', label: 'Games' },
+  { key: 'config', label: 'Configuration' },
+  { key: 'audit', label: 'Audit Log' },
+  { key: 'help', label: 'Help' },
+  { key: 'whats-new', label: "What's New" },
+];
+
 const asUtcTime = (t: string) => /[Z+]/.test(t.slice(-6)) ? t : t + 'Z';
 
 function ago(t: string): string {
@@ -38,6 +48,24 @@ function ago(t: string): string {
   if (hours < 24) return `${hours}h ago`;
   return `${Math.round(hours / 24)}d ago`;
 }
+
+/** plan.md colour rule: healthy → safe, retrying → watch, a decision waiting → accent. Info-only
+ *  problems are neither retrying nor a decision, so they read as "healthy, just for your info". */
+type Tone = 'ok' | 'warn' | 'crit';
+
+function severityTone(s: AgentEvent['severity']): Tone {
+  return s === 'Error' ? 'crit' : s === 'Warning' ? 'warn' : 'ok';
+}
+const severityLabel = (s: AgentEvent['severity']) =>
+  s === 'Error' ? 'ERROR' : s === 'Warning' ? 'WARN' : 'INFO';
+
+// Full literal class strings — Tailwind's build-time scanner reads source text, not runtime
+// template interpolation, so a `border-${tone}` string would silently generate no CSS.
+const BADGE_TONE: Record<Tone, string> = {
+  ok: 'border-safe text-safe',
+  warn: 'border-watch text-watch',
+  crit: 'border-accent text-accent',
+};
 
 export function NavBar({
   view,
@@ -59,59 +87,23 @@ export function NavBar({
   }
 
   // Info events (e.g. "an update was applied") are routine confirmations, not problems — they
-  // never drive the badge's color or count it up as alarming.
+  // never drive the badge's tone or count it up as alarming.
   const actionable = problems.filter(p => p.severity !== 'Info');
   const errorCount = actionable.filter(p => p.severity === 'Error').length;
-  const badgeColor = actionable.length === 0 ? '#4a9eff' : errorCount > 0 ? '#e5534b' : '#f4a60d';
-
-  const severityColor = (s: AgentEvent['severity']) =>
-    s === 'Error' ? '#e5534b' : s === 'Warning' ? '#f4a60d' : '#4a9eff';
-  const severityLabel = (s: AgentEvent['severity']) =>
-    s === 'Error' ? 'ERROR' : s === 'Warning' ? 'WARN' : 'INFO';
-
-  // Inline styles, not Tailwind classes: index.css's unlayered `* { padding: 0 }` reset beats any
-  // @layer utilities rule regardless of specificity, so a Tailwind padding class here is silently
-  // a no-op. Password/Connect already use inline styles for the same reason — match that padding
-  // exactly (5px 14px) so every control in this row is the same height.
-  const navBtnStyle = (active: boolean): CSSProperties => ({
-    padding: '5px 14px', borderRadius: 5, fontSize: 12, border: '1px solid',
-    cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-    background: active ? '#129271' : 'transparent',
-    color: active ? '#fff' : '#ECEFF1',
-    borderColor: active ? '#129271' : '#494949',
-    fontWeight: active ? 600 : 400,
-  });
-
-  const ghostBtnStyle: CSSProperties = {
-    padding: '5px 13px', borderRadius: 5, fontSize: 12, background: 'transparent',
-    color: '#ECEFF1', border: '1px solid #494949', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-  };
+  const badgeTone: Tone = actionable.length === 0 ? 'ok' : errorCount > 0 ? 'crit' : 'warn';
 
   return (
-    <header
-      style={{
-        background: '#1E252A',
-        borderBottom: '1px solid #494949',
-        padding: '0 20px',
-        height: 72,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        position: 'sticky',
-        top: 0,
-        zIndex: 20,
-      }}
-    >
+    <header className="bg-panel border-b border-line px-5 h-[72px] flex items-center justify-between sticky top-0 z-20">
       {/* Brand + version */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="flex items-center gap-2.5">
         <a
           href="#"
           onClick={e => { e.preventDefault(); onViewChange('games'); }}
-          style={{ display: 'flex', alignItems: 'center', gap: 9, userSelect: 'none' }}
+          className="flex items-center gap-[9px] select-none"
         >
-          <img src={logoUrl} style={{ height: 64, width: 'auto', borderRadius: 6, flexShrink: 0 }} alt="SaveLocker" />
-          <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.4px' }}>
-            Save<span style={{ color: '#129271' }}>Locker</span>
+          <img src={logoUrl} className="h-16 w-auto rounded-md flex-shrink-0" alt="SaveLocker" />
+          <span className="text-[17px] font-bold tracking-[-0.4px] text-fg">
+            Save<span className="text-accent">Locker</span>
           </span>
         </a>
 
@@ -127,36 +119,33 @@ export function NavBar({
                 `\nClick for release notes.`
               : 'Release notes'
           }
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '2px 9px', borderRadius: 20, cursor: 'pointer',
-            background: view === 'whats-new' ? '#2A3238' : 'transparent',
-            border: '1px solid #494949',
-            color: build?.isRelease === false ? '#f4a60d' : '#8b9aaa',
-            fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
-          }}
+          className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-line text-[11px] font-mono
+            ${view === 'whats-new' ? 'bg-raise' : 'bg-transparent'}
+            ${build?.isRelease === false ? 'text-watch' : 'text-dim'}`}
         >
           {build ? (build.version === 'dev' ? 'dev' : `v${build.version}`) : '—'}
           {unreadNotes && (
-            <span
-              title="New release notes"
-              style={{ width: 6, height: 6, borderRadius: '50%', background: '#129271', flexShrink: 0 }}
-            />
+            <span title="New release notes" className="w-1.5 h-1.5 rounded-full bg-safe flex-shrink-0" />
           )}
         </button>
       </div>
 
       {/* Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <button style={navBtnStyle(view === 'games')} onClick={() => onViewChange('games')}>Games</button>
-        <button style={navBtnStyle(view === 'config')} onClick={() => onViewChange('config')}>Configuration</button>
-        <button style={navBtnStyle(view === 'audit')} onClick={() => onViewChange('audit')}>Audit Log</button>
-        <button style={navBtnStyle(view === 'help')} onClick={() => onViewChange('help')}>Help</button>
-        <button style={navBtnStyle(view === 'whats-new')} onClick={() => onViewChange('whats-new')}>What's New</button>
+      <div className="flex items-center gap-1.5">
+        {NAV_ITEMS.map(item => (
+          <Button
+            key={item.key}
+            variant={view === item.key ? 'primary' : 'default'}
+            size="sm"
+            onClick={() => onViewChange(item.key)}
+          >
+            {item.label}
+          </Button>
+        ))}
 
         {/* API Key composite input */}
-        <div style={{ display: 'flex', alignItems: 'center', background: '#2A3238', border: '1px solid #494949', borderRadius: 5, overflow: 'hidden' }}>
-          <span style={{ padding: '5px 9px', fontSize: 10, color: '#64748b', fontFamily: "'JetBrains Mono', monospace", borderRight: '1px solid #494949', userSelect: 'none' }}>
+        <div className="flex items-center bg-ink border border-line rounded-md overflow-hidden">
+          <span className="px-2.5 py-[5px] text-[10px] text-faint font-mono border-r border-line select-none">
             PASSWORD
           </span>
           <input
@@ -164,81 +153,58 @@ export function NavBar({
             value={keyInput}
             onChange={e => setKeyInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleConnect()}
-            style={{ padding: '5px 9px', background: 'transparent', color: '#ECEFF1', border: 'none', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", width: 160 }}
+            className="px-2.5 py-[5px] bg-transparent text-fg border-0 text-[11px] font-mono w-40"
           />
         </div>
 
-        <button
-          onClick={handleConnect}
-          style={{ padding: '5px 14px', background: '#129271', color: '#fff', border: '1px solid #129271', borderRadius: 5, fontSize: 12, fontWeight: 600 }}
-        >
-          Connect
-        </button>
+        <Button variant="primary" size="sm" onClick={handleConnect}>Connect</Button>
 
-        <button style={{ ...ghostBtnStyle, padding: '5px 10px', fontSize: 14, lineHeight: 1 }} onClick={onRefresh} title="Refresh">↻</button>
+        <Button variant="default" size="sm" style={{ fontSize: 14, lineHeight: 1 }} onClick={onRefresh} title="Refresh">
+          ↻
+        </Button>
 
         {escalatedConflicts.length > 0 && (
-          <button
+          <Button
+            variant="alert"
+            size="sm"
             onClick={() => onViewChange('games')}
             title="These conflicts have been unresolved for more than six hours"
-            style={{
-              padding: '5px 12px', background: '#351b1b', color: '#e5534b',
-              border: '1px solid #e5534b', borderRadius: 5, fontSize: 12,
-              fontWeight: 700, cursor: 'pointer',
-            }}
           >
             Overdue conflicts: {escalatedConflicts.length}
-          </button>
+          </Button>
         )}
 
         {/* Agent problems. Absent when there are none — a healthy fleet should be quiet. */}
         {problems.length > 0 && (
-          <div style={{ position: 'relative' }}>
+          <div className="relative">
             <button
               onClick={() => setShowProblems(v => !v)}
               title="Problems reported by agents"
-              style={{
-                padding: '5px 12px', background: 'transparent', color: badgeColor,
-                border: `1px solid ${badgeColor}`, borderRadius: 5, fontSize: 12,
-                fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-              }}
+              className={`flex items-center gap-1.5 px-3 py-[5px] rounded-md border text-xs font-semibold bg-transparent ${BADGE_TONE[badgeTone]}`}
             >
               {actionable.length > 0 ? '⚠' : 'ⓘ'} {problems.length}
             </button>
 
             {showProblems && (
-              <div
-                style={{
-                  position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 460,
-                  background: '#1E252A', border: '1px solid #494949', borderRadius: 8,
-                  boxShadow: '0 10px 30px rgba(0,0,0,0.45)', zIndex: 30, overflow: 'hidden',
-                }}
-              >
-                <div style={{ padding: '10px 14px', borderBottom: '1px solid #494949', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 600, color: '#ECEFF1' }}>Agent problems</span>
-                  <span style={{ fontSize: 11, color: '#9CA3AF' }}>reported by the machines themselves</span>
+              <div className="absolute right-0 top-[calc(100%+8px)] w-[460px] bg-panel border border-line rounded-lg shadow-2xl z-30 overflow-hidden">
+                <div className="px-3.5 py-2.5 border-b border-line flex justify-between items-center">
+                  <span className="text-[12.5px] font-semibold text-fg">Agent problems</span>
+                  <span className="text-[11px] text-dim">reported by the machines themselves</span>
                 </div>
 
-                <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+                <div className="max-h-[360px] overflow-y-auto">
                   {problems.map(p => (
-                    <div key={p.id} style={{ padding: '11px 14px', borderTop: '1px solid #252e35', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                      <span
-                        style={{
-                          marginTop: 2, flexShrink: 0, padding: '1px 7px', borderRadius: 3, fontSize: 10,
-                          fontWeight: 700, letterSpacing: '0.3px',
-                          color: severityColor(p.severity),
-                          border: `1px solid ${severityColor(p.severity)}`,
-                        }}
-                      >
+                    <div key={p.id} className="px-3.5 py-[11px] border-t border-row flex gap-2.5 items-start">
+                      <Chip tone={severityTone(p.severity)} className="mt-0.5 flex-shrink-0 font-bold tracking-[0.3px]">
                         {severityLabel(p.severity)}
-                      </span>
+                      </Chip>
 
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 600, color: '#ECEFF1' }}>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12.5px] font-semibold text-fg">
                           {p.machineName}{p.gameName ? ` — ${p.gameName}` : ''}
                         </div>
-                        <div style={{ fontSize: 12, color: '#8b9aaa', lineHeight: 1.45, marginTop: 2 }}>{p.message}</div>
-                        <div style={{ fontSize: 10.5, color: '#556070', marginTop: 3, fontFamily: "'JetBrains Mono', monospace" }}>
+                        <div className="text-xs text-dim leading-[1.45] mt-0.5">{p.message}</div>
+                        <div className="text-[10.5px] text-faint mt-[3px] font-mono">
                           {p.code} · {ago(p.lastSeen)}{p.count > 1 ? ` · ×${p.count}` : ''}
                         </div>
                       </div>
@@ -250,21 +216,26 @@ export function NavBar({
                           button made "I made the warning go away" indistinguishable from "I fixed
                           it". Send them to the one place it can actually be resolved instead. */}
                       {p.code === CONFLICT_CODE ? (
-                        <button
+                        <Button
+                          variant="alert"
+                          size="sm"
+                          className="flex-shrink-0"
                           onClick={() => { setShowProblems(false); onViewChange('games'); }}
                           title="A conflict does not clear on its own — it has to be resolved on the game."
-                          style={{ flexShrink: 0, padding: '3px 9px', background: 'transparent', color: '#f4a60d', border: '1px solid #f4a60d', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
                         >
                           Resolve
-                        </button>
+                        </Button>
                       ) : onDismissProblem && (
-                        <button
+                        <Button
+                          variant="quiet"
+                          size="sm"
+                          className="flex-shrink-0"
+                          style={{ borderColor: 'var(--color-line)' }}
                           onClick={() => onDismissProblem(p.id)}
                           title="Dismiss. If the condition still holds, the agent will report it again."
-                          style={{ flexShrink: 0, padding: '3px 9px', background: 'transparent', color: '#8b9aaa', border: '1px solid #494949', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
                         >
                           Dismiss
-                        </button>
+                        </Button>
                       )}
                     </div>
                   ))}

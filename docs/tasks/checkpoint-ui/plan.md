@@ -15,6 +15,16 @@ Five identity pitches this direction was chosen from: `identity-options.html`, b
 Brand kit: `brand-kit.html`, beside this file (also mirrored at
 <https://claude.ai/code/artifact/b3e0c8a5-70a0-47bf-b4f2-d0dbf4f0b2d5>).
 
+## Status (updated 2026-09-17)
+
+This file has no phase write-ups of its own — the per-phase status table lives in [[implementation]]
+(updated the same day) because that's where the phases are actually enumerated, and the per-group
+table lives in [[implementation-grouping]]. Short version: Group 1 (`web`'s tokens, reset, motion
+primitives, `ui/` component library, and a first pass at Phase 8's assets) shipped 2026-09-17.
+Everything else — the console shell, agent foundation, agent Games tab, appearance/fleet-sync, Deck,
+notifications — is still `⏳ Not started`. Every design decision on this page is still current; none
+of it changed while building Group 1.
+
 ## The idea in one line
 
 Checkpoint dresses SaveLocker as something you own rather than something you administer: soft black

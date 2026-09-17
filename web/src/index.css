@@ -1,45 +1,145 @@
 @import "tailwindcss";
 
+/* Checkpoint tokens. Light is the base :root set; dark applies under the OS preference or an
+   explicit override once Phase 4 (Group 5) ships a theme switcher. Every derived (soft/line/ink)
+   step is color-mix against the live --color-panel/--color-fg, so it re-derives correctly under
+   either theme with no second set of values. See docs/tasks/checkpoint-ui/plan.md. */
 @theme {
-  --color-bg-global:        #2A3238;
-  --color-bg-card:          #1E252A;
-  --color-bg-table-hd:      #222d34;
-  --color-bg-row-sep:       #252e35;
-  --color-text-primary:     #ECEFF1;
-  --color-text-muted:       #9CA3AF;
-  --color-text-secondary:   #8b9aaa;
-  --color-text-dim:         #556070;
-  --color-text-faint:       #64748b;
-  --color-accent-green:     #129271;
-  --color-accent-amber:     #f4a60d;
-  --color-accent-amber-lt:  #fdce63;
-  --color-border:           #494949;
+  --color-ink:        #f5f3ef;
+  --color-panel:      #fffefc;
+  --color-raise:      #f0ede8;
+  --color-tile:       #ebe7e0;
+  --color-hover:      #e8e3dc;
+  --color-fg:         #191719;
+  --color-dim:        #57534d;
+  --color-faint:      #8b8780;
+  --color-line:       #e2ddd5;
+  --color-row:        #eeeae3;
+  --color-safe:       #4c7b3e;
+  --color-watch:      #8a6212;
+  --color-accent:     #c0432c;
+  --color-on-accent:  #fff8f6;
 
-  --font-family-sans: 'Inter', system-ui, sans-serif;
-  --font-family-mono: 'JetBrains Mono', monospace;
+  --color-accent-soft: color-mix(in oklab, var(--color-accent) 14%, var(--color-panel));
+  --color-accent-line: color-mix(in oklab, var(--color-accent) 42%, var(--color-panel));
+  --color-accent-ink:  color-mix(in oklab, var(--color-accent) 80%, var(--color-fg));
+  --color-safe-soft:   color-mix(in oklab, var(--color-safe) 14%, var(--color-panel));
+  --color-safe-line:   color-mix(in oklab, var(--color-safe) 40%, var(--color-panel));
+  --color-safe-ink:    color-mix(in oklab, var(--color-safe) 82%, var(--color-fg));
+  --color-watch-soft:  color-mix(in oklab, var(--color-watch) 14%, var(--color-panel));
+  --color-watch-line:  color-mix(in oklab, var(--color-watch) 40%, var(--color-panel));
+  --color-watch-ink:   color-mix(in oklab, var(--color-watch) 82%, var(--color-fg));
+
+  --font-sans: 'Archivo', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Legacy names — every one of these was unreferenced by any component before this change (dead
+     @theme entries), but the plan calls for keeping them as aliases for one release in case
+     something starts consuming them mid-migration. Drop once Groups 2-4 finish converting. */
+  --color-bg-global:       var(--color-ink);
+  --color-bg-card:         var(--color-panel);
+  --color-bg-table-hd:     var(--color-raise);
+  --color-bg-row-sep:      var(--color-row);
+  --color-text-primary:    var(--color-fg);
+  --color-text-muted:      var(--color-dim);
+  --color-text-secondary:  var(--color-dim);
+  --color-text-dim:        var(--color-faint);
+  --color-text-faint:      var(--color-faint);
+  --color-accent-green:    var(--color-safe);
+  --color-accent-amber:    var(--color-watch);
+  --color-accent-amber-lt: var(--color-watch);
+  --color-border:          var(--color-line);
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-ink:        #0f0f10;
+    --color-panel:      #141416;
+    --color-raise:      #191a1c;
+    --color-tile:       #1b1c1f;
+    --color-hover:      #202124;
+    --color-fg:         #f0eee9;
+    --color-dim:        #a09d97;
+    --color-faint:      #6b6862;
+    --color-line:       #242427;
+    --color-row:        #1d1d20;
+    --color-safe:       #7fa96a;
+    --color-watch:      #d9a63f;
+    --color-accent:     #e0533c;
+    --color-on-accent:  #160f0e;
+  }
+}
+:root[data-theme="dark"] {
+  --color-ink:        #0f0f10;
+  --color-panel:      #141416;
+  --color-raise:      #191a1c;
+  --color-tile:       #1b1c1f;
+  --color-hover:      #202124;
+  --color-fg:         #f0eee9;
+  --color-dim:        #a09d97;
+  --color-faint:      #6b6862;
+  --color-line:       #242427;
+  --color-row:        #1d1d20;
+  --color-safe:       #7fa96a;
+  --color-watch:      #d9a63f;
+  --color-accent:     #e0533c;
+  --color-on-accent:  #160f0e;
+}
+
+:root {
+  --ease: cubic-bezier(.2, .8, .25, 1);
+}
+
+@layer base {
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+}
+
 body {
-  background: #2A3238;
-  color: #ECEFF1;
-  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--color-ink);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
 }
 
 #root { min-height: 100vh; display: flex; flex-direction: column; }
 
 ::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: #1E252A; }
-::-webkit-scrollbar-thumb { background: #494949; border-radius: 3px; }
+::-webkit-scrollbar-track { background: var(--color-panel); }
+::-webkit-scrollbar-thumb { background: var(--color-line); border-radius: 3px; }
 
 button { cursor: pointer; font-family: inherit; }
 button:hover { opacity: 0.85; transition: opacity 0.1s; }
 a { text-decoration: none; color: inherit; }
-input::placeholder { color: #556070; }
-input:focus { border-color: #129271 !important; outline: none; }
+input::placeholder { color: var(--color-faint); }
+input:focus { border-color: var(--color-accent) !important; outline: none; }
+
+/* Motion primitives (plan.md "Motion"). One curve, two entrance keyframes; the caller staggers via
+   inline `animation-delay`. Progress bars must never use these — a tick re-rendering its ancestor
+   would replay them, which is the bug the plan calls out by name. */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pop {
+  from { opacity: 0; transform: scale(.94); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes toast-in {
+  0%   { opacity: 0; transform: translateY(8px) scale(.97); }
+  60%  { opacity: 1; transform: translateY(-2px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-rise     { animation: rise 260ms var(--ease) both; }
+.animate-pop       { animation: pop 300ms var(--ease) both; }
+.animate-toast-in { animation: toast-in 340ms var(--ease) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise, .animate-pop, .animate-toast-in { animation: none; }
+  * { transition-duration: 0.001ms !important; }
+}
 
 /* A column of cards that scrolls inside a fixed-height page.
    The `> *` rule is the load-bearing half: a flex column with a bounded height SHRINKS its children
@@ -49,18 +149,18 @@ input:focus { border-color: #129271 !important; outline: none; }
 .page-scroll > * { flex-shrink: 0; }
 
 /* Help KB prose */
-.help-content { color: #ECEFF1; line-height: 1.75; }
-.help-content h1 { font-size: 20px; font-weight: 700; margin-bottom: 16px; color: #ECEFF1; }
-.help-content h2 { font-size: 14px; font-weight: 600; margin: 24px 0 8px; color: #ECEFF1; text-transform: uppercase; letter-spacing: 0.06em; }
-.help-content h3 { font-size: 13px; font-weight: 600; margin: 18px 0 6px; color: #8b9aaa; }
-.help-content p  { font-size: 13px; margin-bottom: 12px; color: #cbd5e1; }
-.help-content ul, .help-content ol { font-size: 13px; margin: 0 0 12px 20px; color: #cbd5e1; }
+.help-content { color: var(--color-fg); line-height: 1.75; }
+.help-content h1 { font-size: 20px; font-weight: 700; margin-bottom: 16px; color: var(--color-fg); }
+.help-content h2 { font-size: 14px; font-weight: 600; margin: 24px 0 8px; color: var(--color-fg); text-transform: uppercase; letter-spacing: 0.06em; }
+.help-content h3 { font-size: 13px; font-weight: 600; margin: 18px 0 6px; color: var(--color-dim); }
+.help-content p  { font-size: 13px; margin-bottom: 12px; color: var(--color-dim); }
+.help-content ul, .help-content ol { font-size: 13px; margin: 0 0 12px 20px; color: var(--color-dim); }
 .help-content li { margin-bottom: 4px; }
-.help-content strong { color: #ECEFF1; font-weight: 600; }
-.help-content code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: #1E252A; border: 1px solid #494949; border-radius: 3px; padding: 1px 5px; color: #86efac; }
-.help-content pre  { background: #1E252A; border: 1px solid #494949; border-radius: 5px; padding: 12px 14px; overflow-x: auto; margin-bottom: 14px; }
-.help-content pre code { background: none; border: none; padding: 0; font-size: 12px; color: #86efac; }
-.help-content blockquote { border-left: 3px solid #129271; margin: 12px 0; padding: 6px 14px; background: #1E252A; border-radius: 0 4px 4px 0; font-size: 13px; color: #8b9aaa; }
+.help-content strong { color: var(--color-fg); font-weight: 600; }
+.help-content code { font-family: var(--font-mono); font-size: 11px; background: var(--color-tile); border: 1px solid var(--color-line); border-radius: 3px; padding: 1px 5px; color: var(--color-safe-ink); }
+.help-content pre  { background: var(--color-tile); border: 1px solid var(--color-line); border-radius: 5px; padding: 12px 14px; overflow-x: auto; margin-bottom: 14px; }
+.help-content pre code { background: none; border: none; padding: 0; font-size: 12px; color: var(--color-safe-ink); }
+.help-content blockquote { border-left: 3px solid var(--color-accent); margin: 12px 0; padding: 6px 14px; background: var(--color-tile); border-radius: 0 4px 4px 0; font-size: 13px; color: var(--color-dim); }
 /* The wrapper, not the table itself, gets `overflow-x: auto` — a table that's wider than the
    content pane needs to scroll sideways instead of overflowing it (the content pane sits inside
    the console's fixed-height, overflow-hidden root; see Gotchas → bounded flex column), but
@@ -68,7 +168,7 @@ input:focus { border-color: #129271 !important; outline: none; }
    that compute accessible roles from computed display (notably Safari/VoiceOver). */
 .help-content-table-wrap { overflow-x: auto; margin-bottom: 16px; }
 .help-content table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.help-content th { background: #222d34; color: #8b9aaa; font-weight: 600; padding: 6px 10px; text-align: left; border-bottom: 1px solid #494949; white-space: nowrap; }
-.help-content td { padding: 6px 10px; border-bottom: 1px solid #252e35; color: #cbd5e1; }
-.help-content a { color: #129271; text-decoration: underline; }
-.help-content a:hover { color: #16b992; }
+.help-content th { background: var(--color-raise); color: var(--color-dim); font-weight: 600; padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--color-line); white-space: nowrap; }
+.help-content td { padding: 6px 10px; border-bottom: 1px solid var(--color-row); color: var(--color-dim); }
+.help-content a { color: var(--color-accent); text-decoration: underline; }
+.help-content a:hover { color: var(--color-accent-ink); }
