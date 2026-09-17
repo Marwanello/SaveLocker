@@ -295,11 +295,16 @@ function Use-TestEnvVars {
     $env:SAVELOCKER_STATE_ROOT     = $StateRoot
     $env:SAVELOCKER_TRAY_PORT      = "$WinPort"
     $env:SAVELOCKER_RUNKEY_SUBPATH = 'Software\SaveLocker\TestRun'
+    # Lets the test agent's own PlayniteLibrary/PlaynitePlugin (tasks/playnite-plugin/plan.md, Phases
+    # 18-19) find and write into THIS portable instance instead of silently seeing nothing (a portable
+    # Playnite's library/Extensions live beside its own exe, not %AppData%, so without this the agent
+    # can't discover it at all) or, worse, a real personal Playnite install on the same machine.
+    if ($PlaynitePath) { $env:SAVELOCKER_PLAYNITE_PATH = $PlaynitePath }
 }
 function Clear-TestEnvVars {
-    # Leaving either set makes later runs in this shell behave in ways that look like bugs.
-    Remove-Item Env:\SAVELOCKER_STATE_ROOT, Env:\SAVELOCKER_TRAY_PORT, Env:\SAVELOCKER_RUNKEY_SUBPATH `
-        -ErrorAction SilentlyContinue
+    # Leaving any of these set makes later runs in this shell behave in ways that look like bugs.
+    Remove-Item Env:\SAVELOCKER_STATE_ROOT, Env:\SAVELOCKER_TRAY_PORT, Env:\SAVELOCKER_RUNKEY_SUBPATH, `
+        Env:\SAVELOCKER_PLAYNITE_PATH -ErrorAction SilentlyContinue
 }
 
 # Not `wslpath`: wsl.exe strips the backslashes out of a Windows path argument before the Linux side

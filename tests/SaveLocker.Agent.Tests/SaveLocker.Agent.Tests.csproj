@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The one xUnit project on the Windows-agent side (tasks/playnite-plugin/plan.md, Phase 18).
+       Every other Windows-agent test is a PowerShell script driving real processes (run-winagent-
+       tests.ps1 etc.) — this exists because PlayniteLibrary's LiteDB fixture is cheap to build
+       in-process, unlike HeroicLibrary's real Electron JSON files, which is genuinely a different
+       situation, not a change of testing philosophy for the rest of this project. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsPublishable>false</IsPublishable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Agent\SaveLocker.Agent.csproj" />
+  </ItemGroup>
+
+</Project>

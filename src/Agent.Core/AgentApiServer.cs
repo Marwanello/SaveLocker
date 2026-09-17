@@ -30,6 +30,13 @@ public sealed class AgentApiServer : IDisposable
     // trip the agent's own recurring update check makes (Agent.PlaynitePlugin.CheckAsync). Injected
     // because PlaynitePlugin lives in the Windows-only Agent project: Linux supplies nothing.
     private readonly Func<Task<PlaynitePluginStatusDto>> _playnitePluginStatus;
+    // The agent-ui card's own two calls (tasks/playnite-plugin/plan.md, Phase 19) — a status read
+    // for the suggest/install card, and the explicit, user-clicked install action. Kept as two
+    // separate funcs rather than folded into _playnitePluginStatus above: that one is the PLUGIN
+    // process's own self-check (a different caller, a different question), and install is a write,
+    // which no existing status func here performs.
+    private readonly Func<Task<PlaynitePluginCardStatusDto>> _playnitePluginCardStatus;
+    private readonly Func<Task<PlaynitePluginStatusDto>> _playnitePluginInstall;
     private readonly PathBrowser _browser;
     private readonly Action? _onConnectionChanged;
     // Invoked after the tracked-game list or a save folder changed AND was durably written, so the
@@ -91,7 +98,9 @@ public sealed class AgentApiServer : IDisposable
         Func<Task<string>>? syncAll = null,
         Func<TrackedGame, CancellationToken, Task<LaunchGateResult>>? prepareLaunch = null,
         Func<TrackedGame, CancellationToken, Task>? postExitSync = null,
-        Func<Task<PlaynitePluginStatusDto>>? playnitePluginStatus = null)
+        Func<Task<PlaynitePluginStatusDto>>? playnitePluginStatus = null,
+        Func<Task<PlaynitePluginCardStatusDto>>? playnitePluginCardStatus = null,
+        Func<Task<PlaynitePluginStatusDto>>? playnitePluginInstall = null)
     {
         _browser = new PathBrowser(browseRoots);
         Port = port;
@@ -107,6 +116,10 @@ public sealed class AgentApiServer : IDisposable
         // Default is "not applicable" for the same reason as _deckyStatus above, mirrored: Linux
         // cannot run Playnite, so Daemon.cs injects nothing and this route answers a neutral status.
         _playnitePluginStatus = playnitePluginStatus ??
+            (() => Task.FromResult(new PlaynitePluginStatusDto("NotApplicable", "", null, null)));
+        _playnitePluginCardStatus = playnitePluginCardStatus ??
+            (() => Task.FromResult(new PlaynitePluginCardStatusDto(false, false, null, null, "")));
+        _playnitePluginInstall = playnitePluginInstall ??
             (() => Task.FromResult(new PlaynitePluginStatusDto("NotApplicable", "", null, null)));
         _onConnectionChanged = onConnectionChanged;
         _onGamesChanged = onGamesChanged;
@@ -167,6 +180,12 @@ public sealed class AgentApiServer : IDisposable
 
         _app = builder.Build();
         _app.Use(GuardAsync);
+        // Rewrites the served document's components.schemas into alphabetical order — see
+        // OpenApiSchemaSorter's own doc comment for why this has to happen on the raw JSON text
+        // rather than via AddDocumentTransformer (fixes the recurring Windows-vs-Linux
+        // api-types.ts ordering diff for good, instead of requiring a Linux regeneration). Shared
+        // with Server/Program.cs, which serves its own OpenAPI document and needs the identical fix.
+        _app.Use(OpenApiSchemaSorterMiddleware.SortOpenApiSchemasAsync);
         _app.MapOpenApi();
         MapApi(_app);
         MapUi(_app);
@@ -586,6 +605,21 @@ public sealed class AgentApiServer : IDisposable
         // a newer version exists — which is exactly the restart notice Phase 14 wants to surface, with
         // no separate branching needed here.
         app.MapGet("/api/playnite-plugin", async () => await _playnitePluginStatus())
+            .Produces<PlaynitePluginStatusDto>();
+
+        // tasks/playnite-plugin/plan.md, Phase 19: the agent-ui suggest/install card's own data
+        // source — a different consumer from the route above (that one is the plugin process asking
+        // about itself; this one is agent-ui polling on behalf of a user who may not have the plugin
+        // at all yet), shaped like DeckyStatusDto on purpose. Default answers "not applicable" for the
+        // same reason _deckyStatus/_playnitePluginStatus do: Linux cannot run Playnite, so Daemon.cs
+        // injects nothing.
+        app.MapGet("/api/playnite-plugin/status", async () => await _playnitePluginCardStatus())
+            .Produces<PlaynitePluginCardStatusDto>();
+
+        // The install half of Phase 19 — an explicit, user-clicked first install, never triggered by
+        // any poll or timer. See PlaynitePlugin.InstallFirstTimeAsync's own remarks for why a first
+        // install can safely do what an ordinary background update deliberately never has.
+        app.MapPost("/api/playnite-plugin/install", async () => await _playnitePluginInstall())
             .Produces<PlaynitePluginStatusDto>();
 
         // ---- Launch options (tasks/DeckyPlugin.md) ----
@@ -1311,6 +1345,20 @@ public sealed record DeckyStatusDto(
 /// </summary>
 public sealed record PlaynitePluginStatusDto(
     string State, string Message, string? InstalledVersion, string? LatestVersion);
+
+/// <summary>
+/// GET /api/playnite-plugin/status (tasks/playnite-plugin/plan.md, Phase 19) — the agent-ui
+/// suggest/install card's data source, deliberately shaped like <see cref="DeckyStatusDto"/>: the
+/// same three-state card pattern (not applicable, applicable but not installed, installed), one field
+/// narrower since there is no need for a separate "is the launcher present" flag here — this card
+/// renders nothing at all when <paramref name="Applicable"/> is false, so the two states Decky's own
+/// <c>DeckyPresent</c> distinguishes (present-without-plugin vs. absent) never need to render
+/// differently for Playnite. <paramref name="LatestVersion"/> has no Decky equivalent: a card that
+/// offers to install the plugin in the first place needs to know what it would install, which
+/// <see cref="PlaynitePluginStatusDto"/> above never has to answer before something is installed.
+/// </summary>
+public sealed record PlaynitePluginCardStatusDto(
+    bool Applicable, bool PluginInstalled, string? PluginVersion, string? LatestVersion, string InstallUrl);
 
 /// <param name="SteamAppId">
 /// The <b>unsigned</b> 32-bit AppID, normalised here so no caller has to know the trap: Steam stores

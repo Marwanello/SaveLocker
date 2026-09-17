@@ -14,6 +14,17 @@
     <!-- MinVer derives the version from the nearest git tag (e.g. v0.1.0).
          PrivateAssets=all keeps it out of transitive dependencies. -->
     <PackageReference Include="MinVer" Version="5.0.0" PrivateAssets="all" />
+    <!-- Reads Playnite's own games.db (PlayniteLibrary.cs, tasks/playnite-plugin/plan.md Phase 18).
+         Version is 4.x, NOT the current 5.x line — confirmed against a real Playnite install's own
+         games.db on 2026-09-16: its file header literally reads "** This is a LiteDB file **" (LiteDB
+         4's own on-disk marker), and LiteDB 5.0.21 refused to open it at all ("not a valid LiteDB
+         database format"). 4.1.4 is the newest 4.x release; there is no later patch to pin to instead.
+         NU1904 flags it for CVE-2022-23535 (unsafe deserialization of a JSON `_type` field on an
+         attacker-supplied string, patched only in 5.0.13+) — PlayniteLibrary.cs never calls LiteDB's
+         JSON deserializer at all, reads only via BsonDocument's own indexer against a local file this
+         agent did not accept over the network, so that CVE's attack vector does not reach this code
+         path. Suppressed with NoWarn rather than left to warn on every build. -->
+    <PackageReference Include="LiteDB" Version="4.1.4" NoWarn="NU1904" />
   </ItemGroup>
 
   <PropertyGroup>

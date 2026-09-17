@@ -934,6 +934,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/playnite-plugin/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaynitePluginCardStatusDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/playnite-plugin/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlaynitePluginStatusDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/launch-options": {
         parameters: {
             query?: never;
@@ -1963,6 +2033,13 @@ export interface components {
         OkResponse: {
             /** @default true */
             ok: boolean;
+        };
+        PlaynitePluginCardStatusDto: {
+            applicable: boolean;
+            pluginInstalled: boolean;
+            pluginVersion: null | string;
+            latestVersion: null | string;
+            installUrl: string;
         };
         PlaynitePluginStatusDto: {
             state: string;

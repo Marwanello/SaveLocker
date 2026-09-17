@@ -1,4 +1,4 @@
-# Implementation grouping — how to actually work through the Playnite plugin's 16 phases
+# Implementation grouping — how to actually work through the Playnite plugin's 19 phases
 
 Written 2026-09-14, same day the task moved out of `conflict-resolution-ui` to stand on its own;
 regrouped the same day into fewer, larger groups after review. Same two-document split that task
@@ -15,10 +15,9 @@ same three things `conflict-resolution-ui`'s own grouping document weighs togeth
    manual/hardware-checked every time.
 3. **Session-cost precedent**, sized against this project's own history rather than guessed — see
    `plan.md`'s own "Size estimate" section for the full per-phase breakdown this grouping is built
-   from (~7–9 sessions agent-side, ~11–15 plugin-side, ~18–24 total — unchanged by this regrouping,
-   only the bucketing changed).
+   from (~9.5–12.5 sessions agent-side including Phases 18–19, ~12–16 plugin-side, ~22–29 total).
 
-## Status (updated 2026-09-16 — Group 5/Phases 13-15+17 built, see `plan.md`)
+## Status (updated 2026-09-16 — Group 5/Phases 13-15+17 built, Phases 18-19 planned, see `plan.md`)
 
 | Group | Contents | Status |
 |---|---|---|
@@ -27,7 +26,7 @@ same three things `conflict-resolution-ui`'s own grouping document weighs togeth
 | 3 | Phases 8–11 (scaffold, settings, core gate, matching) | ✅ Done 2026-09-15 — hardware-verified on a portable Playnite (Harmony theme); Fullscreen-mode popup and the WSL "lease held elsewhere" case were fixed late this session, re-confirmation on hardware still pending |
 | 4 | Phase 12 (enroll/link popup) | ✅ Built 2026-09-15 — builds clean against the real Playnite SDK; NOT yet hardware-verified. Also picked up Tier 4 of `GameMatcher`'s matching chain (the link nudge), deferred from Group 3 since it needed this picker. See `SaveLocker-Playnite`'s own `docs/CONTEXT.md`/`docs/logs/2026-09-15_group-4-link-popup.md` |
 | 5 | Phases 13–15 + 17 (status chip/buttons, self-update consumption, test infra, release CI) | ✅ Built 2026-09-16, on branch `playnite-plugin-group-5` — code-complete, builds clean, `dotnet test` 25/25; NOT yet hardware-verified inside a running Playnite, and no real tag has been pushed to exercise Phase 17's workflow. Phase 13's `GetGameViewControl` status chip was removed again after being confirmed dead code under every existing theme (Default included, not just Harmony) — `GetGameMenuItems` and the `SaveLocker: Linked` Tag are the surviving theme-independent surfaces. A small companion agent-side change (`GET /api/playnite-plugin`, main repo commit `31f8b9b` on `claude/group-5-playnite-plugin-3d3aae`) was verified live against a real scratch server + agent. See `SaveLocker-Playnite`'s own `docs/CONTEXT.md` |
-| 6 | Phase 16 (add-on database submission) | ⏳ Not started |
+| 6 | Phase 16 (add-on database submission) + Phase 18 (agent-side Playnite library reader + `agent-ui` chip) + Phase 19 (`agent-ui` "Playnite plugin" suggest/install card) | 🚧 In progress, 2026-09-16 — Phases 18 and 19 ✅ shipped and hardware-verified on this machine's real Playnite install (branch `claude/playnite-group6-phase17-82e72b`); Phase 16 prep staged (`SaveLocker-Playnite` branch `playnite-plugin-group-6`), PR deliberately not opened — blocked on a real version tag existing first |
 
 ## Groups
 
@@ -96,16 +95,30 @@ not a hard dependency of any of them. Phase 17 belongs here rather than with Gro
 work with a concrete, verifiable output (a workflow file, a produced release), not a third-party review
 process with an uncontrolled timeline — the exact distinction Group 6 draws for itself below.
 
-**Group 6 — plugin-side, add-on database submission. Low effort, uncontrolled timeline, ~0.5–1 session.**
-`Phase 16` alone, deliberately last and kept separate rather than folded into Group 5: writing the
-manifest and opening the PR is genuinely small, but the review turnaround afterward is a third party's
-timeline, not this project's, and nothing else here waits on it — Phase 7/14's self-update path is
-what covers players in the meantime. Worth keeping visible as its own line rather than buried in a
-polish group, precisely because "submit and don't wait on it" is a different kind of task from
-building something.
+**Group 6 — add-on database submission + agent-side Playnite discovery/install. Low-to-medium effort
+per piece, ~3–4.5 sessions combined, uncontrolled timeline on one piece only.** `Phase 16`
+(add-on database submission), `Phase 18` (agent-side Playnite library reader + `agent-ui` chip,
+added 2026-09-16), and `Phase 19` (`agent-ui` "Playnite plugin" suggest/install card, added
+2026-09-16, a direct follow-up to Phase 18) — merged into one group by explicit request rather than
+kept as the three separate groups (6/7/8) they were first scoped into. The three don't share a
+technical dependency (Phase 16 is plugin-side and third-party-review-gated; 18 and 19 are agent-side
+and self-contained), but they share the same practical shape: each is late-stage, independently
+deferrable polish that rounds out the plan rather than blocking anything else in it, and none is
+required for the Group 1–5 MVP or its extensions. Phase 16's PR-and-wait step is genuinely
+open-ended — nothing else here waits on it, Phase 7/14's self-update path covers players in the
+meantime — while 18 and 19 are ordinary build-and-verify sessions on this repo alone (18 touches
+`GameScanner`'s discovery sources and is first-use-of-`LiteDB` risk here, comparable to Group 3's own
+Playnite-SDK toolchain risk on the plugin side; 19 is mostly assembly of already-shipped pieces —
+Phase 7's `InstallAsync`, Phase 6's hosting slot — plus sharing 18's Playnite-detection probe, and
+carries the first real hardware exercise of `InstallAsync` against a running Playnite instead of a
+new toolchain). Do Phase 16 first if the PR is to be opened early and left to review in the
+background; 18 and 19 can run in either order relative to it or to each other, with 19 naturally
+following 18 since it reuses 18's detection probe.
 
 **Plugin-side subtotal: ~12–16 sessions**, matching `plan.md`'s own size estimate (now including
-Phase 17), still in four groups instead of seven.
+Phase 17), still in four groups.
+
+**Agent-side total, including Phases 18–19: ~9.5–12.5 sessions.**
 
 ## Recommended order and the MVP cut
 
@@ -122,8 +135,9 @@ Group 3 ────────── Group 4 ────────── Gr
                                                    update, tests,
                                                    release CI)
                                                         │
-                                                        └── Group 6 (submit to add-on DB, last,
-                                                             don't wait on it)
+                                                        └── Group 6 (add-on DB submission +
+                                                             agent-side Playnite discovery/install —
+                                                             last, don't wait on the DB piece)
 ```
 
 **MVP — a genuinely shippable first slice: Group 1 and Group 3.** Roughly 7–8.5 sessions (2–2.5 +

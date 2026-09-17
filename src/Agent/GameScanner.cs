@@ -58,6 +58,7 @@ public sealed class GameScanner : IGameScanner
         }
 
         all.AddRange(await SafeSourceAsync("common save roots", () => ScanSaveRootsAsync(ct), ct));
+        all.AddRange(await SafeSourceAsync("Playnite library", () => ScanPlayniteLibraryAsync(ct), ct));
 
         // De-dupe by name: prefer a candidate that already has a suggested save dir.
         // Grouped on the NORMALISED name: the same game reaches us spelled differently by
@@ -234,6 +235,46 @@ public sealed class GameScanner : IGameScanner
                     SteamAppId: appid));
             }
         }
+        return results;
+    }
+
+    // ----- Source 4: Playnite library (games.db, LiteDB — tasks/playnite-plugin/plan.md Phase 18) -----
+
+    /// <summary>
+    /// A fourth broad-sweep source, independent of the three above: a Playnite-only game shows up
+    /// here with zero dependency on the SaveLocker Playnite plugin ever being installed, the same way
+    /// Heroic games surface on Linux with no companion plugin at all. See <see cref="PlayniteLibrary"/>
+    /// for the one real, unverified risk this source carries.
+    /// </summary>
+    private async Task<IReadOnlyList<ScanCandidate>> ScanPlayniteLibraryAsync(CancellationToken ct)
+    {
+        if (!PlayniteLibrary.Present) return Array.Empty<ScanCandidate>();
+
+        var results = new List<ScanCandidate>();
+        var steamPath = FindSteamPath();
+
+        foreach (var game in PlayniteLibrary.SafeRead())
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // A Steam-owned Playnite entry resolves exactly as strongly as a native Steam-installed
+            // candidate already does (Phase 2) — same library-root signal, just reached through
+            // Playnite's own library instead of libraryfolders.vdf.
+            var isSteam = PlayniteLibrary.IsSteam(game.PluginId);
+            var storeRoot = isSteam ? steamPath : null;
+            var save = await SuggestSaveDirAsync(game.Name, ct, game.InstallDirectory, storeRoot);
+
+            results.Add(new ScanCandidate(
+                game.Name, save, ScanSource.Playnite,
+                // Only a Steam-owned entry has a Cloud flag worth asking the manifest about — every
+                // other store's Cloud coverage isn't something this manifest tracks.
+                HasSteamCloud: isSteam && (await _detection.HasSteamCloudAsync(game.Name, ct) ?? true),
+                ManifestKey: await CanonicalKeyAsync(game.Name, save, ct),
+                InstallDir: game.InstallDirectory,
+                SteamAppId: isSteam ? game.GameId : null,
+                Store: PlayniteLibrary.StoreFor(game.PluginId)));
+        }
+
         return results;
     }
 

@@ -125,7 +125,10 @@ internal sealed class TrayContext : ApplicationContext
             postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
             // GET /api/playnite-plugin (tasks/playnite-plugin/plan.md, Phase 14) — lets the plugin
             // itself ask whether a newer version of itself is waiting on the server.
-            playnitePluginStatus: () => PlaynitePlugin.StatusAsync(_config, AgentLogger.Log));
+            playnitePluginStatus: () => PlaynitePlugin.StatusAsync(_config, AgentLogger.Log),
+            // The agent-ui suggest/install card's own two calls (Phase 19).
+            playnitePluginCardStatus: () => PlaynitePlugin.CardStatusAsync(_config),
+            playnitePluginInstall: () => PlaynitePlugin.InstallFirstTimeAsync(_config, AgentLogger.Log));
         _apiServer.Start();
 
         _commandPoller = new CommandPoller(

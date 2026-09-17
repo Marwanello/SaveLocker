@@ -183,6 +183,14 @@ app.Services.GetRequiredService<AgentInstallerService>().SweepIncoming(TimeSpan.
 // run an unverifiable off-origin download. Fire-and-forget: hashing 100 MB must not delay startup.
 _ = app.Services.GetRequiredService<AgentInstallerService>().BackfillDigestAsync();
 
+// Rewrites the served OpenAPI document's components.schemas into alphabetical order — see
+// OpenApiSchemaSorter's own doc comment for why this has to post-process the raw JSON rather
+// than reorder the document model (an AddDocumentTransformer that mutated
+// doc.Components.Schemas had no effect on the actual serialized order, confirmed live). Fixes
+// the recurring Windows-vs-Linux api-types.ts ordering diff for good. Shared with
+// Agent.Core/AgentApiServer.cs, which serves its own OpenAPI document and needs the identical fix.
+app.Use(OpenApiSchemaSorterMiddleware.SortOpenApiSchemasAsync);
+
 // OpenAPI JSON at /openapi/v1.json + a Swagger UI explorer at /swagger.
 app.MapOpenApi();
 app.UseSwaggerUI(o => o.SwaggerEndpoint("/openapi/v1.json", "SaveLocker API v1"));
