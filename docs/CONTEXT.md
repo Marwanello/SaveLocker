@@ -1103,6 +1103,65 @@ Phase 17's own build session already recorded).
 
 ---
 
+**Checkpoint UI redesign, Group 1 shipped (2026-09-17, branch `claude/ui-redesign-gaps-group-1-96445b`,
+`tasks/checkpoint-ui/` — plan.md/implementation.md/implementation-grouping.md all updated in the same
+session, per this file's own `## Status` table convention).** Asked directly to first fold in any
+implementation that had drifted ahead of the plan since it was written 2026-09-02, then build Group 1.
+**The gap found**: an unrelated session (2026-09-08/09, PR #35, "easy wins") had already self-hosted
+both apps' fonts via `@fontsource/inter` + `@fontsource/jetbrains-mono` imported in each `main.tsx`,
+for the standing LAN-offline reason in [[Decisions]] — but Phase 1 item 3 still read "swap the Google
+Fonts import," which no longer existed to swap. Folded into `implementation.md`/`implementation-
+grouping.md` directly (self-host `@fontsource/archivo` the same way, not a CDN import) rather than
+left for whoever hit it next; it moved no work between groups, only *how* each app's font swap
+happens. No other part of the plan had drifted — grepped `web/src` for the plan's own token names,
+motion primitives and `ui/` folder; none existed yet.
+<br>**Shipped**: `web/src/index.css`'s reset moved into `@layer base`; the `@theme` block replaced
+with the full Checkpoint token set for both themes (light `:root` default, dark under
+`prefers-color-scheme` or an explicit `data-theme` override for Phase 4 to drive later; old token
+names kept as aliases, though grep confirmed they were dead code even before this — no component had
+ever consumed them); the font swapped to self-hosted `@fontsource/archivo` in `web/src/main.tsx`
+(`@fontsource/jetbrains-mono` untouched, still the code/CLI face); motion primitives (`rise`/`pop`/
+`toast-in` keyframes, shared `--ease`, a `prefers-reduced-motion` block that turns all three off);
+seven new primitives under `web/src/components/ui/` (`Card`, `Chip`, `Button`, `Stat`, `Row`, `Seg`,
+`Toast`), each with a visible 2px accent `focus-visible` ring; and `NavBar.tsx` rewritten against the
+new tokens/primitives as the one proof-of-usability surface the plan's own "done when" calls for,
+with the severity/problem-badge colour logic remapped onto the plan's three-hue rule (safe/watch/
+accent) instead of the old ad hoc blue/amber/red. Also shipped, partially and said so rather than
+claimed in full: the three marks (Cartridge, Pixel lock, Memory card) as real SVG files under
+`web/src/assets/marks/`, and an SVG favicon (`web/public/favicon.svg`, Pixel lock on the Ember accent
+tile, wired ahead of the existing PNG fallbacks) — but the four Steam store crops and every PNG/ICO
+export (sized favicons, the Windows tray icon, the Deck tile) are **not** done: this environment has
+no SVG rasterizer at all (`magick`/`inkscape`/`rsvg-convert` all absent, confirmed by checking), so
+that half of Phase 8 is flagged as a follow-up in `implementation.md` rather than silently skipped.
+<br>**Verified against a real throwaway server, not just built**: `web`'s `npm run build`
+(`tsc -b && vite build`) and `npm run lint` (`oxlint`) both clean; then `tests/testenv.ps1 build -Only
+console` (rebuilds the Docker image from this worktree, so it genuinely picks up the changes) and
+`up -Only console` on `:5080`, confirmed live in the browser: the resolved `--color-*` custom
+properties matched plan.md's light and dark tables exactly under emulated `prefers-color-scheme`,
+`/favicon.svg` served `image/svg+xml` and 200, and a focused nav button's computed style showed
+`Archivo` as the resolved font and a `2px solid rgb(224, 83, 60)` (`--color-accent`, dark) outline —
+confirming the Tailwind utilities actually compiled rather than silently no-opping. Screenshotted the
+console once for a visual sanity check (NavBar in the new Ember/soft-black palette, the rest of the
+app still in its old teal — the expected, deliberately partial look for a foundation-only group);
+follow-up focus/theme checks used computed-style assertions instead of more screenshots, since the
+Browser pane's screenshot call was intermittently timing out in this session unrelated to the app
+itself. Console torn down afterward (`testenv.ps1 down -Only console`) to leave a clean state.
+<br>**One real Tailwind footgun caught and fixed while building the primitives, not left in**: a
+first draft built the agent-problems badge colour via `` `border-${tone}` `` string interpolation —
+Tailwind's scanner reads source text at build time, not runtime template results, so that would have
+silently generated no CSS for any of the three tones. Fixed with a `Record<Tone, string>` of full
+literal class strings (the same pattern already used in `Chip.tsx`), and separately caught two spots
+where a component's own class and a one-off override targeted the same CSS property (ambiguous
+cascade order) — fixed by moving those two overrides to inline `style`, which always wins regardless
+of Tailwind's generation order.
+<br>`agent-ui` **untouched this session** — Group 1 is scoped `web`-only by design; Group 3 executes
+the token-delivery decision made here (a plain `agent-ui/src/tokens.css`, imported from
+`agent-ui/src/main.tsx` the exact way that file already imports its self-hosted fonts) and the
+matching Archivo font swap on that side. Groups 2 (console shell) and 6 (Deck) are next and don't
+depend on each other; full status table in `tasks/checkpoint-ui/implementation-grouping.md`.
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three
