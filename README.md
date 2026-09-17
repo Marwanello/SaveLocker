@@ -15,7 +15,7 @@
 - **Trust-on-first-use TLS pinning** — the agent pins the server's TLS key at enrollment and warns (never blocks) if it changes, so a routine certificate renewal can't take a headless Deck offline
 - **Automatic sync** — watches save folders, waits for the game to finish writing (settle gate) after it exits, then pushes; pulls the latest save before launch
 - **Lease / checkout model** — one machine holds an exclusive lease while a game is running; others are warned before they can stomp each other's progress; the lease auto-renews so long sessions never silently expire
-- **Conflict detection** — content-hash comparison on every upload; diverged saves are flagged as conflicts rather than silently overwritten; resolve in the dashboard (pick a winner, roll back to any prior version)
+- **Conflict resolution, everywhere** — content-hash comparison on every upload flags diverged saves as conflicts rather than silently overwriting anything. The same "this device vs. the cloud" card resolves them from the dashboard's Backups tab, the agent UI's Conflicts page, the Windows tray, the Steam Deck's Game Mode screen, or the Decky Quick Access panel — a Linux launch is blocked outright on a genuine unresolved conflict, and a desktop notification with a "View conflict" action fires on Deck Desktop Mode
 - **Fleet health reporting** — a headless Deck can't pop a toast, so agents report problems (blocked pull, missing save folder, unreachable server…) to the console: a problem badge in the nav bar plus per-machine health — online / offline / never-reported, agent version, last sync, queued pushes
 - **Agent auto-update (Windows)** — when the console hosts a newer installer the agent offers it and updates itself silently; the server can also auto-poll GitHub Releases for new versions
 - **Offline retry queue** — pushes that fail while the server is unreachable are queued to disk and drained automatically when the connection returns
@@ -29,6 +29,8 @@
 - **Audit log** — every push, pull, lease, conflict, enrollment, and admin action is recorded with machine + game + timestamp
 - **Cover art** — fetches grid / hero / logo / icon from [SteamGridDB](https://www.steamgriddb.com/) and caches them in the server
 - **Installers** — a self-contained Windows installer (Inno Setup, with in-wizard enrollment) and a self-contained Linux / Steam Deck tarball; neither needs a .NET runtime present
+- **Decky plugin** ([SaveLocker-Decky](https://github.com/SkorcherX/SaveLocker-Decky)) — sets Steam launch options for you (the agent can't — Steam rewrites its own config on exit), and its Quick Access panel shows lease warnings, sync status, per-game or fleet-wide push/pull, `doctor` on demand, and the same conflict-resolution UI as the dashboard
+- **Playnite plugin** ([SaveLocker-Playnite](https://github.com/Marwanello/SaveLocker-Playnite)) — the Windows-side equivalent of Steam's launch wrapper: pulls (or blocks on a real conflict) *before* Playnite starts a game, not just after. The agent also reads Playnite's library directly with no plugin installed, so Playnite-only games still show up in Add Games
 
 ---
 
@@ -118,8 +120,9 @@ docker compose up -d
 ```
 
 Set `TZ` to your own timezone (used for the weekly/monthly agent-update auto-fetch schedule).
-`AgentUpdate__GitHubRepo` / `AgentUpdate__Plugin__GitHubRepo` point the dashboard's "fetch agent
-version" feature and the auto-fetch poller at **this fork's** own GitHub Releases — change them if
+`AgentUpdate__GitHubRepo` / `AgentUpdate__Plugin__GitHubRepo` / `AgentUpdate__PlaynitePlugin__GitHubRepo`
+point the dashboard's "fetch agent version" feature and the auto-fetch poller at **this fork's** own
+GitHub Releases for the agent, the Decky plugin, and the Playnite plugin respectively — change them if
 you've forked SaveLocker again yourself and want your own fork's releases offered to your fleet.
 
 **Environment variables:**
@@ -133,6 +136,7 @@ you've forked SaveLocker again yourself and want your own fork's releases offere
 | `TZ` | *(unset)* | Server timezone — used for weekly/monthly agent-update schedules |
 | `AgentUpdate__GitHubRepo` | `SkorcherX/SaveLocker` | Repo the agent-update poller/fetch checks for new Windows/Linux releases |
 | `AgentUpdate__Plugin__GitHubRepo` | *(unset)* | Repo the Decky-plugin update channel checks (e.g. `Marwanello/SaveLocker-Decky`) |
+| `AgentUpdate__PlaynitePlugin__GitHubRepo` | `Marwanello/SaveLocker-Playnite` | Repo the Playnite-plugin update channel checks |
 | `AgentUpdate__AutoFetchHours` | `0` (disabled) | Poll the GitHub repo(s) above for a newer release this often |
 
 ### 2 — Create an enrollment file
@@ -234,8 +238,9 @@ Pull requests run the full test matrix: .NET / web / agent-UI builds, the Docker
 1. Agent on **Machine A** launches a game → acquires lease, pulls latest save
 2. Agent on **Machine B** launches the same game → lease denied, agent UI pops up with a warning banner; B plays anyway (B's push on exit will land as a conflict)
 3. Both machines push diverged saves → server records a **conflict**, leaves the prior head intact
-4. Dashboard shows the conflict — pick which save wins, or roll back to any archived version
-5. Next sync on each machine picks up the resolved head
+4. The conflict shows up wherever you're actually looking — the dashboard's Backups tab, the agent UI's Conflicts page, the Windows tray, the Deck's Game Mode screen, or the Decky panel — always framed as **this device** vs. **the cloud**, with a "newer" tag on whichever side is more recent. A Linux game launch is blocked outright while a conflict for it is open; a desktop notification fires if the machine has a notification daemon running
+5. Pick which side wins (or keep both as a recoverable backup) from any of those surfaces — resolving from one clears it everywhere
+6. Next sync on each machine picks up the resolved head
 
 ---
 
