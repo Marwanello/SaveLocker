@@ -183,8 +183,9 @@ public sealed class AgentApiServer : IDisposable
         // Rewrites the served document's components.schemas into alphabetical order — see
         // OpenApiSchemaSorter's own doc comment for why this has to happen on the raw JSON text
         // rather than via AddDocumentTransformer (fixes the recurring Windows-vs-Linux
-        // api-types.ts ordering diff for good, instead of requiring a Linux regeneration).
-        _app.Use(SortOpenApiSchemasAsync);
+        // api-types.ts ordering diff for good, instead of requiring a Linux regeneration). Shared
+        // with Server/Program.cs, which serves its own OpenAPI document and needs the identical fix.
+        _app.Use(OpenApiSchemaSorterMiddleware.SortOpenApiSchemasAsync);
         _app.MapOpenApi();
         MapApi(_app);
         MapUi(_app);
@@ -225,39 +226,6 @@ public sealed class AgentApiServer : IDisposable
             context.Request.Path = "/";
 
         await next(context);
-    }
-
-    /// <summary>Buffers the response for <c>/openapi/*.json</c> and rewrites it with
-    /// <see cref="OpenApiSchemaSorter"/> before sending it on — see that type's doc comment for why
-    /// this has to happen on the raw JSON rather than through an OpenAPI document transformer.
-    /// Every other route passes straight through untouched.</summary>
-    private static async Task SortOpenApiSchemasAsync(HttpContext context, RequestDelegate next)
-    {
-        if (!context.Request.Path.StartsWithSegments("/openapi") ||
-            !context.Request.Path.Value!.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-        {
-            await next(context);
-            return;
-        }
-
-        var originalBody = context.Response.Body;
-        await using var buffer = new MemoryStream();
-        context.Response.Body = buffer;
-        try
-        {
-            await next(context);
-        }
-        finally
-        {
-            context.Response.Body = originalBody;
-        }
-
-        buffer.Seek(0, SeekOrigin.Begin);
-        var json = await new StreamReader(buffer).ReadToEndAsync();
-        var sorted = OpenApiSchemaSorter.SortSchemasAlphabetically(json);
-        var bytes = System.Text.Encoding.UTF8.GetBytes(sorted);
-        context.Response.ContentLength = bytes.Length;
-        await originalBody.WriteAsync(bytes);
     }
 
     private void MapApi(WebApplication app)

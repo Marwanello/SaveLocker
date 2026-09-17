@@ -187,35 +187,9 @@ _ = app.Services.GetRequiredService<AgentInstallerService>().BackfillDigestAsync
 // OpenApiSchemaSorter's own doc comment for why this has to post-process the raw JSON rather
 // than reorder the document model (an AddDocumentTransformer that mutated
 // doc.Components.Schemas had no effect on the actual serialized order, confirmed live). Fixes
-// the recurring Windows-vs-Linux api-types.ts ordering diff for good.
-app.Use(async (context, next) =>
-{
-    if (!context.Request.Path.StartsWithSegments("/openapi") ||
-        !context.Request.Path.Value!.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-    {
-        await next(context);
-        return;
-    }
-
-    var originalBody = context.Response.Body;
-    await using var buffer = new MemoryStream();
-    context.Response.Body = buffer;
-    try
-    {
-        await next(context);
-    }
-    finally
-    {
-        context.Response.Body = originalBody;
-    }
-
-    buffer.Seek(0, SeekOrigin.Begin);
-    var json = await new StreamReader(buffer).ReadToEndAsync();
-    var sorted = OpenApiSchemaSorter.SortSchemasAlphabetically(json);
-    var bytes = System.Text.Encoding.UTF8.GetBytes(sorted);
-    context.Response.ContentLength = bytes.Length;
-    await originalBody.WriteAsync(bytes);
-});
+// the recurring Windows-vs-Linux api-types.ts ordering diff for good. Shared with
+// Agent.Core/AgentApiServer.cs, which serves its own OpenAPI document and needs the identical fix.
+app.Use(OpenApiSchemaSorterMiddleware.SortOpenApiSchemasAsync);
 
 // OpenAPI JSON at /openapi/v1.json + a Swagger UI explorer at /swagger.
 app.MapOpenApi();
