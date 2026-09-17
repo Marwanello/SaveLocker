@@ -7,19 +7,31 @@ Read [[plan]] first for tokens, type, motion and the colour rule, and
 [[implementation-grouping]] before starting any phase — it regroups the list below **by surface**
 rather than by phase number, because several phases edit the same components.
 
-## Status (updated 2026-09-17)
+## Status (updated 2026-09-18)
 
 | Phase | Status |
 |---|---|
 | 1 — Design system foundation, web half | ✅ Shipped 2026-09-17 (Group 1) |
 | 1 — Design system foundation, agent half | ⏳ Not started (Group 3) |
-| 2 — Console shell | ⏳ Not started (Group 2) |
-| 3 — Sync all and progress | ⏳ Not started (Groups 2/3) |
+| 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2) |
+| 3 — Sync all and progress | 🚧 Items 1, 2, 4 shipped 2026-09-18 (Group 2 — console side); items 3 and 5 (agent side) not started (Group 3) |
 | 4 — Appearance, and syncing it to the fleet | ⏳ Not started (Group 5) |
 | 5 — Agent UI | ⏳ Not started (Groups 3/4) |
 | 6 — Deck and Wayland | ⏳ Not started (Group 6); the Wayland item (6.4) still needs the open decision below made first |
 | 7 — OS notifications | ⏳ Not started (Group 7) |
 | 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1) — see the note under Phase 8 below |
+
+## A gap found while building Group 2 (2026-09-18)
+
+Phase 3 item 1 below says console "Sync all" should "enqueue a command per tracked game for the
+machine that owns it." That undersells what the wire protocol already does: `EnqueueCommandRequest.
+GameId` is nullable, and `CommandPoller.ExecuteAsync`'s `TargetGames(cmd.GameId)` already treats a
+null `GameId` as "every game this machine tracks" — the same mechanism the tray's own local "Sync
+All" and the agent-ui's Sync-now already use. So "Sync all" needed **one `Sync` command per machine**
+(`GameId: null`), never one per game — the agent's own poller does the per-game fan-out on receipt.
+Building it the way the sentence originally read would have queued needless per-game commands the
+wire was never designed to take. Implemented the simpler, correct way; verified live end to end (see
+Phase 3 below) — a queued command really did sync every game on the machine that received it.
 
 ## A gap found and folded in before Group 1 started (2026-09-17)
 
@@ -119,35 +131,39 @@ surface converted. `agent-ui` untouched this phase — its half of item 6 is Gro
 
 ---
 
-### Phase 2 — Console shell
+### Phase 2 — Console shell — ✅ shipped 2026-09-18 (Group 2), one item deliberately split off
 
-| Item | Kind | Work |
-|---|---|---|
-| Two-line rows everywhere | UI only | Replace the sidebar rows in `GamesSidebar.tsx` |
-| Games grid wall + list/grid switch | UI only | New `GamesGrid.tsx`; persist choice in `localStorage` (`sl_games_layout`) |
-| Cover art in list and grid | UI only | No server work: `ArtService.Assets` already fetches `grid` at exactly `dimensions=600x900` plus `hero`/`logo`/`icon`, and `GridUrl`/`HeroUrl`/`LogoUrl`/`IconUrl` are already on the game DTO. Only a fallback tile for when SteamGridDB has nothing is new |
-| Notifications bell + menu | Extend | Rebuild the `NavBar` dropdown as `NotificationsMenu.tsx`; keep the existing badge rule (Info never colours it). New: per-item actions that deep-link (conflict → that game with the resolve panel open; `savedir.missing` → that game's folder field), and Dismiss all (loop the existing dismiss endpoint) |
-| Lock button + sign-in screen | **New** | Remove the password field from the header. `SignIn.tsx` renders whenever no credential is held or the server returns 401. Two options: (a) UI-only — keep `X-Admin-Password` in `localStorage`, the screen is just where you type it; (b) proper session — new `POST /admin/session` returning a signed cookie with a 30-day option, and `Tokens.cs` gains verification. (a) ships in a day and is honest; (b) is the right end state. Do (a) now, file (b) as a follow-up |
-| Exclude patterns as chips | Extend | Same `POST /games/{id}/excludes`; chips + add field + "preview what is skipped" (needs a dry-run count — either compute client-side from the last version's file list via `/versions/{id}/stats`, or add `GET /games/{id}/excludes/preview`) |
-| Server default excludes editor | Extend | `Sync:DefaultExcludeGlobs` already exists in settings; surface it in Configuration and show it as inherited chips on each game |
-| Release history table | UI only | `releases/index.ts` already has every version; render the full list under the three newest |
+| Item | Kind | Work | Status |
+|---|---|---|---|
+| Two-line rows everywhere | UI only | Replace the sidebar rows in `GamesSidebar.tsx` | ✅ Shipped — `GamesSidebar.tsx` now renders the `ui/Row` primitive |
+| Games grid wall + list/grid switch | UI only | New `GamesGrid.tsx`; persist choice in `localStorage` (`sl_games_layout`) | ✅ Shipped — `Seg` switch in the sidebar header, verified live: toggling flips the sidebar between 220px list and 340px grid and persists across reload |
+| Cover art in list and grid | UI only | No server work: `ArtService.Assets` already fetches `grid` at exactly `dimensions=600x900` plus `hero`/`logo`/`icon`, and `GridUrl`/`HeroUrl`/`LogoUrl`/`IconUrl` are already on the game DTO. Only a fallback tile for when SteamGridDB has nothing is new | ✅ Shipped — confirmed no server work was needed; the "no art" fallback tile verified live |
+| Notifications bell + menu | Extend | Rebuild the `NavBar` dropdown as `NotificationsMenu.tsx`; keep the existing badge rule (Info never colours it). New: per-item actions that deep-link (conflict → that game with the resolve panel open; `savedir.missing` → that game's folder field), and Dismiss all (loop the existing dismiss endpoint) | ✅ Shipped as `NotificationsMenu.tsx`. The deep-link is honest about its actual reach: it navigates to Games and selects the named game (a conflict's card is already unconditionally open on `GameDetail`, so that fully covers it); `savedir.missing` lands on the right game's page but does not scroll/focus the folder field specifically — that finer targeting isn't built. Not exercised live this session (no real problem/conflict event existed in the seeded test data) — verified by build + code review only |
+| Lock button + sign-in screen | **New** | Remove the password field from the header. `SignIn.tsx` renders whenever no credential is held or the server returns 401. Two options: (a) UI-only — keep `X-Admin-Password` in `localStorage`, the screen is just where you type it; (b) proper session — new `POST /admin/session` returning a signed cookie with a 30-day option, and `Tokens.cs` gains verification. (a) ships in a day and is honest; (b) is the right end state. Do (a) now, file (b) as a follow-up | ✅ Shipped as option (a). Verified live end to end: Lock → SignIn full-screen → Connect with a blank password (this test server has none set) → back to the authenticated app. Option (b) remains a follow-up, not started |
+| Exclude patterns as chips | Extend | Same `POST /games/{id}/excludes`; chips + add field + "preview what is skipped" (needs a dry-run count — either compute client-side from the last version's file list via `/versions/{id}/stats`, or add `GET /games/{id}/excludes/preview`) | ✅ Shipped. `/versions/{id}/stats` turned out to carry no file list at all (`VersionStatsDto(int FileCount, DateTime? NewestFileWriteUtc)` — count only), so this needed the second option: new `POST /games/{id}/excludes/preview`, backed by `SyncService.PreviewExcludesAsync` reading the head archive's own zip directory and running it through the same `Matcher`-based filter the agent uses (extracted from `SaveArchive.EnumerateRelativeFiles` into a new public `SaveArchive.FilterExcluded`, so the preview can never drift from what the agent actually does). One-directional by construction — it can only ever find newly-caught files among what's currently tracked, never ones an already-saved pattern already hides — and the UI says so ("would **additionally** exclude"). Verified live: added `**` as a draft pattern against a real one-file seeded save and got back "Would additionally exclude 1 file", matching exactly |
+| Server default excludes editor | Extend | `Sync:DefaultExcludeGlobs` already exists in settings; surface it in Configuration and show it as inherited chips on each game | 🚧 Shipped as **read-only display**, not a true editor — `Sync:DefaultExcludeGlobs` turned out to be `IConfiguration`-only (appsettings.json/env var), never wired into `SettingsService`'s DB-backed override the way the SteamGridDB key is, so there was nothing to write to yet. Both a new Configuration card and each game's own chip list now show it; making it console-writable is a real follow-up, not built here |
+| Release history table | UI only | `releases/index.ts` already has every version; render the full list under the three newest | ⏳ **Deliberately split off**, per `implementation-grouping.md`'s own pre-authorization to move this item out if size grows — `WhatsNewView.tsx`'s existing sidebar-click layout already technically exposes every release; turning it into "3 newest in full, a table of the rest below" is a distinct navigation redesign that shares no files with the rest of this group. Not started |
 
 ---
 
-### Phase 3 — Sync all and progress
+### Phase 3 — Sync all and progress — 🚧 items 1/2/4 shipped 2026-09-18 (Group 2, console side)
 
-1. **Console Sync all** *(Extend)* — enqueue a command per tracked game for the machine that owns it.
-   Client-side loop over `POST /commands` works today; a `POST /commands/bulk` taking a list is
-   nicer and avoids 7 round trips. Add the bulk endpoint.
-2. **Console progress** *(Extend)* — poll `GET /commands` and derive "3 of 7"; the rail under the top
-   bar is the only new UI. No new server state needed.
-3. **Agent Sync all** *(UI only)* — `POST /api/sync` and `GET /api/activity` already exist and
-   already report phase and bytes; the header just has to render them.
-4. **Do not re-render the page on a progress tick.** The prototype originally rebuilt everything on
-   every tick and replayed all entrance animations — a real bug the maintainer caught. In React,
-   progress must live in its own component subscribing to the poll, and the surrounding view must not
-   be a dependency of it. This is a correctness requirement, not polish.
-5. Per-game **Sync this game** on the agent's game page — same endpoint with a game id.
+1. **Console Sync all** *(Extend)* — ✅ shipped. **Not** one command per tracked game — see "A gap
+   found while building Group 2" above: one `Sync` command per **machine**, `GameId: null`, which
+   `CommandPoller.TargetGames` already fans out to every game that machine tracks. `POST
+   /commands/bulk` added (`SyncService.EnqueueCommandsAsync`), taking the whole machine list in one
+   call. Verified live: clicking Sync all queued one real command for the one seeded test machine,
+   which the daemon picked up and completed within seconds — confirmed via `GET /commands` showing
+   `status: "Done"` and a real result string.
+2. **Console progress** *(Extend)* — ✅ shipped as `SyncAllProgress.tsx`, polling `GET /commands` on
+   its own 2s timer (see item 4). No new server state — it just watches the ids the bulk call handed
+   back until they're all `Done`/`Failed`.
+3. **Agent Sync all** *(UI only)* — ⏳ not started. Agent-side; Group 3.
+4. **Do not re-render the page on a progress tick.** — ✅ satisfied by construction:
+   `SyncAllProgress` owns its own poll and its own `doneCount` state; `NavBar` only ever hands it an
+   immutable `commandIds` array set once per click, so a tick's `setDoneCount` re-renders nothing
+   above it.
+5. Per-game **Sync this game** on the agent's game page — ⏳ not started. Agent-side; Group 3.
 
 ---
 

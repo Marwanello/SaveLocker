@@ -575,6 +575,13 @@ admin.MapPost("/games/{id:guid}/retain", async (Guid id, int? value, SyncService
 admin.MapPost("/games/{id:guid}/excludes", async (Guid id, string[] patterns, SyncService sync) =>
     await sync.SetExcludeGlobsAsync(id, patterns) ? Results.Ok() : Results.NotFound());
 
+// Dry run for the exclude editor, against a DRAFT pattern list — never saved, and never asks the
+// agent anything; counted against what the server's head archive already has (see
+// SyncService.PreviewExcludesAsync for the one-directional caveat).
+admin.MapPost("/games/{id:guid}/excludes/preview", async (Guid id, string[] patterns, SyncService sync) =>
+    Results.Ok(new ExcludesPreviewDto(await sync.PreviewExcludesAsync(id, patterns))))
+    .Produces<ExcludesPreviewDto>();
+
 admin.MapPost("/games/{id:guid}/conflict-policy", async (
     Guid id, SetConflictPolicyRequest req, SyncService sync) =>
     await sync.SetConflictPolicyAsync(id, req.Policy, req.PreferredMachineId)
@@ -766,6 +773,12 @@ admin.MapDelete("/games/{id:guid}/lease/force", async (Guid id, SyncService sync
 admin.MapPost("/commands", async (EnqueueCommandRequest req, SyncService sync) =>
     Results.Ok((await sync.EnqueueCommandAsync(req)).ToDto()))
     .Produces<AgentCommandDto>();
+
+// Console "Sync all": one call, one command per machine, instead of one dashboard round trip per
+// machine (implementation-grouping.md Group 2 / plan.md Phase 3 item 1).
+admin.MapPost("/commands/bulk", async (EnqueueCommandRequest[] reqs, SyncService sync) =>
+    Results.Ok((await sync.EnqueueCommandsAsync(reqs)).Select(c => c.ToDto())))
+    .Produces<List<AgentCommandDto>>();
 
 admin.MapGet("/commands", async (SyncService sync) =>
     Results.Ok((await sync.ListCommandsAsync()).Select(c => c.ToDto())))

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { GameSummary, Machine, Command, Conflict, Version, VersionStats, MachineSavePath, MachineScanCandidate } from '../types';
 import { toTemplate, isTemplate } from '../savePathTemplate';
+import { Chip } from './ui/Chip';
+import { Button } from './ui/Button';
 
 const shortId = (id: string | null | undefined) => id ? id.replace(/-/g, '').slice(0, 8) : '—';
 const asUtc = (t: string) => /[Z+]|-\d\d:\d\d$/.test(t) ? t : t + 'Z';
@@ -43,11 +45,15 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
   const [pathCandidates, setPathCandidates] = useState<MachineScanCandidate[]>([]);
   const [editingPathFor, setEditingPathFor] = useState<string | null>(null);
   const [pathDraft, setPathDraft] = useState('');
-  const [excludeText, setExcludeText] = useState((summary.game.excludeGlobs ?? []).join('\n'));
+  const [excludeDraft, setExcludeDraft] = useState<string[]>(summary.game.excludeGlobs ?? []);
+  const [newPattern, setNewPattern] = useState('');
   const [excludeForGameId, setExcludeForGameId] = useState(summary.game.id);
   const [savingExcludes, setSavingExcludes] = useState(false);
   const [defaultGlobs, setDefaultGlobs] = useState<string[]>([]);
   const [excludeOpen, setExcludeOpen] = useState(false);
+  // null while the first preview for this draft hasn't answered yet — kept distinct from 0 so the
+  // count never flashes "0" for a moment before the real number lands.
+  const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [policyDraft, setPolicyDraft] = useState<string>(summary.game.conflictPolicy ?? 'Manual');
   const [preferredMachineDraft, setPreferredMachineDraft] = useState<string | null>(summary.game.preferredMachineId ?? null);
   const [policyForGameId, setPolicyForGameId] = useState(summary.game.id);
@@ -68,7 +74,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
   // Reset the exclude editor when switching games (not on every poll — avoids clobbering edits).
   if (excludeForGameId !== game.id) {
     setExcludeForGameId(game.id);
-    setExcludeText((game.excludeGlobs ?? []).join('\n'));
+    setExcludeDraft(game.excludeGlobs ?? []);
   }
   const headId = head?.id ?? null;
   // filter, not find. Taking the first match silently hid every other conflict on the game, and the
@@ -120,6 +126,19 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
     api.settings().then(s => setDefaultGlobs(s.defaultExcludeGlobs ?? [])).catch(() => {});
   }, []);
 
+  // Dry run against the head archive for whatever the draft currently is — including on first
+  // mount, against the SAVED patterns, which should read close to 0 (they already kept those
+  // files out, so there's nothing left in the archive for this pass to find; see
+  // SyncService.PreviewExcludesAsync's one-directional caveat). Re-fires on every add/remove.
+  useEffect(() => {
+    let cancelled = false;
+    setPreviewCount(null);
+    api.previewExcludes(game.id, excludeDraft)
+      .then(r => { if (!cancelled) setPreviewCount(r.wouldExclude); })
+      .catch(() => { if (!cancelled) setPreviewCount(null); });
+    return () => { cancelled = true; };
+  }, [game.id, excludeDraft]);
+
   // File count / newest-mtime for the versions on either side of an open conflict — fetched
   // lazily, only for versions actually shown in a conflict card. An archive never changes once
   // uploaded, so requestedStatsRef stops the 15s poll (App.tsx) from re-fetching what it already
@@ -138,12 +157,24 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
   }, [conflicts, game.id]);
 
   async function handleSaveExcludes() {
-    const patterns = excludeText.split('\n').map(s => s.trim()).filter(Boolean);
     setSavingExcludes(true);
-    try { await api.setExcludes(game.id, patterns); onRefresh(); }
+    try { await api.setExcludes(game.id, excludeDraft); onRefresh(); }
     catch (e) { alert('Could not save exclude patterns: ' + (e as Error).message); }
     finally { setSavingExcludes(false); }
   }
+
+  function handleAddPattern() {
+    const p = newPattern.trim();
+    if (!p || excludeDraft.includes(p)) { setNewPattern(''); return; }
+    setExcludeDraft(prev => [...prev, p]);
+    setNewPattern('');
+  }
+
+  function handleRemovePattern(p: string) {
+    setExcludeDraft(prev => prev.filter(x => x !== p));
+  }
+
+  const excludeDirty = JSON.stringify(excludeDraft) !== JSON.stringify(game.excludeGlobs ?? []);
 
   async function handleSavePolicy() {
     setSavingPolicy(true);
@@ -558,32 +589,65 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
           <span style={{ fontSize: 11, color: '#556070', userSelect: 'none' }}>{excludeOpen ? '▲' : '▼'}</span>
         </button>
         {excludeOpen && (
-          <div style={{ padding: '0 18px 14px', display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid #494949' }}>
-            <p style={{ fontSize: 11, color: '#556070', marginTop: 10 }}>
-              One glob per line — e.g. <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10 }}>*.log</code>, <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10 }}>cache/**</code>. Bare patterns match at any depth. See <a href="#help/glob-patterns" style={{ color: '#129271' }}>glob pattern docs</a>.
+          <div className="flex flex-col gap-2.5" style={{ padding: '0 18px 14px', borderTop: '1px solid #494949', paddingTop: 10 }}>
+            <p className="text-[11px] text-faint">
+              Files matching these never upload. Bare patterns like <code className="font-mono">*.log</code> match
+              at any depth; <code className="font-mono">cache/**</code> anchors at this game's save folder.
+              See <a href="#help/glob-patterns" className="text-accent">glob pattern docs</a>.
             </p>
-            <textarea
-              value={excludeText}
-              onChange={e => setExcludeText(e.target.value)}
-              spellCheck={false}
-              rows={4}
-              placeholder="(none — only global defaults apply)"
-              style={{ width: '100%', resize: 'vertical', background: '#2A3238', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 4, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, padding: '6px 8px', boxSizing: 'border-box' }}
-            />
+
             {defaultGlobs.length > 0 && (
-              <span style={{ fontSize: 10, color: '#556070' }}>
-                global defaults (always applied):&nbsp;
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8b9aaa' }}>{defaultGlobs.join(', ')}</span>
-              </span>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] text-faint uppercase tracking-[0.08em]">Inherited from server defaults</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {defaultGlobs.map(g => <Chip key={g} className="font-mono">{g}</Chip>)}
+                </div>
+              </div>
             )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                disabled={savingExcludes}
-                onClick={handleSaveExcludes}
-                style={{ padding: '5px 14px', border: `1px solid ${savingExcludes ? '#494949' : '#129271'}`, color: savingExcludes ? '#556070' : '#129271', background: 'transparent', borderRadius: 4, fontSize: 11, cursor: savingExcludes ? 'default' : 'pointer' }}
-              >
+
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[10px] text-faint uppercase tracking-[0.08em]">This game's own patterns</span>
+              <div className="flex flex-wrap gap-1.5">
+                {excludeDraft.length === 0 && <span className="text-[11px] text-faint italic">none</span>}
+                {excludeDraft.map(p => (
+                  <Chip key={p} className="font-mono">
+                    {p}
+                    <button
+                      onClick={() => handleRemovePattern(p)}
+                      title={`Remove ${p}`}
+                      className="ml-1 text-faint hover:text-accent"
+                    >
+                      ×
+                    </button>
+                  </Chip>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <input
+                value={newPattern}
+                onChange={e => setNewPattern(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAddPattern()}
+                placeholder="e.g. *.log or cache/**"
+                className="flex-1 bg-ink text-fg border border-line rounded-md px-2.5 py-1.5 text-xs font-mono focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              />
+              <Button variant="default" size="sm" onClick={handleAddPattern}>Add</Button>
+            </div>
+
+            {/* Dry run against the head archive — see SyncService.PreviewExcludesAsync. Only ever
+                catches files already tracked, never ones an existing saved pattern already hides,
+                which is exactly why it's phrased as "additionally" rather than a total. */}
+            {previewCount !== null && previewCount > 0 && (
+              <p className="text-[11px] text-watch">
+                Would additionally exclude {previewCount} file{previewCount === 1 ? '' : 's'} currently tracked in the latest save.
+              </p>
+            )}
+
+            <div className="flex justify-end">
+              <Button variant="primary" size="sm" disabled={savingExcludes || !excludeDirty} onClick={handleSaveExcludes}>
                 {savingExcludes ? 'Saving…' : 'Save patterns'}
-              </button>
+              </Button>
             </div>
           </div>
         )}

@@ -1085,6 +1085,49 @@
         }
       }
     },
+    "/api/games/{id}/excludes/preview": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExcludesPreviewDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/games/{id}/conflict-policy": {
       "post": {
         "tags": [
@@ -1815,6 +1858,41 @@
         "tags": [
           "SaveLocker.Server"
         ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentCommandDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/commands/bulk": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/EnqueueCommandRequest"
+                }
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -3304,6 +3382,18 @@
             "items": {
               "$ref": "#/components/schemas/EnrollmentGame"
             }
+          }
+        }
+      },
+      "ExcludesPreviewDto": {
+        "required": [
+          "wouldExclude"
+        ],
+        "type": "object",
+        "properties": {
+          "wouldExclude": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },

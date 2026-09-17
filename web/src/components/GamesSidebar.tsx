@@ -1,4 +1,10 @@
+import { useState } from 'react';
 import type { GameSummary } from '../types';
+import { Row } from './ui/Row';
+import { Chip } from './ui/Chip';
+import { Seg } from './ui/Seg';
+import { Button } from './ui/Button';
+import { GamesGrid } from './GamesGrid';
 
 interface Props {
   games: GameSummary[];
@@ -8,107 +14,80 @@ interface Props {
   onRefresh: () => void;
 }
 
+type Layout = 'list' | 'grid';
+const LAYOUT_KEY = 'sl_games_layout';
+
+function loadLayout(): Layout {
+  try { return localStorage.getItem(LAYOUT_KEY) === 'grid' ? 'grid' : 'list'; }
+  catch { return 'list'; }
+}
+
 const fmtMb = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 
 export function GamesSidebar({ games, selectedId, onSelect, onAddGame, onRefresh }: Props) {
+  const [layout, setLayout] = useState<Layout>(loadLayout);
   const grandTotal = games.reduce((sum, s) => sum + s.totalStorageBytes, 0);
 
+  function changeLayout(v: Layout) {
+    setLayout(v);
+    try { localStorage.setItem(LAYOUT_KEY, v); } catch { /* private browsing, etc — not fatal */ }
+  }
+
   return (
-    <aside style={{
-      width: 220,
-      flexShrink: 0,
-      background: '#1E252A',
-      borderRight: '1px solid #494949',
-      display: 'flex',
-      flexDirection: 'column',
-      minHeight: 0,
-    }}>
-      <div style={{ padding: '10px 14px', borderBottom: '1px solid #494949', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexShrink: 0 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: '#129271', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Games</span>
-        <span style={{ fontSize: 9.5, color: '#556070', fontFamily: "'JetBrains Mono', monospace" }} title="Total save data stored on server">{fmtMb(grandTotal)}</span>
+    <aside className={`flex-shrink-0 bg-panel border-r border-line flex flex-col min-h-0 ${layout === 'grid' ? 'w-[340px]' : 'w-[220px]'}`}>
+      <div className="px-3.5 py-2.5 border-b border-line flex items-baseline justify-between flex-shrink-0">
+        <span className="text-[10px] font-bold text-accent tracking-[0.12em] uppercase">Games</span>
+        <span className="text-[9.5px] text-faint font-mono" title="Total save data stored on server">{fmtMb(grandTotal)}</span>
       </div>
 
       {/* Action buttons — anchored below header, always visible */}
-      <div style={{ flexShrink: 0, borderBottom: '1px solid #494949', padding: '8px 12px', display: 'flex', gap: 6 }}>
-        <button
-          onClick={onAddGame}
-          style={{ flex: 1, padding: '6px 0', background: '#129271', color: '#fff', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
-        >
-          + Add game
-        </button>
-        <button
-          onClick={onRefresh}
-          style={{ padding: '6px 10px', background: 'transparent', color: '#8b9aaa', border: '1px solid #494949', borderRadius: 5, fontSize: 12, cursor: 'pointer' }}
-          title="Refresh"
-        >
-          ↻
-        </button>
+      <div className="flex-shrink-0 border-b border-line p-2 flex flex-col gap-2">
+        <div className="flex gap-1.5">
+          <Button variant="primary" className="flex-1 text-center" onClick={onAddGame}>+ Add game</Button>
+          <Button variant="default" onClick={onRefresh} title="Refresh">↻</Button>
+        </div>
+        <Seg value={layout} onChange={changeLayout} aria-label="Games layout" className="self-start"
+          options={[{ value: 'list', label: 'List' }, { value: 'grid', label: 'Grid' }]} />
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-      {games.length === 0 && (
-        <div style={{ padding: '20px 14px', fontSize: 12, color: '#556070' }}>No games tracked yet.</div>
-      )}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {games.length === 0 && (
+          <div className="p-3.5 text-xs text-faint">No games tracked yet.</div>
+        )}
 
-      {games.map(s => {
-        const { game, head, hasOpenConflict, lease, totalStorageBytes } = s;
-        const isSelected = game.id === selectedId;
-
-        return (
-          <button
-            key={game.id}
-            onClick={() => onSelect(game.id)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '10px 14px',
-              background: isSelected ? '#2A3238' : 'transparent',
-              border: 'none',
-              borderBottom: '1px solid #252e35',
-              borderLeft: isSelected ? '2px solid #129271' : '2px solid transparent',
-              cursor: 'pointer',
-              textAlign: 'left',
-              width: '100%',
-              opacity: game.enabled ? 1 : 0.55,
-            }}
-          >
-            {/* Box art thumbnail */}
-            {game.gridUrl
-              ? <img src={game.gridUrl} alt="" style={{ width: 32, height: 46, objectFit: 'cover', borderRadius: 4, border: '1px solid #494949', flexShrink: 0 }} />
-              : <div style={{ width: 32, height: 46, background: '#2A3238', border: '1px dashed #494949', borderRadius: 4, flexShrink: 0 }} />
-            }
-
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 500, color: '#ECEFF1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {game.name}
-              </div>
-              <div style={{ marginTop: 3, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                {hasOpenConflict
-                  ? <span style={{ fontSize: 9, padding: '1px 5px', border: '1px solid #f4a60d', color: '#f4a60d', borderRadius: 3 }}>conflict</span>
-                  : <span style={{ fontSize: 9, padding: '1px 5px', border: '1px solid #129271', color: '#129271', borderRadius: 3 }}>in sync</span>
-                }
-                {lease?.holderMachineName
-                  ? <span style={{ fontSize: 9, padding: '1px 5px', border: '1px solid #494949', color: '#8b9aaa', borderRadius: 3 }}>leased</span>
-                  : null
-                }
-                {head && (
-                  <span style={{ fontSize: 9, color: '#556070', fontFamily: "'JetBrains Mono', monospace" }}>
-                    {head.id.replace(/-/g, '').slice(0, 6)}
-                  </span>
-                )}
-                {totalStorageBytes > 0 && (
-                  <span style={{ fontSize: 9, color: '#494949', fontFamily: "'JetBrains Mono', monospace" }}>
-                    {fmtMb(totalStorageBytes)}
-                  </span>
-                )}
-              </div>
-            </div>
-          </button>
-        );
-      })}
+        {layout === 'grid' ? (
+          <GamesGrid games={games} selectedId={selectedId} onSelect={onSelect} />
+        ) : (
+          <div className="flex flex-col gap-1.5 p-1.5">
+            {games.map(s => {
+              const { game, head, hasOpenConflict, lease, totalStorageBytes } = s;
+              return (
+                <Row
+                  key={game.id}
+                  onClick={() => onSelect(game.id)}
+                  className={`${game.id === selectedId ? 'border-accent' : ''} ${game.enabled ? '' : 'opacity-[.55]'}`}
+                  cover={
+                    game.gridUrl
+                      ? <img src={game.gridUrl} alt="" className="w-full h-full object-cover" />
+                      : <span className="text-faint text-[8px] font-mono">no art</span>
+                  }
+                  title={game.name}
+                  subtext={[
+                    totalStorageBytes > 0 ? fmtMb(totalStorageBytes) : null,
+                    head ? head.id.replace(/-/g, '').slice(0, 6) : null,
+                    lease?.holderMachineName ? `leased by ${lease.holderMachineName}` : null,
+                  ].filter(Boolean).join(' · ') || '—'}
+                  end={
+                    hasOpenConflict
+                      ? <Chip tone="crit">conflict</Chip>
+                      : <Chip tone="ok">in sync</Chip>
+                  }
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
-
     </aside>
   );
 }

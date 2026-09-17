@@ -14,12 +14,12 @@ phases to do in one session, in what order, and why. Driven by three things weig
    23 files, multiple review rounds) was a heavy session. Treat ~1,500 insertions as the ceiling for
    a group that still gets reviewed properly.
 
-## Status (updated 2026-09-17)
+## Status (updated 2026-09-18)
 
 | Group | Contents | Status |
 |---|---|---|
 | 1 | Phase 1 (web half) + Phase 8 assets | 🚧 Web foundation ✅ shipped 2026-09-17 (reset layered, tokens, self-hosted Archivo, motion primitives, `ui/` primitives, `NavBar.tsx` converted as proof). Assets partial: 3 marks + SVG favicon shipped; Steam art crops and all PNG/ICO rasterization deferred — no rasterizer available in this environment, see `implementation.md` Phase 8 |
-| 2 | Phase 2 + Phase 3.1/2/4 + `POST /commands/bulk` | ⏳ Not started |
+| 2 | Phase 2 + Phase 3.1/2/4 + `POST /commands/bulk` | 🚧 ✅ Shipped 2026-09-18 — every item except the release-history table, split off as pre-authorized below (still ⏳). See `implementation.md` Phase 2/3 for the per-item table |
 | 3 | Phase 1 (agent half) + Phase 5 overview trim + Phase 3.3/5 | ⏳ Not started |
 | 4 | Phase 5 Games tab + art proxy + search | ⏳ Not started |
 | 5 | Phase 4 appearance + fleet sync | ⏳ Not started |
@@ -134,16 +134,34 @@ surface (`NavBar.tsx`) proves the primitives are usable. — **met**: `web` buil
 a real throwaway server (`tests/testenv.ps1`), not just built.
 
 **Group 2 — Console shell, including console Sync all.**
-Phase 2 **plus** Phase 3 items 1, 2 and 4. Folded together deliberately: the Sync all button and the
-progress rail live in the same top bar Phase 2 is already rewriting, and the notifications bell is in
-that bar too. Splitting them means editing `NavBar.tsx` twice. Server work is one small endpoint,
-`POST /commands/bulk`, so the client isn't making seven round trips. Sign-in ships as option (a) from
-`implementation.md` (the screen is where you type the existing `X-Admin-Password`); file the real
-session endpoint as a follow-up rather than growing this group.
+✅ **Shipped 2026-09-18** — every item except the release-history table (below). Phase 2 **plus**
+Phase 3 items 1, 2 and 4. Folded together deliberately: the Sync all button and the progress rail
+live in the same top bar Phase 2 is already rewriting, and the notifications bell is in that bar
+too — all landed together in one `NavBar.tsx` rewrite, not two. Server work turned out to be two
+small endpoints, not one: `POST /commands/bulk` (as planned) plus `POST /games/{id}/excludes/preview`
+(the exclude-chip dry run needed a real endpoint — `/versions/{id}/stats` has no file list to compute
+one client-side, contrary to `implementation.md`'s original hedge). Sign-in shipped as option (a)
+from `implementation.md`; the real session endpoint (option b) stays a follow-up.
+<br>**"Sync all" is one command per machine, not per game** — see `implementation.md`'s "gap found
+while building Group 2": `CommandPoller.TargetGames` already treats a null `GameId` as "every game
+this machine tracks," so a single `Sync`/`GameId: null` command per machine does what the plan's
+phrasing implied would need one command per game. Verified live end to end against a real seeded
+test machine — the queued command actually ran and completed.
+<br>**Split off, as pre-authorized below**: the release-history table. `implementation.md`'s Phase 2
+table has the full per-item detail, including two honestly-scoped simplifications — the default
+excludes "editor" shipped read-only (`Sync:DefaultExcludeGlobs` was never wired into the DB-backed
+settings override the SteamGridDB key uses, so there was nothing to write to yet), and the
+notifications menu's deep link opens the right game but doesn't scroll/focus a specific field for
+`savedir.missing`.
+<br>**Verified live, not just built**: a real throwaway server via `tests/testenv.ps1` (a seeded
+WSL machine + one tracked game with a real save) — list/grid switch and its `localStorage`
+persistence, the cover-art fallback tile, Sync all's bulk enqueue and real completion, Lock →
+SignIn → reconnect, and the exclude-chip preview count against the game's actual archive (added
+`**` as a draft pattern, got back "would additionally exclude 1 file," matching the seed's one
+file exactly). The notifications menu's deep-link and "Dismiss all" were not exercised live — no
+real problem/conflict event existed in the seeded data — verified by build and code review only.
 
-This is the biggest user-visible payoff in the plan and it is fully verifiable here. Watch its size —
-if it's running past ~1,500 insertions, the release-history table and the exclude-pattern chips are
-the two cleanest things to split into a Group 2b.
+This is the biggest user-visible payoff in the plan and it was fully verifiable here, as expected.
 
 **Group 3 — Agent foundation, Overview, and agent progress.**
 Phase 1 (the agent half, per Group 1's decision) + Phase 5's Overview trim + Phase 3 items 3 and 5.

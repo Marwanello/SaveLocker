@@ -652,30 +652,56 @@ public static class SaveArchive
     {
         var rootFull = Path.GetFullPath(root);
         var all = EnumerateFilesNoFollow(rootFull)
-            .Select(f => Path.GetRelativePath(rootFull, f).Replace('\\', '/'))
-            .ToList();
+            .Select(f => Path.GetRelativePath(rootFull, f).Replace('\\', '/'));
 
+        var kept = FilterExcluded(all, excludeGlobs).ToList();
+        kept.Sort(StringComparer.Ordinal);
+        return kept;
+    }
+
+    /// <summary>
+    /// Which of <paramref name="relativePaths"/> survive after removing anything matching
+    /// <paramref name="excludeGlobs"/> — the same matcher <see cref="EnumerateRelativeFiles"/> uses
+    /// against a live directory, exposed here so a caller with an existing path list (e.g. the
+    /// server previewing a draft exclude pattern against an already-uploaded archive, which has no
+    /// filesystem of its own to walk) gets the identical bare-filename-matches-at-any-depth rule
+    /// rather than a second, driftable reimplementation of it.
+    /// </summary>
+    public static IReadOnlyList<string> FilterExcluded(IEnumerable<string> relativePaths, IEnumerable<string>? excludeGlobs)
+    {
+        var all = relativePaths.ToList();
         var globs = excludeGlobs?
             .Where(g => !string.IsNullOrWhiteSpace(g))
             .Select(g => g.Trim())
             .ToList();
-        if (globs is { Count: > 0 })
-        {
-            var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
-            matcher.AddInclude("**/*");
-            foreach (var g in globs)
-            {
-                matcher.AddExclude(g);
-                // A bare filename pattern (no '/') should match at any depth, gitignore-style:
-                // "*.log" excludes logs in every subfolder, not just the save root. Patterns
-                // that already contain '/' are treated as explicit paths anchored at the root.
-                if (!g.Contains('/')) matcher.AddExclude("**/" + g);
-            }
-            var kept = new HashSet<string>(matcher.Match(all).Files.Select(m => m.Path), StringComparer.Ordinal);
-            all = all.Where(kept.Contains).ToList();
-        }
+        if (globs is not { Count: > 0 }) return all;
 
-        all.Sort(StringComparer.Ordinal);
-        return all;
+        var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
+        matcher.AddInclude("**/*");
+        foreach (var g in globs)
+        {
+            matcher.AddExclude(g);
+            // A bare filename pattern (no '/') should match at any depth, gitignore-style:
+            // "*.log" excludes logs in every subfolder, not just the save root. Patterns
+            // that already contain '/' are treated as explicit paths anchored at the root.
+            if (!g.Contains('/')) matcher.AddExclude("**/" + g);
+        }
+        var kept = new HashSet<string>(matcher.Match(all).Files.Select(m => m.Path), StringComparer.Ordinal);
+        return all.Where(kept.Contains).ToList();
+    }
+
+    /// <summary>Relative paths of every real file entry already in an archive on disk, straight
+    /// from the zip's own directory — the same source <see cref="GetArchiveStats"/> reads, never
+    /// re-extracted.</summary>
+    public static IReadOnlyList<string> ListArchiveEntries(string zipPath)
+    {
+        using var zip = ZipFile.OpenRead(zipPath);
+        var names = new List<string>();
+        foreach (var entry in zip.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name)) continue; // directory entry, no content
+            names.Add(entry.FullName);
+        }
+        return names;
     }
 }

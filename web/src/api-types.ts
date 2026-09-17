@@ -1328,6 +1328,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/excludes/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": string[];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ExcludesPreviewDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games/{id}/conflict-policy": {
         parameters: {
             query?: never;
@@ -2247,6 +2288,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/commands/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["EnqueueCommandRequest"][];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentCommandDto"][];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/audit": {
         parameters: {
             query?: never;
@@ -3054,6 +3134,10 @@ export interface components {
             /** Format: int32 */
             settleMaxWaitSeconds?: null | number;
             games?: null | components["schemas"]["EnrollmentGame"][];
+        };
+        ExcludesPreviewDto: {
+            /** Format: int32 */
+            wouldExclude: number;
         };
         FileManifestEntry: {
             path: string;

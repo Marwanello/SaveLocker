@@ -1,4 +1,4 @@
-import type { GameSummary, Machine, Command, Conflict, Settings, Version, VersionStats, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule } from './types';
+import type { GameSummary, Machine, Command, Conflict, Settings, Version, VersionStats, ExcludesPreview, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule } from './types';
 
 let adminPassword = localStorage.getItem('sl_password') || '';
 
@@ -69,6 +69,9 @@ export const api = {
     request<void>(`/games/${gameId}/retain${value !== null ? `?value=${value}` : ''}`, { method: 'POST' }),
   setExcludes: (gameId: string, patterns: string[]) =>
     request<void>(`/games/${gameId}/excludes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patterns) }),
+  /** Dry run against the game's head archive, for a draft pattern list that hasn't been saved yet. */
+  previewExcludes: (gameId: string, patterns: string[]) =>
+    request<ExcludesPreview>(`/games/${gameId}/excludes/preview`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patterns) }),
   setConflictPolicy: (gameId: string, policy: string, preferredMachineId?: string | null) =>
     request<void>(`/games/${gameId}/conflict-policy`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ policy, preferredMachineId: preferredMachineId ?? null }) }),
   deleteVersion: (gameId: string, versionId: string) =>
@@ -107,6 +110,18 @@ export const api = {
 
   queueCommand: (machineId: string, gameId: string, type: string, force: boolean) =>
     request<void>('/commands', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ machineId, gameId, type, force }) }),
+
+  /**
+   * Console "Sync all": one call, one command per machine. `gameId: null` on each — the agent's
+   * own poller already syncs every game IT tracks when a command names no specific game
+   * (`CommandPoller.TargetGames`), so this needs no per-game fan-out at all.
+   */
+  queueSyncAll: (machineIds: string[]) =>
+    request<Command[]>('/commands/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(machineIds.map(machineId => ({ machineId, gameId: null, type: 'Sync', force: false }))),
+    }),
 
   deleteMachine: (machineId: string) =>
     fetch(`/api/machines/${machineId}`, { method: 'DELETE', headers: headers() })

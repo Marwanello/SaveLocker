@@ -17,6 +17,7 @@ export type Machine = Schemas['MachineDto'];
 export type Command = Schemas['AgentCommandDto'];
 export type Conflict = NonNullable<Schemas['ConflictDto']>;
 export type VersionStats = NonNullable<Schemas['VersionStatsDto']>;
+export type ExcludesPreview = NonNullable<Schemas['ExcludesPreviewDto']>;
 export type Settings = Schemas['ServerSettingsDto'];
 export type MachineSavePath = Schemas['MachineSavePathDto'];
 export type MachineScanCandidate = Schemas['MachineScanCandidateDto'];

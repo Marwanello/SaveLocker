@@ -228,6 +228,12 @@ public record SaveVersionDto(
 /// Mainly for telling apart the two sides of an open conflict.</summary>
 public record VersionStatsDto(int FileCount, DateTime? NewestFileWriteUtc);
 
+/// <summary>How many files already tracked in a game's head version would stop being uploaded
+/// under a draft (not-yet-saved) set of exclude patterns — a dry run for the console's exclude
+/// editor. Necessarily one-directional: a file that ALREADY matches a saved pattern was never
+/// uploaded, so it cannot be counted here either way. 0 for a game with no head version yet.</summary>
+public record ExcludesPreviewDto(int WouldExclude);
+
 [JsonConverter(typeof(JsonStringEnumConverter<UploadStatus>))]
 public enum UploadStatus
 {

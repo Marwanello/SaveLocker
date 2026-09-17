@@ -1192,6 +1192,32 @@ public sealed class SyncService
     }
 
     /// <summary>
+    /// How many files in the game's current head archive would stop being uploaded under
+    /// <paramref name="draftPatterns"/> — a dry run for the console's exclude-pattern editor, before
+    /// the draft is saved. Uses <see cref="SaveArchive.FilterExcluded"/>, the exact matcher agents
+    /// apply, against the head archive's own entry list (never re-hashed or re-extracted — same
+    /// zip-directory read <see cref="GetVersionStatsAsync"/> uses).
+    /// <para>
+    /// Necessarily one-directional: a file that already matches a SAVED pattern was never uploaded
+    /// in the first place, so it cannot appear here to be counted either way — this can only ever
+    /// report newly-caught files among what the server currently has. 0 for a game with no head
+    /// version yet (nothing tracked, nothing to warn about).
+    /// </para>
+    /// </summary>
+    public async Task<int> PreviewExcludesAsync(Guid gameId, IEnumerable<string> draftPatterns)
+    {
+        var game = await _db.Games.FindAsync(gameId);
+        if (game?.HeadVersionId is null) return 0;
+
+        var head = await _db.SaveVersions.FindAsync(game.HeadVersionId.Value);
+        if (head is null || !_store.Exists(head.ArchivePath)) return 0;
+
+        var entries = SaveArchive.ListArchiveEntries(_store.FullPath(head.ArchivePath));
+        var kept = SaveArchive.FilterExcluded(entries, draftPatterns);
+        return entries.Count - kept.Count;
+    }
+
+    /// <summary>
     /// Set the conflict resolution policy for a game. For <see cref="ConflictPolicy.PreferMachine"/>,
     /// <paramref name="preferredMachineId"/> must identify an existing machine.
     /// Clears <c>PreferredMachineId</c> when switching away from that policy.
@@ -1700,6 +1726,18 @@ public sealed class SyncService
             .ToListAsync();
 
     // ----- Agent command channel -----
+
+    /// <summary>Dashboard: queue several commands in one call — e.g. console "Sync all", one
+    /// GameId-null Sync command per machine (each agent's own poller already fans that out to every
+    /// game IT tracks, see CommandPoller.TargetGames) rather than one dashboard round trip per
+    /// machine.</summary>
+    public async Task<List<AgentCommand>> EnqueueCommandsAsync(IEnumerable<EnqueueCommandRequest> reqs)
+    {
+        var result = new List<AgentCommand>();
+        foreach (var req in reqs)
+            result.Add(await EnqueueCommandAsync(req));
+        return result;
+    }
 
     /// <summary>Dashboard: queue a command for an agent to run on its next poll.</summary>
     public async Task<AgentCommand> EnqueueCommandAsync(EnqueueCommandRequest req)

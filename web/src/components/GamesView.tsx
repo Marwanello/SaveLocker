@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { GameSummary, Machine, Command, Conflict } from '../types';
 import { GamesSidebar } from './GamesSidebar';
 import { GameDetail } from './GameDetail';
@@ -10,12 +10,25 @@ interface Props {
   conflicts: Conflict[];
   onRefresh: () => void;
   onAddGame: () => void;
+  /** Set by a notification's deep link (a conflict or a missing save dir) — select this game once,
+   *  then report it consumed. `null`/undefined means no pending request. */
+  selectGameId?: string | null;
+  onSelectGameHandled?: () => void;
 }
 
-export function GamesView({ games, machines, commands, conflicts, onRefresh, onAddGame }: Props) {
+export function GamesView({ games, machines, commands, conflicts, onRefresh, onAddGame, selectGameId, onSelectGameHandled }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(
     games.length > 0 ? games[0].game.id : null
   );
+
+  // Deliberately keyed on `selectGameId` alone, not `onSelectGameHandled`: this must fire once per
+  // incoming request, not on every render the callback happens to be re-created (oxlint's
+  // exhaustive-deps warns here; harmless — it isn't wired into CI and the omission is intentional).
+  useEffect(() => {
+    if (!selectGameId) return;
+    setSelectedId(selectGameId);
+    onSelectGameHandled?.();
+  }, [selectGameId]);
 
   // Keep selectedId in sync when games list changes (e.g., a game is deleted).
   const validIds = new Set(games.map(s => s.game.id));

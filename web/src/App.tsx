@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { api, getPassword } from './api';
+import { api, getPassword, setPassword } from './api';
 import type { GameSummary, Machine, Command, Conflict, Settings, AgentHealth, ServerBuildInfo } from './types';
 import { NavBar } from './components/NavBar';
 import { GamesView } from './components/GamesView';
@@ -7,6 +7,7 @@ import { ConfigView } from './components/ConfigView';
 import { AuditView } from './components/AuditView';
 import { HelpView } from './components/HelpView';
 import { WhatsNewView } from './components/WhatsNewView';
+import { SignIn } from './components/SignIn';
 import { hasUnreadNotes, markNotesSeen } from './releaseSeen';
 
 type View = 'games' | 'config' | 'audit' | 'help' | 'whats-new';
@@ -41,6 +42,12 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [build, setBuild] = useState<ServerBuildInfo | undefined>();
   const [unreadNotes, setUnreadNotes] = useState(false);
+  // 401 is distinct from a network/server error: it means the credential itself is wrong, which
+  // is what SignIn exists to fix — a generic error banner would just leave the same wrong password
+  // sitting in localStorage forever.
+  const [authFailed, setAuthFailed] = useState(false);
+  // One-shot: set by a notification's deep link, consumed (and cleared) by GamesView.
+  const [pendingGameId, setPendingGameId] = useState<string | null>(null);
 
   const loadingRef = useRef(false);
 
@@ -65,14 +72,36 @@ export default function App() {
         api.overview(), api.conflicts(), api.machines(), api.commands(), api.settings(), api.health(),
       ]);
       setData({ games, machines, commands, conflicts, settings, health });
+      setAuthFailed(false);
     } catch (e) {
       const msg = (e as Error).message;
-      setError(msg.startsWith('401') ? 'Wrong password — enter it in the nav bar and click Connect.' : 'Failed to load: ' + msg);
+      if (msg.startsWith('401')) setAuthFailed(true);
+      else setError('Failed to load: ' + msg);
     } finally {
       setLoading(false);
       loadingRef.current = false;
     }
   }, []);
+
+  function handleSignIn(password: string) {
+    setPassword(password);
+    setAuthFailed(false);
+    void load();
+  }
+
+  /** plan.md's "lock button": forgets the credential and drops back to SignIn. Clearing `data` too
+   *  is what actually flips `needsSignIn` below — a stale games list would otherwise still render
+   *  behind the lock as if nothing happened. */
+  function handleLock() {
+    setPassword('');
+    setAuthFailed(false);
+    setData(null);
+  }
+
+  function handleOpenGame(gameId: string | null) {
+    setPendingGameId(gameId);
+    setView('games');
+  }
 
   useEffect(() => { load(); }, [load]);
 
@@ -129,6 +158,11 @@ export default function App() {
   // Help and What's New are bundled into the build — they need no server data and no password,
   // so they must render even when the console cannot authenticate.
   const isPublicView = view === 'help' || view === 'whats-new';
+  // Not gated on `loading`: an unauthenticated first load may still succeed (the server can have
+  // no password set at all), so showing SignIn immediately when nothing is stored yet — rather
+  // than waiting out that request — avoids a Sign-in → Loading… → Sign-in flash while it's in
+  // flight, and `data` populating flips this off on its own once the load actually succeeds.
+  const needsSignIn = (!getPassword() && !data) || authFailed;
 
   return (
     // A fixed viewport height, not a minimum: the games sidebar and the detail panel each own their
@@ -138,26 +172,26 @@ export default function App() {
       <NavBar
         view={view}
         onViewChange={v => { setView(v); if (!data && v !== 'help' && v !== 'whats-new') load(); }}
-        onConnect={load}
         onRefresh={load}
+        onLock={handleLock}
+        machines={data?.machines ?? []}
         build={build}
         unreadNotes={unreadNotes}
         problems={problems}
         escalatedConflicts={data?.conflicts.filter(c => c.escalated) ?? []}
         onDismissProblem={handleDismissProblem}
+        onOpenGame={handleOpenGame}
       />
 
       {error && (
         <div style={{ padding: '10px 24px', color: '#f4a60d', fontSize: 13 }}>{error}</div>
       )}
 
-      {!getPassword() && !data && !loading && !error && !isPublicView && (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#556070', fontSize: 14 }}>
-          If a password is required, enter it in the nav bar and click Connect.
-        </div>
+      {needsSignIn && !isPublicView && (
+        <SignIn wrongPassword={authFailed} onSubmit={handleSignIn} />
       )}
 
-      {loading && !data && !isPublicView && (
+      {loading && !data && !needsSignIn && !isPublicView && (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#556070', fontSize: 13 }}>
           Loading…
         </div>
@@ -175,7 +209,7 @@ export default function App() {
         </div>
       )}
 
-      {data && !isPublicView && (
+      {data && !isPublicView && !needsSignIn && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {view === 'games'
             ? <GamesView
@@ -185,6 +219,8 @@ export default function App() {
                 conflicts={data.conflicts}
                 onRefresh={load}
                 onAddGame={handleAddGame}
+                selectGameId={pendingGameId}
+                onSelectGameHandled={() => setPendingGameId(null)}
               />
             : view === 'audit'
             ? <AuditView />

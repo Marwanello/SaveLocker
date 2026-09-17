@@ -3,6 +3,7 @@ import { api, setPassword } from '../api';
 import type { GameSummary, Machine, Settings, Enrollment, EffectiveServerUrl, AgentHealth, ServerBuildInfo } from '../types';
 import { fleetSkew, isNewerThanConsole, isTestBuild, normalizeVersion } from '../versionSkew';
 import { AgentUpdatesCard } from './AgentUpdatesCard';
+import { Chip } from './ui/Chip';
 
 interface Props {
   games: GameSummary[];
@@ -227,6 +228,31 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
             Free key: <a href="https://www.steamgriddb.com" target="_blank" rel="noreferrer" style={{ color: '#129271' }}>steamgriddb.com</a> → user menu → Preferences → API.
           </p>
 
+        </div>
+      </div>
+
+      {/* ── Default exclude patterns ── Read-only: unlike the SteamGridDB key above,
+          Sync:DefaultExcludeGlobs is IConfiguration-only (appsettings.json / env var), never a
+          SettingsService DB override, so there is nothing here to write yet — a console-editable
+          version is a real follow-up, not built in this pass. Shown here so an admin can at least
+          see what every game inherits without reading server config; each game's own exclude
+          editor shows the same chips (GameDetail.tsx). */}
+      <div style={card}>
+        <div style={cardHeader}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#ECEFF1' }}>Default exclude patterns</span>
+          <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>applied to every game</span>
+        </div>
+        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {(settings.defaultExcludeGlobs ?? []).length === 0
+              ? <span style={{ fontSize: 12, color: '#556070', fontStyle: 'italic' }}>none configured</span>
+              : settings.defaultExcludeGlobs!.map(g => <Chip key={g} className="font-mono">{g}</Chip>)
+            }
+          </div>
+          <p style={{ fontSize: 11, color: '#9CA3AF' }}>
+            Set via <code style={{ fontFamily: "'JetBrains Mono', monospace" }}>Sync:DefaultExcludeGlobs</code> in
+            the server's config or environment — not editable from this dashboard yet.
+          </p>
         </div>
       </div>
 
