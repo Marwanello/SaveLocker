@@ -1209,12 +1209,17 @@ file" after adding `**` as a draft pattern against the one real seeded file — 
 notifications menu's conflict deep-link and "Dismiss all" were not exercised live (no real
 problem/conflict existed in the seeded data) — build- and code-review-verified only, noted as such in
 `implementation.md` rather than claimed as tested.
-<br>**A pre-existing, unrelated test-suite finding, not caused by this session**: `run-server-
-bugbounty-tests.ps1` fails the same 6 checks (all in CS-02, "reporting a reclaimed command completes
+<br>**A pre-existing, unrelated test-suite bug, found and fixed in this session after all**: `run-server-
+bugbounty-tests.ps1` failed the same 6 checks (all in CS-02, "reporting a reclaimed command completes
 it" and its dependents) twice in a row against a freshly wiped `.verify-server-bugbounty` — confirmed
-via `git diff` that nothing this session touched overlaps the command-claim/lease/report code path
-(this session's `SyncService.cs`/`Program.cs`/`Contracts.cs` changes are 100% additive). Flagged as a
-background task rather than fixed here, since it's out of this session's scope. Separately,
+via `git diff` that nothing this session's own code changes overlap the command-claim/lease/report
+code path (`SyncService.cs`/`Program.cs`/`Contracts.cs` changes there are 100% additive). Root cause:
+the `Report-Command` test helper never sent a `claimToken`, a field the CS-02 hardening fix
+(`b313e6f`, 2026-09-07) added to `CompleteCommandAsync`'s fencing check — every real agent
+(`CommandPoller.cs`) threads it through, but this helper predates that fix (`d46dcd6`) and was never
+updated, so every report silently no-opped instead of completing the command. Fixed by capturing the
+`claimToken` each `Claim-Commands` call returns and passing it through the three `Report-Command`
+call sites; 216/216 now passes clean. Separately,
 `run-agent-tests.ps1` looked broken the same way at first (3 failures around "Laptop pull restores
 save") but turned out to be **this session's own fault**: `.verify/`'s client-side agent configs
 carried a stale `LastSyncedHash` from an earlier run that a fresh server DB didn't know about —
