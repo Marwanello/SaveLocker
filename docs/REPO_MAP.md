@@ -40,7 +40,13 @@ SaveLocker/
 │   │   │   │                               #   (`Conflicts:EscalationAfterSeconds`, default 6 h)
 │   │   │   ├── GlobConfig.cs            # Save-file exclude globs: per-game text + `Sync:DefaultExcludeGlobs`
 │   │   │   ├── ArchiveStore.cs          # {root}/{gameId}/{versionId}.zip on disk
-│   │   │   ├── ArtService.cs            # SteamGridDB fetch + cache to /data/art/
+│   │   │   ├── ArtService.cs            # SteamGridDB fetch + cache to /data/art/; default pick (an OPAQUE
+│   │   │   │                           #   icon preferred), the picker's paged options, "set this one"
+│   │   │   ├── ArtBackfillService.cs    # Background fill of games with no art, run when a key is saved.
+│   │   │   │                           #   Missing art only — never replaces a hand-picked cover
+│   │   │   ├── ArtThumbnails.cs         # GET /art/{game}/grid.png?w=96 — cached right-sized copies (the
+│   │   │   │                           #   anti-aliasing fix); allowlisted widths only
+│   │   │   ├── ArtImages.cs             # Pixel helpers: is-fully-opaque, Lanczos downscale
 │   │   │   ├── BackupService.cs         # Nightly VACUUM INTO SQLite snapshots + retention
 │   │   │   ├── AgentInstallerService.cs # Hosts installer binaries for agent auto-update. PLATFORM-
 │   │   │   │                           #   SLOTTED: win-x64 at the root, linux-x64/ beside it
@@ -170,6 +176,8 @@ SaveLocker/
 │   │   ├── api.ts                       # Typed fetch client (all server endpoints)
 │   │   ├── api-types.ts                 # GENERATED from /openapi/v1.json → npm run gen:api
 │   │   ├── types.ts                     # Thin aliases over api-types.ts
+│   │   ├── art.ts                       # artSrc/artSrcSet: ask the server for cover/icon at the size it is
+│   │   │                               #   drawn (`?w=`) so the browser never shrinks a 600×900 to 38 px
 │   │   ├── releaseSeen.ts               # localStorage "have these notes been read?" for the dot
 │   │   ├── versionSkew.ts               # Agent vs console version comparison. Only NEWER-than-
 │   │   │                               #   console warns; a 9.9.9-ci tarball is a TEST BUILD
@@ -182,6 +190,8 @@ SaveLocker/
 │   │       ├── GamesSidebar.tsx         # 220 px left sidebar: cover art, name, badges
 │   │       ├── GamesView.tsx            # Sidebar + detail panel layout
 │   │       ├── GameDetail.tsx           # Game card, Machines, Commands, Versions, save paths
+│   │       ├── ArtPicker.tsx            # Inline cover/icon chooser under the game card (the pen over the
+│   │       │                           #   cover opens it): SteamGridDB options, five per page
 │   │       ├── ConfigView.tsx           # SteamGridDB, Console build card, Machines/API keys,
 │   │       │                           #   Agent Updates (TWO rows since v0.5.5: win-x64 +
 │   │       │                           #   linux-x64). Console card sits ABOVE Machines on
@@ -237,8 +247,12 @@ SaveLocker/
 │   ├── run-console-security-tests.ps1  # Console API + security (SEC-*): bulk commands, exclude-pattern
 │   │                                   #   validation, admin sessions, PBKDF2 v1→v2, sign-in throttle,
 │   │                                   #   trusted proxy, registration gating, CSP headers, artwork-fetch
-│   │                                   #   hardening (hosts its own stub SteamGridDB). Server only.
-│   │                                   #   Own server on :5215, stub on :5216.
+│   │                                   #   hardening (hosts its own stub SteamGridDB) + the art picker,
+│   │                                   #   background backfill, opaque-icon choice and thumbnails.
+│   │                                   #   Server only. Own server on :5215, stub on :5216.
+│   ├── sgdb-stub.py                    # A stand-in SteamGridDB for trying art BY HAND (any key works):
+│   │                                   #   `testenv up -Only console -ConsoleEnv …` points the console
+│   │                                   #   container at it. Build and Run → "Testing artwork"
 │   ├── run-delta-upload-tests.ps1      # Per-file delta upload: self-healing baseline, byte-exact
 │   │                                   #   reconstruction across a full+full+delta chain, deletion,
 │   │                                   #   the size/count floor, a diverged push staying full, and a

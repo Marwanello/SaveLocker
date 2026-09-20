@@ -207,6 +207,14 @@ behave in ways that look like bugs.
   `show_real_game_mappings` — used from `cmd_status` and `cmd_up` — reported the entirely normal "no
   game maps a real folder" case as the SSH command having failed, because nothing matched the
   `grep -o` feeding the warning loop. Needs `|| true` after the pipeline.
+- **The test console container cannot reach a server bound to the host's loopback, and
+  `host.docker.internal` has an IPv6 address it cannot route.** A stub SteamGridDB for the console
+  (`tests/sgdb-stub.py`, via `-ConsoleEnv`) therefore listens on `0.0.0.0` and is addressed by that
+  name. Docker Desktop lists both `192.168.65.254` and an `fdc4:…` address for it; a burst of parallel
+  fetches occasionally tries the IPv6 one first and logs `Network is unreachable` (measured: 2 of 10
+  picker previews on one load, 0 of 15 on three re-fetches). Harmless, and the picker shows a clickable
+  "no preview" tile — but it is not a product bug, so do not chase it there. Port 5217 for the manual
+  stub: 5216 is the security suite's own and it refuses to start if it is taken.
 
 ## Windows ACLs
 - **`SetAccessRuleProtection(isProtected: true, preserveInheritance: true)` does not let you then
@@ -333,6 +341,23 @@ behave in ways that look like bugs.
   endpoint needing no key at all, this one against a response nobody re-fetched. Symptom either way:
   a typo silently replaces a working key. **Art fetches keep their cacheable URLs on purpose** — a
   cached image is the point there.
+- **Never draw a big image small — ask the server for it at the size you draw.** A 600×900 cover in a
+  38 px tile is a ~16× shrink, and a browser does that with a cheap filter that reads only a few source
+  pixels: the result is jagged, shimmering diagonals and broken text (reproduced with a synthetic cover
+  of 1 px lines beside a Lanczos-resampled copy — the copy was clean, the original was not). No CSS
+  fixes it. `web/src/art.ts` builds `?w=` URLs and a `srcSet`; the server (`ArtThumbnails`) resamples
+  once, in linear light, and caches it. Widths outside its allowlist are IGNORED and return the
+  full-size original, so a typo in a width silently brings the aliasing back — keep `ART_WIDTHS` and
+  `ArtThumbnails.Widths` identical. Also: `loading="lazy"` images in a tab that is not painted never
+  load, so a check that reads `naturalWidth` from a hidden pane sees 0×0 (paint it first).
+- **ImageSharp's `Image.Identify(...).PixelType.AlphaRepresentation` is not a transparency test.**
+  An RGBA PNG with a single fully clear pixel identified as having no alpha, so the first "prefer an
+  opaque icon" kept the transparent one. Decode and read the pixels (`ArtImages.IsFullyOpaque`); only
+  JPEG can skip that. Caught by the suite's stub serving one 8×8 icon with a clear corner first.
+- **Regenerating `src/Server/openapi.json` from a scratch server rewrites `servers[0].url` to that
+  server's own address.** The committed snapshot says `http://localhost:5179/`; restore that line or
+  the diff carries an unrelated one-line change (and `gen:api` output shifts with it). Everything else
+  in a regenerated snapshot should be additions for the routes you added — read the diff.
 
 ## Hosting / network
 - **Container: `/data` ownership.** The server image runs unprivileged (uid 1654, or

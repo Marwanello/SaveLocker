@@ -2976,3 +2976,30 @@ Portable Playnite installs keep their `library`/`Extensions` beside their own ex
 - Full manual click-through inside Playnite (conflict gate blocking a launch, right-click menu items, Link to SaveLocker popup) — still outstanding for Phase 16.
 - `installer.yaml`/plugin changes only pushed to the `playnite-plugin-group-6` branch, not `main` — the `raw.githubusercontent.com` URLs in the submission manifest won't resolve until that lands.
 - The actual PlayniteAddonDatabase fork + submission PR — explicitly deferred pending the click-through above, per "verify first, then submit."
+
+## 2026-09-20 — Artwork: backfill when a key is added, opaque icons in the list, anti-aliased thumbnails, cover/icon picker
+
+**Branch:** `steamgriddb-art-picker` (from `main`; the Checkpoint Group 3 branch was left as it was).
+
+### What was built
+- **Key added after games exist → art fills in.** `POST /settings/steamgriddb-key` now queues `ArtBackfillService` (background, one game at a time, coalescing) for every game with no cover or no icon, and answers at once with `gamesQueued` and a message that says so. Only MISSING art is fetched (`RefreshArtAsync(onlyMissing)`), so a hand-picked cover is never replaced; the explicit *Refresh art* button still fetches the default again.
+- **The list shows the game's icon, not cropped box art**, and the default icon is now the first fully **opaque** PNG among the top six candidates (`ArtImages.IsFullyOpaque`), falling back to the first that downloads. The grid wall and game page keep the cover.
+- **The aliasing** was reproduced first (a synthetic 600×900 cover of 1 px lines, drawn at 38 px and at 137 px, beside a Lanczos copy: the original showed moiré and broken text, the copy was clean). Fix: `GET /art/{game}/{grid|icon}.{ext}?w=` (`ArtThumbnails`) — on-demand, disk-cached, Lanczos in linear light, allowlisted widths, never upscales, opaque covers as JPEG. Works on art that is already cached, no migration. `web/src/art.ts` builds the `srcSet`; a 38 px tile now loads a 64 px file instead of the full 600×900.
+- **Cover/icon picker.** A pen appears over the game card's cover on hover, on keyboard focus, and always on touch screens; it opens `ArtPicker` inline (no modal) with two strips of five SteamGridDB options each, a pager per strip, and a Current tile. Choosing saves at once. New routes `GET /games/{id}/art/options` and `PUT /games/{id}/art/{kind}`; previews are fetched and shrunk by the server and inlined as `data:` URIs (the CSP allows nothing else). The listing is cached 10 minutes and sliced, so it does not depend on SteamGridDB's page size.
+- **Rig:** `testenv.ps1 -ConsoleEnv` (env for the console container) + `tests/sgdb-stub.py` (a stub SteamGridDB) so the real Docker console can be driven with art and no key. Documented in Build and Run → *Testing artwork*.
+
+### Bugs found on the way
+- `IsFullyOpaque` first trusted ImageSharp's `PixelType.AlphaRepresentation`, which called an RGBA PNG with one clear pixel opaque — the suite's stub (transparent icon listed first) caught it, the stub log showing the second icon was never even requested. Now reads the pixels ([[Gotchas]] → *Web console*).
+- Keyboard: the picker sits after every control on the game card in tab order, so opening it from the pen left focus far away and Escape dead. It now takes focus on open; the card hands it back to the pen on close.
+
+### Verification
+- `run-console-security-tests.ps1` **137/137** (was 105): +32 checks — backfill, hand-picked cover kept, paging across a 7|5 API boundary at two requests for four pages, previews inline/shrunk/JPEG, hostile URLs refused and never contacted, opaque icon chosen, thumbnails right-sized/cached/allowlisted/stale-on-replace. First run 136/137; the one failure was the real bug above.
+- `web` `tsc -b`, `oxlint` and `vite build` clean; `dotnet build` clean; `openapi.json` regenerated and diffed (additions only — the scratch server's own `servers[0].url` restored) and `api-types.ts` regenerated.
+- **Through `testenv` (the real Docker console, pointed at the stub):** added 8 games with no key → pasted a key in Configuration → the alert read "…Fetching artwork for 9 games in the background." and 9/9 had cover and icon within a second (server log agrees); the default icons were the opaque ones though a transparent one was listed first; the list drew 64 px files in 38 px tiles and the grid 192 px files in ~133 px tiles; hover showed the pen; the picker paged 1–5 → 6–10 across the stub's API pages; picking a cover and an icon updated the server, the sidebar and the card without a reload, with fresh thumbnails; light theme rendered; focus-into-picker on open and a real Escape key returning focus to the pen were checked. The rig's seeded games were deleted afterwards and the console taken down.
+
+### Not done / not verified
+- **Never run against the real SteamGridDB** (no key available — deliberately not using the maintainer's). The new request parameters — `dimensions=600x900,342x482,660x930`, `mimes=image/png`, `nsfw=false`, `page=` — follow the official client's documented names but have only met the stub. The first thing to do with a real key: open the picker on a well-known game, page through, and confirm the covers are portrait and the pages don't repeat.
+- The picker lists art for the FIRST name match SteamGridDB returns; a game whose name matches the wrong entry offers that entry's art. No way to choose the SteamGridDB game yet ([[Backlog]]).
+- Deleting a game leaves its `/art/{id}/` folder behind (pre-existing; thumbnails now live in it too).
+- A real Enter key press on a button is not deliverable by this harness (recorded in the Group 3 session); the open step was made with `.click()`, which is what Enter does natively. Escape was a real key press.
+- `Release Notes Pending.md` is stale and was not used; what the next release's notes must say is in [[CONTEXT]].

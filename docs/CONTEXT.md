@@ -1139,6 +1139,24 @@ Linux/cross-OS chain — this session had no agent build; the server, the new su
 `web` build/lint and a real container were all run. Release notes for the next release must cover:
 sessions (a one-time re-sign-in is NOT needed — the old password is migrated on first load), the
 throttle (5 wrong passwords → 15 min), the non-root container (and `SAVELOCKER_UID`), and the CSP.
+**Artwork: backfill on key save, opaque icons in the list, thumbnails, and a cover/icon picker
+(2026-09-20, branch `steamgriddb-art-picker`, no task file — asked directly).** Four things, one session:
+saving a SteamGridDB key now fills in the games that have no art, in the background, and never touches a
+cover chosen by hand; the games list shows the square **icon** (the default is the first fully *opaque*
+PNG) instead of cropped box art; the aliasing in the list/grid was real — a browser shrinking 600×900 to
+38 px — and is fixed by serving right-sized Lanczos copies (`?w=`, on demand, cached, no migration); and
+a pen over the game card's cover opens an inline picker of five SteamGridDB covers and five icons with
+pagers ([[Decisions]] → *Artwork*, [[API Reference]], [[Gotchas]] → *Web console*).
+<br>**Verified:** `run-console-security-tests` **137/137** (was 105) and, through `testenv` against the real
+Docker console, the whole loop in a browser (both themes, keyboard, thumbnails at the right sizes) — see
+`progress.md`. To repeat it: [[Build and Run]] → *Testing artwork* (`testenv up -ConsoleEnv …` +
+`tests/sgdb-stub.py`). **Not verified: against the real SteamGridDB** — no key was available; the
+`dimensions`/`mimes`/`nsfw`/`page` parameters follow the official client but have only met the stub.
+<br>**Release notes for the next release must cover:** adding a key now fetches art for existing games;
+the list shows icons; existing art is re-served at proper sizes (no action needed); the pen/picker; and
+that *Refresh art* replaces a hand-picked cover. `Release Notes Pending.md` is stale — draft in
+`web/src/releases/` at tag time.
+
 ---
 
 ## Where things stand
