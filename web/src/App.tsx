@@ -8,6 +8,7 @@ import { AuditView } from './components/AuditView';
 import { HelpView } from './components/HelpView';
 import { WhatsNewView } from './components/WhatsNewView';
 import { SignIn } from './components/SignIn';
+import { AddGameDialog } from './components/AddGameDialog';
 import { hasUnreadNotes, markNotesSeen } from './releaseSeen';
 
 type View = 'games' | 'config' | 'audit' | 'help' | 'whats-new';
@@ -42,6 +43,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [build, setBuild] = useState<ServerBuildInfo | undefined>();
   const [unreadNotes, setUnreadNotes] = useState(false);
+  const [addGameOpen, setAddGameOpen] = useState(false);
   // 401 is distinct from a network/server error: it means the credential itself is wrong, which
   // is what SignIn exists to fix — a generic error banner would just leave the same wrong password
   // sitting in localStorage forever.
@@ -130,17 +132,10 @@ export default function App() {
     if (view === 'whats-new' && build) { markNotesSeen(build.version); setUnreadNotes(false); }
   }, [view, build]);
 
-  async function handleAddGame() {
-    const name = prompt('New game name (defines it on the server; agents map their local save dir):');
-    if (!name?.trim()) return;
-    const dir = prompt(
-      'Suggested save folder (optional). E.g. C:\\Users\\me\\AppData\\Roaming\\Game. Leave blank to skip:',
-      ''
-    );
-    try {
-      await api.addGame(name.trim(), dir?.trim() || null);
-      await load();
-    } catch (e) { alert('Add game failed: ' + (e as Error).message); }
+  async function handleAddGame(name: string, dir: string | null) {
+    await api.addGame(name, dir);
+    setAddGameOpen(false);
+    await load();
   }
 
   async function handleDismissProblem(id: string) {
@@ -218,7 +213,7 @@ export default function App() {
                 commands={data.commands}
                 conflicts={data.conflicts}
                 onRefresh={load}
-                onAddGame={handleAddGame}
+                onAddGame={() => setAddGameOpen(true)}
                 selectGameId={pendingGameId}
                 onSelectGameHandled={() => setPendingGameId(null)}
               />
@@ -235,6 +230,8 @@ export default function App() {
           }
         </div>
       )}
+
+      {addGameOpen && <AddGameDialog onClose={() => setAddGameOpen(false)} onSubmit={handleAddGame} />}
     </div>
   );
 }
