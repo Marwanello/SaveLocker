@@ -1180,6 +1180,11 @@ the list shows icons; existing art is re-served at proper sizes (no action neede
 that *Refresh art* replaces a hand-picked cover. `Release Notes Pending.md` is stale — draft in
 `web/src/releases/` at tag time.
 
+**Branch note (2026-09-20, end of session):** the Group 3 work, the artwork work and the testenv sync fix are
+all on `ui-redesign-group-3` (merge `0f0868e`, local, no PR). **Next action:** Group 4 (agent Games tab) in a
+fresh session on a branch stacked on this one — sizing and the reasons are in `progress.md` and
+`session_summary.md`.
+
 ---
 
 ## Where things stand

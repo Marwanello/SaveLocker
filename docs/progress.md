@@ -3056,3 +3056,39 @@ Portable Playnite installs keep their `library`/`Extensions` beside their own ex
 - Deleting a game leaves its `/art/{id}/` folder behind (pre-existing; thumbnails now live in it too).
 - A real Enter key press on a button is not deliverable by this harness (recorded in the Group 3 session); the open step was made with `.click()`, which is what Enter does natively. Escape was a real key press.
 - `Release Notes Pending.md` is stale and was not used; what the next release's notes must say is in [[CONTEXT]].
+
+## 2026-09-20 (wrap-up) — everything is on `ui-redesign-group-3`; Group 4 sized
+
+**Branch:** `ui-redesign-group-3`, created from the merge commit `0f0868e`. Local only — nothing pushed, no PR.
+
+### What is on it (53 files, +2,929 / −526 against `main`)
+- **Checkpoint UI Group 3** — `2705ce4` (code), `04bb7f1` (Docs). The agent half of the design system, status header with Sync all, trimmed Overview.
+- **Artwork** — `eb53aaa` (code), `fff1bd8` (Docs). Backfill when a SteamGridDB key is added, opaque icons in the list, right-sized Lanczos thumbnails, the cover/icon picker.
+- **`testenv.ps1 sync` fix** — `199a513` (code), `f4d2aad` (Docs). New directories, deletions and renames now reach the WSL clone.
+- **Merge** — `0f0868e`. Code merged without conflicts; `CONTEXT.md`, `Gotchas.md` and `progress.md` conflicted only because both sides appended at the same spot, and keep both.
+- The three older branch names (`claude/group-3-ui-redesign-c16953`, `steamgriddb-art-picker`, `testenv-sync-untracked-files`) still point at their own commits; delete them once this lands. The name `ui-redesign-group-3` undersells the contents, which are three separate pieces of work — worth saying in the PR description.
+
+### Why the art work was invisible in the rig
+`testenv.ps1` builds whatever is checked out. The art work lived on `steamgriddb-art-picker`, branched from `main`, and the worktree had been left on the sync-fix branch, so neither the Docker console nor the WSL clone (at `f4d2aad`) contained `ArtPicker.tsx` or `ArtThumbnails.cs`. Not a bug in either — a branch that was never checked out. Merging fixed it.
+
+### Group 4 — how big, and where to do it
+**Scope** (`tasks/checkpoint-ui/implementation-grouping.md`): the agent Games tab — list and grid with cover art, a per-game page with Sync this game / Push now / Pull latest, the art proxy (`GET /api/games/{id}/art`), search in Add games — plus Phase 3 item 5, which moved here because the agent's local API has no per-game sync route.
+
+**Size — an estimate, not a measurement.** Group 3 was 21 files and +917 / −416 lines, `agent-ui` only. Group 4 is larger and wider: roughly 20–25 files and 1,400–1,900 changed lines, of which four to six are C# (`AgentApiServer` routes, a per-game entry on `SyncEngine`, the art proxy) and the rest is `agent-ui` (new Games list/grid, game page, `Row` and `Seg` ports, Sidebar entry, search in the 417-line `AddGamesView`). It also regenerates `agent-ui/src/api-types.ts` from the Linux daemon. The plan itself calls it "the single largest *new* UI in the plan".
+
+**Recommendation: a new session on a new branch, stacked on `ui-redesign-group-3`.**
+1. It is the first agent group that changes C# *and* the UI, so it needs the agent suites (`run-linux-tests` and the Windows-side ones), not just a browser check — a full session of verification on its own.
+2. This session has already been compacted once and carries three unrelated streams; Group 4 wants a clean context and its own reviewable diff.
+3. `ui-redesign-group-3` is already 53 files. Group 4 on top would make a PR nobody can review; branch after this one is pushed or opened as a PR.
+4. `implementation-grouping.md` says to re-evaluate before each new group, and there is one design question to settle at the start: **the art proxy should forward `?w=`** (the widths this session added: 48/64/96/128/192/256/384) and prefer the icon for list rows, or the agent's Games list will re-introduce the aliasing fixed here.
+
+### Verified on the merged tree / not verified
+- **Verified:** server build (0 warnings, 0 errors), web `npm run build`, `testenv.ps1` PowerShell parse and `bash -n testenv.sh`, `run-console-security-tests` **137/137**, and both `-ConsoleEnv` and the `--untracked-files=all` sync change present in `testenv.ps1`.
+- **Not verified:** `agent-ui` build on the merged tree (it does not touch the art files, and Group 3 built clean on its own), the C# agent suites, the art picker against the **real** SteamGridDB (only the stub — first thing to do with a real key: if the choices come up empty, suspect the `dimensions`/`mimes`/`nsfw`/`page` parameters), the WebView2 tray window, a real Deck.
+
+### Still open
+- The picker uses the first SteamGridDB name match and offers no way to choose another (Backlog).
+- A deleted game leaves its `/art/{id}` folder behind (Backlog).
+- An untracked file deleted on Windows survives in the WSL clone — `rm` by hand (Gotchas).
+- The `--color-faint` contrast decision (3.31:1 dark / 3.55:1 light) still belongs to the maintainer.
+- `Release Notes Pending.md` is stale; what the next release notes must cover is in `CONTEXT.md`.
