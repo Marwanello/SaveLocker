@@ -220,6 +220,35 @@ jobs:
       - name: Build the server image
         run: docker build -f src/Server/Dockerfile -t savelocker:ci .
 
+      # "The image builds" says nothing about who the server RUNS as. It used to be root, and a bare
+      # `USER app` would have fixed that on paper while breaking every existing install (see
+      # src/Server/docker-entrypoint.sh) — so both halves are exercised: a fresh volume, and a data
+      # directory a root-running container already created, which must be handed over and stay writable.
+      - name: The server runs unprivileged on a fresh volume
+        run: |
+          docker run -d --name sl-fresh -p 8080:8080 -v sl-fresh-data:/data savelocker:ci
+          for i in $(seq 1 60); do curl -sf http://localhost:8080/health >/dev/null && break; sleep 1; done
+          curl -sf http://localhost:8080/health
+          uid="$(docker exec sl-fresh sh -c 'awk "/^Uid:/{print \$2}" /proc/1/status')"
+          echo "server uid: $uid"
+          test "$uid" != "0"
+          docker rm -f sl-fresh
+
+      - name: A root-created data directory upgrades in place
+        run: |
+          # What the previous image left behind: the server run as root, database and all.
+          docker run -d --name sl-legacy --user 0 --entrypoint dotnet -p 8080:8080 -v sl-legacy-data:/data savelocker:ci SaveLocker.Server.dll
+          for i in $(seq 1 60); do curl -sf http://localhost:8080/health >/dev/null && break; sleep 1; done
+          curl -sf -X POST -H 'Content-Type: application/json' -d '{"name":"Legacy Game"}' http://localhost:8080/api/games >/dev/null
+          docker rm -f sl-legacy
+          # Now the real image, on that same volume.
+          docker run -d --name sl-upgraded -p 8080:8080 -v sl-legacy-data:/data savelocker:ci
+          for i in $(seq 1 60); do curl -sf http://localhost:8080/health >/dev/null && break; sleep 1; done
+          curl -sf http://localhost:8080/api/overview | grep -q "Legacy Game"
+          curl -sf -X POST -H 'Content-Type: application/json' -d '{"name":"After Upgrade"}' http://localhost:8080/api/games >/dev/null
+          test "$(docker exec sl-upgraded sh -c 'awk "/^Uid:/{print \$2}" /proc/1/status')" != "0"
+          docker rm -f sl-upgraded
+
   # The agent integration suite, driven against the LINUX agent. Same script that runs on
   # Windows (PowerShell Core runs on both) — so the shared Agent.Core sync brain is held to
   # one behavioural contract, not two.
