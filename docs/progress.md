@@ -3014,3 +3014,18 @@ Portable Playnite installs keep their `library`/`Extensions` beside their own ex
 
 - Phase 3 item 5 (moved to Group 4); the WebView2 tray window itself and a real Deck were not exercised (the same bundle was loaded in a browser).
 - No PR opened, nothing pushed.
+
+## 2026-09-20 (later) — `testenv.ps1 sync` no longer drops new directories, deletions or renames
+
+**Branch:** `testenv-sync-untracked-files` (on top of the Group 3 branch — the Gotchas bullet and Backlog line it closes live there, not on `main`).
+
+### What was built
+- `testenv.ps1 sync` builds its list from `git status --porcelain=v1 -z --untracked-files=all` and classifies each path by what is on disk: present → `M<TAB>path`, absent → `D<TAB>path`. `testenv.sh` `cmd_sync` copies the `M` lines as before and `rm`s the `D` lines from the clone (refusing any path that could leave it); a bare path with no tab is still a copy.
+- Fixes three silent failures at once: an untracked directory (one porcelain entry → `skip (gone)`), a deleted tracked file (survived in the clone, which is checked out at the committed tree first), and a staged rename (`old -> new` matched no path; `Test-Path` threw on the `>`).
+
+### Verification
+- One throwaway change — a nested new directory, a file with a space in its name, a deleted tracked file and a `git mv` — run through the OLD script from `HEAD` (reproduced: `skip (gone): tests/_sync_probe/`, the `Test-Path` error, nothing deleted) and then the new one: "syncing 6 changed and 2 deleted file(s)", both new files present in the `Ubuntu` clone at `~/SaveLocker` with correct content, the deleted file gone, the old name gone, the new name present. Probe removed from both trees afterwards and the clone re-synced clean.
+- `bash -n tests/testenv.sh` and a PowerShell 5.1 parse of `testenv.ps1` are clean.
+
+### Not done
+- A file copied in while untracked and later deleted on the Windows side without a commit still survives in the clone (no `git clean`, deliberately) — noted in `Gotchas.md`.

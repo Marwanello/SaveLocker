@@ -32,5 +32,4 @@ Not-yet-done work only — one line per item, each pointing at its task folder u
 ## Planned / future
 
 - **Checkpoint UI redesign.** 8-phase console/agent/Deck visual redesign; Groups 1 (web foundation), 2 (console shell) and 3 (agent foundation, Overview, agent Sync all) shipped 2026-09-17/18/20; Groups 4-7 + the release-history table open (Group 4 also owns per-game "Sync this game", which needs new agent routes) → `tasks/checkpoint-ui/plan.md`.
-- **`testenv.ps1 sync` skips new directories.** It reads `git status --porcelain`, which collapses an untracked directory to one entry, and the copy loop takes only files — so a new folder never reaches the WSL clone. One-flag fix (`--untracked-files=all`); today's workaround is `git add` first → [[Gotchas]] → *`tests/testenv.ps1`*.
 - **Other stores' cloud flags.** GOG/Epic/Origin/Uplay flags for Heroic candidates → `tasks/other-stores-cloud-flags/summary.md`.

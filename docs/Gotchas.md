@@ -207,13 +207,24 @@ behave in ways that look like bugs.
   `show_real_game_mappings` — used from `cmd_status` and `cmd_up` — reported the entirely normal "no
   game maps a real folder" case as the SSH command having failed, because nothing matched the
   `grep -o` feeding the warning loop. Needs `|| true` after the pipeline.
-- **`sync` silently skips a NEW directory unless its files are staged.** It builds its file list from
-  `git status --porcelain`, which reports an untracked directory as ONE entry
-  (`?? agent-ui/src/components/ui/`), and `testenv.sh`'s copy loop only takes regular files — so it
-  prints `skip (gone): agent-ui/src/components/ui/` and the WSL clone builds without any file in it.
-  Found 2026-09-20 adding `agent-ui/src/components/ui/`. `git add` the new files first (staged files are
-  listed individually); the rig-side fix is `--untracked-files=all` on that `git status`, not yet made.
-  A deleted file is skipped the same way, so the clone keeps its old copy.
+- **`sync` used to skip a NEW directory, a deleted file, and a renamed one — fixed 2026-09-20.** It built
+  its file list from plain `git status --porcelain`, which reports an untracked directory as ONE entry
+  (`?? agent-ui/src/components/ui/`); `testenv.sh`'s copy loop only takes regular files, so it printed
+  `skip (gone): agent-ui/src/components/ui/` and the WSL clone built without any file in it (a compile
+  error on the missing imports, or a silently stale tree). The same list also lost every deletion
+  (`Test-Path` filtered it out, and the clone is first checked out at the COMMITTED tree, so the file
+  lived on there) and every staged rename (`R  old -> new` matches no path — `Test-Path` even threw
+  "Illegal characters in path" on the `>`). Now `git status --porcelain=v1 -z --untracked-files=all`:
+  every untracked file is listed on its own, nothing is quoted (`"a b"` was), and a rename is two
+  tokens. Each file is classified by what is on disk — present → `M<TAB>path` (copied), absent →
+  `D<TAB>path` (removed from the clone). Reproduced with the old script and fixed on the same change:
+  a nested new directory, a file with a space in its name, a deleted tracked file and a `git mv`.
+  **Still true:** a file that was copied in while UNTRACKED and is later deleted on the Windows side
+  without ever being committed survives in the clone — `checkout --force` does not remove untracked
+  files and `git status` no longer mentions it (four files — `Toast.tsx` and `toast.ts` under both
+  `agent-ui/src` and `web/src` — sat untracked in the clone on 2026-09-20 while existing in no tree and no
+  commit on any branch). `rm` it in the clone by hand; a blanket `git clean` was not added because
+  nothing proves the clone holds nothing un-ignored that it needs.
 - **`conflict -Wsl` on its own seeds no conflict.** It creates the game and pushes once from WSL — the
   rig prints "only seeding WSL" — and by then the game has a head, so a following `-Windows -Wsl` puts
   the divergence on the wrong machine. Recovering takes a full `clean` and a rebuild. Start with

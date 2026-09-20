@@ -1156,8 +1156,9 @@ window, a real Deck) are in `tasks/checkpoint-ui/implementation-grouping.md` →
 <br>**One finding for the maintainer, not fixed:** the plan's `--color-faint` is 3.31:1 (dark) / 3.55:1
 (light) — below WCAG AA for the small text it is used on, in the console too. Agent content text uses
 `--color-dim` instead; changing `--faint` itself means `web`, `agent-ui` and `Ui/Theme.cs` together.
-<br>**Two rig traps found, in [[Gotchas]]:** `testenv.ps1 sync` silently skips a NEW directory unless its
-files are staged (filed in [[Backlog]]), and `conflict -Wsl` alone seeds no conflict. Also: a Windows test
+<br>**Two rig traps found, in [[Gotchas]]:** `testenv.ps1 sync` silently skipped a NEW directory unless its
+files were staged (**fixed the same day**, branch `testenv-sync-untracked-files` — it also lost deletions
+and renames), and `conflict -Wsl` alone seeds no conflict. Also: a Windows test
 agent left over from an earlier session was mapped to eight of the maintainer's REAL save folders — `clean`
 removed it, and Sync all was only ever pressed on the WSL agent.
 ---
