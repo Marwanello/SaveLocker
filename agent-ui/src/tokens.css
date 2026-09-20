@@ -1,0 +1,64 @@
+/* Checkpoint tokens for the agent UI — a HAND-KEPT COPY of the `@theme` block in
+   web/src/index.css, which is the source of truth (docs/tasks/checkpoint-ui/plan.md, "Tokens").
+   agent-ui has no Tailwind and shares no workspace with web/, so the two files cannot be built from
+   one source; change a value in web/src/index.css and change it here in the same commit. The names
+   are identical on purpose, so the two files can be diffed line for line.
+
+   DARK is the base and light is an explicit opt-in (`data-theme="light"` on <html>), for the same
+   reason as in web: the views not yet migrated (Add games, Settings, Conflicts, the plugin cards)
+   hardcode dark colours, and a light base would put dark text on them. The default flips to following
+   the OS in the group that finishes the migration — see implementation-grouping.md, Group 5.
+   Every derived (soft/line/ink) step is a color-mix against the live --color-panel/--color-fg, so
+   it re-derives under either theme with no second set of values. */
+:root {
+  color-scheme: dark;
+
+  --color-ink:        #0f0f10;
+  --color-panel:      #141416;
+  --color-raise:      #191a1c;
+  --color-tile:       #1b1c1f;
+  --color-hover:      #202124;
+  --color-fg:         #f0eee9;
+  --color-dim:        #a09d97;
+  --color-faint:      #6b6862;
+  --color-line:       #242427;
+  --color-row:        #1d1d20;
+  --color-safe:       #7fa96a;
+  --color-watch:      #d9a63f;
+  --color-accent:     #e0533c;
+  --color-on-accent:  #160f0e;
+
+  --color-accent-soft: color-mix(in oklab, var(--color-accent) 14%, var(--color-panel));
+  --color-accent-line: color-mix(in oklab, var(--color-accent) 42%, var(--color-panel));
+  --color-accent-ink:  color-mix(in oklab, var(--color-accent) 80%, var(--color-fg));
+  --color-safe-soft:   color-mix(in oklab, var(--color-safe) 14%, var(--color-panel));
+  --color-safe-line:   color-mix(in oklab, var(--color-safe) 40%, var(--color-panel));
+  --color-safe-ink:    color-mix(in oklab, var(--color-safe) 82%, var(--color-fg));
+  --color-watch-soft:  color-mix(in oklab, var(--color-watch) 14%, var(--color-panel));
+  --color-watch-line:  color-mix(in oklab, var(--color-watch) 40%, var(--color-panel));
+  --color-watch-ink:   color-mix(in oklab, var(--color-watch) 82%, var(--color-fg));
+
+  --font-sans: 'Archivo', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --ease: cubic-bezier(.2, .8, .25, 1);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-ink:        #f5f3ef;
+  --color-panel:      #fffefc;
+  --color-raise:      #f0ede8;
+  --color-tile:       #ebe7e0;
+  --color-hover:      #e8e3dc;
+  --color-fg:         #191719;
+  --color-dim:        #57534d;
+  --color-faint:      #8b8780;
+  --color-line:       #e2ddd5;
+  --color-row:        #eeeae3;
+  --color-safe:       #4c7b3e;
+  --color-watch:      #8a6212;
+  --color-accent:     #c0432c;
+  --color-on-accent:  #fff8f6;
+}

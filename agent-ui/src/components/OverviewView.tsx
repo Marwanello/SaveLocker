@@ -1,18 +1,27 @@
-import { Cpu, AlertTriangle } from 'lucide-react'
-import type { AgentState, LeaseWarning } from '../types'
+import type { ReactNode } from 'react'
+import type { AgentState, Conflict, LeaseWarning, TrackedGame, View } from '../types'
 import { api } from '../api'
-import { LaunchSetupCard } from './LaunchSetupCard'
-import { DeckyPluginCard } from './DeckyPluginCard'
-import { PlaynitePluginCard } from './PlaynitePluginCard'
-import { ActivityCard } from './ActivityCard'
+import { RecentCard } from './RecentCard'
+import { Banner } from './ui/Banner'
+import { Button } from './ui/Button'
+import { Card } from './ui/Card'
+import { Stat } from './ui/Stat'
 
 interface Props {
   state: AgentState | null
+  conflicts: Conflict[]
+  games: TrackedGame[]
   onWarningDismissed: () => void
-  onSynced?: () => void
+  onNavigate: (v: View) => void
 }
 
-export function OverviewView({ state, onWarningDismissed, onSynced }: Props) {
+/**
+ * Quick info only (plan.md Phase 5): three stats, one status banner, what happens next, and the
+ * last three events. Sync all and its progress live in the status header on every page, not here.
+ * The launch-setup and plugin cards that used to fill this page are in Settings, where the
+ * prototype puts them; the full rolling log expands inside "Recent".
+ */
+export function OverviewView({ state, conflicts, games, onWarningDismissed, onNavigate }: Props) {
   const warnings = state?.leaseWarnings ?? []
 
   async function dismiss(w: LeaseWarning) {
@@ -20,95 +29,79 @@ export function OverviewView({ state, onWarningDismissed, onSynced }: Props) {
     onWarningDismissed()
   }
 
-  return (
-    <div style={{
-      position: 'absolute', inset: 0,
-      display: 'flex', flexDirection: 'column',
-      overflow: 'hidden',
-    }}>
-      {/* Lease conflict banners */}
-      {warnings.length > 0 && (
-        <div style={{ flexShrink: 0, padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {warnings.map(w => (
-            <div key={w.gameName} style={{
-              display: 'flex', alignItems: 'flex-start', gap: 10,
-              background: 'rgba(244,166,13,0.12)', border: '1px solid rgba(244,166,13,0.45)',
-              borderRadius: 7, padding: '10px 14px',
-            }}>
-              <AlertTriangle size={16} strokeWidth={2} color="#f4a60d" style={{ flexShrink: 0, marginTop: 1 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: '#f4a60d', fontSize: 13, fontWeight: 600, lineHeight: 1.3 }}>
-                  Save conflict risk — {w.gameName}
-                </div>
-                <div style={{ color: '#ECEFF1', fontSize: 12, marginTop: 3, lineHeight: 1.5 }}>
-                  <strong style={{ color: '#f4a60d' }}>{w.holderMachine}</strong> already has this game
-                  checked out. You launched without pulling their latest save — a conflict will likely
-                  appear in the dashboard when you exit.
-                </div>
-              </div>
-              <button
-                onClick={() => dismiss(w)}
-                style={{
-                  flexShrink: 0, background: 'transparent', border: 'none',
-                  color: '#9CA3AF', fontSize: 18, lineHeight: 1, cursor: 'pointer',
-                  padding: '0 2px', marginTop: -1,
-                }}
-                title="Dismiss"
-              >×</button>
-            </div>
-          ))}
-        </div>
-      )}
+  const banners: ReactNode[] = []
+  if (state && !state.connected) {
+    banners.push(
+      <Banner
+        key="setup" tone="crit"
+        title="This machine is not connected to a server"
+        detail="Register it in Settings, then Sync all pulls the latest save of every tracked game."
+        action={<Button variant="primary" onClick={() => onNavigate('settings')}>Open Settings</Button>}
+      />,
+    )
+  } else if (conflicts.length > 0) {
+    const first = games.find(g => g.id === conflicts[0].gameId)?.name ?? 'A game'
+    banners.push(
+      <Banner
+        key="conflicts" tone="crit"
+        title={conflicts.length === 1 ? `${first} is waiting on you` : `${conflicts.length} games are waiting on you`}
+        detail="Both copies changed since the last sync. Keep one."
+        action={<Button variant="primary" onClick={() => onNavigate('conflicts')}>Choose</Button>}
+      />,
+    )
+  }
+  for (const w of warnings) {
+    banners.push(
+      <Banner
+        key={`lease-${w.gameName}`} tone="warn"
+        title={`Save conflict risk — ${w.gameName}`}
+        detail={`${w.holderMachine} already has this game checked out. You launched without pulling their latest save, so a conflict will likely appear when you exit.`}
+        action={<Button size="sm" variant="quiet" onClick={() => void dismiss(w)}>Dismiss</Button>}
+      />,
+    )
+  }
+  if (state?.connected && banners.length === 0) {
+    banners.push(
+      <Banner
+        key="clear" tone="ok"
+        title="Nothing needs you."
+        detail="No conflicts waiting, and no other machine is holding one of your games."
+      />,
+    )
+  }
 
-      {/* Main content */}
-      <div style={{
-        flex: 1, display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        gap: 18, padding: 24, overflowY: 'auto',
-      }}>
-        <Cpu size={40} strokeWidth={1.75} color="#129271" />
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ color: '#ECEFF1', fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em' }}>
-            Agent Running
-          </div>
-          <div style={{ color: '#9CA3AF', fontSize: 13, marginTop: 5, lineHeight: 1.5 }}>
-            Monitoring save game activity on {state?.machineName ?? '…'}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 14, marginTop: 4 }}>
-          <StatCard value={String(state?.gamesTracked ?? '…')} label="Games Tracked" color="#129271" />
-          <StatCard value={String(state?.savesBacked ?? '…')} label="Saves Backed Up" color="#ECEFF1" />
-          <StatCard value={state?.lastSyncAgo ?? '—'} label="Last Sync" color="#9CA3AF" />
-        </div>
-        <LaunchSetupCard />
-        {/* After the launch-options card on purpose: the manual step is the supported one, and this
-            is the optional thing that can remove it. Both hide themselves on Windows. */}
-        <DeckyPluginCard />
-        {/* Playnite's own analogue, right beside it — the two never both render on the same machine
-            (Decky hides on Windows, this hides wherever Playnite's own data folder is absent). */}
-        <PlaynitePluginCard />
-        {/* Last: what's happening right now is the thing worth checking back on, so it sits where a
-            user's eye lands after everything else is already known to be fine. */}
-        <ActivityCard onSynced={onSynced} />
-      </div>
-    </div>
-  )
-}
+  const tracked = state?.gamesTracked
 
-function StatCard({ value, label, color }: { value: string; label: string; color: string }) {
   return (
-    <div style={{
-      background: '#1E252A', border: '1px solid #494949', borderRadius: 7,
-      padding: '14px 22px', textAlign: 'center', minWidth: 112,
-    }}>
-      <div style={{
-        color, fontSize: 28, fontWeight: 700,
-        fontVariantNumeric: 'tabular-nums', lineHeight: 1,
-      }}>
-        {value}
+    <div className="sl-page">
+      <div className="sl-grid3">
+        <Stat label="Tracked here" value={tracked ?? '…'} context="games on this machine" />
+        <Stat label="Saves backed up" value={state?.savesBacked ?? '…'} context="new versions pushed, in total" />
+        <Stat label="Last sync" value={state?.lastSyncAgo ?? '—'} context="last push or pull" />
       </div>
-      <div style={{ color: '#9CA3AF', fontSize: 11, marginTop: 5, letterSpacing: '0.02em' }}>
-        {label}
+
+      {banners}
+
+      <div className="sl-grid2">
+        <Card
+          title="Next up"
+          headerRight={<Button size="sm" onClick={() => onNavigate('addGames')}>Add games</Button>}
+        >
+          <dl className="sl-kv">
+            <dt>Watching</dt>
+            <dd>{tracked === undefined ? '…' : `${tracked} save folder${tracked === 1 ? '' : 's'}`}</dd>
+            <dt>On quit</dt>
+            <dd>
+              {state === null ? '…'
+                : state.settleQuietSeconds > 0
+                  ? `Push after ${state.settleQuietSeconds} seconds of quiet`
+                  : 'Push straight away'}
+            </dd>
+            <dt>Server</dt>
+            <dd>{state?.serverUrl ? state.serverUrl.replace(/^https?:\/\//, '') : '—'}</dd>
+          </dl>
+        </Card>
+        <RecentCard />
       </div>
     </div>
   )
