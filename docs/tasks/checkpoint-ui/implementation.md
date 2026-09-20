@@ -11,9 +11,9 @@ rather than by phase number, because several phases edit the same components.
 
 | Phase | Status |
 |---|---|
-| 1 — Design system foundation, web half | ✅ Shipped 2026-09-17 (Group 1) |
+| 1 — Design system foundation, web half | ✅ Shipped 2026-09-17 (Group 1); theme default corrected 2026-09-20 (dark base, light opt-in — see `implementation-grouping.md`) |
 | 1 — Design system foundation, agent half | ⏳ Not started (Group 3) |
-| 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2) |
+| 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in moved to revocable sessions 2026-09-20 |
 | 3 — Sync all and progress | 🚧 Items 1, 2, 4 shipped 2026-09-18 (Group 2 — console side); items 3 and 5 (agent side) not started (Group 3) |
 | 4 — Appearance, and syncing it to the fleet | ⏳ Not started (Group 5) |
 | 5 — Agent UI | ⏳ Not started (Groups 3/4) |

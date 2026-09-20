@@ -409,8 +409,15 @@ session can judge an edge case, not to reopen the choice.
   restore is reported to the console as an event.
 - **LAN-only over plain HTTP. No tunnel, no TLS termination, no reverse proxy** (2026-07-27). The
   payload is save files, not credentials or PII, and the earlier Cloudflare Tunnel plan is dropped.
-  So `X-Forwarded-*` is never read and no trusted-proxy configuration exists — there is nothing in
-  front to trust. The one URL the server hands to *other machines* (enrollment policy, hosted
+  So `X-Forwarded-*` is never read **by default** and there is nothing in front to trust.
+  <br>**Amended 2026-09-20:** the maintainer's own server IS reached through a Cloudflare-proxied
+  hostname (`Gotchas.md` → *Hosting / network*), and behind a proxy every client shares the proxy's
+  address, so the sign-in throttle below would have been one global bucket. `Security:TrustedProxies`
+  (IPs / CIDRs) is now an **opt-in**: only when it is set is the forwarded address believed
+  (`Security:ClientIpHeader`, default `X-Forwarded-For`; Cloudflare's is `CF-Connecting-IP`), and
+  only when the connection itself comes from a listed proxy. Unset — the default and the documented
+  LAN setup — the header is still never read, so it cannot be spoofed to dodge a lockout (asserted
+  in `run-console-security-tests.ps1`). The one URL the server hands to *other machines* (enrollment policy, hosted
   installer link) comes from `PublicUrl.For`: `Server:PublicBaseUrl` if configured, else the request
   origin. Minting is **refused when an inferred URL is loopback**, because a console opened at
   `http://localhost:5080` on the server box otherwise mints a file telling the new machine to sync
@@ -418,6 +425,67 @@ session can judge an edge case, not to reopen the choice.
   `Server:PublicBaseUrl` — is honoured: agent and server on one box is a real setup, and it is what
   both enrollment suites do. `Server:PublicBaseUrl` is also the single knob to set if a proxy is
   ever added.
+- **The console keeps a revocable session, never the admin password** (2026-09-20). It used to store
+  the password itself in `localStorage` and send it on every request, so anything able to read that
+  storage — an XSS, a hostile extension — took the real credential, which never expires and may be
+  reused elsewhere. `POST /api/admin/session` now exchanges the password ONCE for a random 256-bit
+  token (`AdminSession`; only its SHA-256 is stored, the same treatment machine keys get), sent as
+  `X-Admin-Session`. It slides 7 days idle up to a 30-day cap and is ended by Lock, "Sign out
+  everywhere", or any password change. `X-Admin-Password` still works for scripts — a header is not
+  ambient authority, which is what keeps the API CSRF-free by construction; a cookie session was
+  rejected for exactly that reason. A console that still holds the old plaintext password swaps it
+  for a session on first load and deletes it. A token in `localStorage` is still readable by an XSS;
+  what changed is that it is revocable, expires, and is not the password. The CSP below is what
+  makes an XSS less likely in the first place.
+- **Admin password guesses are throttled on every path that checks one** (2026-09-20). Sign-in, the
+  legacy header, and re-registering an existing machine (which was an unmetered oracle) all ask
+  `AuthThrottle` first: 5 wrong passwords in 15 minutes locks that client out for 15 minutes — the
+  RIGHT password included, or it would only be counting — doubling per repeat lockout to a 4 h cap,
+  plus a global backstop (100 misses from anyone in the window → 5 minutes) that bounds a
+  distributed guess. **Wrong session tokens are deliberately not counted**: they are not guesses (256
+  random bits) and a stale tab polling with an expired one would lock its owner out of signing in.
+  In memory on purpose — a restart forgives everyone, so a lockout can never strand the owner behind
+  a stale database row. IPv6 clients are keyed by /64. The known cost: an attacker can hold NEW
+  sign-ins off for the global window; existing sessions are unaffected.
+- **PBKDF2 is `v2:{iterations}:salt:hash` at 600,000 iterations** (OWASP's current minimum for
+  PBKDF2-HMAC-SHA256), 2026-09-20. The count lives in the string, so the next increase needs no new
+  format. `v1:` hashes (100,000 iterations, count implicit) still verify — `verify-password-compat.ps1`
+  guards that — and are re-written at the next successful sign-in, compare-and-set so a concurrent
+  password change is never overwritten. A hash supplied through configuration cannot be written back
+  and simply stays as it is. A verified-password cache (5 min, HMAC-keyed, only successes) stops
+  script callers paying 600k iterations on every request.
+- **A machine key is fleet-scoped, by design — and open registration is what makes that matter**
+  (2026-09-20). Any registered machine can read and write every game, force-overwrite a head, resolve
+  any conflict and change any conflict policy; there are no per-machine ACLs, because the hub model
+  lets any machine adopt any server-defined game. There is no game or version delete route in the
+  agent group. Scoping keys to games a machine tracks was considered and NOT built: it is a product
+  change (adoption, "pull to a new machine"), not a hardening tweak. What follows from it: first-time
+  registration is open, so on a reachable server anyone can mint a key — and the admin password then
+  guards the dashboard but not the saves. `Security:RequireAdminPasswordToRegister=true` closes that
+  (agents already accept `--admin-password`). It stays **off by default** — the LAN-convenience
+  default is a maintainer decision this session did not override — but anything reachable beyond the
+  household should turn it on, or use enrollment tokens.
+- **Artwork URLs are untrusted input** (2026-09-20). `ArtService` used to fetch whatever URL
+  SteamGridDB's response named with a default client and store the bytes under `/art`, which is served
+  from the same origin as the admin console; the extension came from the URL, so a path ending
+  `.html` put an attacker-shaped page there. It now requires https, a host on `Art:AllowedImageHosts`
+  (default `steamgriddb.com` + subdomains — re-checked on every redirect hop; redirects are followed
+  by hand, at most 3), no credentials in the URL, a 25 MB cap counted as bytes stream, and decides the
+  stored type from the file's leading bytes (PNG/JPEG/GIF/WebP/ICO — no SVG). `Art:ApiBaseUrl` and
+  `Art:AllowInsecureImageUrls` exist so the test suite can stand a stub in front; nothing else sets them.
+- **The console is served with a strict Content-Security-Policy** (2026-09-20): scripts, connections
+  and images only from itself, no framing, no `<base>`/plugins; `'unsafe-inline'` for STYLES only
+  (React writes `style=""`), `data:` fonts. It works because the built bundle has no inline script and
+  no third-party origin — **adding either breaks it**. `/art` gets `default-src 'none'; sandbox`,
+  and `/swagger` + `/openapi` are exempt (Swagger UI needs inline script). `nosniff`, `X-Frame-Options:
+  DENY` and `Referrer-Policy: no-referrer` go on everything.
+- **The server container runs unprivileged** (2026-09-20). A bare `USER app` would have looked like
+  the whole fix and broken every upgrade: `/data` is a mounted share whose database was created by
+  root, and a non-root process cannot write files it does not own. `docker-entrypoint.sh` starts as
+  root just long enough to `chown` `/data` once (only when a directory or the top-level database
+  files are not already the target user's — later starts skip the walk), then drops privileges with
+  `setpriv`. `SAVELOCKER_UID`/`SAVELOCKER_GID` (unRAID: 99/100) or a compose `user:` are honoured; a
+  `user:` that cannot write `/data` fails at start with the command to fix it.
 - **Lease writes are single statements; losing a race is an answer, not an error.** Acquisition is a
   conditional `UPDATE` (take over a row that is mine or expired) falling back to an `INSERT` whose
   unique `GameId` index arbitrates — the losing caller catches the constraint violation and returns

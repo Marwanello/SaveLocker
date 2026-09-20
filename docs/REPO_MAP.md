@@ -31,7 +31,10 @@ SaveLocker/
 │   │   │   ├── SyncService.cs           # Core: lease, upload, conflict, prune, resolve
 │   │   │   ├── EnrollmentService.cs     # Single-use enrollment tokens → machine API key
 │   │   │   ├── Tokens.cs                # Per-machine API keys + PBKDF2 password hashing. The on-disk
-│   │   │   │                           #   `v1:` format is load-bearing — see Gotchas
+│   │   │   │                           #   `v1:`/`v2:{iterations}:` formats are load-bearing — see Gotchas
+│   │   │   ├── AdminAuth.cs             # Console credential: throttled password check + verified-password
+│   │   │   │                           #   cache + revocable AdminSession tokens (Lock / sign out everywhere)
+│   │   │   ├── AuthThrottle.cs          # In-memory lockout for admin-password guesses: per client + global
 │   │   │   ├── HealthService.cs         # Agent heartbeats + events; dedupes and auto-resolves
 │   │   │   ├── ConflictEscalationPolicy.cs # When an open conflict becomes "escalated"
 │   │   │   │                               #   (`Conflicts:EscalationAfterSeconds`, default 6 h)
@@ -49,6 +52,7 @@ SaveLocker/
 │   │   │   ├── LeaseSweeperService.cs   # Hourly BackgroundService: clear stale leases
 │   │   │   └── Mapping.cs              # Entity → DTO mapping helpers
 │   │   ├── BuildInfo.cs                 # What this build is: env (baked by CI) -> assembly -> "dev"
+│   │   ├── docker-entrypoint.sh         # Runs the server unprivileged: one-time /data hand-over, then setpriv
 │   │   ├── Dockerfile                   # Multi-stage: Node (web/) + .NET SDK + aspnet runtime.
 │   │   │                               #   Takes SAVELOCKER_VERSION/_COMMIT/_BUILT_AT build args
 │   │   ├── appsettings.json             # Storage, Backup, AgentUpdate config sections
@@ -230,6 +234,11 @@ SaveLocker/
 │   │                                   #   and `.verify-winagent`. Drives two REAL tray processes,
 │   │                                   #   so it needs an interactive desktop or it silently skips.
 │   ├── run-server-bugbounty-tests.ps1  # Server-side bug bounty — auth, enrollment, update routes.
+│   ├── run-console-security-tests.ps1  # Console API + security (SEC-*): bulk commands, exclude-pattern
+│   │                                   #   validation, admin sessions, PBKDF2 v1→v2, sign-in throttle,
+│   │                                   #   trusted proxy, registration gating, CSP headers, artwork-fetch
+│   │                                   #   hardening (hosts its own stub SteamGridDB). Server only.
+│   │                                   #   Own server on :5215, stub on :5216.
 │   ├── run-delta-upload-tests.ps1      # Per-file delta upload: self-healing baseline, byte-exact
 │   │                                   #   reconstruction across a full+full+delta chain, deletion,
 │   │                                   #   the size/count floor, a diverged push staying full, and a
@@ -301,7 +310,9 @@ SaveLocker/
 
 ## Auth model
 - **Agent routes (server)** — `X-Api-Key: <machine key>` (issued at registration)
-- **Admin routes (server)** — `X-Admin-Password: <password>` (set in dashboard; open if unset)
+- **Admin routes (server)** — a console session, `X-Admin-Session: <token>` (minted by
+  `POST /api/admin/session`, revocable, expiring), **or** `X-Admin-Password: <password>` for scripts.
+  Set in the dashboard; open if unset. Password guesses are throttled on every path that checks one.
 - **The agent's own API (:5178)** — `X-SaveLocker-Token`, from the 0600 `api-token` file beside
   `config.json`, **plus** a loopback `Host` check and an Origin check. Loopback is not by itself a
   defence: that API rewrites config and re-registers the machine, and any local process or web page

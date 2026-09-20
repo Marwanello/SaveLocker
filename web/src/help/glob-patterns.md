@@ -28,12 +28,16 @@ SaveLocker uses gitignore-style glob matching.
 
 Exclude patterns are per-game. In the dashboard:
 1. Open the **Games** view and select a game.
-2. Scroll to the **Exclude patterns** card in the game detail panel.
-3. Add one pattern per line and save.
+2. Open the **Exclude patterns** section in the game detail panel.
+3. Type a pattern and press **Add** (or Enter) — each one becomes a chip you can remove with its ×. Press **Save patterns** when the list is right.
+
+While you edit, the dashboard checks your draft against the game's latest uploaded save and tells you how many of its files the patterns match, *before* you save. A pattern the matcher cannot use — for example one with `..` anywhere but the very start — is refused with the reason, and **Save patterns** stays disabled until you remove it. (Saving such a pattern would otherwise stop that game syncing on every machine.)
+
+A game can have at most 100 patterns, each up to 260 characters.
 
 ## Global defaults
 
-A global default exclude list applies to all games unless overridden. Configure it in **Configuration → Global exclude patterns**.
+A server-wide default exclude list applies to every game. It is shown (read-only) in **Configuration → Default exclude patterns** and, as chips, in each game's editor. It is set on the server itself with `Sync:DefaultExcludeGlobs` in its configuration or environment — it is not editable from the dashboard yet.
 
 ## 500 MB upload cap
 

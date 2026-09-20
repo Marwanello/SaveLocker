@@ -18,13 +18,27 @@ phases to do in one session, in what order, and why. Driven by three things weig
 
 | Group | Contents | Status |
 |---|---|---|
-| 1 | Phase 1 (web half) + Phase 8 assets | 🚧 Web foundation ✅ shipped 2026-09-17 (reset layered, tokens, self-hosted Archivo, motion primitives, `ui/` primitives, `NavBar.tsx` converted as proof). Assets partial: 3 marks + SVG favicon shipped; Steam art crops and all PNG/ICO rasterization deferred — no rasterizer available in this environment, see `implementation.md` Phase 8 |
-| 2 | Phase 2 + Phase 3.1/2/4 + `POST /commands/bulk` | 🚧 ✅ Shipped 2026-09-18 — every item except the release-history table, split off as pre-authorized below (still ⏳). See `implementation.md` Phase 2/3 for the per-item table |
+| 1 | Phase 1 (web half) + Phase 8 assets | 🚧 In progress — web foundation ✅ Shipped 2026-09-17 (reset layered, tokens, self-hosted Archivo, motion primitives, `ui/` primitives, `NavBar.tsx` converted as proof). Assets partial: 3 marks + SVG favicon shipped; Steam art crops and all PNG/ICO rasterization deferred — no rasterizer available in this environment, see `implementation.md` Phase 8 |
+| 2 | Phase 2 + Phase 3.1/2/4 + `POST /commands/bulk` | ✅ Shipped 2026-09-18 — every item except the release-history table, split off as pre-authorized below (still ⏳). See `implementation.md` Phase 2/3 for the per-item table |
 | 3 | Phase 1 (agent half) + Phase 5 overview trim + Phase 3.3/5 | ⏳ Not started |
 | 4 | Phase 5 Games tab + art proxy + search | ⏳ Not started |
-| 5 | Phase 4 appearance + fleet sync | ⏳ Not started |
+| 5 | Phase 4 appearance + fleet sync | ⏳ Not started — **must also flip the theme default to follow the OS** (see below), and only once Groups 3–4 have converted the remaining inline-styled views |
 | 6 | Phase 6 items 1-3 (Deck) | ⏳ Not started |
 | 7 | Phase 7 (notifications) | ⏳ Not started |
+
+**2026-09-20 review pass (a code review of Groups 1–2, all findings fixed on branch
+`console-review-fixes-and-security-hardening`).** Two things here change what later groups may assume:
+1. **The theme default was wrong and is corrected.** Group 1 shipped light as the `:root` base with dark
+   under `prefers-color-scheme`. Every view not yet migrated hardcodes dark colours but inherits text
+   colour from `<body>`, so light-preferring visitors got near-black text on dark cards — game titles,
+   machine names, headings, most of the Audit Log (measured 1.04–1.15:1). Dark is the base again;
+   light is `data-theme="light"` only. **Group 5 (appearance) flips it** — after which every
+   remaining `#hex` in `web/src` must already be gone, which is the actual acceptance test: run the
+   contrast walk described in `Gotchas.md` → *Web console* in both schemes.
+2. **Sign-in shipped as "option (a)" (the password kept in `localStorage`) and was upgraded to option
+   (b)**: a revocable session (`POST /api/admin/session`, `X-Admin-Session`). Group 3's agent UI has its
+   own local API and is unaffected; anything new in `web/` must go through `api.ts`, never read a
+   credential itself.
 
 ## Corrections to `implementation.md`, found while writing this (and one found later)
 

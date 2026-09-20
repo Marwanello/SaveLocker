@@ -100,6 +100,27 @@ leaves Config reporting a version split.
   being replaced.
 - **Console** redeploy is the `docker compose pull` above.
 
+### Securing the server
+
+Everything here is opt-in configuration (compose `environment:` entries, or `Security__Key=` env
+vars) unless it says *default*. The reasoning is in [[Decisions]]; each item is asserted in
+`tests/run-console-security-tests.ps1`.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `SAVELOCKER_UID` / `SAVELOCKER_GID` | image's `app` (1654) | The unprivileged user the container runs as. The entrypoint hands `/data` to it once on first start (a root-created install upgrades in place). unRAID: `99` / `100`. A compose `user:` also works if `/data` is already that user's. |
+| `Security__RequireAdminPasswordToRegister` | `false` | `true` = registering ANY machine (not only re-registering) needs the admin password, once one is set. A machine key can read and write **every** game, so leave this off only on a network where everyone able to reach the server is trusted. Agents: `savelocker register --name X --admin-password …`. |
+| `Security__TrustedProxies` | *(unset)* | Proxy / tunnel address(es) or CIDR ranges, comma-separated (e.g. `172.18.0.0/16`). **Only** then is a forwarded client address believed, and only from a listed proxy. Without it, behind a proxy, every client shares the proxy's address and one person's typos lock everyone out of signing in. |
+| `Security__ClientIpHeader` | `X-Forwarded-For` | Which header carries the client address (Cloudflare: `CF-Connecting-IP`). |
+| `Security__MaxFailedAttempts` / `FailureWindowSeconds` / `LockoutSeconds` | `5` / `900` / `900` | Wrong admin passwords a client may make in the window before being refused (429 + `Retry-After`) for the lockout period, doubling per repeat up to 4 h. |
+| `Security__GlobalMaxFailures` / `GlobalLockoutSeconds` | `100` / `300` | The backstop that bounds a guess spread over many addresses. |
+| `Security__SessionIdleDays` / `SessionMaxDays` | `7` / `30` | Console session lifetime: idle expiry slides, the cap does not. |
+| `Art__AllowedImageHosts` | `steamgriddb.com` | Hosts (and their subdomains) an artwork image may be fetched from. |
+
+Locked yourself out? Lockouts live in memory, so restarting the container clears them. The admin
+password itself can be reset by clearing the `Admin:PasswordHash` row from `Settings` in the database
+while the server is stopped.
+
 **Migrations:** only **v0.5.0** ever broke rollback — two schema migrations run on first start, so
 **back up `/data` first** when crossing that boundary from anything older. Every release since has
 been a clean container downgrade.
@@ -249,13 +270,20 @@ Scratch state written to `.verify/` (Windows) and `.verify-linux/` (Linux), both
 `ASPNETCORE_ENVIRONMENT=Development` *and* explicit `Storage__*`, or it opens `/data/savelocker.db`
 (i.e. `E:\data\`) and hangs on a stale migrations lock.
 
+`run-console-security-tests.ps1` owns :5215 (server) and :5216 (a stub SteamGridDB it hosts), needs only
+the **server** built in Debug (no agent), and reads/edits the SQLite file through WSL python3 for its
+database-level checks (they print `SKIP` without it). It covers the console's bulk-command and
+exclude-pattern endpoints, admin sessions, the PBKDF2 v1→v2 upgrade, the sign-in throttle (per-client,
+global, trusted-proxy), registration gating, response headers, and the artwork-fetch hardening.
+Confirmed to fail with the throttle, URL allowlist and image sniffing switched off (14 FAILs).
+
 ### Suite baseline
 
 Quote these as a pair with the date — a bare number means nothing on its own.
 
 | Where | Counts |
 |---|---|
-| Windows, local | win agent bug bounty **114** (reads **113/114** since 2026-08-14 — see [[Backlog]]) · server bug bounty **164** · agent 47 · delta upload **17** (new 2026-08-22, `run-delta-upload-tests.ps1`) · hardening 33 · local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6 |
+| Windows, local | **console/security 105** (new 2026-09-20, `run-console-security-tests.ps1`) · win agent bug bounty **114** (reads **113/114** since 2026-08-14 — see [[Backlog]]) · server bug bounty **164** · agent 47 · delta upload **17** (new 2026-08-22, `run-delta-upload-tests.ps1`) · hardening 33 · local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6 |
 | Linux, local (WSL ext4) | `run-linux-tests` **63** on `main`, **69** at `4c9f5f5`, **84** after Phase 2, **117** after Phase 3, **123** after Phase 4 of the auto-update work, **137** after Phase 1, **154** after Phase 2, **161** after the Deck hardware pass, **197** after Phase 5 and **208** once the agent UI read the plugin's state live, both of `logs/2026-08-15_decky-plugin.md`, then **216** after `logs/2026-08-15_install-update-now.md` (2026-08-15, same clone) |
 | Linux, in CI | agent 43 · hardening 37 · local-api 30 · concurrency 23 · health 19 · enrollment 16 |
 | Detection | sweep **271/298 (90.9%)** at the default 300 sample, 17 pinned |

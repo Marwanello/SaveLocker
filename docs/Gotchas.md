@@ -218,6 +218,16 @@ behave in ways that look like bugs.
   is no window with an empty ACL. Cost an hour and a confidently-passing wrong test.
 
 ## PowerShell / shell quoting
+- **A function named after a built-in alias silently never runs.** In a test script, `function Pwd`
+  was shadowed by the `pwd` alias (`Get-Location`) — aliases outrank functions — so every call
+  failed with "positional parameter cannot be found", and because the abort left the pass count
+  untouched the run still ended `0 failed`, exit 0. Avoid `Pwd`, `Cmd`, `Sort`, `Select`, `Where`,
+  `Group`, `Sleep`, `Cd`, `Ls`… as helper names, and give a script's `try` a `catch` that FAILS the
+  run: an aborted suite must never look like a passing one.
+- **Windows PowerShell 5.1 strips the inner double quotes from a native command's argument.**
+  `wsl ... python3 -c "print('ok')"` reaches bash as `print('ok')` unquoted and dies on the
+  parenthesis — and a probe written that way reports "WSL is not usable" when it is fine. Probe with
+  `python3 --version`, or write the code to a file (as `Invoke-Sqlite` in the security suite does).
 - **PowerShell escapes with a backtick, not a backslash.** `"...\$HOME..."` does not escape
   `$HOME` in PowerShell — it expands PowerShell's own `$HOME`, backslashes get eaten, and bash
   receives garbage. Pass WSL commands in a **single-quoted** PowerShell string, or write a `.sh`
@@ -265,6 +275,31 @@ behave in ways that look like bugs.
   Releases (self-contained publish) are unaffected.
 
 ## Web console
+- **An UNLAYERED CSS rule beats every Tailwind utility, whatever its specificity.** Tailwind v4 puts
+  utilities in `@layer utilities`, and unlayered CSS always outranks layered CSS. So a plain
+  `button:hover { opacity: .85 }` in `index.css` silently won over `disabled:opacity-50` (a disabled
+  button jumped from 50% to 85% on hover, looking enabled), over `hover:opacity-100`, and a plain
+  `input:focus { outline: none }` reduced the `focus-visible:outline-*` ring to nothing — three
+  findings, one cause. Global element rules belong inside `@layer base`. The same rule is why the old
+  `* { padding: 0 }` reset made every Tailwind padding/margin class a no-op until Group 1 layered it.
+  **Related: a CSS animation with `animation-fill-mode: both` holds its FINAL keyframe forever and
+  beats any normal declaration on the same element** — including an inline `style`. `animate-pop`
+  (`opacity` 0→1) therefore erased the `opacity: .55` on a disabled game's tile; dim an inner wrapper,
+  never the element that carries the entrance.
+- **Do not make light the default while any view still hardcodes dark colours.** The unmigrated views
+  (game detail, configuration, audit log, agent updates: ~275 hex colours in inline styles) paint dark
+  cards but inherit their TEXT colour from `<body>`. With light as the base, every visitor whose OS
+  prefers light got near-black text on those cards (measured 1.04–1.15:1 — invisible: the game title,
+  machine names, page headings, most of the Audit Log). Dark is the base; light is opt-in via
+  `data-theme="light"` until the migration is finished. **Measure, don't eyeball:** walk every text
+  node, resolve its effective foreground/background (a canvas turns `color-mix()` / `oklab()` results
+  into RGB) and compute the contrast ratio — and turn transitions off first: on a hidden pane a
+  `background-color` transition freezes at its old value while `color` (not transitioned) updates, which
+  produced a convincing 1.01:1 "everything is invisible" false alarm.
+- **The dashboard's CSP forbids inline script and any third-party origin.** See `Decisions.md`. A new
+  `<script>` in `index.html`, a CDN font/stylesheet, a remote image in a help article, or a
+  `fetch` to another origin will be blocked in production while working perfectly under `npm run dev`
+  (Vite serves no CSP). Check a change like that against the container, not the dev server.
 - **A bounded flex column SHRINKS its children instead of overflowing.** The console root is a fixed
   `height: 100vh` + `overflow: hidden` so the page does not scroll and its panes do — but the naive
   version of that collapsed ConfigView's cards to ~4 px each rather than producing a scrollbar. The
@@ -300,6 +335,17 @@ behave in ways that look like bugs.
   cached image is the point there.
 
 ## Hosting / network
+- **Container: `/data` ownership.** The server image runs unprivileged (uid 1654, or
+  `SAVELOCKER_UID`/`GID`). Its entrypoint hands `/data` over once on first start after upgrading from
+  the root-running image. If the server logs "unable to open database file" after an operator forced
+  `user: "99:100"` (or `--user`) — the entrypoint refuses to start and prints the `chown` to run,
+  because a non-root start cannot fix ownership itself. Verified 2026-09-20 on all four paths (fresh
+  volume, root-created data upgrading, `SAVELOCKER_UID=99`, forced `--user` that cannot write).
+- **Behind a proxy or tunnel, the sign-in throttle needs `Security:TrustedProxies`.** Without it every
+  client looks like the proxy's address and one person's typos can lock everyone out of *signing in*
+  (sessions and agents are unaffected). Set the proxy's IP/CIDR and `Security:ClientIpHeader`
+  (`CF-Connecting-IP` for Cloudflare). The forwarded address is believed ONLY when the connection
+  itself comes from a listed proxy.
 - **A Cloudflare-proxied hostname kills any single request past ~100s — the free/pro edge timeout is
   fixed and not configurable.** Diagnosed 2026-08-18 (`tasks/`-less session, see `logs/`): Cyberpunk
   2077's save archive (100+ MB — one autosave per few minutes played, each several MB) took longer

@@ -15,17 +15,27 @@ Five identity pitches this direction was chosen from: `identity-options.html`, b
 Brand kit: `brand-kit.html`, beside this file (also mirrored at
 <https://claude.ai/code/artifact/b3e0c8a5-70a0-47bf-b4f2-d0dbf4f0b2d5>).
 
-## Status (updated 2026-09-18)
+## Status (updated 2026-09-20)
 
-This file has no phase write-ups of its own — the per-phase status table lives in [[implementation]]
-(updated the same day) because that's where the phases are actually enumerated, and the per-group
-table lives in [[implementation-grouping]]. Short version: Group 1 (`web`'s tokens, reset, motion
-primitives, `ui/` component library, and a first pass at Phase 8's assets, 2026-09-17) and Group 2
-(the console shell — sidebar rows, games grid, notifications menu, sign-in, console Sync all,
-exclude-pattern chips, 2026-09-18) have shipped. Everything else — agent foundation, agent Games tab,
-appearance/fleet-sync, Deck, notifications, and the one item split out of Group 2 (the release-history
-table) — is still `⏳ Not started`. Every design decision on this page is still current; none of it
-changed while building Groups 1-2.
+| Phase | Status |
+|---|---|
+| 1 — Design system foundation, web half | ✅ Shipped 2026-09-17 (Group 1). **Corrected 2026-09-20:** dark is the base and light is opt-in (`data-theme="light"`) until the unmigrated views are converted — see the note below |
+| 1 — Design system foundation, agent half | ⏳ Not started (Group 3) |
+| 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in reworked onto revocable sessions 2026-09-20 |
+| 3 — Sync all and progress | 🚧 Items 1, 2, 4 shipped (console side); 2026-09-20 review: offline machines are left out, no duplicate stacking, failures reported. Items 3, 5 (agent side) not started (Group 3) |
+| 4 — Appearance, and syncing it to the fleet | ⏳ Not started (Group 5) — **now also owns flipping the theme default to follow the OS** |
+| 5 — Agent UI | ⏳ Not started (Groups 3/4) |
+| 6 — Deck and Wayland | ⏳ Not started (Group 6); the Wayland item (6.4) still needs the open decision made first |
+| 7 — OS notifications | ⏳ Not started (Group 7) |
+| 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1) |
+
+The phases are enumerated in [[implementation]] and the session-by-session order is
+[[implementation-grouping]]. Every design decision on this page is still current — **with one
+sequencing correction (2026-09-20):** "light and dark, both first-class" is the destination, not the
+state to ship halfway. Following the OS preference while ~275 hardcoded dark colours remain in the
+unmigrated console views made those views unreadable for light-preferring visitors (measured
+1.04–1.15:1). Until the migration ends, dark is the base and light is reachable only through an
+explicit `data-theme="light"`.
 
 ## The idea in one line
 
