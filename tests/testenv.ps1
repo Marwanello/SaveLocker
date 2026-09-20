@@ -17,7 +17,11 @@
 #                                 -Only is 'all'/'playnite' and -PlaynitePath is configured)
 #   .\tests\testenv.ps1 up        start them (registers on first run); installs/reinstalls the test
 #                                 Decky plugin on the Deck alongside the test daemon, and the
-#                                 Playnite plugin into -PlaynitePath if configured
+#                                 Playnite plugin into -PlaynitePath if configured.
+#                                 -ConsoleEnv KEY=VALUE[,...] adds environment to the console CONTAINER —
+#                                 used to point it at tests/sgdb-stub.py (a stand-in SteamGridDB) so
+#                                 artwork can be tried without a real key; see Build and Run.md →
+#                                 "Testing artwork"
 #   .\tests\testenv.ps1 down      stop them; the installed agent is never touched
 #   .\tests\testenv.ps1 status    what is running, and which build
 #   .\tests\testenv.ps1 test      run the suites
@@ -153,6 +157,10 @@ param(
     [string]$StateRoot = $(if ($env:SAVELOCKER_TEST_ROOT) { $env:SAVELOCKER_TEST_ROOT }
                            else { Join-Path $env:LOCALAPPDATA 'SaveLocker-test' }),
     [int]$ConsolePort = 5080,
+    # Extra environment for the test console CONTAINER, as KEY=VALUE — applied every time `up` (re)starts
+    # it. What it exists for: pointing the console at a stub SteamGridDB (tests/sgdb-stub.py) so
+    # artwork can be exercised without a real API key. See "Testing artwork" in docs/Build and Run.md.
+    [string[]]$ConsoleEnv = @(),
     [int]$WinPort     = 5188,
     # Not 5188: WSL2 publishes Linux listeners onto Windows localhost, so they really do collide.
     [int]$LinuxPort   = 5187,
@@ -932,7 +940,14 @@ function Build-Console {
 function Start-Console {
     Say "console on :$ConsolePort"
     & docker rm -f $container 2>$null | Out-Null
-    & docker run -d --name $container -p "${ConsolePort}:8080" -v "${volume}:/data" $image | Out-Null
+    # host.docker.internal is built in on Docker Desktop and needs this on a plain Linux engine, so a
+    # stub server on this PC is reachable by one name on both.
+    $extra = @('--add-host', 'host.docker.internal:host-gateway')
+    foreach ($kv in $ConsoleEnv) {
+        if ($kv -notmatch '^[A-Za-z_][A-Za-z0-9_]*=') { throw "-ConsoleEnv entries must be KEY=VALUE, got '$kv'" }
+        $extra += @('-e', $kv)
+    }
+    & docker run -d --name $container -p "${ConsolePort}:8080" -v "${volume}:/data" @extra $image | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'docker run failed' }
     for ($i = 0; $i -lt 40; $i++) {
         $s = Test-ConsoleUp

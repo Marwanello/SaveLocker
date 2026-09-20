@@ -34,6 +34,11 @@ export type ServerBuildInfo = NonNullable<Schemas['ServerBuildInfo']>;
 export type AgentInstallerStatus = Schemas['AgentInstallerStatus'];
 export type InstallerHashVerification = Schemas['InstallerHashVerification'];
 export type AutoFetchSchedule = NonNullable<Schemas['AutoFetchSchedule']>;
+export type ArtOptionsPage = Schemas['ArtOptionsPageDto'];
+export type ArtOption = NonNullable<Schemas['ArtOptionDto']>;
+
+/** The two pieces of art a person can choose: the box-art cover and the square icon. */
+export type ArtKind = 'grid' | 'icon';
 
 /**
  * Which agent a hosted package is for. Hand-written because the server's `AgentPlatform` is a

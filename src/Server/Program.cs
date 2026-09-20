@@ -54,6 +54,9 @@ builder.Services.AddSingleton<ConflictEscalationPolicy>();
 builder.Services.AddScoped<SyncService>();
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddScoped<ArtService>();
+builder.Services.AddMemoryCache();   // ArtService: the picker's SteamGridDB listings
+builder.Services.AddSingleton<ArtBackfillService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ArtBackfillService>());
 builder.Services.AddScoped<EnrollmentService>();
 builder.Services.AddScoped<HealthService>();
 
@@ -273,6 +276,11 @@ app.Use(OpenApiSchemaSorterMiddleware.SortOpenApiSchemasAsync);
 // OpenAPI JSON at /openapi/v1.json + a Swagger UI explorer at /swagger.
 app.MapOpenApi();
 app.UseSwaggerUI(o => o.SwaggerEndpoint("/openapi/v1.json", "SaveLocker API v1"));
+
+// /art/{game}/grid.png?w=96 — a right-sized copy of cached art (ArtThumbnails). Ahead of the static
+// files so it can answer first; every request it does not recognise falls straight through to them.
+var artRoot = ArtService.ResolveRoot(app.Configuration, app.Environment);
+app.Use((ctx, next) => ArtThumbnails.HandleAsync(ctx, next, artRoot));
 
 // Serve the admin dashboard (wwwroot/index.html) at "/".
 app.UseDefaultFiles();
@@ -766,7 +774,8 @@ admin.MapGet("/settings", async (SettingsService settings) =>
 // key, and the console (which ignored `ok`) reported it as configured. A rejected key must leave
 // the working one exactly where it was.
 admin.MapPost("/settings/steamgriddb-key", async (
-    SetSteamGridDbKeyRequest req, SettingsService settings, ArtService art, CancellationToken ct) =>
+    SetSteamGridDbKeyRequest req, SettingsService settings, ArtService art, ArtBackfillService backfill,
+    CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(req.ApiKey))
     {
@@ -790,7 +799,19 @@ admin.MapPost("/settings/steamgriddb-key", async (
     }
 
     await settings.SetAsync(SettingsService.SteamGridDbApiKey, req.ApiKey, ct);
-    return Results.Ok(new { ok, message });
+
+    // Games enrolled while there was no key have no art, and a key is what changes that. Fetched in the
+    // background (ArtBackfillService) — doing it here would hold this request for the whole library.
+    var missing = (await art.GameIdsMissingArtAsync(ct)).Count;
+    if (missing > 0) backfill.Request();
+    return Results.Ok(new
+    {
+        ok,
+        message = missing > 0
+            ? $"{message} Fetching artwork for {missing} game{(missing == 1 ? "" : "s")} in the background."
+            : message,
+        gamesQueued = missing,
+    });
 });
 
 admin.MapPost("/settings/agent-update-auto-fetch", async (
@@ -846,6 +867,22 @@ admin.MapPost("/games/{id:guid}/art/refresh", async (Guid id, ArtService art) =>
     var (ok, message) = await art.RefreshArtAsync(id);
     return ok ? Results.Ok(new { message }) : Results.BadRequest(new { message });
 });
+
+// The console's cover/icon picker: five SteamGridDB options at a time (page is 0-based), previews inline.
+admin.MapGet("/games/{id:guid}/art/options", async (
+    Guid id, string kind, int? page, ArtService art, CancellationToken ct) =>
+{
+    var (result, error) = await art.GetOptionsAsync(id, kind, page ?? 0, ct);
+    return result is not null ? Results.Ok(result) : Results.BadRequest(new { message = error });
+}).Produces<ArtOptionsPageDto>();
+
+// Use one of those options. `kind` is "grid" (cover) or "icon"; the body carries the option's URL.
+admin.MapPut("/games/{id:guid}/art/{kind}", async (
+    Guid id, string kind, SetGameArtRequest req, ArtService art, CancellationToken ct) =>
+{
+    var (ok, message, game) = await art.SetArtAsync(id, kind, req.Url, ct);
+    return ok ? Results.Ok(game!.ToDto()) : Results.BadRequest(new { message });
+}).Produces<GameDto>();
 
 admin.MapDelete("/games/{id:guid}", async (Guid id, SyncService sync) =>
     await sync.DeleteGameAsync(id) ? Results.NoContent() : Results.NotFound());

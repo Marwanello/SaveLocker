@@ -5,6 +5,7 @@ import { Chip } from './ui/Chip';
 import { Seg } from './ui/Seg';
 import { Button } from './ui/Button';
 import { GamesGrid } from './GamesGrid';
+import { artSrc, artSrcSet } from '../art';
 
 interface Props {
   games: GameSummary[];
@@ -61,14 +62,18 @@ export function GamesSidebar({ games, selectedId, onSelect, onAddGame, onRefresh
           <div className="flex flex-col gap-1.5 p-1.5">
             {games.map(s => {
               const { game, head, hasOpenConflict, lease, totalStorageBytes } = s;
+              const art = game.iconUrl || game.gridUrl;
               return (
                 <Row
                   key={game.id}
                   onClick={() => onSelect(game.id)}
                   className={`${game.id === selectedId ? 'border-accent' : ''} ${game.enabled ? '' : 'opacity-[.55]'}`}
+                  // The row's cover is a 38 px SQUARE, so it shows the game's icon — box art is 2:3 and
+                  // has to be cropped to fit. The cover is only the fallback for a game with no icon.
                   cover={
-                    game.gridUrl
-                      ? <img src={game.gridUrl} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                    art
+                      ? <img src={artSrc(art, 64)} srcSet={artSrcSet(art, [64, 128])} sizes="38px"
+                          alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                       : <span className="text-faint text-[8px] font-mono">no art</span>
                   }
                   title={game.name}

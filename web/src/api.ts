@@ -1,4 +1,4 @@
-import type { GameSummary, Machine, Command, Conflict, Settings, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule } from './types';
+import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule } from './types';
 
 // The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
 // itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
@@ -47,6 +47,7 @@ function plainDetail(body: string): string {
     const parsed = JSON.parse(body);
     if (typeof parsed === 'string') return parsed;
     if (typeof parsed?.error === 'string') return parsed.error;
+    if (typeof parsed?.message === 'string') return parsed.message;
     if (typeof parsed?.detail === 'string') return parsed.detail;
     if (typeof parsed?.title === 'string') return parsed.title;
   } catch { /* not JSON — fall through */ }
@@ -161,6 +162,12 @@ export const api = {
     request<VersionStats>(`/games/${gameId}/versions/${versionId}/stats`),
 
   refreshArt: (gameId: string) => request<{ message?: string }>(`/games/${gameId}/art/refresh`, { method: 'POST' }),
+  /** Five SteamGridDB covers or icons for a game, with inline previews. `page` counts from 0. */
+  artOptions: (gameId: string, kind: ArtKind, page: number) =>
+    request<ArtOptionsPage>(`/games/${gameId}/art/options?kind=${kind}&page=${page}`),
+  /** Use one of those options (by its `url`) as the game's cover or icon. */
+  setArt: (gameId: string, kind: ArtKind, url: string) =>
+    request<Game>(`/games/${gameId}/art/${kind}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) }),
   setEnabled: (gameId: string, value: boolean) => request<void>(`/games/${gameId}/enabled?value=${value}`, { method: 'POST' }),
   deleteGame: (gameId: string) => request<void>(`/games/${gameId}`, { method: 'DELETE' }),
   addGame: (name: string, suggestedSaveDir: string | null) =>
