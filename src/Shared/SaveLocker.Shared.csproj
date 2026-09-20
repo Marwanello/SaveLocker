@@ -11,7 +11,6 @@
          between the Server and Agent.Core hosts — both already carry this FrameworkReference
          themselves, so this adds nothing new to their published output. -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" Version="10.0.9" />
     <PackageReference Include="YamlDotNet" Version="18.0.0" />
   </ItemGroup>
 
