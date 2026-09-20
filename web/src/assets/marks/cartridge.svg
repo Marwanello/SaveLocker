@@ -1,0 +1,7 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SaveLocker mark: Cartridge">
+  <title>SaveLocker — Cartridge mark</title>
+  <rect x="5" y="5" width="22" height="22" rx="4" fill="var(--color-accent, #e0533c)"/>
+  <rect x="8.5" y="8.5" width="15" height="8" rx="2" fill="var(--color-on-accent, #160f0e)"/>
+  <circle cx="16" cy="12.5" r="2.1" fill="var(--color-accent, #e0533c)"/>
+  <path d="M10.5 27v-3.4M16 27v-3.4M21.5 27v-3.4" stroke="var(--color-on-accent, #160f0e)" stroke-width="2" stroke-linecap="round" opacity=".65"/>
+</svg>

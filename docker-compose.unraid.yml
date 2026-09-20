@@ -10,6 +10,15 @@ services:
       - AgentUpdate__Plugin__GitHubRepo=Marwanello/SaveLocker-Decky
       # Optional: periodically fetch newer GitHub release installers (hours; 0 = disabled).
       # - AgentUpdate__AutoFetchHours=24
+      # Optional: the server runs as an unprivileged user (uid 1654 by default) and hands /data to it
+      # on first start. On unRAID, nobody:users keeps new files owned like the rest of the share:
+      # - SAVELOCKER_UID=99
+      # - SAVELOCKER_GID=100
+      # Optional hardening — see docs/Build and Run.md, "Securing the server":
+      # - Security__RequireAdminPasswordToRegister=true   # a machine key can read/write EVERY game
+      # Only if a reverse proxy / tunnel sits in front (otherwise every client looks like the proxy):
+      # - Security__TrustedProxies=172.18.0.0/16          # the proxy's address(es) / CIDR range(s)
+      # - Security__ClientIpHeader=CF-Connecting-IP       # header carrying the real client address
     volumes:
       - /mnt/user/appdata/savelocker:/data
     healthcheck:

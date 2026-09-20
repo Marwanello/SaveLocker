@@ -76,6 +76,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateSessionRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SessionResponse"];
+                    };
+                };
+            };
+        };
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/status": {
         parameters: {
             query?: never;
@@ -1328,6 +1384,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/excludes/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": string[];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ExcludesPreviewDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games/{id}/conflict-policy": {
         parameters: {
             query?: never;
@@ -1749,6 +1846,39 @@ export interface paths {
             };
         };
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -2237,6 +2367,45 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["AgentCommandDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/commands/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["BulkEnqueueRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BulkEnqueueResponse"];
                     };
                 };
             };
@@ -2921,6 +3090,15 @@ export interface components {
             useDeltaPath: boolean;
             needPaths?: null | string[];
         };
+        BulkEnqueueRequest: {
+            commands: components["schemas"]["EnqueueCommandRequest"][];
+            /** Format: int32 */
+            skipMachinesUnseenForSeconds?: null | number;
+        };
+        BulkEnqueueResponse: {
+            queued: components["schemas"]["AgentCommandDto"][];
+            skipped: components["schemas"]["SkippedCommandDto"][];
+        };
         ChunkAppendResponse: {
             /** Format: int64 */
             bytesReceived: number;
@@ -3008,6 +3186,9 @@ export interface components {
             customPathsJson: null | string;
             suggestedSaveDir?: null | string;
         };
+        CreateSessionRequest: {
+            password: null | string;
+        };
         EffectiveServerUrl: {
             url: string;
             fromConfig: boolean;
@@ -3054,6 +3235,10 @@ export interface components {
             /** Format: int32 */
             settleMaxWaitSeconds?: null | number;
             games?: null | components["schemas"]["EnrollmentGame"][];
+        };
+        ExcludesPreviewDto: {
+            /** Format: int32 */
+            wouldExclude: number;
         };
         FileManifestEntry: {
             path: string;
@@ -3200,6 +3385,11 @@ export interface components {
             /** Format: date-time */
             nextAutoFetchRunAt?: null | string;
         };
+        SessionResponse: {
+            token: null | string;
+            /** Format: date-time */
+            expiresAt: null | string;
+        };
         SetAdminPasswordRequest: {
             password: null | string;
         };
@@ -3210,6 +3400,12 @@ export interface components {
         };
         SetSteamGridDbKeyRequest: {
             apiKey: null | string;
+        };
+        SkippedCommandDto: {
+            /** Format: uuid */
+            machineId: string;
+            machineName: string;
+            reason: string;
         };
         UploadResult: {
             status: components["schemas"]["UploadStatus"];

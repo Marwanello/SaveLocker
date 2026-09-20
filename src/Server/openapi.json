@@ -51,6 +51,45 @@
         }
       }
     },
+    "/api/admin/session": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/admin/status": {
       "get": {
         "tags": [
@@ -1085,6 +1124,49 @@
         }
       }
     },
+    "/api/games/{id}/excludes/preview": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExcludesPreviewDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/games/{id}/conflict-policy": {
       "post": {
         "tags": [
@@ -1425,6 +1507,18 @@
           },
           "required": true
         },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/admin/sessions": {
+      "delete": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
         "responses": {
           "200": {
             "description": "OK"
@@ -1825,6 +1919,35 @@
                   "items": {
                     "$ref": "#/components/schemas/AgentCommandDto"
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/commands/bulk": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkEnqueueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkEnqueueResponse"
                 }
               }
             }
@@ -2833,6 +2956,48 @@
           }
         }
       },
+      "BulkEnqueueRequest": {
+        "required": [
+          "commands"
+        ],
+        "type": "object",
+        "properties": {
+          "commands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnqueueCommandRequest"
+            }
+          },
+          "skipMachinesUnseenForSeconds": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "BulkEnqueueResponse": {
+        "required": [
+          "queued",
+          "skipped"
+        ],
+        "type": "object",
+        "properties": {
+          "queued": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCommandDto"
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkippedCommandDto"
+            }
+          }
+        }
+      },
       "ChunkAppendResponse": {
         "required": [
           "bytesReceived"
@@ -3125,6 +3290,20 @@
           }
         }
       },
+      "CreateSessionRequest": {
+        "required": [
+          "password"
+        ],
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "EffectiveServerUrl": {
         "required": [
           "url",
@@ -3304,6 +3483,18 @@
             "items": {
               "$ref": "#/components/schemas/EnrollmentGame"
             }
+          }
+        }
+      },
+      "ExcludesPreviewDto": {
+        "required": [
+          "wouldExclude"
+        ],
+        "type": "object",
+        "properties": {
+          "wouldExclude": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -3849,6 +4040,28 @@
           }
         }
       },
+      "SessionResponse": {
+        "required": [
+          "token",
+          "expiresAt"
+        ],
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expiresAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
       "SetAdminPasswordRequest": {
         "required": [
           "password"
@@ -3892,6 +4105,26 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "SkippedCommandDto": {
+        "required": [
+          "machineId",
+          "machineName",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "machineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "machineName": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
           }
         }
       },

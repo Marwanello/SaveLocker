@@ -1,15 +1,115 @@
-import type { GameSummary, Machine, Command, Conflict, Settings, Version, VersionStats, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule } from './types';
+import type { GameSummary, Machine, Command, Conflict, Settings, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule } from './types';
 
-let adminPassword = localStorage.getItem('sl_password') || '';
+// The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
+// itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
+// a hostile extension — took the real credential, which never expires and may be reused elsewhere. A
+// session is a random token the server can end (Lock, "Sign out everywhere", a password change) and
+// that expires on its own; only its hash is stored server-side. localStorage still holds it, so it
+// survives a reload — that is the same exposure window, but now for something that can be killed.
+const SESSION_KEY = 'sl_session';
+const LEGACY_PASSWORD_KEY = 'sl_password';
 
-export function getPassword() { return adminPassword; }
-export function setPassword(p: string) {
-  adminPassword = p;
-  localStorage.setItem('sl_password', p);
+// localStorage can throw (private windows, blocked site data). A console that cannot persist a
+// session still works — it just asks again after a reload.
+function readStore(key: string): string { try { return localStorage.getItem(key) ?? ''; } catch { return ''; } }
+function writeStore(key: string, value: string | null) {
+  try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key); } catch { /* see above */ }
 }
 
+let sessionToken = readStore(SESSION_KEY);
+
+export function hasSession() { return sessionToken !== ''; }
+export function clearSession() { sessionToken = ''; writeStore(SESSION_KEY, null); }
+
+/** A failed request. `status` lets a caller react to a refusal by kind instead of matching message text. */
+export class ApiError extends Error {
+  readonly status: number;
+  /** The server's own explanation, unwrapped from whatever shape it sent — for showing to a person. */
+  readonly detail: string;
+  constructor(status: number, message: string, detail = '') {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+/** The text worth showing for a caught failure: the server's explanation when there is one. */
+export function errorText(e: unknown): string {
+  if (e instanceof ApiError) return e.detail || e.message;
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** A server refusal body as plain text: a JSON string, `{error}`, or problem-details, else the raw text. */
+function plainDetail(body: string): string {
+  if (!body) return '';
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed === 'string') return parsed;
+    if (typeof parsed?.error === 'string') return parsed.error;
+    if (typeof parsed?.detail === 'string') return parsed.detail;
+    if (typeof parsed?.title === 'string') return parsed.title;
+  } catch { /* not JSON — fall through */ }
+  return body;
+}
+
+export type SignInResult =
+  | { ok: true }
+  | { ok: false; reason: 'wrong' | 'throttled' | 'error'; message: string };
+
+/**
+ * Exchange the admin password for a session. The password is sent once, here, and never stored. On a
+ * server that has no admin password the answer carries no token and this simply reports success —
+ * there is nothing to sign in to.
+ */
+export async function signIn(password: string): Promise<SignInResult> {
+  let res: Response;
+  try {
+    res = await fetch('/api/admin/session', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }),
+    });
+  } catch { return { ok: false, reason: 'error', message: "Couldn't reach the server." }; }
+
+  if (res.ok) {
+    const body = await res.json().catch(() => null) as { token?: string | null } | null;
+    if (body?.token) { sessionToken = body.token; writeStore(SESSION_KEY, body.token); }
+    else clearSession();
+    return { ok: true };
+  }
+  // 429's message comes from the server and says how long to wait ("…Try again in 14 minutes.").
+  const detail = await explain(res);
+  if (res.status === 401) return { ok: false, reason: 'wrong', message: 'Wrong password. Try again.' };
+  if (res.status === 429) return { ok: false, reason: 'throttled', message: detail };
+  return { ok: false, reason: 'error', message: detail };
+}
+
+/** Lock: end this browser's session on the server (best effort) and forget it locally. */
+export async function signOut(): Promise<void> {
+  if (sessionToken) {
+    try { await fetch('/api/admin/session', { method: 'DELETE', headers: headers() }); } catch { /* the token is dropped below either way */ }
+  }
+  clearSession();
+}
+
+/**
+ * Consoles from before sessions kept the admin PASSWORD in localStorage. Swap it for a session once and
+ * delete it — whatever the answer, unless the server could not be asked (a transient failure keeps it
+ * for the next load, rather than costing the user their sign-in over a network blip).
+ */
+export async function migrateLegacyPassword(): Promise<'none' | 'migrated' | 'rejected' | 'pending'> {
+  const legacy = readStore(LEGACY_PASSWORD_KEY);
+  if (!legacy) return 'none';
+  const r = await signIn(legacy);
+  if (r.ok) { writeStore(LEGACY_PASSWORD_KEY, null); return 'migrated'; }
+  if (r.reason === 'wrong') { writeStore(LEGACY_PASSWORD_KEY, null); return 'rejected'; }
+  return 'pending';
+}
+
+/** Remove a leftover plaintext password without using it (the server turned out to need none). */
+export function dropLegacyPassword() { writeStore(LEGACY_PASSWORD_KEY, null); }
+
 function headers(extra: Record<string, string> = {}): Record<string, string> {
-  return { 'X-Admin-Password': adminPassword, ...extra };
+  return sessionToken ? { 'X-Admin-Session': sessionToken, ...extra } : { ...extra };
 }
 
 /**
@@ -25,6 +125,7 @@ async function explain(res: Response): Promise<string> {
     try {
       const parsed = JSON.parse(body);
       if (typeof parsed === 'string' && parsed) return parsed;
+      if (typeof parsed?.error === 'string' && parsed.error) return parsed.error;
       if (parsed?.detail) return parsed.detail as string;
       if (parsed?.title) return parsed.title as string;
     } catch { return body; }
@@ -39,7 +140,7 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   });
   if (!res.ok) {
     const detail = await res.text();
-    throw new Error(`${res.status} ${res.statusText}${detail ? `: ${detail}` : ''}`);
+    throw new ApiError(res.status, `${res.status} ${res.statusText}${detail ? `: ${detail}` : ''}`, plainDetail(detail));
   }
   const ct = res.headers.get('content-type') || '';
   return ct.includes('json') ? res.json() : res.text() as unknown as T;
@@ -69,6 +170,9 @@ export const api = {
     request<void>(`/games/${gameId}/retain${value !== null ? `?value=${value}` : ''}`, { method: 'POST' }),
   setExcludes: (gameId: string, patterns: string[]) =>
     request<void>(`/games/${gameId}/excludes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patterns) }),
+  /** Dry run against the game's head archive, for a draft pattern list that hasn't been saved yet. */
+  previewExcludes: (gameId: string, patterns: string[]) =>
+    request<ExcludesPreview>(`/games/${gameId}/excludes/preview`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patterns) }),
   setConflictPolicy: (gameId: string, policy: string, preferredMachineId?: string | null) =>
     request<void>(`/games/${gameId}/conflict-policy`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ policy, preferredMachineId: preferredMachineId ?? null }) }),
   deleteVersion: (gameId: string, versionId: string) =>
@@ -107,6 +211,26 @@ export const api = {
 
   queueCommand: (machineId: string, gameId: string, type: string, force: boolean) =>
     request<void>('/commands', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ machineId, gameId, type, force }) }),
+
+  /**
+   * Console "Sync all": one call, one command per machine. `gameId: null` on each — the agent's
+   * own poller already syncs every game IT tracks when a command names no specific game
+   * (`CommandPoller.TargetGames`), so this needs no per-game fan-out at all.
+   */
+  queueSyncAll: (machineIds: string[], skipUnseenForSeconds: number) =>
+    request<BulkEnqueueResponse>('/commands/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        commands: machineIds.map(machineId => ({ machineId, gameId: null, type: 'Sync', force: false })),
+        // Commands never expire, so one queued for a machine that is switched off would fire
+        // unannounced whenever it next connects. The server leaves such machines out and names them.
+        skipMachinesUnseenForSeconds: skipUnseenForSeconds,
+      }),
+    }),
+
+  /** "Sign out everywhere": ends every session on the server, this browser's included. */
+  signOutEverywhere: () => request<{ ended: number }>('/admin/sessions', { method: 'DELETE' }),
 
   deleteMachine: (machineId: string) =>
     fetch(`/api/machines/${machineId}`, { method: 'DELETE', headers: headers() })

@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { api, getPassword } from './api';
+import {
+  api, ApiError, clearSession, dropLegacyPassword, errorText, hasSession,
+  migrateLegacyPassword, signIn, signOut,
+} from './api';
 import type { GameSummary, Machine, Command, Conflict, Settings, AgentHealth, ServerBuildInfo } from './types';
 import { NavBar } from './components/NavBar';
 import { GamesView } from './components/GamesView';
@@ -7,6 +10,8 @@ import { ConfigView } from './components/ConfigView';
 import { AuditView } from './components/AuditView';
 import { HelpView } from './components/HelpView';
 import { WhatsNewView } from './components/WhatsNewView';
+import { SignIn } from './components/SignIn';
+import { AddGameDialog } from './components/AddGameDialog';
 import { hasUnreadNotes, markNotesSeen } from './releaseSeen';
 
 type View = 'games' | 'config' | 'audit' | 'help' | 'whats-new';
@@ -41,51 +46,159 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [build, setBuild] = useState<ServerBuildInfo | undefined>();
   const [unreadNotes, setUnreadNotes] = useState(false);
+  const [addGameOpen, setAddGameOpen] = useState(false);
 
+  // Whether the server has an admin password at all — null until /api/admin/status answers. This, not
+  // "did a request 401", decides whether the sign-in screen exists: on a server with no password there
+  // is nothing to sign in to (and nothing to Lock), and on one with a password the very first visit
+  // used to be reported as a WRONG password because the automatic first load carries none.
+  const [passwordRequired, setPasswordRequired] = useState<boolean | null>(null);
+  // Whether this browser holds a session token. localStorage is not reactive, so it is mirrored here.
+  const [signedIn, setSignedIn] = useState(hasSession);
+  // What the sign-in screen says beyond its plain prompt. Only ever a REAL outcome: an attempt that was
+  // refused, a lockout, or a session that ended — never the state of having not tried yet.
+  const [signInNotice, setSignInNotice] = useState<{ text: string; tone: 'error' | 'info' } | null>(null);
+  const [signInBusy, setSignInBusy] = useState(false);
+
+  // One-shot: set by a notification's deep link, consumed (and cleared) by GamesView.
+  const [pendingGameId, setPendingGameId] = useState<string | null>(null);
+
+  const canLoad = passwordRequired === false || (passwordRequired === true && signedIn);
+  const needsSignIn = passwordRequired === true && !signedIn;
+
+  // A response that lands after the credential changed (Lock, sign-in, a 401) belongs to the previous
+  // state and must not repaint it: without this, a load in flight when Lock was pressed put the games
+  // back on screen behind the sign-in screen.
+  const epochRef = useRef(0);
   const loadingRef = useRef(false);
+  const reloadQueuedRef = useRef(false);
 
-  // Separate from load(): /api/admin/status is unauthenticated, so the version must still show
-  // when the admin password is wrong or unset — which is exactly when you are diagnosing.
-  useEffect(() => {
-    api.adminStatus()
-      .then(s => {
-        setBuild(s.build);
-        setUnreadNotes(hasUnreadNotes(s.build?.version));
-      })
-      .catch(() => { /* unreachable server is already surfaced by load() */ });
+  // /api/admin/status is unauthenticated, so the version must still show when the admin password is
+  // wrong or unset — which is exactly when you are diagnosing.
+  const refreshStatus = useCallback(async () => {
+    try {
+      const s = await api.adminStatus();
+      setBuild(s.build);
+      setUnreadNotes(hasUnreadNotes(s.build?.version));
+      setPasswordRequired(s.passwordRequired);
+      setError(e => (e.startsWith("Can't reach") ? '' : e));
+    } catch {
+      setError("Can't reach the server.");
+    }
   }, []);
 
-  const load = useCallback(async () => {
-    if (loadingRef.current) return;
-    loadingRef.current = true;
+  const loadOnce = useCallback(async () => {
+    const epoch = epochRef.current;
     setLoading(true);
     setError('');
     try {
       const [games, conflicts, machines, commands, settings, health] = await Promise.all([
         api.overview(), api.conflicts(), api.machines(), api.commands(), api.settings(), api.health(),
       ]);
+      if (epoch !== epochRef.current) return;
       setData({ games, machines, commands, conflicts, settings, health });
+      // Keep this in step with the server: an admin can set or remove the password from Configuration.
+      setPasswordRequired(settings.adminPasswordSet);
     } catch (e) {
-      const msg = (e as Error).message;
-      setError(msg.startsWith('401') ? 'Wrong password — enter it in the nav bar and click Connect.' : 'Failed to load: ' + msg);
+      if (epoch !== epochRef.current) return;
+      if (e instanceof ApiError && e.status === 401) {
+        // The credential is no longer good — expired, ended by Lock in another tab, or the password
+        // changed — or the server gained a password while this console was open. Drop it and ask again.
+        const hadSession = hasSession();
+        clearSession();
+        setSignedIn(false);
+        setData(null);
+        setPasswordRequired(true);
+        setSignInNotice(hadSession ? { text: 'Your session ended. Sign in again.', tone: 'info' } : null);
+      } else {
+        setError('Failed to load: ' + errorText(e));
+      }
     } finally {
       setLoading(false);
-      loadingRef.current = false;
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Single-flight, but never lossy: a request that arrives while a load is running (Refresh, an Add game,
+  // a dismissal) used to be silently dropped, so the screen kept showing the state from before it.
+  const load = useCallback(async () => {
+    if (loadingRef.current) { reloadQueuedRef.current = true; return; }
+    loadingRef.current = true;
+    try {
+      do {
+        reloadQueuedRef.current = false;
+        await loadOnce();
+      } while (reloadQueuedRef.current);
+    } finally {
+      loadingRef.current = false;
+    }
+  }, [loadOnce]);
+
+  // What does the server require? Asked on first contact, and again every few seconds until it answers.
+  useEffect(() => { void refreshStatus(); }, [refreshStatus]);
+  useEffect(() => {
+    if (passwordRequired !== null) return;
+    const id = setInterval(() => void refreshStatus(), 5000);
+    return () => clearInterval(id);
+  }, [passwordRequired, refreshStatus]);
+
+  // Consoles from before sessions kept the admin PASSWORD in localStorage. Swap it for a session once —
+  // or, if the server needs no password, just delete it — so the plaintext does not linger.
+  useEffect(() => {
+    if (passwordRequired === null) return;
+    if (passwordRequired === false) { dropLegacyPassword(); return; }
+    if (signedIn) return;
+    let cancelled = false;
+    void migrateLegacyPassword().then(r => {
+      if (cancelled || r !== 'migrated') return;
+      epochRef.current++;
+      setSignedIn(true);
+    });
+    return () => { cancelled = true; };
+  }, [passwordRequired, signedIn]);
+
+  useEffect(() => { if (canLoad) void load(); }, [canLoad, load]);
+  useEffect(() => {
+    if (!canLoad) return; // nothing to poll while locked out: it would only be refused
+    const id = setInterval(() => void load(), 15000);
+    return () => clearInterval(id);
+  }, [canLoad, load]);
+
+  async function handleSignIn(password: string) {
+    setSignInBusy(true);
+    setSignInNotice(null);
+    const result = await signIn(password);
+    setSignInBusy(false);
+    if (!result.ok) {
+      setSignInNotice({ text: result.message, tone: 'error' });
+      return;
+    }
+    epochRef.current++;
+    setSignedIn(hasSession());
+    await refreshStatus();
+  }
+
+  /** plan.md's "lock button": ends this session on the server and forgets it here. Clearing `data` too
+   *  is what actually removes the console from view — a stale games list would otherwise still render
+   *  behind the lock as if nothing happened. */
+  async function handleLock() {
+    epochRef.current++;
+    setAddGameOpen(false);
+    setData(null);
+    setSignInNotice(null);
+    setSignedIn(false);
+    await signOut();
+  }
+
+  function handleOpenGame(gameId: string | null) {
+    setPendingGameId(gameId);
+    setView('games');
+  }
 
   useEffect(() => {
     function onHash() { setView(viewFromHash()); }
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
-
-  useEffect(() => {
-    const id = setInterval(load, 15000);
-    return () => clearInterval(id);
-  }, [load]);
 
   useEffect(() => {
     if (view === 'config') location.hash = 'config';
@@ -101,22 +214,22 @@ export default function App() {
     if (view === 'whats-new' && build) { markNotesSeen(build.version); setUnreadNotes(false); }
   }, [view, build]);
 
-  async function handleAddGame() {
-    const name = prompt('New game name (defines it on the server; agents map their local save dir):');
-    if (!name?.trim()) return;
-    const dir = prompt(
-      'Suggested save folder (optional). E.g. C:\\Users\\me\\AppData\\Roaming\\Game. Leave blank to skip:',
-      ''
-    );
-    try {
-      await api.addGame(name.trim(), dir?.trim() || null);
-      await load();
-    } catch (e) { alert('Add game failed: ' + (e as Error).message); }
+  async function handleAddGame(name: string, dir: string | null) {
+    await api.addGame(name, dir);
+    setAddGameOpen(false);
+    await load();
   }
 
-  async function handleDismissProblem(id: string) {
-    try { await api.dismissEvent(id); await load(); }
-    catch (e) { alert('Dismiss failed: ' + (e as Error).message); }
+  // One reload after the whole batch, and one report of anything that failed — not a reload and an
+  // alert per event, which for "Dismiss all" was N sequential round trips and up to N dialogs.
+  async function handleDismissProblems(ids: string[]) {
+    const failures: string[] = [];
+    for (const id of ids) {
+      try { await api.dismissEvent(id); } catch (e) { failures.push(errorText(e)); }
+    }
+    await load();
+    if (failures.length === 1 && ids.length === 1) alert('Dismiss failed: ' + failures[0]);
+    else if (failures.length > 0) alert(`Could not dismiss ${failures.length} of ${ids.length}: ${failures[0]}`);
   }
 
   // Errors before warnings: an agent that is not syncing outranks one that synced with a caveat.
@@ -137,28 +250,28 @@ export default function App() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
       <NavBar
         view={view}
-        onViewChange={v => { setView(v); if (!data && v !== 'help' && v !== 'whats-new') load(); }}
-        onConnect={load}
-        onRefresh={load}
+        onViewChange={v => { setView(v); if (!data && canLoad && v !== 'help' && v !== 'whats-new') void load(); }}
+        onRefresh={() => void load()}
+        onLock={passwordRequired === true && signedIn ? () => void handleLock() : undefined}
+        machines={data?.machines ?? []}
         build={build}
         unreadNotes={unreadNotes}
         problems={problems}
         escalatedConflicts={data?.conflicts.filter(c => c.escalated) ?? []}
-        onDismissProblem={handleDismissProblem}
+        onDismissProblems={handleDismissProblems}
+        onOpenGame={handleOpenGame}
       />
 
       {error && (
         <div style={{ padding: '10px 24px', color: '#f4a60d', fontSize: 13 }}>{error}</div>
       )}
 
-      {!getPassword() && !data && !loading && !error && !isPublicView && (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#556070', fontSize: 14 }}>
-          If a password is required, enter it in the nav bar and click Connect.
-        </div>
+      {needsSignIn && !isPublicView && (
+        <SignIn notice={signInNotice} busy={signInBusy} onSubmit={p => void handleSignIn(p)} />
       )}
 
-      {loading && !data && !isPublicView && (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#556070', fontSize: 13 }}>
+      {((passwordRequired === null && !error) || (canLoad && loading && !data)) && !isPublicView && (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8b9aaa', fontSize: 13 }}>
           Loading…
         </div>
       )}
@@ -175,7 +288,7 @@ export default function App() {
         </div>
       )}
 
-      {data && !isPublicView && (
+      {data && !isPublicView && !needsSignIn && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {view === 'games'
             ? <GamesView
@@ -183,8 +296,10 @@ export default function App() {
                 machines={data.machines}
                 commands={data.commands}
                 conflicts={data.conflicts}
-                onRefresh={load}
-                onAddGame={handleAddGame}
+                onRefresh={() => void load()}
+                onAddGame={() => setAddGameOpen(true)}
+                selectGameId={pendingGameId}
+                onSelectGameHandled={() => setPendingGameId(null)}
               />
             : view === 'audit'
             ? <AuditView />
@@ -194,11 +309,13 @@ export default function App() {
                 settings={data.settings}
                 health={data.health}
                 build={build}
-                onRefresh={load}
+                onRefresh={() => void load()}
               />
           }
         </div>
       )}
+
+      {addGameOpen && <AddGameDialog onClose={() => setAddGameOpen(false)} onSubmit={handleAddGame} />}
     </div>
   );
 }

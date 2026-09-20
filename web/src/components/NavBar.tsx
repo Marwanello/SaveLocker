@@ -1,22 +1,36 @@
-import { useState, type CSSProperties } from 'react';
-import { getPassword, setPassword as persistPassword } from '../api';
-import type { AgentEvent, Conflict, ServerBuildInfo } from '../types';
+import { useCallback, useState } from 'react';
+import { api } from '../api';
+import type { AgentEvent, Conflict, Machine, ServerBuildInfo } from '../types';
 import logoUrl from '../assets/SaveLocker_Logo_crop.png';
+import { Button } from './ui/Button';
+import { Toast } from './ui/Toast';
+import { NotificationsMenu } from './NotificationsMenu';
+import { SyncAllProgress } from './SyncAllProgress';
+import type { SyncAllOutcome } from './SyncAllProgress';
 
 type View = 'games' | 'config' | 'audit' | 'help' | 'whats-new';
 
-/**
- * `AgentEventCodes.Conflict` on the server. The one reported condition that never self-heals: every
- * other event auto-closes when the machine syncs that game cleanly again, so it is treated
- * differently below.
- */
-const CONFLICT_CODE = 'sync.conflict';
+const NAV_ITEMS: { key: View; label: string }[] = [
+  { key: 'games', label: 'Games' },
+  { key: 'config', label: 'Configuration' },
+  { key: 'audit', label: 'Audit Log' },
+  { key: 'help', label: 'Help' },
+  { key: 'whats-new', label: "What's New" },
+];
+
+/** An agent polls every 20 s and the server stamps `lastSeen` on each contact, so three minutes of
+ *  silence means the machine is off or unreachable, not merely between polls. Decided server-side
+ *  (`skipMachinesUnseenForSeconds`) so the browser's clock never enters into it. */
+const ONLINE_WINDOW_SECONDS = 180;
 
 interface Props {
   view: View;
   onViewChange: (v: View) => void;
-  onConnect: () => void;
   onRefresh: () => void;
+  /** Forgets the session and returns to SignIn — plan.md's "lock button". Absent when the server has
+   *  no admin password: there is nothing to lock, and a Lock button that does nothing is a lie. */
+  onLock?: () => void;
+  machines: Machine[];
   /** What this console is running. Undefined until /api/admin/status answers. */
   build?: ServerBuildInfo;
   /** True when the running release's notes have not been opened yet. */
@@ -25,93 +39,94 @@ interface Props {
    *  failures reach a human — it cannot toast, so the console has to (Decisions.md §2). */
   problems?: AgentEvent[];
   escalatedConflicts?: Conflict[];
-  onDismissProblem?: (id: string) => void;
+  onDismissProblems?: (ids: string[]) => Promise<void>;
+  /** Navigate to Games and select a specific game — used by the notifications menu's deep links. */
+  onOpenGame: (gameId: string | null) => void;
 }
 
-const asUtcTime = (t: string) => /[Z+]/.test(t.slice(-6)) ? t : t + 'Z';
-
-function ago(t: string): string {
-  const mins = Math.max(0, Math.round((Date.now() - new Date(asUtcTime(t)).getTime()) / 60000));
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
+const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+const shorten = (s: string, max = 90) => (s.length > max ? s.slice(0, max - 1) + '…' : s);
 
 export function NavBar({
   view,
   onViewChange,
-  onConnect,
   onRefresh,
+  onLock,
+  machines,
   build,
   unreadNotes = false,
   problems = [],
   escalatedConflicts = [],
-  onDismissProblem,
+  onDismissProblems,
+  onOpenGame,
 }: Props) {
-  const [keyInput, setKeyInput] = useState(getPassword());
-  const [showProblems, setShowProblems] = useState(false);
+  const [syncCommandIds, setSyncCommandIds] = useState<string[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [toast, setToast] = useState<{ text: string; ms: number } | null>(null);
+  const dismissToast = useCallback(() => setToast(null), []);
 
-  function handleConnect() {
-    persistPassword(keyInput.trim());
-    onConnect();
+  // A batch still being tracked counts as "busy" too — pressing again mid-batch used to queue a second
+  // sync behind the first on every machine.
+  const busy = syncing || syncCommandIds.length > 0;
+
+  async function handleSyncAll() {
+    if (machines.length === 0 || busy) return;
+    setSyncing(true);
+    try {
+      const res = await api.queueSyncAll(machines.map(m => m.id), ONLINE_WINDOW_SECONDS);
+      const offline = res.skipped.map(s => s.machineName);
+      if (res.queued.length === 0) {
+        setToast({
+          text: offline.length > 0
+            ? `Nothing was queued — ${offline.join(', ')} ${offline.length === 1 ? 'is' : 'are'} offline.`
+            : 'Nothing to sync.',
+          ms: 6000,
+        });
+      } else {
+        setSyncCommandIds(res.queued.map(c => c.id));
+        if (offline.length > 0) setToast({ text: `Left out ${offline.join(', ')} — offline.`, ms: 5000 });
+      }
+    } catch (e) {
+      setToast({ text: 'Could not start Sync all: ' + (e as Error).message, ms: 7000 });
+    } finally {
+      setSyncing(false);
+    }
   }
 
-  // Info events (e.g. "an update was applied") are routine confirmations, not problems — they
-  // never drive the badge's color or count it up as alarming.
-  const actionable = problems.filter(p => p.severity !== 'Info');
-  const errorCount = actionable.filter(p => p.severity === 'Error').length;
-  const badgeColor = actionable.length === 0 ? '#4a9eff' : errorCount > 0 ? '#e5534b' : '#f4a60d';
-
-  const severityColor = (s: AgentEvent['severity']) =>
-    s === 'Error' ? '#e5534b' : s === 'Warning' ? '#f4a60d' : '#4a9eff';
-  const severityLabel = (s: AgentEvent['severity']) =>
-    s === 'Error' ? 'ERROR' : s === 'Warning' ? 'WARN' : 'INFO';
-
-  // Inline styles, not Tailwind classes: index.css's unlayered `* { padding: 0 }` reset beats any
-  // @layer utilities rule regardless of specificity, so a Tailwind padding class here is silently
-  // a no-op. Password/Connect already use inline styles for the same reason — match that padding
-  // exactly (5px 14px) so every control in this row is the same height.
-  const navBtnStyle = (active: boolean): CSSProperties => ({
-    padding: '5px 14px', borderRadius: 5, fontSize: 12, border: '1px solid',
-    cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-    background: active ? '#129271' : 'transparent',
-    color: active ? '#fff' : '#ECEFF1',
-    borderColor: active ? '#129271' : '#494949',
-    fontWeight: active ? 600 : 400,
-  });
-
-  const ghostBtnStyle: CSSProperties = {
-    padding: '5px 13px', borderRadius: 5, fontSize: 12, background: 'transparent',
-    color: '#ECEFF1', border: '1px solid #494949', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-  };
+  // Past tense, per plan.md "Voice": what happened, not "completed successfully!".
+  function handleSyncDone(r: SyncAllOutcome) {
+    setSyncCommandIds([]);
+    onRefresh(); // the games list should show what just synced without waiting for the next poll
+    if (r.timedOut) {
+      setToast({ text: `${plural(r.total - r.done, 'machine')} still working — they will finish in the background.`, ms: 7000 });
+    } else if (r.failures.length > 0) {
+      const first = r.failures[0];
+      setToast({
+        text: `Synced ${r.total - r.failures.length} of ${plural(r.total, 'machine')} — ${first.machine} failed: ${shorten(first.reason)}` +
+          (r.failures.length > 1 ? ` (+${r.failures.length - 1} more)` : ''),
+        ms: 9000,
+      });
+    } else {
+      setToast({ text: `Synced ${plural(r.total, 'machine')}.`, ms: 3200 });
+    }
+  }
 
   return (
-    <header
-      style={{
-        background: '#1E252A',
-        borderBottom: '1px solid #494949',
-        padding: '0 20px',
-        height: 72,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        position: 'sticky',
-        top: 0,
-        zIndex: 20,
-      }}
-    >
+    // min-h + wrap, not a fixed height: with the progress rail, "Overdue conflicts" and the
+    // notifications badge all showing, a single row is wider than a 1024 px window, and because the
+    // page is overflow-hidden the last controls — Lock included — were pushed off-screen with no way
+    // to scroll to them. Extra controls now wrap onto a second row instead.
+    <header className="bg-panel border-b border-line px-5 py-1 min-h-[72px] flex flex-wrap items-center justify-between gap-x-4 gap-y-2 sticky top-0 z-20">
       {/* Brand + version */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="flex items-center gap-2.5">
         <a
           href="#"
           onClick={e => { e.preventDefault(); onViewChange('games'); }}
-          style={{ display: 'flex', alignItems: 'center', gap: 9, userSelect: 'none' }}
+          className="flex items-center gap-[9px] select-none"
         >
-          <img src={logoUrl} style={{ height: 64, width: 'auto', borderRadius: 6, flexShrink: 0 }} alt="SaveLocker" />
-          <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.4px' }}>
-            Save<span style={{ color: '#129271' }}>Locker</span>
+          <img src={logoUrl} className="h-16 w-auto rounded-md flex-shrink-0" alt="SaveLocker" />
+          <span className="text-[17px] font-bold tracking-[-0.4px] text-fg">
+            Save<span className="text-accent">Locker</span>
           </span>
         </a>
 
@@ -127,153 +142,72 @@ export function NavBar({
                 `\nClick for release notes.`
               : 'Release notes'
           }
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '2px 9px', borderRadius: 20, cursor: 'pointer',
-            background: view === 'whats-new' ? '#2A3238' : 'transparent',
-            border: '1px solid #494949',
-            color: build?.isRelease === false ? '#f4a60d' : '#8b9aaa',
-            fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
-          }}
+          className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-line text-[11px] font-mono
+            ${view === 'whats-new' ? 'bg-raise' : 'bg-transparent'}
+            ${build?.isRelease === false ? 'text-watch' : 'text-dim'}`}
         >
           {build ? (build.version === 'dev' ? 'dev' : `v${build.version}`) : '—'}
           {unreadNotes && (
-            <span
-              title="New release notes"
-              style={{ width: 6, height: 6, borderRadius: '50%', background: '#129271', flexShrink: 0 }}
-            />
+            <span title="New release notes" className="w-1.5 h-1.5 rounded-full bg-safe flex-shrink-0" />
           )}
         </button>
       </div>
 
       {/* Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <button style={navBtnStyle(view === 'games')} onClick={() => onViewChange('games')}>Games</button>
-        <button style={navBtnStyle(view === 'config')} onClick={() => onViewChange('config')}>Configuration</button>
-        <button style={navBtnStyle(view === 'audit')} onClick={() => onViewChange('audit')}>Audit Log</button>
-        <button style={navBtnStyle(view === 'help')} onClick={() => onViewChange('help')}>Help</button>
-        <button style={navBtnStyle(view === 'whats-new')} onClick={() => onViewChange('whats-new')}>What's New</button>
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+        {NAV_ITEMS.map(item => (
+          <Button
+            key={item.key}
+            variant={view === item.key ? 'selected' : 'default'}
+            size="sm"
+            aria-current={view === item.key ? 'page' : undefined}
+            onClick={() => onViewChange(item.key)}
+          >
+            {item.label}
+          </Button>
+        ))}
 
-        {/* API Key composite input */}
-        <div style={{ display: 'flex', alignItems: 'center', background: '#2A3238', border: '1px solid #494949', borderRadius: 5, overflow: 'hidden' }}>
-          <span style={{ padding: '5px 9px', fontSize: 10, color: '#64748b', fontFamily: "'JetBrains Mono', monospace", borderRight: '1px solid #494949', userSelect: 'none' }}>
-            PASSWORD
-          </span>
-          <input
-            type="password"
-            value={keyInput}
-            onChange={e => setKeyInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleConnect()}
-            style={{ padding: '5px 9px', background: 'transparent', color: '#ECEFF1', border: 'none', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", width: 160 }}
-          />
-        </div>
+        <div className="w-px h-5 bg-line mx-1" aria-hidden />
 
-        <button
-          onClick={handleConnect}
-          style={{ padding: '5px 14px', background: '#129271', color: '#fff', border: '1px solid #129271', borderRadius: 5, fontSize: 12, fontWeight: 600 }}
-        >
-          Connect
-        </button>
+        {/* plan.md Surfaces: "Sync all primary". One filled button per view, per plan.md
+            Components — this is the thing you most likely came to do, so it alone holds the accent. */}
+        <Button variant="primary" size="sm" onClick={handleSyncAll} disabled={busy || machines.length === 0}>
+          {syncing ? 'Starting…' : busy ? 'Syncing…' : 'Sync all'}
+        </Button>
+        {syncCommandIds.length > 0 && (
+          <SyncAllProgress commandIds={syncCommandIds} onDone={handleSyncDone} />
+        )}
 
-        <button style={{ ...ghostBtnStyle, padding: '5px 10px', fontSize: 14, lineHeight: 1 }} onClick={onRefresh} title="Refresh">↻</button>
+        <Button variant="default" size="sm" style={{ fontSize: 14, lineHeight: 1 }} onClick={onRefresh} title="Refresh" aria-label="Refresh">
+          ↻
+        </Button>
 
         {escalatedConflicts.length > 0 && (
-          <button
-            onClick={() => onViewChange('games')}
+          <Button
+            variant="alert"
+            size="sm"
+            onClick={() => onOpenGame(escalatedConflicts[0].gameId)}
             title="These conflicts have been unresolved for more than six hours"
-            style={{
-              padding: '5px 12px', background: '#351b1b', color: '#e5534b',
-              border: '1px solid #e5534b', borderRadius: 5, fontSize: 12,
-              fontWeight: 700, cursor: 'pointer',
-            }}
           >
             Overdue conflicts: {escalatedConflicts.length}
-          </button>
+          </Button>
         )}
 
-        {/* Agent problems. Absent when there are none — a healthy fleet should be quiet. */}
-        {problems.length > 0 && (
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => setShowProblems(v => !v)}
-              title="Problems reported by agents"
-              style={{
-                padding: '5px 12px', background: 'transparent', color: badgeColor,
-                border: `1px solid ${badgeColor}`, borderRadius: 5, fontSize: 12,
-                fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-              }}
-            >
-              {actionable.length > 0 ? '⚠' : 'ⓘ'} {problems.length}
-            </button>
+        {/* Absent when there are none — a healthy fleet should be quiet. */}
+        <NotificationsMenu problems={problems} onOpenGame={onOpenGame} onDismissProblems={onDismissProblems} />
 
-            {showProblems && (
-              <div
-                style={{
-                  position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 460,
-                  background: '#1E252A', border: '1px solid #494949', borderRadius: 8,
-                  boxShadow: '0 10px 30px rgba(0,0,0,0.45)', zIndex: 30, overflow: 'hidden',
-                }}
-              >
-                <div style={{ padding: '10px 14px', borderBottom: '1px solid #494949', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 600, color: '#ECEFF1' }}>Agent problems</span>
-                  <span style={{ fontSize: 11, color: '#9CA3AF' }}>reported by the machines themselves</span>
-                </div>
-
-                <div style={{ maxHeight: 360, overflowY: 'auto' }}>
-                  {problems.map(p => (
-                    <div key={p.id} style={{ padding: '11px 14px', borderTop: '1px solid #252e35', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                      <span
-                        style={{
-                          marginTop: 2, flexShrink: 0, padding: '1px 7px', borderRadius: 3, fontSize: 10,
-                          fontWeight: 700, letterSpacing: '0.3px',
-                          color: severityColor(p.severity),
-                          border: `1px solid ${severityColor(p.severity)}`,
-                        }}
-                      >
-                        {severityLabel(p.severity)}
-                      </span>
-
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 600, color: '#ECEFF1' }}>
-                          {p.machineName}{p.gameName ? ` — ${p.gameName}` : ''}
-                        </div>
-                        <div style={{ fontSize: 12, color: '#8b9aaa', lineHeight: 1.45, marginTop: 2 }}>{p.message}</div>
-                        <div style={{ fontSize: 10.5, color: '#556070', marginTop: 3, fontFamily: "'JetBrains Mono', monospace" }}>
-                          {p.code} · {ago(p.lastSeen)}{p.count > 1 ? ` · ×${p.count}` : ''}
-                        </div>
-                      </div>
-
-                      {/* A conflict is NOT dismissible, and this is the difference that cost a real
-                          user a day of play. Every other agent event self-heals — a machine that
-                          recovers auto-closes it — so Dismiss is honest for them. A conflict does
-                          not: it sits until a human resolves it. Offering the same grey Dismiss
-                          button made "I made the warning go away" indistinguishable from "I fixed
-                          it". Send them to the one place it can actually be resolved instead. */}
-                      {p.code === CONFLICT_CODE ? (
-                        <button
-                          onClick={() => { setShowProblems(false); onViewChange('games'); }}
-                          title="A conflict does not clear on its own — it has to be resolved on the game."
-                          style={{ flexShrink: 0, padding: '3px 9px', background: 'transparent', color: '#f4a60d', border: '1px solid #f4a60d', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
-                        >
-                          Resolve
-                        </button>
-                      ) : onDismissProblem && (
-                        <button
-                          onClick={() => onDismissProblem(p.id)}
-                          title="Dismiss. If the condition still holds, the agent will report it again."
-                          style={{ flexShrink: 0, padding: '3px 9px', background: 'transparent', color: '#8b9aaa', border: '1px solid #494949', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
-                        >
-                          Dismiss
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+        {onLock && (
+          <Button variant="quiet" size="sm" onClick={onLock} title="Lock — end this session and sign in again" aria-label="Lock">
+            🔒
+          </Button>
         )}
       </div>
+
+      {toast && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 w-max max-w-[min(92vw,560px)]">
+          <Toast key={toast.text} dwellMs={toast.ms} onDismiss={dismissToast}>{toast.text}</Toast>
+        </div>
+      )}
     </header>
   );
 }

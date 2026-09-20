@@ -1103,6 +1103,44 @@ Phase 17's own build session already recorded).
 
 ---
 
+**Checkpoint UI redesign, Groups 1–2 shipped (2026-09-17 / 09-18) — PR #44, then reviewed and corrected
+2026-09-20 (branch `console-review-fixes-and-security-hardening`).** Design system + console shell:
+tokens, `ui/` primitives, sidebar rows and a games grid, the notifications menu, sign-in, console Sync
+all, and the exclude-pattern chip editor with a server-side dry run (`POST /commands/bulk`,
+`POST /games/{id}/excludes/preview`). Full handoff text of both sessions, including the gaps they found
+and what was verified live: `logs/2026-09-18_checkpoint-ui-groups-1-2.md`. Design: `tasks/checkpoint-ui/`.
+<br>**The review (2026-09-20) found the shipped state materially wrong in ways the original verification
+missed, and every finding is fixed.** The load-bearing ones: **(1) light was the default theme**, so
+every visitor whose OS prefers light saw near-black text on the unmigrated views' hardcoded dark cards
+(measured 1.04–1.15:1 — game titles, machine names, headings, most of the Audit Log; 0 unreadable
+elements now, in both schemes) — dark is the base and light is `data-theme="light"` opt-in until the
+migration ends; **(2) sign-in** said "Wrong password" to a first-time visitor, "Lock" was undone by the
+next poll, and the password itself sat in `localStorage` — replaced by revocable sessions; **(3) Sync
+all** queued commands for offline machines (commands never expire, so they fire unannounced days later)
+and hung its progress rail forever; **(4) unlayered global CSS beat Tailwind utilities** (a disabled
+button lit up on hover, focus rings computed to `none`) — one cause, three findings ([[Gotchas]] → *Web
+console*); **(5) a `..` exclude pattern threw** inside the matcher — a 500 from the preview, and once
+saved, an exception in every agent's hash of that game.
+<br>**Security hardening done in the same pass** (all in [[Decisions]], asserted by the new
+`tests/run-console-security-tests.ps1`, **105/105**, confirmed to fail with three of the defences
+disabled): revocable console sessions; a sign-in throttle on every path that checks the admin password
+(re-registration had been an unmetered oracle); PBKDF2 → `v2:` at 600,000 iterations with `v1:` upgraded
+on sign-in (`verify-password-compat.ps1` passes); artwork URLs treated as untrusted (a `.html` path
+used to put an attacker-shaped page on the console's origin); a strict CSP; and the container now runs
+unprivileged — with an entrypoint that hands an existing root-created `/data` over once, because a bare
+`USER app` would have failed every upgrade (verified on fresh, root-created, `SAVELOCKER_UID=99` and
+forced-`--user` volumes). **`X-Forwarded-*` is still never read by default**; `Security:TrustedProxies`
+is an opt-in for deployments behind a proxy — which the maintainer's own is, despite the LAN-only
+decision ([[Decisions]] amended). **Left for a maintainer decision, not changed:** first-time machine
+registration is still open by default (`Security:RequireAdminPasswordToRegister` exists, off) even
+though a machine key can read/write every game.
+<br>**Not verified here:** the Windows-agent suites, `run-server-bugbounty-tests` (216) and the CI-only
+Linux/cross-OS chain — this session had no agent build; the server, the new suite, the compat guard,
+`web` build/lint and a real container were all run. Release notes for the next release must cover:
+sessions (a one-time re-sign-in is NOT needed — the old password is migrated on first load), the
+throttle (5 wrong passwords → 15 min), the non-root container (and `SAVELOCKER_UID`), and the CSP.
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

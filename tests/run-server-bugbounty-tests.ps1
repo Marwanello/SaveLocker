@@ -325,9 +325,13 @@ try {
     function Claim-Commands {
         return @(((Invoke-WebRequest "$url/api/agent/commands" -Headers $agentHdr -UseBasicParsing).Content | ConvertFrom-Json))
     }
-    function Report-Command($id, $status, $result) {
+    # claimToken must be the one the agent was handed by its most recent Claim-Commands (see
+    # AgentCommandDto.ClaimToken / CompleteCommandAsync) - a real agent always threads this through
+    # (CommandPoller.cs), and the server treats a mismatched or missing token on a still-live claim
+    # as a stale report and no-ops it, so omitting it here silently swallowed every completion.
+    function Report-Command($id, $status, $result, $claimToken = $null) {
         Invoke-RestMethod "$url/api/agent/commands/$id/result" -Method Post -Headers $agentHdr `
-            -ContentType "application/json" -Body (@{ status = $status; result = $result } | ConvertTo-Json)
+            -ContentType "application/json" -Body (@{ status = $status; result = $result; claimToken = $claimToken } | ConvertTo-Json)
     }
     function Admin-Command($id) {
         return @(Get-Json "/api/commands" | Where-Object { $_.id -eq $id })[0]
@@ -351,16 +355,19 @@ try {
     Check "the reclaim is audited" `
         (@(Get-Json "/api/audit?limit=200" | Where-Object { $_.action -eq "command.reclaim" }).Count -ge 1)
 
+    # The token from THIS delivery - the one a real agent would hold onto and report back with.
+    $c1Token = ($reclaim | Where-Object { $_.id -eq $c1.id }).claimToken
+
     # ---- 2. Execution succeeded but the result POST was lost ----
     # The retry runs the command again (safe for every type) and reports it. Reporting twice must be
     # a no-op, not a reopened command.
-    Report-Command $c1.id "Done" "pulled 1 game" | Out-Null
+    Report-Command $c1.id "Done" "pulled 1 game" $c1Token | Out-Null
     $done = Admin-Command $c1.id
     Check "reporting a reclaimed command completes it" ($done.status -eq "Done")
     Check "completion clears the lease"                ($null -eq $done.leaseExpiresAt)
 
     $lateOk = $false
-    try { Report-Command $c1.id "Failed" "late duplicate report" | Out-Null; $lateOk = $true } catch { }
+    try { Report-Command $c1.id "Failed" "late duplicate report" $c1Token | Out-Null; $lateOk = $true } catch { }
     $stillDone = Admin-Command $c1.id
     Check "a late duplicate report is accepted"         $lateOk
     Check "a late report does not reopen a done command" ($stillDone.status -eq "Done" -and $stillDone.result -eq "pulled 1 game")
@@ -387,9 +394,10 @@ try {
     Check "two simultaneous polls: no request errored"  (@($bodies | Where-Object { $_ -like "ERROR:*" }).Count -eq 0)
     Check "two simultaneous polls: exactly one claim"   ($winners.Count -eq 1)
     Check "the raced command was claimed exactly once"  ((Admin-Command $c2.id).claimCount -eq 1)
+    $c2Token = (($winners[0] | ConvertFrom-Json) | Where-Object { $_.id -eq $c2.id }).claimToken
 
     # ---- 4. Explicit failure is terminal ----
-    Report-Command $c2.id "Failed" "disk full" | Out-Null
+    Report-Command $c2.id "Failed" "disk full" $c2Token | Out-Null
     $failed = Admin-Command $c2.id
     Check "an explicit failure is recorded"             ($failed.status -eq "Failed" -and $failed.result -eq "disk full")
     Start-Sleep -Seconds $leaseWait

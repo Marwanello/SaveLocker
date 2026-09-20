@@ -20,9 +20,20 @@ public static class Tokens
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
-    // PBKDF2 parameters. These are part of the ON-DISK format ("v1:salt:hash") — changing any of
-    // them invalidates every stored password. Bump the version tag if they ever have to move.
-    private const int Iterations = 100_000;
+    // PBKDF2 parameters are part of the ON-DISK format, so they travel WITH the hash:
+    //   v2:{iterations}:{salt}:{hash}   — written today; the count lives in the string, so raising
+    //                                     it later needs no new format and no migration
+    //   v1:{salt}:{hash}                — written before v2; the count was a compile-time constant
+    //                                     (100,000), which is why a new tag was needed to move it.
+    // Both still verify. A v1 (or under-strength v2) hash is re-written at the next successful
+    // sign-in — see NeedsRehash / SettingsService.UpgradeAdminPasswordHashAsync — because that is
+    // the only moment the plaintext is in hand.
+    /// <summary>OWASP's current PBKDF2-HMAC-SHA256 minimum (Password Storage Cheat Sheet).</summary>
+    public const int CurrentIterations = 600_000;
+    private const int LegacyIterations = 100_000;
+    // A stored hash is trusted input, but a corrupted or hand-edited one must not be able to pin a
+    // core for minutes on every request.
+    private const int MaxAcceptedIterations = 5_000_000;
     private const int SaltBytes = 16;
     private const int HashBytes = 32;
     private static readonly HashAlgorithmName Algorithm = HashAlgorithmName.SHA256;
@@ -36,22 +47,46 @@ public static class Tokens
     public static string HashPassword(string password)
     {
         var salt = RandomNumberGenerator.GetBytes(SaltBytes);
-        var hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, Iterations, Algorithm, HashBytes);
-        return $"v1:{Convert.ToBase64String(salt)}:{Convert.ToBase64String(hash)}";
+        var hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, CurrentIterations, Algorithm, HashBytes);
+        return $"v2:{CurrentIterations}:{Convert.ToBase64String(salt)}:{Convert.ToBase64String(hash)}";
     }
 
-    /// <summary>Returns true when <paramref name="password"/> matches a hash produced by <see cref="HashPassword"/>.</summary>
+    /// <summary>Returns true when <paramref name="password"/> matches a hash produced by <see cref="HashPassword"/>
+    /// (or by the older v1 writer).</summary>
     public static bool VerifyPassword(string password, string storedHash)
     {
-        var parts = storedHash.Split(':');
-        if (parts.Length != 3 || parts[0] != "v1") return false;
+        if (!TryParse(storedHash, out var iterations, out var saltB64, out var hashB64)) return false;
         try
         {
-            var salt = Convert.FromBase64String(parts[1]);
-            var expected = Convert.FromBase64String(parts[2]);
-            var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, Iterations, Algorithm, expected.Length);
+            var salt = Convert.FromBase64String(saltB64);
+            var expected = Convert.FromBase64String(hashB64);
+            var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, Algorithm, expected.Length);
             return CryptographicOperations.FixedTimeEquals(actual, expected);
         }
         catch { return false; }
+    }
+
+    /// <summary>True when a verified hash should be re-written at today's strength: any v1 hash, or
+    /// a v2 hash written with fewer iterations than <see cref="CurrentIterations"/>.</summary>
+    public static bool NeedsRehash(string storedHash) =>
+        !TryParse(storedHash, out var iterations, out _, out _) || iterations < CurrentIterations;
+
+    private static bool TryParse(string stored, out int iterations, out string salt, out string hash)
+    {
+        iterations = 0; salt = hash = "";
+        var parts = stored.Split(':');
+        switch (parts[0])
+        {
+            case "v1" when parts.Length == 3:
+                (iterations, salt, hash) = (LegacyIterations, parts[1], parts[2]);
+                return true;
+            case "v2" when parts.Length == 4
+                           && int.TryParse(parts[1], out iterations)
+                           && iterations is > 0 and <= MaxAcceptedIterations:
+                (salt, hash) = (parts[2], parts[3]);
+                return true;
+            default:
+                return false;
+        }
     }
 }

@@ -20,6 +20,7 @@ public class AppDbContext : DbContext
     public DbSet<EnrollmentToken> EnrollmentTokens => Set<EnrollmentToken>();
     public DbSet<AgentHealth> AgentHealth => Set<AgentHealth>();
     public DbSet<AgentEvent> AgentEvents => Set<AgentEvent>();
+    public DbSet<AdminSession> AdminSessions => Set<AdminSession>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -69,6 +70,9 @@ public class AppDbContext : DbContext
 
         // Redeem looks a token up by hash; unique so a hash can never map to two rows.
         b.Entity<EnrollmentToken>().HasIndex(t => t.TokenHash).IsUnique();
+
+        // Every admin request looks its session up by token hash; unique so one hash is one session.
+        b.Entity<AdminSession>().HasIndex(t => t.TokenHash).IsUnique();
 
         // One health row per machine, and it dies with the machine.
         b.Entity<AgentHealth>().HasKey(h => h.MachineId);

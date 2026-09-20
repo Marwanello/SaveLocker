@@ -28,6 +28,16 @@ public sealed class ArtService
     private readonly HttpClient _download;   // plain client for CDN image GETs (NO auth header)
     private readonly string _artRoot;        // wwwroot/art
     private string? _apiKey;                 // resolved at the start of each operation
+    private readonly string[] _allowedImageHosts;
+    private readonly bool _allowInsecureImageUrls;
+
+    /// <summary>Hosts an artwork URL may point at (each also matches its subdomains): SteamGridDB's own
+    /// domain, whose CDN (cdn2.steamgriddb.com) serves the images. <c>Art:AllowedImageHosts</c> replaces it.</summary>
+    private static readonly string[] DefaultImageHosts = { "steamgriddb.com" };
+
+    // Hero art at full resolution is ~9.5 MB (see HeroMaxWidth); nothing legitimate is near this.
+    private const long MaxImageBytes = 25L * 1024 * 1024;
+    private const int MaxRedirects = 3;
 
     // Asset kind -> SteamGridDB endpoint (relative to the api/v2 base).
     private static readonly (string kind, string path)[] Assets =
@@ -44,8 +54,11 @@ public sealed class ArtService
         _settings = settings;
         _http = factory.CreateClient("steamgriddb");
         // Asset images live on a separate CDN host that rejects the API bearer token,
-        // so download them with a clean client carrying no Authorization header.
-        _download = factory.CreateClient();
+        // so download them with a clean client carrying no Authorization header. It is the
+        // no-redirect client: every hop is validated by FetchImageAsync itself.
+        _download = factory.CreateClient("steamgriddb-cdn");
+        _allowedImageHosts = ConfiguredImageHosts(config);
+        _allowInsecureImageUrls = config.GetValue<bool?>("Art:AllowInsecureImageUrls") ?? false;
         // In production Storage:ArtRoot points to /data/art (the persistent volume mount).
         // In dev, fall back to wwwroot/art so local runs still work without configuration.
         _artRoot = config["Storage:ArtRoot"]
@@ -262,25 +275,41 @@ public sealed class ArtService
     // at 1920×620). Cap them at this width to keep file sizes reasonable.
     private const int HeroMaxWidth = 920;
 
-    /// <summary>Download an asset into wwwroot/art/{gameId}/{kind}{ext}; return its served URL.</summary>
+    /// <summary>
+    /// Download an asset into wwwroot/art/{gameId}/{kind}{ext}; return its served URL — or null when the
+    /// URL is refused or the bytes are not an image we recognise (the caller just skips that asset).
+    /// <para>
+    /// The URL is <b>data from SteamGridDB's response, not something we chose</b>, and what we fetch
+    /// from it is written under <c>/art</c>, which is served from the same origin as the admin console.
+    /// So it is checked as untrusted input: https only, host on the allowlist (every redirect hop too),
+    /// a size cap, and the stored file's type is decided by its own leading bytes — never by the URL's
+    /// extension, which used to let a path ending in <c>.html</c> put an attacker-shaped page on the
+    /// console's origin. An unreachable or unresponsive host is also just "skip this asset".
+    /// </para>
+    /// </summary>
     private async Task<string?> DownloadAsync(Guid gameId, string kind, string url, CancellationToken ct)
     {
+        byte[]? bytes;
+        try { bytes = await FetchImageAsync(url, ct); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException) { return null; }
+        if (bytes is null) return null;
+
+        var ext = ImageSniffer.DetectExtension(bytes);
+        if (ext is null) return null;
+
         var dir = Path.Combine(_artRoot, gameId.ToString("N"));
         Directory.CreateDirectory(dir);
-
-        var bytes = await _download.GetByteArrayAsync(url, ct);
 
         string file;
         if (kind == "hero")
         {
             // Downscale to HeroMaxWidth, preserving aspect ratio, and store as JPEG.
             file = Path.Combine(dir, "hero.jpg");
-            await ResizeHeroAsync(bytes, file, ct);
+            try { await ResizeHeroAsync(bytes, file, ct); }
+            catch (Exception ex) when (ex is UnknownImageFormatException or InvalidImageContentException) { return null; }
         }
         else
         {
-            var ext = Path.GetExtension(new Uri(url).AbsolutePath);
-            if (string.IsNullOrEmpty(ext) || ext.Length > 5) ext = ".png";
             file = Path.Combine(dir, kind + ext);
             await File.WriteAllBytesAsync(file, bytes, ct);
         }
@@ -288,6 +317,69 @@ public sealed class ArtService
         // Cache-bust with the write time so the dashboard <img> refreshes after a re-fetch.
         var filename = Path.GetFileName(file);
         return $"/art/{gameId:N}/{filename}?v={DateTime.UtcNow.Ticks}";
+    }
+
+    /// <summary>The image bytes at <paramref name="url"/>, or null if any hop is not an allowed URL,
+    /// the response is an error, or it exceeds <see cref="MaxImageBytes"/>. Redirects are followed by
+    /// hand, at most <see cref="MaxRedirects"/> of them, each one re-checked.</summary>
+    private async Task<byte[]?> FetchImageAsync(string url, CancellationToken ct)
+    {
+        var current = Uri.TryCreate(url, UriKind.Absolute, out var first) ? first : null;
+        for (var hop = 0; hop <= MaxRedirects; hop++)
+        {
+            if (current is null || !IsAllowedImageUrl(current, _allowedImageHosts, _allowInsecureImageUrls))
+                return null;
+
+            using var resp = await _download.GetAsync(current, HttpCompletionOption.ResponseHeadersRead, ct);
+            if ((int)resp.StatusCode is >= 300 and < 400)
+            {
+                current = resp.Headers.Location is { } loc ? new Uri(current, loc) : null;
+                continue;
+            }
+            if (!resp.IsSuccessStatusCode) return null;
+            if (resp.Content.Headers.ContentLength > MaxImageBytes) return null;
+
+            await using var body = await resp.Content.ReadAsStreamAsync(ct);
+            using var buffer = new MemoryStream();
+            var chunk = new byte[81920];
+            int read;
+            while ((read = await body.ReadAsync(chunk, ct)) > 0)
+            {
+                // Counted as it arrives: Content-Length is only a claim, and absent on chunked replies.
+                if (buffer.Length + read > MaxImageBytes) return null;
+                buffer.Write(chunk, 0, read);
+            }
+            return buffer.ToArray();
+        }
+        return null; // too many redirects
+    }
+
+    /// <summary>
+    /// True for an https URL (http only when <c>Art:AllowInsecureImageUrls</c> is set — the test suite's
+    /// stand-in server has no certificate) whose host is one of <paramref name="allowedHosts"/> or a
+    /// subdomain of one, and that carries no credentials.
+    /// </summary>
+    internal static bool IsAllowedImageUrl(Uri uri, IReadOnlyList<string> allowedHosts, bool allowInsecure)
+    {
+        var secure = uri.Scheme == Uri.UriSchemeHttps;
+        if (!secure && !(allowInsecure && uri.Scheme == Uri.UriSchemeHttp)) return false;
+        if (!string.IsNullOrEmpty(uri.UserInfo)) return false;
+
+        var host = uri.IdnHost.ToLowerInvariant();
+        return allowedHosts.Any(a => host == a || host.EndsWith("." + a, StringComparison.Ordinal));
+    }
+
+    private static string[] ConfiguredImageHosts(IConfiguration config)
+    {
+        var configured = (config["Art:AllowedImageHosts"]?
+                .Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                ?? Array.Empty<string>())
+            .Concat(config.GetSection("Art:AllowedImageHosts").GetChildren().Select(c => c.Value ?? ""))
+            .Select(h => h.Trim().TrimStart('.').ToLowerInvariant())
+            .Where(h => h.Length > 0)
+            .Distinct()
+            .ToArray();
+        return configured.Length > 0 ? configured : DefaultImageHosts;
     }
 
     private static async Task ResizeHeroAsync(byte[] bytes, string destPath, CancellationToken ct)
@@ -299,5 +391,27 @@ public sealed class ArtService
         var encoder = new JpegEncoder { Quality = 85 };
         await using var fs = File.Create(destPath);
         await image.SaveAsync(fs, encoder, ct);
+    }
+}
+
+/// <summary>
+/// Decides what a downloaded artwork file IS from its own leading bytes. Only raster image formats
+/// are recognised — deliberately no SVG (it can carry script) and nothing text-based — so a body that
+/// is HTML, JSON or a script is refused however its URL or Content-Type dressed it.
+/// </summary>
+internal static class ImageSniffer
+{
+    /// <summary>The file extension for a recognised image (".png", ".jpg", ".gif", ".webp", ".ico"), else null.</summary>
+    public static string? DetectExtension(ReadOnlySpan<byte> b)
+    {
+        if (b.Length >= 8 && b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47 &&
+            b[4] == 0x0D && b[5] == 0x0A && b[6] == 0x1A && b[7] == 0x0A) return ".png";
+        if (b.Length >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF) return ".jpg";
+        if (b.Length >= 6 && b[0] == (byte)'G' && b[1] == (byte)'I' && b[2] == (byte)'F' && b[3] == (byte)'8' &&
+            (b[4] == (byte)'7' || b[4] == (byte)'9') && b[5] == (byte)'a') return ".gif";
+        if (b.Length >= 12 && b[0] == (byte)'R' && b[1] == (byte)'I' && b[2] == (byte)'F' && b[3] == (byte)'F' &&
+            b[8] == (byte)'W' && b[9] == (byte)'E' && b[10] == (byte)'B' && b[11] == (byte)'P') return ".webp";
+        if (b.Length >= 4 && b[0] == 0x00 && b[1] == 0x00 && b[2] == 0x01 && b[3] == 0x00) return ".ico";
+        return null;
     }
 }

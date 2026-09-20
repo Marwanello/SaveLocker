@@ -652,30 +652,83 @@ public static class SaveArchive
     {
         var rootFull = Path.GetFullPath(root);
         var all = EnumerateFilesNoFollow(rootFull)
-            .Select(f => Path.GetRelativePath(rootFull, f).Replace('\\', '/'))
-            .ToList();
+            .Select(f => Path.GetRelativePath(rootFull, f).Replace('\\', '/'));
 
+        var kept = FilterExcluded(all, excludeGlobs);
+        kept.Sort(StringComparer.Ordinal);
+        return kept;
+    }
+
+    /// <summary>
+    /// Which of <paramref name="relativePaths"/> survive after removing anything matching
+    /// <paramref name="excludeGlobs"/> — the same matcher <see cref="EnumerateRelativeFiles"/> uses
+    /// against a live directory, exposed here so a caller with an existing path list (e.g. the
+    /// server previewing a draft exclude pattern against an already-uploaded archive, which has no
+    /// filesystem of its own to walk) gets the identical bare-filename-matches-at-any-depth rule
+    /// rather than a second, driftable reimplementation of it.
+    /// Throws <see cref="ArgumentException"/> naming the offending pattern when one is not a valid
+    /// glob (see <see cref="ValidateExcludeGlob"/>) — never a bare matcher exception.
+    /// </summary>
+    public static List<string> FilterExcluded(IEnumerable<string> relativePaths, IEnumerable<string>? excludeGlobs)
+    {
+        var all = relativePaths.ToList();
         var globs = excludeGlobs?
             .Where(g => !string.IsNullOrWhiteSpace(g))
             .Select(g => g.Trim())
             .ToList();
-        if (globs is { Count: > 0 })
-        {
-            var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
-            matcher.AddInclude("**/*");
-            foreach (var g in globs)
-            {
-                matcher.AddExclude(g);
-                // A bare filename pattern (no '/') should match at any depth, gitignore-style:
-                // "*.log" excludes logs in every subfolder, not just the save root. Patterns
-                // that already contain '/' are treated as explicit paths anchored at the root.
-                if (!g.Contains('/')) matcher.AddExclude("**/" + g);
-            }
-            var kept = new HashSet<string>(matcher.Match(all).Files.Select(m => m.Path), StringComparer.Ordinal);
-            all = all.Where(kept.Contains).ToList();
-        }
+        if (globs is not { Count: > 0 }) return all;
 
-        all.Sort(StringComparer.Ordinal);
-        return all;
+        var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
+        matcher.AddInclude("**/*");
+        foreach (var g in globs)
+            AddExclusion(matcher, g);
+        var kept = new HashSet<string>(matcher.Match(all).Files.Select(m => m.Path), StringComparer.Ordinal);
+        return all.Where(kept.Contains).ToList();
+    }
+
+    /// <summary>
+    /// Null when <paramref name="glob"/> is usable, else why it is not. The matcher rejects some
+    /// shapes outright — a ".." anywhere but the start of a pattern throws — and it does so at the
+    /// moment a save folder is hashed, on every agent, for every push of that game. Checking here,
+    /// where a pattern is first typed, turns "this game silently stopped syncing" into an error on
+    /// the field that caused it.
+    /// </summary>
+    public static string? ValidateExcludeGlob(string glob)
+    {
+        var g = glob.Trim();
+        if (g.Length == 0) return null;
+        try { AddExclusion(new Matcher(StringComparison.OrdinalIgnoreCase), g); return null; }
+        catch (ArgumentException ex) { return ex.Message; }
+    }
+
+    private static void AddExclusion(Matcher matcher, string glob)
+    {
+        try
+        {
+            matcher.AddExclude(glob);
+            // A bare filename pattern (no '/') should match at any depth, gitignore-style:
+            // "*.log" excludes logs in every subfolder, not just the save root. Patterns
+            // that already contain '/' are treated as explicit paths anchored at the root.
+            if (!glob.Contains('/')) matcher.AddExclude("**/" + glob);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new ArgumentException($"Invalid exclude pattern '{glob}': {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>Relative paths of every real file entry already in an archive on disk, straight
+    /// from the zip's own directory — the same source <see cref="GetArchiveStats"/> reads, never
+    /// re-extracted.</summary>
+    public static IReadOnlyList<string> ListArchiveEntries(string zipPath)
+    {
+        using var zip = ZipFile.OpenRead(zipPath);
+        var names = new List<string>();
+        foreach (var entry in zip.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name)) continue; // directory entry, no content
+            names.Add(entry.FullName);
+        }
+        return names;
     }
 }

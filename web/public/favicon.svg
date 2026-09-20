@@ -1,0 +1,12 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SaveLocker">
+  <title>SaveLocker</title>
+  <rect width="32" height="32" rx="6.5" fill="#e0533c"/>
+  <!-- Pixel lock, monochrome per brand-kit.html's rule: "one colour and no punch — use it ...
+       anywhere the accent would fight the host" (exactly the favicon/tray case). -->
+  <g fill="#160f0e">
+    <rect x="12" y="3" width="8" height="4"/>
+    <rect x="8" y="7" width="4" height="5"/>
+    <rect x="20" y="7" width="4" height="5"/>
+    <rect x="5" y="12" width="22" height="16"/>
+  </g>
+</svg>

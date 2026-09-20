@@ -1,0 +1,9 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SaveLocker mark: Pixel lock">
+  <title>SaveLocker — Pixel lock mark (default)</title>
+  <rect x="12" y="3" width="8" height="4" fill="var(--color-accent, #e0533c)"/>
+  <rect x="8" y="7" width="4" height="5" fill="var(--color-accent, #e0533c)"/>
+  <rect x="20" y="7" width="4" height="5" fill="var(--color-accent, #e0533c)"/>
+  <rect x="5" y="12" width="22" height="16" fill="var(--color-accent, #e0533c)"/>
+  <rect x="14" y="16" width="4" height="4" fill="var(--color-on-accent, #160f0e)"/>
+  <rect x="15" y="20" width="2" height="5" fill="var(--color-on-accent, #160f0e)"/>
+</svg>

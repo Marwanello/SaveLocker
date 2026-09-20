@@ -1167,11 +1167,18 @@ public sealed class SyncService
         return true;
     }
 
-    /// <summary>Set (or clear) a game's per-game exclude globs. Takes effect on agents' next reconcile.</summary>
-    public async Task<bool> SetExcludeGlobsAsync(Guid gameId, IEnumerable<string> patterns)
+    /// <summary>
+    /// Set (or clear) a game's per-game exclude globs. Takes effect on agents' next reconcile.
+    /// <c>found</c> is false for an unknown game; <c>error</c> is non-null (and nothing is stored)
+    /// when the patterns are refused — see <see cref="GlobConfig.Validate"/> for why a bad one must
+    /// never reach an agent.
+    /// </summary>
+    public async Task<(bool found, string? error)> SetExcludeGlobsAsync(Guid gameId, IEnumerable<string> patterns)
     {
         var game = await _db.Games.FindAsync(gameId);
-        if (game is null) return false;
+        if (game is null) return (false, null);
+        patterns = patterns.ToList();
+        if (GlobConfig.Validate(patterns) is { } refused) return (true, refused);
 
         // The caller replaces the whole list, so the only way to say what actually changed is to
         // diff against what was there before — otherwise the audit trail says "3 pattern(s)" and a
@@ -1188,7 +1195,47 @@ public sealed class SyncService
 
         await Audit(null, gameId, "game.excludes", parts.Count > 0 ? string.Join("; ", parts) : "no change");
         await _db.SaveChangesAsync();
-        return true;
+        return (true, null);
+    }
+
+    /// <summary>
+    /// How many files in the game's current head archive would stop being uploaded under
+    /// <paramref name="draftPatterns"/> — a dry run for the console's exclude-pattern editor, before
+    /// the draft is saved. Uses <see cref="SaveArchive.FilterExcluded"/>, the exact matcher agents
+    /// apply, against the head archive's own entry list (never re-hashed or re-extracted — same
+    /// zip-directory read <see cref="GetVersionStatsAsync"/> uses).
+    /// <para>
+    /// Necessarily one-directional: a file that already matches a SAVED pattern was never uploaded
+    /// in the first place, so it cannot appear here to be counted either way — this can only ever
+    /// report newly-caught files among what the server currently has. 0 for a game with no head
+    /// version yet (nothing tracked, nothing to warn about) or whose head archive cannot be read
+    /// (that is a storage problem worth its own alarm, not a reason to fail a draft preview).
+    /// <c>found</c> is false for an unknown game; <c>error</c> is non-null for patterns that would
+    /// be refused on save, so the editor can say so before the user gets that far.
+    /// </para>
+    /// </summary>
+    public async Task<(bool found, int count, string? error)> PreviewExcludesAsync(Guid gameId, IEnumerable<string> draftPatterns)
+    {
+        var game = await _db.Games.FindAsync(gameId);
+        if (game is null) return (false, 0, null);
+
+        var patterns = draftPatterns.ToList();
+        if (GlobConfig.Validate(patterns) is { } refused) return (true, 0, refused);
+        if (game.HeadVersionId is null) return (true, 0, null);
+
+        var head = await _db.SaveVersions.FindAsync(game.HeadVersionId.Value);
+        if (head is null || !_store.Exists(head.ArchivePath)) return (true, 0, null);
+
+        try
+        {
+            var entries = SaveArchive.ListArchiveEntries(_store.FullPath(head.ArchivePath));
+            var kept = SaveArchive.FilterExcluded(entries, patterns);
+            return (true, entries.Count - kept.Count, null);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException)
+        {
+            return (true, 0, null);
+        }
     }
 
     /// <summary>
@@ -1700,6 +1747,112 @@ public sealed class SyncService
             .ToListAsync();
 
     // ----- Agent command channel -----
+
+    /// <summary>Most commands one bulk call may carry — one per machine is the intended shape.</summary>
+    public const int MaxBulkCommands = 100;
+
+    /// <summary>
+    /// Null when every request names a machine (and game, when given) that exists and a real
+    /// command type, else why not. The command table has a foreign key to machines, so an unknown
+    /// id used to surface as an unhandled database error — after any earlier requests in the same
+    /// call had already been saved.
+    /// </summary>
+    public async Task<string?> ValidateCommandRequestsAsync(IReadOnlyList<EnqueueCommandRequest> reqs)
+    {
+        foreach (var r in reqs)
+            if (!Enum.IsDefined(r.Type)) return $"Unknown command type '{r.Type}'.";
+
+        static string Unknown(string what, List<Guid> ids) =>
+            $"Unknown {what}: {string.Join(", ", ids.Take(5))}" + (ids.Count > 5 ? $" (+{ids.Count - 5} more)" : "") + ".";
+
+        var machineIds = reqs.Select(r => r.MachineId).Distinct().ToList();
+        var knownMachines = await _db.Machines.Where(m => machineIds.Contains(m.Id)).Select(m => m.Id).ToListAsync();
+        var missingMachines = machineIds.Except(knownMachines).ToList();
+        if (missingMachines.Count > 0) return Unknown("machine", missingMachines);
+
+        var gameIds = reqs.Where(r => r.GameId.HasValue).Select(r => r.GameId!.Value).Distinct().ToList();
+        if (gameIds.Count > 0)
+        {
+            var knownGames = await _db.Games.Where(g => gameIds.Contains(g.Id)).Select(g => g.Id).ToListAsync();
+            var missingGames = gameIds.Except(knownGames).ToList();
+            if (missingGames.Count > 0) return Unknown("game", missingGames);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Dashboard: queue several commands in one call — e.g. console "Sync all", one GameId-null
+    /// Sync command per machine (each agent's own poller already fans that out to every game IT
+    /// tracks, see CommandPoller.TargetGames) rather than one dashboard round trip per machine.
+    /// <para>
+    /// All-or-nothing: every request is validated first and everything is saved in one commit, so a
+    /// bad id can no longer leave half the machines queued behind an error. A request identical to a
+    /// command already Pending is answered with that command instead of stacking a second one
+    /// (the same reason <c>QueuePullFanOutAsync</c> checks first). Commands never expire, so
+    /// <see cref="BulkEnqueueRequest.SkipMachinesUnseenForSeconds"/> lets a caller leave out machines
+    /// that are not connected rather than queue work that fires unannounced days later.
+    /// </para>
+    /// </summary>
+    public async Task<(BulkEnqueueResponse? result, string? error)> EnqueueCommandsAsync(BulkEnqueueRequest req)
+    {
+        var reqs = req.Commands;
+        if (reqs is null || reqs.Count == 0) return (null, "At least one command is required.");
+        if (reqs.Count > MaxBulkCommands) return (null, $"At most {MaxBulkCommands} commands can be queued in one call.");
+        if (req.SkipMachinesUnseenForSeconds is < 0) return (null, "SkipMachinesUnseenForSeconds cannot be negative.");
+        if (await ValidateCommandRequestsAsync(reqs) is { } invalid) return (null, invalid);
+
+        var machineIds = reqs.Select(r => r.MachineId).Distinct().ToList();
+        var machines = await _db.Machines.Where(m => machineIds.Contains(m.Id)).ToDictionaryAsync(m => m.Id);
+
+        var now = DateTime.UtcNow;
+        var skipped = new List<SkippedCommandDto>();
+        var skippedIds = new HashSet<Guid>();
+        if (req.SkipMachinesUnseenForSeconds is { } window)
+        {
+            var cutoff = now - TimeSpan.FromSeconds(window);
+            foreach (var m in machines.Values.Where(m => m.LastSeen < cutoff).OrderBy(m => m.Name))
+            {
+                skippedIds.Add(m.Id);
+                skipped.Add(new SkippedCommandDto(m.Id, m.Name, "offline"));
+            }
+        }
+
+        var pending = await _db.AgentCommands
+            .Where(c => machineIds.Contains(c.MachineId) && c.Status == CommandStatus.Pending)
+            .ToListAsync();
+
+        var ids = new List<Guid>();
+        foreach (var r in reqs)
+        {
+            if (skippedIds.Contains(r.MachineId)) continue;
+
+            var existing = pending.FirstOrDefault(c =>
+                c.MachineId == r.MachineId && c.GameId == r.GameId && c.Type == r.Type && c.Force == r.Force);
+            if (existing is not null) { ids.Add(existing.Id); continue; }
+
+            var cmd = new AgentCommand
+            {
+                Id = Guid.NewGuid(),
+                MachineId = r.MachineId,
+                GameId = r.GameId,
+                Type = r.Type,
+                Force = r.Force,
+                Status = CommandStatus.Pending,
+                CreatedAt = now
+            };
+            _db.AgentCommands.Add(cmd);
+            pending.Add(cmd);
+            await Audit(r.MachineId, r.GameId, "command.enqueue", r.Type.ToString());
+            ids.Add(cmd.Id);
+        }
+        await _db.SaveChangesAsync();
+
+        var distinct = ids.Distinct().ToList();
+        var byId = await _db.AgentCommands.Include(c => c.Machine)
+            .Where(c => distinct.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id);
+        return (new BulkEnqueueResponse(distinct.Select(id => byId[id].ToDto()).ToList(), skipped), null);
+    }
 
     /// <summary>Dashboard: queue a command for an agent to run on its next poll.</summary>
     public async Task<AgentCommand> EnqueueCommandAsync(EnqueueCommandRequest req)

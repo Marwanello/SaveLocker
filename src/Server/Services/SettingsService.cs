@@ -68,12 +68,35 @@ public sealed class SettingsService
     public async Task<bool> HasAdminPasswordAsync(CancellationToken ct = default) =>
         !string.IsNullOrEmpty(await GetEffectiveAsync(AdminPasswordHash, ct));
 
+    /// <summary>
+    /// Set (or, when blank, clear) the admin password. Every signed-in browser is signed out: a
+    /// password change is the one moment an owner is certain to want a stolen session dead, and it
+    /// costs a legitimate user one sign-in.
+    /// </summary>
     public async Task SetAdminPasswordAsync(string? password, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(password))
             await SetAsync(AdminPasswordHash, null, ct);
         else
             await SetAsync(AdminPasswordHash, Tokens.HashPassword(password), ct);
+        await _db.AdminSessions.ExecuteDeleteAsync(ct);
+    }
+
+    /// <summary>
+    /// Re-write the stored admin hash at today's strength, given the plaintext that was JUST verified
+    /// against <paramref name="verifiedHash"/>. Returns the new hash, or null when there was nothing
+    /// to do. Compare-and-set on <paramref name="verifiedHash"/>: a sign-in that verified the OLD
+    /// password must not overwrite one an admin changed a moment later. A hash that lives in
+    /// configuration (env / appsettings) rather than the database is left alone — there is nowhere
+    /// to write it back to.
+    /// </summary>
+    public async Task<string?> UpgradeAdminPasswordHashAsync(string password, string verifiedHash, CancellationToken ct = default)
+    {
+        var row = await _db.Settings.FindAsync(new object?[] { AdminPasswordHash }, ct);
+        if (row is null || row.Value != verifiedHash || !Tokens.NeedsRehash(row.Value)) return null;
+        row.Value = Tokens.HashPassword(password);
+        await _db.SaveChangesAsync(ct);
+        return row.Value;
     }
 
     public async Task<double> GetAutoFetchHoursAsync(CancellationToken ct = default)

@@ -58,6 +58,14 @@ Click **↻ Refresh** in the nav bar to force an immediate reload. The dashboard
 - If a machine's key is lost, the clean fix is to **re-enroll**: mint a fresh enrollment file in the console and run `enroll --file …` again (redeeming an existing machine name rotates its key and brings it back as itself). Alternatively, delete the agent config (`%PROGRAMDATA%\SaveLocker\config.json`, or `~/.local/share/SaveLocker/config.json` on Linux) and restart the agent to register anew.
 - In the dashboard, you can revoke old machines under **Configuration → Machines**.
 
+## Signing in to the dashboard
+
+**"Your session ended. Sign in again."** Signing in gives your browser a *session*, not a copy of your password. A session ends when you press **Lock**, use **Configuration → Admin password → Sign out everywhere**, change the password, or leave the console unused for a week (30 days at most in any case). Just sign in again.
+
+**"Too many wrong passwords. Try again in N minutes."** After five wrong passwords in 15 minutes, the server refuses further attempts from that address for a while — the right password included, so guessing cannot simply carry on. Wait it out, or restart the server container (the lockout is held in memory). Anyone already signed in is unaffected. If the server sits behind a proxy or tunnel and everyone gets locked out together, the server has not been told the proxy's address — see *Securing the server* in the server documentation (`Security__TrustedProxies`).
+
+**Forgot the admin password.** Stop the server, remove the `Admin:PasswordHash` row from the `Settings` table of its database (or the `Admin__PasswordHash` environment variable if you set it that way), and start it again: the dashboard is then open until you set a new password under **Configuration → Admin password**.
+
 ## Logs and diagnostics
 
 Windows state lives under `%PROGRAMDATA%\SaveLocker\`; Linux state lives under `~/.local/share/SaveLocker/` (XDG, not `%PROGRAMDATA%`).
