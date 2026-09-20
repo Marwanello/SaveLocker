@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 
 interface Props {
   cover: ReactNode;
+  /** A string title also becomes the row's tooltip: the column is narrow and the text truncates. */
   title: ReactNode;
   subtext: ReactNode;
   end?: ReactNode;
@@ -26,7 +27,7 @@ export function Row({ cover, title, subtext, end, onClick, className = '' }: Pro
       <span className="row-span-2 w-[38px] h-[38px] rounded-[9px] flex items-center justify-center flex-shrink-0 overflow-hidden">
         {cover}
       </span>
-      <span className="col-start-2 text-[13px] font-semibold self-end truncate">{title}</span>
+      <span className="col-start-2 text-[13px] font-semibold self-end truncate" title={typeof title === 'string' ? title : undefined}>{title}</span>
       <span className="col-start-2 text-[10.5px] text-faint self-start truncate">{subtext}</span>
       {end && <span className="col-start-3 row-span-2 flex items-center">{end}</span>}
     </Tag>

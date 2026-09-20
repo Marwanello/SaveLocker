@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api } from '../api';
+import { api, ApiError, errorText } from '../api';
 import type { GameSummary, Machine, Command, Conflict, Version, VersionStats, MachineSavePath, MachineScanCandidate } from '../types';
 import { toTemplate, isTemplate } from '../savePathTemplate';
 import { Chip } from './ui/Chip';
@@ -54,6 +54,9 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
   // null while the first preview for this draft hasn't answered yet — kept distinct from 0 so the
   // count never flashes "0" for a moment before the real number lands.
   const [previewCount, setPreviewCount] = useState<number | null>(null);
+  // The server's reason when it refuses the draft (a pattern the matcher cannot evaluate): shown on the
+  // editor and blocks Save, instead of the request failing quietly and the bad pattern being saved.
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [policyDraft, setPolicyDraft] = useState<string>(summary.game.conflictPolicy ?? 'Manual');
   const [preferredMachineDraft, setPreferredMachineDraft] = useState<string | null>(summary.game.preferredMachineId ?? null);
   const [policyForGameId, setPolicyForGameId] = useState(summary.game.id);
@@ -126,18 +129,24 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
     api.settings().then(s => setDefaultGlobs(s.defaultExcludeGlobs ?? [])).catch(() => {});
   }, []);
 
-  // Dry run against the head archive for whatever the draft currently is — including on first
-  // mount, against the SAVED patterns, which should read close to 0 (they already kept those
-  // files out, so there's nothing left in the archive for this pass to find; see
-  // SyncService.PreviewExcludesAsync's one-directional caveat). Re-fires on every add/remove.
+  // Dry run against the head archive for whatever the draft currently is. Only while the editor is
+  // OPEN: it used to run on every game selection with the section collapsed, and each call makes the
+  // server read the head archive's zip index off disk for a number nobody was looking at. Re-fires
+  // on every add/remove. A 400 is the server refusing the draft itself (see previewError).
   useEffect(() => {
+    if (!excludeOpen) return;
     let cancelled = false;
     setPreviewCount(null);
+    setPreviewError(null);
     api.previewExcludes(game.id, excludeDraft)
       .then(r => { if (!cancelled) setPreviewCount(r.wouldExclude); })
-      .catch(() => { if (!cancelled) setPreviewCount(null); });
+      .catch(e => {
+        if (cancelled) return;
+        setPreviewCount(null);
+        if (e instanceof ApiError && e.status === 400) setPreviewError(e.detail || e.message);
+      });
     return () => { cancelled = true; };
-  }, [game.id, excludeDraft]);
+  }, [game.id, excludeDraft, excludeOpen]);
 
   // File count / newest-mtime for the versions on either side of an open conflict — fetched
   // lazily, only for versions actually shown in a conflict card. An archive never changes once
@@ -159,7 +168,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
   async function handleSaveExcludes() {
     setSavingExcludes(true);
     try { await api.setExcludes(game.id, excludeDraft); onRefresh(); }
-    catch (e) { alert('Could not save exclude patterns: ' + (e as Error).message); }
+    catch (e) { alert('Could not save exclude patterns: ' + errorText(e)); }
     finally { setSavingExcludes(false); }
   }
 
@@ -379,7 +388,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
             : (
               <div style={{ width: 94, height: 134, background: '#2A3238', border: '1px dashed #494949', borderRadius: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, flexShrink: 0 }}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#494949" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                <span style={{ color: '#494949', fontSize: 9, fontFamily: "'JetBrains Mono', monospace", textAlign: 'center', lineHeight: 1.5 }}>box<br/>art</span>
+                <span style={{ color: '#8b9aaa', fontSize: 9, fontFamily: "'JetBrains Mono', monospace", textAlign: 'center', lineHeight: 1.5 }}>box<br/>art</span>
               </div>
             )
           }
@@ -442,7 +451,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                   ? 'Each machine expands this against its own folders — inside the game\'s Proton prefix on a Steam Deck. A machine that already has its own path keeps it.'
                   : 'A literal path, used only where it happens to exist. "Use as template" on a machine row turns it into one that works everywhere.'}
                 style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: isTemplate(game.suggestedSaveDir) ? '#129271' : '#8b9aaa', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {game.suggestedSaveDir || <span style={{ color: '#494949', fontStyle: 'italic' }}>none</span>}
+                {game.suggestedSaveDir || <span style={{ color: '#8b9aaa', fontStyle: 'italic' }}>none</span>}
               </span>
               <button style={{ padding: '3px 9px', border: '1px solid #494949', color: '#ECEFF1', background: 'transparent', borderRadius: 4, fontSize: 10, cursor: 'pointer', flexShrink: 0 }} onClick={handleSetSaveDir}>Edit</button>
             </div>
@@ -615,6 +624,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                     <button
                       onClick={() => handleRemovePattern(p)}
                       title={`Remove ${p}`}
+                      aria-label={`Remove ${p}`}
                       className="ml-1 text-faint hover:text-accent"
                     >
                       ×
@@ -635,17 +645,24 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
               <Button variant="default" size="sm" onClick={handleAddPattern}>Add</Button>
             </div>
 
-            {/* Dry run against the head archive — see SyncService.PreviewExcludesAsync. Only ever
-                catches files already tracked, never ones an existing saved pattern already hides,
-                which is exactly why it's phrased as "additionally" rather than a total. */}
-            {previewCount !== null && previewCount > 0 && (
+            {/* Dry run against the head archive — see SyncService.PreviewExcludesAsync. It counts the
+                whole draft against what the server holds, which can include files a SAVED pattern
+                already covers (the latest save may predate that pattern until the next upload), so
+                the wording depends on whether there is anything unsaved rather than claiming these
+                are all new. */}
+            {previewError && (
+              <p role="alert" className="text-[11px] text-accent-ink">{previewError}</p>
+            )}
+            {!previewError && previewCount !== null && previewCount > 0 && (
               <p className="text-[11px] text-watch">
-                Would additionally exclude {previewCount} file{previewCount === 1 ? '' : 's'} currently tracked in the latest save.
+                {excludeDirty
+                  ? `Saving would leave ${previewCount} file${previewCount === 1 ? '' : 's'} in the latest save out of future uploads.`
+                  : `${previewCount} file${previewCount === 1 ? '' : 's'} in the latest save match${previewCount === 1 ? 'es' : ''} these patterns; the next upload will leave ${previewCount === 1 ? 'it' : 'them'} out.`}
               </p>
             )}
 
             <div className="flex justify-end">
-              <Button variant="primary" size="sm" disabled={savingExcludes || !excludeDirty} onClick={handleSaveExcludes}>
+              <Button variant="primary" size="sm" disabled={savingExcludes || !excludeDirty || previewError !== null} onClick={handleSaveExcludes}>
                 {savingExcludes ? 'Saving…' : 'Save patterns'}
               </Button>
             </div>

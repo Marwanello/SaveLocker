@@ -34,7 +34,7 @@ export function GamesSidebar({ games, selectedId, onSelect, onAddGame, onRefresh
   }
 
   return (
-    <aside className={`flex-shrink-0 bg-panel border-r border-line flex flex-col min-h-0 ${layout === 'grid' ? 'w-[340px]' : 'w-[220px]'}`}>
+    <aside className={`flex-shrink-0 bg-panel border-r border-line flex flex-col min-h-0 ${layout === 'grid' ? 'w-[340px]' : 'w-[260px]'}`}>
       <div className="px-3.5 py-2.5 border-b border-line flex items-baseline justify-between flex-shrink-0">
         <span className="text-[10px] font-bold text-accent tracking-[0.12em] uppercase">Games</span>
         <span className="text-[9.5px] text-faint font-mono" title="Total save data stored on server">{fmtMb(grandTotal)}</span>
@@ -68,7 +68,7 @@ export function GamesSidebar({ games, selectedId, onSelect, onAddGame, onRefresh
                   className={`${game.id === selectedId ? 'border-accent' : ''} ${game.enabled ? '' : 'opacity-[.55]'}`}
                   cover={
                     game.gridUrl
-                      ? <img src={game.gridUrl} alt="" className="w-full h-full object-cover" />
+                      ? <img src={game.gridUrl} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                       : <span className="text-faint text-[8px] font-mono">no art</span>
                   }
                   title={game.name}
@@ -77,10 +77,13 @@ export function GamesSidebar({ games, selectedId, onSelect, onAddGame, onRefresh
                     head ? head.id.replace(/-/g, '').slice(0, 6) : null,
                     lease?.holderMachineName ? `leased by ${lease.holderMachineName}` : null,
                   ].filter(Boolean).join(' · ') || '—'}
+                  // A healthy game is the normal case, so it gets a quiet dot rather than a word: the
+                  // "in sync" chip took a quarter of the row and left the title ~60px (measured) —
+                  // most names were cut to about eight characters. Only a conflict earns a chip.
                   end={
                     hasOpenConflict
                       ? <Chip tone="crit">conflict</Chip>
-                      : <Chip tone="ok">in sync</Chip>
+                      : <span className="w-2 h-2 rounded-full bg-safe" role="img" aria-label="in sync" title="in sync" />
                   }
                 />
               );

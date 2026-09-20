@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes } from 'react';
 
-type Variant = 'default' | 'primary' | 'quiet' | 'alert';
+type Variant = 'default' | 'primary' | 'selected' | 'quiet' | 'alert';
 type Size = 'default' | 'sm';
 
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -11,6 +11,8 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
 const VARIANT: Record<Variant, string> = {
   default: 'bg-raise border-line text-fg hover:bg-hover',
   primary: 'bg-accent border-accent text-on-accent font-semibold hover:brightness-110',
+  // The current tab / chosen option: highlighted, but not the accent — that stays the one action.
+  selected: 'bg-tile border-line text-fg font-semibold hover:bg-tile',
   quiet: 'bg-transparent border-transparent text-dim hover:bg-hover',
   alert: 'bg-accent-soft border-accent-line text-accent-ink font-semibold hover:bg-accent-soft',
 };
@@ -21,7 +23,8 @@ const SIZE: Record<Size, string> = {
 };
 
 /** plan.md "Components": one filled (`primary`) button per view, everything else outline/quiet/text.
- *  Destructive actions use `alert` and must name their effect in their own label, not here. */
+ *  `selected` marks the current tab without spending that one accent. Destructive actions use `alert`
+ *  and must name their effect in their own label, not here. */
 export function Button({ variant = 'default', size = 'default', className = '', ...rest }: Props) {
   return (
     <button

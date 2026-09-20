@@ -1,24 +1,30 @@
 @import "tailwindcss";
 
-/* Checkpoint tokens. Light is the base :root set; dark applies under the OS preference or an
-   explicit override once Phase 4 (Group 5) ships a theme switcher. Every derived (soft/line/ink)
-   step is color-mix against the live --color-panel/--color-fg, so it re-derives correctly under
-   either theme with no second set of values. See docs/tasks/checkpoint-ui/plan.md. */
+/* Checkpoint tokens. DARK is the base set, and light is an explicit opt-in (`data-theme="light"`
+   on <html>) — deliberately NOT keyed to prefers-color-scheme yet. About 275 colours in the
+   views that have not been migrated (game detail, configuration, audit log, agent updates) are
+   still hardcoded for a dark canvas and inherit their text colour from <body>; under a light
+   base that text turned near-black on those dark cards (measured at 1.04–1.15:1 contrast, i.e.
+   invisible) for every visitor whose OS prefers light. The default flips to following the OS in
+   the group that finishes the migration — see docs/tasks/checkpoint-ui/implementation-grouping.md.
+   Every derived (soft/line/ink) step is color-mix against the live --color-panel/--color-fg, so
+   it re-derives correctly under either theme with no second set of values.
+   See docs/tasks/checkpoint-ui/plan.md. */
 @theme {
-  --color-ink:        #f5f3ef;
-  --color-panel:      #fffefc;
-  --color-raise:      #f0ede8;
-  --color-tile:       #ebe7e0;
-  --color-hover:      #e8e3dc;
-  --color-fg:         #191719;
-  --color-dim:        #57534d;
-  --color-faint:      #8b8780;
-  --color-line:       #e2ddd5;
-  --color-row:        #eeeae3;
-  --color-safe:       #4c7b3e;
-  --color-watch:      #8a6212;
-  --color-accent:     #c0432c;
-  --color-on-accent:  #fff8f6;
+  --color-ink:        #0f0f10;
+  --color-panel:      #141416;
+  --color-raise:      #191a1c;
+  --color-tile:       #1b1c1f;
+  --color-hover:      #202124;
+  --color-fg:         #f0eee9;
+  --color-dim:        #a09d97;
+  --color-faint:      #6b6862;
+  --color-line:       #242427;
+  --color-row:        #1d1d20;
+  --color-safe:       #7fa96a;
+  --color-watch:      #d9a63f;
+  --color-accent:     #e0533c;
+  --color-on-accent:  #160f0e;
 
   --color-accent-soft: color-mix(in oklab, var(--color-accent) 14%, var(--color-panel));
   --color-accent-line: color-mix(in oklab, var(--color-accent) 42%, var(--color-panel));
@@ -51,39 +57,25 @@
   --color-border:          var(--color-line);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --color-ink:        #0f0f10;
-    --color-panel:      #141416;
-    --color-raise:      #191a1c;
-    --color-tile:       #1b1c1f;
-    --color-hover:      #202124;
-    --color-fg:         #f0eee9;
-    --color-dim:        #a09d97;
-    --color-faint:      #6b6862;
-    --color-line:       #242427;
-    --color-row:        #1d1d20;
-    --color-safe:       #7fa96a;
-    --color-watch:      #d9a63f;
-    --color-accent:     #e0533c;
-    --color-on-accent:  #160f0e;
-  }
-}
-:root[data-theme="dark"] {
-  --color-ink:        #0f0f10;
-  --color-panel:      #141416;
-  --color-raise:      #191a1c;
-  --color-tile:       #1b1c1f;
-  --color-hover:      #202124;
-  --color-fg:         #f0eee9;
-  --color-dim:        #a09d97;
-  --color-faint:      #6b6862;
-  --color-line:       #242427;
-  --color-row:        #1d1d20;
-  --color-safe:       #7fa96a;
-  --color-watch:      #d9a63f;
-  --color-accent:     #e0533c;
-  --color-on-accent:  #160f0e;
+/* Opt-in only (see the note above the tokens): <html data-theme="light">. `color-scheme` makes the
+   browser's own controls, scrollbars and form fields follow whichever palette is active. */
+:root { color-scheme: dark; }
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-ink:        #f5f3ef;
+  --color-panel:      #fffefc;
+  --color-raise:      #f0ede8;
+  --color-tile:       #ebe7e0;
+  --color-hover:      #e8e3dc;
+  --color-fg:         #191719;
+  --color-dim:        #57534d;
+  --color-faint:      #8b8780;
+  --color-line:       #e2ddd5;
+  --color-row:        #eeeae3;
+  --color-safe:       #4c7b3e;
+  --color-watch:      #8a6212;
+  --color-accent:     #c0432c;
+  --color-on-accent:  #fff8f6;
 }
 
 :root {
@@ -92,6 +84,15 @@
 
 @layer base {
   * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* These two were UNLAYERED, and an unlayered rule beats every Tailwind utility (which live in
+     @layer utilities) regardless of specificity. Measured consequences: a disabled Button (opacity
+     50%) jumped to 85% the moment it was hovered — looking enabled — `hover:opacity-100` never
+     applied, and the `focus-visible:outline-*` ring the new inputs ask for computed to `none`.
+     In the base layer they still style every raw <button>/<input> the unmigrated views use, and a
+     component that sets its own opacity or outline now wins, as it should. */
+  button:not(:disabled):hover { opacity: 0.85; transition: opacity 0.1s; }
+  input:focus { outline: none; }
 }
 
 body {
@@ -111,10 +112,11 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--color-line); border-radius: 3px; }
 
 button { cursor: pointer; font-family: inherit; }
-button:hover { opacity: 0.85; transition: opacity 0.1s; }
 a { text-decoration: none; color: inherit; }
 input::placeholder { color: var(--color-faint); }
-input:focus { border-color: var(--color-accent) !important; outline: none; }
+/* Accent border on focus, over the inline `border` the unmigrated inputs set. !important is what makes
+   it beat an inline style; the OUTLINE rule lives in @layer base above so a utility can override it. */
+input:focus { border-color: var(--color-accent) !important; }
 
 /* Motion primitives (plan.md "Motion"). One curve, two entrance keyframes; the caller staggers via
    inline `animation-delay`. Progress bars must never use these — a tick re-rendering its ancestor
