@@ -1919,6 +1919,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/art/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    kind: string;
+                    page?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ArtOptionsPageDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/art/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    kind: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetGameArtRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GameDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games/{id}": {
         parameters: {
             query?: never;
@@ -3037,6 +3119,22 @@ export interface components {
             downloadUrl: string;
             sha256?: null | string;
         };
+        ArtOptionDto: {
+            url: string;
+            preview: null | string;
+            /** Format: int32 */
+            width: null | number;
+            /** Format: int32 */
+            height: null | number;
+            author: null | string;
+        };
+        ArtOptionsPageDto: {
+            kind: string;
+            /** Format: int32 */
+            page: number;
+            hasMore: boolean;
+            options: components["schemas"]["ArtOptionDto"][];
+        };
         AuditEntryDto: {
             /** Format: uuid */
             id: string;
@@ -3397,6 +3495,9 @@ export interface components {
             policy: components["schemas"]["ConflictPolicy"];
             /** Format: uuid */
             preferredMachineId?: null | string;
+        };
+        SetGameArtRequest: {
+            url: string;
         };
         SetSteamGridDbKeyRequest: {
             apiKey: null | string;

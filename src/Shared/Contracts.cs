@@ -193,6 +193,20 @@ public record InstallerHashVerification(
 /// <summary>Set (or clear, when null/empty) the SteamGridDB API key from the dashboard.</summary>
 public record SetSteamGridDbKeyRequest(string? ApiKey);
 
+/// <summary>
+/// One SteamGridDB image offered for a game's cover or icon. <paramref name="Url"/> is what the server
+/// downloads if it is chosen; <paramref name="Preview"/> is a small inline <c>data:</c> image of it,
+/// fetched and shrunk by the server — the console never contacts SteamGridDB's CDN itself, and its CSP
+/// would refuse to. Null when the preview could not be fetched.
+/// </summary>
+public record ArtOptionDto(string Url, string? Preview, int? Width, int? Height, string? Author);
+
+/// <summary>One page (five options) of a game's SteamGridDB covers or icons.</summary>
+public record ArtOptionsPageDto(string Kind, int Page, bool HasMore, List<ArtOptionDto> Options);
+
+/// <summary>Use this SteamGridDB image (an <see cref="ArtOptionDto.Url"/>) as the game's cover or icon.</summary>
+public record SetGameArtRequest(string Url);
+
 /// <summary>Set (or clear, when null/empty) the admin dashboard password.</summary>
 public record SetAdminPasswordRequest(string? Password);
 

@@ -1,6 +1,9 @@
 ﻿using System.Net.Http.Headers;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using SaveLocker.Server.Data;
+using SaveLocker.Shared;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Processing;
@@ -40,18 +43,38 @@ public sealed class ArtService
     private const int MaxRedirects = 3;
 
     // Asset kind -> SteamGridDB endpoint (relative to the api/v2 base).
+    // The icon is the exception to "take the first result": see PickIconAsync, which reads a short
+    // list. PNG only, because the console draws it in a square tile and PNG is the one icon format we
+    // can inspect for transparency.
     private static readonly (string kind, string path)[] Assets =
     {
         ("grid", "grids/game/{0}?dimensions=600x900&types=static&limit=1"),
         ("hero", "heroes/game/{0}?limit=1"),
         ("logo", "logos/game/{0}?limit=1"),
-        ("icon", "icons/game/{0}?limit=1"),
+        ("icon", "icons/game/{0}?mimes=image/png"),
     };
 
-    public ArtService(AppDbContext db, SettingsService settings, IHttpClientFactory factory, IWebHostEnvironment env, IConfiguration config)
+    /// <summary>How many icon candidates to download looking for one with no transparent pixels.</summary>
+    private const int IconCandidates = 6;
+
+    /// <summary>Options shown per page in the console's picker.</summary>
+    public const int OptionsPageSize = 5;
+
+    // Each API page is up to 50 results; ten pages is far more than anyone scrolls, and bounds the work.
+    private const int MaxOptionApiPages = 10;
+
+    // A preview is shrunk to fit its tile (see GetOptionsAsync); one that cannot be shrunk is passed
+    // through only if it is already small, since it travels inline in the JSON.
+    private const int MaxPassthroughPreviewBytes = 300 * 1024;
+
+    private readonly IMemoryCache _cache;
+
+    public ArtService(AppDbContext db, SettingsService settings, IHttpClientFactory factory,
+        IWebHostEnvironment env, IConfiguration config, IMemoryCache cache)
     {
         _db = db;
         _settings = settings;
+        _cache = cache;
         _http = factory.CreateClient("steamgriddb");
         // Asset images live on a separate CDN host that rejects the API bearer token,
         // so download them with a clean client carrying no Authorization header. It is the
@@ -59,11 +82,17 @@ public sealed class ArtService
         _download = factory.CreateClient("steamgriddb-cdn");
         _allowedImageHosts = ConfiguredImageHosts(config);
         _allowInsecureImageUrls = config.GetValue<bool?>("Art:AllowInsecureImageUrls") ?? false;
-        // In production Storage:ArtRoot points to /data/art (the persistent volume mount).
-        // In dev, fall back to wwwroot/art so local runs still work without configuration.
-        _artRoot = config["Storage:ArtRoot"]
-            ?? Path.Combine(env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot"), "art");
+        _artRoot = ResolveRoot(config, env);
     }
+
+    /// <summary>
+    /// Where art lives on disk. In production <c>Storage:ArtRoot</c> points to /data/art (the persistent
+    /// volume mount); in dev it falls back to wwwroot/art so local runs work without configuration.
+    /// Shared with the thumbnail endpoint, which must read from the same place.
+    /// </summary>
+    public static string ResolveRoot(IConfiguration config, IWebHostEnvironment env) =>
+        config["Storage:ArtRoot"]
+            ?? Path.Combine(env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot"), "art");
 
     private Task<string?> ResolveKeyAsync(CancellationToken ct) =>
         _settings.GetEffectiveAsync(SettingsService.SteamGridDbApiKey, ct);
@@ -190,8 +219,17 @@ public sealed class ArtService
         catch { return true; }
     }
 
-    /// <summary>(Re)fetch and cache artwork for a game by name. Returns a status message.</summary>
-    public async Task<(bool ok, string message)> RefreshArtAsync(Guid gameId, CancellationToken ct = default)
+    /// <summary>
+    /// (Re)fetch and cache artwork for a game by name. Returns a status message.
+    /// <para>
+    /// With <paramref name="onlyMissing"/> it fills the gaps and leaves whatever is already there alone.
+    /// The backfill after a key is added needs that: a cover somebody picked by hand is not "missing",
+    /// and re-fetching it would put SteamGridDB's default back over their choice. The explicit
+    /// "Refresh art" button does not pass it — asking for a refresh means asking for the default again.
+    /// </para>
+    /// </summary>
+    public async Task<(bool ok, string message)> RefreshArtAsync(
+        Guid gameId, CancellationToken ct = default, bool onlyMissing = false)
     {
         _apiKey = await ResolveKeyAsync(ct);
         if (string.IsNullOrWhiteSpace(_apiKey))
@@ -200,24 +238,24 @@ public sealed class ArtService
         var game = await _db.Games.FindAsync(new object?[] { gameId }, ct);
         if (game is null) return (false, "Unknown game.");
 
+        var wanted = Assets.Where(a => !onlyMissing || string.IsNullOrEmpty(UrlFor(game, a.kind))).ToArray();
+        if (wanted.Length == 0) return (true, "No art was missing.");
+
         var sgdbId = await FindGameIdAsync(game.Name, ct);
         if (sgdbId is null) return (false, $"No SteamGridDB match for \"{game.Name}\".");
 
         var found = new List<string>();
-        foreach (var (kind, pathTemplate) in Assets)
+        foreach (var (kind, pathTemplate) in wanted)
         {
-            var url = await FirstAssetUrlAsync(string.Format(pathTemplate, sgdbId), ct);
-            if (url is null) continue;
-            var cached = await DownloadAsync(gameId, kind, url, ct);
+            var path = string.Format(pathTemplate, sgdbId);
+            string? cached;
+            if (kind == "icon")
+                cached = await PickIconAsync(gameId, path, ct);
+            else
+                cached = await FirstAssetUrlAsync(path, ct) is { } url ? await DownloadAsync(gameId, kind, url, ct) : null;
             if (cached is null) continue;
 
-            switch (kind)
-            {
-                case "grid": game.GridUrl = cached; break;
-                case "hero": game.HeroUrl = cached; break;
-                case "logo": game.LogoUrl = cached; break;
-                case "icon": game.IconUrl = cached; break;
-            }
+            SetUrl(game, kind, cached);
             found.Add(kind);
         }
 
@@ -234,6 +272,237 @@ public sealed class ArtService
         try { await RefreshArtAsync(gameId, ct); } catch { /* art is non-critical */ }
     }
 
+    /// <summary>
+    /// Games with no cover or no icon — the two the console draws. Hero and logo are not counted: they
+    /// are fetched alongside, but a game that only lacks those is not one anybody can see is incomplete.
+    /// </summary>
+    public Task<List<Guid>> GameIdsMissingArtAsync(CancellationToken ct = default) =>
+        _db.Games
+            .Where(g => g.GridUrl == null || g.GridUrl == "" || g.IconUrl == null || g.IconUrl == "")
+            .Select(g => g.Id)
+            .ToListAsync(ct);
+
+    private static string? UrlFor(Game g, string kind) => kind switch
+    {
+        "grid" => g.GridUrl, "hero" => g.HeroUrl, "logo" => g.LogoUrl, "icon" => g.IconUrl, _ => null,
+    };
+
+    private static void SetUrl(Game g, string kind, string url)
+    {
+        switch (kind)
+        {
+            case "grid": g.GridUrl = url; break;
+            case "hero": g.HeroUrl = url; break;
+            case "logo": g.LogoUrl = url; break;
+            case "icon": g.IconUrl = url; break;
+        }
+    }
+
+    /// <summary>
+    /// Store the first candidate icon with no transparent pixel, else the first that downloads at all.
+    /// <para>
+    /// The console draws the icon in a rounded square in place of the box art. Most icons on SteamGridDB
+    /// are logos cut out on a transparent background; on the tile those show the panel colour through
+    /// and read as a floating glyph rather than the game's icon. There is no API filter for it, so
+    /// the candidates are read and their pixels checked — up to <see cref="IconCandidates"/>, which is
+    /// a few small PNGs. Falling back to a transparent one beats no icon: the list would drop to box art.
+    /// </para>
+    /// </summary>
+    private async Task<string?> PickIconAsync(Guid gameId, string path, CancellationToken ct)
+    {
+        byte[]? firstUsable = null;
+        foreach (var url in await AssetUrlsAsync(path, IconCandidates, ct))
+        {
+            var bytes = await TryFetchAsync(url, ct);
+            if (bytes is null || ImageSniffer.DetectExtension(bytes) is null) continue;
+            if (ArtImages.IsFullyOpaque(bytes)) return await StoreAsync(gameId, "icon", bytes, ct);
+            firstUsable ??= bytes;
+        }
+        return firstUsable is null ? null : await StoreAsync(gameId, "icon", firstUsable, ct);
+    }
+
+    // ----- Choosing art by hand -----
+
+    /// <summary>Make a SteamGridDB image (one of the URLs <see cref="GetOptionsAsync"/> offered) the game's cover or icon.</summary>
+    public async Task<(bool ok, string message, Game? game)> SetArtAsync(
+        Guid gameId, string kind, string url, CancellationToken ct = default)
+    {
+        if (kind is not ("grid" or "icon")) return (false, "Art kind must be 'grid' or 'icon'.", null);
+        var game = await _db.Games.FindAsync(new object?[] { gameId }, ct);
+        if (game is null) return (false, "Unknown game.", null);
+
+        // The URL came from the caller. DownloadAsync is what makes that safe: https, an allowlisted host
+        // on every redirect hop, a size cap, and a type decided by the bytes.
+        var stored = await DownloadAsync(gameId, kind, url, ct);
+        if (stored is null)
+            return (false, "That image could not be downloaded — it is not on SteamGridDB, or not a usable image.", null);
+
+        SetUrl(game, kind, stored);
+        await _db.SaveChangesAsync(ct);
+        return (true, kind == "grid" ? "Cover updated." : "Icon updated.", game);
+    }
+
+    /// <summary>
+    /// One page (<see cref="OptionsPageSize"/> options) of the game's SteamGridDB covers or icons, each with
+    /// a small inline preview. Pages are numbered from 0.
+    /// <para>
+    /// SteamGridDB pages are much bigger than five and their size is not ours to assume, so the listing
+    /// is kept (ten minutes, in memory) and sliced here: page N is items [5N, 5N+5) of one running list
+    /// that grows by fetching API pages only as far as needed — plus one more item, so <c>HasMore</c>
+    /// is a fact rather than a guess that opens an empty page.
+    /// </para>
+    /// <para>
+    /// Previews are fetched by the server and inlined as <c>data:</c> URIs. The console's CSP allows
+    /// images from itself and <c>data:</c> only, and a browser fetching from SteamGridDB's CDN directly
+    /// would also tell it who is browsing. Each is shrunk to its tile first, so five of them cost tens
+    /// of kilobytes, not five full covers.
+    /// </para>
+    /// </summary>
+    public async Task<(ArtOptionsPageDto? page, string? error)> GetOptionsAsync(
+        Guid gameId, string kind, int page, CancellationToken ct = default)
+    {
+        if (kind is not ("grid" or "icon")) return (null, "Art kind must be 'grid' or 'icon'.");
+        if (page < 0) return (null, "Page must be 0 or more.");
+
+        _apiKey = await ResolveKeyAsync(ct);
+        if (string.IsNullOrWhiteSpace(_apiKey))
+            return (null, "SteamGridDB API key not configured — set it in the dashboard (Server settings).");
+
+        var game = await _db.Games.FindAsync(new object?[] { gameId }, ct);
+        if (game is null) return (null, "Unknown game.");
+
+        try
+        {
+            var sgdbId = await ResolveSgdbIdAsync(game.Name, ct);
+            if (sgdbId is null) return (null, $"No SteamGridDB match for \"{game.Name}\".");
+
+            var source = _cache.GetOrCreate($"sgdb-options:{sgdbId}:{kind}", e =>
+            {
+                e.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
+                return new OptionSource();
+            })!;
+            await FillAsync(source, sgdbId.Value, kind, (page + 1) * OptionsPageSize + 1, ct);
+
+            var slice = source.Items.Skip(page * OptionsPageSize).Take(OptionsPageSize).ToList();
+            var hasMore = source.Items.Count > (page + 1) * OptionsPageSize;
+
+            var previews = await Task.WhenAll(slice.Select(o => PreviewAsync(o, kind, ct)));
+            var options = slice
+                .Select((o, i) => new ArtOptionDto(o.Url, previews[i], o.Width, o.Height, o.Author))
+                .ToList();
+            return (new ArtOptionsPageDto(kind, page, hasMore, options), null);
+        }
+        catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException) && !ct.IsCancellationRequested)
+        {
+            return (null, "Could not reach SteamGridDB: " + ex.Message);
+        }
+    }
+
+    private sealed record OptionMeta(string Url, string? Thumb, int? Width, int? Height, string? Author);
+
+    /// <summary>The running listing for one (SteamGridDB game, kind). Mutated only under <see cref="Gate"/>.</summary>
+    private sealed class OptionSource
+    {
+        public readonly SemaphoreSlim Gate = new(1, 1);
+        public readonly List<OptionMeta> Items = new();
+        public readonly HashSet<string> Seen = new();
+        public int NextApiPage;
+        public int Raw;
+        public bool Exhausted;
+    }
+
+    private async Task FillAsync(OptionSource src, int sgdbId, string kind, int need, CancellationToken ct)
+    {
+        await src.Gate.WaitAsync(ct);
+        try
+        {
+            while (src.Items.Count < need && !src.Exhausted && src.NextApiPage < MaxOptionApiPages)
+            {
+                var (items, total) = await FetchOptionsPageAsync(sgdbId, kind, src.NextApiPage, ct);
+                src.NextApiPage++;
+                src.Raw += items.Count;
+                foreach (var item in items)
+                    if (src.Seen.Add(item.Url)) src.Items.Add(item);   // a repeated page must not repeat options
+                if (items.Count == 0 || (total is { } t && src.Raw >= t)) src.Exhausted = true;
+            }
+        }
+        finally { src.Gate.Release(); }
+    }
+
+    private async Task<(List<OptionMeta> items, int? total)> FetchOptionsPageAsync(
+        int sgdbId, string kind, int apiPage, CancellationToken ct)
+    {
+        // Every portrait size SteamGridDB has for covers — they all crop to the console's 2:3 tile, and
+        // the default fetch's 600x900 alone leaves too little to choose from. nsfw=false because these
+        // are drawn in the console unprompted.
+        var path = kind == "grid"
+            ? $"grids/game/{sgdbId}?dimensions=600x900,342x482,660x930&types=static&nsfw=false&page={apiPage}"
+            : $"icons/game/{sgdbId}?nsfw=false&page={apiPage}";
+
+        using var doc = await GetJsonAsync(path, ct);
+        if (doc is null)
+        {
+            // Refused on the FIRST page means the request itself is bad (a rejected key); refused later is
+            // just the end of the list, which some endpoints answer with an error rather than an empty page.
+            if (apiPage == 0) throw new HttpRequestException("SteamGridDB did not accept the request — check the API key.");
+            return (new List<OptionMeta>(), null);
+        }
+
+        var items = new List<OptionMeta>();
+        var root = doc.RootElement;
+        if (root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var e in data.EnumerateArray())
+            {
+                if (Str(e, "url") is not { Length: > 0 } url) continue;
+                string? author = null;
+                if (e.TryGetProperty("author", out var a) && a.ValueKind == JsonValueKind.Object) author = Str(a, "name");
+                items.Add(new OptionMeta(url, Str(e, "thumb"), Int(e, "width"), Int(e, "height"), author));
+            }
+        }
+        return (items, Int(root, "total"));
+
+        static string? Str(JsonElement el, string name) =>
+            el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        static int? Int(JsonElement el, string name) =>
+            el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) ? n : null;
+    }
+
+    private async Task<string?> PreviewAsync(OptionMeta option, string kind, CancellationToken ct)
+    {
+        var bytes = await TryFetchAsync(option.Thumb ?? option.Url, ct);
+        if (bytes is null && option.Thumb is not null) bytes = await TryFetchAsync(option.Url, ct);
+        if (bytes is null) return null;
+
+        var ext = ImageSniffer.DetectExtension(bytes);
+        if (ext is null) return null;
+
+        // Sized for the picker's tiles at 2× density: ~84 px wide covers, ~56 px icons.
+        using var stream = new MemoryStream(bytes);
+        if (ArtImages.Downscale(stream, kind == "grid" ? 200 : 128, jpegWhenOpaque: kind == "grid") is { } small)
+            return $"data:{small.Mime};base64,{Convert.ToBase64String(small.Bytes)}";
+
+        // Already narrower than the tile (or undecodable, like .ico): send it as it is, if it is small.
+        return bytes.Length <= MaxPassthroughPreviewBytes
+            ? $"data:{MimeFor(ext)};base64,{Convert.ToBase64String(bytes)}"
+            : null;
+    }
+
+    private static string MimeFor(string ext) => ext switch
+    {
+        ".png" => "image/png", ".jpg" => "image/jpeg", ".gif" => "image/gif",
+        ".webp" => "image/webp", _ => "image/x-icon",
+    };
+
+    private async Task<int?> ResolveSgdbIdAsync(string name, CancellationToken ct)
+    {
+        var key = "sgdb-id:" + name.ToLowerInvariant();
+        if (_cache.TryGetValue(key, out int cached)) return cached;
+        var id = await FindGameIdAsync(name, ct);
+        if (id is { } found) _cache.Set(key, found, TimeSpan.FromMinutes(30));
+        return id;
+    }
+
     // ----- SteamGridDB calls -----
 
     private async Task<int?> FindGameIdAsync(string name, CancellationToken ct)
@@ -244,12 +513,23 @@ public sealed class ArtService
         return data.GetArrayLength() > 0 ? data[0].GetProperty("id").GetInt32() : null;
     }
 
-    private async Task<string?> FirstAssetUrlAsync(string path, CancellationToken ct)
+    private async Task<string?> FirstAssetUrlAsync(string path, CancellationToken ct) =>
+        (await AssetUrlsAsync(path, 1, ct)).FirstOrDefault();
+
+    /// <summary>The first <paramref name="max"/> asset URLs SteamGridDB lists at <paramref name="path"/>, best-scored first.</summary>
+    private async Task<List<string>> AssetUrlsAsync(string path, int max, CancellationToken ct)
     {
+        var urls = new List<string>();
         using var doc = await GetJsonAsync(path, ct);
-        if (doc is null) return null;
-        if (!doc.RootElement.TryGetProperty("data", out var data) || data.GetArrayLength() == 0) return null;
-        return data[0].TryGetProperty("url", out var u) ? u.GetString() : null;
+        if (doc is null || !doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+            return urls;
+        foreach (var item in data.EnumerateArray())
+        {
+            if (item.TryGetProperty("url", out var u) && u.ValueKind == JsonValueKind.String && u.GetString() is { Length: > 0 } s)
+                urls.Add(s);
+            if (urls.Count >= max) break;
+        }
+        return urls;
     }
 
     private async Task<JsonDocument?> GetJsonAsync(string path, CancellationToken ct)
@@ -289,11 +569,20 @@ public sealed class ArtService
     /// </summary>
     private async Task<string?> DownloadAsync(Guid gameId, string kind, string url, CancellationToken ct)
     {
-        byte[]? bytes;
-        try { bytes = await FetchImageAsync(url, ct); }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException) { return null; }
-        if (bytes is null) return null;
+        var bytes = await TryFetchAsync(url, ct);
+        return bytes is null ? null : await StoreAsync(gameId, kind, bytes, ct);
+    }
 
+    /// <summary><see cref="FetchImageAsync"/>, with "the host is unreachable or unresponsive" folded into null.</summary>
+    private async Task<byte[]?> TryFetchAsync(string url, CancellationToken ct)
+    {
+        try { return await FetchImageAsync(url, ct); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException) { return null; }
+    }
+
+    /// <summary>Write downloaded bytes as the game's <paramref name="kind"/> image and return its served URL, or null if they are not a recognised image.</summary>
+    private async Task<string?> StoreAsync(Guid gameId, string kind, byte[] bytes, CancellationToken ct)
+    {
         var ext = ImageSniffer.DetectExtension(bytes);
         if (ext is null) return null;
 
@@ -313,6 +602,12 @@ public sealed class ArtService
             file = Path.Combine(dir, kind + ext);
             await File.WriteAllBytesAsync(file, bytes, ct);
         }
+
+        // A replacement in another format (icon.ico over icon.png) would otherwise leave the old file
+        // behind, unreferenced, for good.
+        foreach (var stale in Directory.EnumerateFiles(dir, kind + ".*"))
+            if (!string.Equals(stale, file, StringComparison.OrdinalIgnoreCase))
+                try { File.Delete(stale); } catch (IOException) { }
 
         // Cache-bust with the write time so the dashboard <img> refreshes after a re-fetch.
         var filename = Path.GetFileName(file);

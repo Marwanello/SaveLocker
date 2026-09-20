@@ -1,5 +1,6 @@
 import type { GameSummary } from '../types';
 import { Chip } from './ui/Chip';
+import { artSrc, artSrcSet } from '../art';
 
 interface Props {
   games: GameSummary[];
@@ -31,7 +32,8 @@ export function GamesGrid({ games, selectedId, onSelect }: Props) {
             <div className={`flex flex-col gap-1.5 ${game.enabled ? '' : 'opacity-[.55]'}`}>
               <div className="aspect-[3/4] w-full rounded-[6px] overflow-hidden bg-raise border border-line flex items-center justify-center">
                 {game.gridUrl
-                  ? <img src={game.gridUrl} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                  ? <img src={artSrc(game.gridUrl, 192)} srcSet={artSrcSet(game.gridUrl, [192, 256, 384])} sizes="140px"
+                      alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   : <span className="text-faint text-[10px] font-mono">no art</span>
                 }
               </div>
