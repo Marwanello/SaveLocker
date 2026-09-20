@@ -196,6 +196,16 @@ public record SetSteamGridDbKeyRequest(string? ApiKey);
 /// <summary>Set (or clear, when null/empty) the admin dashboard password.</summary>
 public record SetAdminPasswordRequest(string? Password);
 
+/// <summary>Sign in to the console: exchange the admin password for a revocable session token.</summary>
+public record CreateSessionRequest(string? Password);
+
+/// <summary>
+/// The session a sign-in produced. <c>Token</c> is null when the server has no admin password at all
+/// (there is nothing to sign in to); otherwise it is sent back as <c>X-Admin-Session</c> on every
+/// admin request, and is returned here exactly once — the server keeps only its hash.
+/// </summary>
+public record SessionResponse(string? Token, DateTime? ExpiresAt);
+
 // ----- Leases -----
 
 public record LeaseDto(
@@ -358,6 +368,21 @@ public enum CommandStatus
 
 /// <summary>A command the dashboard wants an agent to run (null GameId = all games).</summary>
 public record EnqueueCommandRequest(Guid MachineId, Guid? GameId, AgentCommandType Type, bool Force);
+
+/// <summary>
+/// Several commands in one call — the console's "Sync all". <paramref name="SkipMachinesUnseenForSeconds"/>
+/// leaves out any machine that has not contacted the server that recently: a command for a machine
+/// that is switched off just sits Pending (commands never expire) and then runs, unasked, whenever
+/// it next connects, which is not what pressing "Sync all" today meant. Null queues for everyone.
+/// </summary>
+public record BulkEnqueueRequest(List<EnqueueCommandRequest> Commands, int? SkipMachinesUnseenForSeconds = null);
+
+public record SkippedCommandDto(Guid MachineId, string MachineName, string Reason);
+
+/// <summary>What a bulk enqueue did. <c>Queued</c> holds a command per request that was accepted —
+/// including, for a machine that already had an identical command Pending, that EXISTING command
+/// (so pressing Sync all twice does not stack two syncs behind one another).</summary>
+public record BulkEnqueueResponse(List<AgentCommandDto> Queued, List<SkippedCommandDto> Skipped);
 
 public record AgentCommandDto(
     Guid Id,

@@ -8,6 +8,14 @@ using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// A list-valued setting from either shape configuration offers: a single delimited string (what an
+// environment variable naturally is) or indexed children (appsettings arrays / Key__0, Key__1 ...).
+static List<string> ConfigList(IConfiguration cfg, string key) =>
+    (cfg[key]?.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>())
+        .Concat(cfg.GetSection(key).GetChildren().Select(c => c.Value?.Trim() ?? "").Where(v => v.Length > 0))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
 var configuredDbPath = builder.Configuration["Storage:DbPath"];
 var defaultDbPath = Path.Combine(AppContext.BaseDirectory, "data", "savelocker.db");
 var dbPath = configuredDbPath ?? defaultDbPath;
@@ -49,13 +57,55 @@ builder.Services.AddScoped<ArtService>();
 builder.Services.AddScoped<EnrollmentService>();
 builder.Services.AddScoped<HealthService>();
 
+// Admin sign-in: throttled password checks + revocable console sessions (see AuthThrottle/AdminAuth).
+// Singletons because the throttle's memory and the verified-password cache must outlive a request.
+builder.Services.AddSingleton<AuthThrottle>();
+builder.Services.AddSingleton<VerifiedPasswordCache>();
+builder.Services.AddScoped<AdminAuth>();
+
+// Client addresses feed the sign-in throttle. Decisions.md: X-Forwarded-* is NEVER read by default —
+// with nothing in front of the server there is nothing to trust, and a header anyone can send is not
+// evidence of who they are. A deployment that DOES sit behind a proxy or tunnel (a Cloudflare-proxied
+// hostname is exactly that) declares it here, and only then is the forwarded address believed, and
+// only when the connection itself arrives from one of the declared proxies. Without this, every
+// client behind such a proxy shares the proxy's address and the per-client throttle is really a
+// global one. Env form: Security__TrustedProxies="10.0.0.5,172.16.0.0/12"; Security__ClientIpHeader
+// (default X-Forwarded-For; Cloudflare's is CF-Connecting-IP).
+var trustedProxies = ConfigList(builder.Configuration, "Security:TrustedProxies");
+if (trustedProxies.Count > 0)
+{
+    builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(o =>
+    {
+        o.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor;
+        o.ForwardedForHeaderName = builder.Configuration["Security:ClientIpHeader"] is { Length: > 0 } h ? h : "X-Forwarded-For";
+        o.ForwardLimit = 1;
+        // The defaults trust loopback; a declared list REPLACES them rather than adding to them.
+        o.KnownProxies.Clear();
+        o.KnownIPNetworks.Clear();
+        foreach (var entry in trustedProxies)
+        {
+            if (System.Net.IPNetwork.TryParse(entry, out var net)) o.KnownIPNetworks.Add(net);
+            else if (System.Net.IPAddress.TryParse(entry, out var ip)) o.KnownProxies.Add(ip);
+            else throw new InvalidOperationException(
+                $"Security:TrustedProxies entry '{entry}' is not an IP address or CIDR range (e.g. 10.0.0.5 or 172.16.0.0/12).");
+        }
+    });
+}
+
 // SteamGridDB client (artwork). The Bearer key is attached per request by ArtService
 // (resolved from SettingsService) so it can be set/changed from the dashboard at runtime.
+// Art:ApiBaseUrl exists so the test suite can stand a stub in front of it; nothing else sets it.
 builder.Services.AddHttpClient("steamgriddb", c =>
 {
-    c.BaseAddress = new Uri("https://www.steamgriddb.com/api/v2/");
+    c.BaseAddress = new Uri(builder.Configuration["Art:ApiBaseUrl"] is { Length: > 0 } u
+        ? (u.EndsWith('/') ? u : u + "/")
+        : "https://www.steamgriddb.com/api/v2/");
     c.Timeout = TimeSpan.FromSeconds(20);
 });
+// The image CDN client NEVER follows redirects on its own: ArtService re-validates every hop against
+// the host allowlist, so a permitted host cannot bounce a fetch to one that is not.
+builder.Services.AddHttpClient("steamgriddb-cdn", c => c.Timeout = TimeSpan.FromSeconds(30))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
 
 // OpenAPI document (/openapi/v1.json) — the single source of truth for the REST
 // contract. The web dashboard's TS types are generated from it (openapi-typescript),
@@ -183,6 +233,35 @@ app.Services.GetRequiredService<AgentInstallerService>().SweepIncoming(TimeSpan.
 // run an unverifiable off-origin download. Fire-and-forget: hashing 100 MB must not delay startup.
 _ = app.Services.GetRequiredService<AgentInstallerService>().BackfillDigestAsync();
 
+// Believe a forwarded client address only when the operator declared which proxies may send one.
+if (trustedProxies.Count > 0) app.UseForwardedHeaders();
+
+// Response headers for a service that hosts a same-origin admin console AND user-influenced files.
+//  - nosniff everywhere: a file under /art must never be reinterpreted as HTML by the browser.
+//  - The dashboard is a single self-hosted bundle with no inline script and no third-party origin,
+//    so its CSP can be strict: scripts, connections and images only from itself. That is what limits
+//    an XSS to "runs in the page" rather than "loads attacker code / sends data elsewhere".
+//    'unsafe-inline' is for STYLES only (React writes style="" attributes); fonts may be data: URIs.
+//  - /art gets a locked-down policy of its own, and /swagger + /openapi are left alone (Swagger UI
+//    needs inline script and would break under the dashboard's policy).
+const string DashboardCsp =
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
+    "font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; " +
+    "frame-ancestors 'none'; form-action 'self'";
+app.Use(async (ctx, next) =>
+{
+    var h = ctx.Response.Headers;
+    h.XContentTypeOptions = "nosniff";
+    h.XFrameOptions = "DENY";
+    h["Referrer-Policy"] = "no-referrer";
+    var path = ctx.Request.Path;
+    if (path.StartsWithSegments("/art"))
+        h.ContentSecurityPolicy = "default-src 'none'; sandbox";
+    else if (!path.StartsWithSegments("/swagger") && !path.StartsWithSegments("/openapi"))
+        h.ContentSecurityPolicy = DashboardCsp;
+    await next();
+});
+
 // Rewrites the served OpenAPI document's components.schemas into alphabetical order — see
 // OpenApiSchemaSorter's own doc comment for why this has to post-process the raw JSON rather
 // than reorder the document model (an AddDocumentTransformer that mutated
@@ -221,28 +300,67 @@ app.MapGet("/health", () => Results.Ok(new { service = "SaveLocker", status = "o
 // gets locked out). So once an admin password is set, re-registration must carry
 // it in the X-Admin-Password header. With no password configured the endpoint
 // stays fully open (first-run behaviour, matching AdminPasswordFilter).
+//
+// A machine key is FLEET-scoped (Decisions.md): it can read and write every game, so minting one is
+// the real door into the save data, and an open first-time registration means the admin password on
+// its own guards the dashboard but not the saves. Security:RequireAdminPasswordToRegister=true closes
+// that door — once a password is set, EVERY registration needs it (agents already accept one:
+// `savelocker register --admin-password`). Off by default: the LAN-convenience default stands.
+// The password check itself is throttled like every other one (AuthThrottle) — this route used to
+// be an unmetered oracle for it.
 app.MapPost("/api/machines/register", async (
-    MachineRegisterRequest req, HttpContext http, SyncService sync, SettingsService settings) =>
+    MachineRegisterRequest req, HttpContext http, SyncService sync, SettingsService settings,
+    AdminAuth auth, IConfiguration cfg) =>
 {
     if (string.IsNullOrWhiteSpace(req.Name))
         return Results.BadRequest("Machine name is required.");
     var name = req.Name.Trim();
 
-    if (await sync.MachineExistsAsync(name))
+    var requireForNew = cfg.GetValue<bool?>("Security:RequireAdminPasswordToRegister") ?? false;
+    var existing = await sync.MachineExistsAsync(name);
+    if (existing || requireForNew)
     {
         var storedHash = await settings.GetEffectiveAsync(SettingsService.AdminPasswordHash);
         if (!string.IsNullOrEmpty(storedHash))
         {
-            var provided = http.Request.Headers["X-Admin-Password"].FirstOrDefault();
-            if (string.IsNullOrEmpty(provided) || !Tokens.VerifyPassword(provided, storedHash))
+            var provided = http.Request.Headers[AdminPasswordFilter.PasswordHeader].FirstOrDefault();
+            var check = string.IsNullOrEmpty(provided)
+                ? new PasswordCheck(PasswordOutcome.Invalid)
+                : await auth.CheckPasswordAsync(provided, storedHash, http, "register");
+            if (check.Outcome == PasswordOutcome.Throttled) return AuthResults.TooManyAttempts(http, check.RetryAfter);
+            if (check.Outcome != PasswordOutcome.Ok)
                 return Results.Json(
-                    new { error = "This machine name is already registered. Re-registering rotates its key and requires the admin password." },
+                    new
+                    {
+                        error = existing
+                            ? "This machine name is already registered. Re-registering rotates its key and requires the admin password."
+                            : "This server requires the admin password to register a machine."
+                    },
                     statusCode: StatusCodes.Status401Unauthorized);
         }
     }
 
     return Results.Ok(await sync.RegisterMachineAsync(name));
 }).Produces<MachineRegisterResponse>();
+
+// Sign in to the console. The password is exchanged ONCE for a random session token that the browser
+// keeps instead of the password itself — see AdminSession. Throttled; a server with no admin
+// password has nothing to sign in to and answers with a null token.
+app.MapPost("/api/admin/session", async (
+    CreateSessionRequest req, HttpContext http, SettingsService settings, AdminAuth auth) =>
+{
+    var storedHash = await settings.GetEffectiveAsync(SettingsService.AdminPasswordHash);
+    if (string.IsNullOrEmpty(storedHash))
+        return Results.Ok(new SessionResponse(null, null));
+
+    var check = await auth.CheckPasswordAsync(req.Password ?? "", storedHash, http, "login");
+    if (check.Outcome == PasswordOutcome.Throttled) return AuthResults.TooManyAttempts(http, check.RetryAfter);
+    if (check.Outcome != PasswordOutcome.Ok)
+        return Results.Json(new { error = "Wrong password." }, statusCode: StatusCodes.Status401Unauthorized);
+
+    var (token, expiresAt) = await auth.CreateSessionAsync(http);
+    return Results.Ok(new SessionResponse(token, expiresAt));
+}).Produces<SessionResponse>();
 
 // Unauthenticated on purpose: this is the reachability probe, and the build identity has to be
 // readable before you can authenticate — a wrong admin password is one of the things you would be
@@ -573,14 +691,22 @@ admin.MapPost("/games/{id:guid}/retain", async (Guid id, int? value, SyncService
     await sync.SetGameRetentionAsync(id, value) ? Results.Ok() : Results.NotFound());
 
 admin.MapPost("/games/{id:guid}/excludes", async (Guid id, string[] patterns, SyncService sync) =>
-    await sync.SetExcludeGlobsAsync(id, patterns) ? Results.Ok() : Results.NotFound());
+{
+    var (found, error) = await sync.SetExcludeGlobsAsync(id, patterns);
+    return !found ? Results.NotFound() : error is not null ? Results.BadRequest(error) : Results.Ok();
+});
 
 // Dry run for the exclude editor, against a DRAFT pattern list — never saved, and never asks the
 // agent anything; counted against what the server's head archive already has (see
-// SyncService.PreviewExcludesAsync for the one-directional caveat).
+// SyncService.PreviewExcludesAsync for the one-directional caveat). A pattern that would be refused
+// on save is refused here with the same message, so the editor can flag it before "Save".
 admin.MapPost("/games/{id:guid}/excludes/preview", async (Guid id, string[] patterns, SyncService sync) =>
-    Results.Ok(new ExcludesPreviewDto(await sync.PreviewExcludesAsync(id, patterns))))
-    .Produces<ExcludesPreviewDto>();
+{
+    var (found, count, error) = await sync.PreviewExcludesAsync(id, patterns);
+    return !found ? Results.NotFound()
+        : error is not null ? Results.BadRequest(error)
+        : Results.Ok(new ExcludesPreviewDto(count));
+}).Produces<ExcludesPreviewDto>();
 
 admin.MapPost("/games/{id:guid}/conflict-policy", async (
     Guid id, SetConflictPolicyRequest req, SyncService sync) =>
@@ -686,12 +812,27 @@ admin.MapPost("/settings/agent-update-auto-fetch", async (
     }
 });
 
+// Changing (or clearing) the password ends every session — SettingsService.SetAdminPasswordAsync —
+// so the caller's own session is gone too: the console signs straight back in with the new password.
 admin.MapPost("/admin/password", async (SetAdminPasswordRequest req, SettingsService settings) =>
 {
     await settings.SetAdminPasswordAsync(req.Password);
     var msg = string.IsNullOrWhiteSpace(req.Password) ? "Admin password cleared." : "Admin password updated.";
     return Results.Ok(new { ok = true, message = msg });
 });
+
+// Lock: end THIS browser's session. Idempotent, and a harmless no-op for a caller that authenticated
+// with the legacy password header (there is no session to end).
+admin.MapDelete("/admin/session", async (HttpContext http, AdminAuth auth) =>
+{
+    if (http.Request.Headers[AdminPasswordFilter.SessionHeader].FirstOrDefault() is { Length: > 0 } token)
+        await auth.RevokeSessionAsync(token);
+    return Results.NoContent();
+});
+
+// "Sign out everywhere": end every session, this one included.
+admin.MapDelete("/admin/sessions", async (AdminAuth auth) =>
+    Results.Ok(new { ended = await auth.RevokeAllSessionsAsync() }));
 
 admin.MapPost("/games", async (CreateGameRequest req, SyncService sync, ArtService art) =>
 {
@@ -771,14 +912,20 @@ admin.MapDelete("/games/{id:guid}/lease/force", async (Guid id, SyncService sync
 
 // ---- Command channel (admin side: queue + list) ----
 admin.MapPost("/commands", async (EnqueueCommandRequest req, SyncService sync) =>
-    Results.Ok((await sync.EnqueueCommandAsync(req)).ToDto()))
-    .Produces<AgentCommandDto>();
+{
+    if (await sync.ValidateCommandRequestsAsync(new[] { req }) is { } invalid)
+        return Results.BadRequest(invalid);
+    return Results.Ok((await sync.EnqueueCommandAsync(req)).ToDto());
+}).Produces<AgentCommandDto>();
 
 // Console "Sync all": one call, one command per machine, instead of one dashboard round trip per
-// machine (implementation-grouping.md Group 2 / plan.md Phase 3 item 1).
-admin.MapPost("/commands/bulk", async (EnqueueCommandRequest[] reqs, SyncService sync) =>
-    Results.Ok((await sync.EnqueueCommandsAsync(reqs)).Select(c => c.ToDto())))
-    .Produces<List<AgentCommandDto>>();
+// machine (implementation-grouping.md Group 2 / plan.md Phase 3 item 1). All-or-nothing, and it
+// never stacks a second identical Pending command — see SyncService.EnqueueCommandsAsync.
+admin.MapPost("/commands/bulk", async (BulkEnqueueRequest req, SyncService sync) =>
+{
+    var (result, error) = await sync.EnqueueCommandsAsync(req);
+    return error is not null ? Results.BadRequest(error) : Results.Ok(result);
+}).Produces<BulkEnqueueResponse>();
 
 admin.MapGet("/commands", async (SyncService sync) =>
     Results.Ok((await sync.ListCommandsAsync()).Select(c => c.ToDto())))

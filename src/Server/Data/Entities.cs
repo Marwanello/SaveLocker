@@ -333,3 +333,24 @@ public class AuditLog
     public string Action { get; set; } = "";
     public string? Detail { get; set; }
 }
+
+/// <summary>
+/// One signed-in dashboard browser. The console used to keep the admin PASSWORD itself in
+/// <c>localStorage</c> and send it on every request, so anything able to read that storage (an
+/// XSS, a hostile extension) walked away with the real credential. A session is instead a random
+/// 256-bit token the server can revoke (Lock, "sign out everywhere", a password change) and that
+/// expires on its own; only its SHA-256 is stored, the same treatment machine API keys get.
+/// </summary>
+public class AdminSession
+{
+    public Guid Id { get; set; }
+    public string TokenHash { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    public DateTime LastUsedAt { get; set; }
+
+    /// <summary>Sliding idle expiry, capped at <c>CreatedAt + Security:SessionMaxDays</c>.</summary>
+    public DateTime ExpiresAt { get; set; }
+
+    /// <summary>Where it was created from (the throttle's client key) — context for the audit trail.</summary>
+    public string? ClientAddress { get; set; }
+}

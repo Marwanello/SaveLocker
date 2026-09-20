@@ -52,6 +52,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 
 COPY --from=build /app ./
 
+# Runs the server as the image's unprivileged `app` user, and does the one-time /data ownership
+# hand-over that an existing (root-created) install needs — see the script for why a bare `USER app`
+# would have broken every upgrade. Placed AFTER the app COPY on purpose: it is tiny and rarely changes.
+COPY --from=build /src/src/Server/docker-entrypoint.sh /usr/local/bin/savelocker-entrypoint
+RUN chmod 0755 /usr/local/bin/savelocker-entrypoint
+
 # Persisted state (DB + archives) lives on a mounted unRAID share.
 VOLUME ["/data"]
 # Re-declared: ARGs do not cross stage boundaries. These are what /api/admin/status reports.
@@ -71,4 +77,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -sf http://localhost:8080/health || exit 1
 
-ENTRYPOINT ["dotnet", "SaveLocker.Server.dll"]
+ENTRYPOINT ["/usr/local/bin/savelocker-entrypoint"]
+CMD ["dotnet", "SaveLocker.Server.dll"]
