@@ -207,6 +207,23 @@ behave in ways that look like bugs.
   `show_real_game_mappings` — used from `cmd_status` and `cmd_up` — reported the entirely normal "no
   game maps a real folder" case as the SSH command having failed, because nothing matched the
   `grep -o` feeding the warning loop. Needs `|| true` after the pipeline.
+- **`sync` silently skips a NEW directory unless its files are staged.** It builds its file list from
+  `git status --porcelain`, which reports an untracked directory as ONE entry
+  (`?? agent-ui/src/components/ui/`), and `testenv.sh`'s copy loop only takes regular files — so it
+  prints `skip (gone): agent-ui/src/components/ui/` and the WSL clone builds without any file in it.
+  Found 2026-09-20 adding `agent-ui/src/components/ui/`. `git add` the new files first (staged files are
+  listed individually); the rig-side fix is `--untracked-files=all` on that `git status`, not yet made.
+  A deleted file is skipped the same way, so the clone keeps its old copy.
+- **`conflict -Wsl` on its own seeds no conflict.** It creates the game and pushes once from WSL — the
+  rig prints "only seeding WSL" — and by then the game has a head, so a following `-Windows -Wsl` puts
+  the divergence on the wrong machine. Recovering takes a full `clean` and a rebuild. Start with
+  `conflict -Windows -Wsl` on a clean rig whenever the agent under test is the WSL one: an agent only
+  shows the conflicts it is itself a party to (`/api/conflicts` filters on `MachineId`).
+- **The Windows test agent can be mapped to REAL save folders.** After a run against a console that
+  already held games, `up` printed `the test agent maps 'Cyberpunk 2077' to a real folder` for eight of
+  the maintainer's own games. Anything that syncs the whole fleet from that agent — **Sync all**, the
+  tray's Sync All — is a pull from the throwaway console over real saves. Click through on the WSL agent
+  (its games have no local folder, so nothing can be touched) or on a rig that has been `clean`ed first.
 
 ## Windows ACLs
 - **`SetAccessRuleProtection(isProtected: true, preserveInheritance: true)` does not let you then
@@ -453,6 +470,34 @@ behave in ways that look like bugs.
   dominates and write windows never overlap. The discriminating shape is a long-lived process
   holding stale in-memory state vs. a short-lived one; order by waiting on observable state, not
   by hoping for a race.
+
+## Agent UI (`agent-ui/`)
+- **It has no Tailwind, so `tokens.css` is a hand-kept COPY of `web/src/index.css`'s `@theme` block.**
+  Change a colour in one and change it in the other in the same commit; the names are identical so the
+  two files can be diffed line for line. Hover / active / focus-visible cannot be inline styles, so the
+  primitives in `components/ui/` carry `sl-` classes defined in `ui.css` — a new primitive needs its CSS
+  there, and the states are not visible in a build, only in a browser.
+- **Dark is the base and light is `data-theme="light"` only**, for the same reason as the console: the
+  views not yet migrated (Add games, Settings, Conflicts, the plugin cards) hardcode dark hex colours.
+  Group 5 flips it once nothing hardcoded is left.
+- **`--color-faint` is not readable text.** It measures 3.31:1 on the dark panel and 3.55:1 on the light
+  one — the plan's own values, so not something to "fix" locally, and it fails WCAG AA for the 10–12px
+  text it is used on. Use it for eyebrow labels and decoration; anything that carries content (a hero
+  detail line, an empty state, a timestamp) uses `--color-dim`. Measure in a browser rather than by eye:
+  resolve each element's colours through a canvas (it turns `color-mix()` into RGB), composite backgrounds
+  up the tree, and switch transitions off first, exactly as for the console.
+- **A page that scrolls inside the fixed-height shell needs `.sl-page`, not a bare `overflow-y: auto`.**
+  A bounded flex column shrinks its children instead of overflowing; `.sl-page > * { flex-shrink: 0 }` is
+  the fix (same trap as the console's `.page-scroll`).
+- **Progress must be read through `useActivity.ts`, not a fresh `api.activity()` poll.** The store keeps the
+  previous object for whichever slice did not change and components subscribe to one slice
+  (`useActivityBusy` is a boolean), so a byte tick re-renders the header's progress and nothing else.
+  Measured 2026-09-20 over four ticks: 16 DOM mutations in the progress area, 0 in the page and the Sync
+  all button. A second poller in a component would bring the re-renders back.
+- **A callback that runs after a long `await` must not read state from the render that created it.**
+  `handleSynced` used `view` directly and so could never see that the user had left for Conflicts during a
+  sync; it reads a ref now. Any new "after the request finishes, decide based on where the user is now"
+  logic wants the same.
 
 ## ImGui / Deck UI (`Ui/*`, `savelocker ui`)
 - Drive gamepad nav from **`ButtonDown` events**, edge-triggered and queued — feeding held-button

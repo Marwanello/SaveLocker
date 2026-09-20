@@ -200,9 +200,22 @@ SaveLocker/
 │       │                               #   build. Do not hand-edit. The script hardcodes :5178 —
 │       │                               #   read Gotchas before regenerating
 │       ├── types.ts                     # Thin aliases over api-types.ts
+│       ├── tokens.css                   # Checkpoint tokens — a HAND-KEPT COPY of web/src/index.css's
+│       │                               #   `@theme` block (no shared workspace). Dark base, light is
+│       │                               #   `data-theme="light"` opt-in. Change both together
+│       ├── ui.css                       # Base reset + the `sl-` classes the ui/ primitives use
+│       │                               #   (agent-ui has no Tailwind, so hover/focus states live here)
+│       ├── useActivity.ts               # ONE shared 1.5 s poll of /api/activity behind
+│       │                               #   useSyncExternalStore slices, so a progress tick re-renders
+│       │                               #   only the header's progress, never the page around it
+│       ├── format.ts                    # formatBytes / formatTime
 │       └── components/
-│           ├── Sidebar.tsx · StatusHeader.tsx
-│           ├── OverviewView.tsx · AddGamesView.tsx · SettingsView.tsx
+│           ├── ui/                      # Button · Card · Chip · Stat · Banner · Toast — counterparts
+│           │                           #   of web/src/components/ui/ (Row/Seg arrive with Group 4)
+│           ├── Sidebar.tsx              # Nav + footer (machine, server host, agent build label)
+│           ├── StatusHeader.tsx         # The strip on EVERY page: status + Sync all + live progress
+│           ├── OverviewView.tsx · RecentCard.tsx   # Quick info only; "Recent" expands to the full log
+│           ├── AddGamesView.tsx · SettingsView.tsx
 │           ├── LaunchSetupCard.tsx      # The Steam launch-options command + Copy. Renders nothing
 │           │                           #   on Windows. Target of logs/2026-08-15_decky-plugin.md
 │           ├── DeckyPluginCard.tsx      # The optional Decky plugin: what it adds, and whether it

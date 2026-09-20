@@ -2976,3 +2976,41 @@ Portable Playnite installs keep their `library`/`Extensions` beside their own ex
 - Full manual click-through inside Playnite (conflict gate blocking a launch, right-click menu items, Link to SaveLocker popup) — still outstanding for Phase 16.
 - `installer.yaml`/plugin changes only pushed to the `playnite-plugin-group-6` branch, not `main` — the `raw.githubusercontent.com` URLs in the submission manifest won't resolve until that lands.
 - The actual PlayniteAddonDatabase fork + submission PR — explicitly deferred pending the click-through above, per "verify first, then submit."
+
+
+---
+
+## 2026-09-20 — Checkpoint UI Group 3: agent foundation, trimmed Overview, agent Sync all
+
+**Branch:** `claude/group-3-ui-redesign-c16953` (local, not pushed, no PR opened). Code: `2705ce4`; the vault changes are a separate `Docs:` commit.
+
+### Request sequence
+
+1. "Implement group 3 in the ui redesign task please." Read `tasks/checkpoint-ui/` (`implementation-grouping.md` Group 3, `implementation.md` Phases 1/3/5, `plan.md`, the prototype's agent screens) and the Groups 1–2 handoff before writing anything.
+
+### What was done
+
+- **Scope call, made before building:** Phase 3 item 5 (per-game "Sync this game") was listed in Group 3 but is not buildable there — the agent has no game page (Group 4 builds the Games tab) and no per-game sync route (`POST /api/sync` takes no game filter; `pre-launch-sync`/`post-exit-sync` are launch-gate routes). Moved to Group 4 in the docs (`➡️ Moved`, per the status-table convention) rather than adding a button to Settings that the Games tab would delete.
+- `agent-ui/src/tokens.css` (hand-kept copy of `web`'s tokens, dark base / light opt-in) + `ui.css` (reset, keyframes, the `sl-` primitive classes) + `@fontsource/archivo` replacing Inter; `components/ui/` — `Button`, `Card`, `Chip`, `Stat`, `Banner`, `Toast`.
+- `StatusHeader.tsx` rewritten as the strip on every page: status, primary Sync all, live progress. `useActivity.ts` — one shared poll behind `useSyncExternalStore`, one slice per hook.
+- `OverviewView` trimmed (3 stats, one banner, Next up, Recent); `RecentCard` expands inline to the full log; `ActivityCard` deleted; launch-setup/Decky/Playnite cards moved to `SettingsView`. `Sidebar` and the `App` shell converted (real `<button>`s, landmarks, tokens).
+- **Bug fixed in moved code:** `handleSynced` read `view` from the render in which Sync was pressed, so its "don't pop the overlay over Conflicts" guard never saw a later navigation. Now a ref.
+
+### Verification — via testenv (per standing instruction)
+
+- `build` (console, Windows, Linux) → `clean` → `build` → `conflict -Windows -Wsl` → `up -Only linux`; browsed the WSL agent's UI at `:5187`.
+- Real Sync all on a real seeded conflict: busy → "Sync all complete." toast (dismissed at ~2.6 s) → conflict pop-up 7 ms later. Pressed from Overview and then navigating to Conflicts with the sync slowed to 3 s: no pop-up over Conflicts.
+- A progress tick re-renders only the progress area: 16 DOM mutations there, 0 in the page and at the button, over four ticks (fetch intercepted to fake a 25 MB push).
+- Every tab stop shows a 2px accent focus ring; both themes render; contrast walk over 43 text nodes in both themes — only the seven 10px `--color-faint` eyebrows are under 4.5:1 (3.31 dark / 3.55 light: the plan's own token).
+- Not-connected, conflict, lease-warning and pulling states checked by intercepting `fetch` against the Windows test agent's UI. `agent-ui` `tsc -b && vite build` and `oxlint` clean (two pre-existing warnings). No C# changed — no suite re-run, `api-types.ts` not regenerated.
+
+### Found along the way
+
+- The Windows test agent was mapped to eight of the maintainer's real save folders (rig warned). Sync all was not pressed there; `clean` wiped it.
+- `testenv.ps1 sync` skips a new (untracked) directory — worked around with `git add`; filed in `Backlog.md`. `conflict -Wsl` alone seeds no conflict. Both in `Gotchas.md`.
+- `--color-faint` is below WCAG AA — a maintainer decision (touches `web`, `agent-ui` and `Ui/Theme.cs`).
+
+### Not done
+
+- Phase 3 item 5 (moved to Group 4); the WebView2 tray window itself and a real Deck were not exercised (the same bundle was loaded in a browser).
+- No PR opened, nothing pushed.

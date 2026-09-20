@@ -7,16 +7,16 @@ Read [[plan]] first for tokens, type, motion and the colour rule, and
 [[implementation-grouping]] before starting any phase — it regroups the list below **by surface**
 rather than by phase number, because several phases edit the same components.
 
-## Status (updated 2026-09-18)
+## Status (updated 2026-09-20)
 
 | Phase | Status |
 |---|---|
 | 1 — Design system foundation, web half | ✅ Shipped 2026-09-17 (Group 1); theme default corrected 2026-09-20 (dark base, light opt-in — see `implementation-grouping.md`) |
-| 1 — Design system foundation, agent half | ⏳ Not started (Group 3) |
+| 1 — Design system foundation, agent half | ✅ Shipped 2026-09-20 (Group 3) — `tokens.css`, `ui.css`, Archivo, `components/ui/` |
 | 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in moved to revocable sessions 2026-09-20 |
-| 3 — Sync all and progress | 🚧 Items 1, 2, 4 shipped 2026-09-18 (Group 2 — console side); items 3 and 5 (agent side) not started (Group 3) |
+| 3 — Sync all and progress | ✅ Items 1, 2, 4 shipped 2026-09-18 (Group 2 — console side); item 3 (agent Sync all + progress) shipped 2026-09-20 (Group 3); item 5 (per-game Sync this game) ➡️ moved to Group 4 — needs a game page and a per-game agent route |
 | 4 — Appearance, and syncing it to the fleet | ⏳ Not started (Group 5) |
-| 5 — Agent UI | ⏳ Not started (Groups 3/4) |
+| 5 — Agent UI | 🚧 Overview trim shipped 2026-09-20 (Group 3); Games tab, cover art and Add-games search not started (Group 4) |
 | 6 — Deck and Wayland | ⏳ Not started (Group 6); the Wayland item (6.4) still needs the open decision below made first |
 | 7 — OS notifications | ⏳ Not started (Group 7) |
 | 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1) — see the note under Phase 8 below |
@@ -79,8 +79,8 @@ Grouped by phase. **New** = no code today. **Extend** = endpoint or component ex
 ### Phase 1 — Design system foundation *(UI only)*
 
 Nothing user-visible changes except type and colour. Everything after this depends on it.
-**The `web` half (items 1-5) shipped 2026-09-17 as Group 1** — item 6 is a decision, made below but
-not yet executed on the agent side; that execution is Group 3.
+**The `web` half (items 1-5) shipped 2026-09-17 as Group 1**; item 6, the agent half, was a decision made
+there and executed 2026-09-20 as Group 3 (see below).
 
 1. ✅ **Fix the reset that forces inline styles.** `web/src/index.css` had an unlayered
    `* { box-sizing; margin: 0; padding: 0 }` which beat every Tailwind utility regardless of
@@ -109,17 +109,19 @@ not yet executed on the agent side; that execution is Group 3.
    switch), `Toast` — new files under `web/src/components/ui/`. Each carries a visible
    `focus-visible` ring (`outline: 2px solid var(--color-accent)`), per plan.md's Deck-derived focus
    spec and this phase's own "keyboard focus visible" definition of done.
-6. **Decided, not yet executed: how `agent-ui` gets the same tokens.** It still has *no* Tailwind
-   dependency and *no* authored `.css` file — the font self-hosting fix (item 3's gap, above) means
-   it now imports third-party `@fontsource/*` CSS in `main.tsx`, which is a real precedent: Group 3
-   should emit the tokens as a plain CSS custom-property file and import it the *exact* same way
-   (`import './tokens.css'` in `agent-ui/src/main.tsx`), rather than adding Tailwind or inventing a
-   second mechanism. Because `web` and `agent-ui` are two independent npm packages with no shared
-   workspace, that file is duplicated (not built from one shared source) — `agent-ui/src/tokens.css`
-   carries a header comment pointing back at `web/src/index.css`'s `@theme` block as the value
-   source, and the two are kept in sync by hand when a token changes. The two apps also still differ
-   on icons — `agent-ui` depends on `lucide-react`, `web` has no icon library — unaffected by this
-   decision.
+6. ✅ **How `agent-ui` gets the same tokens — decided by Group 1, executed 2026-09-20 by Group 3.** It has
+   no Tailwind dependency, so the tokens are a plain CSS custom-property file imported from
+   `agent-ui/src/main.tsx` the exact way that file already imports its `@fontsource/*` CSS
+   (`import './tokens.css'`) — no second mechanism. Because `web` and `agent-ui` are two independent npm
+   packages with no shared workspace, `agent-ui/src/tokens.css` is a hand-kept copy of `web/src/index.css`'s
+   `@theme` block (same names, so the two diff line for line), with a header comment saying so; it is dark by
+   default with `data-theme="light"` as the opt-in, mirroring `web`. Alongside it, `agent-ui/src/ui.css`
+   holds the reset, the motion keyframes and the `sl-` classes behind the new `components/ui/` primitives
+   (`Button`, `Card`, `Chip`, `Stat`, `Banner`, `Toast`): hover, active and focus-visible cannot be inline
+   styles, and there is no Tailwind to write them as utilities. Fonts: `@fontsource/archivo` 400/500/600/700
+   in place of Inter, `jetbrains-mono` kept. The two apps still differ on icons — `agent-ui` uses
+   `lucide-react`, `web` has none. The inline styles in the views this group did not touch (Add games,
+   Settings, Conflicts, the plugin cards, the pop-up) are unchanged and still hardcode the old palette.
 
 **Verify:** `npm run build` in `web/` — passes (`tsc -b && vite build`, clean); `npm run lint`
 (`oxlint`) clean. Loaded live against a real throwaway server via `tests/testenv.ps1 build/up -Only
@@ -146,7 +148,7 @@ surface converted. `agent-ui` untouched this phase — its half of item 6 is Gro
 
 ---
 
-### Phase 3 — Sync all and progress — 🚧 items 1/2/4 shipped 2026-09-18 (Group 2, console side)
+### Phase 3 — Sync all and progress — ✅ items 1–4 shipped (console 2026-09-18, agent 2026-09-20); item 5 ➡️ Group 4
 
 1. **Console Sync all** *(Extend)* — ✅ shipped. **Not** one command per tracked game — see "A gap
    found while building Group 2" above: one `Sync` command per **machine**, `GameId: null`, which
@@ -158,12 +160,31 @@ surface converted. `agent-ui` untouched this phase — its half of item 6 is Gro
 2. **Console progress** *(Extend)* — ✅ shipped as `SyncAllProgress.tsx`, polling `GET /commands` on
    its own 2s timer (see item 4). No new server state — it just watches the ids the bulk call handed
    back until they're all `Done`/`Failed`.
-3. **Agent Sync all** *(UI only)* — ⏳ not started. Agent-side; Group 3.
-4. **Do not re-render the page on a progress tick.** — ✅ satisfied by construction:
-   `SyncAllProgress` owns its own poll and its own `doneCount` state; `NavBar` only ever hands it an
-   immutable `commandIds` array set once per click, so a tick's `setDoneCount` re-renders nothing
-   above it.
-5. Per-game **Sync this game** on the agent's game page — ⏳ not started. Agent-side; Group 3.
+3. **Agent Sync all** *(UI only)* — ✅ shipped 2026-09-20 (Group 3) as `StatusHeader.tsx`, the strip under
+   the top bar on every agent page: a primary **Sync all** (`POST /api/sync`, single-flight on the agent),
+   plus what is syncing now from `GET /api/activity` — a determinate bar with bytes and percent for a push
+   (`bytesTotal > 0`), a sweeping indeterminate bar for a pull, a settle wait, or the gap between two games,
+   because there is no honest percentage for those. It shows busy for a sync it did not start itself (the
+   tray, a game exit) and disables the button then, since a second press would only be told a sync is already
+   running. Not built, because there is nothing behind it: the prototype's "Cancel" (no agent endpoint) and
+   "Syncing 2 of 6" (the activity snapshot names the current game, not the run's position in the list).
+   The result is the server's own "Sync all complete." as a toast — `SyncAllAsync` returns no counts or byte
+   totals, so the prototype's "Synced 6 games — 19.3 MB sent" is not derivable and was not invented.
+4. **Do not re-render the page on a progress tick.** — ✅ satisfied by construction, on both sides.
+   Console: `SyncAllProgress` owns its own poll and its own `doneCount` state; `NavBar` only ever hands it
+   an immutable `commandIds` array set once per click, so a tick's `setDoneCount` re-renders nothing above
+   it. Agent: `agent-ui/src/useActivity.ts` is one shared poll behind `useSyncExternalStore`; each hook
+   subscribes to a single slice and a poll keeps the previous object for any slice that did not change.
+   `StatusHeader` reads only `useActivityBusy()` (a boolean), so it re-renders when a sync starts or ends;
+   only `HeroStatus` reads the per-tick `current`. Measured live over four ticks: 16 DOM mutations in the
+   progress area, 0 in the Overview page, 0 around the Sync all button.
+5. Per-game **Sync this game** on the agent's game page — ➡️ **moved to Group 4** (2026-09-20). Two things
+   this item assumed do not exist: an agent game page (Group 4 builds the Games tab it lives on), and a
+   per-game sync route — `POST /api/sync` takes no game filter, and `pre-launch-sync`/`post-exit-sync` are
+   launch-gate routes with their own single-flight and fail-open contracts, not a manual sync. So it is not
+   "UI only" as listed: it needs `AgentApiServer` routes, an `agent-ui` `api-types.ts` regeneration and a
+   per-game entry point (`SyncEngine.PushAsync`/`PullAsync` exist; `SyncAllAsync` loops them). Building a
+   button in Settings' tracked-games list now would have been thrown away when the Games tab replaced it.
 
 ---
 
@@ -185,11 +206,11 @@ The largest genuinely-new piece.
 
 ---
 
-### Phase 5 — Agent UI
+### Phase 5 — Agent UI — 🚧 Overview trim shipped 2026-09-20 (Group 3); the rest is Group 4
 
 | Item | Kind | Work |
 |---|---|---|
-| Overview trimmed to quick info | UI only | Three stats, one status banner, Next up, last three events |
+| Overview trimmed to quick info | UI only | ✅ **Shipped (Group 3).** Three stats, one status banner, Next up, last three events. The stats are the three the agent really has (Tracked here, Saves backed up, Last sync) — the prototype's "Sent today" has no data behind it. The banner is one of: not connected → conflict → per-game lease warnings (each still dismissible) → "Nothing needs you." "Recent" expands in place to the full 50-entry log so the trim does not delete the only view of it. The launch-setup, Decky and Playnite cards moved to Settings, where the prototype puts them |
 | **Games tab** | **New** | New view listing tracked games with cover art, grid or list, opening a per-game page: save size, last sync, versions, bytes sent last push, folder, process, launch command, Sync/Push/Pull. The **list renders from `GET /api/games` only**. `GET /api/games/{id}/sync-status` is *not* a list-view source — its own handler comment says it is "NOT cheap on disk: the local hash still walks and reads every file in the save folder," plus a full `GetStateAsync`. Polling it per game re-hashes every save folder on a timer. Allowed on a single opened game or an explicit "check now"; never on a timer, never for a whole list |
 | Cover art in the agent | **New** | The agent cannot reach SteamGridDB. Either proxy `GET /api/games/{id}/art` through the agent to the server's `/art/...`, or have the agent UI point straight at the server URL it already knows. Proxy is better — it works when the browser cannot reach the server directly |
 | Search in Add games | UI only | Filter by name and path, stacked on the existing filters |

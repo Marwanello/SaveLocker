@@ -1139,6 +1139,27 @@ Linux/cross-OS chain — this session had no agent build; the server, the new su
 `web` build/lint and a real container were all run. Release notes for the next release must cover:
 sessions (a one-time re-sign-in is NOT needed — the old password is migrated on first load), the
 throttle (5 wrong passwords → 15 min), the non-root container (and `SAVELOCKER_UID`), and the CSP.
+
+**Checkpoint UI redesign, Group 3 shipped (2026-09-20, branch `claude/group-3-ui-redesign-c16953`,
+`2705ce4`, local — no PR opened).** The agent half of the design system, `agent-ui` only — no C#, no wire
+change. `tokens.css` (a hand-kept copy of `web`'s tokens; dark base, light opt-in) + `ui.css` + Archivo +
+six primitives in `components/ui/`; **`StatusHeader` is now the strip on every agent page: a primary Sync
+all and live push progress**, fed by one shared `useActivity` store so a progress tick re-renders only the
+progress area (measured: 16 DOM mutations there, 0 in the page and at the button); the Overview is three
+stats, one banner, Next up and Recent (which expands to the full log); the launch-setup and plugin cards
+moved to Settings. **Phase 3 item 5 (per-game "Sync this game") moved to Group 4** — it needs a game page and
+a per-game agent route, neither of which exists. One inherited bug fixed on the way: `handleSynced` used a
+stale `view`, so the "don't pop the overlay over Conflicts" guard never worked mid-sync. Verified against a
+real seeded conflict on the WSL test agent (real Sync all → busy → toast → pop-up), keyboard focus and both
+themes; write-up, deliberate departures from the prototype and what was *not* verified (the WebView2 tray
+window, a real Deck) are in `tasks/checkpoint-ui/implementation-grouping.md` → Group 3.
+<br>**One finding for the maintainer, not fixed:** the plan's `--color-faint` is 3.31:1 (dark) / 3.55:1
+(light) — below WCAG AA for the small text it is used on, in the console too. Agent content text uses
+`--color-dim` instead; changing `--faint` itself means `web`, `agent-ui` and `Ui/Theme.cs` together.
+<br>**Two rig traps found, in [[Gotchas]]:** `testenv.ps1 sync` silently skips a NEW directory unless its
+files are staged (filed in [[Backlog]]), and `conflict -Wsl` alone seeds no conflict. Also: a Windows test
+agent left over from an earlier session was mapped to eight of the maintainer's REAL save folders — `clean`
+removed it, and Sync all was only ever pressed on the WSL agent.
 ---
 
 ## Where things stand
