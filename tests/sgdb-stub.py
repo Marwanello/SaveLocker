@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """A stand-in SteamGridDB for exercising the console's artwork by hand — no API key, no network.
 
-    python tests/sgdb-stub.py [--port 5216]
+    python tests/sgdb-stub.py [--port 5217]
 
 then start the test console pointed at it (the container reaches this PC as host.docker.internal):
 
     .\\tests\\testenv.ps1 up -Only console -ConsoleEnv `
-        Art__ApiBaseUrl=http://host.docker.internal:5216/api/v2/, `
+        Art__ApiBaseUrl=http://host.docker.internal:5217/api/v2/, `
         Art__AllowedImageHosts=host.docker.internal, Art__AllowInsecureImageUrls=true
 
 Any key is accepted, so: start the console with NO key, add some games, then paste anything into
@@ -164,7 +164,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--port", type=int, default=5216)
+    ap.add_argument("--port", type=int, default=5217)
     args = ap.parse_args()
     print(f"stub SteamGridDB on 0.0.0.0:{args.port}  (any API key is accepted)")
     ThreadingHTTPServer(("0.0.0.0", args.port), Handler).serve_forever()

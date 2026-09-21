@@ -34,8 +34,9 @@
 #                                 is the first OPAQUE one; ?w= thumbnails are right-sized, cached,
 #                                 allowlisted, never upscaled, and go stale when the cover is replaced.
 #
-# Checks that read or edit the SQLite file go through WSL python3 (there is no sqlite3 on the Windows
-# box — same approach as run-server-bugbounty-tests.ps1). Without WSL those checks print SKIP.
+# Checks that read or edit the SQLite file go through python's sqlite3 module (there is no sqlite3 CLI on
+# the Windows box): a native Python 3 if there is one, else WSL's (as run-server-bugbounty-tests.ps1 does).
+# With neither, those checks print SKIP. CI runs this suite on windows-latest, which has the first.
 #
 # Owns :5215 (server) and :5216 (stub) and .verify-console-security. Usage:
 #   .\tests\run-console-security-tests.ps1 [-Port 5215] [-StubPort 5216] [-WslDistro Ubuntu]
@@ -131,7 +132,16 @@ function Cleanup {
     if ($script:stubJob) { Stop-Job $script:stubJob -ErrorAction SilentlyContinue; Remove-Job $script:stubJob -Force -ErrorAction SilentlyContinue }
 }
 
-# ---------------------------------------------------------------- SQLite via WSL python (server must be STOPPED)
+# ---------------------------------------------------------------- SQLite via python (server must be STOPPED)
+# A native Python 3 (its standard library carries sqlite3) is preferred; WSL's is the fallback for a
+# Windows box that has only that. Native is what CI has: a hosted Windows runner has Python and no WSL distro.
+$script:pyNative = $null
+foreach ($cmd in @(Get-Command python, python3 -CommandType Application -All -ErrorAction SilentlyContinue)) {
+    # The WindowsApps "python.exe" is a Store launcher, not an interpreter, whether or not Python is installed.
+    if ($cmd.Source -like "*\WindowsApps\*") { continue }
+    $ver = try { (& $cmd.Source --version 2>&1) -join "" } catch { "" }
+    if ($ver -match "^Python 3") { $script:pyNative = $cmd.Source; break }
+}
 function ConvertTo-WslPath($p) { $d = $p.Substring(0, 1).ToLower(); return "/mnt/$d" + ($p.Substring(2) -replace '\\', '/') }
 function Invoke-Sqlite($sql, [switch]$Write) {
     $py = Join-Path $scratch "query.py"; $sqlFile = Join-Path $scratch "query.sql"
@@ -150,12 +160,17 @@ else:
 '@ | Set-Content -Path $py -Encoding utf8
     Set-Content -Path $sqlFile -Value $sql -Encoding utf8
     $db = Join-Path $script:state "savelocker.db"
-    return (& wsl -d $WslDistro -- python3 (ConvertTo-WslPath $py) (ConvertTo-WslPath $db) (ConvertTo-WslPath $sqlFile) $(if ($Write) { "rw" } else { "ro" }) 2>&1)
+    $mode = if ($Write) { "rw" } else { "ro" }
+    if ($script:pyNative) { return (& $script:pyNative $py $db $sqlFile $mode 2>&1) }
+    return (& wsl -d $WslDistro -- python3 (ConvertTo-WslPath $py) (ConvertTo-WslPath $db) (ConvertTo-WslPath $sqlFile) $mode 2>&1)
 }
 $wslOk = $false
 # (No inline python here: PowerShell 5.1 strips the inner quotes before bash sees them.)
-try { $wslOk = ((& wsl -d $WslDistro -- python3 --version 2>&1) -join "") -match "^Python 3" } catch { }
-if (-not $wslOk) { Write-Host "NOTE: WSL python3 ($WslDistro) is not usable; database-level checks will be skipped." }
+if (-not $script:pyNative) {
+    try { $wslOk = ((& wsl -d $WslDistro -- python3 --version 2>&1) -join "") -match "^Python 3" } catch { }
+}
+$sqliteOk = [bool]$script:pyNative -or $wslOk
+if (-not $sqliteOk) { Write-Host "NOTE: neither a native Python 3 nor WSL python3 ($WslDistro) is usable; database-level checks will be skipped." }
 
 function Sha256Hex($s) {
     $sha = [System.Security.Cryptography.SHA256]::Create()
@@ -308,7 +323,7 @@ Check "default: ... and works with it" ((Http POST "/api/machines/register" @{ n
 # ------------------------------------------------------------------ SEC-01/02: database-level
 Stop-Phase
 Write-Host ""; Write-Host "-- SEC-01/02: what is actually stored"
-if ($wslOk) {
+if ($sqliteOk) {
     $hash = ("" + (Invoke-Sqlite "SELECT Value FROM Settings WHERE [Key]='Admin:PasswordHash'")).Trim()
     Check "SEC-02: a newly set password is stored as v2 at 600,000 iterations" ($hash -like "v2:600000:*")
     Check "SEC-01: the raw session token is NOT in the database" ((("" + (Invoke-Sqlite "SELECT COUNT(*) FROM AdminSessions WHERE TokenHash='$tokA'")).Trim()) -eq "0")
@@ -327,7 +342,7 @@ if ($wslOk) {
     $upgraded = ("" + (Invoke-Sqlite "SELECT Value FROM Settings WHERE [Key]='Admin:PasswordHash'")).Trim()
     Check "SEC-02: the successful sign-in re-wrote the hash as v2 @ 600,000" ($upgraded -like "v2:600000:*")
     Check "SEC-01: the expired session row was swept by that sign-in" ((("" + (Invoke-Sqlite "SELECT COUNT(*) FROM AdminSessions WHERE ExpiresAt < '2001-01-01'")).Trim()) -eq "0")
-} else { Skip "database-level checks need WSL python3 (-WslDistro $WslDistro)" }
+} else { Skip "database-level checks need Python 3 (native, or WSL via -WslDistro $WslDistro)" }
 
 # A hash that lives in CONFIG (env) rather than the database cannot be written back; it must still verify.
 $cfgHash = New-V1Hash "config-pw"
