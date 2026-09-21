@@ -8,7 +8,7 @@ namespace SaveLocker.Shared;
 /// it will never see. See <c>docs/tasks/checkpoint-ui/plan.md</c>.
 /// </summary>
 /// <param name="Theme"><c>"system"</c> (follow the OS), <c>"dark"</c> or <c>"light"</c>.</param>
-/// <param name="Accent"><c>"ember"</c>, <c>"coolant"</c>, <c>"arcade"</c>, <c>"cobalt"</c> or <c>"stealth"</c>.</param>
+/// <param name="Accent"><c>"ember"</c>, <c>"coolant"</c>, <c>"arcade"</c>, <c>"cobalt"</c>, <c>"emerald"</c> or <c>"stealth"</c>.</param>
 /// <param name="Mark"><c>"pixel"</c> (Pixel lock), <c>"cartridge"</c> or <c>"memcard"</c> (Memory card).</param>
 public record AppearanceDto(string Theme, string Accent, string Mark);
 
@@ -34,7 +34,7 @@ public record SetAppearanceRequest(string Theme, string Accent, string Mark, boo
 public static class Appearances
 {
     public static readonly string[] Themes = { "system", "dark", "light" };
-    public static readonly string[] Accents = { "ember", "coolant", "arcade", "cobalt", "stealth" };
+    public static readonly string[] Accents = { "ember", "coolant", "arcade", "cobalt", "emerald", "stealth" };
     public static readonly string[] Marks = { "pixel", "cartridge", "memcard" };
 
     /// <summary>Pixel lock on Ember, following the OS theme — what every surface drew before this existed.</summary>

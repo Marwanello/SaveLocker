@@ -3102,3 +3102,14 @@ Full write-up: [[session_summary]]. Branch `ui-redesign-group-4`, PR https://git
 - **Tests:** `run-local-api-tests.ps1` §11, 53/53 (was 30); removing the art guards fails 3 checks.
 - **Not verified:** WebView2 tray window, a real Deck, light theme (Group 5), C# suites other than `run-local-api-tests`.
 - **Open:** Groups 5–7; version list and bytes-sent on the game page (Backlog).
+
+## 2026-09-21 — Checkpoint UI Group 5: appearance, fleet sync, theme follows the OS
+
+Full write-up: [[session_summary]]. Branch `ui-redesign-group-5`, commits `4e423ab`, `c86fb02`, `c85ad5e`, `881a78c` plus Emerald.
+
+- **Look = three ids** (theme, accent, mark), stored server-side, pushed on the heartbeat, normalised by every reader; the agent's "Follow the console" defaults on.
+- **UI:** Appearance card, mark on sign-in and favicon, ~470 hex colours moved onto tokens, theme follows the OS (`data-theme` pins, no attribute = System). Windows tray/window icons drawn with GDI+.
+- **Emerald** added as a sixth accent; it shares the green range with the "healthy" colour.
+- **Tests:** appearance consistency 20/20 (new), console/security 172/172, local-api 85/85.
+- **Not verified:** Emerald contrast walk, WebView2 tray window, real taskbar icon, OS-theme flip event, Deck, the new test under pwsh in CI.
+- **Open:** Deck accent (Group 6), Groups 6-7, the Backlog items listed in the summary.

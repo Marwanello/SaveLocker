@@ -35,7 +35,7 @@ function Cs-List($name) {
     return @()
 }
 $csThemes = Cs-List "Themes"; $csAccents = Cs-List "Accents"; $csMarks = Cs-List "Marks"
-Check "Appearance.cs: found 3 themes, 5 accents, 3 marks" ($csThemes.Count -eq 3 -and $csAccents.Count -eq 5 -and $csMarks.Count -eq 3)
+Check "Appearance.cs: found 3 themes, 6 accents, 3 marks" ($csThemes.Count -eq 3 -and $csAccents.Count -eq 6 -and $csMarks.Count -eq 3)
 
 # ---- accent colours: C# palette vs both TS copies ---------------------------------------------------------
 $pal = Read-Src "src/Agent.Core/AppearancePalette.cs"
@@ -49,7 +49,7 @@ function Ts-Accents($rel) {
 }
 $webAcc = Ts-Accents "web/src/appearance.ts"
 $agentAcc = Ts-Accents "agent-ui/src/appearance.ts"
-Check "accents: web/appearance.ts lists five, with all four colours each" ($webAcc.Count -eq 5)
+Check "accents: web/appearance.ts lists six, with all four colours each" ($webAcc.Count -eq 6)
 Check "accents: web and agent-ui carry the SAME ids and colours, in the same order" (Same $webAcc $agentAcc)
 Check "accents: AppearancePalette.cs (tray icon / Deck) carries the same ids and colours as the console" (Same $palRows $webAcc)
 Check "accents: the ids are exactly the ones the SERVER validates against (Appearance.cs)" (Same @($webAcc | ForEach-Object { ($_ -split " ")[0] }) $csAccents)

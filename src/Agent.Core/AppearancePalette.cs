@@ -25,6 +25,7 @@ public static class AppearancePalette
         ["coolant"] = new(0x35A5BD, 0x08171B, 0x12768D, 0xF2FBFD),
         ["arcade"]  = new(0xD4589B, 0x1A0D15, 0xB23C7C, 0xFFF5FA),
         ["cobalt"]  = new(0x5B81D6, 0x0A0F1C, 0x3A5CBE, 0xF6F8FF),
+        ["emerald"] = new(0x2FBF71, 0x06170E, 0x1A7F4B, 0xF2FDF6),
         ["stealth"] = new(0xDCD7CC, 0x141416, 0x2E2B28, 0xFAF8F5),
     };
 

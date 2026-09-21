@@ -9,7 +9,7 @@
 import { useSyncExternalStore } from 'react'
 
 export type Theme = 'system' | 'dark' | 'light'
-export type AccentId = 'ember' | 'coolant' | 'arcade' | 'cobalt' | 'stealth'
+export type AccentId = 'ember' | 'coolant' | 'arcade' | 'cobalt' | 'emerald' | 'stealth'
 export type MarkId = 'pixel' | 'cartridge' | 'memcard'
 
 export interface Look {
@@ -32,6 +32,7 @@ export const ACCENTS: Record<AccentId, { name: string; dark: string; dOn: string
   coolant: { name: 'Coolant', dark: '#35a5bd', dOn: '#08171b', light: '#12768d', lOn: '#f2fbfd' },
   arcade:  { name: 'Arcade',  dark: '#d4589b', dOn: '#1a0d15', light: '#b23c7c', lOn: '#fff5fa' },
   cobalt:  { name: 'Cobalt',  dark: '#5b81d6', dOn: '#0a0f1c', light: '#3a5cbe', lOn: '#f6f8ff' },
+  emerald: { name: 'Emerald', dark: '#2fbf71', dOn: '#06170e', light: '#1a7f4b', lOn: '#f2fdf6' },
   stealth: { name: 'Stealth', dark: '#dcd7cc', dOn: '#141416', light: '#2e2b28', lOn: '#faf8f5' },
 }
 
