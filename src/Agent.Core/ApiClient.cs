@@ -175,6 +175,27 @@ public sealed class ApiClient
         return await resp.Content.ReadFromJsonAsync<GameStateDto>();
     }
 
+    /// <summary>
+    /// A cover or icon the server stores, at one of its thumbnail widths. <paramref name="relativeUrl"/>
+    /// comes from the server's own game record, so it is held to <c>/art/</c> on the same origin: a
+    /// hostile server must not be able to point this machine's requests at another host.
+    /// </summary>
+    public async Task<(byte[] Bytes, string ContentType)?> GetArtAsync(
+        string relativeUrl, int? width, CancellationToken ct = default)
+    {
+        if (!relativeUrl.StartsWith("/art/", StringComparison.Ordinal) || relativeUrl.Contains("//") ||
+            relativeUrl.Contains(".."))
+            return null;
+        var url = width is > 0 ? $"{relativeUrl}{(relativeUrl.Contains('?') ? '&' : '?')}w={width}" : relativeUrl;
+        using var resp = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (resp.StatusCode == HttpStatusCode.NotFound) return null;
+        resp.EnsureSuccessStatusCode();
+        var type = resp.Content.Headers.ContentType?.MediaType ?? "";
+        if (!type.StartsWith("image/", StringComparison.OrdinalIgnoreCase)) return null;
+        if (resp.Content.Headers.ContentLength > 16 * 1024 * 1024) return null;
+        return (await resp.Content.ReadAsByteArrayAsync(ct), type);
+    }
+
     public async Task<LeaseAcquireResponse> AcquireLeaseAsync(Guid gameId)
     {
         var resp = await _http.PostAsync($"/api/games/{gameId}/lease", null);

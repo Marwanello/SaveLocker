@@ -170,7 +170,8 @@ public sealed class Daemon : IAsyncDisposable
             activity: _activity,
             syncAll: () => _engine.SyncAllAsync(_config.Games),
             prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct),
-            postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct));
+            postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
+            syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct));
         _apiServer.Start();
 
         _drainer = new OfflineQueueDrainer(_offlineQueue, _config, () => _engine, Notify);

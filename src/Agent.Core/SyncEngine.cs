@@ -666,6 +666,38 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
+    /// One game's manual sync, for the agent UI's game page: the same pull-then-push
+    /// <see cref="SyncAllAsync"/> runs per game, or just one direction. Never forced — a pull still
+    /// refuses to overwrite local changes the server has not seen (WA-02), and a push that diverged
+    /// still becomes a conflict rather than winning silently.
+    /// </summary>
+    public async Task<string> SyncGameAsync(TrackedGame game, GameSyncMode mode, CancellationToken ct = default)
+    {
+        var running = GameActivity.IsActive(game);
+        switch (mode)
+        {
+            case GameSyncMode.Pull:
+                if (running) return $"{game.Name} is running, so its save was not replaced.";
+                return await PullAsync(game, ct: ct)
+                    ? $"Pulled the latest save of {game.Name}."
+                    : $"{game.Name} was not pulled. Check the activity log for why.";
+            case GameSyncMode.Push:
+                return DescribePush(game, await PushAsync(game, ct: ct));
+            default:
+                if (!running) await PullAsync(game, ct: ct);
+                var pushed = DescribePush(game, await PushAsync(game, ct: ct));
+                return running ? $"{pushed} Not pulled: the game is running." : pushed;
+        }
+    }
+
+    private static string DescribePush(TrackedGame game, UploadResult? result) => result?.Status switch
+    {
+        UploadStatus.Conflict => $"{game.Name} has a conflict. Choose a side in Conflicts.",
+        null => $"{game.Name} was not pushed. Check the activity log for why.",
+        _ => $"{game.Name} is up to date on the server.",
+    };
+
+    /// <summary>
     /// True if the game's save path is one nothing may ever archive or replace, having reported it.
     /// Loud on purpose: this is either a serious misconfiguration or a hostile server path, and on a
     /// headless box the console is the only place anyone would find out.
