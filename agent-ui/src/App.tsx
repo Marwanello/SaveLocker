@@ -1,5 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
-import { HardDrive } from 'lucide-react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import type { View, AgentState, Conflict, TrackedGame } from './types'
 import { api } from './api'
 import { Sidebar } from './components/Sidebar'
@@ -9,13 +8,14 @@ import { AddGamesView } from './components/AddGamesView'
 import { ConflictsView } from './components/ConflictsView'
 import { SyncConflictModal } from './components/SyncConflictModal'
 import { SettingsView } from './components/SettingsView'
+import { Chip } from './components/ui/Chip'
 import logoUrl from './assets/SaveLocker_Logo_crop.png'
 
 export default function App() {
   // The tray's native Sync All / Force Pull / Force Push (TrayApp.cs, Phase 7) open this window at
   // "#conflicts:queue" rather than the plain "#conflicts" route when they find an open conflict —
   // the suffix is stripped for routing but remembered below to auto-open the same queue pop-up
-  // OverviewView's own "Sync now" button already shows, so both hosts get one queue UI regardless of
+  // the status header's own Sync all already shows, so both hosts get one queue UI regardless of
   // which trigger point found the conflict.
   const initialHash = window.location.hash.slice(1)
   const [view, setView] = useState<View>(() => {
@@ -26,9 +26,9 @@ export default function App() {
   const [state, setState] = useState<AgentState | null>(null)
   const [conflicts, setConflicts] = useState<Conflict[]>([])
   const [games, setGames] = useState<TrackedGame[]>([])
-  // Non-null only while the sync-time pop-up is up (Overview's "Sync now" surfaced at least one
-  // conflict). Deliberately separate from `conflicts`: the passive 15s poll below must never open
-  // this on its own — only an explicit Sync now does, so nothing interrupts the user unprompted.
+  // Non-null only while the sync-time pop-up is up (a Sync all surfaced at least one conflict).
+  // Deliberately separate from `conflicts`: the passive 15s poll below must never open this on its
+  // own — only an explicit Sync all does, so nothing interrupts the user unprompted.
   const [syncQueue, setSyncQueue] = useState<Conflict[] | null>(null)
 
   const refreshState = useCallback(() => {
@@ -47,12 +47,19 @@ export default function App() {
     }
   }, [])
 
+  // Read through a ref: Sync all is a long request, and `handleSynced` runs when it FINISHES. A `view`
+  // captured by the closure would be the page the user was on when they pressed it, so the guard below
+  // could never notice they had since gone to Conflicts. The button is in the header on every page now,
+  // which makes navigating away mid-sync the normal case rather than the edge one.
+  const viewRef = useRef(view)
+  useEffect(() => { viewRef.current = view })
+
   const handleSynced = useCallback(() => {
-    // A "Sync now" request can still be in flight after the user has already navigated to the
+    // A Sync all request can still be in flight after the user has already navigated to the
     // Conflicts page themselves — it shows the same conflicts already, so popping the overlay on
     // top of it would only interrupt the user a second time for information they can already see.
-    refreshConflicts().then(cs => { if (cs.length > 0 && view !== 'conflicts') setSyncQueue(cs) })
-  }, [refreshConflicts, view])
+    refreshConflicts().then(cs => { if (cs.length > 0 && viewRef.current !== 'conflicts') setSyncQueue(cs) })
+  }, [refreshConflicts])
 
   useEffect(() => {
     refreshState()
@@ -74,39 +81,51 @@ export default function App() {
   }, [autoQueueRequested, refreshConflicts])
 
   return (
-    <div style={{
-      height: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      background: '#0d1114',
-      fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
-      overflow: 'hidden',
-    }}>
-        {/* Shared header row — one element, guaranteed alignment */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #494949', flexShrink: 0 }}>
-          <div style={{
-            width: 212, minWidth: 212, padding: '15px 14px',
-            background: '#1E252A', borderRight: '1px solid #494949',
-            display: 'flex', alignItems: 'center', gap: 10,
-          }}>
-            <img src={logoUrl} alt="SaveLocker" style={{ width: 34, height: 34, objectFit: 'contain', borderRadius: 5, flexShrink: 0 }} />
+    <div className="sl-app">
+        <header className="sl-topbar">
+          <div className="sl-brand">
+            <img src={logoUrl} alt="" />
             <div>
-              <div style={{ color: '#ECEFF1', fontSize: 13, fontWeight: 700, letterSpacing: '-0.015em', lineHeight: 1.2 }}>SaveLocker</div>
-              {/* buildLabel, not currentVersion: several builds share one version number, and on a
-                  machine running a test build beside the installed one that is the whole question.
-                  Case is left alone here — a commit hash in caps reads as a different string. */}
-              <div style={{ color: '#9CA3AF', fontSize: 10, letterSpacing: '0.07em', lineHeight: 1.5 }}>AGENT v{state?.buildLabel ?? state?.currentVersion ?? '…'}</div>
+              <div className="sl-brand__name">SaveLocker</div>
+              <div className="sl-brand__sub">Agent</div>
             </div>
           </div>
-          <StatusHeader connected={state?.connected ?? false} serverUrl={state?.serverUrl ?? ''} />
-        </div>
+          <div className="sl-topbar__tools">
+            {state && (state.connected
+              ? <Chip tone="ok">Connected</Chip>
+              : <Chip tone="crit">Not connected</Chip>)}
+          </div>
+        </header>
 
-        {/* Main row: sidebar nav + content */}
-        <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          <Sidebar activeView={view} onNavigate={setView} conflictCount={conflicts.length} />
+        {/* On every page, because Sync all is not an Overview thing. It re-renders when a sync starts
+            or ends, never on a progress tick — see StatusHeader. */}
+        <StatusHeader
+          state={state}
+          conflicts={conflicts}
+          games={games}
+          onSynced={() => { refreshState(); handleSynced() }}
+        />
 
-          <div style={{ flex: 1, minWidth: 0, background: '#2A3238', position: 'relative', overflow: 'hidden' }}>
-            {view === 'overview' && <OverviewView state={state} onWarningDismissed={refreshState} onSynced={handleSynced} />}
+        <div className="sl-body">
+          <Sidebar
+            activeView={view}
+            onNavigate={setView}
+            conflictCount={conflicts.length}
+            agentLabel={state?.buildLabel ?? state?.currentVersion ?? '…'}
+            machineName={state?.machineName ?? ''}
+            serverHost={(state?.serverUrl ?? '').replace(/^https?:\/\//, '')}
+          />
+
+          <main className="sl-content">
+            {view === 'overview' && (
+              <OverviewView
+                state={state}
+                conflicts={conflicts}
+                games={games}
+                onWarningDismissed={refreshState}
+                onNavigate={setView}
+              />
+            )}
             {view === 'addGames' && <AddGamesView onEnrolled={refreshState} />}
             {view === 'conflicts' && (
               <ConflictsView
@@ -117,20 +136,7 @@ export default function App() {
               />
             )}
             {view === 'settings' && <SettingsView state={state} onSaved={refreshState} />}
-          </div>
-        </div>
-
-        {/* Shared footer row — one element, guaranteed alignment */}
-        <div style={{ display: 'flex', borderTop: '1px solid #494949', flexShrink: 0 }}>
-          <div style={{
-            width: 212, minWidth: 212, padding: '11px 14px',
-            background: '#1E252A', borderRight: '1px solid #494949',
-            display: 'flex', alignItems: 'center', gap: 7,
-          }}>
-            <HardDrive size={12} strokeWidth={1.75} color="#9CA3AF" />
-            <span style={{ color: '#9CA3AF', fontSize: 11 }}>Machine: {state?.machineName ?? '…'}</span>
-          </div>
-          <div style={{ flex: 1, background: '#2A3238' }} />
+          </main>
         </div>
 
         {/* position: fixed — a true overlay over the whole shell, sidebar included, not scoped to

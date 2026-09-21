@@ -14,14 +14,14 @@ phases to do in one session, in what order, and why. Driven by three things weig
    23 files, multiple review rounds) was a heavy session. Treat ~1,500 insertions as the ceiling for
    a group that still gets reviewed properly.
 
-## Status (updated 2026-09-18)
+## Status (updated 2026-09-20)
 
 | Group | Contents | Status |
 |---|---|---|
 | 1 | Phase 1 (web half) + Phase 8 assets | 🚧 In progress — web foundation ✅ Shipped 2026-09-17 (reset layered, tokens, self-hosted Archivo, motion primitives, `ui/` primitives, `NavBar.tsx` converted as proof). Assets partial: 3 marks + SVG favicon shipped; Steam art crops and all PNG/ICO rasterization deferred — no rasterizer available in this environment, see `implementation.md` Phase 8 |
 | 2 | Phase 2 + Phase 3.1/2/4 + `POST /commands/bulk` | ✅ Shipped 2026-09-18 — every item except the release-history table, split off as pre-authorized below (still ⏳). See `implementation.md` Phase 2/3 for the per-item table |
-| 3 | Phase 1 (agent half) + Phase 5 overview trim + Phase 3.3/5 | ⏳ Not started |
-| 4 | Phase 5 Games tab + art proxy + search | ⏳ Not started |
+| 3 | Phase 1 (agent half) + Phase 5 overview trim + Phase 3.3 (agent Sync all) | ✅ Shipped 2026-09-20 — tokens, primitives, Archivo, status header with Sync all + live progress, trimmed Overview, converted shell. **Phase 3.5 (per-game "Sync this game") ➡️ moved to Group 4**: it needs a game page and a per-game agent route, neither of which exists yet. See the Group 3 write-up below |
+| 4 | Phase 5 Games tab + art proxy + search + **Phase 3.5 (per-game Sync this game)** | ⏳ Not started — now also owns the per-game sync route (`POST /api/games/{id}/sync`, or push/pull/sync as three), because the agent's local API has none |
 | 5 | Phase 4 appearance + fleet sync | ⏳ Not started — **must also flip the theme default to follow the OS** (see below), and only once Groups 3–4 have converted the remaining inline-styled views |
 | 6 | Phase 6 items 1-3 (Deck) | ⏳ Not started |
 | 7 | Phase 7 (notifications) | ⏳ Not started |
@@ -178,6 +178,63 @@ real problem/conflict event existed in the seeded data — verified by build and
 This is the biggest user-visible payoff in the plan and it was fully verifiable here, as expected.
 
 **Group 3 — Agent foundation, Overview, and agent progress.**
+✅ **Shipped 2026-09-20 (`2705ce4`) — every item except Phase 3 item 5, which moved to Group 4.** Written
+up after the original scope below, so the two read side by side.
+<br>**Shipped:** `agent-ui/src/tokens.css` (dark base, `data-theme="light"` opt-in — the same rule as
+`web`, for the same reason) and `ui.css` (the reset, the scrollbar, the motion keyframes and the `sl-`
+classes behind the primitives — `agent-ui` has no Tailwind, and hover/active/focus-visible cannot be
+inline styles), both imported from `main.tsx` beside the `@fontsource` CSS; `@fontsource/archivo`
+replaces Inter (`@fontsource/jetbrains-mono` untouched); `components/ui/` — `Button`, `Card`, `Chip`,
+`Stat`, `Banner`, `Toast`, the same API as `web`'s so Group 4's `Row`/`Seg` port the same way. **Sync all
+and its progress are `StatusHeader.tsx`, now the strip under the top bar on every page** (badge, one line
+of status, a primary Sync all, the meter): determinate from `bytesDone/bytesTotal` for a push,
+a sweeping indeterminate bar for a pull, a settle wait, or the gap between two games — there is no honest
+percentage for those, so none is drawn. `POST /api/sync` and `GET /api/activity` needed no change, as
+predicted. The Overview is three stats, one status banner (not connected → conflict → per-game lease
+warnings → "Nothing needs you"), Next up and Recent; `ActivityCard` is deleted; the launch-setup, Decky
+and Playnite cards moved to Settings, where the prototype puts them.
+<br>**Item 4 is structural, not a matter of care.** `useActivity.ts` is ONE shared poll behind
+`useSyncExternalStore`, and each hook subscribes to one slice — `useActivityCurrent` (every tick),
+`useActivityBusy` (a boolean, flips twice a sync), `useActivityRecent` (unchanged by a tick). A poll keeps
+the previous object for whichever slice did not change. **Measured** in the running app over four
+byte-progress ticks: 16 DOM mutations in the progress area, **0** in the Overview page and **0** around the
+Sync all button.
+<br>**Deliberate departures from the prototype, all toward the plan's own text or the shipped console:**
+the current nav item is a neutral tile, not accent-soft (plan.md: accent means "a decision is waiting";
+`web`'s `Button` already has a `selected` variant for the same reason), and the progress meter fills with
+`--color-safe` like Group 2's `SyncAllProgress` rather than the prototype's accent; the hero badge is an
+icon, not the prototype's monospace "IDLE/HOLD" text (plan.md: mono is not the data face, and "HOLD" would
+claim sync is paused, which it is not for the other games); stats are the three the agent really has —
+Tracked here, Saves backed up, Last sync — not the prototype's "Sent today", for which no number exists.
+**Recent expands inline to the full 50-entry log** ("Show all N") — trimming the Overview must not delete
+the only place the rolling log was visible, and plan.md forbids a modal. The agent's Sync all confirms
+with the server's own "Sync all complete." as a toast (2.6 s; a failure stays until dismissed), because `SyncAllAsync` returns no counts
+or byte totals and none were invented.
+<br>**One bug found in the code being moved, fixed rather than carried:** `handleSynced` read `view` from
+the render in which Sync was pressed, so its "do not pop the overlay on top of Conflicts" guard could never
+see a later navigation. With the button on every page, navigating mid-sync is the normal case. It reads a
+ref now. Verified both ways in the real app: pressed from Overview it opens the pop-up; pressed from
+Overview with the user then going to Conflicts (sync slowed to 3 s to allow it) it does not.
+<br>**A finding the maintainer should decide on, not fixed here:** `--color-faint` measures **3.31:1** on
+the dark panel and **3.55:1** on the light one — the plan's own values, and the ones `web` already uses —
+so 10–12px text in it fails WCAG AA in both themes. In the agent, only the seven 10px eyebrow labels still
+use it; every piece of content text (hero detail, empty state, timestamps, the sidebar footer, progress
+numbers) uses `--color-dim`, and a contrast walk over all 43 text nodes of the shell and Overview, in both
+themes, finds nothing else under 4.5:1. Lifting `--faint` itself is a token change that has to happen in
+`web/src/index.css`, `agent-ui/src/tokens.css` and `Ui/Theme.cs` together.
+<br>**Verified live** (via `tests/testenv.ps1`, on the WSL agent): a genuine two-machine conflict seeded
+with `conflict -Windows -Wsl`; the hero, its chip, the sidebar count and the banner all read from the real
+API; the **real** Sync all button went busy (disabled, "Syncing…"), raised the "Sync all complete." toast,
+dismissed it at 2.6 s, and opened the conflict pop-up 7 ms after the toast; every tab stop had a visible 2px
+accent focus ring; both themes rendered; the launch-setup and Decky cards render in Settings on the Linux
+agent and are gone from Overview. The states that need special data (a push at 19 of 25 MB, a pull with no
+byte total, a not-connected machine, a lease warning) were checked by intercepting `fetch` in the page
+against the Windows test agent's UI, and are **not** a substitute for a real push: loopback finishes a
+push too fast to screenshot mid-transfer, as `CONTEXT.md` already records. **Not verified:** the WebView2
+tray window itself (the same bundle was loaded in a browser), and a real Steam Deck. `agent-ui` `tsc -b &&
+vite build` and `oxlint` are clean (the same two pre-existing warnings); no C# changed, so no test suite
+was re-run and `api-types.ts` was not regenerated.
+<br>**Original scope, kept for the record:**
 Phase 1 (the agent half, per Group 1's decision) + Phase 5's Overview trim + Phase 3 items 3 and 5.
 Grouped by file again: `StatusHeader.tsx` is where the progress lands and `OverviewView.tsx` is what
 gets trimmed, and both are small. `POST /api/sync` and `GET /api/activity` already report phase and
@@ -194,7 +251,15 @@ follow the exact pattern already proven working in that same file — no new mec
 **Group 4 — Agent Games tab.**
 The rest of Phase 5: the new Games view (list and grid, cover art, per-game page with Sync/Push/Pull),
 the art proxy, and search in Add games. Split from Group 3 because it's the single largest *new* UI
-in the plan and it doesn't fit alongside the foundation work. Needs Group 3's tokens. Obey the
+in the plan and it doesn't fit alongside the foundation work. Needs Group 3's tokens **and primitives**
+(`agent-ui/src/components/ui/`, `ui.css`); `Row` and `Seg` are not ported yet — port them from `web`'s.
+**Also owns Phase 3 item 5**, moved here from Group 3 on 2026-09-20: "Sync this game" is a button on the
+per-game page this group builds, and it is *not* UI-only after all — the agent's local API has no per-game
+sync route (`POST /api/sync` takes no game filter; `pre-launch-sync` and `post-exit-sync` are launch-gate
+routes with their own single-flight and fail-open contracts, not a manual sync). It, and the page's Push
+now / Pull latest, need new `AgentApiServer` routes, an `api-types.ts` regeneration in `agent-ui`, and a
+per-game entry point on `SyncEngine` (`PushAsync`/`PullAsync` already exist; `SyncAllAsync` loops them).
+Obey the
 `sync-status` trap above. The art proxy (`GET /api/games/{id}/art` through the agent) is the right
 call over pointing the browser at the server — it still works when the browser can't reach the server
 directly.

@@ -19,7 +19,7 @@ interface Props {
 type Kind = 'cloud' | 'local'
 
 /**
- * Pauses on each conflict "Sync now" surfaced, one at a time, over the WHOLE app shell — sidebar
+ * Pauses on each conflict "Sync all" surfaced, one at a time, over the WHOLE app shell — sidebar
  * included — not just the content pane, so there's no way to click around it by accident. Reuses
  * `ConflictCard` in 'immediate' mode: pressing a side resolves it right away and the queue advances,
  * matching the tray's own "one conflict at a time" bulk-resolve queue (Phase 7) rather than a

@@ -6,7 +6,9 @@ Everything for the console / agent / Deck visual redesign lives here. Like
 completed 2026-09-02; Group 1 (the `web`-side foundation — tokens, reset, motion primitives, the
 `ui/` component library, and a first pass at Phase 8's assets) shipped 2026-09-17, and Group 2 (the
 console shell — sidebar rows, games grid, notifications, sign-in, console Sync all, exclude-pattern
-chips) shipped 2026-09-18, see [[implementation-grouping]]'s status table for the rest. Don't treat
+chips) shipped 2026-09-18, and Group 3 (the agent's tokens and primitives, the status header with Sync
+all and live progress, the trimmed Overview) shipped 2026-09-20, see [[implementation-grouping]]'s
+status table for the rest. Don't treat
 `plan.md` as "read once, execute its steps, stop" — it's the canonical reference to re-read at the
 start of every session that touches this work, and it gets amended in place as phases ship.
 
@@ -24,12 +26,13 @@ needed. They also stay live at these mirrors, which is only useful for sharing a
 second source of truth: [prototype](https://claude.ai/code/artifact/b8f247f2-32e5-4808-8e4c-61ba0cc3406f) ·
 [brand kit](https://claude.ai/code/artifact/b3e0c8a5-70a0-47bf-b4f2-d0dbf4f0b2d5).
 
-**Start here:** `implementation-grouping.md`'s status table, to see what's already shipped. Groups 1
-and 2 are done; Group 3 (agent foundation) and Group 6 (Deck) are next and independent of each
-other — Group 1 already made the one decision (how `agent-ui` receives the design tokens: a plain
-CSS file imported the same way `main.tsx` already imports its self-hosted fonts) that would
-otherwise get re-litigated when Group 3 starts. The release-history table Group 2 split off (see
-`implementation.md` Phase 2) is small and unclaimed — a fine pickup for a short session.
+**Start here:** `implementation-grouping.md`'s status table, to see what's already shipped. Groups 1,
+2 and 3 are done. Group 4 (the agent's Games tab — it now also owns Phase 3 item 5, per-game "Sync
+this game", which needs new agent routes) and Group 6 (Deck) are next and independent of each other;
+Group 4 builds on the primitives Group 3 put in `agent-ui/src/components/ui/`. The release-history
+table Group 2 split off (see `implementation.md` Phase 2) is small and unclaimed — a fine pickup for a
+short session. One open finding from Group 3 is a maintainer decision rather than a task: `--color-faint`
+fails WCAG AA (3.31:1 dark, 3.55:1 light) — see the Group 3 write-up.
 
 **Once every phase ships**, move this whole folder to `docs/logs/` with a date prefix
 (e.g. `logs/2026-MM-DD_checkpoint-ui/`), per the normal task-completion convention.

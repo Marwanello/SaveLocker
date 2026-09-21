@@ -207,6 +207,42 @@ behave in ways that look like bugs.
   `show_real_game_mappings` — used from `cmd_status` and `cmd_up` — reported the entirely normal "no
   game maps a real folder" case as the SSH command having failed, because nothing matched the
   `grep -o` feeding the warning loop. Needs `|| true` after the pipeline.
+- **`sync` used to skip a NEW directory, a deleted file, and a renamed one — fixed 2026-09-20.** It built
+  its file list from plain `git status --porcelain`, which reports an untracked directory as ONE entry
+  (`?? agent-ui/src/components/ui/`); `testenv.sh`'s copy loop only takes regular files, so it printed
+  `skip (gone): agent-ui/src/components/ui/` and the WSL clone built without any file in it (a compile
+  error on the missing imports, or a silently stale tree). The same list also lost every deletion
+  (`Test-Path` filtered it out, and the clone is first checked out at the COMMITTED tree, so the file
+  lived on there) and every staged rename (`R  old -> new` matches no path — `Test-Path` even threw
+  "Illegal characters in path" on the `>`). Now `git status --porcelain=v1 -z --untracked-files=all`:
+  every untracked file is listed on its own, nothing is quoted (`"a b"` was), and a rename is two
+  tokens. Each file is classified by what is on disk — present → `M<TAB>path` (copied), absent →
+  `D<TAB>path` (removed from the clone). Reproduced with the old script and fixed on the same change:
+  a nested new directory, a file with a space in its name, a deleted tracked file and a `git mv`.
+  **Still true:** a file that was copied in while UNTRACKED and is later deleted on the Windows side
+  without ever being committed survives in the clone — `checkout --force` does not remove untracked
+  files and `git status` no longer mentions it (four files — `Toast.tsx` and `toast.ts` under both
+  `agent-ui/src` and `web/src` — sat untracked in the clone on 2026-09-20 while existing in no tree and no
+  commit on any branch). `rm` it in the clone by hand; a blanket `git clean` was not added because
+  nothing proves the clone holds nothing un-ignored that it needs.
+- **`conflict -Wsl` on its own seeds no conflict.** It creates the game and pushes once from WSL — the
+  rig prints "only seeding WSL" — and by then the game has a head, so a following `-Windows -Wsl` puts
+  the divergence on the wrong machine. Recovering takes a full `clean` and a rebuild. Start with
+  `conflict -Windows -Wsl` on a clean rig whenever the agent under test is the WSL one: an agent only
+  shows the conflicts it is itself a party to (`/api/conflicts` filters on `MachineId`).
+- **The Windows test agent can be mapped to REAL save folders.** After a run against a console that
+  already held games, `up` printed `the test agent maps 'Cyberpunk 2077' to a real folder` for eight of
+  the maintainer's own games. Anything that syncs the whole fleet from that agent — **Sync all**, the
+  tray's Sync All — is a pull from the throwaway console over real saves. Click through on the WSL agent
+  (its games have no local folder, so nothing can be touched) or on a rig that has been `clean`ed first.
+- **The test console container cannot reach a server bound to the host's loopback, and
+  `host.docker.internal` has an IPv6 address it cannot route.** A stub SteamGridDB for the console
+  (`tests/sgdb-stub.py`, via `-ConsoleEnv`) therefore listens on `0.0.0.0` and is addressed by that
+  name. Docker Desktop lists both `192.168.65.254` and an `fdc4:…` address for it; a burst of parallel
+  fetches occasionally tries the IPv6 one first and logs `Network is unreachable` (measured: 2 of 10
+  picker previews on one load, 0 of 15 on three re-fetches). Harmless, and the picker shows a clickable
+  "no preview" tile — but it is not a product bug, so do not chase it there. Port 5217 for the manual
+  stub: 5216 is the security suite's own and it refuses to start if it is taken.
 
 ## Windows ACLs
 - **`SetAccessRuleProtection(isProtected: true, preserveInheritance: true)` does not let you then
@@ -333,6 +369,31 @@ behave in ways that look like bugs.
   endpoint needing no key at all, this one against a response nobody re-fetched. Symptom either way:
   a typo silently replaces a working key. **Art fetches keep their cacheable URLs on purpose** — a
   cached image is the point there.
+- **Never draw a big image small — ask the server for it at the size you draw.** A 600×900 cover in a
+  38 px tile is a ~16× shrink, and a browser does that with a cheap filter that reads only a few source
+  pixels: the result is jagged, shimmering diagonals and broken text (reproduced with a synthetic cover
+  of 1 px lines beside a Lanczos-resampled copy — the copy was clean, the original was not). No CSS
+  fixes it. `web/src/art.ts` builds `?w=` URLs and a `srcSet`; the server (`ArtThumbnails`) resamples
+  once, in linear light, and caches it. Widths outside its allowlist are IGNORED and return the
+  full-size original, so a typo in a width silently brings the aliasing back — keep `ART_WIDTHS` and
+  `ArtThumbnails.Widths` identical. Also: `loading="lazy"` images in a tab that is not painted never
+  load, so a check that reads `naturalWidth` from a hidden pane sees 0×0 (paint it first).
+- **ImageSharp's `Image.Identify(...).PixelType.AlphaRepresentation` is not a transparency test.**
+  An RGBA PNG with a single fully clear pixel identified as having no alpha, so the first "prefer an
+  opaque icon" kept the transparent one. Decode and read the pixels (`ArtImages.IsFullyOpaque`); only
+  JPEG can skip that. Caught by the suite's stub serving one 8×8 icon with a clear corner first.
+- **ImageSharp 3.x's format errors are NOT `ImageProcessingException`s.** `UnknownImageFormatException` and
+  `InvalidImageContentException` derive from `ImageFormatException`, a sibling type, so
+  `catch (Exception ex) when (ex is ImageProcessingException ...)` lets the two most common failures on
+  untrusted bytes straight through (measured on 3.1.12 with a probe project: HTML, a valid-magic PNG with
+  junk after it, an .ico). It read as covered for a whole PR: every test image was a real one, and a
+  sniff on the magic number kept most junk away from ImageSharp. Use `ArtImages.IsDecodeFailure`. Also
+  `Image.Identify(new byte[0])` throws `ArgumentNullException`, not a format error, so an empty body needs
+  its own guard. A PNG header plus junk is now refused at `StoreAsync` and the picker preview, not stored.
+- **Regenerating `src/Server/openapi.json` from a scratch server rewrites `servers[0].url` to that
+  server's own address.** The committed snapshot says `http://localhost:5179/`; restore that line or
+  the diff carries an unrelated one-line change (and `gen:api` output shifts with it). Everything else
+  in a regenerated snapshot should be additions for the routes you added — read the diff.
 
 ## Hosting / network
 - **Container: `/data` ownership.** The server image runs unprivileged (uid 1654, or
@@ -453,6 +514,48 @@ behave in ways that look like bugs.
   dominates and write windows never overlap. The discriminating shape is a long-lived process
   holding stale in-memory state vs. a short-lived one; order by waiting on observable state, not
   by hoping for a race.
+
+## Agent UI (`agent-ui/`)
+- **It has no Tailwind, so `tokens.css` is a hand-kept COPY of `web/src/index.css`'s `@theme` block.**
+  Change a colour in one and change it in the other in the same commit; the names are identical so the
+  two files can be diffed line for line. Hover / active / focus-visible cannot be inline styles, so the
+  primitives in `components/ui/` carry `sl-` classes defined in `ui.css` — a new primitive needs its CSS
+  there, and the states are not visible in a build, only in a browser.
+- **Dark is the base and light is `data-theme="light"` only**, for the same reason as the console: the
+  views not yet migrated (Add games, Settings, Conflicts, the plugin cards) hardcode dark hex colours.
+  Group 5 flips it once nothing hardcoded is left.
+- **`--color-faint` is not readable text.** It measures 3.31:1 on the dark panel and 3.55:1 on the light
+  one — the plan's own values, so not something to "fix" locally, and it fails WCAG AA for the 10–12px
+  text it is used on. Use it for eyebrow labels and decoration; anything that carries content (a hero
+  detail line, an empty state, a timestamp) uses `--color-dim`. Measure in a browser rather than by eye:
+  resolve each element's colours through a canvas (it turns `color-mix()` into RGB), composite backgrounds
+  up the tree, and switch transitions off first, exactly as for the console.
+- **A page that scrolls inside the fixed-height shell needs `.sl-page`, not a bare `overflow-y: auto`.**
+  A bounded flex column shrinks its children instead of overflowing; `.sl-page > * { flex-shrink: 0 }` is
+  the fix (same trap as the console's `.page-scroll`).
+- **Progress must be read through `useActivity.ts`, not a fresh `api.activity()` poll.** The store keeps the
+  previous object for whichever slice did not change and components subscribe to one slice
+  (`useActivityBusy` is a boolean), so a byte tick re-renders the header's progress and nothing else.
+  Measured 2026-09-20 over four ticks: 16 DOM mutations in the progress area, 0 in the page and the Sync
+  all button. A second poller in a component would bring the re-renders back.
+- **A callback that runs after a long `await` must not read state from the render that created it.**
+  `handleSynced` used `view` directly and so could never see that the user had left for Conflicts during a
+  sync; it reads a ref now. Any new "after the request finishes, decide based on where the user is now"
+  logic wants the same.
+- **`refreshActivity()` invalidates the poll already in flight; do not "simplify" that away.** A poll sent
+  before a sync ended still answers "Pushing", and applying it after the header went idle put the busy
+  state back on screen (a disabled "Syncing…" button) until the next tick. Dropping the refresh when a poll
+  is running was the first attempt and only shortened it. It now bumps a generation, discards the stale
+  answer and asks again once the poll settles. Measured against a mock agent that ends the sync while a
+  poll is in flight: 480 ms of stale busy state before, 0 ms after.
+- **Testing `agent-ui` against a mock agent in the Browser pane** (how that was measured; no agent needed):
+  `vite dev` proxies `/api` to :5178, so first confirm nothing real is listening there (with the installed
+  agent running, the proxy would forward to it and **Sync all would be a real sync**), then replace
+  `window.fetch` in the page and answer everything yourself. Three traps: the pane hides itself and
+  `document.hidden` stops `useActivity` polling, so a harness waiting on a poll hangs (pin `document.hidden`
+  to false); swapping a source file under a running dev server for an A/B can leave the browser on the module
+  it already had, so check which one is live (`(await import('/src/x.ts')).fn.toString()`) and restart the
+  server; and a disabled button swallows `.click()` silently, so wait for `!disabled` first.
 
 ## ImGui / Deck UI (`Ui/*`, `savelocker ui`)
 - Drive gamepad nav from **`ButtonDown` events**, edge-triggered and queued — feeding held-button

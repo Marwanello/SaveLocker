@@ -17,7 +17,11 @@
 #                                 -Only is 'all'/'playnite' and -PlaynitePath is configured)
 #   .\tests\testenv.ps1 up        start them (registers on first run); installs/reinstalls the test
 #                                 Decky plugin on the Deck alongside the test daemon, and the
-#                                 Playnite plugin into -PlaynitePath if configured
+#                                 Playnite plugin into -PlaynitePath if configured.
+#                                 -ConsoleEnv KEY=VALUE[,...] adds environment to the console CONTAINER —
+#                                 used to point it at tests/sgdb-stub.py (a stand-in SteamGridDB) so
+#                                 artwork can be tried without a real key; see Build and Run.md →
+#                                 "Testing artwork"
 #   .\tests\testenv.ps1 down      stop them; the installed agent is never touched
 #   .\tests\testenv.ps1 status    what is running, and which build
 #   .\tests\testenv.ps1 test      run the suites
@@ -153,6 +157,10 @@ param(
     [string]$StateRoot = $(if ($env:SAVELOCKER_TEST_ROOT) { $env:SAVELOCKER_TEST_ROOT }
                            else { Join-Path $env:LOCALAPPDATA 'SaveLocker-test' }),
     [int]$ConsolePort = 5080,
+    # Extra environment for the test console CONTAINER, as KEY=VALUE — applied every time `up` (re)starts
+    # it. What it exists for: pointing the console at a stub SteamGridDB (tests/sgdb-stub.py) so
+    # artwork can be exercised without a real API key. See "Testing artwork" in docs/Build and Run.md.
+    [string[]]$ConsoleEnv = @(),
     [int]$WinPort     = 5188,
     # Not 5188: WSL2 publishes Linux listeners onto Windows localhost, so they really do collide.
     [int]$LinuxPort   = 5187,
@@ -932,7 +940,14 @@ function Build-Console {
 function Start-Console {
     Say "console on :$ConsolePort"
     & docker rm -f $container 2>$null | Out-Null
-    & docker run -d --name $container -p "${ConsolePort}:8080" -v "${volume}:/data" $image | Out-Null
+    # host.docker.internal is built in on Docker Desktop and needs this on a plain Linux engine, so a
+    # stub server on this PC is reachable by one name on both.
+    $extra = @('--add-host', 'host.docker.internal:host-gateway')
+    foreach ($kv in $ConsoleEnv) {
+        if ($kv -notmatch '^[A-Za-z_][A-Za-z0-9_]*=') { throw "-ConsoleEnv entries must be KEY=VALUE, got '$kv'" }
+        $extra += @('-e', $kv)
+    }
+    & docker run -d --name $container -p "${ConsolePort}:8080" -v "${volume}:/data" @extra $image | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'docker run failed' }
     for ($i = 0; $i -lt 40; $i++) {
         $s = Test-ConsoleUp
@@ -1253,9 +1268,36 @@ switch ($Command) {
     'sync' {
         # From git status, never a hand-written list: a hardcoded one went stale mid-session once and
         # the clone silently built an older tree than the one under test.
-        $changed = & git -C $root status --porcelain |
-            ForEach-Object { $_.Substring(3).Trim('"') } |
-            Where-Object { $_ -and (Test-Path (Join-Path $root $_)) }
+        #
+        # `-z --untracked-files=all`, both load-bearing (found 2026-09-20):
+        #  * Plain --porcelain reports a NEW directory as ONE entry ("?? agent-ui/src/components/ui/").
+        #    That passed Test-Path (the directory exists), then failed cmd_sync's regular-file check and
+        #    was skipped as "gone" — none of its files reached the clone, which then failed to build on
+        #    the missing imports or, worse, built a stale tree. -uall lists every file.
+        #  * -z: no quoting or escaping (plain output quotes "a b"), and a rename is two tokens — the
+        #    new path, then the old one. Plain output's "old -> new" matched no path at all, so a renamed
+        #    file was dropped and its old name lived on in the clone.
+        $raw = (& git -C $root status --porcelain=v1 -z --untracked-files=all) -join ''
+        $tokens = @($raw -split "`0" | Where-Object { $_ })
+        $paths = New-Object 'System.Collections.Generic.List[string]'
+        for ($i = 0; $i -lt $tokens.Count; $i++) {
+            if ($tokens[$i].Length -lt 4) { continue }
+            $paths.Add($tokens[$i].Substring(3))
+            # A rename/copy carries where it came from as the NEXT token. Take it as a path too: a copy's
+            # source still exists (harmless to copy again), a rename's does not (and must be removed).
+            if ($tokens[$i].Substring(0, 2) -match '[RC]' -and $i + 1 -lt $tokens.Count) { $i++; $paths.Add($tokens[$i]) }
+        }
+        # Classified by what is on disk, not by the status letters: a file that exists is copied over the
+        # clone's checkout; one that does not was deleted (or renamed away) — and because the clone is
+        # first checked out at the COMMITTED tree, a deleted file would otherwise stay there until the
+        # next commit. A directory entry (a submodule) is neither, and is skipped.
+        $lines = New-Object 'System.Collections.Generic.List[string]'
+        $copied = 0; $removed = 0
+        foreach ($p in ($paths | Select-Object -Unique)) {
+            $full = Join-Path $root $p
+            if (Test-Path -LiteralPath $full -PathType Leaf) { $lines.Add("M`t$p"); $copied++ }
+            elseif (-not (Test-Path -LiteralPath $full)) { $lines.Add("D`t$p"); $removed++ }
+        }
         # The branch fetch+checkout (inside Invoke-Wsl's own 'sync' handling) must run even with a
         # clean tree — that's exactly the state right after a commit, and skipping it here is what
         # left the clone stuck on a stale, unrelated commit with no way to reach the current one
@@ -1263,8 +1305,8 @@ switch ($Command) {
         # empty) file so cmd_sync's `read` loop hits EOF from a real redirect rather than whatever
         # this process's own stdin happens to be.
         $list = Join-Path $env:TEMP 'savelocker-testenv-sync.txt'
-        Set-Content -Path $list -Value $changed -Encoding ASCII
-        if ($changed) { Say "syncing $($changed.Count) changed file(s) into the WSL clone" }
+        Set-Content -Path $list -Value $lines -Encoding ASCII
+        if ($lines.Count) { Say "syncing $copied changed and $removed deleted file(s) into the WSL clone" }
         else { Say 'no uncommitted changes — fetching the current branch into the WSL clone' }
         Invoke-Wsl 'sync' $list
         Remove-Item $list -ErrorAction SilentlyContinue

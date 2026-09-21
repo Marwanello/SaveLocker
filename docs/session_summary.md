@@ -1,3 +1,82 @@
+# Session summary — 2026-09-20 — Checkpoint UI Group 3, artwork picker, testenv sync fix, all merged onto `ui-redesign-group-3`
+
+Shipped three unrelated pieces of work in one session, found out why none of the second was visible in the
+test rig (it was on a branch nobody had checked out), merged everything onto one branch, and sized Group 4
+of the Checkpoint UI plan. Standalone: the facts below do not need the rest of the vault.
+
+## What was asked
+
+1. Implement Group 3 of the Checkpoint UI redesign (the agent half of the design system, plus the Overview
+   trim and a primary Sync all on every page).
+2. Artwork, four things: adding a SteamGridDB key when none existed should fetch art for games that lack it;
+   the games list should use square, non-transparent icons instead of box art; explain and fix the aliasing
+   on the box art; and hovering the cover of a selected game should show an edit pen that opens a chooser
+   for cover and icon from SteamGridDB, paginated, five at a time by default.
+3. Fix `tests/testenv.ps1 sync`, which silently skipped files in new untracked directories.
+4. "None of these I can see when building from the test env — why?", then "merge it here".
+5. Create `ui-redesign-group-3` with all of this session's changes, say how big Group 4 is and whether to do
+   it here or in a fresh session, and record that in `docs/progress.md` and `docs/session_summary.md`.
+
+## What was built
+
+- **Group 3** (`2705ce4`, `04bb7f1`): `agent-ui` tokens and `ui.css`, Archivo, six primitives, `StatusHeader`
+  as the strip on every page (Sync all plus live push progress, from one shared `useActivity` store so a
+  progress tick re-renders only the progress area), and a three-stat Overview. Per-game "Sync this game"
+  moved to Group 4 because the agent has no per-game sync route.
+- **Artwork** (`eb53aaa`, `fff1bd8`): saving a key queues a background backfill that fills only missing art
+  and never replaces a hand-picked cover; the list uses the first fully opaque PNG icon; browsers were
+  shrinking 600×900 covers to 38 px with a cheap filter, so the server now serves Lanczos copies on demand
+  (`?w=`, allowlisted widths, cached on disk) with a client `srcSet`; the pen opens an inline picker (no
+  modal, per the plan) with two paged strips of five, previews inlined as `data:` URIs because the console's
+  CSP allows nothing else.
+- **testenv sync** (`199a513`, `f4d2aad`): the file list now comes from `git status --porcelain=v1 -z
+  --untracked-files=all`, each path classified as copy or delete by what is on disk, and `testenv.sh`
+  removes deleted files from the clone. That also fixes deletions and renames, which the old list lost.
+- **Merge** (`0f0868e`) and the branch `ui-redesign-group-3` (53 files, +2,929 / −526 against `main`).
+
+## What was found and fixed
+
+- **Real bug, caught by the new suite:** the icon check trusted ImageSharp's `AlphaRepresentation`, which is
+  unreliable, so a transparent icon was kept. It now decodes and scans pixels (JPEGs are opaque by definition).
+- **Aliasing was real**, not a perception: reproduced in a browser (jagged raw image, clean Lanczos copy).
+- **Keyboard gap:** the picker was far from the pen in tab order and Escape did nothing from the pen. Focus now
+  moves into the picker on open and returns to the pen on close.
+- **Rig artefact, not a product bug:** Docker Desktop's `host.docker.internal` has an unroutable IPv6 address,
+  so a burst of picker previews occasionally logged "Network is unreachable" (2 of 10 once, 0 of 15 after).
+- **`handleSynced` used a stale `view`**, so its guard against popping an overlay over Conflicts never worked
+  mid-sync. Fixed in Group 3.
+- **Why the art was invisible in the rig:** `testenv.ps1` builds the checked-out branch; the art work was on a
+  sibling branch from `main`, and the worktree sat on the sync-fix branch. Merging resolved it.
+
+## Verification
+
+- `run-console-security-tests`: **137/137** on the art branch (was 105) and again on the merged tree.
+- Art loop through `testenv` against the real Docker console with a local SteamGridDB stand-in: backfill of
+  9 of 9 games within a second, opaque icons chosen, thumbnails loaded at the right sizes, picker paged 1–5 to
+  6–10, both themes, real Escape returning focus to the pen.
+- Sync fix: old script reproduced all three failures; new one synced 6 files and removed 2 in the Ubuntu clone.
+- Merged tree: server build, web build, script parse checks all clean.
+
+## Not done
+
+- **Never run against the real SteamGridDB.** The `dimensions`, `mimes`, `nsfw` and `page` parameters follow the
+  official client but have only met the stand-in. If the picker comes up empty with a real key, start there.
+- `agent-ui` was not rebuilt on the merged tree; the C# agent suites, the WebView2 tray window and a real Deck
+  were not run.
+- Known limits: the picker uses the first name match SteamGridDB returns; deleting a game leaves its art folder.
+- Nothing pushed and no PR opened.
+
+## Group 4 — size and recommendation
+
+The agent Games tab (list and grid, per-game page with Sync/Push/Pull, an art proxy, search in Add games) plus
+the per-game sync route it owns. Estimated roughly 20–25 files and 1,400–1,900 changed lines (Group 3 was 21
+files, +917 / −416), four to six of them C#, and it regenerates `agent-ui`'s `api-types.ts`. **Do it in a new
+session on a new branch stacked on `ui-redesign-group-3`**: it is the first agent group to change C# and the UI
+together and needs the agent suites; this branch is already 53 files; and one decision belongs at its start —
+the art proxy must forward `?w=` and prefer icons in list rows, or the aliasing fixed here comes back.
+
+---
+
 # Session summary — 2026-09-16 (cont'd) — Playnite plugin Group 5 shipped, Docker caching fix, dialog-based sync/conflict feedback
 
 Implemented Group 5 of the Playnite plugin plan (Phases 13/14/15/17: status chip, self-update

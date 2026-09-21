@@ -275,6 +275,24 @@ session can judge an edge case, not to reopen the choice.
 - **"Latest" = `Game.HeadVersionId`.** UI label "Latest"; admin action "Set as Latest".
 - **Artwork:** SteamGridDB images are downloaded/cached server-side, not stored as bare URLs
   (offline-safe, survives upstream changes).
+  - **Sizes are made on demand, from the stored original** (`?w=` on `/art/...`, allowlisted widths,
+    cached under `{game}/thumbs/`) — not stored as extra columns or URLs. It works on art that is
+    already cached, needs no migration, and a re-fetched image invalidates its own thumbnails by being
+    newer. Covers go out as JPEG (opaque), icons as PNG.
+  - **The default icon is the first fully opaque PNG among the top few** (falling back to the first that
+    downloads). The console draws it in a square tile, where a cut-out logo on a transparent background
+    reads as a floating glyph. There is no SteamGridDB filter for it, so it is checked by reading pixels.
+  - **The list shows the icon; the cover is only the fallback.** Box art is 2:3 and has to be cropped
+    to fit a square; the grid wall and the game page keep the cover.
+  - **Only missing art is ever fetched automatically.** Saving a key backfills games with no cover or
+    no icon, in the background, one at a time — and so does a pass shortly after every startup, because
+    a key supplied by configuration is never saved in the dashboard and a restart mid-run must lose
+    nothing (what is missing is read back from the database). A cover chosen by hand is never replaced by
+    a default.
+    The explicit *Refresh art* button does replace it — asking for a refresh means asking for the default.
+  - **Picker previews are inlined as `data:` URIs by the server.** The console's CSP allows images from
+    itself and `data:` only (Decisions → console headers) and a browser fetching from SteamGridDB's CDN
+    would also tell it who is browsing. Shrunk first, so a page of five is tens of kilobytes.
 - **Product name: SaveLocker.** Rename complete 2026-07-10 — config dir, mutex, registry key,
   DB path, namespaces, solution/project files. Existing Docker deployments may still have
   `/data/localgamesync.db`; rename or set `Storage__DbPath`.

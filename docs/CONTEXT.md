@@ -1139,6 +1139,79 @@ Linux/cross-OS chain — this session had no agent build; the server, the new su
 `web` build/lint and a real container were all run. Release notes for the next release must cover:
 sessions (a one-time re-sign-in is NOT needed — the old password is migrated on first load), the
 throttle (5 wrong passwords → 15 min), the non-root container (and `SAVELOCKER_UID`), and the CSP.
+
+**Checkpoint UI redesign, Group 3 shipped (2026-09-20, branch `claude/group-3-ui-redesign-c16953`,
+`2705ce4`, local — no PR opened).** The agent half of the design system, `agent-ui` only — no C#, no wire
+change. `tokens.css` (a hand-kept copy of `web`'s tokens; dark base, light opt-in) + `ui.css` + Archivo +
+six primitives in `components/ui/`; **`StatusHeader` is now the strip on every agent page: a primary Sync
+all and live push progress**, fed by one shared `useActivity` store so a progress tick re-renders only the
+progress area (measured: 16 DOM mutations there, 0 in the page and at the button); the Overview is three
+stats, one banner, Next up and Recent (which expands to the full log); the launch-setup and plugin cards
+moved to Settings. **Phase 3 item 5 (per-game "Sync this game") moved to Group 4** — it needs a game page and
+a per-game agent route, neither of which exists. One inherited bug fixed on the way: `handleSynced` used a
+stale `view`, so the "don't pop the overlay over Conflicts" guard never worked mid-sync. Verified against a
+real seeded conflict on the WSL test agent (real Sync all → busy → toast → pop-up), keyboard focus and both
+themes; write-up, deliberate departures from the prototype and what was *not* verified (the WebView2 tray
+window, a real Deck) are in `tasks/checkpoint-ui/implementation-grouping.md` → Group 3.
+<br>**One finding for the maintainer, not fixed:** the plan's `--color-faint` is 3.31:1 (dark) / 3.55:1
+(light) — below WCAG AA for the small text it is used on, in the console too. Agent content text uses
+`--color-dim` instead; changing `--faint` itself means `web`, `agent-ui` and `Ui/Theme.cs` together.
+<br>**Two rig traps found, in [[Gotchas]]:** `testenv.ps1 sync` silently skipped a NEW directory unless its
+files were staged (**fixed the same day**, branch `testenv-sync-untracked-files` — it also lost deletions
+and renames), and `conflict -Wsl` alone seeds no conflict. Also: a Windows test
+agent left over from an earlier session was mapped to eight of the maintainer's REAL save folders — `clean`
+removed it, and Sync all was only ever pressed on the WSL agent.
+
+**Artwork: backfill on key save, opaque icons in the list, thumbnails, and a cover/icon picker
+(2026-09-20, branch `steamgriddb-art-picker`, no task file — asked directly).** Four things, one session:
+saving a SteamGridDB key now fills in the games that have no art, in the background, and never touches a
+cover chosen by hand; the games list shows the square **icon** (the default is the first fully *opaque*
+PNG) instead of cropped box art; the aliasing in the list/grid was real — a browser shrinking 600×900 to
+38 px — and is fixed by serving right-sized Lanczos copies (`?w=`, on demand, cached, no migration); and
+a pen over the game card's cover opens an inline picker of five SteamGridDB covers and five icons with
+pagers ([[Decisions]] → *Artwork*, [[API Reference]], [[Gotchas]] → *Web console*).
+<br>**Verified:** `run-console-security-tests` **137/137** (was 105) and, through `testenv` against the real
+Docker console, the whole loop in a browser (both themes, keyboard, thumbnails at the right sizes) — see
+`progress.md`. To repeat it: [[Build and Run]] → *Testing artwork* (`testenv up -ConsoleEnv …` +
+`tests/sgdb-stub.py`). **Not verified: against the real SteamGridDB** — no key was available; the
+`dimensions`/`mimes`/`nsfw`/`page` parameters follow the official client but have only met the stub.
+<br>**Release notes for the next release must cover:** adding a key now fetches art for existing games;
+the list shows icons; existing art is re-served at proper sizes (no action needed); the pen/picker; and
+that *Refresh art* replaces a hand-picked cover. `Release Notes Pending.md` is stale — draft in
+`web/src/releases/` at tag time.
+
+**Branch note (2026-09-20, end of session):** the Group 3 work, the artwork work and the testenv sync fix are
+all on `ui-redesign-group-3` (merge `0f0868e`, local, no PR). **Next action:** Group 4 (agent Games tab) in a
+fresh session on a branch stacked on this one — sizing and the reasons are in `progress.md` and
+`session_summary.md`.
+
+**PR #45 reviewed, every finding fixed and pushed onto it (2026-09-21, branch `ui-redesign-group-3`).**
+A review of the PR (Group 3 + artwork + the `testenv sync` fix) found no blockers and about a dozen smaller
+issues; all are fixed, plus two suggestions the maintainer asked for. **Server art:** an image declaring more
+than 40M pixels is refused in the one fetch chokepoint (`TryFetchAsync`) — before, a 144-megapixel PNG of
+~20 KB was inlined as a picker preview; picker pages are cut under the listing's lock; `page` is bounded;
+art files are replaced by temp-file-and-move; the thumbnail handler no longer leaks a temp file on an aborted
+request or serves a stale thumbnail. **A latent bug found while fixing, not by the review:** ImageSharp 3.x's
+`UnknownImageFormatException`/`InvalidImageContentException` are not `ImageProcessingException`s, so the PR's
+catch filters never caught them (a valid-magic PNG with junk would 500 a picker page); fixed in `ArtImages`,
+and junk is now refused at store and preview ([[Gotchas]] → *Web console*). **Startup backfill:**
+`ArtBackfillService` also runs once after startup (`Art:BackfillOnStartup`, `Art:BackfillStartupDelaySeconds`),
+so a key from `SteamGridDb__ApiKey` backfills and a restart mid-run loses nothing. **CI:** a new
+`console-security-tests` job runs the suite on `windows-latest`; its SQLite checks now prefer a native Python
+over WSL. **agent-ui:** a finished Sync all no longer flashes "Pushing…" (a poll in flight when the sync ends
+answered with the old state — measured 480 ms → 0 ms), a failure toast stays until dismissed, the "newer"
+pill no longer names the removed Inter font, the Overview conflict banner no longer repeats the header.
+<br>**Verified:** `run-console-security-tests` **149/149**, 0 skipped (137 before). Against the build without the
+fixes the new oversized/page/startup checks failed (5 failures, confirmed); a build with only the oversize
+guard failed 9 — which is how the filter bug surfaced. `agent-ui` `tsc -b && vite build` clean, `oxlint` shows
+the same two pre-existing warnings; the timing fix was A/B-tested in the Browser pane against a mock agent,
+with the old module confirmed live for the control ([[Gotchas]] → *Agent UI*). **Not verified:** the new CI job
+on a real GitHub runner (it runs on the PR), the real SteamGridDB, the WebView2 tray window, a Deck.
+<br>**Left alone on purpose:** `CONTEXT.md` itself is now ~1,350 lines and a single Read truncates at ~650, so the
+session-start read takes several calls. Moving older per-session entries to `logs/` (as its own header says)
+would fix that, but it is a large editorial change to the file every session depends on and belongs in its own
+change, not in this PR.
+
 ---
 
 ## Where things stand

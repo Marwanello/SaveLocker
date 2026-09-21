@@ -26,9 +26,17 @@
 #   SEC-08  artwork fetch         a hostile image URL (foreign host, redirect off-list, credentials in
 #                                 the URL, oversized, not-an-image, ".html" path) never puts anything
 #                                 attacker-shaped under /art. Uses a stub SteamGridDB it hosts itself.
+#   ART-01  art, not security     (same stub, same phase) a key added AFTER games exist fills in the games
+#                                 with no art in the background and leaves a hand-picked cover alone;
+#                                 the picker pages five at a time across the API's own page boundary and
+#                                 costs no extra requests per page; previews are inline and shrunk; a
+#                                 chosen image goes through the same hostile-URL rules; the default icon
+#                                 is the first OPAQUE one; ?w= thumbnails are right-sized, cached,
+#                                 allowlisted, never upscaled, and go stale when the cover is replaced.
 #
-# Checks that read or edit the SQLite file go through WSL python3 (there is no sqlite3 on the Windows
-# box — same approach as run-server-bugbounty-tests.ps1). Without WSL those checks print SKIP.
+# Checks that read or edit the SQLite file go through python's sqlite3 module (there is no sqlite3 CLI on
+# the Windows box): a native Python 3 if there is one, else WSL's (as run-server-bugbounty-tests.ps1 does).
+# With neither, those checks print SKIP. CI runs this suite on windows-latest, which has the first.
 #
 # Owns :5215 (server) and :5216 (stub) and .verify-console-security. Usage:
 #   .\tests\run-console-security-tests.ps1 [-Port 5215] [-StubPort 5216] [-WslDistro Ubuntu]
@@ -100,7 +108,7 @@ function Start-Phase($name, [hashtable]$extraEnv = @{}) {
     $set = @{
         ASPNETCORE_URLS = $url; Storage__DbPath = (Join-Path $script:state "savelocker.db")
         Storage__ArchiveRoot = (Join-Path $script:state "archives"); Backup__Enabled = "false"
-        Logging__EventLog__LogLevel__Default = "None"
+        Logging__EventLog__LogLevel__Default = "None"; Art__BackfillOnStartup = "false"
     }
     foreach ($k in $extraEnv.Keys) { $set[$k] = $extraEnv[$k] }
     foreach ($k in $set.Keys) { Set-Item -Path "Env:$k" -Value $set[$k] }
@@ -124,7 +132,16 @@ function Cleanup {
     if ($script:stubJob) { Stop-Job $script:stubJob -ErrorAction SilentlyContinue; Remove-Job $script:stubJob -Force -ErrorAction SilentlyContinue }
 }
 
-# ---------------------------------------------------------------- SQLite via WSL python (server must be STOPPED)
+# ---------------------------------------------------------------- SQLite via python (server must be STOPPED)
+# A native Python 3 (its standard library carries sqlite3) is preferred; WSL's is the fallback for a
+# Windows box that has only that. Native is what CI has: a hosted Windows runner has Python and no WSL distro.
+$script:pyNative = $null
+foreach ($cmd in @(Get-Command python, python3 -CommandType Application -All -ErrorAction SilentlyContinue)) {
+    # The WindowsApps "python.exe" is a Store launcher, not an interpreter, whether or not Python is installed.
+    if ($cmd.Source -like "*\WindowsApps\*") { continue }
+    $ver = try { (& $cmd.Source --version 2>&1) -join "" } catch { "" }
+    if ($ver -match "^Python 3") { $script:pyNative = $cmd.Source; break }
+}
 function ConvertTo-WslPath($p) { $d = $p.Substring(0, 1).ToLower(); return "/mnt/$d" + ($p.Substring(2) -replace '\\', '/') }
 function Invoke-Sqlite($sql, [switch]$Write) {
     $py = Join-Path $scratch "query.py"; $sqlFile = Join-Path $scratch "query.sql"
@@ -143,12 +160,17 @@ else:
 '@ | Set-Content -Path $py -Encoding utf8
     Set-Content -Path $sqlFile -Value $sql -Encoding utf8
     $db = Join-Path $script:state "savelocker.db"
-    return (& wsl -d $WslDistro -- python3 (ConvertTo-WslPath $py) (ConvertTo-WslPath $db) (ConvertTo-WslPath $sqlFile) $(if ($Write) { "rw" } else { "ro" }) 2>&1)
+    $mode = if ($Write) { "rw" } else { "ro" }
+    if ($script:pyNative) { return (& $script:pyNative $py $db $sqlFile $mode 2>&1) }
+    return (& wsl -d $WslDistro -- python3 (ConvertTo-WslPath $py) (ConvertTo-WslPath $db) (ConvertTo-WslPath $sqlFile) $mode 2>&1)
 }
 $wslOk = $false
 # (No inline python here: PowerShell 5.1 strips the inner quotes before bash sees them.)
-try { $wslOk = ((& wsl -d $WslDistro -- python3 --version 2>&1) -join "") -match "^Python 3" } catch { }
-if (-not $wslOk) { Write-Host "NOTE: WSL python3 ($WslDistro) is not usable; database-level checks will be skipped." }
+if (-not $script:pyNative) {
+    try { $wslOk = ((& wsl -d $WslDistro -- python3 --version 2>&1) -join "") -match "^Python 3" } catch { }
+}
+$sqliteOk = [bool]$script:pyNative -or $wslOk
+if (-not $sqliteOk) { Write-Host "NOTE: neither a native Python 3 nor WSL python3 ($WslDistro) is usable; database-level checks will be skipped." }
 
 function Sha256Hex($s) {
     $sha = [System.Security.Cryptography.SHA256]::Create()
@@ -301,7 +323,7 @@ Check "default: ... and works with it" ((Http POST "/api/machines/register" @{ n
 # ------------------------------------------------------------------ SEC-01/02: database-level
 Stop-Phase
 Write-Host ""; Write-Host "-- SEC-01/02: what is actually stored"
-if ($wslOk) {
+if ($sqliteOk) {
     $hash = ("" + (Invoke-Sqlite "SELECT Value FROM Settings WHERE [Key]='Admin:PasswordHash'")).Trim()
     Check "SEC-02: a newly set password is stored as v2 at 600,000 iterations" ($hash -like "v2:600000:*")
     Check "SEC-01: the raw session token is NOT in the database" ((("" + (Invoke-Sqlite "SELECT COUNT(*) FROM AdminSessions WHERE TokenHash='$tokA'")).Trim()) -eq "0")
@@ -320,7 +342,7 @@ if ($wslOk) {
     $upgraded = ("" + (Invoke-Sqlite "SELECT Value FROM Settings WHERE [Key]='Admin:PasswordHash'")).Trim()
     Check "SEC-02: the successful sign-in re-wrote the hash as v2 @ 600,000" ($upgraded -like "v2:600000:*")
     Check "SEC-01: the expired session row was swept by that sign-in" ((("" + (Invoke-Sqlite "SELECT COUNT(*) FROM AdminSessions WHERE ExpiresAt < '2001-01-01'")).Trim()) -eq "0")
-} else { Skip "database-level checks need WSL python3 (-WslDistro $WslDistro)" }
+} else { Skip "database-level checks need Python 3 (native, or WSL via -WslDistro $WslDistro)" }
 
 # A hash that lives in CONFIG (env) rather than the database cannot be written back; it must still verify.
 $cfgHash = New-V1Hash "config-pw"
@@ -407,6 +429,33 @@ if (-not $canBind) {
     $stubScript = {
         param($port, $log)
         $png = [Convert]::FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==")
+        # Real images for the picker/thumbnail checks. Saved as 32-bit ARGB, so even the "opaque" icon is an
+        # RGBA PNG - which is exactly what makes a header-only transparency check wrong.
+        Add-Type -AssemblyName System.Drawing
+        function NewPng([int]$w, [int]$h, [bool]$clearCorner) {
+            $bmp = New-Object System.Drawing.Bitmap($w, $h, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $rect = New-Object System.Drawing.Rectangle(0, 0, $w, $h)
+            $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush($rect, [System.Drawing.Color]::DarkSlateBlue, [System.Drawing.Color]::OrangeRed, 60.0)
+            $g.FillRectangle($brush, $rect)
+            $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::White, 1)
+            for ($i = 0; $i -lt ($w + $h); $i += 7) { $g.DrawLine($pen, $i, 0, 0, $i) }
+            $g.Dispose()
+            if ($clearCorner) { $bmp.SetPixel(0, 0, [System.Drawing.Color]::FromArgb(0, 0, 0, 0)) }
+            $ms = New-Object System.IO.MemoryStream; $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
+            return , $ms.ToArray()
+        }
+        $bigPng = NewPng 400 600 $false
+        $iconClear = NewPng 8 8 $true
+        $iconSolid = NewPng 8 8 $false
+        # 12000x12000 = 144 million pixels, but one bit each and all clear: a few KB of PNG. The shape a
+        # decode-size cap exists for - it is small enough to be inlined, and enormous once decoded.
+        $bombBmp = New-Object System.Drawing.Bitmap(12000, 12000, [System.Drawing.Imaging.PixelFormat]::Format1bppIndexed)
+        $bombMs = New-Object System.IO.MemoryStream; $bombBmp.Save($bombMs, [System.Drawing.Imaging.ImageFormat]::Png); $bombBmp.Dispose()
+        $bombPng = $bombMs.ToArray()
+        # The right magic number and nothing behind it; and a 200 with no body at all.
+        $corruptPng = [byte[]](@(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A) + (1..40))
+        $emptyBody = [byte[]]@()
         $l = [System.Net.HttpListener]::new()
         $l.Prefixes.Add("http://127.0.0.1:$port/"); $l.Prefixes.Add("http://localhost:$port/")
         $l.Start()
@@ -424,8 +473,28 @@ if (-not $canBind) {
             try {
                 if ($path -eq "/ping") { Send $ctx 200 ([Text.Encoding]::UTF8.GetBytes("pong")) "text/plain" }
                 elseif ($path -like "/api/v2/search/autocomplete/*") {
-                    $id = if ($path -like "*Good*") { 1 } else { 2 }
+                    $id = if ($path -like "*Good*") { 1 } elseif ($path -like "*Paged*") { 3 } elseif ($path -like "*Opaque*") { 4 } elseif ($path -like "*Bomb*") { 5 } elseif ($path -like "*Corrupt*") { 6 } else { 2 }
                     Json $ctx @{ success = $true; data = @(@{ id = $id }) }
+                }
+                # Picker fixtures. Game 3 has 12 covers spread over two API pages of 7 and 5 - deliberately not
+                # the console's five-per-page, so a slice that straddles the API boundary is exercised. Game 4
+                # has a real 400x600 cover and two icons, the FIRST of them transparent. Game 5's one cover is
+                # the 144-megapixel image; game 6's are an image that is only a header, and an empty body.
+                elseif ($path -match "^/api/v2/(grids|heroes|logos|icons)/game/([3456])$") {
+                    $kind = $Matches[1]; $gid = [int]$Matches[2]
+                    $items = @(); $total = 0
+                    if ($gid -eq 3 -and $kind -eq "grids") {
+                        $apiPage = [int]("0" + $ctx.Request.QueryString["page"])
+                        $range = if ($apiPage -eq 0) { 1..7 } elseif ($apiPage -eq 1) { 8..12 } else { @() }
+                        $items = @($range | ForEach-Object { @{ id = $_; url = "$base/img/good.png?n=$_"; thumb = "$base/img/big.png"; width = 600; height = 900; author = @{ name = "artist$_" } } })
+                        $total = 12
+                    }
+                    elseif ($gid -eq 4 -and $kind -eq "grids") { $items = @(@{ id = 40; url = "$base/img/big.png"; thumb = "$base/img/big.png" }); $total = 1 }
+                    elseif ($gid -eq 5 -and $kind -eq "grids") { $items = @(@{ id = 50; url = "$base/img/bomb.png"; thumb = "$base/img/bomb.png" }); $total = 1 }
+                    elseif ($gid -eq 6 -and $kind -eq "grids") { $items = @(@{ id = 60; url = "$base/img/corrupt.png"; thumb = "$base/img/corrupt.png" }, @{ id = 61; url = "$base/img/empty.png"; thumb = "$base/img/empty.png" }); $total = 2 }
+                    elseif ($gid -eq 6 -and $kind -eq "icons") { $items = @(@{ id = 62; url = "$base/img/corrupt.png" }); $total = 1 }
+                    elseif ($gid -eq 4 -and $kind -eq "icons") { $items = @(@{ id = 41; url = "$base/img/icon-clear.png" }, @{ id = 42; url = "$base/img/icon-solid.png" }); $total = 2 }
+                    Json $ctx @{ success = $true; total = $total; data = $items }
                 }
                 elseif ($path -match "^/api/v2/(grids|heroes|logos|icons)/game/(\d+)") {
                     $kind = $Matches[1]; $gid = [int]$Matches[2]
@@ -448,6 +517,12 @@ if (-not $canBind) {
                 }
                 elseif ($path -eq "/redir") { $ctx.Response.StatusCode = 302; $ctx.Response.RedirectLocation = "http://localhost:$port/img/good.png"; $ctx.Response.Close() }
                 elseif ($path -eq "/img/good.png" -or $path -eq "/img/pngpage.html") { Send $ctx 200 $png "application/octet-stream" }
+                elseif ($path -eq "/img/big.png") { Send $ctx 200 $bigPng "image/png" }
+                elseif ($path -eq "/img/bomb.png") { Send $ctx 200 $bombPng "image/png" }
+                elseif ($path -eq "/img/corrupt.png") { Send $ctx 200 $corruptPng "image/png" }
+                elseif ($path -eq "/img/empty.png") { Send $ctx 200 $emptyBody "image/png" }
+                elseif ($path -eq "/img/icon-clear.png") { Send $ctx 200 $iconClear "image/png" }
+                elseif ($path -eq "/img/icon-solid.png") { Send $ctx 200 $iconSolid "image/png" }
                 elseif ($path -eq "/img/fake.png") { Send $ctx 200 ([Text.Encoding]::UTF8.GetBytes("<html><script>alert(1)</script></html>")) "image/png" }
                 elseif ($path -eq "/img/huge-declared.png") {
                     $ctx.Response.StatusCode = 200; $ctx.Response.ContentLength64 = 30MB
@@ -504,6 +579,173 @@ if (-not $canBind) {
         $served = Http GET ($good.gridUrl -replace '\?.*$', '')
         Check "art: served with nosniff and a sandboxing CSP" `
             ($served.Status -eq 200 -and ("" + $served.Headers["X-Content-Type-Options"]) -eq "nosniff" -and ("" + $served.Headers["Content-Security-Policy"]) -match "sandbox")
+        Stop-Phase
+
+        # ------------------------------------------------------------------------------------
+        # Not security checks, but they need the stub above and the same hostile-URL rules apply to
+        # everything the picker downloads: a key added after games exist, the cover/icon picker,
+        # the opaque-icon preference, and the right-sized thumbnails (the anti-aliasing fix).
+        Write-Host ""; Write-Host "-- art: a key added later, the picker, an opaque icon, thumbnails"
+        Add-Type -AssemblyName System.Drawing
+        function ImageSize([byte[]]$bytes) {
+            $ms = New-Object System.IO.MemoryStream(, $bytes); $img = [System.Drawing.Image]::FromStream($ms)
+            $s = "$($img.Width)x$($img.Height)"; $img.Dispose(); return $s
+        }
+        function GetArt($path) {
+            $r = Invoke-WebRequest "$url$path" -UseBasicParsing -TimeoutSec 30
+            return [pscustomobject]@{ Bytes = $r.RawContentStream.ToArray(); Type = ("" + $r.Headers["Content-Type"]); Status = [int]$r.StatusCode }
+        }
+        function StubCount($line) { @(Get-Content $stubLog | Where-Object { $_ -eq $line }).Count }
+        function GameNamed($name) { (Http GET "/api/overview").Json | ForEach-Object { $_.game } | Where-Object { $_.name -eq $name } }
+
+        $artRoot2 = Join-Path $scratch "art2"
+        # NO key at start: the first games are created with nothing to fetch art with.
+        Start-Phase "art2" @{
+            Art__ApiBaseUrl = "http://127.0.0.1:$StubPort/api/v2/"; Art__AllowedImageHosts = "127.0.0.1"
+            Art__AllowInsecureImageUrls = "true"; Storage__ArtRoot = $artRoot2
+        }
+        Http POST "/api/games" @{ name = "SEC Backfill Good" } | Out-Null
+        Http POST "/api/games" @{ name = "SEC Keep Good" } | Out-Null
+        $none = GameNamed "SEC Backfill Good"; $keep0 = GameNamed "SEC Keep Good"
+        Check "backfill: with no key a new game has no art" ($null -eq $none.gridUrl -and $null -eq $none.iconUrl)
+
+        # A cover chosen by hand BEFORE the key exists (choosing needs no key - only listing does).
+        $pick0 = Http PUT "/api/games/$($keep0.id)/art/grid" @{ url = "http://127.0.0.1:$StubPort/img/good.png?n=99" }
+        $keepGrid = "" + $pick0.Json.gridUrl
+        Check "backfill: setup - a hand-picked cover is stored" ($pick0.Status -eq 200 -and $keepGrid -like "/art/*/grid.png*")
+
+        $saved = Http POST "/api/settings/steamgriddb-key" @{ apiKey = "test-key" }
+        Check "backfill: saving a key answers at once, and says art is being fetched in the background" `
+            ($saved.Status -eq 200 -and $saved.Json.gamesQueued -eq 2 -and $saved.Json.message -match "background")
+
+        $filled = $null
+        foreach ($i in 1..60) { Start-Sleep -Milliseconds 500; $filled = GameNamed "SEC Backfill Good"; if ($filled.gridUrl -and $filled.iconUrl) { break } }
+        Check "backfill: the game with no art gets a cover and an icon without anyone asking" `
+            ($filled.gridUrl -like "/art/*/grid.png*" -and $filled.iconUrl -like "/art/*/icon.png*")
+        $keep1 = GameNamed "SEC Keep Good"
+        Check "backfill: a game that lacked only its icon gets the icon ..." ($keep1.iconUrl -like "/art/*/icon.png*")
+        Check "backfill: ... and its hand-picked cover is left exactly as it was (not replaced by the default)" ($keep1.gridUrl -eq $keepGrid)
+        $again = Http POST "/api/settings/steamgriddb-key" @{ apiKey = "test-key" }
+        Check "backfill: saving a key when nothing is missing queues nothing" `
+            ($again.Status -eq 200 -and $again.Json.gamesQueued -eq 0 -and $again.Json.message -notmatch "background")
+
+        # ---- the picker: five per page, over an API that pages seven-then-five
+        Http POST "/api/games" @{ name = "SEC Paged" } | Out-Null
+        $paged = GameNamed "SEC Paged"
+        $pgid = ([guid]$paged.id).ToString("N")
+        $before = StubCount "GET 127.0.0.1 /api/v2/grids/game/3"
+        $p0 = Http GET "/api/games/$($paged.id)/art/options?kind=grid&page=0"
+        $p1 = Http GET "/api/games/$($paged.id)/art/options?kind=grid&page=1"
+        $p2 = Http GET "/api/games/$($paged.id)/art/options?kind=grid&page=2"
+        $p3 = Http GET "/api/games/$($paged.id)/art/options?kind=grid&page=3"
+        function OptionNumbers($r) { (@($r.Json.options | ForEach-Object { [int](($_.url -split 'n=')[1]) })) -join "," }
+        Check "picker: page 0 is five options, and there is more" ((OptionNumbers $p0) -eq "1,2,3,4,5" -and $p0.Json.hasMore -eq $true)
+        Check "picker: page 1 straddles two API pages and is the NEXT five" ((OptionNumbers $p1) -eq "6,7,8,9,10" -and $p1.Json.hasMore -eq $true)
+        Check "picker: the last page is short and says there is no more" ((OptionNumbers $p2) -eq "11,12" -and $p2.Json.hasMore -eq $false)
+        Check "picker: past the end is empty, not an error" ($p3.Status -eq 200 -and @($p3.Json.options).Count -eq 0 -and $p3.Json.hasMore -eq $false)
+        # The ICON listing for this game has not been fetched yet (the cover one has), so a request would show.
+        $beforeFar = StubCount "GET 127.0.0.1 /api/v2/icons/game/3"
+        $far = Http GET "/api/games/$($paged.id)/art/options?kind=icon&page=2000000000"
+        Check "picker: an absurd page number is an empty page - no arithmetic overflow, and no request to SteamGridDB" `
+            ($far.Status -eq 200 -and @($far.Json.options).Count -eq 0 -and $far.Json.hasMore -eq $false -and (StubCount "GET 127.0.0.1 /api/v2/icons/game/3") -eq $beforeFar)
+        Check "picker: width, height and author are passed through" `
+            ($p0.Json.options[0].width -eq 600 -and $p0.Json.options[0].height -eq 900 -and $p0.Json.options[0].author -eq "artist1")
+        Check "picker: four pages cost two SteamGridDB requests (the listing is kept, not re-fetched per page)" `
+            ((StubCount "GET 127.0.0.1 /api/v2/grids/game/3") - $before -eq 2)
+
+        $prev = "" + $p0.Json.options[0].preview
+        Check "picker: each option carries an inline data: preview (the console's CSP allows nothing else)" ($prev -match "^data:image/(png|jpeg);base64,")
+        $prevBytes = [Convert]::FromBase64String(($prev -replace '^data:[^,]+,', ''))
+        Check "picker: ... shrunk to its tile (a 400x600 thumb becomes 200x300), not sent whole" ((ImageSize $prevBytes) -eq "200x300")
+        Check "picker: ... and an opaque cover preview is a JPEG, not a fat PNG" ($prev -match "^data:image/jpeg")
+        Check "picker: an unknown art kind is refused" ((Http GET "/api/games/$($paged.id)/art/options?kind=hero").Status -eq 400)
+        Check "picker: an unknown game is refused" ((Http GET "/api/games/$([guid]::NewGuid())/art/options?kind=grid").Status -eq 400)
+
+        $applied = Http PUT "/api/games/$($paged.id)/art/grid" @{ url = $p1.Json.options[2].url }
+        Check "picker: choosing an option stores it as the cover" `
+            ($applied.Status -eq 200 -and $applied.Json.gridUrl -like "/art/*/grid.png*" -and $applied.Json.gridUrl -ne $paged.gridUrl)
+        $heroBefore = StubCount "GET localhost /img/hero.jpg"
+        $evil = Http PUT "/api/games/$($paged.id)/art/grid" @{ url = "http://localhost:$StubPort/img/hero.jpg" }
+        Check "picker: a URL on a host that is not allowlisted is refused, and never contacted" `
+            ($evil.Status -eq 400 -and (StubCount "GET localhost /img/hero.jpg") -eq $heroBefore)
+        Check "picker: a URL carrying credentials is refused" `
+            ((Http PUT "/api/games/$($paged.id)/art/grid" @{ url = "http://user:pw@127.0.0.1:$StubPort/img/good.png" }).Status -eq 400)
+        Check "picker: only 'grid' and 'icon' can be chosen - not hero or logo" `
+            ((Http PUT "/api/games/$($paged.id)/art/hero" @{ url = "http://127.0.0.1:$StubPort/img/good.png" }).Status -eq 400)
+        Check "picker: the refused attempts changed nothing" ((GameNamed "SEC Paged").gridUrl -eq $applied.Json.gridUrl)
+
+        # ---- an image that declares far more pixels than it has bytes (144 MP in a few KB) is refused everywhere
+        Http POST "/api/games" @{ name = "SEC Bomb" } | Out-Null
+        $bomb = GameNamed "SEC Bomb"
+        $bo = Http GET "/api/games/$($bomb.id)/art/options?kind=grid&page=0"
+        Check "oversized: the listing still answers, and offers the option ..." ($bo.Status -eq 200 -and @($bo.Json.options).Count -eq 1)
+        Check "oversized: ... with NO inline preview (a tiny file of a huge image must not be handed to the browser)" ($null -eq $bo.Json.options[0].preview)
+        $bp = Http PUT "/api/games/$($bomb.id)/art/grid" @{ url = "http://127.0.0.1:$StubPort/img/bomb.png" }
+        Check "oversized: choosing it is refused (400) and nothing is stored" ($bp.Status -eq 400 -and $null -eq (GameNamed "SEC Bomb").gridUrl)
+
+        # ---- bytes with the right magic number but nothing behind it, and a 200 with no body: refused quietly, never a 500
+        Http POST "/api/games" @{ name = "SEC Corrupt" } | Out-Null
+        $cor = GameNamed "SEC Corrupt"
+        $co = Http GET "/api/games/$($cor.id)/art/options?kind=grid&page=0"
+        Check "corrupt: a listing holding an undecodable image and an empty body still answers (200), not a 500" `
+            ($co.Status -eq 200 -and @($co.Json.options).Count -eq 2)
+        Check "corrupt: ... and neither is inlined as a preview" ($null -eq $co.Json.options[0].preview -and $null -eq $co.Json.options[1].preview)
+        Check "corrupt: choosing the undecodable image is refused (400)" `
+            ((Http PUT "/api/games/$($cor.id)/art/grid" @{ url = "http://127.0.0.1:$StubPort/img/corrupt.png" }).Status -eq 400)
+        Check "corrupt: choosing the empty body is refused (400), not a 500" `
+            ((Http PUT "/api/games/$($cor.id)/art/grid" @{ url = "http://127.0.0.1:$StubPort/img/empty.png" }).Status -eq 400)
+        $cr = Http POST "/api/games/$($cor.id)/art/refresh"
+        Check "corrupt: refreshing a game whose cover and icon are undecodable answers 400 (nothing to store), not a 500, and stores nothing" `
+            ($cr.Status -eq 400 -and $null -eq (GameNamed "SEC Corrupt").gridUrl -and $null -eq (GameNamed "SEC Corrupt").iconUrl)
+
+        # ---- a transparent icon and an opaque one: the opaque one wins, though it is second
+        Http POST "/api/games" @{ name = "SEC Opaque" } | Out-Null
+        $op = GameNamed "SEC Opaque"
+        $gid = ([guid]$op.id).ToString("N")
+        $bmp = New-Object System.Drawing.Bitmap((Join-Path $artRoot2 "$gid\icon.png")); $corner = $bmp.GetPixel(0, 0).A; $bmp.Dispose()
+        Check "icon: of two candidates the first has a transparent pixel and the second none - the opaque one is kept" ($corner -eq 255)
+
+        # ---- thumbnails: the anti-aliasing fix
+        $orig = GetArt "/art/$gid/grid.png"
+        Check "thumb: the plain URL still serves the untouched original (400x600 PNG)" ((ImageSize $orig.Bytes) -eq "400x600" -and $orig.Type -eq "image/png")
+        $t96 = GetArt "/art/$gid/grid.png?w=96"
+        Check "thumb: ?w=96 is a 96x144 copy" ((ImageSize $t96.Bytes) -eq "96x144")
+        Check "thumb: ... an opaque cover goes out as JPEG, and a fraction of the original's size" `
+            ($t96.Type -eq "image/jpeg" -and $t96.Bytes.Length -lt ($orig.Bytes.Length / 4))
+        Check "thumb: ... and is cached on disk under thumbs/" (Test-Path (Join-Path $artRoot2 "$gid\thumbs\grid-96.jpg"))
+        Check "thumb: a width not on the allowlist is ignored - the original comes back and nothing is written" `
+            ((ImageSize (GetArt "/art/$gid/grid.png?w=97").Bytes) -eq "400x600" -and -not (Test-Path (Join-Path $artRoot2 "$gid\thumbs\grid-97.jpg")))
+        Check "thumb: it never upscales - a 1x1 source asked for at 96 is returned as it is" ((ImageSize (GetArt "/art/$pgid/grid.png?w=96").Bytes) -eq "1x1")
+        $h = Http GET "/art/$gid/grid.png?w=64"
+        Check "thumb: served with nosniff and the sandboxing CSP, like every other /art file" `
+            ($h.Status -eq 200 -and ("" + $h.Headers["X-Content-Type-Options"]) -eq "nosniff" -and ("" + $h.Headers["Content-Security-Policy"]) -match "sandbox")
+        $rep = Http PUT "/api/games/$($op.id)/art/grid" @{ url = "http://127.0.0.1:$StubPort/img/good.png?n=1" }
+        Check "thumb: once the cover is replaced, the old thumbnail is not served (freshness follows the source)" `
+            ($rep.Status -eq 200 -and (ImageSize (GetArt "/art/$gid/grid.png?w=96").Bytes) -eq "1x1")
+        Stop-Phase
+
+        # ---- a key that arrives by CONFIGURATION (never saved in the dashboard) still backfills, at startup
+        Write-Host ""; Write-Host "-- art: startup backfill (a key from configuration, games that predate it)"
+        $artEnv3 = @{
+            Art__ApiBaseUrl = "http://127.0.0.1:$StubPort/api/v2/"; Art__AllowedImageHosts = "127.0.0.1"
+            Art__AllowInsecureImageUrls = "true"; Storage__ArtRoot = (Join-Path $scratch "art3")
+        }
+        Start-Phase "art3" $artEnv3          # no key: the games are created with nothing to fetch art with
+        Http POST "/api/games" @{ name = "SEC Boot Good" } | Out-Null
+        Http POST "/api/games" @{ name = "SEC Boot Keep Good" } | Out-Null
+        $bootKeep0 = GameNamed "SEC Boot Keep Good"
+        $bootGrid = "" + (Http PUT "/api/games/$($bootKeep0.id)/art/grid" @{ url = "http://127.0.0.1:$StubPort/img/good.png?n=77" }).Json.gridUrl
+        Stop-Phase
+        $bootEnv = $artEnv3.Clone()
+        $bootEnv.SteamGridDb__ApiKey = "test-key"; $bootEnv.Art__BackfillOnStartup = "true"; $bootEnv.Art__BackfillStartupDelaySeconds = "0"
+        Start-Phase "art3" $bootEnv          # the same database, restarted with a key and the startup pass on
+        $bootFilled = $null
+        foreach ($i in 1..60) { Start-Sleep -Milliseconds 500; $bootFilled = GameNamed "SEC Boot Good"; if ($bootFilled.gridUrl -and $bootFilled.iconUrl) { break } }
+        Check "startup: a key from configuration fills in the games that predate it, with nobody saving a key" `
+            ($bootFilled.gridUrl -like "/art/*/grid.png*" -and $bootFilled.iconUrl -like "/art/*/icon.png*")
+        $bootKept = GameNamed "SEC Boot Keep Good"
+        Check "startup: ... a game that lacked only its icon gets the icon ..." ($bootKept.iconUrl -like "/art/*/icon.png*")
+        Check "startup: ... and its hand-picked cover is left exactly as it was" ($bootKept.gridUrl -eq $bootGrid)
         Stop-Phase
     }
 }

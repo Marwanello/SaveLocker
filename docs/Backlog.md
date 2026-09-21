@@ -21,6 +21,8 @@ Not-yet-done work only — one line per item, each pointing at its task folder u
 - **Console: list and revoke individual signed-in browsers.** Sessions exist (`AdminSession`: created-at, last-used, client address) but the only controls are Lock and "Sign out everywhere". A small table under *Configuration → Admin password* would make a stolen session findable.
 - **Console: per-game detail when a Sync all machine fails.** The toast names the machine and the agent's own reason for the first failure; a batch with several failures only counts the rest.
 - **Sign-in throttle: surface lockouts in the console.** `admin.lockout` is in the audit log, but nothing raises it as a notification the way an agent problem is.
+- **Art picker: choose which SteamGridDB game to pull from.** Options come from the first name match, so a game whose name matches the wrong entry offers that entry's art with no way out short of renaming the game. A search box in the picker (`search/autocomplete`, remember the chosen id per game) would close it.
+- **Art files outlive their game.** `DeleteGameAsync` never removes `/data/art/{gameId}/` (covers, icons, and now `thumbs/`). Small, but it only grows.
 - **Interactive setup guide.** First-run console walkthrough ending at a syncing game → `tasks/interactive-setup-guide/summary.md`.
 - **Decky Phase 5 hardware proof.** Upload plugin v0.2.1 zip, watch the Deck self-update → `tasks/decky-phase5-proof/summary.md`.
 - **QAM left-stick scrolling.** Collapse doctor output behind an expander for fewer focus stops → `tasks/decky-qam-scrolling/summary.md`.
@@ -31,5 +33,5 @@ Not-yet-done work only — one line per item, each pointing at its task folder u
 
 ## Planned / future
 
-- **Checkpoint UI redesign.** 8-phase console/agent/Deck visual redesign; Groups 1 (web foundation) and 2 (console shell) shipped 2026-09-17/18, Groups 3-7 + the release-history table open → `tasks/checkpoint-ui/plan.md`.
+- **Checkpoint UI redesign.** 8-phase console/agent/Deck visual redesign; Groups 1 (web foundation), 2 (console shell) and 3 (agent foundation, Overview, agent Sync all) shipped 2026-09-17/18/20; Groups 4-7 + the release-history table open (Group 4 also owns per-game "Sync this game", which needs new agent routes) → `tasks/checkpoint-ui/plan.md`.
 - **Other stores' cloud flags.** GOG/Epic/Origin/Uplay flags for Heroic candidates → `tasks/other-stores-cloud-flags/summary.md`.

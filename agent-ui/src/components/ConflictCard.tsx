@@ -165,7 +165,7 @@ export function ConflictCard({
                 {side.v ? relative(side.v.createdAt) : shortId(side.id)}
                 {isNewer && (
                   <span style={{
-                    fontFamily: "'Inter', sans-serif", fontSize: 9.5, fontWeight: 700,
+                    fontFamily: 'var(--font-sans)', fontSize: 9.5, fontWeight: 700,
                     letterSpacing: '0.05em', textTransform: 'uppercase', color: '#16b992',
                     background: 'rgba(18,146,113,0.14)', borderRadius: 10, padding: '1px 6px',
                   }}>newer</span>

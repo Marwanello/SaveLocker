@@ -318,12 +318,32 @@ cmd_sync() {
     echo "  clone now at $(git -C "$REPO" log --oneline -1)"
   fi
 
-  local n=0
-  while IFS= read -r rel; do
+  local n=0 removed=0 line tag rel
+  while IFS= read -r line; do
     # The list is written by PowerShell, so every line arrives with a trailing CR - which turns a
     # real path into one that does not exist, reported as "skip (gone)".
-    rel="${rel%$'\r'}"
-    [ -n "$rel" ] || continue
+    line="${line%$'\r'}"
+    [ -n "$line" ] || continue
+    # "M<TAB>path" = copy it in, "D<TAB>path" = it was deleted (or renamed away) on the Windows side.
+    # A line with no tab is a bare path, i.e. a copy - what this list held before deletions were sent.
+    case "$line" in
+      *$'\t'*) tag="${line%%$'\t'*}"; rel="${line#*$'\t'}" ;;
+      *)       tag=M;                rel="$line" ;;
+    esac
+
+    if [ "$tag" = D ]; then
+      # The clone was just checked out at the COMMITTED tree, so a file deleted since still exists
+      # there until the next commit — and gets built. Remove it. The path came from git status of
+      # our own tree, but this is `rm`, so refuse anything that could leave the clone anyway.
+      case "$rel" in /*|../*|*/../*|*/..) echo "  refusing to remove outside the clone: $rel"; continue ;; esac
+      if [ -e "$REPO/$rel" ] || [ -L "$REPO/$rel" ]; then
+        rm -f -- "$REPO/$rel" || die "remove failed: $rel"
+        echo "  $rel (deleted)"
+        removed=$((removed + 1))
+      fi
+      continue
+    fi
+
     if [ ! -f "$wt/$rel" ]; then echo "  skip (gone): $rel"; continue; fi
     mkdir -p "$REPO/$(dirname "$rel")"
     # The CR strip applies to TEXT ONLY. It exists because CRLF in tests/linux/*.sh fails six
@@ -343,7 +363,7 @@ cmd_sync() {
     fi
     n=$((n + 1))
   done
-  echo "synced $n file(s) into $REPO"
+  echo "synced $n file(s) into $REPO, removed $removed"
 }
 
 case "$CMD" in

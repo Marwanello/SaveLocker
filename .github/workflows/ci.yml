@@ -432,3 +432,25 @@ jobs:
       - name: Pull the Linux save and byte-compare
         shell: powershell
         run: .\tests\cross-os\crossos.ps1 -Leg confirm
+
+  # The console + security suite (tests/run-console-security-tests.ps1): admin sessions, the sign-in
+  # throttle, PBKDF2 upgrade, CSP headers, the hostile-artwork-URL rules, and the artwork picker, background
+  # backfill and thumbnails. Server only, but it hosts its own stub SteamGridDB and draws test images with
+  # System.Drawing, which is Windows-only — hence windows-latest, and Windows PowerShell 5.1 like the
+  # cross-OS legs. Python is for the checks that read the SQLite file (the suite prefers a native one).
+  console-security-tests:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build server
+        run: dotnet build src/Server/SaveLocker.Server.csproj --no-incremental
+      - name: Run the console / security suite
+        shell: powershell
+        run: .\tests\run-console-security-tests.ps1

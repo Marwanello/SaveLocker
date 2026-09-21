@@ -4,6 +4,9 @@ import type { AgentState, AgentVersion, TrackedGame } from '../types'
 import { api } from '../api'
 import { useFolderPicker } from '../useFolderPicker'
 import { PathBrowserModal } from './PathBrowserModal'
+import { LaunchSetupCard } from './LaunchSetupCard'
+import { DeckyPluginCard } from './DeckyPluginCard'
+import { PlaynitePluginCard } from './PlaynitePluginCard'
 
 interface Props {
   state: AgentState | null
@@ -365,6 +368,17 @@ export function SettingsView({ state, onSaved }: Props) {
           captured half-finished. Raise it if a game is slow to flush its save. 0 backs up
           immediately. Manual syncs are never delayed.
         </div>
+      </div>
+
+      {/* Moved here from the Overview when it was trimmed to quick info (checkpoint-ui plan.md,
+          Phase 5) — this is where the prototype puts them. The launch-options card is still the
+          supported manual step, so it comes first; the plugin cards are the optional things that can
+          remove it. Each renders nothing where it does not apply (Windows, no Playnite), so there is
+          deliberately no section header here to be left orphaned. */}
+      <div className="sl-collapse-empty" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <LaunchSetupCard />
+        <DeckyPluginCard />
+        <PlaynitePluginCard />
       </div>
 
       {/* Tracked Games */}

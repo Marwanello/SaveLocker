@@ -2976,3 +2976,119 @@ Portable Playnite installs keep their `library`/`Extensions` beside their own ex
 - Full manual click-through inside Playnite (conflict gate blocking a launch, right-click menu items, Link to SaveLocker popup) — still outstanding for Phase 16.
 - `installer.yaml`/plugin changes only pushed to the `playnite-plugin-group-6` branch, not `main` — the `raw.githubusercontent.com` URLs in the submission manifest won't resolve until that lands.
 - The actual PlayniteAddonDatabase fork + submission PR — explicitly deferred pending the click-through above, per "verify first, then submit."
+
+
+---
+
+## 2026-09-20 — Checkpoint UI Group 3: agent foundation, trimmed Overview, agent Sync all
+
+**Branch:** `claude/group-3-ui-redesign-c16953` (local, not pushed, no PR opened). Code: `2705ce4`; the vault changes are a separate `Docs:` commit.
+
+### Request sequence
+
+1. "Implement group 3 in the ui redesign task please." Read `tasks/checkpoint-ui/` (`implementation-grouping.md` Group 3, `implementation.md` Phases 1/3/5, `plan.md`, the prototype's agent screens) and the Groups 1–2 handoff before writing anything.
+
+### What was done
+
+- **Scope call, made before building:** Phase 3 item 5 (per-game "Sync this game") was listed in Group 3 but is not buildable there — the agent has no game page (Group 4 builds the Games tab) and no per-game sync route (`POST /api/sync` takes no game filter; `pre-launch-sync`/`post-exit-sync` are launch-gate routes). Moved to Group 4 in the docs (`➡️ Moved`, per the status-table convention) rather than adding a button to Settings that the Games tab would delete.
+- `agent-ui/src/tokens.css` (hand-kept copy of `web`'s tokens, dark base / light opt-in) + `ui.css` (reset, keyframes, the `sl-` primitive classes) + `@fontsource/archivo` replacing Inter; `components/ui/` — `Button`, `Card`, `Chip`, `Stat`, `Banner`, `Toast`.
+- `StatusHeader.tsx` rewritten as the strip on every page: status, primary Sync all, live progress. `useActivity.ts` — one shared poll behind `useSyncExternalStore`, one slice per hook.
+- `OverviewView` trimmed (3 stats, one banner, Next up, Recent); `RecentCard` expands inline to the full log; `ActivityCard` deleted; launch-setup/Decky/Playnite cards moved to `SettingsView`. `Sidebar` and the `App` shell converted (real `<button>`s, landmarks, tokens).
+- **Bug fixed in moved code:** `handleSynced` read `view` from the render in which Sync was pressed, so its "don't pop the overlay over Conflicts" guard never saw a later navigation. Now a ref.
+
+### Verification — via testenv (per standing instruction)
+
+- `build` (console, Windows, Linux) → `clean` → `build` → `conflict -Windows -Wsl` → `up -Only linux`; browsed the WSL agent's UI at `:5187`.
+- Real Sync all on a real seeded conflict: busy → "Sync all complete." toast (dismissed at ~2.6 s) → conflict pop-up 7 ms later. Pressed from Overview and then navigating to Conflicts with the sync slowed to 3 s: no pop-up over Conflicts.
+- A progress tick re-renders only the progress area: 16 DOM mutations there, 0 in the page and at the button, over four ticks (fetch intercepted to fake a 25 MB push).
+- Every tab stop shows a 2px accent focus ring; both themes render; contrast walk over 43 text nodes in both themes — only the seven 10px `--color-faint` eyebrows are under 4.5:1 (3.31 dark / 3.55 light: the plan's own token).
+- Not-connected, conflict, lease-warning and pulling states checked by intercepting `fetch` against the Windows test agent's UI. `agent-ui` `tsc -b && vite build` and `oxlint` clean (two pre-existing warnings). No C# changed — no suite re-run, `api-types.ts` not regenerated.
+
+### Found along the way
+
+- The Windows test agent was mapped to eight of the maintainer's real save folders (rig warned). Sync all was not pressed there; `clean` wiped it.
+- `testenv.ps1 sync` skips a new (untracked) directory — worked around with `git add`; filed in `Backlog.md`. `conflict -Wsl` alone seeds no conflict. Both in `Gotchas.md`.
+- `--color-faint` is below WCAG AA — a maintainer decision (touches `web`, `agent-ui` and `Ui/Theme.cs`).
+
+### Not done
+
+- Phase 3 item 5 (moved to Group 4); the WebView2 tray window itself and a real Deck were not exercised (the same bundle was loaded in a browser).
+- No PR opened, nothing pushed.
+
+## 2026-09-20 (later) — `testenv.ps1 sync` no longer drops new directories, deletions or renames
+
+**Branch:** `testenv-sync-untracked-files` (on top of the Group 3 branch — the Gotchas bullet and Backlog line it closes live there, not on `main`).
+
+### What was built
+- `testenv.ps1 sync` builds its list from `git status --porcelain=v1 -z --untracked-files=all` and classifies each path by what is on disk: present → `M<TAB>path`, absent → `D<TAB>path`. `testenv.sh` `cmd_sync` copies the `M` lines as before and `rm`s the `D` lines from the clone (refusing any path that could leave it); a bare path with no tab is still a copy.
+- Fixes three silent failures at once: an untracked directory (one porcelain entry → `skip (gone)`), a deleted tracked file (survived in the clone, which is checked out at the committed tree first), and a staged rename (`old -> new` matched no path; `Test-Path` threw on the `>`).
+
+### Verification
+- One throwaway change — a nested new directory, a file with a space in its name, a deleted tracked file and a `git mv` — run through the OLD script from `HEAD` (reproduced: `skip (gone): tests/_sync_probe/`, the `Test-Path` error, nothing deleted) and then the new one: "syncing 6 changed and 2 deleted file(s)", both new files present in the `Ubuntu` clone at `~/SaveLocker` with correct content, the deleted file gone, the old name gone, the new name present. Probe removed from both trees afterwards and the clone re-synced clean.
+- `bash -n tests/testenv.sh` and a PowerShell 5.1 parse of `testenv.ps1` are clean.
+
+### Not done
+- A file copied in while untracked and later deleted on the Windows side without a commit still survives in the clone (no `git clean`, deliberately) — noted in `Gotchas.md`.
+
+## 2026-09-20 — Artwork: backfill when a key is added, opaque icons in the list, anti-aliased thumbnails, cover/icon picker
+
+**Branch:** `steamgriddb-art-picker` (from `main`; the Checkpoint Group 3 branch was left as it was).
+
+### What was built
+- **Key added after games exist → art fills in.** `POST /settings/steamgriddb-key` now queues `ArtBackfillService` (background, one game at a time, coalescing) for every game with no cover or no icon, and answers at once with `gamesQueued` and a message that says so. Only MISSING art is fetched (`RefreshArtAsync(onlyMissing)`), so a hand-picked cover is never replaced; the explicit *Refresh art* button still fetches the default again.
+- **The list shows the game's icon, not cropped box art**, and the default icon is now the first fully **opaque** PNG among the top six candidates (`ArtImages.IsFullyOpaque`), falling back to the first that downloads. The grid wall and game page keep the cover.
+- **The aliasing** was reproduced first (a synthetic 600×900 cover of 1 px lines, drawn at 38 px and at 137 px, beside a Lanczos copy: the original showed moiré and broken text, the copy was clean). Fix: `GET /art/{game}/{grid|icon}.{ext}?w=` (`ArtThumbnails`) — on-demand, disk-cached, Lanczos in linear light, allowlisted widths, never upscales, opaque covers as JPEG. Works on art that is already cached, no migration. `web/src/art.ts` builds the `srcSet`; a 38 px tile now loads a 64 px file instead of the full 600×900.
+- **Cover/icon picker.** A pen appears over the game card's cover on hover, on keyboard focus, and always on touch screens; it opens `ArtPicker` inline (no modal) with two strips of five SteamGridDB options each, a pager per strip, and a Current tile. Choosing saves at once. New routes `GET /games/{id}/art/options` and `PUT /games/{id}/art/{kind}`; previews are fetched and shrunk by the server and inlined as `data:` URIs (the CSP allows nothing else). The listing is cached 10 minutes and sliced, so it does not depend on SteamGridDB's page size.
+- **Rig:** `testenv.ps1 -ConsoleEnv` (env for the console container) + `tests/sgdb-stub.py` (a stub SteamGridDB) so the real Docker console can be driven with art and no key. Documented in Build and Run → *Testing artwork*.
+
+### Bugs found on the way
+- `IsFullyOpaque` first trusted ImageSharp's `PixelType.AlphaRepresentation`, which called an RGBA PNG with one clear pixel opaque — the suite's stub (transparent icon listed first) caught it, the stub log showing the second icon was never even requested. Now reads the pixels ([[Gotchas]] → *Web console*).
+- Keyboard: the picker sits after every control on the game card in tab order, so opening it from the pen left focus far away and Escape dead. It now takes focus on open; the card hands it back to the pen on close.
+
+### Verification
+- `run-console-security-tests.ps1` **137/137** (was 105): +32 checks — backfill, hand-picked cover kept, paging across a 7|5 API boundary at two requests for four pages, previews inline/shrunk/JPEG, hostile URLs refused and never contacted, opaque icon chosen, thumbnails right-sized/cached/allowlisted/stale-on-replace. First run 136/137; the one failure was the real bug above.
+- `web` `tsc -b`, `oxlint` and `vite build` clean; `dotnet build` clean; `openapi.json` regenerated and diffed (additions only — the scratch server's own `servers[0].url` restored) and `api-types.ts` regenerated.
+- **Through `testenv` (the real Docker console, pointed at the stub):** added 8 games with no key → pasted a key in Configuration → the alert read "…Fetching artwork for 9 games in the background." and 9/9 had cover and icon within a second (server log agrees); the default icons were the opaque ones though a transparent one was listed first; the list drew 64 px files in 38 px tiles and the grid 192 px files in ~133 px tiles; hover showed the pen; the picker paged 1–5 → 6–10 across the stub's API pages; picking a cover and an icon updated the server, the sidebar and the card without a reload, with fresh thumbnails; light theme rendered; focus-into-picker on open and a real Escape key returning focus to the pen were checked. The rig's seeded games were deleted afterwards and the console taken down.
+
+### Not done / not verified
+- **Never run against the real SteamGridDB** (no key available — deliberately not using the maintainer's). The new request parameters — `dimensions=600x900,342x482,660x930`, `mimes=image/png`, `nsfw=false`, `page=` — follow the official client's documented names but have only met the stub. The first thing to do with a real key: open the picker on a well-known game, page through, and confirm the covers are portrait and the pages don't repeat.
+- The picker lists art for the FIRST name match SteamGridDB returns; a game whose name matches the wrong entry offers that entry's art. No way to choose the SteamGridDB game yet ([[Backlog]]).
+- Deleting a game leaves its `/art/{id}/` folder behind (pre-existing; thumbnails now live in it too).
+- A real Enter key press on a button is not deliverable by this harness (recorded in the Group 3 session); the open step was made with `.click()`, which is what Enter does natively. Escape was a real key press.
+- `Release Notes Pending.md` is stale and was not used; what the next release's notes must say is in [[CONTEXT]].
+
+## 2026-09-20 (wrap-up) — everything is on `ui-redesign-group-3`; Group 4 sized
+
+**Branch:** `ui-redesign-group-3`, created from the merge commit `0f0868e`. Local only — nothing pushed, no PR.
+
+### What is on it (53 files, +2,929 / −526 against `main`)
+- **Checkpoint UI Group 3** — `2705ce4` (code), `04bb7f1` (Docs). The agent half of the design system, status header with Sync all, trimmed Overview.
+- **Artwork** — `eb53aaa` (code), `fff1bd8` (Docs). Backfill when a SteamGridDB key is added, opaque icons in the list, right-sized Lanczos thumbnails, the cover/icon picker.
+- **`testenv.ps1 sync` fix** — `199a513` (code), `f4d2aad` (Docs). New directories, deletions and renames now reach the WSL clone.
+- **Merge** — `0f0868e`. Code merged without conflicts; `CONTEXT.md`, `Gotchas.md` and `progress.md` conflicted only because both sides appended at the same spot, and keep both.
+- The three older branch names (`claude/group-3-ui-redesign-c16953`, `steamgriddb-art-picker`, `testenv-sync-untracked-files`) still point at their own commits; delete them once this lands. The name `ui-redesign-group-3` undersells the contents, which are three separate pieces of work — worth saying in the PR description.
+
+### Why the art work was invisible in the rig
+`testenv.ps1` builds whatever is checked out. The art work lived on `steamgriddb-art-picker`, branched from `main`, and the worktree had been left on the sync-fix branch, so neither the Docker console nor the WSL clone (at `f4d2aad`) contained `ArtPicker.tsx` or `ArtThumbnails.cs`. Not a bug in either — a branch that was never checked out. Merging fixed it.
+
+### Group 4 — how big, and where to do it
+**Scope** (`tasks/checkpoint-ui/implementation-grouping.md`): the agent Games tab — list and grid with cover art, a per-game page with Sync this game / Push now / Pull latest, the art proxy (`GET /api/games/{id}/art`), search in Add games — plus Phase 3 item 5, which moved here because the agent's local API has no per-game sync route.
+
+**Size — an estimate, not a measurement.** Group 3 was 21 files and +917 / −416 lines, `agent-ui` only. Group 4 is larger and wider: roughly 20–25 files and 1,400–1,900 changed lines, of which four to six are C# (`AgentApiServer` routes, a per-game entry on `SyncEngine`, the art proxy) and the rest is `agent-ui` (new Games list/grid, game page, `Row` and `Seg` ports, Sidebar entry, search in the 417-line `AddGamesView`). It also regenerates `agent-ui/src/api-types.ts` from the Linux daemon. The plan itself calls it "the single largest *new* UI in the plan".
+
+**Recommendation: a new session on a new branch, stacked on `ui-redesign-group-3`.**
+1. It is the first agent group that changes C# *and* the UI, so it needs the agent suites (`run-linux-tests` and the Windows-side ones), not just a browser check — a full session of verification on its own.
+2. This session has already been compacted once and carries three unrelated streams; Group 4 wants a clean context and its own reviewable diff.
+3. `ui-redesign-group-3` is already 53 files. Group 4 on top would make a PR nobody can review; branch after this one is pushed or opened as a PR.
+4. `implementation-grouping.md` says to re-evaluate before each new group, and there is one design question to settle at the start: **the art proxy should forward `?w=`** (the widths this session added: 48/64/96/128/192/256/384) and prefer the icon for list rows, or the agent's Games list will re-introduce the aliasing fixed here.
+
+### Verified on the merged tree / not verified
+- **Verified:** server build (0 warnings, 0 errors), web `npm run build`, `testenv.ps1` PowerShell parse and `bash -n testenv.sh`, `run-console-security-tests` **137/137**, and both `-ConsoleEnv` and the `--untracked-files=all` sync change present in `testenv.ps1`.
+- **Not verified:** `agent-ui` build on the merged tree (it does not touch the art files, and Group 3 built clean on its own), the C# agent suites, the art picker against the **real** SteamGridDB (only the stub — first thing to do with a real key: if the choices come up empty, suspect the `dimensions`/`mimes`/`nsfw`/`page` parameters), the WebView2 tray window, a real Deck.
+
+### Still open
+- The picker uses the first SteamGridDB name match and offers no way to choose another (Backlog).
+- A deleted game leaves its `/art/{id}` folder behind (Backlog).
+- An untracked file deleted on Windows survives in the WSL clone — `rm` by hand (Gotchas).
+- The `--color-faint` contrast decision (3.31:1 dark / 3.55:1 light) still belongs to the maintainer.
+- `Release Notes Pending.md` is stale; what the next release notes must cover is in `CONTEXT.md`.

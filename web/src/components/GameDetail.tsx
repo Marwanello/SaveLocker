@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, errorText } from '../api';
 import type { GameSummary, Machine, Command, Conflict, Version, VersionStats, MachineSavePath, MachineScanCandidate } from '../types';
 import { toTemplate, isTemplate } from '../savePathTemplate';
+import { artSrc, artSrcSet } from '../art';
+import { ArtPicker } from './ArtPicker';
 import { Chip } from './ui/Chip';
 import { Button } from './ui/Button';
 
@@ -64,6 +66,8 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
   const [versionStats, setVersionStats] = useState<Record<string, VersionStats>>({});
   const requestedStatsRef = useRef<Set<string>>(new Set());
   const [versionsView, setVersionsView] = useState<'main' | 'backups'>('main');
+  const [artOpen, setArtOpen] = useState(false);
+  const penRef = useRef<HTMLButtonElement>(null);
 
   const { game, head, lease, hasOpenConflict } = summary;
 
@@ -382,16 +386,37 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
       <div style={{ ...card, padding: '18px 20px' }}>
         <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
 
-          {/* Box art */}
-          {game.gridUrl
-            ? <img src={game.gridUrl} alt="cover" style={{ width: 94, height: 134, objectFit: 'cover', borderRadius: 6, border: '1px solid #494949', flexShrink: 0 }} />
-            : (
-              <div style={{ width: 94, height: 134, background: '#2A3238', border: '1px dashed #494949', borderRadius: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, flexShrink: 0 }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#494949" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                <span style={{ color: '#8b9aaa', fontSize: 9, fontFamily: "'JetBrains Mono', monospace", textAlign: 'center', lineHeight: 1.5 }}>box<br/>art</span>
-              </div>
-            )
-          }
+          {/* Box art — the pen over it opens the cover/icon picker. Shown on hover and on keyboard focus,
+              and always on touch screens, which have no hover to reveal it. */}
+          <div className="group relative flex-shrink-0" style={{ width: 94, height: 134 }}>
+            {game.gridUrl
+              ? <img src={artSrc(game.gridUrl, 192)} srcSet={artSrcSet(game.gridUrl, [96, 192, 256])} sizes="94px" alt="cover" style={{ width: 94, height: 134, objectFit: 'cover', borderRadius: 6, border: '1px solid #494949', display: 'block' }} />
+              : (
+                <div style={{ width: 94, height: 134, background: '#2A3238', border: '1px dashed #494949', borderRadius: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#494949" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  <span style={{ color: '#8b9aaa', fontSize: 9, fontFamily: "'JetBrains Mono', monospace", textAlign: 'center', lineHeight: 1.5 }}>box<br/>art</span>
+                </div>
+              )
+            }
+            <button
+              ref={penRef}
+              type="button"
+              onClick={() => setArtOpen(o => !o)}
+              aria-label="Change cover and icon"
+              aria-expanded={artOpen}
+              title="Change cover and icon"
+              className="absolute inset-0 rounded-[6px] border-0 p-0 cursor-pointer bg-transparent
+                transition-colors duration-150 ease-[var(--ease)]
+                group-hover:bg-black/45 focus-visible:bg-black/45
+                focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+            >
+              <span className="absolute right-1.5 bottom-1.5 grid place-items-center w-7 h-7 rounded-full bg-black/70 text-white
+                opacity-0 transition-opacity duration-150 ease-[var(--ease)]
+                group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+              </span>
+            </button>
+          </div>
 
           {/* Info column */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 11, minWidth: 0 }}>
@@ -412,7 +437,8 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
 
               {!game.enabled && <span style={{ padding: '2px 7px', border: '1px solid #f4a60d', color: '#f4a60d', borderRadius: 4, fontSize: 10 }}>disabled</span>}
 
-              <button style={ghostBtn()} onClick={handleRefreshArt}>Refresh art</button>
+              <button style={ghostBtn()} onClick={handleRefreshArt}
+                title="Fetch SteamGridDB's default cover and icon again. This replaces ones you picked.">Refresh art</button>
               <button style={ghostBtn()} onClick={handleSetEnabled}>{game.enabled ? 'Disable' : 'Enable'}</button>
               {lease?.holderMachineName && (
                 <button style={ghostBtn({ borderColor: '#f4a60d', color: '#f4a60d' })} onClick={handleForceRelease}>Force-release lease</button>
@@ -493,6 +519,10 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
           </div>
         </div>
       </div>
+
+      {artOpen && (
+        <ArtPicker game={game} onChanged={onRefresh} onClose={() => { setArtOpen(false); penRef.current?.focus(); }} />
+      )}
 
       {/* ── Conflict resolution — one card per open conflict, newest-active first ── */}
       {gameConflicts.map(c => {

@@ -256,6 +256,27 @@ an error instead of a silent no-op. Because the Deck is only awake when woken (s
 handoff section in [[CONTEXT]]), every SSH/`scp` call has a short connect timeout and reports
 "unreachable" rather than hanging or aborting the rest of the rig.
 
+### Testing artwork (a stub SteamGridDB)
+
+The test console has no SteamGridDB key, and a real one would put real traffic on a third party — so
+artwork is exercised against `tests/sgdb-stub.py`, a stdlib-only stand-in that accepts any key and serves
+generated covers and icons for every game name (12 covers over two API pages of 7 and 5; 8 icons, the
+first transparent). The console *container* reaches it as `host.docker.internal`, which is what
+`-ConsoleEnv` (KEY=VALUE, applied each time `up` starts the container) is for:
+
+```sh
+python tests/sgdb-stub.py --port 5217        # keep this running
+.\tests\testenv.ps1 up -Only console -ConsoleEnv `
+    'Art__ApiBaseUrl=http://host.docker.internal:5217/api/v2/','Art__AllowedImageHosts=host.docker.internal','Art__AllowInsecureImageUrls=true'
+```
+
+Then add games with no key set, and paste **any** key under Configuration → SteamGridDB: they fill in in
+the background. Not 5216 — the security suite owns that port and refuses to start if it is taken.
+The container also logs a few `Network is unreachable (host.docker.internal:5217)` lines: Docker Desktop
+gives that name an IPv6 address the container cannot route, so a burst of parallel fetches occasionally
+tries it first. A preview tile that says "no preview" once is that, not a bug; paging away and back
+refetches it.
+
 ## Tests
 
 ```sh
@@ -283,9 +304,10 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 
 | Where | Counts |
 |---|---|
-| Windows, local | **console/security 105** (new 2026-09-20, `run-console-security-tests.ps1`) · win agent bug bounty **114** (reads **113/114** since 2026-08-14 — see [[Backlog]]) · server bug bounty **164** · agent 47 · delta upload **17** (new 2026-08-22, `run-delta-upload-tests.ps1`) · hardening 33 · local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6 |
+| Windows, local | **console/security 149** (105 when it was added 2026-09-20; +32 for the art picker/backfill/thumbnails; +12 for the PR #45 review fixes — oversized, corrupt and empty images, the page bound, the startup backfill — `run-console-security-tests.ps1`) · win agent bug bounty **114** (reads **113/114** since 2026-08-14 — see [[Backlog]]) · server bug bounty **164** · agent 47 · delta upload **17** (new 2026-08-22, `run-delta-upload-tests.ps1`) · hardening 33 · local-api 30 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6 |
 | Linux, local (WSL ext4) | `run-linux-tests` **63** on `main`, **69** at `4c9f5f5`, **84** after Phase 2, **117** after Phase 3, **123** after Phase 4 of the auto-update work, **137** after Phase 1, **154** after Phase 2, **161** after the Deck hardware pass, **197** after Phase 5 and **208** once the agent UI read the plugin's state live, both of `logs/2026-08-15_decky-plugin.md`, then **216** after `logs/2026-08-15_install-update-now.md` (2026-08-15, same clone) |
 | Linux, in CI | agent 43 · hardening 37 · local-api 30 · concurrency 23 · health 19 · enrollment 16 |
+| Windows, in CI | console/security **149** (`console-security-tests` job on `windows-latest`; its SQLite checks use the runner's Python, not WSL) |
 | Detection | sweep **271/298 (90.9%)** at the default 300 sample, 17 pinned |
 
 The two platforms differ by design — each suite skips the other's cases. The detection drop from
