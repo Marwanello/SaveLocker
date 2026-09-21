@@ -18,6 +18,15 @@ public enum LaunchDecision
     Blocked
 }
 
+/// <summary>Which direction(s) a manual, per-game sync runs — see <see cref="SyncEngine.SyncGameAsync"/>.</summary>
+public enum GameSyncMode
+{
+    /// <summary>Pull, then push — what Sync all does per game.</summary>
+    Sync,
+    Push,
+    Pull
+}
+
 /// <summary>Result of <see cref="SyncEngine.PrepareLaunchAsync"/> — the Linux launch wrapper's own
 /// answer to "is it safe to start this game right now" (tasks/conflict-resolution-ui/plan.md, Phase 4).</summary>
 public record LaunchGateResult(
@@ -656,13 +665,24 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         var skipped = new List<string>();
         foreach (var g in games)
         {
-            if (GameActivity.IsActive(g)) skipped.Add(g.Name);
-            else await PullAsync(g, ct: ct);
-            await PushAsync(g, ct: ct);
+            var (pullSkipped, _) = await PullThenPushAsync(g, ct);
+            if (pullSkipped) skipped.Add(g.Name);
         }
         return skipped.Count == 0
             ? "Sync all complete."
             : $"Sync all complete. Not pulled (still running): {string.Join(", ", skipped)}.";
+    }
+
+    /// <summary>
+    /// The one per-game step both <see cref="SyncAllAsync"/> and <see cref="SyncGameAsync"/> run, so
+    /// what "sync" means for a game cannot differ between them: pull unless the game is running, then
+    /// push either way.
+    /// </summary>
+    private async Task<(bool PullSkipped, UploadResult? Push)> PullThenPushAsync(TrackedGame game, CancellationToken ct)
+    {
+        var running = GameActivity.IsActive(game);
+        if (!running) await PullAsync(game, ct: ct);
+        return (running, await PushAsync(game, ct: ct));
     }
 
     /// <summary>
@@ -673,20 +693,19 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// </summary>
     public async Task<string> SyncGameAsync(TrackedGame game, GameSyncMode mode, CancellationToken ct = default)
     {
-        var running = GameActivity.IsActive(game);
         switch (mode)
         {
             case GameSyncMode.Pull:
-                if (running) return $"{game.Name} is running, so its save was not replaced.";
+                if (GameActivity.IsActive(game)) return $"{game.Name} is running, so its save was not replaced.";
                 return await PullAsync(game, ct: ct)
                     ? $"Pulled the latest save of {game.Name}."
                     : $"Nothing was pulled for {game.Name}: it is already up to date, or the pull was refused. The activity log says which.";
             case GameSyncMode.Push:
                 return DescribePush(game, await PushAsync(game, ct: ct));
             default:
-                if (!running) await PullAsync(game, ct: ct);
-                var pushed = DescribePush(game, await PushAsync(game, ct: ct));
-                return running ? $"{pushed} Not pulled: the game is running." : pushed;
+                var (pullSkipped, push) = await PullThenPushAsync(game, ct);
+                var pushed = DescribePush(game, push);
+                return pullSkipped ? $"{pushed} Not pulled: the game is running." : pushed;
         }
     }
 

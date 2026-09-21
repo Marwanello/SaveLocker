@@ -1,4 +1,4 @@
-# Local agent API - 53 checks (up to 54 when a candidate is scanned). Runs on BOTH Windows and Linux.
+# Local agent API - 66 checks (up to 67 when a candidate is scanned). Runs on BOTH Windows and Linux.
 #
 # The agent's own API (AgentApiServer, shared by the Windows tray and the Linux daemon) manages this
 # machine: it rewrites config, enrolls games and re-registers against the server. It used to be
@@ -18,7 +18,9 @@
 #   10. A server change moves ALL traffic          - the cached SyncEngine used to keep pushing to
 #                                                    the old host while the poller moved (LA-01).
 #   11. The per-game routes + the art proxy         - a server naming a hostile art URL cannot aim this
-#                                                    machine elsewhere; one sync at a time (409).
+#                                                    machine elsewhere or get a key, a redirect, an
+#                                                    SVG or a huge body through; one sync per GAME (409),
+#                                                    and none of it blocks another game's launch/exit.
 #
 # The daemon runs on its own port so this suite never collides with a real agent on :5178.
 # Usage: .\tests\run-local-api-tests.ps1 / pwsh tests/run-local-api-tests.ps1
@@ -397,16 +399,22 @@ finally {
 # `POST /api/games/{id}/sync`, `GET /api/games/{id}/state` and `GET /api/games/{id}/art` are the
 # agent UI's game page. The art route is the one with an attack surface: it fetches a URL the
 # SERVER named in its own game record, and hands the bytes to a browser page. So a hostile or
-# broken server must not be able to (a) point this machine's request at another host, (b) escape
-# `/art/`, or (c) get a non-image served under an image route. The stub below stands in for that
-# server, records every request it receives, and names those URLs as the game's art.
+# broken server must not be able to (a) point this machine's request at another host - by a
+# scheme-relative URL OR a redirect, (b) escape `/art/` - by a literal `..` OR an encoded `%2e%2e`,
+# (c) get a non-image (or an SVG) served under an image route, (d) make the agent buffer a body of
+# any size - one with no Content-Length included, or (e) receive the machine's API key at all.
+# The stub below stands in for that server, records every request it receives, and names those URLs
+# as the game's art. A second listener plays "another host" for the redirect.
 #
 # It also holds one game's head-download request open (the first thing a pull asks the server), which
-# is what keeps the agent's single sync gate taken long enough to observe the 409 a second per-game
-# sync is meant to get.
+# keeps that game's sync taken long enough to observe what it must and must not block: a second sync
+# of the SAME game (409), and - the regression - nothing about any OTHER game or the launch-gate
+# routes. Those share the agent's global sync gate, and answer 409 to "a full sync is running, it
+# will converge"; a one-game sync does not converge another game, so it must not hold that gate.
 # =================================================================================
-$artStubPort = 5196; $artPort = 5186
+$artStubPort = 5212; $artPort = 5211; $artOtherPort = 5213
 $artStubUrl  = "http://localhost:$artStubPort"
+$artOtherUrl = "http://localhost:$artOtherPort"
 $artBase     = "http://localhost:$artPort"
 $artDir      = Join-Path $scratch "art"
 New-Item -ItemType Directory -Force $artDir | Out-Null
@@ -419,6 +427,10 @@ $artGames = [ordered]@{
     good      = "/art/good/grid.png?v=1"
     hostcheat = "//evil.example/x.png"
     traversal = "/art/../secrets/grid.png"
+    encoded   = "/art/%2e%2e/api/secret/grid.png"
+    redirect  = "/art/redirect/grid.png"
+    huge      = "/art/huge/grid.png"
+    svg       = "/art/svg/grid.png"
     notimage  = "/art/html/grid.png"
     slow      = $null
 }
@@ -444,10 +456,17 @@ $artCfg = Join-Path $artDir "cfg.json"
 $artListener = [System.Net.HttpListener]::new()
 $artListener.Prefixes.Add("$artStubUrl/")
 $artListener.Start()
+$artOtherListener = [System.Net.HttpListener]::new()
+$artOtherListener.Prefixes.Add("$artOtherUrl/")
+$artOtherListener.Start()
 
-$artLog     = New-Object System.Collections.ArrayList
-$artPending = New-Object System.Collections.ArrayList
-$script:artCtxTask = $artListener.GetContextAsync()
+$artLog      = New-Object System.Collections.ArrayList
+$artKeyed    = New-Object System.Collections.ArrayList   # paths of stub requests that carried X-Api-Key
+$artOtherLog = New-Object System.Collections.ArrayList   # everything the "other host" was ever asked
+$artPending  = New-Object System.Collections.ArrayList
+$script:artHold = $true   # while true, the slow game's download is held open; released for Sync all below
+$script:artCtxTask   = $artListener.GetContextAsync()
+$script:artOtherTask = $artOtherListener.GetContextAsync()
 
 function ArtSend($ctx, $status, $type, [byte[]]$bytes) {
     try {
@@ -461,6 +480,7 @@ function ArtSend($ctx, $status, $type, [byte[]]$bytes) {
 function ArtHandle($ctx) {
     $path = $ctx.Request.Url.AbsolutePath
     [void]$artLog.Add("$($ctx.Request.HttpMethod) $($ctx.Request.Url.PathAndQuery)")
+    if ($ctx.Request.Headers["X-Api-Key"]) { [void]$artKeyed.Add($path) }
     if ($path -match '^/api/agent/games/([0-9a-f-]{36})/state$') {
         $gid = $Matches[1]
         $name = ($artIds.GetEnumerator() | Where-Object { $_.Value -eq $gid } | Select-Object -First 1).Key
@@ -475,20 +495,45 @@ function ArtHandle($ctx) {
     }
     elseif ($path -match '^/api/games/([0-9a-f-]{36})/download$') {
         # "No saves yet" is what a pull expects for a game with no head; the slow game answers it late.
-        if ($Matches[1] -eq $artIds["slow"]) { [void]$artPending.Add(@{ Ctx = $ctx; Due = (Get-Date).AddSeconds(3) }) }
+        if ($script:artHold -and $Matches[1] -eq $artIds["slow"]) { [void]$artPending.Add(@{ Ctx = $ctx; Due = (Get-Date).AddSeconds(12) }) }
         else { ArtSend $ctx 404 $null $null }
     }
     elseif ($path -eq "/art/good/grid.png") { ArtSend $ctx 200 "image/png" $pngBytes }
     elseif ($path -eq "/art/html/grid.png") { ArtSend $ctx 200 "text/html" ([Text.Encoding]::UTF8.GetBytes("<script>alert(1)</script>")) }
+    elseif ($path -eq "/art/svg/grid.png") {
+        ArtSend $ctx 200 "image/svg+xml" ([Text.Encoding]::UTF8.GetBytes('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>'))
+    }
+    elseif ($path -eq "/art/redirect/grid.png") {
+        # A hostile server's other trick: not naming another host, sending the agent there.
+        try { $ctx.Response.StatusCode = 302; $ctx.Response.RedirectLocation = "$artOtherUrl/lan.png"; $ctx.Response.Close() } catch { }
+    }
+    elseif ($path -eq "/art/huge/grid.png") {
+        # 17 MiB (past the 16 MiB cap) as a CHUNKED body, so there is no Content-Length for a length
+        # check to catch - only reading it and counting does.
+        try {
+            $ctx.Response.SendChunked = $true
+            $ctx.Response.ContentType = "image/png"
+            $chunk = New-Object byte[] (1MB)
+            foreach ($i in 1..17) { $ctx.Response.OutputStream.Write($chunk, 0, $chunk.Length) }
+            $ctx.Response.Close()
+        } catch { }
+    }
     else { ArtSend $ctx 404 $null $null }
 }
 
-# One turn of the stub: answer whatever has arrived, and release held responses that are due.
+# One turn of the stub: answer whatever has arrived (at the server or at the "other host"), and
+# release held responses that are due.
 function ArtPump($ms) {
     if ($script:artCtxTask.Wait($ms)) {
         $c = $script:artCtxTask.Result
         $script:artCtxTask = $artListener.GetContextAsync()
         ArtHandle $c
+    }
+    if ($script:artOtherTask.IsCompleted) {
+        $c = $script:artOtherTask.Result
+        $script:artOtherTask = $artOtherListener.GetContextAsync()
+        [void]$artOtherLog.Add("$($c.Request.Url.PathAndQuery) key=$($c.Request.Headers['X-Api-Key'])")
+        ArtSend $c 200 "image/png" $pngBytes
     }
     foreach ($p in @($artPending)) {
         if ((Get-Date) -ge $p.Due) { ArtSend $p.Ctx 404 $null $null; $artPending.Remove($p) }
@@ -506,7 +551,7 @@ function ArtStart($method, $path, $token, $json) {
     return $artHttp.SendAsync($req, [System.Net.Http.HttpCompletionOption]::ResponseContentRead)
 }
 function ArtFinish($task) {
-    $deadline = (Get-Date).AddSeconds(30)
+    $deadline = (Get-Date).AddSeconds(45)
     while (-not $task.IsCompleted -and (Get-Date) -lt $deadline) { ArtPump 50 }
     if (-not $task.IsCompleted -or $task.IsFaulted) { return @{ Status = 0; Body = ""; Type = ""; Bytes = @() } }
     $res = $task.Result
@@ -563,31 +608,76 @@ try {
     Check "art asked the server for the thumbnail width" (@($artLog | Where-Object { $_ -match "^GET /art/good/grid\.png\?v=1&w=96$" }).Count -ge 1)
     Check "a game with no art URL is 404"          ((ArtCall "GET" "/api/games/$g/art?kind=icon" $artToken $null).Status -eq 404)
 
-    # -- ...and a server cannot use it to reach elsewhere or serve a non-image --
+    # -- ...and a server cannot use it to reach elsewhere, or serve or stuff it with what is not art --
     $host1 = ArtCall "GET" "/api/games/$($artIds['hostcheat'])/art?kind=grid" $artToken $null
     $trav  = ArtCall "GET" "/api/games/$($artIds['traversal'])/art?kind=grid" $artToken $null
+    $encd  = ArtCall "GET" "/api/games/$($artIds['encoded'])/art?kind=grid" $artToken $null
+    $redir = ArtCall "GET" "/api/games/$($artIds['redirect'])/art?kind=grid" $artToken $null
     $html  = ArtCall "GET" "/api/games/$($artIds['notimage'])/art?kind=grid" $artToken $null
+    $svg   = ArtCall "GET" "/api/games/$($artIds['svg'])/art?kind=grid" $artToken $null
+    $t0 = Get-Date
+    $huge  = ArtCall "GET" "/api/games/$($artIds['huge'])/art?kind=grid" $artToken $null
+    $hugeSecs = ((Get-Date) - $t0).TotalSeconds
     Check "a scheme-relative art URL (//evil.example) is refused"  ($host1.Status -eq 404)
     Check "an art URL that climbs out of /art/ is refused"         ($trav.Status -eq 404)
+    Check "an ENCODED climb out of /art/ (%2e%2e) is refused"      ($encd.Status -eq 404)
+    Check "a redirect to another origin is refused, not followed"  ($redir.Status -eq 404 -and @($artOtherLog).Count -eq 0)
     Check "a non-image response is never served as art"            ($html.Status -eq 404 -and -not $html.Body.Contains("<script>"))
-    Check "the stub was never asked for the hostile paths"         (@($artLog | Where-Object { $_ -match "evil|secrets" }).Count -eq 0)
+    Check "an SVG is never served as art (it can carry script)"    ($svg.Status -eq 404 -and -not $svg.Body.Contains("onload"))
+    Check "a body past 16 MiB with no length is stopped, not buffered" ($huge.Status -eq 404 -and $hugeSecs -lt 20)
+    Check "the stub was never asked for the hostile paths"         (@($artLog | Where-Object { $_ -match "evil|secret" }).Count -eq 0)
+    Check "the other origin was never contacted at all"            (@($artOtherLog).Count -eq 0)
+    Check "art is fetched WITHOUT the machine key"                 (@($artKeyed | Where-Object { $_ -like "/art/*" }).Count -eq 0)
+    Check "(the recorder works: server API calls DO carry the key)" (@($artKeyed | Where-Object { $_ -like "/api/agent/*" }).Count -ge 1)
 
-    # -- one sync at a time: a second per-game sync while one runs is a 409, and the gate frees --
-    $first = ArtStart "POST" "/api/games/$($artIds['slow'])/sync" $artToken '{"mode":"pull"}'
+    # -- the other two modes are accepted and answer with a message (only pull ran above) --
+    $pushRes = ArtCall "POST" "/api/games/$g/sync" $artToken '{"mode":"push"}'
+    $syncRes = ArtCall "POST" "/api/games/$g/sync" $artToken '{"mode":"sync"}'
+    $pushMsg = if ($pushRes.Status -eq 200) { ($pushRes.Body | ConvertFrom-Json).message } else { $null }
+    $syncMsg = if ($syncRes.Status -eq 200) { ($syncRes.Body | ConvertFrom-Json).message } else { $null }
+    Check "mode 'push' is accepted and reports what happened" ($pushRes.Status -eq 200 -and $pushMsg -match "Art good")
+    Check "mode 'sync' is accepted and reports what happened" ($syncRes.Status -eq 200 -and $syncMsg -match "Art good")
+
+    # -- one sync per GAME: a second on the same game is a 409; other games and the launch gate are free --
+    $slow = $artIds["slow"]
+    $first = ArtStart "POST" "/api/games/$slow/sync" $artToken '{"mode":"pull"}'
     $t0 = Get-Date
     while (@($artPending).Count -eq 0 -and ((Get-Date) - $t0).TotalSeconds -lt 10) { ArtPump 50 }
-    Check "the first sync is holding the gate (its download request is in flight)" (@($artPending).Count -eq 1)
-    $second = ArtCall "POST" "/api/games/$g/sync" $artToken '{"mode":"pull"}'
-    Check "a second per-game sync meanwhile is 409" ($second.Status -eq 409)
-    Check "the 409 says why"                        ($second.Body -match "already running")
+    Check "the first sync is holding its game (its download request is in flight)" (@($artPending).Count -eq 1)
+
+    $second = ArtCall "POST" "/api/games/$slow/sync" $artToken '{"mode":"pull"}'
+    Check "a second sync of the SAME game meanwhile is 409" ($second.Status -eq 409)
+    Check "the 409 says why"                                ($second.Body -match "already running")
+
+    # Each of these is judged only if the first sync is STILL held when it is asked, so a slow
+    # answer cannot let the assertion pass on a gate that had already freed.
+    $held = @($artPending).Count -eq 1
+    $other = ArtCall "POST" "/api/games/$g/sync" $artToken '{"mode":"pull"}'
+    Check "a sync of a DIFFERENT game meanwhile is not blocked" ($held -and $other.Status -eq 200)
+    $held = @($artPending).Count -eq 1
+    $launch = ArtCall "POST" "/api/games/$g/pre-launch-sync" $artToken $null
+    Check "pre-launch-sync of another game is not answered 409 by it" ($held -and $launch.Status -ne 409 -and $launch.Status -ne 0)
+    $held = @($artPending).Count -eq 1
+    $exit = ArtCall "POST" "/api/games/$g/post-exit-sync" $artToken $null
+    Check "post-exit-sync of another game is not answered 409 by it (its push and lease release run)" `
+        ($held -and $exit.Status -ne 409 -and $exit.Status -ne 0)
+
     $firstDone = ArtFinish $first
     Check "the first sync itself completes (200)"   ($firstDone.Status -eq 200)
-    $third = ArtCall "POST" "/api/games/$g/sync" $artToken '{"mode":"pull"}'
-    Check "the gate is free again afterwards"       ($third.Status -ne 409 -and $third.Status -ne 0)
+    $third = ArtCall "POST" "/api/games/$slow/sync" $artToken '{"mode":"pull"}'
+    Check "the game is free again afterwards"       ($third.Status -ne 409 -and $third.Status -ne 0)
+
+    # -- Sync all runs the same per-game step as the game page (SyncEngine.PullThenPushAsync); no other
+    #    suite drives it, so a refactor of that step would otherwise go unnoticed --
+    $script:artHold = $false
+    $all = ArtCall "POST" "/api/sync" $artToken $null
+    $allMsg = if ($all.Status -eq 200) { ($all.Body | ConvertFrom-Json).message } else { $null }
+    Check "Sync all runs every game and reports completion" ($all.Status -eq 200 -and $allMsg -eq "Sync all complete.")
 }
 finally {
     if ($artProc) { Stop-Process -Id $artProc.Id -Force -ErrorAction SilentlyContinue }
     $artListener.Stop(); $artListener.Close()
+    $artOtherListener.Stop(); $artOtherListener.Close()
     $artHttp.Dispose()
 }
 

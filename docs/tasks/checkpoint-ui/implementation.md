@@ -178,7 +178,7 @@ surface converted. `agent-ui` untouched this phase — its half of item 6 is Gro
    `StatusHeader` reads only `useActivityBusy()` (a boolean), so it re-renders when a sync starts or ends;
    only `HeroStatus` reads the per-tick `current`. Measured live over four ticks: 16 DOM mutations in the
    progress area, 0 in the Overview page, 0 around the Sync all button.
-5. Per-game **Sync this game** on the agent's game page — ✅ **shipped 2026-09-21 (Group 4)**: `POST /api/games/{id}/sync` (`{mode: sync|push|pull}`, single-flight with `/api/sync`, 409 when busy, never forced) over the new `SyncEngine.SyncGameAsync`. Originally moved here from Group 3 (2026-09-20): Two things
+5. Per-game **Sync this game** on the agent's game page — ✅ **shipped 2026-09-21 (Group 4)**: `POST /api/games/{id}/sync` (`{mode: sync|push|pull}`, one at a time per game - a second press on the same game is a 409 - and deliberately not behind the global sync gate the launch routes share; never forced) over the new `SyncEngine.SyncGameAsync`. Originally moved here from Group 3 (2026-09-20): Two things
    this item assumed do not exist: an agent game page (Group 4 builds the Games tab it lives on), and a
    per-game sync route — `POST /api/sync` takes no game filter, and `pre-launch-sync`/`post-exit-sync` are
    launch-gate routes with their own single-flight and fail-open contracts, not a manual sync. So it is not

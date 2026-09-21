@@ -1212,11 +1212,10 @@ session-start read takes several calls. Moving older per-session entries to `log
 would fix that, but it is a large editorial change to the file every session depends on and belongs in its own
 change, not in this PR.
 
-**Checkpoint UI redesign, Group 4 shipped (2026-09-21, branch `claude/group-4-ui-redesign-fe56ca`, local — no PR
-yet).** The agent's Games tab: list and grid, search, a per-game page (Sync this game / Push now / Pull latest /
+**Checkpoint UI redesign, Group 4 shipped (2026-09-21, branch `ui-redesign-group-4`, PR #46).** The agent's Games tab: list and grid, search, a per-game page (Sync this game / Push now / Pull latest /
 Check now, what the server holds, what this device watches), cover art, and a search box in Add games. Three new
-local-API routes: `POST /api/games/{id}/sync` (`mode` sync|push|pull; single-flight with `/api/sync`, **409** when
-busy, never forced), `GET /api/games/{id}/state` (server head/lease/conflict) and `GET /api/games/{id}/art` (the
+local-API routes: `POST /api/games/{id}/sync` (`mode` sync|push|pull; one at a time **per game** — **409** on the same game, and never behind the global gate the launch
+routes share — never forced), `GET /api/games/{id}/state` (server head/lease/conflict) and `GET /api/games/{id}/art` (the
 art proxy). Art reaches the page as a **blob** fetched with the local token — an `<img src>` cannot carry it.
 <br>**Caught by running it, not building it:** `.Produces<byte[]>(…, "image/*")` throws at daemon startup (no
 wildcard content types); `dotnet build` and `tsc` were both clean. **Follow-up, same day:** `run-local-api-tests.ps1`
@@ -1224,7 +1223,29 @@ wildcard content types); `dotnet build` and `tsc` were both clean. **Follow-up, 
 sync on a real two-machine conflict was run live. **Not verified:** the WebView2 window, a Deck, light theme
 (Group 5). Detail and honest gaps (no version list or last-push bytes on the page — no data behind them; now in
 [[Backlog]]) in
-`tasks/checkpoint-ui/implementation-grouping.md` → Group 4. **Next action:** Group 5 (appearance + fleet sync,
+`tasks/checkpoint-ui/implementation-grouping.md` → Group 4.
+<br>**Reviewed the same day (PR #46): eight findings, all fixed** — write-up in
+`tasks/checkpoint-ui/implementation-grouping.md` → Group 4 → *Review fixes*. The two that mattered: the
+art proxy followed a `302` to another origin *carrying the machine key* (it also buffered chunked bodies of
+any size and let `%2e%2e` past its `..` check), and the per-game sync route held the global sync gate that
+`pre-launch-sync` / `post-exit-sync` answer 409 on — so syncing one game dropped an *unrelated* game's exit
+push and lease release. Art now goes through its own no-redirect, no-key, bounded client; syncs are gated
+per game.
+<br>**Verified:** `run-local-api-tests.ps1` **66/66** (§11 is now 36 checks); `run-health-tests` 22/22 and
+`run-delta-upload-tests` 29/29 unchanged (`ApiClient` sits under every sync path); the whole solution builds
+and `agent-ui` `tsc -b && vite build` and `oxlint` are clean (same two pre-existing warnings). **Mutation-
+checked:** with the PR-head `ApiClient` / `AgentApiServer` / `SyncEngine` swapped back in, 9 of the new
+checks fail — redirect followed, SVG served, oversized body buffered, the `%2e%2e` path reaching the stub,
+the other origin contacted, the key sent on art, and all three cross-game gate checks. `useArt`'s queue /
+abort / expiry logic was driven in Node against the real source (22 checks; 8 fail against the PR-head
+version) — a scratch harness, not committed: `agent-ui` has no JS test runner.
+<br>**Not verified:** any of it in a real browser or the WebView2 window, and the unreachable-server
+starvation the four-at-a-time limiter addresses (reasoned from the code — no rig for it). **Still open,
+pre-existing, now in [[Backlog]]:** `post-exit-sync` answering 409 while *Sync all* holds the gate. **A flake,
+seen once, not investigated:** `run-local-api-tests` §10's *NO traffic reached the old server A* failed on
+the first run after a cold build and passed on every run since — most likely a request from before the
+server switch sitting in the listener's queue while the daemon started slowly.
+<br>**Next action:** Group 5 (appearance + fleet sync,
 flips the theme default) or Group 6 (Deck) — both listed there.
 
 ---

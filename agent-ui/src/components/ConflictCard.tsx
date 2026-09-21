@@ -1,28 +1,13 @@
 import { useState, type ReactNode } from 'react'
 import { Cloud, HardDrive } from 'lucide-react'
 import type { Conflict, SaveVersion, VersionStats } from '../types'
+import { asUtc, formatAgo, formatDateTime } from '../format'
 
 const shortId = (id: string) => id.replace(/-/g, '').slice(0, 8)
-// Server timestamps have no zone suffix but are UTC (System.Text.Json default) — without this a
-// browser in a non-UTC zone parses them as local time and every "when" is wrong by the offset.
-const asUtc = (t: string) => /[Z+]|-\d\d:\d\d$/.test(t) ? t : t + 'Z'
-const absolute = (t: string) => new Date(asUtc(t)).toLocaleString()
 const fmtSize = (n: number) =>
   n < 1024 ? `${n} B`
     : n < 1024 * 1024 ? (n / 1024).toFixed(1) + ' KB'
       : (n / (1024 * 1024)).toFixed(2) + ' MB'
-
-/** "12m ago" / "2h ago" — the number that actually drives which side to keep, so it is the
- * headline text in each panel; the exact timestamp is still one hover away via `title`. */
-function relative(t: string): string {
-  const ms = Date.now() - new Date(asUtc(t)).getTime()
-  const mins = Math.round(ms / 60_000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hours = Math.round(mins / 60)
-  if (hours < 24) return `${hours}h ago`
-  return `${Math.round(hours / 24)}d ago`
-}
 
 interface Props {
   conflict: Conflict
@@ -156,13 +141,13 @@ export function ConflictCard({
               </div>
 
               <div
-                title={side.v ? absolute(side.v.createdAt) : undefined}
+                title={side.v ? formatDateTime(side.v.createdAt) : undefined}
                 style={{
                   fontFamily: "'JetBrains Mono', monospace", fontSize: 15, fontWeight: 600,
                   color: '#ECEFF1', display: 'flex', alignItems: 'baseline', gap: 7,
                 }}
               >
-                {side.v ? relative(side.v.createdAt) : shortId(side.id)}
+                {side.v ? formatAgo(side.v.createdAt) : shortId(side.id)}
                 {isNewer && (
                   <span style={{
                     fontFamily: 'var(--font-sans)', fontSize: 9.5, fontWeight: 700,
