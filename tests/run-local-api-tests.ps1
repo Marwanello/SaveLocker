@@ -465,6 +465,7 @@ $artKeyed    = New-Object System.Collections.ArrayList   # paths of stub request
 $artOtherLog = New-Object System.Collections.ArrayList   # everything the "other host" was ever asked
 $artPending  = New-Object System.Collections.ArrayList
 $script:artHold = $true   # while true, the slow game's download is held open; released for Sync all below
+$script:artLook = @{ theme = "dark"; accent = "cobalt"; mark = "memcard" }   # what the stub's heartbeat pushes (section 12)
 $script:artCtxTask   = $artListener.GetContextAsync()
 $script:artOtherTask = $artOtherListener.GetContextAsync()
 
@@ -497,6 +498,12 @@ function ArtHandle($ctx) {
         # "No saves yet" is what a pull expects for a game with no head; the slow game answers it late.
         if ($script:artHold -and $Matches[1] -eq $artIds["slow"]) { [void]$artPending.Add(@{ Ctx = $ctx; Due = (Get-Date).AddSeconds(12) }) }
         else { ArtSend $ctx 404 $null $null }
+    }
+    elseif ($path -eq "/api/agent/health") {
+        # The heartbeat answer that carries the console's look (section 12). Changed mid-run through
+        # $script:artLook to prove a later push is stored even while this machine ignores it.
+        $body = @{ escalatedConflicts = @(); appearance = $script:artLook } | ConvertTo-Json -Depth 4
+        ArtSend $ctx 200 "application/json" ([Text.Encoding]::UTF8.GetBytes($body))
     }
     elseif ($path -eq "/art/good/grid.png") { ArtSend $ctx 200 "image/png" $pngBytes }
     elseif ($path -eq "/art/html/grid.png") { ArtSend $ctx 200 "text/html" ([Text.Encoding]::UTF8.GetBytes("<script>alert(1)</script>")) }
@@ -673,6 +680,84 @@ try {
     $all = ArtCall "POST" "/api/sync" $artToken $null
     $allMsg = if ($all.Status -eq 200) { ($all.Body | ConvertFrom-Json).message } else { $null }
     Check "Sync all runs every game and reports completion" ($all.Status -eq 200 -and $allMsg -eq "Sync all complete.")
+
+    # =============================================================================
+    # 12. APPEARANCE (checkpoint-ui Phase 4): the console's look reaches this machine on a heartbeat, and
+    #     a machine can opt out. Same daemon and stub as section 11 - the stub's /api/agent/health answers
+    #     with $script:artLook, and the daemon's own poller (every ~20 s) is what delivers it.
+    # =============================================================================
+    Write-Host ""; Write-Host "-- 12: appearance"
+    function Look($r) { if ($r.Status -eq 200) { return ($r.Body | ConvertFrom-Json) } else { return $null } }
+    function PostLook($follow, $look) {
+        $b = @{ follow = $follow }
+        if ($null -ne $look) { $b.look = $look }
+        return (ArtCall "POST" "/api/appearance" $artToken ($b | ConvertTo-Json -Depth 4 -Compress))
+    }
+
+    Check "appearance: needs the local token (GET)"  ((ArtCall "GET" "/api/appearance" $null $null).Status -eq 401)
+    Check "appearance: needs the local token (POST)" ((ArtCall "POST" "/api/appearance" $null '{"follow":false}').Status -eq 401)
+
+    # By now several heartbeats have gone out (section 11 spends well over 20 s in its held requests),
+    # but wait for the first push rather than assuming - up to two poll periods.
+    $a = $null
+    $deadline = (Get-Date).AddSeconds(50)
+    while ((Get-Date) -lt $deadline) {
+        $a = Look (ArtCall "GET" "/api/appearance" $artToken $null)
+        if ($a -and $a.console -and $a.console.accent -eq "cobalt") { break }
+        ArtPump 500
+    }
+    Check "appearance: a look pushed on the heartbeat is stored (console = cobalt / memcard / dark)" `
+        ($a -and $a.console.accent -eq "cobalt" -and $a.console.mark -eq "memcard" -and $a.console.theme -eq "dark")
+    Check "appearance: following is the default, so it is what this machine now draws" `
+        ($a -and $a.follow -eq $true -and $a.effective.accent -eq "cobalt" -and $a.effective.mark -eq "memcard")
+    Check "appearance: it says WHEN the console's look last changed" ($a -and $a.consoleAppliedAt -and ([datetime]$a.consoleAppliedAt) -gt (Get-Date).ToUniversalTime().AddMinutes(-10))
+    Check "appearance: the machine key is not in the answer" (-not (ArtCall "GET" "/api/appearance" $artToken $null).Body.Contains("art-test-key"))
+
+    # An id nothing knows is refused before anything is stored - including a value shaped like CSS.
+    foreach ($bad in @(
+        '{"follow":false,"look":{"theme":"dark","accent":"hotpink","mark":"pixel"}}',
+        '{"follow":false,"look":{"theme":"sepia","accent":"ember","mark":"pixel"}}',
+        '{"follow":false,"look":{"theme":"dark","accent":"red;}body{display:none","mark":"pixel"}}')) {
+        Check "appearance: an unknown id is a 400 ($($bad.Substring(0, 44))...)" ((ArtCall "POST" "/api/appearance" $artToken $bad).Status -eq 400)
+    }
+    $after = Look (ArtCall "GET" "/api/appearance" $artToken $null)
+    Check "appearance: the refused requests changed nothing" ($after.follow -eq $true -and $after.effective.accent -eq "cobalt")
+
+    # Turning "follow" off with no look keeps what is on screen (nothing jumps), and starts the machine's own choice from it.
+    $gamesBefore = @((Get-Content $artCfg -Raw | ConvertFrom-Json).Games).Count
+    $off = Look (PostLook $false $null)
+    Check "appearance: turning follow off changes nothing on screen (the machine's own look starts as the current one)" `
+        ($off.follow -eq $false -and $off.effective.accent -eq "cobalt" -and $off.local.accent -eq "cobalt")
+
+    # Now the machine picks its own look ...
+    $mine = Look (PostLook $false @{ theme = "light"; accent = "arcade"; mark = "cartridge" })
+    Check "appearance: with follow off, this machine's own look is what it draws" `
+        ($mine.follow -eq $false -and $mine.effective.theme -eq "light" -and $mine.effective.accent -eq "arcade" -and $mine.effective.mark -eq "cartridge")
+    Check "appearance: ... while the console's last look is still on record" ($mine.console.accent -eq "cobalt")
+
+    # ... and the write reached config.json without disturbing anything else in it.
+    $disk = Get-Content $artCfg -Raw | ConvertFrom-Json
+    Check "appearance: persisted to config.json (follow off, own look arcade)" `
+        ($disk.FollowConsoleAppearance -eq $false -and $disk.LocalAppearance.Accent -eq "arcade")
+    Check "appearance: ... and the game list and the machine key in it were not disturbed" `
+        (@($disk.Games).Count -eq $gamesBefore -and $disk.ApiKey -eq "art-test-key")
+
+    # The console changes its look while this machine is opted out: the push is STORED, not applied.
+    $script:artLook = @{ theme = "light"; accent = "coolant"; mark = "pixel" }
+    $deadline = (Get-Date).AddSeconds(50)
+    while ((Get-Date) -lt $deadline) {
+        $a = Look (ArtCall "GET" "/api/appearance" $artToken $null)
+        if ($a -and $a.console.accent -eq "coolant") { break }
+        ArtPump 500
+    }
+    Check "appearance: a push while opted out is still stored (console = coolant) ..." ($a.console.accent -eq "coolant" -and $a.console.mark -eq "pixel")
+    Check "appearance: ... but does NOT change what this machine draws (still arcade)" ($a.effective.accent -eq "arcade" -and $a.follow -eq $false)
+
+    # Following again shows the console's CURRENT look at once, not the one from when it was switched off.
+    $on = Look (PostLook $true $null)
+    Check "appearance: turning follow back on draws the console's current look immediately (coolant)" `
+        ($on.follow -eq $true -and $on.effective.accent -eq "coolant" -and $on.effective.mark -eq "pixel")
+    Check "appearance: ... and the machine's own choice is remembered for next time (still arcade)" ($on.local.accent -eq "arcade")
 }
 finally {
     if ($artProc) { Stop-Process -Id $artProc.Id -Force -ErrorAction SilentlyContinue }

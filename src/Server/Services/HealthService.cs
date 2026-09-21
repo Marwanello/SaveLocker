@@ -24,11 +24,13 @@ public sealed class HealthService
 
     private readonly AppDbContext _db;
     private readonly ConflictEscalationPolicy _conflictEscalation;
+    private readonly SettingsService _settings;
 
-    public HealthService(AppDbContext db, ConflictEscalationPolicy conflictEscalation)
+    public HealthService(AppDbContext db, ConflictEscalationPolicy conflictEscalation, SettingsService settings)
     {
         _db = db;
         _conflictEscalation = conflictEscalation;
+        _settings = settings;
     }
 
     /// <summary>Record a heartbeat, fold in any reported events, and close what the agent just fixed.</summary>
@@ -80,13 +82,19 @@ public sealed class HealthService
             .Where(m => stuckMachineIds.Contains(m.Id))
             .ToDictionaryAsync(m => m.Id, m => m.Name);
 
+        // The look rides the heartbeat because it is already the cheapest channel every agent polls
+        // (~20 s): no new schedule, no new route. Null when the admin turned pushing off, which the
+        // agent reads as "no opinion" — it keeps what it last applied.
+        var appearance = await _settings.GetAppearanceAsync();
+
         return new AgentHeartbeatResponse(conflicts.Select(c => new ConflictEscalationDto(
             c.Id,
             c.GameId,
             c.Game?.Name ?? "(deleted game)",
             c.MachineId is { } stuckId ? machineNames.GetValueOrDefault(stuckId) : null,
             c.CreatedAt,
-            c.Count)).ToArray());
+            c.Count)).ToArray(),
+            appearance.PushToAgents ? appearance.Look : null);
     }
 
     /// <summary>

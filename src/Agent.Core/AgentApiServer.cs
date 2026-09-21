@@ -371,6 +371,24 @@ public sealed class AgentApiServer : IDisposable
             return TypedResults.Ok(new ConfigChangeResponse(identityCleared, _autoStart.IsEnabled()));
         }).Produces<ConfigChangeResponse>();
 
+        // The look this window draws itself in (theme, accent, app mark) — pushed by the console on
+        // each heartbeat unless this machine has opted out. Its own route pair rather than fields on
+        // AgentConfigDto: that record is read by the Decky plugin, and this one is polled by every
+        // agent-ui page. Both are local reads/writes of config.json — no disk walk, no network.
+        app.MapGet("/api/appearance", () => ToAppearanceDto(_config)).Produces<AgentAppearanceDto>();
+
+        app.MapPost("/api/appearance", Results<Ok<AgentAppearanceDto>, BadRequest<ErrorResponse>>
+            (AgentAppearanceRequest body) =>
+        {
+            if (body.Look is { } look && !Appearances.IsValid(look.Theme, look.Accent, look.Mark))
+                return TypedResults.BadRequest(new ErrorResponse(
+                    $"Theme must be one of {string.Join(", ", Appearances.Themes)}; accent one of " +
+                    $"{string.Join(", ", Appearances.Accents)}; mark one of {string.Join(", ", Appearances.Marks)}."));
+
+            _config.SetAppearance(body.Follow, body.Look);
+            return TypedResults.Ok(ToAppearanceDto(_config));
+        }).Produces<AgentAppearanceDto>();
+
         app.MapPost("/api/register", async Task<Results<Ok<RegisterResponse>, InternalServerError<ErrorResponse>>>
             (RegisterRequest body) =>
         {
@@ -1221,6 +1239,17 @@ public sealed class AgentApiServer : IDisposable
         return result;
     }
 
+    private static AgentAppearanceDto ToAppearanceDto(AgentConfig config)
+    {
+        var effective = config.EffectiveAppearance;
+        return new AgentAppearanceDto(
+            config.FollowConsoleAppearance,
+            effective,
+            config.ConsoleAppearance is { } pushed ? Appearances.Normalize(pushed) : null,
+            config.ConsoleAppearanceAt,
+            Appearances.Normalize(config.LocalAppearance ?? effective));
+    }
+
     private static CandidateDto[] ToCandidateDtos(IReadOnlyList<ScanCandidate> candidates) =>
         candidates.Select((candidate, id) => new CandidateDto(
             id,
@@ -1386,6 +1415,23 @@ public sealed record AgentConfigDto(
     string MachineName,
     bool StartWithWindows,
     int SettleQuietSeconds);
+/// <param name="Follow">This machine takes the console's look. Off is the per-machine override.</param>
+/// <param name="Effective">What to draw right now — the one field a page needs to style itself. Always
+/// a known-good value, so a page never has to defend against an unknown id.</param>
+/// <param name="Console">The look the console last pushed, or null if none ever arrived (the console
+/// is not sharing, or is an older build).</param>
+/// <param name="ConsoleAppliedAt">When <paramref name="Console"/> last changed, UTC.</param>
+/// <param name="Local">This machine's own look — its previous choice, or the current one if it never
+/// made one — offered as the starting point when "Follow the console" is turned off.</param>
+public sealed record AgentAppearanceDto(
+    bool Follow,
+    AppearanceDto Effective,
+    AppearanceDto? Console,
+    DateTime? ConsoleAppliedAt,
+    AppearanceDto Local);
+/// <param name="Look">Required to change this machine's own look; omitted to only flip
+/// <paramref name="Follow"/>.</param>
+public sealed record AgentAppearanceRequest(bool Follow, AppearanceDto? Look = null);
 /// <param name="UpdateAvailable">
 /// The server is offering something newer. That is all it means: nothing is downloaded, and acting
 /// on it needs network, a download, a digest check and a smoke test — any of which can fail, and all

@@ -30,6 +30,17 @@ public sealed class SettingsService
     public const string AgentUpdateScheduleDayOfMonth = "AgentUpdate:Schedule:DayOfMonth";
     public const string AgentUpdateScheduleTimeOfDay = "AgentUpdate:Schedule:TimeOfDay";
 
+    /// <summary>The console's look (docs/tasks/checkpoint-ui/plan.md). Ids, never colours — see
+    /// <see cref="Appearances"/>. Absent means the default, so a deployment that never opens the
+    /// Appearance card sees nothing change; they are also settable from config/env
+    /// (<c>Ui__Accent=coolant</c>), which is how an unRAID template can pick one up front.</summary>
+    public const string UiTheme = "Ui:Theme";
+    public const string UiAccent = "Ui:Accent";
+    public const string UiMark = "Ui:Mark";
+    /// <summary>Whether enrolled agents are told the look above. Absent means <b>true</b> — the
+    /// prototype's default, and the reason "set it once, every machine matches" works out of the box.</summary>
+    public const string UiPushToAgents = "Ui:PushToAgents";
+
     private readonly AppDbContext _db;
     private readonly IConfiguration _cfg;
 
@@ -157,6 +168,39 @@ public sealed class SettingsService
         await SetAsync(AgentUpdateScheduleTimeOfDay, schedule.TimeOfDay, ct);
     }
 
+    /// <summary>
+    /// The console's look and whether it is shared. Always a known-good <see cref="AppearanceDto"/>:
+    /// a value that is not a recognised id (a typo in an env var, a row written by a newer build) is
+    /// replaced with that field's default here, at the one place every reader goes through.
+    /// </summary>
+    public async Task<AppearanceSettingsDto> GetAppearanceAsync(CancellationToken ct = default)
+    {
+        var look = Appearances.Normalize(new AppearanceDto(
+            await GetEffectiveAsync(UiTheme, ct) ?? "",
+            await GetEffectiveAsync(UiAccent, ct) ?? "",
+            await GetEffectiveAsync(UiMark, ct) ?? ""));
+        var push = !bool.TryParse(await GetEffectiveAsync(UiPushToAgents, ct), out var parsed) || parsed;
+        return new AppearanceSettingsDto(look, push);
+    }
+
+    /// <summary>
+    /// Store the console's look. All four keys are written explicitly, including a value that equals
+    /// the default: a stored "ember" keeps meaning Ember if a later release changes what the default is.
+    /// </summary>
+    public async Task SetAppearanceAsync(SetAppearanceRequest req, CancellationToken ct = default)
+    {
+        if (!Appearances.IsValid(req.Theme, req.Accent, req.Mark))
+            throw new ArgumentOutOfRangeException(nameof(req),
+                $"Theme must be one of {string.Join(", ", Appearances.Themes)}; accent one of " +
+                $"{string.Join(", ", Appearances.Accents)}; mark one of {string.Join(", ", Appearances.Marks)}.");
+
+        var look = Appearances.Normalize(new AppearanceDto(req.Theme, req.Accent, req.Mark));
+        await SetAsync(UiTheme, look.Theme, ct);
+        await SetAsync(UiAccent, look.Accent, ct);
+        await SetAsync(UiMark, look.Mark, ct);
+        await SetAsync(UiPushToAgents, req.PushToAgents ? "true" : "false", ct);
+    }
+
     /// <summary>The dashboard-facing settings snapshot (never includes the raw key).</summary>
     public async Task<ServerSettingsDto> GetServerSettingsDtoAsync(CancellationToken ct = default)
     {
@@ -171,7 +215,8 @@ public sealed class SettingsService
             DefaultExcludeGlobs: GlobConfig.GlobalDefaults(_cfg),
             AutoFetchHours: schedule.Hours,
             Schedule: schedule,
-            NextAutoFetchRunAt: AutoFetchScheduler.ComputeNextRun(schedule, DateTime.UtcNow));
+            NextAutoFetchRunAt: AutoFetchScheduler.ComputeNextRun(schedule, DateTime.UtcNow),
+            Appearance: await GetAppearanceAsync(ct));
     }
 
     /// <summary>Show only the last 4 characters so the dashboard can confirm which key is set.</summary>

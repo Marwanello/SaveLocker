@@ -1,5 +1,6 @@
 ﻿using System.Drawing;
 using System.Windows.Forms;
+using SaveLocker.Shared;
 
 namespace SaveLocker.Agent;
 
@@ -21,6 +22,28 @@ internal static class AppResources
         catch
         {
             return SystemIcons.Application;
+        }
+    }
+
+    /// <summary>
+    /// The agent icon in the given look — the chosen mark, in the chosen accent — as a NEW icon the
+    /// caller owns and disposes. <paramref name="large"/> asks for the shell's large-icon size (the
+    /// window's Alt-Tab entry) rather than the small one (the tray, the title bar).
+    /// <para>
+    /// Falls back to a copy of the packaged icon: an icon is never worth failing to show the tray for.
+    /// </para>
+    /// </summary>
+    public static Icon Render(AppearanceDto look, bool large = false)
+    {
+        try
+        {
+            var size = large ? SystemInformation.IconSize : SystemInformation.SmallIconSize;
+            return MarkIcon.Render(look, size.Width);
+        }
+        catch (Exception ex)
+        {
+            AgentLogger.LogException("AppResources.Render", ex);
+            return (Icon)Icon.Clone();
         }
     }
 

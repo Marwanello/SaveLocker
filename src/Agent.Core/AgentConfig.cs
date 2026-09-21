@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
+using SaveLocker.Shared;
 
 namespace SaveLocker.Agent;
 
@@ -72,6 +73,37 @@ public sealed class AgentConfig
 
     /// <summary>Mute the Game Mode UI's interface sounds (`savelocker ui`). Nothing else uses audio.</summary>
     public bool UiSoundsMuted { get; set; }
+
+    /// <summary>
+    /// Whether this machine draws itself in the look the console pushes (theme, accent, app mark).
+    /// True by default — "set it once on the server and every machine matches". Turning it off is the
+    /// per-machine override: <see cref="LocalAppearance"/> is used and pushed looks are still stored
+    /// but ignored, so turning it back on shows the console's current look at once.
+    /// </summary>
+    public bool FollowConsoleAppearance { get; set; } = true;
+    /// <summary>The look the console last pushed on a heartbeat; null until one carried a look.</summary>
+    public AppearanceDto? ConsoleAppearance { get; set; }
+    /// <summary>When <see cref="ConsoleAppearance"/> last <b>changed</b> (UTC) — not when a heartbeat
+    /// last repeated it, which would read "just now" forever.</summary>
+    public DateTime? ConsoleAppearanceAt { get; set; }
+    /// <summary>This machine's own look, used while <see cref="FollowConsoleAppearance"/> is off.</summary>
+    public AppearanceDto? LocalAppearance { get; set; }
+
+    /// <summary>
+    /// The look this machine actually draws: the console's when following it, this machine's own
+    /// otherwise, always a known-good value. Derived rather than stored so it can never disagree with
+    /// the three fields above.
+    /// </summary>
+    [JsonIgnore]
+    public AppearanceDto EffectiveAppearance => Appearances.Normalize(
+        FollowConsoleAppearance ? ConsoleAppearance : LocalAppearance ?? ConsoleAppearance);
+
+    /// <summary>
+    /// Raised, with the new <see cref="EffectiveAppearance"/>, after a change to it is on disk. May
+    /// arrive on any thread (the heartbeat's, or a request's) — a subscriber that owns UI objects
+    /// marshals, as the tray does through its dispatcher.
+    /// </summary>
+    public event Action<AppearanceDto>? AppearanceChanged;
 
     [JsonIgnore] public string ConfigPath { get; private set; } = DefaultConfigPath;
 
@@ -192,6 +224,12 @@ public sealed class AgentConfig
             // Same reasoning as the sync state above: SetTracked owns this list, and a host that
             // loaded its config at boot must not write a stale copy over another process's opt-out.
             UntrackedGameIds = onDisk.UntrackedGameIds;
+            // Same again for the look: the heartbeat and the appearance route write it through
+            // UpdateSettings, so a host holding a boot-time copy must not write that copy back.
+            FollowConsoleAppearance = onDisk.FollowConsoleAppearance;
+            ConsoleAppearance = onDisk.ConsoleAppearance;
+            ConsoleAppearanceAt = onDisk.ConsoleAppearanceAt;
+            LocalAppearance = onDisk.LocalAppearance;
 
             // And the opt-out has to be ENFORCED here, not just carried. A long-lived host loaded
             // its game list at boot and holds it for the process lifetime, so after another process
@@ -293,10 +331,91 @@ public sealed class AgentConfig
         SettleQuietSeconds = fresh.SettleQuietSeconds;
         SettleMaxWaitSeconds = fresh.SettleMaxWaitSeconds;
         UiSoundsMuted = fresh.UiSoundsMuted;
+        FollowConsoleAppearance = fresh.FollowConsoleAppearance;
+        ConsoleAppearance = fresh.ConsoleAppearance;
+        ConsoleAppearanceAt = fresh.ConsoleAppearanceAt;
+        LocalAppearance = fresh.LocalAppearance;
         TotalSavesPushed = fresh.TotalSavesPushed;
         LastSyncTime = fresh.LastSyncTime;
         Games = fresh.Games;
         UntrackedGameIds = fresh.UntrackedGameIds;
+    }
+
+    /// <summary>
+    /// The console pushed a look on a heartbeat. Stored — even while <see cref="FollowConsoleAppearance"/>
+    /// is off, so turning it back on shows the console's current look rather than a stale one — and
+    /// <see cref="AppearanceChanged"/> raised when what this machine actually draws changed.
+    /// Returns whether the stored console look changed.
+    /// <para>
+    /// The unchanged case answers from memory and writes nothing: this runs on every ~20 s heartbeat,
+    /// and <see cref="UpdateSettings"/> takes the cross-process lock and rewrites <c>config.json</c>.
+    /// </para>
+    /// </summary>
+    public bool ApplyConsoleAppearance(AppearanceDto pushed)
+    {
+        var look = Appearances.Normalize(pushed);
+        if (ConsoleAppearance is { } known && Appearances.Normalize(known) == look) return false;
+
+        var before = EffectiveAppearance;
+        var changed = false;
+        UpdateSettings(c =>
+        {
+            if (c.ConsoleAppearance is { } stored && Appearances.Normalize(stored) == look) return;
+            c.ConsoleAppearance = look;
+            c.ConsoleAppearanceAt = DateTime.UtcNow;
+            changed = true;
+        });
+        RaiseIfEffectiveChanged(before);
+        return changed;
+    }
+
+    /// <summary>
+    /// The per-machine override, from the agent UI. <paramref name="follow"/> on: use the console's
+    /// look (this machine's own choice is kept, so switching back restores it). Off: use
+    /// <paramref name="local"/>, or — when none is given — the machine's previous own choice, or
+    /// failing that whatever it is drawing right now, so that turning "Follow the console" off changes
+    /// nothing on screen until the user picks something else.
+    /// </summary>
+    public void SetAppearance(bool follow, AppearanceDto? local)
+    {
+        var before = EffectiveAppearance;
+        UpdateSettings(c =>
+        {
+            if (!follow)
+                c.LocalAppearance = Appearances.Normalize(local ?? c.LocalAppearance ?? c.EffectiveAppearance);
+            else if (local is not null)
+                c.LocalAppearance = Appearances.Normalize(local);
+            c.FollowConsoleAppearance = follow;
+        });
+        RaiseIfEffectiveChanged(before);
+    }
+
+    /// <summary>
+    /// Adopt whatever look is on disk. For <c>savelocker ui</c>, which loads <c>config.json</c> once
+    /// and never reloads it — without this the Deck's accent would only follow the console after a
+    /// restart. Skips rather than waits when another process holds the lock (it runs from the render
+    /// loop), so the next poll simply retries. Raises <see cref="AppearanceChanged"/> when the
+    /// effective look moved.
+    /// </summary>
+    public void RefreshAppearance()
+    {
+        using var guard = AgentStateLock.TryAcquire("config", StateDir, TimeSpan.Zero);
+        if (guard is null) return;
+        var onDisk = ReadOnDisk();
+        if (onDisk is null) return;
+
+        var before = EffectiveAppearance;
+        FollowConsoleAppearance = onDisk.FollowConsoleAppearance;
+        ConsoleAppearance = onDisk.ConsoleAppearance;
+        ConsoleAppearanceAt = onDisk.ConsoleAppearanceAt;
+        LocalAppearance = onDisk.LocalAppearance;
+        RaiseIfEffectiveChanged(before);
+    }
+
+    private void RaiseIfEffectiveChanged(AppearanceDto before)
+    {
+        var after = EffectiveAppearance;
+        if (after != before) AppearanceChanged?.Invoke(after);
     }
 
     /// <summary>Is this server game one this machine has opted out of tracking?</summary>

@@ -68,7 +68,8 @@ public record ServerSettingsDto(
     string[]? DefaultExcludeGlobs = null,
     double AutoFetchHours = 0,
     AutoFetchSchedule? Schedule = null,
-    DateTime? NextAutoFetchRunAt = null);
+    DateTime? NextAutoFetchRunAt = null,
+    AppearanceSettingsDto? Appearance = null);
 
 /// <summary>
 /// When the server automatically checks GitHub for newer agent/plugin packages.
@@ -574,8 +575,19 @@ public record ConflictEscalationDto(
     DateTime CreatedAt,
     int Count);
 
-/// <summary>Server guidance returned with a heartbeat.</summary>
-public record AgentHeartbeatResponse(ConflictEscalationDto[] EscalatedConflicts);
+/// <summary>
+/// Server guidance returned with a heartbeat.
+/// <para>
+/// <paramref name="Appearance"/> is appended and optional for the same reason
+/// <see cref="AgentHeartbeat.PathCandidates"/> is: an older agent ignores the field, and a newer
+/// agent talking to an older server sees null, so the fleet and the container upgrade in either
+/// order. Null also means "the console is not sharing its look" — an agent keeps whatever it last
+/// applied, it does not fall back to the default.
+/// </para>
+/// </summary>
+public record AgentHeartbeatResponse(
+    ConflictEscalationDto[] EscalatedConflicts,
+    AppearanceDto? Appearance = null);
 
 /// <summary>
 /// "This machine's scan found a save folder for a game it tracks but has not mapped." Reported so

@@ -1470,6 +1470,35 @@
         }
       }
     },
+    "/api/settings/appearance": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAppearanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppearanceSettingsDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/agent-update-auto-fetch": {
       "post": {
         "tags": [
@@ -2773,6 +2802,16 @@
             "items": {
               "$ref": "#/components/schemas/ConflictEscalationDto"
             }
+          },
+          "appearance": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AppearanceDto"
+              }
+            ]
           }
         }
       },
@@ -2833,6 +2872,40 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "AppearanceDto": {
+        "required": [
+          "theme",
+          "accent",
+          "mark"
+        ],
+        "type": "object",
+        "properties": {
+          "theme": {
+            "type": "string"
+          },
+          "accent": {
+            "type": "string"
+          },
+          "mark": {
+            "type": "string"
+          }
+        }
+      },
+      "AppearanceSettingsDto": {
+        "required": [
+          "look",
+          "pushToAgents"
+        ],
+        "type": "object",
+        "properties": {
+          "look": {
+            "$ref": "#/components/schemas/AppearanceDto"
+          },
+          "pushToAgents": {
+            "type": "boolean"
           }
         }
       },
@@ -4199,6 +4272,16 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "appearance": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AppearanceSettingsDto"
+              }
+            ]
           }
         }
       },
@@ -4235,6 +4318,29 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "SetAppearanceRequest": {
+        "required": [
+          "theme",
+          "accent",
+          "mark",
+          "pushToAgents"
+        ],
+        "type": "object",
+        "properties": {
+          "theme": {
+            "type": "string"
+          },
+          "accent": {
+            "type": "string"
+          },
+          "mark": {
+            "type": "string"
+          },
+          "pushToAgents": {
+            "type": "boolean"
           }
         }
       },

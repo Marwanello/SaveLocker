@@ -1777,6 +1777,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/appearance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetAppearanceRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AppearanceSettingsDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/agent-update-auto-fetch": {
         parameters: {
             query?: never;
@@ -3100,6 +3139,7 @@ export interface components {
         };
         AgentHeartbeatResponse: {
             escalatedConflicts: components["schemas"]["ConflictEscalationDto"][];
+            appearance?: null | components["schemas"]["AppearanceDto"];
         };
         AgentInstallerStatus: {
             version: string;
@@ -3118,6 +3158,15 @@ export interface components {
             latestVersion: string;
             downloadUrl: string;
             sha256?: null | string;
+        };
+        AppearanceDto: {
+            theme: string;
+            accent: string;
+            mark: string;
+        };
+        AppearanceSettingsDto: {
+            look: components["schemas"]["AppearanceDto"];
+            pushToAgents: boolean;
         };
         ArtOptionDto: {
             url: string;
@@ -3482,6 +3531,7 @@ export interface components {
             schedule?: null | components["schemas"]["AutoFetchSchedule"];
             /** Format: date-time */
             nextAutoFetchRunAt?: null | string;
+            appearance?: null | components["schemas"]["AppearanceSettingsDto"];
         };
         SessionResponse: {
             token: null | string;
@@ -3490,6 +3540,12 @@ export interface components {
         };
         SetAdminPasswordRequest: {
             password: null | string;
+        };
+        SetAppearanceRequest: {
+            theme: string;
+            accent: string;
+            mark: string;
+            pushToAgents: boolean;
         };
         SetConflictPolicyRequest: {
             policy: components["schemas"]["ConflictPolicy"];

@@ -30,12 +30,13 @@ internal sealed class AgentWindow : Form
 
     /// <param name="view">Optional initial view (the React app's hash route), applied as soon as
     /// WebView2 is ready rather than being lost to the startup race.</param>
-    public AgentWindow(int port, string? view = null)
+    public AgentWindow(int port, string? view = null, SaveLocker.Shared.AppearanceDto? look = null)
     {
         _port = port;
         _pendingUrl = UrlForView(port, view);
         Text = "SaveLocker";
         Icon = AppResources.Icon;
+        if (look is not null) ApplyLook(look);
         // WinForms ClientSize units are physical pixels even when DeviceDpi > 96.
         // WebView2 divides physical px by devicePixelRatio (= DeviceDpi/96) to get CSS px.
         // So to get 900×600 CSS pixels we need 900*(DeviceDpi/96) × 600*(DeviceDpi/96) physical px.
@@ -45,6 +46,26 @@ internal sealed class AgentWindow : Form
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(0x0d, 0x11, 0x14);
         Controls.Add(_webView);
+    }
+
+    // The mark the user picked, rendered for this form and disposed with it. Null while the packaged
+    // icon is showing. UI thread only, like every other field here.
+    private Icon? _ownedIcon;
+
+    /// <summary>Show the chosen mark and accent as this window's icon. Safe to call while open —
+    /// the console can change the look at any time.</summary>
+    internal void ApplyLook(SaveLocker.Shared.AppearanceDto look)
+    {
+        var next = AppResources.Render(look, large: true);
+        Icon = next;
+        _ownedIcon?.Dispose();
+        _ownedIcon = next;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _ownedIcon?.Dispose();
+        base.Dispose(disposing);
     }
 
     protected override async void OnLoad(EventArgs e)
