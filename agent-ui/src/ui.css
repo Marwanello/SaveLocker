@@ -190,8 +190,10 @@ button:disabled { cursor: default; }
   position: fixed; right: 20px; bottom: 20px; z-index: 50; max-width: min(420px, calc(100vw - 40px));
   background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 12px;
   padding: 12px 16px; font-size: 13px; line-height: 1.5; color: var(--color-fg);
+  display: flex; align-items: center; gap: 12px;
   box-shadow: 0 10px 30px -12px rgba(0, 0, 0, .6); animation: sl-toast-in 340ms var(--ease) both;
 }
+.sl-toast > span { min-width: 0; overflow-wrap: anywhere; }
 .sl-toast--warn { border-color: var(--color-watch-line); }
 
 @media (prefers-reduced-motion: reduce) {

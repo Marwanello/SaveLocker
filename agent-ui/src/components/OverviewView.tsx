@@ -45,7 +45,7 @@ export function OverviewView({ state, conflicts, games, onWarningDismissed, onNa
       <Banner
         key="conflicts" tone="crit"
         title={conflicts.length === 1 ? `${first} is waiting on you` : `${conflicts.length} games are waiting on you`}
-        detail="Both copies changed since the last sync. Keep one."
+        detail="Open Conflicts to keep this device's save or the cloud's."
         action={<Button variant="primary" onClick={() => onNavigate('conflicts')}>Choose</Button>}
       />,
     )
