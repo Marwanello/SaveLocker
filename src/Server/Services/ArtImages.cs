@@ -16,6 +16,38 @@ internal static class ArtImages
     // A PNG can be a few KB and still declare a billion pixels; decoding it is the cost, not reading it.
     private const long MaxDecodePixels = 40_000_000;
 
+    // ImageSharp's two most common failures on untrusted bytes — UnknownImageFormatException and
+    // InvalidImageContentException — derive from ImageFormatException, NOT from ImageProcessingException,
+    // so a filter on the latter alone lets both through (measured on 3.1.12).
+    private static bool IsDecodeFailure(Exception ex) =>
+        ex is ImageFormatException or ImageProcessingException or NotSupportedException;
+
+    /// <summary>
+    /// True when ImageSharp can read the image's header: it is a format it knows and the header is intact.
+    /// Says nothing about the pixels. An .ico is a real image ImageSharp does not know, so callers that
+    /// accept those ask about the extension first.
+    /// </summary>
+    public static bool IsIdentifiable(byte[] bytes)
+    {
+        if (bytes.Length == 0) return false;
+        try { Image.Identify(bytes); return true; }
+        catch (Exception ex) when (IsDecodeFailure(ex)) { return false; }
+    }
+
+    /// <summary>
+    /// True when the header declares more pixels than we will decode. An image that cannot be identified
+    /// at all (an .ico, say) is not "oversized" — that is a different question, and callers that pass
+    /// small unidentifiable images through must not be able to mistake this for it.
+    /// </summary>
+    public static bool IsOversized(byte[] bytes)
+    {
+        if (bytes.Length == 0) return false;
+        try { return Exceeds(Image.Identify(bytes)); }
+        catch (Exception ex) when (IsDecodeFailure(ex)) { return false; }
+    }
+
+    private static bool Exceeds(ImageInfo info) => (long)info.Width * info.Height > MaxDecodePixels;
+
     /// <summary>
     /// True when the image has no pixel that is even partly transparent. Only the pixels can say so:
     /// the header's own alpha flag proved wrong in both directions (an RGBA PNG with one clear pixel
@@ -27,14 +59,13 @@ internal static class ArtImages
     {
         try
         {
-            var info = Image.Identify(bytes);
-            if ((long)info.Width * info.Height > MaxDecodePixels) return false;
+            if (Exceeds(Image.Identify(bytes))) return false;
             if (Image.DetectFormat(bytes).Name == "JPEG") return true;
 
             using var image = Image.Load<Rgba32>(bytes);
             return HasNoTransparency(image);
         }
-        catch (Exception ex) when (ex is ImageProcessingException or NotSupportedException) { return false; }
+        catch (Exception ex) when (IsDecodeFailure(ex)) { return false; }
     }
 
     private static bool HasNoTransparency(Image<Rgba32> image)
@@ -70,7 +101,7 @@ internal static class ArtImages
         try
         {
             var info = Image.Identify(source);
-            if (info.Width <= maxWidth || (long)info.Width * info.Height > MaxDecodePixels) return null;
+            if (info.Width <= maxWidth || Exceeds(info)) return null;
             source.Position = 0;
 
             var isJpeg = Image.DetectFormat(source).Name == "JPEG";
@@ -92,6 +123,6 @@ internal static class ArtImages
             else image.Save(output, new PngEncoder());
             return (output.ToArray(), asJpeg ? "image/jpeg" : "image/png");
         }
-        catch (Exception ex) when (ex is ImageProcessingException or NotSupportedException) { return null; }
+        catch (Exception ex) when (IsDecodeFailure(ex)) { return null; }
     }
 }

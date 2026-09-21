@@ -63,6 +63,10 @@ public sealed class ArtService
     // Each API page is up to 50 results; ten pages is far more than anyone scrolls, and bounds the work.
     private const int MaxOptionApiPages = 10;
 
+    // Ten API pages cannot hold more than this many pages of five, so anything past it is an empty page
+    // without asking SteamGridDB — and keeps (page + 1) * OptionsPageSize from overflowing an int.
+    private const int MaxOptionPage = 1000;
+
     // A preview is shrunk to fit its tile (see GetOptionsAsync); one that cannot be shrunk is passed
     // through only if it is already small, since it travels inline in the JSON.
     private const int MaxPassthroughPreviewBytes = 300 * 1024;
@@ -268,9 +272,13 @@ public sealed class ArtService
     /// <summary>Best-effort fetch used on enroll; swallows errors so enroll never fails on art.</summary>
     public async Task TryRefreshOnEnrollAsync(Guid gameId, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(await ResolveKeyAsync(ct))) return;
+        if (!await HasKeyAsync(ct)) return;
         try { await RefreshArtAsync(gameId, ct); } catch { /* art is non-critical */ }
     }
+
+    /// <summary>Whether a SteamGridDB key is configured, from the dashboard or from configuration.</summary>
+    public async Task<bool> HasKeyAsync(CancellationToken ct = default) =>
+        !string.IsNullOrWhiteSpace(await ResolveKeyAsync(ct));
 
     /// <summary>
     /// Games with no cover or no icon — the two the console draws. Hero and logo are not counted: they
@@ -332,7 +340,7 @@ public sealed class ArtService
         if (game is null) return (false, "Unknown game.", null);
 
         // The URL came from the caller. DownloadAsync is what makes that safe: https, an allowlisted host
-        // on every redirect hop, a size cap, and a type decided by the bytes.
+        // on every redirect hop, a size cap, a pixel cap, and a type decided by the bytes.
         var stored = await DownloadAsync(gameId, kind, url, ct);
         if (stored is null)
             return (false, "That image could not be downloaded — it is not on SteamGridDB, or not a usable image.", null);
@@ -363,6 +371,7 @@ public sealed class ArtService
     {
         if (kind is not ("grid" or "icon")) return (null, "Art kind must be 'grid' or 'icon'.");
         if (page < 0) return (null, "Page must be 0 or more.");
+        if (page > MaxOptionPage) return (new ArtOptionsPageDto(kind, page, false, new List<ArtOptionDto>()), null);
 
         _apiKey = await ResolveKeyAsync(ct);
         if (string.IsNullOrWhiteSpace(_apiKey))
@@ -381,10 +390,7 @@ public sealed class ArtService
                 e.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
                 return new OptionSource();
             })!;
-            await FillAsync(source, sgdbId.Value, kind, (page + 1) * OptionsPageSize + 1, ct);
-
-            var slice = source.Items.Skip(page * OptionsPageSize).Take(OptionsPageSize).ToList();
-            var hasMore = source.Items.Count > (page + 1) * OptionsPageSize;
+            var (slice, hasMore) = await PageAsync(source, sgdbId.Value, kind, page, ct);
 
             var previews = await Task.WhenAll(slice.Select(o => PreviewAsync(o, kind, ct)));
             var options = slice
@@ -400,7 +406,7 @@ public sealed class ArtService
 
     private sealed record OptionMeta(string Url, string? Thumb, int? Width, int? Height, string? Author);
 
-    /// <summary>The running listing for one (SteamGridDB game, kind). Mutated only under <see cref="Gate"/>.</summary>
+    /// <summary>The running listing for one (SteamGridDB game, kind). Read and mutated only under <see cref="Gate"/>.</summary>
     private sealed class OptionSource
     {
         public readonly SemaphoreSlim Gate = new(1, 1);
@@ -411,8 +417,15 @@ public sealed class ArtService
         public bool Exhausted;
     }
 
-    private async Task FillAsync(OptionSource src, int sgdbId, string kind, int need, CancellationToken ct)
+    /// <summary>
+    /// Grows the running listing far enough to answer <paramref name="page"/> (and to know whether there is
+    /// a next one), then cuts the page out of it — both under the gate, since a concurrent request may be
+    /// appending to the same list the moment it is released.
+    /// </summary>
+    private async Task<(List<OptionMeta> slice, bool hasMore)> PageAsync(
+        OptionSource src, int sgdbId, string kind, int page, CancellationToken ct)
     {
+        var need = (page + 1) * OptionsPageSize + 1;
         await src.Gate.WaitAsync(ct);
         try
         {
@@ -425,6 +438,9 @@ public sealed class ArtService
                     if (src.Seen.Add(item.Url)) src.Items.Add(item);   // a repeated page must not repeat options
                 if (items.Count == 0 || (total is { } t && src.Raw >= t)) src.Exhausted = true;
             }
+
+            var slice = src.Items.Skip(page * OptionsPageSize).Take(OptionsPageSize).ToList();
+            return (slice, src.Items.Count > (page + 1) * OptionsPageSize);
         }
         finally { src.Gate.Release(); }
     }
@@ -475,7 +491,7 @@ public sealed class ArtService
         if (bytes is null) return null;
 
         var ext = ImageSniffer.DetectExtension(bytes);
-        if (ext is null) return null;
+        if (ext is null || (ext != ".ico" && !ArtImages.IsIdentifiable(bytes))) return null;
 
         // Sized for the picker's tiles at 2× density: ~84 px wide covers, ~56 px icons.
         using var stream = new MemoryStream(bytes);
@@ -562,7 +578,7 @@ public sealed class ArtService
     /// The URL is <b>data from SteamGridDB's response, not something we chose</b>, and what we fetch
     /// from it is written under <c>/art</c>, which is served from the same origin as the admin console.
     /// So it is checked as untrusted input: https only, host on the allowlist (every redirect hop too),
-    /// a size cap, and the stored file's type is decided by its own leading bytes — never by the URL's
+    /// a size cap and a pixel cap, and the stored file's type is decided by its own leading bytes — never by the URL's
     /// extension, which used to let a path ending in <c>.html</c> put an attacker-shaped page on the
     /// console's origin. An unreachable or unresponsive host is also just "skip this asset".
     /// </para>
@@ -573,10 +589,19 @@ public sealed class ArtService
         return bytes is null ? null : await StoreAsync(gameId, kind, bytes, ct);
     }
 
-    /// <summary><see cref="FetchImageAsync"/>, with "the host is unreachable or unresponsive" folded into null.</summary>
+    /// <summary>
+    /// <see cref="FetchImageAsync"/>, with "the host is unreachable or unresponsive" folded into null — and
+    /// an image that declares more pixels than we will decode too. Every path that keeps or shows a
+    /// fetched image comes through here, so a few KB of PNG that expands to gigabytes is refused once,
+    /// rather than each caller having to remember to ask.
+    /// </summary>
     private async Task<byte[]?> TryFetchAsync(string url, CancellationToken ct)
     {
-        try { return await FetchImageAsync(url, ct); }
+        try
+        {
+            var bytes = await FetchImageAsync(url, ct);
+            return bytes is not null && ArtImages.IsOversized(bytes) ? null : bytes;
+        }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException) { return null; }
     }
 
@@ -585,6 +610,9 @@ public sealed class ArtService
     {
         var ext = ImageSniffer.DetectExtension(bytes);
         if (ext is null) return null;
+        // The magic number alone is not enough: a PNG header followed by junk is refused here rather than
+        // stored and served. (.ico is a real image ImageSharp does not read, so it is taken on its sniff.)
+        if (ext != ".ico" && !ArtImages.IsIdentifiable(bytes)) return null;
 
         var dir = Path.Combine(_artRoot, gameId.ToString("N"));
         Directory.CreateDirectory(dir);
@@ -594,13 +622,13 @@ public sealed class ArtService
         {
             // Downscale to HeroMaxWidth, preserving aspect ratio, and store as JPEG.
             file = Path.Combine(dir, "hero.jpg");
-            try { await ResizeHeroAsync(bytes, file, ct); }
+            try { await ReplaceFileAsync(file, temp => ResizeHeroAsync(bytes, temp, ct)); }
             catch (Exception ex) when (ex is UnknownImageFormatException or InvalidImageContentException) { return null; }
         }
         else
         {
             file = Path.Combine(dir, kind + ext);
-            await File.WriteAllBytesAsync(file, bytes, ct);
+            await ReplaceFileAsync(file, temp => File.WriteAllBytesAsync(temp, bytes, ct));
         }
 
         // A replacement in another format (icon.ico over icon.png) would otherwise leave the old file
@@ -612,6 +640,26 @@ public sealed class ArtService
         // Cache-bust with the write time so the dashboard <img> refreshes after a re-fetch.
         var filename = Path.GetFileName(file);
         return $"/art/{gameId:N}/{filename}?v={DateTime.UtcNow.Ticks}";
+    }
+
+    /// <summary>
+    /// Writes <paramref name="dest"/> through a temp file beside it, so a reader (the thumbnail handler,
+    /// a browser) sees the old file or the new one, never half of it. The temp name starts with a dot so
+    /// the sweep of a kind's stale files (<c>grid.*</c>) cannot delete one that is still being written.
+    /// </summary>
+    private static async Task ReplaceFileAsync(string dest, Func<string, Task> write)
+    {
+        var temp = Path.Combine(Path.GetDirectoryName(dest)!, $".{Guid.NewGuid():N}.tmp");
+        try
+        {
+            await write(temp);
+            File.Move(temp, dest, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(temp); } catch (IOException) { }
+            throw;
+        }
     }
 
     /// <summary>The image bytes at <paramref name="url"/>, or null if any hop is not an allowed URL,

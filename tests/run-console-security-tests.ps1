@@ -108,7 +108,7 @@ function Start-Phase($name, [hashtable]$extraEnv = @{}) {
     $set = @{
         ASPNETCORE_URLS = $url; Storage__DbPath = (Join-Path $script:state "savelocker.db")
         Storage__ArchiveRoot = (Join-Path $script:state "archives"); Backup__Enabled = "false"
-        Logging__EventLog__LogLevel__Default = "None"
+        Logging__EventLog__LogLevel__Default = "None"; Art__BackfillOnStartup = "false"
     }
     foreach ($k in $extraEnv.Keys) { $set[$k] = $extraEnv[$k] }
     foreach ($k in $set.Keys) { Set-Item -Path "Env:$k" -Value $set[$k] }
@@ -448,6 +448,14 @@ if (-not $canBind) {
         $bigPng = NewPng 400 600 $false
         $iconClear = NewPng 8 8 $true
         $iconSolid = NewPng 8 8 $false
+        # 12000x12000 = 144 million pixels, but one bit each and all clear: a few KB of PNG. The shape a
+        # decode-size cap exists for - it is small enough to be inlined, and enormous once decoded.
+        $bombBmp = New-Object System.Drawing.Bitmap(12000, 12000, [System.Drawing.Imaging.PixelFormat]::Format1bppIndexed)
+        $bombMs = New-Object System.IO.MemoryStream; $bombBmp.Save($bombMs, [System.Drawing.Imaging.ImageFormat]::Png); $bombBmp.Dispose()
+        $bombPng = $bombMs.ToArray()
+        # The right magic number and nothing behind it; and a 200 with no body at all.
+        $corruptPng = [byte[]](@(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A) + (1..40))
+        $emptyBody = [byte[]]@()
         $l = [System.Net.HttpListener]::new()
         $l.Prefixes.Add("http://127.0.0.1:$port/"); $l.Prefixes.Add("http://localhost:$port/")
         $l.Start()
@@ -465,13 +473,14 @@ if (-not $canBind) {
             try {
                 if ($path -eq "/ping") { Send $ctx 200 ([Text.Encoding]::UTF8.GetBytes("pong")) "text/plain" }
                 elseif ($path -like "/api/v2/search/autocomplete/*") {
-                    $id = if ($path -like "*Good*") { 1 } elseif ($path -like "*Paged*") { 3 } elseif ($path -like "*Opaque*") { 4 } else { 2 }
+                    $id = if ($path -like "*Good*") { 1 } elseif ($path -like "*Paged*") { 3 } elseif ($path -like "*Opaque*") { 4 } elseif ($path -like "*Bomb*") { 5 } elseif ($path -like "*Corrupt*") { 6 } else { 2 }
                     Json $ctx @{ success = $true; data = @(@{ id = $id }) }
                 }
                 # Picker fixtures. Game 3 has 12 covers spread over two API pages of 7 and 5 - deliberately not
                 # the console's five-per-page, so a slice that straddles the API boundary is exercised. Game 4
-                # has a real 400x600 cover and two icons, the FIRST of them transparent.
-                elseif ($path -match "^/api/v2/(grids|heroes|logos|icons)/game/([34])$") {
+                # has a real 400x600 cover and two icons, the FIRST of them transparent. Game 5's one cover is
+                # the 144-megapixel image; game 6's are an image that is only a header, and an empty body.
+                elseif ($path -match "^/api/v2/(grids|heroes|logos|icons)/game/([3456])$") {
                     $kind = $Matches[1]; $gid = [int]$Matches[2]
                     $items = @(); $total = 0
                     if ($gid -eq 3 -and $kind -eq "grids") {
@@ -481,6 +490,9 @@ if (-not $canBind) {
                         $total = 12
                     }
                     elseif ($gid -eq 4 -and $kind -eq "grids") { $items = @(@{ id = 40; url = "$base/img/big.png"; thumb = "$base/img/big.png" }); $total = 1 }
+                    elseif ($gid -eq 5 -and $kind -eq "grids") { $items = @(@{ id = 50; url = "$base/img/bomb.png"; thumb = "$base/img/bomb.png" }); $total = 1 }
+                    elseif ($gid -eq 6 -and $kind -eq "grids") { $items = @(@{ id = 60; url = "$base/img/corrupt.png"; thumb = "$base/img/corrupt.png" }, @{ id = 61; url = "$base/img/empty.png"; thumb = "$base/img/empty.png" }); $total = 2 }
+                    elseif ($gid -eq 6 -and $kind -eq "icons") { $items = @(@{ id = 62; url = "$base/img/corrupt.png" }); $total = 1 }
                     elseif ($gid -eq 4 -and $kind -eq "icons") { $items = @(@{ id = 41; url = "$base/img/icon-clear.png" }, @{ id = 42; url = "$base/img/icon-solid.png" }); $total = 2 }
                     Json $ctx @{ success = $true; total = $total; data = $items }
                 }
@@ -506,6 +518,9 @@ if (-not $canBind) {
                 elseif ($path -eq "/redir") { $ctx.Response.StatusCode = 302; $ctx.Response.RedirectLocation = "http://localhost:$port/img/good.png"; $ctx.Response.Close() }
                 elseif ($path -eq "/img/good.png" -or $path -eq "/img/pngpage.html") { Send $ctx 200 $png "application/octet-stream" }
                 elseif ($path -eq "/img/big.png") { Send $ctx 200 $bigPng "image/png" }
+                elseif ($path -eq "/img/bomb.png") { Send $ctx 200 $bombPng "image/png" }
+                elseif ($path -eq "/img/corrupt.png") { Send $ctx 200 $corruptPng "image/png" }
+                elseif ($path -eq "/img/empty.png") { Send $ctx 200 $emptyBody "image/png" }
                 elseif ($path -eq "/img/icon-clear.png") { Send $ctx 200 $iconClear "image/png" }
                 elseif ($path -eq "/img/icon-solid.png") { Send $ctx 200 $iconSolid "image/png" }
                 elseif ($path -eq "/img/fake.png") { Send $ctx 200 ([Text.Encoding]::UTF8.GetBytes("<html><script>alert(1)</script></html>")) "image/png" }
@@ -628,6 +643,11 @@ if (-not $canBind) {
         Check "picker: page 1 straddles two API pages and is the NEXT five" ((OptionNumbers $p1) -eq "6,7,8,9,10" -and $p1.Json.hasMore -eq $true)
         Check "picker: the last page is short and says there is no more" ((OptionNumbers $p2) -eq "11,12" -and $p2.Json.hasMore -eq $false)
         Check "picker: past the end is empty, not an error" ($p3.Status -eq 200 -and @($p3.Json.options).Count -eq 0 -and $p3.Json.hasMore -eq $false)
+        # The ICON listing for this game has not been fetched yet (the cover one has), so a request would show.
+        $beforeFar = StubCount "GET 127.0.0.1 /api/v2/icons/game/3"
+        $far = Http GET "/api/games/$($paged.id)/art/options?kind=icon&page=2000000000"
+        Check "picker: an absurd page number is an empty page - no arithmetic overflow, and no request to SteamGridDB" `
+            ($far.Status -eq 200 -and @($far.Json.options).Count -eq 0 -and $far.Json.hasMore -eq $false -and (StubCount "GET 127.0.0.1 /api/v2/icons/game/3") -eq $beforeFar)
         Check "picker: width, height and author are passed through" `
             ($p0.Json.options[0].width -eq 600 -and $p0.Json.options[0].height -eq 900 -and $p0.Json.options[0].author -eq "artist1")
         Check "picker: four pages cost two SteamGridDB requests (the listing is kept, not re-fetched per page)" `
@@ -654,6 +674,30 @@ if (-not $canBind) {
             ((Http PUT "/api/games/$($paged.id)/art/hero" @{ url = "http://127.0.0.1:$StubPort/img/good.png" }).Status -eq 400)
         Check "picker: the refused attempts changed nothing" ((GameNamed "SEC Paged").gridUrl -eq $applied.Json.gridUrl)
 
+        # ---- an image that declares far more pixels than it has bytes (144 MP in a few KB) is refused everywhere
+        Http POST "/api/games" @{ name = "SEC Bomb" } | Out-Null
+        $bomb = GameNamed "SEC Bomb"
+        $bo = Http GET "/api/games/$($bomb.id)/art/options?kind=grid&page=0"
+        Check "oversized: the listing still answers, and offers the option ..." ($bo.Status -eq 200 -and @($bo.Json.options).Count -eq 1)
+        Check "oversized: ... with NO inline preview (a tiny file of a huge image must not be handed to the browser)" ($null -eq $bo.Json.options[0].preview)
+        $bp = Http PUT "/api/games/$($bomb.id)/art/grid" @{ url = "http://127.0.0.1:$StubPort/img/bomb.png" }
+        Check "oversized: choosing it is refused (400) and nothing is stored" ($bp.Status -eq 400 -and $null -eq (GameNamed "SEC Bomb").gridUrl)
+
+        # ---- bytes with the right magic number but nothing behind it, and a 200 with no body: refused quietly, never a 500
+        Http POST "/api/games" @{ name = "SEC Corrupt" } | Out-Null
+        $cor = GameNamed "SEC Corrupt"
+        $co = Http GET "/api/games/$($cor.id)/art/options?kind=grid&page=0"
+        Check "corrupt: a listing holding an undecodable image and an empty body still answers (200), not a 500" `
+            ($co.Status -eq 200 -and @($co.Json.options).Count -eq 2)
+        Check "corrupt: ... and neither is inlined as a preview" ($null -eq $co.Json.options[0].preview -and $null -eq $co.Json.options[1].preview)
+        Check "corrupt: choosing the undecodable image is refused (400)" `
+            ((Http PUT "/api/games/$($cor.id)/art/grid" @{ url = "http://127.0.0.1:$StubPort/img/corrupt.png" }).Status -eq 400)
+        Check "corrupt: choosing the empty body is refused (400), not a 500" `
+            ((Http PUT "/api/games/$($cor.id)/art/grid" @{ url = "http://127.0.0.1:$StubPort/img/empty.png" }).Status -eq 400)
+        $cr = Http POST "/api/games/$($cor.id)/art/refresh"
+        Check "corrupt: refreshing a game whose cover and icon are undecodable answers 400 (nothing to store), not a 500, and stores nothing" `
+            ($cr.Status -eq 400 -and $null -eq (GameNamed "SEC Corrupt").gridUrl -and $null -eq (GameNamed "SEC Corrupt").iconUrl)
+
         # ---- a transparent icon and an opaque one: the opaque one wins, though it is second
         Http POST "/api/games" @{ name = "SEC Opaque" } | Out-Null
         $op = GameNamed "SEC Opaque"
@@ -678,6 +722,30 @@ if (-not $canBind) {
         $rep = Http PUT "/api/games/$($op.id)/art/grid" @{ url = "http://127.0.0.1:$StubPort/img/good.png?n=1" }
         Check "thumb: once the cover is replaced, the old thumbnail is not served (freshness follows the source)" `
             ($rep.Status -eq 200 -and (ImageSize (GetArt "/art/$gid/grid.png?w=96").Bytes) -eq "1x1")
+        Stop-Phase
+
+        # ---- a key that arrives by CONFIGURATION (never saved in the dashboard) still backfills, at startup
+        Write-Host ""; Write-Host "-- art: startup backfill (a key from configuration, games that predate it)"
+        $artEnv3 = @{
+            Art__ApiBaseUrl = "http://127.0.0.1:$StubPort/api/v2/"; Art__AllowedImageHosts = "127.0.0.1"
+            Art__AllowInsecureImageUrls = "true"; Storage__ArtRoot = (Join-Path $scratch "art3")
+        }
+        Start-Phase "art3" $artEnv3          # no key: the games are created with nothing to fetch art with
+        Http POST "/api/games" @{ name = "SEC Boot Good" } | Out-Null
+        Http POST "/api/games" @{ name = "SEC Boot Keep Good" } | Out-Null
+        $bootKeep0 = GameNamed "SEC Boot Keep Good"
+        $bootGrid = "" + (Http PUT "/api/games/$($bootKeep0.id)/art/grid" @{ url = "http://127.0.0.1:$StubPort/img/good.png?n=77" }).Json.gridUrl
+        Stop-Phase
+        $bootEnv = $artEnv3.Clone()
+        $bootEnv.SteamGridDb__ApiKey = "test-key"; $bootEnv.Art__BackfillOnStartup = "true"; $bootEnv.Art__BackfillStartupDelaySeconds = "0"
+        Start-Phase "art3" $bootEnv          # the same database, restarted with a key and the startup pass on
+        $bootFilled = $null
+        foreach ($i in 1..60) { Start-Sleep -Milliseconds 500; $bootFilled = GameNamed "SEC Boot Good"; if ($bootFilled.gridUrl -and $bootFilled.iconUrl) { break } }
+        Check "startup: a key from configuration fills in the games that predate it, with nobody saving a key" `
+            ($bootFilled.gridUrl -like "/art/*/grid.png*" -and $bootFilled.iconUrl -like "/art/*/icon.png*")
+        $bootKept = GameNamed "SEC Boot Keep Good"
+        Check "startup: ... a game that lacked only its icon gets the icon ..." ($bootKept.iconUrl -like "/art/*/icon.png*")
+        Check "startup: ... and its hand-picked cover is left exactly as it was" ($bootKept.gridUrl -eq $bootGrid)
         Stop-Phase
     }
 }

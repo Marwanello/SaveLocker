@@ -43,7 +43,7 @@ internal static class ArtThumbnails
         var kind = m.Groups["kind"].Value;
         var source = Path.Combine(dir, $"{kind}.{m.Groups["ext"].Value}");
 
-        var thumb = File.Exists(source) ? await EnsureAsync(dir, source, kind, width, ctx.RequestAborted) : null;
+        var thumb = File.Exists(source) ? await EnsureAsync(dir, source, kind, width) : null;
         if (thumb is null)
         {
             await next(ctx); // missing, undecodable, or already smaller than asked: serve the original
@@ -62,7 +62,7 @@ internal static class ArtThumbnails
     }
 
     /// <summary>The thumbnail's path, made if it does not exist or the source has changed since.</summary>
-    private static async Task<string?> EnsureAsync(string dir, string source, string kind, int width, CancellationToken ct)
+    private static async Task<string?> EnsureAsync(string dir, string source, string kind, int width)
     {
         var thumbDir = Path.Combine(dir, "thumbs");
         var sourceWritten = File.GetLastWriteTimeUtc(source);
@@ -78,7 +78,8 @@ internal static class ArtThumbnails
         (byte[] Bytes, string Mime)? made;
         try
         {
-            await using var stream = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read);
+            // Delete is shared so ArtService can replace the cover by rename while this is reading it.
+            await using var stream = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             // Covers are opaque and go out as JPEG; icons keep PNG, where flat art and transparency matter.
             made = ArtImages.Downscale(stream, width, jpegWhenOpaque: kind == "grid");
         }
@@ -86,15 +87,20 @@ internal static class ArtThumbnails
         if (made is null) return null;
 
         var thumb = Path.Combine(thumbDir, $"{kind}-{width}{(made.Value.Mime == "image/jpeg" ? ".jpg" : ".png")}");
-        Directory.CreateDirectory(thumbDir);
         var temp = Path.Combine(thumbDir, $".{Guid.NewGuid():N}.tmp");
-        await File.WriteAllBytesAsync(temp, made.Value.Bytes, ct);
-        try { File.Move(temp, thumb, overwrite: true); }
-        catch (IOException)
+        try
         {
-            // Another request finished the same thumbnail first and is being read. Theirs is as good as ours.
+            Directory.CreateDirectory(thumbDir);
+            // Not tied to the request: a client hanging up mid-write would only leave the temp file behind.
+            await File.WriteAllBytesAsync(temp, made.Value.Bytes);
+            File.Move(temp, thumb, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
             try { File.Delete(temp); } catch (IOException) { }
-            if (!File.Exists(thumb)) return null;
+            // Another request may have finished the same thumbnail first, and theirs is as good as ours —
+            // but only if it is not the stale one this was regenerating. A read-only volume ends up here too.
+            if (!File.Exists(thumb) || File.GetLastWriteTimeUtc(thumb) < sourceWritten) return null;
         }
         return thumb;
     }
