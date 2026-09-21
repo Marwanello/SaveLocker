@@ -1,4 +1,4 @@
-# Local agent API - 30 checks (up to 31 when a candidate is scanned). Runs on BOTH Windows and Linux.
+# Local agent API - 53 checks (up to 54 when a candidate is scanned). Runs on BOTH Windows and Linux.
 #
 # The agent's own API (AgentApiServer, shared by the Windows tray and the Linux daemon) manages this
 # machine: it rewrites config, enrolls games and re-registers against the server. It used to be
@@ -17,6 +17,8 @@
 #
 #   10. A server change moves ALL traffic          - the cached SyncEngine used to keep pushing to
 #                                                    the old host while the poller moved (LA-01).
+#   11. The per-game routes + the art proxy         - a server naming a hostile art URL cannot aim this
+#                                                    machine elsewhere; one sync at a time (409).
 #
 # The daemon runs on its own port so this suite never collides with a real agent on :5178.
 # Usage: .\tests\run-local-api-tests.ps1 / pwsh tests/run-local-api-tests.ps1
@@ -388,6 +390,205 @@ finally {
     if ($swProc) { Stop-Process -Id $swProc.Id -Force -ErrorAction SilentlyContinue }
     $listenerA.Stop(); $listenerA.Close()
     $listenerB.Stop(); $listenerB.Close()
+}
+
+# =================================================================================
+# 11. THE PER-GAME ROUTES AND THE ART PROXY (UI redesign Group 4)
+# `POST /api/games/{id}/sync`, `GET /api/games/{id}/state` and `GET /api/games/{id}/art` are the
+# agent UI's game page. The art route is the one with an attack surface: it fetches a URL the
+# SERVER named in its own game record, and hands the bytes to a browser page. So a hostile or
+# broken server must not be able to (a) point this machine's request at another host, (b) escape
+# `/art/`, or (c) get a non-image served under an image route. The stub below stands in for that
+# server, records every request it receives, and names those URLs as the game's art.
+#
+# It also holds one game's head-download request open (the first thing a pull asks the server), which
+# is what keeps the agent's single sync gate taken long enough to observe the 409 a second per-game
+# sync is meant to get.
+# =================================================================================
+$artStubPort = 5196; $artPort = 5186
+$artStubUrl  = "http://localhost:$artStubPort"
+$artBase     = "http://localhost:$artPort"
+$artDir      = Join-Path $scratch "art"
+New-Item -ItemType Directory -Force $artDir | Out-Null
+
+$pngBytes = [Convert]::FromBase64String(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+
+# name -> the gridUrl the stub's game record carries
+$artGames = [ordered]@{
+    good      = "/art/good/grid.png?v=1"
+    hostcheat = "//evil.example/x.png"
+    traversal = "/art/../secrets/grid.png"
+    notimage  = "/art/html/grid.png"
+    slow      = $null
+}
+$artIds = @{}
+$artGameCfg = @()
+foreach ($n in $artGames.Keys) {
+    $id = [guid]::NewGuid().ToString()
+    $artIds[$n] = $id
+    $dir = Join-Path $artDir "save-$n"
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    "x" | Set-Content (Join-Path $dir "s.sav") -Encoding utf8
+    $artGameCfg += @{ GameId = $id; Name = "Art $n"; SaveDirectory = $dir }
+}
+$artCfg = Join-Path $artDir "cfg.json"
+@{
+    ServerUrl   = $artStubUrl
+    MachineName = "ArtTest"
+    ApiKey      = "art-test-key"
+    MachineId   = [guid]::NewGuid().ToString()
+    Games       = $artGameCfg
+} | ConvertTo-Json -Depth 5 | Set-Content -Path $artCfg -Encoding utf8
+
+$artListener = [System.Net.HttpListener]::new()
+$artListener.Prefixes.Add("$artStubUrl/")
+$artListener.Start()
+
+$artLog     = New-Object System.Collections.ArrayList
+$artPending = New-Object System.Collections.ArrayList
+$script:artCtxTask = $artListener.GetContextAsync()
+
+function ArtSend($ctx, $status, $type, [byte[]]$bytes) {
+    try {
+        $ctx.Response.StatusCode = $status
+        if ($type) { $ctx.Response.ContentType = $type }
+        if ($bytes) { $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length) }
+        $ctx.Response.Close()
+    } catch { }
+}
+
+function ArtHandle($ctx) {
+    $path = $ctx.Request.Url.AbsolutePath
+    [void]$artLog.Add("$($ctx.Request.HttpMethod) $($ctx.Request.Url.PathAndQuery)")
+    if ($path -match '^/api/agent/games/([0-9a-f-]{36})/state$') {
+        $gid = $Matches[1]
+        $name = ($artIds.GetEnumerator() | Where-Object { $_.Value -eq $gid } | Select-Object -First 1).Key
+        $body = @{
+            game = @{
+                id = $gid; name = "Art $name"; manifestKey = $null; customPathsJson = $null; enabled = $true
+                gridUrl = $artGames[$name]; iconUrl = $null
+            }
+            head = $null; lease = $null; hasOpenConflict = $false; totalStorageBytes = 0
+        } | ConvertTo-Json -Depth 5
+        ArtSend $ctx 200 "application/json" ([Text.Encoding]::UTF8.GetBytes($body))
+    }
+    elseif ($path -match '^/api/games/([0-9a-f-]{36})/download$') {
+        # "No saves yet" is what a pull expects for a game with no head; the slow game answers it late.
+        if ($Matches[1] -eq $artIds["slow"]) { [void]$artPending.Add(@{ Ctx = $ctx; Due = (Get-Date).AddSeconds(3) }) }
+        else { ArtSend $ctx 404 $null $null }
+    }
+    elseif ($path -eq "/art/good/grid.png") { ArtSend $ctx 200 "image/png" $pngBytes }
+    elseif ($path -eq "/art/html/grid.png") { ArtSend $ctx 200 "text/html" ([Text.Encoding]::UTF8.GetBytes("<script>alert(1)</script>")) }
+    else { ArtSend $ctx 404 $null $null }
+}
+
+# One turn of the stub: answer whatever has arrived, and release held responses that are due.
+function ArtPump($ms) {
+    if ($script:artCtxTask.Wait($ms)) {
+        $c = $script:artCtxTask.Result
+        $script:artCtxTask = $artListener.GetContextAsync()
+        ArtHandle $c
+    }
+    foreach ($p in @($artPending)) {
+        if ((Get-Date) -ge $p.Due) { ArtSend $p.Ctx 404 $null $null; $artPending.Remove($p) }
+    }
+}
+
+# The test client is single-threaded, so a call and the stub answering it take turns: start the
+# request, then pump the stub until it completes.
+function ArtStart($method, $path, $token, $json) {
+    $req = New-Object System.Net.Http.HttpRequestMessage($method, "$artBase$path")
+    if ($token) { $req.Headers.Add("X-SaveLocker-Token", $token) }
+    if ($null -ne $json) {
+        $req.Content = New-Object System.Net.Http.StringContent($json, [System.Text.Encoding]::UTF8, "application/json")
+    }
+    return $artHttp.SendAsync($req, [System.Net.Http.HttpCompletionOption]::ResponseContentRead)
+}
+function ArtFinish($task) {
+    $deadline = (Get-Date).AddSeconds(30)
+    while (-not $task.IsCompleted -and (Get-Date) -lt $deadline) { ArtPump 50 }
+    if (-not $task.IsCompleted -or $task.IsFaulted) { return @{ Status = 0; Body = ""; Type = ""; Bytes = @() } }
+    $res = $task.Result
+    return @{
+        Status = [int]$res.StatusCode
+        Body   = $res.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        Type   = "$($res.Content.Headers.ContentType)"
+        Bytes  = $res.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+    }
+}
+function ArtCall($method, $path, $token, $json) { ArtFinish (ArtStart $method $path $token $json) }
+
+# Its own client: section 5 disposes the shared one.
+$artHttp = New-Object System.Net.Http.HttpClient
+$artProc = $null
+try {
+    $artArgs = @($dll, "daemon", "--port", "$artPort", "--config", $artCfg)
+    $artProc = if ($onWindows) {
+        Start-Process -FilePath $dotnet -ArgumentList $artArgs -PassThru -WindowStyle Hidden
+    } else {
+        Start-Process -FilePath $dotnet -ArgumentList $artArgs -PassThru
+    }
+    foreach ($i in 1..40) {
+        ArtPump 700
+        try { Invoke-WebRequest "$artBase/" -UseBasicParsing -TimeoutSec 2 | Out-Null; break } catch { }
+    }
+    $artToken = (Get-Content (Join-Path $artDir "api-token") -Raw).Trim()
+    $g = $artIds["good"]
+
+    # -- the token gate covers all three new routes --
+    Check "sync needs the local token"  ((ArtCall "POST" "/api/games/$g/sync" $null '{"mode":"pull"}').Status -eq 401)
+    Check "state needs the local token" ((ArtCall "GET" "/api/games/$g/state" $null $null).Status -eq 401)
+    Check "art needs the local token"   ((ArtCall "GET" "/api/games/$g/art?kind=grid" $null $null).Status -eq 401)
+
+    # -- input validation happens before the server is asked anything --
+    $unknown = [guid]::NewGuid().ToString()
+    Check "sync of an untracked game is 404"   ((ArtCall "POST" "/api/games/$unknown/sync" $artToken '{"mode":"pull"}').Status -eq 404)
+    Check "state of an untracked game is 404"  ((ArtCall "GET" "/api/games/$unknown/state" $artToken $null).Status -eq 404)
+    Check "art of an untracked game is 404"    ((ArtCall "GET" "/api/games/$unknown/art?kind=grid" $artToken $null).Status -eq 404)
+    Check "sync with a bogus mode is 400"      ((ArtCall "POST" "/api/games/$g/sync" $artToken '{"mode":"nuke"}').Status -eq 400)
+    Check "sync with no mode is 400"           ((ArtCall "POST" "/api/games/$g/sync" $artToken '{}').Status -eq 400)
+    Check "art with a bogus kind is 400"       ((ArtCall "GET" "/api/games/$g/art?kind=hero" $artToken $null).Status -eq 400)
+
+    # -- /state relays the server's per-game state --
+    $st = ArtCall "GET" "/api/games/$g/state" $artToken $null
+    $stJson = if ($st.Status -eq 200) { $st.Body | ConvertFrom-Json } else { $null }
+    Check "state relays the server's game record" ($st.Status -eq 200 -and $stJson.game.name -eq "Art good")
+
+    # -- the art proxy: a normal image comes through, right-sized --
+    $art = ArtCall "GET" "/api/games/$g/art?kind=grid&w=96" $artToken $null
+    Check "art relays the image bytes, unchanged"  ($art.Status -eq 200 -and $art.Bytes.Length -eq $pngBytes.Length -and
+                                                   [Convert]::ToBase64String($art.Bytes) -eq [Convert]::ToBase64String($pngBytes))
+    Check "art keeps the image content type"       ($art.Type -eq "image/png")
+    Check "art asked the server for the thumbnail width" (@($artLog | Where-Object { $_ -match "^GET /art/good/grid\.png\?v=1&w=96$" }).Count -ge 1)
+    Check "a game with no art URL is 404"          ((ArtCall "GET" "/api/games/$g/art?kind=icon" $artToken $null).Status -eq 404)
+
+    # -- ...and a server cannot use it to reach elsewhere or serve a non-image --
+    $host1 = ArtCall "GET" "/api/games/$($artIds['hostcheat'])/art?kind=grid" $artToken $null
+    $trav  = ArtCall "GET" "/api/games/$($artIds['traversal'])/art?kind=grid" $artToken $null
+    $html  = ArtCall "GET" "/api/games/$($artIds['notimage'])/art?kind=grid" $artToken $null
+    Check "a scheme-relative art URL (//evil.example) is refused"  ($host1.Status -eq 404)
+    Check "an art URL that climbs out of /art/ is refused"         ($trav.Status -eq 404)
+    Check "a non-image response is never served as art"            ($html.Status -eq 404 -and -not $html.Body.Contains("<script>"))
+    Check "the stub was never asked for the hostile paths"         (@($artLog | Where-Object { $_ -match "evil|secrets" }).Count -eq 0)
+
+    # -- one sync at a time: a second per-game sync while one runs is a 409, and the gate frees --
+    $first = ArtStart "POST" "/api/games/$($artIds['slow'])/sync" $artToken '{"mode":"pull"}'
+    $t0 = Get-Date
+    while (@($artPending).Count -eq 0 -and ((Get-Date) - $t0).TotalSeconds -lt 10) { ArtPump 50 }
+    Check "the first sync is holding the gate (its download request is in flight)" (@($artPending).Count -eq 1)
+    $second = ArtCall "POST" "/api/games/$g/sync" $artToken '{"mode":"pull"}'
+    Check "a second per-game sync meanwhile is 409" ($second.Status -eq 409)
+    Check "the 409 says why"                        ($second.Body -match "already running")
+    $firstDone = ArtFinish $first
+    Check "the first sync itself completes (200)"   ($firstDone.Status -eq 200)
+    $third = ArtCall "POST" "/api/games/$g/sync" $artToken '{"mode":"pull"}'
+    Check "the gate is free again afterwards"       ($third.Status -ne 409 -and $third.Status -ne 0)
+}
+finally {
+    if ($artProc) { Stop-Process -Id $artProc.Id -Force -ErrorAction SilentlyContinue }
+    $artListener.Stop(); $artListener.Close()
+    $artHttp.Dispose()
 }
 
 Write-Host ""

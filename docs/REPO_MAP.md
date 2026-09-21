@@ -282,7 +282,10 @@ SaveLocker/
 │   │                                   #   FAIL. Own server on :5182.
 │   ├── run-local-api-tests.ps1         # The agent's OWN API (:5178). It rewrites config and
 │   │                                   #   re-registers the machine, so an unauthenticated caller
-│   │                                   #   owns the box — it used to answer every one of them.
+│   │                                   #   owns the box — it used to answer every one of them. Also the
+│   │                                   #   per-game routes and the art proxy (§11): a stub server names a
+│   │                                   #   hostile art URL and the proxy must refuse it, and a second
+│   │                                   #   per-game sync must get a 409.
 │   ├── run-concurrency-tests.ps1       # Cross-PROCESS state: daemon vs. launch wrapper. The sharp
 │   │                                   #   one is the lost update — a daemon writing stale config
 │   │                                   #   erases a parent version another process just recorded.
