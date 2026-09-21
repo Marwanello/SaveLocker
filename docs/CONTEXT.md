@@ -1219,9 +1219,11 @@ local-API routes: `POST /api/games/{id}/sync` (`mode` sync|push|pull; single-fli
 busy, never forced), `GET /api/games/{id}/state` (server head/lease/conflict) and `GET /api/games/{id}/art` (the
 art proxy). Art reaches the page as a **blob** fetched with the local token — an `<img src>` cannot carry it.
 <br>**Caught by running it, not building it:** `.Produces<byte[]>(…, "image/*")` throws at daemon startup (no
-wildcard content types); `dotnet build` and `tsc` were both clean. **Not verified:** the WebView2 window, a Deck,
-a per-game sync landing on a real conflict, light theme; no C# suite was run and `run-agent-tests` has no case for the
-new routes. Detail and honest gaps (no version list or last-push bytes on the page — no data behind them) in
+wildcard content types); `dotnet build` and `tsc` were both clean. **Follow-up, same day:** `run-local-api-tests.ps1`
+§11 now covers the routes (53/53; the hostile-art-URL guards and the 409 gate checked by mutation), and a per-game
+sync on a real two-machine conflict was run live. **Not verified:** the WebView2 window, a Deck, light theme
+(Group 5). Detail and honest gaps (no version list or last-push bytes on the page — no data behind them; now in
+[[Backlog]]) in
 `tasks/checkpoint-ui/implementation-grouping.md` → Group 4. **Next action:** Group 5 (appearance + fleet sync,
 flips the theme default) or Group 6 (Deck) — both listed there.
 
