@@ -29,25 +29,25 @@ export function LaunchSetupCard() {
 
   return (
     <div style={{
-      background: '#1E252A', border: '1px solid #494949', borderRadius: 8,
+      background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 8,
       padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10,
       textAlign: 'left', width: '100%', maxWidth: 560,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Gamepad2 size={16} strokeWidth={1.9} color="#129271" />
-        <span style={{ color: '#ECEFF1', fontSize: 13, fontWeight: 700 }}>Steam launch setup</span>
+        <Gamepad2 size={16} strokeWidth={1.9} color="var(--color-safe-ink)" />
+        <span style={{ color: 'var(--color-fg)', fontSize: 13, fontWeight: 700 }}>Steam launch setup</span>
       </div>
 
-      <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
-        Paste this into a game's <strong style={{ color: '#ECEFF1' }}>Properties → Launch Options</strong> in
-        Steam. It is the <strong style={{ color: '#ECEFF1' }}>same command for every game</strong> — set one up,
+      <p style={{ color: 'var(--color-dim)', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
+        Paste this into a game's <strong style={{ color: 'var(--color-fg)' }}>Properties → Launch Options</strong> in
+        Steam. It is the <strong style={{ color: 'var(--color-fg)' }}>same command for every game</strong> — set one up,
         then copy it from that game's launch options into the next. You only need this card for the first game.
       </p>
 
       <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
         <code style={{
-          flex: 1, minWidth: 0, background: '#12181C', border: '1px solid #494949', borderRadius: 5,
-          padding: '8px 10px', color: '#ECEFF1', fontSize: 11.5, lineHeight: 1.4,
+          flex: 1, minWidth: 0, background: 'var(--color-raise)', border: '1px solid var(--color-line)', borderRadius: 5,
+          padding: '8px 10px', color: 'var(--color-fg)', fontSize: 11.5, lineHeight: 1.4,
           overflowX: 'auto', whiteSpace: 'nowrap',
           fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace",
         }}>
@@ -58,8 +58,8 @@ export function LaunchSetupCard() {
           style={{
             display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
             padding: '0 12px', background: 'transparent',
-            border: `1px solid ${copied ? '#129271' : '#494949'}`, borderRadius: 5,
-            color: copied ? '#129271' : '#ECEFF1', fontSize: 12, fontWeight: 600,
+            border: `1px solid ${copied ? 'var(--color-line)' : 'var(--color-line)'}`, borderRadius: 5,
+            color: copied ? 'var(--color-fg)' : 'var(--color-fg)', fontSize: 12, fontWeight: 600,
             cursor: 'pointer', fontFamily: 'inherit',
           }}
         >
@@ -74,18 +74,18 @@ export function LaunchSetupCard() {
         background: 'rgba(244,166,13,0.1)', border: '1px solid rgba(244,166,13,0.35)',
         borderRadius: 6, padding: '9px 11px',
       }}>
-        <AlertTriangle size={14} strokeWidth={2} color="#f4a60d" style={{ flexShrink: 0, marginTop: 1 }} />
-        <div style={{ color: '#ECEFF1', fontSize: 11.5, lineHeight: 1.55 }}>
-          Use the <strong style={{ color: '#f4a60d' }}>full path above</strong> — Game Mode does not put
+        <AlertTriangle size={14} strokeWidth={2} color="var(--color-watch-ink)" style={{ flexShrink: 0, marginTop: 1 }} />
+        <div style={{ color: 'var(--color-fg)', fontSize: 11.5, lineHeight: 1.55 }}>
+          Use the <strong style={{ color: 'var(--color-watch-ink)' }}>full path above</strong> — Game Mode does not put
           <code style={{ fontSize: 11 }}> ~/.local/bin </code> on PATH, so a short command silently fails to
-          launch. For a <strong style={{ color: '#f4a60d' }}>non-Steam shortcut</strong>, also tick
+          launch. For a <strong style={{ color: 'var(--color-watch-ink)' }}>non-Steam shortcut</strong>, also tick
           <strong> "Force the use of a specific Steam Play compatibility tool"</strong> in its properties, or
           Proton never creates a prefix and there is nothing to sync.
         </div>
       </div>
 
       {info.note && (
-        <p style={{ color: '#f4a60d', fontSize: 11.5, lineHeight: 1.5, margin: 0 }}>{info.note}</p>
+        <p style={{ color: 'var(--color-watch-ink)', fontSize: 11.5, lineHeight: 1.5, margin: 0 }}>{info.note}</p>
       )}
     </div>
   )

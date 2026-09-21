@@ -37,9 +37,9 @@ export function ConflictsView({ conflicts, games, machineName, onRefresh }: Prop
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         gap: 14, padding: 24,
       }}>
-        <GitBranch size={40} strokeWidth={1.75} color="#129271" />
-        <div style={{ color: '#ECEFF1', fontSize: 16, fontWeight: 700 }}>No open conflicts</div>
-        <div style={{ color: '#9CA3AF', fontSize: 13, textAlign: 'center', maxWidth: 380, lineHeight: 1.6 }}>
+        <GitBranch size={40} strokeWidth={1.75} color="var(--color-safe-ink)" />
+        <div style={{ color: 'var(--color-fg)', fontSize: 16, fontWeight: 700 }}>No open conflicts</div>
+        <div style={{ color: 'var(--color-dim)', fontSize: 13, textAlign: 'center', maxWidth: 380, lineHeight: 1.6 }}>
           Every tracked game's save matches the cloud. If this device and the cloud both change the
           same save before syncing, the choice will show up here.
         </div>

@@ -44,14 +44,14 @@ export function HelpView() {
       <aside style={{
         width: 240,
         flexShrink: 0,
-        background: '#1E252A',
-        borderRight: '1px solid #494949',
+        background: 'var(--color-panel)',
+        borderRight: '1px solid var(--color-line)',
         display: 'flex',
         flexDirection: 'column',
         overflowY: 'auto',
       }}>
         {/* Search */}
-        <div style={{ padding: '10px 12px', borderBottom: '1px solid #494949' }}>
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--color-line)' }}>
           <input
             type="search"
             placeholder="Search articles…"
@@ -59,11 +59,11 @@ export function HelpView() {
             onChange={e => setQuery(e.target.value)}
             style={{
               width: '100%',
-              background: '#2A3238',
-              border: '1px solid #494949',
+              background: 'var(--color-raise)',
+              border: '1px solid var(--color-line)',
               borderRadius: 4,
               padding: '5px 9px',
-              color: '#ECEFF1',
+              color: 'var(--color-fg)',
               fontSize: 12,
               fontFamily: 'inherit',
               boxSizing: 'border-box',
@@ -75,14 +75,14 @@ export function HelpView() {
         {query.trim()
           ? (
             <div>
-              <div style={{ padding: '6px 14px 2px', fontSize: 10, fontWeight: 700, color: '#129271', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+              <div style={{ padding: '6px 14px 2px', fontSize: 10, fontWeight: 700, color: 'var(--color-safe-ink)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
                 Results ({filtered.length})
               </div>
               {filtered.map(a => (
                 <SidebarItem key={a.slug} title={a.title} active={a.slug === selectedSlug} onClick={() => selectArticle(a.slug)} />
               ))}
               {filtered.length === 0 && (
-                <div style={{ padding: '12px 14px', fontSize: 12, color: '#556070' }}>No articles match.</div>
+                <div style={{ padding: '12px 14px', fontSize: 12, color: 'var(--color-dim)' }}>No articles match.</div>
               )}
             </div>
           )
@@ -90,7 +90,7 @@ export function HelpView() {
             const catArticles = articles.filter(a => a.category === cat);
             return (
               <div key={cat}>
-                <div style={{ padding: '8px 14px 4px', fontSize: 10, fontWeight: 700, color: '#129271', textTransform: 'uppercase', letterSpacing: '0.12em', borderBottom: '1px solid #252e35' }}>
+                <div style={{ padding: '8px 14px 4px', fontSize: 10, fontWeight: 700, color: 'var(--color-safe-ink)', textTransform: 'uppercase', letterSpacing: '0.12em', borderBottom: '1px solid var(--color-line)' }}>
                   {cat}
                 </div>
                 {catArticles.map(a => (
@@ -126,13 +126,13 @@ function SidebarItem({ title, active, onClick }: { title: string; active: boolea
         width: '100%',
         textAlign: 'left',
         padding: '7px 14px 7px 16px',
-        background: active ? '#2A3238' : 'transparent',
+        background: active ? 'var(--color-raise)' : 'transparent',
         border: 'none',
-        borderLeft: active ? '2px solid #129271' : '2px solid transparent',
-        borderBottom: '1px solid #252e35',
+        borderLeft: active ? '2px solid var(--color-line)' : '2px solid transparent',
+        borderBottom: '1px solid var(--color-line)',
         cursor: 'pointer',
         fontSize: 12,
-        color: active ? '#ECEFF1' : '#8b9aaa',
+        color: active ? 'var(--color-fg)' : 'var(--color-dim)',
         fontWeight: active ? 600 : 400,
       }}
     >

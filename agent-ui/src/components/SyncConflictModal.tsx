@@ -100,12 +100,12 @@ export function SyncConflictModal({ queue, games, machineName, onResolved, onAll
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
-          color: '#556070', marginBottom: 8,
+          color: 'var(--color-dim)', marginBottom: 8,
         }}>
           <span>Sync paused — conflict found</span>
           {queue.length > 1 && (
             <span style={{
-              fontFamily: "'JetBrains Mono', monospace", color: '#fdce63',
+              fontFamily: "'JetBrains Mono', monospace", color: 'var(--color-watch-ink)',
               background: 'rgba(244,166,13,0.12)', border: '1px solid rgba(244,166,13,0.35)',
               borderRadius: 20, padding: '2px 8px', letterSpacing: 0,
             }}>{index + 1} of {queue.length}</span>
@@ -139,8 +139,8 @@ export function SyncConflictModal({ queue, games, machineName, onResolved, onAll
                 disabled={resolving}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
-                  fontSize: 11.5, fontWeight: 600, color: '#8b9aaa',
-                  background: 'none', border: '1px solid #445059', borderRadius: 5,
+                  fontSize: 11.5, fontWeight: 600, color: 'var(--color-dim)',
+                  background: 'none', border: '1px solid var(--color-line)', borderRadius: 5,
                   padding: '6px 11px', cursor: resolving ? 'default' : 'pointer',
                 }}
               >
@@ -165,12 +165,12 @@ function ApplyToAllPrompt({ kindLabel, remaining, busy, onApply, onReviewEach }:
 }) {
   return (
     <div style={{
-      background: '#1E252A', border: '1px solid #34424b',
+      background: 'var(--color-panel)', border: '1px solid var(--color-line)',
       borderRadius: 10, padding: '18px 20px',
     }}>
-      <div style={{ color: '#ECEFF1', fontSize: 13.5, fontWeight: 700 }}>Apply to the rest too?</div>
-      <div style={{ color: '#8b9aaa', fontSize: 12.5, lineHeight: 1.6, marginTop: 8 }}>
-        Keep <strong style={{ color: '#ECEFF1' }}>{kindLabel}</strong>'s save for the other {remaining}{' '}
+      <div style={{ color: 'var(--color-fg)', fontSize: 13.5, fontWeight: 700 }}>Apply to the rest too?</div>
+      <div style={{ color: 'var(--color-dim)', fontSize: 12.5, lineHeight: 1.6, marginTop: 8 }}>
+        Keep <strong style={{ color: 'var(--color-fg)' }}>{kindLabel}</strong>'s save for the other {remaining}{' '}
         conflict{remaining === 1 ? '' : 's'} too, or go through {remaining === 1 ? 'it' : 'them'} one at a time?
       </div>
       <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
@@ -180,7 +180,7 @@ function ApplyToAllPrompt({ kindLabel, remaining, busy, onApply, onReviewEach }:
           style={{
             padding: '7px 16px', borderRadius: 6, fontSize: 12, fontWeight: 700, border: 'none',
             cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
-            background: '#129271', color: '#fff',
+            background: 'var(--color-accent)', color: 'var(--color-on-accent)',
           }}
         >
           Apply to all remaining
@@ -190,7 +190,7 @@ function ApplyToAllPrompt({ kindLabel, remaining, busy, onApply, onReviewEach }:
           onClick={onReviewEach}
           style={{
             padding: '7px 16px', borderRadius: 6, fontSize: 12, fontWeight: 600,
-            background: 'transparent', color: '#8b9aaa', border: '1px solid #445059',
+            background: 'transparent', color: 'var(--color-dim)', border: '1px solid var(--color-line)',
             cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
           }}
         >

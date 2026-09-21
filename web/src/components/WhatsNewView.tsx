@@ -35,10 +35,10 @@ export function WhatsNewView({ build }: { build?: ServerBuildInfo }) {
   return (
     <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
       <aside style={{
-        width: 240, flexShrink: 0, background: '#1E252A',
-        borderRight: '1px solid #494949', display: 'flex', flexDirection: 'column', overflowY: 'auto',
+        width: 240, flexShrink: 0, background: 'var(--color-panel)',
+        borderRight: '1px solid var(--color-line)', display: 'flex', flexDirection: 'column', overflowY: 'auto',
       }}>
-        <div style={{ padding: '8px 14px 4px', fontSize: 10, fontWeight: 700, color: '#129271', textTransform: 'uppercase', letterSpacing: '0.12em', borderBottom: '1px solid #252e35' }}>
+        <div style={{ padding: '8px 14px 4px', fontSize: 10, fontWeight: 700, color: 'var(--color-safe-ink)', textTransform: 'uppercase', letterSpacing: '0.12em', borderBottom: '1px solid var(--color-line)' }}>
           Releases
         </div>
 
@@ -52,12 +52,12 @@ export function WhatsNewView({ build }: { build?: ServerBuildInfo }) {
               style={{
                 display: 'block', width: '100%', textAlign: 'left',
                 padding: '9px 14px 9px 16px',
-                background: active ? '#2A3238' : 'transparent',
+                background: active ? 'var(--color-raise)' : 'transparent',
                 border: 'none',
-                borderLeft: active ? '2px solid #129271' : '2px solid transparent',
-                borderBottom: '1px solid #252e35',
+                borderLeft: active ? '2px solid var(--color-line)' : '2px solid transparent',
+                borderBottom: '1px solid var(--color-line)',
                 cursor: 'pointer',
-                color: active ? '#ECEFF1' : '#8b9aaa',
+                color: active ? 'var(--color-fg)' : 'var(--color-dim)',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -67,14 +67,14 @@ export function WhatsNewView({ build }: { build?: ServerBuildInfo }) {
                     title="This is the release your console is running"
                     style={{
                       padding: '0 6px', borderRadius: 3, fontSize: 9, fontWeight: 700,
-                      letterSpacing: '0.4px', color: '#129271', border: '1px solid #129271',
+                      letterSpacing: '0.4px', color: 'var(--color-safe-ink)', border: '1px solid var(--color-safe-line)',
                     }}
                   >
                     RUNNING
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: 10.5, color: '#556070', marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>
+              <div style={{ fontSize: 10.5, color: 'var(--color-dim)', marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>
                 {r.date}
               </div>
             </button>
@@ -88,7 +88,7 @@ export function WhatsNewView({ build }: { build?: ServerBuildInfo }) {
         {build && !build.isRelease && build.version !== 'dev' && (
           <div style={{
             marginBottom: 22, padding: '10px 14px', borderRadius: 6,
-            border: '1px solid #f4a60d', color: '#f4a60d', fontSize: 12.5, lineHeight: 1.5,
+            border: '1px solid var(--color-watch-line)', color: 'var(--color-watch-ink)', fontSize: 12.5, lineHeight: 1.5,
           }}>
             This console is running <strong>{build.version}</strong> — a development build made after
             v{running?.version ?? releases[0].version} was released. The notes below cover that

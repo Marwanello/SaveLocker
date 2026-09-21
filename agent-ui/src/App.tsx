@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import type { View, AgentState, Conflict, TrackedGame } from './types'
+import type { View, AgentState, AgentAppearance, Conflict, TrackedGame } from './types'
 import { api } from './api'
 import { Sidebar } from './components/Sidebar'
 import { StatusHeader } from './components/StatusHeader'
@@ -11,7 +11,8 @@ import { ConflictsView } from './components/ConflictsView'
 import { SyncConflictModal } from './components/SyncConflictModal'
 import { SettingsView } from './components/SettingsView'
 import { Chip } from './components/ui/Chip'
-import logoUrl from './assets/SaveLocker_Logo_crop.png'
+import { Mark } from './components/ui/Mark'
+import { setLook } from './appearance'
 
 export default function App() {
   // The tray's native Sync All / Force Pull / Force Push (TrayApp.cs, Phase 7) open this window at
@@ -27,6 +28,7 @@ export default function App() {
   const [autoQueueRequested] = useState(() => initialHash === 'conflicts:queue')
   const [openGameId, setOpenGameId] = useState<string | null>(null)
   const [state, setState] = useState<AgentState | null>(null)
+  const [appearance, setAppearance] = useState<AgentAppearance | null>(null)
   const [conflicts, setConflicts] = useState<Conflict[]>([])
   const [games, setGames] = useState<TrackedGame[]>([])
   // Non-null only while the sync-time pop-up is up (a Sync all surfaced at least one conflict).
@@ -37,6 +39,16 @@ export default function App() {
   const refreshState = useCallback(() => {
     api.state().then(setState).catch(console.error)
   }, [])
+
+  // What this window looks like: the console's look or this machine's own (Settings > Appearance). Adopted
+  // through setLook, which paints it and is a no-op while it is unchanged, so polling costs nothing.
+  const adoptAppearance = useCallback((a: AgentAppearance) => {
+    setAppearance(a)
+    setLook(a.effective)
+  }, [])
+  const refreshAppearance = useCallback(() => {
+    api.appearance().then(adoptAppearance).catch(console.error)
+  }, [adoptAppearance])
 
   const refreshConflicts = useCallback(async (): Promise<Conflict[]> => {
     try {
@@ -87,6 +99,12 @@ export default function App() {
   }, [refreshState])
 
   useEffect(() => {
+    refreshAppearance()
+    const id = setInterval(refreshAppearance, 10_000)
+    return () => clearInterval(id)
+  }, [refreshAppearance])
+
+  useEffect(() => {
     refreshConflicts()
     const id = setInterval(refreshConflicts, 15_000)
     return () => clearInterval(id)
@@ -103,7 +121,7 @@ export default function App() {
     <div className="sl-app">
         <header className="sl-topbar">
           <div className="sl-brand">
-            <img src={logoUrl} alt="" />
+            <Mark size={30} />
             <div>
               <div className="sl-brand__name">SaveLocker</div>
               <div className="sl-brand__sub">Agent</div>
@@ -170,7 +188,7 @@ export default function App() {
                 onRefresh={refreshConflicts}
               />
             )}
-            {view === 'settings' && <SettingsView state={state} onSaved={refreshState} />}
+            {view === 'settings' && <SettingsView state={state} onSaved={refreshState} appearance={appearance} onAppearanceChanged={adoptAppearance} />}
           </main>
         </div>
 

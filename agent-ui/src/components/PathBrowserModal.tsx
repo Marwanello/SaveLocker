@@ -21,7 +21,7 @@ const OVERLAY: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
 }
 const PANEL: React.CSSProperties = {
-  background: '#1E252A', border: '1px solid #494949', borderRadius: 6,
+  background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 6,
   width: '86%', maxWidth: 620, maxHeight: '86%',
   display: 'flex', flexDirection: 'column', overflow: 'hidden',
 }
@@ -100,12 +100,12 @@ export function PathBrowserModal({ gameName, initialPath, onConfirm, onCancel }:
   return (
     <div style={OVERLAY} onKeyDown={onKeyDown}>
       <div style={PANEL}>
-        <div style={{ padding: '13px 15px', borderBottom: '1px solid #494949' }}>
-          <div style={{ color: '#ECEFF1', fontSize: 14, fontWeight: 600 }}>
+        <div style={{ padding: '13px 15px', borderBottom: '1px solid var(--color-line)' }}>
+          <div style={{ color: 'var(--color-fg)', fontSize: 14, fontWeight: 600 }}>
             Save folder for {gameName}
           </div>
           <div style={{
-            color: '#9CA3AF', fontSize: 11, marginTop: 4,
+            color: 'var(--color-dim)', fontSize: 11, marginTop: 4,
             fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace",
             wordBreak: 'break-all',
           }}>
@@ -114,7 +114,7 @@ export function PathBrowserModal({ gameName, initialPath, onConfirm, onCancel }:
         </div>
 
         {error && (
-          <div style={{ padding: '9px 15px', color: '#f4a60d', fontSize: 12, borderBottom: '1px solid #494949' }}>
+          <div style={{ padding: '9px 15px', color: 'var(--color-watch-ink)', fontSize: 12, borderBottom: '1px solid var(--color-line)' }}>
             {error}
           </div>
         )}
@@ -127,7 +127,7 @@ export function PathBrowserModal({ gameName, initialPath, onConfirm, onCancel }:
                 display: 'flex', alignItems: 'center', gap: 9, width: '100%',
                 height: ROW_HEIGHT, padding: '0 15px', background: 'transparent',
                 border: 'none', borderBottom: '1px solid rgba(73,73,73,0.4)',
-                color: '#9CA3AF', fontSize: 13, cursor: 'pointer',
+                color: 'var(--color-dim)', fontSize: 13, cursor: 'pointer',
                 fontFamily: 'inherit', textAlign: 'left',
               }}
             >
@@ -137,9 +137,9 @@ export function PathBrowserModal({ gameName, initialPath, onConfirm, onCancel }:
           )}
 
           {loading ? (
-            <div style={{ padding: '15px', color: '#9CA3AF', fontSize: 12 }}>Loading…</div>
+            <div style={{ padding: '15px', color: 'var(--color-dim)', fontSize: 12 }}>Loading…</div>
           ) : entries.length === 0 ? (
-            <div style={{ padding: '15px', color: '#9CA3AF', fontSize: 12 }}>
+            <div style={{ padding: '15px', color: 'var(--color-dim)', fontSize: 12 }}>
               No folders here. Use this folder if the save files live at this level.
             </div>
           ) : entries.map((entry, i) => (
@@ -151,14 +151,14 @@ export function PathBrowserModal({ gameName, initialPath, onConfirm, onCancel }:
               style={{
                 display: 'flex', alignItems: 'center', gap: 9, width: '100%',
                 height: ROW_HEIGHT, padding: '0 15px',
-                background: i === focusIndex ? '#2A3238' : 'transparent',
+                background: i === focusIndex ? 'var(--color-raise)' : 'transparent',
                 border: 'none', borderBottom: '1px solid rgba(73,73,73,0.4)',
-                borderLeft: i === focusIndex ? '3px solid #129271' : '3px solid transparent',
-                color: '#ECEFF1', fontSize: 13, cursor: 'pointer',
+                borderLeft: i === focusIndex ? '3px solid var(--color-line)' : '3px solid transparent',
+                color: 'var(--color-fg)', fontSize: 13, cursor: 'pointer',
                 fontFamily: 'inherit', textAlign: 'left',
               }}
             >
-              <Folder size={15} strokeWidth={1.75} color="#9CA3AF" style={{ flexShrink: 0 }} />
+              <Folder size={15} strokeWidth={1.75} color="var(--color-dim)" style={{ flexShrink: 0 }} />
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {entry.name}
               </span>
@@ -168,11 +168,11 @@ export function PathBrowserModal({ gameName, initialPath, onConfirm, onCancel }:
 
         <div style={{
           display: 'flex', gap: 7, justifyContent: 'flex-end',
-          padding: '11px 15px', borderTop: '1px solid #494949',
+          padding: '11px 15px', borderTop: '1px solid var(--color-line)',
         }}>
           <button
             onClick={onCancel}
-            style={{ ...BTN, background: 'transparent', border: '1px solid #494949', color: '#ECEFF1' }}
+            style={{ ...BTN, background: 'transparent', border: '1px solid var(--color-line)', color: 'var(--color-fg)' }}
           >
             <X size={14} strokeWidth={1.75} />
             <span>Cancel</span>
@@ -180,7 +180,7 @@ export function PathBrowserModal({ gameName, initialPath, onConfirm, onCancel }:
           <button
             onClick={() => listing?.path && onConfirm(listing.path)}
             disabled={atRootList}
-            style={{ ...BTN, background: '#129271', color: '#fff', opacity: atRootList ? 0.45 : 1 }}
+            style={{ ...BTN, background: 'var(--color-accent)', color: 'var(--color-on-accent)', opacity: atRootList ? 0.45 : 1 }}
           >
             <Check size={14} strokeWidth={1.75} />
             <span>Use this folder</span>

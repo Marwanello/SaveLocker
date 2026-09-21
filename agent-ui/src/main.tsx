@@ -9,6 +9,10 @@ import '@fontsource/jetbrains-mono/500.css'
 import './tokens.css'
 import './ui.css'
 import App from './App'
+import { initLook } from './appearance'
+
+// Before the first render: paint the look this window last had, so it never flashes the default.
+initLook()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

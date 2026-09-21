@@ -51,14 +51,14 @@ export function DeckyPluginCard() {
     ? <>The plugin is set up. It sets launch options for you and adds sync controls to Game Mode —
         this agent keeps it updated.</>
     : status.deckyPresent
-      ? <>You have <strong style={{ color: '#ECEFF1' }}>Decky Loader</strong> but not the SaveLocker
+      ? <>You have <strong style={{ color: 'var(--color-fg)' }}>Decky Loader</strong> but not the SaveLocker
           plugin. It can set the launch options above for you and add sync controls to Game Mode.</>
-      : <>Use <strong style={{ color: '#ECEFF1' }}>Decky Loader</strong>? A plugin can set the launch
+      : <>Use <strong style={{ color: 'var(--color-fg)' }}>Decky Loader</strong>? A plugin can set the launch
           options above for you and add sync controls to Game Mode.</>
 
   return (
     <div style={{
-      background: '#1E252A', border: '1px solid #494949', borderRadius: 8,
+      background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 8,
       padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: expanded ? 10 : 6,
       textAlign: 'left', width: '100%', maxWidth: 560,
     }}>
@@ -72,18 +72,18 @@ export function DeckyPluginCard() {
           cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
         }}
       >
-        <Puzzle size={16} strokeWidth={1.9} color="#129271" style={{ flexShrink: 0 }} />
-        <span style={{ color: '#ECEFF1', fontSize: 13, fontWeight: 700 }}>Decky plugin</span>
+        <Puzzle size={16} strokeWidth={1.9} color="var(--color-fg)" style={{ flexShrink: 0 }} />
+        <span style={{ color: 'var(--color-fg)', fontSize: 13, fontWeight: 700 }}>Decky plugin</span>
         {installed ? (
           <span style={{
-            padding: '1px 7px', background: '#129271', color: '#fff',
+            padding: '1px 7px', background: 'var(--color-safe-soft)', color: 'var(--color-safe-ink)',
             borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', flexShrink: 0,
           }}>
             {version ? `INSTALLED v${version}` : 'INSTALLED'}
           </span>
         ) : (
           <span style={{
-            padding: '1px 7px', border: '1px solid #556070', color: '#9CA3AF',
+            padding: '1px 7px', border: '1px solid var(--color-line)', color: 'var(--color-dim)',
             borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', flexShrink: 0,
           }}>
             OPTIONAL
@@ -91,14 +91,14 @@ export function DeckyPluginCard() {
         )}
         <span style={{
           marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 3,
-          color: '#129271', fontSize: 11.5, fontWeight: 600, flexShrink: 0,
+          color: 'var(--color-safe-ink)', fontSize: 11.5, fontWeight: 600, flexShrink: 0,
         }}>
           {expanded ? 'Show less' : 'Learn more'}
-          <Chevron size={14} strokeWidth={2} color="#129271" />
+          <Chevron size={14} strokeWidth={2} color="var(--color-safe-ink)" />
         </span>
       </button>
 
-      <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
+      <p style={{ color: 'var(--color-dim)', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
         {summary}
         {!expanded && !installed && ' Everything here works without it.'}
       </p>
@@ -106,48 +106,48 @@ export function DeckyPluginCard() {
       {expanded && (
         <>
           <ul style={{
-            color: '#9CA3AF', fontSize: 12, lineHeight: 1.6, margin: 0, paddingLeft: 18,
+            color: 'var(--color-dim)', fontSize: 12, lineHeight: 1.6, margin: 0, paddingLeft: 18,
             display: 'flex', flexDirection: 'column', gap: 3,
           }}>
             <li>
-              <strong style={{ color: '#ECEFF1' }}>Sets launch options for you.</strong> The agent
+              <strong style={{ color: 'var(--color-fg)' }}>Sets launch options for you.</strong> The agent
               cannot — Steam rewrites its own config on exit, so only something running inside Steam
               can. It also repairs a short <code style={{ fontSize: 11 }}>savelocker</code> to the full
               path, and merges with <code style={{ fontSize: 11 }}>mangohud</code> or any arguments you
               already have rather than replacing them.
             </li>
             <li>
-              <strong style={{ color: '#ECEFF1' }}>Warns you in Game Mode</strong> when another machine
+              <strong style={{ color: 'var(--color-fg)' }}>Warns you in Game Mode</strong> when another machine
               has a game checked out — before you launch it and cause a conflict.
             </li>
             <li>
-              <strong style={{ color: '#ECEFF1' }}>Push, pull and doctor from the Quick Access panel</strong>,
+              <strong style={{ color: 'var(--color-fg)' }}>Push, pull and doctor from the Quick Access panel</strong>,
               per game or all at once, without leaving Game Mode for the desktop.
             </li>
           </ul>
 
           {installed ? (
-            <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
+            <p style={{ color: 'var(--color-dim)', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
               Nothing to do — this agent replaces the plugin's files when a newer version is published,
               and Decky reloads it within a second. Run <code style={{ fontSize: 11 }}>savelocker doctor</code> to
               see whether one is waiting.
             </p>
           ) : (
             <>
-              <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
+              <p style={{ color: 'var(--color-dim)', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
                 {status.deckyPresent
-                  ? <>Install it from Decky &rarr; <strong style={{ color: '#ECEFF1' }}>Install Plugin from URL</strong> with
+                  ? <>Install it from Decky &rarr; <strong style={{ color: 'var(--color-fg)' }}>Install Plugin from URL</strong> with
                       the link below.</>
-                  : <>Install <strong style={{ color: '#ECEFF1' }}>Decky Loader</strong> first, then add this
-                      from Decky &rarr; <strong style={{ color: '#ECEFF1' }}>Install Plugin from URL</strong>.</>}
+                  : <>Install <strong style={{ color: 'var(--color-fg)' }}>Decky Loader</strong> first, then add this
+                      from Decky &rarr; <strong style={{ color: 'var(--color-fg)' }}>Install Plugin from URL</strong>.</>}
                 {' '}After that this agent keeps it updated by itself — you do not need Decky's
                 custom-store setting, which would replace your official store while it is set.
               </p>
 
               <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
                 <code style={{
-                  flex: 1, minWidth: 0, background: '#12181C', border: '1px solid #494949', borderRadius: 5,
-                  padding: '8px 10px', color: '#ECEFF1', fontSize: 11.5, lineHeight: 1.4,
+                  flex: 1, minWidth: 0, background: 'var(--color-raise)', border: '1px solid var(--color-line)', borderRadius: 5,
+                  padding: '8px 10px', color: 'var(--color-fg)', fontSize: 11.5, lineHeight: 1.4,
                   overflowX: 'auto', whiteSpace: 'nowrap',
                   fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace",
                 }}>
@@ -158,8 +158,8 @@ export function DeckyPluginCard() {
                   style={{
                     display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
                     padding: '0 12px', background: 'transparent',
-                    border: `1px solid ${copied ? '#129271' : '#494949'}`, borderRadius: 5,
-                    color: copied ? '#129271' : '#ECEFF1', fontSize: 12, fontWeight: 600,
+                    border: `1px solid ${copied ? 'var(--color-line)' : 'var(--color-line)'}`, borderRadius: 5,
+                    color: copied ? 'var(--color-fg)' : 'var(--color-fg)', fontSize: 12, fontWeight: 600,
                     cursor: 'pointer', fontFamily: 'inherit',
                   }}
                 >

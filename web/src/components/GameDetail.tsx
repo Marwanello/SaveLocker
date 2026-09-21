@@ -359,24 +359,25 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
     try { await api.queueCommand(machineId, game.id, type, force); onRefresh(); } catch (e) { alert('Could not queue command: ' + (e as Error).message); }
   }
 
-  const card = { background: '#1E252A', border: '1px solid #494949', borderRadius: 8, overflow: 'hidden' } as const;
-  const cardHeader = { padding: '11px 18px', borderBottom: '1px solid #494949' } as const;
-  const sectionLabel = { fontSize: 10, fontWeight: 700, color: '#129271', letterSpacing: '0.12em', textTransform: 'uppercase' as const };
-  const thStyle = { padding: '8px 18px', textAlign: 'left' as const, fontSize: 11, color: '#556070', fontWeight: 500 };
+  const card = { background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 8, overflow: 'hidden' } as const;
+  const cardHeader = { padding: '11px 18px', borderBottom: '1px solid var(--color-line)' } as const;
+  const sectionLabel = { fontSize: 10, fontWeight: 700, color: 'var(--color-safe-ink)', letterSpacing: '0.12em', textTransform: 'uppercase' as const };
+  const thStyle = { padding: '8px 18px', textAlign: 'left' as const, fontSize: 11, color: 'var(--color-dim)', fontWeight: 500 };
   const tdStyle = { padding: '11px 18px', fontSize: 13, fontWeight: 500 };
-  const tdMono = { padding: '11px 18px', fontSize: 11, color: '#8b9aaa', fontFamily: "'JetBrains Mono', monospace" };
-  const rowSep = { borderTop: '1px solid #252e35' };
+  const tdMono = { padding: '11px 18px', fontSize: 11, color: 'var(--color-dim)', fontFamily: "'JetBrains Mono', monospace" };
+  const rowSep = { borderTop: '1px solid var(--color-line)' };
 
   const ghostBtn = (extra?: React.CSSProperties): React.CSSProperties => ({
-    padding: '2px 8px', border: '1px solid #494949', color: '#ECEFF1', background: 'transparent',
+    padding: '2px 8px', border: '1px solid var(--color-line)', color: 'var(--color-fg)', background: 'transparent',
     borderRadius: 4, fontSize: 10, cursor: 'pointer', ...extra,
   });
-  const amberBtn: React.CSSProperties = { padding: '2px 8px', border: '1px solid #f4a60d', color: '#f4a60d', background: 'transparent', borderRadius: 4, fontSize: 10, cursor: 'pointer' };
+  const amberBtn: React.CSSProperties = { padding: '2px 8px', border: '1px solid var(--color-watch-line)', color: 'var(--color-watch-ink)', background: 'transparent', borderRadius: 4, fontSize: 10, cursor: 'pointer' };
   const pillBtn = (active: boolean): React.CSSProperties => ({
     padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-    border: `1px solid ${active ? '#129271' : '#494949'}`,
-    background: active ? '#129271' : 'transparent',
-    color: active ? '#fff' : '#8b9aaa',
+    // The current tab is `selected` (neutral tile, not the accent) — plan.md: the accent stays the one action.
+    border: '1px solid var(--color-line)',
+    background: active ? 'var(--color-tile)' : 'transparent',
+    color: active ? 'var(--color-fg)' : 'var(--color-dim)',
   });
 
   return (
@@ -390,11 +391,11 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
               and always on touch screens, which have no hover to reveal it. */}
           <div className="group relative flex-shrink-0" style={{ width: 94, height: 134 }}>
             {game.gridUrl
-              ? <img src={artSrc(game.gridUrl, 192)} srcSet={artSrcSet(game.gridUrl, [96, 192, 256])} sizes="94px" alt="cover" style={{ width: 94, height: 134, objectFit: 'cover', borderRadius: 6, border: '1px solid #494949', display: 'block' }} />
+              ? <img src={artSrc(game.gridUrl, 192)} srcSet={artSrcSet(game.gridUrl, [96, 192, 256])} sizes="94px" alt="cover" style={{ width: 94, height: 134, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--color-line)', display: 'block' }} />
               : (
-                <div style={{ width: 94, height: 134, background: '#2A3238', border: '1px dashed #494949', borderRadius: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#494949" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                  <span style={{ color: '#8b9aaa', fontSize: 9, fontFamily: "'JetBrains Mono', monospace", textAlign: 'center', lineHeight: 1.5 }}>box<br/>art</span>
+                <div style={{ width: 94, height: 134, background: 'var(--color-raise)', border: '1px dashed var(--color-line)', borderRadius: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-faint)' }}><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  <span style={{ color: 'var(--color-dim)', fontSize: 9, fontFamily: "'JetBrains Mono', monospace", textAlign: 'center', lineHeight: 1.5 }}>box<br/>art</span>
                 </div>
               )
             }
@@ -426,69 +427,69 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
               <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.3px' }}>{game.name}</span>
 
               {hasOpenConflict
-                ? <span style={{ padding: '2px 7px', border: '1px solid #f4a60d', color: '#f4a60d', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>conflict</span>
-                : <span style={{ padding: '2px 7px', border: '1px solid #129271', color: '#129271', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>in sync</span>
+                ? <span style={{ padding: '2px 7px', border: '1px solid var(--color-watch-line)', color: 'var(--color-watch-ink)', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>conflict</span>
+                : <span style={{ padding: '2px 7px', border: '1px solid var(--color-safe-line)', color: 'var(--color-safe-ink)', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>in sync</span>
               }
 
               {lease?.holderMachineName
-                ? <span style={{ padding: '2px 7px', border: '1px solid #494949', color: '#8b9aaa', borderRadius: 4, fontSize: 10 }}>leased by {lease.holderMachineName}</span>
-                : <span style={{ padding: '2px 7px', border: '1px solid #494949', color: '#8b9aaa', borderRadius: 4, fontSize: 10 }}>free</span>
+                ? <span style={{ padding: '2px 7px', border: '1px solid var(--color-line)', color: 'var(--color-dim)', borderRadius: 4, fontSize: 10 }}>leased by {lease.holderMachineName}</span>
+                : <span style={{ padding: '2px 7px', border: '1px solid var(--color-line)', color: 'var(--color-dim)', borderRadius: 4, fontSize: 10 }}>free</span>
               }
 
-              {!game.enabled && <span style={{ padding: '2px 7px', border: '1px solid #f4a60d', color: '#f4a60d', borderRadius: 4, fontSize: 10 }}>disabled</span>}
+              {!game.enabled && <span style={{ padding: '2px 7px', border: '1px solid var(--color-watch-line)', color: 'var(--color-watch-ink)', borderRadius: 4, fontSize: 10 }}>disabled</span>}
 
               <button style={ghostBtn()} onClick={handleRefreshArt}
                 title="Fetch SteamGridDB's default cover and icon again. This replaces ones you picked.">Refresh art</button>
               <button style={ghostBtn()} onClick={handleSetEnabled}>{game.enabled ? 'Disable' : 'Enable'}</button>
               {lease?.holderMachineName && (
-                <button style={ghostBtn({ borderColor: '#f4a60d', color: '#f4a60d' })} onClick={handleForceRelease}>Force-release lease</button>
+                <button style={ghostBtn({ borderColor: 'var(--color-watch-line)', color: 'var(--color-watch-ink)' })} onClick={handleForceRelease}>Force-release lease</button>
               )}
               <button style={amberBtn} onClick={handleDeleteGame}>Delete</button>
             </div>
 
             {/* Latest commit meta */}
             {head ? (
-              <p style={{ fontSize: 11.5, color: '#8b9aaa', fontFamily: "'JetBrains Mono', monospace" }}>
-                latest&nbsp;<span style={{ color: '#fdce63', fontWeight: 500 }}>{shortId(head.id)}</span>&nbsp;from&nbsp;
-                <span style={{ color: '#ECEFF1' }}>{head.machineName}</span>&nbsp;at&nbsp;
-                <span style={{ color: '#ECEFF1' }}>{when(head.createdAt)}</span>&nbsp;·&nbsp;
-                <span style={{ color: '#ECEFF1' }}>{fmtSize(head.size)}</span>
+              <p style={{ fontSize: 11.5, color: 'var(--color-dim)', fontFamily: "'JetBrains Mono', monospace" }}>
+                latest&nbsp;<span style={{ color: 'var(--color-watch-ink)', fontWeight: 500 }}>{shortId(head.id)}</span>&nbsp;from&nbsp;
+                <span style={{ color: 'var(--color-fg)' }}>{head.machineName}</span>&nbsp;at&nbsp;
+                <span style={{ color: 'var(--color-fg)' }}>{when(head.createdAt)}</span>&nbsp;·&nbsp;
+                <span style={{ color: 'var(--color-fg)' }}>{fmtSize(head.size)}</span>
               </p>
             ) : (
-              <p style={{ fontSize: 11.5, color: '#556070', fontFamily: "'JetBrains Mono', monospace" }}>no saves yet</p>
+              <p style={{ fontSize: 11.5, color: 'var(--color-dim)', fontFamily: "'JetBrains Mono', monospace" }}>no saves yet</p>
             )}
 
             {/* Total storage for this game */}
-            <p style={{ fontSize: 11, color: '#556070', fontFamily: "'JetBrains Mono', monospace" }}>
+            <p style={{ fontSize: 11, color: 'var(--color-dim)', fontFamily: "'JetBrains Mono', monospace" }}>
               total stored:&nbsp;
-              <span style={{ color: '#8b9aaa', fontWeight: 500 }}>{fmtSize(summary.totalStorageBytes)}</span>
+              <span style={{ color: 'var(--color-dim)', fontWeight: 500 }}>{fmtSize(summary.totalStorageBytes)}</span>
               &nbsp;across&nbsp;
-              <span style={{ color: '#8b9aaa' }}>{versions.length} version{versions.length !== 1 ? 's' : ''}</span>
+              <span style={{ color: 'var(--color-dim)' }}>{versions.length} version{versions.length !== 1 ? 's' : ''}</span>
             </p>
 
             {/* Suggested save dir fallback */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#2A3238', padding: '7px 10px', borderRadius: 5, border: '1px solid #494949' }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#494949" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-              <span style={{ fontSize: 10, color: '#556070', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--color-raise)', padding: '7px 10px', borderRadius: 5, border: '1px solid var(--color-line)' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--color-faint)' }}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <span style={{ fontSize: 10, color: 'var(--color-dim)', flexShrink: 0 }}>
                 {isTemplate(game.suggestedSaveDir) ? 'template:' : 'fallback path:'}
               </span>
               <span
                 title={isTemplate(game.suggestedSaveDir)
                   ? 'Each machine expands this against its own folders — inside the game\'s Proton prefix on a Steam Deck. A machine that already has its own path keeps it.'
                   : 'A literal path, used only where it happens to exist. "Use as template" on a machine row turns it into one that works everywhere.'}
-                style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: isTemplate(game.suggestedSaveDir) ? '#129271' : '#8b9aaa', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {game.suggestedSaveDir || <span style={{ color: '#8b9aaa', fontStyle: 'italic' }}>none</span>}
+                style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: isTemplate(game.suggestedSaveDir) ? 'var(--color-safe-ink)' : 'var(--color-dim)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {game.suggestedSaveDir || <span style={{ color: 'var(--color-dim)', fontStyle: 'italic' }}>none</span>}
               </span>
-              <button style={{ padding: '3px 9px', border: '1px solid #494949', color: '#ECEFF1', background: 'transparent', borderRadius: 4, fontSize: 10, cursor: 'pointer', flexShrink: 0 }} onClick={handleSetSaveDir}>Edit</button>
+              <button style={{ padding: '3px 9px', border: '1px solid var(--color-line)', color: 'var(--color-fg)', background: 'transparent', borderRadius: 4, fontSize: 10, cursor: 'pointer', flexShrink: 0 }} onClick={handleSetSaveDir}>Edit</button>
             </div>
 
             {/* Conflict policy */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#2A3238', padding: '7px 10px', borderRadius: 5, border: '1px solid #494949', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 10, color: '#556070', flexShrink: 0 }}>conflict policy:</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--color-raise)', padding: '7px 10px', borderRadius: 5, border: '1px solid var(--color-line)', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 10, color: 'var(--color-dim)', flexShrink: 0 }}>conflict policy:</span>
               <select
                 value={policyDraft}
                 onChange={e => { setPolicyDraft(e.target.value); if (e.target.value !== 'PreferMachine') setPreferredMachineDraft(null); }}
-                style={{ background: '#1E252A', color: '#ECEFF1', border: '1px solid #3a464f', borderRadius: 4, fontSize: 11, padding: '2px 5px', cursor: 'pointer' }}
+                style={{ background: 'var(--color-panel)', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 4, fontSize: 11, padding: '2px 5px', cursor: 'pointer' }}
               >
                 <option value="Manual">Manual — resolve conflicts in the console</option>
                 <option value="NewestWins">Newest wins — latest upload always wins</option>
@@ -498,7 +499,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                 <select
                   value={preferredMachineDraft ?? ''}
                   onChange={e => setPreferredMachineDraft(e.target.value || null)}
-                  style={{ background: '#1E252A', color: '#ECEFF1', border: '1px solid #3a464f', borderRadius: 4, fontSize: 11, padding: '2px 5px', cursor: 'pointer' }}
+                  style={{ background: 'var(--color-panel)', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 4, fontSize: 11, padding: '2px 5px', cursor: 'pointer' }}
                 >
                   <option value="">— pick a machine —</option>
                   {machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -509,7 +510,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                 <button
                   disabled={savingPolicy || (policyDraft === 'PreferMachine' && !preferredMachineDraft)}
                   onClick={handleSavePolicy}
-                  style={{ padding: '3px 9px', border: '1px solid #129271', color: savingPolicy ? '#556070' : '#129271', background: 'transparent', borderRadius: 4, fontSize: 10, cursor: savingPolicy ? 'default' : 'pointer', flexShrink: 0 }}
+                  style={{ padding: '3px 9px', border: '1px solid var(--color-line)', color: savingPolicy ? 'var(--color-dim)' : 'var(--color-fg)', background: 'transparent', borderRadius: 4, fontSize: 10, cursor: savingPolicy ? 'default' : 'pointer', flexShrink: 0 }}
                 >
                   {savingPolicy ? 'Saving…' : 'Save'}
                 </button>
@@ -528,24 +529,24 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
       {gameConflicts.map(c => {
         const stuck = machines.find(m => m.id === c.machineId)?.name;
         return (
-          <div key={c.id} style={{ background: '#241a1a', border: `1px solid ${c.escalated ? '#e5534b' : '#4a2a2a'}`, borderRadius: 8, padding: '10px 12px' }}>
-            <b style={{ color: '#f4a60d' }}>
+          <div key={c.id} style={{ background: 'var(--color-accent-soft)', border: `1px solid ${c.escalated ? 'var(--color-accent-line)' : 'var(--color-accent-line)'}`, borderRadius: 8, padding: '10px 12px' }}>
+            <b style={{ color: 'var(--color-watch-ink)' }}>
               Conflict{stuck ? ` — ${stuck} cannot sync` : ''}: choose the version to keep
             </b>
             {' '}
-            <a href="#help/conflicts" style={{ fontSize: 11, color: '#129271', textDecoration: 'underline' }}>Why did this happen?</a>
+            <a href="#help/conflicts" style={{ fontSize: 11, color: 'var(--color-fg)', textDecoration: 'underline' }}>Why did this happen?</a>
             {c.escalated && (
-              <div style={{ fontSize: 11, color: '#e5534b', marginTop: 5, fontWeight: 700 }}>
+              <div style={{ fontSize: 11, color: 'var(--color-accent-ink)', marginTop: 5, fontWeight: 700 }}>
                 Overdue — this conflict has been unresolved for more than six hours.
               </div>
             )}
 
             {(game.conflictPolicy ?? 'Manual') === 'Manual' && (
-              <div style={{ fontSize: 11, color: '#556070', marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: 'var(--color-dim)', marginTop: 4 }}>
                 Playing solo?{' '}
                 <button
                   onClick={() => { setPolicyDraft('NewestWins'); void api.setConflictPolicy(game.id, 'NewestWins').then(onRefresh); }}
-                  style={{ background: 'none', border: 'none', color: '#129271', fontSize: 11, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                  style={{ background: 'none', border: 'none', color: 'var(--color-fg)', fontSize: 11, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
                 >
                   Set to "Newest wins"
                 </button>
@@ -553,7 +554,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
               </div>
             )}
             {c.count > 1 && (
-              <div style={{ fontSize: 11, color: '#8b9aaa', marginTop: 4, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 11, color: 'var(--color-dim)', marginTop: 4, lineHeight: 1.5 }}>
                 {c.count} divergent saves folded into this conflict — the <b>newest</b> is offered below.
                 The older ones are still listed under Versions and can be promoted with "Set as Latest".
               </div>
@@ -566,15 +567,15 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                 const v = versions.find(x => x.id === vid);
                 const stats = versionStats[vid];
                 return (
-                  <div key={vid} style={{ background: '#1E252A', border: '1px solid #4a2a2a', borderRadius: 5, padding: 8 }}>
+                  <div key={vid} style={{ background: 'var(--color-panel)', border: '1px solid var(--color-accent-line)', borderRadius: 5, padding: 8 }}>
                     <div style={{ fontWeight: 600, fontSize: 12 }}>
                       {v ? v.machineName : shortId(vid)}{vid === headId ? ' — current Latest' : ''}
                     </div>
-                    <div style={{ fontSize: 10.5, color: '#8b9aaa', fontFamily: "'JetBrains Mono', monospace", margin: '2px 0' }}>
+                    <div style={{ fontSize: 10.5, color: 'var(--color-dim)', fontFamily: "'JetBrains Mono', monospace", margin: '2px 0' }}>
                       {v ? `${when(v.createdAt)} · ${fmtSize(v.size)}` : shortId(vid)}
                     </div>
                     {stats && (
-                      <div style={{ fontSize: 10.5, color: '#8b9aaa', fontFamily: "'JetBrains Mono', monospace" }}>
+                      <div style={{ fontSize: 10.5, color: 'var(--color-dim)', fontFamily: "'JetBrains Mono', monospace" }}>
                         {stats.fileCount} file{stats.fileCount === 1 ? '' : 's'}
                         {stats.newestFileWriteUtc ? ` · newest change ${when(stats.newestFileWriteUtc)}` : ''}
                       </div>
@@ -582,13 +583,13 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                     <div style={{ display: 'flex', gap: 5, marginTop: 7 }}>
                       <button
                         onClick={() => handleResolveConflict(c.id, vid, false)}
-                        style={{ padding: '4px 9px', background: '#129271', color: '#fff', border: 'none', borderRadius: 4, fontSize: 10.5, cursor: 'pointer' }}
+                        style={{ padding: '4px 9px', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: 4, fontSize: 10.5, cursor: 'pointer' }}
                       >
                         Use as Latest
                       </button>
                       <button
                         onClick={() => handleResolveConflict(c.id, vid, true)}
-                        style={{ padding: '4px 9px', background: 'transparent', color: '#fdce63', border: '1px solid #fdce63', borderRadius: 4, fontSize: 10.5, cursor: 'pointer' }}
+                        style={{ padding: '4px 9px', background: 'transparent', color: 'var(--color-watch-ink)', border: '1px solid var(--color-watch-line)', borderRadius: 4, fontSize: 10.5, cursor: 'pointer' }}
                       >
                         Keep both · use this
                       </button>
@@ -603,13 +604,13 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
 
       {/* ── Initial sync wizard ── */}
       {contributors.length > 1 && (
-        <div style={{ background: '#1a2330', border: '1px solid #2a3a52', borderRadius: 8, padding: '10px 12px' }}>
+        <div style={{ background: 'var(--color-tile)', border: '1px solid var(--color-line)', borderRadius: 8, padding: '10px 12px' }}>
           <b>Initial sync — which machine has your real progress?</b>
-          <p style={{ fontSize: 12, color: '#8b9aaa', marginTop: 2 }}>Sets that machine's newest save as Latest (what every machine pulls).</p>
+          <p style={{ fontSize: 12, color: 'var(--color-dim)', marginTop: 2 }}>Sets that machine's newest save as Latest (what every machine pulls).</p>
           <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
             {contributors.map(v => (
               <button key={v.id} onClick={() => handleSetLatest(v.id)}
-                style={{ padding: '5px 12px', background: '#129271', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, cursor: 'pointer' }}
+                style={{ padding: '5px 12px', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: 5, fontSize: 12, cursor: 'pointer' }}
               >
                 {v.machineName} ({when(v.createdAt)}){v.id === headId ? ' — current' : ''}
               </button>
@@ -625,11 +626,11 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
           style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 18px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
         >
           <span style={sectionLabel}>Exclude patterns</span>
-          <span style={{ fontSize: 11, color: '#556070', userSelect: 'none' }}>{excludeOpen ? '▲' : '▼'}</span>
+          <span style={{ fontSize: 11, color: 'var(--color-dim)', userSelect: 'none' }}>{excludeOpen ? '▲' : '▼'}</span>
         </button>
         {excludeOpen && (
-          <div className="flex flex-col gap-2.5" style={{ padding: '0 18px 14px', borderTop: '1px solid #494949', paddingTop: 10 }}>
-            <p className="text-[11px] text-faint">
+          <div className="flex flex-col gap-2.5" style={{ padding: '0 18px 14px', borderTop: '1px solid var(--color-line)', paddingTop: 10 }}>
+            <p className="text-[11px] text-dim">
               Files matching these never upload. Bare patterns like <code className="font-mono">*.log</code> match
               at any depth; <code className="font-mono">cache/**</code> anchors at this game's save folder.
               See <a href="#help/glob-patterns" className="text-accent">glob pattern docs</a>.
@@ -647,7 +648,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
             <div className="flex flex-col gap-1.5">
               <span className="text-[10px] text-faint uppercase tracking-[0.08em]">This game's own patterns</span>
               <div className="flex flex-wrap gap-1.5">
-                {excludeDraft.length === 0 && <span className="text-[11px] text-faint italic">none</span>}
+                {excludeDraft.length === 0 && <span className="text-[11px] text-dim italic">none</span>}
                 {excludeDraft.map(p => (
                   <Chip key={p} className="font-mono">
                     {p}
@@ -655,7 +656,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                       onClick={() => handleRemovePattern(p)}
                       title={`Remove ${p}`}
                       aria-label={`Remove ${p}`}
-                      className="ml-1 text-faint hover:text-accent"
+                      className="ml-1 text-dim hover:text-accent"
                     >
                       ×
                     </button>
@@ -705,7 +706,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
         <div style={cardHeader}><span style={sectionLabel}>Machines</span></div>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ background: '#222d34' }}>
+            <tr style={{ background: 'var(--color-raise)' }}>
               <th style={thStyle}>Machine</th>
               <th style={thStyle}>Last upload (this game)</th>
               <th style={thStyle}>Last seen</th>
@@ -714,7 +715,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
           </thead>
           <tbody>
             {machines.length === 0
-              ? <tr><td colSpan={4} style={{ padding: '20px 18px', color: '#556070', fontSize: 13 }}>No machines registered.</td></tr>
+              ? <tr><td colSpan={4} style={{ padding: '20px 18px', color: 'var(--color-dim)', fontSize: 13 }}>No machines registered.</td></tr>
               : machines.map(m => {
                   const last = latestByMachine[m.id];
                   return (
@@ -724,9 +725,9 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                       <td style={tdMono}>{when(m.lastSeen)}</td>
                       <td style={{ padding: '11px 18px' }}>
                         <div style={{ display: 'flex', gap: 5 }}>
-                          <button style={{ padding: '4px 10px', border: '1px solid #494949', color: '#ECEFF1', background: 'transparent', borderRadius: 4, fontSize: 11, cursor: 'pointer' }} onClick={() => handleCmd(m.id, 'Pull', true)}>Pull</button>
-                          <button style={{ padding: '4px 10px', border: '1px solid #494949', color: '#ECEFF1', background: 'transparent', borderRadius: 4, fontSize: 11, cursor: 'pointer' }} onClick={() => handleCmd(m.id, 'Push', true)}>Push</button>
-                          <button style={{ padding: '4px 10px', border: 'none', color: '#fff', background: '#129271', borderRadius: 4, fontSize: 11, cursor: 'pointer', fontWeight: 500 }} onClick={() => handleCmd(m.id, 'Sync', false)}>Sync</button>
+                          <button style={{ padding: '4px 10px', border: '1px solid var(--color-line)', color: 'var(--color-fg)', background: 'transparent', borderRadius: 4, fontSize: 11, cursor: 'pointer' }} onClick={() => handleCmd(m.id, 'Pull', true)}>Pull</button>
+                          <button style={{ padding: '4px 10px', border: '1px solid var(--color-line)', color: 'var(--color-fg)', background: 'transparent', borderRadius: 4, fontSize: 11, cursor: 'pointer' }} onClick={() => handleCmd(m.id, 'Push', true)}>Push</button>
+                          <button style={{ padding: '4px 10px', border: 'none', color: 'var(--color-on-accent)', background: 'var(--color-accent)', borderRadius: 4, fontSize: 11, cursor: 'pointer', fontWeight: 500 }} onClick={() => handleCmd(m.id, 'Sync', false)}>Sync</button>
                         </div>
                       </td>
                     </tr>
@@ -742,7 +743,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
         <div style={cardHeader}><span style={sectionLabel}>Save paths per machine</span></div>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ background: '#222d34' }}>
+            <tr style={{ background: 'var(--color-raise)' }}>
               <th style={thStyle}>Machine</th>
               <th style={thStyle}>Save folder</th>
               <th style={{ ...thStyle, width: 80 }}></th>
@@ -750,7 +751,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
           </thead>
           <tbody>
             {machines.length === 0
-              ? <tr><td colSpan={3} style={{ padding: '20px 18px', color: '#556070', fontSize: 13 }}>No machines registered.</td></tr>
+              ? <tr><td colSpan={3} style={{ padding: '20px 18px', color: 'var(--color-dim)', fontSize: 13 }}>No machines registered.</td></tr>
               : machines.map(m => {
                   const stored = machinePaths.find(p => p.machineId === m.id);
                   const candidate = pathCandidates.find(c => c.machineId === m.id);
@@ -764,8 +765,8 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                           // folder for X" in a modal detached from the table, which made it easy to
                           // type a Deck path into a Windows machine's row.
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            <label style={{ color: '#9CA3AF', fontSize: 11 }}>
-                              Save path on <span style={{ color: '#ECEFF1', fontWeight: 600 }}>{m.name}</span>
+                            <label style={{ color: 'var(--color-dim)', fontSize: 11 }}>
+                              Save path on <span style={{ color: 'var(--color-fg)', fontWeight: 600 }}>{m.name}</span>
                             </label>
                             <input
                               autoFocus
@@ -777,8 +778,8 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                               }}
                               placeholder="Leave blank to clear the stored path"
                               style={{
-                                background: '#171e23', border: '1px solid #3a464f', borderRadius: 4,
-                                padding: '6px 8px', color: '#ECEFF1', fontSize: 12,
+                                background: 'var(--color-raise)', border: '1px solid var(--color-line)', borderRadius: 4,
+                                padding: '6px 8px', color: 'var(--color-fg)', fontSize: 12,
                                 fontFamily: 'ui-monospace, Consolas, monospace', outline: 'none',
                               }}
                             />
@@ -788,23 +789,23 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                         ) : candidate ? (
                           // The agent found this but has NOT adopted it — a human confirms here.
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                            <span style={{ color: '#556070', fontStyle: 'italic' }}>not set</span>
-                            <span style={{ color: '#9CA3AF', fontSize: 11, fontStyle: 'normal' }}>
+                            <span style={{ color: 'var(--color-dim)', fontStyle: 'italic' }}>not set</span>
+                            <span style={{ color: 'var(--color-dim)', fontSize: 11, fontStyle: 'normal' }}>
                               {m.name}'s scan found:
                             </span>
-                            <span style={{ color: '#ECEFF1', fontSize: 12, wordBreak: 'break-all' }}>
+                            <span style={{ color: 'var(--color-fg)', fontSize: 12, wordBreak: 'break-all' }}>
                               {candidate.suggestedPath}
                             </span>
                           </div>
                         ) : (
-                          <span style={{ color: '#556070', fontStyle: 'italic' }}>not set</span>
+                          <span style={{ color: 'var(--color-dim)', fontStyle: 'italic' }}>not set</span>
                         )}
                       </td>
                       <td style={{ padding: '11px 18px', whiteSpace: 'nowrap' }}>
                         {editing ? (
                           <div style={{ display: 'flex', gap: 5 }}>
                             <button
-                              style={{ padding: '4px 10px', border: 'none', color: '#fff', background: '#129271', borderRadius: 4, fontSize: 11, cursor: 'pointer', fontWeight: 500 }}
+                              style={{ padding: '4px 10px', border: 'none', color: 'var(--color-on-accent)', background: 'var(--color-accent)', borderRadius: 4, fontSize: 11, cursor: 'pointer', fontWeight: 500 }}
                               onClick={() => void saveMachinePath(m.id, pathDraft)}
                             >Save</button>
                             <button style={ghostBtn()} onClick={() => setEditingPathFor(null)}>Cancel</button>
@@ -813,7 +814,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                           <div style={{ display: 'flex', gap: 5 }}>
                             {!stored && candidate && (
                               <button
-                                style={{ padding: '4px 10px', border: 'none', color: '#fff', background: '#129271', borderRadius: 4, fontSize: 11, cursor: 'pointer', fontWeight: 500 }}
+                                style={{ padding: '4px 10px', border: 'none', color: 'var(--color-on-accent)', background: 'var(--color-accent)', borderRadius: 4, fontSize: 11, cursor: 'pointer', fontWeight: 500 }}
                                 onClick={() => void saveMachinePath(m.id, candidate.suggestedPath)}
                               >Apply</button>
                             )}
@@ -848,7 +849,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
           <div style={cardHeader}><span style={sectionLabel}>Recent Remote Commands</span></div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ background: '#222d34' }}>
+              <tr style={{ background: 'var(--color-raise)' }}>
                 <th style={{ ...thStyle, whiteSpace: 'nowrap' }}>When</th>
                 <th style={thStyle}>Machine</th>
                 <th style={thStyle}>Action</th>
@@ -861,19 +862,19 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                 <tr key={c.id} style={rowSep}>
                   <td style={{ ...tdMono, whiteSpace: 'nowrap' }}>{when(c.createdAt)}</td>
                   <td style={tdStyle}>{c.machineName}</td>
-                  <td style={{ padding: '11px 18px', fontSize: 12, color: '#ECEFF1' }}>{c.type}{c.force ? ' (force)' : ''}</td>
+                  <td style={{ padding: '11px 18px', fontSize: 12, color: 'var(--color-fg)' }}>{c.type}{c.force ? ' (force)' : ''}</td>
                   <td style={{ padding: '11px 18px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>
                     {c.status === 'Done'
-                      ? <span style={{ color: '#129271' }}>Done</span>
+                      ? <span style={{ color: 'var(--color-safe-ink)' }}>Done</span>
                       : c.status === 'Failed'
-                        ? <span style={{ color: '#f4a60d' }}>Failed</span>
-                        : <span style={{ color: '#8b9aaa' }}>{c.status}</span>
+                        ? <span style={{ color: 'var(--color-watch-ink)' }}>Failed</span>
+                        : <span style={{ color: 'var(--color-dim)' }}>{c.status}</span>
                     }
                     {c.claimCount > 1 && (
-                      <span style={{ color: '#f4a60d', fontWeight: 400 }}> · retried ×{c.claimCount}</span>
+                      <span style={{ color: 'var(--color-watch-ink)', fontWeight: 400 }}> · retried ×{c.claimCount}</span>
                     )}
                   </td>
-                  <td style={{ padding: '11px 18px', fontSize: 11.5, color: '#8b9aaa', maxWidth: 340, wordBreak: 'break-word', lineHeight: 1.6 }}>
+                  <td style={{ padding: '11px 18px', fontSize: 11.5, color: 'var(--color-dim)', maxWidth: 340, wordBreak: 'break-word', lineHeight: 1.6 }}>
                     {c.result || commandWaitText(c)}
                   </td>
                 </tr>
@@ -912,14 +913,14 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
           >Prune now</button>
         </div>
         {versionsView === 'backups' && (
-          <p style={{ padding: '10px 18px 0', margin: 0, fontSize: 11.5, color: '#8b9aaa', lineHeight: 1.5 }}>
+          <p style={{ padding: '10px 18px 0', margin: 0, fontSize: 11.5, color: 'var(--color-dim)', lineHeight: 1.5 }}>
             Not part of the current save's history — nothing here was deleted, it just isn't what
             machines currently pull. Download one to keep a copy, or "Set as Latest" to bring it back.
           </p>
         )}
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ background: '#222d34' }}>
+            <tr style={{ background: 'var(--color-raise)' }}>
               <th style={thStyle}>Version</th>
               <th style={thStyle}>Machine</th>
               <th style={thStyle}>When</th>
@@ -929,22 +930,22 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
           </thead>
           <tbody>
             {loadingVersions
-              ? <tr><td colSpan={5} style={{ padding: '20px 18px', color: '#556070', fontSize: 13 }}>Loading…</td></tr>
+              ? <tr><td colSpan={5} style={{ padding: '20px 18px', color: 'var(--color-dim)', fontSize: 13 }}>Loading…</td></tr>
               : shownVersions.length === 0
-                ? <tr><td colSpan={5} style={{ padding: '20px 18px', color: '#556070', fontSize: 13 }}>
+                ? <tr><td colSpan={5} style={{ padding: '20px 18px', color: 'var(--color-dim)', fontSize: 13 }}>
                     {versionsView === 'main' ? 'No versions yet.' : 'No backups — nothing here yet.'}
                   </td></tr>
                 : shownVersions.map(v => (
                     <tr key={v.id} style={rowSep}>
                       <td style={{ padding: '11px 18px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#fdce63' }}>{shortId(v.id)}</span>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: 'var(--color-watch-ink)' }}>{shortId(v.id)}</span>
                           {v.id === headId
-                            ? <span style={{ padding: '2px 7px', background: '#129271', color: '#fff', borderRadius: 3, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>Latest</span>
-                            : <button style={{ padding: '2px 8px', border: '1px solid #f4a60d', color: '#f4a60d', background: 'transparent', borderRadius: 3, fontSize: 10, cursor: 'pointer' }} onClick={() => handleSetLatest(v.id)}>Set as Latest</button>
+                            ? <span style={{ padding: '2px 7px', background: 'var(--color-safe-soft)', color: 'var(--color-safe-ink)', borderRadius: 3, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>Latest</span>
+                            : <button style={{ padding: '2px 8px', border: '1px solid var(--color-watch-line)', color: 'var(--color-watch-ink)', background: 'transparent', borderRadius: 3, fontSize: 10, cursor: 'pointer' }} onClick={() => handleSetLatest(v.id)}>Set as Latest</button>
                           }
                           {v.protected && (
-                            <span title="Protected from automatic pruning" style={{ padding: '2px 7px', border: '1px solid #fdce63', color: '#fdce63', borderRadius: 3, fontSize: 10 }}>
+                            <span title="Protected from automatic pruning" style={{ padding: '2px 7px', border: '1px solid var(--color-watch-line)', color: 'var(--color-watch-ink)', borderRadius: 3, fontSize: 10 }}>
                               Protected
                             </span>
                           )}
@@ -952,7 +953,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                       </td>
                       <td style={tdStyle}>{v.machineName}</td>
                       <td style={tdMono}>{when(v.createdAt)}</td>
-                      <td style={{ padding: '11px 18px', fontSize: 11.5, color: '#8b9aaa' }}>{fmtSize(v.size)}</td>
+                      <td style={{ padding: '11px 18px', fontSize: 11.5, color: 'var(--color-dim)' }}>{fmtSize(v.size)}</td>
                       <td style={{ padding: '11px 18px' }}>
                         <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}>
                           {/* The escape hatch. Without it there was no way to take a copy of a save
@@ -961,7 +962,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                           <button
                             onClick={() => handleDownloadVersion(v)}
                             title="Download this version's archive"
-                            style={{ padding: '2px 8px', border: '1px solid #494949', color: '#ECEFF1', background: 'transparent', borderRadius: 3, fontSize: 10, cursor: 'pointer' }}
+                            style={{ padding: '2px 8px', border: '1px solid var(--color-line)', color: 'var(--color-fg)', background: 'transparent', borderRadius: 3, fontSize: 10, cursor: 'pointer' }}
                           >
                             Download
                           </button>
@@ -969,7 +970,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                             <button
                               onClick={() => handleSetVersionProtected(v, false)}
                               title="Allow automatic retention to prune this version"
-                              style={{ padding: '2px 8px', border: '1px solid #fdce63', color: '#fdce63', background: 'transparent', borderRadius: 3, fontSize: 10, cursor: 'pointer' }}
+                              style={{ padding: '2px 8px', border: '1px solid var(--color-watch-line)', color: 'var(--color-watch-ink)', background: 'transparent', borderRadius: 3, fontSize: 10, cursor: 'pointer' }}
                             >
                               Unprotect
                             </button>
@@ -977,7 +978,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
                           {v.id !== headId && (
                             <button
                               onClick={() => handleDeleteVersion(v.id)}
-                              style={{ padding: '2px 8px', border: '1px solid #f4a60d', color: '#f4a60d', background: 'transparent', borderRadius: 3, fontSize: 10, cursor: 'pointer' }}
+                              style={{ padding: '2px 8px', border: '1px solid var(--color-watch-line)', color: 'var(--color-watch-ink)', background: 'transparent', borderRadius: 3, fontSize: 10, cursor: 'pointer' }}
                             >
                               Delete
                             </button>

@@ -1,40 +1,44 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { FolderSearch, Trash2 } from 'lucide-react'
-import type { AgentState, AgentVersion, TrackedGame } from '../types'
+import type { AgentAppearance, AgentState, AgentVersion, TrackedGame } from '../types'
 import { api } from '../api'
 import { useFolderPicker } from '../useFolderPicker'
 import { PathBrowserModal } from './PathBrowserModal'
 import { LaunchSetupCard } from './LaunchSetupCard'
 import { DeckyPluginCard } from './DeckyPluginCard'
 import { PlaynitePluginCard } from './PlaynitePluginCard'
+import { Chip } from './ui/Chip'
+import { AppearanceCard } from './AppearanceCard'
 
 interface Props {
   state: AgentState | null
   onSaved: () => void
+  appearance: AgentAppearance | null
+  onAppearanceChanged: (next: AgentAppearance) => void
 }
 
 const INPUT: React.CSSProperties = {
-  background: '#1E252A', border: '1px solid #494949', borderRadius: 4,
-  padding: '7px 10px', color: '#ECEFF1', outline: 'none', fontFamily: 'inherit',
+  background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 4,
+  padding: '7px 10px', color: 'var(--color-fg)', outline: 'none', fontFamily: 'inherit',
 }
 const LABEL: React.CSSProperties = {
-  color: '#9CA3AF', fontSize: 11, display: 'block', marginBottom: 5,
+  color: 'var(--color-dim)', fontSize: 11, display: 'block', marginBottom: 5,
 }
 const BTN_PRIMARY: React.CSSProperties = {
-  padding: '7px 15px', background: '#129271', border: 'none', borderRadius: 4,
-  color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+  padding: '7px 15px', background: 'var(--color-accent)', border: 'none', borderRadius: 4,
+  color: 'var(--color-on-accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
   fontFamily: 'inherit', flexShrink: 0,
 }
 const BTN_SECONDARY: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 5,
   padding: '7px 11px', background: 'transparent',
-  border: '1px solid #494949', borderRadius: 4,
-  color: '#ECEFF1', fontSize: 12, cursor: 'pointer',
+  border: '1px solid var(--color-line)', borderRadius: 4,
+  color: 'var(--color-fg)', fontSize: 12, cursor: 'pointer',
   fontFamily: 'inherit', flexShrink: 0, whiteSpace: 'nowrap',
 }
 const SECTION_HEADER: React.CSSProperties = {
-  color: '#9CA3AF', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.11em',
-  marginBottom: 14, paddingBottom: 8, borderBottom: '1px solid #494949',
+  color: 'var(--color-dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.11em',
+  marginBottom: 14, paddingBottom: 8, borderBottom: '1px solid var(--color-line)',
 }
 
 /**
@@ -58,27 +62,22 @@ function UpdateStatus({ platform }: { platform?: string }) {
     api.agentVersion().then(setInfo).catch(() => setFailed(true))
   }, [])
 
-  if (failed) return <div style={{ color: '#9CA3AF', fontSize: 12 }}>Could not read the agent version.</div>
-  if (!info) return <div style={{ color: '#9CA3AF', fontSize: 12 }}>Checking…</div>
+  if (failed) return <div style={{ color: 'var(--color-dim)', fontSize: 12 }}>Could not read the agent version.</div>
+  if (!info) return <div style={{ color: 'var(--color-dim)', fontSize: 12 }}>Checking…</div>
 
-  const badge = (text: string, background: string) => (
-    <span style={{
-      padding: '2px 7px', background, color: '#1E252A', borderRadius: 4,
-      fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
-    }}>{text}</span>
-  )
+  const badge = (text: string, tone: 'ok' | 'warn') => <Chip tone={tone}>{text}</Chip>
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ color: '#ECEFF1', fontSize: 13 }}>Running v{info.currentVersion}</span>
+        <span style={{ color: 'var(--color-fg)', fontSize: 13 }}>Running v{info.currentVersion}</span>
         {info.stagedVersion
-          ? badge(`v${info.stagedVersion} READY`, '#4ade80')
+          ? badge(`v${info.stagedVersion} READY`, 'ok')
           : info.updateAvailable && info.latestVersion
-            ? badge(`v${info.latestVersion} AVAILABLE`, '#f4a60d')
+            ? badge(`v${info.latestVersion} AVAILABLE`, 'warn')
             : null}
       </div>
-      <div style={{ color: '#9CA3AF', fontSize: 11, lineHeight: 1.5 }}>
+      <div style={{ color: 'var(--color-dim)', fontSize: 11, lineHeight: 1.5 }}>
         {info.stagedVersion
           // The agent's own words for what blocks it, verbatim: it knows which game is running and
           // this UI does not, and re-phrasing it here is how three surfaces start disagreeing.
@@ -96,7 +95,7 @@ function UpdateStatus({ platform }: { platform?: string }) {
   )
 }
 
-export function SettingsView({ state, onSaved }: Props) {
+export function SettingsView({ state, onSaved, appearance, onAppearanceChanged }: Props) {
   const [serverUrl, setServerUrl] = useState('')
   const [machineName, setMachineName] = useState('')
   const [adminPassword, setAdminPassword] = useState('')
@@ -279,6 +278,8 @@ export function SettingsView({ state, onSaved }: Props) {
       position: 'absolute', inset: 0, overflowY: 'auto',
       padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 22,
     }}>
+      <AppearanceCard appearance={appearance} onChanged={onAppearanceChanged} />
+
       {/* Connection */}
       <div>
         <div style={SECTION_HEADER}>Connection</div>
@@ -318,12 +319,12 @@ export function SettingsView({ state, onSaved }: Props) {
 
           <div>
             <label style={LABEL}>Connection Status</label>
-            <div style={{ color: state?.connected ? '#129271' : '#f4a60d', fontSize: 13 }}>
+            <div style={{ color: state?.connected ? 'var(--color-safe-ink)' : 'var(--color-watch-ink)', fontSize: 13 }}>
               {state?.connected
                 ? 'Registered — this machine holds a key for the server.'
                 : 'Not registered yet.'}
             </div>
-            <div style={{ color: '#9CA3AF', fontSize: 11, marginTop: 5, lineHeight: 1.5 }}>
+            <div style={{ color: 'var(--color-dim)', fontSize: 11, marginTop: 5, lineHeight: 1.5 }}>
               The machine key is kept in the agent's config file and never shown here. If it is ever
               exposed, use Register / Re-register above to rotate it.
             </div>
@@ -334,12 +335,12 @@ export function SettingsView({ state, onSaved }: Props) {
               type="checkbox" checked={startWithWindows}
               onChange={e => void toggleStartup(e.target.checked)}
             />
-            <span style={{ color: '#ECEFF1', fontSize: 13 }}>{startupLabel}</span>
+            <span style={{ color: 'var(--color-fg)', fontSize: 13 }}>{startupLabel}</span>
           </label>
         </div>
 
         {status && (
-          <div style={{ color: '#9CA3AF', fontSize: 12, marginTop: 8 }}>{status}</div>
+          <div style={{ color: 'var(--color-dim)', fontSize: 12, marginTop: 8 }}>{status}</div>
         )}
       </div>
 
@@ -362,7 +363,7 @@ export function SettingsView({ state, onSaved }: Props) {
           />
           <button style={BTN_PRIMARY} onClick={() => void save()} disabled={busy}>Save</button>
         </div>
-        <div style={{ color: '#9CA3AF', fontSize: 11, marginTop: 7, lineHeight: 1.5 }}>
+        <div style={{ color: 'var(--color-dim)', fontSize: 11, marginTop: 7, lineHeight: 1.5 }}>
           After a game closes, SaveLocker waits until its save folder stops changing for this long
           before backing it up — so a game that keeps writing for a few seconds after exit can't be
           captured half-finished. Raise it if a game is slow to flush its save. 0 backs up
@@ -386,11 +387,11 @@ export function SettingsView({ state, onSaved }: Props) {
         <div style={SECTION_HEADER}>Currently Tracked Games</div>
 
         <div style={{
-          background: '#1E252A', border: '1px solid #494949', borderRadius: 5,
+          background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 5,
           overflow: 'hidden', marginBottom: 10,
         }}>
           {games.length === 0 ? (
-            <div style={{ padding: '14px 13px', color: '#9CA3AF', fontSize: 12 }}>
+            <div style={{ padding: '14px 13px', color: 'var(--color-dim)', fontSize: 12 }}>
               No games tracked yet. Go to Add Games to enroll.
             </div>
           ) : games.map(g => (
@@ -410,12 +411,12 @@ export function SettingsView({ state, onSaved }: Props) {
                 style={{ marginTop: 2 }}
               />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: '#ECEFF1', fontSize: 13, fontWeight: 500, marginBottom: 3 }}>
+                <div style={{ color: 'var(--color-fg)', fontSize: 13, fontWeight: 500, marginBottom: 3 }}>
                   {g.name}
                 </div>
                 {g.path && (
                   <div style={{
-                    color: '#9CA3AF', fontSize: 10, marginBottom: 5,
+                    color: 'var(--color-dim)', fontSize: 10, marginBottom: 5,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace",
                   }}>
@@ -426,14 +427,14 @@ export function SettingsView({ state, onSaved }: Props) {
                   {/* An unmapped game (enrolled before Add Games gated on a folder) needs a path
                       set; a mapped one only ever needs it changed. Distinct labels, and neither
                       collides with Add Games' "Set save folder". */}
-                  {!g.path && <span style={{ color: '#f4a60d', fontSize: 11 }}>No save folder set</span>}
+                  {!g.path && <span style={{ color: 'var(--color-watch-ink)', fontSize: 11 }}>No save folder set</span>}
                   <button
                     onClick={() => void pickFolderFor(g)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 5,
                       padding: '5px 10px', background: 'transparent',
-                      border: `1px solid ${g.path ? '#494949' : '#129271'}`, borderRadius: 4,
-                      color: g.path ? '#9CA3AF' : '#129271', fontSize: 11, fontWeight: 600,
+                      border: `1px solid ${g.path ? 'var(--color-line)' : 'var(--color-line)'}`, borderRadius: 4,
+                      color: g.path ? 'var(--color-dim)' : 'var(--color-fg)', fontSize: 11, fontWeight: 600,
                       cursor: 'pointer', fontFamily: 'inherit',
                     }}
                   >
@@ -449,11 +450,11 @@ export function SettingsView({ state, onSaved }: Props) {
                 {state?.platform !== 'Linux' && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
                     {g.processNames.length > 0 ? (
-                      <span style={{ color: '#9CA3AF', fontSize: 10 }}>
+                      <span style={{ color: 'var(--color-dim)', fontSize: 10 }}>
                         Launch/exit sync: {g.processNames.join(', ')}
                       </span>
                     ) : (
-                      <span style={{ color: '#f4a60d', fontSize: 11 }}>
+                      <span style={{ color: 'var(--color-watch-ink)', fontSize: 11 }}>
                         Launch/exit sync not configured
                       </span>
                     )}
@@ -461,9 +462,9 @@ export function SettingsView({ state, onSaved }: Props) {
                       onClick={() => void editProcessesFor(g)}
                       style={{
                         padding: '4px 9px', background: 'transparent',
-                        border: `1px solid ${g.processNames.length > 0 ? '#494949' : '#f4a60d'}`,
+                        border: `1px solid ${g.processNames.length > 0 ? 'var(--color-line)' : 'var(--color-watch-line)'}`,
                         borderRadius: 4,
-                        color: g.processNames.length > 0 ? '#9CA3AF' : '#f4a60d',
+                        color: g.processNames.length > 0 ? 'var(--color-dim)' : 'var(--color-watch-ink)',
                         fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
                       }}
                     >
@@ -483,13 +484,13 @@ export function SettingsView({ state, onSaved }: Props) {
             style={{
               display: 'flex', alignItems: 'center', gap: 5,
               padding: '6px 12px', background: 'transparent',
-              border: '1px solid #f4a60d', borderRadius: 4,
-              color: '#f4a60d', fontSize: 12, cursor: 'pointer',
+              border: '1px solid var(--color-watch-line)', borderRadius: 4,
+              color: 'var(--color-watch-ink)', fontSize: 12, cursor: 'pointer',
               fontFamily: 'inherit',
               opacity: selectedGames.size === 0 ? 0.45 : 1,
             }}
           >
-            <Trash2 size={13} strokeWidth={1.75} color="#f4a60d" />
+            <Trash2 size={13} strokeWidth={1.75} color="var(--color-watch-ink)" />
             <span>Remove selected</span>
           </button>
         </div>

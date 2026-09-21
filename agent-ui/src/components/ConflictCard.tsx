@@ -75,28 +75,28 @@ export function ConflictCard({
 
   return (
     <div style={{
-      background: '#1E252A', border: '1px solid #34424b',
+      background: 'var(--color-panel)', border: '1px solid var(--color-line)',
       borderRadius: 10, padding: '18px 20px', flexShrink: 0,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 14.5, fontWeight: 700, color: '#ECEFF1' }}>{gameName}</span>
+        <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--color-fg)' }}>{gameName}</span>
         <span style={{
           fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
-          color: '#f4a60d', background: 'rgba(244,166,13,0.12)',
+          color: 'var(--color-watch-ink)', background: 'rgba(244,166,13,0.12)',
           border: '1px solid rgba(244,166,13,0.4)', borderRadius: 20, padding: '2px 8px',
         }}>Conflict</span>
       </div>
-      <div style={{ fontSize: 12.5, lineHeight: 1.6, color: '#8b9aaa', marginTop: 8, maxWidth: '54ch' }}>
+      <div style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--color-dim)', marginTop: 8, maxWidth: '54ch' }}>
         {labelFor('local', versionB)} and {labelFor('cloud', versionA).toLowerCase()} both changed since
         the last sync. Pick which one to keep — the other is never deleted, just set aside.
       </div>
       {conflict.escalated && (
-        <div style={{ color: '#e5534b', fontSize: 11, fontWeight: 600, marginTop: 6 }}>
+        <div style={{ color: 'var(--color-accent-ink)', fontSize: 11, fontWeight: 600, marginTop: 6 }}>
           Overdue — this conflict has been unresolved for more than six hours.
         </div>
       )}
       {conflict.count > 1 && (
-        <div style={{ color: '#8b9aaa', fontSize: 11, marginTop: 6, lineHeight: 1.5 }}>
+        <div style={{ color: 'var(--color-dim)', fontSize: 11, marginTop: 6, lineHeight: 1.5 }}>
           {conflict.count} divergent saves folded into this conflict — the newest is offered below.
         </div>
       )}
@@ -121,8 +121,8 @@ export function ConflictCard({
                 flex: '1 1 210px', minWidth: 210, cursor: resolving ? 'default' : 'pointer',
                 background: isSelected
                   ? 'linear-gradient(180deg, rgba(18,146,113,0.10), rgba(18,146,113,0.03) 60%)'
-                  : '#222d34',
-                border: `1px solid ${isSelected ? '#129271' : '#3a4750'}`,
+                  : 'var(--color-raise)',
+                border: `1px solid ${isSelected ? 'var(--color-safe-line)' : 'var(--color-line)'}`,
                 borderRadius: 8, padding: '14px 15px',
                 display: 'flex', flexDirection: 'column', gap: 10,
                 transition: 'border-color .12s ease, background .12s ease',
@@ -132,39 +132,39 @@ export function ConflictCard({
                 <div style={{
                   width: 26, height: 26, borderRadius: 6, flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: isSelected ? 'rgba(18,146,113,0.18)' : '#2c383f',
-                  color: isSelected ? '#16b992' : '#8b9aaa',
+                  background: isSelected ? 'rgba(18,146,113,0.18)' : 'var(--color-raise)',
+                  color: isSelected ? 'var(--color-safe-ink)' : 'var(--color-dim)',
                 }}>
                   <Icon size={14} strokeWidth={2} />
                 </div>
-                <span style={{ color: '#ECEFF1', fontWeight: 700, fontSize: 13 }}>{label}</span>
+                <span style={{ color: 'var(--color-fg)', fontWeight: 700, fontSize: 13 }}>{label}</span>
               </div>
 
               <div
                 title={side.v ? formatDateTime(side.v.createdAt) : undefined}
                 style={{
                   fontFamily: "'JetBrains Mono', monospace", fontSize: 15, fontWeight: 600,
-                  color: '#ECEFF1', display: 'flex', alignItems: 'baseline', gap: 7,
+                  color: 'var(--color-fg)', display: 'flex', alignItems: 'baseline', gap: 7,
                 }}
               >
                 {side.v ? formatAgo(side.v.createdAt) : shortId(side.id)}
                 {isNewer && (
                   <span style={{
                     fontFamily: 'var(--font-sans)', fontSize: 9.5, fontWeight: 700,
-                    letterSpacing: '0.05em', textTransform: 'uppercase', color: '#16b992',
+                    letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--color-safe-ink)',
                     background: 'rgba(18,146,113,0.14)', borderRadius: 10, padding: '1px 6px',
                   }}>newer</span>
                 )}
               </div>
 
               {side.v && (
-                <div style={{ color: '#8b9aaa', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
+                <div style={{ color: 'var(--color-dim)', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
                   {side.s ? `${side.s.fileCount} file${side.s.fileCount === 1 ? '' : 's'} · ` : ''}
                   {fmtSize(side.v.size)}
                 </div>
               )}
               {caption && (
-                <div style={{ color: '#556070', fontSize: 10.5, lineHeight: 1.5 }}>{caption}</div>
+                <div style={{ color: 'var(--color-dim)', fontSize: 10.5, lineHeight: 1.5 }}>{caption}</div>
               )}
 
               <button
@@ -174,9 +174,9 @@ export function ConflictCard({
                   marginTop: 2, alignSelf: 'flex-start',
                   padding: '6px 12px', borderRadius: 5, fontSize: 11.5, fontWeight: 600,
                   cursor: resolving ? 'default' : 'pointer', opacity: resolving ? 0.6 : 1,
-                  background: isSelected ? '#129271' : '#2c383f',
-                  color: isSelected ? '#fff' : '#8b9aaa',
-                  border: `1px solid ${isSelected ? '#129271' : '#445059'}`,
+                  background: isSelected ? 'var(--color-accent)' : 'var(--color-raise)',
+                  color: isSelected ? 'var(--color-on-accent)' : 'var(--color-dim)',
+                  border: `1px solid ${isSelected ? 'var(--color-line)' : 'var(--color-line)'}`,
                 }}
               >
                 Keep this
@@ -187,15 +187,15 @@ export function ConflictCard({
       </div>
 
       <div style={{
-        marginTop: 14, paddingTop: 14, borderTop: '1px dashed #3a4750',
+        marginTop: 14, paddingTop: 14, borderTop: '1px dashed var(--color-line)',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
       }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#8b9aaa', cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-dim)', cursor: 'pointer' }}>
           <input
             type="checkbox"
             checked={keepBoth}
             onChange={e => setKeepBoth(e.target.checked)}
-            style={{ accentColor: '#fdce63', width: 13, height: 13 }}
+            style={{ accentColor: 'var(--color-watch-ink)', width: 13, height: 13 }}
           />
           Also keep the other one as a backup — restorable later from Backups
         </label>
@@ -209,8 +209,8 @@ export function ConflictCard({
             style={{
               padding: '7px 16px', borderRadius: 6, fontSize: 12, fontWeight: 700, border: 'none',
               cursor: selected && !resolving ? 'pointer' : 'default',
-              background: selected ? '#129271' : '#384249',
-              color: selected ? '#fff' : '#556070',
+              background: selected ? 'var(--color-accent)' : 'var(--color-raise)',
+              color: selected ? 'var(--color-on-accent)' : 'var(--color-dim)',
             }}
           >
             {selectedLabel ? `Resolve with ${selectedLabel}` : 'Resolve'}

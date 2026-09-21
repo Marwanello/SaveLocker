@@ -13,8 +13,8 @@ interface Props {
 const BTN_BASE: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 5,
   padding: '5px 11px', background: 'transparent',
-  border: '1px solid #494949', borderRadius: 4,
-  color: '#ECEFF1', fontSize: 12, cursor: 'pointer',
+  border: '1px solid var(--color-line)', borderRadius: 4,
+  color: 'var(--color-fg)', fontSize: 12, cursor: 'pointer',
   fontFamily: 'inherit',
 }
 
@@ -69,9 +69,9 @@ function chipStyle(active: boolean): React.CSSProperties {
   return {
     display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px',
     background: active ? 'rgba(18,146,113,0.12)' : 'transparent',
-    border: `1px solid ${active ? '#129271' : '#494949'}`,
+    border: `1px solid ${active ? 'var(--color-safe-line)' : 'var(--color-line)'}`,
     borderRadius: 999,
-    color: active ? '#129271' : '#9CA3AF',
+    color: active ? 'var(--color-safe-ink)' : 'var(--color-dim)',
     fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit',
     whiteSpace: 'nowrap',
   }
@@ -224,14 +224,14 @@ export function AddGamesView({ onEnrolled }: Props) {
       display: 'flex', flexDirection: 'column',
       gap: 11, padding: '16px 20px', overflow: 'hidden',
     }}>
-      <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.65, flexShrink: 0 }}>
+      <p style={{ color: 'var(--color-dim)', fontSize: 12, lineHeight: 1.65, flexShrink: 0 }}>
         Tick games to sync. Games without a known save folder need one set before enrolling.
       </p>
 
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
         <button style={BTN_BASE} disabled={busy} onClick={() => void scan(true)}>
-          <RefreshCw size={13} strokeWidth={1.75} color="#9CA3AF" />
+          <RefreshCw size={13} strokeWidth={1.75} color="var(--color-dim)" />
           <span>Rescan</span>
         </button>
         <button
@@ -239,7 +239,7 @@ export function AddGamesView({ onEnrolled }: Props) {
           disabled={busy || checked.size !== 1}
           onClick={() => setSaveFolder()}
         >
-          <FolderOpen size={13} strokeWidth={1.75} color="#9CA3AF" />
+          <FolderOpen size={13} strokeWidth={1.75} color="var(--color-dim)" />
           <span>Set save folder…</span>
         </button>
         <input
@@ -262,7 +262,7 @@ export function AddGamesView({ onEnrolled }: Props) {
             style={chipStyle(filter === f.id)}
           >
             <span>{f.label}</span>
-            <span style={{ opacity: 0.65, fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace", fontSize: 10.5 }}>
+            <span style={{ fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace", fontSize: 10.5 }}>
               {f.count}
             </span>
           </button>
@@ -272,12 +272,12 @@ export function AddGamesView({ onEnrolled }: Props) {
       {/* Heroic storefronts — a second axis, shown only while the Heroic filter is on. */}
       {stores.length > 1 && (
         <div style={{ display: 'flex', gap: 5, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center', paddingLeft: 2 }}>
-          <span style={{ color: '#6B7280', fontSize: 11 }}>Store:</span>
+          <span style={{ color: 'var(--color-dim)', fontSize: 11 }}>Store:</span>
           <button onClick={() => setStore(null)} style={chipStyle(store === null)}>All</button>
           {stores.map(s => (
             <button key={s.id} onClick={() => setStore(s.id)} style={chipStyle(store === s.id)}>
               <span>{s.label}</span>
-              <span style={{ opacity: 0.65, fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace", fontSize: 10.5 }}>
+              <span style={{ fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace", fontSize: 10.5 }}>
                 {s.count}
               </span>
             </button>
@@ -288,12 +288,12 @@ export function AddGamesView({ onEnrolled }: Props) {
       {/* Save-path detection — a second axis like Store, so it stacks with the source filter
           instead of replacing it. Always visible: unlike Store it isn't specific to one source. */}
       <div style={{ display: 'flex', gap: 5, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center', paddingLeft: 2 }}>
-        <span style={{ color: '#6B7280', fontSize: 11 }}>Path:</span>
+        <span style={{ color: 'var(--color-dim)', fontSize: 11 }}>Path:</span>
         {PATH_MODES.map(p => (
           <button key={p.id} onClick={() => setPathMode(p.id)} style={chipStyle(pathMode === p.id)}>
             <span>{p.label}</span>
             {p.id !== 'all' && (
-              <span style={{ opacity: 0.65, fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace", fontSize: 10.5 }}>
+              <span style={{ fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace", fontSize: 10.5 }}>
                 {sourceFiltered.filter(p.match).length}
               </span>
             )}
@@ -303,7 +303,7 @@ export function AddGamesView({ onEnrolled }: Props) {
 
       {/* Game list */}
       <div style={{
-        background: '#1E252A', border: '1px solid #494949', borderRadius: 6,
+        background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 6,
         overflowY: 'auto', flex: 1, minHeight: 0,
       }}>
         {visible.map(c => (
@@ -324,9 +324,9 @@ export function AddGamesView({ onEnrolled }: Props) {
             />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                <span style={{ color: '#ECEFF1', fontSize: 13, fontWeight: 500 }}>{c.name}</span>
+                <span style={{ color: 'var(--color-fg)', fontSize: 13, fontWeight: 500 }}>{c.name}</span>
                 <span style={{
-                  color: '#9CA3AF', fontSize: 10,
+                  color: 'var(--color-dim)', fontSize: 10,
                   background: 'rgba(255,255,255,0.05)',
                   border: '1px solid rgba(255,255,255,0.09)',
                   padding: '1px 6px', borderRadius: 3,
@@ -337,7 +337,7 @@ export function AddGamesView({ onEnrolled }: Props) {
                 {/* Only when it adds something the source does not already say. */}
                 {c.store && c.store !== 'Unknown' && c.store !== 'Steam' && (
                   <span style={{
-                    color: '#9CA3AF', fontSize: 10,
+                    color: 'var(--color-dim)', fontSize: 10,
                     background: 'rgba(255,255,255,0.05)',
                     border: '1px solid rgba(255,255,255,0.09)',
                     padding: '1px 6px', borderRadius: 3,
@@ -347,7 +347,7 @@ export function AddGamesView({ onEnrolled }: Props) {
                 )}
                 {c.hasSteamCloud && (
                   <span style={{
-                    color: '#60a5fa', fontSize: 10,
+                    color: 'var(--color-dim)', fontSize: 10,
                     background: 'rgba(96,165,250,0.08)',
                     border: '1px solid rgba(96,165,250,0.22)',
                     padding: '1px 6px', borderRadius: 3,
@@ -358,7 +358,7 @@ export function AddGamesView({ onEnrolled }: Props) {
               </div>
               {c.path ? (
                 <div style={{
-                  color: '#9CA3AF', fontSize: 10, marginTop: 3,
+                  color: 'var(--color-dim)', fontSize: 10, marginTop: 3,
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace",
                 }}>
@@ -368,14 +368,14 @@ export function AddGamesView({ onEnrolled }: Props) {
                 // The per-row button is what a Deck user actually hits — the toolbar button needs
                 // a tick first, and this appears exactly on the rows that block enrollment.
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
-                  <span style={{ color: '#f4a60d', fontSize: 11 }}>No save folder set</span>
+                  <span style={{ color: 'var(--color-watch-ink)', fontSize: 11 }}>No save folder set</span>
                   <button
                     onClick={() => void pickFolderFor(c)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 5,
                       padding: '4px 9px', background: 'transparent',
-                      border: '1px solid #129271', borderRadius: 4,
-                      color: '#129271', fontSize: 11, fontWeight: 600,
+                      border: '1px solid var(--color-line)', borderRadius: 4,
+                      color: 'var(--color-fg)', fontSize: 11, fontWeight: 600,
                       cursor: 'pointer', fontFamily: 'inherit',
                     }}
                   >
@@ -399,15 +399,15 @@ export function AddGamesView({ onEnrolled }: Props) {
 
       {/* Footer */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <span style={{ color: enrollBlocked && !status ? '#f4a60d' : '#9CA3AF', fontSize: 12 }}>
+        <span style={{ color: enrollBlocked && !status ? 'var(--color-watch-ink)' : 'var(--color-dim)', fontSize: 12 }}>
           {footerStatus}
         </span>
         <button
           onClick={() => void enroll()}
           disabled={busy || checked.size === 0 || enrollBlocked}
           style={{
-            padding: '7px 18px', background: '#129271', border: 'none', borderRadius: 5,
-            color: '#fff', fontSize: 13, fontWeight: 600,
+            padding: '7px 18px', background: 'var(--color-accent)', border: 'none', borderRadius: 5,
+            color: 'var(--color-on-accent)', fontSize: 13, fontWeight: 600,
             cursor: checked.size > 0 && !busy && !enrollBlocked ? 'pointer' : 'default',
             fontFamily: 'inherit', letterSpacing: '0.01em',
             opacity: checked.size === 0 || busy || enrollBlocked ? 0.5 : 1,

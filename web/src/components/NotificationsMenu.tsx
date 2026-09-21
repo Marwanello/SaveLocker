@@ -111,7 +111,7 @@ export function NotificationsMenu({ problems, onOpenGame, onDismissProblems }: P
                     {p.machineName}{p.gameName ? ` — ${p.gameName}` : ''}
                   </div>
                   <div className="text-xs text-dim leading-[1.45] mt-0.5">{p.message}</div>
-                  <div className="text-[10.5px] text-faint mt-[3px] font-mono">
+                  <div className="text-[10.5px] text-dim mt-[3px] font-mono">
                     {p.code} · {ago(p.lastSeen)}{p.count > 1 ? ` · ×${p.count}` : ''}
                   </div>
                 </div>

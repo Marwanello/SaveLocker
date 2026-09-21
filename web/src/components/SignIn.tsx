@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Button } from './ui/Button';
+import { Mark } from './ui/Mark';
 
 interface Props {
   /** Why this screen is showing anything beyond the plain prompt: a refused password, a lockout, a
@@ -29,9 +30,7 @@ export function SignIn({ notice = null, busy = false, onSubmit }: Props) {
   return (
     <div className="flex-1 flex items-center justify-center animate-rise">
       <form onSubmit={submit} className="w-[320px] flex flex-col gap-4 items-center">
-        <div className="w-11 h-11 rounded-full bg-accent-soft border border-accent-line flex items-center justify-center text-accent text-lg" aria-hidden>
-          🔒
-        </div>
+        <Mark size={46} />
         <div className="text-center">
           <h1 className="text-lg font-bold text-fg">SaveLocker</h1>
           <p className="text-[13px] text-dim mt-1">Enter the admin password to continue.</p>
