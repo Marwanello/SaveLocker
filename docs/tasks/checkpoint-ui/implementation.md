@@ -15,7 +15,7 @@ rather than by phase number, because several phases edit the same components.
 | 1 — Design system foundation, agent half | ✅ Shipped 2026-09-20 (Group 3) — `tokens.css`, `ui.css`, Archivo, `components/ui/` |
 | 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in moved to revocable sessions 2026-09-20 |
 | 3 — Sync all and progress | ✅ Items 1, 2, 4 shipped 2026-09-18 (Group 2 — console side); item 3 (agent Sync all + progress) shipped 2026-09-20 (Group 3); item 5 (per-game Sync this game) ✅ shipped 2026-09-21 (Group 4) with the game page and a new per-game agent route |
-| 4 — Appearance, and syncing it to the fleet | ⏳ Not started (Group 5) |
+| 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5), except item 4 — the Deck's accent ➡️ Group 6, which owns the token split it needs. The theme default now follows the OS (every hex colour left the views first). See `implementation-grouping.md` → Group 5 |
 | 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
 | 6 — Deck and Wayland | ⏳ Not started (Group 6); the Wayland item (6.4) still needs the open decision below made first |
 | 7 — OS notifications | ⏳ Not started (Group 7) |
@@ -192,17 +192,26 @@ surface converted. `agent-ui` untouched this phase — its half of item 6 is Gro
 
 The largest genuinely-new piece.
 
-1. Store the choice server-side in `AppSetting` via `SettingsService`: `Ui:Theme`, `Ui:Accent`,
+1. ✅ **Shipped.** Store the choice server-side in `AppSetting` via `SettingsService`: `Ui:Theme`, `Ui:Accent`,
    `Ui:Mark`, `Ui:PushToAgents`. `GET /settings` already returns settings; add these keys and a
-   `POST /admin/appearance` (or reuse the existing settings write path).
-2. **Agents follow the server.** The heartbeat response (`POST /agent/health`) is the cheapest
+   `POST /admin/appearance` (or reuse the existing settings write path). — Built as `ServerSettingsDto.appearance` +
+   `POST /api/settings/appearance` (the "existing settings write path", beside `steamgriddb-key`); ids are validated against
+   closed lists and settable from env (`Ui__Accent`); the wire carries ids, never colours.
+2. ✅ **Shipped.** **Agents follow the server.** The heartbeat response (`POST /agent/health`) is the cheapest
    carrier — add an `appearance` object to it, so no new poll is needed. `AgentConfig` persists it
-   to `config.json`, and the agent UI reads it from `GET /api/config`.
-3. Per-machine override: `Ui:Follow` in the agent's own config, exposed as **Follow the console** in
-   agent Settings. When off, the agent keeps its local choice and ignores the pushed one.
-4. The Deck UI reads the same config and maps the accent into `Ui/Theme.cs`.
-5. App icon choice changes the favicon (`web/index.html` link swap), the tray icon
-   (`src/Agent/AppResources.cs`, needs all three marks as embedded `.ico`), and the Deck header.
+   to `config.json`, and the agent UI reads it from `GET /api/config`. — The agent UI reads **`GET /api/appearance`** instead
+   (`AgentConfigDto` is read by the Decky plugin; this is polled by every page). Null on the heartbeat means "the console is not
+   sharing" and an agent keeps what it last applied.
+3. ✅ **Shipped.** Per-machine override: `Ui:Follow` in the agent's own config (`FollowConsoleAppearance`), exposed as **Follow the console** in
+   agent Settings. When off, the agent keeps its local choice and ignores the pushed one — pushes are still *stored*, so
+   turning it back on shows the console's current look. Turning it off changes nothing on screen.
+4. ➡️ **Moved to Group 6.** The Deck UI reads the same config and maps the accent into `Ui/Theme.cs`. — `Theme.cs`'s `AccentGreen` is both the accent and the healthy colour at 68 sites, so this needs Group 6's token split. Ready for it:
+   `AgentConfig.EffectiveAppearance`, `RefreshAppearance()`, `Agent.Core/AppearancePalette.cs`.
+5. ✅ **Shipped, except the Deck header (Group 6).** App icon choice changes the favicon (`web/index.html` link swap), the tray icon
+   (`src/Agent/AppResources.cs`, needs all three marks as embedded `.ico`), and the Deck header. — The favicon is redrawn in
+   place (a data URL of the mark on an accent tile); the tray **and window** icons are drawn at runtime (`Agent/MarkIcon.cs`),
+   so no `.ico` files and no rasterizer are needed; the in-app brand position in both top bars and the sign-in screen draws
+   the chosen mark (`ui/Mark.tsx`).
 
 ---
 
@@ -260,7 +269,7 @@ Ship the three marks and the Steam art from the prototype as real files:
 | Marks (Cartridge, Pixel lock, Memory card) | vector | `web/src/assets/marks/*.svg` | ✅ Shipped — exact path data from `brand-kit.html`'s draw functions, body/punch fills as `var(--color-accent/on-accent, <fallback>)` |
 | Favicon | SVG (scales) | `web/public/favicon.svg`, linked ahead of the existing PNG fallbacks in `web/index.html` | ✅ Shipped — Pixel lock, monochrome per brand-kit's own "no punch, one colour" rule for a tray-like context, on the Ember accent tile |
 | Favicon | 32 / 180 PNG | `web/public/` | ⏳ Not done — the existing pre-Checkpoint PNGs are untouched; this environment has no SVG rasterizer (`magick`/`inkscape`/`rsvg-convert` all absent, confirmed) |
-| Tray icon | 16/24/32/48 `.ico` | `src/Agent/AppResources.cs` | ⏳ Not done — needs the PNG export above first, then embedding into the Windows agent (that wiring belongs to whichever group actually consumes it — Group 5's appearance/mark-switcher, per its own note that it "needs Group 1's marks to exist as real icon files") |
+| Tray icon | 16/24/32/48 `.ico` | `src/Agent/AppResources.cs` | ✅ Shipped 2026-09-21 (Group 5) **differently**: drawn at runtime from the chosen mark and accent (`src/Agent/MarkIcon.cs`, GDI+, transparent punch-outs, light/dark taskbar aware, at the shell's own icon size) — so it needs no `.ico` and follows the Appearance setting. The packaged `SaveLocker.ico` remains the installer/exe icon and the fallback. Not reacting to a Windows taskbar-theme change while running ([[Backlog]]) |
 | Deck tile | 256 | `src/Agent.Linux/Ui/Art.cs` | ⏳ Not done — same rasterization gap; consumed by Group 6 |
 | Library capsule | 600×900 | `store/` | ⏳ Not done |
 | Wide capsule | 1920×620 | `store/` | ⏳ Not done |

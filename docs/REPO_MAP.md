@@ -14,6 +14,8 @@ SaveLocker/
 │   │   ├── SaveArchive.cs               # Content hashing + atomic zip restore + per-file manifest
 │   │   │                               #   (`ComputeManifest`) for delta uploads
 │   │   ├── ManifestLoader.cs            # Ludusavi manifest downloader + cloud/tag parsing
+│   │   ├── Appearance.cs                # The look (theme/accent/mark) as three closed id lists + the DTOs,
+│   │   │                               #   and `Appearances.Normalize` — every reader normalises, none rejects
 │   │   ├── PathResolver.cs              # Expands manifest placeholders (<winAppData>, <base>) to real
 │   │   │                               #   dirs, trimmed at the first wildcard so there is a dir to watch
 │   │   └── WinePrefix.cs                # drive_c + which Wine user the game runs as — needed before any
@@ -92,6 +94,8 @@ SaveLocker/
 │   │   ├── AgentApiServer.cs            # ASP.NET minimal API on :5178 + OpenAPI + agent-ui files
 │   │   ├── PathBrowser.cs               # Directory listing for the UI's path browser — a Deck has no
 │   │   │                               #   folder dialog and no usable terminal in Game Mode
+│   │   ├── AppearancePalette.cs         # Accent id → colours for the surfaces drawn in C# (tray icon now, Deck
+│   │   │                               #   in Group 6). Hand-kept copy of web/src/appearance.ts — a test ties them
 │   │   ├── AgentConfig.cs               # JSON config at %PROGRAMDATA%\SaveLocker\config.json
 │   │   ├── Detection.cs                 # Ludusavi manifest wrapper
 │   │   ├── UpdateChecker.cs             # Polls /api/agent/latest, downloads the platform's payload
@@ -126,7 +130,9 @@ SaveLocker/
 │   │   ├── GameScanner.cs               # IGameScanner: shortcuts + Steam libraries + save-root heuristic
 │   │   ├── AutoStart.cs                 # IAutoStart: HKCU Run-key toggle ("Start with Windows")
 │   │   ├── FolderPicker.cs              # WinForms FolderBrowserDialog on an STA thread
-│   │   └── AppResources.cs             # Embedded icon + asset loader
+│   │   ├── AppResources.cs             # Embedded icon + asset loader; Render(look) → the chosen mark as an Icon
+│   │   └── MarkIcon.cs                  # Draws the three marks in GDI+ at the shell's icon size — tray + window
+│   │                                   #   icon follow the Appearance setting; transparent punch-outs, taskbar-aware
 │   │
 │   └── Agent.Linux/                     # SaveLocker.Agent.Linux.csproj → binary `savelocker`
 │       │                               # Headless Proton agent (net10.0). No tray, no toast:
@@ -177,7 +183,10 @@ SaveLocker/
 │   │   ├── api.ts                       # Typed fetch client (all server endpoints)
 │   │   ├── api-types.ts                 # GENERATED from /openapi/v1.json → npm run gen:api
 │   │   ├── types.ts                     # Thin aliases over api-types.ts
-│   │   ├── art.ts                       # artSrc/artSrcSet: ask the server for cover/icon at the size it is
+│   │   ├── appearance.ts                # The look: ids, accent triples, mark geometry; applyLook (data-theme, inline
+│   │                               #   accent, favicon); the live-look store (initLook/setLook/useLook). Hand-kept
+│   │                               #   copy in agent-ui/src/appearance.ts — run-appearance-consistency-tests
+│   ├── art.ts                       # artSrc/artSrcSet: ask the server for cover/icon at the size it is
 │   │   │                               #   drawn (`?w=`) so the browser never shrinks a 600×900 to 38 px
 │   │   ├── releaseSeen.ts               # localStorage "have these notes been read?" for the dot
 │   │   ├── versionSkew.ts               # Agent vs console version comparison. Only NEWER-than-
@@ -187,6 +196,8 @@ SaveLocker/
 │   │   │                               #   Same file is the GitHub Release body (release.yml
 │   │   │                               #   body_path) — written once, cannot drift.
 │   │   └── components/
+│   │       ├── AppearanceCard.tsx       # Configuration → theme, accent, app icon, Push-to-agents (POST /settings/appearance)
+│   │       ├── ui/                          # Card · Chip · Button · Stat · Row · Seg · Toast · Switch · Mark
 │   │       ├── NavBar.tsx               # Logo, Games/Config/Audit Log tabs, Connect/Refresh
 │   │       ├── GamesSidebar.tsx         # 220 px left sidebar: cover art, name, badges
 │   │       ├── GamesView.tsx            # Sidebar + detail panel layout
@@ -219,6 +230,7 @@ SaveLocker/
 │       ├── useActivity.ts               # ONE shared 1.5 s poll of /api/activity behind
 │       │                               #   useSyncExternalStore slices, so a progress tick re-renders
 │       │                               #   only the header's progress, never the page around it
+│       ├── appearance.ts                # Copy of web/src/appearance.ts; the agent polls /api/appearance and setLook()s it
 │       ├── format.ts                    # formatBytes / formatTime
 │       └── components/
 │           ├── ui/                      # Button · Card · Chip · Stat · Banner · Toast — counterparts
@@ -271,6 +283,9 @@ SaveLocker/
 │   ├── sgdb-stub.py                    # A stand-in SteamGridDB for trying art BY HAND (any key works):
 │   │                                   #   `testenv up -Only console -ConsoleEnv …` points the console
 │   │                                   #   container at it. Build and Run → "Testing artwork"
+│   ├── run-appearance-consistency-tests.ps1 # Source-only drift check (~1 s): the accent table in four places, the id
+│   │                                   #   lists the server validates, mark geometry vs the SVGs, the two token files,
+│   │                                   #   the OS-following theme rule, and NO #hex in any view
 │   ├── run-delta-upload-tests.ps1      # Per-file delta upload: self-healing baseline, byte-exact
 │   │                                   #   reconstruction across a full+full+delta chain, deletion,
 │   │                                   #   the size/count floor, a diverged push staying full, and a

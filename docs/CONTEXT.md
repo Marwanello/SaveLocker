@@ -1245,8 +1245,37 @@ pre-existing, now in [[Backlog]]:** `post-exit-sync` answering 409 while *Sync a
 seen once, not investigated:** `run-local-api-tests` §10's *NO traffic reached the old server A* failed on
 the first run after a cold build and passed on every run since — most likely a request from before the
 server switch sitting in the listener's queue while the daemon started slowly.
-<br>**Next action:** Group 5 (appearance + fleet sync,
-flips the theme default) or Group 6 (Deck) — both listed there.
+<br>**Superseded by Group 5 below — next action is now Group 6 (Deck) or 7 (notifications).**
+
+**Checkpoint UI redesign, Group 5 shipped (2026-09-21, branch `ui-redesign-group-5-appearance`, local — no PR).**
+Appearance and fleet sync, plus the theme default flip. The console's look is **three ids** (`Ui:Theme`/`Accent`/
+`Mark`/`PushToAgents`, also settable from env) written by `POST /api/settings/appearance` (validated, admin-only,
+audited) and **carried to every agent on the heartbeat** when pushing is on — absent means "keep what you have", not
+"the default". Agents store it, can opt out per machine (**Follow the console**, default on; off changes nothing on
+screen, pushes are still stored so turning it on shows the *current* look), and read it from `GET /api/appearance`.
+The look repaints a console/agent page via `data-theme` + an inline accent + a redrawn favicon, and the brand position
+in both top bars and the sign-in screen draws the chosen mark; the **Windows tray and window icons are drawn at runtime**
+(`Agent/MarkIcon.cs`, GDI+, transparent punch-outs) — no `.ico` files. **The theme default now follows the OS**
+(`data-theme` pins one, no attribute is System), which needed **303 + 166 hardcoded hex colours** in the console's
+`GameDetail`/`ConfigView`/`AuditView`/`AgentUpdatesCard`/help views and the agent's Add games/Settings/Conflicts/plugin
+cards migrated to tokens first — by role, not by shade (details in `tasks/checkpoint-ui/implementation-grouping.md` →
+Group 5). **Phase 4 item 4, the Deck's accent, moved to Group 6:** `Theme.cs`'s `AccentGreen` is both "accent" and
+"healthy" at 68 sites; the plumbing (`EffectiveAppearance`, `RefreshAppearance()`, `AppearancePalette`) is done.
+<br>**Verified live through `testenv`** (Windows tray agent + Docker console), by clicking: the card stored `dark/coolant/
+cartridge`; the real tray agent adopted it by itself; the override, the stored-but-ignored push and re-following all
+behaved; the contrast walk (all text nodes, composited backgrounds) is **0 failing in both OS schemes for all five
+accents** on Config/Audit/Help/What's New/Games+detail, and only the documented 10 px uppercase eyebrows on the agent.
+`run-console-security-tests` **172/172**, `run-local-api-tests` **85/85**, and the new source-only
+`run-appearance-consistency-tests` **20/20** (mutation-checked). **Two real bugs the walk caught, not the builds:**
+content text on `--color-faint` (3.1–3.6:1) and a count badge dimmed with `opacity: .65` (2.6:1 on light).
+<br>**Not verified:** the WebView2 tray window, the tray icon on a real taskbar (the renderer was proven on a contact
+sheet, at 16/24/32 px, on dark and light backdrops), a real OS-theme *flip event* (a hidden Browser pane delivers no
+`change` events — the handler was invoked directly; [[Gotchas]] → *Web console*), the Deck, screenshots (none rendered).
+<br>**Release notes for the next release must cover:** the Appearance card and *Push appearance to agents*; agents follow
+the console by default and can opt out in their own Settings; the theme now follows the OS (a light-preferring browser
+that saw the dark console before will see light now, and can pin it); the brand mark replaces the old logo.
+<br>**Next action:** Group 6 (Deck — its token split is what also unlocks the Deck's accent) or Group 7 (notifications).
+The Backlog → *Appearance follow-ups* carries the five small leftovers.
 
 ---
 

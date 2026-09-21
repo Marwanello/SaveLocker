@@ -254,6 +254,10 @@ behave in ways that look like bugs.
   is no window with an empty ACL. Cost an hour and a confidently-passing wrong test.
 
 ## PowerShell / shell quoting
+- **A non-ASCII character inside a *string literal* in a BOM-less `.ps1` breaks Windows PowerShell 5.1.** It reads the file
+  as CP-1252, and the last byte of an em dash (`—`, `E2 80 94`) is `0x94`, which 5.1 treats as a closing curly quote — so
+  the parse error points at a *different* line, several checks later. Comments are safe (the tests already carry `—` in
+  them); string literals in code stay ASCII. CI runs `pwsh`, which reads UTF-8 correctly, so it only bites locally.
 - **A function named after a built-in alias silently never runs.** In a test script, `function Pwd`
   was shadowed by the `pwd` alias (`Get-Location`) — aliases outrank functions — so every call
   failed with "positional parameter cannot be found", and because the abort left the pass count
@@ -322,16 +326,28 @@ behave in ways that look like bugs.
   beats any normal declaration on the same element** — including an inline `style`. `animate-pop`
   (`opacity` 0→1) therefore erased the `opacity: .55` on a disabled game's tile; dim an inner wrapper,
   never the element that carries the entrance.
-- **Do not make light the default while any view still hardcodes dark colours.** The unmigrated views
-  (game detail, configuration, audit log, agent updates: ~275 hex colours in inline styles) paint dark
-  cards but inherit their TEXT colour from `<body>`. With light as the base, every visitor whose OS
-  prefers light got near-black text on those cards (measured 1.04–1.15:1 — invisible: the game title,
-  machine names, page headings, most of the Audit Log). Dark is the base; light is opt-in via
-  `data-theme="light"` until the migration is finished. **Measure, don't eyeball:** walk every text
+- **A view must take every colour from the tokens — no `#hex` in a `.tsx`.** Group 5 flipped the theme to follow the
+  OS *because* the last hardcoded colours had gone; before that, the unmigrated views (game detail, configuration,
+  audit log, agent updates: ~275 hex colours in inline styles) painted dark cards but inherited their TEXT colour from
+  `<body>`, so every visitor whose OS prefers light got near-black text on them (measured 1.04–1.15:1 — invisible).
+  One hardcoded colour is enough to bring that back for one widget, and `run-appearance-consistency-tests.ps1` now fails
+  on it. Also: **never dim text with `opacity`** (a 0.65 on a count badge was fine on dark and 2.6:1 on light — use a
+  token), and **content text is `--color-dim`, not `--color-faint`** (3.1–3.6:1 — only uppercase eyebrow labels).
+  **Measure, don't eyeball:** walk every text
   node, resolve its effective foreground/background (a canvas turns `color-mix()` / `oklab()` results
   into RGB) and compute the contrast ratio — and turn transitions off first: on a hidden pane a
   `background-color` transition freezes at its old value while `color` (not transitioned) updates, which
-  produced a convincing 1.01:1 "everything is invisible" false alarm.
+  produced a convincing 1.01:1 "everything is invisible" false alarm. Do it in **both** schemes and, since Group 5,
+  for **each accent** (the pane's `resize_window` `colorScheme` emulates the OS preference; **reload after switching** —
+  see the next item).
+- **`prefers-color-scheme` `change` events never fire in a hidden Browser pane.** Media-query change events are
+  dispatched in the rendering step, which a minimised or hidden window does not run (screenshots time out for the same
+  reason). `matchMedia().matches` flips, but neither the app's listener nor a control listener of your own is called, so a
+  System-theme page keeps the accent it derived for the OLD scheme (Cobalt's light `#3a5cbe` on a dark page — a convincing
+  "the accent is stale after an OS flip" that is not a bug). Reloading re-derives correctly; to test the handler itself,
+  wrap `MediaQueryList.prototype.addEventListener` to capture the callback, flip the scheme, and call it. A visible
+  window is expected to deliver the event (the spec queues it in the rendering step); **that was not observed** — no
+  visible pane was available.
 - **The dashboard's CSP forbids inline script and any third-party origin.** See `Decisions.md`. A new
   `<script>` in `index.html`, a CDN font/stylesheet, a remote image in a help article, or a
   `fetch` to another origin will be blocked in production while working perfectly under `npm run dev`
@@ -437,6 +453,12 @@ behave in ways that look like bugs.
   server's own code.
 
 ## Testing
+- **`run-local-api-tests.ps1` hardcodes its daemon to :5188 — the same port the `testenv` Windows tray owns.** With the rig up, the
+  suite's token checks talk to the *tray* (a different token) and a dozen checks fail together: `token is accepted`, `the
+  agent's own Origin`, the whole path-browser block. It looks like a regression and is not. `.	ests	estenv.ps1 down` first (the
+  installed agent is untouched), or run a copy on scratch ports. Also build `agent-ui` **before** `dotnet build`-ing the Linux
+  agent (`npm run build` in `agent-ui/`): its csproj copies `agent-ui/dist` into the bin only if it exists at build time, and
+  `the UI is served with the token injected` needs it.
 - **`systemd-analyze security` misreads a `--user` unit — do not act on its score.** Run against
   `savelocker.service` on a Deck (2026-08-15) it reports **8.5 EXPOSED** and, top of the list,
   *"Service runs as root user"*. It does not: a `--user` unit runs as the desktop user. The tool
