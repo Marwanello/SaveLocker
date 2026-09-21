@@ -222,8 +222,11 @@ SaveLocker/
 │       ├── format.ts                    # formatBytes / formatTime
 │       └── components/
 │           ├── ui/                      # Button · Card · Chip · Stat · Banner · Toast — counterparts
-│           │                           #   of web/src/components/ui/ (Row/Seg arrive with Group 4)
+│           │                           #   of web/src/components/ui/ (Row · Seg)
 │           ├── Sidebar.tsx              # Nav + footer (machine, server host, agent build label)
+│           ├── GamesView.tsx · GameDetailView.tsx · GameArt.tsx   # The Games tab: list/grid + search,
+│           │                           #   the per-game page (Sync/Push/Pull, "Check now"), art tile. Art comes
+│           │                           #   through `useArt.ts` (fetch with the token → blob URL), never `<img src>`
 │           ├── StatusHeader.tsx         # The strip on EVERY page: status + Sync all + live progress
 │           ├── OverviewView.tsx · RecentCard.tsx   # Quick info only; "Recent" expands to the full log
 │           ├── AddGamesView.tsx · SettingsView.tsx

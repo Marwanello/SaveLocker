@@ -1212,6 +1212,19 @@ session-start read takes several calls. Moving older per-session entries to `log
 would fix that, but it is a large editorial change to the file every session depends on and belongs in its own
 change, not in this PR.
 
+**Checkpoint UI redesign, Group 4 shipped (2026-09-21, branch `claude/group-4-ui-redesign-fe56ca`, local — no PR
+yet).** The agent's Games tab: list and grid, search, a per-game page (Sync this game / Push now / Pull latest /
+Check now, what the server holds, what this device watches), cover art, and a search box in Add games. Three new
+local-API routes: `POST /api/games/{id}/sync` (`mode` sync|push|pull; single-flight with `/api/sync`, **409** when
+busy, never forced), `GET /api/games/{id}/state` (server head/lease/conflict) and `GET /api/games/{id}/art` (the
+art proxy). Art reaches the page as a **blob** fetched with the local token — an `<img src>` cannot carry it.
+<br>**Caught by running it, not building it:** `.Produces<byte[]>(…, "image/*")` throws at daemon startup (no
+wildcard content types); `dotnet build` and `tsc` were both clean. **Not verified:** the WebView2 window, a Deck,
+a per-game sync landing on a real conflict, light theme; no C# suite was run and `run-agent-tests` has no case for the
+new routes. Detail and honest gaps (no version list or last-push bytes on the page — no data behind them) in
+`tasks/checkpoint-ui/implementation-grouping.md` → Group 4. **Next action:** Group 5 (appearance + fleet sync,
+flips the theme default) or Group 6 (Deck) — both listed there.
+
 ---
 
 ## Where things stand

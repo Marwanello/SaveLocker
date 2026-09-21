@@ -680,7 +680,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                 if (running) return $"{game.Name} is running, so its save was not replaced.";
                 return await PullAsync(game, ct: ct)
                     ? $"Pulled the latest save of {game.Name}."
-                    : $"{game.Name} was not pulled. Check the activity log for why.";
+                    : $"Nothing was pulled for {game.Name}: it is already up to date, or the pull was refused. The activity log says which.";
             case GameSyncMode.Push:
                 return DescribePush(game, await PushAsync(game, ct: ct));
             default:
@@ -693,8 +693,10 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     private static string DescribePush(TrackedGame game, UploadResult? result) => result?.Status switch
     {
         UploadStatus.Conflict => $"{game.Name} has a conflict. Choose a side in Conflicts.",
-        null => $"{game.Name} was not pushed. Check the activity log for why.",
-        _ => $"{game.Name} is up to date on the server.",
+        UploadStatus.Created => $"Pushed a new save of {game.Name}.",
+        UploadStatus.NoChange => $"No local changes to push for {game.Name}.",
+        null => $"Nothing was pushed for {game.Name}. The activity log says why.",
+        _ => $"{game.Name} was synced.",
     };
 
     /// <summary>

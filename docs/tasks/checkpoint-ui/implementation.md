@@ -14,9 +14,9 @@ rather than by phase number, because several phases edit the same components.
 | 1 — Design system foundation, web half | ✅ Shipped 2026-09-17 (Group 1); theme default corrected 2026-09-20 (dark base, light opt-in — see `implementation-grouping.md`) |
 | 1 — Design system foundation, agent half | ✅ Shipped 2026-09-20 (Group 3) — `tokens.css`, `ui.css`, Archivo, `components/ui/` |
 | 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in moved to revocable sessions 2026-09-20 |
-| 3 — Sync all and progress | ✅ Items 1, 2, 4 shipped 2026-09-18 (Group 2 — console side); item 3 (agent Sync all + progress) shipped 2026-09-20 (Group 3); item 5 (per-game Sync this game) ➡️ moved to Group 4 — needs a game page and a per-game agent route |
+| 3 — Sync all and progress | ✅ Items 1, 2, 4 shipped 2026-09-18 (Group 2 — console side); item 3 (agent Sync all + progress) shipped 2026-09-20 (Group 3); item 5 (per-game Sync this game) ✅ shipped 2026-09-21 (Group 4) with the game page and a new per-game agent route |
 | 4 — Appearance, and syncing it to the fleet | ⏳ Not started (Group 5) |
-| 5 — Agent UI | 🚧 Overview trim shipped 2026-09-20 (Group 3); Games tab, cover art and Add-games search not started (Group 4) |
+| 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
 | 6 — Deck and Wayland | ⏳ Not started (Group 6); the Wayland item (6.4) still needs the open decision below made first |
 | 7 — OS notifications | ⏳ Not started (Group 7) |
 | 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1) — see the note under Phase 8 below |
@@ -178,7 +178,7 @@ surface converted. `agent-ui` untouched this phase — its half of item 6 is Gro
    `StatusHeader` reads only `useActivityBusy()` (a boolean), so it re-renders when a sync starts or ends;
    only `HeroStatus` reads the per-tick `current`. Measured live over four ticks: 16 DOM mutations in the
    progress area, 0 in the Overview page, 0 around the Sync all button.
-5. Per-game **Sync this game** on the agent's game page — ➡️ **moved to Group 4** (2026-09-20). Two things
+5. Per-game **Sync this game** on the agent's game page — ✅ **shipped 2026-09-21 (Group 4)**: `POST /api/games/{id}/sync` (`{mode: sync|push|pull}`, single-flight with `/api/sync`, 409 when busy, never forced) over the new `SyncEngine.SyncGameAsync`. Originally moved here from Group 3 (2026-09-20): Two things
    this item assumed do not exist: an agent game page (Group 4 builds the Games tab it lives on), and a
    per-game sync route — `POST /api/sync` takes no game filter, and `pre-launch-sync`/`post-exit-sync` are
    launch-gate routes with their own single-flight and fail-open contracts, not a manual sync. So it is not
@@ -206,7 +206,7 @@ The largest genuinely-new piece.
 
 ---
 
-### Phase 5 — Agent UI — 🚧 Overview trim shipped 2026-09-20 (Group 3); the rest is Group 4
+### Phase 5 — Agent UI — ✅ Overview trim shipped 2026-09-20 (Group 3); Games tab, art and search shipped 2026-09-21 (Group 4)
 
 | Item | Kind | Work |
 |---|---|---|
