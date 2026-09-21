@@ -12,6 +12,16 @@ public sealed class ApiClient
 {
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
     private readonly HttpClient _http;
+    // Cover/icon fetches only, and built on first use: most ApiClient instances never ask for art.
+    // Never follows a redirect and carries no machine key — see GetArtAsync.
+    private readonly Lazy<HttpClient> _artHttp;
+
+    private const int MaxArtBytes = 16 * 1024 * 1024;
+    private static readonly TimeSpan ArtTimeout = TimeSpan.FromSeconds(20);
+    // What the server's art store can hold (ArtService's ImageSniffer: png, jpg, gif, webp, ico — no
+    // SVG, which can carry script). Anything else a server sends under an image route is refused.
+    private static readonly string[] ArtContentTypes =
+        ["image/png", "image/jpeg", "image/gif", "image/webp", "image/x-icon", "image/vnd.microsoft.icon"];
 
     /// <summary>
     /// The server's TLS public-key fingerprint as observed on the last connection this client made,
@@ -42,6 +52,14 @@ public sealed class ApiClient
         _http = new HttpClient(handler) { BaseAddress = new Uri(baseUrl), Timeout = TimeSpan.FromMinutes(10) };
         if (!string.IsNullOrEmpty(apiKey))
             _http.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+
+        _artHttp = new Lazy<HttpClient>(() =>
+        {
+            var artHandler = ServerHttp.CreateHandler(
+                expectedPin, onObserved: pin => ObservedPin = pin, onMismatch: onPinMismatch);
+            artHandler.AllowAutoRedirect = false;
+            return new HttpClient(artHandler) { BaseAddress = new Uri(baseUrl) };
+        });
     }
 
     /// <summary>
@@ -165,35 +183,74 @@ public sealed class ApiClient
         return (await resp.Content.ReadFromJsonAsync<GameDto>())!;
     }
 
-    public async Task<GameStateDto?> GetStateAsync(Guid gameId)
+    public async Task<GameStateDto?> GetStateAsync(Guid gameId, CancellationToken ct = default)
     {
         // The /api/agent/ one: the bare /api/games/{id}/state is admin-filtered, so this 401'd for
         // every agent the moment the server had an admin password set.
-        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/state");
+        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/state", ct);
         if (resp.StatusCode == HttpStatusCode.NotFound) return null;
         resp.EnsureSuccessStatusCode();
-        return await resp.Content.ReadFromJsonAsync<GameStateDto>();
+        return await resp.Content.ReadFromJsonAsync<GameStateDto>(ct);
     }
 
     /// <summary>
     /// A cover or icon the server stores, at one of its thumbnail widths. <paramref name="relativeUrl"/>
-    /// comes from the server's own game record, so it is held to <c>/art/</c> on the same origin: a
-    /// hostile server must not be able to point this machine's requests at another host.
+    /// comes from the server's own game record, so a hostile server chooses it — and this machine's
+    /// request must not follow it anywhere but the server's own <c>/art/</c>.
+    ///
+    /// <para>
+    /// Three things hold that line. The URL is judged <i>resolved</i>, not as a string: a check for
+    /// a literal <c>..</c> passes <c>%2e%2e</c>, which the URI layer then collapses out of
+    /// <c>/art/</c>. The request goes out on its own client that <b>refuses redirects</b> — the shared
+    /// one follows a 302 to any host, taking the machine key with it. And that client carries
+    /// <b>no key at all</b>: <c>/art/</c> is served to anyone, so there is nothing to authenticate.
+    /// </para>
+    ///
+    /// <para>
+    /// What comes back is bounded too: an allowlisted image type, at most 16 MiB <i>read</i> — a
+    /// <c>Content-Length</c> check alone passes a chunked body of any size — inside a 20 s budget
+    /// that covers the body, not only the headers.
+    /// </para>
     /// </summary>
     public async Task<(byte[] Bytes, string ContentType)?> GetArtAsync(
         string relativeUrl, int? width, CancellationToken ct = default)
     {
-        if (!relativeUrl.StartsWith("/art/", StringComparison.Ordinal) || relativeUrl.Contains("//") ||
-            relativeUrl.Contains(".."))
+        var http = _artHttp.Value;
+        if (!relativeUrl.StartsWith("/art/", StringComparison.Ordinal)) return null;
+        var withWidth = width is > 0
+            ? $"{relativeUrl}{(relativeUrl.Contains('?') ? '&' : '?')}w={width}"
+            : relativeUrl;
+        if (!Uri.TryCreate(http.BaseAddress, withWidth, out var target) ||
+            target.Scheme != http.BaseAddress!.Scheme || target.Authority != http.BaseAddress.Authority ||
+            !target.AbsolutePath.StartsWith("/art/", StringComparison.Ordinal))
             return null;
-        var url = width is > 0 ? $"{relativeUrl}{(relativeUrl.Contains('?') ? '&' : '?')}w={width}" : relativeUrl;
-        using var resp = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
-        if (resp.StatusCode == HttpStatusCode.NotFound) return null;
+
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        budget.CancelAfter(ArtTimeout);
+        using var resp = await http.GetAsync(target, HttpCompletionOption.ResponseHeadersRead, budget.Token);
+        if (resp.StatusCode == HttpStatusCode.NotFound || (int)resp.StatusCode is >= 300 and < 400) return null;
         resp.EnsureSuccessStatusCode();
         var type = resp.Content.Headers.ContentType?.MediaType ?? "";
-        if (!type.StartsWith("image/", StringComparison.OrdinalIgnoreCase)) return null;
-        if (resp.Content.Headers.ContentLength > 16 * 1024 * 1024) return null;
-        return (await resp.Content.ReadAsByteArrayAsync(ct), type);
+        if (!ArtContentTypes.Contains(type, StringComparer.OrdinalIgnoreCase)) return null;
+        if (resp.Content.Headers.ContentLength > MaxArtBytes) return null;
+        var bytes = await ReadAtMostAsync(resp.Content, MaxArtBytes, budget.Token);
+        return bytes is null ? null : (bytes, type);
+    }
+
+    /// <summary>The body, or null if it is longer than <paramref name="max"/> — read as it arrives, so a
+    /// body with no declared length is stopped at the cap rather than buffered whole.</summary>
+    private static async Task<byte[]?> ReadAtMostAsync(HttpContent content, int max, CancellationToken ct)
+    {
+        await using var stream = await content.ReadAsStreamAsync(ct);
+        using var ms = new MemoryStream();
+        var buffer = new byte[81920];
+        int read;
+        while ((read = await stream.ReadAsync(buffer, ct)) > 0)
+        {
+            if (ms.Length + read > max) return null;
+            ms.Write(buffer, 0, read);
+        }
+        return ms.ToArray();
     }
 
     public async Task<LeaseAcquireResponse> AcquireLeaseAsync(Guid gameId)

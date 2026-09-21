@@ -69,9 +69,16 @@ public sealed class AgentApiServer : IDisposable
     private readonly Detection _detection;
     // One sync at a time, however many surfaces are offering the button — see /api/sync.
     private readonly SemaphoreSlim _syncGate = new(1, 1);
+    // One manual sync per GAME (POST /api/games/{id}/sync). Deliberately not _syncGate — see that route.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> _gameSyncGates = new();
     // A game's art URLs change only when someone re-picks a cover, so a grid of covers does not need
-    // one state request per image.
+    // one state request per image. Entries expire ArtUrlTtl after they were FETCHED — a hit must not
+    // refresh them, or a cover viewed more often than that would never be looked up again.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, (DateTime At, GameDto Game)> _artUrls = new();
+    private static readonly TimeSpan ArtUrlTtl = TimeSpan.FromMinutes(5);
+    // The most one art request may hold a browser connection: the UI asks for a grid of them at once,
+    // and a browser gives one origin only a handful of connections.
+    private static readonly TimeSpan ArtBudget = TimeSpan.FromSeconds(20);
     private readonly string _uiRoot;
     private readonly LocalAuth _auth;
     // Lease warnings are persisted, not held in memory: the Linux launch wrapper is a separate
@@ -706,28 +713,45 @@ public sealed class AgentApiServer : IDisposable
             finally { _syncGate.Release(); }
         }).Produces<SyncNowResponse>();
 
-        // The game page's Sync / Push now / Pull latest. Same single-flight gate as /api/sync and the
-        // launch-gate routes: two overlapping runs would race each other's leases. Unlike /api/sync a
-        // busy gate is a 409, because the caller asked for one specific game and a message saying
-        // "watch the activity feed" would read as success. Never forced (see SyncEngine.SyncGameAsync).
+        // The game page's Sync / Push now / Pull latest. Gated per GAME, not by _syncGate, and that is
+        // load-bearing: pre-launch-sync and post-exit-sync answer 409 whenever _syncGate is held, on the
+        // premise that "the running sync still converges" — true of Sync all, false of one game's sync.
+        // Holding it here dropped an UNRELATED game's exit push, and with it OnGameExitAsync's lease
+        // release (the game's lease renewer stops nowhere else, so its lease would be renewed on).
+        // The engine already serialises one game's push and pull (per-game lock), so the gate here only
+        // tells a second press on the same game what is happening: a 409 rather than /api/sync's 200
+        // "watch the activity feed", because the caller named a game and that would read as success.
+        // Never forced (see SyncEngine.SyncGameAsync).
+        //
+        // Not tied to the request's lifetime, like /api/sync: a page that is reloaded or closed must
+        // not abort a push halfway through its upload. The result is on /api/activity either way.
         app.MapPost("/api/games/{id:guid}/sync",
             async Task<Results<Ok<SyncNowResponse>, Conflict<ErrorResponse>, BadRequest<ErrorResponse>, NotFound, InternalServerError<ErrorResponse>>>
-                (Guid id, GameSyncRequest body, CancellationToken ct) =>
+                (Guid id, GameSyncRequest body) =>
         {
             var game = _config.Games.FirstOrDefault(g => g.GameId == id);
             if (game is null) return TypedResults.NotFound();
             if (!Enum.TryParse<GameSyncMode>(body.Mode, ignoreCase: true, out var mode) || !Enum.IsDefined(mode))
                 return TypedResults.BadRequest(new ErrorResponse("mode must be sync, push or pull."));
 
-            if (!await _syncGate.WaitAsync(0))
-                return TypedResults.Conflict(new ErrorResponse("A sync is already running. Watch the activity feed."));
-            try { return TypedResults.Ok(new SyncNowResponse(await _syncGame(game, mode, ct))); }
+            var gate = _gameSyncGates.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+            if (!await gate.WaitAsync(0))
+                return TypedResults.Conflict(new ErrorResponse("A sync of this game is already running. Watch the activity feed."));
+            try { return TypedResults.Ok(new SyncNowResponse(await _syncGame(game, mode, CancellationToken.None))); }
+            // With no request token, a cancellation is the engine's own (retired because the server
+            // connection changed) or an HTTP timeout (a TaskCanceledException). Neither is a bug worth
+            // a stack trace, and the message must not claim to know which.
+            catch (OperationCanceledException)
+            {
+                return TypedResults.InternalServerError(new ErrorResponse(
+                    "The sync was cancelled: the server connection changed, or the server stopped answering. Try again."));
+            }
             catch (Exception ex)
             {
                 AgentLogger.LogException("AgentApiServer.game-sync", ex);
                 return TypedResults.InternalServerError(new ErrorResponse(ex.Message));
             }
-            finally { _syncGate.Release(); }
+            finally { gate.Release(); }
         }).Produces<SyncNowResponse>().Produces<ErrorResponse>(StatusCodes.Status409Conflict);
 
         // What the server holds for one game: head version (machine, time, size), open conflict, lease.
@@ -754,21 +778,30 @@ public sealed class AgentApiServer : IDisposable
         {
             if (_config.Games.All(g => g.GameId != id)) return TypedResults.NotFound();
             if (kind is not ("grid" or "icon")) return TypedResults.BadRequest(new ErrorResponse("kind must be grid or icon."));
+            // One budget for the lookup and the fetch, so a server that has gone quiet frees the
+            // connection instead of holding it for the HTTP client's own (long) timeout.
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            budget.CancelAfter(ArtBudget);
             try
             {
                 var api = ApiClient.For(_config);
-                var url = _artUrls.TryGetValue(id, out var hit) && hit.At > DateTime.UtcNow.AddMinutes(-5)
-                    ? hit.Game
-                    : (await api.GetStateAsync(id))?.Game;
+                var fresh = _artUrls.TryGetValue(id, out var hit) && hit.At > DateTime.UtcNow - ArtUrlTtl;
+                var url = fresh ? hit.Game : (await api.GetStateAsync(id, budget.Token))?.Game;
                 if (url is null) return TypedResults.NotFound();
-                _artUrls[id] = (DateTime.UtcNow, url);
+                if (!fresh) _artUrls[id] = (DateTime.UtcNow, url);
                 var path = kind == "grid" ? url.GridUrl : url.IconUrl;
                 if (string.IsNullOrEmpty(path)) return TypedResults.NotFound();
-                var art = await api.GetArtAsync(path, w, ct);
+                var art = await api.GetArtAsync(path, w, budget.Token);
                 if (art is null) return TypedResults.NotFound();
                 return TypedResults.Bytes(art.Value.Bytes, art.Value.ContentType);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            // The page went away (a navigation, an aborted fetch): nobody is left to answer.
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { return TypedResults.Empty; }
+            catch (OperationCanceledException)
+            {
+                return TypedResults.InternalServerError(new ErrorResponse("The server did not answer in time."));
+            }
+            catch (Exception ex)
             {
                 return TypedResults.InternalServerError(new ErrorResponse(ex.Message));
             }
@@ -1326,8 +1359,6 @@ public sealed record TrackedGameDto(
     /// this field existed).
     /// </summary>
     string? InstallDir = null);
-
-public enum GameSyncMode { Sync, Push, Pull }
 
 /// <param name="Mode"><c>sync</c> (pull then push), <c>push</c> or <c>pull</c>; case-insensitive.</param>
 public sealed record GameSyncRequest(string? Mode);
