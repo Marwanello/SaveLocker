@@ -382,6 +382,14 @@ behave in ways that look like bugs.
   An RGBA PNG with a single fully clear pixel identified as having no alpha, so the first "prefer an
   opaque icon" kept the transparent one. Decode and read the pixels (`ArtImages.IsFullyOpaque`); only
   JPEG can skip that. Caught by the suite's stub serving one 8×8 icon with a clear corner first.
+- **ImageSharp 3.x's format errors are NOT `ImageProcessingException`s.** `UnknownImageFormatException` and
+  `InvalidImageContentException` derive from `ImageFormatException`, a sibling type, so
+  `catch (Exception ex) when (ex is ImageProcessingException ...)` lets the two most common failures on
+  untrusted bytes straight through (measured on 3.1.12 with a probe project: HTML, a valid-magic PNG with
+  junk after it, an .ico). It read as covered for a whole PR: every test image was a real one, and a
+  sniff on the magic number kept most junk away from ImageSharp. Use `ArtImages.IsDecodeFailure`. Also
+  `Image.Identify(new byte[0])` throws `ArgumentNullException`, not a format error, so an empty body needs
+  its own guard. A PNG header plus junk is now refused at `StoreAsync` and the picker preview, not stored.
 - **Regenerating `src/Server/openapi.json` from a scratch server rewrites `servers[0].url` to that
   server's own address.** The committed snapshot says `http://localhost:5179/`; restore that line or
   the diff carries an unrelated one-line change (and `gen:api` output shifts with it). Everything else
@@ -534,6 +542,20 @@ behave in ways that look like bugs.
   `handleSynced` used `view` directly and so could never see that the user had left for Conflicts during a
   sync; it reads a ref now. Any new "after the request finishes, decide based on where the user is now"
   logic wants the same.
+- **`refreshActivity()` invalidates the poll already in flight; do not "simplify" that away.** A poll sent
+  before a sync ended still answers "Pushing", and applying it after the header went idle put the busy
+  state back on screen (a disabled "Syncing…" button) until the next tick. Dropping the refresh when a poll
+  is running was the first attempt and only shortened it. It now bumps a generation, discards the stale
+  answer and asks again once the poll settles. Measured against a mock agent that ends the sync while a
+  poll is in flight: 480 ms of stale busy state before, 0 ms after.
+- **Testing `agent-ui` against a mock agent in the Browser pane** (how that was measured; no agent needed):
+  `vite dev` proxies `/api` to :5178, so first confirm nothing real is listening there (with the installed
+  agent running, the proxy would forward to it and **Sync all would be a real sync**), then replace
+  `window.fetch` in the page and answer everything yourself. Three traps: the pane hides itself and
+  `document.hidden` stops `useActivity` polling, so a harness waiting on a poll hangs (pin `document.hidden`
+  to false); swapping a source file under a running dev server for an A/B can leave the browser on the module
+  it already had, so check which one is live (`(await import('/src/x.ts')).fn.toString()`) and restart the
+  server; and a disabled button swallows `.click()` silently, so wait for `!disabled` first.
 
 ## ImGui / Deck UI (`Ui/*`, `savelocker ui`)
 - Drive gamepad nav from **`ButtonDown` events**, edge-triggered and queued — feeding held-button

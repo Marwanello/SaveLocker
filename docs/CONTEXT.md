@@ -1185,6 +1185,33 @@ all on `ui-redesign-group-3` (merge `0f0868e`, local, no PR). **Next action:** G
 fresh session on a branch stacked on this one — sizing and the reasons are in `progress.md` and
 `session_summary.md`.
 
+**PR #45 reviewed, every finding fixed and pushed onto it (2026-09-21, branch `ui-redesign-group-3`).**
+A review of the PR (Group 3 + artwork + the `testenv sync` fix) found no blockers and about a dozen smaller
+issues; all are fixed, plus two suggestions the maintainer asked for. **Server art:** an image declaring more
+than 40M pixels is refused in the one fetch chokepoint (`TryFetchAsync`) — before, a 144-megapixel PNG of
+~20 KB was inlined as a picker preview; picker pages are cut under the listing's lock; `page` is bounded;
+art files are replaced by temp-file-and-move; the thumbnail handler no longer leaks a temp file on an aborted
+request or serves a stale thumbnail. **A latent bug found while fixing, not by the review:** ImageSharp 3.x's
+`UnknownImageFormatException`/`InvalidImageContentException` are not `ImageProcessingException`s, so the PR's
+catch filters never caught them (a valid-magic PNG with junk would 500 a picker page); fixed in `ArtImages`,
+and junk is now refused at store and preview ([[Gotchas]] → *Web console*). **Startup backfill:**
+`ArtBackfillService` also runs once after startup (`Art:BackfillOnStartup`, `Art:BackfillStartupDelaySeconds`),
+so a key from `SteamGridDb__ApiKey` backfills and a restart mid-run loses nothing. **CI:** a new
+`console-security-tests` job runs the suite on `windows-latest`; its SQLite checks now prefer a native Python
+over WSL. **agent-ui:** a finished Sync all no longer flashes "Pushing…" (a poll in flight when the sync ends
+answered with the old state — measured 480 ms → 0 ms), a failure toast stays until dismissed, the "newer"
+pill no longer names the removed Inter font, the Overview conflict banner no longer repeats the header.
+<br>**Verified:** `run-console-security-tests` **149/149**, 0 skipped (137 before). Against the build without the
+fixes the new oversized/page/startup checks failed (5 failures, confirmed); a build with only the oversize
+guard failed 9 — which is how the filter bug surfaced. `agent-ui` `tsc -b && vite build` clean, `oxlint` shows
+the same two pre-existing warnings; the timing fix was A/B-tested in the Browser pane against a mock agent,
+with the old module confirmed live for the control ([[Gotchas]] → *Agent UI*). **Not verified:** the new CI job
+on a real GitHub runner (it runs on the PR), the real SteamGridDB, the WebView2 tray window, a Deck.
+<br>**Left alone on purpose:** `CONTEXT.md` itself is now ~1,350 lines and a single Read truncates at ~650, so the
+session-start read takes several calls. Moving older per-session entries to `logs/` (as its own header says)
+would fix that, but it is a large editorial change to the file every session depends on and belongs in its own
+change, not in this PR.
+
 ---
 
 ## Where things stand

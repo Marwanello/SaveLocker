@@ -42,7 +42,8 @@ SaveLocker/
 │   │   │   ├── ArchiveStore.cs          # {root}/{gameId}/{versionId}.zip on disk
 │   │   │   ├── ArtService.cs            # SteamGridDB fetch + cache to /data/art/; default pick (an OPAQUE
 │   │   │   │                           #   icon preferred), the picker's paged options, "set this one"
-│   │   │   ├── ArtBackfillService.cs    # Background fill of games with no art, run when a key is saved.
+│   │   │   ├── ArtBackfillService.cs    # Background fill of games with no art, run when a key is saved
+│   │   │   │                           #   AND once after startup (a config-supplied key never "saves").
 │   │   │   │                           #   Missing art only — never replaces a hand-picked cover
 │   │   │   ├── ArtThumbnails.cs         # GET /art/{game}/grid.png?w=96 — cached right-sized copies (the
 │   │   │   │                           #   anti-aliasing fix); allowlisted widths only
@@ -262,7 +263,8 @@ SaveLocker/
 │   │                                   #   trusted proxy, registration gating, CSP headers, artwork-fetch
 │   │                                   #   hardening (hosts its own stub SteamGridDB) + the art picker,
 │   │                                   #   background backfill, opaque-icon choice and thumbnails.
-│   │                                   #   Server only. Own server on :5215, stub on :5216.
+│   │                                   #   Server only. Own server on :5215, stub on :5216. Its SQLite
+│   │                                   #   checks use a native Python 3, else WSL's (CI has the former).
 │   ├── sgdb-stub.py                    # A stand-in SteamGridDB for trying art BY HAND (any key works):
 │   │                                   #   `testenv up -Only console -ConsoleEnv …` points the console
 │   │                                   #   container at it. Build and Run → "Testing artwork"
@@ -309,7 +311,8 @@ SaveLocker/
 │
 ├── .github/workflows/
 │   ├── ci.yml                           # PR + main push: dotnet, web, agent-ui, docker, the Linux
-│   │                                   #   package, the agent suites and the cross-OS chain.
+│   │                                   #   package, the agent suites, the cross-OS chain and the
+│   │                                   #   console/security suite (windows-latest).
 │   │                                   #   paths-ignore skips vault-only commits — see Gotchas
 │   ├── docker-publish.yml               # main push + v* tag → ghcr.io/skorcherx/savelocker:latest
 │   └── release.yml                      # v* tag → TWO jobs: build-installer (windows) and

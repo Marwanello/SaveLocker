@@ -285,7 +285,10 @@ session can judge an edge case, not to reopen the choice.
   - **The list shows the icon; the cover is only the fallback.** Box art is 2:3 and has to be cropped
     to fit a square; the grid wall and the game page keep the cover.
   - **Only missing art is ever fetched automatically.** Saving a key backfills games with no cover or
-    no icon, in the background, one at a time; a cover chosen by hand is never replaced by a default.
+    no icon, in the background, one at a time — and so does a pass shortly after every startup, because
+    a key supplied by configuration is never saved in the dashboard and a restart mid-run must lose
+    nothing (what is missing is read back from the database). A cover chosen by hand is never replaced by
+    a default.
     The explicit *Refresh art* button does replace it — asking for a refresh means asking for the default.
   - **Picker previews are inlined as `data:` URIs by the server.** The console's CSP allows images from
     itself and `data:` only (Decisions → console headers) and a browser fetching from SteamGridDB's CDN

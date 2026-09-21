@@ -208,7 +208,7 @@ claim sync is paused, which it is not for the other games); stats are the three 
 Tracked here, Saves backed up, Last sync — not the prototype's "Sent today", for which no number exists.
 **Recent expands inline to the full 50-entry log** ("Show all N") — trimming the Overview must not delete
 the only place the rolling log was visible, and plan.md forbids a modal. The agent's Sync all confirms
-with the server's own "Sync all complete." as a toast (2.6 s), because `SyncAllAsync` returns no counts
+with the server's own "Sync all complete." as a toast (2.6 s; a failure stays until dismissed), because `SyncAllAsync` returns no counts
 or byte totals and none were invented.
 <br>**One bug found in the code being moved, fixed rather than carried:** `handleSynced` read `view` from
 the render in which Sync was pressed, so its "do not pop the overlay on top of Conflicts" guard could never
