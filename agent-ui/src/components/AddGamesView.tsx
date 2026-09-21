@@ -83,6 +83,7 @@ export function AddGamesView({ onEnrolled }: Props) {
   const [filter, setFilter] = useState<FilterId>('suggested')
   const [store, setStore] = useState<string | null>(null)
   const [pathMode, setPathMode] = useState<PathMode>('all')
+  const [query, setQuery] = useState('')
   const [scanning, setScanning] = useState(false)
   const [enrolling, setEnrolling] = useState(false)
   const [status, setStatus] = useState('')
@@ -191,7 +192,10 @@ export function AddGamesView({ onEnrolled }: Props) {
     .filter(active.match)
     .filter(c => !((filter === 'heroic' || filter === 'playnite') && store) || c.store === store)
   const activePathMode = PATH_MODES.find(p => p.id === pathMode) ?? PATH_MODES[0]
-  const visible = sourceFiltered.filter(activePathMode.match)
+  const needle = query.trim().toLowerCase()
+  const visible = sourceFiltered
+    .filter(activePathMode.match)
+    .filter(c => !needle || c.name.toLowerCase().includes(needle) || c.path.toLowerCase().includes(needle))
 
   const enrollBlocked = missing.length > 0
   // Named, not just counted. A user looking for a game they can plainly see in Steam needs to be
@@ -203,7 +207,8 @@ export function AddGamesView({ onEnrolled }: Props) {
   // nothing. Path is named first: it is the row that can hide everything while the source row
   // looks wide open.
   const undoHint =
-    pathMode !== 'all' ? ' Set Path to “All” to see every one.'
+    needle ? ' Clear the search to see every one.'
+      : pathMode !== 'all' ? ' Set Path to “All” to see every one.'
       : filter !== 'all' ? ' Choose “All” to see every one.'
       : ''
   const footerStatus = status || (
@@ -237,6 +242,14 @@ export function AddGamesView({ onEnrolled }: Props) {
           <FolderOpen size={13} strokeWidth={1.75} color="#9CA3AF" />
           <span>Set save folder…</span>
         </button>
+        <input
+          type="search"
+          className="sl-search"
+          placeholder="Search by name or folder"
+          aria-label="Search found games"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+        />
       </div>
 
       {/* Filters */}

@@ -196,6 +196,61 @@ button:disabled { cursor: default; }
 .sl-toast > span { min-width: 0; overflow-wrap: anywhere; }
 .sl-toast--warn { border-color: var(--color-watch-line); }
 
+/* ---- Seg, Row, art, Games ------------------------------------------------------------------- */
+.sl-seg { display: inline-flex; background: var(--color-raise); border: 1px solid var(--color-line); border-radius: 99px; padding: 3px; gap: 2px; }
+.sl-seg button {
+  font-size: 12.5px; font-weight: 600; padding: 6px 14px; border-radius: 99px; border: 0; cursor: pointer;
+  background: transparent; color: var(--color-dim); transition: background-color .15s var(--ease), color .15s var(--ease);
+}
+.sl-seg button:hover { color: var(--color-fg); }
+.sl-seg button[aria-pressed="true"] { background: var(--color-panel); color: var(--color-fg); box-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
+.sl-seg button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+.sl-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 12px; row-gap: 3px;
+  align-items: center; width: 100%; text-align: left; padding: 10px 12px; color: inherit;
+  background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 12px;
+  transition: transform .15s var(--ease), background-color .15s var(--ease);
+}
+.sl-row--click { cursor: pointer; }
+.sl-row--click:hover { transform: translateX(2px); background: var(--color-raise); }
+.sl-row--click:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.sl-row__cover { grid-row: span 2; width: 38px; height: 38px; border-radius: 9px; overflow: hidden; display: flex; align-items: center; justify-content: center; flex: none; }
+.sl-row__title { grid-column: 2; font-size: 13px; font-weight: 600; align-self: end; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-row__sub { grid-column: 2; font-size: 11px; color: var(--color-dim); align-self: start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-row__end { grid-column: 3; grid-row: 1 / span 2; display: flex; align-items: center; gap: 8px; }
+
+.sl-art { display: block; width: 100%; height: 100%; object-fit: cover; }
+.sl-art--fallback { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; background: var(--color-tile); color: var(--color-dim); font-weight: 700; letter-spacing: -.02em; }
+
+.sl-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sl-search {
+  flex: 1; min-width: 160px; max-width: 320px; padding: 7px 12px; font: inherit; font-size: 12.5px; color: var(--color-fg);
+  background: var(--color-raise); border: 1px solid var(--color-line); border-radius: 99px;
+}
+.sl-search::placeholder { color: var(--color-dim); }
+.sl-search:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+.sl-list { display: flex; flex-direction: column; gap: 8px; }
+.sl-wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 14px; }
+.sl-tile {
+  display: flex; flex-direction: column; gap: 8px; text-align: left; color: inherit; cursor: pointer; background: none; border: 0; padding: 0;
+  transition: transform .15s var(--ease);
+}
+.sl-tile:hover { transform: translateY(-2px); }
+.sl-tile:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; border-radius: 12px; }
+.sl-tile__cover { aspect-ratio: 2 / 3; border-radius: 12px; overflow: hidden; border: 1px solid var(--color-line); background: var(--color-tile); position: relative; }
+.sl-tile__name { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-tile__pin { position: absolute; top: 8px; right: 8px; }
+
+.sl-gamehead { display: flex; align-items: center; gap: 16px; }
+.sl-gamehead__cover { width: 88px; aspect-ratio: 2 / 3; border-radius: 12px; overflow: hidden; border: 1px solid var(--color-line); flex: none; background: var(--color-tile); }
+.sl-gamehead__main { min-width: 0; flex: 1; }
+.sl-gamehead__title { font-size: 22px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; overflow-wrap: anywhere; }
+.sl-gamehead__chips { display: flex; gap: 7px; margin-top: 8px; flex-wrap: wrap; }
+.sl-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.sl-back { align-self: flex-start; }
+
 @media (prefers-reduced-motion: reduce) {
   .sl-page > *, .sl-toast, .sl-spin { animation: none; }
   .sl-meter > i.sl-meter__sweep { animation: none; width: 100%; opacity: .45; }

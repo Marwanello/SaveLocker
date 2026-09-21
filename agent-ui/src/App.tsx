@@ -4,6 +4,8 @@ import { api } from './api'
 import { Sidebar } from './components/Sidebar'
 import { StatusHeader } from './components/StatusHeader'
 import { OverviewView } from './components/OverviewView'
+import { GamesView } from './components/GamesView'
+import { GameDetailView } from './components/GameDetailView'
 import { AddGamesView } from './components/AddGamesView'
 import { ConflictsView } from './components/ConflictsView'
 import { SyncConflictModal } from './components/SyncConflictModal'
@@ -20,9 +22,10 @@ export default function App() {
   const initialHash = window.location.hash.slice(1)
   const [view, setView] = useState<View>(() => {
     const base = initialHash.split(':')[0] as View
-    return (['overview', 'addGames', 'conflicts', 'settings'] as View[]).includes(base) ? base : 'addGames'
+    return (['overview', 'games', 'addGames', 'conflicts', 'settings'] as View[]).includes(base) ? base : 'games'
   })
   const [autoQueueRequested] = useState(() => initialHash === 'conflicts:queue')
+  const [openGameId, setOpenGameId] = useState<string | null>(null)
   const [state, setState] = useState<AgentState | null>(null)
   const [conflicts, setConflicts] = useState<Conflict[]>([])
   const [games, setGames] = useState<TrackedGame[]>([])
@@ -60,6 +63,22 @@ export default function App() {
     // top of it would only interrupt the user a second time for information they can already see.
     refreshConflicts().then(cs => { if (cs.length > 0 && viewRef.current !== 'conflicts') setSyncQueue(cs) })
   }, [refreshConflicts])
+
+  // A per-game sync (the game page's buttons) only interrupts for a conflict on THAT game: the pop-up
+  // queues every conflict it is handed, and another game's old one is not what this press was about.
+  const handleGameSynced = useCallback((gameId: string) => {
+    refreshState()
+    refreshConflicts().then(cs => {
+      const mine = cs.filter(c => c.gameId === gameId)
+      if (mine.length > 0 && viewRef.current !== 'conflicts') setSyncQueue(mine)
+    })
+  }, [refreshState, refreshConflicts])
+
+  const navigate = useCallback((v: View) => {
+    // Choosing Games in the sidebar always lands on the list, even from inside a game.
+    if (v === 'games') setOpenGameId(null)
+    setView(v)
+  }, [])
 
   useEffect(() => {
     refreshState()
@@ -109,7 +128,7 @@ export default function App() {
         <div className="sl-body">
           <Sidebar
             activeView={view}
-            onNavigate={setView}
+            onNavigate={navigate}
             conflictCount={conflicts.length}
             agentLabel={state?.buildLabel ?? state?.currentVersion ?? '…'}
             machineName={state?.machineName ?? ''}
@@ -123,9 +142,25 @@ export default function App() {
                 conflicts={conflicts}
                 games={games}
                 onWarningDismissed={refreshState}
-                onNavigate={setView}
+                onNavigate={navigate}
               />
             )}
+            {view === 'games' && (() => {
+              const open = games.find(g => g.id === openGameId)
+              return open
+                ? (
+                  <GameDetailView
+                    key={open.id}
+                    game={open}
+                    conflicts={conflicts}
+                    machineName={state?.machineName ?? ''}
+                    onBack={() => setOpenGameId(null)}
+                    onNavigate={navigate}
+                    onSynced={() => handleGameSynced(open.id)}
+                  />
+                )
+                : <GamesView games={games} conflicts={conflicts} onOpen={setOpenGameId} onNavigate={navigate} />
+            })()}
             {view === 'addGames' && <AddGamesView onEnrolled={refreshState} />}
             {view === 'conflicts' && (
               <ConflictsView

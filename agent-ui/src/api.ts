@@ -1,4 +1,4 @@
-import type { Activity, AgentState, AgentVersion, BrowseListing, Candidate, Conflict, DeckyStatus, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, TrackedGame, VersionStats } from './types'
+import type { Activity, AgentState, AgentVersion, BrowseListing, Candidate, Conflict, DeckyStatus, GameState, GameSyncMode, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -89,4 +89,16 @@ export const api = {
   // ids. Cached by the caller: an archive's stats never change once uploaded.
   version: (id: string) => req<SaveVersion>(`/api/versions/${id}`),
   versionStats: (id: string) => req<VersionStats>(`/api/versions/${id}/stats`),
+  // One game's manual sync (never forced): the agent answers with a one-line result, or a 409 when
+  // another sync already holds the gate.
+  syncGame: (id: string, mode: GameSyncMode) => post<{ message: string }>(`/api/games/${id}/sync`, { mode }),
+  // What the server holds for one game: head, lease, open conflict. Cheap; no disk work.
+  gameState: (id: string) => req<GameState>(`/api/games/${id}/state`),
+  // Hashes the whole save folder. Only ever on an explicit "Check now", never on a timer or a list.
+  syncStatus: (id: string) => req<SyncStatus>(`/api/games/${id}/sync-status`),
+  // Cover or icon as a Blob: an <img src> cannot carry the local token, so the UI fetches it here.
+  art: async (id: string, kind: 'grid' | 'icon', w: number): Promise<Blob | null> => {
+    const res = await fetch(`/api/games/${id}/art?kind=${kind}&w=${w}`, { headers: authHeaders() })
+    return res.ok ? res.blob() : null
+  },
 }
