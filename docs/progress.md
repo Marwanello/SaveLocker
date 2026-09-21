@@ -3092,3 +3092,13 @@ Portable Playnite installs keep their `library`/`Extensions` beside their own ex
 - An untracked file deleted on Windows survives in the WSL clone — `rm` by hand (Gotchas).
 - The `--color-faint` contrast decision (3.31:1 dark / 3.55:1 light) still belongs to the maintainer.
 - `Release Notes Pending.md` is stale; what the next release notes must cover is in `CONTEXT.md`.
+
+## 2026-09-21 — Checkpoint UI Group 4: agent Games tab, art proxy, per-game sync (PR #46)
+
+Full write-up: [[session_summary]]. Branch `ui-redesign-group-4`, PR https://github.com/Marwanello/SaveLocker/pull/46, commits `11c6e60`, `0d6f376`, `6ebb6eb`, `101193a`, `fd50f0b`.
+
+- **Routes:** `POST /api/games/{id}/sync` (single-flight, 409 when busy), `GET /api/games/{id}/state`, `GET /api/games/{id}/art` (only same-origin `/art/` URLs, only `image/*`).
+- **UI:** Games tab (list/grid, search), per-game page with "Sync this game", art via fetch + blob, search in Add Games.
+- **Tests:** `run-local-api-tests.ps1` §11, 53/53 (was 30); removing the art guards fails 3 checks.
+- **Not verified:** WebView2 tray window, a real Deck, light theme (Group 5), C# suites other than `run-local-api-tests`.
+- **Open:** Groups 5–7; version list and bytes-sent on the game page (Backlog).

@@ -14,6 +14,7 @@ interface Props {
 
 const NAV: { view: View; label: string }[] = [
   { view: 'overview', label: 'Overview' },
+  { view: 'games', label: 'Games' },
   { view: 'addGames', label: 'Add Games' },
   { view: 'conflicts', label: 'Conflicts' },
   { view: 'settings', label: 'Settings' },

@@ -1,6 +1,6 @@
 import type { components } from './api-types'
 
-export type View = 'overview' | 'addGames' | 'conflicts' | 'settings'
+export type View = 'overview' | 'games' | 'addGames' | 'conflicts' | 'settings'
 export type LeaseWarning = components['schemas']['LeaseWarningDto']
 export type AgentState = Omit<components['schemas']['AgentStateDto'],
   'gamesTracked' | 'savesBacked' | 'settleQuietSeconds'> & {
@@ -22,3 +22,6 @@ export type Activity = components['schemas']['ActivityDto']
 export type Conflict = components['schemas']['ConflictDto']
 export type SaveVersion = components['schemas']['SaveVersionDto']
 export type VersionStats = components['schemas']['VersionStatsDto']
+export type GameState = components['schemas']['GameStateDto']
+export type SyncStatus = components['schemas']['SyncStatusDto']
+export type GameSyncMode = 'sync' | 'push' | 'pull'

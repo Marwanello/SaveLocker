@@ -1187,6 +1187,177 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["GameSyncRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SyncNowResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GameStateDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/art": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    kind?: string;
+                    w?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                        "image/jpeg": string;
+                        "image/webp": string;
+                        "image/gif": string;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent-version": {
         parameters: {
             query?: never;
@@ -1946,7 +2117,10 @@ export interface components {
             /** @default false */
             escalated: boolean;
         };
-        /** @enum {unknown} */
+        /**
+         * @default Manual
+         * @enum {unknown}
+         */
         ConflictPolicy: "Manual" | "NewestWins" | "PreferMachine";
         ConflictPolicyDto: {
             policy: components["schemas"]["ConflictPolicy"];
@@ -1985,6 +2159,40 @@ export interface components {
         FolderResponse: {
             path: null | string;
         };
+        GameDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            manifestKey: null | string;
+            customPathsJson: null | string;
+            enabled: boolean;
+            suggestedSaveDir?: null | string;
+            machineSavePath?: null | string;
+            gridUrl?: null | string;
+            heroUrl?: null | string;
+            logoUrl?: null | string;
+            iconUrl?: null | string;
+            /** Format: int32 */
+            retainVersions?: null | number;
+            excludeGlobs?: null | string[];
+            conflictPolicy?: components["schemas"]["ConflictPolicy"];
+            /** Format: uuid */
+            preferredMachineId?: null | string;
+        };
+        GameStateDto: {
+            game: components["schemas"]["GameDto"];
+            head: null | components["schemas"]["SaveVersionDto"];
+            lease: null | components["schemas"]["LeaseDto"];
+            hasOpenConflict: boolean;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            totalStorageBytes: number;
+        };
+        GameSyncRequest: {
+            mode: null | string;
+        };
         LaunchCommandDto: {
             command: null | string;
             note: null | string;
@@ -2019,6 +2227,17 @@ export interface components {
             steamAppId: number;
             applied: boolean;
             error: null | string;
+        };
+        LeaseDto: {
+            /** Format: uuid */
+            gameId: string;
+            /** Format: uuid */
+            holderMachineId: null | string;
+            holderMachineName: null | string;
+            /** Format: date-time */
+            acquiredAt: null | string;
+            /** Format: date-time */
+            expiresAt: null | string;
         };
         LeaseWarningDto: {
             gameName: string;
