@@ -447,7 +447,6 @@ sealed class UiApp
         // pass rather than baking twice.
         Theme.SetAccent(AppearancePalette.For(_config.EffectiveAppearance.Accent));
         Theme.ApplyStyle();
-        Art.Load(_gl);
 
         // A scripted capture must never make noise — on a Deck it would fire into whatever the user
         // is actually listening to. It still opens the device, muted, so the Settings screen reports
@@ -873,11 +872,13 @@ sealed class UiApp
         // Vertical centring is measured inside the child's content box, so the padding pushed above
         // is already accounted for — do not subtract it again.
         const float markH = 40f;
-        if (Art.Logo.Ok)
         {
             var inner = Theme.Layout.HeaderHeight - Theme.Space.Sm * 2;
             ImGui.SetCursorPosY(Theme.Space.Sm + MathF.Max(0f, (inner - markH) / 2f));
-            ImGui.Image(Art.Logo.Id, new Vector2(Art.Logo.WidthAt(markH), markH));
+            var markPos = ImGui.GetCursorScreenPos();
+            AppMark.Draw(ImGui.GetWindowDrawList(), markPos, markH, _config.EffectiveAppearance.Mark,
+                Theme.Accent, Theme.OnAccent);
+            ImGui.Dummy(new Vector2(markH, markH));
             ImGui.SameLine(0, Theme.Space.Md);
         }
 

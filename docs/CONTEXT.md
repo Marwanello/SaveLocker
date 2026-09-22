@@ -1318,10 +1318,30 @@ than "needs a WSLg pass" — it's specifically "needs a physical controller and 
 blocking nothing yet," untouched here. Archivo was not swapped in for the Deck's fonts (still Inter +
 JetBrains Mono) — no Archivo TTFs to embed in this environment, the same asset gap Group 1 hit for PNG/ICO
 rasterization; flagged in `Theme.cs`'s own font-section comment rather than left unexplained.
+<br>**Follow-up (2026-09-22, same day) — two more bugs caught by eye, not by inspection.** The header's
+`Icons.Sync` glyph had its arrowhead hand-picked at the wrong angle — roughly a third of the way around
+the circle from where the arc it caps actually ends — so the "Sync all" button showed a near-full ring
+with a triangle stuck to its side instead of a refresh icon. Rewritten as a shared `ArcWithArrow` helper
+that computes the tip and its tangent from the same end angle the arc is drawn to, so the two can't drift
+apart again. Separately, the mark in the header's top-left corner was still `logo-96.png` — a fixed-colour
+raster of the pre-Checkpoint brand, baked long before this redesign and never touched by Group 6, so it
+neither matched the new palette nor moved when the accent changed. Replaced with a new `AppMark.cs` that
+draws whichever mark `EffectiveAppearance.Mark` names (Pixel lock, Cartridge or Memory card) straight into
+the draw list in `Theme.Accent`/`Theme.OnAccent` — the same 32-unit geometry as `web/src/appearance.ts`'s
+`MARKS` and `src/Agent/MarkIcon.cs` (the Windows tray icon), and the same accent/no-tile rule
+`agent-ui/src/App.tsx`'s own topbar draws `<Mark/>` with. `Art.cs` (which existed solely to load that one
+PNG) and its embedded resource are gone. All three marks and several accents were pixel-checked via a
+scratch `SAVELOCKER_STATE_ROOT` config with `FollowConsoleAppearance: false` — this also closes the "does
+the accent actually repaint from a pushed look" half of the gap above, short of a real console push.
+Archivo still was not swapped in — still no TTFs to embed in this environment; the user offered to supply
+them, and was told exactly what's needed: `Archivo-Regular.ttf` and `Archivo-SemiBold.ttf` (the same two
+weights `Ui/Fonts/Inter-*.ttf` already provides) dropped in `src/Agent.Linux/Ui/Fonts/`, at which point
+`Theme.cs`'s `RegularResource`/`SemiBoldResource` constants and the `.csproj`'s embedded-resource block are
+a small, mechanical swap.
 <br>**Next action:** a real Deck (or a box with a physical gamepad) to exercise the Y/L1/R1 bindings
-through an actual controller and confirm the accent repaints from a genuinely pushed console look, or
-Group 7 (OS notifications) if that hardware access isn't available first. The Wayland decision (Phase 6
-item 4) is still open and needs deciding before any code is written for it.
+through an actual controller, or Group 7 (OS notifications) if that hardware access isn't available
+first. The Wayland decision (Phase 6 item 4) is still open and needs deciding before any code is written
+for it. Archivo TTFs, if the user supplies them, are a quick follow-up whenever they land.
 
 ---
 

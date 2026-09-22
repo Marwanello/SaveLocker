@@ -23,7 +23,7 @@ phases to do in one session, in what order, and why. Driven by three things weig
 | 3 | Phase 1 (agent half) + Phase 5 overview trim + Phase 3.3 (agent Sync all) | ✅ Shipped 2026-09-20 — tokens, primitives, Archivo, status header with Sync all + live progress, trimmed Overview, converted shell. **Phase 3.5 (per-game "Sync this game") ➡️ moved to Group 4**: it needs a game page and a per-game agent route, neither of which exists yet. See the Group 3 write-up below |
 | 4 | Phase 5 Games tab + art proxy + search + **Phase 3.5 (per-game Sync this game)** | ✅ Shipped 2026-09-21 — see the Group 4 write-up below |
 | 5 | Phase 4 appearance + fleet sync | ✅ Shipped 2026-09-21 — the `Ui:*` setting and its console card, the heartbeat push, the per-machine "Follow the console" override, the favicon, the brand mark, the Windows tray + window icon; **and the theme default now follows the OS**, after every hardcoded hex left the views (303 in `web`, 166 in `agent-ui` → 0). **Phase 4 item 4 (the Deck's accent) ➡️ moved to Group 6**: `Theme.cs`'s `AccentGreen` means both "accent" and "healthy" at 68 sites, so an accent switch there needs Group 6's token split; the plumbing it needs is done. See the Group 5 write-up below |
-| 6 | Phase 6 items 1-3 (Deck) | ✅ Shipped 2026-09-22 (branch `claude/group-6-ui-redesign-6d9b06`) — Checkpoint tokens, the accent/healthy split, 62px two-line rows, the button legend, Sync all on Y. `savelocker ui --screenshot` and `--nav` turned out to run on this Windows box (no WSLg needed — SDL/GL resolved natively), so this was verified live, not by build alone: real pixel colours sampled off real screenshots, and the L1/R1 section-switch driven through `--nav r1,r1,r1` with `--nav-debug` open. That pass caught and fixed a genuine focus-timing bug (below) a build could never have shown. Still not run on a real Deck or under gamescope's actual input path |
+| 6 | Phase 6 items 1-3 (Deck) | ✅ Shipped 2026-09-22 (branch `claude/group-6-ui-redesign-6d9b06`) — Checkpoint tokens, the accent/healthy split, 62px two-line rows, the button legend, Sync all on Y. `savelocker ui --screenshot` and `--nav` turned out to run on this Windows box (no WSLg needed — SDL/GL resolved natively), so this was verified live, not by build alone: real pixel colours sampled off real screenshots, and the L1/R1 section-switch driven through `--nav r1,r1,r1` with `--nav-debug` open. That pass caught and fixed a genuine focus-timing bug (below) a build could never have shown. Same-day follow-up (below) fixed a mis-angled Sync icon and replaced the header's stale pre-Checkpoint logo with a live, mark-aware, accent-coloured `AppMark`. Still not run on a real Deck or under gamescope's actual input path; Archivo TTFs still needed for the font face |
 | 7 | Phase 7 (notifications) | ⏳ Not started |
 
 **2026-09-20 review pass (a code review of Groups 1–2, all findings fixed on branch
@@ -380,6 +380,21 @@ item per the plan's own "Open decision" section, out of this group's scope. Arch
 in for the Deck's fonts (still Inter + JetBrains Mono): this environment has no Archivo TTFs to embed,
 the same asset gap Group 1 hit for PNG/ICO rasterization — flagged in `Theme.cs`'s own font-section
 comment for whoever brings the fonts next, rather than silently left unexplained.
+<br>**Same-day follow-up, two more bugs caught by eye:** `Icons.Sync`'s arrowhead was hand-picked at
+roughly a third of the way around the circle from where its arc actually ends, so the "Sync all" button
+drew a near-full ring with a stray triangle rather than a refresh glyph — replaced with a shared
+`ArcWithArrow` helper that derives the tip and its tangent from the arc's own end angle, so the two
+can't drift apart again. Separately, the header's top-left mark was still `logo-96.png`, a fixed-colour
+raster of the pre-Checkpoint brand that Group 6 never touched — it matched neither the new palette nor
+an accent change. Replaced with `AppMark.cs`, which draws whichever mark `EffectiveAppearance.Mark`
+names (Pixel lock, Cartridge, Memory card) straight into the draw list in `Theme.Accent`/`Theme.OnAccent`
+— the same 32-unit geometry as `web/src/appearance.ts`'s `MARKS` and `src/Agent/MarkIcon.cs` (the
+Windows tray icon), and the same accent/no-tile treatment `agent-ui/src/App.tsx`'s own topbar draws
+`<Mark/>` with, rather than the tray's real-transparency "mono" variant this surface doesn't need.
+`Art.cs`, which existed solely to decode that one PNG, is deleted along with its embedded resource. All
+three marks were pixel-checked across several accents via a scratch `SAVELOCKER_STATE_ROOT` config with
+`FollowConsoleAppearance: false` — narrowing "confirm the accent repaints from a genuinely pushed
+console look" (above) to just the console-push half.
 
 **Group 7 — Notifications. Windows half here, Linux half deferred.**
 Phase 7. The Windows toast is buildable *and* verifiable on this machine. The Linux freedesktop call

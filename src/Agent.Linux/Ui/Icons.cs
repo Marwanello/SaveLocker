@@ -240,25 +240,47 @@ static class Icons
     };
 
     /// <summary>
-    /// lucide's refresh-cw: two ~250° arcs chasing each other, each capped with a small arrowhead —
-    /// used by the Deck header's Sync all button (implementation.md Phase 6 item 3).
+    /// lucide's refresh-cw: two ~300° arcs chasing each other, each capped with a small arrowhead at
+    /// the end of its sweep — used by the Deck header's Sync all button (implementation.md Phase 6
+    /// item 3).
     /// </summary>
     public static readonly Glyph Sync = (dl, p, s, c, w) =>
     {
-        var r = 7f / 24f * s;
-        var top = P(p, s, 11, 8);
-        var bottom = P(p, s, 13, 16);
-
-        dl.PathClear();
-        dl.PathArcTo(top, r, -2.6f, 2.6f, 20);
-        dl.PathStroke(c, ImDrawFlags.None, w);
-        Poly(dl, p, s, c, w, false, 15.7f, 4.6f, 18.4f, 8, 18.4f, 4.3f);
-
-        dl.PathClear();
-        dl.PathArcTo(bottom, r, MathF.PI - 2.6f, MathF.PI + 2.6f, 20);
-        dl.PathStroke(c, ImDrawFlags.None, w);
-        Poly(dl, p, s, c, w, false, 8.3f, 19.4f, 5.6f, 16, 5.6f, 19.7f);
+        const float r = 7f;
+        const float sweep = 2.6f;
+        ArcWithArrow(dl, p, s, c, w, 11, 8, r, -sweep, sweep);
+        ArcWithArrow(dl, p, s, c, w, 13, 16, r, MathF.PI - sweep, MathF.PI + sweep);
     };
+
+    /// <summary>
+    /// A circular arc from <paramref name="startRad"/> to <paramref name="endRad"/>, capped at the end
+    /// with a small triangular arrowhead tangent to the circle there. Previously the arrowhead's three
+    /// points were hand-picked and landed roughly a third of the way around the circle from where the
+    /// stroke actually ends — computing the tip from the same angle the arc is drawn to keeps the two
+    /// in sync by construction.
+    /// </summary>
+    private static void ArcWithArrow(ImDrawListPtr dl, Vector2 p, float s, uint c, float w,
+        float cx, float cy, float r, float startRad, float endRad)
+    {
+        var centre = P(p, s, cx, cy);
+        var radius = r / 24f * s;
+
+        dl.PathClear();
+        dl.PathArcTo(centre, radius, startRad, endRad, 20);
+        dl.PathStroke(c, ImDrawFlags.None, w);
+
+        var tip = centre + new Vector2(MathF.Cos(endRad), MathF.Sin(endRad)) * radius;
+        var tangent = new Vector2(-MathF.Sin(endRad), MathF.Cos(endRad));
+        var normal = new Vector2(MathF.Cos(endRad), MathF.Sin(endRad));
+        var back = 4.2f / 24f * s;
+        var half = 2.6f / 24f * s;
+
+        dl.PathClear();
+        dl.PathLineTo(tip - tangent * back + normal * half);
+        dl.PathLineTo(tip);
+        dl.PathLineTo(tip - tangent * back - normal * half);
+        dl.PathStroke(c, ImDrawFlags.None, w);
+    }
 
     /// <summary>
     /// A spinner. Unlike the others this is time-dependent: it sweeps an arc whose phase comes from
