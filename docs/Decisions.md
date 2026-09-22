@@ -600,6 +600,24 @@ session can judge an edge case, not to reopen the choice.
   autosave slot, a last-played stat) — the per-file manifest this work adds now makes that
   concretely diagnosable per push, via the `upload.delta` audit entry's "N of M files needed fresh
   bytes", rather than needing to guess.
+- **Appearance is three ids, chosen once on the server and pushed on the heartbeat** (2026-09-21, checkpoint-ui
+  Phase 4). `Ui:Theme`/`Accent`/`Mark`/`PushToAgents` in `AppSetting`; the wire never carries a colour, because a
+  colour is a rendering decision and the server should not make it for a screen it will never see (the tray draws the
+  same accent in GDI+, the browser in CSS, the Deck in ImGui). Every reader **normalises rather than rejects** — an id
+  it does not know becomes that field's default — so a sixth accent from a newer server, a hand-edited
+  `config.json` or a typo in an env var can never leave a window unstyled. The heartbeat carries it only when pushing is
+  on, and **absent means "no opinion", not "the default"**: an agent keeps what it last applied, so switching pushing off
+  freezes machines where they are instead of snapping them all back to Ember. On the agent, **Follow the console is on
+  by default**; turning it off changes nothing on screen (the machine's own look starts as whatever it is drawing), and
+  pushes that arrive meanwhile are stored but not applied, so turning it back on shows the console's *current* look.
+  The favicon, the tray icon and the brand mark are all drawn from one geometry table; there are no per-accent icon
+  files (the build environment has no SVG rasterizer, and fifteen `.ico` files would be fifteen things to keep in step).
+- **The theme follows the OS unless one is pinned** (2026-09-21). `<html data-theme="dark|light">` pins it and *no
+  attribute* means "System", so the CSS itself follows `prefers-color-scheme` with no script and no flash. It flipped
+  from "dark base, light opt-in" only once no view carried a hardcoded hex colour (that ordering is what made the flip
+  safe — [[Gotchas]] → *Web console*); `tests/run-appearance-consistency-tests.ps1` keeps it that way by failing on a
+  `#hex` in any `.tsx`. An accent is the one token the look rewrites, and is written **inline for the palette in
+  force** — an accent has a dark and a light value — so it is re-derived when the OS flips while the theme is System.
 
 ## Environment facts (user-provided)
 - Games are standalone builds, not bought on Steam/Epic → manifest-based detection + manual

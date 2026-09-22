@@ -1,4 +1,4 @@
-import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule } from './types';
+import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule } from './types';
 
 // The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
 // itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
@@ -258,6 +258,13 @@ export const api = {
     }
     return body ?? {};
   },
+
+  setAppearance: (req: SetAppearanceRequest) =>
+    request<AppearanceSettings>('/settings/appearance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    }),
 
   setAutoFetchSchedule: (schedule: AutoFetchSchedule) =>
     request<{ schedule: AutoFetchSchedule; nextRunAt: string | null }>('/settings/agent-update-auto-fetch', {

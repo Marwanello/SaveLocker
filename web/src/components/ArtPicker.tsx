@@ -120,9 +120,9 @@ function Strip({ game, kind, applying, onChoose }: StripProps) {
             {currentUrl
               ? <img src={artSrc(currentUrl, 128)} srcSet={artSrcSet(currentUrl, [96, 192])} sizes={isGrid ? '84px' : '56px'}
                   alt={`Current ${LABEL[kind].noun}`} className="w-full h-full object-cover" />
-              : <span className="text-[10px] text-faint">none</span>}
+              : <span className="text-[10px] text-dim">none</span>}
           </span>
-          <figcaption className="text-[10px] text-faint">Current</figcaption>
+          <figcaption className="text-[10px] text-dim">Current</figcaption>
         </figure>
 
         <span aria-hidden className="self-stretch w-px bg-line" />
@@ -162,9 +162,9 @@ function Strip({ game, kind, applying, onChoose }: StripProps) {
               <span className={`${tile} rounded-[9px] overflow-hidden bg-raise border border-line grid place-items-center hover:border-dim`}>
                 {o.preview
                   ? <img src={o.preview} alt="" className="w-full h-full object-cover" />
-                  : <span className="text-[9px] text-faint">no preview</span>}
+                  : <span className="text-[9px] text-dim">no preview</span>}
               </span>
-              <span className="text-[10px] text-faint tabular-nums">
+              <span className="text-[10px] text-dim tabular-nums">
                 {saving ? 'Saving…' : o.width && o.height ? `${o.width}×${o.height}` : ' '}
               </span>
             </button>

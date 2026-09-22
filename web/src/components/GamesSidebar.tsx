@@ -38,7 +38,7 @@ export function GamesSidebar({ games, selectedId, onSelect, onAddGame, onRefresh
     <aside className={`flex-shrink-0 bg-panel border-r border-line flex flex-col min-h-0 ${layout === 'grid' ? 'w-[340px]' : 'w-[260px]'}`}>
       <div className="px-3.5 py-2.5 border-b border-line flex items-baseline justify-between flex-shrink-0">
         <span className="text-[10px] font-bold text-accent tracking-[0.12em] uppercase">Games</span>
-        <span className="text-[9.5px] text-faint font-mono" title="Total save data stored on server">{fmtMb(grandTotal)}</span>
+        <span className="text-[9.5px] text-dim font-mono" title="Total save data stored on server">{fmtMb(grandTotal)}</span>
       </div>
 
       {/* Action buttons — anchored below header, always visible */}
@@ -53,7 +53,7 @@ export function GamesSidebar({ games, selectedId, onSelect, onAddGame, onRefresh
 
       <div className="flex-1 overflow-y-auto min-h-0">
         {games.length === 0 && (
-          <div className="p-3.5 text-xs text-faint">No games tracked yet.</div>
+          <div className="p-3.5 text-xs text-dim">No games tracked yet.</div>
         )}
 
         {layout === 'grid' ? (
@@ -74,7 +74,7 @@ export function GamesSidebar({ games, selectedId, onSelect, onAddGame, onRefresh
                     art
                       ? <img src={artSrc(art, 64)} srcSet={artSrcSet(art, [64, 128])} sizes="38px"
                           alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
-                      : <span className="text-faint text-[8px] font-mono">no art</span>
+                      : <span className="text-dim text-[8px] font-mono">no art</span>
                   }
                   title={game.name}
                   subtext={[

@@ -34,7 +34,7 @@ export function GamesGrid({ games, selectedId, onSelect }: Props) {
                 {game.gridUrl
                   ? <img src={artSrc(game.gridUrl, 192)} srcSet={artSrcSet(game.gridUrl, [192, 256, 384])} sizes="140px"
                       alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
-                  : <span className="text-faint text-[10px] font-mono">no art</span>
+                  : <span className="text-dim text-[10px] font-mono">no art</span>
                 }
               </div>
               <div className="text-xs font-semibold text-fg truncate">{game.name}</div>

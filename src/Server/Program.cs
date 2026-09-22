@@ -814,6 +814,27 @@ admin.MapPost("/settings/steamgriddb-key", async (
     });
 });
 
+// The console's look, and whether enrolled agents are handed it on their next heartbeat. Validated
+// against the closed id lists — a 400 for anything else, never a stored typo an agent would have to
+// defend against. Audited: it changes what every machine in the household looks like.
+admin.MapPost("/settings/appearance", async (
+    SetAppearanceRequest req, SettingsService settings, SyncService sync, CancellationToken ct) =>
+{
+    try
+    {
+        await settings.SetAppearanceAsync(req, ct);
+    }
+    catch (ArgumentOutOfRangeException ex)
+    {
+        return Results.BadRequest(ex.Message);
+    }
+    var stored = await settings.GetAppearanceAsync(ct);
+    await sync.LogAuditAsync("settings.appearance",
+        $"{stored.Look.Theme} theme, {stored.Look.Accent} accent, {stored.Look.Mark} mark; " +
+        (stored.PushToAgents ? "shared with agents" : "not shared with agents"));
+    return Results.Ok(stored);
+}).Produces<AppearanceSettingsDto>();
+
 admin.MapPost("/settings/agent-update-auto-fetch", async (
     AutoFetchSchedule req, SettingsService settings, CancellationToken ct) =>
 {

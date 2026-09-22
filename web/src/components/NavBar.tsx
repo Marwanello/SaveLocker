@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { api } from '../api';
 import type { AgentEvent, Conflict, Machine, ServerBuildInfo } from '../types';
-import logoUrl from '../assets/SaveLocker_Logo_crop.png';
+import { Mark } from './ui/Mark';
 import { Button } from './ui/Button';
 import { Toast } from './ui/Toast';
 import { NotificationsMenu } from './NotificationsMenu';
@@ -124,7 +124,7 @@ export function NavBar({
           onClick={e => { e.preventDefault(); onViewChange('games'); }}
           className="flex items-center gap-[9px] select-none"
         >
-          <img src={logoUrl} className="h-16 w-auto rounded-md flex-shrink-0" alt="SaveLocker" />
+          <Mark size={40} />
           <span className="text-[17px] font-bold tracking-[-0.4px] text-fg">
             Save<span className="text-accent">Locker</span>
           </span>

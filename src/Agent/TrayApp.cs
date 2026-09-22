@@ -34,6 +34,8 @@ internal sealed class TrayContext : ApplicationContext
 
     private readonly AgentConfig _config;
     private readonly NotifyIcon _icon;
+    // The icon _icon currently shows, owned here so a swap can dispose the one it replaces.
+    private Icon? _trayIcon;
     // Created, disposed and replaced only on the UI thread (StartFolderWatchers is the sole writer
     // and every caller of it dispatches). WA-09.
     private readonly List<FolderWatcher> _folderWatchers = new();
@@ -83,13 +85,18 @@ internal sealed class TrayContext : ApplicationContext
             _offlineQueue, _config, () => _engine,
             msg => { Notify(msg); AgentLogger.Log(msg); });
 
+        // The chosen mark in the chosen accent, not the packaged icon. Rendered here so the tray comes
+        // up in the right look from the first frame, and again whenever the look changes.
+        _trayIcon = AppResources.Render(config.EffectiveAppearance);
         _icon = new NotifyIcon
         {
-            Icon = AppResources.Icon,
+            Icon = _trayIcon,
             Text = $"SaveLocker — {config.MachineName}",
             Visible = true
         };
         _icon.DoubleClick += (_, _) => OpenWindow();
+        // Raised from the heartbeat's thread or a request's; the icon belongs to the UI thread.
+        config.AppearanceChanged += look => _ui.Post(() => ApplyLook(look));
         RebuildMenu();
 
         StartFolderWatchers();
@@ -371,7 +378,7 @@ internal sealed class TrayContext : ApplicationContext
         if (_window is null || _window.IsDisposed)
         {
             // The view is handed to the constructor so it is already queued before OnLoad runs.
-            _window = new AgentWindow(AgentApiPort, view);
+            _window = new AgentWindow(AgentApiPort, view, _config.EffectiveAppearance);
             _window.FormClosed += (_, _) => { _window = null; };
         }
         else
@@ -607,6 +614,16 @@ internal sealed class TrayContext : ApplicationContext
 
     // ─── Infrastructure ──────────────────────────────────────────────────────────
 
+    /// <summary>Re-draw the tray icon and any open window's icon in a new look. UI thread only.</summary>
+    private void ApplyLook(SaveLocker.Shared.AppearanceDto look)
+    {
+        var next = AppResources.Render(look);
+        _icon.Icon = next;
+        _trayIcon?.Dispose();
+        _trayIcon = next;
+        if (_window is { IsDisposed: false } window) window.ApplyLook(look);
+    }
+
     private void FireAndForget(Func<Task> action) => _ = Task.Run(async () =>
     {
         try { await action(); }
@@ -639,6 +656,7 @@ internal sealed class TrayContext : ApplicationContext
             _icon.Visible = false;
             _icon.ContextMenuStrip?.Dispose();
             _icon.Dispose();
+            _trayIcon?.Dispose();
             _commandPoller.Dispose();
             _processWatcher.Dispose();
             // Synchronous: Dispose cannot await, so a held lease expires rather than being released.

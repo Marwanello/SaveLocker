@@ -67,7 +67,7 @@ export function PlaynitePluginCard() {
 
   return (
     <div style={{
-      background: '#1E252A', border: '1px solid #494949', borderRadius: 8,
+      background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 8,
       padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: expanded ? 10 : 6,
       textAlign: 'left', width: '100%', maxWidth: 560,
     }}>
@@ -80,18 +80,18 @@ export function PlaynitePluginCard() {
           cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
         }}
       >
-        <Puzzle size={16} strokeWidth={1.9} color="#129271" style={{ flexShrink: 0 }} />
-        <span style={{ color: '#ECEFF1', fontSize: 13, fontWeight: 700 }}>Playnite plugin</span>
+        <Puzzle size={16} strokeWidth={1.9} color="var(--color-fg)" style={{ flexShrink: 0 }} />
+        <span style={{ color: 'var(--color-fg)', fontSize: 13, fontWeight: 700 }}>Playnite plugin</span>
         {installed ? (
           <span style={{
-            padding: '1px 7px', background: '#129271', color: '#fff',
+            padding: '1px 7px', background: 'var(--color-safe-soft)', color: 'var(--color-safe-ink)',
             borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', flexShrink: 0,
           }}>
             {version ? `INSTALLED v${version}` : 'INSTALLED'}
           </span>
         ) : (
           <span style={{
-            padding: '1px 7px', border: '1px solid #556070', color: '#9CA3AF',
+            padding: '1px 7px', border: '1px solid var(--color-line)', color: 'var(--color-dim)',
             borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', flexShrink: 0,
           }}>
             OPTIONAL
@@ -99,14 +99,14 @@ export function PlaynitePluginCard() {
         )}
         <span style={{
           marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 3,
-          color: '#129271', fontSize: 11.5, fontWeight: 600, flexShrink: 0,
+          color: 'var(--color-safe-ink)', fontSize: 11.5, fontWeight: 600, flexShrink: 0,
         }}>
           {expanded ? 'Show less' : 'Learn more'}
-          <Chevron size={14} strokeWidth={2} color="#129271" />
+          <Chevron size={14} strokeWidth={2} color="var(--color-safe-ink)" />
         </span>
       </button>
 
-      <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
+      <p style={{ color: 'var(--color-dim)', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
         {summary}
         {!expanded && !installed && ' Everything here works without it.'}
       </p>
@@ -114,26 +114,26 @@ export function PlaynitePluginCard() {
       {expanded && (
         <>
           <ul style={{
-            color: '#9CA3AF', fontSize: 12, lineHeight: 1.6, margin: 0, paddingLeft: 18,
+            color: 'var(--color-dim)', fontSize: 12, lineHeight: 1.6, margin: 0, paddingLeft: 18,
             display: 'flex', flexDirection: 'column', gap: 3,
           }}>
             <li>
-              <strong style={{ color: '#ECEFF1' }}>Blocks a launch</strong> only when this game has a
+              <strong style={{ color: 'var(--color-fg)' }}>Blocks a launch</strong> only when this game has a
               genuinely unresolved conflict — never for lock contention or a network hiccup, which
               still just warn.
             </li>
             <li>
-              <strong style={{ color: '#ECEFF1' }}>"Link to SaveLocker"</strong> — a one-click match
+              <strong style={{ color: 'var(--color-fg)' }}>"Link to SaveLocker"</strong> — a one-click match
               for a game the automatic name-matching chain couldn't place on its own.
             </li>
             <li>
-              <strong style={{ color: '#ECEFF1' }}>Status and sync menu items</strong> for the game
+              <strong style={{ color: 'var(--color-fg)' }}>Status and sync menu items</strong> for the game
               currently selected, without leaving Playnite.
             </li>
           </ul>
 
           {installed ? (
-            <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
+            <p style={{ color: 'var(--color-dim)', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
               Nothing to do — this agent replaces the plugin's files when a newer version is
               published; restart Playnite afterward to pick it up.
               {status.latestVersion && status.latestVersion !== version && (
@@ -142,7 +142,7 @@ export function PlaynitePluginCard() {
             </p>
           ) : (
             <>
-              <p style={{ color: '#9CA3AF', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
+              <p style={{ color: 'var(--color-dim)', fontSize: 12, lineHeight: 1.55, margin: 0 }}>
                 Install it automatically below, or download the <code style={{ fontSize: 11 }}>.pext</code> and
                 double-click it to install by hand. Either way this agent keeps it updated afterward.
               </p>
@@ -153,9 +153,9 @@ export function PlaynitePluginCard() {
                   disabled={installing}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
-                    padding: '7px 14px', background: installing ? '#0F5A45' : '#129271',
+                    padding: '7px 14px', background: installing ? 'var(--color-raise)' : 'var(--color-accent)',
                     border: 'none', borderRadius: 5,
-                    color: '#fff', fontSize: 12, fontWeight: 600,
+                    color: 'var(--color-on-accent)', fontSize: 12, fontWeight: 600,
                     cursor: installing ? 'default' : 'pointer', fontFamily: 'inherit',
                     opacity: installing ? 0.75 : 1,
                   }}
@@ -165,8 +165,8 @@ export function PlaynitePluginCard() {
                 </button>
 
                 <code style={{
-                  flex: 1, minWidth: 0, background: '#12181C', border: '1px solid #494949', borderRadius: 5,
-                  padding: '8px 10px', color: '#ECEFF1', fontSize: 11.5, lineHeight: 1.4,
+                  flex: 1, minWidth: 0, background: 'var(--color-raise)', border: '1px solid var(--color-line)', borderRadius: 5,
+                  padding: '8px 10px', color: 'var(--color-fg)', fontSize: 11.5, lineHeight: 1.4,
                   overflowX: 'auto', whiteSpace: 'nowrap',
                   fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace",
                 }}>
@@ -177,8 +177,8 @@ export function PlaynitePluginCard() {
                   style={{
                     display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
                     padding: '0 12px', background: 'transparent',
-                    border: `1px solid ${copied ? '#129271' : '#494949'}`, borderRadius: 5,
-                    color: copied ? '#129271' : '#ECEFF1', fontSize: 12, fontWeight: 600,
+                    border: `1px solid ${copied ? 'var(--color-line)' : 'var(--color-line)'}`, borderRadius: 5,
+                    color: copied ? 'var(--color-fg)' : 'var(--color-fg)', fontSize: 12, fontWeight: 600,
                     cursor: 'pointer', fontFamily: 'inherit',
                   }}
                 >
@@ -189,7 +189,7 @@ export function PlaynitePluginCard() {
               </div>
 
               {installMessage && (
-                <p style={{ color: '#9CA3AF', fontSize: 11.5, lineHeight: 1.5, margin: 0 }}>
+                <p style={{ color: 'var(--color-dim)', fontSize: 11.5, lineHeight: 1.5, margin: 0 }}>
                   {installMessage}
                 </p>
               )}

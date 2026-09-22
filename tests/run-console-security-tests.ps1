@@ -8,6 +8,11 @@
 #   API-02  exclude patterns      a pattern the matcher cannot evaluate (".." mid-pattern) is refused on
 #                                 save AND preview instead of throwing inside every agent's hash; the
 #                                 preview count is right against a real uploaded archive.
+#   UI-01   appearance            the console's theme/accent/mark: validated against closed id lists (a
+#                                 CSS-shaped value is a 400), stored all-or-nothing, admin-only and
+#                                 audited; the heartbeat carries it to any machine, and carries NOTHING
+#                                 when pushing is off; a garbage value from an env var is normalised, not
+#                                 passed on to an agent.
 #   SEC-01  admin sessions        the console keeps a revocable random token, not the password; only
 #                                 its hash is stored; Lock / sign-out-everywhere / a password change
 #                                 end it; an expired one is refused.
@@ -260,6 +265,57 @@ Check "preview: an anchored 'sub/*.log' counts only that folder (1)" ((Preview @
 Check "preview: a pattern matching nothing counts 0" ((Preview @("nothing-here")) -eq 0)
 Check "preview: '**' counts all 4" ((Preview @("**")) -eq 4)
 
+# ------------------------------------------------------------------ UI-01: appearance (checkpoint-ui Phase 4)
+Write-Host ""; Write-Host "-- UI-01: appearance setting + the heartbeat that carries it"
+function Beat($machine) {
+    return (Http POST "/api/agent/health" @{ agentVersion = "9.9.9-test"; platform = "Windows" } @{ "X-Api-Key" = $machine.apiKey })
+}
+$s0 = (Http GET "/api/settings").Json
+Check "appearance: an install that never touched it reads system / ember / pixel, pushing on" `
+    ($s0.appearance.look.theme -eq "system" -and $s0.appearance.look.accent -eq "ember" -and $s0.appearance.look.mark -eq "pixel" -and $s0.appearance.pushToAgents -eq $true)
+$beat0 = Beat $m1
+Check "heartbeat: an agent is handed that default look (so 'set it once' needs no opt-in)" `
+    ($beat0.Status -eq 200 -and $beat0.Json.appearance.accent -eq "ember" -and $beat0.Json.appearance.mark -eq "pixel")
+
+$set = Http POST "/api/settings/appearance" @{ theme = "dark"; accent = "coolant"; mark = "cartridge"; pushToAgents = $true }
+Check "appearance: a valid choice is stored (200) and echoed back" `
+    ($set.Status -eq 200 -and $set.Json.look.accent -eq "coolant" -and $set.Json.look.mark -eq "cartridge" -and $set.Json.look.theme -eq "dark" -and $set.Json.pushToAgents -eq $true)
+$s1 = (Http GET "/api/settings").Json
+Check "appearance: GET /settings reads it back" ($s1.appearance.look.accent -eq "coolant" -and $s1.appearance.look.mark -eq "cartridge")
+$beat1 = Beat $m2
+Check "heartbeat: ANY machine's next beat carries the new look" `
+    ($beat1.Json.appearance.theme -eq "dark" -and $beat1.Json.appearance.accent -eq "coolant" -and $beat1.Json.appearance.mark -eq "cartridge")
+
+$upper = Http POST "/api/settings/appearance" @{ theme = "LIGHT"; accent = "Arcade"; mark = "MEMCARD"; pushToAgents = $true }
+Check "appearance: ids are case-insensitive and stored lower-case" `
+    ($upper.Status -eq 200 -and $upper.Json.look.theme -eq "light" -and $upper.Json.look.accent -eq "arcade" -and $upper.Json.look.mark -eq "memcard")
+
+foreach ($bad in @(
+    @{ why = "an unknown accent"; body = @{ theme = "dark"; accent = "hotpink"; mark = "pixel"; pushToAgents = $true } },
+    @{ why = "an unknown theme";  body = @{ theme = "sepia"; accent = "ember"; mark = "pixel"; pushToAgents = $true } },
+    @{ why = "an unknown mark";   body = @{ theme = "dark"; accent = "ember"; mark = "floppy"; pushToAgents = $true } },
+    @{ why = "an empty field";    body = @{ theme = ""; accent = "ember"; mark = "pixel"; pushToAgents = $true } },
+    @{ why = "a CSS-shaped value an accent could be abused with"; body = @{ theme = "dark"; accent = "red;}body{display:none"; mark = "pixel"; pushToAgents = $true } })) {
+    $r = Http POST "/api/settings/appearance" $bad.body
+    Check "appearance: $($bad.why) is refused (400)" ($r.Status -eq 400)
+}
+$s2 = (Http GET "/api/settings").Json
+Check "appearance: the refused requests changed nothing (all-or-nothing, still arcade/memcard/light)" `
+    ($s2.appearance.look.accent -eq "arcade" -and $s2.appearance.look.mark -eq "memcard" -and $s2.appearance.look.theme -eq "light")
+
+$off = Http POST "/api/settings/appearance" @{ theme = "light"; accent = "arcade"; mark = "memcard"; pushToAgents = $false }
+Check "appearance: pushing can be turned off (200)" ($off.Status -eq 200 -and $off.Json.pushToAgents -eq $false)
+$beat2 = Beat $m1
+Check "heartbeat: with pushing off the response carries NO appearance (an agent keeps what it has)" `
+    ($beat2.Status -eq 200 -and $null -eq $beat2.Json.appearance)
+Check "appearance: ... but the look itself is still stored, so turning pushing back on restores it" `
+    ((Http GET "/api/settings").Json.appearance.look.accent -eq "arcade")
+Check "appearance: the other heartbeat fields are unaffected (escalatedConflicts still present)" `
+    ($null -ne $beat2.Json.PSObject.Properties["escalatedConflicts"])
+Check "appearance: changing it is audited" (@(Actions) -contains "settings.appearance")
+# Put the default back so nothing later in the run depends on this section's choices.
+Http POST "/api/settings/appearance" @{ theme = "system"; accent = "ember"; mark = "pixel"; pushToAgents = $true } | Out-Null
+
 # ------------------------------------------------------------------ SEC-07: response headers (server is still OPEN here)
 Write-Host ""; Write-Host "-- SEC-07: response headers"
 $root1 = Http GET "/"
@@ -280,6 +336,8 @@ $pw1 = "correct horse battery"; $pw2 = "a different passphrase"
 Check "setup: setting the admin password succeeds" ((Http POST "/api/admin/password" @{ password = $pw1 }).Status -eq 200)
 Check "password is now required" ((Http GET "/api/admin/status").Json.passwordRequired -eq $true)
 Check "no credential -> 401" ((Http GET "/api/overview").Status -eq 401)
+Check "appearance: writing it needs the admin credential (401 without); it restyles every machine" `
+    ((Http POST "/api/settings/appearance" @{ theme = "dark"; accent = "coolant"; mark = "pixel"; pushToAgents = $true }).Status -eq 401)
 Check "a made-up session token -> 401" ((Http GET "/api/overview" $null (Session "not-a-real-token")).Status -eq 401)
 $wrong = Login "nope"
 Check "sign-in with the wrong password -> 401" ($wrong.Status -eq 401 -and $wrong.Json.error -match "Wrong password")
@@ -415,6 +473,23 @@ Check "... and was not created" ((@((Http GET "/api/machines" $null (PwHeader $p
 Check "a NEW machine with a wrong password is refused (401)" ((Http POST "/api/machines/register" @{ name = "SEC-R1" } (PwHeader "nope")).Status -eq 401)
 $withPw = Http POST "/api/machines/register" @{ name = "SEC-R1" } (PwHeader $pw)
 Check "a NEW machine WITH the password registers (200, gets a key)" ($withPw.Status -eq 200 -and $withPw.Json.apiKey.Length -ge 40)
+Stop-Phase
+
+# =====================================================================================
+Write-Host ""; Write-Host "==== Phase 5b: UI-01 the look seeded from configuration (an unRAID template's env vars) ===="
+# A value that is not a recognised id must never reach an agent: the server normalises at the one place
+# every reader goes through, so a typo in an env var costs a default, not a broken window.
+Start-Phase "uiconfig" @{ Ui__Accent = "cobalt"; Ui__Theme = "not-a-theme"; Ui__Mark = "memcard"; Ui__PushToAgents = "false"; Security__MaxFailedAttempts = "1000" }
+$cm = (Http POST "/api/machines/register" @{ name = "UI-M1" }).Json
+$cs = (Http GET "/api/settings").Json
+Check "config: a valid Ui__Accent / Ui__Mark from the environment is honoured" ($cs.appearance.look.accent -eq "cobalt" -and $cs.appearance.look.mark -eq "memcard")
+Check "config: an unrecognised Ui__Theme falls back to 'system' instead of being passed on" ($cs.appearance.look.theme -eq "system")
+Check "config: Ui__PushToAgents=false is honoured (read as pushing off)" ($cs.appearance.pushToAgents -eq $false)
+$cb = Http POST "/api/agent/health" @{ agentVersion = "9.9.9-test"; platform = "Linux" } @{ "X-Api-Key" = $cm.apiKey }
+Check "config: ... and so the heartbeat carries no appearance" ($cb.Status -eq 200 -and $null -eq $cb.Json.appearance)
+Check "config: the admin can still override it from the console (200), which then wins over the env var" `
+    ((Http POST "/api/settings/appearance" @{ theme = "dark"; accent = "stealth"; mark = "pixel"; pushToAgents = $true }).Status -eq 200 -and
+     (Http GET "/api/settings").Json.appearance.look.accent -eq "stealth")
 Stop-Phase
 
 # =====================================================================================

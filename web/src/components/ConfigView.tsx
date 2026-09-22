@@ -3,6 +3,7 @@ import { api, signIn, clearSession, errorText } from '../api';
 import type { GameSummary, Machine, Settings, Enrollment, EffectiveServerUrl, AgentHealth, ServerBuildInfo } from '../types';
 import { fleetSkew, isNewerThanConsole, isTestBuild, normalizeVersion } from '../versionSkew';
 import { AgentUpdatesCard } from './AgentUpdatesCard';
+import { AppearanceCard } from './AppearanceCard';
 import { Chip } from './ui/Chip';
 
 interface Props {
@@ -164,49 +165,51 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
   }
 
   function enrollmentState(e: Enrollment): { text: string; color: string } {
-    if (e.redeemedAt) return { text: `used by ${e.redeemedByMachineName ?? 'a machine'}`, color: '#556070' };
-    if (new Date(asUtc(e.expiresAt)) <= new Date()) return { text: 'expired', color: '#f4a60d' };
-    return { text: `valid until ${when(e.expiresAt)}`, color: '#129271' };
+    if (e.redeemedAt) return { text: `used by ${e.redeemedByMachineName ?? 'a machine'}`, color: 'var(--color-dim)' };
+    if (new Date(asUtc(e.expiresAt)) <= new Date()) return { text: 'expired', color: 'var(--color-watch-ink)' };
+    return { text: `valid until ${when(e.expiresAt)}`, color: 'var(--color-safe-ink)' };
   }
 
-  const card = { background: '#1E252A', border: '1px solid #494949', borderRadius: 8, overflow: 'hidden' } as const;
-  const cardHeader = { padding: '11px 18px', borderBottom: '1px solid #494949', display: 'flex', alignItems: 'center', justifyContent: 'space-between' } as const;
-  const thStyle = { padding: '8px 18px', textAlign: 'left' as const, fontSize: 11, color: '#556070', fontWeight: 500 };
+  const card = { background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 8, overflow: 'hidden' } as const;
+  const cardHeader = { padding: '11px 18px', borderBottom: '1px solid var(--color-line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' } as const;
+  const thStyle = { padding: '8px 18px', textAlign: 'left' as const, fontSize: 11, color: 'var(--color-dim)', fontWeight: 500 };
   const tdStyle = { padding: '11px 18px', fontSize: 13, fontWeight: 500 };
-  const tdMono = { padding: '11px 18px', fontSize: 11, color: '#8b9aaa', fontFamily: "'JetBrains Mono', monospace" };
-  const rowSep = { borderTop: '1px solid #252e35' };
+  const tdMono = { padding: '11px 18px', fontSize: 11, color: 'var(--color-dim)', fontFamily: "'JetBrains Mono', monospace" };
+  const rowSep = { borderTop: '1px solid var(--color-line)' };
 
   return (
     <main className="page-scroll" style={{ padding: '20px 24px', maxWidth: 900, margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
       {/* Page heading */}
       <div style={{ padding: '4px 0 8px' }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.4px', color: '#ECEFF1' }}>Configuration</h1>
-        <p style={{ fontSize: 12, color: '#9CA3AF', lineHeight: 1.6, marginTop: 4 }}>SaveLocker · Self-hosted cloud save manager</p>
+        <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.4px', color: 'var(--color-fg)' }}>Configuration</h1>
+        <p style={{ fontSize: 12, color: 'var(--color-dim)', lineHeight: 1.6, marginTop: 4 }}>SaveLocker · Self-hosted cloud save manager</p>
       </div>
+
+      <AppearanceCard settings={settings} onSaved={onRefresh} />
 
       {/* ── Server Settings Card ── */}
       <div style={card}>
         <div style={cardHeader}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#ECEFF1' }}>Server settings</span>
-          <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>SteamGridDB artwork</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-fg)' }}>Server settings</span>
+          <span style={{ fontSize: 11.5, color: 'var(--color-dim)' }}>SteamGridDB artwork</span>
         </div>
 
         <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
           {/* Current key status */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, color: '#ECEFF1' }}>SteamGridDB API key:</span>
+            <span style={{ fontSize: 13, color: 'var(--color-fg)' }}>SteamGridDB API key:</span>
             {settings.steamGridDbConfigured ? (
               <>
-                <span style={{ padding: '2px 7px', background: '#129271', color: '#fff', borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>configured</span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#ECEFF1', letterSpacing: '0.04em' }}>{settings.steamGridDbKeyMasked || ''}</span>
+                <span style={{ padding: '2px 7px', background: 'var(--color-safe-soft)', color: 'var(--color-safe-ink)', borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>configured</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: 'var(--color-fg)', letterSpacing: '0.04em' }}>{settings.steamGridDbKeyMasked || ''}</span>
                 {settings.steamGridDbFromConfig && (
-                  <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>(from config file — saving here overrides it)</span>
+                  <span style={{ fontSize: 11.5, color: 'var(--color-dim)' }}>(from config file — saving here overrides it)</span>
                 )}
               </>
             ) : (
-              <span style={{ padding: '2px 7px', border: '1px solid #f4a60d', color: '#f4a60d', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>not set</span>
+              <span style={{ padding: '2px 7px', border: '1px solid var(--color-watch-line)', color: 'var(--color-watch-ink)', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>not set</span>
             )}
           </div>
 
@@ -217,26 +220,26 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
               value={sgdbInput}
               onChange={e => setSgdbInput(e.target.value)}
               placeholder="Paste SteamGridDB API key"
-              style={{ flex: 1, minWidth: 220, padding: '7px 10px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 5, fontSize: 12, fontFamily: 'inherit', transition: 'border-color 0.15s' }}
+              style={{ flex: 1, minWidth: 220, padding: '7px 10px', background: 'transparent', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 5, fontSize: 12, fontFamily: 'inherit', transition: 'border-color 0.15s' }}
             />
             <button
               onClick={handleSaveKey}
               disabled={savingKey}
-              style={{ padding: '6px 14px', background: '#129271', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: savingKey ? 'not-allowed' : 'pointer', opacity: savingKey ? 0.5 : 1, whiteSpace: 'nowrap' }}
+              style={{ padding: '6px 14px', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: savingKey ? 'not-allowed' : 'pointer', opacity: savingKey ? 0.5 : 1, whiteSpace: 'nowrap' }}
             >
               {savingKey ? 'Verifying…' : 'Save key'}
             </button>
             {settings.steamGridDbConfigured && (
               <button
                 onClick={handleClearKey}
-                style={{ padding: '6px 12px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 5, fontSize: 12, cursor: 'pointer' }}
+                style={{ padding: '6px 12px', background: 'transparent', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 5, fontSize: 12, cursor: 'pointer' }}
               >
                 Clear
               </button>
             )}
           </div>
-          <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: -6 }}>
-            Free key: <a href="https://www.steamgriddb.com" target="_blank" rel="noreferrer" style={{ color: '#129271' }}>steamgriddb.com</a> → user menu → Preferences → API.
+          <p style={{ fontSize: 11, color: 'var(--color-dim)', marginTop: -6 }}>
+            Free key: <a href="https://www.steamgriddb.com" target="_blank" rel="noreferrer" style={{ color: 'var(--color-accent-ink)' }}>steamgriddb.com</a> → user menu → Preferences → API.
           </p>
 
         </div>
@@ -250,17 +253,17 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
           editor shows the same chips (GameDetail.tsx). */}
       <div style={card}>
         <div style={cardHeader}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#ECEFF1' }}>Default exclude patterns</span>
-          <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>applied to every game</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-fg)' }}>Default exclude patterns</span>
+          <span style={{ fontSize: 11.5, color: 'var(--color-dim)' }}>applied to every game</span>
         </div>
         <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {(settings.defaultExcludeGlobs ?? []).length === 0
-              ? <span style={{ fontSize: 12, color: '#556070', fontStyle: 'italic' }}>none configured</span>
+              ? <span style={{ fontSize: 12, color: 'var(--color-dim)', fontStyle: 'italic' }}>none configured</span>
               : settings.defaultExcludeGlobs!.map(g => <Chip key={g} className="font-mono">{g}</Chip>)
             }
           </div>
-          <p style={{ fontSize: 11, color: '#9CA3AF' }}>
+          <p style={{ fontSize: 11, color: 'var(--color-dim)' }}>
             Set via <code style={{ fontFamily: "'JetBrains Mono', monospace" }}>Sync:DefaultExcludeGlobs</code> in
             the server's config or environment — not editable from this dashboard yet.
           </p>
@@ -270,17 +273,17 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
       {/* ── Admin Password ── */}
       <div style={card}>
         <div style={cardHeader}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#ECEFF1' }}>Admin password</span>
-          <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>dashboard access control</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-fg)' }}>Admin password</span>
+          <span style={{ fontSize: 11.5, color: 'var(--color-dim)' }}>dashboard access control</span>
         </div>
         <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 13, color: '#ECEFF1' }}>Status:</span>
+            <span style={{ fontSize: 13, color: 'var(--color-fg)' }}>Status:</span>
             {settings.adminPasswordSet ? (
-              <span style={{ padding: '2px 7px', background: '#129271', color: '#fff', borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>protected</span>
+              <span style={{ padding: '2px 7px', background: 'var(--color-safe-soft)', color: 'var(--color-safe-ink)', borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>protected</span>
             ) : (
-              <span style={{ padding: '2px 7px', border: '1px solid #f4a60d', color: '#f4a60d', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>open — no password set</span>
+              <span style={{ padding: '2px 7px', border: '1px solid var(--color-watch-line)', color: 'var(--color-watch-ink)', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>open — no password set</span>
             )}
           </div>
 
@@ -290,7 +293,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
               placeholder={settings.adminPasswordSet ? 'New password' : 'Set password'}
-              style={{ flex: 1, minWidth: 160, padding: '7px 10px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 5, fontSize: 12, fontFamily: 'inherit' }}
+              style={{ flex: 1, minWidth: 160, padding: '7px 10px', background: 'transparent', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 5, fontSize: 12, fontFamily: 'inherit' }}
             />
             <input
               type="password"
@@ -298,11 +301,11 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
               onChange={e => setConfirmPassword(e.target.value)}
               placeholder="Confirm password"
               onKeyDown={e => e.key === 'Enter' && handleSetPassword()}
-              style={{ flex: 1, minWidth: 160, padding: '7px 10px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 5, fontSize: 12, fontFamily: 'inherit' }}
+              style={{ flex: 1, minWidth: 160, padding: '7px 10px', background: 'transparent', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 5, fontSize: 12, fontFamily: 'inherit' }}
             />
             <button
               onClick={handleSetPassword}
-              style={{ padding: '6px 14px', background: '#129271', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+              style={{ padding: '6px 14px', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
             >
               {settings.adminPasswordSet ? 'Change password' : 'Set password'}
             </button>
@@ -310,7 +313,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
               <button
                 onClick={handleSignOutEverywhere}
                 title="End every signed-in session, on every browser — this one included"
-                style={{ padding: '6px 12px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 5, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                style={{ padding: '6px 12px', background: 'transparent', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 5, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}
               >
                 Sign out everywhere
               </button>
@@ -318,13 +321,13 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
             {settings.adminPasswordSet && (
               <button
                 onClick={handleClearPassword}
-                style={{ padding: '6px 12px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 5, fontSize: 12, cursor: 'pointer' }}
+                style={{ padding: '6px 12px', background: 'transparent', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 5, fontSize: 12, cursor: 'pointer' }}
               >
                 Remove
               </button>
             )}
           </div>
-          <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: -6 }}>
+          <p style={{ fontSize: 11, color: 'var(--color-dim)', marginTop: -6 }}>
             Protects the dashboard from casual access on your local network. Signing in gives this browser a session, not a copy of the password; Lock (in the header) or "Sign out everywhere" ends it, and changing the password ends every session.
           </p>
 
@@ -337,15 +340,15 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
       {/* ── Save retention ── */}
       <div style={card}>
         <div style={cardHeader}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#ECEFF1' }}>Save retention</span>
-          <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>versions stored per game</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-fg)' }}>Save retention</span>
+          <span style={{ fontSize: 11.5, color: 'var(--color-dim)' }}>versions stored per game</span>
         </div>
-        <div style={{ padding: '10px 18px 4px', fontSize: 11, color: '#556070' }}>
+        <div style={{ padding: '10px 18px 4px', fontSize: 11, color: 'var(--color-dim)' }}>
           Leave blank to use the server default (10). Set to 0 for unlimited. Changes take effect on the next upload.
         </div>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ background: '#222d34', borderBottom: '1px solid #494949' }}>
+            <tr style={{ background: 'var(--color-raise)', borderBottom: '1px solid var(--color-line)' }}>
               <th style={thStyle}>Game</th>
               <th style={thStyle}>Storage used</th>
               <th style={{ ...thStyle, width: 160 }}>Keep versions</th>
@@ -354,7 +357,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
           </thead>
           <tbody>
             {games.length === 0
-              ? <tr><td colSpan={4} style={{ padding: '20px 18px', color: '#556070', fontSize: 13 }}>No games tracked yet.</td></tr>
+              ? <tr><td colSpan={4} style={{ padding: '20px 18px', color: 'var(--color-dim)', fontSize: 13 }}>No games tracked yet.</td></tr>
               : games
                   .slice()
                   .sort((a, b) => b.totalStorageBytes - a.totalStorageBytes)
@@ -369,13 +372,13 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
                           value={retentionInputs[s.game.id] ?? ''}
                           onChange={e => setRetentionInputs(prev => ({ ...prev, [s.game.id]: e.target.value }))}
                           placeholder="default (10)"
-                          style={{ width: '100%', padding: '5px 8px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 4, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}
+                          style={{ width: '100%', padding: '5px 8px', background: 'transparent', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 4, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}
                         />
                       </td>
                       <td style={{ padding: '8px 18px' }}>
                         <button
                           onClick={() => handleSaveRetention(s.game.id, s.game.name)}
-                          style={{ padding: '4px 12px', background: '#129271', color: '#fff', border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                          style={{ padding: '4px 12px', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
                         >
                           Save
                         </button>
@@ -390,14 +393,14 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
       {/* ── Enroll a machine ── */}
       <div style={{ ...card, marginBottom: 24 }}>
         <div style={cardHeader}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#ECEFF1' }}>Enroll a machine</span>
-          <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>single-use file — set up an agent without pasting an API key</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-fg)' }}>Enroll a machine</span>
+          <span style={{ fontSize: 11.5, color: 'var(--color-dim)' }}>single-use file — set up an agent without pasting an API key</span>
         </div>
 
-        <div style={{ padding: '14px 18px', borderBottom: '1px solid #252e35' }}>
-          <p style={{ margin: '0 0 12px', fontSize: 12.5, color: '#8b9aaa', lineHeight: 1.5 }}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--color-line)' }}>
+          <p style={{ margin: '0 0 12px', fontSize: 12.5, color: 'var(--color-dim)', lineHeight: 1.5 }}>
             Downloads a file carrying a short-lived, single-use token — never an API key. Copy it to the
-            new machine and run <code style={{ fontFamily: "'JetBrains Mono', monospace", color: '#ECEFF1' }}>savelocker enroll --file &lt;file&gt;</code>.
+            new machine and run <code style={{ fontFamily: "'JetBrains Mono', monospace", color: 'var(--color-fg)' }}>savelocker enroll --file &lt;file&gt;</code>.
             The agent trades the token for its own key, pins this server, and picks up every enabled game.
             The file is downloaded once and cannot be shown again.
           </p>
@@ -405,7 +408,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
           {effectiveUrl && (
             <p style={{
               margin: '0 0 12px', fontSize: 12, lineHeight: 1.5,
-              color: effectiveUrl.isLoopback ? '#f4a60d' : '#8b9aaa',
+              color: effectiveUrl.isLoopback ? 'var(--color-watch-ink)' : 'var(--color-dim)',
             }}>
               {blockedByLoopback ? (
                 <>
@@ -417,7 +420,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
               ) : (
                 <>
                   The file will tell the agent to sync with{' '}
-                  <code style={{ fontFamily: "'JetBrains Mono', monospace", color: '#ECEFF1' }}>{effectiveUrl.url}</code>
+                  <code style={{ fontFamily: "'JetBrains Mono', monospace", color: 'var(--color-fg)' }}>{effectiveUrl.url}</code>
                   {effectiveUrl.fromConfig ? ' (from Server:PublicBaseUrl).' : '.'} Override it below if
                   that is not how this machine reaches the server.
                 </>
@@ -427,33 +430,33 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 180px' }}>
-              <span style={{ fontSize: 11, color: '#556070' }}>Machine name (optional — binds the file to it)</span>
+              <span style={{ fontSize: 11, color: 'var(--color-dim)' }}>Machine name (optional — binds the file to it)</span>
               <input
                 value={enrollName}
                 onChange={e => setEnrollName(e.target.value)}
                 placeholder="steamdeck"
-                style={{ padding: '6px 9px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 4, fontSize: 12.5 }}
+                style={{ padding: '6px 9px', background: 'transparent', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 4, fontSize: 12.5 }}
               />
             </label>
 
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 110 }}>
-              <span style={{ fontSize: 11, color: '#556070' }}>Expires (min)</span>
+              <span style={{ fontSize: 11, color: 'var(--color-dim)' }}>Expires (min)</span>
               <input
                 type="number"
                 min={1}
                 value={enrollTtl}
                 onChange={e => setEnrollTtl(e.target.value)}
-                style={{ padding: '6px 9px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 4, fontSize: 12.5, fontFamily: "'JetBrains Mono', monospace" }}
+                style={{ padding: '6px 9px', background: 'transparent', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 4, fontSize: 12.5, fontFamily: "'JetBrains Mono', monospace" }}
               />
             </label>
 
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 220px' }}>
-              <span style={{ fontSize: 11, color: '#556070' }}>Server URL the agent should use (optional)</span>
+              <span style={{ fontSize: 11, color: 'var(--color-dim)' }}>Server URL the agent should use (optional)</span>
               <input
                 value={enrollServerUrl}
                 onChange={e => setEnrollServerUrl(e.target.value)}
                 placeholder={effectiveUrl?.url ?? window.location.origin}
-                style={{ padding: '6px 9px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 4, fontSize: 12.5, fontFamily: "'JetBrains Mono', monospace" }}
+                style={{ padding: '6px 9px', background: 'transparent', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 4, fontSize: 12.5, fontFamily: "'JetBrains Mono', monospace" }}
               />
             </label>
 
@@ -469,7 +472,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
                   title={blockedByLoopback && !enrollServerUrl.trim()
                     ? 'Enter the address agents should use, or reopen the console at this server\'s LAN address.'
                     : undefined}
-                  style={{ padding: '7px 14px', background: '#129271', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.5 : 1 }}
+                  style={{ padding: '7px 14px', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.5 : 1 }}
                 >
                   {minting ? 'Creating…' : 'Create enrollment file'}
                 </button>
@@ -480,7 +483,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
           {/* window.location.origin was wrong here: in dev that is Vite's port, and behind any
               front end it is the browser's view rather than the server's. The effective URL comes
               from the server, which is the thing that actually writes it into the file. */}
-          <p style={{ margin: '10px 0 0', fontSize: 11.5, color: '#556070', lineHeight: 1.5 }}>
+          <p style={{ margin: '10px 0 0', fontSize: 11.5, color: 'var(--color-dim)', lineHeight: 1.5 }}>
             Set the server URL when the new machine reaches this server at a different address than
             you did — otherwise leave it blank.
           </p>
@@ -488,7 +491,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
 
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ background: '#222d34', borderBottom: '1px solid #494949' }}>
+            <tr style={{ background: 'var(--color-raise)', borderBottom: '1px solid var(--color-line)' }}>
               <th style={thStyle}>For machine</th>
               <th style={thStyle}>Created</th>
               <th style={thStyle}>State</th>
@@ -497,18 +500,18 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
           </thead>
           <tbody>
             {enrollments.length === 0
-              ? <tr><td colSpan={4} style={{ padding: '20px 18px', color: '#556070', fontSize: 13 }}>No enrollment files created.</td></tr>
+              ? <tr><td colSpan={4} style={{ padding: '20px 18px', color: 'var(--color-dim)', fontSize: 13 }}>No enrollment files created.</td></tr>
               : enrollments.map(e => {
                   const state = enrollmentState(e);
                   return (
                     <tr key={e.id} style={rowSep}>
-                      <td style={tdStyle}>{e.machineName ?? <span style={{ color: '#556070' }}>any machine</span>}</td>
+                      <td style={tdStyle}>{e.machineName ?? <span style={{ color: 'var(--color-dim)' }}>any machine</span>}</td>
                       <td style={tdMono}>{when(e.createdAt)}</td>
                       <td style={{ ...tdMono, color: state.color }}>{state.text}</td>
                       <td style={{ padding: '11px 18px', textAlign: 'right' }}>
                         <button
                           onClick={() => handleRevokeEnrollment(e.id)}
-                          style={{ padding: '4px 10px', border: '1px solid #f4a60d', color: '#f4a60d', background: 'transparent', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
+                          style={{ padding: '4px 10px', border: '1px solid var(--color-watch-line)', color: 'var(--color-watch-ink)', background: 'transparent', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
                         >
                           {e.redeemedAt ? 'Remove' : 'Revoke'}
                         </button>
@@ -526,8 +529,8 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
           console and agents are compared without leaving the page. */}
       <div style={{ ...card, marginBottom: 24 }}>
         <div style={cardHeader}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#ECEFF1' }}>Console</span>
-          <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>what this server and dashboard are running</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-fg)' }}>Console</span>
+          <span style={{ fontSize: 11.5, color: 'var(--color-dim)' }}>what this server and dashboard are running</span>
         </div>
         <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'flex-start', gap: 28, flexWrap: 'wrap' }}>
           <BuildField label="Version" value={build ? (build.version === 'dev' ? 'dev' : `v${build.version}`) : '…'} wide />
@@ -542,7 +545,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
             {build && !build.isRelease && (
               <span
                 title="This build is not a tagged release."
-                style={{ padding: '2px 8px', borderRadius: 3, fontSize: 10, fontWeight: 700, color: '#f4a60d', border: '1px solid #f4a60d' }}
+                style={{ padding: '2px 8px', borderRadius: 3, fontSize: 10, fontWeight: 700, color: 'var(--color-watch-ink)', border: '1px solid var(--color-watch-line)' }}
               >
                 DEV BUILD
               </span>
@@ -559,13 +562,13 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
                 setTimeout(() => setCopiedBuild(false), 1500);
               }}
               title="Copy the build identity — paste it into a bug report"
-              style={{ padding: '4px 11px', background: 'transparent', color: '#8b9aaa', border: '1px solid #494949', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
+              style={{ padding: '4px 11px', background: 'transparent', color: 'var(--color-dim)', border: '1px solid var(--color-line)', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
             >
               {copiedBuild ? '✓ Copied' : 'Copy'}
             </button>
             <a
               href="#whats-new"
-              style={{ padding: '4px 11px', color: '#129271', border: '1px solid #129271', borderRadius: 4, fontSize: 11, textDecoration: 'none' }}
+              style={{ padding: '4px 11px', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 4, fontSize: 11, textDecoration: 'none' }}
             >
               Release notes
             </a>
@@ -577,7 +580,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
         {(skew.aheadOfConsole.length > 0 || skew.mixedVersions.length > 0) && (
           <div style={{ padding: '0 18px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {skew.aheadOfConsole.length > 0 && (
-              <div style={{ padding: '9px 12px', borderRadius: 5, border: '1px solid #f4a60d', color: '#f4a60d', fontSize: 12, lineHeight: 1.5 }}>
+              <div style={{ padding: '9px 12px', borderRadius: 5, border: '1px solid var(--color-watch-line)', color: 'var(--color-watch-ink)', fontSize: 12, lineHeight: 1.5 }}>
                 <strong>{skew.aheadOfConsole.join(', ')}</strong>{' '}
                 {skew.aheadOfConsole.length > 1 ? 'are running agents' : 'is running an agent'} newer
                 than this console. A newer agent can expect endpoints or behaviour this server does
@@ -586,7 +589,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
               </div>
             )}
             {skew.mixedVersions.length > 0 && (
-              <div style={{ padding: '9px 12px', borderRadius: 5, border: '1px solid #494949', color: '#8b9aaa', fontSize: 12, lineHeight: 1.5 }}>
+              <div style={{ padding: '9px 12px', borderRadius: 5, border: '1px solid var(--color-line)', color: 'var(--color-dim)', fontSize: 12, lineHeight: 1.5 }}>
                 The fleet is running <strong>{skew.mixedVersions.length} different agent versions</strong>{' '}
                 ({skew.mixedVersions.map(v => `v${v}`).join(', ')}). Agents that differ can disagree
                 about exclude globs and save paths, which shows up as repeated sync conflicts rather
@@ -600,12 +603,12 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
       {/* ── Machines / API Keys ── */}
       <div style={{ ...card, marginBottom: 24 }}>
         <div style={cardHeader}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#ECEFF1' }}>Machines</span>
-          <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>agent health, versions, and keys</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-fg)' }}>Machines</span>
+          <span style={{ fontSize: 11.5, color: 'var(--color-dim)' }}>agent health, versions, and keys</span>
         </div>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ background: '#222d34', borderBottom: '1px solid #494949' }}>
+            <tr style={{ background: 'var(--color-raise)', borderBottom: '1px solid var(--color-line)' }}>
               <th style={thStyle}>Machine</th>
               <th style={thStyle}>Agent</th>
               <th style={thStyle}>Status</th>
@@ -616,7 +619,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
           </thead>
           <tbody>
             {machines.length === 0
-              ? <tr><td colSpan={6} style={{ padding: '20px 18px', color: '#556070', fontSize: 13 }}>No machines registered.</td></tr>
+              ? <tr><td colSpan={6} style={{ padding: '20px 18px', color: 'var(--color-dim)', fontSize: 13 }}>No machines registered.</td></tr>
               : machines.map(m => {
                   const h = healthByMachine.get(m.id);
                   // Info events are routine confirmations (an update landed, a plugin refreshed) —
@@ -631,10 +634,10 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
                   // "offline since —", which reads as a machine that has stopped rather than one
                   // that has not started. The absent heartbeat is the thing to test.
                   const status = !h || !h.lastHeartbeat
-                    ? { text: 'never reported', color: '#556070' }
+                    ? { text: 'never reported', color: 'var(--color-dim)' }
                     : h.online
-                      ? { text: 'online', color: '#129271' }
-                      : { text: `offline since ${when(h.lastHeartbeat)}`, color: '#f4a60d' };
+                      ? { text: 'online', color: 'var(--color-safe-ink)' }
+                      : { text: `offline since ${when(h.lastHeartbeat)}`, color: 'var(--color-watch-ink)' };
 
                   return (
                     <tr key={m.id} style={rowSep}>
@@ -643,7 +646,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
                         {problems > 0 && (
                           <span
                             title={h?.openEvents.filter(e => e.severity !== 'Info').map(e => e.message).join('\n')}
-                            style={{ marginLeft: 8, padding: '1px 6px', borderRadius: 3, fontSize: 10, fontWeight: 700, color: '#e5534b', border: '1px solid #e5534b', whiteSpace: 'nowrap', display: 'inline-block' }}
+                            style={{ marginLeft: 8, padding: '1px 6px', borderRadius: 3, fontSize: 10, fontWeight: 700, color: 'var(--color-accent-ink)', border: '1px solid var(--color-accent-line)', whiteSpace: 'nowrap', display: 'inline-block' }}
                           >
                             {problems} problem{problems > 1 ? 's' : ''}
                           </span>
@@ -651,24 +654,24 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
                         {infoEvents.length > 0 && (
                           <span
                             title={infoEvents.map(e => e.message).join('\n')}
-                            style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 3, fontSize: 10, fontWeight: 700, color: '#4a9eff', border: '1px solid #4a9eff', whiteSpace: 'nowrap', display: 'inline-block' }}
+                            style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 3, fontSize: 10, fontWeight: 700, color: 'var(--color-dim)', border: '1px solid var(--color-line)', whiteSpace: 'nowrap', display: 'inline-block' }}
                           >
                             {infoEvents.length} update{infoEvents.length > 1 ? 's' : ''}
                           </span>
                         )}
                         {(h?.offlineQueueDepth ?? 0) > 0 && (
-                          <span style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 3, fontSize: 10, fontWeight: 700, color: '#f4a60d', border: '1px solid #f4a60d' }}>
+                          <span style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 3, fontSize: 10, fontWeight: 700, color: 'var(--color-watch-ink)', border: '1px solid var(--color-watch-line)' }}>
                             {h!.offlineQueueDepth} queued
                           </span>
                         )}
                       </td>
                       <td style={tdMono}>
                         {h?.agentVersion ? `v${normalizeVersion(h.agentVersion)}` : '—'}
-                        {h?.platform ? <span style={{ color: '#556070' }}> · {h.platform}</span> : null}
+                        {h?.platform ? <span style={{ color: 'var(--color-dim)' }}> · {h.platform}</span> : null}
                         {isTestBuild(h?.agentVersion) && (
                           <span
                             title="A throwaway build from CI, not a release. Stamped so it cannot be mistaken for one."
-                            style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 3, fontSize: 10, fontWeight: 700, color: '#8b9aaa', border: '1px solid #556070' }}
+                            style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 3, fontSize: 10, fontWeight: 700, color: 'var(--color-dim)', border: '1px solid var(--color-line)' }}
                           >
                             TEST BUILD
                           </span>
@@ -676,7 +679,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
                         {isNewerThanConsole(h?.agentVersion, build?.version) && (
                           <span
                             title="This agent is newer than the console. It may expect endpoints or behaviour this server does not have — upgrade the server container."
-                            style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 3, fontSize: 10, fontWeight: 700, color: '#f4a60d', border: '1px solid #f4a60d' }}
+                            style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 3, fontSize: 10, fontWeight: 700, color: 'var(--color-watch-ink)', border: '1px solid var(--color-watch-line)' }}
                           >
                             NEWER THAN CONSOLE
                           </span>
@@ -687,13 +690,13 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
                       <td style={tdMono}>
                         {h ? `${h.trackedGames}` : '—'}
                         {(h?.unmappedGames ?? 0) > 0 && (
-                          <span style={{ color: '#f4a60d' }}> ({h!.unmappedGames} unmapped)</span>
+                          <span style={{ color: 'var(--color-watch-ink)' }}> ({h!.unmappedGames} unmapped)</span>
                         )}
                       </td>
                       <td style={{ padding: '11px 18px', textAlign: 'right' }}>
                         <button
                           onClick={() => handleDeleteMachine(m.id, m.name)}
-                          style={{ padding: '4px 10px', border: '1px solid #f4a60d', color: '#f4a60d', background: 'transparent', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
+                          style={{ padding: '4px 10px', border: '1px solid var(--color-watch-line)', color: 'var(--color-watch-ink)', background: 'transparent', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
                         >
                           Delete
                         </button>
@@ -714,10 +717,10 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
 function BuildField({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
   return (
     <div style={{ minWidth: wide ? 190 : 110 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: '#129271', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-safe-ink)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
         {label}
       </div>
-      <div style={{ marginTop: 4, fontSize: 12.5, color: '#ECEFF1', fontFamily: "'JetBrains Mono', monospace", wordBreak: 'break-all' }}>
+      <div style={{ marginTop: 4, fontSize: 12.5, color: 'var(--color-fg)', fontFamily: "'JetBrains Mono', monospace", wordBreak: 'break-all' }}>
         {value}
       </div>
     </div>

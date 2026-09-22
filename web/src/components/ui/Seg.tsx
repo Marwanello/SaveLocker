@@ -29,7 +29,7 @@ export function Seg<T extends string>({ value, options, onChange, className = ''
           className={`text-[12.5px] font-semibold px-[15px] py-[7px] rounded-full border-0 cursor-pointer
             transition-colors duration-150 ease-[var(--ease)]
             focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2
-            ${o.value === value ? 'bg-panel text-fg shadow-sm' : 'bg-transparent text-faint hover:opacity-100'}`}
+            ${o.value === value ? 'bg-panel text-fg shadow-sm' : 'bg-transparent text-dim hover:opacity-100'}`}
         >
           {o.label}
         </button>

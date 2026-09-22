@@ -8,6 +8,11 @@ import '@fontsource/jetbrains-mono/400.css'
 import '@fontsource/jetbrains-mono/500.css'
 import './index.css'
 import App from './App.tsx'
+import { initLook } from './appearance'
+
+// Before the first render: paint the look this browser last saw, so a returning visitor never sees the
+// default flash and the sign-in screen already matches. The server's copy replaces it once signed in.
+initLook()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -28,7 +28,7 @@ export function Row({ cover, title, subtext, end, onClick, className = '' }: Pro
         {cover}
       </span>
       <span className="col-start-2 text-[13px] font-semibold self-end truncate" title={typeof title === 'string' ? title : undefined}>{title}</span>
-      <span className="col-start-2 text-[10.5px] text-faint self-start truncate">{subtext}</span>
+      <span className="col-start-2 text-[10.5px] text-dim self-start truncate">{subtext}</span>
       {end && <span className="col-start-3 row-span-2 flex items-center">{end}</span>}
     </Tag>
   );

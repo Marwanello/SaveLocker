@@ -4,10 +4,12 @@
    one source; change a value in web/src/index.css and change it here in the same commit. The names
    are identical on purpose, so the two files can be diffed line for line.
 
-   DARK is the base and light is an explicit opt-in (`data-theme="light"` on <html>), for the same
-   reason as in web: the views not yet migrated (Add games, Settings, Conflicts, the plugin cards)
-   hardcode dark colours, and a light base would put dark text on them. The default flips to following
-   the OS in the group that finishes the migration — see implementation-grouping.md, Group 5.
+   DARK is the base. The theme follows the OS (prefers-color-scheme) unless the Appearance setting pins
+   one: <html data-theme="dark|light"> pins it, and NO attribute means "System" — the same rule as web,
+   and it flipped in the same group (5), once every hardcoded hex had left the views. The accent is the
+   one token the look rewrites (agent-ui/src/appearance.ts, inline on <html>); Ember, below, is its
+   default. The light palette is written twice, once for data-theme="light" and once inside the media
+   query for an unpinned visitor whose OS prefers light — CSS cannot share one block between the two.
    Every derived (soft/line/ink) step is a color-mix against the live --color-panel/--color-fg, so
    it re-derives under either theme with no second set of values. */
 :root {
@@ -61,4 +63,25 @@
   --color-watch:      #8a6212;
   --color-accent:     #c0432c;
   --color-on-accent:  #fff8f6;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+
+    --color-ink:        #f5f3ef;
+    --color-panel:      #fffefc;
+    --color-raise:      #f0ede8;
+    --color-tile:       #ebe7e0;
+    --color-hover:      #e8e3dc;
+    --color-fg:         #191719;
+    --color-dim:        #57534d;
+    --color-faint:      #8b8780;
+    --color-line:       #e2ddd5;
+    --color-row:        #eeeae3;
+    --color-safe:       #4c7b3e;
+    --color-watch:      #8a6212;
+    --color-accent:     #c0432c;
+    --color-on-accent:  #fff8f6;
+  }
 }

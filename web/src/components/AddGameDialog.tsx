@@ -84,7 +84,7 @@ export function AddGameDialog({ onClose, onSubmit }: Props) {
         <div>
           <div className="flex items-baseline justify-between mb-1.5">
             <label htmlFor="add-game-dir" className="text-[13px] font-semibold text-fg">Suggested save folder</label>
-            <span className="text-[11px] text-faint">Optional</span>
+            <span className="text-[11px] text-dim">Optional</span>
           </div>
           <input
             id="add-game-dir"
@@ -95,7 +95,7 @@ export function AddGameDialog({ onClose, onSubmit }: Props) {
             placeholder="C:\Users\me\AppData\Roaming\Hollow Knight"
             className={`${INPUT} font-mono text-[13px]`}
           />
-          <p className="text-[11px] text-faint mt-1.5">
+          <p className="text-[11px] text-dim mt-1.5">
             Used as a fallback for machines that have no stored path. You can change it later from the game page.
           </p>
         </div>

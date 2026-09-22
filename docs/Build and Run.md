@@ -304,10 +304,10 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 
 | Where | Counts |
 |---|---|
-| Windows, local | **console/security 149** (105 when it was added 2026-09-20; +32 for the art picker/backfill/thumbnails; +12 for the PR #45 review fixes — oversized, corrupt and empty images, the page bound, the startup backfill — `run-console-security-tests.ps1`) · win agent bug bounty **114** (reads **113/114** since 2026-08-14 — see [[Backlog]]) · server bug bounty **164** · agent 47 · delta upload **17** (new 2026-08-22, `run-delta-upload-tests.ps1`) · hardening 33 · local-api 66 · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6 |
+| Windows, local | **console/security 172** (105 when it was added 2026-09-20; +32 for the art picker/backfill/thumbnails; +12 for the PR #45 review fixes — oversized, corrupt and empty images, the page bound, the startup backfill; +23 for `UI-01` appearance, 2026-09-21 — `run-console-security-tests.ps1`) · **appearance consistency 20** (new 2026-09-21, `run-appearance-consistency-tests.ps1` — source only, no server, about a second) · win agent bug bounty **114** (reads **113/114** since 2026-08-14 — see [[Backlog]]) · server bug bounty **164** · agent 47 · delta upload **17** (new 2026-08-22, `run-delta-upload-tests.ps1`) · hardening 33 · local-api **85** (66 + §12 appearance, 2026-09-21; needs `agent-ui` built into the Linux bin and :5188 free — [[Gotchas]] → *Testing*) · concurrency 23 · health 19 · enrollment 18 · enrollment-TLS 6 |
 | Linux, local (WSL ext4) | `run-linux-tests` **63** on `main`, **69** at `4c9f5f5`, **84** after Phase 2, **117** after Phase 3, **123** after Phase 4 of the auto-update work, **137** after Phase 1, **154** after Phase 2, **161** after the Deck hardware pass, **197** after Phase 5 and **208** once the agent UI read the plugin's state live, both of `logs/2026-08-15_decky-plugin.md`, then **216** after `logs/2026-08-15_install-update-now.md` (2026-08-15, same clone) |
 | Linux, in CI | agent 43 · hardening 37 · local-api 66 · concurrency 23 · health 19 · enrollment 16 |
-| Windows, in CI | console/security **149** (`console-security-tests` job on `windows-latest`; its SQLite checks use the runner's Python, not WSL) |
+| Windows, in CI | console/security **172** (`console-security-tests` job on `windows-latest`; its SQLite checks use the runner's Python, not WSL) |
 | Detection | sweep **271/298 (90.9%)** at the default 300 sample, 17 pinned |
 
 The two platforms differ by design — each suite skips the other's cases. The detection drop from

@@ -15,7 +15,7 @@ Five identity pitches this direction was chosen from: `identity-options.html`, b
 Brand kit: `brand-kit.html`, beside this file (also mirrored at
 <https://claude.ai/code/artifact/b3e0c8a5-70a0-47bf-b4f2-d0dbf4f0b2d5>).
 
-## Status (updated 2026-09-21, after Group 4)
+## Status (updated 2026-09-21, after Group 5)
 
 | Phase | Status |
 |---|---|
@@ -23,7 +23,7 @@ Brand kit: `brand-kit.html`, beside this file (also mirrored at
 | 1 — Design system foundation, agent half | ✅ Shipped 2026-09-20 (Group 3) — dark base, light opt-in, like the console |
 | 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in reworked onto revocable sessions 2026-09-20 |
 | 3 — Sync all and progress | ✅ Items 1, 2, 4 shipped (console side; 2026-09-20 review: offline machines are left out, no duplicate stacking, failures reported); item 3 (agent Sync all + progress) shipped 2026-09-20 (Group 3); item 5 (per-game Sync this game) ✅ shipped 2026-09-21 (Group 4) with the game page and a new per-game agent route |
-| 4 — Appearance, and syncing it to the fleet | ⏳ Not started (Group 5) — **now also owns flipping the theme default to follow the OS** |
+| 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5), **including flipping the theme default to follow the OS**; item 4 (the Deck's accent) ➡️ Group 6, which owns the token split it needs |
 | 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
 | 6 — Deck and Wayland | ⏳ Not started (Group 6); the Wayland item (6.4) still needs the open decision made first |
 | 7 — OS notifications | ⏳ Not started (Group 7) |
@@ -35,7 +35,9 @@ sequencing correction (2026-09-20):** "light and dark, both first-class" is the 
 state to ship halfway. Following the OS preference while ~275 hardcoded dark colours remain in the
 unmigrated console views made those views unreadable for light-preferring visitors (measured
 1.04–1.15:1). Until the migration ends, dark is the base and light is reachable only through an
-explicit `data-theme="light"`.
+explicit `data-theme="light"`. **Resolved 2026-09-21 (Group 5):** the migration ended (no `#hex` is left in any view) and the
+default now follows the OS — `data-theme` pins a theme, *no attribute* is "System". Measured with the contrast walk in both
+schemes and for every accent: no failures beyond the uppercase eyebrow labels on `--faint`.
 
 ## The idea in one line
 

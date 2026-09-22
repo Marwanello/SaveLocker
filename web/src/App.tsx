@@ -11,6 +11,7 @@ import { AuditView } from './components/AuditView';
 import { HelpView } from './components/HelpView';
 import { WhatsNewView } from './components/WhatsNewView';
 import { SignIn } from './components/SignIn';
+import { setLook } from './appearance';
 import { AddGameDialog } from './components/AddGameDialog';
 import { hasUnreadNotes, markNotesSeen } from './releaseSeen';
 
@@ -99,6 +100,9 @@ export default function App() {
       setData({ games, machines, commands, conflicts, settings, health });
       // Keep this in step with the server: an admin can set or remove the password from Configuration.
       setPasswordRequired(settings.adminPasswordSet);
+      // The look is a server setting: adopt it here so a change made in another browser follows within a
+      // poll. A no-op while it is unchanged, and an older server that has no appearance leaves it alone.
+      if (settings.appearance) setLook(settings.appearance.look);
     } catch (e) {
       if (epoch !== epochRef.current) return;
       if (e instanceof ApiError && e.status === 401) {
@@ -263,7 +267,7 @@ export default function App() {
       />
 
       {error && (
-        <div style={{ padding: '10px 24px', color: '#f4a60d', fontSize: 13 }}>{error}</div>
+        <div style={{ padding: '10px 24px', color: 'var(--color-watch-ink)', fontSize: 13 }}>{error}</div>
       )}
 
       {needsSignIn && !isPublicView && (
@@ -271,7 +275,7 @@ export default function App() {
       )}
 
       {((passwordRequired === null && !error) || (canLoad && loading && !data)) && !isPublicView && (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8b9aaa', fontSize: 13 }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-dim)', fontSize: 13 }}>
           Loading…
         </div>
       )}

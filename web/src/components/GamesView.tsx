@@ -42,7 +42,7 @@ export function GamesView({ games, machines, commands, conflicts, onRefresh, onA
     return (
       // The "+ Add game" button lives in the sidebar, which is not rendered while there are no games —
       // this empty state used to tell a fresh install to click a button that was not on the screen.
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center', justifyContent: 'center', color: '#8b9aaa', fontSize: 14 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center', justifyContent: 'center', color: 'var(--color-dim)', fontSize: 14 }}>
         <span>No games tracked yet.</span>
         <Button variant="primary" onClick={onAddGame}>+ Add game</Button>
       </div>
@@ -64,7 +64,7 @@ export function GamesView({ games, machines, commands, conflicts, onRefresh, onA
             onRefresh={onRefresh}
           />
         ) : (
-          <div style={{ color: '#556070', fontSize: 14, marginTop: 40, textAlign: 'center' }}>Select a game from the sidebar.</div>
+          <div style={{ color: 'var(--color-dim)', fontSize: 14, marginTop: 40, textAlign: 'center' }}>Select a game from the sidebar.</div>
         )}
       </main>
     </div>

@@ -263,6 +263,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/appearance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentAppearanceDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AgentAppearanceRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentAppearanceDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/register": {
         parameters: {
             query?: never;
@@ -2009,6 +2076,18 @@ export interface components {
             /** Format: date-time */
             startedAtUtc: null | string;
         };
+        AgentAppearanceDto: {
+            follow: boolean;
+            effective: components["schemas"]["AppearanceDto"];
+            console: null | components["schemas"]["AppearanceDto"];
+            /** Format: date-time */
+            consoleAppliedAt: null | string;
+            local: components["schemas"]["AppearanceDto"];
+        };
+        AgentAppearanceRequest: {
+            follow: boolean;
+            look?: null | components["schemas"]["AppearanceDto"];
+        };
         AgentConfigDto: {
             serverUrl: string;
             machineName: string;
@@ -2044,6 +2123,11 @@ export interface components {
         };
         AliasRequest: {
             alias: null | string;
+        };
+        AppearanceDto: {
+            theme: string;
+            accent: string;
+            mark: string;
         };
         BrowseEntry: {
             name: string;

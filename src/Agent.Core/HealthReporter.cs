@@ -203,6 +203,15 @@ public sealed class HealthReporter
                 "Open the SaveLocker console to resolve it.");
         }
 
+        // The console's look rides this response. Applied here, where every host (the tray and the
+        // Linux daemon) already sees every heartbeat, rather than in each of them. Like everything in
+        // this method it must not throw: styling a window is never a reason to lose the report.
+        if (response.Appearance is { } look)
+        {
+            try { config.ApplyConsoleAppearance(look); }
+            catch (Exception ex) { AgentLogger.LogException("HealthReporter.Appearance", ex); }
+        }
+
         // Clear only what was actually sent — a fault reported while the request was in flight must
         // survive to the next beat rather than being silently dropped here.
         lock (_lock)

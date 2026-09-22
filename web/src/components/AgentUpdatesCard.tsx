@@ -120,8 +120,8 @@ export function AgentUpdatesCard({
   return (
     <div style={card}>
       <div style={cardHeader}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: '#ECEFF1' }}>Agent updates</span>
-        <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>hosted packages</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-fg)' }}>Agent updates</span>
+        <span style={{ fontSize: 11.5, color: 'var(--color-dim)' }}>hosted packages</span>
       </div>
 
       <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -129,19 +129,19 @@ export function AgentUpdatesCard({
           const status = statuses[slot.platform];
           return (
             <div key={slot.platform} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, color: '#ECEFF1', fontWeight: 600, minWidth: 122 }}>{slot.label}</span>
+              <span style={{ fontSize: 13, color: 'var(--color-fg)', fontWeight: 600, minWidth: 122 }}>{slot.label}</span>
               {loading ? (
-                <span style={{ fontSize: 12, color: '#556070' }}>Loading…</span>
+                <span style={{ fontSize: 12, color: 'var(--color-dim)' }}>Loading…</span>
               ) : status ? (
                 <>
-                  <span style={{ padding: '2px 7px', background: '#129271', color: '#fff', borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>
+                  <span style={{ padding: '2px 7px', background: 'var(--color-safe-soft)', color: 'var(--color-safe-ink)', borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>
                     v{status.version}
                   </span>
-                  <span style={{ fontSize: 11, color: '#9CA3AF' }}>{sourceLabel(status.source)}</span>
-                  <span style={{ fontSize: 11, color: '#556070' }}>· {new Date(asUtc(status.uploadedAt)).toLocaleDateString()}</span>
+                  <span style={{ fontSize: 11, color: 'var(--color-dim)' }}>{sourceLabel(status.source)}</span>
+                  <span style={{ fontSize: 11, color: 'var(--color-dim)' }}>· {new Date(asUtc(status.uploadedAt)).toLocaleDateString()}</span>
                 </>
               ) : (
-                <span style={{ padding: '2px 7px', border: '1px solid #556070', color: '#556070', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>
+                <span style={{ padding: '2px 7px', border: '1px solid var(--color-line)', color: 'var(--color-dim)', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>
                   none — these agents won't be offered updates
                 </span>
               )}
@@ -149,14 +149,14 @@ export function AgentUpdatesCard({
           );
         })}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 4, borderTop: '1px solid #2A3238' }}>
-          <span style={{ fontSize: 12, color: '#9CA3AF' }}>{describeSchedule(settings.schedule ?? undefined, settings.nextAutoFetchRunAt)}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 4, borderTop: '1px solid var(--color-line)' }}>
+          <span style={{ fontSize: 12, color: 'var(--color-dim)' }}>{describeSchedule(settings.schedule ?? undefined, settings.nextAutoFetchRunAt)}</span>
         </div>
 
         <div style={{ marginTop: 4 }}>
           <button
             onClick={() => setShowEdit(true)}
-            style={{ padding: '6px 16px', background: 'transparent', color: '#129271', border: '1px solid #129271', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+            style={{ padding: '6px 16px', background: 'transparent', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
           >
             Edit
           </button>
@@ -222,34 +222,34 @@ function AgentUpdatesModal({
         onClick={e => e.stopPropagation()}
         style={{
           width: 'min(720px, 92vw)', maxHeight: '86vh', overflowY: 'auto',
-          background: '#1E252A', border: '1px solid #494949', borderRadius: 8,
+          background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 8,
           boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
         }}
       >
-        <div style={{ ...cardHeader, position: 'sticky', top: 0, background: '#1E252A', zIndex: 1 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#ECEFF1' }}>Edit agent updates</span>
+        <div style={{ ...cardHeader, position: 'sticky', top: 0, background: 'var(--color-panel)', zIndex: 1 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-fg)' }}>Edit agent updates</span>
           <button
             onClick={onClose}
-            style={{ padding: '3px 9px', background: 'transparent', border: '1px solid #494949', borderRadius: 4, color: '#9CA3AF', fontSize: 12, cursor: 'pointer' }}
+            style={{ padding: '3px 9px', background: 'transparent', border: '1px solid var(--color-line)', borderRadius: 4, color: 'var(--color-dim)', fontSize: 12, cursor: 'pointer' }}
           >
             Close
           </button>
         </div>
 
-        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1px solid #2A3238' }}>
-          <span style={{ fontSize: 13, color: '#ECEFF1', fontWeight: 600 }}>Fetch latest for all packages</span>
+        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1px solid var(--color-line)' }}>
+          <span style={{ fontSize: 13, color: 'var(--color-fg)', fontWeight: 600 }}>Fetch latest for all packages</span>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {INSTALLER_SLOTS.map(slot => (
-              <label key={slot.platform} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: '#ECEFF1', cursor: 'pointer' }}>
+              <label key={slot.platform} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--color-fg)', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={checked[slot.platform]}
                   onChange={e => setChecked(prev => ({ ...prev, [slot.platform]: e.target.checked }))}
-                  style={{ accentColor: '#129271' }}
+                  style={{ accentColor: 'var(--color-accent)' }}
                 />
                 {slot.label}
                 {bulkResults[slot.platform] && (
-                  <span style={{ fontSize: 11, color: bulkResults[slot.platform]?.startsWith('✓') ? '#129271' : '#e05252', fontFamily: "'JetBrains Mono', monospace" }}>
+                  <span style={{ fontSize: 11, color: bulkResults[slot.platform]?.startsWith('✓') ? 'var(--color-safe-ink)' : 'var(--color-accent-ink)', fontFamily: "'JetBrains Mono', monospace" }}>
                     {bulkResults[slot.platform]}
                   </span>
                 )}
@@ -260,19 +260,19 @@ function AgentUpdatesModal({
             <button
               onClick={handleBulkFetch}
               disabled={bulkFetching}
-              style={{ padding: '7px 16px', background: bulkFetching ? '#2A3238' : '#129271', color: bulkFetching ? '#556070' : '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: bulkFetching ? 'default' : 'pointer' }}
+              style={{ padding: '7px 16px', background: bulkFetching ? 'var(--color-raise)' : 'var(--color-accent)', color: bulkFetching ? 'var(--color-dim)' : 'var(--color-on-accent)', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: bulkFetching ? 'default' : 'pointer' }}
             >
               {bulkFetching ? 'Fetching…' : 'Fetch selected from GitHub'}
             </button>
           </div>
         </div>
 
-        <div style={{ padding: '16px 18px', borderBottom: '1px solid #2A3238' }}>
+        <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--color-line)' }}>
           <ScheduleEditor schedule={schedule} onChanged={onScheduleChanged} />
         </div>
 
         <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <span style={{ fontSize: 13, color: '#ECEFF1', fontWeight: 600 }}>Per-package</span>
+          <span style={{ fontSize: 13, color: 'var(--color-fg)', fontWeight: 600 }}>Per-package</span>
           {INSTALLER_SLOTS.map((slot, i) => (
             <InstallerSlotEditor
               key={slot.platform}
@@ -293,12 +293,12 @@ const DEFAULT_SCHEDULE: AutoFetchSchedule = {
 };
 
 const selectStyle: CSSProperties = {
-  padding: '6px 9px', background: '#2A3238', color: '#ECEFF1', border: '1px solid #494949',
+  padding: '6px 9px', background: 'var(--color-raise)', color: 'var(--color-fg)', border: '1px solid var(--color-line)',
   borderRadius: 5, fontSize: 12, fontFamily: 'inherit',
 };
 const numberInputStyle: CSSProperties = {
-  width: 70, padding: '6px 9px', background: 'transparent', color: '#ECEFF1',
-  border: '1px solid #494949', borderRadius: 5, fontSize: 12, fontFamily: "'JetBrains Mono', monospace",
+  width: 70, padding: '6px 9px', background: 'transparent', color: 'var(--color-fg)',
+  border: '1px solid var(--color-line)', borderRadius: 5, fontSize: 12, fontFamily: "'JetBrains Mono', monospace",
 };
 
 function ScheduleEditor({
@@ -326,7 +326,7 @@ function ScheduleEditor({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <span style={{ fontSize: 13, color: '#ECEFF1', fontWeight: 600 }}>Automatic fetch schedule</span>
+      <span style={{ fontSize: 13, color: 'var(--color-fg)', fontWeight: 600 }}>Automatic fetch schedule</span>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <select
@@ -349,7 +349,7 @@ function ScheduleEditor({
               aria-label="Hours between checks"
               style={numberInputStyle}
             />
-            <span style={{ fontSize: 12, color: '#9CA3AF' }}>hours</span>
+            <span style={{ fontSize: 12, color: 'var(--color-dim)' }}>hours</span>
           </>
         )}
 
@@ -365,7 +365,7 @@ function ScheduleEditor({
 
         {draft.mode === 'monthly' && (
           <>
-            <span style={{ fontSize: 12, color: '#9CA3AF' }}>day</span>
+            <span style={{ fontSize: 12, color: 'var(--color-dim)' }}>day</span>
             <input
               type="number" min={1} max={31}
               value={draft.dayOfMonth}
@@ -373,13 +373,13 @@ function ScheduleEditor({
               aria-label="Day of month"
               style={numberInputStyle}
             />
-            <span style={{ fontSize: 12, color: '#9CA3AF' }}>of each month</span>
+            <span style={{ fontSize: 12, color: 'var(--color-dim)' }}>of each month</span>
           </>
         )}
 
         {(draft.mode === 'weekly' || draft.mode === 'monthly') && (
           <>
-            <span style={{ fontSize: 12, color: '#9CA3AF' }}>at</span>
+            <span style={{ fontSize: 12, color: 'var(--color-dim)' }}>at</span>
             <input
               type="time"
               value={draft.timeOfDay}
@@ -387,20 +387,20 @@ function ScheduleEditor({
               aria-label="Time of day"
               style={{ ...numberInputStyle, width: 100 }}
             />
-            <span style={{ fontSize: 11, color: '#556070' }}>server time</span>
+            <span style={{ fontSize: 11, color: 'var(--color-dim)' }}>server time</span>
           </>
         )}
 
         <button
           onClick={handleSave}
           disabled={saving}
-          style={{ padding: '6px 14px', background: saving ? '#2A3238' : '#129271', color: saving ? '#556070' : '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: saving ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
+          style={{ padding: '6px 14px', background: saving ? 'var(--color-raise)' : 'var(--color-accent)', color: saving ? 'var(--color-dim)' : 'var(--color-on-accent)', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: saving ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
         >
           {saving ? 'Saving…' : 'Save schedule'}
         </button>
       </div>
 
-      <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>
+      <p style={{ fontSize: 11, color: 'var(--color-dim)', margin: 0 }}>
         {draft.mode === 'hours'
           ? 'Set 0 to disable. Reconfiguring checks GitHub immediately, then at this interval.'
           : draft.mode === 'disabled'
@@ -479,34 +479,34 @@ function InstallerSlotEditor({
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', gap: 10,
-      borderTop: first ? undefined : '1px solid #2A3238',
+      borderTop: first ? undefined : '1px solid var(--color-line)',
       paddingTop: first ? 0 : 14,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 13, color: '#ECEFF1', fontWeight: 600, minWidth: 122 }}>{slot.label}</span>
+        <span style={{ fontSize: 13, color: 'var(--color-fg)', fontWeight: 600, minWidth: 122 }}>{slot.label}</span>
         {status ? (
           <>
-            <span style={{ padding: '2px 7px', background: '#129271', color: '#fff', borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>v{status.version}</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#9CA3AF' }}>{status.fileName}</span>
-            <span style={{ fontSize: 11, color: '#556070' }}>·</span>
-            <span style={{ fontSize: 11, color: '#556070' }}>{(status.sizeBytes / (1024 * 1024)).toFixed(1)} MB</span>
-            <span style={{ fontSize: 11, color: '#556070' }}>· {sourceLabel(status.source)} · uploaded {new Date(asUtc(status.uploadedAt)).toLocaleDateString()}</span>
+            <span style={{ padding: '2px 7px', background: 'var(--color-safe-soft)', color: 'var(--color-safe-ink)', borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>v{status.version}</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--color-dim)' }}>{status.fileName}</span>
+            <span style={{ fontSize: 11, color: 'var(--color-dim)' }}>·</span>
+            <span style={{ fontSize: 11, color: 'var(--color-dim)' }}>{(status.sizeBytes / (1024 * 1024)).toFixed(1)} MB</span>
+            <span style={{ fontSize: 11, color: 'var(--color-dim)' }}>· {sourceLabel(status.source)} · uploaded {new Date(asUtc(status.uploadedAt)).toLocaleDateString()}</span>
             <a
               href={`/api/agent/installer/download?platform=${slot.platform}`}
-              style={{ fontSize: 11, color: '#129271', textDecoration: 'none' }}
+              style={{ fontSize: 11, color: 'var(--color-fg)', textDecoration: 'none' }}
               target="_blank" rel="noreferrer"
             >
               Download ↓
             </a>
             <button
               onClick={handleDelete}
-              style={{ padding: '2px 10px', border: '1px solid #f4a60d', color: '#f4a60d', background: 'transparent', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
+              style={{ padding: '2px 10px', border: '1px solid var(--color-watch-line)', color: 'var(--color-watch-ink)', background: 'transparent', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
             >
               Delete
             </button>
           </>
         ) : (
-          <span style={{ padding: '2px 7px', border: '1px solid #556070', color: '#556070', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>none — these agents won't be offered updates</span>
+          <span style={{ padding: '2px 7px', border: '1px solid var(--color-line)', color: 'var(--color-dim)', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>none — these agents won't be offered updates</span>
         )}
       </div>
 
@@ -518,7 +518,7 @@ function InstallerSlotEditor({
           <button
             onClick={handleVerify}
             disabled={verifying}
-            style={{ padding: '3px 10px', background: 'transparent', color: verifying ? '#556070' : '#8b9aaa', border: '1px solid #494949', borderRadius: 4, fontSize: 11, cursor: verifying ? 'default' : 'pointer' }}
+            style={{ padding: '3px 10px', background: 'transparent', color: verifying ? 'var(--color-dim)' : 'var(--color-dim)', border: '1px solid var(--color-line)', borderRadius: 4, fontSize: 11, cursor: verifying ? 'default' : 'pointer' }}
           >
             {verifying ? 'Checking…' : 'Verify hash against GitHub'}
           </button>
@@ -527,7 +527,7 @@ function InstallerSlotEditor({
               title={verification.note ?? (verification.publishedSha256 ? `Published: ${verification.publishedSha256}\nHosted: ${status.sha256}` : undefined)}
               style={{
                 fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
-                color: verification.status === 'match' ? '#129271' : verification.status === 'mismatch' ? '#e05252' : '#9CA3AF',
+                color: verification.status === 'match' ? 'var(--color-safe-ink)' : verification.status === 'mismatch' ? 'var(--color-accent-ink)' : 'var(--color-dim)',
               }}
             >
               {verification.status === 'match' ? '✓ matches published checksum'
@@ -548,7 +548,7 @@ function InstallerSlotEditor({
             const parsed = slot.parseVersion(e.target.files?.[0]?.name ?? '');
             if (parsed) setVersionOverride(parsed);
           }}
-          style={{ flex: 1, minWidth: 200, padding: '5px 0', color: '#9CA3AF', fontSize: 12, background: 'transparent', border: 'none' }}
+          style={{ flex: 1, minWidth: 200, padding: '5px 0', color: 'var(--color-dim)', fontSize: 12, background: 'transparent', border: 'none' }}
         />
         <input
           type="text"
@@ -556,24 +556,24 @@ function InstallerSlotEditor({
           onChange={e => setVersionOverride(e.target.value)}
           placeholder="Version (e.g. 0.2.0)"
           aria-label={`${slot.label} package version`}
-          style={{ width: 140, padding: '7px 10px', background: 'transparent', color: '#ECEFF1', border: '1px solid #494949', borderRadius: 5, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}
+          style={{ width: 140, padding: '7px 10px', background: 'transparent', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 5, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}
         />
         <button
           onClick={handleUpload}
           disabled={uploading}
-          style={{ padding: '6px 14px', background: uploading ? '#2A3238' : '#129271', color: uploading ? '#556070' : '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: uploading ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
+          style={{ padding: '6px 14px', background: uploading ? 'var(--color-raise)' : 'var(--color-accent)', color: uploading ? 'var(--color-dim)' : 'var(--color-on-accent)', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: uploading ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
         >
           {uploading ? 'Uploading…' : 'Upload'}
         </button>
         <button
           onClick={handleFetchGitHub}
           disabled={fetching}
-          style={{ padding: '6px 14px', background: 'transparent', color: fetching ? '#556070' : '#129271', border: `1px solid ${fetching ? '#2A3238' : '#129271'}`, borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: fetching ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
+          style={{ padding: '6px 14px', background: 'transparent', color: fetching ? 'var(--color-dim)' : 'var(--color-fg)', border: `1px solid ${fetching ? 'var(--color-line)' : 'var(--color-line)'}`, borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: fetching ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
         >
           {fetching ? 'Fetching…' : 'Fetch from GitHub'}
         </button>
       </div>
-      <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: -4 }}>
+      <p style={{ fontSize: 11, color: 'var(--color-dim)', marginTop: -4 }}>
         <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10 }}>{slot.fileHint}</code>
         {' '}from the release workflow — upload it, or pull it straight from the latest GitHub Release.
         The version is read from the filename. Connected {slot.label} agents are offered it at their next check-in.
@@ -583,9 +583,9 @@ function InstallerSlotEditor({
 }
 
 const card: CSSProperties = {
-  background: '#1E252A', border: '1px solid #494949', borderRadius: 8, overflow: 'hidden',
+  background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 8, overflow: 'hidden',
 };
 const cardHeader: CSSProperties = {
-  padding: '11px 18px', borderBottom: '1px solid #494949',
+  padding: '11px 18px', borderBottom: '1px solid var(--color-line)',
   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
 };
