@@ -17,7 +17,7 @@ rather than by phase number, because several phases edit the same components.
 | 3 — Sync all and progress | ✅ Items 1, 2, 4 shipped 2026-09-18 (Group 2 — console side); item 3 (agent Sync all + progress) shipped 2026-09-20 (Group 3); item 5 (per-game Sync this game) ✅ shipped 2026-09-21 (Group 4) with the game page and a new per-game agent route |
 | 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5); item 4 — the Deck's accent ➡️ shipped 2026-09-22 (Group 6). The theme default now follows the OS (every hex colour left the views first). See `implementation-grouping.md` → Groups 5/6 |
 | 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
-| 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22 (Group 6) — verified by build only, no WSLg/Deck pass yet. Item 4 (Wayland, 6.4) still needs the open decision below made first |
+| 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22 (Group 6) — verified live (real screenshots, pixel-sampled colours, `--nav`-scripted L1/R1 with `--nav-debug`) since `savelocker ui` runs on this Windows box without WSLg; a real focus-timing bug was found and fixed this way — see `implementation-grouping.md` → Group 6. No real Deck/gamescope pass yet. Item 4 (Wayland, 6.4) still needs the open decision below made first |
 | 7 — OS notifications | ⏳ Not started (Group 7) |
 | 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1) — see the note under Phase 8 below |
 

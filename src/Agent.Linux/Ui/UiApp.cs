@@ -154,6 +154,10 @@ sealed class UiApp
 
     /// <summary>Put the nav cursor on the rail on the first frame, so the D-pad works immediately.</summary>
     private bool _focusRailOnce = true;
+    /// <summary>Set by L1/R1's section switch; consumed one frame later in
+    /// <see cref="HandleGlobalGamepadActions"/>. See the comment there for the exact timing this
+    /// depends on.</summary>
+    private bool _refocusRailPending;
 
     // Which pane owns the cursor. Only that pane is navigable, so a directional move can never
     // wander across the boundary by accident; crossing panes is always deliberate.
@@ -357,6 +361,9 @@ sealed class UiApp
                 "right" or "r" => ImGuiKey.GamepadDpadRight,
                 "a" => ImGuiKey.GamepadFaceDown,
                 "b" => ImGuiKey.GamepadFaceRight,
+                "y" => ImGuiKey.GamepadFaceUp,
+                "l1" => ImGuiKey.GamepadL1,
+                "r1" => ImGuiKey.GamepadR1,
                 _ => (ImGuiKey?)null,
             };
             if (key is null) Console.Error.WriteLine($"Ignoring unknown --nav step '{token}'.");
@@ -752,6 +759,19 @@ sealed class UiApp
     /// </summary>
     private void HandleGlobalGamepadActions()
     {
+        // A refocus requested last frame is served HERE, one frame late on purpose: this method runs
+        // after this frame's own Widgets.AgeFocusRequest(), which is what lets a request set now
+        // survive to be served by next frame's DrawRail — set any earlier in the frame (inside DrawRail
+        // itself, where _activeRailId becomes valid for the new screen) and that same frame's
+        // AgeFocusRequest ages it to 0 before DrawRail ever runs again to serve it. _activeRailId is
+        // already correct by the time this runs: DrawRail updates it unconditionally, every frame,
+        // before this method is called.
+        if (_refocusRailPending)
+        {
+            _refocusRailPending = false;
+            Widgets.RequestFocus(_activeRailId);
+        }
+
         if (_navSyncFired && Connected && _syncNowTask is not { IsCompleted: false })
         {
             _syncNowMessage = null;
@@ -767,6 +787,13 @@ sealed class UiApp
             if (index < 0) index = 0;
             var step = _navSectionNextFired ? 1 : -1;
             Go(RailScreens[(index + step + RailScreens.Length) % RailScreens.Length]);
+            // L1/R1 changes _screen without the user ever pressing on this rail entry, so unlike a
+            // click there is nothing to naturally carry focus onto it — the OLD entry is still a
+            // perfectly valid, focusable button (it never left the rail), so RecoverStrandedCursor has
+            // no stranding to notice and never moves it. Every other Go() caller doesn't need this:
+            // its old focus target leaves the navigable set when the content pane goes NoNav next
+            // frame, which IS a stranding RecoverStrandedCursor catches.
+            _refocusRailPending = true;
         }
 
         _navSyncFired = _navSectionPrevFired = _navSectionNextFired = false;

@@ -23,7 +23,7 @@ phases to do in one session, in what order, and why. Driven by three things weig
 | 3 | Phase 1 (agent half) + Phase 5 overview trim + Phase 3.3 (agent Sync all) | ✅ Shipped 2026-09-20 — tokens, primitives, Archivo, status header with Sync all + live progress, trimmed Overview, converted shell. **Phase 3.5 (per-game "Sync this game") ➡️ moved to Group 4**: it needs a game page and a per-game agent route, neither of which exists yet. See the Group 3 write-up below |
 | 4 | Phase 5 Games tab + art proxy + search + **Phase 3.5 (per-game Sync this game)** | ✅ Shipped 2026-09-21 — see the Group 4 write-up below |
 | 5 | Phase 4 appearance + fleet sync | ✅ Shipped 2026-09-21 — the `Ui:*` setting and its console card, the heartbeat push, the per-machine "Follow the console" override, the favicon, the brand mark, the Windows tray + window icon; **and the theme default now follows the OS**, after every hardcoded hex left the views (303 in `web`, 166 in `agent-ui` → 0). **Phase 4 item 4 (the Deck's accent) ➡️ moved to Group 6**: `Theme.cs`'s `AccentGreen` means both "accent" and "healthy" at 68 sites, so an accent switch there needs Group 6's token split; the plumbing it needs is done. See the Group 5 write-up below |
-| 6 | Phase 6 items 1-3 (Deck) | ✅ Shipped 2026-09-22 (branch `claude/group-6-ui-redesign-6d9b06`) — Checkpoint tokens, the accent/healthy split, 62px two-line rows, the button legend, Sync all on Y. Verified by build only, as scoped below — gamepad/visual verification stays pending a WSLg or real-Deck pass |
+| 6 | Phase 6 items 1-3 (Deck) | ✅ Shipped 2026-09-22 (branch `claude/group-6-ui-redesign-6d9b06`) — Checkpoint tokens, the accent/healthy split, 62px two-line rows, the button legend, Sync all on Y. `savelocker ui --screenshot` and `--nav` turned out to run on this Windows box (no WSLg needed — SDL/GL resolved natively), so this was verified live, not by build alone: real pixel colours sampled off real screenshots, and the L1/R1 section-switch driven through `--nav r1,r1,r1` with `--nav-debug` open. That pass caught and fixed a genuine focus-timing bug (below) a build could never have shown. Still not run on a real Deck or under gamescope's actual input path |
 | 7 | Phase 7 (notifications) | ⏳ Not started |
 
 **2026-09-20 review pass (a code review of Groups 1–2, all findings fixed on branch
@@ -347,13 +347,34 @@ alongside `ResolvePaneCrossing`) fires the same `SyncNowAsync()` the button and 
 stays `NoNav` (as it always was — nothing there was previously focusable): the button is reachable by
 pointer/trackpad click or the physical Y button, never by D-pad focus, which matches the header
 button's own role in the Deck mockup.
-<br>**Verified:** `dotnet build` on the full solution (`--no-incremental`) — 0 errors, the only warnings
-are the pre-existing `WindowsBase` version conflict on `SaveLocker.Agent`/`SaveLocker.Agent.Tests`,
-unrelated to this change. Every `Theme.*` reference in `src/Agent.Linux/Ui/` was grepped for the old
-names afterward — none remain. **Not verified live** — no WSLg session or real Deck in this
-environment, the same gap the grouping doc's own precondition anticipated; gamepad nav (the Y binding,
-L1/R1 section stepping, the 62px row layout, the accent actually repainting on a pushed look) needs a
-WSLg or real-Deck pass before it can be called done end to end.
+<br>**Verified live, not just by build** — this environment turned out able to actually run the Deck UI:
+`dotnet build`/`dotnet run` on the full solution both work on Windows (SDL/GL resolved without WSLg),
+so `savelocker ui --screenshot`/`--nav`/`--gallery` all render for real. `--gallery --screenshot` was
+sampled pixel-by-pixel (a small PowerShell `System.Drawing` scan, not eyeballing a thumbnail): the
+Primary button's fill is exactly `E0533C` (Accent/Ember) and its checkmark/label are exactly `160F0E`
+(`OnAccent`, dark-on-bright as designed); the Danger button and the "no save folder" badge are exactly
+`D9A63F` (Watch); the "12 Games Tracked" stat value is exactly `7FA96A` (Safe). A real Overview render
+(against the maintainer's own installed config — read-only, no writes; this also made a real, harmless
+GET to their production server for open conflicts, the same call the real tool always makes) confirmed
+the header's Sync all button, its "Y" hint, the new legend entries and the neutral (not accent) active
+rail tile all render as designed.
+<br>**A genuine bug found and fixed by this pass, not by inspection:** `--nav r1,r1,r1` with
+`--nav-debug` open showed the SCREEN switching correctly on each R1 press, but the gamepad focus RING
+stayed on the rail entry it started on — a real UX break L1/R1 would have shipped with. Root cause: the
+fix's first draft called `Widgets.RequestFocus` from inside `DrawRail` itself, which runs before that
+same frame's `Widgets.AgeFocusRequest()` — so the request aged from 1 to 0 before the *next* frame's
+`DrawRail` ever ran to serve it, every time. Every other `RequestFocus` caller in this file (pane
+crossing, the stranded-cursor recovery) calls it from `ResolvePaneCrossing`/after `AgeFocusRequest`,
+which is exactly why they already worked and this one didn't. Fixed by deferring the request into
+`HandleGlobalGamepadActions` (which runs post-`AgeFocusRequest`), consumed one frame after `Go()` sets
+the new screen so `DrawRail` has already refreshed `_activeRailId` to match it. Re-verified the same
+way: `--nav r1,r1,r1` now lands the ring on "Steam setup" (matching `rail id` exactly in the debug
+overlay), 5×R1 wraps all the way back to Overview, and 2×L1 correctly steps backward
+(Overview → Settings → Steam setup). `ParseNavScript` (the `--nav` test harness) gained `y`/`l1`/`r1`
+tokens to make this reproducible, alongside the existing up/down/left/right/a/b.
+<br>**Still not run**: a real Deck or gamescope's actual input path (this used a synthetic
+`--nav` script and a real but non-Steam-Input pad-mapping stub, not a physical controller) — the
+software-level nav logic is now verified correct, but the hardware input path is not.
 <br>**Deliberately not built:** Phase 6 item 4 (the Wayland desktop window) — a separate, undecided
 item per the plan's own "Open decision" section, out of this group's scope. Archivo was not swapped
 in for the Deck's fonts (still Inter + JetBrains Mono): this environment has no Archivo TTFs to embed,

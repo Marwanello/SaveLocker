@@ -1298,21 +1298,30 @@ atlas, same trap as every other non-ASCII character in this file). The header ga
 **Sync all** primary button (new `Icons.Sync` glyph) plus a global Y/L1/R1 gamepad binding
 (`HandleGlobalGamepadActions`) — Y fires the same `SyncNowAsync()` the header button and the Overview's own
 "Sync now" already share; L1/R1 step through the rail's screens in order.
-<br>**Verified:** `dotnet build` on the full solution (`--no-incremental`) — 0 errors, only the pre-existing
-`WindowsBase` warning on `SaveLocker.Agent`/`.Tests`, unrelated. Every `Theme.*` name in `src/Agent.Linux/Ui/`
-was grepped for the old (pre-Checkpoint) field names afterward — none remain.
-<br>**Not verified live** — this session had no WSLg session and no reachable real Deck, the gap the grouping
-doc's own precondition for this group anticipated. The Y binding, L1/R1 section stepping, the 62px row layout
-and the accent actually repainting on a pushed console look all still need a WSLg or real-Deck pass before
-they can be called done end to end — the same honest gap every other hardware-gated feature in this project
-has shipped with.
+<br>**Verified live, not just by build** — `savelocker ui --screenshot`/`--nav`/`--gallery` turned out to
+actually run on this Windows box (SDL/GL resolved without WSLg). A pixel-level scan of a real
+`--gallery` screenshot confirmed the Primary button is exactly `E0533C`/`160F0E` (Accent/OnAccent), the
+Danger button and warning badges are exactly `D9A63F` (Watch), and the stat tile is exactly `7FA96A`
+(Safe) — not eyeballed. **A real focus-timing bug was found and fixed this way, not by inspection**:
+`--nav r1,r1,r1` with `--nav-debug` showed the SCREEN switching correctly but the gamepad focus RING
+staying behind on the old rail entry — `RequestFocus` was being called from inside `DrawRail`, one
+step too early in the frame relative to `Widgets.AgeFocusRequest()`, so the request always aged to 0
+before the next frame could serve it. Fixed by deferring it into `HandleGlobalGamepadActions` (which
+runs after that frame's `AgeFocusRequest`); re-verified with the same script — the ring now lands
+exactly on the target rail entry, 5×R1 wraps back to Overview, 2×L1 steps backward correctly.
+`ParseNavScript` gained `y`/`l1`/`r1` tokens to make this reproducible.
+<br>**Still not run** — a real Deck or gamescope's actual input path (this used a synthetic `--nav`
+script, not a physical controller), and the accent actually repainting from a real pushed console look
+(this environment's scratch runs had nothing pushing one). The gap that's left is genuinely smaller
+than "needs a WSLg pass" — it's specifically "needs a physical controller and a live console."
 <br>**Deliberately not built:** Phase 6 item 4 (the Wayland desktop window) — the plan's own "open decision,
 blocking nothing yet," untouched here. Archivo was not swapped in for the Deck's fonts (still Inter +
 JetBrains Mono) — no Archivo TTFs to embed in this environment, the same asset gap Group 1 hit for PNG/ICO
 rasterization; flagged in `Theme.cs`'s own font-section comment rather than left unexplained.
-<br>**Next action:** a WSLg or real-Deck pass to actually exercise the gamepad nav and accent repaint this
-group added, or Group 7 (OS notifications) if that hardware access isn't available first. The Wayland
-decision (Phase 6 item 4) is still open and needs deciding before any code is written for it.
+<br>**Next action:** a real Deck (or a box with a physical gamepad) to exercise the Y/L1/R1 bindings
+through an actual controller and confirm the accent repaints from a genuinely pushed console look, or
+Group 7 (OS notifications) if that hardware access isn't available first. The Wayland decision (Phase 6
+item 4) is still open and needs deciding before any code is written for it.
 
 ---
 
