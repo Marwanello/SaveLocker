@@ -220,6 +220,15 @@ static class Icons
     /// "Conflicts" wherever this UI needs the same icon language as the React sidebar/empty-state
     /// (agent-ui/src/components/Sidebar.tsx, ConflictsView.tsx).
     /// </summary>
+    /// <summary>Three bars — the Steam overlay's own menu glyph, used by the Deck hint bar's
+    /// "Steam menu" entry (implementation.md Phase 6 item 2).</summary>
+    public static readonly Glyph Menu = (dl, p, s, c, w) =>
+    {
+        Line(dl, p, s, c, w, 4, 6, 20, 6);
+        Line(dl, p, s, c, w, 4, 12, 20, 12);
+        Line(dl, p, s, c, w, 4, 18, 20, 18);
+    };
+
     public static readonly Glyph GitBranch = (dl, p, s, c, w) =>
     {
         Line(dl, p, s, c, w, 6, 3, 6, 15);
@@ -228,6 +237,27 @@ static class Icons
         dl.PathClear();
         dl.PathArcTo(P(p, s, 9, 9), 9f / 24f * s, 0f, MathF.PI / 2f, 16);
         dl.PathStroke(c, ImDrawFlags.None, w);
+    };
+
+    /// <summary>
+    /// lucide's refresh-cw: two ~250° arcs chasing each other, each capped with a small arrowhead —
+    /// used by the Deck header's Sync all button (implementation.md Phase 6 item 3).
+    /// </summary>
+    public static readonly Glyph Sync = (dl, p, s, c, w) =>
+    {
+        var r = 7f / 24f * s;
+        var top = P(p, s, 11, 8);
+        var bottom = P(p, s, 13, 16);
+
+        dl.PathClear();
+        dl.PathArcTo(top, r, -2.6f, 2.6f, 20);
+        dl.PathStroke(c, ImDrawFlags.None, w);
+        Poly(dl, p, s, c, w, false, 15.7f, 4.6f, 18.4f, 8, 18.4f, 4.3f);
+
+        dl.PathClear();
+        dl.PathArcTo(bottom, r, MathF.PI - 2.6f, MathF.PI + 2.6f, 20);
+        dl.PathStroke(c, ImDrawFlags.None, w);
+        Poly(dl, p, s, c, w, false, 8.3f, 19.4f, 5.6f, 16, 5.6f, 19.7f);
     };
 
     /// <summary>

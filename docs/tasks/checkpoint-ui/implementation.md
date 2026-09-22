@@ -7,7 +7,7 @@ Read [[plan]] first for tokens, type, motion and the colour rule, and
 [[implementation-grouping]] before starting any phase — it regroups the list below **by surface**
 rather than by phase number, because several phases edit the same components.
 
-## Status (updated 2026-09-20)
+## Status (updated 2026-09-22)
 
 | Phase | Status |
 |---|---|
@@ -15,9 +15,9 @@ rather than by phase number, because several phases edit the same components.
 | 1 — Design system foundation, agent half | ✅ Shipped 2026-09-20 (Group 3) — `tokens.css`, `ui.css`, Archivo, `components/ui/` |
 | 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in moved to revocable sessions 2026-09-20 |
 | 3 — Sync all and progress | ✅ Items 1, 2, 4 shipped 2026-09-18 (Group 2 — console side); item 3 (agent Sync all + progress) shipped 2026-09-20 (Group 3); item 5 (per-game Sync this game) ✅ shipped 2026-09-21 (Group 4) with the game page and a new per-game agent route |
-| 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5), except item 4 — the Deck's accent ➡️ Group 6, which owns the token split it needs. The theme default now follows the OS (every hex colour left the views first). See `implementation-grouping.md` → Group 5 |
+| 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5); item 4 — the Deck's accent ➡️ shipped 2026-09-22 (Group 6). The theme default now follows the OS (every hex colour left the views first). See `implementation-grouping.md` → Groups 5/6 |
 | 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
-| 6 — Deck and Wayland | ⏳ Not started (Group 6); the Wayland item (6.4) still needs the open decision below made first |
+| 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22 (Group 6) — verified by build only, no WSLg/Deck pass yet. Item 4 (Wayland, 6.4) still needs the open decision below made first |
 | 7 — OS notifications | ⏳ Not started (Group 7) |
 | 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1) — see the note under Phase 8 below |
 
@@ -231,13 +231,21 @@ The largest genuinely-new piece.
 
 ---
 
-### Phase 6 — Deck and Wayland
+### Phase 6 — Deck and Wayland — ✅ Items 1-3 shipped 2026-09-22 (Group 6); item 4 still open
 
-1. `src/Agent.Linux/Ui/Theme.cs` — Checkpoint dark tokens, 2px accent focus ring plus the 4px halo,
-   62px rows, 16px minimum body text.
-2. Two-line rows in `Widgets.cs`; the button legend along the bottom (A Select · B Back · Y Sync now ·
-   L1/R1 Switch section · ☰ Steam menu).
-3. **Sync all in the Deck header**, bound to Y, using the existing sync path.
+1. ✅ `src/Agent.Linux/Ui/Theme.cs` — Checkpoint dark tokens, 2px accent focus ring plus the 4px halo,
+   62px rows, 16px minimum body text. Shipped as the `Safe`/`Accent` split Group 5 flagged (`Accent` is
+   dynamic, sourced from `AppearancePalette` via a new `AgentConfig.RefreshAppearance()`; `Safe`/`Watch`
+   are fixed). Font face itself stays Inter/JetBrains Mono — no Archivo TTFs to embed in this
+   environment, same asset gap as Phase 8.
+2. ✅ Two-line rows in `Widgets.cs`; the button legend along the bottom (A Select · B Back · Y Sync now ·
+   L1/R1 Switch section · ☰ Steam menu). Shipped: `ListRow`'s two-line height is now a fixed 62px
+   constant, the rail widened to 236px, and the legend gained the three new entries via a new
+   `Widgets.GamepadHintWide` and `Icons.Menu`.
+3. ✅ **Sync all in the Deck header**, bound to Y, using the existing sync path. Shipped: a visible
+   primary button in the header (new `Icons.Sync` glyph) plus a global Y/L1/R1 gamepad binding
+   (`HandleGlobalGamepadActions`) — Y triggers the same `SyncNowAsync()` the header button and the
+   Overview's own "Sync now" share, L1/R1 step through the rail's screens in order.
 4. Wayland desktop session: the agent window currently has no native chrome of its own. Either host
    the existing web UI in a small GTK/WebKit window with a header bar, or accept the browser. Decide
    before building — this is the one item in the plan with no obvious right answer.

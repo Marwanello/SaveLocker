@@ -1278,6 +1278,42 @@ that saw the dark console before will see light now, and can pin it); the brand 
 <br>**Next action:** Group 6 (Deck — its token split is what also unlocks the Deck's accent) or Group 7 (notifications).
 The Backlog → *Appearance follow-ups* carries the five small leftovers.
 
+**Checkpoint UI redesign, Group 6 shipped (2026-09-22, branch `claude/group-6-ui-redesign-6d9b06`, no PR yet).**
+Phase 6 items 1-3, the Deck (`savelocker ui`, Game Mode). `Ui/Theme.cs` now carries the literal Checkpoint
+dark palette from `web/src/index.css`, and — the actual work — the old `AccentGreen`, which had been the
+interaction accent *and* "healthy" at once, is split into a fixed `Safe`/`Watch` (never swapped by an accent
+choice) and a dynamic `Accent` (from `AppearancePalette`, applied via a new `Theme.SetAccent`). Every one of
+the ~40 call sites was checked against the shipped web/agent-ui component it mirrors rather than guessed —
+`Chip.tsx`'s own `ok`/`warn`/`crit` doc comment turned out to already be the exact framework in use, and
+`agent-ui/src/ui.css`'s `.sl-nav[aria-current]` comment ("is NOT the accent... that colour is reserved for
+'a decision is waiting'") caught the same mistake in the Deck's rail that Group 3 had already corrected on
+the web — the current-screen indicator is now a neutral tile, never the accent. A new
+`AgentConfig.RefreshAppearance()` (mirrors `RefreshGameList()`) is what Group 5's write-up named as the
+missing piece — `savelocker ui` is a separate, long-lived process from the daemon that applies a pushed
+console look, so it polls the setting off disk every 5s and repaints on change. **Also shipped:** `ListRow`'s
+two-line rows are now a fixed 62px (was computed from whichever font baked), the rail widened to 236px, and
+the button legend gained "Y Sync now", "L1 / R1 Switch section" and "☰ Steam menu" (a new
+`Widgets.GamepadHintWide` and `Icons.Menu` glyph — the literal ☰ character is outside the embedded font's
+atlas, same trap as every other non-ASCII character in this file). The header gained a real, visible
+**Sync all** primary button (new `Icons.Sync` glyph) plus a global Y/L1/R1 gamepad binding
+(`HandleGlobalGamepadActions`) — Y fires the same `SyncNowAsync()` the header button and the Overview's own
+"Sync now" already share; L1/R1 step through the rail's screens in order.
+<br>**Verified:** `dotnet build` on the full solution (`--no-incremental`) — 0 errors, only the pre-existing
+`WindowsBase` warning on `SaveLocker.Agent`/`.Tests`, unrelated. Every `Theme.*` name in `src/Agent.Linux/Ui/`
+was grepped for the old (pre-Checkpoint) field names afterward — none remain.
+<br>**Not verified live** — this session had no WSLg session and no reachable real Deck, the gap the grouping
+doc's own precondition for this group anticipated. The Y binding, L1/R1 section stepping, the 62px row layout
+and the accent actually repainting on a pushed console look all still need a WSLg or real-Deck pass before
+they can be called done end to end — the same honest gap every other hardware-gated feature in this project
+has shipped with.
+<br>**Deliberately not built:** Phase 6 item 4 (the Wayland desktop window) — the plan's own "open decision,
+blocking nothing yet," untouched here. Archivo was not swapped in for the Deck's fonts (still Inter +
+JetBrains Mono) — no Archivo TTFs to embed in this environment, the same asset gap Group 1 hit for PNG/ICO
+rasterization; flagged in `Theme.cs`'s own font-section comment rather than left unexplained.
+<br>**Next action:** a WSLg or real-Deck pass to actually exercise the gamepad nav and accent repaint this
+group added, or Group 7 (OS notifications) if that hardware access isn't available first. The Wayland
+decision (Phase 6 item 4) is still open and needs deciding before any code is written for it.
+
 ---
 
 ## Where things stand

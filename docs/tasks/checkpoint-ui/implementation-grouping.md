@@ -23,7 +23,7 @@ phases to do in one session, in what order, and why. Driven by three things weig
 | 3 | Phase 1 (agent half) + Phase 5 overview trim + Phase 3.3 (agent Sync all) | ✅ Shipped 2026-09-20 — tokens, primitives, Archivo, status header with Sync all + live progress, trimmed Overview, converted shell. **Phase 3.5 (per-game "Sync this game") ➡️ moved to Group 4**: it needs a game page and a per-game agent route, neither of which exists yet. See the Group 3 write-up below |
 | 4 | Phase 5 Games tab + art proxy + search + **Phase 3.5 (per-game Sync this game)** | ✅ Shipped 2026-09-21 — see the Group 4 write-up below |
 | 5 | Phase 4 appearance + fleet sync | ✅ Shipped 2026-09-21 — the `Ui:*` setting and its console card, the heartbeat push, the per-machine "Follow the console" override, the favicon, the brand mark, the Windows tray + window icon; **and the theme default now follows the OS**, after every hardcoded hex left the views (303 in `web`, 166 in `agent-ui` → 0). **Phase 4 item 4 (the Deck's accent) ➡️ moved to Group 6**: `Theme.cs`'s `AccentGreen` means both "accent" and "healthy" at 68 sites, so an accent switch there needs Group 6's token split; the plumbing it needs is done. See the Group 5 write-up below |
-| 6 | Phase 6 items 1-3 (Deck) | ⏳ Not started |
+| 6 | Phase 6 items 1-3 (Deck) | ✅ Shipped 2026-09-22 (branch `claude/group-6-ui-redesign-6d9b06`) — Checkpoint tokens, the accent/healthy split, 62px two-line rows, the button legend, Sync all on Y. Verified by build only, as scoped below — gamepad/visual verification stays pending a WSLg or real-Deck pass |
 | 7 | Phase 7 (notifications) | ⏳ Not started |
 
 **2026-09-20 review pass (a code review of Groups 1–2, all findings fixed on branch
@@ -300,11 +300,65 @@ files. Keep it alone — a wire change plus a settings surface plus tray/favicon
 session on its own.
 
 **Group 6 — Deck. Code-only from here.**
-Phase 6 items 1–3: Checkpoint dark tokens in `src/Agent.Linux/Ui/Theme.cs`, two-line rows in
-`Widgets.cs`, the button legend, and Sync all bound to Y. Independent of Groups 2–5 — it shares no
-files with them — so it can slot in any time after Group 1 fixes the token values. Compiles and gets
-reviewed here; flag gamepad verification as pending a WSLg or real-Deck pass, the same honest way
-every other hardware-gated feature in this project has shipped.
+✅ **Shipped 2026-09-22 (branch `claude/group-6-ui-redesign-6d9b06`).** Phase 6 items 1–3.
+<br>**Item 1, `Theme.cs`:** the palette is now the literal Checkpoint dark set from `web/src/index.css`'s
+`@theme` block (`Ink`/`Panel`/`Raise`/`Tile`/`Hover`/`Fg`/`Dim`/`Faint`/`Line`/`Row`/`Safe`/`Watch`),
+replacing the old pre-Checkpoint names (`BgGlobal`, `TextPrimary`, `AccentGreen`, …) 1:1 by role. The
+real work was the split Group 5 flagged: `AccentGreen` had been the interaction accent **and** the
+healthy colour at once, so pointing a Checkpoint accent at it would make Ember read as "connected".
+`Safe` (olive, fixed) now owns every "server and machine agree" fact — connected/enrolled status, the
+"already tracked" and "newer" badges, progress bars, code/mono text — and `Accent` (dynamic) owns
+every "a decision is waiting" affordance — the focus ring, `Primary` buttons, `Toggle`/`CheckRow`'s
+on-state, and the hover/press lift on every button, row and rail item, since that is the one moment
+plan.md's rule allows the accent outside a genuine decision. Each call site was checked against the
+shipped web/agent-ui component it mirrors (`Chip.tsx`'s own `ok`/`warn`/`crit` doc comment turned out
+to be the exact framework already in use) rather than guessed — e.g. `ConflictCard.tsx`'s "newer" tag
+is `--color-safe-ink`, not the accent, and its escalated line is `--color-accent-ink`, not a dedicated
+red, both now matched exactly. `Accent`/`OnAccent` are `Theme.SetAccent(AccentColors)`, sourced from
+`AppearancePalette.For(_config.EffectiveAppearance.Accent)`: set once at startup before the first
+`ApplyStyle()` bake, and again whenever `AgentConfig.AppearanceChanged` fires. That event only ever
+fired from the daemon before this — a separate process from `savelocker ui` — so a new
+`AgentConfig.RefreshAppearance()` (mirroring the existing `RefreshGameList()`'s re-read-from-disk
+shape exactly) is polled every 5s to pick up a console-pushed or other-machine look. This is the
+plumbing Group 5's write-up named as still missing ("`RefreshAppearance()` ... the Deck UI loads
+config.json once and never reloads it").
+<br>**A genuine correction found by checking precedent, not left as a guess:** the rail's "current
+screen" indicator was accent-tinted in the old code (and in the Deck mockup's own CSS). But
+`agent-ui/src/ui.css`'s `.sl-nav[aria-current]` rule carries a comment recording the exact same
+correction for the exact same widget class ("is NOT the accent: that colour is reserved for 'a
+decision is waiting'"), already shipped and reviewed in Group 3. `RailItem`'s `active` state now
+matches it — a neutral `Tile`/`Line` tile, never the accent — and only its hover/focus lift is.
+<br>**Item 2:** `ListRow` now draws a **fixed** 62px height for a two-line row (`Theme.Layout.RowHeight`)
+and 46px for the folder browser's single-line entries, rather than a height computed from whichever
+font baked — "Rows are 62px tall" is prototype.html's own line for the Deck screen, and a fixed
+constant holds it exactly regardless of the font fallback path. The rail also grew from 220px to
+236px, the width plan.md's Surfaces table and the prototype both give it. The button legend
+(`DrawHintBar`) gained three entries — "Y Sync now", "L1 / R1 Switch section", "☰ Steam menu" — using
+a new `Widgets.GamepadHintWide` (a labelled pill, for a hint whose own label is more than one
+character) and a new `Icons.Menu` glyph (three bars — the literal ☰ character is outside the embedded
+font's ASCII+Latin-1 atlas, the same trap every other non-ASCII character in this file already avoids).
+<br>**Item 3:** the header gained a real, visible "Sync all" primary button (a new `Icons.Sync`
+refresh-arrows glyph, right-aligned beside the server chip, sized via a new
+`Widgets.MeasurePillButtonSize` so the block can be laid out before either control is drawn) *and* a
+global Y binding — `ButtonName.Y`/`LeftBumper`/`RightBumper` now map to
+`ImGuiKey.GamepadFaceUp`/`L1`/`R1`, and a new `HandleGlobalGamepadActions` (called once a frame,
+alongside `ResolvePaneCrossing`) fires the same `SyncNowAsync()` the button and the Overview's own
+"Sync now" already share, plus L1/R1 stepping through the rail's screens in order. The header itself
+stays `NoNav` (as it always was — nothing there was previously focusable): the button is reachable by
+pointer/trackpad click or the physical Y button, never by D-pad focus, which matches the header
+button's own role in the Deck mockup.
+<br>**Verified:** `dotnet build` on the full solution (`--no-incremental`) — 0 errors, the only warnings
+are the pre-existing `WindowsBase` version conflict on `SaveLocker.Agent`/`SaveLocker.Agent.Tests`,
+unrelated to this change. Every `Theme.*` reference in `src/Agent.Linux/Ui/` was grepped for the old
+names afterward — none remain. **Not verified live** — no WSLg session or real Deck in this
+environment, the same gap the grouping doc's own precondition anticipated; gamepad nav (the Y binding,
+L1/R1 section stepping, the 62px row layout, the accent actually repainting on a pushed look) needs a
+WSLg or real-Deck pass before it can be called done end to end.
+<br>**Deliberately not built:** Phase 6 item 4 (the Wayland desktop window) — a separate, undecided
+item per the plan's own "Open decision" section, out of this group's scope. Archivo was not swapped
+in for the Deck's fonts (still Inter + JetBrains Mono): this environment has no Archivo TTFs to embed,
+the same asset gap Group 1 hit for PNG/ICO rasterization — flagged in `Theme.cs`'s own font-section
+comment for whoever brings the fonts next, rather than silently left unexplained.
 
 **Group 7 — Notifications. Windows half here, Linux half deferred.**
 Phase 7. The Windows toast is buildable *and* verifiable on this machine. The Linux freedesktop call

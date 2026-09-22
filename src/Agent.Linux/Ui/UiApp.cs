@@ -84,6 +84,12 @@ sealed class UiApp
     private long _gamesReadAt;
     private const long GamesPollMs = 10000;
 
+    // Same reasoning as the game list above, for the appearance the console last pushed: this
+    // process loaded config.json once at startup and never re-reads it on its own, so a look changed
+    // from the console or another machine would otherwise never reach a Deck already running.
+    private long _appearanceReadAt;
+    private const long AppearancePollMs = 5000;
+
     // A conflict only carries version ids; both sides' machine/timestamp/size and file-count are
     // fetched lazily and cached forever (an archive's stats never change once uploaded), mirroring
     // agent-ui's useConflictVersions.ts. Every field write happens on the render thread, in
@@ -161,6 +167,9 @@ sealed class UiApp
     private int _pendingCrossFrames;
     private const int PendingCrossFrames = 1800;   // ~30 s; a cold scan can take a while
     private bool _navLeftFired, _navRightFired, _navBackFired;
+    // Y (Sync all) and L1/R1 (switch rail section) — global, not pane-scoped like the three above,
+    // so they fire from whichever pane the cursor is in. See HandleGlobalGamepadActions.
+    private bool _navSyncFired, _navSectionPrevFired, _navSectionNextFired;
     private int _strandedFrames;
 
     // Scripted navigation, for verification. Gamepad nav is the single hardest thing to test off a
@@ -280,6 +289,12 @@ sealed class UiApp
         // button already makes, not a duplicated sync path.
         _apiPort = apiPort;
         _localAuth = LocalAuth.LoadOrCreate(config.ConfigPath);
+
+        // Repaint whenever this machine's effective appearance changes — a pushed console look, or
+        // (once a picker exists here) this machine's own choice. Always fires on the render thread in
+        // this process: the only writers of AppearanceChanged elsewhere (the heartbeat handler, the
+        // local API) run inside the daemon, a separate process this one never becomes.
+        _config.AppearanceChanged += look => Theme.SetAccent(AppearancePalette.For(look.Accent));
     }
 
     public static int Run(AgentConfig config, string? sizeOverride = null, string? screenshotPath = null,
@@ -420,6 +435,10 @@ sealed class UiApp
         // Fonts must be added inside onConfigureIO: Silk invokes it before baking the font device
         // texture, so anything added afterwards is silently ignored.
         _controller = new ImGuiController(_gl, _window, _input, null, Theme.LoadFonts);
+        // Before ApplyStyle, not after: SetAccent only rebakes the style table itself once it has
+        // already been applied once, so setting the accent first means ApplyStyle bakes it in one
+        // pass rather than baking twice.
+        Theme.SetAccent(AppearancePalette.For(_config.EffectiveAppearance.Accent));
         Theme.ApplyStyle();
         Art.Load(_gl);
 
@@ -484,6 +503,9 @@ sealed class UiApp
         ButtonName.DPadRight => ImGuiKey.GamepadDpadRight,
         ButtonName.A => ImGuiKey.GamepadFaceDown,   // activate
         ButtonName.B => ImGuiKey.GamepadFaceRight,  // cancel
+        ButtonName.Y => ImGuiKey.GamepadFaceUp,     // Sync all — the button legend's "Y Sync now"
+        ButtonName.LeftBumper => ImGuiKey.GamepadL1,   // Switch section (previous rail entry)
+        ButtonName.RightBumper => ImGuiKey.GamepadR1,  // Switch section (next rail entry)
         _ => null,
     };
 
@@ -523,6 +545,7 @@ sealed class UiApp
         // reconciled it since the last frame. First frame included (_gamesReadAt == 0), which is
         // the reconcile-on-launch half — a ghost deleted before startup never paints at all.
         PollGameList();
+        PollAppearance();
         // Before Update, which is what calls NewFrame: a queued mouse position must be in the queue
         // NewFrame drains, because NewFrame is also where HoveredWindow is resolved. MouseDelta read
         // here is last frame's, which costs the highlight a frame nobody can perceive.
@@ -539,7 +562,7 @@ sealed class UiApp
         _controller.Update((float)delta);
 
 
-        _gl.ClearColor(Theme.BgGlobal.X, Theme.BgGlobal.Y, Theme.BgGlobal.Z, 1.0f);
+        _gl.ClearColor(Theme.Ink.X, Theme.Ink.Y, Theme.Ink.Z, 1.0f);
         _gl.Clear((uint)ClearBufferMask.ColorBufferBit);
 
         var flags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize |
@@ -590,6 +613,7 @@ sealed class UiApp
 
         RecoverStrandedCursor();
         ResolvePaneCrossing();
+        HandleGlobalGamepadActions();
 
         ImGui.End();
         _controller.Render();
@@ -713,6 +737,41 @@ sealed class UiApp
         _navLeftFired = _navRightFired = _navBackFired = false;
     }
 
+    /// <summary>Rail order — must match the entries <see cref="DrawRail"/> draws. Set save folder is
+    /// a sub-flow of Add game and deliberately not included, same as it is not a rail entry.</summary>
+    private static readonly Screen[] RailScreens =
+    {
+        Screen.Status, Screen.AddGame, Screen.Conflicts, Screen.LaunchSetup, Screen.Settings,
+    };
+
+    /// <summary>
+    /// Y (Sync all) and L1/R1 (switch rail section) — implementation.md Phase 6 item 3 ("Sync all in
+    /// the Deck header, bound to Y, using the existing sync path"). Global rather than pane-scoped
+    /// like <see cref="ResolvePaneCrossing"/>'s Left/Right/B: they act from whichever pane the cursor
+    /// is currently in, the same reach the button legend along the bottom promises.
+    /// </summary>
+    private void HandleGlobalGamepadActions()
+    {
+        if (_navSyncFired && Connected && _syncNowTask is not { IsCompleted: false })
+        {
+            _syncNowMessage = null;
+            _syncNowTask = SyncNowAsync();
+        }
+
+        if (_navSectionPrevFired || _navSectionNextFired)
+        {
+            // Set save folder shares Add game's rail slot (DrawRail already highlights "Add game"
+            // for both), so it steps from there rather than falling back to Overview.
+            var effective = _screen == Screen.SetFolder ? Screen.AddGame : _screen;
+            var index = Array.IndexOf(RailScreens, effective);
+            if (index < 0) index = 0;
+            var step = _navSectionNextFired ? 1 : -1;
+            Go(RailScreens[(index + step + RailScreens.Length) % RailScreens.Length]);
+        }
+
+        _navSyncFired = _navSectionPrevFired = _navSectionNextFired = false;
+    }
+
     private void EnterContent()
     {
         _focusZone = Zone.Content;
@@ -776,7 +835,7 @@ sealed class UiApp
     private void DrawHeader(Vector2 size)
     {
         ImGui.SetCursorPos(Vector2.Zero);
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.BgCard);
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Panel);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
             new Vector2(Theme.Layout.Gutter, Theme.Space.Sm));
         ImGui.BeginChild("header", new Vector2(size.X, Theme.Layout.HeaderHeight),
@@ -797,25 +856,52 @@ sealed class UiApp
 
         ImGui.BeginGroup();
         Widgets.EyebrowLabel("Agent Status");
-        var accent = Connected ? Theme.AccentGreen : Theme.AccentAmber;
-        Widgets.StatusDot(accent, 8f);
+        var statusColour = Connected ? Theme.Safe : Theme.Watch;
+        Widgets.StatusDot(statusColour, 8f);
         ImGui.SameLine(0, Theme.Space.Sm);
-        Widgets.Text(Connected ? "CONNECTED" : "NOT ENROLLED", accent, Theme.BodyStrong);
+        Widgets.Text(Connected ? "CONNECTED" : "NOT ENROLLED", statusColour, Theme.BodyStrong);
         ImGui.EndGroup();
 
-        // Server chip, right-aligned.
+        // Right side: Sync all (bound to Y — see HandleGlobalGamepadActions) and the server chip,
+        // right-aligned as one block (checkpoint-ui/prototype.html's Deck header).
         var url = _config.ServerUrl?.Replace("https://", "").Replace("http://", "") ?? "";
+        float chipW = 0f;
         if (!string.IsNullOrEmpty(url))
         {
             Theme.PushFont(Theme.Mono);
-            var chipW = ImGui.CalcTextSize(url).X + 52f;
+            chipW = ImGui.CalcTextSize(url).X + 52f;
             Theme.PopFont(Theme.Mono);
+        }
 
-            ImGui.SameLine();
-            var pad = ImGui.GetContentRegionAvail().X - chipW;
-            if (pad > 0) { ImGui.Dummy(new Vector2(pad, 0)); ImGui.SameLine(); }
-            ImGui.SetCursorPosY((Theme.Layout.HeaderHeight - 26f) / 2f - Theme.Space.Sm);
-            Widgets.Badge(url, Theme.AccentGreen, Icons.Server, mono: true);
+        bool syncingAll = _syncNowTask is { IsCompleted: false };
+        var syncLabel = syncingAll ? "Syncing..." : "Sync all";
+        var syncSize = Widgets.MeasurePillButtonSize(syncLabel, Icons.Sync);
+        Theme.PushFont(Theme.Caption);
+        var hintW = ImGui.CalcTextSize("Y").X;
+        Theme.PopFont(Theme.Caption);
+
+        var blockW = syncSize.X + Theme.Space.Xs + hintW + (chipW > 0f ? Theme.Space.Lg + chipW : 0f);
+
+        ImGui.SameLine();
+        var pad = ImGui.GetContentRegionAvail().X - blockW;
+        if (pad > 0) { ImGui.Dummy(new Vector2(pad, 0)); ImGui.SameLine(); }
+
+        ImGui.SetCursorPosY((Theme.Layout.HeaderHeight - syncSize.Y) / 2f - Theme.Space.Sm);
+        if (Widgets.PillButton(syncLabel, Widgets.ButtonKind.Primary, Icons.Sync,
+                enabled: !syncingAll && Connected))
+        {
+            _syncNowMessage = null;
+            _syncNowTask = SyncNowAsync();
+        }
+        ImGui.SameLine(0, Theme.Space.Xs);
+        ImGui.AlignTextToFramePadding();
+        Widgets.Text("Y", Theme.Faint, Theme.Caption);
+
+        if (chipW > 0f)
+        {
+            ImGui.SameLine(0, Theme.Space.Lg);
+            ImGui.AlignTextToFramePadding();
+            Widgets.Badge(url, Theme.Safe, Icons.Server, mono: true);
         }
 
         ImGui.EndChild();
@@ -830,7 +916,7 @@ sealed class UiApp
         var height = size.Y - Theme.Layout.HeaderHeight - Theme.Layout.HintBarHeight;
 
         ImGui.SetCursorPos(new Vector2(0, Theme.Layout.HeaderHeight));
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.BgCard);
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Panel);
         // Horizontal padding is FocusClearance, not Space.Sm: rail entries are full-width, so the
         // padding is the only room their focus ring has.
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
@@ -908,7 +994,7 @@ sealed class UiApp
     private static void DrawSeparators(Vector2 size)
     {
         var dl = ImGui.GetForegroundDrawList();
-        var colour = ImGui.ColorConvertFloat4ToU32(Theme.Border);
+        var colour = ImGui.ColorConvertFloat4ToU32(Theme.Line);
         var railBottom = size.Y - Theme.Layout.HintBarHeight;
 
         dl.AddLine(new Vector2(0, Theme.Layout.HeaderHeight),
@@ -923,7 +1009,7 @@ sealed class UiApp
         var height = size.Y - Theme.Layout.HeaderHeight - Theme.Layout.HintBarHeight;
 
         ImGui.SetCursorPos(new Vector2(Theme.Layout.RailWidth + 1f, Theme.Layout.HeaderHeight));
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.BgGlobal);
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Ink);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
             new Vector2(Theme.Layout.Gutter, Theme.Layout.Gutter));
         var contentFlags = ImGuiWindowFlags.NavFlattened;
@@ -985,7 +1071,7 @@ sealed class UiApp
         var y = size.Y - Theme.Layout.HintBarHeight;
 
         ImGui.SetCursorPos(new Vector2(0, y));
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.BgCard);
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Panel);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,
             new Vector2(Theme.Layout.Gutter, Theme.Space.Sm + 2f));
         ImGui.BeginChild("hints", new Vector2(size.X, Theme.Layout.HintBarHeight),
@@ -998,6 +1084,12 @@ sealed class UiApp
         Widgets.GamepadHint("B", _screen == Screen.SetFolder ? "Cancel" : "Back");
         ImGui.SameLine(0, Theme.Space.Lg);
         Widgets.GamepadHintIcon(Icons.Dpad, "Move");
+        ImGui.SameLine(0, Theme.Space.Lg);
+        Widgets.GamepadHint("Y", "Sync now");
+        ImGui.SameLine(0, Theme.Space.Lg);
+        Widgets.GamepadHintWide("L1 / R1", "Switch section");
+        ImGui.SameLine(0, Theme.Space.Lg);
+        Widgets.GamepadHintIcon(Icons.Menu, "Steam menu");
 
         var version = $"SaveLocker {BuildVersion}";
         Theme.PushFont(Theme.Caption);
@@ -1008,7 +1100,7 @@ sealed class UiApp
         var pad = ImGui.GetContentRegionAvail().X - vw;
         if (pad > 0) { ImGui.Dummy(new Vector2(pad, 0)); ImGui.SameLine(); }
         ImGui.AlignTextToFramePadding();
-        Widgets.Text(version, Theme.TextDim, Theme.Caption);
+        Widgets.Text(version, Theme.Faint, Theme.Caption);
 
         ImGui.EndChild();
         ImGui.PopStyleVar();
@@ -1041,7 +1133,7 @@ sealed class UiApp
         {
             Widgets.Banner("notenrolled", "This device is not enrolled",
                 "Run  savelocker enroll --file <policy.json>  once in Desktop Mode, then come back here.",
-                Theme.AccentAmber, Icons.AlertTriangle);
+                Theme.Watch, Icons.AlertTriangle);
             Widgets.Gap(Theme.Space.Md);
         }
 
@@ -1052,11 +1144,11 @@ sealed class UiApp
             ? FormatAgo(DateTime.UtcNow - _config.LastSyncTime.Value)
             : "-";
 
-        Widgets.StatTile(_config.Games.Count.ToString(), "Games Tracked", Theme.AccentGreen, tileW, 112f);
+        Widgets.StatTile(_config.Games.Count.ToString(), "Games Tracked", Theme.Safe, tileW, 112f);
         ImGui.SameLine(0, Theme.Space.Md);
-        Widgets.StatTile(_config.TotalSavesPushed.ToString(), "Saves Backed Up", Theme.TextPrimary, tileW, 112f);
+        Widgets.StatTile(_config.TotalSavesPushed.ToString(), "Saves Backed Up", Theme.Fg, tileW, 112f);
         ImGui.SameLine(0, Theme.Space.Md);
-        Widgets.StatTile(lastSync, "Last Sync", Theme.TextMuted, tileW, 112f);
+        Widgets.StatTile(lastSync, "Last Sync", Theme.Dim, tileW, 112f);
 
         Widgets.Gap(Theme.Space.Lg);
 
@@ -1074,7 +1166,7 @@ sealed class UiApp
                 Widgets.SectionHeader("Tracked games");
                 if (_config.Games.Count == 0)
                 {
-                    Widgets.Text("No games tracked yet.", Theme.TextMuted);
+                    Widgets.Text("No games tracked yet.", Theme.Dim);
                     Widgets.Gap(Theme.Space.Md);
                     if (Widgets.PillButton("Add a game", Widgets.ButtonKind.Primary, Icons.Plus))
                         Go(Screen.AddGame);
@@ -1099,7 +1191,7 @@ sealed class UiApp
                             conflicted || missing ? Icons.AlertTriangle : Icons.Folder,
                             trailing: conflicted && missing ? "conflict + needs setup"
                                 : conflicted ? "conflict" : missing ? "needs setup" : null,
-                            trailingColour: (conflicted || missing) ? Theme.AccentAmber : null,
+                            trailingColour: (conflicted || missing) ? Theme.Watch : null,
                             chevron: conflicted);
                         if (pressed && conflicted) Go(Screen.Conflicts);
                     }
@@ -1115,7 +1207,7 @@ sealed class UiApp
                 InfoRow("Server", _config.ServerUrl ?? "-", mono: true);
                 InfoRow("Agent", BuildVersion, mono: true);
                 InfoRow("Status", Connected ? "Enrolled" : "Not enrolled",
-                    colour: Connected ? Theme.AccentGreen : Theme.AccentAmber);
+                    colour: Connected ? Theme.Safe : Theme.Watch);
 
                 Widgets.Gap(Theme.Space.Lg);
                 Widgets.SectionHeader("Next step");
@@ -1135,13 +1227,13 @@ sealed class UiApp
                     Widgets.TextWrapped(
                         $"SaveLocker {pending} is downloaded and ready. "
                         + Updater.ApplyInstruction(),
-                        Theme.AccentGreen);
+                        Theme.Safe);
                     Widgets.Gap(Theme.Space.Sm);
                 }
 
                 Widgets.TextWrapped(
                     "Each game needs the SaveLocker launch option set once in Steam before it syncs.",
-                    Theme.TextMuted);
+                    Theme.Dim);
                 Widgets.Gap(Theme.Space.Sm);
                 if (Widgets.PillButton("Steam setup", Widgets.ButtonKind.Secondary, Icons.Settings))
                     Go(Screen.LaunchSetup);
@@ -1184,7 +1276,7 @@ sealed class UiApp
         {
             ImGui.SameLine(0, Theme.Space.Md);
             ImGui.AlignTextToFramePadding();
-            Widgets.Text(_syncNowMessage, Theme.TextMuted, Theme.Caption);
+            Widgets.Text(_syncNowMessage, Theme.Dim, Theme.Caption);
         }
         Widgets.Gap(Theme.Space.Sm);
 
@@ -1193,13 +1285,13 @@ sealed class UiApp
 
         if (!active)
         {
-            Widgets.StatusDot(Theme.TextDim, 7f);
+            Widgets.StatusDot(Theme.Faint, 7f);
             ImGui.SameLine(0, Theme.Space.Sm);
             ImGui.AlignTextToFramePadding();
             // A plain hyphen, not an em dash: the embedded font's glyph atlas is ASCII + Latin-1
             // only (Theme.LoadFonts), so U+2014 renders as a missing-glyph box on this screen —
             // every other real (non-comment) string in this file already avoids it for that reason.
-            Widgets.Text("Idle - nothing syncing right now.", Theme.TextMuted, Theme.Caption);
+            Widgets.Text("Idle - nothing syncing right now.", Theme.Dim, Theme.Caption);
         }
         else
         {
@@ -1209,10 +1301,10 @@ sealed class UiApp
                 SyncPhase.Pulling => "Pulling",
                 _ => "Settling",
             };
-            Widgets.StatusDot(Theme.AccentGreen, 7f);
+            Widgets.StatusDot(Theme.Safe, 7f);
             ImGui.SameLine(0, Theme.Space.Sm);
             ImGui.AlignTextToFramePadding();
-            Widgets.Text($"{verb} {current.GameName}...", Theme.TextPrimary, Theme.Caption);
+            Widgets.Text($"{verb} {current.GameName}...", Theme.Fg, Theme.Caption);
 
             if (current.Phase == SyncPhase.Pushing && current.BytesTotal > 0)
             {
@@ -1221,7 +1313,7 @@ sealed class UiApp
                 Widgets.ProgressBar(pct, ImGui.GetContentRegionAvail().X);
                 Widgets.Gap(Theme.Space.Xs);
                 Widgets.Text($"{FormatBytes(current.BytesDone)} / {FormatBytes(current.BytesTotal)}",
-                    Theme.TextDim, Theme.Caption);
+                    Theme.Faint, Theme.Caption);
             }
         }
 
@@ -1231,7 +1323,7 @@ sealed class UiApp
         {
             Widgets.Gap(Theme.Space.Sm);
             foreach (var e in _activityRecent.Take(3))
-                Widgets.Text($"{e.TimestampUtc.ToLocalTime():HH:mm:ss}  {e.Message}", Theme.TextDim, Theme.Caption);
+                Widgets.Text($"{e.TimestampUtc.ToLocalTime():HH:mm:ss}  {e.Message}", Theme.Faint, Theme.Caption);
         }
 
         Widgets.EndCard();
@@ -1293,7 +1385,7 @@ sealed class UiApp
                     $"{w.HolderMachine} already has this game checked out. You launched without "
                     + "pulling their latest save, so a conflict will likely appear in the console "
                     + "when you exit.",
-                    Theme.AccentAmber, Icons.AlertTriangle, dismissible: true))
+                    Theme.Watch, Icons.AlertTriangle, dismissible: true))
             {
                 _leaseWarnings.Clear(w.GameName);
                 _warningsReadAt = 0;   // force a re-read next frame
@@ -1306,9 +1398,9 @@ sealed class UiApp
     /// <summary>A label/value pair, aligned into a column so a stack of them reads as a table.</summary>
     private static void InfoRow(string label, string value, bool mono = false, Vector4? colour = null)
     {
-        Widgets.Text(label, Theme.TextMuted, Theme.Caption);
+        Widgets.Text(label, Theme.Dim, Theme.Caption);
         ImGui.SameLine(96f);
-        Widgets.Text(value, colour ?? Theme.TextPrimary, mono ? Theme.Mono : Theme.Body);
+        Widgets.Text(value, colour ?? Theme.Fg, mono ? Theme.Mono : Theme.Body);
     }
 
     private void DrawAddGame()
@@ -1318,7 +1410,7 @@ sealed class UiApp
             Widgets.Banner("addblocked", "This device is not enrolled",
                 "Games cannot be added yet. Run  savelocker enroll --file <policy.json>  once in "
                 + "Desktop Mode, then return here.",
-                Theme.AccentAmber, Icons.AlertTriangle);
+                Theme.Watch, Icons.AlertTriangle);
             return;
         }
 
@@ -1334,11 +1426,11 @@ sealed class UiApp
         if (scanning)
         {
             var dl = ImGui.GetWindowDrawList();
-            Icons.Spinner(dl, ImGui.GetCursorScreenPos(), 22f, Theme.AccentGreen, 2.5f);
+            Icons.Spinner(dl, ImGui.GetCursorScreenPos(), 22f, Theme.Safe, 2.5f);
             ImGui.Dummy(new Vector2(22, 22));
             ImGui.SameLine(0, Theme.Space.Md);
             ImGui.AlignTextToFramePadding();
-            Widgets.Text("Scanning for games...", Theme.TextMuted);
+            Widgets.Text("Scanning for games...", Theme.Dim);
         }
         else if (Widgets.PillButton("Scan for games", Widgets.ButtonKind.Primary, Icons.Search))
         {
@@ -1390,7 +1482,7 @@ sealed class UiApp
         {
             ImGui.SameLine(0, Theme.Space.Md);
             ImGui.AlignTextToFramePadding();
-            Widgets.Text(_addStatus, Theme.TextMuted, Theme.Caption);
+            Widgets.Text(_addStatus, Theme.Dim, Theme.Caption);
         }
 
         Widgets.Gap(Theme.Space.Md);
@@ -1427,7 +1519,7 @@ sealed class UiApp
             var sourceFiltered = Enumerable.Range(0, _candidates.Count)
                 .Where(i => MatchesFilter(_candidates[i], _addFilter))
                 .ToList();
-            Widgets.Text("Path", Theme.TextDim, Theme.Caption);
+            Widgets.Text("Path", Theme.Faint, Theme.Caption);
             foreach (var m in Enum.GetValues<PathMode>())
             {
                 ImGui.SameLine(0, Theme.Space.Sm);
@@ -1478,11 +1570,11 @@ sealed class UiApp
             // Plain quotes, not curly ones: the embedded font's glyph atlas is ASCII + Latin-1 only
             // (Theme.LoadFonts), so U+201C/U+201D rendered as missing-glyph boxes here.
             Widgets.Text($"No games match \"{FilterLabel(_addFilter)}{pathSuffix}\". Choose All to see every one.",
-                Theme.TextMuted);
+                Theme.Dim);
         }
         else
         {
-            Widgets.Text("Scan to find games with Proton prefixes on this device.", Theme.TextMuted);
+            Widgets.Text("Scan to find games with Proton prefixes on this device.", Theme.Dim);
         }
         NavDebug.PopScope();
         ImGui.EndChild();
@@ -1501,7 +1593,7 @@ sealed class UiApp
             ImGui.SameLine(0, Theme.Space.Md);
             ImGui.AlignTextToFramePadding();
             Widgets.Text("Set a save folder for: " + string.Join(", ", missing),
-                Theme.AccentAmberLt, Theme.Caption);
+                Theme.WatchInk, Theme.Caption);
         }
     }
 
@@ -1522,26 +1614,26 @@ sealed class UiApp
         ImGui.SameLine(0, Theme.Space.Md);
 
         ImGui.BeginGroup();
-        Widgets.Text(c.Name, alreadyTracked ? Theme.TextMuted : Theme.TextPrimary, Theme.BodyStrong);
+        Widgets.Text(c.Name, alreadyTracked ? Theme.Dim : Theme.Fg, Theme.BodyStrong);
         ImGui.SameLine(0, Theme.Space.Sm);
         ImGui.AlignTextToFramePadding();
-        Widgets.Text($"[{c.Source}]", Theme.TextDim, Theme.Caption);
+        Widgets.Text($"[{c.Source}]", Theme.Faint, Theme.Caption);
 
         if (alreadyTracked)
         {
             ImGui.SameLine(0, Theme.Space.Sm);
-            Widgets.Badge("already tracked", Theme.AccentGreen, Icons.Check);
+            Widgets.Badge("already tracked", Theme.Safe, Icons.Check);
         }
         else if (!hasFolder)
         {
             ImGui.SameLine(0, Theme.Space.Sm);
-            Widgets.Badge("no save folder", Theme.AccentAmber, Icons.AlertTriangle);
+            Widgets.Badge("no save folder", Theme.Watch, Icons.AlertTriangle);
         }
 
         if (!alreadyTracked)
         {
             Widgets.Text(hasFolder ? c.SuggestedSaveDir! : "Pick where this game keeps its saves.",
-                hasFolder ? Theme.TextMuted : Theme.AccentAmberLt, Theme.Caption);
+                hasFolder ? Theme.Dim : Theme.WatchInk, Theme.Caption);
             if (Widgets.PillButton(hasFolder ? "Change folder" : "Set save folder",
                     hasFolder ? Widgets.ButtonKind.Ghost : Widgets.ButtonKind.Secondary, Icons.Folder))
                 EnterSetFolder(i);
@@ -1553,7 +1645,7 @@ sealed class UiApp
         var dl = ImGui.GetWindowDrawList();
         var p = ImGui.GetCursorScreenPos();
         dl.AddLine(p, p + new Vector2(ImGui.GetContentRegionAvail().X, 0),
-            ImGui.ColorConvertFloat4ToU32(Theme.BgRowSep), 1f);
+            ImGui.ColorConvertFloat4ToU32(Theme.Row), 1f);
         Widgets.Gap(Theme.Space.Sm);
 
         ImGui.PopID();
@@ -1581,13 +1673,13 @@ sealed class UiApp
         }
 
         var c = _candidates[_folderTargetId];
-        Widgets.Text($"Save folder for {c.Name}", Theme.TextPrimary, Theme.Title);
+        Widgets.Text($"Save folder for {c.Name}", Theme.Fg, Theme.Title);
         if (!string.IsNullOrEmpty(c.PrefixPath))
             Widgets.TextWrapped(
                 "Opened inside this game's Proton prefix. Saves usually sit under Documents, "
                 + "AppData/Roaming or AppData/LocalLow. The right pane lists files in the current "
                 + "folder so you can confirm the save is really here.",
-                Theme.TextMuted);
+                Theme.Dim);
         Widgets.Gap(Theme.Space.Sm);
 
         if (_lastListedPath != _browsePath)
@@ -1602,13 +1694,13 @@ sealed class UiApp
         {
             Widgets.Banner("unreadable", "Folder not available",
                 "That folder is not readable, or is outside the browsable roots.",
-                Theme.AccentAmber, Icons.AlertTriangle);
+                Theme.Watch, Icons.AlertTriangle);
             _browsePath = "";
             return;
         }
 
         Widgets.Badge(string.IsNullOrEmpty(_listing.Path) ? "(roots)" : _listing.Path,
-            Theme.TextMuted, Icons.HardDrive, mono: true);
+            Theme.Dim, Icons.HardDrive, mono: true);
         Widgets.Gap(Theme.Space.Sm);
 
         var avail = ImGui.GetContentRegionAvail();
@@ -1640,9 +1732,9 @@ sealed class UiApp
             {
                 Widgets.SectionHeader(_files.Length == 0 ? "Files here (none)" : $"Files here ({_files.Length})");
                 if (_files.Length == 0)
-                    Widgets.TextWrapped("This folder has no files directly in it.", Theme.TextDim);
+                    Widgets.TextWrapped("This folder has no files directly in it.", Theme.Faint);
                 foreach (var f in _files)
-                    Widgets.Text(f, Theme.TextMuted, Theme.Caption);
+                    Widgets.Text(f, Theme.Dim, Theme.Caption);
             },
             height: paneH);
 
@@ -1665,19 +1757,19 @@ sealed class UiApp
         {
             Widgets.Banner("nolaunch", "Not available here",
                 _launch.Note ?? "No launch command available on this platform.",
-                Theme.AccentAmber, Icons.AlertTriangle);
+                Theme.Watch, Icons.AlertTriangle);
             return;
         }
 
-        Widgets.Text("Steam launch setup", Theme.TextPrimary, Theme.Title);
+        Widgets.Text("Steam launch setup", Theme.Fg, Theme.Title);
         Widgets.TextWrapped("Add this to each game's Steam launch options so SaveLocker syncs it.",
-            Theme.TextMuted);
+            Theme.Dim);
         Widgets.Gap(Theme.Space.Md);
 
         // The command block: mono, accented, on a card. If the clipboard fails this is what the
         // user retypes, so it has to be unambiguous — hence the monospace face.
-        Widgets.BeginCard("cmd", new Vector2(0, 0), Theme.BgCard, Theme.ChipBorder);
-        Widgets.TextWrapped(_launch.Command, Theme.AccentGreen, Theme.Mono);
+        Widgets.BeginCard("cmd", new Vector2(0, 0), Theme.Panel, Theme.Line);
+        Widgets.TextWrapped(_launch.Command, Theme.Safe, Theme.Mono);
         Widgets.EndCard();
 
         Widgets.Gap(Theme.Space.Md);
@@ -1692,7 +1784,7 @@ sealed class UiApp
             ImGui.SameLine(0, Theme.Space.Md);
             ImGui.AlignTextToFramePadding();
             Widgets.Text(_copyResult,
-                _copyResult.StartsWith("Copied") ? Theme.AccentGreen : Theme.AccentAmber,
+                _copyResult.StartsWith("Copied") ? Theme.Safe : Theme.Watch,
                 Theme.Caption);
         }
 
@@ -1721,6 +1813,20 @@ sealed class UiApp
         // busy-gate to wait on. Best-effort: contention just defers to the next poll, and a
         // missing/unreadable file is a no-op (ReadOnDisk returns null) rather than a crash.
         try { _config.RefreshGameList(); } catch { /* the next poll retries */ }
+    }
+
+    /// <summary>
+    /// Re-read the appearance settings from disk (implementation.md Phase 6 item 1's "the Deck's
+    /// accent" — moved here from Group 5, which left the plumbing this calls). A changed effective
+    /// look raises <see cref="AgentConfig.AppearanceChanged"/>, repainting via the subscription in
+    /// the constructor. Same best-effort, non-blocking shape as <see cref="PollGameList"/>.
+    /// </summary>
+    private void PollAppearance()
+    {
+        var now = Environment.TickCount64;
+        if (_appearanceReadAt != 0 && now - _appearanceReadAt <= AppearancePollMs) return;
+        _appearanceReadAt = now;
+        try { _config.RefreshAppearance(); } catch { /* the next poll retries */ }
     }
 
     /// <summary>
@@ -1936,20 +2042,20 @@ sealed class UiApp
             Widgets.Banner("conflictsblocked", "This device is not enrolled",
                 "Conflicts can only be checked once this device is enrolled. Run  savelocker enroll "
                 + "--file <policy.json>  once in Desktop Mode, then come back here.",
-                Theme.AccentAmber, Icons.AlertTriangle);
+                Theme.Watch, Icons.AlertTriangle);
             return;
         }
 
-        Widgets.Text("Open conflicts", Theme.TextPrimary, Theme.Title);
+        Widgets.Text("Open conflicts", Theme.Fg, Theme.Title);
         Widgets.TextWrapped(
             "This device and the cloud both changed the same save before syncing. Pick which one to "
             + "keep - the other is never deleted, just set aside.",
-            Theme.TextMuted);
+            Theme.Dim);
         Widgets.Gap(Theme.Space.Md);
 
         if (!string.IsNullOrEmpty(_resolveError))
         {
-            if (Widgets.Banner("resolveerr", "Could not resolve", _resolveError, Theme.AccentAmber,
+            if (Widgets.Banner("resolveerr", "Could not resolve", _resolveError, Theme.Watch,
                     Icons.AlertTriangle, dismissible: true))
                 _resolveError = null;
             Widgets.Gap(Theme.Space.Md);
@@ -1958,7 +2064,7 @@ sealed class UiApp
         if (!string.IsNullOrEmpty(_conflictsError))
         {
             if (Widgets.Banner("conflictserr", "Could not check for conflicts", _conflictsError,
-                    Theme.AccentAmber, Icons.AlertTriangle, dismissible: true))
+                    Theme.Watch, Icons.AlertTriangle, dismissible: true))
                 _conflictsError = null;
             Widgets.Gap(Theme.Space.Md);
         }
@@ -1966,14 +2072,14 @@ sealed class UiApp
         if (_openConflicts.Count == 0)
         {
             Widgets.Gap(Theme.Space.Xl);
-            Icons.Draw(Icons.Cloud, 40f, Theme.AccentGreen);
+            Icons.Draw(Icons.Cloud, 40f, Theme.Safe);
             Widgets.Gap(Theme.Space.Sm);
-            Widgets.Text("Every tracked game's save matches the cloud.", Theme.TextPrimary, Theme.BodyStrong);
+            Widgets.Text("Every tracked game's save matches the cloud.", Theme.Fg, Theme.BodyStrong);
             Widgets.Gap(Theme.Space.Xs);
             Widgets.TextWrapped(
                 "If this device and the cloud both change the same save before syncing, the choice "
                 + "will show up here.",
-                Theme.TextMuted, Theme.Caption);
+                Theme.Dim, Theme.Caption);
             return;
         }
 
@@ -2004,17 +2110,19 @@ sealed class UiApp
         bool resolving = _resolvingConflictId == c.Id;
         bool anyResolving = _resolvingConflictId is not null;
 
-        Widgets.BeginCard("card", new Vector2(0, 0), Theme.BgCard, Theme.Border);
+        Widgets.BeginCard("card", new Vector2(0, 0), Theme.Panel, Theme.Line);
 
-        Widgets.Text(gameName, Theme.TextPrimary, Theme.BodyStrong);
+        Widgets.Text(gameName, Theme.Fg, Theme.BodyStrong);
         ImGui.SameLine(0, Theme.Space.Sm);
         ImGui.AlignTextToFramePadding();
-        Widgets.Badge("CONFLICT", Theme.AccentAmber, Icons.AlertTriangle);
+        Widgets.Badge("CONFLICT", Theme.Watch, Icons.AlertTriangle);
         if (c.Escalated)
         {
             ImGui.SameLine(0, Theme.Space.Sm);
             ImGui.AlignTextToFramePadding();
-            Widgets.Text("Overdue - unresolved for over six hours.", Theme.AccentRed, Theme.Caption);
+            // Accent, not a dedicated red: matches ConflictCard.tsx's escalated line
+            // (`--color-accent-ink`) — overdue is a more urgent decision waiting, not a new colour.
+            Widgets.Text("Overdue - unresolved for over six hours.", Theme.AccentInk, Theme.Caption);
         }
         Widgets.Gap(Theme.Space.Sm);
 
@@ -2041,7 +2149,7 @@ sealed class UiApp
         if (resolving)
         {
             Widgets.Gap(Theme.Space.Xs);
-            Widgets.Text("Resolving...", Theme.TextMuted, Theme.Caption);
+            Widgets.Text("Resolving...", Theme.Dim, Theme.Caption);
         }
 
         Widgets.EndCard();
@@ -2056,35 +2164,35 @@ sealed class UiApp
         float width, Action onKeep)
     {
         ImGui.PushID(id);
-        Widgets.BeginCard("side", new Vector2(width, 0), Theme.BgTableHd, Theme.Border);
+        Widgets.BeginCard("side", new Vector2(width, 0), Theme.Raise, Theme.Line);
 
         // No AlignTextToFramePadding here: the icon's Dummy is exactly one text line tall (see
         // Icons.Draw's size argument below), so it is already level with the label without it. That
         // call is for lining plain text up against a *taller*, frame-padded sibling (see Toggle/
         // HintLabel) - adding it here when nothing on the line is taller just pushes the label down
         // by FramePadding.y for no reason, which is what put the icon and label visibly out of line.
-        Icons.Draw(icon, ImGui.GetTextLineHeight(), Theme.TextMuted);
+        Icons.Draw(icon, ImGui.GetTextLineHeight(), Theme.Dim);
         ImGui.SameLine(0, Theme.Space.Sm);
-        Widgets.Text(label, Theme.TextPrimary, Theme.BodyStrong);
+        Widgets.Text(label, Theme.Fg, Theme.BodyStrong);
         if (isNewer)
         {
             ImGui.SameLine(0, Theme.Space.Sm);
             ImGui.AlignTextToFramePadding();
-            Widgets.Badge("newer", Theme.AccentGreen);
+            Widgets.Badge("newer", Theme.Safe);
         }
 
         Widgets.Gap(Theme.Space.Xs);
         if (version is not null)
         {
-            Widgets.Text(FormatAgo(DateTime.UtcNow - version.CreatedAt), Theme.TextPrimary, Theme.Mono);
+            Widgets.Text(FormatAgo(DateTime.UtcNow - version.CreatedAt), Theme.Fg, Theme.Mono);
             var fileCount = stats is { FileCount: var fc } ? $"{fc} file{(fc == 1 ? "" : "s")} - " : "";
-            Widgets.Text(fileCount + FormatBytes(version.Size), Theme.TextMuted, Theme.Caption);
+            Widgets.Text(fileCount + FormatBytes(version.Size), Theme.Dim, Theme.Caption);
             if (!string.IsNullOrEmpty(caption))
-                Widgets.TextWrapped(caption, Theme.TextDim, Theme.Caption);
+                Widgets.TextWrapped(caption, Theme.Faint, Theme.Caption);
         }
         else
         {
-            Widgets.Text("Loading...", Theme.TextDim, Theme.Caption);
+            Widgets.Text("Loading...", Theme.Faint, Theme.Caption);
         }
 
         Widgets.Gap(Theme.Space.Sm);
@@ -2102,11 +2210,11 @@ sealed class UiApp
         var p = ImGui.GetCursorScreenPos();
         var lineH = ImGui.GetTextLineHeight();
         dl.AddCircleFilled(p + new Vector2(4f, lineH / 2f), 3f,
-            ImGui.ColorConvertFloat4ToU32(Theme.AccentGreen), 10);
+            ImGui.ColorConvertFloat4ToU32(Theme.Safe), 10);
 
         ImGui.Indent(Theme.Space.Lg);
-        Widgets.Text(title, Theme.TextPrimary, Theme.BodyStrong);
-        Widgets.TextWrapped(body, Theme.TextMuted, Theme.Caption);
+        Widgets.Text(title, Theme.Fg, Theme.BodyStrong);
+        Widgets.TextWrapped(body, Theme.Dim, Theme.Caption);
         ImGui.Unindent(Theme.Space.Lg);
         Widgets.Gap(Theme.Space.Sm);
     }
@@ -2146,6 +2254,9 @@ sealed class UiApp
             _navLeftFired = fire.Contains(ImGuiKey.GamepadDpadLeft);
             _navRightFired = fire.Contains(ImGuiKey.GamepadDpadRight);
             _navBackFired = fire.Contains(ImGuiKey.GamepadFaceRight);
+            _navSyncFired = fire.Contains(ImGuiKey.GamepadFaceUp);
+            _navSectionPrevFired = fire.Contains(ImGuiKey.GamepadL1);
+            _navSectionNextFired = fire.Contains(ImGuiKey.GamepadR1);
         }
 
         // Release last frame's pulses, then press this frame's — a clean down/up per physical press.
@@ -2261,7 +2372,7 @@ sealed class UiApp
         ImGui.PopStyleColor();
     }
 
-    private static void TextDis(string s) => TextCol(Theme.TextMuted, s);
+    private static void TextDis(string s) => TextCol(Theme.Dim, s);
 
     private static string FormatAgo(TimeSpan ago)
     {

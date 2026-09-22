@@ -213,8 +213,8 @@ static class Widgets
         var breathe = 0.5f + 0.5f * MathF.Sin((float)ImGui.GetTime() * 3.2f);
         var spread = GlowSpreadMin + (GlowSpreadMax - GlowSpreadMin) * breathe;
 
-        var glow = Theme.Alpha(Theme.AccentGreen, (0.40f + 0.30f * breathe) * strength);
-        var edge = Theme.Alpha(Theme.AccentGreen, strength);
+        var glow = Theme.Alpha(Theme.Accent, (0.40f + 0.30f * breathe) * strength);
+        var edge = Theme.Alpha(Theme.Accent, strength);
 
         dl.AddRect(min - new Vector2(spread, spread), max + new Vector2(spread, spread), U32(glow),
             rounding + spread, ImDrawFlags.None, GlowThickness);
@@ -352,7 +352,7 @@ static class Widgets
         Theme.PushFont(Theme.Caption);
         var dl = ImGui.GetWindowDrawList();
         var pos = ImGui.GetCursorScreenPos();
-        var col = U32(Theme.TextMuted);
+        var col = U32(Theme.Dim);
 
         // ImGui has no letter-spacing, so tracking is done by drawing character by character.
         // Worth it: the wide-tracked caps label is a signature of the console's visual language.
@@ -376,7 +376,7 @@ static class Widgets
         var dl = ImGui.GetWindowDrawList();
         var p = ImGui.GetCursorScreenPos();
         var w = ImGui.GetContentRegionAvail().X;
-        dl.AddLine(p + new Vector2(0, 2), p + new Vector2(w, 2), U32(Theme.BgRowSep), 1f);
+        dl.AddLine(p + new Vector2(0, 2), p + new Vector2(w, 2), U32(Theme.Row), 1f);
         ImGui.Dummy(new Vector2(0, Theme.Space.Sm));
     }
 
@@ -388,8 +388,8 @@ static class Widgets
     /// </summary>
     public static void BeginCard(string id, Vector2 size, Vector4? fill = null, Vector4? border = null)
     {
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, fill ?? Theme.BgCard);
-        ImGui.PushStyleColor(ImGuiCol.Border, border ?? Theme.Border);
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, fill ?? Theme.Panel);
+        ImGui.PushStyleColor(ImGuiCol.Border, border ?? Theme.Line);
         ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, Theme.Rounding.Card);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(Theme.Space.Lg, Theme.Space.Md));
         ImGui.BeginChild(id, size, ImGuiChildFlags.Border | ImGuiChildFlags.AutoResizeY,
@@ -410,15 +410,15 @@ static class Widgets
     public enum ButtonKind { Primary, Secondary, Danger, Ghost }
 
     /// <summary>
-    /// A pill button. Hover, focus and press are tweened, and the gamepad focus ring is drawn as a
-    /// full outline rather than ImGui's hairline — on a Deck it is the only cursor there is.
+    /// A <see cref="PillButton"/>'s size before it is drawn — the same formula that function uses
+    /// internally, exposed so a caller can right-align layout around a button it hasn't drawn yet
+    /// (the Deck header's Sync all button sits beside the server chip, both computed in one pass).
     /// </summary>
-    public static bool PillButton(string label, ButtonKind kind = ButtonKind.Secondary,
-        Icons.Glyph? icon = null, float minWidth = 0f, bool enabled = true)
+    public static Vector2 MeasurePillButtonSize(string label, Icons.Glyph? icon = null, float minWidth = 0f)
     {
         var padX = Theme.Space.Lg;
         var padY = Theme.Space.Sm + 2f;
-        var iconSize = enabled || true ? ImGui.GetTextLineHeight() : 0f;
+        var iconSize = ImGui.GetTextLineHeight();
 
         Theme.PushFont(Theme.BodyStrong);
         var textSize = ImGui.CalcTextSize(label);
@@ -427,6 +427,22 @@ static class Widgets
         var width = MathF.Max(minWidth,
             textSize.X + padX * 2 + (icon is null ? 0f : iconSize + Theme.Space.Sm));
         var height = textSize.Y + padY * 2;
+        return new Vector2(width, height);
+    }
+
+    /// <summary>
+    /// A pill button. Hover, focus and press are tweened, and the gamepad focus ring is drawn as a
+    /// full outline rather than ImGui's hairline — on a Deck it is the only cursor there is.
+    /// </summary>
+    public static bool PillButton(string label, ButtonKind kind = ButtonKind.Secondary,
+        Icons.Glyph? icon = null, float minWidth = 0f, bool enabled = true)
+    {
+        var padY = Theme.Space.Sm + 2f;
+        var iconSize = ImGui.GetTextLineHeight();
+
+        var buttonSize = MeasurePillButtonSize(label, icon, minWidth);
+        var width = buttonSize.X;
+        var height = buttonSize.Y;
 
         ClaimFocus(ImGui.GetID(label), enabled);
         if (!enabled) ImGui.BeginDisabled();
@@ -448,33 +464,39 @@ static class Widgets
 
         var (baseFill, baseText, borderColour) = kind switch
         {
-            ButtonKind.Primary   => (Theme.AccentGreen, Theme.TextPrimary, Theme.AccentGreen),
-            ButtonKind.Danger    => (Theme.Alpha(Theme.AccentAmber, 0.16f), Theme.AccentAmber, Theme.WarnBorder),
-            ButtonKind.Ghost     => (Theme.Alpha(Theme.BgCard, 0f), Theme.TextMuted, Theme.Alpha(Theme.Border, 0f)),
-            _                    => (Theme.BgTableHd, Theme.TextPrimary, Theme.Border),
+            ButtonKind.Primary   => (Theme.Accent, Theme.OnAccent, Theme.Accent),
+            ButtonKind.Danger    => (Theme.Alpha(Theme.Watch, 0.16f), Theme.Watch, Theme.WatchLine),
+            ButtonKind.Ghost     => (Theme.Alpha(Theme.Panel, 0f), Theme.Dim, Theme.Alpha(Theme.Line, 0f)),
+            _                    => (Theme.Raise, Theme.Fg, Theme.Line),
         };
 
+        // The hover/press lift tints toward the accent regardless of kind: it is what marks a
+        // control as "about to be interacted with", the one moment plan.md's colour rule allows the
+        // accent outside Primary and the focus ring.
         var fill = Mix(baseFill, kind == ButtonKind.Primary
-            ? Mix(baseFill, Theme.TextPrimary, 0.18f)
-            : Theme.Alpha(Theme.AccentGreen, 0.22f), lift * 0.6f);
-        var text = enabled ? baseText : Theme.TextDim;
+            ? Mix(baseFill, Theme.Fg, 0.18f)
+            : Theme.Alpha(Theme.Accent, 0.22f), lift * 0.6f);
+        var text = enabled ? baseText : Theme.Faint;
 
-        // A disabled Primary must lose its accent fill, not just dim its label — a full-green
+        // A disabled Primary must lose its accent fill, not just dim its label — a full-accent
         // button with grey text still reads as pressable, and on a gamepad the user finds out only
         // by pressing A and having nothing happen.
         if (!enabled)
         {
-            fill = Theme.BgTableHd;
-            borderColour = Theme.Border;
+            fill = Theme.Raise;
+            borderColour = Theme.Line;
         }
 
         var rounding = height / 2f;
         dl.AddRectFilled(min, max, U32(fill), rounding);
-        dl.AddRect(min, max, U32(Mix(borderColour, Theme.AccentGreen, lift * 0.8f)), rounding,
+        dl.AddRect(min, max, U32(Mix(borderColour, Theme.Accent, lift * 0.8f)), rounding,
             ImDrawFlags.None, 1f);
 
         FocusRing(dl, min, max, rounding, focused ? 1f : 0f);
 
+        Theme.PushFont(Theme.BodyStrong);
+        var textSize = ImGui.CalcTextSize(label);
+        Theme.PopFont(Theme.BodyStrong);
         var contentW = textSize.X + (icon is null ? 0f : iconSize + Theme.Space.Sm);
         var cursor = new Vector2(min.X + (width - contentW) / 2f, min.Y + padY);
 
@@ -503,8 +525,8 @@ static class Widgets
         var min = ImGui.GetCursorScreenPos();
         var max = min + new Vector2(width, height);
 
-        dl.AddRectFilled(min, max, U32(Theme.BgCard), Theme.Rounding.Card);
-        dl.AddRect(min, max, U32(Theme.Border), Theme.Rounding.Card, ImDrawFlags.None, 1f);
+        dl.AddRectFilled(min, max, U32(Theme.Panel), Theme.Rounding.Card);
+        dl.AddRect(min, max, U32(Theme.Line), Theme.Rounding.Card, ImDrawFlags.None, 1f);
 
         // A thin accent rule along the top edge ties the tile to the value it carries.
         dl.AddLine(min + new Vector2(Theme.Rounding.Card, 1f),
@@ -520,7 +542,7 @@ static class Widgets
         Theme.PushFont(Theme.Caption);
         var ls = ImGui.CalcTextSize(label);
         dl.AddText(new Vector2(min.X + (width - ls.X) / 2f, max.Y - ls.Y - Theme.Space.Md),
-            U32(Theme.TextMuted), label);
+            U32(Theme.Dim), label);
         Theme.PopFont(Theme.Caption);
 
         ImGui.Dummy(new Vector2(width, height));
@@ -538,9 +560,11 @@ static class Widgets
         var min = ImGui.GetCursorScreenPos();
         var rounding = height / 2f;
 
-        dl.AddRectFilled(min, min + new Vector2(width, height), U32(Theme.BgTableHd), rounding);
+        dl.AddRectFilled(min, min + new Vector2(width, height), U32(Theme.Raise), rounding);
+        // Safe, not the accent: a push in progress is not a decision waiting (matches the console's
+        // SyncAllProgress and agent-ui's progress meter, both --color-safe).
         if (fraction > 0f)
-            dl.AddRectFilled(min, min + new Vector2(width * fraction, height), U32(Theme.AccentGreen), rounding);
+            dl.AddRectFilled(min, min + new Vector2(width * fraction, height), U32(Theme.Safe), rounding);
 
         ImGui.Dummy(new Vector2(width, height));
     }
@@ -631,7 +655,7 @@ static class Widgets
 
         ImGui.BeginGroup();
         Text(title, colour, Theme.BodyStrong);
-        TextWrapped(body, Theme.TextPrimary, wrapPosX: wrapX);
+        TextWrapped(body, Theme.Fg, wrapPosX: wrapX);
         ImGui.EndGroup();
 
         if (dismissible)
@@ -639,7 +663,7 @@ static class Widgets
             ImGui.SameLine();
             var avail = ImGui.GetContentRegionAvail().X;
             if (avail > reserve) { ImGui.Dummy(new Vector2(avail - reserve, 0)); ImGui.SameLine(); }
-            if (IconButton("dismiss", Icons.X, Theme.TextMuted)) dismissed = true;
+            if (IconButton("dismiss", Icons.X, Theme.Dim)) dismissed = true;
         }
 
         NavDebug.PopScope();
@@ -668,12 +692,12 @@ static class Widgets
 
         if (lift > 0.01f)
             dl.AddRectFilled(min, ImGui.GetItemRectMax(),
-                U32(Theme.Alpha(Theme.AccentGreen, 0.18f * lift)), Theme.Rounding.Button);
+                U32(Theme.Alpha(Theme.Accent, 0.18f * lift)), Theme.Rounding.Button);
         FocusRing(dl, min, ImGui.GetItemRectMax(), Theme.Rounding.Button,
             ImGui.IsItemFocused() ? 1f : 0f);
 
         Icons.DrawAt(dl, glyph, min + new Vector2(Theme.Space.Xs, Theme.Space.Xs), size,
-            Mix(colour, Theme.AccentGreen, lift));
+            Mix(colour, Theme.Accent, lift));
 
         return pressed;
     }
@@ -699,19 +723,19 @@ static class Widgets
         Feedback(ImGui.GetItemID(), pressed, Sound.Cue.Toggle, $"toggle:{label}");
 
         var t = Tween(ImGui.GetItemID(), value ? 1f : 0f, 18f);
-        var track = Mix(Theme.BgTableHd, Theme.AccentGreen, t);
+        var track = Mix(Theme.Raise, Theme.Accent, t);
 
         dl.AddRectFilled(min, max, U32(track), height / 2f);
-        dl.AddRect(min, max, U32(Theme.Border), height / 2f, ImDrawFlags.None, 1f);
+        dl.AddRect(min, max, U32(Theme.Line), height / 2f, ImDrawFlags.None, 1f);
         FocusRing(dl, min, max, height / 2f, focused ? 1f : 0f);
 
         var r = height / 2f - 3f;
         var cx = min.X + 3f + r + t * (width - height);
-        dl.AddCircleFilled(new Vector2(cx, min.Y + height / 2f), r, U32(Theme.TextPrimary), 20);
+        dl.AddCircleFilled(new Vector2(cx, min.Y + height / 2f), r, U32(Theme.Fg), 20);
 
         ImGui.SameLine(0, Theme.Space.Md);
         ImGui.AlignTextToFramePadding();
-        Text(label, Theme.TextPrimary);
+        Text(label, Theme.Fg);
         ImGui.PopID();
 
         return pressed;
@@ -763,16 +787,16 @@ static class Widgets
         // The value box spans both rows, to the left of the pair.
         var boxH = buttonSize.Y * 2 + gap;
         var dl = ImGui.GetWindowDrawList();
-        dl.AddRectFilled(originScreen, originScreen + new Vector2(boxW, boxH), U32(Theme.BgTableHd),
+        dl.AddRectFilled(originScreen, originScreen + new Vector2(boxW, boxH), U32(Theme.Raise),
             Theme.Rounding.Button);
-        dl.AddRect(originScreen, originScreen + new Vector2(boxW, boxH), U32(Theme.Border),
+        dl.AddRect(originScreen, originScreen + new Vector2(boxW, boxH), U32(Theme.Line),
             Theme.Rounding.Button, ImDrawFlags.None, 1f);
 
         Theme.PushFont(Theme.BodyStrong);
         var text = value.ToString();
         var ts = ImGui.CalcTextSize(text);
         dl.AddText(originScreen + new Vector2((boxW - ts.X) / 2f, (boxH - ts.Y) / 2f),
-            U32(Theme.TextPrimary), text);
+            U32(Theme.Fg), text);
         Theme.PopFont(Theme.BodyStrong);
 
         // Claim the whole block for layout, so whatever follows clears both rows rather than
@@ -782,7 +806,7 @@ static class Widgets
 
         ImGui.SameLine(0, Theme.Space.Md);
         ImGui.SetCursorPosY(origin.Y + (boxH - ImGui.GetTextLineHeight()) / 2f);
-        Text(label, Theme.TextMuted);
+        Text(label, Theme.Dim);
         ImGui.PopID();
 
         return changed;
@@ -796,10 +820,11 @@ static class Widgets
         Icons.Glyph? icon = null, string? trailing = null, Vector4? trailingColour = null,
         bool chevron = true, bool selected = false, bool enabled = true)
     {
+        // Fixed, not measured from the current font's line height (plan.md "Layout rules" — "Two-line
+        // rows" — and checkpoint-ui/prototype.html's Deck screen: "Rows are 62px tall"): a constant
+        // holds regardless of which TTFs happened to bake, where a lineH-derived sum would not.
         var lineH = ImGui.GetTextLineHeight();
-        var height = subtitle is null
-            ? lineH + Theme.Space.Md * 2
-            : lineH * 2 + Theme.Space.Xs + Theme.Space.Md * 2;
+        var height = subtitle is null ? Theme.Layout.RowHeightSingle : Theme.Layout.RowHeight;
         var width = ImGui.GetContentRegionAvail().X;
 
         ImGui.PushID(id);
@@ -816,24 +841,27 @@ static class Widgets
         var lift = Tween(ImGui.GetItemID(), hot ? 1f : 0f);
         if (enabled) Feedback(ImGui.GetItemID(), pressed, label: $"row:{title}");
 
+        // Selected is Accent, not a neutral tile: unlike a nav rail's "current screen" (which is not
+        // a decision — see RailItem), a selected row here marks something the user has flagged
+        // pending a further action (a candidate ticked, a game marked for removal).
         if (selected || lift > 0.01f)
         {
-            var bg = selected ? Theme.NavActiveBg : Theme.Alpha(Theme.AccentGreen, 0.16f * lift);
+            var bg = selected ? Theme.AccentSoft : Theme.Alpha(Theme.Accent, 0.16f * lift);
             dl.AddRectFilled(min, max, U32(bg), Theme.Rounding.Button);
         }
         // A left accent bar marks selection, matching the console sidebar's active-row treatment.
         if (selected)
-            dl.AddRectFilled(min, new Vector2(min.X + 3f, max.Y), U32(Theme.AccentGreen), 2f);
+            dl.AddRectFilled(min, new Vector2(min.X + 3f, max.Y), U32(Theme.Accent), 2f);
 
         FocusRing(dl, min, max, Theme.Rounding.Button, lift);
 
-        dl.AddLine(new Vector2(min.X, max.Y), new Vector2(max.X, max.Y), U32(Theme.BgRowSep), 1f);
+        dl.AddLine(new Vector2(min.X, max.Y), new Vector2(max.X, max.Y), U32(Theme.Row), 1f);
 
         var x = min.X + Theme.Space.Md;
         if (icon is not null)
         {
             Icons.DrawAt(dl, icon, new Vector2(x, min.Y + (height - lineH) / 2f), lineH,
-                enabled ? Mix(Theme.TextMuted, Theme.AccentGreen, lift) : Theme.TextDim);
+                enabled ? Mix(Theme.Dim, Theme.Accent, lift) : Theme.Faint);
             x += lineH + Theme.Space.Md;
         }
 
@@ -844,7 +872,7 @@ static class Widgets
         {
             Icons.DrawAt(dl, Icons.ChevronRight,
                 new Vector2(rightEdge - lineH, min.Y + (height - lineH) / 2f), lineH,
-                Mix(Theme.TextDim, Theme.AccentGreen, lift));
+                Mix(Theme.Faint, Theme.Accent, lift));
             rightEdge -= lineH + Theme.Space.Sm;
         }
 
@@ -853,7 +881,7 @@ static class Widgets
             Theme.PushFont(Theme.Caption);
             var ts = ImGui.CalcTextSize(trailing);
             dl.AddText(new Vector2(rightEdge - ts.X, min.Y + (height - ts.Y) / 2f),
-                U32(trailingColour ?? Theme.TextMuted), trailing);
+                U32(trailingColour ?? Theme.Dim), trailing);
             rightEdge -= ts.X + Theme.Space.Md;
             Theme.PopFont(Theme.Caption);
         }
@@ -862,14 +890,14 @@ static class Widgets
         var textY = subtitle is null ? min.Y + (height - lineH) / 2f : min.Y + Theme.Space.Md;
 
         Theme.PushFont(Theme.BodyStrong);
-        dl.AddText(new Vector2(x, textY), U32(enabled ? Theme.TextPrimary : Theme.TextDim),
+        dl.AddText(new Vector2(x, textY), U32(enabled ? Theme.Fg : Theme.Faint),
             Elide(title, budget));
         Theme.PopFont(Theme.BodyStrong);
 
         if (subtitle is not null)
         {
             Theme.PushFont(Theme.Caption);
-            dl.AddText(new Vector2(x, textY + lineH + Theme.Space.Xs), U32(Theme.TextMuted),
+            dl.AddText(new Vector2(x, textY + lineH + Theme.Space.Xs), U32(Theme.Dim),
                 Elide(subtitle, budget, middle: true));
             Theme.PopFont(Theme.Caption);
         }
@@ -899,15 +927,15 @@ static class Widgets
         if (enabled) Feedback(ImGui.GetItemID(), pressed, Sound.Cue.Toggle, $"check:{id}");
 
         var t = Tween(ImGui.GetItemID(), ticked ? 1f : 0f, 20f);
-        var fill = Mix(Theme.BgTableHd, Theme.AccentGreen, t);
+        var fill = Mix(Theme.Raise, Theme.Accent, t);
 
-        dl.AddRectFilled(min, max, U32(enabled ? fill : Theme.BgRowSep), Theme.Rounding.Button);
-        dl.AddRect(min, max, U32(Theme.Border), Theme.Rounding.Button, ImDrawFlags.None, 1f);
+        dl.AddRectFilled(min, max, U32(enabled ? fill : Theme.Row), Theme.Rounding.Button);
+        dl.AddRect(min, max, U32(Theme.Line), Theme.Rounding.Button, ImDrawFlags.None, 1f);
         FocusRing(dl, min, max, Theme.Rounding.Button, hot ? 1f : 0f);
 
         if (t > 0.05f)
             Icons.DrawAt(dl, Icons.Check, min + new Vector2(2, 2), box - 4f,
-                Theme.Alpha(Theme.TextPrimary, t));
+                Theme.Alpha(Theme.Fg, t));
 
         ImGui.PopID();
         return pressed;
@@ -943,22 +971,26 @@ static class Widgets
         var on = Tween(ImGui.GetItemID() ^ 0x5A5Au, active ? 1f : 0f);
         Feedback(ImGui.GetItemID(), pressed, label: $"rail:{label}");
 
-        // Active (this is the current screen) and focused (the cursor is here) are DIFFERENT states
-        // and must look different: you can stand on "Settings" while still viewing "Overview".
-        var bg = Mix(Theme.Alpha(Theme.AccentGreen, 0f), Theme.NavActiveBg, MathF.Max(on, lift));
-        dl.AddRectFilled(min, max, U32(bg), Theme.Rounding.Button);
-
+        // Active ("this is the screen you're on") is a neutral tile, never the accent — plan.md's
+        // colour rule reserves the accent for "a decision is waiting", and agent-ui's Sidebar.tsx
+        // made this same correction for the same widget (its [aria-current] is tile/line, never
+        // accent; the conflict COUNT is the one thing there that is). Hover/focus is the accent: it
+        // is the one state here that is actually about to be interacted with.
         if (on > 0.01f)
-            dl.AddRectFilled(min, new Vector2(min.X + 3f, max.Y),
-                U32(Theme.Alpha(Theme.AccentGreen, on)), 2f);
+        {
+            dl.AddRectFilled(min, max, U32(Theme.Alpha(Theme.Tile, on)), Theme.Rounding.Button);
+            dl.AddRect(min, max, U32(Theme.Alpha(Theme.Line, on)), Theme.Rounding.Button,
+                ImDrawFlags.None, 1f);
+        }
+        if (lift > 0.01f)
+            dl.AddRectFilled(min, max, U32(Theme.Alpha(Theme.Accent, 0.16f * lift)), Theme.Rounding.Button);
 
         FocusRing(dl, min, max, Theme.Rounding.Button, lift);
 
-        var tint = Mix(Theme.TextMuted, Theme.AccentGreen, MathF.Max(on, lift));
-        var textCol = Mix(Theme.TextPrimary, Theme.AccentGreen, on);
+        var textCol = Mix(Theme.Dim, Theme.Fg, MathF.Max(on, lift));
 
         var x = min.X + Theme.Space.Md;
-        Icons.DrawAt(dl, icon, new Vector2(x, min.Y + (height - lineH) / 2f), lineH, tint);
+        Icons.DrawAt(dl, icon, new Vector2(x, min.Y + (height - lineH) / 2f), lineH, textCol);
 
         var font = active ? Theme.BodyStrong : Theme.Body;
         Theme.PushFont(font);
@@ -1006,9 +1038,9 @@ static class Widgets
                                   MathF.Round(centre.Y - size.Y / 2f));
         }
 
-        dl.AddCircleFilled(centre, r, U32(Theme.BgTableHd), 20);
-        dl.AddCircle(centre, r, U32(Theme.Border), 20, 1f);
-        dl.AddText(textPos, U32(Theme.TextPrimary), button);
+        dl.AddCircleFilled(centre, r, U32(Theme.Raise), 20);
+        dl.AddCircle(centre, r, U32(Theme.Line), 20, 1f);
+        dl.AddText(textPos, U32(Theme.Fg), button);
         Theme.PopFont(Theme.Caption);
 
         HintLabel(r * 2, action);
@@ -1026,9 +1058,37 @@ static class Widgets
 
         // Sized to the face-button circle's diameter so the row reads as one set of controls.
         var size = lineH * 1.1f;
-        Icons.DrawAt(dl, glyph, pos + new Vector2(0, (lineH - size) / 2f), size, Theme.TextPrimary);
+        Icons.DrawAt(dl, glyph, pos + new Vector2(0, (lineH - size) / 2f), size, Theme.Fg);
 
         HintLabel(size, action);
+    }
+
+    /// <summary>
+    /// A hint for a control whose own label is more than one character — "L1 / R1" — which a
+    /// lettered circle has no room for (checkpoint-ui/prototype.html's Deck footer: <c>.glyph.wide</c>).
+    /// </summary>
+    public static void GamepadHintWide(string label, string action)
+    {
+        var dl = ImGui.GetWindowDrawList();
+        var pos = ImGui.GetCursorScreenPos();
+        var lineH = ImGui.GetTextLineHeight();
+        var height = lineH * 1.1f;
+
+        Theme.PushFont(Theme.Caption);
+        var ts = ImGui.CalcTextSize(label);
+        Theme.PopFont(Theme.Caption);
+
+        var width = ts.X + Theme.Space.Sm * 2;
+        var max = pos + new Vector2(width, height);
+
+        dl.AddRectFilled(pos, max, U32(Theme.Raise), 7f);
+        dl.AddRect(pos, max, U32(Theme.Line), 7f, ImDrawFlags.None, 1f);
+
+        Theme.PushFont(Theme.Caption);
+        dl.AddText(pos + new Vector2((width - ts.X) / 2f, (height - ts.Y) / 2f), U32(Theme.Fg), label);
+        Theme.PopFont(Theme.Caption);
+
+        HintLabel(width, action);
     }
 
     /// <summary>
@@ -1054,7 +1114,7 @@ static class Widgets
         ImGui.Dummy(new Vector2(glyphWidth, ImGui.GetTextLineHeight()));
         ImGui.SameLine(0, Theme.Space.Sm);
         ImGui.AlignTextToFramePadding();
-        Text(action, Theme.TextMuted, Theme.Caption);
+        Text(action, Theme.Dim, Theme.Caption);
     }
 
     // ── Layout ───────────────────────────────────────────────────────────────────────────────

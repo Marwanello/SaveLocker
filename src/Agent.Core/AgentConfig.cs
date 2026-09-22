@@ -492,6 +492,30 @@ public sealed class AgentConfig
     }
 
     /// <summary>
+    /// Re-read this machine's appearance settings from disk. <see cref="ApplyConsoleAppearance"/>
+    /// and <see cref="SetAppearance"/> are what actually change them, both writing through
+    /// <see cref="UpdateSettings"/> — but the Deck UI (<c>savelocker ui</c>) is a separate,
+    /// long-lived process from the daemon that applies a pushed heartbeat look, so like
+    /// <see cref="RefreshGameList"/>, it loaded its copy once at start and never sees a change until
+    /// something re-reads the file. Best-effort and non-blocking, same reasoning as that method: a
+    /// missed poll costs nothing but the next tick.
+    /// </summary>
+    public void RefreshAppearance()
+    {
+        using var guard = AgentStateLock.TryAcquire("config", StateDir, TimeSpan.Zero);
+        if (guard is null) return;
+        var onDisk = ReadOnDisk();
+        if (onDisk is null) return;
+
+        var before = EffectiveAppearance;
+        FollowConsoleAppearance = onDisk.FollowConsoleAppearance;
+        ConsoleAppearance = onDisk.ConsoleAppearance;
+        ConsoleAppearanceAt = onDisk.ConsoleAppearanceAt;
+        LocalAppearance = onDisk.LocalAppearance;
+        RaiseIfEffectiveChanged(before);
+    }
+
+    /// <summary>
     /// Re-read one game's sync bookkeeping from disk into the caller's object.
     ///
     /// The mirror of <see cref="SaveGameSyncState"/>, and the other half of the same bug. That method

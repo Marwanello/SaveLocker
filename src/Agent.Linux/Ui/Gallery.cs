@@ -21,11 +21,11 @@ static class Gallery
 
     public static void Draw()
     {
-        Widgets.Text("Component gallery", Theme.TextPrimary, Theme.Title);
+        Widgets.Text("Component gallery", Theme.Fg, Theme.Title);
         Widgets.Text(Theme.FontsLoaded
                 ? "Inter + JetBrains Mono baked."
                 : "FALLBACK BITMAP FONT - the TTFs did not load.",
-            Theme.FontsLoaded ? Theme.TextMuted : Theme.AccentAmber);
+            Theme.FontsLoaded ? Theme.Dim : Theme.Watch);
         Widgets.Gap(Theme.Space.Md);
 
         Widgets.TwoColumn("gallery", 0.5f, DrawLeft, DrawRight);
@@ -46,22 +46,22 @@ static class Gallery
         Widgets.PillButton("Copy", Widgets.ButtonKind.Secondary, Icons.Copy);
 
         Widgets.SectionHeader("Stat tiles");
-        Widgets.StatTile("12", "Games Tracked", Theme.AccentGreen, 150, 96);
+        Widgets.StatTile("12", "Games Tracked", Theme.Safe, 150, 96);
         ImGui.SameLine(0, Theme.Space.Md);
-        Widgets.StatTile("348", "Saves Backed Up", Theme.TextPrimary, 150, 96);
+        Widgets.StatTile("348", "Saves Backed Up", Theme.Fg, 150, 96);
         ImGui.SameLine(0, Theme.Space.Md);
-        Widgets.StatTile("4m ago", "Last Sync", Theme.TextMuted, 150, 96);
+        Widgets.StatTile("4m ago", "Last Sync", Theme.Dim, 150, 96);
 
         Widgets.SectionHeader("Badges and status");
-        Widgets.StatusDot(Theme.AccentGreen);
+        Widgets.StatusDot(Theme.Safe);
         ImGui.SameLine(0, Theme.Space.Sm);
         ImGui.AlignTextToFramePadding();
-        Widgets.Text("CONNECTED", Theme.AccentGreen, Theme.BodyStrong);
+        Widgets.Text("CONNECTED", Theme.Safe, Theme.BodyStrong);
         ImGui.SameLine(0, Theme.Space.Lg);
-        Widgets.Badge("192.168.68.55:5080", Theme.AccentGreen, Icons.Server, mono: true);
-        Widgets.Badge("already tracked", Theme.AccentGreen, Icons.Check);
+        Widgets.Badge("192.168.68.55:5080", Theme.Safe, Icons.Server, mono: true);
+        Widgets.Badge("already tracked", Theme.Safe, Icons.Check);
         ImGui.SameLine(0, Theme.Space.Sm);
-        Widgets.Badge("no save folder", Theme.AccentAmber, Icons.AlertTriangle);
+        Widgets.Badge("no save folder", Theme.Watch, Icons.AlertTriangle);
 
         Widgets.SectionHeader("Input");
         Widgets.Toggle("Start on boot", ref _toggleA);
@@ -75,13 +75,13 @@ static class Gallery
         Widgets.SectionHeader("Banner");
         Widgets.Banner("warn", "Save conflict risk - Hollow Knight",
             "WIDEBOY already has this game checked out. You launched without pulling their latest save.",
-            Theme.AccentAmber, Icons.AlertTriangle, dismissible: true);
+            Theme.Watch, Icons.AlertTriangle, dismissible: true);
 
         Widgets.SectionHeader("List rows");
         Widgets.ListRow("r1", "Hollow Knight", "~/.local/share/Steam/.../unity3d/Team Cherry",
-            Icons.Folder, "synced", Theme.AccentGreen);
+            Icons.Folder, "synced", Theme.Safe);
         Widgets.ListRow("r2", "Hades", "No save folder set", Icons.AlertTriangle,
-            "needs setup", Theme.AccentAmber);
+            "needs setup", Theme.Watch);
         Widgets.ListRow("r3", "Selected row", "This one is the current selection",
             Icons.Monitor, selected: true);
         Widgets.ListRow("r4", "Disabled row", "Already tracked", Icons.Check,
@@ -91,24 +91,24 @@ static class Gallery
         Widgets.CheckRow("c1", ref _checkA);
         ImGui.SameLine(0, Theme.Space.Md);
         ImGui.AlignTextToFramePadding();
-        Widgets.Text("Ticked", Theme.TextPrimary);
+        Widgets.Text("Ticked", Theme.Fg);
         ImGui.SameLine(0, Theme.Space.Lg);
         Widgets.CheckRow("c2", ref _checkB);
         ImGui.SameLine(0, Theme.Space.Md);
         ImGui.AlignTextToFramePadding();
-        Widgets.Text("Unticked", Theme.TextPrimary);
+        Widgets.Text("Unticked", Theme.Fg);
 
         Widgets.SectionHeader("Icons");
         DrawIconStrip();
 
         Widgets.SectionHeader("Spinner and mono");
         var dl = ImGui.GetWindowDrawList();
-        Icons.Spinner(dl, ImGui.GetCursorScreenPos(), 22f, Theme.AccentGreen, 2.5f);
+        Icons.Spinner(dl, ImGui.GetCursorScreenPos(), 22f, Theme.Safe, 2.5f);
         ImGui.Dummy(new Vector2(22, 22));
         ImGui.SameLine(0, Theme.Space.Md);
         ImGui.AlignTextToFramePadding();
-        Widgets.Text("Scanning...", Theme.TextMuted);
-        Widgets.Text("savelocker run -- %command%", Theme.AccentGreen, Theme.Mono);
+        Widgets.Text("Scanning...", Theme.Dim);
+        Widgets.Text("savelocker run -- %command%", Theme.Safe, Theme.Mono);
     }
 
     private static void DrawIconStrip()
@@ -126,16 +126,16 @@ static class Gallery
         for (int i = 0; i < set.Length; i++)
         {
             if (i % 8 != 0) ImGui.SameLine(0, Theme.Space.Md);
-            Icons.Draw(set[i].Glyph, 24f, Theme.TextPrimary);
+            Icons.Draw(set[i].Glyph, 24f, Theme.Fg);
         }
 
         // Same glyphs at the smallest and largest sizes used, to catch stroke-weight breakdown.
         Widgets.Gap(Theme.Space.Sm);
         foreach (var size in new[] { 14f, 18f, 24f, 32f, 40f })
         {
-            Icons.Draw(Icons.Shield, size, Theme.AccentGreen);
+            Icons.Draw(Icons.Shield, size, Theme.Safe);
             ImGui.SameLine(0, Theme.Space.Md);
         }
-        Icons.Draw(Icons.Settings, 40f, Theme.AccentAmber);
+        Icons.Draw(Icons.Settings, 40f, Theme.Watch);
     }
 }
