@@ -68,7 +68,7 @@ const STORES: { id: string; label: string }[] = [
 function chipStyle(active: boolean): React.CSSProperties {
   return {
     display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px',
-    background: active ? 'rgba(18,146,113,0.12)' : 'transparent',
+    background: active ? 'var(--color-safe-soft)' : 'transparent',
     border: `1px solid ${active ? 'var(--color-safe-line)' : 'var(--color-line)'}`,
     borderRadius: 999,
     color: active ? 'var(--color-safe-ink)' : 'var(--color-dim)',
@@ -312,7 +312,7 @@ export function AddGamesView({ onEnrolled }: Props) {
             style={{
               display: 'flex', alignItems: 'flex-start',
               padding: '10px 13px',
-              borderBottom: '1px solid rgba(73,73,73,0.4)',
+              borderBottom: '1px solid var(--color-line)',
               gap: 10,
             }}
           >
@@ -327,8 +327,8 @@ export function AddGamesView({ onEnrolled }: Props) {
                 <span style={{ color: 'var(--color-fg)', fontSize: 13, fontWeight: 500 }}>{c.name}</span>
                 <span style={{
                   color: 'var(--color-dim)', fontSize: 10,
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.09)',
+                  background: 'var(--color-raise)',
+                  border: '1px solid var(--color-line)',
                   padding: '1px 6px', borderRadius: 3,
                   fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace",
                 }}>
@@ -338,8 +338,8 @@ export function AddGamesView({ onEnrolled }: Props) {
                 {c.store && c.store !== 'Unknown' && c.store !== 'Steam' && (
                   <span style={{
                     color: 'var(--color-dim)', fontSize: 10,
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.09)',
+                    background: 'var(--color-raise)',
+                    border: '1px solid var(--color-line)',
                     padding: '1px 6px', borderRadius: 3,
                   }}>
                     {STORES.find(s => s.id === c.store)?.label ?? c.store}
@@ -348,8 +348,8 @@ export function AddGamesView({ onEnrolled }: Props) {
                 {c.hasSteamCloud && (
                   <span style={{
                     color: 'var(--color-dim)', fontSize: 10,
-                    background: 'rgba(96,165,250,0.08)',
-                    border: '1px solid rgba(96,165,250,0.22)',
+                    background: 'var(--color-raise)',
+                    border: '1px solid var(--color-line)',
                     padding: '1px 6px', borderRadius: 3,
                   }}>
                     Steam Cloud

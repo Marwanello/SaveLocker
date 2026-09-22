@@ -203,6 +203,7 @@ button:disabled { cursor: default; }
   background: transparent; color: var(--color-dim); transition: background-color .15s var(--ease), color .15s var(--ease);
 }
 .sl-seg button:hover { color: var(--color-fg); }
+.sl-seg button:disabled { cursor: default; }
 .sl-seg button[aria-pressed="true"] { background: var(--color-panel); color: var(--color-fg); box-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
 .sl-seg button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 

@@ -197,6 +197,37 @@ export function setLook(next: Partial<Record<keyof Look, unknown>>): void {
   listeners.forEach(l => l())
 }
 
+// ---- saves made from this window -----------------------------------------------------------------
+// A poll answers with the look as it was when its request LEFT. One already in flight when the user saves
+// would land after the save and put the old look back until the next poll. Every save bumps `writes` on the
+// way in and on the way out and holds `saving` while it runs; a poll only counts if it left, and came back,
+// under the same `writes` with no save running.
+
+let writes = 0
+let saving = 0
+
+/** Take this before a poll's request leaves, and hand it to `isCurrentPoll` when the answer arrives. */
+export function looksEpoch(): number {
+  return writes
+}
+
+/** False when a save started, ran or finished while the poll was out: its answer predates that save. */
+export function isCurrentPoll(epoch: number): boolean {
+  return saving === 0 && epoch === writes
+}
+
+/** Run a save so that any poll overlapping it is ignored instead of undoing it. */
+export async function saveLook<T>(work: () => Promise<T>): Promise<T> {
+  writes++
+  saving++
+  try {
+    return await work()
+  } finally {
+    saving--
+    writes++
+  }
+}
+
 function subscribe(cb: () => void) {
   listeners.add(cb)
   return () => { listeners.delete(cb) }

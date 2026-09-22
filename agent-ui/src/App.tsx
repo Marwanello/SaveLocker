@@ -12,7 +12,7 @@ import { SyncConflictModal } from './components/SyncConflictModal'
 import { SettingsView } from './components/SettingsView'
 import { Chip } from './components/ui/Chip'
 import { Mark } from './components/ui/Mark'
-import { setLook } from './appearance'
+import { isCurrentPoll, looksEpoch, setLook } from './appearance'
 
 export default function App() {
   // The tray's native Sync All / Force Pull / Force Push (TrayApp.cs, Phase 7) open this window at
@@ -46,8 +46,11 @@ export default function App() {
     setAppearance(a)
     setLook(a.effective)
   }, [])
+  // A poll that left before a save made from this window, or was still out while one ran, answers with the
+  // state from before it: adopting that would undo the save until the next poll. Dropped instead.
   const refreshAppearance = useCallback(() => {
-    api.appearance().then(adoptAppearance).catch(console.error)
+    const epoch = looksEpoch()
+    api.appearance().then(a => { if (isCurrentPoll(epoch)) adoptAppearance(a) }).catch(console.error)
   }, [adoptAppearance])
 
   const refreshConflicts = useCallback(async (): Promise<Conflict[]> => {

@@ -8,15 +8,17 @@ interface Props<T extends string> {
   options: Option<T>[]
   onChange: (v: T) => void
   'aria-label': string
+  /** Ignore clicks — e.g. while a save is in flight, so two rapid choices cannot race each other. */
+  disabled?: boolean
 }
 
 /** Counterpart of web/src/components/ui/Seg.tsx — a pill switch between two or more views of the
  *  same thing (here: list or grid). The states live in ui.css. */
-export function Seg<T extends string>({ value, options, onChange, ...rest }: Props<T>) {
+export function Seg<T extends string>({ value, options, onChange, disabled = false, ...rest }: Props<T>) {
   return (
     <div role="group" aria-label={rest['aria-label']} className="sl-seg">
       {options.map(o => (
-        <button key={o.value} type="button" aria-pressed={o.value === value} onClick={() => onChange(o.value)}>
+        <button key={o.value} type="button" aria-pressed={o.value === value} disabled={disabled} onClick={() => onChange(o.value)}>
           {o.label}
         </button>
       ))}

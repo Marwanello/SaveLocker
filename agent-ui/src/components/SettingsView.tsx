@@ -400,7 +400,7 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged }
               style={{
                 display: 'flex', alignItems: 'flex-start',
                 padding: '10px 13px',
-                borderBottom: '1px solid rgba(73,73,73,0.4)',
+                borderBottom: '1px solid var(--color-line)',
                 gap: 10,
               }}
             >
@@ -433,8 +433,8 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged }
                     style={{
                       display: 'flex', alignItems: 'center', gap: 5,
                       padding: '5px 10px', background: 'transparent',
-                      border: `1px solid ${g.path ? 'var(--color-line)' : 'var(--color-line)'}`, borderRadius: 4,
-                      color: g.path ? 'var(--color-dim)' : 'var(--color-fg)', fontSize: 11, fontWeight: 600,
+                      border: `1px solid ${g.path ? 'var(--color-line)' : 'var(--color-accent-line)'}`, borderRadius: 4,
+                      color: g.path ? 'var(--color-dim)' : 'var(--color-accent-ink)', fontSize: 11, fontWeight: 600,
                       cursor: 'pointer', fontFamily: 'inherit',
                     }}
                   >

@@ -58,8 +58,8 @@ export function LaunchSetupCard() {
           style={{
             display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
             padding: '0 12px', background: 'transparent',
-            border: `1px solid ${copied ? 'var(--color-line)' : 'var(--color-line)'}`, borderRadius: 5,
-            color: copied ? 'var(--color-fg)' : 'var(--color-fg)', fontSize: 12, fontWeight: 600,
+            border: `1px solid ${copied ? 'var(--color-safe-line)' : 'var(--color-line)'}`, borderRadius: 5,
+            color: copied ? 'var(--color-safe-ink)' : 'var(--color-fg)', fontSize: 12, fontWeight: 600,
             cursor: 'pointer', fontFamily: 'inherit',
           }}
         >
@@ -71,7 +71,7 @@ export function LaunchSetupCard() {
 
       <div style={{
         display: 'flex', gap: 8, alignItems: 'flex-start',
-        background: 'rgba(244,166,13,0.1)', border: '1px solid rgba(244,166,13,0.35)',
+        background: 'var(--color-watch-soft)', border: '1px solid var(--color-watch-line)',
         borderRadius: 6, padding: '9px 11px',
       }}>
         <AlertTriangle size={14} strokeWidth={2} color="var(--color-watch-ink)" style={{ flexShrink: 0, marginTop: 1 }} />

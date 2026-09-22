@@ -455,7 +455,7 @@ behave in ways that look like bugs.
 ## Testing
 - **`run-local-api-tests.ps1` hardcodes its daemon to :5188 — the same port the `testenv` Windows tray owns.** With the rig up, the
   suite's token checks talk to the *tray* (a different token) and a dozen checks fail together: `token is accepted`, `the
-  agent's own Origin`, the whole path-browser block. It looks like a regression and is not. `.	ests	estenv.ps1 down` first (the
+  agent's own Origin`, the whole path-browser block. It looks like a regression and is not. `.\tests\testenv.ps1 down` first (the
   installed agent is untouched), or run a copy on scratch ports. Also build `agent-ui` **before** `dotnet build`-ing the Linux
   agent (`npm run build` in `agent-ui/`): its csproj copies `agent-ui/dist` into the bin only if it exists at build time, and
   `the UI is served with the token injected` needs it.

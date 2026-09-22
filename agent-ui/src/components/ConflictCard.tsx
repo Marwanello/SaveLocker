@@ -82,8 +82,8 @@ export function ConflictCard({
         <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--color-fg)' }}>{gameName}</span>
         <span style={{
           fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
-          color: 'var(--color-watch-ink)', background: 'rgba(244,166,13,0.12)',
-          border: '1px solid rgba(244,166,13,0.4)', borderRadius: 20, padding: '2px 8px',
+          color: 'var(--color-watch-ink)', background: 'var(--color-watch-soft)',
+          border: '1px solid var(--color-watch-line)', borderRadius: 20, padding: '2px 8px',
         }}>Conflict</span>
       </div>
       <div style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--color-dim)', marginTop: 8, maxWidth: '54ch' }}>
@@ -120,7 +120,7 @@ export function ConflictCard({
               style={{
                 flex: '1 1 210px', minWidth: 210, cursor: resolving ? 'default' : 'pointer',
                 background: isSelected
-                  ? 'linear-gradient(180deg, rgba(18,146,113,0.10), rgba(18,146,113,0.03) 60%)'
+                  ? 'linear-gradient(180deg, color-mix(in oklab, var(--color-safe) 10%, transparent), color-mix(in oklab, var(--color-safe) 3%, transparent) 60%)'
                   : 'var(--color-raise)',
                 border: `1px solid ${isSelected ? 'var(--color-safe-line)' : 'var(--color-line)'}`,
                 borderRadius: 8, padding: '14px 15px',
@@ -132,7 +132,7 @@ export function ConflictCard({
                 <div style={{
                   width: 26, height: 26, borderRadius: 6, flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: isSelected ? 'rgba(18,146,113,0.18)' : 'var(--color-raise)',
+                  background: isSelected ? 'color-mix(in oklab, var(--color-safe) 18%, transparent)' : 'var(--color-raise)',
                   color: isSelected ? 'var(--color-safe-ink)' : 'var(--color-dim)',
                 }}>
                   <Icon size={14} strokeWidth={2} />
@@ -152,7 +152,7 @@ export function ConflictCard({
                   <span style={{
                     fontFamily: 'var(--font-sans)', fontSize: 9.5, fontWeight: 700,
                     letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--color-safe-ink)',
-                    background: 'rgba(18,146,113,0.14)', borderRadius: 10, padding: '1px 6px',
+                    background: 'var(--color-safe-soft)', borderRadius: 10, padding: '1px 6px',
                   }}>newer</span>
                 )}
               </div>
@@ -176,7 +176,7 @@ export function ConflictCard({
                   cursor: resolving ? 'default' : 'pointer', opacity: resolving ? 0.6 : 1,
                   background: isSelected ? 'var(--color-accent)' : 'var(--color-raise)',
                   color: isSelected ? 'var(--color-on-accent)' : 'var(--color-dim)',
-                  border: `1px solid ${isSelected ? 'var(--color-line)' : 'var(--color-line)'}`,
+                  border: `1px solid ${isSelected ? 'var(--color-accent)' : 'var(--color-line)'}`,
                 }}
               >
                 Keep this

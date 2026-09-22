@@ -1260,7 +1260,8 @@ in both top bars and the sign-in screen draws the chosen mark; the **Windows tra
 `GameDetail`/`ConfigView`/`AuditView`/`AgentUpdatesCard`/help views and the agent's Add games/Settings/Conflicts/plugin
 cards migrated to tokens first — by role, not by shade (details in `tasks/checkpoint-ui/implementation-grouping.md` →
 Group 5). **Phase 4 item 4, the Deck's accent, moved to Group 6:** `Theme.cs`'s `AccentGreen` is both "accent" and
-"healthy" at 68 sites; the plumbing (`EffectiveAppearance`, `RefreshAppearance()`, `AppearancePalette`) is done.
+"healthy" at 68 sites; the plumbing (`EffectiveAppearance`, `AppearancePalette`) is done — the Deck's own refresh
+(`savelocker ui` loads `config.json` once) is written with its caller in Group 6.
 <br>**Verified live through `testenv`** (Windows tray agent + Docker console), by clicking: the card stored `dark/coolant/
 cartridge`; the real tray agent adopted it by itself; the override, the stored-but-ignored push and re-following all
 behaved; the contrast walk (all text nodes, composited backgrounds) is **0 failing in both OS schemes for all five

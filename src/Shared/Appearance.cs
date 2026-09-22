@@ -19,8 +19,15 @@ public record AppearanceDto(string Theme, string Accent, string Mark);
 /// </summary>
 public record AppearanceSettingsDto(AppearanceDto Look, bool PushToAgents);
 
-/// <summary>Body of <c>POST /api/settings/appearance</c>. Any id the server does not know is a 400.</summary>
-public record SetAppearanceRequest(string Theme, string Accent, string Mark, bool PushToAgents);
+/// <summary>
+/// Body of <c>POST /api/settings/appearance</c>. Any id the server does not know is a 400.
+/// <para>
+/// <paramref name="PushToAgents"/> defaults to <b>true</b>, the value an install that never opened the
+/// Appearance card has: without the default a body that leaves it out (a script setting only the
+/// accent) deserialises to <c>false</c> and silently stops sharing the look with every machine.
+/// </para>
+/// </summary>
+public record SetAppearanceRequest(string Theme, string Accent, string Mark, bool PushToAgents = true);
 
 /// <summary>
 /// The closed vocabulary of <see cref="AppearanceDto"/>, and the one place that decides what a value

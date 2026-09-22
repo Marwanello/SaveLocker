@@ -99,8 +99,12 @@ on-accent}` triples.
   once that machine syncs the game cleanly again.
 - **Accent** — a decision is waiting. Never used for emphasis, never for a healthy state.
 
-An accent change must never make something read as healthy or broken, which is why none of the five
-options sit in the green or amber hue ranges.
+An accent change must never make something read as healthy or broken, which is why the first five
+options avoid the green and amber hue ranges. **Exception:** Emerald (added 2026-09-21, after this
+rule was written) sits in the green range on purpose — it shares the range with `--safe` rather than
+sitting beside it, so choosing it does make the accent and the healthy colour the same hue. Accepted
+as a maintainer choice rather than fixed by retuning or dropping the accent; see [[Decisions]] →
+*Appearance is three ids*.
 
 ## Type
 
