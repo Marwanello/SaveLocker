@@ -1338,6 +1338,25 @@ them, and was told exactly what's needed: `Archivo-Regular.ttf` and `Archivo-Sem
 weights `Ui/Fonts/Inter-*.ttf` already provides) dropped in `src/Agent.Linux/Ui/Fonts/`, at which point
 `Theme.cs`'s `RegularResource`/`SemiBoldResource` constants and the `.csproj`'s embedded-resource block are
 a small, mechanical swap.
+<br>**Second follow-up (2026-09-22, still the same day) — the Sync icon fix above was still wrong, and a
+real bug turned up on another surface entirely.** The user tested the first follow-up through the
+`SAVELOCKER_STATE_ROOT` recipe (below) against a live, interactive window, not a screenshot, and the Sync
+icon still looked broken — a muddled blob, not two arrows. The screenshot-based check that had "confirmed"
+the earlier fix used `--screenshot`'s fixed size, which happened to render the icon larger than its real
+~18px button size; at the real size, the two arcs' circles (offset by less than their own diameter, closer
+to lucide's actual two-circle geometry) overlapped enough that their strokes crossed through the shared
+middle and read as a blob rather than two arrows. Redrawn as a single circle with two 140° arcs on opposite
+sides — one circle can't self-overlap — verified this time at the real 1280×800 default size, not an
+inflated one. Separately, the user reported agent-ui's Games tab showing game names in the system font
+instead of Archivo. `Row`/`.sl-row` and the grid `.sl-tile` both render as a real `<button>` when clickable
+(every tracked-game row is), and browsers don't inherit `font-family` into form controls by default —
+every *other* interactive element in `agent-ui/src/ui.css` (`.sl-btn`, `.sl-nav`, `.sl-search`, `.sl-seg
+button`) already carries an explicit `font: inherit` to counter exactly that, but `.sl-row` and `.sl-tile`
+were missed when they were built. The web console never had this bug: Tailwind's Preflight resets
+`font-family: inherit` on form elements globally, and agent-ui has no such reset since it isn't
+Tailwind-based. Fixed by adding `font: inherit` to both rules; verified live in the agent-ui dev server —
+`getComputedStyle` on a game name now reports `Archivo, system-ui, sans-serif` in both List and Grid mode,
+and `document.fonts.check('600 13px Archivo')` is `true`.
 <br>**Next action:** a real Deck (or a box with a physical gamepad) to exercise the Y/L1/R1 bindings
 through an actual controller, or Group 7 (OS notifications) if that hardware access isn't available
 first. The Wayland decision (Phase 6 item 4) is still open and needs deciding before any code is written

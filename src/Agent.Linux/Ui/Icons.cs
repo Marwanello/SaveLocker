@@ -240,16 +240,25 @@ static class Icons
     };
 
     /// <summary>
-    /// lucide's refresh-cw: two ~300° arcs chasing each other, each capped with a small arrowhead at
-    /// the end of its sweep — used by the Deck header's Sync all button (implementation.md Phase 6
-    /// item 3).
+    /// lucide's refresh-cw, simplified to one circle: two 140° arcs on opposite sides of the same
+    /// ring, each capped with a small arrowhead at the end of its sweep — used by the Deck header's
+    /// Sync all button (implementation.md Phase 6 item 3).
+    /// <para>
+    /// A first cut used two same-radius circles offset by less than their own diameter — closer to
+    /// lucide's real two-circle geometry, but at the ~18px this actually renders at (a header pill's
+    /// icon, not the 40px mark) the circles' strokes crossed through the shared overlap in the middle
+    /// and read as a blob, not two arrows (reported against a live, interactive window — a headless
+    /// screenshot at a larger fixed size had not shown it). One circle with a real gap on each side
+    /// can't self-overlap.
+    /// </para>
     /// </summary>
     public static readonly Glyph Sync = (dl, p, s, c, w) =>
     {
-        const float r = 7f;
-        const float sweep = 2.6f;
-        ArcWithArrow(dl, p, s, c, w, 11, 8, r, -sweep, sweep);
-        ArcWithArrow(dl, p, s, c, w, 13, 16, r, MathF.PI - sweep, MathF.PI + sweep);
+        const float r = 8f;
+        const float span = 140f * MathF.PI / 180f;
+        const float start1 = -160f * MathF.PI / 180f;
+        ArcWithArrow(dl, p, s, c, w, 12, 12, r, start1, start1 + span);
+        ArcWithArrow(dl, p, s, c, w, 12, 12, r, start1 + MathF.PI, start1 + MathF.PI + span);
     };
 
     /// <summary>

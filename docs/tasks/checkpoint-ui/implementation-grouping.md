@@ -395,6 +395,14 @@ Windows tray icon), and the same accent/no-tile treatment `agent-ui/src/App.tsx`
 three marks were pixel-checked across several accents via a scratch `SAVELOCKER_STATE_ROOT` config with
 `FollowConsoleAppearance: false` — narrowing "confirm the accent repaints from a genuinely pushed
 console look" (above) to just the console-push half.
+<br>**That Sync icon fix was still wrong — caught only once the user tested it live, not from a
+screenshot.** `--screenshot` renders at a fixed size that happened to draw the icon larger than its real
+~18px button size, and at that larger size the two-circle geometry (offset by less than their own
+diameter) looked fine; at the real size the circles' strokes overlapped through the shared middle and
+read as a blob. Redrawn again as one circle with two 140° arcs on opposite sides, which can't self-overlap
+— re-verified at the real default window size this time. The lesson carried into `Icons.cs`'s own doc
+comment: a headless screenshot at an arbitrary fixed size is not the same check as the size a glyph
+actually renders at.
 
 **Group 7 — Notifications. Windows half here, Linux half deferred.**
 Phase 7. The Windows toast is buildable *and* verifiable on this machine. The Linux freedesktop call
