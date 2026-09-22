@@ -529,7 +529,7 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
       {gameConflicts.map(c => {
         const stuck = machines.find(m => m.id === c.machineId)?.name;
         return (
-          <div key={c.id} style={{ background: 'var(--color-accent-soft)', border: `1px solid ${c.escalated ? 'var(--color-accent-line)' : 'var(--color-accent-line)'}`, borderRadius: 8, padding: '10px 12px' }}>
+          <div key={c.id} style={{ background: 'var(--color-accent-soft)', border: `1px solid ${c.escalated ? 'var(--color-accent)' : 'var(--color-accent-line)'}`, borderRadius: 8, padding: '10px 12px' }}>
             <b style={{ color: 'var(--color-watch-ink)' }}>
               Conflict{stuck ? ` — ${stuck} cannot sync` : ''}: choose the version to keep
             </b>

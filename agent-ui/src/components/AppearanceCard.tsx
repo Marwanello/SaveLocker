@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api'
-import { ACCENTS, MARKS, THEMES, isLight } from '../appearance'
+import { ACCENTS, MARKS, THEMES, isLight, saveLook } from '../appearance'
 import type { AccentId, Look, Theme } from '../appearance'
 import { formatAgo } from '../format'
 import type { AgentAppearance } from '../types'
@@ -30,7 +30,7 @@ export function AppearanceCard({ appearance, onChanged }: Props) {
     setBusy(true)
     setError('')
     try {
-      onChanged(await api.setAppearance({ follow, look }))
+      onChanged(await saveLook(() => api.setAppearance({ follow, look })))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the appearance.')
     } finally {
@@ -81,6 +81,7 @@ export function AppearanceCard({ appearance, onChanged }: Props) {
               aria-label="Theme"
               value={own.theme}
               options={THEMES.map(t => ({ value: t.id, label: t.name }))}
+              disabled={busy}
               onChange={v => void send(false, { ...own, theme: v })}
             />
           </div>

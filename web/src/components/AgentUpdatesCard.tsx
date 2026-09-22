@@ -518,7 +518,7 @@ function InstallerSlotEditor({
           <button
             onClick={handleVerify}
             disabled={verifying}
-            style={{ padding: '3px 10px', background: 'transparent', color: verifying ? 'var(--color-dim)' : 'var(--color-dim)', border: '1px solid var(--color-line)', borderRadius: 4, fontSize: 11, cursor: verifying ? 'default' : 'pointer' }}
+            style={{ padding: '3px 10px', background: 'transparent', color: 'var(--color-dim)', border: '1px solid var(--color-line)', borderRadius: 4, fontSize: 11, cursor: verifying ? 'default' : 'pointer' }}
           >
             {verifying ? 'Checking…' : 'Verify hash against GitHub'}
           </button>
@@ -568,7 +568,7 @@ function InstallerSlotEditor({
         <button
           onClick={handleFetchGitHub}
           disabled={fetching}
-          style={{ padding: '6px 14px', background: 'transparent', color: fetching ? 'var(--color-dim)' : 'var(--color-fg)', border: `1px solid ${fetching ? 'var(--color-line)' : 'var(--color-line)'}`, borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: fetching ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
+          style={{ padding: '6px 14px', background: 'transparent', color: fetching ? 'var(--color-dim)' : 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: fetching ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
         >
           {fetching ? 'Fetching…' : 'Fetch from GitHub'}
         </button>

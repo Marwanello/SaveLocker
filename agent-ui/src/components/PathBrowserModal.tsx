@@ -126,7 +126,7 @@ export function PathBrowserModal({ gameName, initialPath, onConfirm, onCancel }:
               style={{
                 display: 'flex', alignItems: 'center', gap: 9, width: '100%',
                 height: ROW_HEIGHT, padding: '0 15px', background: 'transparent',
-                border: 'none', borderBottom: '1px solid rgba(73,73,73,0.4)',
+                border: 'none', borderBottom: '1px solid var(--color-line)',
                 color: 'var(--color-dim)', fontSize: 13, cursor: 'pointer',
                 fontFamily: 'inherit', textAlign: 'left',
               }}
@@ -152,7 +152,7 @@ export function PathBrowserModal({ gameName, initialPath, onConfirm, onCancel }:
                 display: 'flex', alignItems: 'center', gap: 9, width: '100%',
                 height: ROW_HEIGHT, padding: '0 15px',
                 background: i === focusIndex ? 'var(--color-raise)' : 'transparent',
-                border: 'none', borderBottom: '1px solid rgba(73,73,73,0.4)',
+                border: 'none', borderBottom: '1px solid var(--color-line)',
                 borderLeft: i === focusIndex ? '3px solid var(--color-line)' : '3px solid transparent',
                 color: 'var(--color-fg)', fontSize: 13, cursor: 'pointer',
                 fontFamily: 'inherit', textAlign: 'left',

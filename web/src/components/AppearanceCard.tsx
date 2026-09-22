@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api';
-import { ACCENTS, MARKS, THEMES, isLight, setLook, useLook } from '../appearance';
+import { ACCENTS, MARKS, THEMES, isLight, saveLook, setLook, useLook } from '../appearance';
 import type { AccentId, Look, Theme } from '../appearance';
 import type { Settings } from '../types';
 import { Card } from './ui/Card';
@@ -34,7 +34,7 @@ export function AppearanceCard({ settings, onSaved }: Props) {
     setBusy(true);
     setLook(next);
     try {
-      const saved = await api.setAppearance({ ...next, pushToAgents: push });
+      const saved = await saveLook(() => api.setAppearance({ ...next, pushToAgents: push }));
       setLook(saved.look);
       onSaved();
     } catch (e) {
@@ -57,6 +57,7 @@ export function AppearanceCard({ settings, onSaved }: Props) {
             aria-label="Theme"
             value={look.theme}
             options={THEMES.map(t => ({ value: t.id, label: t.name }))}
+            disabled={busy}
             onChange={v => void save({ theme: v })}
           />
         </div>

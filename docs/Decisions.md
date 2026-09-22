@@ -612,6 +612,13 @@ session can judge an edge case, not to reopen the choice.
   pushes that arrive meanwhile are stored but not applied, so turning it back on shows the console's *current* look.
   The favicon, the tray icon and the brand mark are all drawn from one geometry table; there are no per-accent icon
   files (the build environment has no SVG rasterizer, and fifteen `.ico` files would be fifteen things to keep in step).
+- **Emerald, the sixth accent, is a deliberate exception to the plan's own colour rule** (2026-09-21, added after
+  Phase 4's other five shipped). `tasks/checkpoint-ui/plan.md`'s "none of the five options sit in the green or amber
+  hue ranges" was true when written; Emerald sits in the green range on purpose, so choosing it makes the accent
+  (a decision is waiting) and `--color-safe` (healthy) the same hue — a primary button and a healthy chip read the
+  same. Reviewed (PR #47) and accepted as a maintainer choice rather than fixed by retuning Emerald or dropping it:
+  the option to switch accents is worth more than strict adherence to a rule written before a sixth colour existed.
+  `plan.md`'s rule is amended to record this as a named exception rather than silently drifting from shipped code.
 - **The theme follows the OS unless one is pinned** (2026-09-21). `<html data-theme="dark|light">` pins it and *no
   attribute* means "System", so the CSS itself follows `prefers-color-scheme` with no script and no flash. It flipped
   from "dark base, light opt-in" only once no view carried a hardcoded hex colour (that ordering is what made the flip

@@ -106,7 +106,7 @@ export function SyncConflictModal({ queue, games, machineName, onResolved, onAll
           {queue.length > 1 && (
             <span style={{
               fontFamily: "'JetBrains Mono', monospace", color: 'var(--color-watch-ink)',
-              background: 'rgba(244,166,13,0.12)', border: '1px solid rgba(244,166,13,0.35)',
+              background: 'var(--color-watch-soft)', border: '1px solid var(--color-watch-line)',
               borderRadius: 20, padding: '2px 8px', letterSpacing: 0,
             }}>{index + 1} of {queue.length}</span>
           )}

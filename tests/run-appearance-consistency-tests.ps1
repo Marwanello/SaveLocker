@@ -108,19 +108,37 @@ foreach ($rel in @("web/src/index.css", "agent-ui/src/tokens.css")) {
 # ---- acceptance: no hardcoded colour left in a view ----------------------------------------------------------
 # Comment lines are skipped; a hash route like '#config' is not a colour and does not match (a hex run has to end
 # at a word boundary, and "#config" runs into an 'o').
-$leftovers = @()
+#
+# #hex is not the only spelling: rgba(18,146,113,.12) IS the retired brand green #129271, and it sat in three
+# views after every #hex was gone. So hsl()/hsla() and any rgb()/rgba() with a channel above 20 are colours too.
+# Near-black rgba() (every channel <= 20) stays legal: a modal scrim or a box-shadow reads the same on either theme.
+#
+# And a ternary whose two branches are the SAME string is a state that was flattened, not a colour that was
+# migrated: the hex -> token pass turned `copied ? '#129271' : '#494949'` into `copied ? 'x' : 'x'` in eleven
+# places at once, and each one had lost a visible state (overdue conflict, "Copied", the no-save-folder prompt).
+$leftovers = @(); $flattened = @()
 foreach ($dir in @("web/src", "agent-ui/src")) {
     Get-ChildItem (Join-Path $root $dir) -Recurse -Filter *.tsx | ForEach-Object {
         $n = 0
         foreach ($line in [System.IO.File]::ReadAllLines($_.FullName)) {
             $n++
             if ($line -match '^\s*(//|\*|/\*)') { continue }
-            if ($line -match '#[0-9a-fA-F]{3,8}\b') { $leftovers += ($_.FullName.Substring($root.Length + 1) + ":" + $n) }
+            $where = $_.FullName.Substring($root.Length + 1) + ":" + $n
+            $isColour = ($line -match '#[0-9a-fA-F]{3,8}\b') -or ($line -match '\bhsla?\(')
+            if (-not $isColour) {
+                foreach ($m in [regex]::Matches($line, 'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)')) {
+                    if ([int]$m.Groups[1].Value -gt 20 -or [int]$m.Groups[2].Value -gt 20 -or [int]$m.Groups[3].Value -gt 20) { $isColour = $true; break }
+                }
+            }
+            if ($isColour) { $leftovers += $where }
+            if ($line -match '\?\s*(''[^'']*''|"[^"]*")\s*:\s*\1') { $flattened += $where }
         }
     }
 }
-Check "views: no hardcoded #hex colour in any .tsx under web/src or agent-ui/src ($($leftovers.Count) found)" ($leftovers.Count -eq 0)
+Check "views: no hardcoded colour (#hex, hsl(), or a non-scrim rgb()/rgba()) in any .tsx under web/src or agent-ui/src ($($leftovers.Count) found)" ($leftovers.Count -eq 0)
 if ($leftovers.Count -gt 0) { $leftovers | Select-Object -First 10 | ForEach-Object { Write-Host "      $_" } }
+Check "views: no ternary whose two branches are the same string - a flattened state ($($flattened.Count) found)" ($flattened.Count -eq 0)
+if ($flattened.Count -gt 0) { $flattened | Select-Object -First 10 | ForEach-Object { Write-Host "      $_" } }
 
 Write-Host ""
 Write-Host "==== $pass passed, $fail failed ===="

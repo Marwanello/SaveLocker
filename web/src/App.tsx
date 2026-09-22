@@ -11,7 +11,7 @@ import { AuditView } from './components/AuditView';
 import { HelpView } from './components/HelpView';
 import { WhatsNewView } from './components/WhatsNewView';
 import { SignIn } from './components/SignIn';
-import { setLook } from './appearance';
+import { isCurrentPoll, looksEpoch, setLook } from './appearance';
 import { AddGameDialog } from './components/AddGameDialog';
 import { hasUnreadNotes, markNotesSeen } from './releaseSeen';
 
@@ -90,6 +90,7 @@ export default function App() {
 
   const loadOnce = useCallback(async () => {
     const epoch = epochRef.current;
+    const lookEpoch = looksEpoch();
     setLoading(true);
     setError('');
     try {
@@ -101,8 +102,10 @@ export default function App() {
       // Keep this in step with the server: an admin can set or remove the password from Configuration.
       setPasswordRequired(settings.adminPasswordSet);
       // The look is a server setting: adopt it here so a change made in another browser follows within a
-      // poll. A no-op while it is unchanged, and an older server that has no appearance leaves it alone.
-      if (settings.appearance) setLook(settings.appearance.look);
+      // poll. A no-op while it is unchanged, and an older server that has no appearance leaves it alone. Not
+      // while — or after — this window saved a look since the request left: that answer predates the save and
+      // would put the old look back (a reload queued by the save follows and adopts the right one).
+      if (settings.appearance && isCurrentPoll(lookEpoch)) setLook(settings.appearance.look);
     } catch (e) {
       if (epoch !== epochRef.current) return;
       if (e instanceof ApiError && e.status === 401) {

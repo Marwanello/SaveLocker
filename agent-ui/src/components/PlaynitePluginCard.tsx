@@ -177,8 +177,8 @@ export function PlaynitePluginCard() {
                   style={{
                     display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
                     padding: '0 12px', background: 'transparent',
-                    border: `1px solid ${copied ? 'var(--color-line)' : 'var(--color-line)'}`, borderRadius: 5,
-                    color: copied ? 'var(--color-fg)' : 'var(--color-fg)', fontSize: 12, fontWeight: 600,
+                    border: `1px solid ${copied ? 'var(--color-safe-line)' : 'var(--color-line)'}`, borderRadius: 5,
+                    color: copied ? 'var(--color-safe-ink)' : 'var(--color-fg)', fontSize: 12, fontWeight: 600,
                     cursor: 'pointer', fontFamily: 'inherit',
                   }}
                 >

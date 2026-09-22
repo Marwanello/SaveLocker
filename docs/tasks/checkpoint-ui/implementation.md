@@ -206,7 +206,11 @@ The largest genuinely-new piece.
    agent Settings. When off, the agent keeps its local choice and ignores the pushed one — pushes are still *stored*, so
    turning it back on shows the console's current look. Turning it off changes nothing on screen.
 4. ➡️ **Moved to Group 6.** The Deck UI reads the same config and maps the accent into `Ui/Theme.cs`. — `Theme.cs`'s `AccentGreen` is both the accent and the healthy colour at 68 sites, so this needs Group 6's token split. Ready for it:
-   `AgentConfig.EffectiveAppearance`, `RefreshAppearance()`, `Agent.Core/AppearancePalette.cs`.
+   `AgentConfig.EffectiveAppearance`, `Agent.Core/AppearancePalette.cs`. **Group 6 must also add the refresh** — `savelocker ui`
+   loads `config.json` once and never reloads it, so without one the Deck's accent only follows the console after a restart. An
+   earlier `RefreshAppearance()` (adopt what is on disk, `AgentStateLock.TryAcquire` with a zero timeout because it runs from the
+   render loop, raise `AppearanceChanged` when the effective look moved) was removed in the PR #47 review: nothing called it and
+   nothing tested it, and the Deck cannot consume the look until this group. Write it with its caller and a test.
 5. ✅ **Shipped, except the Deck header (Group 6).** App icon choice changes the favicon (`web/index.html` link swap), the tray icon
    (`src/Agent/AppResources.cs`, needs all three marks as embedded `.ico`), and the Deck header. — The favicon is redrawn in
    place (a data URL of the mark on an accent tile); the tray **and window** icons are drawn at runtime (`Agent/MarkIcon.cs`),

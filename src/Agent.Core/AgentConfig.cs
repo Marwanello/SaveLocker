@@ -390,28 +390,6 @@ public sealed class AgentConfig
         RaiseIfEffectiveChanged(before);
     }
 
-    /// <summary>
-    /// Adopt whatever look is on disk. For <c>savelocker ui</c>, which loads <c>config.json</c> once
-    /// and never reloads it — without this the Deck's accent would only follow the console after a
-    /// restart. Skips rather than waits when another process holds the lock (it runs from the render
-    /// loop), so the next poll simply retries. Raises <see cref="AppearanceChanged"/> when the
-    /// effective look moved.
-    /// </summary>
-    public void RefreshAppearance()
-    {
-        using var guard = AgentStateLock.TryAcquire("config", StateDir, TimeSpan.Zero);
-        if (guard is null) return;
-        var onDisk = ReadOnDisk();
-        if (onDisk is null) return;
-
-        var before = EffectiveAppearance;
-        FollowConsoleAppearance = onDisk.FollowConsoleAppearance;
-        ConsoleAppearance = onDisk.ConsoleAppearance;
-        ConsoleAppearanceAt = onDisk.ConsoleAppearanceAt;
-        LocalAppearance = onDisk.LocalAppearance;
-        RaiseIfEffectiveChanged(before);
-    }
-
     private void RaiseIfEffectiveChanged(AppearanceDto before)
     {
         var after = EffectiveAppearance;

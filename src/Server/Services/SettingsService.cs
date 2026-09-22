@@ -62,18 +62,28 @@ public sealed class SettingsService
     /// <summary>Store (or clear, when null/blank) a setting in the DB.</summary>
     public async Task SetAsync(string key, string? value, CancellationToken ct = default)
     {
+        if (await StageAsync(key, value, ct)) await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// What <see cref="SetAsync"/> changes, tracked but not saved, so settings that must change together
+    /// can be committed by ONE <c>SaveChangesAsync</c>. False when there was nothing to change.
+    /// </summary>
+    private async Task<bool> StageAsync(string key, string? value, CancellationToken ct)
+    {
         value = value?.Trim();
         var row = await _db.Settings.FindAsync(new object?[] { key }, ct);
 
         if (string.IsNullOrWhiteSpace(value))
         {
-            if (row is not null) { _db.Settings.Remove(row); await _db.SaveChangesAsync(ct); }
-            return;
+            if (row is null) return false;
+            _db.Settings.Remove(row);
+            return true;
         }
 
         if (row is null) _db.Settings.Add(new AppSetting { Key = key, Value = value });
         else row.Value = value;
-        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     public async Task<bool> HasAdminPasswordAsync(CancellationToken ct = default) =>
@@ -186,6 +196,8 @@ public sealed class SettingsService
     /// <summary>
     /// Store the console's look. All four keys are written explicitly, including a value that equals
     /// the default: a stored "ember" keeps meaning Ember if a later release changes what the default is.
+    /// They are committed together by one save — a heartbeat that read between four separate commits
+    /// could hand an agent a look that was never chosen (the new theme with the old accent).
     /// </summary>
     public async Task SetAppearanceAsync(SetAppearanceRequest req, CancellationToken ct = default)
     {
@@ -195,10 +207,11 @@ public sealed class SettingsService
                 $"{string.Join(", ", Appearances.Accents)}; mark one of {string.Join(", ", Appearances.Marks)}.");
 
         var look = Appearances.Normalize(new AppearanceDto(req.Theme, req.Accent, req.Mark));
-        await SetAsync(UiTheme, look.Theme, ct);
-        await SetAsync(UiAccent, look.Accent, ct);
-        await SetAsync(UiMark, look.Mark, ct);
-        await SetAsync(UiPushToAgents, req.PushToAgents ? "true" : "false", ct);
+        await StageAsync(UiTheme, look.Theme, ct);
+        await StageAsync(UiAccent, look.Accent, ct);
+        await StageAsync(UiMark, look.Mark, ct);
+        await StageAsync(UiPushToAgents, req.PushToAgents ? "true" : "false", ct);
+        await _db.SaveChangesAsync(ct);
     }
 
     /// <summary>The dashboard-facing settings snapshot (never includes the raw key).</summary>
