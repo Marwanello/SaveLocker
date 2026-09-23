@@ -3113,3 +3113,37 @@ Full write-up: [[session_summary]]. Branch `ui-redesign-group-5`, commits `4e423
 - **Tests:** appearance consistency 20/20 (new), console/security 172/172, local-api 85/85.
 - **Not verified:** Emerald contrast walk, WebView2 tray window, real taskbar icon, OS-theme flip event, Deck, the new test under pwsh in CI.
 - **Open:** Deck accent (Group 6), Groups 6-7, the Backlog items listed in the summary.
+
+## 2026-09-22/23 — Checkpoint UI Group 6: Deck Wayland UI, icon-pack rework, Archivo font (PR #49)
+
+Full write-up: [[session_summary]]. Branch `group-6-ui-redesign` (pushed from `claude/group-6-ui-redesign-6d9b06`,
+renamed rather than duplicated — same handling as Group 5), PR https://github.com/Marwanello/SaveLocker/pull/49,
+commits `bf2f2b8`, `30ffbc5`, `1ba3a2b`, `56ec631`, `3dd23b2`, `1d9b38e`, plus two review-fix commits `1ce9df8`, `bc205d3`.
+
+- **Deck Game Mode (Phase 6, items 1-3):** Checkpoint tokens in `Ui/Theme.cs`, 62px rows, the button-legend row
+  (A Select / B Back / Move / Y Sync now / L1-R1 switch section / Steam menu), Sync all bound to Y. Verified live
+  via `savelocker ui` on this Windows box (no WSLg needed for SDL/GL) with `--screenshot`/`--nav`-scripted
+  L1/R1 input; a real focus-timing bug on section-switch was caught and fixed this way.
+- **Follow-up 1:** replaced the stale pre-Checkpoint `logo-96.png` header image with a live `AppMark` drawn in
+  the current accent/mark; first pass at `Icons.Sync`'s arrowhead angle still overlapped into a blob at the
+  icon's real ~18px render size (a larger `--screenshot` had hidden it) — caught once the user tested it live,
+  redrawn as one non-overlapping circle with two 140° arcs.
+- **Follow-up 2:** fixed the same Sync icon overlap again (still visible live) and fixed agent-ui's Games tab
+  rendering game names in the system font instead of Archivo — `.sl-row`/`.sl-tile` render as `<button>`, which
+  doesn't inherit `font-family`, and were missing the `font: inherit` every other interactive rule already had.
+- **Follow-up 3 (icon-pack rework):** stopped hand-guessing curved icon geometry — a new `Ui/SvgPath.cs` parses
+  and strokes lucide's own `d` path strings (copied verbatim from `agent-ui/node_modules/lucide-react`, the
+  same icon pack the console and agent UI already use), so `Icons.Cloud`, `Icons.Sync` and `Icons.GitBranch`'s
+  arc now trace the real upstream shape instead of a third hand-eyeballed guess. Verified against the W3C SVG
+  1.1 arc-parameterization spec and both flag-combinations lucide's icons actually use (via the `--gallery`
+  screen, reachable only there for `Cloud`). Also fixed the button-legend labels sitting visibly low against
+  their glyph badges — `Widgets.HintLabel` was calling `AlignTextToFramePadding()` against a `Dummy` box that
+  was never framed.
+- **Follow-up 4 (fonts):** the user supplied the two Archivo TTFs; `Theme.cs` now embeds and bakes them in place
+  of Inter (`SaveLocker.Agent.Linux.csproj` embedded-resource entries swapped, `Archivo-OFL.txt` added,
+  `Inter-*` removed) — closes the last open item in Phase 1's agent half for this surface.
+- **Review fixes (PR #49):** Sync-all outcome reporting, `SvgPath` edge cases, and drift guards; docs
+  (`REPO_MAP.md`, status-table rows, `Gotchas.md`, handoff) brought current.
+- **Not verified:** a real Deck/gamescope pass; Wayland desktop chrome (Phase 6 item 4) still needs the open
+  decision made first.
+- **Open:** Phase 6 item 4 (Wayland), Group 7 (OS notifications).
