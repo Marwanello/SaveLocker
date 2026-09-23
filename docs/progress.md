@@ -3147,3 +3147,28 @@ commits `bf2f2b8`, `30ffbc5`, `1ba3a2b`, `56ec631`, `3dd23b2`, `1d9b38e`, plus t
 - **Not verified:** a real Deck/gamescope pass; Wayland desktop chrome (Phase 6 item 4) still needs the open
   decision made first.
 - **Open:** Phase 6 item 4 (Wayland), Group 7 (OS notifications).
+
+## 2026-09-24 — Checkpoint UI Group 7: OS notifications
+
+Branch `claude/group-7-ui-redesign-b15255` (no PR yet). Phase 7, both halves, on shared rules.
+
+- **Shared (`Agent.Core/Notifications.cs`):** `NoticeCatalog` (which events fire, plan-voice copy), `NotificationCenter`
+  (announce once per standing condition, withdraw on clear, retry when nothing could be shown, the five-minute
+  unreachable clock), `NoticeAction` (a link to a screen of the agent UI), `INotificationPresenter`. `SyncEngine` lost its
+  free-text `notify` sink; `CommandPoller` feeds the center "did the server answer" and "which conflicts are open".
+- **Windows:** `ToastPresenter` — a real toast with the brand mark, two buttons, `reminder` scenario for errors.
+  TFM bumped to `net10.0-windows10.0.19041.0` (output folder pinned). Routine balloons removed; conflicts and the
+  server's 6-hour escalation now toast. **Linux:** `ConflictNotifier` → `DesktopNotifier`, mechanics unchanged.
+  **`agent-ui`:** `route.ts` + a `hashchange` listener + `#game:<id>`.
+- **Decision forced by measurement:** a button cannot be a custom URL scheme — built end to end, then refused by the
+  toast host on Windows 11 25H2 (ten variants). It is an `http://localhost:<port>/#route` link. "Retry now"/"Install
+  now" dropped. Recorded in `NoticeAction`'s doc comment, `Gotchas.md` → Windows notifications, `Decisions.md`.
+- **Also measured:** header name/icon need a shortcut with the AUMID (installer now stamps one); the toast logo must be in
+  `%TEMP%`; `IToastNotifier.Setting` throws before the first toast.
+- **Verified:** live via `testenv.ps1` (real toast screenshotted, real click → chooser, the unreachable rule with
+  withdrawal); `dotnet test` 84; `run-linux-tests` 192 (+2 WSLg-only failures); `run-health-tests` 22/22;
+  `run-appearance-consistency-tests` 33/33 (mutation-checked); the installer compiles.
+- **Not verified:** the installed agent's shortcut header; a popup on a real Linux desktop; the Deck's Steam toast
+  (Decky repo, out of scope).
+- **Found, not fixed:** `testenv.ps1 clean` once left stale Windows state behind.
+- **Open:** Phase 6 item 4 (Wayland), Phase 8 assets; a button that acts needs a COM activator ([[Backlog]]).

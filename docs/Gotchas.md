@@ -24,6 +24,18 @@ here.
   changing iteration count/salt/hash size invalidates every stored password. `tests/verify-password-compat.ps1`
   guards this; keep a `v1` verification path if it ever moves.
 
+- **The Windows agent's TFM is `net10.0-windows10.0.19041.0`, but its output folder is still
+  `bin/<Config>/net10.0-windows/` — on purpose.** The platform version *in the TFM string* is the only
+  thing that brings in the WinRT projection (`Windows.UI.Notifications`); setting `TargetPlatformVersion`
+  on plain `net10.0-windows` does not (`CS0234`, tried). The TFM would rename the output folder, which
+  ~20 places hardcode (every `tests/run-*.ps1`, `testenv.ps1`, the installer's publish path,
+  `win-x64.pubxml`, CI), so `SaveLocker.Agent.csproj` sets `AppendTargetFrameworkToOutputPath=false` and
+  pins `OutputPath`. If a script cannot find `SaveLocker.Agent.dll`, look there first. The test project
+  must carry the same TFM (a project cannot reference one built for a newer platform version), and the
+  self-contained exe is ~8 MB larger for the projection (`Microsoft.Windows.SDK.NET.dll` 23.7 MB).
+  A second-build warning count of `2` from `testenv.ps1 build` means *you* added a warning — the
+  baseline is one (`MSB3277`, WindowsBase), and the rig checks it.
+
 - **A test build must not carry a RELEASE's numeric version, or it can never be updated and cannot
   be told apart from the real thing.** `build-linux.sh` stamps `AssemblyFileVersion` with the numeric
   part only (`${version%%-*}` — the attribute rejects a `-suffix`), so a tarball built as
@@ -119,6 +131,10 @@ These exist because the production values are far too slow to observe in a suite
   Must be a **rooted** path or it is ignored — a relative one would resolve against whatever
   directory the process started in, which for a tray launched from Explorer is not knowable. Setting
   it makes `--config` optional: `DefaultConfigPath` moves with it.
+- **`SAVELOCKER_UNREACHABLE_NOTICE_SECONDS`** — how long the server must be gone before the agent says so
+  in a notification (production: 5 minutes; clamped 1–3600). Set it in the shell you run
+  `testenv.ps1 up` from and clear it afterwards; 20 lets the whole appear-once-then-withdraw cycle be
+  watched in a minute (`docker stop savelocker-test`, wait, `docker start savelocker-test`).
 - **`SAVELOCKER_RUNKEY_SUBPATH`** — moves the HKCU "Start with Windows" subkey (Windows only).
   WA-10's access-denied case needs a **Deny ACE**, and putting one on the real
   `Software\Microsoft\Windows\CurrentVersion\Run` would break auto-start for everything on the box if
@@ -243,6 +259,49 @@ behave in ways that look like bugs.
   picker previews on one load, 0 of 15 on three re-fetches). Harmless, and the picker shows a clickable
   "no preview" tile — but it is not a product bug, so do not chase it there. Port 5217 for the manual
   stub: 5216 is the security suite's own and it refuses to start if it is taken.
+
+## Windows notifications (toasts — `src/Agent/ToastPresenter.cs`)
+Every line here was measured on Windows 11 25H2 (build 26200) while building Group 7; none is in any
+documentation that was found. Read before touching the presenter.
+- **A toast's button cannot call back into the tray, and a custom URL scheme is not the way around it.**
+  Built and verified end to end (registry handler → short-lived process → named pipe → tray), then dropped:
+  the plain link worked from `Start-Process` and `Launcher.LaunchUriAsync`, but the *toast host* answered
+  every freshly registered scheme with **"Get an app to open this link"** while launching Discord's (an
+  HKCU-only scheme; its process went 0 → 5), Steam's and `ms-settings:`. Ten variants changed nothing
+  (hyphen-free name, signed handler, Discord's
+  exact key layout incl. `DefaultIcon`, `RegisteredApplications`/Capabilities, `SHChangeNotify`, restarting
+  `ShellExperienceHost`, process AUMID). The button is an `http://localhost:<port>/#route` link the shell
+  hands to the default browser. A richer button needs a COM activator + a shortcut carrying
+  `ToastActivatorCLSID` ([[Backlog]]). Don't rebuild the scheme.
+- **The header's name and icon come from a Start-menu shortcut that carries the toast's AUMID.** With one, the
+  header read the shortcut's name and the exe's icon; without, the raw AUMID string and no icon. An HKCU
+  `AppUserModelId\<id>` key with `DisplayName`/`IconUri` and `SetCurrentProcessExplicitAppUserModelID` were
+  both tried and changed *nothing*. So the AUMID string is chosen to be readable (`SaveLocker`,
+  `SaveLocker.Test.<port>`), and `installer/SaveLocker.iss` stamps `AppUserModelID` on the shortcut
+  (`run-appearance-consistency-tests` ties the two). A rig has no shortcut, so it shows the AUMID.
+- **A toast's logo file must be in `%TEMP%`.** The toast is drawn by an AppContainer process, which reads
+  only where *ALL APPLICATION PACKAGES* has access. The agent's state dir is ACL-locked on purpose (WA-03) and
+  a plain folder under `%LOCALAPPDATA%` is not readable either — in both the file existed, right size and
+  format, and the toast simply had no picture, with no error anywhere.
+- **`IToastNotifier.Setting` throws `0x80070490` ("element not found") until Windows has seen the app show one
+  toast.** It reads as "off" and is not; ask in its own `try` and let `Show` be the real test.
+- **Clicking a toast's button removes it from the Action Center.** So "does it withdraw when the condition
+  ends" cannot be tested on a toast you click — use one nobody clicks (the server-unreachable notice).
+- **Testing toasts here.** PowerShell can display toasts only for an AUMID that has a shortcut (unregistered
+  scratch identities are accepted and silently never shown, and `GetHistory` still says 1). UI Automation
+  cannot see the toast host from the tool sandbox; click by screen coordinate (`SetCursorPos` +
+  `mouse_event`) off a screenshot — the virtual desktop here starts at x = −1920, so bitmap x ≠ screen x.
+  **Every tray port leaves a ~1 KB `savelocker-toast-logo-<port>.png` in `%TEMP%` and, once it has toasted, a
+  record under `HKCU\…\Notifications\Settings\SaveLocker.Test.<port>`** (it lists in Settings → Notifications).
+  `testenv.ps1 clean` removes its own port's; `run-winagent-tests.ps1` (ports 5189–5198) does not — clear those by
+  hand if the list bothers you.
+  `scenario="reminder"` toasts stay put (Error notices use it), and at most three banners are visible at once.
+  **Crop screenshots to the toast region**: the rest of the desktop is the user's. `testenv.ps1 clean` clears
+  the rig's toast history, its Temp logo and Windows' per-app record; if a scratch shortcut or a `slk*` /
+  `Scratch.*` registry key is ever made by hand, remove it by hand.
+- **A default browser is not always Chrome** (here it is Arc): a check on Chrome's window titles saw nothing
+  while the click had worked. Look at connections to the agent's port (`Get-NetTCPConnection -RemotePort`)
+  instead of guessing the browser.
 
 ## Windows ACLs
 - **`SetAccessRuleProtection(isProtected: true, preserveInheritance: true)` does not let you then
@@ -458,6 +517,12 @@ behave in ways that look like bugs.
   server's own code.
 
 ## Testing
+- **`run-linux-tests.sh` fails two "no session" checks under WSLg — that is the machine, not the code.** "no session:
+  graphical session reported no" and "…D-Bus session bus reported no" assume the harness has no graphical session, but WSLg
+  injects `DISPLAY`, `WAYLAND_DISPLAY` and `DBUS_SESSION_BUS_ADDRESS` into every WSL shell, **even under `env -i`**. Expect
+  192 pass / 2 fail there (2026-09-24); the recorded 237/0 baseline is from a cloud container with no display. The notification
+  checks in that suite (`--wait`, `--print-id`, the action label, the error icon, *announced once across several polls*) are
+  unaffected — they use a fake `notify-send` on `PATH`.
 - **`run-local-api-tests.ps1` hardcodes its daemon to :5188 — the same port the `testenv` Windows tray owns.** With the rig up, the
   suite's token checks talk to the *tray* (a different token) and a dozen checks fail together: `token is accepted`, `the
   agent's own Origin`, the whole path-browser block. It looks like a regression and is not. `.\tests\testenv.ps1 down` first (the

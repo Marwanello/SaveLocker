@@ -14,7 +14,7 @@ phases to do in one session, in what order, and why. Driven by three things weig
    23 files, multiple review rounds) was a heavy session. Treat ~1,500 insertions as the ceiling for
    a group that still gets reviewed properly.
 
-## Status (updated 2026-09-20)
+## Status (updated 2026-09-24)
 
 | Group | Contents | Status |
 |---|---|---|
@@ -24,7 +24,7 @@ phases to do in one session, in what order, and why. Driven by three things weig
 | 4 | Phase 5 Games tab + art proxy + search + **Phase 3.5 (per-game Sync this game)** | ✅ Shipped 2026-09-21 — see the Group 4 write-up below |
 | 5 | Phase 4 appearance + fleet sync | ✅ Shipped 2026-09-21 — the `Ui:*` setting and its console card, the heartbeat push, the per-machine "Follow the console" override, the favicon, the brand mark, the Windows tray + window icon; **and the theme default now follows the OS**, after every hardcoded hex left the views (303 in `web`, 166 in `agent-ui` → 0). **Phase 4 item 4 (the Deck's accent) ➡️ moved to Group 6**: `Theme.cs`'s `AccentGreen` means both "accent" and "healthy" at 68 sites, so an accent switch there needs Group 6's token split; the plumbing it needs is done. See the Group 5 write-up below |
 | 6 | Phase 6 items 1-3 (Deck) | ✅ Shipped 2026-09-22 (branch `claude/group-6-ui-redesign-6d9b06`) — Checkpoint tokens, the accent/healthy split, 62px two-line rows, the button legend, Sync all on Y. `savelocker ui --screenshot` and `--nav` turned out to run on this Windows box (no WSLg needed — SDL/GL resolved natively), so this was verified live, not by build alone: real pixel colours sampled off real screenshots, and the L1/R1 section-switch driven through `--nav r1,r1,r1` with `--nav-debug` open. That pass caught and fixed a genuine focus-timing bug (below) a build could never have shown. Same-day follow-up (below) fixed a mis-angled Sync icon and replaced the header's stale pre-Checkpoint logo with a live, mark-aware, accent-coloured `AppMark`. Archivo shipped the same day. Reviewed as PR #49 on 2026-09-23 and every finding fixed (*Review fixes*, below). Still not run on a real Deck or under gamescope's actual input path |
-| 7 | Phase 7 (notifications) | ⏳ Not started |
+| 7 | Phase 7 (notifications) | ✅ Shipped 2026-09-24 (branch `claude/group-7-ui-redesign-b15255`) — both halves on shared rules (`Agent.Core/Notifications.cs`): a real Windows toast (`ToastPresenter`) and the Linux notifier generalised from `ConflictNotifier` (`DesktopNotifier`). **A button is a link to the agent UI, not a callback** — a custom URL scheme was built end to end and the shell's toast host refused every freshly registered one (measured), so "Retry now"/"Install now" became "Open game" and a pointer to the tray menu. Verified live on Windows (real toast, real click, the five-minute rule, withdrawal); the Linux popup itself is still only argv-pinned, and the installer's shortcut change compiles but has not been run. See the Group 7 write-up below |
 
 **2026-09-20 review pass (a code review of Groups 1–2, all findings fixed on branch
 `console-review-fixes-and-security-hardening`).** Two things here change what later groups may assume:
@@ -477,7 +477,57 @@ Deck is the Menu/Start button - the Steam button has its own logo (plan.md speci
 whether `Caption` (13 px) and `Mono` (14 px) count as "16 px minimum body text" - only `Body` is 16.
 **Not verified:** a real Deck or gamescope with a physical controller (the Y/L1/R1 path was driven through the
 same input queue a pad writes to, but never through Silk's SDL-to-`ButtonName` mapping on hardware).
-**Group 7 — Notifications. Windows half here, Linux half deferred.**
+**Group 7 — Notifications.**
+✅ **Shipped 2026-09-24 (branch `claude/group-7-ui-redesign-b15255`).** Written up after the original scope below.
+<br>**What was found before building, and changed the plan:** the Linux half was *not* "only the call missing" —
+`ConflictNotifier` already existed (conflict-resolution Phase 9, hardware-verified), so the work was to
+**generalise it, not add it**; and the Windows half's real cost was not the toast but everything a toast
+needs around it (below). `notify` on `SyncEngine` was a free-text string sink used by exactly one method, so
+the rules could not be expressed against it at all.
+<br>**Shipped:** `Agent.Core/Notifications.cs` — `NoticeCatalog` (which events fire, and their copy in the plan's
+voice: cause first, no exclamation marks), `NotificationCenter` (announce **once** per standing condition,
+withdraw when it ends, retry when nothing could be shown, and the five-minute unreachable clock), `NoticeAction`
+(a link to a screen of the agent UI), `INotificationPresenter`. Engine alerts flow through the catalog;
+`CommandPoller` feeds the center the two things only a poll knows (did the server answer, which conflicts are
+open) — which is also what gives **Windows conflict notifications for the first time**, and puts the server's
+6-hour escalation on both platforms. `agent-ui/src/route.ts` — the hash is now a live route (a `hashchange`
+listener and `#game:<id>`); it had been read once at load, so the tray's kept-and-re-shown window ignored
+every deep link after the first. `ToastPresenter` (Windows) and `DesktopNotifier` (Linux) are the two presenters.
+<br>**Deliberate departures from `implementation.md` Phase 7 / the prototype, each measured or reasoned:**
+- **Buttons open a page; they do not call back.** "Retry now" → "Open game"; "Install now" → the toast names the
+  tray menu's *Update to vX…*. On Windows 11 25H2 a custom URL scheme (the only way back into the tray that
+  works from the Action Center) was built and verified from `Start-Process` and `Launcher.LaunchUriAsync`, but
+  the toast host answered every newly registered scheme with "Get an app to open this link" while launching
+  Discord, Steam and `ms-settings:`; ten variants (name, signed handler, Discord's exact key layout, capabilities,
+  `SHChangeNotify`, host restart, process AUMID…) changed nothing. The link is what the Linux side already did,
+  needs no registration and is not a door a web page can knock on. Full record in `NoticeAction`'s doc comment.
+- **"Resolve deep-links the console" became "opens the agent UI."** The Phase 7 sentence says console; the prototype
+  says "the exact screen". The agent UI has the chooser and per-game pages locally with no sign-in, so that is
+  where a click goes.
+- **One button on Linux, not the mock-up's two** — the single-action call is the exact shape confirmed on real
+  hardware, and a second only duplicates the notification's own dismiss.
+- **The Deck's Steam toast is not here.** It is the Decky plugin's (its own repo), which `plan.md` puts out of scope.
+- **`launch.blocked_conflict`, `savedir.unsafe`, `sync.busy`, `settle.timeout`, `savedir.missing`, update
+  failed/rolled back and plugin events do not toast** — not in the rules; they stay in the log and the bell. The
+  Windows routine balloons that used to fire for them, for the poller's "Added/Removed/Mapped…", and for the
+  offline drainer's "attempting drain…" every 30 s, are gone.
+<br>**What a Windows toast turned out to need (all measured):** its header name and icon come from a Start-menu
+shortcut carrying its AUMID (the installer now stamps `AppUserModelID: "SaveLocker"`); an HKCU registration
+does nothing, so a shortcut-less build shows the AUMID string (chosen to be readable); the brand mark goes in the
+toast's logo slot and the file must be in `%TEMP%` (an AppContainer draws it; the ACL-locked state dir and a plain
+`%LOCALAPPDATA%` folder both gave a silently pictureless toast); `IToastNotifier.Setting` throws until Windows has
+seen the app show one toast, so it is asked in its own `try`. **TFM:** `net10.0-windows10.0.19041.0` is the only
+way to the WinRT projection (`TargetPlatformVersion` alone does not) — minimum OS becomes Windows 10 2004 and the
+self-contained exe grows ~8 MB; the output folder is pinned to the old `bin/<Config>/net10.0-windows/` so the
+~20 scripts, installer and CI that hardcode it are untouched.
+<br>**Verified live** (`tests/testenv.ps1`: real tray, Docker console, WSL agent, a genuine two-machine conflict): the
+real toast (screenshotted), the real click opening the chooser, the unreachable rule (silent, then once, then
+withdrawn ~16 s after the server returned). `dotnet test` 84 (66 new, mutation-checked);
+`run-linux-tests` 192 with every notification check passing (2 failures are WSLg's injected session
+environment — the suite assumes none); `run-health-tests` 22/22; `run-appearance-consistency-tests` 33/33 (5 new:
+installer AUMID ↔ C# constant, catalog routes ↔ `route.ts`); the installer compiles. **Not verified:** a real
+installed agent's shortcut-based header, a popup on a real Linux desktop, the WebView2 tray window.
+<br>**Original scope, kept for the record:**
 Phase 7. The Windows toast is buildable *and* verifiable on this machine. The Linux freedesktop call
 is buildable here but only observable on a real desktop session — `DesktopEnvironment.cs` already
 probes `org.freedesktop.Notifications` and exposes `NotificationDaemonPresent`, so the check exists

@@ -90,6 +90,11 @@ SaveLocker/
 │   │   ├── SaveDirSanity.cs             # "That's a Wine PREFIX, not a save folder" + size backstop
 │   │   ├── SavePathGuard.cs             # The hard floor: paths that can NEVER be a save folder,
 │   │   │                               #   however they arrived
+│   │   ├── Notifications.cs             # OS notifications, platform-neutral: WHAT fires (`NoticeCatalog`), how often
+│   │   │                               #   (`NotificationCenter`: once per standing condition, withdrawn when it ends,
+│   │   │                               #   the 5-minute unreachable clock) and where a button goes (`NoticeAction` —
+│   │   │                               #   a link to a screen of the agent UI, never a callback). Hosts supply only
+│   │   │                               #   an `INotificationPresenter`; read its `NoticeAction` doc before adding a button
 │   │   ├── CommandPoller.cs             # 20 s poll: reconcile game list + run commands
 │   │   ├── AgentApiServer.cs            # ASP.NET minimal API on :5178 + OpenAPI + agent-ui files
 │   │   ├── PathBrowser.cs               # Directory listing for the UI's path browser — a Deck has no
@@ -120,8 +125,14 @@ SaveLocker/
 │   │   ├── ScanCandidate.cs             # Discovery DTO (scanning itself is platform-specific)
 │   │   └── Platform.cs                  # IAutoStart, IGameScanner — impls injected by the host
 │   │
-│   ├── Agent/                           # SaveLocker.Agent.csproj (net10.0-windows, WinForms)
+│   ├── Agent/                           # SaveLocker.Agent.csproj (net10.0-windows10.0.19041.0, WinForms — the
+│   │   │                               #   platform version is what brings in the WinRT projection; its output folder
+│   │   │                               #   is PINNED to bin/<Config>/net10.0-windows/, see Gotchas → Builds)
 │   │   │                               # Windows host: UI + platform impls. → Agent.Core
+│   │   ├── ToastPresenter.cs            # A real Windows toast (title, body, brand mark, 2 buttons) for
+│   │   │                               #   NotificationCenter. The button is an http://localhost link the shell hands to
+│   │   │                               #   the default browser. Doc comment holds the measured Windows 11 traps
+│   │   │                               #   (what names the toast, where its logo must live, why no URL scheme)
 │   │   ├── Program.cs                   # Entry: no args → tray; args → AgentCli
 │   │   ├── TrayApp.cs                   # Tray icon, menu, engine lifecycle; injects the Windows impls
 │   │   ├── UiDispatcher.cs              # The single owning thread for EVERY WinForms object — icon,
@@ -153,6 +164,9 @@ SaveLocker/
 │       │                                #   WRITING the files is the install. Every destination is
 │       │                                #   proven writable BEFORE any byte lands — the plugin dir
 │       │                                #   is root-owned 755 and plugin.json is root's outright
+│       ├── DesktopNotifier.cs           # freedesktop delivery for NotificationCenter: `notify-send --wait --print-id
+│       │                               #   --action`, one process per live notification (the connection that sent an
+│       │                               #   action's notification must outlive it — hardware-verified, see its doc)
 │       ├── Doctor.cs                    # Diagnoses the whole chain (the only UI a Deck has)
 │       ├── SystemdAutoStart.cs          # IAutoStart: systemd --user unit
 │       └── Ui/                          # `savelocker ui` — Game Mode surface (SDL + GL + ImGui)
@@ -236,6 +250,9 @@ SaveLocker/
 │       │                               #   useSyncExternalStore slices, so a progress tick re-renders
 │       │                               #   only the header's progress, never the page around it
 │       ├── appearance.ts                # Copy of web/src/appearance.ts; the agent polls /api/appearance and setLook()s it
+│       ├── route.ts                     # The one place a URL hash becomes a view (#games · #conflicts:queue · #game:<id>),
+│       │                               #   read at startup AND on `hashchange` — that is what lets a notification button or
+│       │                               #   the tray take an already-open window to an exact screen
 │       ├── format.ts                    # formatBytes / formatTime
 │       └── components/
 │           ├── ui/                      # Button · Card · Chip · Stat · Banner · Toast — counterparts
@@ -358,7 +375,7 @@ SaveLocker/
 ```
 
 ## Runtime / toolchain
-- **net10.0** everywhere (`net10.0-windows` for the WinForms tray). .NET 10 is **LTS**; net9 was STS
+- **net10.0** everywhere (`net10.0-windows10.0.19041.0` for the WinForms tray — output still in `bin/<Config>/net10.0-windows/`). .NET 10 is **LTS**; net9 was STS
   and goes out of support 10 Nov 2026. See `Decisions.md → Runtime: .NET 10 LTS`.
 - EF Core tracks the framework at **10.0.x**.
 - **`SQLitePCLRaw.bundle_e_sqlite3` is pinned to 3.x on purpose** in `SaveLocker.Server.csproj` —

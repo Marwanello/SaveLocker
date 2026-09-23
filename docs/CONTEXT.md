@@ -1417,6 +1417,90 @@ through an actual controller, or Group 7 (OS notifications) if that hardware acc
 first. The Wayland decision (Phase 6 item 4) is still open and needs deciding before any code is written
 for it.
 
+**Checkpoint UI redesign, Group 7 shipped (2026-09-24, branch `claude/group-7-ui-redesign-b15255`, no PR yet).**
+Phase 7, OS notifications — both halves, on the same rules. **The rules are shared, in
+`Agent.Core/Notifications.cs`:** `NoticeCatalog` decides what fires and what it says, `NotificationCenter`
+decides how often, and each host supplies only a presenter — `src/Agent/ToastPresenter.cs` (a real Windows
+toast: title, body, the brand mark, two buttons) and `src/Agent.Linux/DesktopNotifier.cs` (the old
+`ConflictNotifier`, generalised from "conflict id" to "notice key", with its hardware-verified
+`notify-send --wait --print-id` mechanics untouched). **What fires** is exactly the plan's list — conflict
+opened, lease held elsewhere, push rejected, pull refused, update ready, server unreachable past five
+minutes — and **never** a successful push or pull. A standing condition is announced **once** and taken down
+when it ends (a clean sync of the game, the server resolving the conflict, the server answering again).
+`SyncEngine` no longer takes a free-text `notify` sink; coded alerts go through the catalog, and everything
+the catalog does not name stays in the log and the console's bell, where it always was.
+<br>**Behaviour that changed on Windows, on purpose:** the routine balloons are gone — `sync.busy`,
+`settle.timeout`, `savedir.*`, the poller's "Added/Removed/Mapped…" and dashboard-command results, and the
+offline drainer's "attempting drain…" **every 30 s for as long as the server was down** (a per-poll
+announcement of exactly the kind the plan's "once" rule exists to stop). Conflicts now toast on Windows for
+the first time (the poll finds them ≤20 s after they open; before, only a tray-initiated sync raised the
+window), and the server's "open too long" escalation now toasts on both platforms in the plan's voice instead
+of the old `URGENT: …` string on Windows only. Tray-menu answers (Force Pull, Sync All, update-check results)
+are still shown — they are replies to a click, not conditions.
+<br>**A button opens a page; it is not a callback — and that was a decision forced by measurement, not taste.**
+The plan wanted "Retry now" / "Install now" style buttons. Every way of getting a click back into the tray was
+tried on Windows 11 25H2: an in-process `Activated` handler does not survive the Action Center; a **custom URL
+scheme** was built end to end (registry handler → short-lived process → named pipe → tray) and the plain link
+worked from `Start-Process` and from `Launcher.LaunchUriAsync`, but **the shell's toast host answered every
+freshly registered scheme with "Get an app to open this link"** — while launching Discord's and Steam's, and
+`ms-settings:`. A hyphen-free name, a signed handler, an exact copy of Discord's key layout, `DefaultIcon`,
+capabilities/`RegisteredApplications`, `SHChangeNotify`, restarting `ShellExperienceHost` and setting the
+process AUMID all changed nothing. So the button is now a plain `http://localhost:<port>/#route` link the shell
+hands to the default browser (a freedesktop action runs `xdg-open` on the same link) — verified end to end:
+clicking **Choose a save** on a real toast opened the agent UI at the conflict chooser. That removed the scheme
+registration, the pipe, the `Program.cs` handler and the door a web page could have knocked on. **Dropped as
+a result:** "Retry now" (now "Open game", whose page has *Push now*), "Install now" (the toast names the tray
+menu's *Update to vX…* item instead), and the old click-the-balloon-to-update. Recorded in `NoticeAction`'s
+own doc comment with the measurements, so nobody rebuilds the scheme.
+<br>**`agent-ui` learned to be deep-linked** (`agent-ui/src/route.ts`): the hash used to be read once at load,
+so the tray window — kept and re-shown, never rebuilt — ignored every deep link after the first, including the
+tray's own `conflicts:queue`. There is now a `hashchange` listener and a `#game:<id>` route; verified by
+navigating an already-open window. `run-appearance-consistency-tests` ties the routes the catalog emits to what
+`route.ts` understands, and the installer's AUMID to `ToastPresenter.ProductAumid` (both mutation-checked).
+<br>**What names and decorates a Windows toast** (all measured, all in `ToastPresenter`'s doc comment): the
+header's name and icon come from a **Start-menu shortcut carrying the toast's AUMID** — a scratch shortcut
+proved it (header became the shortcut's name plus the exe's icon) — so `installer/SaveLocker.iss` now stamps
+`AppUserModelID: "SaveLocker"` on the shortcut (compiles under ISCC; **not installed** — see below). An HKCU
+`AppUserModelId` registration with a DisplayName/IconUri does **nothing** on this build, and a build with no
+shortcut (the rig, a dev run) shows the bare AUMID string as its name, so it is chosen to be readable
+(`SaveLocker.Test.<port>` on a rig). The brand mark rides in the toast's own logo slot, in the current accent —
+but the file **must live in `%TEMP%`**: the toast is drawn in an AppContainer process that can read only where
+*ALL APPLICATION PACKAGES* has access, and both the agent's ACL-locked state dir and a plain
+`%LOCALAPPDATA%` folder silently gave a toast with no picture.
+<br>**Cost worth knowing:** the Windows agent's TFM is now `net10.0-windows10.0.19041.0` (that is the only way to
+get the WinRT projection — `TargetPlatformVersion` alone does not), which raises the minimum OS to Windows 10
+2004 and adds `Microsoft.Windows.SDK.NET.dll` (23.7 MB, ~5.9 MB compressed) + `Microsoft.Windows.UI.Xaml.dll`
+(6.9 MB, unused) to the self-contained exe — roughly **+8 MB on a 67.8 MB build**. The output folder is
+**pinned to `bin/<Config>/net10.0-windows/`** so the ~20 scripts, the installer and CI that hardcode that path
+keep working (`Gotchas` → Builds). `CsWinRTIncludes` could shrink it; not attempted.
+<br>**Verified live, through `tests/testenv.ps1`** (real Windows tray + the Docker console + a WSL agent, a genuine
+two-machine conflict): the real toast rendered with title, body, mark and both buttons (screenshotted); the
+real click opened the chooser; **the server-unreachable rule** (`SAVELOCKER_UNREACHABLE_NOTICE_SECONDS=20`
+instead of 5 min) stayed silent through the short outage, toasted once at the first poll past the threshold,
+stayed at one entry across later polls, and **withdrew itself ~16 s after the console came back**. `dotnet
+test` 84 (66 new: the rules with a fake clock and presenter — once-per-condition, withdraw on clear, the five
+minutes, undelivered-then-retry, the route→URL contract — mutation-checked); `run-linux-tests` 192 with all the
+notification checks passing, including the new "announced once across several polls" one; `run-health-tests`
+22/22; `run-appearance-consistency-tests` 33/33; the installer compiles. Full solution and both frontends build;
+the Windows build warning count is unchanged (the rig's own guard caught a second one I had introduced, `CS8602`,
+and it is fixed).
+<br>**Not verified:** the installed agent's shortcut-based header (only a scratch shortcut with the same AUMID —
+the real installer has never been run with the change); a notification on a **real Linux desktop** (the suite's
+fake `notify-send` pins the argv, as before; nothing here can observe a real popup); the **Deck's Game Mode
+Steam toast** (the Decky plugin, its own repo, deliberately out of scope in `plan.md`); the WebView2 tray window
+beyond what navigation showed. **Two failures in `run-linux-tests` are this WSL's, not the code's:** it runs
+under WSLg, which injects `DISPLAY`, `WAYLAND_DISPLAY` and a D-Bus session bus into every shell — even under
+`env -i` — so "no session: graphical session / D-Bus session bus reported no" cannot pass here (the suite's
+own premise is "this harness has no graphical session").
+<br>**Found, not fixed:** `testenv.ps1 clean` printed `removed …\SaveLocker-test` and the Windows state — an old
+API key included — was still there for the next `conflict` (deleting it by hand worked), which produced a 401 and a
+one-sided seed; cause not found. And `web/node_modules` is absent in this worktree (irrelevant here; the
+console was not touched).
+<br>**Next action:** run the installer once on a real machine and look at a real toast's header (the one unverified
+claim above); then Phase 6 item 4 (the Wayland window) still needs its decision, and Phase 8's Steam art and
+PNG/ICO rasterisation are still open. Release notes for the next tag need a line covering notifications — and
+the raised Windows minimum.
+
 ---
 
 ## Where things stand

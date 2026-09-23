@@ -7,7 +7,7 @@ Read [[plan]] first for tokens, type, motion and the colour rule, and
 [[implementation-grouping]] before starting any phase — it regroups the list below **by surface**
 rather than by phase number, because several phases edit the same components.
 
-## Status (updated 2026-09-22)
+## Status (updated 2026-09-24)
 
 | Phase | Status |
 |---|---|
@@ -18,7 +18,7 @@ rather than by phase number, because several phases edit the same components.
 | 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5); item 4 — the Deck's accent ➡️ shipped 2026-09-22 (Group 6). The theme default now follows the OS (every hex colour left the views first). See `implementation-grouping.md` → Groups 5/6 |
 | 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
 | 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22 (Group 6) — verified live (real screenshots, pixel-sampled colours, `--nav`-scripted L1/R1 with `--nav-debug`) since `savelocker ui` runs on this Windows box without WSLg; a real focus-timing bug was found and fixed this way — see `implementation-grouping.md` → Group 6. No real Deck/gamescope pass yet. Item 4 (Wayland, 6.4) still needs the open decision below made first |
-| 7 — OS notifications | ⏳ Not started (Group 7) |
+| 7 — OS notifications | ✅ Shipped 2026-09-24 (Group 7) — shared rules, a real Windows toast and the generalised Linux notifier. Buttons are links to the agent UI, not callbacks (measured: Windows' toast host refuses freshly registered URL schemes); "Retry now"/"Install now" did not survive that. See Phase 7 below |
 | 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1) — see the note under Phase 8 below |
 
 ## A gap found while building Group 2 (2026-09-18)
@@ -252,19 +252,35 @@ The largest genuinely-new piece.
 
 ---
 
-### Phase 7 — OS notifications *(mostly New)*
+### Phase 7 — OS notifications — ✅ shipped 2026-09-24 (Group 7)
 
 `HealthReporter` already decides what is worth reporting; this is delivery.
 
-- **Windows**: tray balloon exists today. Move to a proper toast (title, body, two actions) so
-  "Resolve" can deep-link the console.
-- **Linux/Wayland**: `DesktopEnvironment.cs` already probes `org.freedesktop.Notifications` and
-  `NotificationDaemonPresent` — wire the actual notify call behind that check.
-- **Headless**: unchanged. No session means no toast; those events reach the console badge and the
-  audit log, which is the existing behaviour and the reason the bell menu matters.
-- **Rules**: fire for conflict opened, lease held elsewhere, push failed after its last retry, pull
-  refused, update staged, server unreachable past 5 minutes. Never for a successful push. A standing
-  warning announces once, not per poll.
+- ✅ **Windows**: a real toast (`src/Agent/ToastPresenter.cs`) — title, body, the brand mark in the current
+  accent, a primary button and a dismiss. **Deviation:** the primary button opens the agent UI at the exact
+  screen (`http://localhost:<port>/#route`, handed to the default browser); it does not deep-link the console
+  and it cannot call back into the tray. "Retry now" became "Open game" (the game page has *Push now*);
+  "Install now" became a toast that names the tray menu's *Update to vX…*. Measured why: a registered custom
+  URL scheme is refused by the toast host on Windows 11 25H2 (Discord's, Steam's and `ms-settings:` launch; a
+  new one — ten variants tried — gets "Get an app to open this link"). The header's name and icon come from
+  a Start-menu shortcut with the toast's AUMID, so `installer/SaveLocker.iss` now stamps one; the mark is
+  written to `%TEMP%` (the only place the toast's AppContainer can read). The agent's TFM is now
+  `net10.0-windows10.0.19041.0` for the WinRT projection (+~8 MB on the exe), output folder pinned.
+- ✅ **Linux/Wayland**: `ConflictNotifier` (conflict-resolution Phase 9, hardware-verified) was already the
+  freedesktop call — it is generalised into `DesktopNotifier`, keeping `notify-send --wait --print-id`
+  exactly. One action button, not the mock-up's two (the verified shape; a second duplicates the dismiss).
+- ✅ **Headless**: unchanged. No session means no toast; those events reach the console badge and the
+  audit log, which is the existing behaviour and the reason the bell menu matters. A host that could not show
+  a notification says so once in the log and tries again on the next poll (a Deck moving to Desktop Mode).
+- ✅ **Rules** (`Agent.Core/Notifications.cs`, shared by both hosts): fire for conflict opened, lease held
+  elsewhere, push rejected (`push.failed` — a network drop has no "last retry": the queue retries forever, and
+  is covered by the next rule), pull refused, update ready, **server unreachable past 5 minutes** (measured in
+  the poller, the one place that hears every failed round trip). Never for a successful push. A standing
+  warning announces once per condition and is withdrawn when the condition ends. Everything else the engine
+  reports stays in the log and the console.
+- ➡️ **Not done, on purpose:** the Deck's Game Mode Steam toast (the Decky plugin, its own repo — out of scope
+  in `plan.md`); a button that acts ("Retry now", "Install now") — needs a COM activator plus a shortcut
+  carrying `ToastActivatorCLSID`, see [[Backlog]].
 
 ---
 
