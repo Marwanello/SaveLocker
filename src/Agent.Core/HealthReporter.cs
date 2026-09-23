@@ -144,7 +144,8 @@ public sealed class HealthReporter
         AgentConfig config,
         OfflineQueue? offlineQueue,
         Action<string>? notify = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Action<ConflictEscalationDto>? onEscalation = null)
     {
         Pending[] events;
         Guid[] resolved;
@@ -198,9 +199,13 @@ public sealed class HealthReporter
             var stuck = string.IsNullOrWhiteSpace(conflict.StuckMachineName)
                 ? ""
                 : $" {conflict.StuckMachineName} cannot sync.";
+            // Two audiences for one fact: `notify` is the plain text a CLI or a log line wants,
+            // `onEscalation` is the structured record a host that can show a notification turns into
+            // one (see NoticeCatalog.ForEscalation). Same once-per-conflict guard for both.
             notify?.Invoke(
                 $"URGENT: {conflict.GameName} has had an unresolved conflict for over 6 hours.{stuck} " +
                 "Open the SaveLocker console to resolve it.");
+            onEscalation?.Invoke(conflict);
         }
 
         // The console's look rides this response. Applied here, where every host (the tray and the

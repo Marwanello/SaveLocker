@@ -614,8 +614,8 @@ wait "${daemon_pid}" 2>/dev/null
 # this script, and everything since — the daemon+wrapper section just above included — kept
 # advancing the Deck's head without it. Pushing ANY edit from it now, without pulling first,
 # reproduces the exact two-machine divergence run-agent-tests.ps1 already covers server-side; this
-# section instead exercises the AGENT's new reaction to it — ConflictNotifier, wired into
-# CommandPoller's 20s tick in Daemon.cs.
+# section instead exercises the AGENT's reaction to it — NotificationCenter (the rules) and
+# DesktopNotifier (the freedesktop delivery), wired into CommandPoller's 20s tick in Daemon.cs.
 echo
 echo "==> Desktop notification on a real conflict (headless harness — no D-Bus session bus)"
 echo "level=other-cfg-stale" >"${scratch}/pulled/slot1.sav"
@@ -667,9 +667,12 @@ esac
 exit 0
 FAKEGDBUS
 
+notify_calls="${scratch}/notify-send-calls.txt"
+rm -f "${notify_calls}"
 cat >"${fakebin}/notify-send" <<FAKENOTIFY
 #!/usr/bin/env bash
 printf '%s\n' "\$@" > "${notify_args}"
+echo call >> "${notify_calls}"
 # --wait means the real notify-send stays alive for as long as the notification is up. Staying
 # alive here too keeps the agent's own process bookkeeping on the same path it takes for real.
 sleep 5
@@ -703,11 +706,20 @@ check "the notification is sent with --wait, so its action can outlive the call"
 check "the notification requests an id, for the documented CloseNotification withdraw path" \
   "$(contains "${sent_args}" "--print-id")"
 check "the action button is declared with the key the agent listens for" \
-  "$(contains "${sent_args}" "--action=view=View conflict")"
-check "the notification names the conflicted game" \
-  "$(contains "${sent_args}" "Fake Prefix Game")"
+  "$(contains "${sent_args}" "--action=view=Choose a save")"
+check "the notification names the conflicted game, in the plan's own words" \
+  "$(contains "${sent_args}" "Fake Prefix Game needs a decision")"
+check "the notification says what to do about it" \
+  "$(contains "${sent_args}" "Both copies changed since the last sync")"
+check "a conflict is an error, so it carries the error icon" \
+  "$(contains "${sent_args}" "--icon=dialog-error")"
 check "the reachable-daemon path reports sending, not 'no daemon'" \
-  "$(contains "$(tail -60 "${log}" 2>/dev/null)" "conflict notification: sent for")"
+  "$(contains "$(tail -60 "${log}" 2>/dev/null)" "notification sent: 'Fake Prefix Game needs a decision'")"
+# THE rule behind every notification: a standing condition is announced ONCE, not on every poll. The
+# daemon above ticked every 500 ms for ~2 s — three or four polls of the same open conflict — and the
+# fake notify-send records one line per invocation.
+check "a standing conflict is announced once across several polls, not once per poll" \
+  "$([ "$(wc -l <"${notify_calls}" 2>/dev/null | tr -d ' ')" = "1" ] && echo 0 || echo 1)"
 
 # ---------------------------------------------------------------------------
 # autostart must report the REAL outcome (LA-08)

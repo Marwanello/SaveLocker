@@ -57,7 +57,7 @@ public static class ProtonRun
         var health = HealthReporter.For(config);
         // Disposed at the end of the run: this process holds a lease renewer for the whole game
         // session, and it must not outlive the wrapper. WA-06.
-        await using var engine = new SyncEngine(config, api, log: Log, notify: Log,
+        await using var engine = new SyncEngine(config, api, log: Log,
             offlineQueue: offlineQueue, health: health);
 
         // The game must be found before launch, but a failure here must never stop it starting:

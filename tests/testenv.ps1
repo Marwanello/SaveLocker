@@ -1466,6 +1466,22 @@ switch ($Command) {
             Remove-Item $conflictTestDir -Recurse -Force
             Write-Host "  removed $conflictTestDir"
         }
+        # What the test tray's toast notifications leave behind (src/Agent/ToastPresenter.cs): the toasts
+        # still sitting in the Action Center, its mark in %TEMP%, and Windows' own per-app record, which
+        # is what would keep listing "SaveLocker.Test.<port>" under Settings > Notifications. Scoped by
+        # port exactly as the tray scopes its identity, and never for 5178: that identity ("SaveLocker")
+        # is the INSTALLED agent's, and this rig must not touch it.
+        if ($WinPort -ne 5178) {
+            $toastAumid = "SaveLocker.Test.$WinPort"
+            try {
+                [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+                [Windows.UI.Notifications.ToastNotificationManager]::History.Clear($toastAumid)
+            } catch { }
+            $toastLogo = Join-Path $env:TEMP "savelocker-toast-logo-$WinPort.png"
+            if (Test-Path $toastLogo) { Remove-Item $toastLogo -Force; Write-Host "  removed $toastLogo" }
+            $toastKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\$toastAumid"
+            if (Test-Path -LiteralPath $toastKey) { Remove-Item -LiteralPath $toastKey -Recurse -Force; Write-Host "  removed $toastKey" }
+        }
 
         Invoke-Wsl 'clean'
 

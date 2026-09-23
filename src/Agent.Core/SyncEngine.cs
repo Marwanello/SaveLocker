@@ -46,7 +46,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     private readonly AgentConfig _config;
     private readonly ApiClient _api;
     private readonly Action<string> _log;
-    private readonly Action<string> _notify;
+    private readonly NotificationCenter? _notices;
     private readonly HealthReporter? _health;
     private readonly string _tempDir;
     private readonly OfflineQueue? _offlineQueue;
@@ -88,20 +88,25 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> _pushLocks = new();
 
     /// <param name="log">Routine progress — written to the agent log only.</param>
-    /// <param name="notify">User-facing alerts (conflicts, blocks, offline retries). Both notified and logged.</param>
-    /// <param name="health">
-    /// Reports the same alerts to the server. On Windows <paramref name="notify"/> raises a toast;
-    /// on a headless Deck it can only write a log line nobody reads — so the console has to be told
-    /// (Decisions.md §2). Both hosts report, so the console is one honest view of the whole fleet.
+    /// <param name="notices">
+    /// Where the few events worth interrupting someone for go — see <see cref="NoticeCatalog"/> for
+    /// which ones. Null on a host with nothing to interrupt (the launch wrapper: a short-lived process
+    /// that exits before it could show anything, whose faults the daemon and console report anyway).
     /// </param>
-    public SyncEngine(AgentConfig config, ApiClient api, Action<string>? log = null, Action<string>? notify = null,
+    /// <param name="health">
+    /// Reports every alert to the server, notification or not. A headless Deck can show nothing
+    /// locally, so the console has to be told (Decisions.md §2). Both hosts report, so the console is
+    /// one honest view of the whole fleet.
+    /// </param>
+    public SyncEngine(AgentConfig config, ApiClient api, Action<string>? log = null,
+        NotificationCenter? notices = null,
         OfflineQueue? offlineQueue = null, HealthReporter? health = null, SyncActivityTracker? activity = null)
     {
         _config = config;
         _api = api;
         _origin = config.ServerUrl;
         _log = log ?? (_ => { });
-        _notify = notify ?? (_ => { });
+        _notices = notices;
         _health = health;
         _offlineQueue = offlineQueue;
         _activity = activity;
@@ -141,17 +146,28 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         catch { /* the sweep is a courtesy; never let it break startup */ }
     }
 
-    /// <summary>An event the user should see as a toast — also written to the log.</summary>
-    private void Alert(string msg) { _log(msg); _notify(msg); }
-
     /// <summary>
-    /// An event the user must see, on <i>any</i> host: toasted where a toast is possible, logged
-    /// always, and reported to the console — which is the only place a Deck's owner will ever see it.
+    /// An event the user must see, on <i>any</i> host: logged always, reported to the console — the
+    /// only place a Deck's owner will ever see it — and, for the few codes <see cref="NoticeCatalog"/>
+    /// says are worth interrupting for, put on screen where a screen exists. Most codes are not: they
+    /// stay in the log and the console's bell, which is where they were before notifications existed
+    /// and where a repeat of the same condition should not keep tapping anyone on the shoulder.
     /// </summary>
     private void Alert(string msg, string code, AgentEventSeverity severity, Guid? gameId)
     {
-        Alert(msg);
+        _log(msg);
         _health?.Report(code, severity, msg, gameId);
+        if (_notices is null || gameId is not { } id) return;
+
+        var name = _config.Games.FirstOrDefault(g => g.GameId == id)?.Name ?? "A tracked game";
+        if (NoticeCatalog.ForEvent(code, name, id, msg) is { } notice) _notices.Raise(notice);
+    }
+
+    /// <summary>This game synced cleanly: its faults on the console close, and its faults on screen go.</summary>
+    private void MarkSynced(Guid gameId)
+    {
+        _health?.MarkSynced(gameId);
+        _notices?.ClearGame(gameId);
     }
 
     /// <summary>A condition worth reporting that was never worth a toast (it is not a user action).</summary>
@@ -285,7 +301,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                     countPush = true;
                     touchSyncTime = true;
                     _log($"[{game.Name}] pushed new version.");
-                    _health?.MarkSynced(game.GameId);
+                    MarkSynced(game.GameId);
                     break;
                 case UploadStatus.NoChange:
                     game.LastKnownVersionId = result.Version?.Id ?? game.LastKnownVersionId;
@@ -293,7 +309,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                     game.ConsecutiveConflicts = 0;
                     touchSyncTime = true;
                     _log($"[{game.Name}] server already had this content.");
-                    _health?.MarkSynced(game.GameId);
+                    MarkSynced(game.GameId);
                     break;
                 case UploadStatus.Conflict:
                     // The server no longer auto-resolves by policy — it only records the divergence.
@@ -309,7 +325,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                         touchSyncTime = true;
                         _log($"[{game.Name}] diverged from the server, but the save policy kept " +
                              "this machine's version.");
-                        _health?.MarkSynced(game.GameId);
+                        MarkSynced(game.GameId);
                         // Present it to callers as the accepted push it effectively became — the head
                         // is now this machine's version — not the raw divergence the server first
                         // answered. Nothing downstream should report a conflict that no longer exists.
@@ -583,7 +599,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                 game.ConsecutiveConflicts = 0;
                 _config.SaveGameSyncState(game);
                 _log($"[{game.Name}] already up to date.");
-                _health?.MarkSynced(game.GameId);
+                MarkSynced(game.GameId);
                 return false;
             }
 
@@ -637,7 +653,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             game.ConsecutiveConflicts = 0;
             _config.SaveGameSyncState(game, touchSyncTime: true);
             _log($"[{game.Name}] restored latest save from server.");
-            _health?.MarkSynced(game.GameId);
+            MarkSynced(game.GameId);
             return true;
         }
         catch (AgentStateLockException ex)
