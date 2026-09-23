@@ -1109,11 +1109,18 @@ static class Widgets
         return new Vector2((glyph.X0 + glyph.X1) / 2f, (glyph.Y0 + glyph.Y1) / 2f);
     }
 
+    /// <summary>
+    /// The glyph badges above are centred on a plain <c>lineH</c>-tall box (see e.g. <see
+    /// cref="GamepadHint"/>'s <c>centre = pos + (r, lineH/2)</c>), not on a framed widget's taller box.
+    /// <c>AlignTextToFramePadding</c> assumes the latter and was pushing the label down by
+    /// <c>FramePadding.y</c> past the badge's own centre — the label reading visibly low against every
+    /// glyph in the hint bar. Leaving the cursor where <c>Dummy</c> put it centres the label in the
+    /// same <c>lineH</c> box the glyph itself is centred in.
+    /// </summary>
     private static void HintLabel(float glyphWidth, string action)
     {
         ImGui.Dummy(new Vector2(glyphWidth, ImGui.GetTextLineHeight()));
         ImGui.SameLine(0, Theme.Space.Sm);
-        ImGui.AlignTextToFramePadding();
         Text(action, Theme.Dim, Theme.Caption);
     }
 

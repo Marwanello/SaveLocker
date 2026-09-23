@@ -404,6 +404,25 @@ read as a blob. Redrawn again as one circle with two 140° arcs on opposite side
 comment: a headless screenshot at an arbitrary fixed size is not the same check as the size a glyph
 actually renders at.
 
+<br>**The icon pack question, and stopping the hand-guessing for good (2026-09-23).** The user asked
+why the Deck UI doesn't just use the same icon pack the agent/console use, after watching `Icons.Cloud`
+and `Icons.Sync` each fail twice from eyeballed geometry. The "no atlas, redrawn as vector paths"
+architecture was already the right call (crisp at any size, no image assets, no SVG rasteriser at build
+time) — the actual defect was authoring the *coordinates* from memory instead of from the real shape. A
+new `Ui/SvgPath.cs` closes that gap: a small M/L/H/V/A/Z tessellator (circular arcs only — rx==ry, no
+rotation, which covers every arc lucide's icons use, via the SVG 1.1 spec's endpoint-to-centre formula)
+that strokes a lucide `d` string copied verbatim out of `agent-ui/node_modules/lucide-react`. `Cloud`,
+`Sync` and half of `GitBranch` now use it; `Sync`'s old `ArcWithArrow` arrowhead helper — the exact
+piece that was wrong both prior times — is deleted, since lucide's own refresh-cw path already includes
+its arrowhead as a two-segment corner. The straight-edged icons (rects/lines/plain circles) stay
+hand-authored, since porting those would add a parser dependency for shapes that were never the ones
+breaking. Verified against real `--screenshot`/`--gallery` renders, per the lesson above: Sync and
+GitBranch at their true ~18-24px, Cloud at 24px in the gallery (its real call site draws it at 40px, so
+this is the stricter case) — clean closed outlines, no dents, no crossed strokes. Also fixed while in
+the same screenshot: the button-legend labels sat visibly low against their glyph badges, because
+`Widgets.HintLabel` called `AlignTextToFramePadding` — which assumes a taller, framed box — against
+glyphs centred on a plain `lineH` box; removed, and the label now centres in the same box its glyph does.
+
 **Group 7 — Notifications. Windows half here, Linux half deferred.**
 Phase 7. The Windows toast is buildable *and* verifiable on this machine. The Linux freedesktop call
 is buildable here but only observable on a real desktop session — `DesktopEnvironment.cs` already

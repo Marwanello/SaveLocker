@@ -1357,6 +1357,34 @@ were missed when they were built. The web console never had this bug: Tailwind's
 Tailwind-based. Fixed by adding `font: inherit` to both rules; verified live in the agent-ui dev server —
 `getComputedStyle` on a game name now reports `Archivo, system-ui, sans-serif` in both List and Grid mode,
 and `document.fonts.check('600 13px Archivo')` is `true`.
+<br>**Third follow-up (2026-09-23) — stopped hand-guessing curved icons; ported them from lucide's own
+path data instead.** The user asked why the Deck UI doesn't just reuse the same icon pack as the agent
+and console, pointing out that every hand-drawn icon here "is created from scratch and looks bad" — a
+fair read of the pattern: `Icons.Cloud` had failed twice and `Icons.Sync` twice more, each time because
+the shape was eyeballed rather than copied from the real geometry. `Icons.cs`'s own doc comment already
+explained *why* there's no image atlas (crisp at any size, no rasteriser, no asset in the tarball) — that
+part was sound — but nothing was stopping the actual coordinates from coming from lucide's real path data
+instead of memory. They do now: a new `SvgPath.cs` is a ~100-line M/L/H/V/A/Z tessellator (arcs
+specialised to the rx==ry, no-rotation case, which is every arc lucide's icons use — the general
+endpoint-to-centre formula is SVG 1.1 spec appendix F.6.5), and `Icons.Cloud`, `Icons.Sync` and half of
+`Icons.GitBranch` now stroke the literal `d` string copied out of
+`agent-ui/node_modules/lucide-react/dist/esm/icons/*.js` (v0.511.0) instead of a hand-picked polygon or
+arc. `Icons.Sync`'s bespoke `ArcWithArrow` helper (the piece that was wrong both prior times) is gone
+entirely — lucide's own refresh-cw draws its arrowhead as a plain two-segment corner, not a filled
+triangle, and that shape now comes along for free as part of the same path string. Straight-edged icons
+(rects, lines, plain circles — Monitor, Plus, Menu, Cpu, Server, the chevrons, etc.) were left as
+hand-authored primitives; porting a shape that's already three lines would be pure overhead, and none of
+those have ever been the buggy ones. Verified against a live `--screenshot` at the real 1280×800 default
+size (Sync in the header pill, GitBranch in the Conflicts rail item) and against `--gallery` at
+1280×1500 (Cloud, which needs an actual conflict on screen to reach any other way) — all three read as
+clean, closed outlines with no dents or crossed strokes. Separately, the user's screenshot also showed the button-legend labels
+sitting visibly low against their glyph badges (A/B/Y circles, the L1/R1 pill, the Steam-menu bars).
+`Widgets.HintLabel` was calling `ImGui.AlignTextToFramePadding()` before the label, which offsets the
+next text's baseline to match a *framed* widget's taller box — but the glyphs above are centred on a
+plain `lineH`-tall box (`GamepadHint`'s `centre = pos + (r, lineH/2)`), not a framed one, so the call was
+pushing every label down by `FramePadding.y` past its own glyph's centre. Removed; the label now centres
+in the same box the glyph does. The Deck's own font is still unchanged — Inter + JetBrains Mono, still
+waiting on `Archivo-Regular.ttf`/`Archivo-SemiBold.ttf` from the user, same gap as the last two rounds.
 <br>**Next action:** a real Deck (or a box with a physical gamepad) to exercise the Y/L1/R1 bindings
 through an actual controller, or Group 7 (OS notifications) if that hardware access isn't available
 first. The Wayland decision (Phase 6 item 4) is still open and needs deciding before any code is written

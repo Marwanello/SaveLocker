@@ -14,6 +14,13 @@ namespace SaveLocker.Agent.Linux.Ui;
 /// Everything is authored on lucide's 24x24 grid and mapped through <see cref="P"/>, so the shapes
 /// can be read against the upstream SVGs. Curves are approximated with short polylines; at the sizes
 /// this UI draws (14-40 px) the difference is not resolvable.
+///
+/// Straight-edged icons (rects, lines, plain circles) are hand-authored directly against the grid —
+/// porting a shape that is already just a handful of lines would be pure overhead. Icons with real
+/// curves (<see cref="Cloud"/>, <see cref="Sync"/>, part of <see cref="GitBranch"/>) instead go
+/// through <see cref="SvgPath"/>, which strokes lucide's own <c>d</c> string directly: hand-guessing a
+/// curve's control points from memory is exactly what produced the Cloud and Sync regressions this
+/// file's history documents.
 /// </summary>
 static class Icons
 {
@@ -198,28 +205,16 @@ static class Icons
     };
 
     /// <summary>
-    /// lucide's cloud (<c>M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z</c>) is two circular
-    /// arcs — a big radius-7 lobe on the left/top and a small radius-4.5 lobe on the right — joined by
-    /// a flat top strip and a flat bottom edge. The two prior attempts here (hand-guessed bumps) both
-    /// produced a lopsided, dented outline, most visible as a concave notch on the right side, because
-    /// they were drawn from eyeballing rather than the path's actual geometry. These points are
-    /// sampled directly off the two SVG arcs (solved for their centres and sweep by hand), so the
-    /// outline is a faithful straight-line approximation rather than a guess — same curve-to-polyline
-    /// tradeoff <see cref="Folder"/> and <see cref="Shield"/> already make for their own rounded
-    /// outlines. Used for "the cloud" side of a conflict (Ui/UiApp.cs) so it reads the same as the
-    /// React surfaces' lucide Cloud icon.
+    /// lucide's cloud, traced by <see cref="SvgPath"/> straight from its own <c>d</c> string
+    /// (<c>lucide-react</c> v0.511.0, <c>icons/cloud.js</c>) instead of hand-guessed geometry. Two
+    /// prior attempts here (eyeballed bumps, then hand-solved arc centres) each produced a lopsided,
+    /// dented outline — most visible as a concave notch on the right side — because both were still a
+    /// guess at the curve rather than the curve itself. Used for "the cloud" side of a conflict
+    /// (Ui/UiApp.cs) so it reads the same as the React surfaces' lucide Cloud icon.
     /// </summary>
     public static readonly Glyph Cloud = (dl, p, s, c, w) =>
-        Poly(dl, p, s, c, w, true,
-            9, 19, 5.33f, 17.96f, 2.74f, 15.14f, 2.03f, 11.39f, 3.39f, 7.82f,
-            6.41f, 5.5f, 10.22f, 5.11f, 13.65f, 6.77f, 15.71f, 9.99f, 17.5f, 10,
-            20.68f, 11.32f, 22, 14.5f, 20.68f, 17.68f, 17.5f, 19);
+        SvgPath.Stroke(dl, p, s, c, w, "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z");
 
-    /// <summary>
-    /// Matches lucide's git-branch exactly (two nodes plus one connecting quarter-arc), reused for
-    /// "Conflicts" wherever this UI needs the same icon language as the React sidebar/empty-state
-    /// (agent-ui/src/components/Sidebar.tsx, ConflictsView.tsx).
-    /// </summary>
     /// <summary>Three bars — the Steam overlay's own menu glyph, used by the Deck hint bar's
     /// "Steam menu" entry (implementation.md Phase 6 item 2).</summary>
     public static readonly Glyph Menu = (dl, p, s, c, w) =>
@@ -229,67 +224,41 @@ static class Icons
         Line(dl, p, s, c, w, 4, 18, 20, 18);
     };
 
+    /// <summary>lucide's git-branch: two nodes (plain circles, already exact) plus one connecting arc,
+    /// the arc now traced by <see cref="SvgPath"/> from its real <c>d</c> string instead of a
+    /// hand-picked quarter-circle — reused for "Conflicts" wherever this UI needs the same icon
+    /// language as the React sidebar/empty-state (agent-ui/src/components/Sidebar.tsx,
+    /// ConflictsView.tsx).</summary>
     public static readonly Glyph GitBranch = (dl, p, s, c, w) =>
     {
         Line(dl, p, s, c, w, 6, 3, 6, 15);
         dl.AddCircle(P(p, s, 18, 6), 3f / 24f * s, c, 16, w);
         dl.AddCircle(P(p, s, 6, 18), 3f / 24f * s, c, 16, w);
-        dl.PathClear();
-        dl.PathArcTo(P(p, s, 9, 9), 9f / 24f * s, 0f, MathF.PI / 2f, 16);
-        dl.PathStroke(c, ImDrawFlags.None, w);
+        SvgPath.Stroke(dl, p, s, c, w, "M18 9a9 9 0 0 1-9 9");
     };
 
     /// <summary>
-    /// lucide's refresh-cw, simplified to one circle: two 140° arcs on opposite sides of the same
-    /// ring, each capped with a small arrowhead at the end of its sweep — used by the Deck header's
+    /// lucide's refresh-cw, traced by <see cref="SvgPath"/> straight from its own four <c>d</c> strings
+    /// (<c>lucide-react</c> v0.511.0, <c>icons/refresh-cw.js</c>) — two big arcs plus two small
+    /// L-shaped corners for the arrowheads, exactly as lucide draws them. Used by the Deck header's
     /// Sync all button (implementation.md Phase 6 item 3).
     /// <para>
-    /// A first cut used two same-radius circles offset by less than their own diameter — closer to
-    /// lucide's real two-circle geometry, but at the ~18px this actually renders at (a header pill's
-    /// icon, not the 40px mark) the circles' strokes crossed through the shared overlap in the middle
-    /// and read as a blob, not two arrows (reported against a live, interactive window — a headless
-    /// screenshot at a larger fixed size had not shown it). One circle with a real gap on each side
-    /// can't self-overlap.
+    /// Two prior hand-authored attempts got this wrong: first a pair of same-radius circles offset by
+    /// less than their own diameter, whose strokes crossed through the shared overlap at the ~18px this
+    /// actually renders at and read as a blob rather than two arrows (a headless screenshot at a larger
+    /// fixed size had not shown it — caught only once the user tested it live); then one circle with
+    /// two gapped arcs and a hand-computed triangular arrowhead, which fixed the overlap but was still
+    /// a guess at lucide's actual shape. Porting the real path data — a 9 and a 9.75-radius arc joined
+    /// into one sweep, capped with a two-segment corner rather than a filled triangle — removes the
+    /// guessing entirely.
     /// </para>
     /// </summary>
     public static readonly Glyph Sync = (dl, p, s, c, w) =>
-    {
-        const float r = 8f;
-        const float span = 140f * MathF.PI / 180f;
-        const float start1 = -160f * MathF.PI / 180f;
-        ArcWithArrow(dl, p, s, c, w, 12, 12, r, start1, start1 + span);
-        ArcWithArrow(dl, p, s, c, w, 12, 12, r, start1 + MathF.PI, start1 + MathF.PI + span);
-    };
-
-    /// <summary>
-    /// A circular arc from <paramref name="startRad"/> to <paramref name="endRad"/>, capped at the end
-    /// with a small triangular arrowhead tangent to the circle there. Previously the arrowhead's three
-    /// points were hand-picked and landed roughly a third of the way around the circle from where the
-    /// stroke actually ends — computing the tip from the same angle the arc is drawn to keeps the two
-    /// in sync by construction.
-    /// </summary>
-    private static void ArcWithArrow(ImDrawListPtr dl, Vector2 p, float s, uint c, float w,
-        float cx, float cy, float r, float startRad, float endRad)
-    {
-        var centre = P(p, s, cx, cy);
-        var radius = r / 24f * s;
-
-        dl.PathClear();
-        dl.PathArcTo(centre, radius, startRad, endRad, 20);
-        dl.PathStroke(c, ImDrawFlags.None, w);
-
-        var tip = centre + new Vector2(MathF.Cos(endRad), MathF.Sin(endRad)) * radius;
-        var tangent = new Vector2(-MathF.Sin(endRad), MathF.Cos(endRad));
-        var normal = new Vector2(MathF.Cos(endRad), MathF.Sin(endRad));
-        var back = 4.2f / 24f * s;
-        var half = 2.6f / 24f * s;
-
-        dl.PathClear();
-        dl.PathLineTo(tip - tangent * back + normal * half);
-        dl.PathLineTo(tip);
-        dl.PathLineTo(tip - tangent * back - normal * half);
-        dl.PathStroke(c, ImDrawFlags.None, w);
-    }
+        SvgPath.Stroke(dl, p, s, c, w,
+            "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
+            "M21 3v5h-5",
+            "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
+            "M8 16H3v5");
 
     /// <summary>
     /// A spinner. Unlike the others this is time-dependent: it sweeps an arc whose phase comes from

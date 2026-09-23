@@ -165,7 +165,10 @@ SaveLocker/
 │           ├── ImGuiInternal.cs         # Direct [DllImport("cimgui")] to the internal API ImGui.NET's
 │           │                            #   binding omits. THE nav fix — do not "solve" it by
 │           │                            #   upgrading the package (Gotchas)
-│           ├── Icons.cs                 # lucide-equivalent glyphs as vector paths — no atlas
+│           ├── Icons.cs                 # lucide-equivalent glyphs as vector paths — no atlas; curved
+│           │                            #   ones traced from lucide's own d= via SvgPath, not guessed
+│           ├── SvgPath.cs               # Tiny M/L/H/V/A/Z tessellator so Icons.cs can stroke lucide's
+│           │                            #   real path data instead of hand-eyeballing curves
 │           ├── Art.cs                   # Embedded images decoded + uploaded as GL textures
 │           ├── Sound.cs                 # Interface sounds — a console UI that answers silently
 │           │                            #   feels inert
