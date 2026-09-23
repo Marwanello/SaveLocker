@@ -210,7 +210,7 @@ The largest genuinely-new piece.
    loads `config.json` once and never reloads it, so without one the Deck's accent only follows the console after a restart. An
    earlier `RefreshAppearance()` (adopt what is on disk, `AgentStateLock.TryAcquire` with a zero timeout because it runs from the
    render loop, raise `AppearanceChanged` when the effective look moved) was removed in the PR #47 review: nothing called it and
-   nothing tested it, and the Deck cannot consume the look until this group. Write it with its caller and a test.
+   nothing tested it, and the Deck cannot consume the look until this group. Write it with its caller and a test. **Done in Group 6:** `AgentConfig.RefreshFromDisk()` (the game list and the look from one read of the file), with `tests/SaveLocker.Agent.Tests/AgentConfigRefreshTests.cs`.
 5. ✅ **Shipped, except the Deck header (Group 6).** App icon choice changes the favicon (`web/index.html` link swap), the tray icon
    (`src/Agent/AppResources.cs`, needs all three marks as embedded `.ico`), and the Deck header. — The favicon is redrawn in
    place (a data URL of the mark on an accent tile); the tray **and window** icons are drawn at runtime (`Agent/MarkIcon.cs`),
@@ -235,9 +235,9 @@ The largest genuinely-new piece.
 
 1. ✅ `src/Agent.Linux/Ui/Theme.cs` — Checkpoint dark tokens, 2px accent focus ring plus the 4px halo,
    62px rows, 16px minimum body text. Shipped as the `Safe`/`Accent` split Group 5 flagged (`Accent` is
-   dynamic, sourced from `AppearancePalette` via a new `AgentConfig.RefreshAppearance()`; `Safe`/`Watch`
-   are fixed). Font face itself stays Inter/JetBrains Mono — no Archivo TTFs to embed in this
-   environment, same asset gap as Phase 8.
+   dynamic, sourced from `AppearancePalette` via a new `AgentConfig.RefreshFromDisk()`; `Safe`/`Watch`
+   are fixed). The font face is Archivo + JetBrains Mono, matching the console and agent-ui (Archivo
+   embedded 2026-09-23, once the two static TTFs were supplied; Inter is gone).
 2. ✅ Two-line rows in `Widgets.cs`; the button legend along the bottom (A Select · B Back · Y Sync now ·
    L1/R1 Switch section · ☰ Steam menu). Shipped: `ListRow`'s two-line height is now a fixed 62px
    constant, the rail widened to 236px, and the legend gained the three new entries via a new
@@ -282,7 +282,7 @@ Ship the three marks and the Steam art from the prototype as real files:
 | Favicon | SVG (scales) | `web/public/favicon.svg`, linked ahead of the existing PNG fallbacks in `web/index.html` | ✅ Shipped — Pixel lock, monochrome per brand-kit's own "no punch, one colour" rule for a tray-like context, on the Ember accent tile |
 | Favicon | 32 / 180 PNG | `web/public/` | ⏳ Not done — the existing pre-Checkpoint PNGs are untouched; this environment has no SVG rasterizer (`magick`/`inkscape`/`rsvg-convert` all absent, confirmed) |
 | Tray icon | 16/24/32/48 `.ico` | `src/Agent/AppResources.cs` | ✅ Shipped 2026-09-21 (Group 5) **differently**: drawn at runtime from the chosen mark and accent (`src/Agent/MarkIcon.cs`, GDI+, transparent punch-outs, light/dark taskbar aware, at the shell's own icon size) — so it needs no `.ico` and follows the Appearance setting. The packaged `SaveLocker.ico` remains the installer/exe icon and the fallback. Not reacting to a Windows taskbar-theme change while running ([[Backlog]]) |
-| Deck tile | 256 | `src/Agent.Linux/Ui/Art.cs` | ⏳ Not done — same rasterization gap; consumed by Group 6 |
+| Deck tile | 256 | `src/Agent.Linux/Ui/Art.cs` | ❌ Dropped 2026-09-23 — the Deck header draws the live mark as vectors (`Ui/AppMark.cs`), so there is no raster to ship; `Art.cs` and `logo-96.png` are deleted |
 | Library capsule | 600×900 | `store/` | ⏳ Not done |
 | Wide capsule | 1920×620 | `store/` | ⏳ Not done |
 | Header capsule | 460×215 | `store/` | ⏳ Not done |

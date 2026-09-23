@@ -163,6 +163,14 @@ a stationary pointer. The last one exists because WSLg leaves the real pointer o
 while a Deck always has one — without it, hover-vs-focus bugs cannot reproduce off-device, and an
 A/B comes back identical while proving nothing.
 
+To see the Deck UI against the **live test rig** rather than fixtures - a real Sync all round trip, the
+console's pushed look - sync the tree into the WSL clone (`.\tests\testenv.ps1 sync`), build the UI variant
+there (`dotnet build src/Agent.Linux/SaveLocker.Agent.Linux.csproj -r linux-x64 --no-self-contained
+--no-incremental`, which writes `bin/Debug/net10.0/linux-x64/` and leaves the running daemon's own DLL alone),
+then run the binary with the rig's own config and the rig daemon's local API port (`DaemonApiPort` in that
+config; `--port` on `ui`):
+`savelocker ui --size 1280x800 --config ~/savelocker-test/SaveLocker/config.json --port 5187 --screen settings --nav y --screenshot out.png`.
+A dead `--port` shows the failure path. Drive it from a script file ([[Gotchas]] -> *WSL environment*).
 Release build (self-contained — SteamOS ships no .NET runtime):
 ```sh
 bash packaging/linux/build-linux.sh          # -> artifacts/linux/savelocker-linux-x64.tar.gz

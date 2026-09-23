@@ -1288,7 +1288,7 @@ the ~40 call sites was checked against the shipped web/agent-ui component it mir
 `agent-ui/src/ui.css`'s `.sl-nav[aria-current]` comment ("is NOT the accent... that colour is reserved for
 'a decision is waiting'") caught the same mistake in the Deck's rail that Group 3 had already corrected on
 the web — the current-screen indicator is now a neutral tile, never the accent. A new
-`AgentConfig.RefreshAppearance()` (mirrors `RefreshGameList()`) is what Group 5's write-up named as the
+`AgentConfig.RefreshAppearance()` (mirrors `RefreshGameList()`; renamed `RefreshFromDisk()` and given a test in the PR #49 review, below) is what Group 5's write-up named as the
 missing piece — `savelocker ui` is a separate, long-lived process from the daemon that applies a pushed
 console look, so it polls the setting off disk every 5s and repaints on change. **Also shipped:** `ListRow`'s
 two-line rows are now a fixed 62px (was computed from whichever font baked), the rail widened to 236px, and
@@ -1398,7 +1398,21 @@ from Inter's ~1.05 MB), and the now-fully-unused `Inter-Regular.ttf`/`Inter-Semi
 exact line (confirming `Theme.FontsLoaded` is `true`, not silently falling back to ImGui's bitmap font),
 and the Overview screen's body text visibly changed face. The Deck now matches the console and agent-ui
 on every surface Checkpoint specifies a typeface for.
-<br>**Next action:** a real Deck (or a box with a physical gamepad) to exercise the Y/L1/R1 bindings
+<br>**PR #49 reviewed, every finding fixed (2026-09-23, branch `group-6-ui-redesign`).** Thirteen findings; full
+write-up in `tasks/checkpoint-ui/implementation-grouping.md` -> Group 6 -> *Review fixes*. The ones that mattered:
+(1) **Sync all was silent off the Overview** - the header button and Y start it from every screen but the result
+was read only on the Overview, so a failure on Conflicts/Settings showed nothing; it is now collected once per
+frame and shown in the header. (2) **`SvgPath` silently mis-drew what it claimed to reject** (curve commands
+dropped, a second `M` discarding the first subpath, compact arc flags mis-read) - rewritten as a pure, cached,
+unit-tested flattener that throws. (3) `RefreshAppearance()` had shipped without a test, against
+`implementation.md`'s own rule; it is now `RefreshFromDisk()` with `AgentConfigRefreshTests`. (4)
+`run-appearance-consistency-tests` now guards `Theme.cs`'s tokens and both C# mark ports too. Also: the header's
+right-hand cluster is on the header's centre line (**8 px lower** than first shipped), content text moved from
+`Faint` to `Dim`, doc drift fixed. **Verified** under WSLg against the test rig with real `--nav` presses and
+a real Sync all round trip (success and failure); `dotnet test` 43/43 (11 before), consistency test 28/28.
+**Not verified:** a real Deck with a physical controller. **Left for the maintainer:** whether the legend's "Steam
+menu" should use the Steam button's logo rather than the three-bar Menu glyph, and whether 13 px `Caption` text
+satisfies "16 px minimum body text".<br>**Next action:** a real Deck (or a box with a physical gamepad) to exercise the Y/L1/R1 bindings
 through an actual controller, or Group 7 (OS notifications) if that hardware access isn't available
 first. The Wayland decision (Phase 6 item 4) is still open and needs deciding before any code is written
 for it.

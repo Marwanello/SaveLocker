@@ -23,7 +23,7 @@ phases to do in one session, in what order, and why. Driven by three things weig
 | 3 | Phase 1 (agent half) + Phase 5 overview trim + Phase 3.3 (agent Sync all) | ✅ Shipped 2026-09-20 — tokens, primitives, Archivo, status header with Sync all + live progress, trimmed Overview, converted shell. **Phase 3.5 (per-game "Sync this game") ➡️ moved to Group 4**: it needs a game page and a per-game agent route, neither of which exists yet. See the Group 3 write-up below |
 | 4 | Phase 5 Games tab + art proxy + search + **Phase 3.5 (per-game Sync this game)** | ✅ Shipped 2026-09-21 — see the Group 4 write-up below |
 | 5 | Phase 4 appearance + fleet sync | ✅ Shipped 2026-09-21 — the `Ui:*` setting and its console card, the heartbeat push, the per-machine "Follow the console" override, the favicon, the brand mark, the Windows tray + window icon; **and the theme default now follows the OS**, after every hardcoded hex left the views (303 in `web`, 166 in `agent-ui` → 0). **Phase 4 item 4 (the Deck's accent) ➡️ moved to Group 6**: `Theme.cs`'s `AccentGreen` means both "accent" and "healthy" at 68 sites, so an accent switch there needs Group 6's token split; the plumbing it needs is done. See the Group 5 write-up below |
-| 6 | Phase 6 items 1-3 (Deck) | ✅ Shipped 2026-09-22 (branch `claude/group-6-ui-redesign-6d9b06`) — Checkpoint tokens, the accent/healthy split, 62px two-line rows, the button legend, Sync all on Y. `savelocker ui --screenshot` and `--nav` turned out to run on this Windows box (no WSLg needed — SDL/GL resolved natively), so this was verified live, not by build alone: real pixel colours sampled off real screenshots, and the L1/R1 section-switch driven through `--nav r1,r1,r1` with `--nav-debug` open. That pass caught and fixed a genuine focus-timing bug (below) a build could never have shown. Same-day follow-up (below) fixed a mis-angled Sync icon and replaced the header's stale pre-Checkpoint logo with a live, mark-aware, accent-coloured `AppMark`. Still not run on a real Deck or under gamescope's actual input path; Archivo TTFs still needed for the font face |
+| 6 | Phase 6 items 1-3 (Deck) | ✅ Shipped 2026-09-22 (branch `claude/group-6-ui-redesign-6d9b06`) — Checkpoint tokens, the accent/healthy split, 62px two-line rows, the button legend, Sync all on Y. `savelocker ui --screenshot` and `--nav` turned out to run on this Windows box (no WSLg needed — SDL/GL resolved natively), so this was verified live, not by build alone: real pixel colours sampled off real screenshots, and the L1/R1 section-switch driven through `--nav r1,r1,r1` with `--nav-debug` open. That pass caught and fixed a genuine focus-timing bug (below) a build could never have shown. Same-day follow-up (below) fixed a mis-angled Sync icon and replaced the header's stale pre-Checkpoint logo with a live, mark-aware, accent-coloured `AppMark`. Archivo shipped the same day. Reviewed as PR #49 on 2026-09-23 and every finding fixed (*Review fixes*, below). Still not run on a real Deck or under gamescope's actual input path |
 | 7 | Phase 7 (notifications) | ⏳ Not started |
 
 **2026-09-20 review pass (a code review of Groups 1–2, all findings fixed on branch
@@ -436,6 +436,47 @@ font loaded again. Verified with a live `--gallery` screenshot (the label reads 
 text visibly changed face. This was the last of Group 6's known asset gaps — the Deck now matches the
 console and agent-ui on every surface Checkpoint specifies a typeface for.
 
+**Review fixes (PR #49, 2026-09-23): 13 findings, all fixed.** The ones that mattered:
+1. **Sync all failed silently off the Overview.** The header button and Y start the same task from every
+   screen, but the finished task was read only inside `DrawActivity()`, which only the Overview draws - so a
+   failure (daemon down, 409) on Conflicts or Settings showed nothing, and the stale result surfaced minutes
+   later when the Overview was next opened. Now one `StartSyncNow()` starts it from all three places,
+   `CollectSyncNow()` takes the outcome once per frame, and the header shows it left of the button (a failure
+   stays until the next attempt, a success fades after 10 s). Verified under WSLg from Settings against the
+   test rig: `Sync all complete.` on a real round trip, `Sync failed: Connection refused (localhost:5999)`
+   against a dead port.
+2. **`SvgPath` promised to throw on what it could not draw, and did not.** Its regex had no alternative for
+   `C/c/S/s/Q/q/T/t`, so a curve command was skipped and its numbers reused as the previous command's
+   arguments; a second `M` in one string discarded the first subpath unstroked; compact arc flags
+   (`0110`) read as one number. The three shipped icons were unaffected (their `d` strings are verbatim
+   lucide 0.511.0 and use none of it) - the next icon added through this door would not have been. Rewritten
+   as a pure, cached `Flatten` over a real scanner that throws `NotSupportedException` for anything
+   else; the ImGui drawing moved to `Icons.Svg`; closed shapes stroke with `ImDrawFlags.Closed`. 27 xUnit
+   tests (`SvgPathTests`), including the three failures above.
+3. **`RefreshAppearance()` shipped with a caller but no test** - the exact thing `implementation.md` Phase 4
+   said the PR #47 review removed one for. It is now `RefreshFromDisk()` (one read of `config.json` serving
+   both the game list and the look, where the UI had been parsing the file twice a few seconds apart) with
+   `AgentConfigRefreshTests` (adopts a pushed look and raises once; stores a pushed look while not following;
+   adopts games added and removed; skips rather than waits on the lock; ignores an unreadable file).
+4. **Nothing guarded the Deck's hand-kept copies.** `run-appearance-consistency-tests` now also ties
+   `Theme.cs`'s 14 dark tokens to `web/src/index.css` and every coordinate of `appearance.ts`'s marks to
+   both C# ports (`MarkIcon.cs`, `AppMark.cs`). Mutation-checked: a token, a cartridge coordinate and a
+   memory-card coordinate each changed by one digit fail their check.
+Smaller: the header's right-hand cluster is placed by explicit cursor position on the header's centre line
+(`SameLine` snaps every later item back to the previous line's top, so one `SetCursorPosY` only ever held
+for the first item - the cluster had also been sitting 8 px above centre, and a message appearing shifted the
+button; **the button and server chip are therefore 8 px lower than in the first Group 6 pass**), and the server
+chip is measured exactly instead of `text + 52`; L1/R1 and `DrawRail` read one `RailEntries` list, so a new
+rail entry cannot be drawn yet skipped by the bumpers; content text that had been on `Faint` (3.31:1) at 13 px
+- the activity log, the conflict card's machine caption, byte counts, the Settings paragraphs - moved to `Dim`,
+per the Group 3 finding (decorative uses keep `Faint`); `PillButton` measures its label once; five unused
+derived tokens removed; the per-icon histories of failed attempts trimmed from `Icons.cs`; `REPO_MAP`,
+`implementation.md` and the `plan.md` status cell (which had become a changelog) brought back in line.
+**Left for the maintainer, not changed:** the legend's "Steam menu" glyph is the three-bar `Menu` icon, which on a
+Deck is the Menu/Start button - the Steam button has its own logo (plan.md specifies the glyph as drawn); and
+whether `Caption` (13 px) and `Mono` (14 px) count as "16 px minimum body text" - only `Body` is 16.
+**Not verified:** a real Deck or gamescope with a physical controller (the Y/L1/R1 path was driven through the
+same input queue a pad writes to, but never through Silk's SDL-to-`ButtonName` mapping on hardware).
 **Group 7 — Notifications. Windows half here, Linux half deferred.**
 Phase 7. The Windows toast is buildable *and* verifiable on this machine. The Linux freedesktop call
 is buildable here but only observable on a real desktop session — `DesktopEnvironment.cs` already
