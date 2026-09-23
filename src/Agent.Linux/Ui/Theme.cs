@@ -150,12 +150,9 @@ static class Theme
     }
 
     // ── Fonts ────────────────────────────────────────────────────────────────────────────────
-    // Inter + JetBrains Mono. The console and agent-ui both self-hosted Archivo in Groups 1/3
-    // (docs/tasks/checkpoint-ui/implementation-grouping.md "Group 1"), but that needs real Archivo
-    // TTFs embedded as resources, and this environment has none to vendor — the same asset gap
-    // Group 1 hit for PNG/ICO rasterization (implementation.md Phase 8). Sizing is Checkpoint's
-    // ("16px minimum body text", implementation.md Phase 6 item 1); the face itself is a follow-up
-    // once Archivo TTFs are available to embed.
+    // Archivo + JetBrains Mono — the same faces the console and agent-ui self-host (Groups 1/3,
+    // docs/tasks/checkpoint-ui/implementation-grouping.md "Group 1"). Sizing is Checkpoint's ("16px
+    // minimum body text", implementation.md Phase 6 item 1).
 
     public static ImFontPtr Display;
     public static ImFontPtr Title;
@@ -167,8 +164,8 @@ static class Theme
     /// <summary>True when the real TTFs were found and baked; false when running on ImGui's default font.</summary>
     public static bool FontsLoaded { get; private set; }
 
-    private const string RegularResource    = "SaveLocker.Agent.Linux.Ui.Fonts.Inter-Regular.ttf";
-    private const string SemiBoldResource   = "SaveLocker.Agent.Linux.Ui.Fonts.Inter-SemiBold.ttf";
+    private const string RegularResource    = "SaveLocker.Agent.Linux.Ui.Fonts.Archivo-Regular.ttf";
+    private const string SemiBoldResource   = "SaveLocker.Agent.Linux.Ui.Fonts.Archivo-SemiBold.ttf";
     private const string MonoResource       = "SaveLocker.Agent.Linux.Ui.Fonts.JetBrainsMono-Regular.ttf";
 
     // ImGui reads font bytes lazily while baking, so the unmanaged copies must outlive the call.

@@ -423,6 +423,19 @@ the same screenshot: the button-legend labels sat visibly low against their glyp
 `Widgets.HintLabel` called `AlignTextToFramePadding` — which assumes a taller, framed box — against
 glyphs centred on a plain `lineH` box; removed, and the label now centres in the same box its glyph does.
 
+<br>**The Deck's font gap closed, same day.** The user supplied `Archivo-Regular.ttf` and
+`Archivo-SemiBold.ttf`. Moved into `src/Agent.Linux/Ui/Fonts/` alongside a fetched `Archivo-OFL.txt`
+(the real SIL OFL 1.1 text from `google/fonts`, matching the per-font licence-file convention
+`Inter-LICENSE.txt`/`JetBrainsMono-OFL.txt` already set), `Theme.cs`'s `RegularResource`/
+`SemiBoldResource` repointed at them, the `.csproj`'s `EmbeddedResource` block and size comment updated
+(~500 KB, down from Inter's ~1.05 MB), and `Inter-Regular.ttf`/`Inter-SemiBold.ttf`/`Inter-LICENSE.txt`
+deleted (unreferenced anywhere else). `Gallery.cs`'s status line was still hardcoded to say
+"Inter + JetBrains Mono baked."; updated to name the actual faces so it can't silently lie about which
+font loaded again. Verified with a live `--gallery` screenshot (the label reads correctly, meaning
+`Theme.FontsLoaded` is `true` rather than having silently fallen back) and the Overview screen's body
+text visibly changed face. This was the last of Group 6's known asset gaps — the Deck now matches the
+console and agent-ui on every surface Checkpoint specifies a typeface for.
+
 **Group 7 — Notifications. Windows half here, Linux half deferred.**
 Phase 7. The Windows toast is buildable *and* verifiable on this machine. The Linux freedesktop call
 is buildable here but only observable on a real desktop session — `DesktopEnvironment.cs` already

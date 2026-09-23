@@ -1383,12 +1383,25 @@ sitting visibly low against their glyph badges (A/B/Y circles, the L1/R1 pill, t
 next text's baseline to match a *framed* widget's taller box — but the glyphs above are centred on a
 plain `lineH`-tall box (`GamepadHint`'s `centre = pos + (r, lineH/2)`), not a framed one, so the call was
 pushing every label down by `FramePadding.y` past its own glyph's centre. Removed; the label now centres
-in the same box the glyph does. The Deck's own font is still unchanged — Inter + JetBrains Mono, still
-waiting on `Archivo-Regular.ttf`/`Archivo-SemiBold.ttf` from the user, same gap as the last two rounds.
+in the same box the glyph does.
+<br>**Fourth follow-up, same day — the Deck's font gap closed.** The user supplied
+`Archivo-Regular.ttf`/`Archivo-SemiBold.ttf` (dropped at the worktree root, not yet in
+`src/Agent.Linux/Ui/Fonts/`). Moved into place alongside a fetched `Archivo-OFL.txt` (the real SIL OFL
+1.1 text, from `google/fonts`'s own repo, matching the licence-file-per-font convention
+`Inter-LICENSE.txt`/`JetBrainsMono-OFL.txt` already set), then the swap `Theme.cs`'s own comment called
+"small and mechanical" actually was: `RegularResource`/`SemiBoldResource` now point at the Archivo
+resources, the `.csproj`'s `EmbeddedResource` entries and size comment updated to match (~500 KB, down
+from Inter's ~1.05 MB), and the now-fully-unused `Inter-Regular.ttf`/`Inter-SemiBold.ttf`/
+`Inter-LICENSE.txt` deleted — nothing else in the repo referenced them. `Gallery.cs`'s own
+"Inter + JetBrains Mono baked." status line would have quietly kept lying otherwise; now reads
+"Archivo + JetBrains Mono baked." Verified live, not just by build: a `--gallery` screenshot shows that
+exact line (confirming `Theme.FontsLoaded` is `true`, not silently falling back to ImGui's bitmap font),
+and the Overview screen's body text visibly changed face. The Deck now matches the console and agent-ui
+on every surface Checkpoint specifies a typeface for.
 <br>**Next action:** a real Deck (or a box with a physical gamepad) to exercise the Y/L1/R1 bindings
 through an actual controller, or Group 7 (OS notifications) if that hardware access isn't available
 first. The Wayland decision (Phase 6 item 4) is still open and needs deciding before any code is written
-for it. Archivo TTFs, if the user supplies them, are a quick follow-up whenever they land.
+for it.
 
 ---
 

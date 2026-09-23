@@ -31,14 +31,14 @@
     <ProjectReference Include="..\Shared\SaveLocker.Shared.csproj" />
   </ItemGroup>
 
-  <!-- Inter + JetBrains Mono, the same faces the console and the React agent UI use, so all three
+  <!-- Archivo + JetBrains Mono, the same faces the console and the React agent UI use, so all three
        surfaces share a typeface as well as a palette. Embedded rather than shipped loose: no
        install.sh change, no path resolution, and a dev build behaves like an installed one.
        Both are SIL OFL 1.1 — the licence files sit alongside and must stay with them.
-       ~1.05 MB. Subsetting to Latin would cut that to ~180 KB; not done yet, see the task file. -->
+       ~500 KB. Subsetting to Latin would cut this further; not done yet, see the task file. -->
   <ItemGroup>
-    <EmbeddedResource Include="Ui\Fonts\Inter-Regular.ttf" />
-    <EmbeddedResource Include="Ui\Fonts\Inter-SemiBold.ttf" />
+    <EmbeddedResource Include="Ui\Fonts\Archivo-Regular.ttf" />
+    <EmbeddedResource Include="Ui\Fonts\Archivo-SemiBold.ttf" />
     <EmbeddedResource Include="Ui\Fonts\JetBrainsMono-Regular.ttf" />
   </ItemGroup>
 

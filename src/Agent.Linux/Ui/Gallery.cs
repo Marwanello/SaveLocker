@@ -23,7 +23,7 @@ static class Gallery
     {
         Widgets.Text("Component gallery", Theme.Fg, Theme.Title);
         Widgets.Text(Theme.FontsLoaded
-                ? "Inter + JetBrains Mono baked."
+                ? "Archivo + JetBrains Mono baked."
                 : "FALLBACK BITMAP FONT - the TTFs did not load.",
             Theme.FontsLoaded ? Theme.Dim : Theme.Watch);
         Widgets.Gap(Theme.Space.Md);
