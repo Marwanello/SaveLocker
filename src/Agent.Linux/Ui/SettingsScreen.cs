@@ -65,7 +65,7 @@ sealed class SettingsScreen
         Widgets.TextWrapped(
             "These are set during enrolment. Game Mode has no keyboard, so change them from Desktop "
             + "Mode with  savelocker set-server  or in the web console.",
-            Theme.Faint, Theme.Caption);
+            Theme.Dim, Theme.Caption);
 
         Widgets.SectionHeader("Sync safety");
         Widgets.TextWrapped(
@@ -115,7 +115,7 @@ sealed class SettingsScreen
                 ? $"Navigation and selection feedback. Source: {Sound.Source}."
                 : $"Unavailable on this machine ({Sound.Unavailable ?? "audio not started"}), "
                   + "so nothing will play.",
-            Theme.Faint, Theme.Caption);
+            Theme.Dim, Theme.Caption);
 
         Widgets.SectionHeader("Startup");
         var was = _autoStartOn;
@@ -137,7 +137,7 @@ sealed class SettingsScreen
             }
         }
         Widgets.TextWrapped("Runs the sync daemon in the background via a systemd --user unit.",
-            Theme.Faint, Theme.Caption);
+            Theme.Dim, Theme.Caption);
 
         if (!string.IsNullOrEmpty(_status))
         {

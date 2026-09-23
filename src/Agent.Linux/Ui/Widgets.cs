@@ -414,7 +414,11 @@ static class Widgets
     /// internally, exposed so a caller can right-align layout around a button it hasn't drawn yet
     /// (the Deck header's Sync all button sits beside the server chip, both computed in one pass).
     /// </summary>
-    public static Vector2 MeasurePillButtonSize(string label, Icons.Glyph? icon = null, float minWidth = 0f)
+    public static Vector2 MeasurePillButtonSize(string label, Icons.Glyph? icon = null, float minWidth = 0f) =>
+        PillMetrics(label, icon, minWidth).Size;
+
+    private static (Vector2 Size, float TextWidth, float PadY, float IconSize) PillMetrics(
+        string label, Icons.Glyph? icon, float minWidth)
     {
         var padX = Theme.Space.Lg;
         var padY = Theme.Space.Sm + 2f;
@@ -427,7 +431,7 @@ static class Widgets
         var width = MathF.Max(minWidth,
             textSize.X + padX * 2 + (icon is null ? 0f : iconSize + Theme.Space.Sm));
         var height = textSize.Y + padY * 2;
-        return new Vector2(width, height);
+        return (new Vector2(width, height), textSize.X, padY, iconSize);
     }
 
     /// <summary>
@@ -437,10 +441,7 @@ static class Widgets
     public static bool PillButton(string label, ButtonKind kind = ButtonKind.Secondary,
         Icons.Glyph? icon = null, float minWidth = 0f, bool enabled = true)
     {
-        var padY = Theme.Space.Sm + 2f;
-        var iconSize = ImGui.GetTextLineHeight();
-
-        var buttonSize = MeasurePillButtonSize(label, icon, minWidth);
+        var (buttonSize, textWidth, padY, iconSize) = PillMetrics(label, icon, minWidth);
         var width = buttonSize.X;
         var height = buttonSize.Y;
 
@@ -494,10 +495,7 @@ static class Widgets
 
         FocusRing(dl, min, max, rounding, focused ? 1f : 0f);
 
-        Theme.PushFont(Theme.BodyStrong);
-        var textSize = ImGui.CalcTextSize(label);
-        Theme.PopFont(Theme.BodyStrong);
-        var contentW = textSize.X + (icon is null ? 0f : iconSize + Theme.Space.Sm);
+        var contentW = textWidth + (icon is null ? 0f : iconSize + Theme.Space.Sm);
         var cursor = new Vector2(min.X + (width - contentW) / 2f, min.Y + padY);
 
         if (icon is not null)
@@ -569,8 +567,12 @@ static class Widgets
         ImGui.Dummy(new Vector2(width, height));
     }
 
-    /// <summary>A small rounded chip — the server-URL pill and inline state markers.</summary>
-    public static void Badge(string text, Vector4 colour, Icons.Glyph? icon = null, bool mono = false)
+    /// <summary>A <see cref="Badge"/>'s exact size before it is drawn, for laying out around it.</summary>
+    public static Vector2 MeasureBadge(string text, Icons.Glyph? icon = null, bool mono = false) =>
+        BadgeMetrics(text, icon, mono).Size;
+
+    private static (Vector2 Size, float IconSize, float PadX, float PadY) BadgeMetrics(
+        string text, Icons.Glyph? icon, bool mono)
     {
         var font = mono ? Theme.Mono : Theme.Caption;
         Theme.PushFont(font);
@@ -582,6 +584,16 @@ static class Widgets
         var padY = Theme.Space.Xs + 1f;
         var width = ts.X + padX * 2 + (icon is null ? 0f : iconSize + Theme.Space.Xs + 2f);
         var height = ts.Y + padY * 2;
+        return (new Vector2(width, height), iconSize, padX, padY);
+    }
+
+    /// <summary>A small rounded chip — the server-URL pill and inline state markers.</summary>
+    public static void Badge(string text, Vector4 colour, Icons.Glyph? icon = null, bool mono = false)
+    {
+        var font = mono ? Theme.Mono : Theme.Caption;
+        var (size, iconSize, padX, padY) = BadgeMetrics(text, icon, mono);
+        var width = size.X;
+        var height = size.Y;
 
         var dl = ImGui.GetWindowDrawList();
         var min = ImGui.GetCursorScreenPos();

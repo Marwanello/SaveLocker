@@ -24,4 +24,10 @@
     <ProjectReference Include="..\..\src\Agent\SaveLocker.Agent.csproj" />
   </ItemGroup>
 
+  <!-- SvgPath is pure (no ImGui), so its source is linked in rather than referencing the Linux agent
+       project, whose SDL/GL dependencies have no business in a Windows-agent test assembly. -->
+  <ItemGroup>
+    <Compile Include="..\..\src\Agent.Linux\Ui\SvgPath.cs" Link="SvgPath.cs" />
+  </ItemGroup>
+
 </Project>

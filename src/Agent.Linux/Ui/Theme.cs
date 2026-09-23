@@ -48,12 +48,7 @@ static class Theme
     public static Vector4 OnAccent { get; private set; } = Rgb(0x160f0e);
 
     public static Vector4 AccentSoft { get; private set; }
-    public static Vector4 AccentLine { get; private set; }
     public static Vector4 AccentInk  { get; private set; }
-    public static readonly Vector4 SafeSoft = Lerp(Panel, Safe, 0.14f);
-    public static readonly Vector4 SafeLine = Lerp(Panel, Safe, 0.40f);
-    public static readonly Vector4 SafeInk  = Lerp(Fg, Safe, 0.82f);
-    public static readonly Vector4 WatchSoft = Lerp(Panel, Watch, 0.14f);
     public static readonly Vector4 WatchLine = Lerp(Panel, Watch, 0.40f);
     public static readonly Vector4 WatchInk  = Lerp(Fg, Watch, 0.82f);
 
@@ -78,7 +73,6 @@ static class Theme
     private static void RecomputeAccentDerived()
     {
         AccentSoft = Lerp(Panel, Accent, 0.14f);
-        AccentLine = Lerp(Panel, Accent, 0.42f);
         AccentInk  = Lerp(Fg, Accent, 0.80f);
     }
 

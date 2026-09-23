@@ -15,12 +15,12 @@ namespace SaveLocker.Agent.Linux.Ui;
 /// can be read against the upstream SVGs. Curves are approximated with short polylines; at the sizes
 /// this UI draws (14-40 px) the difference is not resolvable.
 ///
-/// Straight-edged icons (rects, lines, plain circles) are hand-authored directly against the grid —
-/// porting a shape that is already just a handful of lines would be pure overhead. Icons with real
-/// curves (<see cref="Cloud"/>, <see cref="Sync"/>, part of <see cref="GitBranch"/>) instead go
-/// through <see cref="SvgPath"/>, which strokes lucide's own <c>d</c> string directly: hand-guessing a
-/// curve's control points from memory is exactly what produced the Cloud and Sync regressions this
-/// file's history documents.
+/// Straight-edged icons (rects, lines, plain circles) are hand-authored directly against the grid.
+/// Icons with real curves (<see cref="Cloud"/>, <see cref="Sync"/>, part of <see cref="GitBranch"/>)
+/// go through <see cref="Svg"/>, which strokes lucide's own <c>d</c> string: hand-eyeballed curves
+/// were wrong twice for Cloud and twice for Sync. Copy the string verbatim from
+/// <c>agent-ui/node_modules/lucide-react/dist/esm/icons/</c>; <see cref="SvgPath"/> throws on
+/// anything it cannot draw faithfully.
 /// </summary>
 static class Icons
 {
@@ -52,6 +52,23 @@ static class Icons
         for (int i = 0; i + 1 < xy.Length; i += 2)
             dl.PathLineTo(P(pos, size, xy[i], xy[i + 1]));
         dl.PathStroke(col, closed ? ImDrawFlags.Closed : ImDrawFlags.None, stroke);
+    }
+
+    /// <summary>Stroke lucide <c>d</c> strings (24x24 grid) — one call per subpath, mapped like every
+    /// other glyph here. The flattening is cached per string in <see cref="SvgPath.Flatten"/>.</summary>
+    private static void Svg(ImDrawListPtr dl, Vector2 pos, float size, uint col, float stroke,
+        params ReadOnlySpan<string> paths)
+    {
+        foreach (var d in paths)
+        {
+            foreach (var sub in SvgPath.Flatten(d))
+            {
+                dl.PathClear();
+                foreach (var pt in sub.Points)
+                    dl.PathLineTo(P(pos, size, pt.X, pt.Y));
+                dl.PathStroke(col, sub.Closed ? ImDrawFlags.Closed : ImDrawFlags.None, stroke);
+            }
+        }
     }
 
     private static void Line(ImDrawListPtr dl, Vector2 pos, float size, uint col, float stroke,
@@ -204,16 +221,10 @@ static class Icons
         Dot(dl, p, s, c, 6.5f, 15.5f, 1.1f);
     };
 
-    /// <summary>
-    /// lucide's cloud, traced by <see cref="SvgPath"/> straight from its own <c>d</c> string
-    /// (<c>lucide-react</c> v0.511.0, <c>icons/cloud.js</c>) instead of hand-guessed geometry. Two
-    /// prior attempts here (eyeballed bumps, then hand-solved arc centres) each produced a lopsided,
-    /// dented outline — most visible as a concave notch on the right side — because both were still a
-    /// guess at the curve rather than the curve itself. Used for "the cloud" side of a conflict
-    /// (Ui/UiApp.cs) so it reads the same as the React surfaces' lucide Cloud icon.
-    /// </summary>
+    /// <summary>lucide's cloud (<c>lucide-react</c> 0.511.0, <c>icons/cloud.js</c>). Used for "the
+    /// cloud" side of a conflict so it reads the same as the React surfaces.</summary>
     public static readonly Glyph Cloud = (dl, p, s, c, w) =>
-        SvgPath.Stroke(dl, p, s, c, w, "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z");
+        Svg(dl, p, s, c, w, "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z");
 
     /// <summary>Three bars — the Steam overlay's own menu glyph, used by the Deck hint bar's
     /// "Steam menu" entry (implementation.md Phase 6 item 2).</summary>
@@ -224,37 +235,20 @@ static class Icons
         Line(dl, p, s, c, w, 4, 18, 20, 18);
     };
 
-    /// <summary>lucide's git-branch: two nodes (plain circles, already exact) plus one connecting arc,
-    /// the arc now traced by <see cref="SvgPath"/> from its real <c>d</c> string instead of a
-    /// hand-picked quarter-circle — reused for "Conflicts" wherever this UI needs the same icon
-    /// language as the React sidebar/empty-state (agent-ui/src/components/Sidebar.tsx,
-    /// ConflictsView.tsx).</summary>
+    /// <summary>lucide's git-branch: the nodes and the stem are plain lines and circles, the
+    /// connecting arc is lucide's own path. Same icon as the React sidebar's Conflicts entry.</summary>
     public static readonly Glyph GitBranch = (dl, p, s, c, w) =>
     {
         Line(dl, p, s, c, w, 6, 3, 6, 15);
         dl.AddCircle(P(p, s, 18, 6), 3f / 24f * s, c, 16, w);
         dl.AddCircle(P(p, s, 6, 18), 3f / 24f * s, c, 16, w);
-        SvgPath.Stroke(dl, p, s, c, w, "M18 9a9 9 0 0 1-9 9");
+        Svg(dl, p, s, c, w, "M18 9a9 9 0 0 1-9 9");
     };
 
-    /// <summary>
-    /// lucide's refresh-cw, traced by <see cref="SvgPath"/> straight from its own four <c>d</c> strings
-    /// (<c>lucide-react</c> v0.511.0, <c>icons/refresh-cw.js</c>) — two big arcs plus two small
-    /// L-shaped corners for the arrowheads, exactly as lucide draws them. Used by the Deck header's
-    /// Sync all button (implementation.md Phase 6 item 3).
-    /// <para>
-    /// Two prior hand-authored attempts got this wrong: first a pair of same-radius circles offset by
-    /// less than their own diameter, whose strokes crossed through the shared overlap at the ~18px this
-    /// actually renders at and read as a blob rather than two arrows (a headless screenshot at a larger
-    /// fixed size had not shown it — caught only once the user tested it live); then one circle with
-    /// two gapped arcs and a hand-computed triangular arrowhead, which fixed the overlap but was still
-    /// a guess at lucide's actual shape. Porting the real path data — a 9 and a 9.75-radius arc joined
-    /// into one sweep, capped with a two-segment corner rather than a filled triangle — removes the
-    /// guessing entirely.
-    /// </para>
-    /// </summary>
+    /// <summary>lucide's refresh-cw (<c>icons/refresh-cw.js</c>): two arcs and two arrowhead corners.
+    /// Used by the Deck header's Sync all button, at about 18 px.</summary>
     public static readonly Glyph Sync = (dl, p, s, c, w) =>
-        SvgPath.Stroke(dl, p, s, c, w,
+        Svg(dl, p, s, c, w,
             "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
             "M21 3v5h-5",
             "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",

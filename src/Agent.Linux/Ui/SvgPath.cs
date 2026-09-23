@@ -1,105 +1,123 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Numerics;
-using System.Text.RegularExpressions;
-using ImGuiNET;
 
 namespace SaveLocker.Agent.Linux.Ui;
 
 /// <summary>
-/// A tiny SVG path tessellator — just enough to stroke lucide's icons from their own <c>d</c> strings
-/// (copied verbatim out of <c>agent-ui/node_modules/lucide-react</c>) instead of hand-guessing the
-/// shape. Two prior hand-authored attempts each at <see cref="Icons.Cloud"/> and <see cref="Icons.Sync"/>
-/// produced a visibly wrong outline; porting the real path data fixes the class of bug at the source
-/// rather than eyeballing a curve a third time.
+/// Flattens an SVG path <c>d</c> string into polylines, so <see cref="Icons"/> can stroke lucide's own
+/// path data instead of a hand-guessed copy of the shape. Pure — no ImGui here, so it can be unit-tested
+/// and the result cached per string (the strokes are then just a few <c>PathLineTo</c> calls a frame).
 ///
-/// lucide's icons only ever use M/L/H/V/A/Z (plus their lowercase relative forms), and every arc this
-/// UI actually needs is a true circle (rx == ry, no rotation) — so that is all this supports.
-/// Anything else throws rather than silently drawing the wrong shape.
+/// Supports M/L/H/V/A/Z and their lowercase relative forms, and only circular arcs (rx == ry, no
+/// rotation) — which is all the lucide icons this UI draws use. Anything else throws
+/// <see cref="NotSupportedException"/>: an icon this cannot draw faithfully must fail loudly the first
+/// time it is drawn, not render as a plausible wrong shape.
 /// </summary>
 static class SvgPath
 {
-    private static readonly Regex Token =
-        new(@"[MLHVAZmlhvaz]|-?\d*\.?\d+(?:[eE]-?\d+)?", RegexOptions.Compiled);
+    /// <summary>One connected run of points. <see cref="Closed"/> means the last point joins back to
+    /// the first, and the first point is not repeated at the end.</summary>
+    public readonly record struct Subpath(Vector2[] Points, bool Closed);
 
-    /// <summary>Stroke one or more lucide <c>d</c> strings (authored on lucide's 24x24 grid) into
-    /// <paramref name="dl"/>, mapped into <paramref name="pos"/>/<paramref name="size"/> the same way
-    /// every other glyph in <see cref="Icons"/> is.</summary>
-    public static void Stroke(ImDrawListPtr dl, Vector2 pos, float size, uint col, float stroke,
-        params string[] paths)
+    private static readonly ConcurrentDictionary<string, Subpath[]> Cache = new();
+
+    /// <summary>Points are on the path's own coordinate grid (lucide: 24x24), unscaled.</summary>
+    public static Subpath[] Flatten(string d) => Cache.GetOrAdd(d, Parse);
+
+    private static Subpath[] Parse(string d)
     {
-        foreach (var d in paths)
-            StrokeOne(dl, pos, size, col, stroke, d);
-    }
-
-    private static void StrokeOne(ImDrawListPtr dl, Vector2 pos, float size, uint col, float stroke, string d)
-    {
-        var tokens = Token.Matches(d);
-        int i = 0;
-        string Next() => tokens[i++].Value;
-        float NextNum() => float.Parse(Next(), CultureInfo.InvariantCulture);
-        Vector2 Map(Vector2 v) => pos + v / 24f * size;
-
+        var r = new Reader(d);
+        var result = new List<Subpath>();
+        var pts = new List<Vector2>();
         Vector2 cur = default, start = default;
-        char cmd = ' ';
-        bool open = false;
+        char cmd = '\0';
 
-        void Begin(Vector2 p) { dl.PathClear(); dl.PathLineTo(Map(p)); open = true; cur = p; }
-        void LineTo(Vector2 p) { dl.PathLineTo(Map(p)); cur = p; }
-        void End() { if (open) { dl.PathStroke(col, ImDrawFlags.None, stroke); open = false; } }
-
-        while (i < tokens.Count)
+        void Flush(bool closed)
         {
-            if (tokens[i].Value.Length == 1 && "MLHVAZmlhvaz".IndexOf(tokens[i].Value[0]) >= 0)
-                cmd = tokens[i++].Value[0];
+            // A closed run whose last point already sits on the first would stroke a zero-length
+            // closing segment; drop the duplicate instead.
+            if (closed && pts.Count > 1 && Vector2.DistanceSquared(pts[0], pts[^1]) < 1e-6f)
+                pts.RemoveAt(pts.Count - 1);
+            if (pts.Count > 1) result.Add(new Subpath(pts.ToArray(), closed));
+            pts.Clear();
+        }
+
+        // After a Z the next drawing command continues from the subpath's start, per the SVG spec.
+        void Begun() { if (pts.Count == 0) pts.Add(cur); }
+
+        void LineTo(Vector2 p) { Begun(); pts.Add(p); cur = p; }
+
+        while (r.More())
+        {
+            if (r.AtCommand()) cmd = r.ReadCommand();
+            else if (cmd == '\0') throw r.Fail("a command letter");
             // else: a bare number repeats the previous command with a fresh argument set.
 
             switch (cmd)
             {
-                case 'M': start = new Vector2(NextNum(), NextNum()); Begin(start); cmd = 'L'; break;
-                case 'm': start = cur + new Vector2(NextNum(), NextNum()); Begin(start); cmd = 'l'; break;
-                case 'L': LineTo(new Vector2(NextNum(), NextNum())); break;
-                case 'l': LineTo(cur + new Vector2(NextNum(), NextNum())); break;
-                case 'H': LineTo(new Vector2(NextNum(), cur.Y)); break;
-                case 'h': LineTo(cur + new Vector2(NextNum(), 0)); break;
-                case 'V': LineTo(new Vector2(cur.X, NextNum())); break;
-                case 'v': LineTo(cur + new Vector2(0, NextNum())); break;
+                case 'M':
+                case 'm':
+                {
+                    Flush(false);
+                    var p = r.ReadPoint();
+                    if (cmd == 'm') p += cur;
+                    cur = start = p;
+                    pts.Add(p);
+                    // Extra coordinate pairs after a moveto are implicit lineto's.
+                    cmd = cmd == 'M' ? 'L' : 'l';
+                    break;
+                }
+                case 'L': LineTo(r.ReadPoint()); break;
+                case 'l': LineTo(cur + r.ReadPoint()); break;
+                case 'H': LineTo(new Vector2(r.ReadNumber(), cur.Y)); break;
+                case 'h': LineTo(new Vector2(cur.X + r.ReadNumber(), cur.Y)); break;
+                case 'V': LineTo(new Vector2(cur.X, r.ReadNumber())); break;
+                case 'v': LineTo(new Vector2(cur.X, cur.Y + r.ReadNumber())); break;
                 case 'A':
                 case 'a':
                 {
-                    var r = NextNum();
-                    NextNum();               // ry — always == rx for the arcs this parser handles
-                    NextNum();               // x-axis-rotation — always 0 for the arcs this parser handles
-                    var largeArc = NextNum() != 0;
-                    var sweep = NextNum() != 0;
-                    var end = cmd == 'a' ? cur + new Vector2(NextNum(), NextNum())
-                                         : new Vector2(NextNum(), NextNum());
-                    ArcTo(dl, pos, size, cur, end, r, largeArc, sweep);
+                    var rx = r.ReadNumber();
+                    var ry = r.ReadNumber();
+                    var rotation = r.ReadNumber();
+                    var largeArc = r.ReadFlag();
+                    var sweep = r.ReadFlag();
+                    var end = r.ReadPoint();
+                    if (cmd == 'a') end += cur;
+                    if (rx != ry || rotation != 0f)
+                        throw new NotSupportedException(
+                            $"SvgPath: only circular, unrotated arcs are supported (in \"{d}\")");
+                    Begun();
+                    ArcTo(pts, cur, end, MathF.Abs(rx), largeArc, sweep);
                     cur = end;
                     break;
                 }
                 case 'Z':
                 case 'z':
-                    LineTo(start);
-                    End();
+                    Flush(true);
+                    cur = start;
+                    // Z takes no arguments, so a bare number after it has no command to repeat.
+                    cmd = '\0';
                     break;
                 default:
                     throw new NotSupportedException($"SvgPath: unsupported command '{cmd}' in \"{d}\"");
             }
         }
-        End();
+        Flush(false);
+        return result.ToArray();
     }
 
     /// <summary>
     /// Circular-arc endpoint-to-centre parameterisation (SVG 1.1 spec appendix F.6.5), specialised to
-    /// rx == ry and no rotation — true for every arc lucide's icons use. Appends the arc's points to
-    /// the ImDrawList's currently open path, in the same authoring-grid-to-screen mapping as the
-    /// straight segments around it, so it can sit inline in one continuous stroke.
+    /// rx == ry and no rotation. Appends the arc's points, ending exactly at <paramref name="p2"/>.
     /// </summary>
-    private static void ArcTo(ImDrawListPtr dl, Vector2 pos, float size, Vector2 p1, Vector2 p2,
-        float r, bool largeArc, bool sweep)
+    private static void ArcTo(List<Vector2> pts, Vector2 p1, Vector2 p2, float r, bool largeArc, bool sweep)
     {
+        if (p1 == p2) return;                        // spec: an arc to the current point is omitted
+        if (r == 0f) { pts.Add(p2); return; }        // spec: a zero radius is a straight line
+
         var dist = (p2 - p1).Length();
-        if (dist > 2f * r) r = dist / 2f; // degenerate input safety net, per spec
+        if (dist > 2f * r) r = dist / 2f;            // spec: radii too small to span the chord are scaled up
 
         var x1p = (p1.X - p2.X) / 2f;
         var y1p = (p1.Y - p2.Y) / 2f;
@@ -116,12 +134,69 @@ static class SvgPath
         if (!sweep && delta > 0) delta -= MathF.Tau;
         if (sweep && delta < 0) delta += MathF.Tau;
 
-        const int segments = 24;
-        for (int k = 1; k <= segments; k++)
+        // 7.5 degrees a step: smooth at the 14-40 px this UI draws icons at, and the result is cached.
+        var segments = Math.Max(4, (int)MathF.Ceiling(MathF.Abs(delta) / (MathF.PI / 24f)));
+        for (int k = 1; k < segments; k++)
         {
             var a = a1 + delta * k / segments;
-            var pt = centre + new Vector2(MathF.Cos(a), MathF.Sin(a)) * r;
-            dl.PathLineTo(pos + pt / 24f * size);
+            pts.Add(centre + new Vector2(MathF.Cos(a), MathF.Sin(a)) * r);
         }
+        pts.Add(p2);
+    }
+
+    /// <summary>Scanner over a path string: numbers may abut each other ("6.71-9", "1.5.5") and arc
+    /// flags are single characters that may abut the next number ("a2 2 0 011 1") — which a
+    /// whitespace/regex tokenizer reads as one number and silently shifts every later argument.</summary>
+    private sealed class Reader(string s)
+    {
+        private int _i;
+
+        public bool More()
+        {
+            while (_i < s.Length && (char.IsWhiteSpace(s[_i]) || s[_i] == ',')) _i++;
+            return _i < s.Length;
+        }
+
+        public bool AtCommand() => char.IsAsciiLetter(s[_i]);
+
+        public char ReadCommand() => s[_i++];
+
+        public Vector2 ReadPoint() => new(ReadNumber(), ReadNumber());
+
+        public bool ReadFlag()
+        {
+            if (!More() || (s[_i] != '0' && s[_i] != '1')) throw Fail("an arc flag (0 or 1)");
+            return s[_i++] == '1';
+        }
+
+        public float ReadNumber()
+        {
+            if (!More()) throw Fail("a number");
+            var begin = _i;
+            if (s[_i] is '+' or '-') _i++;
+
+            int digits = 0;
+            while (_i < s.Length && char.IsAsciiDigit(s[_i])) { _i++; digits++; }
+            if (_i < s.Length && s[_i] == '.')
+            {
+                _i++;
+                while (_i < s.Length && char.IsAsciiDigit(s[_i])) { _i++; digits++; }
+            }
+            if (digits == 0) { _i = begin; throw Fail("a number"); }
+
+            if (_i < s.Length && s[_i] is 'e' or 'E')
+            {
+                var mark = _i++;
+                if (_i < s.Length && s[_i] is '+' or '-') _i++;
+                int expDigits = 0;
+                while (_i < s.Length && char.IsAsciiDigit(s[_i])) { _i++; expDigits++; }
+                if (expDigits == 0) _i = mark;   // not an exponent after all
+            }
+
+            return float.Parse(s.AsSpan(begin, _i - begin), NumberStyles.Float, CultureInfo.InvariantCulture);
+        }
+
+        public FormatException Fail(string expected) =>
+            new($"SvgPath: expected {expected} at offset {_i} in \"{s}\"");
     }
 }

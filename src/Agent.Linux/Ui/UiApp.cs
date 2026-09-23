@@ -56,6 +56,12 @@ sealed class UiApp
     private readonly LocalAuth _localAuth;
     private Task<string>? _syncNowTask;
     private string? _syncNowMessage;
+    // Sync all starts from every screen (the header button, and Y), so its outcome has to be
+    // collected and shown on every screen too — see CollectSyncNow and DrawHeader. A success fades
+    // from the header after SyncNowHeaderMs; a failure stays until the next attempt starts.
+    private bool _syncNowFailed;
+    private long _syncNowFinishedAt;
+    private const long SyncNowHeaderMs = 10000;
 
     // Conflicts (tasks/conflict-resolution-ui/plan.md, Phase 8). Unlike the "Sync now" call above,
     // resolving a conflict never touches the daemon's live SyncEngine/lease state — it is the same
@@ -77,18 +83,14 @@ sealed class UiApp
     private const long ConflictsPollMs = 12000;
     private string? _conflictsError;
 
-    // The daemon reconciles the game list with the server every 20 s and saves it; this process
-    // loaded config.json once at startup and never re-read it, so a game deleted in the console
-    // rendered as a ghost until restart (tasks/game-mode-stale-list). Re-read on a timer — local
-    // disk only, no server call, so it works offline exactly when the ghost matters most.
-    private long _gamesReadAt;
-    private const long GamesPollMs = 10000;
-
-    // Same reasoning as the game list above, for the appearance the console last pushed: this
-    // process loaded config.json once at startup and never re-reads it on its own, so a look changed
-    // from the console or another machine would otherwise never reach a Deck already running.
-    private long _appearanceReadAt;
-    private const long AppearancePollMs = 5000;
+    // The daemon reconciles the game list with the server every 20 s and pushes the console's look
+    // in its heartbeat, and saves both; this process loaded config.json once at startup and never
+    // re-read it, so a game deleted in the console rendered as a ghost until restart
+    // (tasks/game-mode-stale-list) and a look changed from the console never reached a Deck already
+    // running. Re-read on a timer — local disk only, no server call, so it works offline exactly
+    // when the ghost matters most. One read serves both.
+    private long _diskReadAt;
+    private const long DiskPollMs = 5000;
 
     // A conflict only carries version ids; both sides' machine/timestamp/size and file-count are
     // fetched lazily and cached forever (an archive's stats never change once uploaded), mirroring
@@ -548,10 +550,11 @@ sealed class UiApp
         // screen is active, so it is polled here rather than inside DrawConflicts.
         PollConflictState();
         // Same placement, same reason: every screen reads _config.Games, and the daemon may have
-        // reconciled it since the last frame. First frame included (_gamesReadAt == 0), which is
+        // reconciled it since the last frame. First frame included (_diskReadAt == 0), which is
         // the reconcile-on-launch half — a ghost deleted before startup never paints at all.
-        PollGameList();
-        PollAppearance();
+        PollDiskState();
+        // Before any draw, so the header (on every screen) and the Overview read the same outcome.
+        CollectSyncNow();
         // Before Update, which is what calls NewFrame: a queued mouse position must be in the queue
         // NewFrame drains, because NewFrame is also where HoveredWindow is resolved. MouseDelta read
         // here is last frame's, which costs the highlight a frame nobody can perceive.
@@ -743,12 +746,22 @@ sealed class UiApp
         _navLeftFired = _navRightFired = _navBackFired = false;
     }
 
-    /// <summary>Rail order — must match the entries <see cref="DrawRail"/> draws. Set save folder is
-    /// a sub-flow of Add game and deliberately not included, same as it is not a rail entry.</summary>
-    private static readonly Screen[] RailScreens =
+    /// <summary>The rail's destinations, in order — the one list <see cref="DrawRail"/> draws and L1/R1
+    /// step through, so a new entry cannot be drawn yet skipped by the bumpers. Order matches
+    /// agent-ui's Sidebar.tsx (Overview, Add Games, Conflicts, ...) so the surfaces read as one
+    /// product.</summary>
+    private static readonly (string Label, Icons.Glyph Icon, Screen Target)[] RailEntries =
     {
-        Screen.Status, Screen.AddGame, Screen.Conflicts, Screen.LaunchSetup, Screen.Settings,
+        ("Overview", Icons.Monitor, Screen.Status),
+        ("Add game", Icons.Plus, Screen.AddGame),
+        ("Conflicts", Icons.GitBranch, Screen.Conflicts),
+        ("Steam setup", Icons.HardDrive, Screen.LaunchSetup),
+        ("Settings", Icons.Settings, Screen.Settings),
     };
+
+    /// <summary>The rail entry a screen lives under. Set save folder is a sub-flow of Add game, so it
+    /// shares that entry's slot rather than being one of its own.</summary>
+    private static Screen RailTarget(Screen screen) => screen == Screen.SetFolder ? Screen.AddGame : screen;
 
     /// <summary>
     /// Y (Sync all) and L1/R1 (switch rail section) — implementation.md Phase 6 item 3 ("Sync all in
@@ -771,21 +784,15 @@ sealed class UiApp
             Widgets.RequestFocus(_activeRailId);
         }
 
-        if (_navSyncFired && Connected && _syncNowTask is not { IsCompleted: false })
-        {
-            _syncNowMessage = null;
-            _syncNowTask = SyncNowAsync();
-        }
+        if (_navSyncFired) StartSyncNow();
 
         if (_navSectionPrevFired || _navSectionNextFired)
         {
-            // Set save folder shares Add game's rail slot (DrawRail already highlights "Add game"
-            // for both), so it steps from there rather than falling back to Overview.
-            var effective = _screen == Screen.SetFolder ? Screen.AddGame : _screen;
-            var index = Array.IndexOf(RailScreens, effective);
+            var current = RailTarget(_screen);
+            var index = Array.FindIndex(RailEntries, e => e.Target == current);
             if (index < 0) index = 0;
             var step = _navSectionNextFired ? 1 : -1;
-            Go(RailScreens[(index + step + RailScreens.Length) % RailScreens.Length]);
+            Go(RailEntries[(index + step + RailEntries.Length) % RailEntries.Length].Target);
             // L1/R1 changes _screen without the user ever pressing on this rail entry, so unlike a
             // click there is nothing to naturally carry focus onto it — the OLD entry is still a
             // perfectly valid, focusable button (it never left the rail), so RecoverStrandedCursor has
@@ -890,45 +897,71 @@ sealed class UiApp
         Widgets.Text(Connected ? "CONNECTED" : "NOT ENROLLED", statusColour, Theme.BodyStrong);
         ImGui.EndGroup();
 
-        // Right side: Sync all (bound to Y — see HandleGlobalGamepadActions) and the server chip,
-        // right-aligned as one block (checkpoint-ui/prototype.html's Deck header).
+        // Right side, as one right-aligned block (checkpoint-ui/prototype.html's Deck header): the last
+        // Sync all's outcome, the Sync all button (bound to Y — see HandleGlobalGamepadActions) and the
+        // server chip. Every item is placed by explicit cursor position, on the header's centre line,
+        // never with SameLine: SameLine snaps the next item back to the previous line's top, so a
+        // vertical offset set for one item is lost for the rest and the row shifts as items come and go.
+        var leftEnd = ImGui.GetItemRectMax().X - ImGui.GetWindowPos().X;   // right edge of the status group
+        var rightEdge = ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X;
+
         var url = _config.ServerUrl?.Replace("https://", "").Replace("http://", "") ?? "";
-        float chipW = 0f;
-        if (!string.IsNullOrEmpty(url))
-        {
-            Theme.PushFont(Theme.Mono);
-            chipW = ImGui.CalcTextSize(url).X + 52f;
-            Theme.PopFont(Theme.Mono);
-        }
+        var chipSize = string.IsNullOrEmpty(url)
+            ? Vector2.Zero
+            : Widgets.MeasureBadge(url, Icons.Server, mono: true);
 
         bool syncingAll = _syncNowTask is { IsCompleted: false };
         var syncLabel = syncingAll ? "Syncing..." : "Sync all";
         var syncSize = Widgets.MeasurePillButtonSize(syncLabel, Icons.Sync);
         Theme.PushFont(Theme.Caption);
         var hintW = ImGui.CalcTextSize("Y").X;
+        var captionH = ImGui.GetTextLineHeight();
         Theme.PopFont(Theme.Caption);
 
-        var blockW = syncSize.X + Theme.Space.Xs + hintW + (chipW > 0f ? Theme.Space.Lg + chipW : 0f);
+        var blockW = syncSize.X + Theme.Space.Xs + hintW + (chipSize.X > 0f ? Theme.Space.Lg + chipSize.X : 0f);
 
-        ImGui.SameLine();
-        var pad = ImGui.GetContentRegionAvail().X - blockW;
-        if (pad > 0) { ImGui.Dummy(new Vector2(pad, 0)); ImGui.SameLine(); }
+        // The outcome sits left of the button, so a press from any screen (Y included) is answered
+        // where the eye already is. Elided to what the row has left once the status group and the
+        // button block have their share.
+        var (outcome, outcomeColour) = HeaderSyncOutcome();
+        float outcomeW = 0f;
+        if (outcome is not null)
+        {
+            var budget = rightEdge - leftEnd - blockW - Theme.Space.Lg * 2;
+            if (budget > 80f)
+            {
+                Theme.PushFont(Theme.Caption);
+                outcome = Widgets.Elide(outcome, budget);
+                outcomeW = ImGui.CalcTextSize(outcome).X;
+                Theme.PopFont(Theme.Caption);
+            }
+            else outcome = null;
+        }
 
-        ImGui.SetCursorPosY((Theme.Layout.HeaderHeight - syncSize.Y) / 2f - Theme.Space.Sm);
+        var rowH = syncSize.Y;
+        var rowTop = (Theme.Layout.HeaderHeight - rowH) / 2f;
+        var x = rightEdge - blockW - (outcomeW > 0f ? outcomeW + Theme.Space.Lg : 0f);
+
+        if (outcomeW > 0f)
+        {
+            ImGui.SetCursorPos(new Vector2(x, rowTop + (rowH - captionH) / 2f));
+            Widgets.Text(outcome!, outcomeColour, Theme.Caption);
+            x += outcomeW + Theme.Space.Lg;
+        }
+
+        ImGui.SetCursorPos(new Vector2(x, rowTop));
         if (Widgets.PillButton(syncLabel, Widgets.ButtonKind.Primary, Icons.Sync,
                 enabled: !syncingAll && Connected))
-        {
-            _syncNowMessage = null;
-            _syncNowTask = SyncNowAsync();
-        }
-        ImGui.SameLine(0, Theme.Space.Xs);
-        ImGui.AlignTextToFramePadding();
-        Widgets.Text("Y", Theme.Faint, Theme.Caption);
+            StartSyncNow();
+        x += syncSize.X + Theme.Space.Xs;
 
-        if (chipW > 0f)
+        ImGui.SetCursorPos(new Vector2(x, rowTop + (rowH - captionH) / 2f));
+        Widgets.Text("Y", Theme.Dim, Theme.Caption);
+        x += hintW;
+
+        if (chipSize.X > 0f)
         {
-            ImGui.SameLine(0, Theme.Space.Lg);
-            ImGui.AlignTextToFramePadding();
+            ImGui.SetCursorPos(new Vector2(x + Theme.Space.Lg, rowTop + (rowH - chipSize.Y) / 2f));
             Widgets.Badge(url, Theme.Safe, Icons.Server, mono: true);
         }
 
@@ -961,20 +994,10 @@ sealed class UiApp
             ImGuiChildFlags.AlwaysUseWindowPadding, railFlags);
         NavDebug.PushScope("rail");
 
-        // Order matches agent-ui's Sidebar.tsx (Overview, Add Games, Conflicts, ...) so the two
-        // surfaces read as the same product.
-        var conflictsLabel = _openConflicts.Count > 0 ? $"Conflicts ({_openConflicts.Count})" : "Conflicts";
-        var items = new (string Label, Icons.Glyph Icon, Screen Target, bool Active)[]
+        var currentTarget = RailTarget(_screen);
+        foreach (var (label, icon, target) in RailEntries)
         {
-            ("Overview", Icons.Monitor, Screen.Status, _screen == Screen.Status),
-            ("Add game", Icons.Plus, Screen.AddGame, _screen is Screen.AddGame or Screen.SetFolder),
-            (conflictsLabel, Icons.GitBranch, Screen.Conflicts, _screen == Screen.Conflicts),
-            ("Steam setup", Icons.HardDrive, Screen.LaunchSetup, _screen == Screen.LaunchSetup),
-            ("Settings", Icons.Settings, Screen.Settings, _screen == Screen.Settings),
-        };
-
-        foreach (var (label, icon, target, active) in items)
-        {
+            var active = target == currentTarget;
             // Land the cursor on the rail entry for the screen already being shown. Without an
             // initial nav target ImGui starts with nothing focused, so the first D-pad press only
             // picks a starting item and appears to do nothing.
@@ -991,7 +1014,11 @@ sealed class UiApp
                 _focusRailOnce = false;
                 ImGui.SetKeyboardFocusHere();
             }
-            if (Widgets.RailItem(label, icon, active, id: target == Screen.Conflicts ? "Conflicts" : label))
+            // The count rides on the label, but the widget id stays "Conflicts" so it is stable as the count moves.
+            var shown = target == Screen.Conflicts && _openConflicts.Count > 0
+                ? $"Conflicts ({_openConflicts.Count})"
+                : label;
+            if (Widgets.RailItem(shown, icon, active, id: label))
                 Go(target);
             if (active) _activeRailId = Widgets.LastRailItemId;
         }
@@ -1282,24 +1309,13 @@ sealed class UiApp
             _activityReadAt = now;
         }
 
-        if (_syncNowTask is { IsCompleted: true })
-        {
-            _syncNowMessage = _syncNowTask.IsCompletedSuccessfully
-                ? _syncNowTask.Result
-                : "Sync failed: " + (_syncNowTask.Exception?.GetBaseException().Message ?? "unknown error");
-            _syncNowTask = null;
-        }
-
         Widgets.BeginCard("activity", new Vector2(0, 0));
         Widgets.SectionHeader("Activity");
 
         bool syncing = _syncNowTask is { IsCompleted: false };
         if (Widgets.PillButton(syncing ? "Syncing..." : "Sync now", Widgets.ButtonKind.Secondary,
                 enabled: !syncing && Connected))
-        {
-            _syncNowMessage = null;
-            _syncNowTask = SyncNowAsync();
-        }
+            StartSyncNow();
         if (!string.IsNullOrEmpty(_syncNowMessage))
         {
             ImGui.SameLine(0, Theme.Space.Md);
@@ -1341,7 +1357,7 @@ sealed class UiApp
                 Widgets.ProgressBar(pct, ImGui.GetContentRegionAvail().X);
                 Widgets.Gap(Theme.Space.Xs);
                 Widgets.Text($"{FormatBytes(current.BytesDone)} / {FormatBytes(current.BytesTotal)}",
-                    Theme.Faint, Theme.Caption);
+                    Theme.Dim, Theme.Caption);
             }
         }
 
@@ -1351,10 +1367,48 @@ sealed class UiApp
         {
             Widgets.Gap(Theme.Space.Sm);
             foreach (var e in _activityRecent.Take(3))
-                Widgets.Text($"{e.TimestampUtc.ToLocalTime():HH:mm:ss}  {e.Message}", Theme.Faint, Theme.Caption);
+                Widgets.Text($"{e.TimestampUtc.ToLocalTime():HH:mm:ss}  {e.Message}", Theme.Dim, Theme.Caption);
         }
 
         Widgets.EndCard();
+    }
+
+    /// <summary>The one way a Sync all starts — the header button, Y and the Overview's own button all
+    /// come through here. A no-op while one is already running or the device is not enrolled.</summary>
+    private void StartSyncNow()
+    {
+        if (!Connected || _syncNowTask is { IsCompleted: false }) return;
+        _syncNowMessage = null;
+        _syncNowTask = SyncNowAsync();
+    }
+
+    /// <summary>
+    /// Take the finished Sync all's outcome, once per frame from <see cref="OnRender"/>. It cannot wait
+    /// for a particular screen to draw: the sync starts from all of them, and one that finished while
+    /// the user was on Conflicts or Settings would otherwise fail silently and then surface minutes
+    /// later, out of context, when the Overview was next opened.
+    /// </summary>
+    private void CollectSyncNow()
+    {
+        if (_syncNowTask is not { IsCompleted: true } done) return;
+        _syncNowFailed = !done.IsCompletedSuccessfully;
+        _syncNowMessage = _syncNowFailed
+            ? "Sync failed: " + (done.Exception?.GetBaseException().Message ?? "unknown error")
+            : done.Result;
+        _syncNowFinishedAt = Environment.TickCount64;
+        _syncNowTask = null;
+    }
+
+    /// <summary>What the header says about the last Sync all, or null. A failure is kept until the
+    /// next attempt; a success is confirmation, not news, and fades.</summary>
+    private (string? Text, Vector4 Colour) HeaderSyncOutcome()
+    {
+        if (string.IsNullOrEmpty(_syncNowMessage) || _syncNowTask is { IsCompleted: false })
+            return (null, default);
+        if (_syncNowFailed) return (_syncNowMessage, Theme.Watch);
+        return Environment.TickCount64 - _syncNowFinishedAt <= SyncNowHeaderMs
+            ? (_syncNowMessage, Theme.Dim)
+            : (null, default);
     }
 
     /// <summary>
@@ -1547,7 +1601,7 @@ sealed class UiApp
             var sourceFiltered = Enumerable.Range(0, _candidates.Count)
                 .Where(i => MatchesFilter(_candidates[i], _addFilter))
                 .ToList();
-            Widgets.Text("Path", Theme.Faint, Theme.Caption);
+            Widgets.Text("Path", Theme.Dim, Theme.Caption);
             foreach (var m in Enum.GetValues<PathMode>())
             {
                 ImGui.SameLine(0, Theme.Space.Sm);
@@ -1645,7 +1699,7 @@ sealed class UiApp
         Widgets.Text(c.Name, alreadyTracked ? Theme.Dim : Theme.Fg, Theme.BodyStrong);
         ImGui.SameLine(0, Theme.Space.Sm);
         ImGui.AlignTextToFramePadding();
-        Widgets.Text($"[{c.Source}]", Theme.Faint, Theme.Caption);
+        Widgets.Text($"[{c.Source}]", Theme.Dim, Theme.Caption);
 
         if (alreadyTracked)
         {
@@ -1760,7 +1814,7 @@ sealed class UiApp
             {
                 Widgets.SectionHeader(_files.Length == 0 ? "Files here (none)" : $"Files here ({_files.Length})");
                 if (_files.Length == 0)
-                    Widgets.TextWrapped("This folder has no files directly in it.", Theme.Faint);
+                    Widgets.TextWrapped("This folder has no files directly in it.", Theme.Dim);
                 foreach (var f in _files)
                     Widgets.Text(f, Theme.Dim, Theme.Caption);
             },
@@ -1829,32 +1883,20 @@ sealed class UiApp
     }
 
     /// <summary>
-    /// Adopt the daemon's game-list membership (added/removed games) into this process's view.
-    /// Synchronous and render-thread-only, like every other field write in this file.
+    /// Adopt what the daemon saved to config.json into this process's view: game-list membership
+    /// (added/removed games) and the console's pushed look. A changed effective look raises
+    /// <see cref="AgentConfig.AppearanceChanged"/>, which repaints via the subscription in the
+    /// constructor. Synchronous and render-thread-only, like every other field write in this file.
     /// </summary>
-    private void PollGameList()
+    private void PollDiskState()
     {
         var now = Environment.TickCount64;
-        if (_gamesReadAt != 0 && now - _gamesReadAt <= GamesPollMs) return;
-        _gamesReadAt = now;
+        if (_diskReadAt != 0 && now - _diskReadAt <= DiskPollMs) return;
+        _diskReadAt = now;
         // Synchronous local read, so there is no task to drain and nothing for the screenshot
         // busy-gate to wait on. Best-effort: contention just defers to the next poll, and a
         // missing/unreadable file is a no-op (ReadOnDisk returns null) rather than a crash.
-        try { _config.RefreshGameList(); } catch { /* the next poll retries */ }
-    }
-
-    /// <summary>
-    /// Re-read the appearance settings from disk (implementation.md Phase 6 item 1's "the Deck's
-    /// accent" — moved here from Group 5, which left the plumbing this calls). A changed effective
-    /// look raises <see cref="AgentConfig.AppearanceChanged"/>, repainting via the subscription in
-    /// the constructor. Same best-effort, non-blocking shape as <see cref="PollGameList"/>.
-    /// </summary>
-    private void PollAppearance()
-    {
-        var now = Environment.TickCount64;
-        if (_appearanceReadAt != 0 && now - _appearanceReadAt <= AppearancePollMs) return;
-        _appearanceReadAt = now;
-        try { _config.RefreshAppearance(); } catch { /* the next poll retries */ }
+        try { _config.RefreshFromDisk(); } catch { /* the next poll retries */ }
     }
 
     /// <summary>
@@ -2216,11 +2258,11 @@ sealed class UiApp
             var fileCount = stats is { FileCount: var fc } ? $"{fc} file{(fc == 1 ? "" : "s")} - " : "";
             Widgets.Text(fileCount + FormatBytes(version.Size), Theme.Dim, Theme.Caption);
             if (!string.IsNullOrEmpty(caption))
-                Widgets.TextWrapped(caption, Theme.Faint, Theme.Caption);
+                Widgets.TextWrapped(caption, Theme.Dim, Theme.Caption);
         }
         else
         {
-            Widgets.Text("Loading...", Theme.Faint, Theme.Caption);
+            Widgets.Text("Loading...", Theme.Dim, Theme.Caption);
         }
 
         Widgets.Gap(Theme.Space.Sm);
