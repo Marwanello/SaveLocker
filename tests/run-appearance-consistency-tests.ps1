@@ -4,11 +4,14 @@
 # The look (theme / accent / mark) is defined in several places that cannot import from one another:
 #
 #   src/Shared/Appearance.cs            the closed id lists the server validates against
-#   src/Agent.Core/AppearancePalette.cs the accent colours the Windows tray icon (and, in Group 6, the Deck) draws
+#   src/Agent.Core/AppearancePalette.cs the accent colours the Windows tray icon and the Deck draw
 #   web/src/appearance.ts               the console's copy: ids, accent triples, mark geometry
 #   agent-ui/src/appearance.ts          the agent UI's copy of the same
+#   src/Agent/MarkIcon.cs               the tray icon's C# port of the mark geometry
+#   src/Agent.Linux/Ui/AppMark.cs       the Deck header's C# port of the same
 #   web/src/index.css                   the palette tokens (source of truth)
 #   agent-ui/src/tokens.css             the hand-kept copy of those tokens
+#   src/Agent.Linux/Ui/Theme.cs         the Deck's hand-kept copy of the dark half of them
 #
 # A drifted copy is silent: an accent that is one shade off on the tray, a token changed in one app, a sixth
 # accent the server accepts and an agent draws as Ember. Each check below names the two files it ties together.
@@ -89,12 +92,51 @@ foreach ($id in $csMarks) {
     Check "mark geometry: '$id' in appearance.ts matches web/src/assets/marks/$($svgFile[$id])" ((Same $tsGeo $svgGeo) -and $tsGeo.Count -gt 3)
 }
 
+# ---- mark geometry: the two C# ports (Windows tray icon, Deck header) vs appearance.ts -----------------------
+# The C# ports draw with GDI+ / ImGui calls rather than SVG, so the shapes cannot be compared structurally. What
+# CAN drift silently is a coordinate edited in one place: every x / y / width / height / rx / cx / cy / r the
+# console's mark uses must still appear as a literal in the matching C# method. (Path data - the memory card's
+# outline, the cartridge pins - is written absolute in C# and relative in the SVG, so it is left to the eye.)
+$csMethod = @{ pixel = "PixelLock"; cartridge = "Cartridge"; memcard = "MemoryCard" }
+function Cs-Method($src, $name) {
+    $a = $src.IndexOf("void $name(")
+    if ($a -lt 0) { return "" }
+    $b = $src.IndexOf("private static", $a + 5)
+    if ($b -lt 0) { $b = $src.Length }
+    return $src.Substring($a, $b - $a)
+}
+foreach ($file in @("src/Agent/MarkIcon.cs", "src/Agent.Linux/Ui/AppMark.cs")) {
+    $src = Read-Src $file
+    foreach ($id in $csMarks) {
+        $a = $webTs.IndexOf("id: '$id'")
+        $next = $webTs.IndexOf("id: '", $a + 5); if ($next -lt 0) { $next = $webTs.IndexOf("const has =", $a) }
+        $wanted = @(Geometry $webTs.Substring($a, $next - $a) | Where-Object { $_ -match '^(x|y|width|height|rx|cx|cy|r)=' } |
+            ForEach-Object { ($_ -split "=", 2)[1] } | Sort-Object -Unique)
+        $body = Cs-Method $src $csMethod[$id]
+        $missing = @($wanted | Where-Object { $body -notmatch ('(?<![\d.])' + [regex]::Escape($_) + 'f?(?![\d.])') })
+        if ($missing.Count) { Write-Host "  $file $($csMethod[$id]): appearance.ts uses $($missing -join ', ') but the C# method has no such literal" }
+        Check "mark geometry: '$id' in $file still uses every coordinate of appearance.ts" ($wanted.Count -gt 3 -and $body.Length -gt 0 -and $missing.Count -eq 0)
+    }
+}
+
 # ---- tokens: web/src/index.css vs agent-ui/src/tokens.css --------------------------------------------------
 function Tokens($rel) {
     $t = Read-Src $rel
     return @([regex]::Matches($t, '(--color-[a-z-]+):\s*(#[0-9a-fA-F]{6});') | ForEach-Object { $_.Groups[1].Value + " " + $_.Groups[2].Value.ToLower() })
 }
 $webTok = Tokens "web/src/index.css"; $agentTok = Tokens "agent-ui/src/tokens.css"
+
+# The Deck's Theme.cs holds the dark half by hand (it is dark-only). Its Accent/OnAccent are the INITIAL values -
+# Ember, the default - which SetAccent replaces from AppearancePalette; the other twelve never change.
+$themeCs = Read-Src "src/Agent.Linux/Ui/Theme.cs"
+$themeTok = @{}
+foreach ($m in [regex]::Matches($themeCs, 'public static (?:readonly )?Vector4 (\w+)\s*(?:=|\{ get; private set; \}\s*=)\s*Rgb\(0x([0-9A-Fa-f]{6})\)')) {
+    $themeTok[$m.Groups[1].Value] = "#" + $m.Groups[2].Value.ToLower()
+}
+$themeToCss = [ordered]@{ Ink = "ink"; Panel = "panel"; Raise = "raise"; Tile = "tile"; Hover = "hover"; Fg = "fg"; Dim = "dim";
+                          Faint = "faint"; Line = "line"; Row = "row"; Safe = "safe"; Watch = "watch"; Accent = "accent"; OnAccent = "on-accent" }
+$themeWant = @($themeToCss.Keys | ForEach-Object { "--color-" + $themeToCss[$_] + " " + $themeTok[$_] })
+Check "tokens: src/Agent.Linux/Ui/Theme.cs (the Deck) carries the dark palette of web/src/index.css, all 14" ($webTok.Count -ge 14 -and (Same $themeWant $webTok[0..13]))
 Check "tokens: each file defines the palette three times (dark base, data-theme=light, the OS-light media query)" ($webTok.Count -eq 42 -and $agentTok.Count -eq 42)
 Check "tokens: web/src/index.css and agent-ui/src/tokens.css hold identical names and values" (Same $webTok $agentTok)
 Check "tokens: within web the two light blocks are identical" (Same $webTok[14..27] $webTok[28..41])

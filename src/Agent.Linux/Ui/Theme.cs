@@ -9,9 +9,14 @@ namespace SaveLocker.Agent.Linux.Ui;
 /// The single source of truth for how the Game Mode UI looks. Every colour, size, spacing and
 /// rounding value in <c>Ui/</c> comes from here — no literal colour may appear anywhere else.
 ///
-/// The palette is lifted verbatim from <c>web/src/index.css</c> <c>@theme</c>, which the console and
-/// the WinForms agent's React UI both consume, so all three surfaces read as one product. If a token
-/// changes there, change it here; they are meant to stay in lockstep.
+/// The palette is the Checkpoint dark set (docs/tasks/checkpoint-ui/plan.md "Tokens"), copied
+/// verbatim from <c>web/src/index.css</c>'s <c>@theme</c> block — the Deck is dark-only (plan.md
+/// "Surfaces"), so only that half of the console's two palettes applies here. <see cref="Accent"/>
+/// is the one token that is NOT fixed: it is re-derived from <see cref="AppearancePalette"/>
+/// whenever this machine's effective appearance changes, exactly like the console's inline CSS
+/// variable and the tray's <c>MarkIcon</c>. Everything else stays constant — swapping an accent
+/// must never make Ember read as "healthy" or "warning", which is why <see cref="Safe"/> and
+/// <see cref="Watch"/> are separate, fixed tokens rather than derived from it.
 /// </summary>
 static class Theme
 {
@@ -20,34 +25,62 @@ static class Theme
     // land on screen as the same values the browser paints. If they look washed out, the
     // framebuffer picked up sRGB somewhere — fix that, do not fudge these constants.
 
-    public static readonly Vector4 BgGlobal      = Rgb(0x2A3238);
-    public static readonly Vector4 BgCard        = Rgb(0x1E252A);
-    public static readonly Vector4 BgTableHd     = Rgb(0x222D34);
-    public static readonly Vector4 BgRowSep      = Rgb(0x252E35);
+    public static readonly Vector4 Ink   = Rgb(0x0f0f10);   // page
+    public static readonly Vector4 Panel = Rgb(0x141416);   // card
+    public static readonly Vector4 Raise = Rgb(0x191a1c);   // control / table header
+    public static readonly Vector4 Tile  = Rgb(0x1b1c1f);   // inset
+    public static readonly Vector4 Hover = Rgb(0x202124);
+    public static readonly Vector4 Fg    = Rgb(0xf0eee9);   // text
+    public static readonly Vector4 Dim   = Rgb(0xa09d97);   // secondary text
+    public static readonly Vector4 Faint = Rgb(0x6b6862);   // tertiary text
+    public static readonly Vector4 Line  = Rgb(0x242427);   // border
+    public static readonly Vector4 Row   = Rgb(0x1d1d20);   // table rule
 
-    public static readonly Vector4 TextPrimary   = Rgb(0xECEFF1);
-    public static readonly Vector4 TextMuted     = Rgb(0x9CA3AF);
-    public static readonly Vector4 TextSecondary = Rgb(0x8B9AAA);
-    public static readonly Vector4 TextDim       = Rgb(0x556070);
-    public static readonly Vector4 TextFaint     = Rgb(0x64748B);
+    /// <summary>Server and machine agree — plan.md's colour rule. Fixed: never swapped by an accent.</summary>
+    public static readonly Vector4 Safe  = Rgb(0x7fa96a);
+    /// <summary>Something failed but will retry, or needs attention. Fixed, same reason as <see cref="Safe"/>.</summary>
+    public static readonly Vector4 Watch = Rgb(0xd9a63f);
 
-    public static readonly Vector4 AccentGreen   = Rgb(0x129271);
-    public static readonly Vector4 AccentAmber   = Rgb(0xF4A60D);
-    public static readonly Vector4 AccentAmberLt = Rgb(0xFDCE63);
-    // Matches the dashboard/agent-ui conflict card's escalated-border red (ConflictCard.tsx) — the
-    // one accent this screen reserves for "overdue," never for an ordinary conflict.
-    public static readonly Vector4 AccentRed     = Rgb(0xE5534B);
+    /// <summary>A decision is waiting. The one token this machine's Appearance setting rewrites —
+    /// see <see cref="SetAccent"/>. Ember (the default accent) is the initial value.</summary>
+    public static Vector4 Accent { get; private set; } = Rgb(0xe0533c);
+    /// <summary>Ink that sits on a filled <see cref="Accent"/> surface (plan.md's "on-accent").</summary>
+    public static Vector4 OnAccent { get; private set; } = Rgb(0x160f0e);
 
-    public static readonly Vector4 Border        = Rgb(0x494949);
+    public static Vector4 AccentSoft { get; private set; }
+    public static Vector4 AccentInk  { get; private set; }
+    public static readonly Vector4 WatchLine = Lerp(Panel, Watch, 0.40f);
+    public static readonly Vector4 WatchInk  = Lerp(Fg, Watch, 0.82f);
 
-    // Derived tints the React UI already uses. Reproduced rather than reinvented so the two
-    // surfaces match exactly — see Sidebar.tsx, StatusHeader.tsx, OverviewView.tsx.
-    public static readonly Vector4 NavActiveBg   = Alpha(AccentGreen, 0.14f);
-    public static readonly Vector4 NavHoverBg    = Alpha(AccentGreen, 0.07f);
-    public static readonly Vector4 ChipBg        = Alpha(AccentGreen, 0.07f);
-    public static readonly Vector4 ChipBorder    = Alpha(AccentGreen, 0.20f);
-    public static readonly Vector4 WarnBg        = Alpha(AccentAmber, 0.12f);
-    public static readonly Vector4 WarnBorder    = Alpha(AccentAmber, 0.45f);
+    static Theme() => RecomputeAccentDerived();
+
+    /// <summary>
+    /// Point <see cref="Accent"/>/<see cref="OnAccent"/> at a different id and rebake ImGui's style
+    /// table so every stock-widget colour (checkboxes, sliders, the nav highlight) picks it up too —
+    /// the hand-painted widgets in <c>Widgets.cs</c> read the static fields directly every frame, so
+    /// they need no rebake, but <c>ApplyStyle</c>'s <c>style.Colors[...]</c> entries are baked once
+    /// and must be re-set explicitly. A no-op re-apply (same id) costs one style-table write, which
+    /// is cheap enough to not bother guarding against.
+    /// </summary>
+    public static unsafe void SetAccent(AccentColors colours)
+    {
+        Accent = Rgb(colours.Dark);
+        OnAccent = Rgb(colours.DarkOn);
+        RecomputeAccentDerived();
+        if (_styled) ApplyStyle();
+    }
+
+    private static void RecomputeAccentDerived()
+    {
+        AccentSoft = Lerp(Panel, Accent, 0.14f);
+        AccentInk  = Lerp(Fg, Accent, 0.80f);
+    }
+
+    /// <summary>Linear (not oklab — ImGui has no colour-management pipeline to do it in) blend
+    /// toward <paramref name="target"/>, matching the console's <c>color-mix(in oklab, X N%, Y)</c>
+    /// derivation closely enough at these percentages that the difference is not resolvable.</summary>
+    private static Vector4 Lerp(Vector4 baseColour, Vector4 target, float t) =>
+        baseColour + (target - baseColour) * t;
 
     public static Vector4 Alpha(Vector4 c, float a) => c with { W = a };
 
@@ -80,10 +113,19 @@ static class Theme
 
     public static class Layout
     {
-        public const float RailWidth = 220f;
+        public const float RailWidth = 236f;
         public const float HeaderHeight = 64f;
         public const float HintBarHeight = 44f;
         public const float Gutter = 24f;
+
+        /// <summary>A two-line row's fixed height (plan.md "Layout rules": "Two-line rows" /
+        /// "Rows are 62px tall" — checkpoint-ui/prototype.html's Deck screen). Fixed rather than
+        /// measured from the current font's line height, so it holds exactly regardless of which
+        /// TTFs happened to bake (see <see cref="LoadFonts"/>'s fallback-font path).</summary>
+        public const float RowHeight = 62f;
+        /// <summary>A single-line row's height (the folder browser's directory listing — nothing to
+        /// put on a second line there).</summary>
+        public const float RowHeightSingle = 46f;
 
         /// <summary>
         /// Clear space every focusable widget needs on all four sides for its focus ring, which is
@@ -102,9 +144,9 @@ static class Theme
     }
 
     // ── Fonts ────────────────────────────────────────────────────────────────────────────────
-    // Inter + JetBrains Mono, matching the console. ImGui bakes one atlas entry per (face, size),
-    // so the scale is deliberately short. All six fall back to the built-in font when the TTFs are
-    // absent, which keeps a dev build that has not vendored them working.
+    // Archivo + JetBrains Mono — the same faces the console and agent-ui self-host (Groups 1/3,
+    // docs/tasks/checkpoint-ui/implementation-grouping.md "Group 1"). Sizing is Checkpoint's ("16px
+    // minimum body text", implementation.md Phase 6 item 1).
 
     public static ImFontPtr Display;
     public static ImFontPtr Title;
@@ -116,8 +158,8 @@ static class Theme
     /// <summary>True when the real TTFs were found and baked; false when running on ImGui's default font.</summary>
     public static bool FontsLoaded { get; private set; }
 
-    private const string RegularResource    = "SaveLocker.Agent.Linux.Ui.Fonts.Inter-Regular.ttf";
-    private const string SemiBoldResource   = "SaveLocker.Agent.Linux.Ui.Fonts.Inter-SemiBold.ttf";
+    private const string RegularResource    = "SaveLocker.Agent.Linux.Ui.Fonts.Archivo-Regular.ttf";
+    private const string SemiBoldResource   = "SaveLocker.Agent.Linux.Ui.Fonts.Archivo-SemiBold.ttf";
     private const string MonoResource       = "SaveLocker.Agent.Linux.Ui.Fonts.JetBrainsMono-Regular.ttf";
 
     // ImGui reads font bytes lazily while baking, so the unmanaged copies must outlive the call.
@@ -199,6 +241,8 @@ static class Theme
 
     // ── Style ────────────────────────────────────────────────────────────────────────────────
 
+    private static bool _styled;
+
     /// <summary>
     /// Map the palette onto ImGui's style table and replace its cramped debug-tool metrics. This is
     /// most of what separates "looks like a tool" from "looks like an app" — stock ImGui spacing is
@@ -206,6 +250,7 @@ static class Theme
     /// </summary>
     public static unsafe void ApplyStyle()
     {
+        _styled = true;
         var style = ImGui.GetStyle();
 
         style.WindowRounding    = 0f;   // the root window is full-bleed; rounding it would show seams
@@ -237,62 +282,63 @@ static class Theme
 
         var c = style.Colors;
 
-        c[(int)ImGuiCol.WindowBg]              = BgGlobal;
-        c[(int)ImGuiCol.ChildBg]               = BgCard;
-        c[(int)ImGuiCol.PopupBg]               = BgCard;
-        c[(int)ImGuiCol.MenuBarBg]             = BgCard;
+        c[(int)ImGuiCol.WindowBg]              = Ink;
+        c[(int)ImGuiCol.ChildBg]               = Panel;
+        c[(int)ImGuiCol.PopupBg]               = Panel;
+        c[(int)ImGuiCol.MenuBarBg]             = Panel;
 
-        c[(int)ImGuiCol.Border]                = Border;
-        c[(int)ImGuiCol.BorderShadow]          = Alpha(BgGlobal, 0f);
-        c[(int)ImGuiCol.Separator]             = BgRowSep;
-        c[(int)ImGuiCol.SeparatorHovered]      = Border;
-        c[(int)ImGuiCol.SeparatorActive]       = AccentGreen;
+        c[(int)ImGuiCol.Border]                = Line;
+        c[(int)ImGuiCol.BorderShadow]          = Alpha(Ink, 0f);
+        c[(int)ImGuiCol.Separator]             = Row;
+        c[(int)ImGuiCol.SeparatorHovered]      = Line;
+        c[(int)ImGuiCol.SeparatorActive]       = Accent;
 
-        c[(int)ImGuiCol.Text]                  = TextPrimary;
-        c[(int)ImGuiCol.TextDisabled]          = TextMuted;
-        c[(int)ImGuiCol.TextSelectedBg]        = Alpha(AccentGreen, 0.35f);
+        c[(int)ImGuiCol.Text]                  = Fg;
+        c[(int)ImGuiCol.TextDisabled]          = Dim;
+        c[(int)ImGuiCol.TextSelectedBg]        = Alpha(Accent, 0.35f);
 
-        c[(int)ImGuiCol.FrameBg]               = BgTableHd;
-        c[(int)ImGuiCol.FrameBgHovered]        = Alpha(AccentGreen, 0.18f);
-        c[(int)ImGuiCol.FrameBgActive]         = Alpha(AccentGreen, 0.28f);
+        c[(int)ImGuiCol.FrameBg]               = Raise;
+        c[(int)ImGuiCol.FrameBgHovered]        = Alpha(Accent, 0.18f);
+        c[(int)ImGuiCol.FrameBgActive]         = Alpha(Accent, 0.28f);
 
-        c[(int)ImGuiCol.Button]                = BgTableHd;
-        c[(int)ImGuiCol.ButtonHovered]         = Alpha(AccentGreen, 0.22f);
-        c[(int)ImGuiCol.ButtonActive]          = Alpha(AccentGreen, 0.34f);
+        c[(int)ImGuiCol.Button]                = Raise;
+        c[(int)ImGuiCol.ButtonHovered]         = Alpha(Accent, 0.22f);
+        c[(int)ImGuiCol.ButtonActive]          = Alpha(Accent, 0.34f);
 
-        c[(int)ImGuiCol.Header]                = NavActiveBg;
-        c[(int)ImGuiCol.HeaderHovered]         = Alpha(AccentGreen, 0.22f);
-        c[(int)ImGuiCol.HeaderActive]          = Alpha(AccentGreen, 0.30f);
+        c[(int)ImGuiCol.Header]                = Tile;
+        c[(int)ImGuiCol.HeaderHovered]         = Alpha(Accent, 0.22f);
+        c[(int)ImGuiCol.HeaderActive]          = Alpha(Accent, 0.30f);
 
-        c[(int)ImGuiCol.CheckMark]             = AccentGreen;
-        c[(int)ImGuiCol.SliderGrab]            = AccentGreen;
-        c[(int)ImGuiCol.SliderGrabActive]      = AccentGreen;
+        c[(int)ImGuiCol.CheckMark]             = Accent;
+        c[(int)ImGuiCol.SliderGrab]            = Accent;
+        c[(int)ImGuiCol.SliderGrabActive]      = Accent;
 
-        c[(int)ImGuiCol.TitleBg]               = BgCard;
-        c[(int)ImGuiCol.TitleBgActive]         = BgCard;
-        c[(int)ImGuiCol.TitleBgCollapsed]      = BgCard;
+        c[(int)ImGuiCol.TitleBg]               = Panel;
+        c[(int)ImGuiCol.TitleBgActive]         = Panel;
+        c[(int)ImGuiCol.TitleBgCollapsed]      = Panel;
 
-        c[(int)ImGuiCol.ScrollbarBg]           = BgCard;
-        c[(int)ImGuiCol.ScrollbarGrab]         = Border;
-        c[(int)ImGuiCol.ScrollbarGrabHovered]  = TextDim;
-        c[(int)ImGuiCol.ScrollbarGrabActive]   = AccentGreen;
+        c[(int)ImGuiCol.ScrollbarBg]           = Panel;
+        c[(int)ImGuiCol.ScrollbarGrab]         = Line;
+        c[(int)ImGuiCol.ScrollbarGrabHovered]  = Faint;
+        c[(int)ImGuiCol.ScrollbarGrabActive]   = Accent;
 
         // ImGui.NET 1.90.8 predates the TabSelected/NavCursor renames — these are the old names.
-        c[(int)ImGuiCol.Tab]                   = BgTableHd;
-        c[(int)ImGuiCol.TabHovered]            = Alpha(AccentGreen, 0.22f);
-        c[(int)ImGuiCol.TabActive]             = NavActiveBg;
+        c[(int)ImGuiCol.Tab]                   = Raise;
+        c[(int)ImGuiCol.TabHovered]            = Alpha(Accent, 0.22f);
+        c[(int)ImGuiCol.TabActive]             = Tile;
 
-        c[(int)ImGuiCol.TableHeaderBg]         = BgTableHd;
-        c[(int)ImGuiCol.TableBorderStrong]     = Border;
-        c[(int)ImGuiCol.TableBorderLight]      = BgRowSep;
-        c[(int)ImGuiCol.TableRowBg]            = Alpha(BgCard, 0f);
-        c[(int)ImGuiCol.TableRowBgAlt]         = Alpha(BgCard, 0.4f);
+        c[(int)ImGuiCol.TableHeaderBg]         = Raise;
+        c[(int)ImGuiCol.TableBorderStrong]     = Line;
+        c[(int)ImGuiCol.TableBorderLight]      = Row;
+        c[(int)ImGuiCol.TableRowBg]            = Alpha(Panel, 0f);
+        c[(int)ImGuiCol.TableRowBgAlt]         = Alpha(Panel, 0.4f);
 
         // The gamepad focus ring is the ONLY cursor a Deck user has — there is no mouse pointer to
         // fall back on. Make it unmistakable: full-strength accent, thicker than ImGui's hairline.
-        c[(int)ImGuiCol.NavHighlight]          = AccentGreen;
-        c[(int)ImGuiCol.NavWindowingHighlight] = AccentGreen;
-        c[(int)ImGuiCol.NavWindowingDimBg]     = Alpha(BgGlobal, 0.6f);
-        c[(int)ImGuiCol.ModalWindowDimBg]      = Alpha(BgGlobal, 0.75f);
+        // "focus ring is 2px accent + 4px halo" — plan.md "Surfaces" table.
+        c[(int)ImGuiCol.NavHighlight]          = Accent;
+        c[(int)ImGuiCol.NavWindowingHighlight] = Accent;
+        c[(int)ImGuiCol.NavWindowingDimBg]     = Alpha(Ink, 0.6f);
+        c[(int)ImGuiCol.ModalWindowDimBg]      = Alpha(Ink, 0.75f);
     }
 }

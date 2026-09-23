@@ -481,6 +481,31 @@ public sealed class AgentConfig
         if (guard is null) return;
         var onDisk = ReadOnDisk();
         if (onDisk is null) return;
+        AdoptGameMembership(onDisk);
+    }
+
+    /// <summary>
+    /// <see cref="RefreshGameList"/> and the appearance half of the same idea from one read of the
+    /// file, for the Deck UI's poll. <see cref="ApplyConsoleAppearance"/> and
+    /// <see cref="SetAppearance"/> are what actually change the look, both writing through
+    /// <see cref="UpdateSettings"/> — but <c>savelocker ui</c> is a separate, long-lived process from
+    /// the daemon that applies a pushed heartbeat look, so it loaded its copy once at start and never
+    /// sees a change until something re-reads the file. Best-effort and non-blocking for the same
+    /// reasons as <see cref="RefreshGameList"/>: a missed poll costs nothing but the next tick. A
+    /// changed effective look raises <see cref="AppearanceChanged"/>.
+    /// </summary>
+    public void RefreshFromDisk()
+    {
+        using var guard = AgentStateLock.TryAcquire("config", StateDir, TimeSpan.Zero);
+        if (guard is null) return;
+        var onDisk = ReadOnDisk();
+        if (onDisk is null) return;
+        AdoptGameMembership(onDisk);
+        AdoptAppearance(onDisk);
+    }
+
+    private void AdoptGameMembership(AgentConfig onDisk)
+    {
         var diskIds = onDisk.Games.Select(g => g.GameId).ToHashSet();
         if (diskIds.SetEquals(Games.Select(g => g.GameId))) return;
         MutateGames(list =>
@@ -489,6 +514,16 @@ public sealed class AgentConfig
             var now = list.Select(g => g.GameId).ToHashSet();
             list.AddRange(onDisk.Games.Where(g => !now.Contains(g.GameId)));
         });
+    }
+
+    private void AdoptAppearance(AgentConfig onDisk)
+    {
+        var before = EffectiveAppearance;
+        FollowConsoleAppearance = onDisk.FollowConsoleAppearance;
+        ConsoleAppearance = onDisk.ConsoleAppearance;
+        ConsoleAppearanceAt = onDisk.ConsoleAppearanceAt;
+        LocalAppearance = onDisk.LocalAppearance;
+        RaiseIfEffectiveChanged(before);
     }
 
     /// <summary>

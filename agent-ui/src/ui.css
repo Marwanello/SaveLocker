@@ -209,7 +209,7 @@ button:disabled { cursor: default; }
 
 .sl-row {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 12px; row-gap: 3px;
-  align-items: center; width: 100%; text-align: left; padding: 10px 12px; color: inherit;
+  align-items: center; width: 100%; text-align: left; padding: 10px 12px; color: inherit; font: inherit;
   background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 12px;
   transition: transform .15s var(--ease), background-color .15s var(--ease);
 }
@@ -235,7 +235,7 @@ button:disabled { cursor: default; }
 .sl-list { display: flex; flex-direction: column; gap: 8px; }
 .sl-wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 14px; }
 .sl-tile {
-  display: flex; flex-direction: column; gap: 8px; text-align: left; color: inherit; cursor: pointer; background: none; border: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 8px; text-align: left; color: inherit; font: inherit; cursor: pointer; background: none; border: 0; padding: 0;
   transition: transform .15s var(--ease);
 }
 .sl-tile:hover { transform: translateY(-2px); }

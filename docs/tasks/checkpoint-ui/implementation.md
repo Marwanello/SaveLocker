@@ -7,7 +7,7 @@ Read [[plan]] first for tokens, type, motion and the colour rule, and
 [[implementation-grouping]] before starting any phase — it regroups the list below **by surface**
 rather than by phase number, because several phases edit the same components.
 
-## Status (updated 2026-09-20)
+## Status (updated 2026-09-22)
 
 | Phase | Status |
 |---|---|
@@ -15,9 +15,9 @@ rather than by phase number, because several phases edit the same components.
 | 1 — Design system foundation, agent half | ✅ Shipped 2026-09-20 (Group 3) — `tokens.css`, `ui.css`, Archivo, `components/ui/` |
 | 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in moved to revocable sessions 2026-09-20 |
 | 3 — Sync all and progress | ✅ Items 1, 2, 4 shipped 2026-09-18 (Group 2 — console side); item 3 (agent Sync all + progress) shipped 2026-09-20 (Group 3); item 5 (per-game Sync this game) ✅ shipped 2026-09-21 (Group 4) with the game page and a new per-game agent route |
-| 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5), except item 4 — the Deck's accent ➡️ Group 6, which owns the token split it needs. The theme default now follows the OS (every hex colour left the views first). See `implementation-grouping.md` → Group 5 |
+| 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5); item 4 — the Deck's accent ➡️ shipped 2026-09-22 (Group 6). The theme default now follows the OS (every hex colour left the views first). See `implementation-grouping.md` → Groups 5/6 |
 | 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
-| 6 — Deck and Wayland | ⏳ Not started (Group 6); the Wayland item (6.4) still needs the open decision below made first |
+| 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22 (Group 6) — verified live (real screenshots, pixel-sampled colours, `--nav`-scripted L1/R1 with `--nav-debug`) since `savelocker ui` runs on this Windows box without WSLg; a real focus-timing bug was found and fixed this way — see `implementation-grouping.md` → Group 6. No real Deck/gamescope pass yet. Item 4 (Wayland, 6.4) still needs the open decision below made first |
 | 7 — OS notifications | ⏳ Not started (Group 7) |
 | 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1) — see the note under Phase 8 below |
 
@@ -210,7 +210,7 @@ The largest genuinely-new piece.
    loads `config.json` once and never reloads it, so without one the Deck's accent only follows the console after a restart. An
    earlier `RefreshAppearance()` (adopt what is on disk, `AgentStateLock.TryAcquire` with a zero timeout because it runs from the
    render loop, raise `AppearanceChanged` when the effective look moved) was removed in the PR #47 review: nothing called it and
-   nothing tested it, and the Deck cannot consume the look until this group. Write it with its caller and a test.
+   nothing tested it, and the Deck cannot consume the look until this group. Write it with its caller and a test. **Done in Group 6:** `AgentConfig.RefreshFromDisk()` (the game list and the look from one read of the file), with `tests/SaveLocker.Agent.Tests/AgentConfigRefreshTests.cs`.
 5. ✅ **Shipped, except the Deck header (Group 6).** App icon choice changes the favicon (`web/index.html` link swap), the tray icon
    (`src/Agent/AppResources.cs`, needs all three marks as embedded `.ico`), and the Deck header. — The favicon is redrawn in
    place (a data URL of the mark on an accent tile); the tray **and window** icons are drawn at runtime (`Agent/MarkIcon.cs`),
@@ -231,13 +231,21 @@ The largest genuinely-new piece.
 
 ---
 
-### Phase 6 — Deck and Wayland
+### Phase 6 — Deck and Wayland — ✅ Items 1-3 shipped 2026-09-22 (Group 6); item 4 still open
 
-1. `src/Agent.Linux/Ui/Theme.cs` — Checkpoint dark tokens, 2px accent focus ring plus the 4px halo,
-   62px rows, 16px minimum body text.
-2. Two-line rows in `Widgets.cs`; the button legend along the bottom (A Select · B Back · Y Sync now ·
-   L1/R1 Switch section · ☰ Steam menu).
-3. **Sync all in the Deck header**, bound to Y, using the existing sync path.
+1. ✅ `src/Agent.Linux/Ui/Theme.cs` — Checkpoint dark tokens, 2px accent focus ring plus the 4px halo,
+   62px rows, 16px minimum body text. Shipped as the `Safe`/`Accent` split Group 5 flagged (`Accent` is
+   dynamic, sourced from `AppearancePalette` via a new `AgentConfig.RefreshFromDisk()`; `Safe`/`Watch`
+   are fixed). The font face is Archivo + JetBrains Mono, matching the console and agent-ui (Archivo
+   embedded 2026-09-23, once the two static TTFs were supplied; Inter is gone).
+2. ✅ Two-line rows in `Widgets.cs`; the button legend along the bottom (A Select · B Back · Y Sync now ·
+   L1/R1 Switch section · ☰ Steam menu). Shipped: `ListRow`'s two-line height is now a fixed 62px
+   constant, the rail widened to 236px, and the legend gained the three new entries via a new
+   `Widgets.GamepadHintWide` and `Icons.Menu`.
+3. ✅ **Sync all in the Deck header**, bound to Y, using the existing sync path. Shipped: a visible
+   primary button in the header (new `Icons.Sync` glyph) plus a global Y/L1/R1 gamepad binding
+   (`HandleGlobalGamepadActions`) — Y triggers the same `SyncNowAsync()` the header button and the
+   Overview's own "Sync now" share, L1/R1 step through the rail's screens in order.
 4. Wayland desktop session: the agent window currently has no native chrome of its own. Either host
    the existing web UI in a small GTK/WebKit window with a header bar, or accept the browser. Decide
    before building — this is the one item in the plan with no obvious right answer.
@@ -274,7 +282,7 @@ Ship the three marks and the Steam art from the prototype as real files:
 | Favicon | SVG (scales) | `web/public/favicon.svg`, linked ahead of the existing PNG fallbacks in `web/index.html` | ✅ Shipped — Pixel lock, monochrome per brand-kit's own "no punch, one colour" rule for a tray-like context, on the Ember accent tile |
 | Favicon | 32 / 180 PNG | `web/public/` | ⏳ Not done — the existing pre-Checkpoint PNGs are untouched; this environment has no SVG rasterizer (`magick`/`inkscape`/`rsvg-convert` all absent, confirmed) |
 | Tray icon | 16/24/32/48 `.ico` | `src/Agent/AppResources.cs` | ✅ Shipped 2026-09-21 (Group 5) **differently**: drawn at runtime from the chosen mark and accent (`src/Agent/MarkIcon.cs`, GDI+, transparent punch-outs, light/dark taskbar aware, at the shell's own icon size) — so it needs no `.ico` and follows the Appearance setting. The packaged `SaveLocker.ico` remains the installer/exe icon and the fallback. Not reacting to a Windows taskbar-theme change while running ([[Backlog]]) |
-| Deck tile | 256 | `src/Agent.Linux/Ui/Art.cs` | ⏳ Not done — same rasterization gap; consumed by Group 6 |
+| Deck tile | 256 | `src/Agent.Linux/Ui/Art.cs` | ❌ Dropped 2026-09-23 — the Deck header draws the live mark as vectors (`Ui/AppMark.cs`), so there is no raster to ship; `Art.cs` and `logo-96.png` are deleted |
 | Library capsule | 600×900 | `store/` | ⏳ Not done |
 | Wide capsule | 1920×620 | `store/` | ⏳ Not done |
 | Header capsule | 460×215 | `store/` | ⏳ Not done |

@@ -1278,6 +1278,145 @@ that saw the dark console before will see light now, and can pin it); the brand 
 <br>**Next action:** Group 6 (Deck — its token split is what also unlocks the Deck's accent) or Group 7 (notifications).
 The Backlog → *Appearance follow-ups* carries the five small leftovers.
 
+**Checkpoint UI redesign, Group 6 shipped (2026-09-22, branch `claude/group-6-ui-redesign-6d9b06`, no PR yet).**
+Phase 6 items 1-3, the Deck (`savelocker ui`, Game Mode). `Ui/Theme.cs` now carries the literal Checkpoint
+dark palette from `web/src/index.css`, and — the actual work — the old `AccentGreen`, which had been the
+interaction accent *and* "healthy" at once, is split into a fixed `Safe`/`Watch` (never swapped by an accent
+choice) and a dynamic `Accent` (from `AppearancePalette`, applied via a new `Theme.SetAccent`). Every one of
+the ~40 call sites was checked against the shipped web/agent-ui component it mirrors rather than guessed —
+`Chip.tsx`'s own `ok`/`warn`/`crit` doc comment turned out to already be the exact framework in use, and
+`agent-ui/src/ui.css`'s `.sl-nav[aria-current]` comment ("is NOT the accent... that colour is reserved for
+'a decision is waiting'") caught the same mistake in the Deck's rail that Group 3 had already corrected on
+the web — the current-screen indicator is now a neutral tile, never the accent. A new
+`AgentConfig.RefreshAppearance()` (mirrors `RefreshGameList()`; renamed `RefreshFromDisk()` and given a test in the PR #49 review, below) is what Group 5's write-up named as the
+missing piece — `savelocker ui` is a separate, long-lived process from the daemon that applies a pushed
+console look, so it polls the setting off disk every 5s and repaints on change. **Also shipped:** `ListRow`'s
+two-line rows are now a fixed 62px (was computed from whichever font baked), the rail widened to 236px, and
+the button legend gained "Y Sync now", "L1 / R1 Switch section" and "☰ Steam menu" (a new
+`Widgets.GamepadHintWide` and `Icons.Menu` glyph — the literal ☰ character is outside the embedded font's
+atlas, same trap as every other non-ASCII character in this file). The header gained a real, visible
+**Sync all** primary button (new `Icons.Sync` glyph) plus a global Y/L1/R1 gamepad binding
+(`HandleGlobalGamepadActions`) — Y fires the same `SyncNowAsync()` the header button and the Overview's own
+"Sync now" already share; L1/R1 step through the rail's screens in order.
+<br>**Verified live, not just by build** — `savelocker ui --screenshot`/`--nav`/`--gallery` turned out to
+actually run on this Windows box (SDL/GL resolved without WSLg). A pixel-level scan of a real
+`--gallery` screenshot confirmed the Primary button is exactly `E0533C`/`160F0E` (Accent/OnAccent), the
+Danger button and warning badges are exactly `D9A63F` (Watch), and the stat tile is exactly `7FA96A`
+(Safe) — not eyeballed. **A real focus-timing bug was found and fixed this way, not by inspection**:
+`--nav r1,r1,r1` with `--nav-debug` showed the SCREEN switching correctly but the gamepad focus RING
+staying behind on the old rail entry — `RequestFocus` was being called from inside `DrawRail`, one
+step too early in the frame relative to `Widgets.AgeFocusRequest()`, so the request always aged to 0
+before the next frame could serve it. Fixed by deferring it into `HandleGlobalGamepadActions` (which
+runs after that frame's `AgeFocusRequest`); re-verified with the same script — the ring now lands
+exactly on the target rail entry, 5×R1 wraps back to Overview, 2×L1 steps backward correctly.
+`ParseNavScript` gained `y`/`l1`/`r1` tokens to make this reproducible.
+<br>**Still not run** — a real Deck or gamescope's actual input path (this used a synthetic `--nav`
+script, not a physical controller), and the accent actually repainting from a real pushed console look
+(this environment's scratch runs had nothing pushing one). The gap that's left is genuinely smaller
+than "needs a WSLg pass" — it's specifically "needs a physical controller and a live console."
+<br>**Deliberately not built:** Phase 6 item 4 (the Wayland desktop window) — the plan's own "open decision,
+blocking nothing yet," untouched here. Archivo was not swapped in for the Deck's fonts (still Inter +
+JetBrains Mono) — no Archivo TTFs to embed in this environment, the same asset gap Group 1 hit for PNG/ICO
+rasterization; flagged in `Theme.cs`'s own font-section comment rather than left unexplained.
+<br>**Follow-up (2026-09-22, same day) — two more bugs caught by eye, not by inspection.** The header's
+`Icons.Sync` glyph had its arrowhead hand-picked at the wrong angle — roughly a third of the way around
+the circle from where the arc it caps actually ends — so the "Sync all" button showed a near-full ring
+with a triangle stuck to its side instead of a refresh icon. Rewritten as a shared `ArcWithArrow` helper
+that computes the tip and its tangent from the same end angle the arc is drawn to, so the two can't drift
+apart again. Separately, the mark in the header's top-left corner was still `logo-96.png` — a fixed-colour
+raster of the pre-Checkpoint brand, baked long before this redesign and never touched by Group 6, so it
+neither matched the new palette nor moved when the accent changed. Replaced with a new `AppMark.cs` that
+draws whichever mark `EffectiveAppearance.Mark` names (Pixel lock, Cartridge or Memory card) straight into
+the draw list in `Theme.Accent`/`Theme.OnAccent` — the same 32-unit geometry as `web/src/appearance.ts`'s
+`MARKS` and `src/Agent/MarkIcon.cs` (the Windows tray icon), and the same accent/no-tile rule
+`agent-ui/src/App.tsx`'s own topbar draws `<Mark/>` with. `Art.cs` (which existed solely to load that one
+PNG) and its embedded resource are gone. All three marks and several accents were pixel-checked via a
+scratch `SAVELOCKER_STATE_ROOT` config with `FollowConsoleAppearance: false` — this also closes the "does
+the accent actually repaint from a pushed look" half of the gap above, short of a real console push.
+Archivo still was not swapped in — still no TTFs to embed in this environment; the user offered to supply
+them, and was told exactly what's needed: `Archivo-Regular.ttf` and `Archivo-SemiBold.ttf` (the same two
+weights `Ui/Fonts/Inter-*.ttf` already provides) dropped in `src/Agent.Linux/Ui/Fonts/`, at which point
+`Theme.cs`'s `RegularResource`/`SemiBoldResource` constants and the `.csproj`'s embedded-resource block are
+a small, mechanical swap.
+<br>**Second follow-up (2026-09-22, still the same day) — the Sync icon fix above was still wrong, and a
+real bug turned up on another surface entirely.** The user tested the first follow-up through the
+`SAVELOCKER_STATE_ROOT` recipe (below) against a live, interactive window, not a screenshot, and the Sync
+icon still looked broken — a muddled blob, not two arrows. The screenshot-based check that had "confirmed"
+the earlier fix used `--screenshot`'s fixed size, which happened to render the icon larger than its real
+~18px button size; at the real size, the two arcs' circles (offset by less than their own diameter, closer
+to lucide's actual two-circle geometry) overlapped enough that their strokes crossed through the shared
+middle and read as a blob rather than two arrows. Redrawn as a single circle with two 140° arcs on opposite
+sides — one circle can't self-overlap — verified this time at the real 1280×800 default size, not an
+inflated one. Separately, the user reported agent-ui's Games tab showing game names in the system font
+instead of Archivo. `Row`/`.sl-row` and the grid `.sl-tile` both render as a real `<button>` when clickable
+(every tracked-game row is), and browsers don't inherit `font-family` into form controls by default —
+every *other* interactive element in `agent-ui/src/ui.css` (`.sl-btn`, `.sl-nav`, `.sl-search`, `.sl-seg
+button`) already carries an explicit `font: inherit` to counter exactly that, but `.sl-row` and `.sl-tile`
+were missed when they were built. The web console never had this bug: Tailwind's Preflight resets
+`font-family: inherit` on form elements globally, and agent-ui has no such reset since it isn't
+Tailwind-based. Fixed by adding `font: inherit` to both rules; verified live in the agent-ui dev server —
+`getComputedStyle` on a game name now reports `Archivo, system-ui, sans-serif` in both List and Grid mode,
+and `document.fonts.check('600 13px Archivo')` is `true`.
+<br>**Third follow-up (2026-09-23) — stopped hand-guessing curved icons; ported them from lucide's own
+path data instead.** The user asked why the Deck UI doesn't just reuse the same icon pack as the agent
+and console, pointing out that every hand-drawn icon here "is created from scratch and looks bad" — a
+fair read of the pattern: `Icons.Cloud` had failed twice and `Icons.Sync` twice more, each time because
+the shape was eyeballed rather than copied from the real geometry. `Icons.cs`'s own doc comment already
+explained *why* there's no image atlas (crisp at any size, no rasteriser, no asset in the tarball) — that
+part was sound — but nothing was stopping the actual coordinates from coming from lucide's real path data
+instead of memory. They do now: a new `SvgPath.cs` is a ~100-line M/L/H/V/A/Z tessellator (arcs
+specialised to the rx==ry, no-rotation case, which is every arc lucide's icons use — the general
+endpoint-to-centre formula is SVG 1.1 spec appendix F.6.5), and `Icons.Cloud`, `Icons.Sync` and half of
+`Icons.GitBranch` now stroke the literal `d` string copied out of
+`agent-ui/node_modules/lucide-react/dist/esm/icons/*.js` (v0.511.0) instead of a hand-picked polygon or
+arc. `Icons.Sync`'s bespoke `ArcWithArrow` helper (the piece that was wrong both prior times) is gone
+entirely — lucide's own refresh-cw draws its arrowhead as a plain two-segment corner, not a filled
+triangle, and that shape now comes along for free as part of the same path string. Straight-edged icons
+(rects, lines, plain circles — Monitor, Plus, Menu, Cpu, Server, the chevrons, etc.) were left as
+hand-authored primitives; porting a shape that's already three lines would be pure overhead, and none of
+those have ever been the buggy ones. Verified against a live `--screenshot` at the real 1280×800 default
+size (Sync in the header pill, GitBranch in the Conflicts rail item) and against `--gallery` at
+1280×1500 (Cloud, which needs an actual conflict on screen to reach any other way) — all three read as
+clean, closed outlines with no dents or crossed strokes. Separately, the user's screenshot also showed the button-legend labels
+sitting visibly low against their glyph badges (A/B/Y circles, the L1/R1 pill, the Steam-menu bars).
+`Widgets.HintLabel` was calling `ImGui.AlignTextToFramePadding()` before the label, which offsets the
+next text's baseline to match a *framed* widget's taller box — but the glyphs above are centred on a
+plain `lineH`-tall box (`GamepadHint`'s `centre = pos + (r, lineH/2)`), not a framed one, so the call was
+pushing every label down by `FramePadding.y` past its own glyph's centre. Removed; the label now centres
+in the same box the glyph does.
+<br>**Fourth follow-up, same day — the Deck's font gap closed.** The user supplied
+`Archivo-Regular.ttf`/`Archivo-SemiBold.ttf` (dropped at the worktree root, not yet in
+`src/Agent.Linux/Ui/Fonts/`). Moved into place alongside a fetched `Archivo-OFL.txt` (the real SIL OFL
+1.1 text, from `google/fonts`'s own repo, matching the licence-file-per-font convention
+`Inter-LICENSE.txt`/`JetBrainsMono-OFL.txt` already set), then the swap `Theme.cs`'s own comment called
+"small and mechanical" actually was: `RegularResource`/`SemiBoldResource` now point at the Archivo
+resources, the `.csproj`'s `EmbeddedResource` entries and size comment updated to match (~500 KB, down
+from Inter's ~1.05 MB), and the now-fully-unused `Inter-Regular.ttf`/`Inter-SemiBold.ttf`/
+`Inter-LICENSE.txt` deleted — nothing else in the repo referenced them. `Gallery.cs`'s own
+"Inter + JetBrains Mono baked." status line would have quietly kept lying otherwise; now reads
+"Archivo + JetBrains Mono baked." Verified live, not just by build: a `--gallery` screenshot shows that
+exact line (confirming `Theme.FontsLoaded` is `true`, not silently falling back to ImGui's bitmap font),
+and the Overview screen's body text visibly changed face. The Deck now matches the console and agent-ui
+on every surface Checkpoint specifies a typeface for.
+<br>**PR #49 reviewed, every finding fixed (2026-09-23, branch `group-6-ui-redesign`).** Thirteen findings; full
+write-up in `tasks/checkpoint-ui/implementation-grouping.md` -> Group 6 -> *Review fixes*. The ones that mattered:
+(1) **Sync all was silent off the Overview** - the header button and Y start it from every screen but the result
+was read only on the Overview, so a failure on Conflicts/Settings showed nothing; it is now collected once per
+frame and shown in the header. (2) **`SvgPath` silently mis-drew what it claimed to reject** (curve commands
+dropped, a second `M` discarding the first subpath, compact arc flags mis-read) - rewritten as a pure, cached,
+unit-tested flattener that throws. (3) `RefreshAppearance()` had shipped without a test, against
+`implementation.md`'s own rule; it is now `RefreshFromDisk()` with `AgentConfigRefreshTests`. (4)
+`run-appearance-consistency-tests` now guards `Theme.cs`'s tokens and both C# mark ports too. Also: the header's
+right-hand cluster is on the header's centre line (**8 px lower** than first shipped), content text moved from
+`Faint` to `Dim`, doc drift fixed. **Verified** under WSLg against the test rig with real `--nav` presses and
+a real Sync all round trip (success and failure); `dotnet test` 43/43 (11 before), consistency test 28/28.
+**Not verified:** a real Deck with a physical controller. **Left for the maintainer:** whether the legend's "Steam
+menu" should use the Steam button's logo rather than the three-bar Menu glyph, and whether 13 px `Caption` text
+satisfies "16 px minimum body text".<br>**Next action:** a real Deck (or a box with a physical gamepad) to exercise the Y/L1/R1 bindings
+through an actual controller, or Group 7 (OS notifications) if that hardware access isn't available
+first. The Wayland decision (Phase 6 item 4) is still open and needs deciding before any code is written
+for it.
+
 ---
 
 ## Where things stand

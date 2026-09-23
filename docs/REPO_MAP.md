@@ -165,8 +165,13 @@ SaveLocker/
 │           ├── ImGuiInternal.cs         # Direct [DllImport("cimgui")] to the internal API ImGui.NET's
 │           │                            #   binding omits. THE nav fix — do not "solve" it by
 │           │                            #   upgrading the package (Gotchas)
-│           ├── Icons.cs                 # lucide-equivalent glyphs as vector paths — no atlas
-│           ├── Art.cs                   # Embedded images decoded + uploaded as GL textures
+│           ├── Icons.cs                 # lucide-equivalent glyphs as vector paths — no atlas; curved
+│           │                            #   ones traced from lucide's own d= via SvgPath, not guessed
+│           ├── SvgPath.cs               # Pure d= flattener (M/L/H/V/A/Z, circular arcs), cached per
+│           │                            #   string; throws on anything it cannot draw faithfully.
+│           │                            #   Unit-tested from tests/SaveLocker.Agent.Tests (linked in)
+│           ├── AppMark.cs               # The header's app mark (Pixel lock / Cartridge / Memory card)
+│           │                            #   in the live accent — the Deck's port of MarkIcon.cs's shapes
 │           ├── Sound.cs                 # Interface sounds — a console UI that answers silently
 │           │                            #   feels inert
 │           ├── Wav.cs                   # Minimal RIFF/WAVE reader (loads SteamOS's own UI sounds)
@@ -175,7 +180,7 @@ SaveLocker/
 │           ├── Screenshot.cs            # `ui --screenshot`: framebuffer → PNG, hand-rolled encoder
 │           ├── SettingsScreen.cs        # Settings: read-only connection, settle stepper,
 │           │                             #   autostart toggle, remove tracked games
-│           └── Fonts/                   # Inter + JetBrains Mono (embedded, SIL OFL)
+│           └── Fonts/                   # Archivo (400/600, static) + JetBrains Mono (embedded, SIL OFL)
 │
 ├── web/                                 # React admin dashboard
 │   │                                   # Stack: Vite 8, React 19, TypeScript, Tailwind v4
@@ -283,9 +288,12 @@ SaveLocker/
 │   ├── sgdb-stub.py                    # A stand-in SteamGridDB for trying art BY HAND (any key works):
 │   │                                   #   `testenv up -Only console -ConsoleEnv …` points the console
 │   │                                   #   container at it. Build and Run → "Testing artwork"
+│   ├── SaveLocker.Agent.Tests/         # The one xUnit project (`dotnet test`, not in CI): PlayniteLibrary's LiteDB
+│   │                                   #   fixture, the OpenAPI sorter, and SvgPath (its source is linked in)
 │   ├── run-appearance-consistency-tests.ps1 # Source-only drift check (~1 s): the accent table in four places, the id
-│   │                                   #   lists the server validates, mark geometry vs the SVGs, the two token files,
-│   │                                   #   the OS-following theme rule, and NO #hex in any view
+│   │                                   #   lists the server validates, mark geometry vs the SVGs AND vs the two C# ports
+│   │                                   #   (MarkIcon.cs, AppMark.cs), the token files AND the Deck's Theme.cs, the
+│   │                                   #   OS-following theme rule, and NO #hex in any view
 │   ├── run-delta-upload-tests.ps1      # Per-file delta upload: self-healing baseline, byte-exact
 │   │                                   #   reconstruction across a full+full+delta chain, deletion,
 │   │                                   #   the size/count floor, a diverged push staying full, and a

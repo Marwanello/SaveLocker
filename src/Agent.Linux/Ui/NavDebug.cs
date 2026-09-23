@@ -120,16 +120,16 @@ static class NavDebug
 
         var lines = new List<(string Label, string Value, Vector4 Colour)>
         {
-            ("key",     _keys.Length > 0 ? _keys : "-",                       Theme.TextPrimary),
-            ("screen",  frame.Screen,                                          Theme.TextMuted),
-            ("zone",    frame.Zone,                                            Theme.AccentGreen),
+            ("key",     _keys.Length > 0 ? _keys : "-",                       Theme.Fg),
+            ("screen",  frame.Screen,                                          Theme.Dim),
+            ("zone",    frame.Zone,                                            Theme.Safe),
             ("focus",   _seenThisFrame
                             ? $"{Describe(_focusedLabel)}  0x{_focusedId:X8}"
                             : imguiHasItem ? "<uninstrumented item>" : "<NO ITEM>",
-                        _seenThisFrame ? Theme.TextPrimary : Theme.AccentAmber),
-            ("window",  _seenThisFrame ? _focusedScope : "-",                  Theme.TextMuted),
+                        _seenThisFrame ? Theme.Fg : Theme.Watch),
+            ("window",  _seenThisFrame ? _focusedScope : "-",                  Theme.Dim),
             ("container", _container.Length > 0 ? _container + "  <- CURSOR ON PANE" : "-",
-                        _container.Length > 0 ? Theme.AccentAmber : Theme.TextDim),
+                        _container.Length > 0 ? Theme.Watch : Theme.Faint),
         };
 
         if (Widgets.FocusRequestFrames > 0)
@@ -138,11 +138,11 @@ static class NavDebug
             lines.Add(("request",
                 $"0x{Widgets.FocusTargetId:X8}  {Widgets.FocusRequestFrames} frames left" +
                 (landed ? "  LANDED" : ""),
-                landed ? Theme.AccentGreen : Theme.AccentAmber));
+                landed ? Theme.Safe : Theme.Watch));
         }
         else
         {
-            lines.Add(("request", "none", Theme.TextDim));
+            lines.Add(("request", "none", Theme.Faint));
         }
 
         // The rail's NoNav gate is suspended while a request is armed, which is what lets a Down
@@ -151,14 +151,14 @@ static class NavDebug
         lines.Add(("gate", Widgets.FocusRequestFrames > 0
             ? "BOTH PANES NAVIGABLE (request armed)"
             : "one pane navigable",
-            Widgets.FocusRequestFrames > 0 ? Theme.AccentAmber : Theme.TextDim));
+            Widgets.FocusRequestFrames > 0 ? Theme.Watch : Theme.Faint));
 
         lines.Add(("nav api", ImGuiInternal.Available ? "cimgui internal" : "fallback",
-            ImGuiInternal.Available ? Theme.AccentGreen : Theme.AccentAmber));
-        lines.Add(("rail id", $"0x{frame.ActiveRailId:X8}", Theme.TextDim));
-        lines.Add(("best content", $"0x{frame.BestContentId:X8}", Theme.TextDim));
+            ImGuiInternal.Available ? Theme.Safe : Theme.Watch));
+        lines.Add(("rail id", $"0x{frame.ActiveRailId:X8}", Theme.Faint));
+        lines.Add(("best content", $"0x{frame.BestContentId:X8}", Theme.Faint));
         if (frame.PendingCrossFrames > 0)
-            lines.Add(("pending cross", $"{frame.PendingCrossFrames} frames", Theme.AccentAmber));
+            lines.Add(("pending cross", $"{frame.PendingCrossFrames} frames", Theme.Watch));
 
         var dl = ImGui.GetForegroundDrawList();
         var font = Theme.Mono;
@@ -178,24 +178,24 @@ static class NavDebug
         uint Col(Vector4 c) => ImGui.ColorConvertFloat4ToU32(c);
 
         dl.AddRectFilled(origin, origin + new Vector2(width, height),
-            Col(Theme.Alpha(Theme.BgGlobal, 0.92f)), Theme.Rounding.Card);
+            Col(Theme.Alpha(Theme.Ink, 0.92f)), Theme.Rounding.Card);
         dl.AddRect(origin, origin + new Vector2(width, height),
-            Col(Theme.AccentAmber), Theme.Rounding.Card, ImDrawFlags.None, 1f);
+            Col(Theme.Watch), Theme.Rounding.Card, ImDrawFlags.None, 1f);
 
         var y = origin.Y + pad;
         void Row(string label, string value, Vector4 colour)
         {
-            dl.AddText(font, fontSize, new Vector2(origin.X + pad, y), Col(Theme.TextDim), label);
+            dl.AddText(font, fontSize, new Vector2(origin.X + pad, y), Col(Theme.Faint), label);
             dl.AddText(font, fontSize, new Vector2(origin.X + pad + labelW, y), Col(colour), value);
             y += lineH;
         }
 
-        Row("NAV DEBUG", "--nav-debug", Theme.AccentAmber);
+        Row("NAV DEBUG", "--nav-debug", Theme.Watch);
         y += lineH * 0.4f;
         foreach (var (label, value, colour) in lines) Row(label, value, colour);
 
         y += lineH * 0.6f;
-        Row("trail", "key          item                   window", Theme.TextDim);
-        foreach (var entry in _trail) Row("", entry, Theme.TextMuted);
+        Row("trail", "key          item                   window", Theme.Faint);
+        foreach (var entry in _trail) Row("", entry, Theme.Dim);
     }
 }

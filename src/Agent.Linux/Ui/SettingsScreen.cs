@@ -47,7 +47,7 @@ sealed class SettingsScreen
     {
         EnsureLoaded();
 
-        Widgets.Text("Settings", Theme.TextPrimary, Theme.Title);
+        Widgets.Text("Settings", Theme.Fg, Theme.Title);
         Widgets.Gap(Theme.Space.Sm);
 
         Widgets.TwoColumn("settings", 0.5f, DrawLeft, DrawRight);
@@ -59,19 +59,19 @@ sealed class SettingsScreen
         InfoRow("Server", _config.ServerUrl ?? "-", mono: true);
         InfoRow("Machine", _config.MachineName ?? "-");
         InfoRow("Status", string.IsNullOrEmpty(_config.ApiKey) ? "Not enrolled" : "Enrolled",
-            colour: string.IsNullOrEmpty(_config.ApiKey) ? Theme.AccentAmber : Theme.AccentGreen);
+            colour: string.IsNullOrEmpty(_config.ApiKey) ? Theme.Watch : Theme.Safe);
 
         Widgets.Gap(Theme.Space.Sm);
         Widgets.TextWrapped(
             "These are set during enrolment. Game Mode has no keyboard, so change them from Desktop "
             + "Mode with  savelocker set-server  or in the web console.",
-            Theme.TextDim, Theme.Caption);
+            Theme.Dim, Theme.Caption);
 
         Widgets.SectionHeader("Sync safety");
         Widgets.TextWrapped(
             "How long SaveLocker waits for a game to stop writing before it uploads a save. "
             + "Raise it if a game flushes slowly on exit.",
-            Theme.TextMuted, Theme.Caption);
+            Theme.Dim, Theme.Caption);
         Widgets.Gap(Theme.Space.Sm);
 
         if (Widgets.Stepper("seconds", ref _settleSeconds, 0, 120, 1))
@@ -115,7 +115,7 @@ sealed class SettingsScreen
                 ? $"Navigation and selection feedback. Source: {Sound.Source}."
                 : $"Unavailable on this machine ({Sound.Unavailable ?? "audio not started"}), "
                   + "so nothing will play.",
-            Theme.TextDim, Theme.Caption);
+            Theme.Dim, Theme.Caption);
 
         Widgets.SectionHeader("Startup");
         var was = _autoStartOn;
@@ -137,12 +137,12 @@ sealed class SettingsScreen
             }
         }
         Widgets.TextWrapped("Runs the sync daemon in the background via a systemd --user unit.",
-            Theme.TextDim, Theme.Caption);
+            Theme.Dim, Theme.Caption);
 
         if (!string.IsNullOrEmpty(_status))
         {
             Widgets.Gap(Theme.Space.Md);
-            Widgets.Text(_status, Theme.AccentGreen, Theme.Caption);
+            Widgets.Text(_status, Theme.Safe, Theme.Caption);
         }
     }
 
@@ -152,7 +152,7 @@ sealed class SettingsScreen
 
         if (_config.Games.Count == 0)
         {
-            Widgets.Text("No games tracked yet.", Theme.TextMuted);
+            Widgets.Text("No games tracked yet.", Theme.Dim);
             return;
         }
 
@@ -176,7 +176,7 @@ sealed class SettingsScreen
                     missing ? "No save folder set" : g.SaveDirectory,
                     missing ? Icons.AlertTriangle : Icons.Folder,
                     trailing: marked ? "will be removed" : null,
-                    trailingColour: marked ? Theme.AccentAmber : null,
+                    trailingColour: marked ? Theme.Watch : null,
                     chevron: false,
                     selected: marked))
             {
@@ -215,14 +215,14 @@ sealed class SettingsScreen
             ImGui.SameLine(0, Theme.Space.Md);
             ImGui.AlignTextToFramePadding();
             Widgets.Text("Stops syncing here. Saves already on the server are kept.",
-                Theme.TextMuted, Theme.Caption);
+                Theme.Dim, Theme.Caption);
         }
     }
 
     private static void InfoRow(string label, string value, bool mono = false, Vector4? colour = null)
     {
-        Widgets.Text(label, Theme.TextMuted, Theme.Caption);
+        Widgets.Text(label, Theme.Dim, Theme.Caption);
         ImGui.SameLine(96f);
-        Widgets.Text(value, colour ?? Theme.TextPrimary, mono ? Theme.Mono : Theme.Body);
+        Widgets.Text(value, colour ?? Theme.Fg, mono ? Theme.Mono : Theme.Body);
     }
 }

@@ -313,6 +313,11 @@ behave in ways that look like bugs.
   reports `SdlPlatform - not applicable`, which reads like "no display" but means the native
   `libSDL2` never got mapped into `deps.json`. `tests/linux/run-ui-wslg.sh` already does this.
   Releases (self-contained publish) are unaffected.
+- **Drive WSL from PowerShell with a script FILE, not an inline `bash -lc '...'`.** Git Bash rewrites a
+  `/mnt/c/...` argument into `C:/Program Files/Git/mnt/c/...` before `wsl` sees it, and an inline command
+  containing `$PATH` or `$HOME` is expanded by WSL's OUTER shell first - which inlines the Windows PATH,
+  parentheses and all (`Program Files (x86)`), and dies with `syntax error near unexpected token '('`. Write the
+  script with LF endings, then `wsl -d Ubuntu -- bash /mnt/c/.../script.sh` from a PowerShell tool.
 
 ## Web console
 - **An UNLAYERED CSS rule beats every Tailwind utility, whatever its specificity.** Tailwind v4 puts
@@ -616,6 +621,13 @@ behave in ways that look like bugs.
   naively, the harness itself looks like frantic mouse movement and claims the cursor — the test
   measures the harness, not the code. `--pointer` skips the movement test entirely for this reason.
 
+- **`SameLine` snaps the next item back to the previous line's TOP.** A `SetCursorPosY` holds only for the first
+  item drawn after it: everything after a `SameLine` returns to the previous line's Y, so a row built as
+  `SameLine` + `SetCursorPosY` + item + `SameLine` + item drifts as items come and go (the Deck header's Sync
+  all button moved 6 px when a message appeared beside it). `AlignTextToFramePadding` and the line's carried
+  text-baseline offset make it worse. For a row whose items must stay put, place each one with an explicit
+  `SetCursorPos(x, y)` on a shared centre line and no `SameLine` - `Widgets.MeasurePillButtonSize` /
+  `MeasureBadge` exist so the widths are known up front.
 ## Linux agent
 - **`Environment.ProcessPath` is the *dotnet host* under `dotnet savelocker.dll`.** Any code that
   answers "where am I installed?" must use `AppContext.BaseDirectory` instead. This is not

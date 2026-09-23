@@ -6,11 +6,11 @@ namespace SaveLocker.Agent.Linux.Ui;
 /// Minimal RIFF/WAVE reader, enough to load SteamOS's UI sounds and hand SDL exactly the format its
 /// device was opened with.
 ///
-/// Hand-rolled for the same reason <see cref="Screenshot"/>'s PCM-adjacent encoder and
-/// <see cref="Art"/>'s PNG decoder are: uncompressed WAV is a trivial, fully specified container,
-/// and pulling an audio library into a self-contained binary to read four short clips is a poor
-/// trade. SDL's own <c>SDL_LoadWAV</c> would work, but converting its output to the device spec
-/// means driving <c>SDL_AudioCVT</c> through pointer-heavy bindings — more fragile than this.
+/// Hand-rolled for the same reason <see cref="Screenshot"/>'s PCM-adjacent encoder is: uncompressed
+/// WAV is a trivial, fully specified container, and pulling an audio library into a self-contained
+/// binary to read four short clips is a poor trade. SDL's own <c>SDL_LoadWAV</c> would work, but
+/// converting its output to the device spec means driving <c>SDL_AudioCVT</c> through pointer-heavy
+/// bindings — more fragile than this.
 /// </summary>
 static class Wav
 {
