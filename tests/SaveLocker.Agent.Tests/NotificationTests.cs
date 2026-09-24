@@ -46,6 +46,8 @@ public class NoticeActionTests
     public void A_notice_with_no_action_has_no_link()
     {
         Assert.Null(NoticeAction.None.ToUrl("http://localhost:5178/"));
+        Assert.Null(NoticeAction.None.ToOpenUrl("http://localhost:5178/"));
+        Assert.Equal("http://localhost:5178/open?view=conflicts:queue", NoticeAction.Conflicts.ToOpenUrl("http://localhost:5178/"));
     }
 }
 

@@ -63,6 +63,10 @@ public sealed class AgentApiServer : IDisposable
     private readonly Func<TrackedGame, CancellationToken, Task> _postExitSync;
     // POST /api/games/{id}/sync — SyncEngine.SyncGameAsync, resolved the same way as the two above.
     private readonly Func<TrackedGame, GameSyncMode, CancellationToken, Task<string>> _syncGame;
+
+    // Raises the host's own window at a route: what a Windows toast button reaches through /open.
+    // Null on a host with no window of its own, where /open falls through to the browser UI.
+    private readonly Action<string>? _openView;
     // Per-game save-dir resolution for /api/candidates/lookup and /api/manifest/search (Phase 5).
     // Host-agnostic (its own Windows-only checks no-op cleanly on Linux), so it is taken directly
     // rather than through a delegate — unlike _doScan/_enroll, nothing here differs per host.
@@ -113,7 +117,8 @@ public sealed class AgentApiServer : IDisposable
         Func<Task<PlaynitePluginStatusDto>>? playnitePluginStatus = null,
         Func<Task<PlaynitePluginCardStatusDto>>? playnitePluginCardStatus = null,
         Func<Task<PlaynitePluginStatusDto>>? playnitePluginInstall = null,
-        Func<TrackedGame, GameSyncMode, CancellationToken, Task<string>>? syncGame = null)
+        Func<TrackedGame, GameSyncMode, CancellationToken, Task<string>>? syncGame = null,
+        Action<string>? openView = null)
     {
         _browser = new PathBrowser(browseRoots);
         Port = port;
@@ -143,6 +148,7 @@ public sealed class AgentApiServer : IDisposable
         _prepareLaunch = prepareLaunch ?? ((_, _) => Task.FromResult(new LaunchGateResult(LaunchDecision.Proceed)));
         _postExitSync = postExitSync ?? ((_, _) => Task.CompletedTask);
         _syncGame = syncGame ?? ((_, _, _) => Task.FromResult("Not available."));
+        _openView = openView;
         _detection = detection;
         _uiRoot = Path.Combine(AppContext.BaseDirectory, "agent-ui");
         _auth = LocalAuth.LoadOrCreate(config.ConfigPath);
@@ -1190,6 +1196,34 @@ public sealed class AgentApiServer : IDisposable
 
     private void MapUi(WebApplication app)
     {
+        // Not under /api, so it needs no token: a toast button is a plain link the default browser
+        // opens, which cannot send one. Nothing is read or changed — at worst a web page that guesses
+        // the port raises the window the user already runs. The route is whitelisted before it reaches
+        // the window's URL.
+        static bool SafeView(string? v) =>
+            v is { Length: > 0 and <= 80 } && v.All(c => char.IsAsciiLetterOrDigit(c) || c is ':' or '-' or '_');
+
+        app.MapGet("/open", (string? view, HttpContext context) =>
+        {
+            if (!SafeView(view)) return Results.BadRequest();
+            if (_openView is null) return Results.Redirect("/#" + view);
+            context.Response.Headers.CacheControl = "no-store";
+            // The page asks for the raise itself, once it has loaded, rather than /open raising the
+            // window directly: the browser takes the foreground when it commits this page, so a raise
+            // made while answering the request lands first and is immediately covered by the tab.
+            return Results.Content(
+                "<!doctype html><meta charset=utf-8><title>SaveLocker</title>" +
+                "<body style=\"font:16px system-ui;margin:3rem\">Opened in the SaveLocker window. You can close this tab.</body>" +
+                $"<script>addEventListener('load',()=>fetch('/open/raise?view={view}',{{method:'POST'}}).finally(()=>window.close()))</script>",
+                "text/html; charset=utf-8");
+        });
+        app.MapPost("/open/raise", (string? view) =>
+        {
+            if (!SafeView(view) || _openView is null) return Results.BadRequest();
+            _openView(view!);
+            return Results.NoContent();
+        });
+
         if (!Directory.Exists(_uiRoot)) return;
 
         // No UseDefaultFiles: "/" must go through SendIndexAsync so the token is injected. Serving

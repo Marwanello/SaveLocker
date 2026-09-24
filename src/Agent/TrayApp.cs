@@ -140,6 +140,7 @@ internal sealed class TrayContext : ApplicationContext
             // Playnite plugin's OnGameStopped equivalent to this route's own OnGameStarting caller.
             postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
             syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct),
+            openView: view => _ui.Post(() => OpenWindow(view)),
             // GET /api/playnite-plugin (tasks/playnite-plugin/plan.md, Phase 14) — lets the plugin
             // itself ask whether a newer version of itself is waiting on the server.
             playnitePluginStatus: () => PlaynitePlugin.StatusAsync(_config, AgentLogger.Log),
@@ -404,10 +405,7 @@ internal sealed class TrayContext : ApplicationContext
             _window.NavigateToView(view);
         }
 
-        if (!_window.Visible)
-            _window.Show();
-        _window.BringToFront();
-        _window.Activate();
+        _window.RaiseToFront();
     }
 
     // ─── Enrollment (called by AgentApiServer) ──────────────────────────────────

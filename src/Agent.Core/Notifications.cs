@@ -19,7 +19,8 @@ public enum NoticeActionKind { None, OpenView }
 /// What a notification's primary button does: open the agent UI at one exact screen. That is all it
 /// ever is, and deliberately so. Each platform turns the <see cref="Route"/> into a link to the
 /// agent's own loopback server and lets the OS open it — a freedesktop action runs <c>xdg-open</c>, a
-/// Windows toast button is a plain <c>http://localhost</c> link the shell hands to the default browser.
+/// Windows toast button is a plain <c>http://localhost</c> link the shell hands to the default browser,
+/// whose page asks the tray to raise its own window at the route (<see cref="ToOpenUrl"/>).
 /// <para>
 /// A richer button ("Retry now", "Install now") needs a way back into the running agent, and on
 /// Windows every way tried failed or was not worth its surface. A custom URL scheme registered by the
@@ -43,6 +44,12 @@ public readonly record struct NoticeAction(NoticeActionKind Kind, string? Route 
     /// (<c>agent-ui/src/route.ts</c> is what reads it). Null for <see cref="None"/>.</summary>
     public string? ToUrl(string uiBaseUrl) =>
         Kind == NoticeActionKind.OpenView ? uiBaseUrl.TrimEnd('/') + "/#" + Route : null;
+
+    /// <summary>The link a Windows toast button carries: the agent's own <c>/open</c> route, which raises
+    /// the tray window at this screen instead of leaving the page to the default browser. Routes are
+    /// <c>[a-z0-9:-]</c> only, so nothing here needs escaping.</summary>
+    public string? ToOpenUrl(string uiBaseUrl) =>
+        Kind == NoticeActionKind.OpenView ? uiBaseUrl.TrimEnd('/') + "/open?view=" + Route : null;
 }
 
 /// <summary>

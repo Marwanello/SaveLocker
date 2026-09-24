@@ -136,7 +136,7 @@ internal sealed class ToastPresenter : INotificationPresenter
     /// </summary>
     internal string BuildXml(AgentNotice notice)
     {
-        var link = notice.Primary.ToUrl(_uiBaseUrl);
+        var link = notice.Primary.ToOpenUrl(_uiBaseUrl);
 
         var xml = new StringBuilder("<toast");
         if (link is not null)
