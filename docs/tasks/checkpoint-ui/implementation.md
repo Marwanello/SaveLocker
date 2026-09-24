@@ -258,7 +258,7 @@ The largest genuinely-new piece.
 
 - ✅ **Windows**: a real toast (`src/Agent/ToastPresenter.cs`) — title, body, the brand mark in the current
   accent, a primary button and a dismiss. **Deviation:** the primary button opens the agent UI at the exact
-  screen (`http://localhost:<port>/#route`, handed to the default browser); it does not deep-link the console
+  screen (`http://localhost:<port>/open?view=route`: the browser hits a page that asks the tray to raise its own window); it does not deep-link the console
   and it cannot call back into the tray. "Retry now" became "Open game" (the game page has *Push now*);
   "Install now" became a toast that names the tray menu's *Update to vX…*. Measured why: a registered custom
   URL scheme is refused by the toast host on Windows 11 25H2 (Discord's, Steam's and `ms-settings:` launch; a

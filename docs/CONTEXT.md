@@ -1445,8 +1445,9 @@ worked from `Start-Process` and from `Launcher.LaunchUriAsync`, but **the shell'
 freshly registered scheme with "Get an app to open this link"** — while launching Discord's and Steam's, and
 `ms-settings:`. A hyphen-free name, a signed handler, an exact copy of Discord's key layout, `DefaultIcon`,
 capabilities/`RegisteredApplications`, `SHChangeNotify`, restarting `ShellExperienceHost` and setting the
-process AUMID all changed nothing. So the button is now a plain `http://localhost:<port>/#route` link the shell
-hands to the default browser (a freedesktop action runs `xdg-open` on the same link) — verified end to end:
+process AUMID all changed nothing. So the button is now a plain `http://localhost:<port>/open?view=route` link the shell
+hands to the default browser, whose page asks the tray to raise its own window at that screen (Linux: a
+freedesktop action runs `xdg-open` on `/#route`, the browser being its UI) — verified end to end:
 clicking **Choose a save** on a real toast opened the agent UI at the conflict chooser. That removed the scheme
 registration, the pipe, the `Program.cs` handler and the door a web page could have knocked on. **Dropped as
 a result:** "Retry now" (now "Open game", whose page has *Push now*), "Install now" (the toast names the tray

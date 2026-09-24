@@ -15,10 +15,10 @@ Notification rules are the same everywhere, so the checklist tests the rules onc
 
 ## 1. Windows toast — conflict opened
 
-1. `.\tests\testenv.ps1 conflict`, then `.\tests\testenv.ps1 up`. The seed pushes Windows first and the second side (WSL/Deck) second, and the server records the conflict against whoever pushes second. So the toast appears on the SECOND side's agent, not on Windows: an agent only announces conflicts its own machine is party to. To get a Windows toast, make Windows the diverging side: stop the tray, run `.\tests\testenv.ps1 conflict -Windows` again after the second side is seeded (re-seeding against an existing head), then `up`. Unverified until run; if Windows still lists no conflict in `doctor`, the rig needs a change.
+1. Seed with Windows as the side that pushes LAST, because the server records a conflict against whoever pushes second and an agent only announces conflicts its own machine is party to. Verified recipe: `clean`, `build`, `conflict -Wsl` (or `-Deck`, alone), then `conflict -Windows`, then `up`. The usual `conflict -Windows -Wsl/-Deck` does the opposite: the conflict lands on WSL/the Deck and Windows correctly shows nothing.
 2. Within one poll (about 15 s): ONE toast appears with the SaveLocker brand mark, title naming the game, body in plain voice (no jargon), buttons **Open game**-style link and **Later**.
 3. Wait 60 s: NO second toast for the same conflict (announce once).
-4. Click the primary button: the default browser opens `http://localhost:<port>/#conflicts:queue` (or `#game:<id>`) on the agent UI at that screen. If the agent UI window/tab was already open, it navigates without a reload.
+4. Click the primary button: a small "Opened in the SaveLocker window" tab flashes in the default browser and the SaveLocker agent window comes to the front (over the browser) at `#conflicts:queue` (or `#game:<id>`). If the window was already open it navigates without a reload; if it was minimized it is restored.
 5. Resolve the conflict in the UI (or dashboard). Within one poll the toast is withdrawn from Action Center if it was still there.
 6. Click **Later** on a fresh conflict: dismissed, does not come back on the next polls.
 

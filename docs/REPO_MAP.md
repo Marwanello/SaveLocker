@@ -130,7 +130,7 @@ SaveLocker/
 │   │   │                               #   is PINNED to bin/<Config>/net10.0-windows/, see Gotchas → Builds)
 │   │   │                               # Windows host: UI + platform impls. → Agent.Core
 │   │   ├── ToastPresenter.cs            # A real Windows toast (title, body, brand mark, 2 buttons) for
-│   │   │                               #   NotificationCenter. The button is an http://localhost link the shell hands to
+│   │   │                               #   NotificationCenter. The button is an http://localhost/open link the shell hands to
 │   │   │                               #   the default browser. Doc comment holds the measured Windows 11 traps
 │   │   │                               #   (what names the toast, where its logo must live, why no URL scheme)
 │   │   ├── Program.cs                   # Entry: no args → tray; args → AgentCli

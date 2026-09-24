@@ -270,8 +270,12 @@ documentation that was found. Read before touching the presenter.
   HKCU-only scheme; its process went 0 → 5), Steam's and `ms-settings:`. Ten variants changed nothing
   (hyphen-free name, signed handler, Discord's
   exact key layout incl. `DefaultIcon`, `RegisteredApplications`/Capabilities, `SHChangeNotify`, restarting
-  `ShellExperienceHost`, process AUMID). The button is an `http://localhost:<port>/#route` link the shell
-  hands to the default browser. A richer button needs a COM activator + a shortcut carrying
+  `ShellExperienceHost`, process AUMID). The button is an `http://localhost:<port>/open?view=route` link the shell
+  hands to the default browser; the tiny page it lands on POSTs `/open/raise`, which raises the tray window at
+  that screen (the browser tab stays behind - only a COM activator removes it). The raise must come from the
+  page, after it loads: raised while `/open` is still answering, the window lands first and the browser tab
+  covers it. `AgentWindow.RaiseToFront` needs the Alt-key trick + TopMost toggle because the browser is already
+  in front and Windows refuses a background process a plain Activate(). A richer button needs a COM activator + a shortcut carrying
   `ToastActivatorCLSID` ([[Backlog]]). Don't rebuild the scheme.
 - **The header's name and icon come from a Start-menu shortcut that carries the toast's AUMID.** With one, the
   header read the shortcut's name and the exe's icon; without, the raw AUMID string and no icon. An HKCU
