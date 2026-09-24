@@ -295,7 +295,7 @@ documentation that was found. Read before touching the presenter.
   scratch identities are accepted and silently never shown, and `GetHistory` still says 1). UI Automation
   cannot see the toast host from the tool sandbox; click by screen coordinate (`SetCursorPos` +
   `mouse_event`) off a screenshot — the virtual desktop here starts at x = −1920, so bitmap x ≠ screen x.
-  **Every tray port leaves a ~1 KB `savelocker-toast-logo-<port>.png` in `%TEMP%` and, once it has toasted, a
+  **Every tray port leaves a ~1 KB `savelocker-toast-logo-<port>-<look>.png` in `%TEMP%` (one file per look: a fixed name made the shell show a stale picture after an accent change) and, once it has toasted, a
   record under `HKCU\…\Notifications\Settings\SaveLocker.Test.<port>`** (it lists in Settings → Notifications).
   `testenv.ps1 clean` removes its own port's; `run-winagent-tests.ps1` (ports 5189–5198) does not — clear those by
   hand if the list bothers you.

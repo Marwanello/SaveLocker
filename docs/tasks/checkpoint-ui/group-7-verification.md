@@ -40,7 +40,7 @@ Negative checks (must NOT toast): a normal successful push/pull; a 30 s offline 
 
 1. Quit the agent while a conflict toast is up, restart it: the same standing conflict is announced again exactly once (fresh process state), not zero and not twice.
 2. Dismiss a toast, leave the conflict open for 5 polls: it does not reappear.
-3. Change the accent in Settings > Appearance: the next toast's mark uses the new accent. `%TEMP%` contains the PNG.
+3. Change the accent in Settings > Appearance: the next toast's mark uses the new accent. `%TEMP%` holds exactly one `savelocker-toast-logo-<port>-<look>.png`, and its name changes with each look (a fixed name was unreliable - the shell showed a stale picture). A toast already on screen or in Action Center keeps the old accent; only a NEW toast changes.
 4. Header name: on the rig it shows the readable test AUMID; the INSTALLED header (shortcut with `AppUserModelID`) is NOT covered here — see section 8.
 
 ## 4. Linux (WSL) agent

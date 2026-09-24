@@ -1477,8 +1477,8 @@ switch ($Command) {
                 [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
                 [Windows.UI.Notifications.ToastNotificationManager]::History.Clear($toastAumid)
             } catch { }
-            $toastLogo = Join-Path $env:TEMP "savelocker-toast-logo-$WinPort.png"
-            if (Test-Path $toastLogo) { Remove-Item $toastLogo -Force; Write-Host "  removed $toastLogo" }
+            Get-ChildItem $env:TEMP -Filter "savelocker-toast-logo-$WinPort*.png" -ErrorAction SilentlyContinue | ForEach-Object {
+                Remove-Item $_.FullName -Force; Write-Host "  removed $($_.FullName)" }
             $toastKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\$toastAumid"
             if (Test-Path -LiteralPath $toastKey) { Remove-Item -LiteralPath $toastKey -Recurse -Force; Write-Host "  removed $toastKey" }
         }

@@ -46,7 +46,8 @@ internal sealed class ToastPresenter : INotificationPresenter
 
     private readonly string _aumid;
     private readonly string _uiBaseUrl;
-    private readonly string _logoPath;
+    private readonly string _logoBase;
+    private volatile string _logoPath;
     private readonly Action<string> _fallback;
 
     /// <param name="fallback">What to do if Windows will not take a toast at all — a locked-down
@@ -66,8 +67,9 @@ internal sealed class ToastPresenter : INotificationPresenter
         // is a plain folder under %LOCALAPPDATA%: in both cases the file was there, the right size and
         // format, and the toast silently had no picture. A mark is not sensitive, and it is rewritten
         // on every start and every look change, so Temp being cleaned now and then costs nothing.
-        _logoPath = Path.Combine(Path.GetTempPath(),
-            port == DefaultPort ? "savelocker-toast-logo.png" : $"savelocker-toast-logo-{port}.png");
+        _logoBase = Path.Combine(Path.GetTempPath(),
+            port == DefaultPort ? "savelocker-toast-logo" : $"savelocker-toast-logo-{port}");
+        _logoPath = _logoBase + ".png";
     }
 
     /// <summary>
@@ -75,15 +77,29 @@ internal sealed class ToastPresenter : INotificationPresenter
     /// the toast's own logo slot (see <see cref="BuildXml"/>) at 48 dip, so it is drawn at twice that:
     /// the tray's 32 px icon upscaled would be soft on a high-DPI screen. Rewriting the file is all a
     /// look change needs; the next toast reads it.
+    /// <para>
+    /// Each look gets its own file name. One fixed name was unreliable: the shell keeps the picture it
+    /// already has for a path (and may hold the file open while a toast is up), so a rewrite sometimes
+    /// showed and sometimes did not. A new path is always read fresh; the old look's file is removed
+    /// once nothing is using it.
+    /// </para>
     /// </summary>
     public void UseLook(AppearanceDto look)
     {
         try
         {
-            using var icon = MarkIcon.Render(look, LogoPixels);
-            using var bitmap = icon.ToBitmap();
-            bitmap.Save(_logoPath, ImageFormat.Png);
+            var path = $"{_logoBase}-{LookId(look)}.png";
+            if (!File.Exists(path))
+            {
+                using var icon = MarkIcon.Render(look, LogoPixels);
+                using var bitmap = icon.ToBitmap();
+                bitmap.Save(path, ImageFormat.Png);
+            }
+            _logoPath = path;
             _hasLogo = true;
+            foreach (var old in Directory.EnumerateFiles(Path.GetDirectoryName(_logoBase)!, Path.GetFileName(_logoBase) + "*.png"))
+                if (!string.Equals(old, path, StringComparison.OrdinalIgnoreCase))
+                    try { File.Delete(old); } catch { /* still on screen in a toast; the next look change retries */ }
         }
         catch (Exception ex) { AgentLogger.LogException("ToastPresenter.UseLook", ex); }
     }
@@ -117,6 +133,9 @@ internal sealed class ToastPresenter : INotificationPresenter
             return null;
         }
     }
+
+    private static string LookId(AppearanceDto look) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{look.Theme}|{look.Accent}|{look.Mark}")))[..10].ToLowerInvariant();
 
     private static NotificationSetting? SettingOrNull(ToastNotifier notifier)
     {
