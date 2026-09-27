@@ -1433,6 +1433,14 @@ switch ($Command) {
         # bash syntax error, reproduced and confirmed fixed 2026-08-19.
         Say 'wsl daemon'
         & wsl -d $Distro -- bash -c 'tail -20 ~/.savelocker-testenv-daemon.log 2>/dev/null || echo ''(none)'''
+        # The daemon's own console output above is ASP.NET's request logging, never what
+        # AgentLogger.Log writes (every "conflict notification"/"notification sent" line) - that goes
+        # to agent.log in the state dir, same as the Windows tail above, and reading only the console
+        # log made every notification look silently missing. $XDG_DATA_HOME is never overridden for
+        # the WSL side (unlike the Deck, which sets its own via testenv-deck.sh), so this is always
+        # ~/savelocker-test/SaveLocker/agent.log.
+        Say 'wsl agent.log'
+        & wsl -d $Distro -- bash -c 'tail -20 ~/savelocker-test/SaveLocker/agent.log 2>/dev/null || echo ''(none)'''
         Say 'wsl suite'
         & wsl -d $Distro -- bash -c 'tail -20 ~/.savelocker-testenv-suite.log 2>/dev/null || echo ''(none)'''
         if (Test-DeckConfigured) {
@@ -1465,6 +1473,22 @@ switch ($Command) {
         if (Test-Path $conflictTestDir) {
             Remove-Item $conflictTestDir -Recurse -Force
             Write-Host "  removed $conflictTestDir"
+        }
+        # What the test tray's toast notifications leave behind (src/Agent/ToastPresenter.cs): the toasts
+        # still sitting in the Action Center, its mark in %TEMP%, and Windows' own per-app record, which
+        # is what would keep listing "SaveLocker.Test.<port>" under Settings > Notifications. Scoped by
+        # port exactly as the tray scopes its identity, and never for 5178: that identity ("SaveLocker")
+        # is the INSTALLED agent's, and this rig must not touch it.
+        if ($WinPort -ne 5178) {
+            $toastAumid = "SaveLocker.Test.$WinPort"
+            try {
+                [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+                [Windows.UI.Notifications.ToastNotificationManager]::History.Clear($toastAumid)
+            } catch { }
+            Get-ChildItem $env:TEMP -Filter "savelocker-toast-logo-$WinPort*.png" -ErrorAction SilentlyContinue | ForEach-Object {
+                Remove-Item $_.FullName -Force; Write-Host "  removed $($_.FullName)" }
+            $toastKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\$toastAumid"
+            if (Test-Path -LiteralPath $toastKey) { Remove-Item -LiteralPath $toastKey -Recurse -Force; Write-Host "  removed $toastKey" }
         }
 
         Invoke-Wsl 'clean'

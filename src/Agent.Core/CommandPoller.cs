@@ -29,13 +29,11 @@ public sealed class CommandPoller : IDisposable
     /// <summary>compatdata path for a Steam AppID. Host-supplied — Core cannot see Steam's layout.</summary>
     private readonly Func<string, string?>? _prefixForAppId;
     /// <summary>
-    /// Host-supplied sink for this machine's open conflicts, polled once per tick alongside
-    /// everything else — <c>null</c> on Windows (Phase 7, wiring the tray to this, is separate and
-    /// still open) so a host that never supplies one pays nothing extra: the conflicts fetch below
-    /// is skipped outright rather than run and ignored. The Linux daemon passes its
-    /// <c>ConflictNotifier</c> here (tasks/conflict-resolution-ui/plan.md, Phase 9).
+    /// What turns this tick's two observations — did the server answer, and which conflicts are
+    /// open — into notifications. Null for a host with nothing to show, which then pays nothing
+    /// extra: the conflicts fetch below is skipped outright rather than run and ignored.
     /// </summary>
-    private readonly Action<IReadOnlyList<ConflictDto>>? _onConflictsPolled;
+    private readonly NotificationCenter? _notices;
     private readonly System.Timers.Timer _timer;
     private int _busy; // 0/1 guard so slow ticks don't overlap
     private Task _lastTick = Task.CompletedTask;
@@ -56,7 +54,7 @@ public sealed class CommandPoller : IDisposable
         HealthReporter? health = null,
         OfflineQueue? offlineQueue = null,
         Func<string, string?>? prefixForAppId = null,
-        Action<IReadOnlyList<ConflictDto>>? onConflictsPolled = null)
+        NotificationCenter? notices = null)
     {
         _prefixForAppId = prefixForAppId;
         _config = config;
@@ -68,7 +66,7 @@ public sealed class CommandPoller : IDisposable
         _onGamesChanged = onGamesChanged;
         _health = health;
         _offlineQueue = offlineQueue;
-        _onConflictsPolled = onConflictsPolled;
+        _notices = notices;
         _timer = new System.Timers.Timer(pollMs) { AutoReset = true };
         _timer.Elapsed += (_, _) => _lastTick = TickAsync();
     }
@@ -83,17 +81,22 @@ public sealed class CommandPoller : IDisposable
         try
         {
             await ReconcileGamesAsync();
+            // The first call of the tick is what tells us the server is there. A push that fails
+            // reports nothing of the kind on its own — it is queued and retried — so this is the one
+            // place "unreachable for five minutes" can be measured (NotificationCenter.ObserveServer).
+            _notices?.ObserveServer(true);
             await UpdatePathCandidatesAsync();
             // Independent of each other — RunCommandsAsync executes dashboard commands,
             // CheckConflictsAsync only reads _config.Games and hits its own endpoint — so run them
             // concurrently rather than paying their two round-trips back to back.
-            if (_onConflictsPolled is not null)
+            if (_notices is not null)
                 await Task.WhenAll(RunCommandsAsync(), CheckConflictsAsync());
             else
                 await RunCommandsAsync();
         }
         catch (Exception ex)
         {
+            if (ServerReachability.IsUnreachable(ex)) _notices?.ObserveServer(false);
             AgentLogger.LogException("CommandPoller.TickAsync", ex);
         }
         finally
@@ -102,7 +105,8 @@ public sealed class CommandPoller : IDisposable
             // threw — a tick that failed is precisely the tick the console needs to hear about.
             // HealthReporter.SendAsync never throws.
             if (_health is not null)
-                await _health.SendAsync(_api(), _config, _offlineQueue, _notify);
+                await _health.SendAsync(_api(), _config, _offlineQueue, _notify,
+                    onEscalation: _notices is null ? null : e => _notices.RaiseEscalation(e));
 
             Interlocked.Exchange(ref _busy, 0);
         }
@@ -419,7 +423,9 @@ public sealed class CommandPoller : IDisposable
             var conflicts = (await _api().GetOpenConflictsAsync())
                 .Where(c => c.MachineId == _config.MachineId)
                 .ToList();
-            _onConflictsPolled!(conflicts);
+            _notices!.ObserveConflicts(
+                conflicts,
+                gameId => _config.Games.FirstOrDefault(g => g.GameId == gameId)?.Name ?? "A tracked game");
         }
         catch (Exception ex)
         {
@@ -555,7 +561,7 @@ public sealed class CommandPoller : IDisposable
 
     /// <summary>
     /// Stops the timer and waits out a tick already in flight, so a caller that disposes objects
-    /// this poller's tick uses (e.g. the host's ConflictNotifier) never races that tick still using
+    /// this poller's tick uses (e.g. the host's notification presenter) never races that tick still using
     /// them after this returns.
     /// </summary>
     public async Task StopAsync()

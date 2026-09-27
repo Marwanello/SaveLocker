@@ -38,10 +38,13 @@ public sealed class Daemon : IAsyncDisposable
     // to disk so `savelocker ui`, a separate process, can show the same feed (SyncActivityStore).
     private readonly SyncActivityTracker _activity;
     private readonly SyncActivityStore _activityStore;
-    // Phase 9 (tasks/conflict-resolution-ui/plan.md): rung 3 of the escalation ladder, wired into
-    // the CommandPoller tick below. Its own dedup is in-memory and per-process, same lifetime as
-    // everything else here — a restart re-notifies for whatever is still open, which is correct.
-    private readonly ConflictNotifier _conflictNotifier;
+    // Desktop notifications (tasks/checkpoint-ui/implementation.md, Phase 7; began as rung 3 of the
+    // conflict-resolution plan's escalation ladder). The rules — what fires, once, until it clears —
+    // are the center's; the screen is the notifier's. Both are in-memory and per-process, same
+    // lifetime as everything else here: a restart re-announces whatever is still true, which is
+    // correct. On a box with no notification daemon the notifier says so and nothing else happens.
+    private readonly DesktopNotifier _notifier;
+    private readonly NotificationCenter _notices;
     private readonly double? _pollMs;
 
     /// <summary>
@@ -61,21 +64,20 @@ public sealed class Daemon : IAsyncDisposable
         _scanner = new LinuxGameScanner(_detection);
         _activityStore = SyncActivityStore.For(config);
         _activity = new SyncActivityTracker(_activityStore.Write);
-        _conflictNotifier = new ConflictNotifier($"http://127.0.0.1:{_apiPort}/#conflicts");
+        _notifier = new DesktopNotifier($"http://127.0.0.1:{_apiPort}/");
+        _notices = new NotificationCenter(_notifier);
         _engine = BuildEngine();
     }
 
-    private SyncEngine BuildEngine() =>
-        new(_config, ApiClient.For(_config),
-            log: Log, notify: Notify, offlineQueue: _offlineQueue, health: _health, activity: _activity);
-
     /// <summary>
-    /// There is nobody here to notify — a toast is impossible in Game Mode — so locally a
-    /// "notification" is only a log line. What makes these visible is <see cref="HealthReporter"/>:
-    /// the same alerts go to the server, and the console shows them. The console is the Deck's UI
+    /// A desktop notification is a bonus on a machine that has a desktop, and nothing at all in Game
+    /// Mode. What makes these events visible everywhere is <see cref="HealthReporter"/>: the same
+    /// alerts go to the server, and the console shows them. The console is the Deck's UI
     /// (Decisions.md §2).
     /// </summary>
-    private static void Notify(string message) => AgentLogger.Log(message);
+    private SyncEngine BuildEngine() =>
+        new(_config, ApiClient.For(_config),
+            log: Log, notices: _notices, offlineQueue: _offlineQueue, health: _health, activity: _activity);
 
     // The engine's routine-progress sink: the file log exactly as before, plus the agent UI's
     // Overview activity feed. One delegate so nothing else has to know the feed exists.
@@ -174,7 +176,7 @@ public sealed class Daemon : IAsyncDisposable
             syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct));
         _apiServer.Start();
 
-        _drainer = new OfflineQueueDrainer(_offlineQueue, _config, () => _engine, Notify);
+        _drainer = new OfflineQueueDrainer(_offlineQueue, _config, () => _engine, AgentLogger.Log);
 
         _commandPoller = new CommandPoller(
             _config,
@@ -182,7 +184,7 @@ public sealed class Daemon : IAsyncDisposable
             () => _engine,
             _detection,
             _scanner,
-            Notify,
+            AgentLogger.Log,
             onGamesChanged: StartFolderWatchers,
             pollMs: _pollMs ?? 20000,
             health: _health,
@@ -192,9 +194,7 @@ public sealed class Daemon : IAsyncDisposable
             prefixForAppId: appId => SteamRoots.Find()
                 .Select(root => SteamRoots.CompatDataPath(root, appId))
                 .FirstOrDefault(p => p is not null),
-            onConflictsPolled: conflicts => _conflictNotifier.CheckConflicts(
-                conflicts,
-                gameId => _config.Games.FirstOrDefault(g => g.GameId == gameId)?.Name ?? "A tracked game"));
+            notices: _notices);
         _commandPoller.Start();
 
         StartFolderWatchers();
@@ -311,6 +311,14 @@ public sealed class Daemon : IAsyncDisposable
                 catch (Exception ex) { AgentLogger.Log($"update: could not stage v{update.Version} — {ex.Message}"); }
             }
 
+            // The only notice anyone gets that a Deck has an update waiting; a staged one installs at
+            // the next start, so it is worth saying once per version. Asked on every check while one
+            // waits, not only right after staging: the check after that skips staging (the version is
+            // already on disk), so a notice nothing could show then — no notification daemon at that
+            // moment — would otherwise never be tried again. The center keeps a standing one quiet.
+            if (Updater.PendingVersion(_config) is { } pending)
+                _notices.Raise(NoticeCatalog.UpdateReady(pending, staged: true));
+
             await CheckPluginUpdateAsync();
         }
         catch (Exception ex)
@@ -372,13 +380,13 @@ public sealed class Daemon : IAsyncDisposable
         _updateTimer?.Dispose();
         _updateChecker?.Dispose();
         // Waits out a tick already in flight before anything it might still be using (in particular
-        // _conflictNotifier, below) gets torn down — otherwise a tick that already started a
-        // notify-send but hasn't recorded it yet can outlive ConflictNotifier.Dispose()'s snapshot.
+        // _notifier, below) gets torn down — otherwise a tick that already started a notify-send but
+        // hasn't recorded it yet can outlive DesktopNotifier.Dispose()'s snapshot.
         if (_commandPoller is not null) await _commandPoller.StopAsync();
         _commandPoller?.Dispose();
         _drainer?.Dispose();
         _apiServer?.Dispose();
-        _conflictNotifier.Dispose();
+        _notifier.Dispose();
         // Shutdown, not a connection change: stop renewing and let any held lease expire rather
         // than blocking the exit on a release to a server that may be why we are stopping.
         _engine.Dispose();

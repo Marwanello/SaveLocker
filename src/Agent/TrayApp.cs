@@ -34,6 +34,9 @@ internal sealed class TrayContext : ApplicationContext
 
     private readonly AgentConfig _config;
     private readonly NotifyIcon _icon;
+    // Windows delivery for notifications (the toast itself) and the rules that decide what reaches it.
+    private readonly ToastPresenter _toasts;
+    private readonly NotificationCenter _notices;
     // The icon _icon currently shows, owned here so a swap can dispose the one it replaces.
     private Icon? _trayIcon;
     // Created, disposed and replaced only on the UI thread (StartFolderWatchers is the sole writer
@@ -73,6 +76,11 @@ internal sealed class TrayContext : ApplicationContext
         _ui = new UiDispatcher();
 
         _config = config;
+        // Before the engine exists: RebuildEngine hands it _notices. The balloon is only ever the
+        // last resort for a machine Windows will not raise a toast on.
+        _toasts = new ToastPresenter(AgentApiPort, ShowBalloon);
+        _toasts.UseLook(config.EffectiveAppearance);
+        _notices = new NotificationCenter(_toasts);
         _offlineQueue = OfflineQueue.For(config);
         _health = HealthReporter.For(config);
         _detection = new Detection(config);
@@ -81,9 +89,10 @@ internal sealed class TrayContext : ApplicationContext
         AgentLogger.Log("SaveLocker agent starting…");
         AgentLogger.Log($"UI owner: {_ui.Owner}");
         RebuildEngine();
-        _drainer = new OfflineQueueDrainer(
-            _offlineQueue, _config, () => _engine,
-            msg => { Notify(msg); AgentLogger.Log(msg); });
+        // Log only. It used to toast, which meant "1 pending push(es) — attempting drain…" every
+        // thirty seconds for as long as the server was down; a queued push is not news, and the
+        // server being gone for long enough is announced once by the center.
+        _drainer = new OfflineQueueDrainer(_offlineQueue, _config, () => _engine, AgentLogger.Log);
 
         // The chosen mark in the chosen accent, not the packaged icon. Rendered here so the tray comes
         // up in the right look from the first frame, and again whenever the look changes.
@@ -131,12 +140,15 @@ internal sealed class TrayContext : ApplicationContext
             // Playnite plugin's OnGameStopped equivalent to this route's own OnGameStarting caller.
             postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
             syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct),
+            openView: view => _ui.Post(() => OpenWindow(view)),
             // GET /api/playnite-plugin (tasks/playnite-plugin/plan.md, Phase 14) — lets the plugin
             // itself ask whether a newer version of itself is waiting on the server.
             playnitePluginStatus: () => PlaynitePlugin.StatusAsync(_config, AgentLogger.Log),
             // The agent-ui suggest/install card's own two calls (Phase 19).
             playnitePluginCardStatus: () => PlaynitePlugin.CardStatusAsync(_config),
             playnitePluginInstall: () => PlaynitePlugin.InstallFirstTimeAsync(_config, AgentLogger.Log));
+        // A toast button's link needs this to raise the window rather than only open a browser tab.
+        _toasts.UseOpenLinkKey(_apiServer.OpenLinkKey);
         _apiServer.Start();
 
         _commandPoller = new CommandPoller(
@@ -145,10 +157,13 @@ internal sealed class TrayContext : ApplicationContext
             () => _engine,
             _detection,
             _scanner,
-            Notify,
+            // The poller's own messages ("Added 'X'", "Removed 2 games", a dashboard command's
+            // result) are things the console already shows; none is in the notification rules.
+            AgentLogger.Log,
             onGamesChanged: () => _ui.Post(() => { RebuildMenu(); StartFolderWatchers(); }),
             health: _health,
-            offlineQueue: _offlineQueue);
+            offlineQueue: _offlineQueue,
+            notices: _notices);
         _commandPoller.Start();
 
         // 24 h periodic update check. First tick fires after 5 s so the tray is fully
@@ -263,13 +278,14 @@ internal sealed class TrayContext : ApplicationContext
         }
 
         var api = ApiClient.For(_config);
-        // Windows toasts AND reports: the tray tells the user in front of it, health reporting tells
-        // the console. One dashboard then shows the whole fleet, Deck and PC alike.
+        // Windows notifies AND reports: the toast tells the user in front of it (for the few events
+        // worth that), health reporting tells the console. One dashboard then shows the whole fleet,
+        // Deck and PC alike.
         SyncEngine replaced;
         lock (_engineLock)
         {
             replaced = _engine;
-            _engine = new SyncEngine(_config, api, log: Log, notify: Notify,
+            _engine = new SyncEngine(_config, api, log: Log, notices: _notices,
                 offlineQueue: _offlineQueue, health: _health, activity: _activity);
         }
 
@@ -391,10 +407,7 @@ internal sealed class TrayContext : ApplicationContext
             _window.NavigateToView(view);
         }
 
-        if (!_window.Visible)
-            _window.Show();
-        _window.BringToFront();
-        _window.Activate();
+        _window.RaiseToFront();
     }
 
     // ─── Enrollment (called by AgentApiServer) ──────────────────────────────────
@@ -473,14 +486,17 @@ internal sealed class TrayContext : ApplicationContext
             _                         => $"Update check: {result.GetType().Name}."
         });
 
+        // This used to be a balloon whose click started the update. A toast cannot reach back into
+        // the tray (see NoticeAction), so it now says where to go — the menu's own "Update to vX…"
+        // item, rebuilt just above — rather than offering a button that could not work.
         if (result is UpdateResult.Available a)
         {
-            Notify($"SaveLocker v{a.Version} is available. Click to update.");
-            _ui.Post(() =>
-            {
-                _icon.BalloonTipClicked += OnBalloonUpdateClicked;
-                _icon.BalloonTipClosed  += OnBalloonClosed;
-            });
+            var notice = NoticeCatalog.UpdateReady(a.Version, staged: false);
+            // The background check says it once per version. A check the user asked for answers
+            // every time, even when that toast is already standing: taking it down first is what
+            // lets it be shown again rather than swallowed as a repeat.
+            if (!silent) _notices.Clear(notice.Key);
+            _notices.Raise(notice);
         }
         else if (!silent)
         {
@@ -494,21 +510,6 @@ internal sealed class TrayContext : ApplicationContext
                 _                     => "Update check finished with no result."
             });
         }
-    }
-
-    private void OnBalloonUpdateClicked(object? sender, EventArgs e)
-    {
-        UnhookBalloon();
-        if (LastUpdateResult is UpdateResult.Available a)
-            FireAndForget(() => PromptAndUpdateAsync(a));
-    }
-
-    private void OnBalloonClosed(object? sender, EventArgs e) => UnhookBalloon();
-
-    private void UnhookBalloon()
-    {
-        _icon.BalloonTipClicked -= OnBalloonUpdateClicked;
-        _icon.BalloonTipClosed  -= OnBalloonClosed;
     }
 
     private async Task PromptAndUpdateAsync(UpdateResult.Available update)
@@ -621,6 +622,7 @@ internal sealed class TrayContext : ApplicationContext
         _icon.Icon = next;
         _trayIcon?.Dispose();
         _trayIcon = next;
+        _toasts.UseLook(look);
         if (_window is { IsDisposed: false } window) window.ApplyLook(look);
     }
 
@@ -634,8 +636,22 @@ internal sealed class TrayContext : ApplicationContext
         }
     });
 
-    private void Notify(string message) => _ui.Post(() =>
+    /// <summary>What a notification falls back to when Windows will not take a toast. A method rather
+    /// than a lambda in the constructor: <c>_icon</c> is assigned there, later, and a lambda would be
+    /// judged against the moment it was written rather than the moment it runs.</summary>
+    private void ShowBalloon(string message) => _ui.Post(() =>
         _icon.ShowBalloonTip(4000, "SaveLocker", message, ToolTipIcon.Info));
+
+    /// <summary>
+    /// The tray's own answer to something the user just did — a menu item's result. Not routed
+    /// through <see cref="_notices"/>: that is for conditions, which announce once and can be
+    /// withdrawn; this is a reply to a click and is always shown, once, as the toast it always was.
+    /// </summary>
+    private void Notify(string message)
+    {
+        var reason = _toasts.Show(NoticeCatalog.Message(message));
+        if (reason is not null) AgentLogger.Log($"notification not shown: {reason}. It said: {message}");
+    }
 
     // The engine's routine-progress sink: the file log exactly as before, plus the agent UI's
     // Overview activity feed. One delegate so nothing else has to know the feed exists.

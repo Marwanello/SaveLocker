@@ -182,6 +182,30 @@ if ($leftovers.Count -gt 0) { $leftovers | Select-Object -First 10 | ForEach-Obj
 Check "views: no ternary whose two branches are the same string - a flattened state ($($flattened.Count) found)" ($flattened.Count -eq 0)
 if ($flattened.Count -gt 0) { $flattened | Select-Object -First 10 | ForEach-Object { Write-Host "      $_" } }
 
+# ---- notifications (checkpoint-ui Phase 7 / Group 7): two more hand-kept pairs ---------------------------
+# A Windows toast is named by a Start-menu shortcut carrying its AUMID; the installer stamps the shortcut and
+# ToastPresenter.cs names the identity. If they drift the toast header quietly falls back to the bare
+# identity string with no icon - nothing fails, it just looks unowned.
+$iss = Read-Src "installer/SaveLocker.iss"
+$toast = Read-Src "src/Agent/ToastPresenter.cs"
+$issAumid = if ($iss -match 'AppUserModelID:\s*"([^"]+)"') { $Matches[1] } else { $null }
+$csAumid  = if ($toast -match 'ProductAumid\s*=\s*"([^"]+)"') { $Matches[1] } else { $null }
+Check "notifications: the installer's shortcut carries an AppUserModelID" ($null -ne $issAumid)
+Check "notifications: the installer's AppUserModelID equals ToastPresenter.ProductAumid ('$issAumid' vs '$csAumid')" (($null -ne $issAumid) -and ($issAumid -ceq $csAumid))
+
+# A notification's button is a link to a hash route of the agent UI (NoticeAction.View("...")). What the agent
+# UI does with that hash is route.ts's; a view renamed there would send every toast to the wrong screen.
+$notif = Read-Src "src/Agent.Core/Notifications.cs"
+$routeTs = Read-Src "agent-ui/src/route.ts"
+$views = @([regex]::Matches(([regex]::Match($routeTs, "const VIEWS[^=]*=\s*\[([^\]]*)\]").Groups[1].Value), "'([A-Za-z]+)'") | ForEach-Object { $_.Groups[1].Value })
+$emitted = @([regex]::Matches($notif, 'View\("([a-z]+)(?::[a-z]+)?"\)') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+$unknown = @($emitted | Where-Object { $views -cnotcontains $_ })
+Check "notifications: route.ts reads its list of views ($($views.Count) found)" ($views.Count -ge 5)
+Check "notifications: every view a notice links to is one route.ts routes ($($emitted -join ', '); unknown: $($unknown -join ', '))" (($emitted.Count -ge 2) -and $unknown.Count -eq 0)
+Check "notifications: NoticeAction.Game's route (game:<id>) and the conflicts chooser (conflicts:queue) are both understood by route.ts" (
+    ($notif -match 'View\(\$"game:\{id:D\}"\)') -and ($notif -match 'View\("conflicts:queue"\)') -and
+    ($routeTs -match "base === 'game'") -and ($routeTs -match "rest === 'queue'"))
+
 Write-Host ""
 Write-Host "==== $pass passed, $fail failed ===="
 if ($fail -gt 0) { exit 1 }

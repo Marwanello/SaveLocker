@@ -7,7 +7,8 @@
        situation, not a change of testing philosophy for the rest of this project. -->
 
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- Matches SaveLocker.Agent: a project cannot reference one built for a newer platform version. -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>

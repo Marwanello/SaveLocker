@@ -626,6 +626,28 @@ session can judge an edge case, not to reopen the choice.
   `#hex` in any `.tsx`. An accent is the one token the look rewrites, and is written **inline for the palette in
   force** — an accent has a dark and a light value — so it is re-derived when the OS flips while the theme is System.
 
+- **OS notifications: a few events, said once, and a button is a link — never a callback** (2026-09-24, checkpoint-ui
+  Phase 7). *What fires* is the plan's list and no more — conflict opened, lease held elsewhere, push rejected, pull
+  refused, update ready, server gone for over five minutes — and never a successful push. Everything else the agent
+  reports keeps going to the log and the console's bell (§2), which is why the routine Windows balloons were removed
+  rather than restyled: the offline drainer's "attempting drain…" used to balloon every 30 s for as long as the server
+  was down, exactly the per-poll repetition the "announce once" rule exists to prevent. A standing condition is
+  announced **once** and withdrawn when it ends (a clean sync of that game, the server resolving the conflict, the
+  server answering); nothing announced because no session existed is not "announced", so a Deck that later reaches
+  Desktop Mode still hears about it. *Conflict notices have one source* — the server-side poll — so a conflict this
+  machine's own push found and one the poll found are one condition with one key, never two popups. *The button opens
+  the agent UI at the exact screen* — on Linux `xdg-open` on `http://127.0.0.1:<port>/#route` (the browser is the UI);
+  on Windows the shell opens `http://localhost:<port>/open?view=route&key=…`, whose page asks the tray to raise its own
+  window there. The key (`LocalAuth.OpenLinkKey`, a keyed hash of the local token) is what may raise the window, so a
+  web page that finds `/open` can show a screen in a tab and nothing more. The button does nothing else: the
+  alternatives were built or measured and rejected — a registered URL scheme is refused by
+  Windows' toast host (and is a door any web page can knock on), and a toast cannot reach into the tray otherwise — so
+  "Retry now"/"Install now" were dropped rather than faked, and the update toast says where the tray's own item is.
+  The measurements are in `NoticeAction`'s doc comment and [[Gotchas]] → *Windows notifications*; a button that acts
+  needs a COM activator ([[Backlog]]). *Where the Windows agent's TFM gets its projection:* `net10.0-windows10.0.19041.0`,
+  with the output folder pinned so nothing that hardcodes the old path moves; the price is Windows 10 2004 as the
+  minimum and ~8 MB on the exe.
+
 ## Environment facts (user-provided)
 - Games are standalone builds, not bought on Steam/Epic → manifest-based detection + manual
   `--dir` fallback is the primary path, not a fallback, on Linux.

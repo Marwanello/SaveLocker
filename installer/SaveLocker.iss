@@ -63,7 +63,12 @@ Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: recursesu
 Source: "{#PublishDir}\agent-ui\*"; DestDir: "{app}\agent-ui"; Flags: recursesubdirs ignoreversion skipifsourcedoesntexist
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
+; AppUserModelID is what gives the agent's toast notifications their name and icon: Windows takes a
+; toast's header from the Start-menu shortcut that carries the toast's identity, and shows the bare
+; identity string, with no icon, when there is none (verified on Windows 11 25H2). Must equal
+; ToastPresenter.ProductAumid in src/Agent/ToastPresenter.cs — tests/run-appearance-consistency-tests
+; fails if they drift.
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "SaveLocker"
 
 [Registry]
 ; Auto-start: written only if the user ticks the task; removed on uninstall. Same key

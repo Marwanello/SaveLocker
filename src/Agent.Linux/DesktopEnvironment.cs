@@ -146,4 +146,83 @@ public static class DesktopEnvironment
         // gdbus prints "(true,)" or "(false,)" to stdout on success.
         return exit == 0 && stdout.Contains("(true", StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// What an app launched from the desktop session would be started with, and this daemon usually
+    /// lacks: display, X authority, and the session's identity and search paths.
+    /// <c>XDG_DATA_DIRS</c> carries the flatpak export directories, which hold a flatpak browser's
+    /// <c>.desktop</c> file. <c>XDG_CURRENT_DESKTOP</c>/<c>KDE_*</c> pick the desktop's own opener.
+    /// </summary>
+    private static readonly string[] SessionKeys =
+    [
+        "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY",
+        "XDG_DATA_DIRS", "XDG_CONFIG_DIRS", "XDG_MENU_PREFIX",
+        "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "XDG_SESSION_TYPE", "DESKTOP_SESSION",
+        "KDE_FULL_SESSION", "KDE_SESSION_VERSION", "KDE_SESSION_UID", "KDE_APPLICATIONS_AS_SCOPE",
+    ];
+
+    /// <summary>
+    /// The desktop session's environment (<see cref="SessionKeys"/>) as the <c>systemd --user</c>
+    /// manager holds it right now. Never taken from this process's own environment, which is a
+    /// snapshot from whenever systemd started it. Every real SaveLocker daemon here is a
+    /// <c>systemd --user</c> unit pulled in by <c>default.target</c>. That target is reached before
+    /// SteamOS's desktop session imports these variables into the manager, and systemd never pushes
+    /// later imports into a running unit. On real hardware (2026-09-27), the test rig's daemon had
+    /// none of them. The installed daemon had Game Mode's values (<c>XDG_CURRENT_DESKTOP=gamescope</c>)
+    /// while the Deck sat in Desktop Mode. Sending a notification still worked, because D-Bus only
+    /// needs the session bus. <c>xdg-open</c> failed in two ways:
+    /// <list type="bullet">
+    /// <item>With no display, it fell through to looking for a text browser.</item>
+    /// <item>With a display but without <c>XDG_DATA_DIRS</c>, KDE could not see the flatpak Chrome
+    /// that was set as the default browser. It opened the only other https handler: SteamOS's
+    /// Firefox placeholder, whose <c>Exec</c> line is broken.</item>
+    /// </list>
+    /// Handing <c>xdg-open</c> the session's own values opened Chrome. Re-read on every call, not
+    /// cached, because a session can start well after the daemon. Empty if <c>systemctl</c> fails;
+    /// the caller then keeps what it has. Values that systemd prints in escaped <c>$'…'</c> form are
+    /// skipped, since none of these keys should need escaping. <see cref="ApplySessionEnv"/> is how a
+    /// child process gets them.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string> ResolveSessionEnv()
+    {
+        var result = new Dictionary<string, string>();
+        var (exit, stdout, _) = ProcessRunner.Run("systemctl", ["--user", "show-environment"], TimeSpan.FromSeconds(2));
+        if (exit != 0) return result;
+
+        foreach (var line in stdout.Split('\n'))
+        {
+            var eq = line.IndexOf('=');
+            if (eq < 0) continue;
+            var key = line[..eq];
+            if (Array.IndexOf(SessionKeys, key) < 0) continue;
+            var value = line[(eq + 1)..].TrimEnd('\r');
+            if (value.Length > 0 && !value.StartsWith("$'", StringComparison.Ordinal)) result[key] = value;
+        }
+        return result;
+    }
+
+    /// <summary>The search paths among <see cref="SessionKeys"/>: they only add places to look, so a
+    /// value the session does not set is harmless to keep. Every other key says which session this is.</summary>
+    private static readonly string[] SearchPathKeys = ["XDG_DATA_DIRS", "XDG_CONFIG_DIRS"];
+
+    /// <summary>
+    /// Give a child process (<paramref name="environment"/> is its <c>ProcessStartInfo.Environment</c>,
+    /// a copy of this process's own) the desktop session's values from <see cref="ResolveSessionEnv"/>.
+    /// When the session has a display, what it says about <i>which</i> session this is is the whole
+    /// truth: a display or identity key it does not set is removed rather than left at this process's
+    /// value, which may be Game Mode's — a gamescope <c>WAYLAND_DISPLAY</c> left beside Desktop Mode's
+    /// X11 <c>DISPLAY</c> sends a Wayland-first browser to a compositor that is not running. When it
+    /// has no display (nothing imported a session into the manager, as under WSL), this process's own
+    /// values are all there is, and are kept.
+    /// </summary>
+    public static void ApplySessionEnv(IDictionary<string, string?> environment)
+    {
+        var session = ResolveSessionEnv();
+        var authoritative = session.ContainsKey("DISPLAY") || session.ContainsKey("WAYLAND_DISPLAY");
+        foreach (var key in SessionKeys)
+        {
+            if (session.TryGetValue(key, out var value)) environment[key] = value;
+            else if (authoritative && Array.IndexOf(SearchPathKeys, key) < 0) environment.Remove(key);
+        }
+    }
 }

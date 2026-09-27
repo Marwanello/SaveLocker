@@ -117,6 +117,30 @@ internal sealed class AgentWindow : Form
         if (UrlForView(_port, view) is { } url) Navigate(url);
     }
 
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+    private const byte VK_MENU = 0x12;
+    private const uint KEYEVENTF_KEYUP = 0x0002;
+
+    /// <summary>
+    /// Show the window above whatever is in front, including a browser that has just taken the
+    /// foreground. A toast button reaches this by way of the browser (see <c>/open</c>), so the
+    /// browser is already active when the request lands, and Windows refuses a background process's
+    /// plain Activate() — the window would open behind it. A synthetic Alt press marks this process as
+    /// the one that last had input, which is what lets SetForegroundWindow through; the TopMost toggle
+    /// puts the window on top even where focus is still refused.
+    /// </summary>
+    public void RaiseToFront()
+    {
+        if (!Visible) Show();
+        if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+        keybd_event(VK_MENU, 0, 0, UIntPtr.Zero);
+        keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+        TopMost = true;
+        TopMost = false;
+        SetForegroundWindow(Handle);
+        Activate();
+    }
     /// <summary>The React app routes on the hash, so a view is a fragment on the home URL.</summary>
     private static string? UrlForView(int port, string? view) =>
         string.IsNullOrWhiteSpace(view) ? null : $"http://localhost:{port}/#{view.Trim()}";

@@ -13,20 +13,19 @@ import { SettingsView } from './components/SettingsView'
 import { Chip } from './components/ui/Chip'
 import { Mark } from './components/ui/Mark'
 import { isCurrentPoll, looksEpoch, setLook } from './appearance'
+import { clearRouteHash, parseRoute } from './route'
 
 export default function App() {
   // The tray's native Sync All / Force Pull / Force Push (TrayApp.cs, Phase 7) open this window at
   // "#conflicts:queue" rather than the plain "#conflicts" route when they find an open conflict —
   // the suffix is stripped for routing but remembered below to auto-open the same queue pop-up
   // the status header's own Sync all already shows, so both hosts get one queue UI regardless of
-  // which trigger point found the conflict.
-  const initialHash = window.location.hash.slice(1)
-  const [view, setView] = useState<View>(() => {
-    const base = initialHash.split(':')[0] as View
-    return (['overview', 'games', 'addGames', 'conflicts', 'settings'] as View[]).includes(base) ? base : 'games'
-  })
-  const [autoQueueRequested] = useState(() => initialHash === 'conflicts:queue')
-  const [openGameId, setOpenGameId] = useState<string | null>(null)
+  // which trigger point found the conflict. A notification's button does the same, and adds
+  // "#game:<id>" — see route.ts, which is also what the hashchange listener below reads.
+  const [initialRoute] = useState(() => parseRoute(window.location.hash))
+  const [view, setView] = useState<View>(initialRoute.view)
+  const [autoQueueRequested] = useState(initialRoute.queue)
+  const [openGameId, setOpenGameId] = useState<string | null>(initialRoute.gameId)
   const [state, setState] = useState<AgentState | null>(null)
   const [appearance, setAppearance] = useState<AgentAppearance | null>(null)
   const [conflicts, setConflicts] = useState<Conflict[]>([])
@@ -113,12 +112,32 @@ export default function App() {
     return () => clearInterval(id)
   }, [refreshConflicts])
 
+  // The route above is read in a state initializer, which StrictMode runs twice — so the hash is
+  // consumed here, after both reads, rather than there. See clearRouteHash for why it goes at all.
+  useEffect(() => { clearRouteHash() }, [])
+
   // Runs once, only when a native tray action opened this window looking for a conflict to show.
   // The passive 15s poll above must never do this on its own — see handleSynced's own comment.
   useEffect(() => {
     if (!autoQueueRequested) return
     refreshConflicts().then(cs => { if (cs.length > 0) setSyncQueue(cs) })
   }, [autoQueueRequested, refreshConflicts])
+
+  // The same routes, asked for while the window is already open. Without this the hash was read only
+  // once at load, so the tray's window — which is kept and re-shown rather than rebuilt — ignored
+  // every deep link after the first, and a notification's button would have opened the app to
+  // wherever it had last been. Like the effect above, only an explicit request raises the pop-up.
+  useEffect(() => {
+    const onHash = () => {
+      const route = parseRoute(window.location.hash)
+      clearRouteHash()
+      setView(route.view)
+      setOpenGameId(route.gameId)
+      if (route.queue) refreshConflicts().then(cs => { if (cs.length > 0) setSyncQueue(cs) })
+    }
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [refreshConflicts])
 
   return (
     <div className="sl-app">

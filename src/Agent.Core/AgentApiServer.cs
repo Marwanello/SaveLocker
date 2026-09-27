@@ -63,6 +63,10 @@ public sealed class AgentApiServer : IDisposable
     private readonly Func<TrackedGame, CancellationToken, Task> _postExitSync;
     // POST /api/games/{id}/sync — SyncEngine.SyncGameAsync, resolved the same way as the two above.
     private readonly Func<TrackedGame, GameSyncMode, CancellationToken, Task<string>> _syncGame;
+
+    // Raises the host's own window at a route: what a Windows toast button reaches through /open.
+    // Null on a host with no window of its own, where /open falls through to the browser UI.
+    private readonly Action<string>? _openView;
     // Per-game save-dir resolution for /api/candidates/lookup and /api/manifest/search (Phase 5).
     // Host-agnostic (its own Windows-only checks no-op cleanly on Linux), so it is taken directly
     // rather than through a delegate — unlike _doScan/_enroll, nothing here differs per host.
@@ -91,6 +95,9 @@ public sealed class AgentApiServer : IDisposable
 
     public int Port { get; }
 
+    /// <summary>What a link to <c>/open</c> must carry to raise the host's window (see MapUi).</summary>
+    public string OpenLinkKey => _auth.OpenLinkKey;
+
     public AgentApiServer(
         int port,
         AgentConfig config,
@@ -113,7 +120,8 @@ public sealed class AgentApiServer : IDisposable
         Func<Task<PlaynitePluginStatusDto>>? playnitePluginStatus = null,
         Func<Task<PlaynitePluginCardStatusDto>>? playnitePluginCardStatus = null,
         Func<Task<PlaynitePluginStatusDto>>? playnitePluginInstall = null,
-        Func<TrackedGame, GameSyncMode, CancellationToken, Task<string>>? syncGame = null)
+        Func<TrackedGame, GameSyncMode, CancellationToken, Task<string>>? syncGame = null,
+        Action<string>? openView = null)
     {
         _browser = new PathBrowser(browseRoots);
         Port = port;
@@ -143,6 +151,7 @@ public sealed class AgentApiServer : IDisposable
         _prepareLaunch = prepareLaunch ?? ((_, _) => Task.FromResult(new LaunchGateResult(LaunchDecision.Proceed)));
         _postExitSync = postExitSync ?? ((_, _) => Task.CompletedTask);
         _syncGame = syncGame ?? ((_, _, _) => Task.FromResult("Not available."));
+        _openView = openView;
         _detection = detection;
         _uiRoot = Path.Combine(AppContext.BaseDirectory, "agent-ui");
         _auth = LocalAuth.LoadOrCreate(config.ConfigPath);
@@ -1190,6 +1199,43 @@ public sealed class AgentApiServer : IDisposable
 
     private void MapUi(WebApplication app)
     {
+        // Not under /api, so no token: a toast button is a plain link the default browser opens, which
+        // cannot send one. Raising the window takes the link key instead (LocalAuth.OpenLinkKey, which
+        // only the notification that built the link knows), so a web page — which can navigate or
+        // frame this route, and whose framed copy would pass the Origin check on its own POST — can at
+        // most show the agent UI's screen in a tab, never pull the window forward over whatever the
+        // user is doing. A missing or stale key (a toast from before the token changed) still gets its
+        // screen, the way the link worked before the window could be raised. The route is whitelisted
+        // before it reaches the window's URL or the page.
+        static bool SafeView(string? v) =>
+            v is { Length: > 0 and <= 80 } && v.All(c => char.IsAsciiLetterOrDigit(c) || c is ':' or '-' or '_');
+
+        app.MapGet("/open", (string? view, string? key, HttpContext context) =>
+        {
+            if (!SafeView(view)) return Results.BadRequest();
+            if (_openView is null || !_auth.IsValidOpenLinkKey(key)) return Results.Redirect("/#" + view);
+            context.Response.Headers.CacheControl = "no-store";
+            // Carries the key in its script, so nothing may frame it or keep it.
+            context.Response.Headers.ContentSecurityPolicy = "frame-ancestors 'none'";
+            context.Response.Headers.XFrameOptions = "DENY";
+            context.Response.Headers["Referrer-Policy"] = "no-referrer";
+            // The page asks for the raise itself, once it has loaded, rather than /open raising the
+            // window directly: the browser takes the foreground when it commits this page, so a raise
+            // made while answering the request lands first and is immediately covered by the tab.
+            return Results.Content(
+                "<!doctype html><meta charset=utf-8><title>SaveLocker</title>" +
+                "<body style=\"font:16px system-ui;margin:3rem\">Opened in the SaveLocker window. You can close this tab.</body>" +
+                $"<script>addEventListener('load',()=>fetch('/open/raise?view={view}&key={_auth.OpenLinkKey}',{{method:'POST'}}).finally(()=>window.close()))</script>",
+                "text/html; charset=utf-8");
+        }).ExcludeFromDescription();
+        app.MapPost("/open/raise", (string? view, string? key) =>
+        {
+            if (!SafeView(view) || _openView is null) return Results.BadRequest();
+            if (!_auth.IsValidOpenLinkKey(key)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+            _openView(view!);
+            return Results.NoContent();
+        }).ExcludeFromDescription();
+
         if (!Directory.Exists(_uiRoot)) return;
 
         // No UseDefaultFiles: "/" must go through SendIndexAsync so the token is injected. Serving

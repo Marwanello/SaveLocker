@@ -29,7 +29,17 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- The 10.0.19041 platform version is what brings in the Windows Runtime projection
+         (Windows.UI.Notifications) that ToastPresenter.cs draws its toasts with — no package needed.
+         It raises the minimum OS to Windows 10 2004 (May 2020). Setting TargetPlatformVersion on the
+         plain net10.0-windows TFM does NOT do it: the projection is only referenced when the version
+         is in the TFM string itself. -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <!-- ...but that string would rename bin/Debug/net10.0-windows/ — a path hardcoded in every
+         tests/run-*.ps1, testenv.ps1, the installer and the publish profile. The folder keeps its
+         old name on purpose; only the TFM inside it changed. -->
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\$(Configuration)\net10.0-windows\</OutputPath>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>

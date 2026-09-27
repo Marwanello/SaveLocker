@@ -93,7 +93,7 @@ Versioning is **MinVer** (git-tag-driven). Tag `v0.1.0` → that build stamps `0
 1. `git tag v0.2.0 && git push origin v0.2.0`
 2. `release.yml` builds on `windows-latest`, runs `build-installer.ps1`, creates a GitHub Release with the exe attached.
 3. Admin uploads the installer in dashboard → Configuration → Agent Updates (Windows row, `POST /api/admin/agent-installer?platform=win-x64`).
-4. Connected agents check within 24 h (or via tray "Check for Updates"); offered update via balloon → confirm dialog (Update Now / Skip / Remind Later).
+4. Connected agents check within 24 h (or via tray "Check for Updates"); an available update raises a toast that names the tray menu's bold "Update to vX…" item, which opens the confirm dialog (Update Now / Skip / Remind Later). (It used to be a balloon whose click started the update; a toast cannot reach back into the tray — `Gotchas` → Windows notifications.)
 5. Agent downloads from `GET /api/agent/installer/download?platform=win-x64`, verifies digest, launches silently, exits.
 
 ### Linux/Deck

@@ -24,6 +24,18 @@ here.
   changing iteration count/salt/hash size invalidates every stored password. `tests/verify-password-compat.ps1`
   guards this; keep a `v1` verification path if it ever moves.
 
+- **The Windows agent's TFM is `net10.0-windows10.0.19041.0`, but its output folder is still
+  `bin/<Config>/net10.0-windows/` — on purpose.** The platform version *in the TFM string* is the only
+  thing that brings in the WinRT projection (`Windows.UI.Notifications`); setting `TargetPlatformVersion`
+  on plain `net10.0-windows` does not (`CS0234`, tried). The TFM would rename the output folder, which
+  ~20 places hardcode (every `tests/run-*.ps1`, `testenv.ps1`, the installer's publish path,
+  `win-x64.pubxml`, CI), so `SaveLocker.Agent.csproj` sets `AppendTargetFrameworkToOutputPath=false` and
+  pins `OutputPath`. If a script cannot find `SaveLocker.Agent.dll`, look there first. The test project
+  must carry the same TFM (a project cannot reference one built for a newer platform version), and the
+  self-contained exe is ~8 MB larger for the projection (`Microsoft.Windows.SDK.NET.dll` 23.7 MB).
+  A second-build warning count of `2` from `testenv.ps1 build` means *you* added a warning — the
+  baseline is one (`MSB3277`, WindowsBase), and the rig checks it.
+
 - **A test build must not carry a RELEASE's numeric version, or it can never be updated and cannot
   be told apart from the real thing.** `build-linux.sh` stamps `AssemblyFileVersion` with the numeric
   part only (`${version%%-*}` — the attribute rejects a `-suffix`), so a tarball built as
@@ -119,6 +131,10 @@ These exist because the production values are far too slow to observe in a suite
   Must be a **rooted** path or it is ignored — a relative one would resolve against whatever
   directory the process started in, which for a tray launched from Explorer is not knowable. Setting
   it makes `--config` optional: `DefaultConfigPath` moves with it.
+- **`SAVELOCKER_UNREACHABLE_NOTICE_SECONDS`** — how long the server must be gone before the agent says so
+  in a notification (production: 5 minutes; clamped 1–3600). Set it in the shell you run
+  `testenv.ps1 up` from and clear it afterwards; 20 lets the whole appear-once-then-withdraw cycle be
+  watched in a minute (`docker stop savelocker-test`, wait, `docker start savelocker-test`).
 - **`SAVELOCKER_RUNKEY_SUBPATH`** — moves the HKCU "Start with Windows" subkey (Windows only).
   WA-10's access-denied case needs a **Deny ACE**, and putting one on the real
   `Software\Microsoft\Windows\CurrentVersion\Run` would break auto-start for everything on the box if
@@ -243,6 +259,57 @@ behave in ways that look like bugs.
   picker previews on one load, 0 of 15 on three re-fetches). Harmless, and the picker shows a clickable
   "no preview" tile — but it is not a product bug, so do not chase it there. Port 5217 for the manual
   stub: 5216 is the security suite's own and it refuses to start if it is taken.
+
+## Windows notifications (toasts — `src/Agent/ToastPresenter.cs`)
+Every line here was measured on Windows 11 25H2 (build 26200) while building Group 7; none is in any
+documentation that was found. Read before touching the presenter.
+- **A toast's button cannot call back into the tray, and a custom URL scheme is not the way around it.**
+  Built and verified end to end (registry handler → short-lived process → named pipe → tray), then dropped:
+  the plain link worked from `Start-Process` and `Launcher.LaunchUriAsync`, but the *toast host* answered
+  every freshly registered scheme with **"Get an app to open this link"** while launching Discord's (an
+  HKCU-only scheme; its process went 0 → 5), Steam's and `ms-settings:`. Ten variants changed nothing
+  (hyphen-free name, signed handler, Discord's
+  exact key layout incl. `DefaultIcon`, `RegisteredApplications`/Capabilities, `SHChangeNotify`, restarting
+  `ShellExperienceHost`, process AUMID). The button is an `http://localhost:<port>/open?view=route&key=…` link the
+  shell hands to the default browser; the tiny page it lands on POSTs `/open/raise`, which raises the tray window at
+  that screen (the browser tab stays behind - only a COM activator removes it). **The `key` is load-bearing**
+  (`LocalAuth.OpenLinkKey`): `/open` is not under `/api`, and a web page can navigate to it or frame it — a framed
+  copy's own POST even passes the Origin check — so without a key it only redirects to `/#route` in the browser.
+  The page also refuses framing (`frame-ancestors 'none'`). A link built before the API server exists, or with a
+  key from an older `api-token`, still opens the screen, just in the browser. The raise must come from the
+  page, after it loads: raised while `/open` is still answering, the window lands first and the browser tab
+  covers it. `AgentWindow.RaiseToFront` needs the Alt-key trick + TopMost toggle because the browser is already
+  in front and Windows refuses a background process a plain Activate(). A richer button needs a COM activator + a shortcut carrying
+  `ToastActivatorCLSID` ([[Backlog]]). Don't rebuild the scheme.
+- **The header's name and icon come from a Start-menu shortcut that carries the toast's AUMID.** With one, the
+  header read the shortcut's name and the exe's icon; without, the raw AUMID string and no icon. An HKCU
+  `AppUserModelId\<id>` key with `DisplayName`/`IconUri` and `SetCurrentProcessExplicitAppUserModelID` were
+  both tried and changed *nothing*. So the AUMID string is chosen to be readable (`SaveLocker`,
+  `SaveLocker.Test.<port>`), and `installer/SaveLocker.iss` stamps `AppUserModelID` on the shortcut
+  (`run-appearance-consistency-tests` ties the two). A rig has no shortcut, so it shows the AUMID.
+- **A toast's logo file must be in `%TEMP%`.** The toast is drawn by an AppContainer process, which reads
+  only where *ALL APPLICATION PACKAGES* has access. The agent's state dir is ACL-locked on purpose (WA-03) and
+  a plain folder under `%LOCALAPPDATA%` is not readable either — in both the file existed, right size and
+  format, and the toast simply had no picture, with no error anywhere.
+- **`IToastNotifier.Setting` throws `0x80070490` ("element not found") until Windows has seen the app show one
+  toast.** It reads as "off" and is not; ask in its own `try` and let `Show` be the real test.
+- **Clicking a toast's button removes it from the Action Center.** So "does it withdraw when the condition
+  ends" cannot be tested on a toast you click — use one nobody clicks (the server-unreachable notice).
+- **Testing toasts here.** PowerShell can display toasts only for an AUMID that has a shortcut (unregistered
+  scratch identities are accepted and silently never shown, and `GetHistory` still says 1). UI Automation
+  cannot see the toast host from the tool sandbox; click by screen coordinate (`SetCursorPos` +
+  `mouse_event`) off a screenshot — the virtual desktop here starts at x = −1920, so bitmap x ≠ screen x.
+  **Every tray port leaves a ~1 KB `savelocker-toast-logo-<port>-<look>.png` in `%TEMP%` (one file per look: a fixed name made the shell show a stale picture after an accent change) and, once it has toasted, a
+  record under `HKCU\…\Notifications\Settings\SaveLocker.Test.<port>`** (it lists in Settings → Notifications).
+  `testenv.ps1 clean` removes its own port's; `run-winagent-tests.ps1` (ports 5189–5198) does not — clear those by
+  hand if the list bothers you.
+  `scenario="reminder"` toasts stay put (Error notices use it), and at most three banners are visible at once.
+  **Crop screenshots to the toast region**: the rest of the desktop is the user's. `testenv.ps1 clean` clears
+  the rig's toast history, its Temp logo and Windows' per-app record; if a scratch shortcut or a `slk*` /
+  `Scratch.*` registry key is ever made by hand, remove it by hand.
+- **A default browser is not always Chrome** (here it is Arc): a check on Chrome's window titles saw nothing
+  while the click had worked. Look at connections to the agent's port (`Get-NetTCPConnection -RemotePort`)
+  instead of guessing the browser.
 
 ## Windows ACLs
 - **`SetAccessRuleProtection(isProtected: true, preserveInheritance: true)` does not let you then
@@ -456,8 +523,21 @@ behave in ways that look like bugs.
   for one large or slow-to-sync game specifically and not others, check archive size against measured
   upload bandwidth against the reverse proxy's fixed timeout before assuming it is the agent's or the
   server's own code.
+- **Behind a proxy, a server that is down still answers — with the proxy's status, not silence.** nginx/Caddy/Traefik
+  return 502/503/504 and Cloudflare 520–530 (521 "web server is down", 522/523 timeouts) when the SaveLocker container
+  is gone, so "no response" is the wrong test for "server unreachable". `ServerReachability` (`Agent.Core`) is the one
+  answer: those codes are the server *missing*. The poller's five-minute "Can't reach the server" clock and
+  `SyncEngine`'s push catch both use it — before it (found in the PR #50 review), a Cloudflare outage never raised
+  the notice and each game's push became a sticky "push failed" toast instead of being queued. A 500 from the server
+  itself is still a real refusal.
 
 ## Testing
+- **`run-linux-tests.sh` fails two "no session" checks under WSLg — that is the machine, not the code.** "no session:
+  graphical session reported no" and "…D-Bus session bus reported no" assume the harness has no graphical session, but WSLg
+  injects `DISPLAY`, `WAYLAND_DISPLAY` and `DBUS_SESSION_BUS_ADDRESS` into every WSL shell, **even under `env -i`**. Expect
+  192 pass / 2 fail there (2026-09-24); the recorded 237/0 baseline is from a cloud container with no display. The notification
+  checks in that suite (`--wait`, `--print-id`, the action label, the error icon, *announced once across several polls*) are
+  unaffected — they use a fake `notify-send` on `PATH`.
 - **`run-local-api-tests.ps1` hardcodes its daemon to :5188 — the same port the `testenv` Windows tray owns.** With the rig up, the
   suite's token checks talk to the *tray* (a different token) and a dozen checks fail together: `token is accepted`, `the
   agent's own Origin`, the whole path-browser block. It looks like a regression and is not. `.\tests\testenv.ps1 down` first (the
@@ -641,6 +721,33 @@ behave in ways that look like bugs.
 - **The Linux install prefix IS the state directory** (`~/.local/share/SaveLocker`), so
   `config.json` — this machine's server API key — sits inside the tree an update replaces. Anything
   that "replaces the install" must copy file-by-file, never swap or rename the directory.
+- **The daemon never has the desktop session's environment — so a notification click must borrow it.**
+  Confirmed on a real Deck 2026-09-27. `savelocker.service`'s `[Install]` is `WantedBy=default.target`,
+  which `systemd --user` reaches before SteamOS's desktop session imports its variables into the
+  manager, and systemd never pushes later imports into a running unit. The test rig's daemon had
+  none of them. The installed daemon had Game Mode's (`XDG_CURRENT_DESKTOP=gamescope`,
+  `XDG_SESSION_TYPE=x11`) while the Deck sat in Desktop Mode. `notify-send` works regardless, because
+  it only needs the session bus. The click's `xdg-open` failed in two ways, one after the other:
+  - **No `DISPLAY`/`WAYLAND_DISPLAY`:** it found no graphical opener and went looking for a text
+    browser (`www-browser`, `links2`, ...). None exists on a Deck.
+  - **A display but no `XDG_DATA_DIRS`:** the flatpak export directories were missing, so KDE could
+    not see flatpak Chrome's `.desktop`, even though `kdeglobals` `BrowserApplication` and
+    `mimeapps.list` both named Chrome. The only https handler left was SteamOS's
+    `/usr/share/applications/org.mozilla.firefox.desktop`, a Discover placeholder whose
+    `Exec=sh -c 'xdg-open appstream://…' %U` breaks on a URL (`unexpected EOF while looking for
+    matching '`). An earlier guess, a stale KDE5 `ksycoca` cache, was wrong. The Deck's own
+    configuration was fine all along.
+
+  Fix: `DesktopNotifier.Open` overlays the session's current values from
+  `systemctl --user show-environment` on every click (`DesktopEnvironment.ResolveSessionEnv`):
+  display, `XAUTHORITY`, `XDG_DATA_DIRS`/`XDG_CONFIG_DIRS`, and the desktop identity
+  (`XDG_CURRENT_DESKTOP`, `KDE_*`, ...). This works however late the session starts, and the unit
+  file stays as it is. Reordering the unit (`After=graphical-session.target`) was rejected: that
+  change belongs in the installer, delays the daemon's startup, and needs its own reasoning about
+  Game Mode's session timing. Proven two ways. Live: on the Deck, the daemon's exact environment
+  plus display reproduced the Firefox failure, and adding the session's values opened Chrome. In
+  `run-linux-tests.sh`: the daemon starts with a stale identity and no session variables, a fake
+  `systemctl` reports the session's values, and a fake `xdg-open` records what it received.
 
 ## Test harness
 - **`run-linux-tests.sh` reassigns `HOME` to the fixture tree.** So `"$HOME/.dotnet"` inside a check

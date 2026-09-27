@@ -614,8 +614,8 @@ wait "${daemon_pid}" 2>/dev/null
 # this script, and everything since — the daemon+wrapper section just above included — kept
 # advancing the Deck's head without it. Pushing ANY edit from it now, without pulling first,
 # reproduces the exact two-machine divergence run-agent-tests.ps1 already covers server-side; this
-# section instead exercises the AGENT's new reaction to it — ConflictNotifier, wired into
-# CommandPoller's 20s tick in Daemon.cs.
+# section instead exercises the AGENT's reaction to it — NotificationCenter (the rules) and
+# DesktopNotifier (the freedesktop delivery), wired into CommandPoller's 20s tick in Daemon.cs.
 echo
 echo "==> Desktop notification on a real conflict (headless harness — no D-Bus session bus)"
 echo "level=other-cfg-stale" >"${scratch}/pulled/slot1.sav"
@@ -667,9 +667,12 @@ esac
 exit 0
 FAKEGDBUS
 
+notify_calls="${scratch}/notify-send-calls.txt"
+rm -f "${notify_calls}"
 cat >"${fakebin}/notify-send" <<FAKENOTIFY
 #!/usr/bin/env bash
 printf '%s\n' "\$@" > "${notify_args}"
+echo call >> "${notify_calls}"
 # --wait means the real notify-send stays alive for as long as the notification is up. Staying
 # alive here too keeps the agent's own process bookkeeping on the same path it takes for real.
 sleep 5
@@ -703,11 +706,114 @@ check "the notification is sent with --wait, so its action can outlive the call"
 check "the notification requests an id, for the documented CloseNotification withdraw path" \
   "$(contains "${sent_args}" "--print-id")"
 check "the action button is declared with the key the agent listens for" \
-  "$(contains "${sent_args}" "--action=view=View conflict")"
-check "the notification names the conflicted game" \
-  "$(contains "${sent_args}" "Fake Prefix Game")"
+  "$(contains "${sent_args}" "--action=view=Choose a save")"
+check "the notification names the conflicted game, in the plan's own words" \
+  "$(contains "${sent_args}" "Fake Prefix Game needs a decision")"
+check "the notification says what to do about it" \
+  "$(contains "${sent_args}" "Both copies changed since the last sync")"
+check "a conflict is an error, so it carries the error icon" \
+  "$(contains "${sent_args}" "--icon=dialog-error")"
 check "the reachable-daemon path reports sending, not 'no daemon'" \
-  "$(contains "$(tail -60 "${log}" 2>/dev/null)" "conflict notification: sent for")"
+  "$(contains "$(tail -60 "${log}" 2>/dev/null)" "notification sent: 'Fake Prefix Game needs a decision'")"
+# THE rule behind every notification: a standing condition is announced ONCE, not on every poll. The
+# daemon above ticked every 500 ms for ~2 s — three or four polls of the same open conflict — and the
+# fake notify-send records one line per invocation.
+check "a standing conflict is announced once across several polls, not once per poll" \
+  "$([ "$(wc -l <"${notify_calls}" 2>/dev/null | tr -d ' ')" = "1" ] && echo 0 || echo 1)"
+
+# ── …and clicking its action opens the right place, even when the daemon's own environment is
+# missing the desktop session or holds a stale one. On real hardware (2026-09-27), both the test
+# rig's daemon and the installed one are systemd --user units pulled in by default.target, which is
+# reached before SteamOS's desktop session imports its variables into the manager. The rig's daemon
+# had no display, so xdg-open found no opener. With a display but without XDG_DATA_DIRS (the flatpak
+# exports), KDE could not see the flatpak Chrome set as default and ran SteamOS's broken Firefox
+# placeholder. The installed daemon still said XDG_CURRENT_DESKTOP=gamescope while the Deck was in
+# Desktop Mode. DesktopNotifier.Open re-reads the session's values from
+# `systemctl --user show-environment` on every click. To prove it, the daemon below starts with a
+# stale identity and none of the session variables, only a fake systemctl reports them, and a fake
+# xdg-open records what it was handed.
+echo
+echo "==> The action button's click hands xdg-open the desktop session the daemon itself lacks"
+xdg_open_env="${scratch}/xdg-open-env.txt"
+xdg_open_args="${scratch}/xdg-open-args.txt"
+rm -f "${xdg_open_env}" "${xdg_open_args}"
+
+cat >"${fakebin}/systemctl" <<'FAKESYSTEMCTL'
+#!/usr/bin/env bash
+case "$*" in
+  *"--user show-environment"*)
+    echo "DISPLAY=:7"
+    echo "WAYLAND_DISPLAY=wayland-9"
+    echo "XAUTHORITY=/run/user/1000/xauth_fake"
+    echo "XDG_DATA_DIRS=/fake/flatpak/exports/share:/usr/share"
+    echo "XDG_CURRENT_DESKTOP=KDE"
+    echo "KDE_SESSION_VERSION=6"
+    echo "XDG_RUNTIME_DIR=/run/user/1000"
+    exit 0
+    ;;
+esac
+exit 1
+FAKESYSTEMCTL
+cat >"${fakebin}/xdg-open" <<FAKEXDGOPEN
+#!/usr/bin/env bash
+env > "${xdg_open_env}"
+printf '%s\n' "\$@" > "${xdg_open_args}"
+FAKEXDGOPEN
+# notify-send --print-id prints the id line first (the real binary does too - Show() reads it off
+# the same stream), then the action key once "clicked", same as a real notify-send would on a
+# button press; --wait's aliveness is unaffected, since this still blocks until the sleep ends.
+cat >"${fakebin}/notify-send" <<FAKENOTIFYCLICK
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > "${notify_args}"
+echo call >> "${notify_calls}"
+echo 424242
+sleep 0.3
+echo view
+sleep 5
+FAKENOTIFYCLICK
+chmod +x "${fakebin}/systemctl" "${fakebin}/xdg-open" "${fakebin}/notify-send"
+
+click_bus_sock="${scratch}/fake-click-bus.sock"
+start_fake_unix_socket "${click_bus_sock}" 64 60
+click_bus_pid="${FAKE_SOCK_PID}"
+
+# Deliberately none of the session's variables (WSLg sets DISPLAY/WAYLAND_DISPLAY, so they are
+# unset here) and Game Mode's leftover desktop identity, as the installed Deck daemon had — including
+# two identity keys the session above does not set at all, which must not reach xdg-open either.
+env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY -u XDG_DATA_DIRS -u KDE_SESSION_VERSION \
+  XDG_CURRENT_DESKTOP=gamescope XDG_SESSION_DESKTOP=gamescope XDG_MENU_PREFIX=gamescope- \
+  PATH="${fakebin}:${PATH}" DBUS_SESSION_BUS_ADDRESS="unix:path=${click_bus_sock}" \
+  SAVELOCKER_POLL_MS=500 dotnet "${agent_dir}/bin/Debug/net10.0/savelocker.dll" daemon \
+  --config "${other_cfg}" --port 5191 >"${scratch}/notify-daemon3.log" 2>&1 &
+click_daemon_pid=$!
+wait_for_port 5191
+sleep 2
+kill "${click_daemon_pid}" 2>/dev/null
+wait "${click_daemon_pid}" 2>/dev/null
+kill "${click_bus_pid}" 2>/dev/null; wait "${click_bus_pid}" 2>/dev/null
+
+opened_args="$(cat "${xdg_open_args}" 2>/dev/null)"
+opened_env="$(cat "${xdg_open_env}" 2>/dev/null)"
+check "the click opens the conflict chooser" \
+  "$(contains "${opened_args}" "#conflicts:queue")"
+check "xdg-open is handed a DISPLAY the daemon's own process never had" \
+  "$(contains "${opened_env}" "DISPLAY=:7")"
+check "xdg-open is handed a WAYLAND_DISPLAY the daemon's own process never had" \
+  "$(contains "${opened_env}" "WAYLAND_DISPLAY=wayland-9")"
+check "xdg-open is handed the session's XAUTHORITY" \
+  "$(contains "${opened_env}" "XAUTHORITY=/run/user/1000/xauth_fake")"
+check "xdg-open is handed the session's XDG_DATA_DIRS (where a flatpak browser's .desktop lives)" \
+  "$(contains "${opened_env}" "XDG_DATA_DIRS=/fake/flatpak/exports/share:/usr/share")"
+check "xdg-open is handed the session's desktop, not the daemon's stale Game Mode one" \
+  "$(contains "${opened_env}" "XDG_CURRENT_DESKTOP=KDE")"
+check "xdg-open is handed the session's KDE version" \
+  "$(contains "${opened_env}" "KDE_SESSION_VERSION=6")"
+# The session has a display, so it is the whole truth about which session this is: an identity key it
+# does not set is dropped, not left at the daemon's Game Mode value beside the session's own.
+check "a Game Mode identity key the session does not set is dropped (XDG_SESSION_DESKTOP)" \
+  "$([ "$(contains "${opened_env}" "XDG_SESSION_DESKTOP=gamescope")" = 1 ] && echo 0 || echo 1)"
+check "a Game Mode identity key the session does not set is dropped (XDG_MENU_PREFIX)" \
+  "$([ "$(contains "${opened_env}" "XDG_MENU_PREFIX=gamescope-")" = 1 ] && echo 0 || echo 1)"
 
 # ---------------------------------------------------------------------------
 # autostart must report the REAL outcome (LA-08)
