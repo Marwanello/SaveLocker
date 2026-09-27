@@ -7,19 +7,68 @@ Read [[plan]] first for tokens, type, motion and the colour rule, and
 [[implementation-grouping]] before starting any phase — it regroups the list below **by surface**
 rather than by phase number, because several phases edit the same components.
 
-## Status (updated 2026-09-24)
+## Status (updated 2026-09-27, after the gap audit)
 
 | Phase | Status |
 |---|---|
 | 1 — Design system foundation, web half | ✅ Shipped 2026-09-17 (Group 1); theme default corrected 2026-09-20 (dark base, light opt-in — see `implementation-grouping.md`) |
 | 1 — Design system foundation, agent half | ✅ Shipped 2026-09-20 (Group 3) — `tokens.css`, `ui.css`, Archivo, `components/ui/` |
-| 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in moved to revocable sessions 2026-09-20 |
+| 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in moved to revocable sessions 2026-09-20. The release-history table (split off) ➡️ Group 12 |
 | 3 — Sync all and progress | ✅ Items 1, 2, 4 shipped 2026-09-18 (Group 2 — console side); item 3 (agent Sync all + progress) shipped 2026-09-20 (Group 3); item 5 (per-game Sync this game) ✅ shipped 2026-09-21 (Group 4) with the game page and a new per-game agent route |
 | 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5); item 4 — the Deck's accent ➡️ shipped 2026-09-22 (Group 6). The theme default now follows the OS (every hex colour left the views first). See `implementation-grouping.md` → Groups 5/6 |
 | 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
-| 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22 (Group 6) — verified live (real screenshots, pixel-sampled colours, `--nav`-scripted L1/R1 with `--nav-debug`) since `savelocker ui` runs on this Windows box without WSLg; a real focus-timing bug was found and fixed this way — see `implementation-grouping.md` → Group 6. No real Deck/gamescope pass yet. Item 4 (Wayland, 6.4) still needs the open decision below made first |
+| 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22 (Group 6) — verified live (real screenshots, pixel-sampled colours, `--nav`-scripted L1/R1 with `--nav-debug`) since `savelocker ui` runs on this Windows box without WSLg; a real focus-timing bug was found and fixed this way — see `implementation-grouping.md` → Group 6. No real Deck/gamescope pass yet. Item 4 (Wayland) ⏳ Group 15 — options and a recommendation now written out below; the maintainer confirms one before code |
 | 7 — OS notifications | ✅ Shipped 2026-09-24 (Group 7) — shared rules, a real Windows toast and the generalised Linux notifier. Buttons are links to the agent UI, not callbacks (measured: Windows' toast host refuses freshly registered URL schemes); "Retry now"/"Install now" did not survive that. See Phase 7 below |
-| 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1) — see the note under Phase 8 below |
+| 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1). Remainder (Steam library art, PNG favicons, the installer icon — all still the pre-Checkpoint brand) ⏳ Group 16 |
+| 9 — Console page kit and top bar | ⏳ Not started — Group 8 (from the 2026-09-27 audit) |
+| 10 — Console Games page | ⏳ Not started — Group 9 |
+| 11 — Backups tab and Configuration | ⏳ Not started — Groups 10 (Backups) and 11 (Configuration). The Backups tab does not exist at all |
+| 12 — Console Audit log, Help, What's new, sign-in | ⏳ Not started — Group 12 |
+| 13 — Agent UI, completed | ⏳ Not started — Group 13 |
+| 14 — Deck Game Mode, completed | ⏳ Not started — Group 14 |
+
+## The 2026-09-27 audit — what the prototype shows that did not ship
+
+Groups 1–7 shipped every phase this file listed, but several of those phases were scoped as the
+**shell** — tokens, top bars, rows, primitives, Sync all. Comparing `prototype.html` screen by screen
+with the code found that most of the *pages* behind the shell were never laid out to the prototype:
+Group 5 migrated them to the tokens (every `#hex` gone, so the theme could follow the OS) and they
+otherwise kept their pre-Checkpoint structure. The measure used: a page built from the primitives has
+almost no inline styles, so a view that still carries dozens of `style={{` was recoloured, not redesigned.
+
+| View | inline `style={{` | Laid out to the prototype? |
+|---|---|---|
+| `web` `GameDetail.tsx` | 116 | No — the old vertical stack of cards, 26 `alert()`/`confirm()` calls |
+| `web` `ConfigView.tsx` + `AgentUpdatesCard.tsx` | 112 + 61 | No — one column of old-style cards, 31 more `alert()`/`confirm()` calls between them |
+| `web` `AuditView.tsx` / `WhatsNewView.tsx` / `HelpView.tsx` | 22 / 10 / 9 | No — no search or machine filter in the audit log, no release-history table |
+| `web` **Backups tab** | — | **Does not exist.** `BackupService` snapshots nightly and `GET /admin/backups` / `POST /admin/backup` exist, but nothing in `web/src/api.ts` calls them — a snapshot can only be seen or taken with curl |
+| `web` top bar, sidebar, grid | — | Partly: tabs are buttons not pill tabs, the bell is a "⚠ N" text button that disappears when quiet, no progress rail or Cancel, the grid is squeezed into a 340 px sidebar |
+| `agent-ui` `SettingsView.tsx` / `AddGamesView.tsx` / `ConflictCard.tsx` | 37 / 29 / 21 | Partly — no Activity tab, no hero "N of M"/Cancel/summary, no game-page stats or versions |
+| Deck `savelocker ui` | — | Tokens, rows, legend and Sync all yes; the rail's sections, the header, the stat tiles, the rows' art and content, and two screens no |
+| Wayland desktop window | — | Not started — the decision it waits on was never taken |
+
+The gaps are **Phases 9–14** below, plus three older items still open: Phase 2's release-history table,
+Phase 6 item 4 and Phase 8's remainder. All of it is grouped in [[implementation-grouping]] → Groups 8–16.
+
+### Deliberate departures — not gaps, do not rebuild
+
+Each of these differs from the prototype on purpose, and was decided when its group shipped.
+
+- **Console Sync all is one command per machine** (Phase 3), so its progress counts machines, not games.
+- **Notification buttons open a page; they never call back** (Group 7, measured on Windows 11).
+- **The Deck rail's current entry is a neutral tile, not the accent** (Group 6), and **the Deck legend's
+  glyphs stay neutral** where the prototype tints A/B/Y safe/accent/watch: the colour rule wins over the
+  mockup — the accent means a decision is waiting and never decorates.
+- **The unread-release-notes dot is `--safe`**, not the prototype's accent, for the same reason.
+- **Real cover art, icons in list rows and the art picker** (2026-09-20) replace the prototype's generated
+  gradient tiles; the gradient-with-initials tile survives only as the no-art fallback.
+- **The conflict card keeps the conflict-resolution-ui look** (the approved mockup in
+  `tasks/conflict-resolution-ui/`). Phase 10's inline resolve panel and Phase 13's Conflicts page wrap it;
+  neither redraws it.
+- **Prototype-only, drop:** the typeface-pairing switcher, "six marks" (three exist), the Decky Quick Access
+  panel and Steam toasts (out of scope in [[plan]]), the Deck legend's `gamescope 1280×800 · Wayland`
+  caption, and numbers the product does not have — playtime ("96h played"), "last push skipped 312 files".
+  Do not invent a figure to fill a slot.
 
 ## A gap found while building Group 2 (2026-09-18)
 
@@ -144,7 +193,7 @@ surface converted. `agent-ui` untouched this phase — its half of item 6 is Gro
 | Lock button + sign-in screen | **New** | Remove the password field from the header. `SignIn.tsx` renders whenever no credential is held or the server returns 401. Two options: (a) UI-only — keep `X-Admin-Password` in `localStorage`, the screen is just where you type it; (b) proper session — new `POST /admin/session` returning a signed cookie with a 30-day option, and `Tokens.cs` gains verification. (a) ships in a day and is honest; (b) is the right end state. Do (a) now, file (b) as a follow-up | ✅ Shipped as option (a). Verified live end to end: Lock → SignIn full-screen → Connect with a blank password (this test server has none set) → back to the authenticated app. Option (b) remains a follow-up, not started |
 | Exclude patterns as chips | Extend | Same `POST /games/{id}/excludes`; chips + add field + "preview what is skipped" (needs a dry-run count — either compute client-side from the last version's file list via `/versions/{id}/stats`, or add `GET /games/{id}/excludes/preview`) | ✅ Shipped. `/versions/{id}/stats` turned out to carry no file list at all (`VersionStatsDto(int FileCount, DateTime? NewestFileWriteUtc)` — count only), so this needed the second option: new `POST /games/{id}/excludes/preview`, backed by `SyncService.PreviewExcludesAsync` reading the head archive's own zip directory and running it through the same `Matcher`-based filter the agent uses (extracted from `SaveArchive.EnumerateRelativeFiles` into a new public `SaveArchive.FilterExcluded`, so the preview can never drift from what the agent actually does). One-directional by construction — it can only ever find newly-caught files among what's currently tracked, never ones an already-saved pattern already hides — and the UI says so ("would **additionally** exclude"). Verified live: added `**` as a draft pattern against a real one-file seeded save and got back "Would additionally exclude 1 file", matching exactly |
 | Server default excludes editor | Extend | `Sync:DefaultExcludeGlobs` already exists in settings; surface it in Configuration and show it as inherited chips on each game | 🚧 Shipped as **read-only display**, not a true editor — `Sync:DefaultExcludeGlobs` turned out to be `IConfiguration`-only (appsettings.json/env var), never wired into `SettingsService`'s DB-backed override the way the SteamGridDB key is, so there was nothing to write to yet. Both a new Configuration card and each game's own chip list now show it; making it console-writable is a real follow-up, not built here |
-| Release history table | UI only | `releases/index.ts` already has every version; render the full list under the three newest | ⏳ **Deliberately split off**, per `implementation-grouping.md`'s own pre-authorization to move this item out if size grows — `WhatsNewView.tsx`'s existing sidebar-click layout already technically exposes every release; turning it into "3 newest in full, a table of the rest below" is a distinct navigation redesign that shares no files with the rest of this group. Not started |
+| Release history table | UI only | `releases/index.ts` already has every version; render the full list under the three newest | ⏳ ➡️ **Group 12** (Phase 12 item 3, 2026-09-27). **Deliberately split off**, per `implementation-grouping.md`'s own pre-authorization to move this item out if size grows — `WhatsNewView.tsx`'s existing sidebar-click layout already technically exposes every release; turning it into "3 newest in full, a table of the rest below" is a distinct navigation redesign that shares no files with the rest of this group. Not started |
 
 ---
 
@@ -249,6 +298,31 @@ The largest genuinely-new piece.
 4. Wayland desktop session: the agent window currently has no native chrome of its own. Either host
    the existing web UI in a small GTK/WebKit window with a header bar, or accept the browser. Decide
    before building — this is the one item in the plan with no obvious right answer.
+   <br>**Options, written out 2026-09-27 (Group 15 builds whichever is confirmed).** Today Desktop Mode
+   has no SaveLocker entry at all: the UI is reached by typing `localhost:5178` into a browser, or by
+   clicking a notification (`DesktopNotifier.Open` → `xdg-open`).
+   1. **A chrome-less browser app window — recommended.** A new `savelocker open` verb, and a `.desktop`
+      launcher `install.sh` writes to `~/.local/share/applications/` (so SaveLocker is in KDE's menu and
+      can be added to Steam as well), open `http://localhost:5178/` in a Chromium-family browser's
+      `--app=` mode when one is installed — on a Deck usually a Flatpak (`com.google.Chrome`,
+      `org.chromium.Chromium`, `com.microsoft.Edge`, `com.brave.Browser`) via `flatpak run` — and fall
+      back to `xdg-open`. agent-ui draws the prototype's header bar (mark, "SaveLocker", "<machine> —
+      desktop session", Sync all) only when it is not inside browser chrome (`display-mode: standalone`,
+      or an `?app` flag the launcher passes); a real web manifest (today's `site.webmanifest` has an empty
+      name and a white theme) makes it installable as a PWA from any Chromium too. Nothing new to ship
+      or install, and the page is the same one every other surface uses. The notification click should go
+      through the same launcher so it lands in the app window, not a new browser tab.
+   2. **Accept the browser.** Ship only the `.desktop` launcher (`xdg-open`), no header bar. Cheapest.
+   3. **`savelocker ui` in a window.** The ImGui Game Mode surface already opens as a native window in
+      Desktop Mode. No dependency at all, but it is the gamepad UI, not "the same agent UI" the plan asks for.
+   4. **WebKitGTK.** Already rejected in [[Decisions]] → *Linux UI* (Flatpak + WebKitGTK is 665 MB+, and
+      SteamOS's immutable rootfs rules out a system package). Listed only so nobody re-proposes it.
+
+   **Measure on the Deck before building option 1:** which Chromium-family browsers the maintainer's
+   Deck actually has; whether `--app=` gives a window KWin decorates with only its own title bar; and
+   whether that browser supports Window Controls Overlay on KDE. Without it, KWin's title bar sits above
+   the in-page header — the header then drops the prototype's − □ × glyphs, which are KWin's to draw,
+   not ours.
 
 ---
 
@@ -299,10 +373,20 @@ Ship the three marks and the Steam art from the prototype as real files:
 | Favicon | 32 / 180 PNG | `web/public/` | ⏳ Not done — the existing pre-Checkpoint PNGs are untouched; this environment has no SVG rasterizer (`magick`/`inkscape`/`rsvg-convert` all absent, confirmed) |
 | Tray icon | 16/24/32/48 `.ico` | `src/Agent/AppResources.cs` | ✅ Shipped 2026-09-21 (Group 5) **differently**: drawn at runtime from the chosen mark and accent (`src/Agent/MarkIcon.cs`, GDI+, transparent punch-outs, light/dark taskbar aware, at the shell's own icon size) — so it needs no `.ico` and follows the Appearance setting. The packaged `SaveLocker.ico` remains the installer/exe icon and the fallback. Not reacting to a Windows taskbar-theme change while running ([[Backlog]]) |
 | Deck tile | 256 | `src/Agent.Linux/Ui/Art.cs` | ❌ Dropped 2026-09-23 — the Deck header draws the live mark as vectors (`Ui/AppMark.cs`), so there is no raster to ship; `Art.cs` and `logo-96.png` are deleted |
-| Library capsule | 600×900 | `store/` | ⏳ Not done |
-| Wide capsule | 1920×620 | `store/` | ⏳ Not done |
-| Header capsule | 460×215 | `store/` | ⏳ Not done |
-| Library hero | 1920×620 | `store/` | ⏳ Not done |
+| Library capsule | 600×900 | `packaging/linux/artwork/dist/capsule.png` | ⏳ Group 16 |
+| Wide capsule | 920×430 | `packaging/linux/artwork/dist/capsule-wide.png` | ⏳ Group 16 |
+| Header capsule | 460×215 | — | ❌ Dropped 2026-09-27 — Steam's *Set Custom Artwork* for a non-Steam shortcut takes no header capsule |
+| Library hero | 1920×620 | `packaging/linux/artwork/dist/hero.png` | ⏳ Group 16 |
+| Library logo | transparent, ≤1280×720 | `packaging/linux/artwork/dist/logo.png` | ⏳ Group 16 — not in the prototype, but it is the fourth file `install.sh` tells the user to set |
+| Installer / exe icon | 16–256 `.ico` | `src/Agent/Assets/SaveLocker.ico`, `web/public/favicon.ico` | ⏳ Group 16 — still the pre-Checkpoint brand (the tray is drawn at runtime; the installer, the exe in Explorer and the `.ico` favicon fallback are not) |
+
+**Corrected 2026-09-27:** the Steam art does not belong in a new `store/` folder. `install.sh` already ships
+four PNGs from `packaging/linux/artwork/dist/` and tells the user to set them on the Game Mode shortcut
+— but they are the **pre-Checkpoint brand** (the green-and-orange circuit-board lockup) at sizes that
+are not Steam's own (782×430, 593×788, 1920×506). The Checkpoint lockups replace those files in place,
+at Steam's sizes, with the wide capsule at 920×430 rather than the prototype's "1920×620 grid" (that
+size is the hero's). The tiles follow the default mark and Ember: a Steam shortcut's art is a file on
+disk, not something the Appearance setting can repaint.
 
 All four Steam pieces are the same lockup at four crops, generated from whichever mark is selected —
 keep them as SVG sources plus exported PNGs so an accent change is a re-export, not a redraw. The
@@ -311,6 +395,101 @@ CSS/HTML mockup boxes inside `brand-kit.html`, which is a demo page, not an asse
 of the above to PNG/ICO needs a tool this environment doesn't have — flagged here rather than
 silently skipped, so whoever picks this up next knows to bring one (a local ImageMagick/Inkscape
 install, or a `sharp`/`resvg` devDependency) rather than re-discovering the gap.
+<br>**Decided 2026-09-27 for Group 16:** the `resvg` route — `@resvg/resvg-js` as a `web` devDependency behind
+an `npm run export:art` script that renders the SVG sources (the marks, the four Steam lockups, the favicon
+tiles) to every PNG and `.ico` above. A script in the repo makes the export reproducible on any machine and
+in CI; an ImageMagick install on one laptop does not.
+
+---
+
+### Phase 9 — Console page kit and top bar *(UI only, one small route)*
+
+Every console page after this is built from these. Without them each re-layout re-invents `style={{`.
+
+| Item | Kind | Work |
+|---|---|---|
+| 9.1 Page primitives | UI only | New in `web/src/components/ui/`: `PageHead` (27 px title, mono sub-line, actions slot), `DataTable` (the prototype's `table.t`: mono uppercase heads, row rules, row hover, `k`/`m`/`n`/`wrap` cell kinds), `KV` (the `dl.kv` grid), `PathField` (mono inset path), `Banner` (accent / watch / safe: title, one line, action), `EmptyState`, `SearchField` (pill with icon), `FilterChips` (`fchip`, with counts), `Meter`, and `InlineConfirm` (10.6). CSS from `prototype.html`. `agent-ui` already has most of these as `sl-` classes (`sl-kv`, `sl-banner`, `sl-empty`, `sl-search`, `sl-meter`) — use the same names where they overlap |
+| 9.2 Page canvas and motion | UI only | One `Page` wrapper every view renders into: 22/24 px padding, 16 px gap, and the `rise` entrance staggered over the first six children in 26 ms steps. Today only `SignIn` and two dialogs animate on entry |
+| 9.3 Tabs | UI only | `NavBar`'s tabs become the prototype's pill tabs (transparent at rest, `--raise` on hover, `accent-soft` + `accent-line` when current), not `Button variant="selected"`. The **Backups** tab (between Audit log and Help) is added by Group 10 together with its page — a tab that opens nothing would be a dead end |
+| 9.4 Bell | Extend | `NotificationsMenu` as drawn: a bell glyph (lucide `bell`) with a count badge — accent when any Error, watch otherwise, none for Info only — and **always present**: the quiet state is the menu's "Nothing to report / A healthy fleet is quiet…" empty state, where Group 2 hid the control. Header "Notifications" + an "N open" chip + Dismiss all; a severity dot instead of the severity chip; title, body, and a mono `code · machine · time` line; footer line + **Open audit log**. Per-item actions: `sync.conflict` → Resolve (today); `savedir.missing` → **Set folder** (opens the game *and* focuses that machine's folder field — Group 2 only opened the game); `push.failed` → **Retry** (queues a `Push` for that machine and game through the existing `POST /commands`); `update.staged` → no button, since the console cannot make an agent restart |
+| 9.5 Header tools | UI only | The lock as an SVG (lucide `lock`), not 🔒. The conflict pill for **any** open conflict, with its age ("1 conflict · 4h", `accent-soft`) — today only escalated conflicts show, as "Overdue conflicts: N". Drop the ↻ button; every view already polls |
+| 9.6 Progress rail and Cancel | Extend | The prototype's 3 px rail across the full width under the top bar (accent fill, width transition, the sweep) replaces the 80 px green mini-bar in the tools, which show a live-dot chip "Syncing 2 of 3 machines" and **Cancel** instead of the button. Cancel needs a route: `POST /commands/cancel { ids }` withdraws commands still waiting to be leased; one already dispatched runs to completion, and the toast says how many were withdrawn and how many were already running. New endpoint → regenerate `openapi.json` and `web/src/api-types.ts` |
+
+---
+
+### Phase 10 — Console Games page *(UI only)*
+
+| Item | Kind | Work |
+|---|---|---|
+| 10.1 Sidebar | UI only | Header: a `GAMES · N` eyebrow and the list/grid `Seg` with its icons. **+ Add game** moves to a footer. The second line of a row becomes `last sync · size` (today `size · head id · leased by`); the end slot is a state dot — safe, watch (a machine reported a problem for this game), accent (conflict), faint (disabled) — and a live phase chip while a Sync all is working on that game's machine. The current row takes `accent-soft` + `accent-line` |
+| 10.2 Grid wall | UI only | Grid becomes a full-width page (`split solo`), not a 340 px sidebar: `PageHead` "Games · N tracked · art from SteamGridDB" with the layout switch and Add game; tiles `minmax(184px, 1fr)`, cover inset 8 px, a Conflict / Retrying chip pinned top-right, a meta line (dot, last sync, size), the `pop` stagger and a 4 px hover lift. Opening a tile shows the game page with **← All games** |
+| 10.3 Page head and stats | UI only | `PageHead`: the name; `steam:<appid> · N versions · size`; chips for state, policy and keep N; Push / Pull (per machine — an inline machine picker when there is more than one) and Refresh art. The cover and its pen/art picker stay. Then four `Stat`s: Latest version (+ when, from which machine), Stored (+ versions kept), Machines (+ names), Lease (Held / Free + holder and age, Force-release beside it) |
+| 10.4 Conflict panel | UI only | A `Banner` ("Both machines wrote since vN", its age, **Resolve**) that expands in place into the resolve panel: the two sides as the conflict card already draws them, Keep this save / Keep both, and the "set a policy" hint. Replaces today's per-conflict cards and keeps their semantics — one per open conflict, never a pre-selected side |
+| 10.5 Two-column body | UI only | `grid31`. Left: **Versions** — a `DataTable` (version, when, machine, size, a Latest / Conflicting / Protected / Kept chip, Set as Latest), an "N kept" chip and **Prune N versions** naming the real count (today "Prune now"); the Backups sub-list stays behind a `Seg`. Right, stacked: **Save folders** (per machine: path, last upload, Push / Pull, Use as template, edit — merging today's separate *Machines* table and *Save paths* card); **Rules** (conflict policy + preferred machine, keep N, both editable in place); **Exclude patterns** (the shipped chip editor restyled: own chips, dashed inherited chips, add field, Preview, **Glob syntax** → Help `glob-patterns`). **Remote commands** full width below: a `DataTable` with state chips, and an `EmptyState` |
+| 10.6 No modals | UI only | Each of the 26 `alert()` / `confirm()` calls in `GameDetail.tsx` (18 / 8) (delete a version, Set as Latest, resolve, prune, force-release, delete the game, template, unprotect…) becomes `InlineConfirm`: the control expands into its consequence sentence and one button that names the effect — "Prune 5 versions", "Keep the Deck save". Failures go to a `Toast`, not an `alert` |
+| 10.7 Split the file | — | `GameDetail.tsx` (58 KB) splits into one component per card under `components/game/`; the page file only lays them out. That split is also what keeps Group 9 reviewable |
+
+The add-game dialog stays a dialog: plan.md's no-modals list is conflicts, pickers, enrollment and
+resolution, and adding a game is a form about something not yet on screen.
+
+---
+
+### Phase 11 — Backups tab and Configuration *(New + Extend)*
+
+The only page the prototype has that the console lacks outright. `BackupService` has taken nightly
+`VACUUM INTO` snapshots since the start, and nobody can see them without curl.
+
+| Item | Kind | Work |
+|---|---|---|
+| 11.1 Backups page | New (UI) | `BackupsView.tsx`: `PageHead` "Backups · nightly snapshots of the database · keeps the newest N", a last-run chip (safe when the newest snapshot is under ~26 h old; watch when older or the last run failed, with the reason) and **Back up now** (primary; `POST /admin/backup`, answered in the past tense). Four `Stat`s: Snapshots (+ oldest), On disk (+ the backup folder), Archives (+ "not included in snapshots" — a snapshot is the version graph, not the save files, and the page must say so), Next run (+ a countdown, or "Scheduled backups are off"). **Recent snapshots**: a `DataTable` of file, taken, size, a Nightly / Manual / Before upgrade chip, and **Download** |
+| 11.2 Backup status | Extend | `GET /admin/backups` grows to `{ enabled, retentionCount, hourOfDay, nextRunAt, backupRoot, lastError, archivesBytes, backups[] }` (or a sibling `/admin/backups/status` if changing the list's shape is too much churn); `BackupInfo` gains `Reason`. The reason rides in the file name after the timestamp (`savelocker-20260927-030000-manual.db`), so the ordinal newest-first sort and the `savelocker-*.db` prune pattern keep working untouched, and existing names read as Nightly. The scheduler keeps its last failure for the page |
+| 11.3 Download | New | `GET /admin/backups/{file}` — admin only, the name matched against the listing and never joined into a path, streamed. **A snapshot holds every machine's API-key hash, the admin password hash, the session-token hashes and the SteamGridDB key in plain text** (the console only ever shows it masked), so it is audited (`backup.download`), sent `Cache-Control: no-store`, and fetched by `api.ts` with the session header into a blob — never a bare `<a href>`, which cannot carry `X-Admin-Session`, and never a credential in a query string. The page says what the file contains beside the button. `run-console-security-tests.ps1` gains: unauthenticated → 401; `..`, absolute and percent-encoded names → 404; a real-looking name not in the listing → 404; the audit row written |
+| 11.4 Before-upgrade snapshot | New | At startup, **before** the schema fix-ups and `db.Database.Migrate()` (`Program.cs`, ~L160–224), take a `before-upgrade` snapshot when the running build differs from the version recorded at the last start (an `AppSetting`, written after a successful start). Migrations are the one moment the server itself can damage the DB, and today the only copy is last night's. Nothing to snapshot on a fresh install |
+| 11.5 Backup settings | Extend | `Backup:Enabled` / `RetentionCount` / `HourOfDay` become DB-backed through `SettingsService` (DB overrides appsettings, like the SteamGridDB key), with an admin write route; `BackupScheduler` reads them each loop instead of once at startup. That is what makes the prototype's **Nightly database backup** toggle real |
+| 11.6 Configuration layout | UI only | `PageHead` "Configuration · server settings · appearance · enrollment · storage" + a "Connected as admin" chip, then `grid2` rows: **Server** (public URL, storage root, build, the conflict-escalation window, a storage `Meter` — "X of Y across N games" — and the SteamGridDB key) beside **Appearance**; **Enroll a machine** (the shipped flow restyled, its history as a `DataTable` with Used / Expired chips) beside **Defaults & maintenance** (the agent auto-update toggle — today buried in `AgentUpdatesCard` —, the nightly-backup toggle from 11.5, default keep, settle, the default exclude patterns from 11.7, Change password); then **Machines** (`DataTable`: machine, platform, agent, a last-seen chip, games, Force-release lease), with **Agent updates** and **Admin password** restyled underneath. Their 31 `alert()` / `confirm()` calls (`ConfigView` 21, `AgentUpdatesCard` 10) become `InlineConfirm` and toasts, as in 10.6. The meter needs the volume's size: add `DriveInfo` total/free for the archive root to the settings DTO |
+| 11.7 Editable default excludes | Extend | Phase 2 shipped these read-only because `Sync:DefaultExcludeGlobs` was never wired into `SettingsService`. Wire it (DB overrides config), add `POST /api/settings/default-excludes` running the same validation as the per-game route (the `..` pattern that once threw inside the matcher — [[Gotchas]] → *Web console*), and reuse 10.5's chip editor in the Defaults card. Agents already receive the effective list per game, so no agent change — assert that in the test rather than assume it |
+| 11.8 Help | UI only | A KB article, `database-backups.md`: what a snapshot contains and does not (archives), where it lives, restoring one by hand (stop the container, swap the file, start it), and that a downloaded snapshot is as sensitive as the admin password |
+
+---
+
+### Phase 12 — Console Audit log, Help, What's new, sign-in *(UI only, three small extends)*
+
+| Item | Kind | Work |
+|---|---|---|
+| 12.1 Audit log | UI only | `PageHead` "N of M events · newest first" with a `SearchField` (action, game, detail) and Export CSV; machine `FilterChips` (All + each machine); a `DataTable` whose action cell is `accent-ink` for failures and conflicts and `dim` otherwise; `EmptyState` "Nothing matches that filter". Filtering runs over the 200 rows `GetAuditLogAsync` returns, and the page says so when the cap is hit rather than implying it searched everything |
+| 12.2 Help | UI only | `PageHead` "N articles · ships with the console, works offline" with the search in its actions; the `docs` grid — a 240 px article-list card (current article `accent-soft`) beside a prose card; `.help-content` restyled to the prototype's `.prose` (h5 eyebrows, the accent-ruled blockquote, `code` chips). Categories stay |
+| 12.3 What's new | Extend | The three newest releases in full (`rel` rows) with **Running** / **Available** chips; the **Release history** table below them (Phase 2's split-off item — every entry in `releases/index.ts`); an **Agent versions** card — machine, agent version (heartbeat), installer hosted for its platform, and Current / Behind / Update staged. "Staged" needs `AgentHeartbeat` to carry an optional `StagedVersion`, appended like the fields before it. "vX available" for the console itself needs the newest release tag `AgentInstallerPollerService` already reads from the repo, exposed on `ServerBuildInfo` |
+| 12.4 Sign-in | Extend | The prototype's two-column screen: the accent wash, "Unlock SaveLocker" + the one-password lead, a labelled field with its error sentence beneath, **Remember this browser for 30 days** (unchecked: the session token in `sessionStorage`, gone with the browser; checked: today's 7-day idle / 30-day max in `localStorage`), the host · version footer, a forgotten-password hint that names the real recovery path — there is no `savelocker-server passwd` verb, so either write that verb or point at the documented reset, not both — and the "While it is locked" aside. **Not** the prototype's live chips ("3 agents connected", "1 conflict waiting"): the lock screen is unauthenticated, and fleet state is not for a stranger on the LAN |
+
+---
+
+### Phase 13 — Agent UI, completed *(Extend: local routes + UI)*
+
+| Item | Kind | Work |
+|---|---|---|
+| 13.1 Activity tab | Extend | A sixth nav entry, **Activity**: the full feed (the Overview keeps its short *Recent*), an **Offline queue** card listing what waits (game, queued at, size, attempts) with its empty state, and **Open agent.log**. New local routes: `GET /api/offline-queue` (reads `OfflineQueue` under `AgentStateLock` — the launch wrapper shares the file) and `POST /api/open-log` (Windows: select the file in Explorer; Linux: `xdg-open` with the borrowed session environment `DesktopNotifier.Open` already uses; no desktop: 409 carrying the path, which the page shows with Copy) |
+| 13.2 Sidebar counts | UI only | Counts on Games (tracked), Add games (suggested candidates from the last scan — never a scan triggered by navigating), Conflicts (today) and Activity (warnings since it was last opened) |
+| 13.3 Hero progress | Extend | "Syncing 2 of 6 — Hades II": the activity snapshot gains `index` / `total` during a Sync all. A phase · MB sent · % legend. **Cancel** — `POST /api/sync/cancel`, cooperative: the game in progress finishes or is abandoned before any byte of a restore is written, never mid-restore, and the rest are skipped. The done state "Synced 6 games — 19.3 MB sent · 2 uploaded, 4 already current" — `SyncAllAsync` returns per-game outcomes and bytes (`SyncEngine` already knows both; Group 3 left this out only because nothing returned them). Line two: machine · last push · settle Ns · offline queue N |
+| 13.4 Overview | Extend | A "Sent today" stat (a per-day byte counter persisted in `config.json` beside the pushed-saves count), "of N on the server" under Tracked here, Next up's Queue line from the real queue, and Rescan library |
+| 13.5 Game page | Extend | Four `Stat`s (save size here, last sync + policy, versions + keep, sent on the last push) and **Versions on the server** — the Backlog's *Agent game page: version list and bytes sent on the last push*: a `GET /api/games/{id}/versions` proxy of the server's per-game list, and the push's bytes recorded per game in `SyncEngine.PushCoreAsync`. The per-game actions the prototype puts on this page — Change folder (PathBrowser), Open folder, Set game process, Stop tracking — which today live only in Settings' tracked-games list; the Excludes and Launch rows under *On this device* |
+| 13.6 Add games | UI only | The rest of the prototype: `fchip`-style filter chips with counts, the line explaining the current filter ("Everything except games Steam Cloud already backs up", plus "Matching "x" — n of m"), check rows with Steam Cloud / Detected / Not detected chips, and a footbar "N selected · they start syncing after the next time you quit each game" with Clear and **Add N games** (today "Enroll selected") |
+| 13.7 Settings | UI only | Cards in the prototype's order: **Connection** (machine name, server URL, the TOFU pin as a chip — "Pinned on first connect" / "Not pinned (plain HTTP)" — from `ServerTrust`, Save, **Test connection**), Appearance (shipped), **Sync safety** (settle; start with Windows / at login; install agent updates automatically), then Steam launch setup beside the Decky and Playnite cards. The form's 37 inline styles go |
+| 13.8 Conflicts page | Extend | `PageHead` "Sync paused · N conflicts · open 4h 12m" around the shipped `ConflictCard` (unchanged); a **Why did this happen?** card per conflict — which machine pushed which version when, on top of which base, all in the conflict DTO and its two versions; after the last one resolves, a **Recently resolved** table (game, kept, when, by), which needs the server's resolved conflicts on an agent route (`GET /agent/conflicts?resolvedSince=`) |
+
+---
+
+### Phase 14 — Deck Game Mode, completed *(C#, uses Phase 13's routes)*
+
+| Item | Kind | Work |
+|---|---|---|
+| 14.1 Rail | UI only | The prototype's sections plus the one the Deck genuinely needs: Overview · **Tracked games** · Add a game · Conflicts · **Activity** · Settings. *Steam setup* moves into Settings, as agent-ui already did with its launch-setup card. L1/R1 follow the rail — `RailEntries` is already the single list both read |
+| 14.2 Header | UI only | The mark plus the **SaveLocker** wordmark (accent "Locker"); a CONNECTED chip in place of today's eyebrow-and-text group; on the right, after Sync all + Y: the machine name, battery % (`/sys/class/power_supply/BAT*/capacity`, hidden when there is none) and the clock. New glyphs come from lucide's real path data through `SvgPath`, never hand-drawn |
+| 14.3 Stats | UI only | Four tiles with sub-lines, as drawn: Agent Status (CONNECTED + server host), Games Tracked ("on this Deck"), Saves Backed Up (+ "X GB on the server", from the daemon), Last Sync (+ which game, "paused" when it is in conflict). Today: three tiles, no sub-lines |
+| 14.4 Rows with art | Extend | Tracked-game rows as drawn: a 38 px cover, the name, `size · last sync · path`, an end chip (Conflict / Needs setup / Synced). The art is the real work: the daemon's `/api/games/{id}/art` proxy already serves it; the Deck needs a PNG/JPEG decode into a GL texture for `ImGui.Image` — a pure-C# decoder such as StbImageSharp (no native library; check the tarball size) — cached per game, released on screen change, with the initials tile as the fallback |
+| 14.5 Tracked games and a game screen | Extend | The new rail section lists those rows; A opens a per-game screen: Sync this game / Push / Pull (the daemon's per-game `POST /api/games/{id}/sync`, Group 4), Change folder (the existing Set folder flow), the server's head and lease, and the versions from 13.5's route. Today a row does nothing unless the game is in conflict |
+| 14.6 Activity screen | Extend | The full log and the offline queue, from 13.1's routes |
+
+---
 
 ## Sequencing and risk
 
@@ -321,7 +500,18 @@ install, or a `sharp`/`resvg` devDependency) rather than re-discovering the gap.
   `record AgentHeartbeatResponse(ConflictEscalationDto[] EscalatedConflicts)`. Adding `appearance`
   to it means regenerating `src/Server/openapi.json` and `api-types.ts` in **both** front ends and
   committing all three, per `CLAUDE.md`.
-- Phase 6 item 4 needs a decision before any code.
+- Phase 6 item 4 needs a decision before any code — the options and a recommendation are under Phase 6.
+- **Phases 9–14 (2026-09-27):** Phase 9 gates 10, 11 and 12 (their pages are built from its kit);
+  13 is independent of all three; 14 reuses 13's new local routes, so it follows 13. Five of them add
+  routes — `POST /commands/cancel` (9), the backup status/download/settings and default-excludes routes
+  (11), `StagedVersion` on the heartbeat and the newest tag on `ServerBuildInfo` (12), and the agent's
+  offline-queue / open-log / cancel / versions / resolved-conflicts routes (13) — so each of those groups
+  regenerates `src/Server/openapi.json` and the `api-types.ts` of whichever front end it touches, per `CLAUDE.md`.
+- **The backup download (11.3) is the riskiest new route in the plan**: it hands a copy of every credential
+  hash the server holds to whoever holds an admin session. Admin-only, audited, no query-string credential,
+  and covered by `run-console-security-tests.ps1` before it merges — the same bar the artwork proxy was held to.
+- **The before-upgrade snapshot (11.4) must run before `Database.Migrate()`**, or it snapshots the already
+  migrated file and protects nothing.
 - Watch the known gotchas: build the server with `--no-incremental` and stop the agent and server
   first (DLL lock); dev storage is `src/Server/localstate/`, never `data/`; the `@import` of the font
   stylesheet must stay above `@import "tailwindcss"` or it is silently dropped.

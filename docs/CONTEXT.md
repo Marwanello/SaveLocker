@@ -1540,6 +1540,20 @@ in the same document; `api-types.ts` regenerated from that tray. Linux suite: se
 proxy path against a real Cloudflare outage, the Deck. The test console did not start this session only because its
 image was not built (a previous `clean` removes it) — `testenv build -Only console` first.
 
+**Checkpoint UI gap audit (2026-09-27, branch `checkpoint-ui-gap-audit`, docs only — no code changed).** The maintainer
+pointed out that much of `tasks/checkpoint-ui/prototype.html` never shipped; a screen-by-screen comparison with the code
+confirmed it. Groups 1–7 built the *shell*; most *pages* behind it were migrated to the tokens by Group 5 and otherwise kept
+their pre-Checkpoint layout — measured by the inline styles still in each view (`GameDetail.tsx` 116, `ConfigView.tsx` 112,
+`AgentUpdatesCard.tsx` 61, agent `SettingsView.tsx` 37…). **The console has no Backups tab at all:** `BackupService` snapshots
+nightly and `GET /admin/backups` / `POST /admin/backup` exist, but nothing in `web/src/api.ts` calls them. The Deck's rail,
+header, stat tiles and rows fall short of the mockup (no Tracked games or Activity screen, no cover art), and the Wayland
+window was never decided. Also found: the Steam library art `install.sh` ships (`packaging/linux/artwork/dist/`) is still
+the pre-Checkpoint brand, at non-Steam sizes. Written up as **Phases 9–14** in `implementation.md` (*The 2026-09-27 audit*
+also lists what differs **on purpose** and must not be rebuilt) and **Groups 8–16** in `implementation-grouping.md`, with
+status rows in `plan.md` and both task files. The Wayland options are written out under Phase 6 item 4 with a recommendation
+(a chrome-less browser app window + a `.desktop` launcher; WebKitGTK stays rejected) — **the maintainer confirms one before
+Group 15 starts.** **Next action:** Group 8 (console page kit + top bar; gates 9–12) or Group 13 (agent UI; independent).
+
 ---
 
 ## Where things stand
