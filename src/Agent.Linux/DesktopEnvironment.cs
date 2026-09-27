@@ -180,9 +180,10 @@ public static class DesktopEnvironment
     /// Handing <c>xdg-open</c> the session's own values opened Chrome. Re-read on every call, not
     /// cached, because a session can start well after the daemon. Empty if <c>systemctl</c> fails;
     /// the caller then keeps what it has. Values that systemd prints in escaped <c>$'…'</c> form are
-    /// skipped, since none of these keys should need escaping.
+    /// skipped, since none of these keys should need escaping. <see cref="ApplySessionEnv"/> is how a
+    /// child process gets them.
     /// </summary>
-    public static IReadOnlyDictionary<string, string> ResolveSessionEnv()
+    private static IReadOnlyDictionary<string, string> ResolveSessionEnv()
     {
         var result = new Dictionary<string, string>();
         var (exit, stdout, _) = ProcessRunner.Run("systemctl", ["--user", "show-environment"], TimeSpan.FromSeconds(2));
@@ -198,5 +199,30 @@ public static class DesktopEnvironment
             if (value.Length > 0 && !value.StartsWith("$'", StringComparison.Ordinal)) result[key] = value;
         }
         return result;
+    }
+
+    /// <summary>The search paths among <see cref="SessionKeys"/>: they only add places to look, so a
+    /// value the session does not set is harmless to keep. Every other key says which session this is.</summary>
+    private static readonly string[] SearchPathKeys = ["XDG_DATA_DIRS", "XDG_CONFIG_DIRS"];
+
+    /// <summary>
+    /// Give a child process (<paramref name="environment"/> is its <c>ProcessStartInfo.Environment</c>,
+    /// a copy of this process's own) the desktop session's values from <see cref="ResolveSessionEnv"/>.
+    /// When the session has a display, what it says about <i>which</i> session this is is the whole
+    /// truth: a display or identity key it does not set is removed rather than left at this process's
+    /// value, which may be Game Mode's — a gamescope <c>WAYLAND_DISPLAY</c> left beside Desktop Mode's
+    /// X11 <c>DISPLAY</c> sends a Wayland-first browser to a compositor that is not running. When it
+    /// has no display (nothing imported a session into the manager, as under WSL), this process's own
+    /// values are all there is, and are kept.
+    /// </summary>
+    public static void ApplySessionEnv(IDictionary<string, string?> environment)
+    {
+        var session = ResolveSessionEnv();
+        var authoritative = session.ContainsKey("DISPLAY") || session.ContainsKey("WAYLAND_DISPLAY");
+        foreach (var key in SessionKeys)
+        {
+            if (session.TryGetValue(key, out var value)) environment[key] = value;
+            else if (authoritative && Array.IndexOf(SearchPathKeys, key) < 0) environment.Remove(key);
+        }
     }
 }

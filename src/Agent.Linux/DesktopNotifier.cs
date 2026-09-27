@@ -71,21 +71,40 @@ public sealed class DesktopNotifier : INotificationPresenter, IDisposable
     public DesktopNotifier(string uiBaseUrl) => _uiBaseUrl = uiBaseUrl;
 
     /// <summary>
+    /// How long a probe that found no notification daemon is believed. A notice nothing could show is
+    /// tried again by whatever raises it next — every poll for a conflict, and an engine fault each
+    /// time it recurs, which includes the pre-launch check the Decky plugin asks the daemon for — and
+    /// each retry would re-run the probe, a <c>gdbus</c> process bounded at 2 s, on that game's launch.
+    /// Only "no" is remembered: "yes" is re-checked every time, so a daemon that has gone away is never
+    /// assumed, and a desktop that appears is noticed within this window.
+    /// </summary>
+    private static readonly TimeSpan NoDaemonRecheck = TimeSpan.FromSeconds(30);
+    private DateTime _noDaemonUntil = DateTime.MinValue; // under _lock
+
+    /// <summary>
     /// Starts one <c>notify-send --wait</c> and returns immediately — the child is what waits, not
     /// this thread. Arguments go through <c>ArgumentList</c>, so a game name containing an apostrophe
     /// or a quote is just text (the escaping the GVariant-literal version had to do by hand does not
     /// arise here at all). The one thing that can hold the caller is the environment probe, which is
-    /// bounded to 2 s by <see cref="DesktopEnvironment"/> and only reaches a subprocess when a session
-    /// bus actually accepted a connection — and the callers are an engine's failure paths and the poll
-    /// tick, none of them a launch wrapper (which passes no notification center at all).
+    /// bounded to 2 s by <see cref="DesktopEnvironment"/>, only reaches a subprocess when a session
+    /// bus actually accepted a connection, and is skipped for <see cref="NoDaemonRecheck"/> after it
+    /// found nothing — the callers include the daemon's pre-launch route, so a game's launch must not
+    /// pay for it over and over.
     /// </summary>
     public string? Show(AgentNotice notice)
     {
+        const string noDaemon = "no desktop notification daemon reachable — see `doctor` or the agent UI.";
         // Only worth asking the environment when there is actually something to say — this is the one
         // point that spawns a process, and the overwhelming common case (nothing new) never gets here.
-        var env = DesktopEnvironment.Detect();
-        if (!env.NotificationDaemonPresent)
-            return "no desktop notification daemon reachable — see `doctor` or the agent UI.";
+        lock (_lock)
+        {
+            if (DateTime.UtcNow < _noDaemonUntil) return noDaemon;
+        }
+        if (!DesktopEnvironment.Detect().NotificationDaemonPresent)
+        {
+            lock (_lock) _noDaemonUntil = DateTime.UtcNow + NoDaemonRecheck;
+            return noDaemon;
+        }
 
         var psi = new ProcessStartInfo("notify-send")
         {
@@ -226,9 +245,10 @@ public sealed class DesktopNotifier : INotificationPresenter, IDisposable
 
     /// <summary>
     /// Opens the agent UI at the notice's screen in the default browser — the desktop-session half of
-    /// the plan's "action button ... opens the chooser." The same link Windows' toast button carries
-    /// (<see cref="NoticeAction.ToUrl"/>). Best-effort: a missing `xdg-open` (a bare window manager
-    /// with no default-application handler configured) degrades to nothing happening, not a crash.
+    /// the plan's "action button ... opens the chooser." The browser is the Linux agent's UI, so the
+    /// link is the hash route itself (<see cref="NoticeAction.ToUrl"/>); Windows' toast goes through
+    /// <c>/open</c> instead, to raise its tray window. Best-effort: a missing `xdg-open` (a bare window
+    /// manager with no default-application handler configured) degrades to nothing happening, not a crash.
     /// </summary>
     private void Open(NoticeAction action)
     {
@@ -238,11 +258,10 @@ public sealed class DesktopNotifier : INotificationPresenter, IDisposable
         {
             var psi = new ProcessStartInfo("xdg-open") { UseShellExecute = false };
             psi.ArgumentList.Add(url);
-            // See DesktopEnvironment.ResolveSessionEnv: this process's own display and session
+            // See DesktopEnvironment.ApplySessionEnv: this process's own display and session
             // variables can be missing or left over from Game Mode even while a desktop session is
             // running. xdg-open gets the session's current values from the systemd user manager.
-            foreach (var (key, value) in DesktopEnvironment.ResolveSessionEnv())
-                psi.Environment[key] = value;
+            DesktopEnvironment.ApplySessionEnv(psi.Environment);
             Process.Start(psi);
         }
         catch (Exception ex)

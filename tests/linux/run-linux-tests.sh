@@ -778,9 +778,10 @@ start_fake_unix_socket "${click_bus_sock}" 64 60
 click_bus_pid="${FAKE_SOCK_PID}"
 
 # Deliberately none of the session's variables (WSLg sets DISPLAY/WAYLAND_DISPLAY, so they are
-# unset here) and Game Mode's leftover desktop identity, as the installed Deck daemon had.
+# unset here) and Game Mode's leftover desktop identity, as the installed Deck daemon had — including
+# two identity keys the session above does not set at all, which must not reach xdg-open either.
 env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY -u XDG_DATA_DIRS -u KDE_SESSION_VERSION \
-  XDG_CURRENT_DESKTOP=gamescope \
+  XDG_CURRENT_DESKTOP=gamescope XDG_SESSION_DESKTOP=gamescope XDG_MENU_PREFIX=gamescope- \
   PATH="${fakebin}:${PATH}" DBUS_SESSION_BUS_ADDRESS="unix:path=${click_bus_sock}" \
   SAVELOCKER_POLL_MS=500 dotnet "${agent_dir}/bin/Debug/net10.0/savelocker.dll" daemon \
   --config "${other_cfg}" --port 5191 >"${scratch}/notify-daemon3.log" 2>&1 &
@@ -807,6 +808,12 @@ check "xdg-open is handed the session's desktop, not the daemon's stale Game Mod
   "$(contains "${opened_env}" "XDG_CURRENT_DESKTOP=KDE")"
 check "xdg-open is handed the session's KDE version" \
   "$(contains "${opened_env}" "KDE_SESSION_VERSION=6")"
+# The session has a display, so it is the whole truth about which session this is: an identity key it
+# does not set is dropped, not left at the daemon's Game Mode value beside the session's own.
+check "a Game Mode identity key the session does not set is dropped (XDG_SESSION_DESKTOP)" \
+  "$([ "$(contains "${opened_env}" "XDG_SESSION_DESKTOP=gamescope")" = 1 ] && echo 0 || echo 1)"
+check "a Game Mode identity key the session does not set is dropped (XDG_MENU_PREFIX)" \
+  "$([ "$(contains "${opened_env}" "XDG_MENU_PREFIX=gamescope-")" = 1 ] && echo 0 || echo 1)"
 
 # ---------------------------------------------------------------------------
 # autostart must report the REAL outcome (LA-08)

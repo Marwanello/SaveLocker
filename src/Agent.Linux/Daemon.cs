@@ -307,15 +307,17 @@ public sealed class Daemon : IAsyncDisposable
                 // safely from here — so the work that CAN be done now is done now, and the swap
                 // waits for the next start (Updater.cs). `savelocker update` is the way to say
                 // "now" instead.
-                try
-                {
-                    var staged = await Updater.StageAsync(_config, update, AgentLogger.Log);
-                    // The only notice anyone gets that a Deck has an update waiting; a staged one
-                    // installs at the next start, so this is worth saying once per version.
-                    _notices.Raise(NoticeCatalog.UpdateReady(staged, staged: true));
-                }
+                try { await Updater.StageAsync(_config, update, AgentLogger.Log); }
                 catch (Exception ex) { AgentLogger.Log($"update: could not stage v{update.Version} — {ex.Message}"); }
             }
+
+            // The only notice anyone gets that a Deck has an update waiting; a staged one installs at
+            // the next start, so it is worth saying once per version. Asked on every check while one
+            // waits, not only right after staging: the check after that skips staging (the version is
+            // already on disk), so a notice nothing could show then — no notification daemon at that
+            // moment — would otherwise never be tried again. The center keeps a standing one quiet.
+            if (Updater.PendingVersion(_config) is { } pending)
+                _notices.Raise(NoticeCatalog.UpdateReady(pending, staged: true));
 
             await CheckPluginUpdateAsync();
         }
