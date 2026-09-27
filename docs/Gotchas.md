@@ -710,28 +710,33 @@ documentation that was found. Read before touching the presenter.
 - **The Linux install prefix IS the state directory** (`~/.local/share/SaveLocker`), so
   `config.json` — this machine's server API key — sits inside the tree an update replaces. Anything
   that "replaces the install" must copy file-by-file, never swap or rename the directory.
-- **The daemon's own `DISPLAY`/`WAYLAND_DISPLAY` is permanently missing, not just stale at startup.**
-  Confirmed on a real Deck 2026-09-27, on BOTH the test rig's daemon and the actual installed
-  `savelocker.service`: neither had either variable in its own `/proc/<pid>/environ`, ever, even
-  hours into a real Desktop Mode session. `savelocker.service`'s `[Install]` is `WantedBy=default.target`,
-  which `systemd --user` reaches before SteamOS's desktop session imports either variable into the
-  manager — a plain unit-ordering fix (`After=graphical-session.target`) was rejected here: it lives
-  in the installer, delays the daemon's own startup, and needs real reasoning about Game Mode's
-  session timing that was out of scope. `notify-send` still worked fine throughout (it only needs the
-  session bus, which IS present) — only `xdg-open`, which needs a real display, silently found none
-  and fell through to hunting for a text browser (`www-browser`, `links2`, ...), none of which exist
-  on a Deck. Fixed in `DesktopNotifier.Open` by re-resolving both fresh from
-  `systemctl --user show-environment` on every click (`DesktopEnvironment.ResolveGraphicalEnv`)
-  rather than trusting the daemon's own environment — self-healing regardless of when the daemon
-  started, and it doesn't touch the unit file. Proven two ways: a `run-linux-tests.sh` check with a
-  fake `systemctl`/`xdg-open` (daemon launched with neither variable set, the fake `xdg-open` records
-  what it actually got); and live on the Deck, where the failure mode changed from "no method
-  available for opening" to `xdg-open` correctly reaching real desktop-file resolution. What it
-  resolves TO is a separate, Deck-specific problem this fix does not and should not touch: THIS
-  Deck's `xdg-settings default-web-browser` points at an uninstalled Firefox even after `xdg-settings
-  set` claims to change it (gamescope-wayland's minimal session likely has no full XDG desktop portal
-  behind it), so nothing visibly opens there even now — a working default browser on the Deck is a
-  precondition for seeing the click actually land, not something SaveLocker can fix from here.
+- **The daemon never has the desktop session's environment — so a notification click must borrow it.**
+  Confirmed on a real Deck 2026-09-27. `savelocker.service`'s `[Install]` is `WantedBy=default.target`,
+  which `systemd --user` reaches before SteamOS's desktop session imports its variables into the
+  manager, and systemd never pushes later imports into a running unit. The test rig's daemon had
+  none of them. The installed daemon had Game Mode's (`XDG_CURRENT_DESKTOP=gamescope`,
+  `XDG_SESSION_TYPE=x11`) while the Deck sat in Desktop Mode. `notify-send` works regardless, because
+  it only needs the session bus. The click's `xdg-open` failed in two ways, one after the other:
+  - **No `DISPLAY`/`WAYLAND_DISPLAY`:** it found no graphical opener and went looking for a text
+    browser (`www-browser`, `links2`, ...). None exists on a Deck.
+  - **A display but no `XDG_DATA_DIRS`:** the flatpak export directories were missing, so KDE could
+    not see flatpak Chrome's `.desktop`, even though `kdeglobals` `BrowserApplication` and
+    `mimeapps.list` both named Chrome. The only https handler left was SteamOS's
+    `/usr/share/applications/org.mozilla.firefox.desktop`, a Discover placeholder whose
+    `Exec=sh -c 'xdg-open appstream://…' %U` breaks on a URL (`unexpected EOF while looking for
+    matching '`). An earlier guess, a stale KDE5 `ksycoca` cache, was wrong. The Deck's own
+    configuration was fine all along.
+
+  Fix: `DesktopNotifier.Open` overlays the session's current values from
+  `systemctl --user show-environment` on every click (`DesktopEnvironment.ResolveSessionEnv`):
+  display, `XAUTHORITY`, `XDG_DATA_DIRS`/`XDG_CONFIG_DIRS`, and the desktop identity
+  (`XDG_CURRENT_DESKTOP`, `KDE_*`, ...). This works however late the session starts, and the unit
+  file stays as it is. Reordering the unit (`After=graphical-session.target`) was rejected: that
+  change belongs in the installer, delays the daemon's startup, and needs its own reasoning about
+  Game Mode's session timing. Proven two ways. Live: on the Deck, the daemon's exact environment
+  plus display reproduced the Firefox failure, and adding the session's values opened Chrome. In
+  `run-linux-tests.sh`: the daemon starts with a stale identity and no session variables, a fake
+  `systemctl` reports the session's values, and a fake `xdg-open` records what it received.
 
 ## Test harness
 - **`run-linux-tests.sh` reassigns `HOME` to the fixture tree.** So `"$HOME/.dotnet"` inside a check
