@@ -195,17 +195,20 @@ public sealed class HealthReporter
 
         foreach (var conflict in response.EscalatedConflicts)
         {
+            // Two audiences for one fact. `onEscalation` is the structured record a host that can show
+            // a notification turns into one, and it gets every beat's list: the NotificationCenter
+            // behind it keeps its own once-per-conflict rule, filters the fleet-wide list down to this
+            // machine's conflicts, and retries one it could not show — which a guard here, spent
+            // before anything was shown, would stop. `notify` is the plain text a CLI or a log line
+            // wants, once per conflict.
+            onEscalation?.Invoke(conflict);
             if (!_notifiedConflictEscalations.Add(conflict.ConflictId)) continue;
             var stuck = string.IsNullOrWhiteSpace(conflict.StuckMachineName)
                 ? ""
                 : $" {conflict.StuckMachineName} cannot sync.";
-            // Two audiences for one fact: `notify` is the plain text a CLI or a log line wants,
-            // `onEscalation` is the structured record a host that can show a notification turns into
-            // one (see NoticeCatalog.ForEscalation). Same once-per-conflict guard for both.
             notify?.Invoke(
                 $"URGENT: {conflict.GameName} has had an unresolved conflict for over 6 hours.{stuck} " +
                 "Open the SaveLocker console to resolve it.");
-            onEscalation?.Invoke(conflict);
         }
 
         // The console's look rides this response. Applied here, where every host (the tray and the

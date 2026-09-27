@@ -96,7 +96,7 @@ public sealed class CommandPoller : IDisposable
         }
         catch (Exception ex)
         {
-            if (IsUnreachable(ex)) _notices?.ObserveServer(false);
+            if (ServerReachability.IsUnreachable(ex)) _notices?.ObserveServer(false);
             AgentLogger.LogException("CommandPoller.TickAsync", ex);
         }
         finally
@@ -111,16 +111,6 @@ public sealed class CommandPoller : IDisposable
             Interlocked.Exchange(ref _busy, 0);
         }
     }
-
-    /// <summary>
-    /// The server never answered — as opposed to answering "no". A 401 from a revoked key, or a 500,
-    /// is a server that is very much there, and calling it unreachable would be a false alarm about
-    /// the wrong problem. <c>HttpRequestException.StatusCode</c> is null exactly when no response
-    /// came back at all; a timeout surfaces as a cancellation rather than as an HTTP failure.
-    /// </summary>
-    private static bool IsUnreachable(Exception ex) =>
-        ex is HttpRequestException { StatusCode: null } or TaskCanceledException ||
-        ex.InnerException is System.Net.Sockets.SocketException;
 
     // ----- game-list reconciliation (server → agent propagation) -----
 

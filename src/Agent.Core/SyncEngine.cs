@@ -351,8 +351,12 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         // past the upload cap). That is not a network drop, and queueing it for retry would loop
         // forever on a request that can never succeed — so it is reported, not queued. This clause
         // must come first: HttpRequestException covers both cases, and the drop clause below would
-        // otherwise swallow rejections and mislabel them "server unreachable".
-        catch (HttpRequestException ex) when (ex.StatusCode is not null && !ct.IsCancellationRequested)
+        // otherwise swallow rejections and mislabel them "server unreachable". A proxy's gateway error
+        // (502/503/504, Cloudflare's 52x) is the exception: that is not the server answering but the
+        // server missing, so it falls through to the drop clause and is queued like any outage.
+        catch (HttpRequestException ex) when (ex.StatusCode is not null &&
+                                              !ServerReachability.IsGatewayFailure(ex.StatusCode) &&
+                                              !ct.IsCancellationRequested)
         {
             Alert($"[{game.Name}] push rejected by the server ({(int)ex.StatusCode}): {ex.Message}",
                 AgentEventCodes.PushFailed, AgentEventSeverity.Error, game.GameId);

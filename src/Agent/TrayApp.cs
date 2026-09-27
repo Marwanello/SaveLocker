@@ -147,6 +147,8 @@ internal sealed class TrayContext : ApplicationContext
             // The agent-ui suggest/install card's own two calls (Phase 19).
             playnitePluginCardStatus: () => PlaynitePlugin.CardStatusAsync(_config),
             playnitePluginInstall: () => PlaynitePlugin.InstallFirstTimeAsync(_config, AgentLogger.Log));
+        // A toast button's link needs this to raise the window rather than only open a browser tab.
+        _toasts.UseOpenLinkKey(_apiServer.OpenLinkKey);
         _apiServer.Start();
 
         _commandPoller = new CommandPoller(
@@ -488,7 +490,14 @@ internal sealed class TrayContext : ApplicationContext
         // the tray (see NoticeAction), so it now says where to go — the menu's own "Update to vX…"
         // item, rebuilt just above — rather than offering a button that could not work.
         if (result is UpdateResult.Available a)
-            _notices.Raise(NoticeCatalog.UpdateReady(a.Version, staged: false));
+        {
+            var notice = NoticeCatalog.UpdateReady(a.Version, staged: false);
+            // The background check says it once per version. A check the user asked for answers
+            // every time, even when that toast is already standing: taking it down first is what
+            // lets it be shown again rather than swallowed as a repeat.
+            if (!silent) _notices.Clear(notice.Key);
+            _notices.Raise(notice);
+        }
         else if (!silent)
         {
             // A check the USER asked for must always answer. Failed and Skipped used to fall through

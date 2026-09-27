@@ -1,4 +1,4 @@
-; Inno Setup script for the SaveLocker Windows tray agent.
+﻿; Inno Setup script for the SaveLocker Windows tray agent.
 ;
 ; Machine-wide install (requests UAC elevation up front): files go to
 ; C:\Program Files\SaveLocker. Auto-start is still the per-user HKCU\...\Run entry

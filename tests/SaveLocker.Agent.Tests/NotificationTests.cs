@@ -49,6 +49,93 @@ public class NoticeActionTests
         Assert.Null(NoticeAction.None.ToOpenUrl("http://localhost:5178/"));
         Assert.Equal("http://localhost:5178/open?view=conflicts:queue", NoticeAction.Conflicts.ToOpenUrl("http://localhost:5178/"));
     }
+
+    // The key is what lets /open raise the tray window; without it the link only shows the screen.
+    [Fact]
+    public void A_toast_link_carries_the_key_that_lets_it_raise_the_window()
+    {
+        Assert.Equal($"http://localhost:5178/open?view=game:{Game:D}&key=0123abcd",
+            NoticeAction.Game(Game).ToOpenUrl("http://localhost:5178/", "0123abcd"));
+        Assert.Null(NoticeAction.None.ToOpenUrl("http://localhost:5178/", "0123abcd"));
+    }
+}
+
+public class ServerReachabilityTests
+{
+    // Behind nginx/Caddy/Cloudflare a server that is down still gets an answer back — the proxy's.
+    [Theory]
+    [InlineData(502)]
+    [InlineData(503)]
+    [InlineData(504)]
+    [InlineData(520)]
+    [InlineData(521)]
+    [InlineData(522)]
+    [InlineData(523)]
+    [InlineData(524)]
+    [InlineData(530)]
+    public void A_gateway_answering_for_a_missing_server_is_unreachable(int status)
+    {
+        var ex = new HttpRequestException("gateway", null, (System.Net.HttpStatusCode)status);
+
+        Assert.True(ServerReachability.IsGatewayFailure(ex.StatusCode));
+        Assert.True(ServerReachability.IsUnreachable(ex));
+    }
+
+    // The server itself answering "no" is a server that is there.
+    [Theory]
+    [InlineData(400)]
+    [InlineData(401)]
+    [InlineData(403)]
+    [InlineData(409)]
+    [InlineData(413)]
+    [InlineData(500)]
+    [InlineData(501)]
+    public void The_server_answering_no_is_not_unreachable(int status)
+    {
+        var ex = new HttpRequestException("refused", null, (System.Net.HttpStatusCode)status);
+
+        Assert.False(ServerReachability.IsGatewayFailure(ex.StatusCode));
+        Assert.False(ServerReachability.IsUnreachable(ex));
+    }
+
+    [Fact]
+    public void No_answer_at_all_is_unreachable()
+    {
+        Assert.True(ServerReachability.IsUnreachable(new HttpRequestException("connection refused")));
+        Assert.True(ServerReachability.IsUnreachable(new TaskCanceledException("timed out")));
+        Assert.True(ServerReachability.IsUnreachable(
+            new IOException("reset", new System.Net.Sockets.SocketException())));
+        Assert.False(ServerReachability.IsUnreachable(new InvalidOperationException("a bug")));
+        Assert.False(ServerReachability.IsGatewayFailure(null));
+    }
+}
+
+public class OpenLinkKeyTests : IDisposable
+{
+    private readonly string _dir = Path.Combine(Path.GetTempPath(), "sl-openkey-" + Guid.NewGuid().ToString("N"));
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_dir, recursive: true); } catch { /* ACL-locked to this user; best effort */ }
+    }
+
+    // What a toast link carries in place of the token: unguessable, never the token itself, and the
+    // same after a restart so a toast left in the Action Center still raises the window.
+    [Fact]
+    public void The_link_key_is_derived_from_the_token_and_stable_across_loads()
+    {
+        var config = Path.Combine(_dir, "config.json");
+        var first = LocalAuth.LoadOrCreate(config);
+        var second = LocalAuth.LoadOrCreate(config);
+
+        Assert.Matches("^[0-9a-f]{32}$", first.OpenLinkKey);
+        Assert.Equal(first.OpenLinkKey, second.OpenLinkKey);
+        Assert.DoesNotContain(first.OpenLinkKey, first.Token);
+        Assert.True(first.IsValidOpenLinkKey(first.OpenLinkKey));
+        Assert.False(first.IsValidOpenLinkKey(first.Token));
+        Assert.False(first.IsValidOpenLinkKey(null));
+        Assert.False(first.IsValidOpenLinkKey(""));
+    }
 }
 
 public class NoticeCatalogTests
@@ -377,13 +464,49 @@ public class NotificationCenterTests
     {
         var conflictId = Guid.NewGuid();
         var e = new ConflictEscalationDto(conflictId, GameA, "Hades", null, _now.AddHours(-6), 1);
+        _center.ObserveConflicts([Conflict(conflictId, GameA)], _ => "Hades");   // this machine's conflict
 
         _center.RaiseEscalation(e);
-        _center.RaiseEscalation(e);
-        Assert.Single(_presenter.Shown);
+        _center.RaiseEscalation(e);   // every heartbeat carries it again
+        Assert.Equal(2, _presenter.Shown.Count);   // the conflict, then its escalation — once
+        Assert.Equal(NoticeCatalog.EscalationKey(conflictId), _presenter.Shown[1].Key);
 
         _center.ObserveConflicts([], _ => "Hades");
-        Assert.Equal([NoticeCatalog.EscalationKey(conflictId)], _presenter.Withdrawn);
+        Assert.Contains(NoticeCatalog.EscalationKey(conflictId), _presenter.Withdrawn);
+    }
+
+    // The heartbeat's escalation list is every overdue conflict in the fleet. Announced on a machine
+    // that is not a party to it, the next poll took it straight back down (its conflict is not among
+    // this machine's) and its button opened a chooser with nothing in it.
+    [Fact]
+    public void An_escalation_for_a_conflict_this_machine_is_not_party_to_is_not_announced()
+    {
+        var elsewhere = Guid.NewGuid();
+        _center.ObserveConflicts([], _ => "Hades");
+
+        _center.RaiseEscalation(new ConflictEscalationDto(elsewhere, GameA, "Hades", "STEAMDECK", _now.AddHours(-7), 1));
+        _center.ObserveConflicts([], _ => "Hades");
+
+        Assert.Empty(_presenter.Shown);
+        Assert.Empty(_presenter.Withdrawn);
+    }
+
+    [Fact]
+    public void An_escalation_that_could_not_be_shown_is_tried_again_on_the_next_heartbeat()
+    {
+        var conflictId = Guid.NewGuid();
+        var e = new ConflictEscalationDto(conflictId, GameA, "Hades", null, _now.AddHours(-7), 1);
+        _presenter.Unavailable = "no desktop notification daemon reachable";
+        _center.ObserveConflicts([Conflict(conflictId, GameA)], _ => "Hades");
+        _center.RaiseEscalation(e);
+        Assert.Empty(_presenter.Shown);
+
+        // A desktop appears; the next poll and heartbeat come round.
+        _presenter.Unavailable = null;
+        _center.ObserveConflicts([Conflict(conflictId, GameA)], _ => "Hades");
+        _center.RaiseEscalation(e);
+
+        Assert.Contains(_presenter.Shown, n => n.Key == NoticeCatalog.EscalationKey(conflictId));
     }
 
     [Fact]

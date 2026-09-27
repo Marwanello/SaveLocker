@@ -22,15 +22,28 @@ public sealed class LocalAuth
     public const string TokenPlaceholder = "__SAVELOCKER_TOKEN__";
 
     private readonly byte[] _tokenBytes;
+    private readonly byte[] _openLinkKeyBytes;
 
     public string Token { get; }
     public string TokenPath { get; }
+
+    /// <summary>
+    /// What a notification's link to <c>/open</c> carries so that it may raise the tray window — the
+    /// one thing on this server a link the default browser opens can ask for without the token. A
+    /// keyed hash of the token rather than the token itself, so the token never sits in a URL or a
+    /// browser's history, while staying exactly as unguessable to a web page. Derived rather than
+    /// minted per process, so it survives a restart: a toast can sit in the Action Center through one.
+    /// </summary>
+    public string OpenLinkKey { get; }
 
     private LocalAuth(string token, string tokenPath)
     {
         Token = token;
         TokenPath = tokenPath;
         _tokenBytes = Encoding.UTF8.GetBytes(token);
+        OpenLinkKey = Convert.ToHexString(HMACSHA256.HashData(_tokenBytes, "savelocker/open-link"u8))[..32]
+            .ToLowerInvariant();
+        _openLinkKeyBytes = Encoding.ASCII.GetBytes(OpenLinkKey);
     }
 
     /// <summary>
@@ -72,6 +85,11 @@ public sealed class LocalAuth
         var presentedBytes = Encoding.UTF8.GetBytes(presented);
         return CryptographicOperations.FixedTimeEquals(presentedBytes, _tokenBytes);
     }
+
+    /// <summary>Fixed-time, like <see cref="IsValid"/>.</summary>
+    public bool IsValidOpenLinkKey(string? presented) =>
+        !string.IsNullOrEmpty(presented) &&
+        CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(presented), _openLinkKeyBytes);
 
     /// <summary>
     /// True for a Host header that names this machine's loopback interface. A DNS-rebinding page

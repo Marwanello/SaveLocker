@@ -46,10 +46,15 @@ public readonly record struct NoticeAction(NoticeActionKind Kind, string? Route 
         Kind == NoticeActionKind.OpenView ? uiBaseUrl.TrimEnd('/') + "/#" + Route : null;
 
     /// <summary>The link a Windows toast button carries: the agent's own <c>/open</c> route, which raises
-    /// the tray window at this screen instead of leaving the page to the default browser. Routes are
-    /// <c>[a-z0-9:-]</c> only, so nothing here needs escaping.</summary>
-    public string? ToOpenUrl(string uiBaseUrl) =>
-        Kind == NoticeActionKind.OpenView ? uiBaseUrl.TrimEnd('/') + "/open?view=" + Route : null;
+    /// the tray window at this screen instead of leaving the page to the default browser.
+    /// <paramref name="key"/> is <see cref="LocalAuth.OpenLinkKey"/>: without it <c>/open</c> only
+    /// shows the screen in the browser and never raises the window, so a web page cannot do that.
+    /// Routes and the key are ASCII letters, digits, <c>:</c> and <c>-</c> (<c>/open</c> refuses anything
+    /// else), so nothing here needs escaping.</summary>
+    public string? ToOpenUrl(string uiBaseUrl, string? key = null) =>
+        Kind == NoticeActionKind.OpenView
+            ? uiBaseUrl.TrimEnd('/') + "/open?view=" + Route + (key is null ? "" : "&key=" + key)
+            : null;
 }
 
 /// <summary>
@@ -225,6 +230,9 @@ public sealed class NotificationCenter
     // Keys whose "could not be shown" has already been logged, so a poll that retries every twenty
     // seconds does not write the same line every twenty seconds.
     private readonly HashSet<string> _undeliveredLogged = new();
+    // The open conflicts this machine is a party to, as the last ObserveConflicts saw them. The
+    // server's escalations cover the whole fleet; only these are this machine's to announce.
+    private HashSet<Guid> _ownConflicts = new();
     private DateTime? _downSince;
 
     /// <param name="unreachableAfter">How long the server must be gone before it is worth saying so.
@@ -315,6 +323,7 @@ public sealed class NotificationCenter
         int unannounced;
         lock (_lock)
         {
+            _ownConflicts = openIds;
             closed = _standing.Keys.Where(k => IsConflictKey(k, out var id) && !openIds.Contains(id)).ToList();
             foreach (var key in closed) _standing.Remove(key);
             _undeliveredLogged.RemoveWhere(k => IsConflictKey(k, out var id) && !openIds.Contains(id));
@@ -331,9 +340,20 @@ public sealed class NotificationCenter
         foreach (var c in fresh) Raise(NoticeCatalog.ForConflict(c, gameName(c.GameId)));
     }
 
-    /// <summary>The server's own escalation ("open too long") — announced once per conflict.</summary>
-    public void RaiseEscalation(ConflictEscalationDto escalation) =>
-        Raise(NoticeCatalog.ForEscalation(escalation, _utcNow()));
+    /// <summary>
+    /// The server's own escalation ("open too long") — announced once per conflict, and only for a
+    /// conflict this machine is a party to. The heartbeat's list is every overdue conflict in the
+    /// fleet: announced anywhere else, the next <see cref="ObserveConflicts"/> would take it straight
+    /// back down (its conflict is not among this machine's), and its button would open a chooser with
+    /// nothing in it. Meant to be called with every heartbeat's list, not only new entries — the key
+    /// keeps a standing one from repeating, and one that could not be shown is tried again.
+    /// </summary>
+    public void RaiseEscalation(ConflictEscalationDto escalation)
+    {
+        bool ours;
+        lock (_lock) ours = _ownConflicts.Contains(escalation.ConflictId);
+        if (ours) Raise(NoticeCatalog.ForEscalation(escalation, _utcNow()));
+    }
 
     /// <summary>
     /// Called on every poll with whether the server answered. One dropped push is not news — the

@@ -95,6 +95,9 @@ public sealed class AgentApiServer : IDisposable
 
     public int Port { get; }
 
+    /// <summary>What a link to <c>/open</c> must carry to raise the host's window (see MapUi).</summary>
+    public string OpenLinkKey => _auth.OpenLinkKey;
+
     public AgentApiServer(
         int port,
         AgentConfig config,
@@ -1196,33 +1199,42 @@ public sealed class AgentApiServer : IDisposable
 
     private void MapUi(WebApplication app)
     {
-        // Not under /api, so it needs no token: a toast button is a plain link the default browser
-        // opens, which cannot send one. Nothing is read or changed — at worst a web page that guesses
-        // the port raises the window the user already runs. The route is whitelisted before it reaches
-        // the window's URL.
+        // Not under /api, so no token: a toast button is a plain link the default browser opens, which
+        // cannot send one. Raising the window takes the link key instead (LocalAuth.OpenLinkKey, which
+        // only the notification that built the link knows), so a web page — which can navigate or
+        // frame this route, and whose framed copy would pass the Origin check on its own POST — can at
+        // most show the agent UI's screen in a tab, never pull the window forward over whatever the
+        // user is doing. A missing or stale key (a toast from before the token changed) still gets its
+        // screen, the way the link worked before the window could be raised. The route is whitelisted
+        // before it reaches the window's URL or the page.
         static bool SafeView(string? v) =>
             v is { Length: > 0 and <= 80 } && v.All(c => char.IsAsciiLetterOrDigit(c) || c is ':' or '-' or '_');
 
-        app.MapGet("/open", (string? view, HttpContext context) =>
+        app.MapGet("/open", (string? view, string? key, HttpContext context) =>
         {
             if (!SafeView(view)) return Results.BadRequest();
-            if (_openView is null) return Results.Redirect("/#" + view);
+            if (_openView is null || !_auth.IsValidOpenLinkKey(key)) return Results.Redirect("/#" + view);
             context.Response.Headers.CacheControl = "no-store";
+            // Carries the key in its script, so nothing may frame it or keep it.
+            context.Response.Headers.ContentSecurityPolicy = "frame-ancestors 'none'";
+            context.Response.Headers.XFrameOptions = "DENY";
+            context.Response.Headers["Referrer-Policy"] = "no-referrer";
             // The page asks for the raise itself, once it has loaded, rather than /open raising the
             // window directly: the browser takes the foreground when it commits this page, so a raise
             // made while answering the request lands first and is immediately covered by the tab.
             return Results.Content(
                 "<!doctype html><meta charset=utf-8><title>SaveLocker</title>" +
                 "<body style=\"font:16px system-ui;margin:3rem\">Opened in the SaveLocker window. You can close this tab.</body>" +
-                $"<script>addEventListener('load',()=>fetch('/open/raise?view={view}',{{method:'POST'}}).finally(()=>window.close()))</script>",
+                $"<script>addEventListener('load',()=>fetch('/open/raise?view={view}&key={_auth.OpenLinkKey}',{{method:'POST'}}).finally(()=>window.close()))</script>",
                 "text/html; charset=utf-8");
-        });
-        app.MapPost("/open/raise", (string? view) =>
+        }).ExcludeFromDescription();
+        app.MapPost("/open/raise", (string? view, string? key) =>
         {
             if (!SafeView(view) || _openView is null) return Results.BadRequest();
+            if (!_auth.IsValidOpenLinkKey(key)) return Results.StatusCode(StatusCodes.Status403Forbidden);
             _openView(view!);
             return Results.NoContent();
-        });
+        }).ExcludeFromDescription();
 
         if (!Directory.Exists(_uiRoot)) return;
 

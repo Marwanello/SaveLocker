@@ -23,6 +23,20 @@ export interface Route {
 
 const VIEWS: readonly View[] = ['overview', 'games', 'addGames', 'conflicts', 'settings']
 
+/**
+ * Take the hash off the address once it has been read: a deep link is a request, not a place the app
+ * stays. Nothing writes the hash when the user moves on (the sidebar only changes state), so a hash
+ * left in place goes stale — and asking for the same screen again (a second toast for the same game,
+ * the tray finding another conflict) then navigates to the identical URL, which fires no `hashchange`
+ * and did nothing at all. With the hash gone every deep link is a change. `replaceState` fires no
+ * event and adds no history entry.
+ */
+export function clearRouteHash(): void {
+  if (window.location.hash) {
+    window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
+  }
+}
+
 export function parseRoute(hash: string): Route {
   const [base = '', rest = ''] = hash.replace(/^#/, '').split(/:(.*)/s)
 

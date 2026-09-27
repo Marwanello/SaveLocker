@@ -126,7 +126,7 @@ internal sealed class AgentWindow : Form
     /// Show the window above whatever is in front, including a browser that has just taken the
     /// foreground. A toast button reaches this by way of the browser (see <c>/open</c>), so the
     /// browser is already active when the request lands, and Windows refuses a background process's
-    /// plain Activate() â€” the window would open behind it. A synthetic Alt press marks this process as
+    /// plain Activate() — the window would open behind it. A synthetic Alt press marks this process as
     /// the one that last had input, which is what lets SetForegroundWindow through; the TopMost toggle
     /// puts the window on top even where focus is still refused.
     /// </summary>

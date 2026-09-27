@@ -2,6 +2,7 @@ using System.Drawing.Imaging;
 using System.Security;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using SaveLocker.Shared;
 using Windows.Data.Xml.Dom;
 using Windows.UI.Notifications;
@@ -12,12 +13,14 @@ namespace SaveLocker.Agent;
 /// Windows delivery for <see cref="NotificationCenter"/>: a real toast with a title, a body, the
 /// brand mark and up to two buttons, in place of the tray balloon.
 /// <para>
-/// <b>What a button does.</b> The primary one is a plain <c>http://localhost:&lt;port&gt;/#route</c>
-/// link (<see cref="NoticeAction"/>): the shell hands it to the default browser, which opens the agent
-/// UI at that exact screen. It works from the banner and from the Action Center, needs nothing
-/// registered, and cannot be aimed at anything but the agent's own page. The alternatives were tried
-/// on Windows 11 25H2 and rejected — see <see cref="NoticeAction"/> for the measurements. The second
-/// button is a system-level dismiss, which needs no process at all.
+/// <b>What a button does.</b> The primary one is a plain
+/// <c>http://localhost:&lt;port&gt;/open?view=route&amp;key=…</c> link (<see cref="NoticeAction.ToOpenUrl"/>):
+/// the shell hands it to the default browser, and the page it lands on asks the tray to raise its own
+/// window at that exact screen. The key (<see cref="LocalAuth.OpenLinkKey"/>) is what lets it raise the
+/// window; a web page, which cannot know it, gets only the screen in a tab. It works from the banner and
+/// from the Action Center, needs nothing registered, and cannot be aimed at anything but the agent's own
+/// page. The alternatives were tried on Windows 11 25H2 and rejected — see <see cref="NoticeAction"/>
+/// for the measurements. The second button is a system-level dismiss, which needs no process at all.
 /// </para>
 /// <para>
 /// <b>What names the toast.</b> Its header takes an app name and icon from a Start-menu shortcut
@@ -47,7 +50,11 @@ internal sealed class ToastPresenter : INotificationPresenter
     private readonly string _aumid;
     private readonly string _uiBaseUrl;
     private readonly string _logoBase;
+    private readonly Regex _ownLogoName;
     private volatile string _logoPath;
+    // Null until the agent's API server exists (UseOpenLinkKey); a link without it still opens the
+    // screen, in the browser, and only the window raise waits for it.
+    private volatile string? _openLinkKey;
     private readonly Action<string> _fallback;
 
     /// <param name="fallback">What to do if Windows will not take a toast at all — a locked-down
@@ -70,7 +77,16 @@ internal sealed class ToastPresenter : INotificationPresenter
         _logoBase = Path.Combine(Path.GetTempPath(),
             port == DefaultPort ? "savelocker-toast-logo" : $"savelocker-toast-logo-{port}");
         _logoPath = _logoBase + ".png";
+        // This presenter's own marks only — one per look, plus the old fixed name. The installed
+        // agent's base is a prefix of every test rig's ("savelocker-toast-logo-5188-…"), so the
+        // directory's own prefix match would have the installed agent delete a running rig's mark.
+        _ownLogoName = new Regex(
+            "^" + Regex.Escape(Path.GetFileName(_logoBase)) + @"(-[0-9a-f]{10})?\.png$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
+
+    /// <summary>The key a button's link needs to raise the tray window — the API server's.</summary>
+    public void UseOpenLinkKey(string key) => _openLinkKey = key;
 
     /// <summary>
     /// Draw the toast's mark in the current look — the same mark and accent as the tray. It is shown in
@@ -98,7 +114,8 @@ internal sealed class ToastPresenter : INotificationPresenter
             _logoPath = path;
             _hasLogo = true;
             foreach (var old in Directory.EnumerateFiles(Path.GetDirectoryName(_logoBase)!, Path.GetFileName(_logoBase) + "*.png"))
-                if (!string.Equals(old, path, StringComparison.OrdinalIgnoreCase))
+                if (_ownLogoName.IsMatch(Path.GetFileName(old)) &&
+                    !string.Equals(old, path, StringComparison.OrdinalIgnoreCase))
                     try { File.Delete(old); } catch { /* still on screen in a toast; the next look change retries */ }
         }
         catch (Exception ex) { AgentLogger.LogException("ToastPresenter.UseLook", ex); }
@@ -155,7 +172,7 @@ internal sealed class ToastPresenter : INotificationPresenter
     /// </summary>
     internal string BuildXml(AgentNotice notice)
     {
-        var link = notice.Primary.ToOpenUrl(_uiBaseUrl);
+        var link = notice.Primary.ToOpenUrl(_uiBaseUrl, _openLinkKey);
 
         var xml = new StringBuilder("<toast");
         if (link is not null)

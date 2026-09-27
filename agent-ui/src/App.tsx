@@ -13,7 +13,7 @@ import { SettingsView } from './components/SettingsView'
 import { Chip } from './components/ui/Chip'
 import { Mark } from './components/ui/Mark'
 import { isCurrentPoll, looksEpoch, setLook } from './appearance'
-import { parseRoute } from './route'
+import { clearRouteHash, parseRoute } from './route'
 
 export default function App() {
   // The tray's native Sync All / Force Pull / Force Push (TrayApp.cs, Phase 7) open this window at
@@ -112,6 +112,10 @@ export default function App() {
     return () => clearInterval(id)
   }, [refreshConflicts])
 
+  // The route above is read in a state initializer, which StrictMode runs twice — so the hash is
+  // consumed here, after both reads, rather than there. See clearRouteHash for why it goes at all.
+  useEffect(() => { clearRouteHash() }, [])
+
   // Runs once, only when a native tray action opened this window looking for a conflict to show.
   // The passive 15s poll above must never do this on its own — see handleSynced's own comment.
   useEffect(() => {
@@ -126,6 +130,7 @@ export default function App() {
   useEffect(() => {
     const onHash = () => {
       const route = parseRoute(window.location.hash)
+      clearRouteHash()
       setView(route.view)
       setOpenGameId(route.gameId)
       if (route.queue) refreshConflicts().then(cs => { if (cs.length > 0) setSyncQueue(cs) })
