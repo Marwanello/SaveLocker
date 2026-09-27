@@ -1433,6 +1433,14 @@ switch ($Command) {
         # bash syntax error, reproduced and confirmed fixed 2026-08-19.
         Say 'wsl daemon'
         & wsl -d $Distro -- bash -c 'tail -20 ~/.savelocker-testenv-daemon.log 2>/dev/null || echo ''(none)'''
+        # The daemon's own console output above is ASP.NET's request logging, never what
+        # AgentLogger.Log writes (every "conflict notification"/"notification sent" line) - that goes
+        # to agent.log in the state dir, same as the Windows tail above, and reading only the console
+        # log made every notification look silently missing. $XDG_DATA_HOME is never overridden for
+        # the WSL side (unlike the Deck, which sets its own via testenv-deck.sh), so this is always
+        # ~/savelocker-test/SaveLocker/agent.log.
+        Say 'wsl agent.log'
+        & wsl -d $Distro -- bash -c 'tail -20 ~/savelocker-test/SaveLocker/agent.log 2>/dev/null || echo ''(none)'''
         Say 'wsl suite'
         & wsl -d $Distro -- bash -c 'tail -20 ~/.savelocker-testenv-suite.log 2>/dev/null || echo ''(none)'''
         if (Test-DeckConfigured) {
