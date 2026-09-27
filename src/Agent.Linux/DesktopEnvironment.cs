@@ -148,21 +148,41 @@ public static class DesktopEnvironment
     }
 
     /// <summary>
-    /// <c>DISPLAY</c>/<c>WAYLAND_DISPLAY</c> as the <c>systemd --user</c> manager holds them right
-    /// now — never this process's own environment, which can be a stale snapshot from whenever
-    /// systemd started it. Every real SaveLocker daemon here is a <c>systemd --user</c> unit pulled
-    /// in by <c>default.target</c>, which is reached before SteamOS's desktop session imports either
-    /// variable into the manager: confirmed on real hardware 2026-09-27, where both the test rig's
-    /// daemon and the actual installed one had neither in their own <c>/proc/&lt;pid&gt;/environ</c>,
-    /// permanently, not just at startup — a notification's own D-Bus call still worked (it only needs
-    /// the session bus, already present), but <c>xdg-open</c> found no display, fell through every
-    /// graphical opener and landed on hunting for a text browser, none of which exist on a Deck.
-    /// Re-read fresh on every call rather than cached or read once at startup: a session can show up
-    /// well after the daemon that will eventually need this, and nothing here should depend on
-    /// getting the unit's own ordering right first. Empty if <c>systemctl</c> fails or neither
-    /// variable is set there either — the caller then falls back to whatever it already has.
+    /// What an app launched from the desktop session would be started with, and this daemon usually
+    /// lacks: display, X authority, and the session's identity and search paths.
+    /// <c>XDG_DATA_DIRS</c> carries the flatpak export directories, which hold a flatpak browser's
+    /// <c>.desktop</c> file. <c>XDG_CURRENT_DESKTOP</c>/<c>KDE_*</c> pick the desktop's own opener.
     /// </summary>
-    public static IReadOnlyDictionary<string, string> ResolveGraphicalEnv()
+    private static readonly string[] SessionKeys =
+    [
+        "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY",
+        "XDG_DATA_DIRS", "XDG_CONFIG_DIRS", "XDG_MENU_PREFIX",
+        "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "XDG_SESSION_TYPE", "DESKTOP_SESSION",
+        "KDE_FULL_SESSION", "KDE_SESSION_VERSION", "KDE_SESSION_UID", "KDE_APPLICATIONS_AS_SCOPE",
+    ];
+
+    /// <summary>
+    /// The desktop session's environment (<see cref="SessionKeys"/>) as the <c>systemd --user</c>
+    /// manager holds it right now. Never taken from this process's own environment, which is a
+    /// snapshot from whenever systemd started it. Every real SaveLocker daemon here is a
+    /// <c>systemd --user</c> unit pulled in by <c>default.target</c>. That target is reached before
+    /// SteamOS's desktop session imports these variables into the manager, and systemd never pushes
+    /// later imports into a running unit. On real hardware (2026-09-27), the test rig's daemon had
+    /// none of them. The installed daemon had Game Mode's values (<c>XDG_CURRENT_DESKTOP=gamescope</c>)
+    /// while the Deck sat in Desktop Mode. Sending a notification still worked, because D-Bus only
+    /// needs the session bus. <c>xdg-open</c> failed in two ways:
+    /// <list type="bullet">
+    /// <item>With no display, it fell through to looking for a text browser.</item>
+    /// <item>With a display but without <c>XDG_DATA_DIRS</c>, KDE could not see the flatpak Chrome
+    /// that was set as the default browser. It opened the only other https handler: SteamOS's
+    /// Firefox placeholder, whose <c>Exec</c> line is broken.</item>
+    /// </list>
+    /// Handing <c>xdg-open</c> the session's own values opened Chrome. Re-read on every call, not
+    /// cached, because a session can start well after the daemon. Empty if <c>systemctl</c> fails;
+    /// the caller then keeps what it has. Values that systemd prints in escaped <c>$'…'</c> form are
+    /// skipped, since none of these keys should need escaping.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> ResolveSessionEnv()
     {
         var result = new Dictionary<string, string>();
         var (exit, stdout, _) = ProcessRunner.Run("systemctl", ["--user", "show-environment"], TimeSpan.FromSeconds(2));
@@ -173,9 +193,9 @@ public static class DesktopEnvironment
             var eq = line.IndexOf('=');
             if (eq < 0) continue;
             var key = line[..eq];
-            if (key is not ("DISPLAY" or "WAYLAND_DISPLAY")) continue;
+            if (Array.IndexOf(SessionKeys, key) < 0) continue;
             var value = line[(eq + 1)..].TrimEnd('\r');
-            if (value.Length > 0) result[key] = value;
+            if (value.Length > 0 && !value.StartsWith("$'", StringComparison.Ordinal)) result[key] = value;
         }
         return result;
     }

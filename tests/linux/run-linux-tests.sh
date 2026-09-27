@@ -721,17 +721,19 @@ check "the reachable-daemon path reports sending, not 'no daemon'" \
 check "a standing conflict is announced once across several polls, not once per poll" \
   "$([ "$(wc -l <"${notify_calls}" 2>/dev/null | tr -d ' ')" = "1" ] && echo 0 || echo 1)"
 
-# ── …and clicking its action opens the right place, even though the daemon's OWN environment
-# never has a display (real hardware, 2026-09-27: both the test rig's daemon and the actual
-# installed one are systemd --user units pulled in by default.target, reached before SteamOS's
-# desktop session imports DISPLAY/WAYLAND_DISPLAY into the manager — so xdg-open, inheriting the
-# daemon's own environment, found no opener at all and fell through to hunting for a text browser).
-# DesktopNotifier.Open now re-resolves both fresh from `systemctl --user show-environment` before
-# every click rather than trusting its own environment, which is exactly what this proves: the
-# daemon below is launched with NEITHER variable set, only a fake systemctl reports them, and the
-# fake xdg-open records what it was actually handed.
+# ── …and clicking its action opens the right place, even when the daemon's own environment is
+# missing the desktop session or holds a stale one. On real hardware (2026-09-27), both the test
+# rig's daemon and the installed one are systemd --user units pulled in by default.target, which is
+# reached before SteamOS's desktop session imports its variables into the manager. The rig's daemon
+# had no display, so xdg-open found no opener. With a display but without XDG_DATA_DIRS (the flatpak
+# exports), KDE could not see the flatpak Chrome set as default and ran SteamOS's broken Firefox
+# placeholder. The installed daemon still said XDG_CURRENT_DESKTOP=gamescope while the Deck was in
+# Desktop Mode. DesktopNotifier.Open re-reads the session's values from
+# `systemctl --user show-environment` on every click. To prove it, the daemon below starts with a
+# stale identity and none of the session variables, only a fake systemctl reports them, and a fake
+# xdg-open records what it was handed.
 echo
-echo "==> The action button's click hands xdg-open a display even when the daemon has none of its own"
+echo "==> The action button's click hands xdg-open the desktop session the daemon itself lacks"
 xdg_open_env="${scratch}/xdg-open-env.txt"
 xdg_open_args="${scratch}/xdg-open-args.txt"
 rm -f "${xdg_open_env}" "${xdg_open_args}"
@@ -742,6 +744,10 @@ case "$*" in
   *"--user show-environment"*)
     echo "DISPLAY=:7"
     echo "WAYLAND_DISPLAY=wayland-9"
+    echo "XAUTHORITY=/run/user/1000/xauth_fake"
+    echo "XDG_DATA_DIRS=/fake/flatpak/exports/share:/usr/share"
+    echo "XDG_CURRENT_DESKTOP=KDE"
+    echo "KDE_SESSION_VERSION=6"
     echo "XDG_RUNTIME_DIR=/run/user/1000"
     exit 0
     ;;
@@ -771,8 +777,11 @@ click_bus_sock="${scratch}/fake-click-bus.sock"
 start_fake_unix_socket "${click_bus_sock}" 64 60
 click_bus_pid="${FAKE_SOCK_PID}"
 
-# Deliberately no DISPLAY/WAYLAND_DISPLAY here - the whole point is that the daemon never has them.
-PATH="${fakebin}:${PATH}" DBUS_SESSION_BUS_ADDRESS="unix:path=${click_bus_sock}" \
+# Deliberately none of the session's variables (WSLg sets DISPLAY/WAYLAND_DISPLAY, so they are
+# unset here) and Game Mode's leftover desktop identity, as the installed Deck daemon had.
+env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY -u XDG_DATA_DIRS -u KDE_SESSION_VERSION \
+  XDG_CURRENT_DESKTOP=gamescope \
+  PATH="${fakebin}:${PATH}" DBUS_SESSION_BUS_ADDRESS="unix:path=${click_bus_sock}" \
   SAVELOCKER_POLL_MS=500 dotnet "${agent_dir}/bin/Debug/net10.0/savelocker.dll" daemon \
   --config "${other_cfg}" --port 5191 >"${scratch}/notify-daemon3.log" 2>&1 &
 click_daemon_pid=$!
@@ -790,6 +799,14 @@ check "xdg-open is handed a DISPLAY the daemon's own process never had" \
   "$(contains "${opened_env}" "DISPLAY=:7")"
 check "xdg-open is handed a WAYLAND_DISPLAY the daemon's own process never had" \
   "$(contains "${opened_env}" "WAYLAND_DISPLAY=wayland-9")"
+check "xdg-open is handed the session's XAUTHORITY" \
+  "$(contains "${opened_env}" "XAUTHORITY=/run/user/1000/xauth_fake")"
+check "xdg-open is handed the session's XDG_DATA_DIRS (where a flatpak browser's .desktop lives)" \
+  "$(contains "${opened_env}" "XDG_DATA_DIRS=/fake/flatpak/exports/share:/usr/share")"
+check "xdg-open is handed the session's desktop, not the daemon's stale Game Mode one" \
+  "$(contains "${opened_env}" "XDG_CURRENT_DESKTOP=KDE")"
+check "xdg-open is handed the session's KDE version" \
+  "$(contains "${opened_env}" "KDE_SESSION_VERSION=6")"
 
 # ---------------------------------------------------------------------------
 # autostart must report the REAL outcome (LA-08)
