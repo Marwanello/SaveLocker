@@ -710,6 +710,28 @@ documentation that was found. Read before touching the presenter.
 - **The Linux install prefix IS the state directory** (`~/.local/share/SaveLocker`), so
   `config.json` — this machine's server API key — sits inside the tree an update replaces. Anything
   that "replaces the install" must copy file-by-file, never swap or rename the directory.
+- **The daemon's own `DISPLAY`/`WAYLAND_DISPLAY` is permanently missing, not just stale at startup.**
+  Confirmed on a real Deck 2026-09-27, on BOTH the test rig's daemon and the actual installed
+  `savelocker.service`: neither had either variable in its own `/proc/<pid>/environ`, ever, even
+  hours into a real Desktop Mode session. `savelocker.service`'s `[Install]` is `WantedBy=default.target`,
+  which `systemd --user` reaches before SteamOS's desktop session imports either variable into the
+  manager — a plain unit-ordering fix (`After=graphical-session.target`) was rejected here: it lives
+  in the installer, delays the daemon's own startup, and needs real reasoning about Game Mode's
+  session timing that was out of scope. `notify-send` still worked fine throughout (it only needs the
+  session bus, which IS present) — only `xdg-open`, which needs a real display, silently found none
+  and fell through to hunting for a text browser (`www-browser`, `links2`, ...), none of which exist
+  on a Deck. Fixed in `DesktopNotifier.Open` by re-resolving both fresh from
+  `systemctl --user show-environment` on every click (`DesktopEnvironment.ResolveGraphicalEnv`)
+  rather than trusting the daemon's own environment — self-healing regardless of when the daemon
+  started, and it doesn't touch the unit file. Proven two ways: a `run-linux-tests.sh` check with a
+  fake `systemctl`/`xdg-open` (daemon launched with neither variable set, the fake `xdg-open` records
+  what it actually got); and live on the Deck, where the failure mode changed from "no method
+  available for opening" to `xdg-open` correctly reaching real desktop-file resolution. What it
+  resolves TO is a separate, Deck-specific problem this fix does not and should not touch: THIS
+  Deck's `xdg-settings default-web-browser` points at an uninstalled Firefox even after `xdg-settings
+  set` claims to change it (gamescope-wayland's minimal session likely has no full XDG desktop portal
+  behind it), so nothing visibly opens there even now — a working default browser on the Deck is a
+  precondition for seeing the click actually land, not something SaveLocker can fix from here.
 
 ## Test harness
 - **`run-linux-tests.sh` reassigns `HOME` to the fixture tree.** So `"$HOME/.dotnet"` inside a check

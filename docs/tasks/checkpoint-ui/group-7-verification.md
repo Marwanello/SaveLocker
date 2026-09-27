@@ -58,7 +58,7 @@ Requires `deck-config` and a reachable Deck.
 
 1. `.\tests\testenv.ps1 conflict -Deck` (this also gives the game a Steam shortcut).
 2. In Desktop Mode: a KDE notification appears with the info/warning icon, title, body and ONE button labelled by the notice. `.\tests\testenv.ps1 logs` shows `notification sent`.
-3. Click the button: the default browser opens the agent UI at `#game:<id>` / `#conflicts:queue` on the Deck's agent port. Confirm the exact screen, and that clicking a second time on an already-open tab navigates it.
+3. Click the button: the default browser opens the agent UI at `#game:<id>` / `#conflicts:queue` on the Deck's agent port. Confirm the exact screen, and that clicking a second time on an already-open tab navigates it. **If nothing opens**, check `xdg-settings get default-web-browser` on the Deck first — SaveLocker now supplies a working `DISPLAY`/`WAYLAND_DISPLAY` on every click regardless of what the daemon's own process had at startup (Gotchas.md, "Linux: the daemon's own DISPLAY is stale"), but that only gets `xdg-open` as far as resolving the Deck's own default-browser association; a Deck with no browser actually installed, or a default pointing at one that isn't, still opens nothing and is a Deck configuration problem, not a SaveLocker one.
 4. Resolve the conflict elsewhere (Windows UI): the Deck notification disappears on its own within a poll (withdraw by id + kill).
 5. Dismiss it, wait 5 polls: does not return.
 6. Stop the server: nothing for the first 5 minutes (or the short test threshold), then one notification; restart the server: it disappears.
