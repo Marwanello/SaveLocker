@@ -238,6 +238,12 @@ public sealed class DesktopNotifier : INotificationPresenter, IDisposable
         {
             var psi = new ProcessStartInfo("xdg-open") { UseShellExecute = false };
             psi.ArgumentList.Add(url);
+            // See DesktopEnvironment.ResolveGraphicalEnv: this process's own DISPLAY/WAYLAND_DISPLAY
+            // can be permanently absent even on a real, running desktop session, so xdg-open is
+            // handed whatever the systemd user manager holds for them right now rather than
+            // whatever xdg-open would otherwise inherit from this process.
+            foreach (var (key, value) in DesktopEnvironment.ResolveGraphicalEnv())
+                psi.Environment[key] = value;
             Process.Start(psi);
         }
         catch (Exception ex)

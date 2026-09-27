@@ -146,4 +146,37 @@ public static class DesktopEnvironment
         // gdbus prints "(true,)" or "(false,)" to stdout on success.
         return exit == 0 && stdout.Contains("(true", StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// <c>DISPLAY</c>/<c>WAYLAND_DISPLAY</c> as the <c>systemd --user</c> manager holds them right
+    /// now — never this process's own environment, which can be a stale snapshot from whenever
+    /// systemd started it. Every real SaveLocker daemon here is a <c>systemd --user</c> unit pulled
+    /// in by <c>default.target</c>, which is reached before SteamOS's desktop session imports either
+    /// variable into the manager: confirmed on real hardware 2026-09-27, where both the test rig's
+    /// daemon and the actual installed one had neither in their own <c>/proc/&lt;pid&gt;/environ</c>,
+    /// permanently, not just at startup — a notification's own D-Bus call still worked (it only needs
+    /// the session bus, already present), but <c>xdg-open</c> found no display, fell through every
+    /// graphical opener and landed on hunting for a text browser, none of which exist on a Deck.
+    /// Re-read fresh on every call rather than cached or read once at startup: a session can show up
+    /// well after the daemon that will eventually need this, and nothing here should depend on
+    /// getting the unit's own ordering right first. Empty if <c>systemctl</c> fails or neither
+    /// variable is set there either — the caller then falls back to whatever it already has.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> ResolveGraphicalEnv()
+    {
+        var result = new Dictionary<string, string>();
+        var (exit, stdout, _) = ProcessRunner.Run("systemctl", ["--user", "show-environment"], TimeSpan.FromSeconds(2));
+        if (exit != 0) return result;
+
+        foreach (var line in stdout.Split('\n'))
+        {
+            var eq = line.IndexOf('=');
+            if (eq < 0) continue;
+            var key = line[..eq];
+            if (key is not ("DISPLAY" or "WAYLAND_DISPLAY")) continue;
+            var value = line[(eq + 1)..].TrimEnd('\r');
+            if (value.Length > 0) result[key] = value;
+        }
+        return result;
+    }
 }
