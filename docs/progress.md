@@ -3172,3 +3172,21 @@ Branch `claude/group-7-ui-redesign-b15255` (no PR yet). Phase 7, both halves, on
   (Decky repo, out of scope).
 - **Found, not fixed:** `testenv.ps1 clean` once left stale Windows state behind.
 - **Open:** Phase 6 item 4 (Wayland), Phase 8 assets; a button that acts needs a COM activator ([[Backlog]]).
+## 2026-09-27 — Review fixes for PR #50 (Group 7, OS notifications)
+
+Branch `group-7-review-fixes`, on top of the PR's `group-7-ui-redesign`. A thorough review found five real bugs and
+six smaller things; all fixed. Full account: CONTEXT.md → *Review fixes for PR #50*.
+
+- **Escalations:** only this machine's own open conflicts are announced (the heartbeat's list is fleet-wide, and a
+  bystander's toast was withdrawn by the next poll); `HealthReporter` passes every beat's list so an unshown one retries.
+- **Repeat deep links:** `agent-ui` consumes the hash once read (`clearRouteHash`); a second link to the same screen
+  was the identical URL — no `hashchange`, no effect.
+- **`/open`:** raising the window needs `LocalAuth.OpenLinkKey` (keyed hash of the local token); without it the route
+  redirects to `/#route`. Anti-framing headers; both routes out of the OpenAPI document (`api-types.ts` regenerated).
+- **Proxies:** `ServerReachability` — 502/503/504 and Cloudflare 520–530 are the server missing. The unreachable
+  notice now fires behind a proxy, and such a push is queued instead of a sticky per-game "push failed".
+- **Update check:** a user-asked check always answers. **Linux:** staged-update notice retried each check; a
+  "no daemon" probe believed 30 s; the click's session env authoritative when it has a display.
+- **Small:** toast mark cleanup no longer deletes a test rig's; doc drift; mojibake; installer BOM restored.
+- **Verified:** `dotnet test` 105 (21 new, mutation-checked); `run-appearance-consistency-tests` 33/33; agent-ui
+  build + lint; live `/open` and repeat-link checks on the test tray; `run-linux-tests` 201 pass / 2 WSLg-only fail, `run-linux-regression-tests` 15/15.

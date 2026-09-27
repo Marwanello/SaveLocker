@@ -1417,7 +1417,8 @@ through an actual controller, or Group 7 (OS notifications) if that hardware acc
 first. The Wayland decision (Phase 6 item 4) is still open and needs deciding before any code is written
 for it.
 
-**Checkpoint UI redesign, Group 7 shipped (2026-09-24, branch `claude/group-7-ui-redesign-b15255`, no PR yet).**
+**Checkpoint UI redesign, Group 7 shipped (2026-09-24, branch `group-7-ui-redesign`, PR #50 — reviewed
+2026-09-27 and every finding fixed, see the next entry).**
 Phase 7, OS notifications — both halves, on the same rules. **The rules are shared, in
 `Agent.Core/Notifications.cs`:** `NoticeCatalog` decides what fires and what it says, `NotificationCenter`
 decides how often, and each host supplies only a presenter — `src/Agent/ToastPresenter.cs` (a real Windows
@@ -1486,8 +1487,9 @@ notification checks passing, including the new "announced once across several po
 the Windows build warning count is unchanged (the rig's own guard caught a second one I had introduced, `CS8602`,
 and it is fixed).
 <br>**Not verified:** the installed agent's shortcut-based header (only a scratch shortcut with the same AUMID —
-the real installer has never been run with the change); a notification on a **real Linux desktop** (the suite's
-fake `notify-send` pins the argv, as before; nothing here can observe a real popup); the **Deck's Game Mode
+the real installer has never been run with the change); ~~a notification on a real Linux desktop~~ — **since
+verified on a real Deck in Desktop Mode (2026-09-27):** the popup appears and *Choose a save* opens the flatpak
+default browser at the conflict queue, once the click borrowed the session's environment (Gotchas → Linux agent); the **Deck's Game Mode
 Steam toast** (the Decky plugin, its own repo, deliberately out of scope in `plan.md`); the WebView2 tray window
 beyond what navigation showed. **Two failures in `run-linux-tests` are this WSL's, not the code's:** it runs
 under WSLg, which injects `DISPLAY`, `WAYLAND_DISPLAY` and a D-Bus session bus into every shell — even under
@@ -1501,6 +1503,42 @@ console was not touched).
 claim above); then Phase 6 item 4 (the Wayland window) still needs its decision, and Phase 8's Steam art and
 PNG/ICO rasterisation are still open. Release notes for the next tag need a line covering notifications — and
 the raised Windows minimum.
+
+**Review fixes for PR #50 (2026-09-27, branch `group-7-review-fixes`, on top of the PR's `group-7-ui-redesign`).** A
+thorough review of Group 7 found five real bugs and six smaller things; all are fixed.
+- **Escalation toasts reached machines that were not party to the conflict**, then vanished ~20 s later. The
+  heartbeat's escalation list is fleet-wide (`HealthService` does not filter it); the next poll's
+  `ObserveConflicts` — filtered to this machine — took the key back down, and its button opened an empty chooser.
+  `NotificationCenter.RaiseEscalation` now announces only conflicts in the last observed own set, and
+  `HealthReporter` passes every beat's list (its old once-per-conflict guard spent an escalation before anything was
+  shown, so one that could not be shown was never retried).
+- **A repeat deep link did nothing in the tray window.** Nothing wrote the hash when the user moved on, so a second
+  link to the same screen navigated to the identical URL — same-document, no `hashchange` (checked in Chromium).
+  `agent-ui` now consumes the hash once read (`clearRouteHash`, in an effect because StrictMode runs the initializer twice).
+- **`/open` could be driven by any web page**: framed, its own same-origin POST passed the Origin check, and each raise
+  injected a synthetic Alt into whatever app had focus. Raising now needs `LocalAuth.OpenLinkKey` (a keyed hash of the
+  local token — stable across restarts, never the token in a URL), which the toast link carries; without it `/open`
+  just redirects to `/#route`. The page sends `frame-ancestors 'none'` + `X-Frame-Options: DENY`; both routes are
+  excluded from the OpenAPI document, so `agent-ui/src/api-types.ts` is back to its pre-`/open` content.
+- **"Can't reach the server" never fired behind a proxy**, and a proxied outage raised a sticky "push failed" per game
+  (not queued). `ServerReachability` (new, `Agent.Core`) treats 502/503/504 and Cloudflare 520–530 as the server
+  missing; the poller and `SyncEngine`'s push catch both use it — a gateway error now queues the push.
+- **A user's "Check for updates" was silent** once the update toast had been announced; it now clears and re-raises.
+- Smaller: the Deck's staged-update notice is raised on every check while one waits (it was tried once, right after
+  staging); `DesktopNotifier` believes a "no notification daemon" probe for 30 s (the Decky pre-launch route re-ran
+  gdbus on each launch); `DesktopEnvironment.ApplySessionEnv` removes display/identity keys the session does not set
+  when it has a display (search paths kept; with no display in the manager, as under WSL, the daemon's own stand);
+  `ToastPresenter`'s look cleanup matched every test rig's marks from the installed agent; doc drift, mojibake, and the
+  installer script's UTF-8 BOM.
+<br>**Verified:** `dotnet test` **105** (21 new; the escalation filter and the gateway codes mutation-checked);
+`run-appearance-consistency-tests` 33/33; `agent-ui` build + lint clean (the two known warnings); both agents build
+(Windows at its 1-warning baseline). **Live on the test tray** (`testenv build/up -Only windows`): `/open` 302 without
+the key, 200 with `frame-ancestors 'none'`/`DENY` with it; `/open/raise` 403 without it and from a foreign Origin, 204
+with it (the window opened at the screen); a repeat `#settings` / `#conflicts:queue` link after moving away navigated
+in the same document; `api-types.ts` regenerated from that tray. Linux suite: see *Build and Run → Suite baseline*.
+**Not run:** the escalation on a real two-machine fleet (needs a 6-hour-old conflict — the unit tests carry it), the
+proxy path against a real Cloudflare outage, the Deck. The test console did not start this session only because its
+image was not built (a previous `clean` removes it) — `testenv build -Only console` first.
 
 ---
 

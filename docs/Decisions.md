@@ -636,8 +636,11 @@ session can judge an edge case, not to reopen the choice.
   server answering); nothing announced because no session existed is not "announced", so a Deck that later reaches
   Desktop Mode still hears about it. *Conflict notices have one source* — the server-side poll — so a conflict this
   machine's own push found and one the poll found are one condition with one key, never two popups. *The button opens
-  the agent UI at the exact screen* (`http://localhost:<port>/#route`, by the shell on Windows and `xdg-open` on Linux)
-  and does nothing else: the alternatives were built or measured and rejected — a registered URL scheme is refused by
+  the agent UI at the exact screen* — on Linux `xdg-open` on `http://127.0.0.1:<port>/#route` (the browser is the UI);
+  on Windows the shell opens `http://localhost:<port>/open?view=route&key=…`, whose page asks the tray to raise its own
+  window there. The key (`LocalAuth.OpenLinkKey`, a keyed hash of the local token) is what may raise the window, so a
+  web page that finds `/open` can show a screen in a tab and nothing more. The button does nothing else: the
+  alternatives were built or measured and rejected — a registered URL scheme is refused by
   Windows' toast host (and is a door any web page can knock on), and a toast cannot reach into the tray otherwise — so
   "Retry now"/"Install now" were dropped rather than faked, and the update toast says where the tray's own item is.
   The measurements are in `NoticeAction`'s doc comment and [[Gotchas]] → *Windows notifications*; a button that acts

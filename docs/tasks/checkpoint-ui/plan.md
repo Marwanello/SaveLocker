@@ -26,7 +26,7 @@ Brand kit: `brand-kit.html`, beside this file (also mirrored at
 | 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5), **including flipping the theme default to follow the OS**; item 4 (the Deck's accent) ➡️ shipped 2026-09-22 (Group 6) |
 | 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
 | 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22/23 (Group 6, PR #49): Checkpoint tokens with the `Safe`/`Accent` split, 62px rows, the button legend, Sync all on Y (its outcome shown in the header from every screen), a live header mark, lucide-traced icons (`SvgPath`), Archivo. Verified live under WSLg against the test rig (real `--nav` presses, a real Sync all round trip); **not yet on a real Deck/gamescope with a physical controller**. Item 4 (Wayland) still needs the open decision made first |
-| 7 — OS notifications | ✅ Shipped 2026-09-24 (Group 7) — buttons open the agent UI at the exact screen; they do not call back |
+| 7 — OS notifications | ✅ Shipped 2026-09-24 (Group 7, PR #50; review fixes 2026-09-27) — buttons open the agent UI at the exact screen; they do not call back. Popup + click verified on a real Deck in Desktop Mode 2026-09-27 |
 | 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1) |
 
 The phases are enumerated in [[implementation]] and the session-by-session order is

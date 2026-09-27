@@ -270,9 +270,13 @@ documentation that was found. Read before touching the presenter.
   HKCU-only scheme; its process went 0 → 5), Steam's and `ms-settings:`. Ten variants changed nothing
   (hyphen-free name, signed handler, Discord's
   exact key layout incl. `DefaultIcon`, `RegisteredApplications`/Capabilities, `SHChangeNotify`, restarting
-  `ShellExperienceHost`, process AUMID). The button is an `http://localhost:<port>/open?view=route` link the shell
-  hands to the default browser; the tiny page it lands on POSTs `/open/raise`, which raises the tray window at
-  that screen (the browser tab stays behind - only a COM activator removes it). The raise must come from the
+  `ShellExperienceHost`, process AUMID). The button is an `http://localhost:<port>/open?view=route&key=…` link the
+  shell hands to the default browser; the tiny page it lands on POSTs `/open/raise`, which raises the tray window at
+  that screen (the browser tab stays behind - only a COM activator removes it). **The `key` is load-bearing**
+  (`LocalAuth.OpenLinkKey`): `/open` is not under `/api`, and a web page can navigate to it or frame it — a framed
+  copy's own POST even passes the Origin check — so without a key it only redirects to `/#route` in the browser.
+  The page also refuses framing (`frame-ancestors 'none'`). A link built before the API server exists, or with a
+  key from an older `api-token`, still opens the screen, just in the browser. The raise must come from the
   page, after it loads: raised while `/open` is still answering, the window lands first and the browser tab
   covers it. `AgentWindow.RaiseToFront` needs the Alt-key trick + TopMost toggle because the browser is already
   in front and Windows refuses a background process a plain Activate(). A richer button needs a COM activator + a shortcut carrying
@@ -519,6 +523,13 @@ documentation that was found. Read before touching the presenter.
   for one large or slow-to-sync game specifically and not others, check archive size against measured
   upload bandwidth against the reverse proxy's fixed timeout before assuming it is the agent's or the
   server's own code.
+- **Behind a proxy, a server that is down still answers — with the proxy's status, not silence.** nginx/Caddy/Traefik
+  return 502/503/504 and Cloudflare 520–530 (521 "web server is down", 522/523 timeouts) when the SaveLocker container
+  is gone, so "no response" is the wrong test for "server unreachable". `ServerReachability` (`Agent.Core`) is the one
+  answer: those codes are the server *missing*. The poller's five-minute "Can't reach the server" clock and
+  `SyncEngine`'s push catch both use it — before it (found in the PR #50 review), a Cloudflare outage never raised
+  the notice and each game's push became a sticky "push failed" toast instead of being queued. A 500 from the server
+  itself is still a real refusal.
 
 ## Testing
 - **`run-linux-tests.sh` fails two "no session" checks under WSLg — that is the machine, not the code.** "no session:

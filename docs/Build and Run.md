@@ -318,6 +318,7 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 | Windows, in CI | console/security **172** (`console-security-tests` job on `windows-latest`; its SQLite checks use the runner's Python, not WSL) |
 | Detection | sweep **271/298 (90.9%)** at the default 300 sample, 17 pinned |
 | Notifications (Group 7, 2026-09-24) | `dotnet test tests/SaveLocker.Agent.Tests` **84** (66 of them the notification rules: once-per-condition, withdraw, the five minutes, the route→URL contract) · `run-appearance-consistency-tests` **33** (28 + the installer-AUMID and route ties) · `run-health-tests` **22** · `run-linux-tests` **192 pass / 2 fail under WSLg** (the two are its injected session — `Gotchas` → Testing; every notification check passes) |
+| Notifications review fixes (PR #50, 2026-09-27) | `dotnet test tests/SaveLocker.Agent.Tests` **105** (21 new: escalation filter + retry, the keyed `/open` link, `ServerReachability`, `OpenLinkKey`) · `run-appearance-consistency-tests` **33** · `run-linux-tests` **201 pass / 2 fail under WSLg** (+2: Game Mode identity keys dropped from the click's env; the 2 are the same injected-session pair) |
 
 The two platforms differ by design — each suite skips the other's cases. The detection drop from
 99.0% is the install-directory guard and is deliberate ([[Backlog]] → file-level saves); `main` reads
