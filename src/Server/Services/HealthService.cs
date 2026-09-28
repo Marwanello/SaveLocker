@@ -53,6 +53,17 @@ public sealed class HealthService
         health.UnmappedGames = beat.UnmappedGames;
         health.OfflineQueueDepth = beat.OfflineQueueDepth;
 
+        // An agent that predates the field sends none: keep what a newer one reported rather than
+        // blanking it, since a downgrade does not change the OS underneath.
+        if (beat.Os is { } os && Clean(os.Id, 64) is { } osId)
+        {
+            health.OsId = osId.ToLowerInvariant();
+            health.OsName = Clean(os.Name, 128) ?? health.OsId;
+            health.OsIdLike = Clean(os.IdLike, 128)?.ToLowerInvariant();
+            health.OsVariantId = Clean(os.VariantId, 64)?.ToLowerInvariant();
+            health.OsDevice = Clean(os.Device, 64);
+        }
+
         // Resolve first, then apply new events. A heartbeat can legitimately carry both — "Hades
         // synced fine" and "Celeste's save folder is gone" — and doing it in this order means a
         // fault re-reported in the same beat stays open instead of being wrongly cleared.
@@ -212,8 +223,20 @@ public sealed class HealthService
                 OpenEvents: openEvents
                     .Where(e => e.MachineId == m.Id)
                     .Select(e => ToDto(e, m.Name))
-                    .ToArray());
+                    .ToArray(),
+                Os: h?.OsId is { } osId
+                    ? new AgentOsInfo(osId, h.OsName ?? osId, h.OsIdLike, h.OsVariantId, h.OsDevice)
+                    : null);
         }).ToList();
+    }
+
+    /// <summary>Agent-supplied display text: control characters out, trimmed, capped, empty → null.</summary>
+    private static string? Clean(string? value, int max)
+    {
+        if (value is null) return null;
+        var s = new string(value.Where(ch => !char.IsControl(ch)).ToArray()).Trim();
+        if (s.Length == 0) return null;
+        return s.Length <= max ? s : s[..max];
     }
 
     /// <summary>Every open problem across the fleet, worst first — what the console's badge counts.</summary>

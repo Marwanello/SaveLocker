@@ -1,17 +1,21 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { api, errorText } from '../../api';
-import type { Conflict, Game, Version, VersionStats } from '../../types';
-import { age, asUtc, fmtSize, plural, shortId, when } from '../../format';
+import type { AgentHealth, Conflict, Game, Version, VersionStats } from '../../types';
+import { age, ago, asUtc, fmtSize, plural, shortId, when } from '../../format';
+import { osForMachine, osLine } from '../../machineOs';
 import { toast, toastError } from '../../toast';
 import { Banner } from '../ui/Banner';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
-import { InlineConfirm } from '../ui/InlineConfirm';
+import { Chip } from '../ui/Chip';
+import { OsBadge } from '../ui/OsLogo';
 
 interface Props {
   game: Game;
   conflict: Conflict;
   versions: Version[];
+  /** Where each side's OS logo comes from. */
+  health: AgentHealth[];
   headId: string | null;
   /** How many other conflicts this game has open — named in the consequence, since they remain. */
   otherConflicts: number;
@@ -24,16 +28,25 @@ interface Props {
 
 const ms = (t: string) => new Date(asUtc(t)).getTime();
 
+const CHOSEN_TILE = `border-safe-line bg-[linear-gradient(180deg,color-mix(in_oklab,var(--color-safe)_10%,transparent),color-mix(in_oklab,var(--color-safe)_3%,transparent)_60%)]`;
+
 /**
- * plan.md Phase 10.4: an open conflict as a Banner that expands, in place, into the resolve panel —
- * the two sides as the conflict card has always shown them (machine, time, size, files), Keep this
- * save / Keep both, and the "set a policy" hint. One per open conflict; neither side is pre-selected.
+ * plan.md Phase 10.4: an open conflict as a Banner that expands, in place, into the resolve panel.
+ * Open, it is the agent's conflict card (agent-ui ConflictCard) seen from the console: the two sides
+ * as tiles, each led by its machine's OS logo where the agent shows Local/Cloud, since here both
+ * sides are machines. Pick a side, optionally keep the other as a protected backup, then Resolve —
+ * the pick is the first step and the sentence under the tiles says what the second will do. Neither
+ * side is pre-selected.
  */
-export function ConflictPanel({ game, conflict: c, versions, headId, otherConflicts, openSignal, onRefresh, onChanged }: Props) {
+export function ConflictPanel({ game, conflict: c, versions, health, headId, otherConflicts, openSignal, onRefresh, onChanged }: Props) {
   const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [keepBoth, setKeepBoth] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [stats, setStats] = useState<Record<string, VersionStats>>({});
   const root = useRef<HTMLDivElement>(null);
   const requested = useRef<Set<string>>(new Set());
+  const uid = useId();
 
   useEffect(() => {
     if (openSignal <= 0) return;
@@ -41,8 +54,8 @@ export function ConflictPanel({ game, conflict: c, versions, headId, otherConfli
     root.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [openSignal]);
 
-  // File count / newest change for each side, read from its archive — only once the panel is open,
-  // since that is the only place they are shown. An archive never changes once uploaded.
+  // File count for each side, read from its archive — only once the panel is open, since that is the
+  // only place it is shown. An archive never changes once uploaded.
   useEffect(() => {
     if (!open) return;
     for (const vid of [c.versionAId, c.versionBId]) {
@@ -61,6 +74,7 @@ export function ConflictPanel({ game, conflict: c, versions, headId, otherConfli
   // Only with both sides in hand: "the newer" of one known side and one not yet loaded is a guess, and
   // was once the wrong one (see GameDetail's version re-read).
   const newer = a && b ? (ms(a.createdAt) >= ms(b.createdAt) ? a : b) : null;
+  const whose = (id: string) => versions.find(v => v.id === id)?.machineName ?? shortId(id);
 
   const title = a && b
     ? `${a.machineName} and ${b.machineName} both wrote` + (base ? ` since ${shortId(base)}` : ' different saves')
@@ -72,26 +86,38 @@ export function ConflictPanel({ game, conflict: c, versions, headId, otherConfli
     ...(c.count > 1 ? [`${c.count} divergent saves were folded into this one; the newest is offered, the rest stay under Versions.`] : []),
   ].join(' ');
 
-  function consequence(v: Version | undefined, keepBoth: boolean) {
+  function consequence(v: Version | undefined, both: boolean) {
     const newerThan = v ? versions.filter(x => ms(x.createdAt) > ms(v.createdAt)).length : 0;
     return [
       v ? `${v.machineName}'s save (${fmtSize(v.size)}, ${when(v.createdAt)}) becomes Latest and both machines in this conflict pull it.`
         : 'This save becomes Latest and both machines in this conflict pull it.',
       newerThan > 0 ? `${plural(newerThan, 'newer save')} stop${newerThan === 1 ? 's' : ''} being what machines pull — nothing is deleted.` : '',
-      keepBoth ? 'Both snapshots are protected from pruning until you unprotect them under Versions.' : '',
+      both ? 'Both snapshots are protected from pruning until you unprotect them under Versions.' : 'The other stays under Versions.',
       otherConflicts > 0 ? `${plural(otherConflicts, 'other conflict')} on this game remain${otherConflicts === 1 ? 's' : ''}.` : '',
     ].filter(Boolean).join(' ');
   }
 
-  async function resolve(versionId: string, keepBoth: boolean) {
-    const v = versions.find(x => x.id === versionId);
+  function collapse() {
+    setOpen(false);
+    setSelected(null);
+    setKeepBoth(false);
+  }
+
+  async function resolve() {
+    if (!selected) return;
+    const who = whose(selected);
+    setBusy(true);
     try {
-      await api.resolveConflict(c.id, versionId, keepBoth);
-      toast(`Kept ${v ? `the ${v.machineName} save` : 'that save'}${keepBoth ? ' and the other as a backup' : ''}. Both machines will pull it.`, 4000);
-      setOpen(false);
+      await api.resolveConflict(c.id, selected, keepBoth);
+      toast(`Kept the ${who} save${keepBoth ? ' and the other as a backup' : ''}. Both machines will pull it.`, 4000);
+      collapse();
       onRefresh();
       await onChanged();
-    } catch (e) { toastError('Could not resolve the conflict: ' + errorText(e)); }
+    } catch (e) {
+      toastError('Could not resolve the conflict: ' + errorText(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function adoptNewestWins() {
@@ -124,57 +150,103 @@ export function ConflictPanel({ game, conflict: c, versions, headId, otherConfli
   return (
     <div ref={root}>
       <Card
-        title="Resolve — which save is your real progress?"
-        headerRight={<Button size="sm" onClick={() => setOpen(false)}>Cancel</Button>}
+        title={<span className="inline-flex items-center gap-2.5">Which save is your real progress? <Chip tone="warn">Conflict</Chip></span>}
+        headerRight={<Button size="sm" onClick={collapse}>Cancel</Button>}
         className="!border-accent-line"
       >
-        <p className="text-[13px] text-dim mb-3.5">
-          The one you keep becomes Latest and every machine in this conflict pulls it. The other stays in the
-          version list — nothing is deleted here.
+        <p className="text-[12.5px] leading-relaxed text-dim max-w-[64ch]">
+          {a && b ? `${a.machineName} and ${b.machineName}` : 'Two machines'} both changed
+          {base ? ` since version ${shortId(base)}` : ' since the last sync'}. Pick which one to keep — the other is
+          never deleted, just set aside.
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {c.escalated && (
+          <p className="text-[11.5px] font-semibold text-accent-ink mt-1.5">
+            Overdue — unresolved for more than six hours, so sync is paused for this game until you choose.
+          </p>
+        )}
+        {c.count > 1 && (
+          <p className="text-[11.5px] text-dim mt-1.5">
+            {c.count} divergent saves were folded into this conflict — the newest is offered below.
+          </p>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
           {sides.map(({ id, v }) => {
-            const st = stats[id];
             const who = v?.machineName ?? shortId(id);
+            const os = osForMachine(health, v?.machineId);
+            const st = stats[id];
+            const chosen = selected === id;
             return (
-              <div key={id} className="border border-line rounded-[14px] p-[15px] bg-tile flex flex-col">
-                <h5 className="text-[10px] tracking-[0.12em] uppercase text-faint font-normal">
-                  {who} · {shortId(id)}{id === headId ? ' · current Latest' : ''}
-                </h5>
-                <div className="text-[17px] font-bold tracking-[-0.03em] mt-2 tabular-nums">
-                  {v ? `${fmtSize(v.size)} · ${when(v.createdAt)}` : '—'}
-                </div>
-                <div className="text-xs text-dim mt-1 min-h-[18px] tabular-nums">
-                  {st ? `${plural(st.fileCount, 'file')}${st.newestFileWriteUtc ? ` · newest change ${when(st.newestFileWriteUtc)}` : ''}` : ''}
-                </div>
-                <div className="mt-3.5">
-                  <InlineConfirm
-                    label={`Keep the ${who} save`}
-                    size="default"
-                    tone="primary"
-                    className="w-full"
-                    consequence={consequence(v, false)}
-                    confirmLabel={`Keep the ${who} save`}
-                    onConfirm={() => resolve(id, false)}
-                  />
-                </div>
-              </div>
+              <button
+                key={id}
+                type="button"
+                aria-pressed={chosen}
+                aria-label={`Keep the ${who} save`}
+                aria-describedby={`${uid}-${id}`}
+                disabled={busy}
+                onClick={() => setSelected(id)}
+                className={`flex flex-col items-stretch gap-2.5 text-left rounded-[12px] border px-[15px] py-3.5 cursor-pointer
+                  transition-[border-color,background-color] duration-150 ease-[var(--ease)] disabled:cursor-default
+                  ${chosen ? CHOSEN_TILE : 'border-line bg-tile hover:border-dim'}
+                  focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2`}
+              >
+                <span className="flex items-center gap-2.5 min-w-0">
+                  <OsBadge os={os} tone={chosen ? 'safe' : 'default'} />
+                  <span className="text-[13.5px] font-bold text-fg truncate">{who}</span>
+                  {id === headId && <Chip className="ml-auto">Latest</Chip>}
+                </span>
+
+                <span id={`${uid}-${id}`} className="flex flex-col gap-1">
+                  <span className="flex items-baseline gap-2 text-[17px] font-bold tracking-[-0.02em] tabular-nums text-fg"
+                    title={v ? when(v.createdAt) : undefined}>
+                    {v ? ago(v.createdAt) : '—'}
+                    {newer?.id === id && (
+                      <span className="text-[9.5px] font-bold tracking-[0.05em] uppercase text-safe-ink bg-safe-soft rounded-full px-1.5 py-px">
+                        newer
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-[11.5px] text-dim tabular-nums">
+                    {[st ? plural(st.fileCount, 'file') : null, v ? fmtSize(v.size) : null, v ? when(v.createdAt) : null]
+                      .filter(Boolean).join(' · ')}
+                  </span>
+                  <span className="text-[11px] text-dim leading-snug">
+                    {osLine(os) ?? 'Operating system not reported yet'} · version {shortId(id)}
+                  </span>
+                </span>
+
+                <span aria-hidden="true"
+                  className={`mt-0.5 self-start rounded-md border px-3 py-[5px] text-[11.5px] font-semibold
+                    transition-colors duration-150 ease-[var(--ease)]
+                    ${chosen ? 'bg-accent border-accent text-on-accent' : 'bg-raise border-line text-dim'}`}>
+                  {chosen ? 'Keeping this' : 'Keep this'}
+                </span>
+              </button>
             );
           })}
         </div>
-        {newer && (
-          <div className="flex gap-2.5 mt-3.5 items-center flex-wrap">
-            <InlineConfirm
-              label={`Keep both — ${newer.machineName}'s as Latest`}
-              size="default"
-              tone="default"
-              consequence={consequence(newer, true)}
-              confirmLabel="Keep both saves"
-              onConfirm={() => resolve(newer.id, true)}
+
+        <p aria-live="polite" className="text-xs leading-relaxed text-dim mt-3 min-h-[18px]">
+          {selected ? consequence(versions.find(v => v.id === selected), keepBoth) : ''}
+        </p>
+
+        <div className="mt-3 pt-3.5 border-t border-dashed border-line flex items-center justify-between gap-3 flex-wrap">
+          <label className="flex items-center gap-2 text-xs text-dim cursor-pointer">
+            <input
+              type="checkbox"
+              checked={keepBoth}
+              disabled={busy}
+              onChange={e => setKeepBoth(e.target.checked)}
+              className="w-[13px] h-[13px] accent-[var(--color-watch-ink)] cursor-pointer
+                focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
             />
-            <span className="text-xs text-dim">The newer save becomes Latest; the other is kept as a protected backup.</span>
-          </div>
-        )}
+            Also keep the other one as a protected backup
+          </label>
+          <Button variant="primary" disabled={!selected || busy} onClick={() => void resolve()}>
+            {selected ? `Resolve with ${whose(selected)}` : 'Resolve'}
+          </Button>
+        </div>
+
         {(game.conflictPolicy ?? 'Manual') === 'Manual' && (
           <p className="text-xs text-dim mt-3.5">
             Playing solo?{' '}

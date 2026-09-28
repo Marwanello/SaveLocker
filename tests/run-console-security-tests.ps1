@@ -16,6 +16,8 @@
 #                                 audited; the heartbeat carries it to any machine, and carries NOTHING
 #                                 when pushing is off; a garbage value from an env var is normalised, not
 #                                 passed on to an agent.
+#   UI-02   machine OS            the heartbeat's OS reaches the console lower-cased, capped and without
+#                                 control characters; an older agent's beat (no field) keeps it.
 #   SEC-01  admin sessions        the console keeps a revocable random token, not the password; only
 #                                 its hash is stored; Lock / sign-out-everywhere / a password change
 #                                 end it; an expired one is refused.
@@ -357,6 +359,30 @@ Check "appearance: the other heartbeat fields are unaffected (escalatedConflicts
 Check "appearance: changing it is audited" (@(Actions) -contains "settings.appearance")
 # Put the default back so nothing later in the run depends on this section's choices.
 Http POST "/api/settings/appearance" @{ theme = "system"; accent = "ember"; mark = "pixel"; pushToAgents = $true } | Out-Null
+
+# ------------------------------------------------------------------ UI-02: the machine's OS (the console's logos)
+Write-Host ""; Write-Host "-- UI-02: the operating system a heartbeat reports"
+function OsOf($machine) { return (@((Http GET "/api/admin/health").Json) | Where-Object { $_.machineId -eq $machine.machineId }).os }
+function BeatOs($machine, $os) {
+    return (Http POST "/api/agent/health" @{ agentVersion = "9.9.9-test"; platform = "Linux"; os = $os } @{ "X-Api-Key" = $machine.apiKey })
+}
+$deck = BeatOs $m1 @{ id = "steamos"; name = "SteamOS"; idLike = "arch"; variantId = "steamdeck"; device = "Steam Deck" }
+$o1 = OsOf $m1
+Check "os: a heartbeat's OS is stored and served to the console (200)" `
+    ($deck.Status -eq 200 -and $o1.id -eq "steamos" -and $o1.name -eq "SteamOS" -and $o1.idLike -eq "arch" -and $o1.variantId -eq "steamdeck" -and $o1.device -eq "Steam Deck")
+BeatOs $m1 @{ id = "Bazzite"; name = "Bazzite 42"; idLike = "FEDORA"; variantId = "Bazzite-Deck" } | Out-Null
+$o2 = OsOf $m1
+Check "os: ids are stored lower-case (the console matches them against its own table)" `
+    ($o2.id -eq "bazzite" -and $o2.idLike -eq "fedora" -and $o2.variantId -eq "bazzite-deck" -and $o2.name -eq "Bazzite 42")
+BeatOs $m1 @{ id = ("x" * 500); name = ("N" * 500) + "`n`t<b>"; device = "Deck" + [char]7 } | Out-Null
+$o3 = OsOf $m1
+Check "os: agent-supplied text is capped (id 64, name 128) and loses control characters" `
+    ($o3.id.Length -eq 64 -and $o3.name.Length -eq 128 -and $o3.name -notmatch "[`n`t]" -and $o3.device -eq "Deck")
+Beat $m1 | Out-Null
+Check "os: a heartbeat without the field (an older agent) keeps what was reported" ((OsOf $m1).id -eq ("x" * 64))
+BeatOs $m1 @{ id = "   "; name = "Blank" } | Out-Null
+Check "os: a blank id is ignored rather than stored" ((OsOf $m1).id -eq ("x" * 64))
+Check "os: a machine whose agent never reported one reads null" ($null -eq (OsOf $m3))
 
 # ------------------------------------------------------------------ SEC-07: response headers (server is still OPEN here)
 Write-Host ""; Write-Host "-- SEC-07: response headers"

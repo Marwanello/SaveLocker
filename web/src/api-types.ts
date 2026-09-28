@@ -3151,6 +3151,7 @@ export interface components {
             /** Format: int32 */
             offlineQueueDepth: number;
             openEvents: components["schemas"]["AgentEventDto"][];
+            os?: null | components["schemas"]["AgentOsInfo"];
         };
         AgentHeartbeat: {
             agentVersion: string;
@@ -3175,6 +3176,7 @@ export interface components {
             events?: null | components["schemas"]["AgentEventReport"][];
             resolvedGameIds?: null | string[];
             pathCandidates?: null | components["schemas"]["ScanPathCandidate"][];
+            os?: null | components["schemas"]["AgentOsInfo"];
         };
         AgentHeartbeatResponse: {
             escalatedConflicts: components["schemas"]["ConflictEscalationDto"][];
@@ -3192,6 +3194,13 @@ export interface components {
             platform: string;
             /** @default manual */
             source: string;
+        };
+        AgentOsInfo: {
+            id: string;
+            name: string;
+            idLike?: null | string;
+            variantId?: null | string;
+            device?: null | string;
         };
         AgentVersionInfo: {
             latestVersion: string;

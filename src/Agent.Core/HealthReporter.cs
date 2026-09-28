@@ -180,7 +180,8 @@ public sealed class HealthReporter
             Events: events.Select(e => new AgentEventReport(
                 e.Code, e.Severity, e.Message, e.GameId, e.OccurredAt)).ToArray(),
             ResolvedGameIds: resolved,
-            PathCandidates: pathCandidates.Length == 0 ? null : pathCandidates);
+            PathCandidates: pathCandidates.Length == 0 ? null : pathCandidates,
+            Os: OsIdentity.This);
 
         AgentHeartbeatResponse response;
         try

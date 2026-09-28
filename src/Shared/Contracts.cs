@@ -580,7 +580,24 @@ public record AgentHeartbeat(
     // Appended, and optional, on purpose: an older agent simply omits it and a newer agent talking
     // to an older server has it ignored, so the fleet and the container can be upgraded in either
     // order (see CONTEXT.md's deploy note).
-    ScanPathCandidate[]? PathCandidates = null);
+    ScanPathCandidate[]? PathCandidates = null,
+    // Appended and optional for the same reason. Null from an agent that predates it.
+    AgentOsInfo? Os = null);
+
+/// <summary>
+/// Which operating system an agent runs on, so the console can put the right logo beside a machine.
+/// On Linux the fields are <c>/etc/os-release</c>'s own (<c>ID</c>, <c>ID_LIKE</c>, <c>VARIANT_ID</c>,
+/// <c>PRETTY_NAME</c>), passed through rather than mapped: the console owns the id → logo table, so a
+/// distro it learns to draw later needs no agent update. On Windows <paramref name="Id"/> is
+/// <c>windows</c>. <paramref name="Device"/> names known hardware (a Steam Deck) or <c>WSL</c>, and is otherwise null.
+/// Agent-reported, so display text only: the server clamps each field and never branches on it.
+/// </summary>
+public record AgentOsInfo(
+    string Id,
+    string Name,
+    string? IdLike = null,
+    string? VariantId = null,
+    string? Device = null);
 
 /// <summary>An unresolved conflict old enough to demand attention on an agent that can toast.</summary>
 public record ConflictEscalationDto(
@@ -642,7 +659,9 @@ public record AgentHealthDto(
     int TrackedGames,
     int UnmappedGames,
     int OfflineQueueDepth,
-    AgentEventDto[] OpenEvents);
+    AgentEventDto[] OpenEvents,
+    // Null until the machine's agent reports it (an older agent never does).
+    AgentOsInfo? Os = null);
 
 // ----- Agent update channel -----
 

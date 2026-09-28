@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { RefObject } from 'react';
 import { api, errorText } from '../../api';
-import type { GameSummary, Machine } from '../../types';
+import type { AgentHealth, GameSummary, Machine } from '../../types';
 import { ago, fmtSize, plural } from '../../format';
 import { toast, toastError } from '../../toast';
 import { PageHead } from '../ui/PageHead';
@@ -11,6 +11,7 @@ import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { InlineConfirm } from '../ui/InlineConfirm';
 import { GameCover } from './GameCover';
+import { MachineSelect } from './MachineSelect';
 import { POLICY_LABEL } from './gameState';
 import type { GameStanding } from './gameState';
 
@@ -21,6 +22,7 @@ interface Props {
   /** Who Push / Pull can go to: the machines that have this game (all of them, if none does yet). */
   machines: Machine[];
   allMachines: Machine[];
+  health: AgentHealth[];
   artOpen: boolean;
   onToggleArt: () => void;
   penRef: RefObject<HTMLButtonElement | null>;
@@ -31,7 +33,7 @@ const STATE_TONE = { ok: 'ok', warn: 'warn', crit: 'crit', idle: 'default' } as 
 
 /** plan.md Phase 10.3: the cover (its pen opens the art picker), the name, the facts line, the state /
  *  policy / keep chips, Push and Pull for one machine, and Refresh art. */
-export function GameHead({ summary, standing, versionCount, machines, allMachines, artOpen, onToggleArt, penRef, onRefresh }: Props) {
+export function GameHead({ summary, standing, versionCount, machines, allMachines, health, artOpen, onToggleArt, penRef, onRefresh }: Props) {
   const { game, head, totalStorageBytes } = summary;
   const [machineId, setMachineId] = useState<string>(machines[0]?.id ?? '');
   const [queuing, setQueuing] = useState(false);
@@ -108,17 +110,14 @@ export function GameHead({ summary, standing, versionCount, machines, allMachine
 
             {target && (
               <span className="inline-flex items-center gap-1.5">
-                {machines.length > 1 && (
-                  <select
-                    value={target.id}
-                    onChange={e => setMachineId(e.target.value)}
-                    aria-label="Machine to push from or pull to"
-                    className="bg-raise border border-line rounded-full pl-3 pr-2 py-[7px] text-[12.5px] text-fg cursor-pointer
-                      focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
-                  >
-                    {machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
-                )}
+                <MachineSelect
+                  machines={machines}
+                  health={health}
+                  value={target.id}
+                  onChange={setMachineId}
+                  label="Machine to push from or pull to"
+                  align="end"
+                />
                 <Button disabled={queuing} onClick={() => void queue('Push')}
                   title={`Upload ${target.name}'s save. If it has diverged from Latest, it becomes a conflict rather than overwriting.`}>
                   Push

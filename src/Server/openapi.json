@@ -2752,6 +2752,16 @@
             "items": {
               "$ref": "#/components/schemas/AgentEventDto"
             }
+          },
+          "os": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentOsInfo"
+              }
+            ]
           }
         }
       },
@@ -2817,6 +2827,16 @@
             "items": {
               "$ref": "#/components/schemas/ScanPathCandidate"
             }
+          },
+          "os": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentOsInfo"
+              }
+            ]
           }
         }
       },
@@ -2880,6 +2900,39 @@
           "source": {
             "type": "string",
             "default": "manual"
+          }
+        }
+      },
+      "AgentOsInfo": {
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "idLike": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "variantId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "device": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

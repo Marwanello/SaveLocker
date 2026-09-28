@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 
-type Node = ['path', { d: string }] | ['rect', Record<string, string>] | ['circle', Record<string, string>];
+type Node = ['path', { d: string }] | ['rect' | 'circle' | 'line', Record<string, string>];
 
 /**
  * lucide 0.511.0's own geometry, copied verbatim from `lucide-react/dist/esm/icons/*.js` (the version
@@ -47,6 +47,12 @@ const ICONS = {
     ['path', { d: 'm15 5 4 4' }],
   ],
   'chevron-down': [['path', { d: 'm6 9 6 6 6-6' }]],
+  check: [['path', { d: 'M20 6 9 17l-5-5' }]],
+  monitor: [
+    ['rect', { width: '20', height: '14', x: '2', y: '3', rx: '2' }],
+    ['line', { x1: '8', x2: '16', y1: '21', y2: '21' }],
+    ['line', { x1: '12', x2: '12', y1: '17', y2: '21' }],
+  ],
 } satisfies Record<string, Node[]>;
 
 export type IconName = keyof typeof ICONS;

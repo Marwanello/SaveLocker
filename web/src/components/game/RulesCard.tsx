@@ -1,16 +1,19 @@
 import { useState } from 'react';
 import { api, errorText } from '../../api';
-import type { Game, Machine } from '../../types';
+import type { AgentHealth, Game, Machine } from '../../types';
 import { toast, toastError } from '../../toast';
 import { Card } from '../ui/Card';
 import { KV } from '../ui/KV';
 import { Button } from '../ui/Button';
 import { InlineConfirm } from '../ui/InlineConfirm';
+import { Select } from '../ui/Select';
+import { MachineSelect } from './MachineSelect';
 import { POLICY_LABEL } from './gameState';
 
 interface Props {
   game: Game;
   machines: Machine[];
+  health: AgentHealth[];
   onRefresh: () => void;
 }
 
@@ -23,9 +26,15 @@ const POLICY_HELP: Record<string, string> = {
   PreferMachine: 'The chosen machine always wins; the other is kept as a backup.',
 };
 
+const POLICY_OPTIONS = (['Manual', 'NewestWins', 'PreferMachine'] as const).map(value => ({
+  value,
+  label: value === 'PreferMachine' ? 'Prefer a machine' : POLICY_LABEL[value] ?? value,
+  sub: POLICY_HELP[value],
+}));
+
 /** plan.md Phase 10.5: Rules — the conflict policy and how many versions to keep, both edited in
  *  place; whether the game syncs at all; and deleting it, which names exactly what goes. */
-export function RulesCard({ game, machines, onRefresh }: Props) {
+export function RulesCard({ game, machines, health, onRefresh }: Props) {
   const current = game.conflictPolicy ?? 'Manual';
   const currentPreferred = game.preferredMachineId ?? null;
   const currentKeep = game.retainVersions ?? null;
@@ -96,18 +105,23 @@ export function RulesCard({ game, machines, onRefresh }: Props) {
           value: (
             <div className="flex flex-col gap-1.5">
               <div className="flex gap-1.5 flex-wrap items-center">
-                <select aria-label="Conflict policy" value={policy} className={fieldCls}
-                  onChange={e => { setPolicy(e.target.value); if (e.target.value !== 'PreferMachine') setPreferred(null); }}>
-                  <option value="Manual">Manual</option>
-                  <option value="NewestWins">Newest wins</option>
-                  <option value="PreferMachine">Prefer a machine</option>
-                </select>
+                <Select
+                  label="Conflict policy"
+                  variant="field"
+                  value={policy}
+                  options={POLICY_OPTIONS}
+                  onChange={v => { setPolicy(v); if (v !== 'PreferMachine') setPreferred(null); }}
+                />
                 {policy === 'PreferMachine' && (
-                  <select aria-label="Machine that always wins" value={preferred ?? ''} className={fieldCls}
-                    onChange={e => setPreferred(e.target.value || null)}>
-                    <option value="">Pick a machine</option>
-                    {machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
+                  <MachineSelect
+                    label="Machine that always wins"
+                    variant="field"
+                    placeholder="Pick a machine"
+                    machines={machines}
+                    health={health}
+                    value={preferred}
+                    onChange={setPreferred}
+                  />
                 )}
                 {policyDirty && (
                   <Button size="sm" disabled={saving || (policy === 'PreferMachine' && !preferred)} onClick={() => void savePolicy()}>Save</Button>

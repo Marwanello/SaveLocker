@@ -103,6 +103,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
         versionCount={versions.length}
         machines={withGame.length > 0 ? withGame : machines}
         allMachines={machines}
+        health={health}
         artOpen={artOpen}
         onToggleArt={() => setArtOpen(o => !o)}
         penRef={penRef}
@@ -119,6 +120,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
           game={game}
           conflict={c}
           versions={versions}
+          health={health}
           headId={headId}
           otherConflicts={gameConflicts.length - 1}
           openSignal={i === 0 ? resolveSignal : 0}
@@ -152,7 +154,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
             intent={intent}
             onRefresh={onRefresh}
           />
-          <RulesCard game={game} machines={machines} onRefresh={onRefresh} />
+          <RulesCard game={game} machines={machines} health={health} onRefresh={onRefresh} />
           <ExcludePatternsCard game={game} onRefresh={onRefresh} />
         </div>
       </div>
