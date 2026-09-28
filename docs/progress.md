@@ -3193,7 +3193,7 @@ six smaller things; all fixed. Full account: CONTEXT.md → *Review fixes for PR
 
 ## 2026-09-28 — Checkpoint UI Group 8: console page kit, top bar, Games page
 
-Full write-up: [[session_summary]]. Branch `claude/group-8-ui-redesign-d49b05` (not pushed, no PR yet), commits
+Full write-up: [[session_summary]]. Branch `group-8-ui-redesign` (renamed from `claude/group-8-ui-redesign-d49b05`), PR #52, commits
 `e6514ce` (8a), `1566de8` (8b), `24074a0` (8c), `c10ef4d` (Docs). Live checklist: `tasks/checkpoint-ui/group-8-verification.md`.
 
 | Part | Commit | What | Size |
@@ -3226,5 +3226,30 @@ Full write-up: [[session_summary]]. Branch `claude/group-8-ui-redesign-d49b05` (
   hidden Browser pane refused key presses; the focus-ring class was checked on all 43 controls instead).
 - **Found, not fixed:** a version's "newest change" reads off by the uploader's UTC offset (`SaveArchive` stamps
   local time, the server reads UTC) — Backlog, spawned as its own task.
-- **Open:** push and PR (as `group-8-ui-redesign`); the current tab/row use the soft accent per plan 9.3 while
+- **Open:** review of PR #52; the current tab/row use the soft accent per plan 9.3 while
   Groups 3/6 made theirs neutral (maintainer to confirm); then Group 9 or Group 10.
+
+## 2026-09-28 (later) — OS logos on the conflict panel, a listbox machine picker; Group 8 PR opened
+
+Full write-up: [[session_summary]]. Same branch, renamed `claude/group-8-ui-redesign-d49b05` → `group-8-ui-redesign` and
+pushed to the fork: PR https://github.com/Marwanello/SaveLocker/pull/52. Commits `b3caca9` (code), `493eec2` (Docs).
+
+| Where | What |
+|---|---|
+| Agent (`Agent.Core/OsIdentity.cs`) | Reports its OS on every heartbeat: os-release `ID`/`ID_LIKE`/`VARIANT_ID`/`PRETTY_NAME`, "Steam Deck"/"Steam Deck OLED" from a Valve board, "WSL", or "Windows 10/11 (build N)" |
+| Contract + server | `AgentOsInfo` appended to `AgentHeartbeat` and `AgentHealthDto` (optional); stored on `AgentHealth` (migration `AddAgentOsInfo`), lower-cased, capped, control characters out, kept across an older agent's beat |
+| Console conflict panel | The agent's conflict card seen from the console: a tile per side led by its machine's OS logo, pick → consequence sentence → "Resolve with X", keep-the-other as a checkbox |
+| Console dropdowns | `ui/Select` listbox (keyboard complete) for the Push/Pull machine, the conflict policy and the preferred machine; machine options carry logo, OS and online state |
+| Logos | Simple Icons 16.33.0 (CC0) for 26 distros + Steam + Steam Deck; the Windows 11 squares; Bazzite's press-kit mark (Apache-2.0); unknown distro → Tux; older agent → its Windows/Linux platform |
+
+- **Tests:** `run-console-security-tests` 195/195 (UI-02 +6); `run-appearance-consistency-tests` 35/35; `OsIdentityTests`
+  18/18 (mutation-checked); web build + lint clean.
+- **Live via `testenv`:** WSL reported "Ubuntu 26.04 LTS · WSL"; a real WinTest-vs-LinuxTest conflict resolved through the new
+  panel (Latest and both protected, confirmed on the server); the dropdown's keys, click-outside and contrast (≥ 6.2:1 both themes).
+- **Rig incident:** an elevated `testenv up` had started a Windows test tray that a normal shell cannot see, so `down` missed
+  it and every agent build hit MSB3027; that `down` also stopped the console and WSL agent mid-use. Both were rebuilt and
+  restarted; the elevated tray kept running the old build (Gotchas → Testing).
+- **Not verified:** the full `SaveLocker.Agent.Tests` project (locked output), a Windows agent at this build, a real
+  Deck/Bazzite report, screenshots (hidden pane).
+- **Found, not fixed:** a Linux agent's stale "conflict unresolved" latch whose push still says "pushed" (Backlog).
+- **Open:** PR #52 review; the UTC-offset "newest change" fix (own branch, next).

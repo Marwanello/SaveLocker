@@ -1555,8 +1555,8 @@ status rows in `plan.md` and both task files. The Wayland options are written ou
 (see `Decisions.md` → *Linux UI*); the launcher stays out of Steam, Game Mode keeps `savelocker ui`. **Regrouped 2026-09-28 at the maintainer's request** from nine groups into three coarse ones worked as
 ordered parts: 8 console kit + top bar + Games page, 9 Backups + Configuration + the other console pages, 10 agent UI +
 Deck + assets + Wayland.
-<br>**Group 8 shipped 2026-09-28 (branch `claude/group-8-ui-redesign-d49b05`, three commits: 8a `e6514ce`, 8b `1566de8`,
-8c `24074a0`) — not yet in a PR or a release.** The console's page kit (`web/src/components/ui/`: `Page`, `PageHead`,
+<br>**Group 8 shipped 2026-09-28 (branch `group-8-ui-redesign`, three commits: 8a `e6514ce`, 8b `1566de8`,
+8c `24074a0`) — in review as PR https://github.com/Marwanello/SaveLocker/pull/52, not yet in a release.** The console's page kit (`web/src/components/ui/`: `Page`, `PageHead`,
 `DataTable`, `KV`, `PathField`, `Banner`, `EmptyState`, `SearchField`, `FilterChips`, `Meter`, `Dot`, `InlineConfirm`, `Icon`,
 a global `Toaster`), the top bar (pill tabs, an always-present bell with per-item actions, the conflict pill, Sync all's
 full-width rail + **Cancel**), and the Games page re-laid out to the prototype with **no `alert`/`confirm`/`prompt` left on it**.
@@ -1580,7 +1580,7 @@ the distros, the Windows 11 squares, Bazzite's own press-kit mark; an unknown di
 its platform. `run-console-security-tests` **195** (UI-02). Verified live: WSL reported "Ubuntu 26.04 LTS · WSL", a real
 conflict resolved through the new panel. Not seen: a real Deck/Bazzite report, and a Windows agent at this build (the rig's
 tray that day was an elevated one this session could not rebuild — `Gotchas` → Testing).
-**Next action:** open the PR for Group 8 (or review it first), then Group 9 (now unblocked) or Group 10.
+**Next action:** review and merge PR #52 (Group 8 + the OS-logo follow-up), then Group 9 (now unblocked) or Group 10.
 
 ---
 
