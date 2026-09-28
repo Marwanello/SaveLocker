@@ -302,8 +302,9 @@ The largest genuinely-new piece.
    has no SaveLocker entry at all: the UI is reached by typing `localhost:5178` into a browser, or by
    clicking a notification (`DesktopNotifier.Open` → `xdg-open`).
    1. **A chrome-less browser app window — recommended.** A new `savelocker open` verb, and a `.desktop`
-      launcher `install.sh` writes to `~/.local/share/applications/` (so SaveLocker is in KDE's menu and
-      can be added to Steam as well), open `http://localhost:5178/` in a Chromium-family browser's
+      launcher `install.sh` writes to `~/.local/share/applications/` (so SaveLocker is in KDE's menu — but
+      not added to Steam: Steam shortcuts are what Game Mode shows, and there the gamepad `savelocker ui`
+      stays the entry point; the two sit side by side over the same daemon), open `http://localhost:5178/` in a Chromium-family browser's
       `--app=` mode when one is installed — on a Deck usually a Flatpak (`com.google.Chrome`,
       `org.chromium.Chromium`, `com.microsoft.Edge`, `com.brave.Browser`) via `flatpak run` — and fall
       back to `xdg-open`. agent-ui draws the prototype's header bar (mark, "SaveLocker", "<machine> —
