@@ -17,7 +17,7 @@ rather than by phase number, because several phases edit the same components.
 | 3 — Sync all and progress | ✅ Items 1, 2, 4 shipped 2026-09-18 (Group 2 — console side); item 3 (agent Sync all + progress) shipped 2026-09-20 (Group 3); item 5 (per-game Sync this game) ✅ shipped 2026-09-21 (Group 4) with the game page and a new per-game agent route |
 | 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5); item 4 — the Deck's accent ➡️ shipped 2026-09-22 (Group 6). The theme default now follows the OS (every hex colour left the views first). See `implementation-grouping.md` → Groups 5/6 |
 | 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
-| 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22 (Group 6) — verified live (real screenshots, pixel-sampled colours, `--nav`-scripted L1/R1 with `--nav-debug`) since `savelocker ui` runs on this Windows box without WSLg; a real focus-timing bug was found and fixed this way — see `implementation-grouping.md` → Group 6. No real Deck/gamescope pass yet. Item 4 (Wayland) ⏳ Group 10 (part 10d) — options and a recommendation now written out below; the maintainer confirms one before code |
+| 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22 (Group 6) — verified live (real screenshots, pixel-sampled colours, `--nav`-scripted L1/R1 with `--nav-debug`) since `savelocker ui` runs on this Windows box without WSLg; a real focus-timing bug was found and fixed this way — see `implementation-grouping.md` → Group 6. No real Deck/gamescope pass yet. Item 4 (Wayland) ⏳ Group 10 (part 10d) — **decided 2026-09-28: option 1**, a chrome-less browser app window (see below); a short Deck measurement comes first |
 | 7 — OS notifications | ✅ Shipped 2026-09-24 (Group 7) — shared rules, a real Windows toast and the generalised Linux notifier. Buttons are links to the agent UI, not callbacks (measured: Windows' toast host refuses freshly registered URL schemes); "Retry now"/"Install now" did not survive that. See Phase 7 below |
 | 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1). Remainder (Steam library art, PNG favicons, the installer icon — all still the pre-Checkpoint brand) ⏳ Group 10 (part 10c) |
 | 9 — Console page kit and top bar | ⏳ Not started — Group 8 (from the 2026-09-27 audit) |
@@ -298,10 +298,13 @@ The largest genuinely-new piece.
 4. Wayland desktop session: the agent window currently has no native chrome of its own. Either host
    the existing web UI in a small GTK/WebKit window with a header bar, or accept the browser. Decide
    before building — this is the one item in the plan with no obvious right answer.
-   <br>**Options, written out 2026-09-27 (Group 10, part 10d, builds whichever is confirmed).** Today Desktop Mode
+   <br>**✅ Decided 2026-09-28 by the maintainer: option 1** (below). Group 10, part 10d, builds it; the Deck
+   measurement at the end of this item comes first and only shapes the header bar (Window Controls Overlay or
+   not). If the Deck has no Chromium-family browser, the launcher's `xdg-open` fallback is option 2 in effect.
+   <br>**Options, written out 2026-09-27 (Group 10, part 10d, builds option 1).** Today Desktop Mode
    has no SaveLocker entry at all: the UI is reached by typing `localhost:5178` into a browser, or by
    clicking a notification (`DesktopNotifier.Open` → `xdg-open`).
-   1. **A chrome-less browser app window — recommended.** A new `savelocker open` verb, and a `.desktop`
+   1. **A chrome-less browser app window — ✅ chosen.** A new `savelocker open` verb, and a `.desktop`
       launcher `install.sh` writes to `~/.local/share/applications/` (so SaveLocker is in KDE's menu — but
       not added to Steam: Steam shortcuts are what Game Mode shows, and there the gamepad `savelocker ui`
       stays the entry point; the two sit side by side over the same daemon), open `http://localhost:5178/` in a Chromium-family browser's

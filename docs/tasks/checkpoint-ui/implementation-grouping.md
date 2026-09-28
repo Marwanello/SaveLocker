@@ -27,7 +27,7 @@ phases to do in one session, in what order, and why. Driven by three things weig
 | 7 | Phase 7 (notifications) | ✅ Shipped 2026-09-24 (branch `group-7-ui-redesign`, PR #50) — both halves on shared rules (`Agent.Core/Notifications.cs`): a real Windows toast (`ToastPresenter`) and the Linux notifier generalised from `ConflictNotifier` (`DesktopNotifier`). **A button is a link to the agent UI, not a callback** — a custom URL scheme was built end to end and the shell's toast host refused every freshly registered one (measured), so "Retry now"/"Install now" became "Open game" and a pointer to the tray menu. Verified live on Windows (real toast, real click, the five-minute rule, withdrawal) and on a real Deck in Desktop Mode 2026-09-27 (the popup, and *Choose a save* opening the flatpak default browser at the queue); the installer's shortcut change compiles but has not been run. Reviewed as PR #50 on 2026-09-27 and every finding fixed (*Review fixes*, below). See the Group 7 write-up below |
 | 8 | Phases 9 + 10 — console page kit, top bar (pill tabs, bell, conflict pill, progress rail + Cancel) and the Games page (sidebar, full-width grid, game page re-layout, no `alert`/`confirm`) | ⏳ Not started — added by the 2026-09-27 gap audit, as are 9 and 10. Parts 8a → 8b → 8c. Gates 9 |
 | 9 | Phases 11 + 12 + Phase 2's release-history table — the **Backups** tab (does not exist today) and its routes, Configuration, Audit log, Help, What's new, sign-in | ⏳ Not started. Parts 9a → 9b → 9c. After 8 |
-| 10 | Phases 13 + 14 + the Phase 8 remainder + Phase 6 item 4 — agent UI completed, Deck Game Mode completed, Steam art / favicons / installer icon, the Wayland window | ⏳ Not started. Parts 10a → 10b, 10c any time, 10d once the maintainer confirms the Wayland option. Independent of 8–9 |
+| 10 | Phases 13 + 14 + the Phase 8 remainder + Phase 6 item 4 — agent UI completed, Deck Game Mode completed, Steam art / favicons / installer icon, the Wayland window | ⏳ Not started. Parts 10a → 10b, 10c any time, 10d (Wayland — option 1 decided 2026-09-28) any time after 10c's manifest. Independent of 8–9 |
 
 **2026-09-20 review pass (a code review of Groups 1–2, all findings fixed on branch
 `console-review-fixes-and-security-hardening`).** Two things here change what later groups may assume:
@@ -117,7 +117,7 @@ unit-test safety net to lean on, which is another reason to keep groups small.
 | 6 (Deck ImGui) | Yes — it compiles | Build only; real gamepad nav needs the Deck or a WSLg box |
 | 7 (Windows toast) | Yes | **Yes** — Windows agent runs here |
 | 7 (Linux freedesktop) | Yes | **No** — needs a live desktop session with a notification daemon |
-| Wayland window | Blocked | Blocked — needs a decision first, see below |
+| Wayland window | Yes (decided 2026-09-28) | Launcher logic here; the window itself only on a real Deck — part of Group 10's Deck session |
 | 8–9 (console) | Yes | **Yes** — `testenv build/up -Only console` + a WSL agent for anything that syncs; both themes; the contrast walk |
 | 10 (agent, Deck, assets, Wayland) | Yes | **Mostly** — agents through `testenv`, the Deck UI via `--screenshot`/`--nav` on this box, the art export here; cover art, battery, a physical controller, the Steam tiles and the Wayland window need one real-Deck session |
 
@@ -652,8 +652,7 @@ run in parallel with them. Ordered so each part consumes what the one before it 
   the pre-Checkpoint PNGs in `packaging/linux/artwork/dist/`; the PNG favicons; both `.ico` files; and a real
   `site.webmanifest` (empty name and white theme today), which 10d's PWA path needs. No dependency on 10a/10b —
   any time.
-- **10d — The Wayland desktop window (Phase 6 item 4). Decision first** — see *Open decisions* below. With the
-  recommended option: a `savelocker open` verb and a `.desktop` launcher from `install.sh`, a Chromium-family
+- **10d — The Wayland desktop window (Phase 6 item 4). Option 1, decided 2026-09-28** — see *Decisions taken* below: a `savelocker open` verb and a `.desktop` launcher from `install.sh`, a Chromium-family
   `--app=` window when one is installed (Flatpak included), `xdg-open` otherwise, agent-ui drawing the
   prototype's header bar only outside browser chrome, and `DesktopNotifier.Open` routing a notification click
   through the same launcher. **Measure on the Deck before building:** which browsers are there, what `--app=`
@@ -671,12 +670,14 @@ menu entry, header bar, and a notification click landing in it.
 
 ## Open decisions
 
-**Phase 6 item 4 — the Wayland desktop window.** Host the existing agent web UI in a small GTK/WebKit
+**Phase 6 item 4 — the Wayland desktop window. ✅ Decided 2026-09-28 — option 1.** Host the existing agent web UI in a small GTK/WebKit
 window with a header bar, or accept the browser. This is the one item in the whole plan with no
 obvious right answer, and it needs deciding before any code is written for it.
 <br>**2026-09-27:** four options and a recommendation (a chrome-less browser app window) are now in
-[[implementation]] → Phase 6 item 4; part 10d carries the work. Still the maintainer's to confirm — 10d is
-last in Group 10 so the rest of the group does not wait on it.
+[[implementation]] → Phase 6 item 4; part 10d carries the work. The maintainer chose **option 1** on
+2026-09-28: a `savelocker open` verb and a KDE-menu `.desktop` entry opening the agent UI in a Chromium-family
+`--app=` window, the header bar drawn by agent-ui. The launcher is **not** added to Steam — Game Mode keeps
+`savelocker ui` — and both sit side by side over the same daemon.
 
 **Smaller calls the gap audit surfaced — the recommendation is written into each group; flag a disagreement
 before that group starts:**
@@ -702,7 +703,7 @@ Any time after Group 1 →  Group 7  (P7 notifications)             ← Linux ha
 Group 8   (P9 + P10: console kit, top bar, Games page)              8a → 8b → 8c
    └─ Group 9   (P11 + P12: Backups, Configuration, other pages)    9a → 9b → 9c
 Group 10  (P13 + P14 + P8 rest + P6.4: agent, Deck, assets, Wayland)
-          10a → 10b; 10c any time; 10d after the Wayland decision — independent of 8–9
+          10a → 10b; 10c any time; 10d after 10c (manifest) — independent of 8–9
 ```
 
 Inline-style migration is **not** a group. It rides inside Groups 2, 3 and 4, converting only the

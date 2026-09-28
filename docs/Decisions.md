@@ -385,6 +385,14 @@ session can judge an edge case, not to reopen the choice.
   Rejected: Flatpak+WebKitGTK (665 MB+), Godot (needs ≤net9), Avalonia (still hand-built nav),
   `steam://openurl` (Game Mode won't open a browser on request). Detail:
   `logs/2026-07-24_linux-agent-streamline.md`.
+- **Desktop Mode window: a chrome-less browser app window** (2026-09-28, Checkpoint UI Phase 6 item 4).
+  `savelocker open` + a `.desktop` entry `install.sh` writes to KDE's menu open the same agent UI in a
+  Chromium-family browser's `--app=` mode (Flatpak included), `xdg-open` when none is installed; agent-ui
+  draws the mockup's header bar only outside browser chrome; notification clicks go through the same
+  launcher. **Not added to Steam** — Steam shortcuts are Game Mode, which keeps `savelocker ui`; the two
+  sit side by side over one daemon. Rejected: a plain browser tab (no header bar), `savelocker ui` in a
+  window (gamepad UI, not the shared agent UI), WebKitGTK (above). Detail:
+  `tasks/checkpoint-ui/implementation.md` → Phase 6 item 4.
 - **Launch trigger: the Steam wrapper (`savelocker run %command%`), not process polling.**
   Gives exact prefix path + precise hooks via `STEAM_COMPAT_DATA_PATH`/`SteamAppId`. Process-name
   polling is the fallback for non-Steam launchers only (Lutris/Heroic/Bottles) — `/proc/pid/comm`

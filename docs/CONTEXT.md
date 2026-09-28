@@ -1551,8 +1551,8 @@ window was never decided. Also found: the Steam library art `install.sh` ships (
 the pre-Checkpoint brand, at non-Steam sizes. Written up as **Phases 9–14** in `implementation.md` (*The 2026-09-27 audit*
 also lists what differs **on purpose** and must not be rebuilt) and **Groups 8–10** in `implementation-grouping.md`, with
 status rows in `plan.md` and both task files. The Wayland options are written out under Phase 6 item 4 with a recommendation
-(a chrome-less browser app window + a `.desktop` launcher; WebKitGTK stays rejected) — **the maintainer confirms one before
-part 10d starts.** **Regrouped 2026-09-28 at the maintainer's request** from nine groups into three coarse ones worked as
+(a chrome-less browser app window + a `.desktop` launcher; WebKitGTK stays rejected) — **decided 2026-09-28: option 1**
+(see `Decisions.md` → *Linux UI*); the launcher stays out of Steam, Game Mode keeps `savelocker ui`. **Regrouped 2026-09-28 at the maintainer's request** from nine groups into three coarse ones worked as
 ordered parts: 8 console kit + top bar + Games page, 9 Backups + Configuration + the other console pages, 10 agent UI +
 Deck + assets + Wayland. **Next action:** Group 8 or Group 10 (independent of each other).
 
