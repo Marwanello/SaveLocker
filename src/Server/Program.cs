@@ -985,6 +985,18 @@ admin.MapPost("/commands/bulk", async (BulkEnqueueRequest req, SyncService sync)
     return error is not null ? Results.BadRequest(error) : Results.Ok(result);
 }).Produces<BulkEnqueueResponse>();
 
+// Console "Cancel" beside a running Sync all: withdraws what no agent has claimed yet and names the
+// rest as already running (a claimed command cannot be recalled) — see SyncService.CancelCommandsAsync.
+admin.MapPost("/commands/cancel", async (CancelCommandsRequest req, SyncService sync) =>
+{
+    var (result, invalid, unknown) = await sync.CancelCommandsAsync(req);
+    if (invalid is not null) return Results.BadRequest(invalid);
+    if (unknown is not null)
+        return Results.NotFound($"Unknown command: {string.Join(", ", unknown.Take(5))}" +
+            (unknown.Count > 5 ? $" (+{unknown.Count - 5} more)" : "") + ".");
+    return Results.Ok(result);
+}).Produces<CancelCommandsResponse>();
+
 admin.MapGet("/commands", async (SyncService sync) =>
     Results.Ok((await sync.ListCommandsAsync()).Select(c => c.ToDto())))
     .Produces<List<AgentCommandDto>>();

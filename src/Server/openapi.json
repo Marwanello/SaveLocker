@@ -2078,6 +2078,35 @@
         }
       }
     },
+    "/api/commands/cancel": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelCommandsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelCommandsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/audit": {
       "get": {
         "tags": [
@@ -3233,6 +3262,52 @@
           }
         }
       },
+      "CancelCommandsRequest": {
+        "required": [
+          "ids"
+        ],
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
+      "CancelCommandsResponse": {
+        "required": [
+          "withdrawn",
+          "alreadyRunning",
+          "alreadyFinished"
+        ],
+        "type": "object",
+        "properties": {
+          "withdrawn": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "alreadyRunning": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "alreadyFinished": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
       "ChunkAppendResponse": {
         "required": [
           "bytesReceived"
@@ -3275,7 +3350,8 @@
           "Pending",
           "Dispatched",
           "Done",
-          "Failed"
+          "Failed",
+          "Cancelled"
         ]
       },
       "ConflictDto": {
@@ -4325,8 +4401,7 @@
         "required": [
           "theme",
           "accent",
-          "mark",
-          "pushToAgents"
+          "mark"
         ],
         "type": "object",
         "properties": {
@@ -4340,7 +4415,8 @@
             "type": "string"
           },
           "pushToAgents": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
           }
         }
       },

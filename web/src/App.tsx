@@ -3,19 +3,20 @@ import {
   api, ApiError, clearSession, dropLegacyPassword, errorText, hasSession,
   migrateLegacyPassword, signIn, signOut,
 } from './api';
-import type { GameSummary, Machine, Command, Conflict, Settings, AgentHealth, ServerBuildInfo } from './types';
+import type { GameSummary, Machine, Command, Conflict, Settings, AgentHealth, ServerBuildInfo, GameIntent, GameRequest } from './types';
 import { NavBar } from './components/NavBar';
+import type { View } from './components/NavBar';
 import { GamesView } from './components/GamesView';
 import { ConfigView } from './components/ConfigView';
 import { AuditView } from './components/AuditView';
 import { HelpView } from './components/HelpView';
 import { WhatsNewView } from './components/WhatsNewView';
 import { SignIn } from './components/SignIn';
+import { Toaster } from './components/ui/Toaster';
+import { toastError } from './toast';
 import { isCurrentPoll, looksEpoch, setLook } from './appearance';
 import { AddGameDialog } from './components/AddGameDialog';
 import { hasUnreadNotes, markNotesSeen } from './releaseSeen';
-
-type View = 'games' | 'config' | 'audit' | 'help' | 'whats-new';
 
 interface AppData {
   games: GameSummary[];
@@ -61,8 +62,10 @@ export default function App() {
   const [signInNotice, setSignInNotice] = useState<{ text: string; tone: 'error' | 'info' } | null>(null);
   const [signInBusy, setSignInBusy] = useState(false);
 
-  // One-shot: set by a notification's deep link, consumed (and cleared) by GamesView.
-  const [pendingGameId, setPendingGameId] = useState<string | null>(null);
+  // One-shot: set by a deep link (notification, conflict pill), consumed (and cleared) by GamesView.
+  // `seq` makes a second request for the SAME game and intent a real change, so it is honoured again.
+  const [pendingGame, setPendingGame] = useState<GameRequest | null>(null);
+  const requestSeq = useRef(0);
 
   const canLoad = passwordRequired === false || (passwordRequired === true && signedIn);
   const needsSignIn = passwordRequired === true && !signedIn;
@@ -125,8 +128,9 @@ export default function App() {
     }
   }, []);
 
-  // Single-flight, but never lossy: a request that arrives while a load is running (Refresh, an Add game,
-  // a dismissal) used to be silently dropped, so the screen kept showing the state from before it.
+  // Single-flight, but never lossy: a request that arrives while a load is running (an Add game, a
+  // dismissal, a Sync all finishing) used to be silently dropped, so the screen kept showing the state
+  // from before it.
   const load = useCallback(async () => {
     if (loadingRef.current) { reloadQueuedRef.current = true; return; }
     loadingRef.current = true;
@@ -196,8 +200,8 @@ export default function App() {
     await signOut();
   }
 
-  function handleOpenGame(gameId: string | null) {
-    setPendingGameId(gameId);
+  function handleOpenGame(gameId: string, intent?: GameIntent) {
+    setPendingGame({ id: gameId, intent, seq: ++requestSeq.current });
     setView('games');
   }
 
@@ -227,16 +231,16 @@ export default function App() {
     await load();
   }
 
-  // One reload after the whole batch, and one report of anything that failed — not a reload and an
-  // alert per event, which for "Dismiss all" was N sequential round trips and up to N dialogs.
+  // One reload after the whole batch, and one report of anything that failed — not a reload and a
+  // report per event, which for "Dismiss all" was N sequential round trips and up to N messages.
   async function handleDismissProblems(ids: string[]) {
     const failures: string[] = [];
     for (const id of ids) {
       try { await api.dismissEvent(id); } catch (e) { failures.push(errorText(e)); }
     }
     await load();
-    if (failures.length === 1 && ids.length === 1) alert('Dismiss failed: ' + failures[0]);
-    else if (failures.length > 0) alert(`Could not dismiss ${failures.length} of ${ids.length}: ${failures[0]}`);
+    if (failures.length === 1 && ids.length === 1) toastError('Could not dismiss: ' + failures[0]);
+    else if (failures.length > 0) toastError(`Could not dismiss ${failures.length} of ${ids.length}: ${failures[0]}`);
   }
 
   // Errors before warnings: an agent that is not syncing outranks one that synced with a caveat.
@@ -254,7 +258,7 @@ export default function App() {
     // A fixed viewport height, not a minimum: the games sidebar and the detail panel each own their
     // scrollbar, and they only get one if an ancestor bounds their height. With minHeight the page
     // itself grew and scrolled, so picking a game far down the list left the detail panel offscreen.
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+    <div className="flex flex-col h-screen overflow-hidden">
       <NavBar
         view={view}
         onViewChange={v => { setView(v); if (!data && canLoad && v !== 'help' && v !== 'whats-new') void load(); }}
@@ -264,13 +268,13 @@ export default function App() {
         build={build}
         unreadNotes={unreadNotes}
         problems={problems}
-        escalatedConflicts={data?.conflicts.filter(c => c.escalated) ?? []}
+        conflicts={data?.conflicts ?? []}
         onDismissProblems={handleDismissProblems}
         onOpenGame={handleOpenGame}
       />
 
       {error && (
-        <div style={{ padding: '10px 24px', color: 'var(--color-watch-ink)', fontSize: 13 }}>{error}</div>
+        <div role="alert" className="px-6 py-2.5 text-watch-ink text-[13px]">{error}</div>
       )}
 
       {needsSignIn && !isPublicView && (
@@ -278,35 +282,34 @@ export default function App() {
       )}
 
       {((passwordRequired === null && !error) || (canLoad && loading && !data)) && !isPublicView && (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-dim)', fontSize: 13 }}>
-          Loading…
-        </div>
+        <div className="flex-1 flex items-center justify-center text-dim text-[13px]">Loading…</div>
       )}
 
       {view === 'help' && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div className="flex-1 flex flex-col min-h-0">
           <HelpView />
         </div>
       )}
 
       {view === 'whats-new' && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div className="flex-1 flex flex-col min-h-0">
           <WhatsNewView build={build} />
         </div>
       )}
 
       {data && !isPublicView && !needsSignIn && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div className="flex-1 flex flex-col min-h-0">
           {view === 'games'
             ? <GamesView
                 games={data.games}
                 machines={data.machines}
                 commands={data.commands}
                 conflicts={data.conflicts}
+                health={data.health}
                 onRefresh={() => void load()}
                 onAddGame={() => setAddGameOpen(true)}
-                selectGameId={pendingGameId}
-                onSelectGameHandled={() => setPendingGameId(null)}
+                request={pendingGame}
+                onRequestHandled={() => setPendingGame(null)}
               />
             : view === 'audit'
             ? <AuditView />
@@ -323,6 +326,7 @@ export default function App() {
       )}
 
       {addGameOpen && <AddGameDialog onClose={() => setAddGameOpen(false)} onSubmit={handleAddGame} />}
+      <Toaster />
     </div>
   );
 }

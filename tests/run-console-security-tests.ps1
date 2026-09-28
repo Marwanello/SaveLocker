@@ -5,7 +5,10 @@
 #
 #   API-01  POST /commands/bulk   validated up front, all-or-nothing, never stacks a duplicate Pending
 #                                 command, can leave offline machines out.
-#   API-02  exclude patterns      a pattern the matcher cannot evaluate (".." mid-pattern) is refused on
+#   API-03  POST /commands/cancel withdraws only what no agent has claimed (a claimed one is reported as
+#                                 running and left alone), is never handed out afterwards, ignores a late
+#                                 result, all-or-nothing on an unknown id (404), admin-only, audited.
+#   API-02  exclude patterns     a pattern the matcher cannot evaluate (".." mid-pattern) is refused on
 #                                 save AND preview instead of throwing inside every agent's hash; the
 #                                 preview count is right against a real uploaded archive.
 #   UI-01   appearance            the console's theme/accent/mark: validated against closed id lists (a
@@ -232,6 +235,45 @@ Check "bulk: skipMachinesUnseenForSeconds=0 leaves out every machine (none seen 
 $skipNone = Http POST "/api/commands/bulk" @{ commands = @((NewCmd $m1.machineId "Scan"), (NewCmd $m2.machineId "Scan")); skipMachinesUnseenForSeconds = 3600 }
 Check "bulk: a wide window skips nobody" ($skipNone.Status -eq 200 -and @($skipNone.Json.queued).Count -eq 2 -and @($skipNone.Json.skipped).Count -eq 0)
 
+# ------------------------------------------------------------------ API-03: cancel
+Write-Host ""; Write-Host "-- API-03: POST /commands/cancel"
+function Cmd($id) { return @((Http GET "/api/commands").Json | Where-Object { $_.id -eq $id })[0] }
+$m3 = (Http POST "/api/machines/register" @{ name = "SEC-M3" }).Json
+$m4 = (Http POST "/api/machines/register" @{ name = "SEC-M4" }).Json
+$batch = (Http POST "/api/commands/bulk" @{ commands = @((NewCmd $m3.machineId), (NewCmd $m4.machineId)) }).Json
+$c3 = @($batch.queued | Where-Object { $_.machineId -eq $m3.machineId })[0].id
+$c4 = @($batch.queued | Where-Object { $_.machineId -eq $m4.machineId })[0].id
+$claimed = Http GET "/api/agent/commands" $null @{ "X-Api-Key" = $m4.apiKey }
+Check "cancel setup: M4's agent polled and claimed its command" ($claimed.Status -eq 200 -and @($claimed.Json | Where-Object { $_.id -eq $c4 }).Count -eq 1)
+
+$cx = Http POST "/api/commands/cancel" @{ ids = @($c3, $c4) }
+Check "cancel: the command no agent had claimed is withdrawn" ($cx.Status -eq 200 -and @($cx.Json.withdrawn).Count -eq 1 -and @($cx.Json.withdrawn)[0] -eq $c3)
+Check "cancel: the claimed one is reported as already running, not cancelled" (@($cx.Json.alreadyRunning).Count -eq 1 -and @($cx.Json.alreadyRunning)[0] -eq $c4)
+$w = Cmd $c3
+Check "cancel: the withdrawn command reads Cancelled, with the reason as its result and a completion time" `
+    ($w.status -eq "Cancelled" -and $w.result -match "Cancelled from the console" -and $null -ne $w.completedAt)
+Check "cancel: the running command is untouched (still Dispatched)" ((Cmd $c4).status -eq "Dispatched")
+$poll3 = Http GET "/api/agent/commands" $null @{ "X-Api-Key" = $m3.apiKey }
+Check "cancel: M3's agent is never handed the withdrawn command" ($poll3.Status -eq 200 -and @($poll3.Json | Where-Object { $_.id -eq $c3 }).Count -eq 0)
+$late = Http POST "/api/agent/commands/$c3/result" @{ status = "Done"; result = "late"; claimToken = $null } @{ "X-Api-Key" = $m3.apiKey }
+Check "cancel: a result posted for a cancelled command is accepted as a no-op and does not reopen it" ($late.Status -eq 200 -and (Cmd $c3).status -eq "Cancelled")
+$again = Http POST "/api/commands/cancel" @{ ids = @($c3) }
+Check "cancel: cancelling it again withdraws nothing and reports it finished" `
+    ($again.Status -eq 200 -and @($again.Json.withdrawn).Count -eq 0 -and @($again.Json.alreadyFinished)[0] -eq $c3)
+Check "cancel: audited once, as command.cancel" (@(Actions | Where-Object { $_ -eq "command.cancel" }).Count -eq 1)
+$requeue = (Http POST "/api/commands/bulk" @{ commands = @((NewCmd $m3.machineId)) }).Json.queued[0]
+Check "cancel: a Sync all afterwards queues a FRESH command (a cancelled one is not reused as the pending one)" `
+    ($requeue.id -ne $c3 -and $requeue.status -eq "Pending")
+
+$ghost = [guid]::NewGuid().ToString()
+$mixedCancel = Http POST "/api/commands/cancel" @{ ids = @($requeue.id, $ghost) }
+Check "cancel: an unknown id is a 404 naming it ..." ($mixedCancel.Status -eq 404 -and $mixedCancel.Content -match $ghost)
+Check "cancel: ... and the real id beside it was NOT cancelled (all-or-nothing)" ((Cmd $requeue.id).status -eq "Pending")
+Check "cancel: an empty list is refused (400)" ((Http POST "/api/commands/cancel" @{ ids = @() }).Status -eq 400)
+$tooManyIds = @(1..101 | ForEach-Object { [guid]::NewGuid().ToString() })
+Check "cancel: more than 100 ids is refused (400)" ((Http POST "/api/commands/cancel" @{ ids = $tooManyIds }).Status -eq 400)
+Check "cancel: a malformed id is refused (400)" ((Http POST "/api/commands/cancel" $null @{} '{"ids":["not-a-guid"]}').Status -eq 400)
+
 # ------------------------------------------------------------------ API-02: exclude patterns + preview
 Write-Host ""; Write-Host "-- API-02: exclude patterns and the dry-run preview"
 $dotdot = '..\..\x'
@@ -338,6 +380,10 @@ Check "password is now required" ((Http GET "/api/admin/status").Json.passwordRe
 Check "no credential -> 401" ((Http GET "/api/overview").Status -eq 401)
 Check "appearance: writing it needs the admin credential (401 without); it restyles every machine" `
     ((Http POST "/api/settings/appearance" @{ theme = "dark"; accent = "coolant"; mark = "pixel"; pushToAgents = $true }).Status -eq 401)
+Check "cancel: withdrawing commands needs the admin credential (401 without)" `
+    ((Http POST "/api/commands/cancel" @{ ids = @($requeue.id) }).Status -eq 401)
+Check "cancel: ... and a MACHINE key is not one (401) - an agent must not cancel another machine's work" `
+    ((Http POST "/api/commands/cancel" @{ ids = @($requeue.id) } @{ "X-Api-Key" = $m3.apiKey }).Status -eq 401)
 Check "a made-up session token -> 401" ((Http GET "/api/overview" $null (Session "not-a-real-token")).Status -eq 401)
 $wrong = Login "nope"
 Check "sign-in with the wrong password -> 401" ($wrong.Status -eq 401 -and $wrong.Json.error -match "Wrong password")

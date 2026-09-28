@@ -155,12 +155,64 @@ input:focus { border-color: var(--color-accent) !important; }
   60%  { opacity: 1; transform: translateY(-2px) scale(1.01); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
+@keyframes drop {
+  from { opacity: 0; transform: translateY(-6px) scale(.985); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.82); } }
 .animate-rise     { animation: rise 260ms var(--ease) both; }
 .animate-pop       { animation: pop 300ms var(--ease) both; }
 .animate-toast-in { animation: toast-in 340ms var(--ease) both; }
+.animate-drop     { animation: drop 180ms var(--ease) both; }
+.animate-pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+
+/* plan.md Motion: "Canvas sections — rise 260ms, 26ms stagger, first six only". Every console page
+   renders into ui/Page.tsx, whose direct children are its sections. Keyed on mount, so a poll that
+   re-renders the page does not replay it; a progress tick never lives inside one (see the rail).
+   `backwards`, not `both`: a held end state would pin `transform`/`opacity` on the child for good and
+   silently beat its own hover lift and disabled dimming (the trap GamesGrid measured with `both`). */
+.page-canvas > * { animation: rise 260ms var(--ease) backwards; }
+.page-canvas > :nth-child(2) { animation-delay: 26ms; }
+.page-canvas > :nth-child(3) { animation-delay: 52ms; }
+.page-canvas > :nth-child(4) { animation-delay: 78ms; }
+.page-canvas > :nth-child(5) { animation-delay: 104ms; }
+.page-canvas > :nth-child(6) { animation-delay: 130ms; }
+.page-canvas > :nth-child(n+7) { animation-delay: 150ms; }
+
+/* The grid wall's tiles: "pop 300ms, 35ms stagger", first six. */
+.tile-wall > * { animation: pop 300ms var(--ease) backwards; }
+.tile-wall > :nth-child(2) { animation-delay: 35ms; }
+.tile-wall > :nth-child(3) { animation-delay: 70ms; }
+.tile-wall > :nth-child(4) { animation-delay: 105ms; }
+.tile-wall > :nth-child(5) { animation-delay: 140ms; }
+.tile-wall > :nth-child(6) { animation-delay: 175ms; }
+.tile-wall > :nth-child(n+7) { animation-delay: 205ms; }
+
+/* ui/DataTable.tsx — the prototype's `table.t`. Cell kinds: k (the row's key: fg, semibold), m (mono),
+   n (tabular number), wrap (lets long text wrap; every other cell stays on one line). */
+.dt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.dt th { font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--color-faint); text-align: left;
+  font-weight: 400; padding: 8px 16px; border-bottom: 1px solid var(--color-line); white-space: nowrap; }
+.dt td { padding: 10px 16px; border-bottom: 1px solid var(--color-row); color: var(--color-dim); white-space: nowrap;
+  vertical-align: middle; transition: background-color 160ms var(--ease); }
+.dt tr:last-child td { border-bottom: 0; }
+.dt tbody tr:hover td { background: var(--color-raise); }
+.dt td.k { color: var(--color-fg); font-weight: 600; }
+.dt td.m { font-family: var(--font-mono); font-size: 11.5px; }
+.dt td.n { font-variant-numeric: tabular-nums; }
+.dt td.wrap { white-space: normal; }
+
+/* The Sync all rail under the top bar: a width that transitions, never jumps, plus the sweep. */
+.sync-rail { position: relative; height: 3px; overflow: hidden; background: var(--color-tile); }
+.sync-rail > i { display: block; height: 100%; background: var(--color-accent); transition: width 550ms cubic-bezier(.3,.9,.3,1); }
+.sync-rail::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--color-accent) 55%, transparent), transparent);
+  transform: translateX(-100%); animation: sweep 1.5s linear infinite; }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-rise, .animate-pop, .animate-toast-in { animation: none; }
+  .animate-rise, .animate-pop, .animate-toast-in, .animate-drop, .animate-pulse-dot,
+  .page-canvas > *, .tile-wall > *, .sync-rail::after { animation: none; }
   * { transition-duration: 0.001ms !important; }
 }
 

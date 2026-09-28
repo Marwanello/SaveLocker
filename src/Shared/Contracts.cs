@@ -378,7 +378,13 @@ public enum CommandStatus
     /// </summary>
     Dispatched,
     Done,
-    Failed
+    Failed,
+    /// <summary>
+    /// Withdrawn from the console before any agent claimed it (<c>POST /commands/cancel</c>). Terminal,
+    /// like Done and Failed, and never handed out: a claim only takes Pending or an expired Dispatched.
+    /// Appended last so the stored integers of the four values above do not move.
+    /// </summary>
+    Cancelled
 }
 
 /// <summary>A command the dashboard wants an agent to run (null GameId = all games).</summary>
@@ -398,6 +404,16 @@ public record SkippedCommandDto(Guid MachineId, string MachineName, string Reaso
 /// including, for a machine that already had an identical command Pending, that EXISTING command
 /// (so pressing Sync all twice does not stack two syncs behind one another).</summary>
 public record BulkEnqueueResponse(List<AgentCommandDto> Queued, List<SkippedCommandDto> Skipped);
+
+/// <summary>The console's Cancel: withdraw these commands if no agent has claimed them yet.</summary>
+public record CancelCommandsRequest(List<Guid> Ids);
+
+/// <summary>
+/// What a cancel did, per command. <c>Withdrawn</c> were still Pending and are now Cancelled;
+/// <c>AlreadyRunning</c> had been handed to an agent and will finish (a claim cannot be recalled);
+/// <c>AlreadyFinished</c> had reached a terminal state before the request arrived.
+/// </summary>
+public record CancelCommandsResponse(List<Guid> Withdrawn, List<Guid> AlreadyRunning, List<Guid> AlreadyFinished);
 
 public record AgentCommandDto(
     Guid Id,

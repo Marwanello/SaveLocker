@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, errorText } from '../api';
-import type { GameSummary, Machine, Command, Conflict, Version, VersionStats, MachineSavePath, MachineScanCandidate } from '../types';
+import type { GameSummary, Machine, Command, Conflict, Version, VersionStats, MachineSavePath, MachineScanCandidate, GameIntent } from '../types';
 import { toTemplate, isTemplate } from '../savePathTemplate';
 import { artSrc, artSrcSet } from '../art';
 import { ArtPicker } from './ArtPicker';
@@ -38,11 +38,14 @@ interface Props {
   commands: Command[];
   conflicts: Conflict[];
   onRefresh: () => void;
+  /** Where a deep link asked to land on this page; `seq` makes each request act exactly once. */
+  intent?: { value: GameIntent; seq: number } | null;
 }
 
-export function GameDetail({ summary, machines, commands, conflicts, onRefresh }: Props) {
+export function GameDetail({ summary, machines, commands, conflicts, onRefresh, intent }: Props) {
   const [versions, setVersions] = useState<Version[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(true);
+  const [pathsLoaded, setPathsLoaded] = useState(false);
   const [machinePaths, setMachinePaths] = useState<MachineSavePath[]>([]);
   const [pathCandidates, setPathCandidates] = useState<MachineScanCandidate[]>([]);
   const [editingPathFor, setEditingPathFor] = useState<string | null>(null);
@@ -122,11 +125,22 @@ export function GameDetail({ summary, machines, commands, conflicts, onRefresh }
   useEffect(() => {
     setLoadingVersions(true);
     api.versions(game.id).then(vs => { setVersions(vs); setLoadingVersions(false); });
-    api.getGamePaths(game.id).then(setMachinePaths).catch(() => {});
+    api.getGamePaths(game.id).then(setMachinePaths).catch(() => {}).finally(() => setPathsLoaded(true));
     api.getGamePathCandidates(game.id).then(setPathCandidates).catch(() => {});
     setEditingPathFor(null);
     setVersionsView('main');
   }, [game.id]);
+
+  // A notification's "Set folder": that machine's row opens for editing (the field focuses itself),
+  // once the stored paths are in so it starts from what is stored — or from the scan's guess.
+  const appliedIntent = useRef(0);
+  useEffect(() => {
+    if (!intent || intent.seq === appliedIntent.current || intent.value.kind !== 'folder' || !pathsLoaded) return;
+    appliedIntent.current = intent.seq;
+    const m = intent.value.machineId;
+    setPathDraft(machinePaths.find(p => p.machineId === m)?.savePath ?? pathCandidates.find(c => c.machineId === m)?.suggestedPath ?? '');
+    setEditingPathFor(m);
+  }, [intent, pathsLoaded, machinePaths, pathCandidates]);
 
   // Global exclude defaults (read-only display); fetched once.
   useEffect(() => {

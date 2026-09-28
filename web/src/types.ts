@@ -19,6 +19,7 @@ export type Conflict = NonNullable<Schemas['ConflictDto']>;
 export type VersionStats = NonNullable<Schemas['VersionStatsDto']>;
 export type ExcludesPreview = NonNullable<Schemas['ExcludesPreviewDto']>;
 export type BulkEnqueueResponse = NonNullable<Schemas['BulkEnqueueResponse']>;
+export type CancelCommandsResponse = NonNullable<Schemas['CancelCommandsResponse']>;
 export type Settings = Schemas['ServerSettingsDto'];
 export type AppearanceSettings = Schemas['AppearanceSettingsDto'];
 export type SetAppearanceRequest = Schemas['SetAppearanceRequest'];
@@ -39,6 +40,13 @@ export type AutoFetchSchedule = NonNullable<Schemas['AutoFetchSchedule']>;
 export type ArtOptionsPage = Schemas['ArtOptionsPageDto'];
 export type ArtOption = NonNullable<Schemas['ArtOptionDto']>;
 
+/**
+ * Where a link into one game should land — a notification's action or the top bar's conflict pill:
+ * `resolve` opens the conflict panel already expanded, `folder` puts that machine's save-folder field
+ * into edit mode and focuses it. No intent just opens the game.
+ */
+export type GameIntent = { kind: 'resolve' } | { kind: 'folder'; machineId: string };
+
 /** The two pieces of art a person can choose: the box-art cover and the square icon. */
 export type ArtKind = 'grid' | 'icon';
 
@@ -48,3 +56,7 @@ export type ArtKind = 'grid' | 'icon';
  * strings are exactly what `?platform=` accepts, and an absent parameter means `win-x64`.
  */
 export type AgentPlatform = 'win-x64' | 'linux-x64' | 'decky-plugin' | 'playnite-plugin';
+
+/** A request to open one game — from a notification or the conflict pill — consumed once by GamesView.
+ *  `seq` makes a second, identical request a real change, so it is honoured again. */
+export interface GameRequest { id: string; intent?: GameIntent; seq: number }
