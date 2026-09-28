@@ -3190,3 +3190,41 @@ six smaller things; all fixed. Full account: CONTEXT.md → *Review fixes for PR
 - **Small:** toast mark cleanup no longer deletes a test rig's; doc drift; mojibake; installer BOM restored.
 - **Verified:** `dotnet test` 105 (21 new, mutation-checked); `run-appearance-consistency-tests` 33/33; agent-ui
   build + lint; live `/open` and repeat-link checks on the test tray; `run-linux-tests` 201 pass / 2 WSLg-only fail, `run-linux-regression-tests` 15/15.
+
+## 2026-09-28 — Checkpoint UI Group 8: console page kit, top bar, Games page
+
+Full write-up: [[session_summary]]. Branch `claude/group-8-ui-redesign-d49b05` (not pushed, no PR yet), commits
+`e6514ce` (8a), `1566de8` (8b), `24074a0` (8c), `c10ef4d` (Docs). Live checklist: `tasks/checkpoint-ui/group-8-verification.md`.
+
+| Part | Commit | What | Size |
+|---|---|---|---|
+| 8a | `e6514ce` | Page kit (`Page`, `PageHead`, `DataTable`, `KV`, `PathField`, `Banner`, `EmptyState`, `SearchField`, `FilterChips`, `Meter`, `Dot`, `InlineConfirm`, `Icon`, `Toaster`), top bar, `POST /api/commands/cancel` | 35 files, +1,540 / −433 |
+| 8b | `1566de8` | `GameDetail.tsx` split into `components/game/`, no behaviour change (156 DOM nodes identical) | 12 files, +1,211 / −1,012 |
+| 8c | `24074a0` | The Games page: sidebar, full-width grid, game page re-layout, no `alert`/`confirm`, guard test | 21 files, +1,519 / −1,219 |
+
+- **Decisions taken with the maintainer:** a new terminal `Cancelled` command status (kept in history); a sidebar
+  row shows Queued/Syncing only for a command naming that game (Sync all moves only the top bar); Push/Pull are
+  unforced by default, Force pull/push sit behind an inline confirm naming what is overwritten; the initial-sync
+  wizard card is dropped.
+- **Server:** `POST /api/commands/cancel` withdraws only unclaimed commands in one conditional update on
+  `Status == Pending`, so a racing agent claim can't be both cancelled and run; unknown id → 404, all or nothing;
+  audited `command.cancel`. `openapi.json` and `web/src/api-types.ts` regenerated.
+- **Top bar:** pill tabs, conflict pill ("1 conflict · 4h"), an always-present bell whose rows carry
+  Resolve / Set folder / Retry, Sync all with a progress rail, "N of M machines done" chip and Cancel. Progress
+  lives in a `useSyncExternalStore` slice (`syncAll.ts`), measured to tick without re-rendering the bar.
+- **Games page:** status dot per sidebar row, full-width cover wall with "← All games", game header with
+  per-machine Push/Pull, four stat tiles, a conflict banner that opens into a side-by-side keep choice, the
+  versions table with a real "Prune N versions" count, save folders, rules, exclude patterns with preview,
+  command history. Every "are you sure?" is an `InlineConfirm` that names the effect.
+- **Bug found live, fixed:** a conflict side pushed while the game page was open left the versions list stale, so
+  **Keep both** labelled the older save as the newer. The page now re-reads versions when the head, storage or
+  conflict sides change.
+- **Tests:** `run-console-security-tests` 189/189 (17 new API-03 checks + 2 auth checks; mutation-checked, 5
+  fail when broken); `run-appearance-consistency-tests` 35/35 (new no-`alert`/`confirm` guard fails with 27 hits
+  on the 8b code); web build and lint clean.
+- **Not verified:** the Windows tray's WebView2 window, a real Deck, real Tab presses on the 8c controls (the
+  hidden Browser pane refused key presses; the focus-ring class was checked on all 43 controls instead).
+- **Found, not fixed:** a version's "newest change" reads off by the uploader's UTC offset (`SaveArchive` stamps
+  local time, the server reads UTC) — Backlog, spawned as its own task.
+- **Open:** push and PR (as `group-8-ui-redesign`); the current tab/row use the soft accent per plan 9.3 while
+  Groups 3/6 made theirs neutral (maintainer to confirm); then Group 9 or Group 10.
