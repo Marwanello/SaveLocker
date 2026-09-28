@@ -608,6 +608,21 @@ session can judge an edge case, not to reopen the choice.
   autosave slot, a last-played stat) — the per-file manifest this work adds now makes that
   concretely diagnosable per push, via the `upload.delta` audit entry's "N of M files needed fresh
   bytes", rather than needing to guess.
+- **A save archive's per-file UTC write time lives in each entry's comment** (2026-09-28). A version's
+  "newest change" read 3 h late from a UTC+3 uploader: zip's own timestamp is a zoneless DOS date/time,
+  by convention the writer's LOCAL wall clock, and `GetArchiveStats` read it as UTC. Each entry now also
+  carries `mtime-utc=<round-trip UTC>` in its comment (`SaveArchive.StampWriteTime` / `EntryWriteTimeUtc`
+  / `CopyWriteTime`), and readers prefer it. Rejected: *stamping the DOS field in UTC* — an old archive
+  (local) and a new one (UTC) would then be indistinguishable, and a delta rebuild copies entries from
+  old archives into new ones, so one zip could hold both; Explorer/7-Zip would also show every time
+  shifted. Rejected: *the standard extended-timestamp extra field (0x5455)* — .NET 10's zip API cannot
+  write extra fields, and hand-assembling headers in the format every save passes through is not worth
+  it. Per-entry, not per-archive, for the same delta-rebuild reason; the server copies only a
+  well-formed record forward, never an agent's arbitrary comment. **Archives written before this carry
+  no record and still read shifted by their uploader's offset** — nothing in them says which zone it
+  was, so they are not guessed at. Restore never set file times from the archive, before or after.
+  Content hashes are path + bytes only, so none of this touches them (asserted in
+  `SaveArchiveTimestampTests`).
 - **Appearance is three ids, chosen once on the server and pushed on the heartbeat** (2026-09-21, checkpoint-ui
   Phase 4). `Ui:Theme`/`Accent`/`Mark`/`PushToAgents` in `AppSetting`; the wire never carries a colour, because a
   colour is a rendering decision and the server should not make it for a screen it will never see (the tray draws the
