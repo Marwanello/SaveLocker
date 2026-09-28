@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api, errorText } from '../../api';
 import type { Conflict, Game, Version } from '../../types';
-import { ago, fmtSize, plural, shortId, when } from '../../format';
+import { ago, fmtSize, plural, shortId, toMs, when } from '../../format';
 import { toast, toastError } from '../../toast';
 import { Card } from '../ui/Card';
 import { Chip } from '../ui/Chip';
@@ -51,7 +51,7 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
   // so then the control says what it does instead of guessing a number.
   const limit = game.retainVersions;
   const prunable = limit != null && limit > 0
-    ? [...versions].sort((x, y) => (x.createdAt < y.createdAt ? 1 : -1)).slice(limit)
+    ? [...versions].sort((x, y) => toMs(y.createdAt) - toMs(x.createdAt)).slice(limit)
         .filter(v => !v.protected && v.id !== headId && !conflicting.has(v.id)).length
     : null;
 
@@ -164,7 +164,9 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
                         onConfirm={() => unprotect(v)}
                       />
                     )}
-                    {v.id !== headId && (
+                    {/* Not the Latest, and not a side of an open conflict — the server refuses both
+                        (SyncService.DeleteVersionAsync); resolving the conflict frees it. */}
+                    {v.id !== headId && !conflicting.has(v.id) && (
                       <InlineConfirm
                         label="Delete"
                         triggerVariant="quiet"

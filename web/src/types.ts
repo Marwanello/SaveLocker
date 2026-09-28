@@ -42,10 +42,11 @@ export type ArtOption = NonNullable<Schemas['ArtOptionDto']>;
 
 /**
  * Where a link into one game should land — a notification's action or the top bar's conflict pill:
- * `resolve` opens the conflict panel already expanded, `folder` puts that machine's save-folder field
- * into edit mode and focuses it. No intent just opens the game.
+ * `resolve` opens that conflict's panel already expanded (the game's first open one when the link does
+ * not name one — an agent's event knows the game, not the conflict), `folder` puts that machine's
+ * save-folder field into edit mode and focuses it. No intent just opens the game.
  */
-export type GameIntent = { kind: 'resolve' } | { kind: 'folder'; machineId: string };
+export type GameIntent = { kind: 'resolve'; conflictId?: string } | { kind: 'folder'; machineId: string };
 
 /** The two pieces of art a person can choose: the box-art cover and the square icon. */
 export type ArtKind = 'grid' | 'icon';

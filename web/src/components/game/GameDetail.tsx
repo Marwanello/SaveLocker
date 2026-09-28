@@ -93,7 +93,13 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
     } catch (e) { toastError('Could not set Latest: ' + errorText(e)); }
   }
 
-  const resolveSignal = intent?.value.kind === 'resolve' ? intent.seq : 0;
+  // A "Resolve" link names one conflict — or, from an agent's event, only the game, which means its first
+  // open conflict AT THAT MOMENT. Pinned per request: deriving "the first" on every render handed the
+  // signal on to the next conflict as soon as the linked one was resolved, and that one sprang open too.
+  const [resolveTarget, setResolveTarget] = useState<{ seq: number; conflictId: string | null } | null>(null);
+  if (intent?.value.kind === 'resolve' && intent.seq !== resolveTarget?.seq) {
+    setResolveTarget({ seq: intent.seq, conflictId: intent.value.conflictId ?? gameConflicts[0]?.id ?? null });
+  }
 
   return (
     <>
@@ -114,7 +120,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
         <ArtPicker game={game} onChanged={onRefresh} onClose={() => { setArtOpen(false); penRef.current?.focus(); }} />
       )}
 
-      {gameConflicts.map((c, i) => (
+      {gameConflicts.map(c => (
         <ConflictPanel
           key={c.id}
           game={game}
@@ -123,7 +129,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
           health={health}
           headId={headId}
           otherConflicts={gameConflicts.length - 1}
-          openSignal={i === 0 ? resolveSignal : 0}
+          openSignal={resolveTarget?.conflictId === c.id ? resolveTarget.seq : 0}
           onRefresh={onRefresh}
           onChanged={reloadVersions}
         />

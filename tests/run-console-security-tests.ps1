@@ -5,9 +5,11 @@
 #
 #   API-01  POST /commands/bulk   validated up front, all-or-nothing, never stacks a duplicate Pending
 #                                 command, can leave offline machines out.
-#   API-03  POST /commands/cancel withdraws only what no agent has claimed (a claimed one is reported as
-#                                 running and left alone), is never handed out afterwards, ignores a late
-#                                 result, all-or-nothing on an unknown id (404), admin-only, audited.
+#   API-03  POST /commands/cancel withdraws only what no agent holds (a live claim is reported as running
+#                                 and left alone; a LAPSED one is withdrawn, since the next poll would hand
+#                                 it out again), is never handed out afterwards, ignores a late result,
+#                                 all-or-nothing on an unknown id (404), admin-only, audited once even when
+#                                 two cancels race.
 #   API-02  exclude patterns     a pattern the matcher cannot evaluate (".." mid-pattern) is refused on
 #                                 save AND preview instead of throwing inside every agent's hash; the
 #                                 preview count is right against a real uploaded archive.
@@ -16,8 +18,9 @@
 #                                 audited; the heartbeat carries it to any machine, and carries NOTHING
 #                                 when pushing is off; a garbage value from an env var is normalised, not
 #                                 passed on to an agent.
-#   UI-02   machine OS            the heartbeat's OS reaches the console lower-cased, capped and without
-#                                 control characters; an older agent's beat (no field) keeps it.
+#   UI-02   machine OS            the heartbeat's OS reaches the console lower-cased, capped (never through
+#                                 a surrogate pair) and without control characters; an older agent's beat
+#                                 (no field) keeps it.
 #   SEC-01  admin sessions        the console keeps a revocable random token, not the password; only
 #                                 its hash is stored; Lock / sign-out-everywhere / a password change
 #                                 end it; an expired one is refused.
@@ -267,6 +270,23 @@ $requeue = (Http POST "/api/commands/bulk" @{ commands = @((NewCmd $m3.machineId
 Check "cancel: a Sync all afterwards queues a FRESH command (a cancelled one is not reused as the pending one)" `
     ($requeue.id -ne $c3 -and $requeue.status -eq "Pending")
 
+# Two cancels of one batch at once (two console tabs, a double click) must report - and audit - the one
+# withdrawal once between them. Sent together on one HttpClient so the requests really do overlap.
+$race = (Http POST "/api/commands/bulk" @{ commands = @((NewCmd $m3.machineId "Scan")) }).Json.queued[0]
+$cancelAudits = @(Actions | Where-Object { $_ -eq "command.cancel" }).Count
+$hc = [System.Net.Http.HttpClient]::new()
+$raceBody = '{"ids":["' + $race.id + '"]}'
+$raceTasks = [System.Threading.Tasks.Task[]]@(1..2 | ForEach-Object {
+    $hc.PostAsync("$url/api/commands/cancel", [System.Net.Http.StringContent]::new($raceBody, [Text.Encoding]::UTF8, "application/json")) })
+[System.Threading.Tasks.Task]::WaitAll($raceTasks)
+$raceCodes = @($raceTasks | ForEach-Object { [int]$_.Result.StatusCode })
+$raceWithdrawn = ($raceTasks | ForEach-Object { @(($_.Result.Content.ReadAsStringAsync().Result | ConvertFrom-Json).withdrawn).Count } | Measure-Object -Sum).Sum
+$hc.Dispose()
+Check "cancel: two cancels at once both answer 200 and withdraw it ONCE between them (got $raceWithdrawn)" `
+    ((@($raceCodes | Where-Object { $_ -eq 200 }).Count -eq 2) -and $raceWithdrawn -eq 1)
+Check "cancel: ... and it is audited once, not once per request" `
+    (@(Actions | Where-Object { $_ -eq "command.cancel" }).Count -eq $cancelAudits + 1)
+
 $ghost = [guid]::NewGuid().ToString()
 $mixedCancel = Http POST "/api/commands/cancel" @{ ids = @($requeue.id, $ghost) }
 Check "cancel: an unknown id is a 404 naming it ..." ($mixedCancel.Status -eq 404 -and $mixedCancel.Content -match $ghost)
@@ -378,6 +398,14 @@ BeatOs $m1 @{ id = ("x" * 500); name = ("N" * 500) + "`n`t<b>"; device = "Deck" 
 $o3 = OsOf $m1
 Check "os: agent-supplied text is capped (id 64, name 128) and loses control characters" `
     ($o3.id.Length -eq 64 -and $o3.name.Length -eq 128 -and $o3.name -notmatch "[`n`t]" -and $o3.device -eq "Deck")
+# A name whose 128-character cap falls between the two halves of an emoji: cutting there leaves a lone
+# surrogate, which the database hands back as U+FFFD. Raw JSON, so the pair survives PowerShell 5.1.
+$pairBeat = Http POST "/api/agent/health" $null @{ "X-Api-Key" = $m1.apiKey } `
+    ('{"agentVersion":"9.9.9-test","platform":"Linux","os":{"id":"pair","name":"' + ("N" * 127) + '\ud83d\ude00"}}')
+$o4 = OsOf $m1
+Check "os: the cap never splits a surrogate pair (127 characters, no U+FFFD; got $($o4.name.Length))" `
+    ($pairBeat.Status -eq 200 -and $o4.name.Length -eq 127 -and $o4.name -notmatch [char]0xFFFD)
+BeatOs $m1 @{ id = ("x" * 500); name = "N" } | Out-Null   # back to the capped id the checks below expect
 Beat $m1 | Out-Null
 Check "os: a heartbeat without the field (an older agent) keeps what was reported" ((OsOf $m1).id -eq ("x" * 64))
 BeatOs $m1 @{ id = "   "; name = "Blank" } | Out-Null
@@ -562,6 +590,39 @@ Check "config: ... and so the heartbeat carries no appearance" ($cb.Status -eq 2
 Check "config: the admin can still override it from the console (200), which then wins over the env var" `
     ((Http POST "/api/settings/appearance" @{ theme = "dark"; accent = "stealth"; mark = "pixel"; pushToAgents = $true }).Status -eq 200 -and
      (Http GET "/api/settings").Json.appearance.look.accent -eq "stealth")
+Stop-Phase
+
+# =====================================================================================
+Write-Host ""; Write-Host "==== Phase 5c: API-03 Cancel withdraws a claim that lapsed unanswered ===="
+# The claim hands a Dispatched command out AGAIN once its lease runs out unanswered, so it is exactly as
+# withdrawable as one never handed out (and the console shows it as Queued). A 6-second lease makes that
+# reachable here. Two machines, because one machine's next poll would re-claim its own lapsed command.
+Start-Phase "lease" @{ Commands__LeaseMinutes = "0.1"; Security__MaxFailedAttempts = "1000" }
+$l1 = (Http POST "/api/machines/register" @{ name = "LEASE-M1" }).Json
+$l2 = (Http POST "/api/machines/register" @{ name = "LEASE-M2" }).Json
+$lq = (Http POST "/api/commands/bulk" @{ commands = @((NewCmd $l1.machineId), (NewCmd $l2.machineId)) }).Json.queued
+$lapsedId = @($lq | Where-Object { $_.machineId -eq $l1.machineId })[0].id
+$liveId = @($lq | Where-Object { $_.machineId -eq $l2.machineId })[0].id
+$firstClaim = @((Http GET "/api/agent/commands" $null @{ "X-Api-Key" = $l1.apiKey }).Json | Where-Object { $_.id -eq $lapsedId })[0]
+Check "lease setup: M1 claimed its command" ($null -ne $firstClaim -and $null -ne $firstClaim.claimToken)
+Start-Sleep -Seconds 7   # M1 goes silent; its 6-second claim lapses
+$liveClaim = @((Http GET "/api/agent/commands" $null @{ "X-Api-Key" = $l2.apiKey }).Json | Where-Object { $_.id -eq $liveId })
+Check "lease setup: M2 claimed its command just now (a live claim)" ($liveClaim.Count -eq 1)
+
+$lc = Http POST "/api/commands/cancel" @{ ids = @($lapsedId, $liveId) }
+Check "cancel: the LAPSED claim is withdrawn - the next poll would have handed it out again" `
+    ($lc.Status -eq 200 -and @($lc.Json.withdrawn).Count -eq 1 -and @($lc.Json.withdrawn)[0] -eq $lapsedId)
+Check "cancel: ... and the live claim is reported as running, not cancelled" `
+    (@($lc.Json.alreadyRunning).Count -eq 1 -and @($lc.Json.alreadyRunning)[0] -eq $liveId)
+$lw = @((Http GET "/api/commands").Json | Where-Object { $_.id -eq $lapsedId })[0]
+Check "cancel: the lapsed one reads Cancelled, says its agent stopped answering, and holds no lease" `
+    ($lw.status -eq "Cancelled" -and $lw.result -match "stopped answering" -and $null -eq $lw.leaseExpiresAt)
+$again1 = Http GET "/api/agent/commands" $null @{ "X-Api-Key" = $l1.apiKey }
+Check "cancel: M1's next poll is NOT handed the withdrawn command again" `
+    ($again1.Status -eq 200 -and @($again1.Json | Where-Object { $_.id -eq $lapsedId }).Count -eq 0)
+$lateL = Http POST "/api/agent/commands/$lapsedId/result" @{ status = "Done"; result = "late"; claimToken = $firstClaim.claimToken } @{ "X-Api-Key" = $l1.apiKey }
+Check "cancel: M1's late result under its old claim is a no-op (still Cancelled)" `
+    ($lateL.Status -eq 200 -and @((Http GET "/api/commands").Json | Where-Object { $_.id -eq $lapsedId })[0].status -eq "Cancelled")
 Stop-Phase
 
 # =====================================================================================

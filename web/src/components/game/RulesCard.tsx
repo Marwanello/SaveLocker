@@ -20,16 +20,27 @@ interface Props {
 const fieldCls = `bg-tile text-fg border border-line rounded-lg px-2 py-[5px] text-[12.5px]
   focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1`;
 
+// What the agent actually does (SyncEngine.TryPolicyResolveAsync): the machine whose push diverged
+// resolves in its OWN favour when the policy says it wins, with keepBoth off on purpose — so the save it
+// replaces is ordinary history under Backups that retention may prune, never a protected backup. Under
+// Prefer a machine, a divergence pushed by any OTHER machine is not auto-resolved at all.
 const POLICY_HELP: Record<string, string> = {
   Manual: 'Two machines that both saved stop and wait for you to choose.',
-  NewestWins: 'The most recent upload always wins; the other is kept as a backup.',
-  PreferMachine: 'The chosen machine always wins; the other is kept as a backup.',
+  NewestWins: 'The newest upload is kept automatically. The save it replaces stays under Backups until retention prunes it.',
+  PreferMachine: 'When the chosen machine’s upload conflicts, its save is kept automatically and the other stays under Backups until retention prunes it. A conflict another machine’s upload makes still waits for you.',
+};
+
+/** The listbox's one-line version of the above (its second line is truncated, so the full text sits under it). */
+const POLICY_SUB: Record<string, string> = {
+  Manual: 'Wait for you to choose',
+  NewestWins: 'Keep the newest upload',
+  PreferMachine: 'Keep one machine’s uploads',
 };
 
 const POLICY_OPTIONS = (['Manual', 'NewestWins', 'PreferMachine'] as const).map(value => ({
   value,
   label: value === 'PreferMachine' ? 'Prefer a machine' : POLICY_LABEL[value] ?? value,
-  sub: POLICY_HELP[value],
+  sub: POLICY_SUB[value],
 }));
 
 /** plan.md Phase 10.5: Rules — the conflict policy and how many versions to keep, both edited in

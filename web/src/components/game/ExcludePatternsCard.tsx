@@ -25,13 +25,19 @@ export function ExcludePatternsCard({ game, onRefresh }: Props) {
   // The dry run reads the head archive's zip index on the server, so it runs only once asked for (or
   // once the draft is being edited), never just because the page opened.
   const [previewOn, setPreviewOn] = useState(false);
-  // null while a preview is outstanding — distinct from 0 so the count never flashes "0" first.
-  const [previewCount, setPreviewCount] = useState<number | null>(null);
-  // The server's reason when it refuses the draft (a pattern the matcher cannot evaluate): shown here
-  // and blocks Save, instead of the request failing quietly and the bad pattern being saved.
-  const [previewError, setPreviewError] = useState<string | null>(null);
+  // The dry run's answer, tagged with the draft it was asked about, and shown only while the draft is
+  // still that one. Discarding, or undoing an edit by hand, used to leave the abandoned draft's count on
+  // screen under the saved patterns' wording (or its refusal, for a pattern no longer there).
+  // `error` is the server's reason when it refuses the draft (a pattern the matcher cannot evaluate):
+  // shown here and blocks Save, instead of the request failing quietly and the bad pattern being saved.
+  const [preview, setPreview] = useState<{ draft: string; count: number | null; error: string | null } | null>(null);
 
-  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  const draftKey = JSON.stringify(draft);
+  const dirty = draftKey !== JSON.stringify(saved);
+  // null while a preview is outstanding — distinct from 0 so the count never flashes "0" first.
+  const current = preview?.draft === draftKey ? preview : null;
+  const previewCount = current?.count ?? null;
+  const previewError = current?.error ?? null;
 
   // Follow a save made elsewhere (another browser, this card's own save once the poll lands) — but
   // only while nothing here is being edited, so a poll never throws away a draft in progress.
@@ -48,13 +54,12 @@ export function ExcludePatternsCard({ game, onRefresh }: Props) {
   useEffect(() => {
     if (!previewOn && !dirty) return;
     let cancelled = false;
-    setPreviewCount(null);
-    setPreviewError(null);
+    const key = JSON.stringify(draft);
     api.previewExcludes(game.id, draft)
-      .then(r => { if (!cancelled) setPreviewCount(r.wouldExclude); })
+      .then(r => { if (!cancelled) setPreview({ draft: key, count: r.wouldExclude, error: null }); })
       .catch(e => {
         if (cancelled) return;
-        if (e instanceof ApiError && e.status === 400) setPreviewError(e.detail || e.message);
+        if (e instanceof ApiError && e.status === 400) setPreview({ draft: key, count: null, error: e.detail || e.message });
       });
     return () => { cancelled = true; };
   }, [game.id, draft, previewOn, dirty]);

@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { api } from './api';
 import type { CancelCommandsResponse, Command } from './types';
+import { toMs } from './format';
 
 /** One console "Sync all" batch — one command per machine (implementation.md, "A gap found while
  *  building Group 2"), so everything here counts machines, never games. */
@@ -8,7 +9,7 @@ export interface SyncAllProgress {
   total: number;
   /** Reached a terminal state: Done, Failed or Cancelled. */
   done: number;
-  /** Still Pending — no agent has claimed them, so Cancel can still withdraw them. */
+  /** No agent holds them (see `withdrawable`), so Cancel can still withdraw them. */
   pending: number;
 }
 
@@ -22,6 +23,16 @@ export interface SyncAllOutcome {
 }
 
 const TERMINAL = new Set<Command['status']>(['Done', 'Failed', 'Cancelled']);
+
+/**
+ * No agent holds this command: it is Pending, or it was handed out and the claim lapsed unanswered, so
+ * the next poll hands it out again. Exactly what `POST /commands/cancel` withdraws (the server decides by
+ * its own clock; this only chooses whether to offer Cancel and what a row says).
+ */
+export function withdrawable(c: Command): boolean {
+  if (c.status === 'Pending') return true;
+  return c.status === 'Dispatched' && !!c.leaseExpiresAt && toMs(c.leaseExpiresAt) < Date.now();
+}
 
 /**
  * plan.md §3 item 4: "a progress tick must not re-render its surroundings." The poll lives here, not in
@@ -85,7 +96,7 @@ class SyncAllTracker {
       this.last = all.filter(c => this.ids.has(c.id));
       const done = this.last.filter(c => TERMINAL.has(c.status)).length;
       // A command missing from the list (it holds the newest 50) is counted as still pending.
-      const pending = this.ids.size - this.last.filter(c => c.status !== 'Pending').length;
+      const pending = this.ids.size - this.last.filter(c => !withdrawable(c)).length;
       const p = this.progress;
       if (p.done !== done || p.pending !== pending) {
         this.progress = { total: p.total, done, pending };
@@ -112,6 +123,13 @@ class SyncAllTracker {
     this.stop();
     cb?.(outcome);
   }
+
+  /**
+   * Forget the batch without reporting it — the console was locked or its session ended. Polling on
+   * would only collect 401s, and the chip and Cancel would sit over the sign-in screen. The commands
+   * themselves are untouched and still run.
+   */
+  reset() { this.stop(); }
 
   private stop() {
     clearInterval(this.interval);

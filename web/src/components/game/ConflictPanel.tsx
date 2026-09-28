@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { api, errorText } from '../../api';
 import type { AgentHealth, Conflict, Game, Version, VersionStats } from '../../types';
-import { age, ago, asUtc, fmtSize, plural, shortId, when } from '../../format';
+import { age, ago, fmtSize, plural, shortId, toMs, when } from '../../format';
 import { osForMachine, osLine } from '../../machineOs';
 import { toast, toastError } from '../../toast';
 import { Banner } from '../ui/Banner';
@@ -25,8 +25,6 @@ interface Props {
   /** The version list changed (a resolve can re-point Latest and protect snapshots). */
   onChanged: () => Promise<void>;
 }
-
-const ms = (t: string) => new Date(asUtc(t)).getTime();
 
 const CHOSEN_TILE = `border-safe-line bg-[linear-gradient(180deg,color-mix(in_oklab,var(--color-safe)_10%,transparent),color-mix(in_oklab,var(--color-safe)_3%,transparent)_60%)]`;
 
@@ -54,8 +52,8 @@ export function ConflictPanel({ game, conflict: c, versions, health, headId, oth
     root.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [openSignal]);
 
-  // File count for each side, read from its archive — only once the panel is open, since that is the
-  // only place it is shown. An archive never changes once uploaded.
+  // File count and newest change for each side, read from its archive — only once the panel is open,
+  // since that is the only place they are shown. An archive never changes once uploaded.
   useEffect(() => {
     if (!open) return;
     for (const vid of [c.versionAId, c.versionBId]) {
@@ -73,7 +71,7 @@ export function ConflictPanel({ game, conflict: c, versions, health, headId, oth
   const base = a && b && a.parentVersionId && a.parentVersionId === b.parentVersionId ? a.parentVersionId : null;
   // Only with both sides in hand: "the newer" of one known side and one not yet loaded is a guess, and
   // was once the wrong one (see GameDetail's version re-read).
-  const newer = a && b ? (ms(a.createdAt) >= ms(b.createdAt) ? a : b) : null;
+  const newer = a && b ? (toMs(a.createdAt) >= toMs(b.createdAt) ? a : b) : null;
   const whose = (id: string) => versions.find(v => v.id === id)?.machineName ?? shortId(id);
 
   const title = a && b
@@ -87,7 +85,7 @@ export function ConflictPanel({ game, conflict: c, versions, health, headId, oth
   ].join(' ');
 
   function consequence(v: Version | undefined, both: boolean) {
-    const newerThan = v ? versions.filter(x => ms(x.createdAt) > ms(v.createdAt)).length : 0;
+    const newerThan = v ? versions.filter(x => toMs(x.createdAt) > toMs(v.createdAt)).length : 0;
     return [
       v ? `${v.machineName}'s save (${fmtSize(v.size)}, ${when(v.createdAt)}) becomes Latest and both machines in this conflict pull it.`
         : 'This save becomes Latest and both machines in this conflict pull it.',
@@ -207,9 +205,17 @@ export function ConflictPanel({ game, conflict: c, versions, health, headId, oth
                     )}
                   </span>
                   <span className="text-[11.5px] text-dim tabular-nums">
-                    {[st ? plural(st.fileCount, 'file') : null, v ? fmtSize(v.size) : null, v ? when(v.createdAt) : null]
+                    {[st ? plural(st.fileCount, 'file') : null, v ? fmtSize(v.size) : null, v ? `uploaded ${when(v.createdAt)}` : null]
                       .filter(Boolean).join(' · ')}
                   </span>
+                  {/* The upload time says when a machine SENT it; this says when the game last WROTE
+                      to it — the better guess at which side holds more play (conflict Tier 1). */}
+                  {st?.newestFileWriteUtc && (
+                    <span className="text-[11.5px] text-dim tabular-nums"
+                      title="When the newest file in this save was last written, by its machine's clock">
+                      newest change {when(st.newestFileWriteUtc)}
+                    </span>
+                  )}
                   <span className="text-[11px] text-dim leading-snug">
                     {osLine(os) ?? 'Operating system not reported yet'} · version {shortId(id)}
                   </span>

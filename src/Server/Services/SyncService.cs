@@ -1874,16 +1874,24 @@ public sealed class SyncService
     }
 
     public const string CancelledResult = "Cancelled from the console before any agent picked it up.";
+    public const string CancelledLapsedResult =
+        "Cancelled from the console after the agent that took it stopped answering (its claim had lapsed).";
 
     /// <summary>
     /// Dashboard: the console's Cancel beside a running Sync all. Withdraws the listed commands no agent
-    /// has claimed yet (Pending → Cancelled) and reports the rest for what they are — a claimed command
-    /// is already executing on its machine and cannot be recalled, so it runs to completion.
+    /// holds (Pending, or Dispatched with a lapsed claim → Cancelled) and reports the rest for what they
+    /// are — a live claim is executing on its machine and cannot be recalled, so it runs to completion.
     /// <para>
-    /// The withdrawal is ONE conditional UPDATE on <c>Status == Pending</c>, the mirror of the claim in
-    /// <see cref="DequeueCommandsAsync"/>, so a command an agent polls for in the same instant lands on
-    /// exactly one side: the agent gets it and it is reported as running, or it is cancelled and no poll
-    /// ever hands it out. A read-then-save would let both happen.
+    /// "Holds" is exactly the claim's own predicate in <see cref="DequeueCommandsAsync"/>: a claim whose
+    /// lease ran out unanswered is due to be handed out again on the next poll, so it is as withdrawable
+    /// as one never handed out (and the console already shows it as Queued).
+    /// </para>
+    /// <para>
+    /// The withdrawal is ONE conditional UPDATE on that predicate, so a command an agent polls for in the
+    /// same instant lands on exactly one side: the agent gets it and it is reported as running, or it is
+    /// cancelled and no poll ever hands it out. It runs inside a transaction with the reads around it and
+    /// the audit rows, which serialises two cancels of the same batch (SQLite's writer lock is taken at
+    /// BEGIN): the second one reads the first one's result, so a withdrawal is reported and audited once.
     /// </para>
     /// Every id must exist (<c>Unknown</c> names the ones that do not, for a 404) — the same all-or-nothing
     /// rule as <see cref="EnqueueCommandsAsync"/>, so a typo cannot quietly cancel half a batch.
@@ -1895,6 +1903,8 @@ public sealed class SyncService
         if (ids.Count == 0) return (null, "At least one command id is required.", null);
         if (ids.Count > MaxBulkCommands) return (null, $"At most {MaxBulkCommands} commands can be cancelled in one call.", null);
 
+        await using var tx = await _db.Database.BeginTransactionAsync();
+
         var before = await _db.AgentCommands
             .Where(c => ids.Contains(c.Id))
             .Select(c => new { c.Id, c.MachineId, c.GameId, c.Type, c.Status })
@@ -1904,11 +1914,16 @@ public sealed class SyncService
 
         var now = DateTime.UtcNow;
         await _db.AgentCommands
-            .Where(c => ids.Contains(c.Id) && c.Status == CommandStatus.Pending)
+            .Where(c => ids.Contains(c.Id)
+                        && (c.Status == CommandStatus.Pending
+                            || (c.Status == CommandStatus.Dispatched
+                                && c.LeaseExpiresAt != null
+                                && c.LeaseExpiresAt < now)))
             .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.Result, c => c.Status == CommandStatus.Pending ? CancelledResult : CancelledLapsedResult)
                 .SetProperty(c => c.Status, CommandStatus.Cancelled)
                 .SetProperty(c => c.CompletedAt, now)
-                .SetProperty(c => c.Result, CancelledResult));
+                .SetProperty(c => c.LeaseExpiresAt, (DateTime?)null));
 
         var after = await _db.AgentCommands
             .Where(c => ids.Contains(c.Id))
@@ -1930,6 +1945,7 @@ public sealed class SyncService
             else finished.Add(id);
         }
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
         return (new CancelCommandsResponse(withdrawn, running, finished), null, null);
     }
 

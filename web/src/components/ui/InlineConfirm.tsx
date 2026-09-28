@@ -70,7 +70,11 @@ export function InlineConfirm({
     >
       <span className="text-xs text-dim leading-[1.45] min-w-[160px] flex-1">{consequence}</span>
       <span className="flex gap-1.5 items-center">
-        <Button ref={confirmRef} variant={tone} size="sm" disabled={busy} onClick={() => void commit()}>
+        {/* Focus lands here, and a button clicks on Enter's keydown — which auto-repeats. Without the
+            guard, holding Enter on "Delete game" a moment too long opened AND confirmed it. */}
+        <Button ref={confirmRef} variant={tone} size="sm" disabled={busy}
+          onKeyDown={e => { if (e.repeat) e.preventDefault(); }}
+          onClick={() => void commit()}>
           {busy ? 'Working…' : confirmLabel}
         </Button>
         <Button variant="quiet" size="sm" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>

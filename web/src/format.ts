@@ -7,7 +7,13 @@ export const asUtc = (t: string) => /[Z+]|-\d\d:\d\d$/.test(t) ? t : t + 'Z';
 
 export const when = (t: string | null | undefined) => t ? new Date(asUtc(t)).toLocaleString() : '—';
 
-const minutesSince = (t: string) => Math.max(0, Math.round((Date.now() - new Date(asUtc(t)).getTime()) / 60000));
+/**
+ * Milliseconds since the epoch — what to ORDER timestamps by. Comparing the strings goes wrong within one
+ * second: the server trims trailing zeros from the fraction, so "…:00.5Z" sorts after "…:00.51Z".
+ */
+export const toMs = (t: string) => new Date(asUtc(t)).getTime();
+
+const minutesSince = (t: string) => Math.max(0, Math.round((Date.now() - toMs(t)) / 60000));
 
 /** "just now", "5m ago", "3h ago", "2d ago". */
 export function ago(t: string | null | undefined): string {

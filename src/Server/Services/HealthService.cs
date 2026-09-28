@@ -236,7 +236,11 @@ public sealed class HealthService
         if (value is null) return null;
         var s = new string(value.Where(ch => !char.IsControl(ch)).ToArray()).Trim();
         if (s.Length == 0) return null;
-        return s.Length <= max ? s : s[..max];
+        if (s.Length <= max) return s;
+        // Never cut between the two halves of a surrogate pair: a lone high surrogate is not valid
+        // UTF-16, so the name would come back from the database ending in U+FFFD.
+        var cut = char.IsHighSurrogate(s[max - 1]) ? max - 1 : max;
+        return s[..cut];
     }
 
     /// <summary>Every open problem across the fleet, worst first — what the console's badge counts.</summary>

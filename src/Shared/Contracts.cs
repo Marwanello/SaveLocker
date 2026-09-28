@@ -380,9 +380,10 @@ public enum CommandStatus
     Done,
     Failed,
     /// <summary>
-    /// Withdrawn from the console before any agent claimed it (<c>POST /commands/cancel</c>). Terminal,
-    /// like Done and Failed, and never handed out: a claim only takes Pending or an expired Dispatched.
-    /// Appended last so the stored integers of the four values above do not move.
+    /// Withdrawn from the console (<c>POST /commands/cancel</c>) while no agent held it: still Pending, or
+    /// Dispatched with a claim that lapsed unanswered. Terminal, like Done and Failed, and never handed
+    /// out: a claim only takes Pending or an expired Dispatched. Appended last so the stored integers of
+    /// the four values above do not move.
     /// </summary>
     Cancelled
 }
@@ -409,8 +410,9 @@ public record BulkEnqueueResponse(List<AgentCommandDto> Queued, List<SkippedComm
 public record CancelCommandsRequest(List<Guid> Ids);
 
 /// <summary>
-/// What a cancel did, per command. <c>Withdrawn</c> were still Pending and are now Cancelled;
-/// <c>AlreadyRunning</c> had been handed to an agent and will finish (a claim cannot be recalled);
+/// What a cancel did, per command. <c>Withdrawn</c> were still Pending (or held only by a lapsed claim)
+/// and are now Cancelled; <c>AlreadyRunning</c> are held by a live claim and will finish (a claim cannot
+/// be recalled);
 /// <c>AlreadyFinished</c> had reached a terminal state before the request arrived.
 /// </summary>
 public record CancelCommandsResponse(List<Guid> Withdrawn, List<Guid> AlreadyRunning, List<Guid> AlreadyFinished);

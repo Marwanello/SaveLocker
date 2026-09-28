@@ -14,6 +14,7 @@ import { WhatsNewView } from './components/WhatsNewView';
 import { SignIn } from './components/SignIn';
 import { Toaster } from './components/ui/Toaster';
 import { toastError } from './toast';
+import { syncAll } from './syncAll';
 import { isCurrentPoll, looksEpoch, setLook } from './appearance';
 import { AddGameDialog } from './components/AddGameDialog';
 import { hasUnreadNotes, markNotesSeen } from './releaseSeen';
@@ -69,6 +70,10 @@ export default function App() {
 
   const canLoad = passwordRequired === false || (passwordRequired === true && signedIn);
   const needsSignIn = passwordRequired === true && !signedIn;
+
+  // Locked, or the session ended: a running Sync all is forgotten here (its commands still run). Left
+  // alone it polled into 401s for up to ten minutes, with its chip and Cancel over the sign-in screen.
+  useEffect(() => { if (needsSignIn) syncAll.reset(); }, [needsSignIn]);
 
   // A response that lands after the credential changed (Lock, sign-in, a 401) belongs to the previous
   // state and must not repaint it: without this, a load in flight when Lock was pressed put the games

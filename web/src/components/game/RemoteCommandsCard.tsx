@@ -1,5 +1,6 @@
 import type { Command } from '../../types';
-import { ago, asUtc, when } from '../../format';
+import { ago, when } from '../../format';
+import { withdrawable } from '../../syncAll';
 import { Card } from '../ui/Card';
 import { Chip } from '../ui/Chip';
 import { Dot } from '../ui/Dot';
@@ -14,8 +15,7 @@ import { EmptyState } from '../ui/EmptyState';
 function waiting(c: Command) {
   if (c.status === 'Pending') return 'Waiting for the agent’s next poll.';
   if (c.status !== 'Dispatched') return '—';
-  const lapsed = c.leaseExpiresAt && new Date(asUtc(c.leaseExpiresAt)) < new Date();
-  return lapsed ? 'No reply — the next poll hands it out again.' : 'Running on the agent.';
+  return withdrawable(c) ? 'No reply — the next poll hands it out again.' : 'Running on the agent.';
 }
 
 function state(c: Command) {
@@ -24,7 +24,10 @@ function state(c: Command) {
     case 'Done': return <Chip tone="ok">Done</Chip>;
     // Amber, not the accent: it failed and says why, but nothing here is waiting on a decision.
     case 'Failed': return <Chip tone="warn">Failed{retried}</Chip>;
-    case 'Dispatched': return <Chip><Dot tone="warn" live />Running{retried}</Chip>;
+    // A lapsed claim is queued again (the sidebar row says the same), not running.
+    case 'Dispatched': return withdrawable(c)
+      ? <Chip>Queued{retried}</Chip>
+      : <Chip><Dot tone="warn" live />Running{retried}</Chip>;
     case 'Cancelled': return <Chip>Cancelled</Chip>;
     default: return <Chip>Queued</Chip>;
   }

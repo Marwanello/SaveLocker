@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api, signIn, clearSession, errorText } from '../api';
 import type { GameSummary, Machine, Settings, Enrollment, EffectiveServerUrl, AgentHealth, ServerBuildInfo } from '../types';
 import { fleetSkew, isNewerThanConsole, isTestBuild, normalizeVersion } from '../versionSkew';
+import { asUtc, when } from '../format';
 import { AgentUpdatesCard } from './AgentUpdatesCard';
 import { AppearanceCard } from './AppearanceCard';
 import { Chip } from './ui/Chip';
@@ -14,9 +15,6 @@ interface Props {
   build?: ServerBuildInfo;
   onRefresh: () => void;
 }
-
-const asUtc = (t: string) => /[Z+]/.test(t.slice(-6)) ? t : t + 'Z';
-const when = (t: string | null | undefined) => t ? new Date(asUtc(t)).toLocaleString() : '—';
 
 export function ConfigView({ games, machines, settings, health, build, onRefresh }: Props) {
   const healthByMachine = new Map(health.map(h => [h.machineId, h]));

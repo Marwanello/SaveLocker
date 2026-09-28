@@ -35,10 +35,16 @@ const STATE_TONE = { ok: 'ok', warn: 'warn', crit: 'crit', idle: 'default' } as 
  *  policy / keep chips, Push and Pull for one machine, and Refresh art. */
 export function GameHead({ summary, standing, versionCount, machines, allMachines, health, artOpen, onToggleArt, penRef, onRefresh }: Props) {
   const { game, head, totalStorageBytes } = summary;
-  const [machineId, setMachineId] = useState<string>(machines[0]?.id ?? '');
+  // Null until someone picks. The default is the first machine of the list as it is NOW: pinning one at
+  // mount pinned a machine from the whole fleet, before this game's versions and folders had loaded and
+  // narrowed the list, and it then switched under the picker with no one touching it. A machine someone
+  // did pick stays picked — and listed — even when it is not one of those (it could be about to be).
+  const [machineId, setMachineId] = useState<string | null>(null);
   const [queuing, setQueuing] = useState(false);
-  // The list can change under the picker (a poll, a machine removed): fall back to the first.
-  const target = machines.find(m => m.id === machineId) ?? machines[0];
+  const picked = machineId ? allMachines.find(m => m.id === machineId) : undefined;
+  const options = picked && !machines.some(m => m.id === picked.id) ? [...machines, picked] : machines;
+  // A picked machine that was removed falls back to the first.
+  const target = picked ?? machines[0];
 
   const policy = game.conflictPolicy ?? 'Manual';
   const preferred = policy === 'PreferMachine'
@@ -111,7 +117,7 @@ export function GameHead({ summary, standing, versionCount, machines, allMachine
             {target && (
               <span className="inline-flex items-center gap-1.5">
                 <MachineSelect
-                  machines={machines}
+                  machines={options}
                   health={health}
                   value={target.id}
                   onChange={setMachineId}

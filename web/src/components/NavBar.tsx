@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api, errorText } from '../api';
 import type { AgentEvent, Conflict, GameIntent, Machine, ServerBuildInfo } from '../types';
-import { age, plural } from '../format';
+import { age, plural, toMs } from '../format';
 import { syncAll, useSyncAllActive, useSyncAllProgress } from '../syncAll';
 import type { SyncAllOutcome } from '../syncAll';
 import { Mark } from './ui/Mark';
@@ -108,7 +108,7 @@ export function NavBar({
 
   // The oldest open conflict drives the pill: it is the one that has waited longest for a decision.
   const oldest = conflicts.length > 0
-    ? conflicts.reduce((a, b) => (a.createdAt <= b.createdAt ? a : b))
+    ? conflicts.reduce((a, b) => (toMs(a.createdAt) <= toMs(b.createdAt) ? a : b))
     : null;
   const anyEscalated = conflicts.some(c => c.escalated);
 
@@ -182,7 +182,7 @@ export function NavBar({
           {oldest && (
             <Button
               variant="alert"
-              onClick={() => onOpenGame(oldest.gameId, { kind: 'resolve' })}
+              onClick={() => onOpenGame(oldest.gameId, { kind: 'resolve', conflictId: oldest.id })}
               title={anyEscalated
                 ? 'Unresolved for more than six hours. Sync is paused for these games until you choose.'
                 : 'Sync is paused for these games until you choose which save to keep.'}

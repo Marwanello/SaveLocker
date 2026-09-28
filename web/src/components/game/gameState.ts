@@ -1,6 +1,6 @@
 import type { AgentHealth, Command, GameSummary } from '../../types';
 import type { DotTone } from '../ui/Dot';
-import { asUtc } from '../../format';
+import { withdrawable } from '../../syncAll';
 
 /** `AgentEventCodes.Conflict` — shown as the conflict itself, never as a separate "problem". */
 const CONFLICT_CODE = 'sync.conflict';
@@ -38,8 +38,7 @@ export function standing(s: GameSummary, problems: Set<string>): GameStanding {
 export function liveCommand(gameId: string, commands: Command[]): { label: 'Queued' | 'Syncing'; command: Command } | null {
   const c = commands.find(x => x.gameId === gameId && (x.status === 'Pending' || x.status === 'Dispatched'));
   if (!c) return null;
-  const lapsed = c.status === 'Dispatched' && c.leaseExpiresAt && new Date(asUtc(c.leaseExpiresAt)) < new Date();
-  return { label: c.status === 'Pending' || lapsed ? 'Queued' : 'Syncing', command: c };
+  return { label: withdrawable(c) ? 'Queued' : 'Syncing', command: c };
 }
 
 /** plan.md "Games: sidebar list by default, grid wall as an alternative". Remembered per browser. */
