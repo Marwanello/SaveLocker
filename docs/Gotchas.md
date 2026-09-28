@@ -250,6 +250,11 @@ behave in ways that look like bugs.
   `agent-ui/src` and `web/src` — sat untracked in the clone on 2026-09-20 while existing in no tree and no
   commit on any branch). `rm` it in the clone by hand; a blanket `git clean` was not added because
   nothing proves the clone holds nothing un-ignored that it needs.
+  **The same leftovers break a branch switch** (2026-09-28): files synced while untracked on branch A and
+  committed there afterwards stay untracked in the clone when you `sync` branch B, which never had them —
+  `src/Agent.Core/OsIdentity.cs` from the Group 8 branch failed the Linux build of a branch cut from `main`
+  (`AgentOsInfo` not found). Remove exactly A's additions: `git diff --name-only --diff-filter=A main A` on
+  Windows, then in the clone `rm` each listed path that `git ls-files --error-unmatch` does not know.
 - **`conflict -Wsl` on its own seeds no conflict.** It creates the game and pushes once from WSL — the
   rig prints "only seeding WSL" — and by then the game has a head, so a following `-Windows -Wsl` puts
   the divergence on the wrong machine. Recovering takes a full `clean` and a rebuild. Start with
@@ -544,6 +549,16 @@ documentation that was found. Read before touching the presenter.
   itself is still a real refusal.
 
 ## Testing
+- **A test of a timestamp's timezone only fails off UTC.** `SaveArchiveTimestampTests` and
+  `run-delta-upload-tests` section 10 pin files to known UTC instants; the old local-clock stamping was right by
+  accident on a UTC+0 machine, so a CI runner at UTC cannot catch that regression — this UTC+3 box can. The offset
+  also moves with the date (Africa/Cairo is +2 in January, +3 in September), so an expected value computed from
+  "today's" offset is wrong for a fixture dated in another season: compare against the UTC instant, never
+  `now`'s offset.
+- **A locked `src/Agent/bin` does not have to block a Windows agent build.** A command-line output folder wins over
+  the project's pinned one: `dotnet build src/Agent/SaveLocker.Agent.csproj -p:OutDir=<scratch>\agentbin\` builds
+  everything the agent needs there; point a copy of a suite's `$agentDll` at it. Used 2026-09-28 while a test tray
+  held the real folder.
 - **`run-linux-tests.sh` fails two "no session" checks under WSLg — that is the machine, not the code.** "no session:
   graphical session reported no" and "…D-Bus session bus reported no" assume the harness has no graphical session, but WSLg
   injects `DISPLAY`, `WAYLAND_DISPLAY` and `DBUS_SESSION_BUS_ADDRESS` into every WSL shell, **even under `env -i`**. Expect

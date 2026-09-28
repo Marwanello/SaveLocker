@@ -62,6 +62,7 @@ Server endpoints (`src/Server/Program.cs`).
   - `POST /api/games/{id}/upload/{sessionId}/complete` → `UploadResult`. On the delta path this is where reconstruction happens: the small payload is validated (entry count/size caps, and every entry must be one of the paths the server itself asked for) before anything is copied. `RetryFull` means the negotiated base moved on since Begin (another machine pushed in between) — the partial payload can no longer be trusted to reconstruct against; `ApiClient` retries transparently with a full archive, never surfaced past it.
 - `GET /api/games/{id}/download` → head zip; response headers `X-Version-Id`, `X-Content-Hash`.
 - `GET /api/versions/{versionId}/download` → that version's zip.
+- `GET /api/versions/{versionId}/stats` (agent) and `GET /api/games/{id}/versions/{versionId}/stats` (admin) → `VersionStatsDto { fileCount, newestFileWriteUtc? }`, read from the archive's own entries and cached per version. `newestFileWriteUtc` is the newest file's real UTC write time for archives written since 2026-09-28 (each entry carries an `mtime-utc=` record — see `Decisions.md`); an older archive only has the uploader's local wall clock, so its value is that clock labelled UTC and reads **shifted by the uploader's UTC offset** (e.g. 3 h later from a UTC+3 machine).
 
 ## Admin
 - `GET /api/conflicts` → open `ConflictDto[]`. `escalated` becomes true after the conflict has been

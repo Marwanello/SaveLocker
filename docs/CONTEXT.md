@@ -72,6 +72,12 @@ DB produces shifting, misleading failures. Give it a fresh `Storage__DbPath`/`Ar
 <br>**Untested:** the `Storage:MaxUploadMb` ceiling on a reconstructed archive. Exercising it needs
 either a >500 MB fixture or a second server started with a tiny cap; neither was worth it, but it is
 the one fix here resting on inspection rather than a test.
+<br>**2026-09-28 — a version's "newest change" is its real UTC write time (branch `fix-archive-utc-timestamps`).** It read 3 h late
+from a UTC+3 uploader: zip's DOS timestamp is the writer's local wall clock and `GetArchiveStats` labelled it UTC. Each
+archive entry now also carries `mtime-utc=<UTC>` in its comment (the DOS field stays local, so other zip tools are
+unchanged); the server's delta rebuild copies that record forward. Old archives still read shifted — nothing in them
+says which zone they came from. Why not UTC in the DOS field or the 0x5455 extra field: [[Decisions]]. Verified live via
+`testenv conflict -Windows -Wsl`: both sides' newest change equals the file's own UTC mtime to the tick.
 
 v0.5.7's rollout (2026-08-15) is complete: console redeployed, the Windows agent took it from the
 tray's *Check for updates*, and **the Deck updated itself** — see below, it is the first time that
