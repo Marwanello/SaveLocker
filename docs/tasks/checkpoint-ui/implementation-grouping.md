@@ -615,7 +615,7 @@ sidebar row are `accent-soft` as plan 9.3/10.1 say, where Groups 3/6 had made th
 item neutral.
 <br>**Found, not fixed (out of scope):** a version's *newest change* (conflict panel) reads hours off on a machine east
 of UTC — `CreateArchive` stamps zip entries in local time and `GetArchiveStats` labels them UTC. Filed as a follow-up
-task. And the header `Mark` re-sets its SVG on every 15 s data poll (pre-existing, harmless).
+task — fixed on `fix-archive-utc-timestamps` and merged into this PR ([[Decisions]]). And the header `Mark` re-sets its SVG on every 15 s data poll (pre-existing, harmless).
 <br>**Not verified:** the WebView2 tray window (the console only), a real Deck, and real Tab presses on the 8c
 controls — the Browser pane stopped drawing mid-session (see [[Gotchas]]); every control carries the focus-visible
 ring class (checked for all 43 on the page) and 8a's real Tab test showed that ring rendering.

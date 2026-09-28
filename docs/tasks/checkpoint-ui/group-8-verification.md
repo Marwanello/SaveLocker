@@ -69,7 +69,6 @@ Two rig facts that bite here:
 2. Click **Keep the WinTest save**: it expands in place into a sentence ("WinTest's save … becomes Latest and both
    machines in this conflict pull it. …") with one button naming the effect, and focus is on that button. Confirm.
 3. Toast **Kept the WinTest save. Both machines will pull it.**; the banner and the top-bar pill disappear.
-   Known cosmetic issue: "newest change" can read hours off on a machine east of UTC (a separate task).
 
 ## 5. Resolve — keep both, with the page left open (8c, and the bug it fixed)
 

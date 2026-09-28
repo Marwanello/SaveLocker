@@ -72,7 +72,7 @@ DB produces shifting, misleading failures. Give it a fresh `Storage__DbPath`/`Ar
 <br>**Untested:** the `Storage:MaxUploadMb` ceiling on a reconstructed archive. Exercising it needs
 either a >500 MB fixture or a second server started with a tiny cap; neither was worth it, but it is
 the one fix here resting on inspection rather than a test.
-<br>**2026-09-28 — a version's "newest change" is its real UTC write time (branch `fix-archive-utc-timestamps`).** It read 3 h late
+<br>**2026-09-28 — a version's "newest change" is its real UTC write time (branch `fix-archive-utc-timestamps`, merged into `group-8-ui-redesign` / PR #52).** It read 3 h late
 from a UTC+3 uploader: zip's DOS timestamp is the writer's local wall clock and `GetArchiveStats` labelled it UTC. Each
 archive entry now also carries `mtime-utc=<UTC>` in its comment (the DOS field stays local, so other zip tools are
 unchanged); the server's delta rebuild copies that record forward. Old archives still read shifted — nothing in them
@@ -1572,7 +1572,7 @@ One new route, `POST /api/commands/cancel`, and a new terminal `CommandStatus.Ca
 side's save; that pass found and fixed one real bug (a conflict side pushed while the page was open was invisible to it, so
 "Keep both" named the older save "the newer"). Decisions taken with the maintainer, the departures, and what was not verified:
 `tasks/checkpoint-ui/implementation-grouping.md` → Group 8; the step-by-step checklist is `tasks/checkpoint-ui/group-8-verification.md`.
-Found in passing and filed as a separate task: a version's "newest change" reads hours off east of UTC (zip entries are
+Found in passing and fixed in the same PR (the "real UTC write time" entry above): a version's "newest change" read hours off east of UTC (zip entries were
 stamped in local time, read as UTC — `SaveArchive`).
 <br>**Same branch, same day — OS logos and a real machine picker (maintainer's request).** Agents now say what they run:
 `AgentOsInfo` rides the heartbeat (appended, optional), filled by `Agent.Core/OsIdentity.cs` from os-release on Linux

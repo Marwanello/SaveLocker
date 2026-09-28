@@ -95,7 +95,7 @@ is only named when both sides are known. Re-tested with the exact sequence that 
   no-hardcoded-colours check.
 - `openapi.json` also picked up old drift: `SetAppearanceRequest.pushToAgents` has been optional since PR #48.
 - Found, not fixed: a version's "newest change" is off by the uploader's UTC offset (`SaveArchive` stamps zip
-  entries in local time, `GetArchiveStats` reads them as UTC; +3 h here). In the Backlog and spawned as its own task.
+  entries in local time, `GetArchiveStats` reads them as UTC; +3 h here). Fixed on `fix-archive-utc-timestamps` and merged into this PR.
 - `testenv.ps1 down` ignores `-Only` and stops the whole rig — recorded in `Gotchas.md`.
 
 ## Follow-up: OS logos and a real machine picker (`b3caca9`, Docs `493eec2`)
@@ -149,4 +149,4 @@ on the server, and its push still reported "pushed" with nothing uploaded (Backl
 Branch `group-8-ui-redesign` (renamed from `claude/group-8-ui-redesign-d49b05`), PR
 https://github.com/Marwanello/SaveLocker/pull/52. Commits `e6514ce` (8a), `1566de8` (8b), `24074a0` (8c), `c10ef4d`
 and `4068647` (Docs), `b3caca9` (OS logos + picker), `493eec2` (Docs), plus the Docs commit for this summary.
-Next: review and merge PR #52; the UTC-offset "newest change" fix on its own branch; then Group 9 or Group 10.
+Next: review and merge PR #52 (it also carries the UTC-offset "newest change" fix); then Group 9 or Group 10.

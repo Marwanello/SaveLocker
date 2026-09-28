@@ -3252,4 +3252,4 @@ pushed to the fork: PR https://github.com/Marwanello/SaveLocker/pull/52. Commits
 - **Not verified:** the full `SaveLocker.Agent.Tests` project (locked output), a Windows agent at this build, a real
   Deck/Bazzite report, screenshots (hidden pane).
 - **Found, not fixed:** a Linux agent's stale "conflict unresolved" latch whose push still says "pushed" (Backlog).
-- **Open:** PR #52 review; the UTC-offset "newest change" fix (own branch, next).
+- **Open:** PR #52 review — it now also carries the UTC-offset "newest change" fix, merged from `fix-archive-utc-timestamps`.
