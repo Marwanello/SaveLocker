@@ -149,6 +149,11 @@ behave in ways that look like bugs.
   `up -Only <target>` honours it. Found 2026-09-28 wanting only the WSL agent down (to leave a console command
   unclaimed for Group 8's Cancel): `down -Only linux` took the console with it. Bring back what you need with
   `up -Only console` / `up -Only windows` / `up -Only linux`, one at a time.
+- **A test tray started from an ELEVATED shell is invisible to a normal one.** `Get-TestTray` finds the tray by
+  its command line, and Windows hides an elevated process's command line from an unelevated caller, so
+  `down` prints "no test tray running" while the tray keeps serving :5188 and locking `src/Agent/bin/Debug`
+  (every agent build then fails with MSB3027, and `Stop-Process` is "Access is denied"). Found 2026-09-28.
+  Run `testenv.ps1` from the same kind of shell every time, or stop that tray from the elevated one.
 - **`build` (any `-Only` target) never fetches or checks out anything itself — it builds whatever
   commit the WSL clone already has.** `sync` is a separate command that does the fetch+checkout (see
   *Sync the WSL clone from `git status`* below); running `build -Only deck` right after switching

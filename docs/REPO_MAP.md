@@ -90,6 +90,9 @@ SaveLocker/
 │   │   │                               #   are separate processes sharing every state file
 │   │   ├── HealthReporter.cs            # Durable pending events + heartbeat. A headless box cannot
 │   │   │                               #   toast, so failures go to the console (Decisions §2)
+│   │   ├── OsIdentity.cs                # What the heartbeat says this machine runs: os-release's ID /
+│   │   │                               #   ID_LIKE / VARIANT_ID / PRETTY_NAME, a Valve board's name, WSL;
+│   │   │                               #   the Windows 10/11 build split. The console maps it to a logo
 │   │   ├── SaveDirSanity.cs             # "That's a Wine PREFIX, not a save folder" + size backstop
 │   │   ├── SavePathGuard.cs             # The hard floor: paths that can NEVER be a save folder,
 │   │   │                               #   however they arrived
@@ -210,6 +213,8 @@ SaveLocker/
 │   │                               #   copy in agent-ui/src/appearance.ts — run-appearance-consistency-tests
 │   ├── art.ts                       # artSrc/artSrcSet: ask the server for cover/icon at the size it is
 │   │   │                               #   drawn (`?w=`) so the browser never shrinks a 600×900 to 38 px
+│   │   ├── machineOs.ts                 # A machine's reported OS → logo key + label (os-release ID table;
+│   │   │                               #   SteamOS on a Deck → the Deck logo, unknown distro → Tux)
 │   │   ├── releaseSeen.ts               # localStorage "have these notes been read?" for the dot
 │   │   ├── versionSkew.ts               # Agent vs console version comparison. Only NEWER-than-
 │   │   │                               #   console warns; a 9.9.9-ci tarball is a TEST BUILD
@@ -219,11 +224,17 @@ SaveLocker/
 │   │   │                               #   body_path) — written once, cannot drift.
 │   │   └── components/
 │   │       ├── AppearanceCard.tsx       # Configuration → theme, accent, app icon, Push-to-agents (POST /settings/appearance)
-│   │       ├── ui/                          # Card · Chip · Button · Stat · Row · Seg · Toast · Switch · Mark
-│   │       ├── NavBar.tsx               # Logo, Games/Config/Audit Log tabs, Connect/Refresh
-│   │       ├── GamesSidebar.tsx         # 220 px left sidebar: cover art, name, badges
-│   │       ├── GamesView.tsx            # Sidebar + detail panel layout
-│   │       ├── GameDetail.tsx           # Game card, Machines, Commands, Versions, save paths
+│   │       ├── ui/                          # The kit: Card · Chip · Button · Seg · Page · PageHead · DataTable ·
+│   │       │                           #   Banner · InlineConfirm · Toaster · Icon (lucide paths) · Select (a
+│   │       │                           #   keyboard-complete listbox) · OsLogo/OsBadge + osLogos.ts (Simple
+│   │       │                           #   Icons CC0, the Windows 11 squares, Bazzite's press-kit mark)
+│   │       ├── NavBar.tsx               # Pill tabs, conflict pill, bell, Sync all + rail + Cancel
+│   │       ├── GamesSidebar.tsx         # 250 px left sidebar: cover art, name, status dot, live chip
+│   │       ├── GamesView.tsx            # Sidebar + game page, or the full-width grid
+│   │       ├── game/                    # The game page, one file per card: GameDetail (owns versions and
+│   │       │                           #   paths), GameHead, ConflictPanel (the agent's conflict card with
+│   │       │                           #   OS logos), GameStats, VersionsCard, SaveFoldersCard, RulesCard,
+│   │       │                           #   ExcludePatternsCard, RemoteCommandsCard, MachineSelect
 │   │       ├── ArtPicker.tsx            # Inline cover/icon chooser under the game card (the pen over the
 │   │       │                           #   cover opens it): SteamGridDB options, five per page
 │   │       ├── ConfigView.tsx           # SteamGridDB, Console build card, Machines/API keys,

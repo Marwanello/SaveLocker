@@ -1568,6 +1568,18 @@ side's save; that pass found and fixed one real bug (a conflict side pushed whil
 `tasks/checkpoint-ui/implementation-grouping.md` → Group 8; the step-by-step checklist is `tasks/checkpoint-ui/group-8-verification.md`.
 Found in passing and filed as a separate task: a version's "newest change" reads hours off east of UTC (zip entries are
 stamped in local time, read as UTC — `SaveArchive`).
+<br>**Same branch, same day — OS logos and a real machine picker (maintainer's request).** Agents now say what they run:
+`AgentOsInfo` rides the heartbeat (appended, optional), filled by `Agent.Core/OsIdentity.cs` from os-release on Linux
+(`ID`, `ID_LIKE`, `VARIANT_ID`, `PRETTY_NAME`, plus "Steam Deck"/"Steam Deck OLED" from a Valve board and "WSL") and the
+build number on Windows; the server stores it on `AgentHealth` (migration `AddAgentOsInfo`, five nullable columns) and
+serves it on `GET /admin/health`. The console's conflict panel became the agent's conflict card with each side led by its
+machine's OS logo (pick a side → the sentence says what happens → "Resolve with X", keep-the-other as a checkbox), and the
+game page's machine dropdowns (Push/Pull target, Rules' preferred machine, and the policy beside it) are a listbox with
+the logo, the OS and online state (`ui/Select.tsx`, `game/MachineSelect.tsx`). Logos: Simple Icons 16.33.0 (CC0) for
+the distros, the Windows 11 squares, Bazzite's own press-kit mark; an unknown distro is Tux, an older agent falls back to
+its platform. `run-console-security-tests` **195** (UI-02). Verified live: WSL reported "Ubuntu 26.04 LTS · WSL", a real
+conflict resolved through the new panel. Not seen: a real Deck/Bazzite report, and a Windows agent at this build (the rig's
+tray that day was an elevated one this session could not rebuild — `Gotchas` → Testing).
 **Next action:** open the PR for Group 8 (or review it first), then Group 9 (now unblocked) or Group 10.
 
 ---
