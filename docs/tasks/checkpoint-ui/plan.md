@@ -15,19 +15,25 @@ Five identity pitches this direction was chosen from: `identity-options.html`, b
 Brand kit: `brand-kit.html`, beside this file (also mirrored at
 <https://claude.ai/code/artifact/b3e0c8a5-70a0-47bf-b4f2-d0dbf4f0b2d5>).
 
-## Status (updated 2026-09-23, after Group 6's follow-ups)
+## Status (updated 2026-09-27, after the gap audit)
 
 | Phase | Status |
 |---|---|
 | 1 — Design system foundation, web half | ✅ Shipped 2026-09-17 (Group 1). **Corrected 2026-09-20:** dark is the base and light is opt-in (`data-theme="light"`) until the unmigrated views are converted — see the note below |
 | 1 — Design system foundation, agent half | ✅ Shipped 2026-09-20 (Group 3) — dark base, light opt-in, like the console |
-| 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in reworked onto revocable sessions 2026-09-20 |
+| 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in reworked onto revocable sessions 2026-09-20. The release-history table ⏳ Group 9 |
 | 3 — Sync all and progress | ✅ Items 1, 2, 4 shipped (console side; 2026-09-20 review: offline machines are left out, no duplicate stacking, failures reported); item 3 (agent Sync all + progress) shipped 2026-09-20 (Group 3); item 5 (per-game Sync this game) ✅ shipped 2026-09-21 (Group 4) with the game page and a new per-game agent route |
 | 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5), **including flipping the theme default to follow the OS**; item 4 (the Deck's accent) ➡️ shipped 2026-09-22 (Group 6) |
 | 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
-| 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22/23 (Group 6, PR #49): Checkpoint tokens with the `Safe`/`Accent` split, 62px rows, the button legend, Sync all on Y (its outcome shown in the header from every screen), a live header mark, lucide-traced icons (`SvgPath`), Archivo. Verified live under WSLg against the test rig (real `--nav` presses, a real Sync all round trip); **not yet on a real Deck/gamescope with a physical controller**. Item 4 (Wayland) still needs the open decision made first |
+| 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22/23 (Group 6, PR #49): Checkpoint tokens with the `Safe`/`Accent` split, 62px rows, the button legend, Sync all on Y (its outcome shown in the header from every screen), a live header mark, lucide-traced icons (`SvgPath`), Archivo. Verified live under WSLg against the test rig (real `--nav` presses, a real Sync all round trip); **not yet on a real Deck/gamescope with a physical controller**. Item 4 (Wayland) ⏳ Group 10 — decided 2026-09-28: a chrome-less Chromium `--app=` window from a KDE-menu launcher, header bar drawn in the page |
 | 7 — OS notifications | ✅ Shipped 2026-09-24 (Group 7, PR #50; review fixes 2026-09-27) — buttons open the agent UI at the exact screen; they do not call back. Popup + click verified on a real Deck in Desktop Mode 2026-09-27 |
-| 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1) |
+| 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1). Steam library art, PNG favicons and the installer icon are still the pre-Checkpoint brand ⏳ Group 10 |
+| 9 — Console page kit and top bar | ⏳ Not started — Group 8. Added 2026-09-27 by the gap audit ([[implementation]] → *The 2026-09-27 audit*), as are 10–14 |
+| 10 — Console Games page | ⏳ Not started — Group 8 |
+| 11 — Backups tab and Configuration | ⏳ Not started — Group 9 (the Backups tab does not exist today) |
+| 12 — Console Audit log, Help, What's new, sign-in | ⏳ Not started — Group 9 |
+| 13 — Agent UI, completed | ⏳ Not started — Group 10 |
+| 14 — Deck Game Mode, completed | ⏳ Not started — Group 10 |
 
 The phases are enumerated in [[implementation]] and the session-by-session order is
 [[implementation-grouping]]. Every design decision on this page is still current — **with one
