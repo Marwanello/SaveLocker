@@ -904,7 +904,7 @@ public sealed class SyncService
         long maxBytes, SHA256 aggregate)
     {
         var entry = dest.CreateEntry(path, CompressionLevel.Optimal);
-        entry.LastWriteTime = src.LastWriteTime;
+        SaveArchive.CopyWriteTime(src, entry);
 
         using var sha = SHA256.Create();
         using var srcStream = src.Open();

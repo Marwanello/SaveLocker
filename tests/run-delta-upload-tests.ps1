@@ -22,6 +22,8 @@
 #   6. A hostile delta payload (a file the server never asked for) is refused outright, proving the
 #      allow-list check works. Tested against a deliberately broken payload, per this project's own
 #      rule for security-relevant code (run-hardening-tests.ps1's convention).
+#  10. A version's "newest change" is each file's real UTC write time — after a full push AND after a
+#      delta rebuild that copies older entries forward — not the uploader's local wall clock.
 #
 # Prerequisites: server + Windows agent built in Debug (`dotnet build ... -c Debug`).
 # Usage:  .\tests\run-delta-upload-tests.ps1
@@ -437,6 +439,49 @@ try {
         }
         finally { $listener.Stop(); $listener.Close() }
     }
+
+    Write-Host ""
+    Write-Host "==== 10. A version's 'newest change' is the real UTC write time, through a delta rebuild ===="
+    # Zip's own timestamp is the uploader's local wall clock; read as UTC it came out shifted by the
+    # uploader's offset (+3 h from a UTC+3 box, 2026-09-28). Each file gets a known UTC instant here, so
+    # the stats route has exactly one right answer. On a machine at UTC+0 the old code was right by
+    # accident — these checks only catch a regression off UTC.
+    $tsSave = Join-Path $scratch "ts_save"; New-Item -ItemType Directory -Force $tsSave | Out-Null
+    $tsGame = "TimeTest-$(Get-Date -Format HHmmss)"
+    $t0 = [DateTime]::new(2026, 1, 15, 8, 0, 0, [DateTimeKind]::Utc)
+    function Set-WrittenUtc($name, $when) { [System.IO.File]::SetLastWriteTimeUtc((Join-Path $tsSave $name), $when) }
+    1..8 | ForEach-Object { New-RandomFile (Join-Path $tsSave "slot$_.sav"); Set-WrittenUtc "slot$_.sav" $t0.AddMinutes($_) }
+    Agent add-game --name $tsGame --dir $tsSave --config $pcCfg | Out-Null
+    $tsId = (Get-Json "/api/overview" | Where-Object { $_.game.name -eq $tsGame }).game.id
+    function Get-HeadNewest {
+        $head = @(Get-Json "/api/games/$tsId/versions")[0]
+        $stats = Get-Json "/api/games/$tsId/versions/$($head.id)/stats"
+        # PowerShell 7's ConvertFrom-Json already made it a DateTime; 5.1 leaves the ISO string.
+        if ($stats.newestFileWriteUtc -is [DateTime]) { return $stats.newestFileWriteUtc.ToUniversalTime() }
+        return [DateTime]::Parse($stats.newestFileWriteUtc, [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::AdjustToUniversal -bor [Globalization.DateTimeStyles]::AssumeUniversal)
+    }
+
+    Agent push $tsGame --config $pcCfg | Out-Null
+    $n1 = Get-HeadNewest
+    Check "full push: newest change is the newest file's UTC write time ($($t0.AddMinutes(8).ToString('u')), got $($n1.ToString('u')))" `
+        ($n1 -eq $t0.AddMinutes(8))
+
+    New-RandomFile (Join-Path $tsSave "slot3.sav"); Set-WrittenUtc "slot3.sav" $t0.AddHours(1)
+    Agent push $tsGame --config $pcCfg | Out-Null
+    $n2 = Get-HeadNewest
+    Check "second full push: follows the rewritten file ($($t0.AddHours(1).ToString('u')), got $($n2.ToString('u')))" `
+        ($n2 -eq $t0.AddHours(1))
+
+    # The delta carries only slot7, and it is OLDER than slot3 — so the newest change can only be right
+    # if the server's rebuild copied slot3's entry forward with its UTC record intact.
+    New-RandomFile (Join-Path $tsSave "slot7.sav"); Set-WrittenUtc "slot7.sav" $t0.AddMinutes(30)
+    Agent push $tsGame --config $pcCfg | Out-Null
+    $tsDelta = Get-LastAudit "upload.delta" $tsGame
+    Check "section 10 prerequisite: the third push took the delta path" ($null -ne $tsDelta)
+    $n3 = Get-HeadNewest
+    Check "delta push: an entry copied forward keeps its UTC time ($($t0.AddHours(1).ToString('u')), got $($n3.ToString('u')))" `
+        ($n3 -eq $t0.AddHours(1))
 }
 finally {
     if ($serverProc -and -not $serverProc.HasExited) { Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue }
