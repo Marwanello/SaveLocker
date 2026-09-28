@@ -182,6 +182,25 @@ if ($leftovers.Count -gt 0) { $leftovers | Select-Object -First 10 | ForEach-Obj
 Check "views: no ternary whose two branches are the same string - a flattened state ($($flattened.Count) found)" ($flattened.Count -eq 0)
 if ($flattened.Count -gt 0) { $flattened | Select-Object -First 10 | ForEach-Object { Write-Host "      $_" } }
 
+# ---- no browser dialogs on the console's game page (checkpoint-ui Group 8c) ----------------------------------
+# plan.md "No modals": every destructive action on the game page expands in place (ui/InlineConfirm) and a failure
+# is a toast. A browser alert()/confirm()/prompt() freezes the page over the very thing it is asking about. Group 9
+# widens this to all of web/src once Configuration's own calls are gone.
+$gameDir = Join-Path $root "web/src/components/game"
+$gameFiles = @(Get-ChildItem $gameDir -Recurse -Include *.tsx, *.ts)
+$dialogs = @()
+foreach ($f in $gameFiles) {
+    $n = 0
+    foreach ($line in [System.IO.File]::ReadAllLines($f.FullName)) {
+        $n++
+        if ($line -match '^\s*(//|\*|/\*)') { continue }
+        if ($line -cmatch '(?<![\w.$])(window\.)?(alert|confirm|prompt)\s*\(') { $dialogs += $f.FullName.Substring($root.Length + 1) + ":" + $n }
+    }
+}
+Check "game page: scanned web/src/components/game ($($gameFiles.Count) files - an empty scan would pass vacuously)" ($gameFiles.Count -ge 8)
+Check "game page: no alert()/confirm()/prompt() under web/src/components/game ($($dialogs.Count) found)" ($dialogs.Count -eq 0)
+if ($dialogs.Count -gt 0) { $dialogs | Select-Object -First 10 | ForEach-Object { Write-Host "      $_" } }
+
 # ---- notifications (checkpoint-ui Phase 7 / Group 7): two more hand-kept pairs ---------------------------
 # A Windows toast is named by a Start-menu shortcut carrying its AUMID; the installer stamps the shortcut and
 # ToastPresenter.cs names the identity. If they drift the toast header quietly falls back to the bare

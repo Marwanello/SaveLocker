@@ -1,160 +1,154 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError, errorText } from '../../api';
 import type { Game } from '../../types';
-import { Chip } from '../ui/Chip';
+import { plural } from '../../format';
+import { toast, toastError } from '../../toast';
+import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
-import { card, sectionLabel } from './legacyStyles';
+import { Icon } from '../ui/Icon';
 
 interface Props {
   game: Game;
   onRefresh: () => void;
 }
 
-/** The game's own exclude patterns over the server's defaults, with a dry run against its head archive. */
+/**
+ * plan.md Phase 10.5: the shipped exclude editor, restyled — this game's own patterns as chips over the
+ * server's defaults as dashed "inherited" chips, an add field, and a dry run against the head archive.
+ */
 export function ExcludePatternsCard({ game, onRefresh }: Props) {
-  const [excludeDraft, setExcludeDraft] = useState<string[]>(game.excludeGlobs ?? []);
-  const [newPattern, setNewPattern] = useState('');
-  const [excludeForGameId, setExcludeForGameId] = useState(game.id);
-  const [savingExcludes, setSavingExcludes] = useState(false);
-  const [defaultGlobs, setDefaultGlobs] = useState<string[]>([]);
-  const [excludeOpen, setExcludeOpen] = useState(false);
-  // null while the first preview for this draft hasn't answered yet — kept distinct from 0 so the
-  // count never flashes "0" for a moment before the real number lands.
+  const saved = game.excludeGlobs ?? [];
+  const [draft, setDraft] = useState<string[]>(saved);
+  const [adding, setAdding] = useState('');
+  const [defaults, setDefaults] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  // The dry run reads the head archive's zip index on the server, so it runs only once asked for (or
+  // once the draft is being edited), never just because the page opened.
+  const [previewOn, setPreviewOn] = useState(false);
+  // null while a preview is outstanding — distinct from 0 so the count never flashes "0" first.
   const [previewCount, setPreviewCount] = useState<number | null>(null);
-  // The server's reason when it refuses the draft (a pattern the matcher cannot evaluate): shown on the
-  // editor and blocks Save, instead of the request failing quietly and the bad pattern being saved.
+  // The server's reason when it refuses the draft (a pattern the matcher cannot evaluate): shown here
+  // and blocks Save, instead of the request failing quietly and the bad pattern being saved.
   const [previewError, setPreviewError] = useState<string | null>(null);
 
-  // Reset the exclude editor when switching games (not on every poll — avoids clobbering edits).
-  if (excludeForGameId !== game.id) {
-    setExcludeForGameId(game.id);
-    setExcludeDraft(game.excludeGlobs ?? []);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+
+  // Follow a save made elsewhere (another browser, this card's own save once the poll lands) — but
+  // only while nothing here is being edited, so a poll never throws away a draft in progress.
+  const [seenSaved, setSeenSaved] = useState(JSON.stringify(saved));
+  if (seenSaved !== JSON.stringify(saved)) {
+    if (JSON.stringify(draft) === seenSaved) setDraft(saved);
+    setSeenSaved(JSON.stringify(saved));
   }
 
-  // Global exclude defaults (read-only display); fetched once.
   useEffect(() => {
-    api.settings().then(s => setDefaultGlobs(s.defaultExcludeGlobs ?? [])).catch(() => {});
+    api.settings().then(s => setDefaults(s.defaultExcludeGlobs ?? [])).catch(() => {});
   }, []);
 
-  // Dry run against the head archive for whatever the draft currently is. Only while the editor is
-  // OPEN: it used to run on every game selection with the section collapsed, and each call makes the
-  // server read the head archive's zip index off disk for a number nobody was looking at. Re-fires
-  // on every add/remove. A 400 is the server refusing the draft itself (see previewError).
   useEffect(() => {
-    if (!excludeOpen) return;
+    if (!previewOn && !dirty) return;
     let cancelled = false;
     setPreviewCount(null);
     setPreviewError(null);
-    api.previewExcludes(game.id, excludeDraft)
+    api.previewExcludes(game.id, draft)
       .then(r => { if (!cancelled) setPreviewCount(r.wouldExclude); })
       .catch(e => {
         if (cancelled) return;
-        setPreviewCount(null);
         if (e instanceof ApiError && e.status === 400) setPreviewError(e.detail || e.message);
       });
     return () => { cancelled = true; };
-  }, [game.id, excludeDraft, excludeOpen]);
+  }, [game.id, draft, previewOn, dirty]);
 
-  async function handleSaveExcludes() {
-    setSavingExcludes(true);
-    try { await api.setExcludes(game.id, excludeDraft); onRefresh(); }
-    catch (e) { alert('Could not save exclude patterns: ' + errorText(e)); }
-    finally { setSavingExcludes(false); }
+  function add() {
+    const p = adding.trim();
+    if (p && !draft.includes(p)) setDraft(d => [...d, p]);
+    setAdding('');
   }
 
-  function handleAddPattern() {
-    const p = newPattern.trim();
-    if (!p || excludeDraft.includes(p)) { setNewPattern(''); return; }
-    setExcludeDraft(prev => [...prev, p]);
-    setNewPattern('');
+  async function save() {
+    setSaving(true);
+    try {
+      await api.setExcludes(game.id, draft);
+      onRefresh();
+      toast('Saved the exclude patterns. Agents apply them from their next push.');
+    } catch (e) { toastError('Could not save the patterns: ' + errorText(e)); }
+    finally { setSaving(false); }
   }
-
-  function handleRemovePattern(p: string) {
-    setExcludeDraft(prev => prev.filter(x => x !== p));
-  }
-
-  const excludeDirty = JSON.stringify(excludeDraft) !== JSON.stringify(game.excludeGlobs ?? []);
 
   return (
-    <div style={card}>
-      <button
-        onClick={() => setExcludeOpen(o => !o)}
-        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 18px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-      >
-        <span style={sectionLabel}>Exclude patterns</span>
-        <span style={{ fontSize: 11, color: 'var(--color-dim)', userSelect: 'none' }}>{excludeOpen ? '▲' : '▼'}</span>
-      </button>
-      {excludeOpen && (
-        <div className="flex flex-col gap-2.5" style={{ padding: '0 18px 14px', borderTop: '1px solid var(--color-line)', paddingTop: 10 }}>
-          <p className="text-[11px] text-dim">
-            Files matching these never upload. Bare patterns like <code className="font-mono">*.log</code> match
-            at any depth; <code className="font-mono">cache/**</code> anchors at this game's save folder.
-            See <a href="#help/glob-patterns" className="text-accent">glob pattern docs</a>.
-          </p>
+    <Card
+      title="Exclude patterns"
+      headerRight={<a href="#help/glob-patterns" className="inline-flex items-center rounded-full border border-line bg-raise px-[11px] py-[5px] text-xs font-medium text-fg hover:bg-hover
+        focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2">Glob syntax</a>}
+    >
+      <p className="text-[12.5px] text-dim mb-3">
+        Files matching these never upload. <code className="font-mono text-[11px]">*.log</code> matches at any depth;{' '}
+        <code className="font-mono text-[11px]">cache/**</code> is relative to this game's save folder.
+      </p>
 
-          {defaultGlobs.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[10px] text-faint uppercase tracking-[0.08em]">Inherited from server defaults</span>
-              <div className="flex flex-wrap gap-1.5">
-                {defaultGlobs.map(g => <Chip key={g} className="font-mono">{g}</Chip>)}
-              </div>
-            </div>
-          )}
+      <div className="flex flex-wrap gap-[7px]">
+        {draft.map(p => (
+          <span key={p} className="inline-flex items-center gap-2 font-mono text-[11.5px] bg-tile border border-line rounded-lg pl-[11px] pr-2 py-1.5 text-fg">
+            {p}
+            <button type="button" onClick={() => setDraft(d => d.filter(x => x !== p))}
+              title={`Remove ${p}`} aria-label={`Remove ${p}`}
+              className="w-[18px] h-[18px] grid place-items-center rounded-[5px] border-0 bg-transparent text-dim cursor-pointer
+                hover:bg-panel hover:text-accent-ink hover:opacity-100
+                focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+              <Icon name="x" size={12} />
+            </button>
+          </span>
+        ))}
+        {/* The field itself is borderless inside the dashed box, so the box carries the focus ring. */}
+        <span className="inline-flex items-center gap-2 bg-tile border border-dashed border-line rounded-lg px-2.5
+          focus-within:outline focus-within:outline-2 focus-within:outline-accent focus-within:outline-offset-1">
+          <input
+            value={adding}
+            onChange={e => setAdding(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+            placeholder="add a pattern…"
+            aria-label="Add an exclude pattern (Enter adds it)"
+            className="bg-transparent border-0 outline-none text-fg font-mono text-[11.5px] py-[7px] w-[150px] focus:!border-0"
+          />
+          <span aria-hidden className="font-mono text-[10px] text-faint">↵</span>
+        </span>
+      </div>
 
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] text-faint uppercase tracking-[0.08em]">This game's own patterns</span>
-            <div className="flex flex-wrap gap-1.5">
-              {excludeDraft.length === 0 && <span className="text-[11px] text-dim italic">none</span>}
-              {excludeDraft.map(p => (
-                <Chip key={p} className="font-mono">
-                  {p}
-                  <button
-                    onClick={() => handleRemovePattern(p)}
-                    title={`Remove ${p}`}
-                    aria-label={`Remove ${p}`}
-                    className="ml-1 text-dim hover:text-accent"
-                  >
-                    ×
-                  </button>
-                </Chip>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <input
-              value={newPattern}
-              onChange={e => setNewPattern(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleAddPattern()}
-              placeholder="e.g. *.log or cache/**"
-              className="flex-1 bg-ink text-fg border border-line rounded-md px-2.5 py-1.5 text-xs font-mono focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-            />
-            <Button variant="default" size="sm" onClick={handleAddPattern}>Add</Button>
-          </div>
-
-          {/* Dry run against the head archive — see SyncService.PreviewExcludesAsync. It counts the
-              whole draft against what the server holds, which can include files a SAVED pattern
-              already covers (the latest save may predate that pattern until the next upload), so
-              the wording depends on whether there is anything unsaved rather than claiming these
-              are all new. */}
-          {previewError && (
-            <p role="alert" className="text-[11px] text-accent-ink">{previewError}</p>
-          )}
-          {!previewError && previewCount !== null && previewCount > 0 && (
-            <p className="text-[11px] text-watch">
-              {excludeDirty
-                ? `Saving would leave ${previewCount} file${previewCount === 1 ? '' : 's'} in the latest save out of future uploads.`
-                : `${previewCount} file${previewCount === 1 ? '' : 's'} in the latest save match${previewCount === 1 ? 'es' : ''} these patterns; the next upload will leave ${previewCount === 1 ? 'it' : 'them'} out.`}
-            </p>
-          )}
-
-          <div className="flex justify-end">
-            <Button variant="primary" size="sm" disabled={savingExcludes || !excludeDirty || previewError !== null} onClick={handleSaveExcludes}>
-              {savingExcludes ? 'Saving…' : 'Save patterns'}
-            </Button>
+      {defaults.length > 0 && (
+        <div className="mt-3.5">
+          <div className="text-[10px] tracking-[0.1em] uppercase text-faint mb-2">Inherited from the server</div>
+          <div className="flex flex-wrap gap-[7px]">
+            {defaults.map(p => (
+              <span key={p} title="A server default — applies to every game"
+                className="inline-flex items-center font-mono text-[11.5px] bg-transparent border border-dashed border-line rounded-lg px-[11px] py-1.5 text-dim">
+                {p}
+              </span>
+            ))}
           </div>
         </div>
       )}
-    </div>
+
+      {/* A dry run against the head archive (SyncService.PreviewExcludesAsync). It counts the whole draft,
+          which can include files a SAVED pattern already covers (the latest save may predate it), so the
+          wording depends on whether anything is unsaved rather than claiming these are all new. */}
+      {previewError && <p role="alert" className="mt-3 text-[11.5px] text-accent-ink">{previewError}</p>}
+      {!previewError && previewCount !== null && (
+        <p className="mt-3 text-[11.5px] text-dim" role="status">
+          {previewCount === 0
+            ? 'Nothing in the latest save matches.'
+            : dirty
+              ? `Saving would leave ${plural(previewCount, 'file')} in the latest save out of future uploads.`
+              : `${plural(previewCount, 'file')} in the latest save match${previewCount === 1 ? 'es' : ''}; the next upload leaves ${previewCount === 1 ? 'it' : 'them'} out.`}
+        </p>
+      )}
+
+      <div className="flex items-center gap-2.5 mt-3.5 flex-wrap">
+        <Button size="sm" disabled={saving || !dirty || previewError !== null} onClick={() => void save()}>
+          {saving ? 'Saving…' : 'Save patterns'}
+        </Button>
+        {dirty && <Button size="sm" variant="quiet" onClick={() => setDraft(saved)}>Discard changes</Button>}
+        {!previewOn && !dirty && <Button size="sm" variant="quiet" onClick={() => setPreviewOn(true)}>Preview what is skipped</Button>}
+      </div>
+    </Card>
   );
 }

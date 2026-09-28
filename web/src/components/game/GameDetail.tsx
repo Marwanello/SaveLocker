@@ -1,138 +1,163 @@
-import { useEffect, useState } from 'react';
-import { api } from '../../api';
-import type { GameSummary, Machine, Command, Conflict, Version, GameIntent } from '../../types';
-import { GameHeaderCard } from './GameHeaderCard';
-import { ConflictCards } from './ConflictCards';
-import { InitialSyncCard } from './InitialSyncCard';
-import { ExcludePatternsCard } from './ExcludePatternsCard';
-import { MachinesCard } from './MachinesCard';
-import { SavePathsCard } from './SavePathsCard';
-import { RemoteCommandsCard } from './RemoteCommandsCard';
+import { useEffect, useRef, useState } from 'react';
+import { api, errorText } from '../../api';
+import type {
+  AgentHealth, Command, Conflict, GameIntent, GameSummary, Machine, MachineSavePath, MachineScanCandidate, Version,
+} from '../../types';
+import { toast, toastError } from '../../toast';
+import { problemGameIds, standing } from './gameState';
+import { ArtPicker } from '../ArtPicker';
+import { GameHead } from './GameHead';
+import { ConflictPanel } from './ConflictPanel';
+import { GameStats } from './GameStats';
 import { VersionsCard } from './VersionsCard';
+import { SaveFoldersCard } from './SaveFoldersCard';
+import { RulesCard } from './RulesCard';
+import { ExcludePatternsCard } from './ExcludePatternsCard';
+import { RemoteCommandsCard } from './RemoteCommandsCard';
 
 interface Props {
   summary: GameSummary;
   machines: Machine[];
   commands: Command[];
   conflicts: Conflict[];
+  health: AgentHealth[];
   onRefresh: () => void;
   /** Where a deep link asked to land on this page; `seq` makes each request act exactly once. */
   intent?: { value: GameIntent; seq: number } | null;
 }
 
-/** One game's page. It owns only what several cards read — the version list and the conflict-policy
- *  draft — and lays the cards out; each card owns its own state and actions. */
-export function GameDetail({ summary, machines, commands, conflicts, onRefresh, intent }: Props) {
+/**
+ * One game's page (plan.md Phase 10.3–10.5). Rendered straight into the Page canvas — every section
+ * below is a direct child of it, which is what staggers their entrance. It owns only what several
+ * sections read: the version list and the machines' folders. Each card owns its own actions.
+ */
+export function GameDetail({ summary, machines, commands, conflicts, health, onRefresh, intent }: Props) {
+  const { game, head } = summary;
   const [versions, setVersions] = useState<Version[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(true);
-  const [policyDraft, setPolicyDraft] = useState<string>(summary.game.conflictPolicy ?? 'Manual');
-  const [preferredMachineDraft, setPreferredMachineDraft] = useState<string | null>(summary.game.preferredMachineId ?? null);
-  const [policyForGameId, setPolicyForGameId] = useState(summary.game.id);
-
-  const { game, head } = summary;
-
-  // Reset the policy draft when switching games (not on every poll).
-  if (policyForGameId !== game.id) {
-    setPolicyForGameId(game.id);
-    setPolicyDraft(game.conflictPolicy ?? 'Manual');
-    setPreferredMachineDraft(game.preferredMachineId ?? null);
-  }
-
-  const headId = head?.id ?? null;
-  // filter, not find. Taking the first match silently hid every other conflict on the game, and the
-  // server used to return them oldest-first — so the console reliably showed the LEAST useful one
-  // while the save actually being played sat in a conflict the UI never rendered.
-  const gameConflicts = conflicts.filter(c => c.gameId === game.id);
-  const gameCmds = commands.filter(c => c.gameId === game.id).slice(0, 8);
-
-  // Latest version per machine (for Machines table "Last upload" column)
-  const latestByMachine: Record<string, Version> = {};
-  for (const v of versions) {
-    // A version whose uploader has been deleted keeps its name but has no machine to key on —
-    // it is history, not a live contributor.
-    if (!v.machineId) continue;
-    if (!latestByMachine[v.machineId]) latestByMachine[v.machineId] = v;
-  }
-
-  // Initial-sync wizard: show when multiple machines have versions
-  const contributors = Object.values(latestByMachine);
+  const [paths, setPaths] = useState<MachineSavePath[]>([]);
+  const [candidates, setCandidates] = useState<MachineScanCandidate[]>([]);
+  const [pathsLoaded, setPathsLoaded] = useState(false);
+  const [artOpen, setArtOpen] = useState(false);
+  const penRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setLoadingVersions(true);
-    api.versions(game.id).then(vs => { setVersions(vs); setLoadingVersions(false); });
+    api.versions(game.id).then(setVersions).catch(e => toastError('Could not load versions: ' + errorText(e)))
+      .finally(() => setLoadingVersions(false));
+    api.getGamePaths(game.id).then(setPaths).catch(() => {}).finally(() => setPathsLoaded(true));
+    api.getGamePathCandidates(game.id).then(setCandidates).catch(() => {});
   }, [game.id]);
 
-  async function reloadVersions() {
-    setVersions(await api.versions(game.id));
+  async function reloadVersions() { setVersions(await api.versions(game.id)); }
+
+  // The list above is read once per game, but versions keep arriving while the page is open — and a
+  // conflict names two of them. Found live: a diverged push landed after the page opened, the panel
+  // could not find that side, and "Keep both" offered the OLDER save as "the newer". Anything a new
+  // upload changes (the head, the stored total, the open conflicts' sides) re-reads it.
+  const conflictSides = conflicts.filter(c => c.gameId === game.id).map(c => `${c.versionAId}:${c.versionBId}`).join(',');
+  const versionsKey = `${head?.id ?? ''}|${summary.totalStorageBytes}|${conflictSides}`;
+  const seenKey = useRef(versionsKey);
+  useEffect(() => {
+    if (seenKey.current === versionsKey) return;
+    seenKey.current = versionsKey;
+    api.versions(game.id).then(setVersions).catch(() => { /* the next change or poll tries again */ });
+  }, [versionsKey, game.id]);
+  async function reloadPaths() {
+    setPaths(await api.getGamePaths(game.id));
+    // A stored path retires its candidate server-side, so refresh both together or the row keeps
+    // offering a guess for a machine that is now mapped.
+    setCandidates(await api.getGamePathCandidates(game.id).catch(() => []));
   }
 
-  async function handleSetLatest(versionId: string) {
-    // Says what actually happens now: a pull is queued for every machine that syncs this game, and
-    // it is unforced, so a machine holding unsynced local work reports blocked rather than losing it.
-    if (!confirm(
-      'Set this version as Latest?\n\n' +
-      'A pull is queued for every machine that syncs this game. Any machine with local changes it ' +
-      'has not pushed yet will report the pull as blocked instead of overwriting them.\n\n' +
-      'If this version is one of the options in an open conflict, that conflict is marked resolved ' +
-      'in its favour.'
-    )) return;
+  const headId = head?.id ?? null;
+  // filter, not find: every open conflict gets its own panel — taking the first one hid the rest.
+  const gameConflicts = conflicts.filter(c => c.gameId === game.id);
+  const gameCmds = commands.filter(c => c.gameId === game.id).slice(0, 8);
+
+  // Each machine's newest version of this game. A version whose uploader was deleted keeps its name
+  // but has no machine to key on — it is history, not a live contributor.
+  const latestByMachine: Record<string, Version> = {};
+  for (const v of versions) if (v.machineId && !latestByMachine[v.machineId]) latestByMachine[v.machineId] = v;
+
+  // The machines that have this game: they uploaded it, or hold (or scanned) a folder for it.
+  const withGame = machines.filter(m =>
+    latestByMachine[m.id] || paths.some(p => p.machineId === m.id) || candidates.some(c => c.machineId === m.id));
+
+  async function setLatest(v: Version) {
     try {
-      await api.setLatest(game.id, versionId);
-      const vs = await api.versions(game.id);
-      setVersions(vs);
+      await api.setLatest(game.id, v.id);
+      await reloadVersions();
       onRefresh();
-    } catch (e) { alert('Set as Latest failed: ' + (e as Error).message); }
+      toast(`Set ${v.machineName}'s save as Latest. Every machine that syncs it was told to pull.`, 4000);
+    } catch (e) { toastError('Could not set Latest: ' + errorText(e)); }
   }
 
-  function handleSetNewestWins() {
-    setPolicyDraft('NewestWins');
-    void api.setConflictPolicy(game.id, 'NewestWins').then(onRefresh);
-  }
+  const resolveSignal = intent?.value.kind === 'resolve' ? intent.seq : 0;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <GameHeaderCard
+    <>
+      <GameHead
         summary={summary}
-        machines={machines}
+        standing={standing(summary, problemGameIds(health))}
         versionCount={versions.length}
-        policyDraft={policyDraft}
-        setPolicyDraft={setPolicyDraft}
-        preferredMachineDraft={preferredMachineDraft}
-        setPreferredMachineDraft={setPreferredMachineDraft}
+        machines={withGame.length > 0 ? withGame : machines}
+        allMachines={machines}
+        artOpen={artOpen}
+        onToggleArt={() => setArtOpen(o => !o)}
+        penRef={penRef}
         onRefresh={onRefresh}
       />
 
-      <ConflictCards
-        game={game}
-        headId={headId}
-        conflicts={gameConflicts}
-        machines={machines}
-        versions={versions}
-        onSetNewestWins={handleSetNewestWins}
-        onRefresh={onRefresh}
-      />
-
-      {contributors.length > 1 && (
-        <InitialSyncCard contributors={contributors} headId={headId} onSetLatest={id => void handleSetLatest(id)} />
+      {artOpen && (
+        <ArtPicker game={game} onChanged={onRefresh} onClose={() => { setArtOpen(false); penRef.current?.focus(); }} />
       )}
 
-      <ExcludePatternsCard game={game} onRefresh={onRefresh} />
+      {gameConflicts.map((c, i) => (
+        <ConflictPanel
+          key={c.id}
+          game={game}
+          conflict={c}
+          versions={versions}
+          headId={headId}
+          otherConflicts={gameConflicts.length - 1}
+          openSignal={i === 0 ? resolveSignal : 0}
+          onRefresh={onRefresh}
+          onChanged={reloadVersions}
+        />
+      ))}
 
-      <MachinesCard game={game} machines={machines} latestByMachine={latestByMachine} onRefresh={onRefresh} />
+      <GameStats summary={summary} versionCount={versions.length} machinesWithGame={withGame} onRefresh={onRefresh} />
 
-      <SavePathsCard game={game} machines={machines} intent={intent} onRefresh={onRefresh} />
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] gap-3 items-start">
+        <VersionsCard
+          game={game}
+          headId={headId}
+          versions={versions}
+          conflicts={gameConflicts}
+          loading={loadingVersions}
+          reloadVersions={reloadVersions}
+          onSetLatest={setLatest}
+          onRefresh={onRefresh}
+        />
+        <div className="flex flex-col gap-3 min-w-0">
+          <SaveFoldersCard
+            game={game}
+            machines={machines}
+            paths={paths}
+            candidates={candidates}
+            pathsLoaded={pathsLoaded}
+            latestByMachine={latestByMachine}
+            reloadPaths={reloadPaths}
+            intent={intent}
+            onRefresh={onRefresh}
+          />
+          <RulesCard game={game} machines={machines} onRefresh={onRefresh} />
+          <ExcludePatternsCard game={game} onRefresh={onRefresh} />
+        </div>
+      </div>
 
-      {gameCmds.length > 0 && <RemoteCommandsCard commands={gameCmds} />}
-
-      <VersionsCard
-        game={game}
-        headId={headId}
-        versions={versions}
-        loading={loadingVersions}
-        reloadVersions={reloadVersions}
-        onSetLatest={id => void handleSetLatest(id)}
-        onRefresh={onRefresh}
-      />
-    </div>
+      <RemoteCommandsCard commands={gameCmds} />
+    </>
   );
 }
