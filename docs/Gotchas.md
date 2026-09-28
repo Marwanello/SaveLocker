@@ -145,6 +145,10 @@ Set them per-process and clear them afterwards — leaving either set in a shell
 behave in ways that look like bugs.
 
 ## `tests/testenv.ps1` (throwaway test rig)
+- **`down` ignores `-Only` and stops everything** — console container, Windows tray and WSL daemon alike, although
+  `up -Only <target>` honours it. Found 2026-09-28 wanting only the WSL agent down (to leave a console command
+  unclaimed for Group 8's Cancel): `down -Only linux` took the console with it. Bring back what you need with
+  `up -Only console` / `up -Only windows` / `up -Only linux`, one at a time.
 - **`build` (any `-Only` target) never fetches or checks out anything itself — it builds whatever
   commit the WSL clone already has.** `sync` is a separate command that does the fetch+checkout (see
   *Sync the WSL clone from `git status`* below); running `build -Only deck` right after switching
@@ -416,7 +420,10 @@ documentation that was found. Read before touching the presenter.
   dispatched in the rendering step, which a minimised or hidden window does not run (screenshots time out for the same
   reason). `matchMedia().matches` flips, but neither the app's listener nor a control listener of your own is called, so a
   System-theme page keeps the accent it derived for the OLD scheme (Cobalt's light `#3a5cbe` on a dark page — a convincing
-  "the accent is stale after an OS flip" that is not a bug). Reloading re-derives correctly; to test the handler itself,
+  "the accent is stale after an OS flip" that is not a bug). The same stall freezes every CSS transition mid-way
+  (`getAnimations()` reports them `running` indefinitely — measure with transitions off) and makes `computer` key presses
+  fail with "could not get the tab ready for input" (Group 8, 2026-09-28: a real-Tab focus walk had to be replaced by a
+  class check). Reloading re-derives correctly; to test the handler itself,
   wrap `MediaQueryList.prototype.addEventListener` to capture the callback, flip the scheme, and call it. A visible
   window is expected to deliver the event (the spec queues it in the rendering step); **that was not observed** — no
   visible pane was available.

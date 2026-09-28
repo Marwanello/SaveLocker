@@ -15,7 +15,7 @@ Five identity pitches this direction was chosen from: `identity-options.html`, b
 Brand kit: `brand-kit.html`, beside this file (also mirrored at
 <https://claude.ai/code/artifact/b3e0c8a5-70a0-47bf-b4f2-d0dbf4f0b2d5>).
 
-## Status (updated 2026-09-27, after the gap audit)
+## Status (updated 2026-09-28)
 
 | Phase | Status |
 |---|---|
@@ -28,8 +28,8 @@ Brand kit: `brand-kit.html`, beside this file (also mirrored at
 | 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22/23 (Group 6, PR #49): Checkpoint tokens with the `Safe`/`Accent` split, 62px rows, the button legend, Sync all on Y (its outcome shown in the header from every screen), a live header mark, lucide-traced icons (`SvgPath`), Archivo. Verified live under WSLg against the test rig (real `--nav` presses, a real Sync all round trip); **not yet on a real Deck/gamescope with a physical controller**. Item 4 (Wayland) ⏳ Group 10 — decided 2026-09-28: a chrome-less Chromium `--app=` window from a KDE-menu launcher, header bar drawn in the page |
 | 7 — OS notifications | ✅ Shipped 2026-09-24 (Group 7, PR #50; review fixes 2026-09-27) — buttons open the agent UI at the exact screen; they do not call back. Popup + click verified on a real Deck in Desktop Mode 2026-09-27 |
 | 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1). Steam library art, PNG favicons and the installer icon are still the pre-Checkpoint brand ⏳ Group 10 |
-| 9 — Console page kit and top bar | ⏳ Not started — Group 8. Added 2026-09-27 by the gap audit ([[implementation]] → *The 2026-09-27 audit*), as are 10–14 |
-| 10 — Console Games page | ⏳ Not started — Group 8 |
+| 9 — Console page kit and top bar | ✅ Shipped 2026-09-28 (Group 8a). Added 2026-09-27 by the gap audit ([[implementation]] → *The 2026-09-27 audit*), as are 10–14 |
+| 10 — Console Games page | ✅ Shipped 2026-09-28 (Groups 8b + 8c) |
 | 11 — Backups tab and Configuration | ⏳ Not started — Group 9 (the Backups tab does not exist today) |
 | 12 — Console Audit log, Help, What's new, sign-in | ⏳ Not started — Group 9 |
 | 13 — Agent UI, completed | ⏳ Not started — Group 10 |

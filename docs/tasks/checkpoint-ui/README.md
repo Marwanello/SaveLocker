@@ -35,8 +35,9 @@ all**, and that the Wayland window was never decided. That work is **Phases 9–
 (*The 2026-09-27 audit* lists every gap and, just as important, the differences that are deliberate and must
 not be rebuilt) and **Groups 8–10** in `implementation-grouping.md` — three deliberately coarse groups, each worked as
 ordered parts: **8** console kit, top bar and Games page; **9** Backups, Configuration and the other console
-pages; **10** agent UI, Deck, assets and the Wayland window. Next up: **Group 8** or **Group 10** (independent
-of each other). Part 10d (Wayland) is decided — option 1 under Phase 6 item 4, a chrome-less browser app window
+pages; **10** agent UI, Deck, assets and the Wayland window. **Group 8 shipped 2026-09-28** (live checklist:
+`group-8-verification.md`). Next up: **Group 9** (now unblocked — it builds on Group 8's kit) or **Group 10**
+(independent of both). Part 10d (Wayland) is decided — option 1 under Phase 6 item 4, a chrome-less browser app window
 (2026-09-28). One older finding is still a maintainer decision rather than a task: `--color-faint` fails
 WCAG AA (3.31:1 dark, 3.55:1 light) — see the Group 3 write-up.
 

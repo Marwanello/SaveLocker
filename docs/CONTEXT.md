@@ -1554,7 +1554,21 @@ status rows in `plan.md` and both task files. The Wayland options are written ou
 (a chrome-less browser app window + a `.desktop` launcher; WebKitGTK stays rejected) — **decided 2026-09-28: option 1**
 (see `Decisions.md` → *Linux UI*); the launcher stays out of Steam, Game Mode keeps `savelocker ui`. **Regrouped 2026-09-28 at the maintainer's request** from nine groups into three coarse ones worked as
 ordered parts: 8 console kit + top bar + Games page, 9 Backups + Configuration + the other console pages, 10 agent UI +
-Deck + assets + Wayland. **Next action:** Group 8 or Group 10 (independent of each other).
+Deck + assets + Wayland.
+<br>**Group 8 shipped 2026-09-28 (branch `claude/group-8-ui-redesign-d49b05`, three commits: 8a `e6514ce`, 8b `1566de8`,
+8c `24074a0`) — not yet in a PR or a release.** The console's page kit (`web/src/components/ui/`: `Page`, `PageHead`,
+`DataTable`, `KV`, `PathField`, `Banner`, `EmptyState`, `SearchField`, `FilterChips`, `Meter`, `Dot`, `InlineConfirm`, `Icon`,
+a global `Toaster`), the top bar (pill tabs, an always-present bell with per-item actions, the conflict pill, Sync all's
+full-width rail + **Cancel**), and the Games page re-laid out to the prototype with **no `alert`/`confirm`/`prompt` left on it**.
+One new route, `POST /api/commands/cancel`, and a new terminal `CommandStatus.Cancelled` (appended; agents never see it);
+`openapi.json` + `web/src/api-types.ts` regenerated. `run-console-security-tests` 172 → **189** (API-03, mutation-checked),
+`run-appearance-consistency-tests` 33 → **35**. Verified live through `testenv` with real conflicts made by editing each
+side's save; that pass found and fixed one real bug (a conflict side pushed while the page was open was invisible to it, so
+"Keep both" named the older save "the newer"). Decisions taken with the maintainer, the departures, and what was not verified:
+`tasks/checkpoint-ui/implementation-grouping.md` → Group 8; the step-by-step checklist is `tasks/checkpoint-ui/group-8-verification.md`.
+Found in passing and filed as a separate task: a version's "newest change" reads hours off east of UTC (zip entries are
+stamped in local time, read as UTC — `SaveArchive`).
+**Next action:** open the PR for Group 8 (or review it first), then Group 9 (now unblocked) or Group 10.
 
 ---
 
