@@ -124,9 +124,22 @@ Two rig facts that bite here:
 2. Optional, precise: the contrast walk in [[Gotchas]] → *Web console* — only uppercase eyebrows on `--faint` and
    disabled buttons may measure under 4.5:1.
 
+## 9b. The PR #52 review fixes
+
+1. Open the conflict panel from the **pill**: each tile reads `N files · size · uploaded …` and, on its own line,
+   **newest change …** (a few seconds before the upload for a save written just before it).
+2. Exclude patterns: add `*` (a count appears), press **Discard changes** — the count goes and **Preview what is
+   skipped** is back. Same with `a/../b` (a refusal appears, then goes).
+3. Versions → **Backups**: a side of an open conflict reads **Conflicting** and offers no **Delete**.
+4. Rules → the policy picker: each choice's line under it says what the agent does (Newest wins / Prefer a machine keep
+   the other only until retention prunes it; Prefer a machine leaves another machine's conflict to you).
+5. The Push/Pull picker: choose the second machine — it stays chosen across the next data poll (~15 s).
+6. With WSL down (section 2.3), start **Sync all** so it waits at "1 of 2", then set an admin password (Configuration,
+   or `POST /api/admin/password`): once the console asks to sign in, the chip, the rail and **Cancel** are gone.
+
 ## 10. Suites
 
-- `.\tests\run-console-security-tests.ps1` → **189 passed** (API-03 is the cancel route).
+- `.\tests\run-console-security-tests.ps1` → **205 passed** (API-03 is the cancel route; Phase 5c its lapsed claim).
 - `.\tests\run-appearance-consistency-tests.ps1` → **35 passed** (the last new check: no `alert(`/`confirm(`/`prompt(`
   under `web/src/components/game`).
 - `cd web; npm run build; npm run lint` → clean.

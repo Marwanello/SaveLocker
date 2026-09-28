@@ -1586,6 +1586,15 @@ the distros, the Windows 11 squares, Bazzite's own press-kit mark; an unknown di
 its platform. `run-console-security-tests` **195** (UI-02). Verified live: WSL reported "Ubuntu 26.04 LTS · WSL", a real
 conflict resolved through the new panel. Not seen: a real Deck/Bazzite report, and a Windows agent at this build (the rig's
 tray that day was an elevated one this session could not rebuild — `Gotchas` → Testing).
+<br>**PR #52 reviewed the same day, every finding addressed (branch `group-8-review-fixes`, pushed onto
+`group-8-ui-redesign`).** 14 findings; write-up in `tasks/checkpoint-ui/implementation-grouping.md` → Group 8 →
+*Review fixes*. The two that mattered: **the UTC "newest change" fix had nothing left showing it** — `b3caca9` dropped
+it from the conflict tile, and the "verified live … to the tick" line in the UTC entry above was checked against
+`main`'s old panel, not this branch; it is back on the tile. And **Discard in Exclude patterns left the abandoned draft's
+dry-run count on screen.** Server: Cancel now also withdraws a claim that **lapsed** unanswered (the claim's own
+predicate) and runs in one transaction, so two cancels at once audit once. `run-console-security-tests` 195 → **205**
+(8 of the 10 new checks fail against the PR-head server), `web` build + lint clean, and the UI fixes checked live
+through `testenv` with a real conflict.
 **Next action:** review and merge PR #52 (Group 8 + the OS-logo follow-up), then Group 9 (now unblocked) or Group 10.
 
 ---

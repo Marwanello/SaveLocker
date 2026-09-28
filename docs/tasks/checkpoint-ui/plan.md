@@ -29,7 +29,7 @@ Brand kit: `brand-kit.html`, beside this file (also mirrored at
 | 7 — OS notifications | ✅ Shipped 2026-09-24 (Group 7, PR #50; review fixes 2026-09-27) — buttons open the agent UI at the exact screen; they do not call back. Popup + click verified on a real Deck in Desktop Mode 2026-09-27 |
 | 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1). Steam library art, PNG favicons and the installer icon are still the pre-Checkpoint brand ⏳ Group 10 |
 | 9 — Console page kit and top bar | ✅ Shipped 2026-09-28 (Group 8a). Added 2026-09-27 by the gap audit ([[implementation]] → *The 2026-09-27 audit*), as are 10–14 |
-| 10 — Console Games page | ✅ Shipped 2026-09-28 (Groups 8b + 8c) |
+| 10 — Console Games page | ✅ Shipped 2026-09-28 (Groups 8b + 8c). PR #52 reviewed the same day, every finding addressed ([[implementation-grouping]] → Group 8 → *Review fixes*) |
 | 11 — Backups tab and Configuration | ⏳ Not started — Group 9 (the Backups tab does not exist today) |
 | 12 — Console Audit log, Help, What's new, sign-in | ⏳ Not started — Group 9 |
 | 13 — Agent UI, completed | ⏳ Not started — Group 10 |
