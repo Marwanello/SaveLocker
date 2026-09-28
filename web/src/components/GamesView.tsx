@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GameSummary, Machine, Command, Conflict, AgentHealth, GameIntent, GameRequest } from '../types';
 import { GamesSidebar } from './GamesSidebar';
-import { GameDetail } from './GameDetail';
+import { GameDetail } from './game/GameDetail';
 import { Button } from './ui/Button';
 
 interface Props {
