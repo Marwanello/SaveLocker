@@ -8,7 +8,7 @@ completed 2026-09-02; Group 1 (the `web`-side foundation — tokens, reset, moti
 console shell — sidebar rows, games grid, notifications, sign-in, console Sync all, exclude-pattern
 chips) shipped 2026-09-18, and Group 3 (the agent's tokens and primitives, the status header with Sync
 all and live progress, the trimmed Overview) shipped 2026-09-20, see [[implementation-grouping]]'s
-status table for the rest (Groups 4–7 shipped by 2026-09-24; Groups 8–16 were added by the 2026-09-27 gap audit). Don't treat
+status table for the rest (Groups 4–7 shipped by 2026-09-24; Groups 8–10 were added by the 2026-09-27 gap audit). Don't treat
 `plan.md` as "read once, execute its steps, stop" — it's the canonical reference to re-read at the
 start of every session that touches this work, and it gets amended in place as phases ship.
 
@@ -33,9 +33,10 @@ re-laid-out — the console's game page, Configuration, Audit log, Help and What
 Add games and Conflicts; the Deck's rail, header, stats and rows — that the console has **no Backups tab at
 all**, and that the Wayland window was never decided. That work is **Phases 9–14** in `implementation.md`
 (*The 2026-09-27 audit* lists every gap and, just as important, the differences that are deliberate and must
-not be rebuilt) and **Groups 8–16** in `implementation-grouping.md`. Next up: **Group 8** (the console page
-kit and top bar — it gates 9–12) or **Group 13** (the agent UI — independent); **Group 16** (assets) fits any
-short session. Group 15 (Wayland) waits on the maintainer confirming one of the options written out under
+not be rebuilt) and **Groups 8–10** in `implementation-grouping.md` — three deliberately coarse groups, each worked as
+ordered parts: **8** console kit, top bar and Games page; **9** Backups, Configuration and the other console
+pages; **10** agent UI, Deck, assets and the Wayland window. Next up: **Group 8** or **Group 10** (independent
+of each other). Part 10d (Wayland) waits on the maintainer confirming one of the options written out under
 Phase 6 item 4. One older finding is still a maintainer decision rather than a task: `--color-faint` fails
 WCAG AA (3.31:1 dark, 3.55:1 light) — see the Group 3 write-up.
 

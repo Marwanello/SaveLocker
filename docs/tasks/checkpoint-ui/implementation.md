@@ -13,19 +13,19 @@ rather than by phase number, because several phases edit the same components.
 |---|---|
 | 1 — Design system foundation, web half | ✅ Shipped 2026-09-17 (Group 1); theme default corrected 2026-09-20 (dark base, light opt-in — see `implementation-grouping.md`) |
 | 1 — Design system foundation, agent half | ✅ Shipped 2026-09-20 (Group 3) — `tokens.css`, `ui.css`, Archivo, `components/ui/` |
-| 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in moved to revocable sessions 2026-09-20. The release-history table (split off) ➡️ Group 12 |
+| 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in moved to revocable sessions 2026-09-20. The release-history table (split off) ➡️ Group 9 |
 | 3 — Sync all and progress | ✅ Items 1, 2, 4 shipped 2026-09-18 (Group 2 — console side); item 3 (agent Sync all + progress) shipped 2026-09-20 (Group 3); item 5 (per-game Sync this game) ✅ shipped 2026-09-21 (Group 4) with the game page and a new per-game agent route |
 | 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5); item 4 — the Deck's accent ➡️ shipped 2026-09-22 (Group 6). The theme default now follows the OS (every hex colour left the views first). See `implementation-grouping.md` → Groups 5/6 |
 | 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
-| 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22 (Group 6) — verified live (real screenshots, pixel-sampled colours, `--nav`-scripted L1/R1 with `--nav-debug`) since `savelocker ui` runs on this Windows box without WSLg; a real focus-timing bug was found and fixed this way — see `implementation-grouping.md` → Group 6. No real Deck/gamescope pass yet. Item 4 (Wayland) ⏳ Group 15 — options and a recommendation now written out below; the maintainer confirms one before code |
+| 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22 (Group 6) — verified live (real screenshots, pixel-sampled colours, `--nav`-scripted L1/R1 with `--nav-debug`) since `savelocker ui` runs on this Windows box without WSLg; a real focus-timing bug was found and fixed this way — see `implementation-grouping.md` → Group 6. No real Deck/gamescope pass yet. Item 4 (Wayland) ⏳ Group 10 (part 10d) — options and a recommendation now written out below; the maintainer confirms one before code |
 | 7 — OS notifications | ✅ Shipped 2026-09-24 (Group 7) — shared rules, a real Windows toast and the generalised Linux notifier. Buttons are links to the agent UI, not callbacks (measured: Windows' toast host refuses freshly registered URL schemes); "Retry now"/"Install now" did not survive that. See Phase 7 below |
-| 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1). Remainder (Steam library art, PNG favicons, the installer icon — all still the pre-Checkpoint brand) ⏳ Group 16 |
+| 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1). Remainder (Steam library art, PNG favicons, the installer icon — all still the pre-Checkpoint brand) ⏳ Group 10 (part 10c) |
 | 9 — Console page kit and top bar | ⏳ Not started — Group 8 (from the 2026-09-27 audit) |
-| 10 — Console Games page | ⏳ Not started — Group 9 |
-| 11 — Backups tab and Configuration | ⏳ Not started — Groups 10 (Backups) and 11 (Configuration). The Backups tab does not exist at all |
-| 12 — Console Audit log, Help, What's new, sign-in | ⏳ Not started — Group 12 |
-| 13 — Agent UI, completed | ⏳ Not started — Group 13 |
-| 14 — Deck Game Mode, completed | ⏳ Not started — Group 14 |
+| 10 — Console Games page | ⏳ Not started — Group 8 |
+| 11 — Backups tab and Configuration | ⏳ Not started — Group 9. The Backups tab does not exist at all |
+| 12 — Console Audit log, Help, What's new, sign-in | ⏳ Not started — Group 9 |
+| 13 — Agent UI, completed | ⏳ Not started — Group 10 |
+| 14 — Deck Game Mode, completed | ⏳ Not started — Group 10 |
 
 ## The 2026-09-27 audit — what the prototype shows that did not ship
 
@@ -48,7 +48,7 @@ almost no inline styles, so a view that still carries dozens of `style={{` was r
 | Wayland desktop window | — | Not started — the decision it waits on was never taken |
 
 The gaps are **Phases 9–14** below, plus three older items still open: Phase 2's release-history table,
-Phase 6 item 4 and Phase 8's remainder. All of it is grouped in [[implementation-grouping]] → Groups 8–16.
+Phase 6 item 4 and Phase 8's remainder. All of it is grouped in [[implementation-grouping]] → Groups 8–10.
 
 ### Deliberate departures — not gaps, do not rebuild
 
@@ -193,7 +193,7 @@ surface converted. `agent-ui` untouched this phase — its half of item 6 is Gro
 | Lock button + sign-in screen | **New** | Remove the password field from the header. `SignIn.tsx` renders whenever no credential is held or the server returns 401. Two options: (a) UI-only — keep `X-Admin-Password` in `localStorage`, the screen is just where you type it; (b) proper session — new `POST /admin/session` returning a signed cookie with a 30-day option, and `Tokens.cs` gains verification. (a) ships in a day and is honest; (b) is the right end state. Do (a) now, file (b) as a follow-up | ✅ Shipped as option (a). Verified live end to end: Lock → SignIn full-screen → Connect with a blank password (this test server has none set) → back to the authenticated app. Option (b) remains a follow-up, not started |
 | Exclude patterns as chips | Extend | Same `POST /games/{id}/excludes`; chips + add field + "preview what is skipped" (needs a dry-run count — either compute client-side from the last version's file list via `/versions/{id}/stats`, or add `GET /games/{id}/excludes/preview`) | ✅ Shipped. `/versions/{id}/stats` turned out to carry no file list at all (`VersionStatsDto(int FileCount, DateTime? NewestFileWriteUtc)` — count only), so this needed the second option: new `POST /games/{id}/excludes/preview`, backed by `SyncService.PreviewExcludesAsync` reading the head archive's own zip directory and running it through the same `Matcher`-based filter the agent uses (extracted from `SaveArchive.EnumerateRelativeFiles` into a new public `SaveArchive.FilterExcluded`, so the preview can never drift from what the agent actually does). One-directional by construction — it can only ever find newly-caught files among what's currently tracked, never ones an already-saved pattern already hides — and the UI says so ("would **additionally** exclude"). Verified live: added `**` as a draft pattern against a real one-file seeded save and got back "Would additionally exclude 1 file", matching exactly |
 | Server default excludes editor | Extend | `Sync:DefaultExcludeGlobs` already exists in settings; surface it in Configuration and show it as inherited chips on each game | 🚧 Shipped as **read-only display**, not a true editor — `Sync:DefaultExcludeGlobs` turned out to be `IConfiguration`-only (appsettings.json/env var), never wired into `SettingsService`'s DB-backed override the way the SteamGridDB key is, so there was nothing to write to yet. Both a new Configuration card and each game's own chip list now show it; making it console-writable is a real follow-up, not built here |
-| Release history table | UI only | `releases/index.ts` already has every version; render the full list under the three newest | ⏳ ➡️ **Group 12** (Phase 12 item 3, 2026-09-27). **Deliberately split off**, per `implementation-grouping.md`'s own pre-authorization to move this item out if size grows — `WhatsNewView.tsx`'s existing sidebar-click layout already technically exposes every release; turning it into "3 newest in full, a table of the rest below" is a distinct navigation redesign that shares no files with the rest of this group. Not started |
+| Release history table | UI only | `releases/index.ts` already has every version; render the full list under the three newest | ⏳ ➡️ **Group 9** (Phase 12 item 3, 2026-09-27). **Deliberately split off**, per `implementation-grouping.md`'s own pre-authorization to move this item out if size grows — `WhatsNewView.tsx`'s existing sidebar-click layout already technically exposes every release; turning it into "3 newest in full, a table of the rest below" is a distinct navigation redesign that shares no files with the rest of this group. Not started |
 
 ---
 
@@ -298,7 +298,7 @@ The largest genuinely-new piece.
 4. Wayland desktop session: the agent window currently has no native chrome of its own. Either host
    the existing web UI in a small GTK/WebKit window with a header bar, or accept the browser. Decide
    before building — this is the one item in the plan with no obvious right answer.
-   <br>**Options, written out 2026-09-27 (Group 15 builds whichever is confirmed).** Today Desktop Mode
+   <br>**Options, written out 2026-09-27 (Group 10, part 10d, builds whichever is confirmed).** Today Desktop Mode
    has no SaveLocker entry at all: the UI is reached by typing `localhost:5178` into a browser, or by
    clicking a notification (`DesktopNotifier.Open` → `xdg-open`).
    1. **A chrome-less browser app window — recommended.** A new `savelocker open` verb, and a `.desktop`
@@ -373,12 +373,12 @@ Ship the three marks and the Steam art from the prototype as real files:
 | Favicon | 32 / 180 PNG | `web/public/` | ⏳ Not done — the existing pre-Checkpoint PNGs are untouched; this environment has no SVG rasterizer (`magick`/`inkscape`/`rsvg-convert` all absent, confirmed) |
 | Tray icon | 16/24/32/48 `.ico` | `src/Agent/AppResources.cs` | ✅ Shipped 2026-09-21 (Group 5) **differently**: drawn at runtime from the chosen mark and accent (`src/Agent/MarkIcon.cs`, GDI+, transparent punch-outs, light/dark taskbar aware, at the shell's own icon size) — so it needs no `.ico` and follows the Appearance setting. The packaged `SaveLocker.ico` remains the installer/exe icon and the fallback. Not reacting to a Windows taskbar-theme change while running ([[Backlog]]) |
 | Deck tile | 256 | `src/Agent.Linux/Ui/Art.cs` | ❌ Dropped 2026-09-23 — the Deck header draws the live mark as vectors (`Ui/AppMark.cs`), so there is no raster to ship; `Art.cs` and `logo-96.png` are deleted |
-| Library capsule | 600×900 | `packaging/linux/artwork/dist/capsule.png` | ⏳ Group 16 |
-| Wide capsule | 920×430 | `packaging/linux/artwork/dist/capsule-wide.png` | ⏳ Group 16 |
+| Library capsule | 600×900 | `packaging/linux/artwork/dist/capsule.png` | ⏳ Group 10 |
+| Wide capsule | 920×430 | `packaging/linux/artwork/dist/capsule-wide.png` | ⏳ Group 10 |
 | Header capsule | 460×215 | — | ❌ Dropped 2026-09-27 — Steam's *Set Custom Artwork* for a non-Steam shortcut takes no header capsule |
-| Library hero | 1920×620 | `packaging/linux/artwork/dist/hero.png` | ⏳ Group 16 |
-| Library logo | transparent, ≤1280×720 | `packaging/linux/artwork/dist/logo.png` | ⏳ Group 16 — not in the prototype, but it is the fourth file `install.sh` tells the user to set |
-| Installer / exe icon | 16–256 `.ico` | `src/Agent/Assets/SaveLocker.ico`, `web/public/favicon.ico` | ⏳ Group 16 — still the pre-Checkpoint brand (the tray is drawn at runtime; the installer, the exe in Explorer and the `.ico` favicon fallback are not) |
+| Library hero | 1920×620 | `packaging/linux/artwork/dist/hero.png` | ⏳ Group 10 |
+| Library logo | transparent, ≤1280×720 | `packaging/linux/artwork/dist/logo.png` | ⏳ Group 10 — not in the prototype, but it is the fourth file `install.sh` tells the user to set |
+| Installer / exe icon | 16–256 `.ico` | `src/Agent/Assets/SaveLocker.ico`, `web/public/favicon.ico` | ⏳ Group 10 — still the pre-Checkpoint brand (the tray is drawn at runtime; the installer, the exe in Explorer and the `.ico` favicon fallback are not) |
 
 **Corrected 2026-09-27:** the Steam art does not belong in a new `store/` folder. `install.sh` already ships
 four PNGs from `packaging/linux/artwork/dist/` and tells the user to set them on the Game Mode shortcut
@@ -395,7 +395,7 @@ CSS/HTML mockup boxes inside `brand-kit.html`, which is a demo page, not an asse
 of the above to PNG/ICO needs a tool this environment doesn't have — flagged here rather than
 silently skipped, so whoever picks this up next knows to bring one (a local ImageMagick/Inkscape
 install, or a `sharp`/`resvg` devDependency) rather than re-discovering the gap.
-<br>**Decided 2026-09-27 for Group 16:** the `resvg` route — `@resvg/resvg-js` as a `web` devDependency behind
+<br>**Decided 2026-09-27 for Group 10 (part 10c):** the `resvg` route — `@resvg/resvg-js` as a `web` devDependency behind
 an `npm run export:art` script that renders the SVG sources (the marks, the four Steam lockups, the favicon
 tiles) to every PNG and `.ico` above. A script in the repo makes the export reproducible on any machine and
 in CI; an ImageMagick install on one laptop does not.
@@ -410,7 +410,7 @@ Every console page after this is built from these. Without them each re-layout r
 |---|---|---|
 | 9.1 Page primitives | UI only | New in `web/src/components/ui/`: `PageHead` (27 px title, mono sub-line, actions slot), `DataTable` (the prototype's `table.t`: mono uppercase heads, row rules, row hover, `k`/`m`/`n`/`wrap` cell kinds), `KV` (the `dl.kv` grid), `PathField` (mono inset path), `Banner` (accent / watch / safe: title, one line, action), `EmptyState`, `SearchField` (pill with icon), `FilterChips` (`fchip`, with counts), `Meter`, and `InlineConfirm` (10.6). CSS from `prototype.html`. `agent-ui` already has most of these as `sl-` classes (`sl-kv`, `sl-banner`, `sl-empty`, `sl-search`, `sl-meter`) — use the same names where they overlap |
 | 9.2 Page canvas and motion | UI only | One `Page` wrapper every view renders into: 22/24 px padding, 16 px gap, and the `rise` entrance staggered over the first six children in 26 ms steps. Today only `SignIn` and two dialogs animate on entry |
-| 9.3 Tabs | UI only | `NavBar`'s tabs become the prototype's pill tabs (transparent at rest, `--raise` on hover, `accent-soft` + `accent-line` when current), not `Button variant="selected"`. The **Backups** tab (between Audit log and Help) is added by Group 10 together with its page — a tab that opens nothing would be a dead end |
+| 9.3 Tabs | UI only | `NavBar`'s tabs become the prototype's pill tabs (transparent at rest, `--raise` on hover, `accent-soft` + `accent-line` when current), not `Button variant="selected"`. The **Backups** tab (between Audit log and Help) is added by Group 9 together with its page — a tab that opens nothing would be a dead end |
 | 9.4 Bell | Extend | `NotificationsMenu` as drawn: a bell glyph (lucide `bell`) with a count badge — accent when any Error, watch otherwise, none for Info only — and **always present**: the quiet state is the menu's "Nothing to report / A healthy fleet is quiet…" empty state, where Group 2 hid the control. Header "Notifications" + an "N open" chip + Dismiss all; a severity dot instead of the severity chip; title, body, and a mono `code · machine · time` line; footer line + **Open audit log**. Per-item actions: `sync.conflict` → Resolve (today); `savedir.missing` → **Set folder** (opens the game *and* focuses that machine's folder field — Group 2 only opened the game); `push.failed` → **Retry** (queues a `Push` for that machine and game through the existing `POST /commands`); `update.staged` → no button, since the console cannot make an agent restart |
 | 9.5 Header tools | UI only | The lock as an SVG (lucide `lock`), not 🔒. The conflict pill for **any** open conflict, with its age ("1 conflict · 4h", `accent-soft`) — today only escalated conflicts show, as "Overdue conflicts: N". Drop the ↻ button; every view already polls |
 | 9.6 Progress rail and Cancel | Extend | The prototype's 3 px rail across the full width under the top bar (accent fill, width transition, the sweep) replaces the 80 px green mini-bar in the tools, which show a live-dot chip "Syncing 2 of 3 machines" and **Cancel** instead of the button. Cancel needs a route: `POST /commands/cancel { ids }` withdraws commands still waiting to be leased; one already dispatched runs to completion, and the toast says how many were withdrawn and how many were already running. New endpoint → regenerate `openapi.json` and `web/src/api-types.ts` |
@@ -427,7 +427,7 @@ Every console page after this is built from these. Without them each re-layout r
 | 10.4 Conflict panel | UI only | A `Banner` ("Both machines wrote since vN", its age, **Resolve**) that expands in place into the resolve panel: the two sides as the conflict card already draws them, Keep this save / Keep both, and the "set a policy" hint. Replaces today's per-conflict cards and keeps their semantics — one per open conflict, never a pre-selected side |
 | 10.5 Two-column body | UI only | `grid31`. Left: **Versions** — a `DataTable` (version, when, machine, size, a Latest / Conflicting / Protected / Kept chip, Set as Latest), an "N kept" chip and **Prune N versions** naming the real count (today "Prune now"); the Backups sub-list stays behind a `Seg`. Right, stacked: **Save folders** (per machine: path, last upload, Push / Pull, Use as template, edit — merging today's separate *Machines* table and *Save paths* card); **Rules** (conflict policy + preferred machine, keep N, both editable in place); **Exclude patterns** (the shipped chip editor restyled: own chips, dashed inherited chips, add field, Preview, **Glob syntax** → Help `glob-patterns`). **Remote commands** full width below: a `DataTable` with state chips, and an `EmptyState` |
 | 10.6 No modals | UI only | Each of the 26 `alert()` / `confirm()` calls in `GameDetail.tsx` (18 / 8) (delete a version, Set as Latest, resolve, prune, force-release, delete the game, template, unprotect…) becomes `InlineConfirm`: the control expands into its consequence sentence and one button that names the effect — "Prune 5 versions", "Keep the Deck save". Failures go to a `Toast`, not an `alert` |
-| 10.7 Split the file | — | `GameDetail.tsx` (58 KB) splits into one component per card under `components/game/`; the page file only lays them out. That split is also what keeps Group 9 reviewable |
+| 10.7 Split the file | — | `GameDetail.tsx` (58 KB) splits into one component per card under `components/game/`; the page file only lays them out. That split is also what keeps Group 8 reviewable |
 
 The add-game dialog stays a dialog: plan.md's no-modals list is conflicts, pickers, enrollment and
 resolution, and adding a game is a form about something not yet on screen.
