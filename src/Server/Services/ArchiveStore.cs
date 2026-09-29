@@ -69,6 +69,9 @@ public sealed class ArchiveStore
         Directory.CreateDirectory(_root);
     }
 
+    /// <summary>Where archives live — shown on the Configuration page, and the volume its meter reads.</summary>
+    public string Root => _root;
+
     private string IncomingDir => Path.Combine(_root, IncomingDirName);
 
     // ----- Chunked upload sessions -----

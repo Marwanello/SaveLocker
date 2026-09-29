@@ -60,6 +60,7 @@ public sealed class Daemon : IAsyncDisposable
         _config = config;
         _offlineQueue = OfflineQueue.For(config);
         _health = HealthReporter.For(config);
+        HealthReporter.StagedVersion = Updater.PendingVersion;
         _detection = new Detection(config);
         _scanner = new LinuxGameScanner(_detection);
         _activityStore = SyncActivityStore.For(config);

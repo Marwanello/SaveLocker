@@ -406,7 +406,8 @@ documentation that was found. Read before touching the presenter.
   `button:hover { opacity: .85 }` in `index.css` silently won over `disabled:opacity-50` (a disabled
   button jumped from 50% to 85% on hover, looking enabled), over `hover:opacity-100`, and a plain
   `input:focus { outline: none }` reduced the `focus-visible:outline-*` ring to nothing — three
-  findings, one cause. Global element rules belong inside `@layer base`. The same rule is why the old
+  findings, one cause. Global element rules belong inside `@layer base`. (A fourth, 2026-09-29: the `a` reset
+  swallowed every link's `underline`/`text-*` classes — layered now.) The same rule is why the old
   `* { padding: 0 }` reset made every Tailwind padding/margin class a no-op until Group 1 layered it.
   **Related: a CSS animation with `animation-fill-mode: both` holds its FINAL keyframe forever and
   beats any normal declaration on the same element** — including an inline `style`. `animate-pop`

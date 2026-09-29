@@ -11,12 +11,13 @@ import { Icon } from './ui/Icon';
 import { toast, toastError } from '../toast';
 import { NotificationsMenu } from './NotificationsMenu';
 
-export type View = 'games' | 'config' | 'audit' | 'help' | 'whats-new';
+export type View = 'games' | 'config' | 'audit' | 'backups' | 'help' | 'whats-new';
 
 const NAV_ITEMS: { key: View; label: string }[] = [
   { key: 'games', label: 'Games' },
   { key: 'config', label: 'Configuration' },
   { key: 'audit', label: 'Audit log' },
+  { key: 'backups', label: 'Backups' },
   { key: 'help', label: 'Help' },
   { key: 'whats-new', label: 'What’s new' },
 ];
@@ -34,6 +35,9 @@ interface Props {
   /** Forgets the session and returns to SignIn — plan.md's "lock button". Absent when the server has
    *  no admin password: there is nothing to lock, and a Lock button that does nothing is a lie. */
   onLock?: () => void;
+  /** Signed out (or not yet known): only the brand and version show — no tabs, Sync all, bell or rail. The
+   *  lock screen must not offer controls that act on the fleet, nor show its problems. */
+  locked?: boolean;
   machines: Machine[];
   /** What this console is running. Undefined until /api/admin/status answers. */
   build?: ServerBuildInfo;
@@ -72,7 +76,7 @@ function outcomeText(r: SyncAllOutcome): { text: string; ms: number } {
 }
 
 export function NavBar({
-  view, onViewChange, onRefresh, onLock, machines, build, unreadNotes = false,
+  view, onViewChange, onRefresh, onLock, locked = false, machines, build, unreadNotes = false,
   problems = [], conflicts = [], onDismissProblems, onOpenGame,
 }: Props) {
   const [starting, setStarting] = useState(false);
@@ -154,6 +158,13 @@ export function NavBar({
           </button>
         </div>
 
+        {locked
+          ? (view === 'help' || view === 'whats-new') && (
+              <div className="ml-auto">
+                <Button onClick={() => onViewChange('games')}>Back to sign in</Button>
+              </div>
+            )
+          : <>
         {/* plan.md Phase 9.3: pill tabs — transparent at rest, raised on hover, and the current one in
             the soft accent with its accent line. */}
         <nav aria-label="Console" className="flex flex-wrap gap-[3px]">
@@ -217,9 +228,10 @@ export function NavBar({
             </Button>
           )}
         </div>
+          </>}
       </header>
 
-      <SyncAllRail />
+      {!locked && <SyncAllRail />}
     </div>
   );
 }

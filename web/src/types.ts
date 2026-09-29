@@ -38,6 +38,12 @@ export type AgentInstallerStatus = Schemas['AgentInstallerStatus'];
 export type InstallerHashVerification = Schemas['InstallerHashVerification'];
 export type AutoFetchSchedule = NonNullable<Schemas['AutoFetchSchedule']>;
 export type ArtOptionsPage = Schemas['ArtOptionsPageDto'];
+export type BackupInfo = NonNullable<Schemas['BackupInfo']>;
+export type BackupStatus = Schemas['BackupStatusDto'];
+export type BackupResult = Schemas['BackupResult'];
+export type BackupRestoreResult = Schemas['BackupRestoreResult'];
+export type SetBackupSettingsRequest = Schemas['SetBackupSettingsRequest'];
+export type BackupDownloadTicket = Schemas['BackupDownloadTicket'];
 export type ArtOption = NonNullable<Schemas['ArtOptionDto']>;
 
 /**

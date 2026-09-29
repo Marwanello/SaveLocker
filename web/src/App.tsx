@@ -9,6 +9,7 @@ import type { View } from './components/NavBar';
 import { GamesView } from './components/GamesView';
 import { ConfigView } from './components/ConfigView';
 import { AuditView } from './components/AuditView';
+import { BackupsView } from './components/BackupsView';
 import { HelpView } from './components/HelpView';
 import { WhatsNewView } from './components/WhatsNewView';
 import { SignIn } from './components/SignIn';
@@ -37,6 +38,7 @@ interface AppData {
 function viewFromHash(): View {
   if (location.hash === '#config') return 'config';
   if (location.hash === '#audit') return 'audit';
+  if (location.hash === '#backups') return 'backups';
   if (location.hash.startsWith('#help')) return 'help';
   if (location.hash.startsWith('#whats-new')) return 'whats-new';
   return 'games';
@@ -179,10 +181,10 @@ export default function App() {
     return () => clearInterval(id);
   }, [canLoad, load]);
 
-  async function handleSignIn(password: string) {
+  async function handleSignIn(password: string, remember: boolean) {
     setSignInBusy(true);
     setSignInNotice(null);
-    const result = await signIn(password);
+    const result = await signIn(password, remember);
     setSignInBusy(false);
     if (!result.ok) {
       setSignInNotice({ text: result.message, tone: 'error' });
@@ -219,6 +221,7 @@ export default function App() {
   useEffect(() => {
     if (view === 'config') location.hash = 'config';
     else if (view === 'audit') location.hash = 'audit';
+    else if (view === 'backups') location.hash = 'backups';
     else if (view === 'help') { if (!location.hash.startsWith('#help')) location.hash = 'help'; }
     else if (view === 'whats-new') { if (!location.hash.startsWith('#whats-new')) location.hash = 'whats-new'; }
     else location.hash = '';
@@ -269,6 +272,7 @@ export default function App() {
         onViewChange={v => { setView(v); if (!data && canLoad && v !== 'help' && v !== 'whats-new') void load(); }}
         onRefresh={() => void load()}
         onLock={passwordRequired === true && signedIn ? () => void handleLock() : undefined}
+        locked={!canLoad}
         machines={data?.machines ?? []}
         build={build}
         unreadNotes={unreadNotes}
@@ -283,7 +287,7 @@ export default function App() {
       )}
 
       {needsSignIn && !isPublicView && (
-        <SignIn notice={signInNotice} busy={signInBusy} onSubmit={p => void handleSignIn(p)} />
+        <SignIn notice={signInNotice} busy={signInBusy} build={build} onSubmit={(p, r) => void handleSignIn(p, r)} />
       )}
 
       {((passwordRequired === null && !error) || (canLoad && loading && !data)) && !isPublicView && (
@@ -298,7 +302,7 @@ export default function App() {
 
       {view === 'whats-new' && (
         <div className="flex-1 flex flex-col min-h-0">
-          <WhatsNewView build={build} />
+          <WhatsNewView build={build} health={data && !needsSignIn ? data.health : undefined} />
         </div>
       )}
 
@@ -318,6 +322,8 @@ export default function App() {
               />
             : view === 'audit'
             ? <AuditView />
+            : view === 'backups'
+            ? <BackupsView onRestored={() => void load()} />
             : <ConfigView
                 games={data.games}
                 machines={data.machines}

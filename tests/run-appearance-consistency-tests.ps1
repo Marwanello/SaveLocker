@@ -1,4 +1,4 @@
-# Appearance consistency (checkpoint-ui Phase 4 / Group 5). Reads SOURCE only - no server, no agent, no build,
+﻿# Appearance consistency (checkpoint-ui Phase 4 / Group 5). Reads SOURCE only - no server, no agent, no build,
 # so it runs in a second and works under both Windows PowerShell 5.1 and pwsh.
 #
 # The look (theme / accent / mark) is defined in several places that cannot import from one another:
@@ -182,14 +182,14 @@ if ($leftovers.Count -gt 0) { $leftovers | Select-Object -First 10 | ForEach-Obj
 Check "views: no ternary whose two branches are the same string - a flattened state ($($flattened.Count) found)" ($flattened.Count -eq 0)
 if ($flattened.Count -gt 0) { $flattened | Select-Object -First 10 | ForEach-Object { Write-Host "      $_" } }
 
-# ---- no browser dialogs on the console's game page (checkpoint-ui Group 8c) ----------------------------------
-# plan.md "No modals": every destructive action on the game page expands in place (ui/InlineConfirm) and a failure
-# is a toast. A browser alert()/confirm()/prompt() freezes the page over the very thing it is asking about. Group 9
-# widens this to all of web/src once Configuration's own calls are gone.
-$gameDir = Join-Path $root "web/src/components/game"
-$gameFiles = @(Get-ChildItem $gameDir -Recurse -Include *.tsx, *.ts)
+# ---- no browser dialogs anywhere in the console (checkpoint-ui Group 8c, widened by Group 9b) ---------------------
+# plan.md "No modals": every destructive action expands in place (ui/InlineConfirm) and a failure is a toast. A
+# browser alert()/confirm()/prompt() freezes the page over the very thing it is asking about. 8c held the game page
+# to it; 9b took the last of them out of Configuration and Agent updates, so the whole console is held to it now.
+$webSrc = Join-Path $root "web/src"
+$webFiles = @(Get-ChildItem $webSrc -Recurse -Include *.tsx, *.ts | Where-Object { $_.Name -ne "api-types.ts" })
 $dialogs = @()
-foreach ($f in $gameFiles) {
+foreach ($f in $webFiles) {
     $n = 0
     foreach ($line in [System.IO.File]::ReadAllLines($f.FullName)) {
         $n++
@@ -197,8 +197,8 @@ foreach ($f in $gameFiles) {
         if ($line -cmatch '(?<![\w.$])(window\.)?(alert|confirm|prompt)\s*\(') { $dialogs += $f.FullName.Substring($root.Length + 1) + ":" + $n }
     }
 }
-Check "game page: scanned web/src/components/game ($($gameFiles.Count) files - an empty scan would pass vacuously)" ($gameFiles.Count -ge 8)
-Check "game page: no alert()/confirm()/prompt() under web/src/components/game ($($dialogs.Count) found)" ($dialogs.Count -eq 0)
+Check "console: scanned web/src ($($webFiles.Count) files - an empty scan would pass vacuously)" ($webFiles.Count -ge 40)
+Check "console: no alert()/confirm()/prompt() anywhere under web/src ($($dialogs.Count) found)" ($dialogs.Count -eq 0)
 if ($dialogs.Count -gt 0) { $dialogs | Select-Object -First 10 | ForEach-Object { Write-Host "      $_" } }
 
 # ---- notifications (checkpoint-ui Phase 7 / Group 7): two more hand-kept pairs ---------------------------
