@@ -50,6 +50,8 @@ function Toggle({ label, hint, checked, onChange, disabled }: {
   );
 }
 
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
 const left = (t: string) => {
   const m = Math.max(0, Math.round((toMs(t) - Date.now()) / 60000));
   return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
@@ -226,14 +228,18 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
   }, []);
   useEffect(() => { void loadBackup(); }, [loadBackup]);
 
-  async function setBackupSchedule(patch: Partial<{ enabled: boolean; retentionCount: number; hourOfDay: number }>) {
+  async function setBackupSchedule(patch: Partial<{ enabled: boolean; retentionCount: number; hourOfDay: number; frequency: string; dayOfWeek: number }>) {
     if (!backup) return;
-    const next = { enabled: backup.enabled, retentionCount: backup.retentionCount, hourOfDay: backup.hourOfDay, ...patch };
+    const next = {
+      enabled: backup.enabled, retentionCount: backup.retentionCount, hourOfDay: backup.hourOfDay,
+      frequency: backup.frequency ?? 'weekly', dayOfWeek: backup.dayOfWeek ?? 0, ...patch,
+    };
+    const at = `${String(next.hourOfDay).padStart(2, '0')}:00 UTC`;
     try {
       await api.setBackupSettings(next);
       toast(next.enabled
-        ? `Nightly backups on: ${String(next.hourOfDay).padStart(2, '0')}:00, keeping ${next.retentionCount}.`
-        : 'Nightly backups are off. Back up now still works.');
+        ? `Backups on: ${next.frequency === 'daily' ? `daily at ${at}` : `every ${WEEKDAYS[next.dayOfWeek]} at ${at}`}, keeping ${next.retentionCount}.`
+        : 'Scheduled backups are off. Back up now still works.');
       await loadBackup();
     } catch (e) { toastError('Could not change the backup schedule: ' + errorText(e)); }
   }
@@ -498,18 +504,27 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
         <Card title="Defaults & maintenance">
           <Toggle label="Agent auto-update" checked={autoUpdateOn} onChange={v => void setAutoUpdate(v)}
             hint={autoUpdateOn ? 'Checks GitHub for a newer installer and hosts it for agents. Schedule: Agent updates, below.' : 'Off — upload installers by hand under Agent updates, below.'} />
-          <Toggle label="Nightly database backup" checked={!!backup?.enabled} disabled={!backup}
+          <Toggle label="Scheduled backup" checked={!!backup?.enabled} disabled={!backup}
             onChange={v => void setBackupSchedule({ enabled: v })}
             hint={backup
-              ? <>VACUUM INTO a snapshot at{' '}
-                  <select aria-label="Backup hour" value={backup.hourOfDay} onChange={e => void setBackupSchedule({ hourOfDay: Number(e.target.value) })}
-                    className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-                    {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}
-                  </select>, keep{' '}
-                  <select aria-label="Snapshots to keep" value={backup.retentionCount} onChange={e => void setBackupSchedule({ retentionCount: Number(e.target.value) })}
-                    className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-                    {[...new Set([3, 7, 14, 30, 60, backup.retentionCount])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>. <a href="#backups" className="underline underline-offset-2 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Backups</a></>
+              ? <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-1">
+                  The database and every game's latest save, zipped,
+                  <select aria-label="Backup frequency" value={backup.frequency ?? 'weekly'} onChange={e => void setBackupSchedule({ frequency: e.target.value })} className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                    <option value="daily">daily</option>
+                    <option value="weekly">weekly</option>
+                  </select>
+                  {(backup.frequency ?? 'weekly') === 'weekly' && <>on
+                    <select aria-label="Backup day" value={backup.dayOfWeek ?? 0} onChange={e => void setBackupSchedule({ dayOfWeek: Number(e.target.value) })} className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                      {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+                    </select></>}
+                  at
+                  <select aria-label="Backup hour (UTC)" value={backup.hourOfDay} onChange={e => void setBackupSchedule({ hourOfDay: Number(e.target.value) })} className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                    {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00 UTC</option>)}
+                  </select>, keep
+                  <select aria-label="Backups to keep" value={backup.retentionCount} onChange={e => void setBackupSchedule({ retentionCount: Number(e.target.value) })} className="bg-panel border border-line rounded-md px-1 py-0 text-xs text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                    {[...new Set([2, 4, 8, 12, 26, 52, backup.retentionCount])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>. <a href="#backups" className="underline underline-offset-2 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Backups</a>
+                </span>
               : 'Reading the backup schedule…'} />
 
           <KV className="mt-3.5" items={[

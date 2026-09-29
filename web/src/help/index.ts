@@ -38,7 +38,7 @@ export const articles: Article[] = [
   { slug: 'decky-plugin',    title: 'The Decky plugin (Steam Deck)',           category: 'Configuration',  content: deckyPlugin },
   { slug: 'save-retention',  title: 'Save retention',                         category: 'Configuration',  content: saveRetention },
   { slug: 'agent-update',    title: 'Agent auto-update & fetching from GitHub','category': 'Maintenance', content: agentUpdate },
-  { slug: 'database-backups', title: 'Database backups (snapshots)',            category: 'Maintenance',    content: databaseBackups },
+  { slug: 'database-backups', title: 'Backups and restoring',                   category: 'Maintenance',    content: databaseBackups },
   { slug: 'cli-reference',   title: 'Agent CLI reference',                    category: 'Reference',      content: cliReference },
   { slug: 'troubleshooting', title: 'Troubleshooting',                        category: 'Troubleshooting',content: troubleshooting },
   { slug: 'restore-safety',  title: 'When a save is refused on restore',      category: 'Troubleshooting',content: restoreSafety },

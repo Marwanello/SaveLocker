@@ -2,6 +2,7 @@
 using SaveLocker.Server.Data;
 using SaveLocker.Server.Services;
 using SaveLocker.Shared;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
@@ -30,6 +31,13 @@ if (configuredDbPath is null && !File.Exists(dbPath))
 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
 
 builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlite($"Data Source={dbPath}"));
+
+// Encryption at rest for stored secrets (SettingsService). The key ring sits beside the database but is NOT in
+// it, and no backup contains it — so a database file or a downloaded backup carries only ciphertext.
+builder.Services.AddDataProtection()
+    .SetApplicationName("SaveLocker")
+    .PersistKeysToFileSystem(new DirectoryInfo(builder.Configuration["Security:KeyRingPath"]
+        ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "keys")));
 
 // Nightly SQLite snapshots (VACUUM INTO). The DB is the version graph; archives are
 // useless without it, so keep a self-contained on-box backup with simple retention.
@@ -171,7 +179,7 @@ using (var scope = app.Services.CreateScope())
     var lastStartedVersion = ReadLastStartedVersion(dbPath);
     if (lastStartedVersion.HasGames && lastStartedVersion.Version != BuildInfo.Current.Version)
     {
-        var snap = await app.Services.GetRequiredService<BackupService>().BackupAsync(BackupReason.BeforeUpgrade, retention: null);
+        var snap = await app.Services.GetRequiredService<BackupService>().BackupAsync(BackupReason.BeforeUpgrade, retention: null, saves: false);
         if (!snap.Ok) app.Logger.LogWarning("Before-upgrade snapshot failed ({Error}); starting anyway.", snap.Message);
     }
 
@@ -233,6 +241,7 @@ using (var scope = app.Services.CreateScope())
 
     db.Database.Migrate();
     await scope.ServiceProvider.GetRequiredService<SettingsService>().SetAsync(LastStartedVersionKey, BuildInfo.Current.Version);
+    await scope.ServiceProvider.GetRequiredService<SettingsService>().EncryptPlaintextSecretsAsync();
 
     // WAL mode: allows concurrent readers alongside the single writer, which prevents
     // "database is locked" 500s when the dashboard fires several parallel API calls.
@@ -1066,7 +1075,7 @@ admin.MapGet("/admin/backups/status", async (BackupService backup, AppDbContext 
     return Results.Ok(new BackupStatusDto(
         s.Enabled, s.RetentionCount, s.HourOfDay, s.Enabled ? backup.NextRunAt : null,
         backup.Options.BackupRoot, error, errorAt, archivesBytes, archivesCount,
-        backup.ListBackups().ToList()));
+        backup.ListBackups().ToList(), s.Frequency, s.DayOfWeek));
 }).Produces<BackupStatusDto>();
 
 admin.MapPost("/admin/backup", async (BackupService backup, SyncService sync, CancellationToken ct) =>
@@ -1082,12 +1091,18 @@ admin.MapPost("/admin/backups/settings", async (SetBackupSettingsRequest req, Ba
     if (req.RetentionCount is < 1 or > BackupService.MaxRetention)
         return Results.BadRequest($"Keep between 1 and {BackupService.MaxRetention} snapshots.");
     if (req.HourOfDay is < 0 or > 23)
-        return Results.BadRequest("The hour must be 0–23.");
+        return Results.BadRequest("The hour must be 0–23 (UTC).");
+    if (req.Frequency is not (BackupService.Daily or BackupService.Weekly))
+        return Results.BadRequest("Frequency must be \"daily\" or \"weekly\".");
+    if (req.DayOfWeek is < 0 or > 6)
+        return Results.BadRequest("The day of the week must be 0 (Sunday) to 6.");
     var before = await backup.GetSettingsAsync(ct);
     await backup.SetSettingsAsync(req, ct);
+    static string Describe(bool on, string freq, int day, int hour, int keep) =>
+        $"scheduled {(on ? "on" : "off")}, {(freq == BackupService.Daily ? "daily" : $"weekly on {(DayOfWeek)day}")} at {hour:00}:00 UTC, keep {keep}";
     await sync.LogAuditAsync("settings.backup",
-        $"scheduled {(req.Enabled ? "on" : "off")}, keep {req.RetentionCount}, at {req.HourOfDay:00}:00" +
-        $" (was {(before.Enabled ? "on" : "off")}, keep {before.RetentionCount}, at {before.HourOfDay:00}:00)");
+        Describe(req.Enabled, req.Frequency, req.DayOfWeek, req.HourOfDay, req.RetentionCount) +
+        $" (was {Describe(before.Enabled, before.Frequency, before.DayOfWeek, before.HourOfDay, before.RetentionCount)})");
     return Results.NoContent();
 });
 
@@ -1100,8 +1115,22 @@ admin.MapGet("/admin/backups/{file}", async (string file, BackupService backup, 
     var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
     await sync.LogAuditAsync("backup.download", Path.GetFileName(path));
     http.Response.Headers.CacheControl = "no-store";
-    return Results.Stream(stream, "application/vnd.sqlite3", Path.GetFileName(path));
-}).Produces(StatusCodes.Status200OK, contentType: "application/vnd.sqlite3");
+    var type = path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? "application/zip" : "application/vnd.sqlite3";
+    return Results.Stream(stream, type, Path.GetFileName(path));
+}).Produces(StatusCodes.Status200OK, contentType: "application/zip");
+
+// Restore: replaces the live database (and puts back the latest saves the backup holds that are missing on
+// disk). A safety backup of the current state is taken first. Audited into the RESTORED database — the one the
+// console reads afterwards — naming both files, so the restore can be traced and undone.
+admin.MapPost("/admin/backups/{file}/restore", async (string file, BackupService backup, IServiceProvider sp, CancellationToken ct) =>
+{
+    var (result, error) = await backup.RestoreAsync(file, ct);
+    if (result is null) return error is null ? Results.NotFound() : Results.BadRequest(error);
+    using (var scope = sp.CreateScope())
+        await scope.ServiceProvider.GetRequiredService<SyncService>().LogAuditAsync("backup.restore",
+            $"restored {result.RestoredFrom}; {result.SavesRestored} saves put back; safety backup {result.SafetyBackup}");
+    return Results.Ok(result);
+}).Produces<BackupRestoreResult>();
 
 // ---- Agent health (admin) ----
 admin.MapGet("/admin/health", async (HealthService health) =>

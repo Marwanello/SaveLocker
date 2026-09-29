@@ -1,5 +1,6 @@
 ﻿using SaveLocker.Server.Data;
 using SaveLocker.Shared;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
 namespace SaveLocker.Server.Services;
@@ -45,20 +46,33 @@ public sealed class SettingsService
     /// every default ("[]") is told apart from one who never saved a list (no row: config applies).</summary>
     public const string DefaultExcludeGlobs = "Sync:DefaultExcludeGlobs";
 
+    /// <summary>
+    /// Settings that are secrets the server must be able to USE (so they cannot be hashed like the admin
+    /// password or machine keys): stored encrypted with ASP.NET Data Protection. Its key ring lives in
+    /// <c>{data}/keys</c>, outside the database — so the database file and every backup of it carry only
+    /// ciphertext. A backup restored onto a different server cannot decrypt them: the key reads as unset.
+    /// </summary>
+    private static readonly HashSet<string> Secrets = new(StringComparer.Ordinal) { SteamGridDbApiKey };
+    private const string EncryptedPrefix = "enc:v1:";
+
     private readonly AppDbContext _db;
     private readonly IConfiguration _cfg;
+    private readonly IDataProtector _protector;
+    private readonly ILogger<SettingsService> _log;
 
-    public SettingsService(AppDbContext db, IConfiguration cfg)
+    public SettingsService(AppDbContext db, IConfiguration cfg, IDataProtectionProvider protection, ILogger<SettingsService> log)
     {
         _db = db;
         _cfg = cfg;
+        _protector = protection.CreateProtector("SaveLocker.Settings.v1");
+        _log = log;
     }
 
-    /// <summary>The DB value if set, else the configuration value, else null.</summary>
+    /// <summary>The DB value if set, else the configuration value, else null. Secrets come back decrypted.</summary>
     public async Task<string?> GetEffectiveAsync(string key, CancellationToken ct = default)
     {
         var row = await _db.Settings.FindAsync(new object?[] { key }, ct);
-        if (!string.IsNullOrWhiteSpace(row?.Value)) return row!.Value;
+        if (!string.IsNullOrWhiteSpace(row?.Value)) return Secrets.Contains(key) ? Reveal(key, row!.Value) : row!.Value;
         var fromCfg = _cfg[key];
         return string.IsNullOrWhiteSpace(fromCfg) ? null : fromCfg;
     }
@@ -85,9 +99,39 @@ public sealed class SettingsService
             return true;
         }
 
+        if (Secrets.Contains(key)) value = EncryptedPrefix + _protector.Protect(value);
         if (row is null) _db.Settings.Add(new AppSetting { Key = key, Value = value });
         else row.Value = value;
         return true;
+    }
+
+    private string? Reveal(string key, string stored)
+    {
+        if (!stored.StartsWith(EncryptedPrefix, StringComparison.Ordinal)) return stored; // written before encryption
+        try { return _protector.Unprotect(stored[EncryptedPrefix.Length..]); }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            // A database from another server (a restored backup) or a lost key ring: unusable, so unset.
+            _log.LogWarning("The stored {Key} cannot be decrypted with this server's keys; treating it as unset.", key);
+            return null;
+        }
+    }
+
+    /// <summary>Encrypt any secret still stored in plain text (written before encryption existed). Run once at startup.</summary>
+    public async Task EncryptPlaintextSecretsAsync(CancellationToken ct = default)
+    {
+        var rows = await _db.Settings.Where(s => Secrets.Contains(s.Key)).ToListAsync(ct);
+        var changed = 0;
+        foreach (var row in rows.Where(r => r.Value.Length > 0 && !r.Value.StartsWith(EncryptedPrefix, StringComparison.Ordinal)))
+        {
+            row.Value = EncryptedPrefix + _protector.Protect(row.Value);
+            changed++;
+        }
+        if (changed > 0)
+        {
+            await _db.SaveChangesAsync(ct);
+            _log.LogInformation("Encrypted {Count} stored secret(s) that predate encryption at rest.", changed);
+        }
     }
 
     public async Task<bool> HasAdminPasswordAsync(CancellationToken ct = default) =>

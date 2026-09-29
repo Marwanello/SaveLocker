@@ -2279,6 +2279,35 @@
         }
       }
     },
+    "/api/admin/backups/{file}/restore": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "file",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupRestoreResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/health": {
       "get": {
         "tags": [
@@ -3279,15 +3308,45 @@
           },
           "reason": {
             "$ref": "#/components/schemas/BackupReason"
+          },
+          "includesSaves": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
       "BackupReason": {
         "enum": [
-          "Nightly",
+          "Scheduled",
           "Manual",
-          "BeforeUpgrade"
+          "BeforeUpgrade",
+          "BeforeRestore"
         ]
+      },
+      "BackupRestoreResult": {
+        "required": [
+          "restoredFrom",
+          "safetyBackup",
+          "savesRestored",
+          "savesAlreadyPresent"
+        ],
+        "type": "object",
+        "properties": {
+          "restoredFrom": {
+            "type": "string"
+          },
+          "safetyBackup": {
+            "type": "string"
+          },
+          "savesRestored": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "savesAlreadyPresent": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
       },
       "BackupResult": {
         "required": [
@@ -3385,6 +3444,15 @@
             "items": {
               "$ref": "#/components/schemas/BackupInfo"
             }
+          },
+          "frequency": {
+            "type": "string",
+            "default": "weekly"
+          },
+          "dayOfWeek": {
+            "type": "integer",
+            "format": "int32",
+            "default": 0
           }
         }
       },
@@ -4744,6 +4812,15 @@
           "hourOfDay": {
             "type": "integer",
             "format": "int32"
+          },
+          "frequency": {
+            "type": "string",
+            "default": "weekly"
+          },
+          "dayOfWeek": {
+            "type": "integer",
+            "format": "int32",
+            "default": 0
           }
         }
       },

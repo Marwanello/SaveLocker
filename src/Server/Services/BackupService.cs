@@ -1,5 +1,10 @@
-﻿using SaveLocker.Shared;
+﻿using System.Globalization;
+using System.IO.Compression;
+using System.Text.Json;
+using SaveLocker.Server.Data;
+using SaveLocker.Shared;
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 
 namespace SaveLocker.Server.Services;
 
@@ -11,70 +16,85 @@ public sealed class BackupOptions
     /// <summary>Absolute (or working-dir-relative) path to the live SQLite database file.</summary>
     public required string DbPath { get; init; }
 
-    /// <summary>Directory the nightly snapshots are written to (created on demand).</summary>
+    /// <summary>Directory the backups are written to (created on demand).</summary>
     public required string BackupRoot { get; init; }
 
-    /// <summary>How many of the most recent snapshots to keep; older ones are pruned.</summary>
+    /// <summary>How many of the most recent backups to keep; older ones are pruned.</summary>
     public int RetentionCount { get; init; } = 7;
 
-    /// <summary>Local hour of day (0–23) the nightly snapshot fires at.</summary>
+    /// <summary>UTC hour of day (0–23) the scheduled backup fires at.</summary>
     public int HourOfDay { get; init; } = 3;
 
-    /// <summary>When false, the scheduler is a no-op (manual <see cref="BackupService.BackupAsync"/> still works).</summary>
+    /// <summary>When false, the scheduler is a no-op (Back up now still works).</summary>
     public bool Enabled { get; init; } = true;
 }
 
-/// <summary>The scheduled-backup settings in force: the DB's value for each, else config's.</summary>
-public sealed record BackupSettings(bool Enabled, int RetentionCount, int HourOfDay);
+/// <summary>The backup schedule in force: the DB's value for each, else config's. Hour is UTC.</summary>
+public sealed record BackupSettings(bool Enabled, int RetentionCount, int HourOfDay, string Frequency, int DayOfWeek)
+{
+    public TimeSpan Interval => Frequency == BackupService.Daily ? TimeSpan.FromDays(1) : TimeSpan.FromDays(7);
+}
 
 /// <summary>
-/// Takes point-in-time snapshots of the live SQLite database. The DB <em>is</em> the version
-/// graph (archives on disk are meaningless without it), so a corrupt or lost file loses
-/// history for every machine — hence a self-contained on-box backup.
+/// Backs up the server: one zip holding a <c>VACUUM INTO</c> copy of the database (the version graph, compressed)
+/// and every game's <b>latest</b> save archive, plus a manifest. <c>VACUUM INTO</c> reads a consistent view under
+/// a read transaction, so it is safe while the server serves writes (copying the .db file can capture a torn WAL).
+/// The zip is written under a <c>.tmp</c> name and renamed on success, so retention never sees a half-written one.
 ///
-/// Snapshots are produced with <c>VACUUM INTO</c>, which reads a consistent view under a
-/// read transaction and folds any pending WAL content into a fresh, defragmented single-file
-/// copy. It is safe to run while the server is serving writes (unlike copying the .db file,
-/// which can capture a torn WAL). The copy is written to a <c>.tmp</c> name and renamed on
-/// success so retention never sees a half-written file.
+/// Older versions are not in the backup (the maintainer's call: smallest backups). A restore brings back the
+/// database and each game's latest save; older versions whose archives were pruned since then stay listed but
+/// can no longer be downloaded.
 ///
-/// The reason rides in the name after the timestamp (<c>savelocker-20260927-030000-manual.db</c>), so
-/// the ordinal newest-first sort and the <c>savelocker-*.db</c> prune pattern work unchanged.
+/// The reason rides in the name after the timestamp (<c>savelocker-20260927-030000-manual.zip</c>, UTC), so the
+/// ordinal newest-first sort and the prune pattern need no index. Legacy <c>.db</c> snapshots are still listed,
+/// downloadable and restorable (database only).
 /// </summary>
 public sealed class BackupService
 {
     private const string Prefix = "savelocker-";
-    private const string Extension = ".db";
-    private const string Pattern = Prefix + "*" + Extension;
+    private const string ZipExt = ".zip";
+    private const string DbExt = ".db";
     private const int StampLength = 15; // yyyyMMdd-HHmmss
+    private const string DbEntry = "savelocker.db";
+    private const string ArchivesDir = "archives/";
+    private const string ManifestEntry = "manifest.json";
 
     public const string EnabledKey = "Backup:Enabled";
     public const string RetentionCountKey = "Backup:RetentionCount";
     public const string HourOfDayKey = "Backup:HourOfDay";
+    public const string FrequencyKey = "Backup:Frequency";
+    public const string DayOfWeekKey = "Backup:DayOfWeek";
+    public const string Daily = "daily";
+    public const string Weekly = "weekly";
     public const int MaxRetention = 365;
 
     private readonly BackupOptions _options;
     private readonly IServiceScopeFactory _scopes;
+    private readonly ArchiveStore _store;
     private readonly ILogger<BackupService> _log;
     private readonly SemaphoreSlim _wake = new(0);
+    // One backup or restore at a time: a restore swapping the database under a running backup (or two
+    // restores racing) is the one outcome worse than either on its own.
+    private readonly SemaphoreSlim _run = new(1, 1);
     private readonly object _gate = new();
     private string? _lastError;
     private DateTime? _lastErrorAt;
     private DateTime? _nextRunAt;
 
-    public BackupService(BackupOptions options, IServiceScopeFactory scopes, ILogger<BackupService> log)
+    public BackupService(BackupOptions options, IServiceScopeFactory scopes, ArchiveStore store, ILogger<BackupService> log)
     {
         _options = options;
         _scopes = scopes;
+        _store = store;
         _log = log;
     }
 
     public BackupOptions Options => _options;
 
-    /// <summary>When the scheduler will next fire; null while scheduled backups are off.</summary>
+    /// <summary>When the scheduler will next fire (UTC); null while scheduled backups are off.</summary>
     public DateTime? NextRunAt { get { lock (_gate) return _nextRunAt; } internal set { lock (_gate) _nextRunAt = value; } }
 
-    /// <summary>The most recent failure, kept for the page until a snapshot succeeds.</summary>
+    /// <summary>The most recent failure, kept for the page until a backup succeeds.</summary>
     public (string? Error, DateTime? At) LastError { get { lock (_gate) return (_lastError, _lastErrorAt); } }
 
     public async Task<BackupSettings> GetSettingsAsync(CancellationToken ct = default)
@@ -84,7 +104,9 @@ public sealed class BackupService
         var enabled = bool.TryParse(await settings.GetEffectiveAsync(EnabledKey, ct), out var e) ? e : _options.Enabled;
         var keep = int.TryParse(await settings.GetEffectiveAsync(RetentionCountKey, ct), out var k) ? k : _options.RetentionCount;
         var hour = int.TryParse(await settings.GetEffectiveAsync(HourOfDayKey, ct), out var h) ? h : _options.HourOfDay;
-        return new BackupSettings(enabled, Math.Clamp(keep, 1, MaxRetention), Math.Clamp(hour, 0, 23));
+        var freq = await settings.GetEffectiveAsync(FrequencyKey, ct) is Daily ? Daily : Weekly;
+        var day = int.TryParse(await settings.GetEffectiveAsync(DayOfWeekKey, ct), out var d) ? d : 0;
+        return new BackupSettings(enabled, Math.Clamp(keep, 1, MaxRetention), Math.Clamp(hour, 0, 23), freq, Math.Clamp(day, 0, 6));
     }
 
     public async Task SetSettingsAsync(SetBackupSettingsRequest req, CancellationToken ct = default)
@@ -93,73 +115,251 @@ public sealed class BackupService
         {
             var settings = scope.ServiceProvider.GetRequiredService<SettingsService>();
             await settings.SetAsync(EnabledKey, req.Enabled ? "true" : "false", ct);
-            await settings.SetAsync(RetentionCountKey, req.RetentionCount.ToString(System.Globalization.CultureInfo.InvariantCulture), ct);
-            await settings.SetAsync(HourOfDayKey, req.HourOfDay.ToString(System.Globalization.CultureInfo.InvariantCulture), ct);
+            await settings.SetAsync(RetentionCountKey, req.RetentionCount.ToString(CultureInfo.InvariantCulture), ct);
+            await settings.SetAsync(HourOfDayKey, req.HourOfDay.ToString(CultureInfo.InvariantCulture), ct);
+            await settings.SetAsync(FrequencyKey, req.Frequency, ct);
+            await settings.SetAsync(DayOfWeekKey, req.DayOfWeek.ToString(CultureInfo.InvariantCulture), ct);
         }
-        // The scheduler is sleeping until the OLD hour; wake it so the new ones take effect now.
+        // The scheduler is sleeping until the OLD time; wake it so the new schedule takes effect now.
         _wake.Release();
     }
 
     /// <summary>Sleeps for <paramref name="delay"/>; true if woken early by a settings change.</summary>
     internal Task<bool> WaitForWakeAsync(TimeSpan delay, CancellationToken ct) => _wake.WaitAsync(delay, ct);
 
-    /// <summary>Snapshot the DB, then prune old snapshots down to the retention count.</summary>
-    /// <param name="retention">The count to prune to; null skips pruning (the before-upgrade snapshot runs
-    /// before the DB it would read the setting from has been migrated).</param>
-    public async Task<BackupResult> BackupAsync(BackupReason reason, int? retention, CancellationToken ct = default)
+    /// <summary>The next scheduled run after <paramref name="nowUtc"/>, in UTC.</summary>
+    public static DateTime NextRun(BackupSettings s, DateTime nowUtc)
     {
+        var next = nowUtc.Date.AddHours(s.HourOfDay);
+        if (s.Frequency == Weekly)
+        {
+            next = next.AddDays(((s.DayOfWeek - (int)next.DayOfWeek) + 7) % 7);
+            if (next <= nowUtc) next = next.AddDays(7);
+        }
+        else if (next <= nowUtc) next = next.AddDays(1);
+        return next;
+    }
+
+    /// <summary>Back up the database and every game's latest save, then prune to the retention count.</summary>
+    /// <param name="retention">The count to prune to; null skips pruning (the before-upgrade backup runs before
+    /// the DB it would read the setting from has been migrated).</param>
+    /// <param name="saves">False for the before-upgrade backup: it runs before migrations, when the schema the
+    /// save lookup queries may not exist yet — and the archives are not what a migration can damage.</param>
+    public async Task<BackupResult> BackupAsync(BackupReason reason, int? retention, CancellationToken ct = default, bool saves = true)
+    {
+        await _run.WaitAsync(ct);
+        try { return await BackupCoreAsync(reason, retention, saves, ct); }
+        finally { _run.Release(); }
+    }
+
+    private async Task<BackupResult> BackupCoreAsync(BackupReason reason, int? retention, bool saves, CancellationToken ct)
+    {
+        string? tempDb = null;
         try
         {
             Directory.CreateDirectory(_options.BackupRoot);
+            // Never reuse a name: a restore's safety backup taken in the same second as the backup being restored
+            // (restoring a Before restore one right after it was made) would overwrite its own source.
+            var stamp = DateTime.UtcNow;
+            string fileName, finalPath;
+            do
+            {
+                fileName = $"{Prefix}{stamp:yyyyMMdd-HHmmss}{Suffix(reason)}{ZipExt}";
+                finalPath = Path.Combine(_options.BackupRoot, fileName);
+                stamp = stamp.AddSeconds(1);
+            } while (File.Exists(finalPath) || Directory.EnumerateFiles(_options.BackupRoot, fileName[..(Prefix.Length + StampLength)] + "*").Any());
+            var tempZip = finalPath + ".tmp";
+            tempDb = Path.Combine(_options.BackupRoot, $".{Guid.NewGuid():N}.db.tmp");
+            if (File.Exists(tempZip)) File.Delete(tempZip);
 
-            var fileName = $"{Prefix}{DateTime.Now:yyyyMMdd-HHmmss}{Suffix(reason)}{Extension}";
-            var finalPath = Path.Combine(_options.BackupRoot, fileName);
-            var tempPath = finalPath + ".tmp";
-            if (File.Exists(tempPath)) File.Delete(tempPath);
-
-            // A separate connection to the same file; coexists with the app's connection.
-            // VACUUM INTO never writes the source, so this is a pure read of a consistent snapshot.
+            // A separate connection to the same file; VACUUM INTO never writes the source.
             await using (var conn = new SqliteConnection($"Data Source={_options.DbPath}"))
             {
                 await conn.OpenAsync(ct);
                 await using var cmd = conn.CreateCommand();
                 cmd.CommandText = "VACUUM main INTO $target";
-                cmd.Parameters.AddWithValue("$target", tempPath);
+                cmd.Parameters.AddWithValue("$target", tempDb);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
-            File.Move(tempPath, finalPath, overwrite: true);
+            var heads = saves ? await ReadHeadsAsync(tempDb, ct) : new List<ManifestGame>();
+            var included = new List<ManifestGame>();
+            await using (var fs = new FileStream(tempZip, FileMode.CreateNew))
+            using (var zip = new ZipArchive(fs, ZipArchiveMode.Create))
+            {
+                zip.CreateEntryFromFile(tempDb, DbEntry, CompressionLevel.SmallestSize);
+                foreach (var g in heads)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (!_store.Exists(g.ArchivePath)) continue; // pruned between the snapshot and now: nothing to copy
+                    // Save archives are zips already; a second compression pass costs time and saves nothing.
+                    zip.CreateEntryFromFile(_store.FullPath(g.ArchivePath), ArchivesDir + Normalize(g.ArchivePath), CompressionLevel.NoCompression);
+                    included.Add(g);
+                }
+                var manifest = zip.CreateEntry(ManifestEntry, CompressionLevel.Optimal);
+                await using var ms = manifest.Open();
+                await JsonSerializer.SerializeAsync(ms, new Manifest(1, DateTime.UtcNow, reason.ToString(), BuildInfo.Current.Version, included), cancellationToken: ct);
+            }
 
-            var info = new BackupInfo(fileName, new FileInfo(finalPath).Length, File.GetLastWriteTimeUtc(finalPath), reason);
+            File.Move(tempZip, finalPath, overwrite: true);
+
+            var info = new BackupInfo(fileName, new FileInfo(finalPath).Length, File.GetLastWriteTimeUtc(finalPath), reason, true);
             var retained = retention is { } keep ? Prune(keep) : ListBackups().Count;
             lock (_gate) { _lastError = null; _lastErrorAt = null; }
-            _log.LogInformation(
-                "SQLite backup written: {File} ({Size:N0} bytes); {Count} snapshot(s) retained.",
-                fileName, info.SizeBytes, retained);
+            _log.LogInformation("Backup written: {File} ({Size:N0} bytes, {Saves} latest saves); {Count} retained.",
+                fileName, info.SizeBytes, included.Count, retained);
             return new BackupResult(true, null, info, retained);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            _log.LogError(ex, "SQLite backup failed.");
+            _log.LogError(ex, "Backup failed.");
             lock (_gate) { _lastError = ex.Message; _lastErrorAt = DateTime.UtcNow; }
             return new BackupResult(false, ex.Message, null, ListBackups().Count);
         }
+        finally
+        {
+            if (tempDb is not null) TryDelete(tempDb);
+            SqliteConnection.ClearAllPools(); // release the temp file on Windows
+        }
     }
 
-    /// <summary>Existing snapshots, newest first.</summary>
+    /// <summary>
+    /// Replace the live database with the one in <paramref name="fileName"/> and put back any latest save it holds
+    /// that is missing on disk. A safety backup of the current state is taken first, so a restore can itself be
+    /// undone. The copy goes through SQLite's online backup API into the live file, so the server keeps running and
+    /// every later request reads the restored data. Refuses a backup whose database fails
+    /// <c>PRAGMA integrity_check</c> or is not a SaveLocker database — before anything is changed.
+    /// </summary>
+    public async Task<(BackupRestoreResult? Result, string? Error)> RestoreAsync(string fileName, CancellationToken ct = default)
+    {
+        if (Find(fileName) is not { } source) return (null, null);
+        await _run.WaitAsync(ct);
+        var work = Path.Combine(_options.BackupRoot, $".restore-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(work);
+            var dbCopy = Path.Combine(work, DbEntry);
+            var isZip = source.EndsWith(ZipExt, StringComparison.OrdinalIgnoreCase);
+            if (isZip)
+            {
+                using var zip = ZipFile.OpenRead(source);
+                var entry = zip.GetEntry(DbEntry);
+                if (entry is null) return (null, "That backup has no database in it.");
+                entry.ExtractToFile(dbCopy);
+            }
+            else File.Copy(source, dbCopy);
+
+            if (Validate(dbCopy) is { } refused) return (null, refused);
+
+            var safety = await BackupCoreAsync(BackupReason.BeforeRestore, retention: null, saves: true, ct);
+            if (!safety.Ok) return (null, $"The safety backup failed, so nothing was restored: {safety.Message}");
+
+            // Online backup: page-by-page into the live file, under SQLite's own locking.
+            SqliteConnection.ClearAllPools();
+            await using (var from = new SqliteConnection($"Data Source={dbCopy};Mode=ReadOnly"))
+            await using (var to = new SqliteConnection($"Data Source={_options.DbPath}"))
+            {
+                await from.OpenAsync(ct);
+                await to.OpenAsync(ct);
+                from.BackupDatabase(to);
+                await using var wal = to.CreateCommand();
+                wal.CommandText = "PRAGMA journal_mode=WAL;";
+                await wal.ExecuteNonQueryAsync(ct);
+            }
+            SqliteConnection.ClearAllPools();
+
+            // A backup from an older build carries an older schema: bring it up to this build's, exactly as a start would.
+            using (var scope = _scopes.CreateScope())
+                await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync(ct);
+
+            int restored = 0, present = 0;
+            if (isZip)
+            {
+                using var zip = ZipFile.OpenRead(source);
+                foreach (var e in zip.Entries.Where(e => e.FullName.StartsWith(ArchivesDir, StringComparison.Ordinal) && e.Length > 0))
+                {
+                    var rel = e.FullName[ArchivesDir.Length..];
+                    // The same zip-slip rule as a save restore: the entry must land inside the archive root.
+                    var full = Path.GetFullPath(_store.FullPath(rel));
+                    var root = Path.GetFullPath(_store.Root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                    if (!full.StartsWith(root, StringComparison.Ordinal)) continue;
+                    // Archives never change once written, so an existing file IS this one.
+                    if (File.Exists(full)) { present++; continue; }
+                    Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+                    e.ExtractToFile(full + ".tmp", overwrite: true);
+                    File.Move(full + ".tmp", full, overwrite: false);
+                    restored++;
+                }
+            }
+
+            _wake.Release(); // the schedule is a setting, and the restored database may hold a different one
+            _log.LogWarning("Restored the database from {File}; safety backup {Safety}; {Restored} saves put back.",
+                fileName, safety.Backup!.FileName, restored);
+            return (new BackupRestoreResult(Path.GetFileName(source), safety.Backup.FileName, restored, present), null);
+        }
+        catch (InvalidDataException) { return (null, "That backup is not a readable zip."); }
+        finally
+        {
+            try { Directory.Delete(work, recursive: true); } catch { /* best effort */ }
+            _run.Release();
+        }
+    }
+
+    private static string? Validate(string dbPath)
+    {
+        try
+        {
+            using var conn = new SqliteConnection($"Data Source={dbPath};Mode=ReadOnly;Pooling=False");
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "PRAGMA integrity_check";
+            if (cmd.ExecuteScalar() as string != "ok") return "The database in that backup is damaged (integrity check failed).";
+            cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('Games','SaveVersions','Machines')";
+            if (Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture) != 3) return "That file is not a SaveLocker database.";
+            return null;
+        }
+        catch (SqliteException ex) { return $"That file is not a readable database: {ex.Message}"; }
+    }
+
+    /// <summary>Each game's latest version, read from the snapshot itself so the list matches the database
+    /// the backup holds, not whatever moved on since.</summary>
+    private static async Task<List<ManifestGame>> ReadHeadsAsync(string dbPath, CancellationToken ct)
+    {
+        var list = new List<ManifestGame>();
+        await using var conn = new SqliteConnection($"Data Source={dbPath};Mode=ReadOnly;Pooling=False");
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT g.Id, g.Name, v.Id, v.ArchivePath, v.Size
+            FROM Games g JOIN SaveVersions v ON v.Id = g.HeadVersionId
+            """;
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+            list.Add(new ManifestGame(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetInt64(4)));
+        return list;
+    }
+
+    private static string Normalize(string archivePath) => archivePath.Replace('\\', '/').TrimStart('/');
+
+    private sealed record ManifestGame(string GameId, string Name, string VersionId, string ArchivePath, long SizeBytes);
+    private sealed record Manifest(int Format, DateTime CreatedAt, string Reason, string ServerVersion, List<ManifestGame> Games);
+
+    /// <summary>Existing backups (zip and legacy db), newest first.</summary>
     public IReadOnlyList<BackupInfo> ListBackups()
     {
         if (!Directory.Exists(_options.BackupRoot)) return Array.Empty<BackupInfo>();
         return EnumerateNewestFirst()
-            .Select(f => new BackupInfo(f.Name, f.Length, f.LastWriteTimeUtc, ReasonOf(f.Name)))
+            // A before-upgrade backup runs before migrations, so it never holds saves (BackupAsync's `saves: false`).
+            .Select(f => new BackupInfo(f.Name, f.Length, f.LastWriteTimeUtc, ReasonOf(f.Name),
+                f.Name.EndsWith(ZipExt, StringComparison.OrdinalIgnoreCase) && ReasonOf(f.Name) != BackupReason.BeforeUpgrade))
             .ToList();
     }
 
     /// <summary>
-    /// The full path of the snapshot named <paramref name="fileName"/>, or null. The name is matched
-    /// against the listing and never joined into a path, so <c>..</c>, an absolute path or a
-    /// percent-encoded separator can only ever miss.
+    /// The full path of the backup named <paramref name="fileName"/>, or null. The name is matched against the
+    /// listing and never joined into a path, so <c>..</c>, an absolute path or a percent-encoded separator can
+    /// only ever miss.
     /// </summary>
     public string? Find(string fileName)
     {
@@ -173,25 +373,29 @@ public sealed class BackupService
     {
         BackupReason.Manual => "-manual",
         BackupReason.BeforeUpgrade => "-before-upgrade",
+        BackupReason.BeforeRestore => "-before-restore",
         _ => "",
     };
 
     internal static BackupReason ReasonOf(string fileName)
     {
-        var stem = fileName[Prefix.Length..^Extension.Length];
+        var stem = Path.GetFileNameWithoutExtension(fileName)[Prefix.Length..];
         return stem.Length > StampLength ? stem[StampLength..] switch
         {
             "-manual" => BackupReason.Manual,
             "-before-upgrade" => BackupReason.BeforeUpgrade,
-            _ => BackupReason.Nightly,
-        } : BackupReason.Nightly;
+            "-before-restore" => BackupReason.BeforeRestore,
+            _ => BackupReason.Scheduled,
+        } : BackupReason.Scheduled;
     }
 
-    // Names start with fixed-width, zero-padded timestamps, so ordinal string order == chronological order.
+    // Names start with fixed-width, zero-padded timestamps, so ordinal order == chronological order.
     private IEnumerable<FileInfo> EnumerateNewestFirst() =>
         new DirectoryInfo(_options.BackupRoot)
-            .EnumerateFiles(Pattern)
-            .OrderByDescending(f => f.Name, StringComparer.Ordinal);
+            .EnumerateFiles(Prefix + "*")
+            .Where(f => f.Name.EndsWith(ZipExt, StringComparison.OrdinalIgnoreCase) || f.Name.EndsWith(DbExt, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(f => f.Name[..Math.Min(f.Name.Length, Prefix.Length + StampLength)], StringComparer.Ordinal)
+            .ThenByDescending(f => f.Name, StringComparer.Ordinal);
 
     private int Prune(int retention)
     {
@@ -203,18 +407,17 @@ public sealed class BackupService
         }
         return Math.Min(files.Count, Math.Max(0, retention));
     }
+
+    private static void TryDelete(string path) { try { File.Delete(path); } catch { /* best effort */ } }
 }
 
 /// <summary>
-/// Fires <see cref="BackupService.BackupAsync"/> nightly at the configured hour, re-reading the settings
-/// every loop (and immediately when an admin changes them), so the console's toggle takes effect without
-/// a restart. When scheduled backups are on at startup it also takes a catch-up snapshot if the newest
-/// existing one is missing or older than a day (e.g. the box was down over its window), while the age
-/// guard keeps frequent redeploys from spamming snapshots.
+/// Fires <see cref="BackupService.BackupAsync"/> on the configured schedule (daily or weekly, at a UTC hour),
+/// re-reading the settings every loop and immediately when an admin changes them. When scheduled backups are on at
+/// startup it also takes a catch-up backup if the newest one is missing or older than one interval.
 /// </summary>
 public sealed class BackupScheduler : BackgroundService
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromHours(24);
     private static readonly TimeSpan OffRecheck = TimeSpan.FromHours(1);
 
     private readonly BackupService _backup;
@@ -231,8 +434,8 @@ public sealed class BackupScheduler : BackgroundService
         try
         {
             var first = await _backup.GetSettingsAsync(ct);
-            if (first.Enabled && (MostRecentAge() is not { } age || age > Interval))
-                await _backup.BackupAsync(BackupReason.Nightly, first.RetentionCount, ct);
+            if (first.Enabled && (MostRecentAge() is not { } age || age > first.Interval))
+                await _backup.BackupAsync(BackupReason.Scheduled, first.RetentionCount, ct);
 
             while (!ct.IsCancellationRequested)
             {
@@ -242,19 +445,18 @@ public sealed class BackupScheduler : BackgroundService
                     if (!s.Enabled)
                     {
                         _backup.NextRunAt = null;
-                        _log.LogInformation("Scheduled SQLite backups are off.");
                         await _backup.WaitForWakeAsync(OffRecheck, ct);
                         continue;
                     }
 
-                    var delay = DelayUntilNextRun(s.HourOfDay);
-                    _backup.NextRunAt = DateTime.UtcNow + delay;
-                    _log.LogInformation("Next SQLite backup in {Hours:0.0} h.", delay.TotalHours);
-                    if (await _backup.WaitForWakeAsync(delay, ct)) continue;
+                    var next = BackupService.NextRun(s, DateTime.UtcNow);
+                    _backup.NextRunAt = next;
+                    _log.LogInformation("Next backup at {Next:u}.", next);
+                    if (await _backup.WaitForWakeAsync(next - DateTime.UtcNow, ct)) continue;
 
                     // Read again: the retention may have changed while this slept.
                     var now = await _backup.GetSettingsAsync(ct);
-                    if (now.Enabled) await _backup.BackupAsync(BackupReason.Nightly, now.RetentionCount, ct);
+                    if (now.Enabled) await _backup.BackupAsync(BackupReason.Scheduled, now.RetentionCount, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -270,13 +472,5 @@ public sealed class BackupScheduler : BackgroundService
     {
         var newest = _backup.ListBackups().FirstOrDefault();
         return newest is null ? null : DateTime.UtcNow - newest.CreatedAt;
-    }
-
-    private static TimeSpan DelayUntilNextRun(int hourOfDay)
-    {
-        var now = DateTime.Now;
-        var next = now.Date.AddHours(Math.Clamp(hourOfDay, 0, 23));
-        if (next <= now) next = next.AddDays(1);
-        return next - now;
     }
 }

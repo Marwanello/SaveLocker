@@ -272,6 +272,7 @@ export default function App() {
         onViewChange={v => { setView(v); if (!data && canLoad && v !== 'help' && v !== 'whats-new') void load(); }}
         onRefresh={() => void load()}
         onLock={passwordRequired === true && signedIn ? () => void handleLock() : undefined}
+        locked={!canLoad}
         machines={data?.machines ?? []}
         build={build}
         unreadNotes={unreadNotes}
@@ -322,7 +323,7 @@ export default function App() {
             : view === 'audit'
             ? <AuditView />
             : view === 'backups'
-            ? <BackupsView />
+            ? <BackupsView onRestored={() => void load()} />
             : <ConfigView
                 games={data.games}
                 machines={data.machines}

@@ -1,4 +1,4 @@
-import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule, BackupStatus, BackupResult, SetBackupSettingsRequest } from './types';
+import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest } from './types';
 
 // The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
 // itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
@@ -318,6 +318,9 @@ export const api = {
     request<string[]>('/settings/default-excludes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patterns) }),
   backupStatus: () => request<BackupStatus>('/admin/backups/status'),
   backupNow: () => request<BackupResult>('/admin/backup', { method: 'POST' }),
+  /** Replace the server's database with a backup's (a safety backup is taken first). */
+  restoreBackup: (fileName: string) =>
+    request<BackupRestoreResult>(`/admin/backups/${encodeURIComponent(fileName)}/restore`, { method: 'POST' }),
   setBackupSettings: (body: SetBackupSettingsRequest) =>
     request<void>('/admin/backups/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   /**

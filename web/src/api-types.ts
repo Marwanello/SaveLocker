@@ -2829,6 +2829,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/backups/{file}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    file: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BackupRestoreResult"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/health": {
         parameters: {
             query?: never;
@@ -3411,9 +3448,19 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             reason: components["schemas"]["BackupReason"];
+            /** @default false */
+            includesSaves: boolean;
         };
         /** @enum {unknown} */
-        BackupReason: "Nightly" | "Manual" | "BeforeUpgrade";
+        BackupReason: "Scheduled" | "Manual" | "BeforeUpgrade" | "BeforeRestore";
+        BackupRestoreResult: {
+            restoredFrom: string;
+            safetyBackup: string;
+            /** Format: int32 */
+            savesRestored: number;
+            /** Format: int32 */
+            savesAlreadyPresent: number;
+        };
         BackupResult: {
             ok: boolean;
             message: null | string;
@@ -3438,6 +3485,13 @@ export interface components {
             /** Format: int32 */
             archivesCount: number;
             backups: components["schemas"]["BackupInfo"][];
+            /** @default weekly */
+            frequency: string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            dayOfWeek: number;
         };
         BeginUploadRequest: {
             contentHash: string;
@@ -3798,6 +3852,13 @@ export interface components {
             retentionCount: number;
             /** Format: int32 */
             hourOfDay: number;
+            /** @default weekly */
+            frequency: string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            dayOfWeek: number;
         };
         SetConflictPolicyRequest: {
             policy: components["schemas"]["ConflictPolicy"];
