@@ -14,7 +14,7 @@ phases to do in one session, in what order, and why. Driven by three things weig
    23 files, multiple review rounds) was a heavy session. Treat ~1,500 insertions as the ceiling for
    a group that still gets reviewed properly.
 
-## Status (updated 2026-09-28)
+## Status (updated 2026-09-29)
 
 | Group | Contents | Status |
 |---|---|---|
@@ -26,7 +26,7 @@ phases to do in one session, in what order, and why. Driven by three things weig
 | 6 | Phase 6 items 1-3 (Deck) | ✅ Shipped 2026-09-22 (branch `claude/group-6-ui-redesign-6d9b06`) — Checkpoint tokens, the accent/healthy split, 62px two-line rows, the button legend, Sync all on Y. `savelocker ui --screenshot` and `--nav` turned out to run on this Windows box (no WSLg needed — SDL/GL resolved natively), so this was verified live, not by build alone: real pixel colours sampled off real screenshots, and the L1/R1 section-switch driven through `--nav r1,r1,r1` with `--nav-debug` open. That pass caught and fixed a genuine focus-timing bug (below) a build could never have shown. Same-day follow-up (below) fixed a mis-angled Sync icon and replaced the header's stale pre-Checkpoint logo with a live, mark-aware, accent-coloured `AppMark`. Archivo shipped the same day. Reviewed as PR #49 on 2026-09-23 and every finding fixed (*Review fixes*, below). Still not run on a real Deck or under gamescope's actual input path |
 | 7 | Phase 7 (notifications) | ✅ Shipped 2026-09-24 (branch `group-7-ui-redesign`, PR #50) — both halves on shared rules (`Agent.Core/Notifications.cs`): a real Windows toast (`ToastPresenter`) and the Linux notifier generalised from `ConflictNotifier` (`DesktopNotifier`). **A button is a link to the agent UI, not a callback** — a custom URL scheme was built end to end and the shell's toast host refused every freshly registered one (measured), so "Retry now"/"Install now" became "Open game" and a pointer to the tray menu. Verified live on Windows (real toast, real click, the five-minute rule, withdrawal) and on a real Deck in Desktop Mode 2026-09-27 (the popup, and *Choose a save* opening the flatpak default browser at the queue); the installer's shortcut change compiles but has not been run. Reviewed as PR #50 on 2026-09-27 and every finding fixed (*Review fixes*, below). See the Group 7 write-up below |
 | 8 | Phases 9 + 10 — console page kit, top bar (pill tabs, bell, conflict pill, progress rail + Cancel) and the Games page (sidebar, full-width grid, game page re-layout, no `alert`/`confirm`) | ✅ Shipped 2026-09-28 (branch `group-8-ui-redesign`, PR #52) — 8a kit + top bar + `POST /commands/cancel` (`e6514ce`), 8b the `GameDetail.tsx` split (`1566de8`), 8c the Games page (`24074a0`). Verified live through `testenv` with real conflicts; one real bug found that way and fixed (a conflict side pushed while the page was open). Replay the live checks with `group-8-verification.md`. Same-day follow-up on the branch: each machine's OS logo on the conflict panel and a listbox machine picker (`b3caca9`). Reviewed as PR #52 on 2026-09-28 and every finding addressed (*Review fixes*, below). See the Group 8 write-up below. Group 9 is unblocked |
-| 9 | Phases 11 + 12 + Phase 2's release-history table — the **Backups** tab (does not exist today) and its routes, Configuration, Audit log, Help, What's new, sign-in | ⏳ Not started. Parts 9a → 9b → 9c. Unblocked: Group 8's kit shipped 2026-09-28 |
+| 9 | Phases 11 + 12 + Phase 2's release-history table — the **Backups** tab and its routes, Configuration, Audit log, Help, What's new, sign-in | 🚧 In progress (branch `group-9-ui-redesign`). **9a ✅ 2026-09-29** — the Backups tab, its status / download / settings routes, the before-upgrade snapshot, the KB article; security bar met (BK-01, every download defence mutation-checked). 9b, 9c ⏳. See the Group 9 write-up below |
 | 10 | Phases 13 + 14 + the Phase 8 remainder + Phase 6 item 4 — agent UI completed, Deck Game Mode completed, Steam art / favicons / installer icon, the Wayland window | ⏳ Not started. Parts 10a → 10b, 10c any time, 10d (Wayland — option 1 decided 2026-09-28) any time after 10c's manifest. Independent of 8–9 |
 
 **2026-09-20 review pass (a code review of Groups 1–2, all findings fixed on branch
@@ -686,6 +686,38 @@ Push/Pull reaching the WSL agent; list ↔ grid and back to a game.
 ### Group 9 — Console: Backups, Configuration and the remaining pages (Phases 11 and 12, plus Phase 2's release-history table). Server + `web`.
 
 Every other console tab. After Group 8: built on its kit, and Configuration reuses its exclude-chip editor.
+
+🚧 **In progress on branch `group-9-ui-redesign`.**
+<br>**9a ✅ (2026-09-29).** *Server:* `BackupInfo` gained `Reason` (`Nightly` / `Manual` / `BeforeUpgrade`), carried in
+the file name after the timestamp (`-manual`, `-before-upgrade`; no suffix = Nightly, so every older snapshot reads right and
+the ordinal sort / prune pattern are unchanged). `GET /admin/backups/status` → `BackupStatusDto` (a sibling route, so the
+old list keeps its shape): settings in force, next run (null while off), backup folder, the last failure (kept until a
+snapshot succeeds), and the archives' total from `SaveVersions.Size` — what a snapshot does *not* hold. `POST
+/admin/backups/settings` (keep 1–365, hour 0–23, audited `settings.backup` with old and new) writes `Backup:Enabled` /
+`RetentionCount` / `HourOfDay` through `SettingsService` (DB over config); the scheduler re-reads them every loop and is
+woken by a change, so the toggle 9b puts in Configuration needs no restart. `GET /admin/backups/{file}`: admin group, the
+name matched ordinally against the listing (never joined into a path), audited `backup.download`, `Cache-Control:
+no-store`. Back up now is audited `backup.manual`. **Before upgrade:** at startup, before the schema fix-ups and
+`Migrate()`, a read-only bare-SQLite look at `Settings['Server:LastStartedVersion']`; a different build (or none recorded
+on a DB that has games) takes the snapshot, un-pruned, and the version is written only after `Migrate()` succeeds — so a
+failed migration retries its snapshot next start. A fresh install takes none. *Web:* `BackupsView.tsx` and the **Backups**
+tab (`#backups`, after Audit log as in the prototype): last-run chip (ok under 26 h, watch when older, empty or failed),
+Back up now, four stats, the snapshot table with a Download that fetches with the session header into a blob, and the
+"what this file holds" line beside it. KB `database-backups.md`. Audit tones for the three new actions (a download is
+`warn`). **Also fixed:** `index.css`'s `a` reset was unlayered, so it beat every link's `underline` / `text-*` utility
+(Gotchas → *Web console*) — it now sits in `@layer base`; the brand and help links compute the same as before.
+<br>**Verified:** `run-console-security-tests` gains **BK-01, 34 checks** — 401s, the reason in the name, `no-store`, the
+audit row, nine traversal / absolute / encoded / unlisted / case-changed names → 404, settings validation + wake +
+retention, and the before-upgrade snapshot through real restarts at three `SAVELOCKER_VERSION`s (none on a first start
+or a same-build restart, exactly one on a new build, recording the *old* build inside it). **Mutation-checked**, one
+defence at a time: path-joined lookup → 2 fail, no audit → 1, no `no-store` → 1, route outside the admin group → 3.
+**Run in this Linux container through a pwsh-7 shim of just that phase** — the suite itself is Windows PowerShell 5.1
+(CI's `console-security-tests` job runs it whole); the rest of the suite was not re-run here. `web` build + lint, and
+`run-appearance-consistency-tests` 35/35. Live in Chromium (dev server + scratch server): both themes, Back up now → a
+Manual row + toast, Download → a file starting `SQLite format 3` + the audit row, scheduled off → "Off · Scheduled
+backups are off", the focus ring on Back up now, the help link. **Not done:** the `testenv` console-container pass
+(rebuild at a different version) — the restarts above exercise the same code path, but not in Docker; the failed-run
+banner was not seen live (no way to make `VACUUM INTO` fail on a running scratch server here).
 
 - **9a — Backups (11.1–11.5, 11.8).** Server first: the status shape and `Reason` (11.2), the download
   route (11.3), the before-upgrade snapshot (11.4), DB-backed backup settings read by the scheduler each

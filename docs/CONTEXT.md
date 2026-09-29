@@ -1595,7 +1595,17 @@ dry-run count on screen.** Server: Cancel now also withdraws a claim that **laps
 predicate) and runs in one transaction, so two cancels at once audit once. `run-console-security-tests` 195 → **205**
 (8 of the 10 new checks fail against the PR-head server), `web` build + lint clean, and the UI fixes checked live
 through `testenv` with a real conflict.
-**Next action:** review and merge PR #52 (Group 8 + the OS-logo follow-up), then Group 9 (now unblocked) or Group 10.
+PR #52 merged.
+<br>**Group 9 started 2026-09-29 (branch `group-9-ui-redesign`) — 9a done: the console's Backups tab.** New admin routes
+`GET /admin/backups/status`, `POST /admin/backups/settings` (DB-backed schedule, re-read every scheduler loop) and
+`GET /admin/backups/{file}` (the download: admin-only, name matched against the listing, audited, `no-store`); a snapshot's
+reason (Nightly / Manual / Before upgrade) rides in its file name; the server takes a **before-upgrade snapshot** before
+migrating whenever it starts on a different build. `BackupsView.tsx` + KB `database-backups.md`. `openapi.json` +
+`web/src/api-types.ts` regenerated (additive). `run-console-security-tests` +34 (BK-01, mutation-checked) — run here only
+as that one phase through a pwsh-7 shim; CI runs the whole suite. Details and what was not verified:
+`tasks/checkpoint-ui/implementation-grouping.md` → Group 9.
+**Next action:** 9b (Configuration re-layout, storage meter, editable default excludes — it also puts 9a's schedule
+toggle on the page), then 9c.
 
 ---
 

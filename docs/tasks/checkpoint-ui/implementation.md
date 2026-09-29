@@ -7,7 +7,7 @@ Read [[plan]] first for tokens, type, motion and the colour rule, and
 [[implementation-grouping]] before starting any phase — it regroups the list below **by surface**
 rather than by phase number, because several phases edit the same components.
 
-## Status (updated 2026-09-28)
+## Status (updated 2026-09-29)
 
 | Phase | Status |
 |---|---|
@@ -22,7 +22,7 @@ rather than by phase number, because several phases edit the same components.
 | 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1). Remainder (Steam library art, PNG favicons, the installer icon — all still the pre-Checkpoint brand) ⏳ Group 10 (part 10c) |
 | 9 — Console page kit and top bar | ✅ Shipped 2026-09-28 (Group 8a) — the `ui/` kit, pill tabs, the always-present bell with per-item actions, the SVG lock, the conflict pill, the full-width rail with Cancel (`POST /commands/cancel`, new `Cancelled` status). The Backups tab arrives with Group 9 |
 | 10 — Console Games page | ✅ Shipped 2026-09-28 (Groups 8b + 8c) — split into `components/game/`, then re-laid out; no `alert()`/`confirm()`/`prompt()` left on the page (guarded by `run-appearance-consistency-tests`). Departures: see `implementation-grouping.md` → Group 8 |
-| 11 — Backups tab and Configuration | ⏳ Not started — Group 9. The Backups tab does not exist at all |
+| 11 — Backups tab and Configuration | 🚧 Items 11.1–11.5 and 11.8 ✅ shipped 2026-09-29 (Group 9a) — the Backups tab, status / download / settings routes, before-upgrade snapshot, KB article. 11.6–11.7 (Configuration) ⏳ Group 9b |
 | 12 — Console Audit log, Help, What's new, sign-in | ⏳ Not started — Group 9 |
 | 13 — Agent UI, completed | ⏳ Not started — Group 10 |
 | 14 — Deck Game Mode, completed | ⏳ Not started — Group 10 |
