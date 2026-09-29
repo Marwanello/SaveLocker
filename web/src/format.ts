@@ -53,6 +53,6 @@ export const plural = (n: number, noun: string, many = noun + 's') => `${n} ${n 
 /** A UTC wall-clock time, labelled as such: "03:00 UTC". Schedules run on the server's UTC clock. */
 export const utcClock = (t: string) => new Date(toMs(t)).toISOString().slice(11, 16) + ' UTC';
 
-/** "Sun 03:00 UTC". */
-export const utcDayClock = (t: string) =>
-  new Date(toMs(t)).toLocaleDateString(undefined, { weekday: 'short', timeZone: 'UTC' }) + ' ' + utcClock(t);
+/** "Sun 05:00" in the browser's own time zone. */
+export const localDayClock = (t: string) =>
+  new Date(toMs(t)).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, errorText } from '../api';
 import type { BackupInfo, BackupStatus } from '../types';
-import { ago, fmtSize, plural, toMs, utcClock, utcDayClock, when } from '../format';
+import { ago, fmtSize, plural, toMs, localDayClock, utcClock, when } from '../format';
 import { toast, toastError } from '../toast';
 import { Page } from './ui/Page';
 import { PageHead } from './ui/PageHead';
@@ -183,9 +183,9 @@ export function BackupsView({ onRestored }: Props) {
         <Stat label="All save versions" value={fmtSize(status.archivesBytes)}
           context={`${plural(status.archivesCount, 'version')} · only each game's latest is backed up`} />
         <Stat label="Next run"
-          value={status.enabled && status.nextRunAt ? utcDayClock(status.nextRunAt) : 'Off'}
+          value={status.enabled && status.nextRunAt ? localDayClock(status.nextRunAt) : 'Off'}
           context={status.enabled
-            ? status.nextRunAt ? countdown(status.nextRunAt) : 'being scheduled'
+            ? status.nextRunAt ? `${countdown(status.nextRunAt)} · ${utcClock(status.nextRunAt)}` : 'being scheduled'
             : 'Scheduled backups are off — Configuration turns them on'} />
       </div>
 

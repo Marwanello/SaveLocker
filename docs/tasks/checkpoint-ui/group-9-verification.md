@@ -32,7 +32,7 @@ Rig facts that matter here:
    - **Backups**
    - **On disk** (`/data/backups`)
    - **All save versions**, with "only each game's latest is backed up"
-   - **Next run**, reading **Sun 03:00 UTC** and "in Nd Nh"
+   - **Next run**, reading Sunday 03:00 UTC **in your local time** (e.g. **Sun 05:00** in UTC+2), with "in Nd Nh · 03:00 UTC" under it
 4. The table has File (`….zip`), Taken ("… · HH:MM UTC"), Size, **Holds** ("Database + latest saves"), Reason, and
    **Download** / **Restore** on every row.
 5. **Back up now**: the toast reads **Backup written. N KB.**, and a new `savelocker-YYYYMMDD-HHMMSS-manual.zip` row
@@ -58,7 +58,7 @@ Rig facts that matter here:
 1. **Configuration → Defaults & maintenance → Scheduled backup** is on and reads "The database and every game's latest
    save, zipped, [weekly] on [Sunday] at [03:00 UTC], keep [7]".
 2. Change it to **Wednesday** and **04:00 UTC**. The toast reads "Backups on: every Wednesday at 04:00 UTC, keeping 7."
-   **Backups → Next run** reads **Wed 04:00 UTC**.
+   **Backups → Next run** reads Wednesday 04:00 UTC in your local time, with "· 04:00 UTC" under it.
 3. Switch to **daily**. The day picker disappears and Next run is within 24 h. Switch back to weekly.
 4. Switch it **off**. Next run reads **Off**. Switch it on again.
 5. Set keep to **2** and press Back up now three times. Only 2 rows remain. Set keep back to 7.
