@@ -131,6 +131,7 @@ export function BackupsView({ onRestored }: Props) {
 
   const backups = status.backups;
   const newest = backups[0];
+  const newestUndo = backups.find(b => b.reason === 'BeforeRestore');
   const oldest = backups[backups.length - 1];
   const onDisk = backups.reduce((n, b) => n + b.sizeBytes, 0);
   const intervalMs = (status.frequency === 'daily' ? 1 : 7) * 24 * 3600_000;
@@ -176,7 +177,9 @@ export function BackupsView({ onRestored }: Props) {
             triggerVariant="alert"
             consequence={<>
               Deletes this backup from the server for good. It can't be restored afterwards
-              {b === newest ? '; the next scheduled run still takes a new one' : ''}. Download it first if you may need it.
+              {b === newest && status.enabled ? '; the next scheduled run still takes a new one' : ''}. Download it first if you may need it.
+              {b === newestUndo && <> This is the newest <strong className="text-fg">Before restore</strong> backup: without it,
+                the last restore can't be undone.</>}
             </>}
             confirmLabel={`Delete ${b.fileName}`}
             onConfirm={() => remove(b)}

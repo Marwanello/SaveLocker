@@ -425,16 +425,25 @@ public sealed class BackupService
 
     /// <summary>
     /// Deletes one backup. Taken under the same lock as a backup or restore, so a restore is never left reading a
-    /// file that disappears under it. Returns the deleted file's name, or null if there is no such backup.
+    /// file that disappears under it — but never WAITED for: a backup that zips every save can hold it for minutes,
+    /// and a delete that silently hangs that long is worse than one that says why and can be pressed again.
+    /// Returns the deleted file's name; (null, null) when there is no such backup; (null, why) when it could not be
+    /// deleted now.
     /// </summary>
-    public async Task<string?> DeleteAsync(string fileName, CancellationToken ct = default)
+    public async Task<(string? Deleted, string? Error)> DeleteAsync(string fileName)
     {
-        await _run.WaitAsync(ct);
+        if (Find(fileName) is null) return (null, null);
+        if (!await _run.WaitAsync(TimeSpan.Zero)) return (null, "A backup or restore is running. Try again when it has finished.");
         try
         {
-            if (Find(fileName) is not { } path) return null;
-            File.Delete(path);
-            return Path.GetFileName(path);
+            if (Find(fileName) is not { } path) return (null, null);
+            try { File.Delete(path); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _log.LogWarning(ex, "Could not delete backup {File}.", fileName);
+                return (null, $"The file could not be deleted: {ex.Message}");
+            }
+            return (Path.GetFileName(path), null);
         }
         finally { _run.Release(); }
     }

@@ -759,6 +759,11 @@ Check "BK-01: ... it is gone from the listing and the disk, and only it" `
 Check "BK-01: ... audited as backup.delete, naming the file" `
     ((@((Http GET "/api/audit?limit=500" $null $bk).Json | Where-Object { $_.action -eq "backup.delete" -and $_.detail -eq $del })).Count -eq 1)
 Check "BK-01: deleting it again -> 404" ((Http DELETE "/api/admin/backups/$del" $null $bk).Status -eq 404)
+# A file that cannot be deleted (held open without delete sharing) is a 409 with the reason, not a bare 500.
+$heldBk = [System.IO.File]::Open((Join-Path $backupDir $name), [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+try { $locked = Http DELETE "/api/admin/backups/$name" $null $bk } finally { $heldBk.Dispose() }
+Check "BK-01: deleting a backup that is held open -> 409, saying why ..." ($locked.Status -eq 409 -and ("" + $locked.Content) -match "could not be deleted")
+Check "BK-01: ... and it is still listed" ((@(Backups | Where-Object { $_.fileName -eq $name })).Count -eq 1)
 
 # A restored database gets exactly what a start gives it, not Migrate() alone: a database whose MachineSavePaths
 # table predates its migration row (made out-of-band, as old installs were) makes a bare Migrate() throw "table

@@ -1085,12 +1085,14 @@ admin.MapPost("/admin/backups/{file}/restore", async (string file, BackupService
     return Results.Ok(result);
 }).Produces<BackupRestoreResult>();
 
-admin.MapDelete("/admin/backups/{file}", async (string file, BackupService backup, SyncService sync, CancellationToken ct) =>
+// 409 when a backup or restore holds the lock, or the file is locked/unwritable: nothing was deleted.
+admin.MapDelete("/admin/backups/{file}", async (string file, BackupService backup, SyncService sync) =>
 {
-    if (await backup.DeleteAsync(file, ct) is not { } deleted) return Results.NotFound();
+    var (deleted, error) = await backup.DeleteAsync(file);
+    if (deleted is null) return error is null ? Results.NotFound() : Results.Conflict(error);
     await sync.LogAuditAsync("backup.delete", deleted);
     return Results.NoContent();
-});
+}).Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status409Conflict);
 
 // Public on purpose: the ticket IS the credential — 256 random bits, single-use, about a minute, one file,
 // minted only behind the admin session above (which also audited it).
