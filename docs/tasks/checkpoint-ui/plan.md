@@ -27,13 +27,13 @@ Brand kit: `brand-kit.html`, beside this file (also mirrored at
 | 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
 | 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22/23 (Group 6, PR #49): Checkpoint tokens with the `Safe`/`Accent` split, 62px rows, the button legend, Sync all on Y (its outcome shown in the header from every screen), a live header mark, lucide-traced icons (`SvgPath`), Archivo. Verified live under WSLg against the test rig (real `--nav` presses, a real Sync all round trip); **not yet on a real Deck/gamescope with a physical controller**. Item 4 (Wayland) ⏳ Group 10 — decided 2026-09-28: a chrome-less Chromium `--app=` window from a KDE-menu launcher, header bar drawn in the page |
 | 7 — OS notifications | ✅ Shipped 2026-09-24 (Group 7, PR #50; review fixes 2026-09-27) — buttons open the agent UI at the exact screen; they do not call back. Popup + click verified on a real Deck in Desktop Mode 2026-09-27 |
-| 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1). Steam library art, PNG favicons and the installer icon are still the pre-Checkpoint brand ⏳ Group 10 |
+| 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1). Steam library art, PNG favicons and the installer icon are still the pre-Checkpoint brand ✅ Shipped 2026-09-29 (Group 10c) |
 | 9 — Console page kit and top bar | ✅ Shipped 2026-09-28 (Group 8a). Added 2026-09-27 by the gap audit ([[implementation]] → *The 2026-09-27 audit*), as are 10–14 |
 | 10 — Console Games page | ✅ Shipped 2026-09-28 (Groups 8b + 8c). PR #52 reviewed the same day, every finding addressed ([[implementation-grouping]] → Group 8 → *Review fixes*) |
 | 11 — Backups tab and Configuration | ⏳ Not started — Group 9 (the Backups tab does not exist today) |
 | 12 — Console Audit log, Help, What's new, sign-in | ⏳ Not started — Group 9 |
-| 13 — Agent UI, completed | ⏳ Not started — Group 10 |
-| 14 — Deck Game Mode, completed | ⏳ Not started — Group 10 |
+| 13 — Agent UI, completed | ✅ Shipped 2026-09-29 (Group 10a) |
+| 14 — Deck Game Mode, completed | ✅ Shipped 2026-09-29 (Group 10b). Verified with `--screenshot`/`--nav`; not yet on a physical Deck |
 
 The phases are enumerated in [[implementation]] and the session-by-session order is
 [[implementation-grouping]]. Every design decision on this page is still current — **with one

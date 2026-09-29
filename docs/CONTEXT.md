@@ -1595,7 +1595,13 @@ dry-run count on screen.** Server: Cancel now also withdraws a claim that **laps
 predicate) and runs in one transaction, so two cancels at once audit once. `run-console-security-tests` 195 → **205**
 (8 of the 10 new checks fail against the PR-head server), `web` build + lint clean, and the UI fixes checked live
 through `testenv` with a real conflict.
-**Next action:** review and merge PR #52 (Group 8 + the OS-logo follow-up), then Group 9 (now unblocked) or Group 10.
+<br>**Group 10 shipped 2026-09-29 (branch `claude/group-10-ui-redesign-2083d5`, four commits: 10a `7f80be6`, 10c `a88fbe1`, 10d `f2d01d2`, 10b `81321d7`; no PR yet).**
+10a: agent UI Activity tab, offline queue, Sync-all "N of M" + cooperative Cancel (between games, `POST /api/sync/cancel`), last-run summary,
+per-game stats/versions/open-folder, resolved conflicts, "Sent today"; new server agent routes `games/{id}/versions` and `conflicts?resolvedSince=`.
+10b: Deck rail of six sections, Tracked games with cover art (StbImageSharp), Game and Activity screens, battery, Steam setup under Settings; `SvgPath` gained cubics.
+10c: `npm run export:art` (resvg, Archivo only) regenerates Steam art, PNG/ICO favicons, installer icon. 10d: `savelocker open` (Chromium `--app=`, Flatpak and xdg-open fallbacks, pure `AppWindowPlanner`) + `.desktop` entry from `install.sh`.
+Not verified: a real Deck, Windows tray/WebView2, the WA suites. **Gotcha:** `testenv clean` wipes the rig shared by all worktrees — it disrupted another worktree's process on :5188.
+**Next action:** open/review the Group 10 PR, then Group 9. Replay: `tasks/checkpoint-ui/implementation-grouping.md` → Group 10.
 
 ---
 
