@@ -41,6 +41,10 @@ public sealed class SettingsService
     /// prototype's default, and the reason "set it once, every machine matches" works out of the box.</summary>
     public const string UiPushToAgents = "Ui:PushToAgents";
 
+    /// <summary>The console's default exclude list, as a JSON array — JSON so that an admin who removes
+    /// every default ("[]") is told apart from one who never saved a list (no row: config applies).</summary>
+    public const string DefaultExcludeGlobs = "Sync:DefaultExcludeGlobs";
+
     private readonly AppDbContext _db;
     private readonly IConfiguration _cfg;
 
@@ -214,22 +218,45 @@ public sealed class SettingsService
         await _db.SaveChangesAsync(ct);
     }
 
+    /// <summary>The exclude patterns every game inherits, and whether they were saved from the console.</summary>
+    public async Task<(string[] Globs, bool FromConsole)> GetDefaultExcludesAsync(CancellationToken ct = default)
+    {
+        var row = await _db.Settings.FindAsync(new object?[] { DefaultExcludeGlobs }, ct);
+        if (row is not null && !string.IsNullOrWhiteSpace(row.Value))
+        {
+            try
+            {
+                if (System.Text.Json.JsonSerializer.Deserialize<string[]>(row.Value) is { } saved)
+                    return (saved.Select(s => s.Trim()).Where(s => s.Length > 0).ToArray(), true);
+            }
+            catch (System.Text.Json.JsonException) { /* unreadable: fall back to config, never to "none" */ }
+        }
+        return (GlobConfig.ConfigDefaults(_cfg), false);
+    }
+
+    /// <summary>Store the console's default list (already validated). An empty list means "no defaults".</summary>
+    public Task SetDefaultExcludesAsync(IEnumerable<string> patterns, CancellationToken ct = default) =>
+        SetAsync(DefaultExcludeGlobs, System.Text.Json.JsonSerializer.Serialize(
+            patterns.Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()), ct);
+
     /// <summary>The dashboard-facing settings snapshot (never includes the raw key).</summary>
     public async Task<ServerSettingsDto> GetServerSettingsDtoAsync(CancellationToken ct = default)
     {
         var inDb = await _db.Settings.AnyAsync(s => s.Key == SteamGridDbApiKey && s.Value != "", ct);
         var key = await GetEffectiveAsync(SteamGridDbApiKey, ct);
         var schedule = await GetAutoFetchScheduleAsync(ct);
+        var (defaults, defaultsFromConsole) = await GetDefaultExcludesAsync(ct);
         return new ServerSettingsDto(
             SteamGridDbConfigured: !string.IsNullOrWhiteSpace(key),
             SteamGridDbKeyMasked: Mask(key),
             SteamGridDbFromConfig: !inDb && !string.IsNullOrWhiteSpace(key),
             AdminPasswordSet: await HasAdminPasswordAsync(ct),
-            DefaultExcludeGlobs: GlobConfig.GlobalDefaults(_cfg),
+            DefaultExcludeGlobs: defaults,
             AutoFetchHours: schedule.Hours,
             Schedule: schedule,
             NextAutoFetchRunAt: AutoFetchScheduler.ComputeNextRun(schedule, DateTime.UtcNow),
-            Appearance: await GetAppearanceAsync(ct));
+            Appearance: await GetAppearanceAsync(ct),
+            DefaultExcludeGlobsFromConsole: defaultsFromConsole);
     }
 
     /// <summary>Show only the last 4 characters so the dashboard can confirm which key is set.</summary>

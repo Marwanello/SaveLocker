@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using SaveLocker.Server.Data;
 using SaveLocker.Shared;
 
@@ -52,6 +52,7 @@ public sealed class HealthService
         health.TrackedGames = beat.TrackedGames;
         health.UnmappedGames = beat.UnmappedGames;
         health.OfflineQueueDepth = beat.OfflineQueueDepth;
+        health.StagedVersion = Clean(beat.StagedVersion, 64);
 
         // An agent that predates the field sends none: keep what a newer one reported rather than
         // blanking it, since a downgrade does not change the OS underneath.
@@ -226,7 +227,8 @@ public sealed class HealthService
                     .ToArray(),
                 Os: h?.OsId is { } osId
                     ? new AgentOsInfo(osId, h.OsName ?? osId, h.OsIdLike, h.OsVariantId, h.OsDevice)
-                    : null);
+                    : null,
+                StagedVersion: h?.StagedVersion);
         }).ToList();
     }
 

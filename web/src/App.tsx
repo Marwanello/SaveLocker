@@ -181,10 +181,10 @@ export default function App() {
     return () => clearInterval(id);
   }, [canLoad, load]);
 
-  async function handleSignIn(password: string) {
+  async function handleSignIn(password: string, remember: boolean) {
     setSignInBusy(true);
     setSignInNotice(null);
-    const result = await signIn(password);
+    const result = await signIn(password, remember);
     setSignInBusy(false);
     if (!result.ok) {
       setSignInNotice({ text: result.message, tone: 'error' });
@@ -286,7 +286,7 @@ export default function App() {
       )}
 
       {needsSignIn && !isPublicView && (
-        <SignIn notice={signInNotice} busy={signInBusy} onSubmit={p => void handleSignIn(p)} />
+        <SignIn notice={signInNotice} busy={signInBusy} build={build} onSubmit={(p, r) => void handleSignIn(p, r)} />
       )}
 
       {((passwordRequired === null && !error) || (canLoad && loading && !data)) && !isPublicView && (
@@ -301,7 +301,7 @@ export default function App() {
 
       {view === 'whats-new' && (
         <div className="flex-1 flex flex-col min-h-0">
-          <WhatsNewView build={build} />
+          <WhatsNewView build={build} health={data && !needsSignIn ? data.health : undefined} />
         </div>
       )}
 

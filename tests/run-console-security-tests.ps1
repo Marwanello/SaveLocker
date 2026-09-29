@@ -18,6 +18,13 @@
 #                                 names are 404s), audited and `no-store`; the reason rides in the name;
 #                                 the schedule settings are validated, audited and wake the scheduler;
 #                                 a new build's first start snapshots the DB BEFORE migrating it, once.
+#   CFG-01  server defaults       the default exclude list is editable from the console: admin-only,
+#                                 validated like a game's own (".." refused, nothing stored), audited
+#                                 with its diff; an agent's game list and a new enrollment file both
+#                                 carry it (proved, not assumed); "[]" means no defaults, not "use
+#                                 config"; the settings DTO names where the list came from and the
+#                                 storage figures. Plus the heartbeat's StagedVersion reaching the
+#                                 console and clearing when the agent stops sending it.
 #   UI-01   appearance            the console's theme/accent/mark: validated against closed id lists (a
 #                                 CSS-shaped value is a 400), stored all-or-nothing, admin-only and
 #                                 audited; the heartbeat carries it to any machine, and carries NOTHING
@@ -666,6 +673,56 @@ Start-Phase "backups" @{ Security__MaxFailedAttempts = "1000"; SAVELOCKER_VERSIO
 $bk = Session (Login $pw).Json.token
 Check "BK-01: ... and only once (a second start of that build takes none)" `
     ((@((Http GET "/api/admin/backups/status" $null $bk).Json.backups | Where-Object { $_.reason -eq "BeforeUpgrade" })).Count -eq 1)
+Stop-Phase
+
+# =====================================================================================
+Write-Host ""; Write-Host "==== Phase 5e: CFG-01 server defaults, storage, staged agent updates ===="
+Start-Phase "cfgdefaults" @{ Security__MaxFailedAttempts = "1000" }
+Http POST "/api/admin/password" @{ password = $pw } | Out-Null
+$cf = Session (Login $pw).Json.token
+$cm = (Http POST "/api/machines/register" @{ name = "CFG-M1" } (PwHeader $pw)).Json
+$ck = @{ "X-Api-Key" = $cm.apiKey }
+$cg = (Http POST "/api/games" @{ name = "CFG Game" } $cf).Json.id
+Http POST "/api/games/$cg/excludes" @("mine/*.sav") $cf | Out-Null
+$s0 = (Http GET "/api/settings" $null $cf).Json
+Check "CFG-01: before any save, the defaults come from configuration (and say so)" `
+    (@($s0.defaultExcludeGlobs) -contains "*.tmp" -and $s0.defaultExcludeGlobsFromConsole -eq $false)
+Check "CFG-01: the settings carry the storage figures (archive root, volume size, default keep, escalation)" `
+    ($s0.storage.archiveRoot -and $s0.storage.volumeTotalBytes -gt 0 -and $s0.storage.volumeFreeBytes -ge 0 -and
+     $s0.storage.defaultRetainVersions -ge 1 -and $s0.storage.escalationAfterSeconds -gt 0)
+Check "CFG-01: saving defaults without a session -> 401" ((Http POST "/api/settings/default-excludes" @("*.cfg-x")).Status -eq 401)
+$bad = Http POST "/api/settings/default-excludes" @("*.log", "a/../b") $cf
+Check "CFG-01: a pattern the matcher cannot evaluate ('..') is refused (400) ..." ($bad.Status -eq 400)
+Check "CFG-01: ... and nothing was stored" ((Http GET "/api/settings" $null $cf).Json.defaultExcludeGlobsFromConsole -eq $false)
+$tooMany = @(1..101 | ForEach-Object { "*.x$_" })
+Check "CFG-01: more than 100 defaults is refused (400)" ((Http POST "/api/settings/default-excludes" $tooMany $cf).Status -eq 400)
+$ok = Http POST "/api/settings/default-excludes" @("*.log", "shadercache/**") $cf
+Check "CFG-01: a valid list is stored (200) and echoed back" ($ok.Status -eq 200 -and (@($ok.Json) -join ",") -eq "*.log,shadercache/**")
+$s1 = (Http GET "/api/settings" $null $cf).Json
+Check "CFG-01: the settings now read the console's list, marked as saved from the console" `
+    ((@($s1.defaultExcludeGlobs) -join ",") -eq "*.log,shadercache/**" -and $s1.defaultExcludeGlobsFromConsole -eq $true)
+$ag = @((Http GET "/api/games" $null $ck).Json | Where-Object { $_.id -eq $cg })[0]
+Check "CFG-01: an agent's game list carries the new defaults plus the game's own pattern" `
+    ((@($ag.excludeGlobs) | Sort-Object) -join "," -eq "*.log,mine/*.sav,shadercache/**")
+Check "CFG-01: ... and no longer the config defaults it replaced" (-not (@($ag.excludeGlobs) -contains "*.tmp"))
+$enr = (Http POST "/api/admin/enrollments" @{ machineName = $null; ttlMinutes = 5; serverUrl = "http://example.test"; gameIds = $null } $cf).Json
+$eg = @($enr.policy.games | Where-Object { $_.id -eq $cg -or $_.gameId -eq $cg })[0]
+Check "CFG-01: a new enrollment file carries them too" (@($eg.excludeGlobs) -contains "shadercache/**")
+$audit = @((Http GET "/api/audit?limit=500" $null $cf).Json | Where-Object { $_.action -eq "settings.default_excludes" })
+Check "CFG-01: the change is audited with what was added and removed" `
+    ($audit.Count -eq 1 -and $audit[0].detail -match "added shadercache/\*\*" -and $audit[0].detail -match "removed .*\*\.tmp")
+Check "CFG-01: an empty list is allowed (200) ..." ((Http POST "/api/settings/default-excludes" @() $cf).Status -eq 200)
+$ag2 = @((Http GET "/api/games" $null $ck).Json | Where-Object { $_.id -eq $cg })[0]
+Check "CFG-01: ... and means NO defaults, not 'fall back to config'" ((@($ag2.excludeGlobs) -join ",") -eq "mine/*.sav")
+# The heartbeat's StagedVersion: display only, and it clears when the agent stops sending it.
+Http POST "/api/agent/health" @{ agentVersion = "0.5.12"; platform = "Linux"; stagedVersion = "0.6.0" } $ck | Out-Null
+$hs = @((Http GET "/api/admin/health" $null $cf).Json | Where-Object { $_.machineId -eq $cm.machineId })[0]
+Check "CFG-01: a staged update reported in the heartbeat reaches the console" ($hs.stagedVersion -eq "0.6.0")
+Http POST "/api/agent/health" @{ agentVersion = "0.6.0"; platform = "Linux" } $ck | Out-Null
+$hs2 = @((Http GET "/api/admin/health" $null $cf).Json | Where-Object { $_.machineId -eq $cm.machineId })[0]
+Check "CFG-01: ... and clears once a beat carries none (the update applied)" ($null -eq $hs2.stagedVersion -and $hs2.agentVersion -eq "0.6.0")
+Check "CFG-01: /admin/status names no latest release before the server has read one from GitHub" `
+    ($null -eq (Http GET "/api/admin/status").Json.build.latestRelease)
 Stop-Phase
 
 # =====================================================================================

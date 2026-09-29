@@ -1448,6 +1448,41 @@
         }
       }
     },
+    "/api/settings/default-excludes": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/steamgriddb-key": {
       "post": {
         "tags": [
@@ -2825,6 +2860,12 @@
                 "$ref": "#/components/schemas/AgentOsInfo"
               }
             ]
+          },
+          "stagedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2899,6 +2940,12 @@
               {
                 "$ref": "#/components/schemas/AgentOsInfo"
               }
+            ]
+          },
+          "stagedVersion": {
+            "type": [
+              "null",
+              "string"
             ]
           }
         }
@@ -4483,6 +4530,12 @@
           },
           "isRelease": {
             "type": "boolean"
+          },
+          "latestRelease": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -4550,6 +4603,67 @@
                 "$ref": "#/components/schemas/AppearanceSettingsDto"
               }
             ]
+          },
+          "defaultExcludeGlobsFromConsole": {
+            "type": "boolean",
+            "default": false
+          },
+          "storage": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ServerStorageDto"
+              }
+            ]
+          }
+        }
+      },
+      "ServerStorageDto": {
+        "required": [
+          "archiveRoot",
+          "volumeTotalBytes",
+          "volumeFreeBytes",
+          "archivesBytes",
+          "gamesWithArchives",
+          "defaultRetainVersions",
+          "escalationAfterSeconds"
+        ],
+        "type": "object",
+        "properties": {
+          "archiveRoot": {
+            "type": "string"
+          },
+          "volumeTotalBytes": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "volumeFreeBytes": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "archivesBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "gamesWithArchives": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "defaultRetainVersions": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "escalationAfterSeconds": {
+            "type": "number",
+            "format": "double"
           }
         }
       },

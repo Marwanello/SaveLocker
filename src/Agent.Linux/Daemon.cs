@@ -1,4 +1,4 @@
-namespace SaveLocker.Agent.Linux;
+﻿namespace SaveLocker.Agent.Linux;
 
 /// <summary>
 /// The headless agent. There is no tray and no toast on a Deck (Game Mode has no desktop), so
@@ -60,6 +60,7 @@ public sealed class Daemon : IAsyncDisposable
         _config = config;
         _offlineQueue = OfflineQueue.For(config);
         _health = HealthReporter.For(config);
+        HealthReporter.StagedVersion = Updater.PendingVersion;
         _detection = new Detection(config);
         _scanner = new LinuxGameScanner(_detection);
         _activityStore = SyncActivityStore.For(config);

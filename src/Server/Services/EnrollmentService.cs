@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using SaveLocker.Server.Data;
 using SaveLocker.Shared;
 
@@ -26,12 +26,14 @@ public sealed class EnrollmentService
     private readonly AppDbContext _db;
     private readonly SyncService _sync;
     private readonly IConfiguration _config;
+    private readonly SettingsService _settings;
 
-    public EnrollmentService(AppDbContext db, SyncService sync, IConfiguration config)
+    public EnrollmentService(AppDbContext db, SyncService sync, IConfiguration config, SettingsService settings)
     {
         _db = db;
         _sync = sync;
         _config = config;
+        _settings = settings;
     }
 
     /// <summary>
@@ -67,6 +69,7 @@ public sealed class EnrollmentService
             games = games.Where(g => wanted.Contains(g.Id)).ToList();
         }
 
+        var (defaultExcludes, _) = await _settings.GetDefaultExcludesAsync();
         var policy = new EnrollmentPolicy(
             Version: EnrollmentPolicy.CurrentVersion,
             ServerUrl: (string.IsNullOrWhiteSpace(req.ServerUrl) ? requestServerUrl : req.ServerUrl).TrimEnd('/'),
@@ -80,7 +83,7 @@ public sealed class EnrollmentService
                 g.Name,
                 g.ManifestKey,
                 g.SuggestedSaveDir,
-                GlobConfig.Effective(_config, g.ExcludeGlobs))).ToArray());
+                GlobConfig.Effective(defaultExcludes, g.ExcludeGlobs))).ToArray());
 
         _db.AuditLogs.Add(NewAudit("enrollment.create", MintDetail(token)));
         await _db.SaveChangesAsync();

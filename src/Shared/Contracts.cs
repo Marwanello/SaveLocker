@@ -69,7 +69,20 @@ public record ServerSettingsDto(
     double AutoFetchHours = 0,
     AutoFetchSchedule? Schedule = null,
     DateTime? NextAutoFetchRunAt = null,
-    AppearanceSettingsDto? Appearance = null);
+    AppearanceSettingsDto? Appearance = null,
+    bool DefaultExcludeGlobsFromConsole = false,
+    ServerStorageDto? Storage = null);
+
+/// <summary>What the Configuration page's Server card reads: where archives live and how full that volume
+/// is (null sizes when the volume cannot be read), the default keep, and the conflict-escalation window.</summary>
+public record ServerStorageDto(
+    string ArchiveRoot,
+    long? VolumeTotalBytes,
+    long? VolumeFreeBytes,
+    long ArchivesBytes,
+    int GamesWithArchives,
+    int DefaultRetainVersions,
+    double EscalationAfterSeconds);
 
 /// <summary>
 /// When the server automatically checks GitHub for newer agent/plugin packages.
@@ -584,7 +597,10 @@ public record AgentHeartbeat(
     // order (see CONTEXT.md's deploy note).
     ScanPathCandidate[]? PathCandidates = null,
     // Appended and optional for the same reason. Null from an agent that predates it.
-    AgentOsInfo? Os = null);
+    AgentOsInfo? Os = null,
+    // An update downloaded and verified but not yet applied (the Linux agent swaps it in at its next
+    // start). Null when none is staged — and from any agent that predates the field.
+    string? StagedVersion = null);
 
 /// <summary>
 /// Which operating system an agent runs on, so the console can put the right logo beside a machine.
@@ -663,7 +679,8 @@ public record AgentHealthDto(
     int OfflineQueueDepth,
     AgentEventDto[] OpenEvents,
     // Null until the machine's agent reports it (an older agent never does).
-    AgentOsInfo? Os = null);
+    AgentOsInfo? Os = null,
+    string? StagedVersion = null);
 
 // ----- Agent update channel -----
 
@@ -725,7 +742,9 @@ public record SyncStatusDto(bool InSync, bool HasOpenConflict, Guid? ConflictId 
 /// the whole repo); it carries a <c>+{n}.{sha}</c> suffix on builds after the nearest tag.
 /// <paramref name="BuiltAt"/> is UTC, null when unstamped.
 /// </summary>
-public record ServerBuildInfo(string Version, string Commit, DateTime? BuiltAt, bool IsRelease);
+/// <param name="LatestRelease">The newest release tag the server has read from its GitHub repo (the agent
+/// update poll or a manual fetch), without a leading "v"; null until one has been read since start.</param>
+public record ServerBuildInfo(string Version, string Commit, DateTime? BuiltAt, bool IsRelease, string? LatestRelease = null);
 
 /// <summary>Response of /api/admin/status — reachability, auth requirement and build identity.</summary>
 public record AdminStatus(bool PasswordRequired, ServerBuildInfo Build);

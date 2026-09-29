@@ -1740,6 +1740,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/default-excludes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": string[];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string[];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/steamgriddb-key": {
         parameters: {
             query?: never;
@@ -3259,6 +3298,7 @@ export interface components {
             offlineQueueDepth: number;
             openEvents: components["schemas"]["AgentEventDto"][];
             os?: null | components["schemas"]["AgentOsInfo"];
+            stagedVersion?: null | string;
         };
         AgentHeartbeat: {
             agentVersion: string;
@@ -3284,6 +3324,7 @@ export interface components {
             resolvedGameIds?: null | string[];
             pathCandidates?: null | components["schemas"]["ScanPathCandidate"][];
             os?: null | components["schemas"]["AgentOsInfo"];
+            stagedVersion?: null | string;
         };
         AgentHeartbeatResponse: {
             escalatedConflicts: components["schemas"]["ConflictEscalationDto"][];
@@ -3700,6 +3741,7 @@ export interface components {
             /** Format: date-time */
             builtAt: null | string;
             isRelease: boolean;
+            latestRelease?: null | string;
         };
         ServerSettingsDto: {
             steamGridDbConfigured: boolean;
@@ -3716,6 +3758,24 @@ export interface components {
             /** Format: date-time */
             nextAutoFetchRunAt?: null | string;
             appearance?: null | components["schemas"]["AppearanceSettingsDto"];
+            /** @default false */
+            defaultExcludeGlobsFromConsole: boolean;
+            storage?: null | components["schemas"]["ServerStorageDto"];
+        };
+        ServerStorageDto: {
+            archiveRoot: string;
+            /** Format: int64 */
+            volumeTotalBytes: null | number;
+            /** Format: int64 */
+            volumeFreeBytes: null | number;
+            /** Format: int64 */
+            archivesBytes: number;
+            /** Format: int32 */
+            gamesWithArchives: number;
+            /** Format: int32 */
+            defaultRetainVersions: number;
+            /** Format: double */
+            escalationAfterSeconds: number;
         };
         SessionResponse: {
             token: null | string;

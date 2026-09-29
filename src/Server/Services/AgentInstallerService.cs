@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text.Json;
 using SaveLocker.Shared;
 
@@ -69,6 +69,10 @@ public class AgentInstallerService
     /// contend for almost nothing, and one gate is one thing to reason about.
     /// </summary>
     private readonly SemaphoreSlim _gate = new(1, 1);
+
+    /// <summary>The newest SaveLocker release tag read from GitHub since start (an agent slot's repo is
+    /// the server's own). What the console's What's new calls "available".</summary>
+    public string? LatestReleaseSeen { get; private set; }
 
     private static readonly JsonSerializerOptions _json = new() { PropertyNameCaseInsensitive = true };
 
@@ -366,6 +370,7 @@ public class AgentInstallerService
             using var doc = JsonDocument.Parse(await metaResp.Content.ReadAsStringAsync(ct));
             var root = doc.RootElement;
             var version = (root.GetProperty("tag_name").GetString() ?? "").TrimStart('v', 'V');
+            if (slot.Platform is AgentPlatform.Windows or AgentPlatform.Linux && version.Length > 0) LatestReleaseSeen = version;
 
             string? assetName = null, assetUrl = null;
             foreach (var a in root.GetProperty("assets").EnumerateArray())

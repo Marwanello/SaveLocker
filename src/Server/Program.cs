@@ -385,8 +385,9 @@ app.MapPost("/api/admin/session", async (
 // readable before you can authenticate — a wrong admin password is one of the things you would be
 // diagnosing. It does disclose the exact version and commit to anyone who can reach the port; for a
 // self-hosted LAN service that is the accepted trade for keeping the probe open.
-app.MapGet("/api/admin/status", async (SettingsService settings) =>
-    Results.Ok(new AdminStatus(await settings.HasAdminPasswordAsync(), BuildInfo.Current)))
+app.MapGet("/api/admin/status", async (SettingsService settings, AgentInstallerService installer) =>
+    Results.Ok(new AdminStatus(await settings.HasAdminPasswordAsync(),
+        BuildInfo.Current with { LatestRelease = installer.LatestReleaseSeen })))
     .Produces<AdminStatus>();
 
 // ---- Public: enrollment redeem ----
@@ -405,14 +406,15 @@ app.MapPost("/api/enroll", async (RedeemEnrollmentRequest req, EnrollmentService
 var agent = app.MapGroup("/api").AddEndpointFilter<ApiKeyFilter>();
 
 // Include this machine's stored save path in each game so the agent can use it in reconcile.
-agent.MapGet("/games", async (HttpContext http, SyncService sync, IConfiguration cfg) =>
+agent.MapGet("/games", async (HttpContext http, SyncService sync, SettingsService settings) =>
 {
     var machine = http.CurrentMachine();
     var games = await sync.ListGamesAsync();
     var pathMap = await sync.GetMachinePathMapAsync(machine.Id);
+    var (defaults, _) = await settings.GetDefaultExcludesAsync();
     // Agents receive the effective exclude set (global defaults ∪ per-game) to apply.
     return Results.Ok(games.Select(g => g.ToDtoWithPath(pathMap.GetValueOrDefault(g.Id))
-        with { ExcludeGlobs = GlobConfig.Effective(cfg, g.ExcludeGlobs) }));
+        with { ExcludeGlobs = GlobConfig.Effective(defaults, g.ExcludeGlobs) }));
 }).Produces<List<GameDto>>();
 
 // ---- Leases (agent) ----
@@ -776,9 +778,43 @@ admin.MapGet("/overview", async (SyncService sync) =>
     .Produces<List<GameStateDto>>();
 
 // ---- Server settings (admin) ----
-admin.MapGet("/settings", async (SettingsService settings) =>
-    Results.Ok(await settings.GetServerSettingsDtoAsync()))
-    .Produces<ServerSettingsDto>();
+admin.MapGet("/settings", async (SettingsService settings, ArchiveStore store, AppDbContext db,
+    ConflictEscalationPolicy escalation, IConfiguration cfg, CancellationToken ct) =>
+{
+    long? total = null, free = null;
+    try
+    {
+        // DriveInfo on a path resolves the volume that holds it (a bind mount in Docker included).
+        var drive = new DriveInfo(Path.GetFullPath(store.Root));
+        total = drive.TotalSize; free = drive.AvailableFreeSpace;
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { }
+    var storage = new ServerStorageDto(
+        Path.GetFullPath(store.Root), total, free,
+        await db.SaveVersions.SumAsync(v => (long?)v.Size, ct) ?? 0,
+        await db.SaveVersions.Select(v => v.GameId).Distinct().CountAsync(ct),
+        cfg.GetValue<int?>("Storage:RetainVersionsPerGame") ?? 10,
+        escalation.After.TotalSeconds);
+    return Results.Ok(await settings.GetServerSettingsDtoAsync(ct) with { Storage = storage });
+}).Produces<ServerSettingsDto>();
+
+// The exclude patterns every game inherits. Validated exactly as a game's own list is (a pattern the
+// matcher cannot evaluate would throw inside every agent's hash of every save folder). Agents pick the
+// new set up from their next game-list poll — no agent change.
+admin.MapPost("/settings/default-excludes", async (string[] patterns, SettingsService settings, SyncService sync, CancellationToken ct) =>
+{
+    if (GlobConfig.Validate(patterns, "as server defaults") is { } refused) return Results.BadRequest(refused);
+    var (before, _) = await settings.GetDefaultExcludesAsync(ct);
+    await settings.SetDefaultExcludesAsync(patterns, ct);
+    var (after, _) = await settings.GetDefaultExcludesAsync(ct);
+    var added = after.Except(before, StringComparer.OrdinalIgnoreCase).ToArray();
+    var removed = before.Except(after, StringComparer.OrdinalIgnoreCase).ToArray();
+    await sync.LogAuditAsync("settings.default_excludes",
+        (added.Length > 0 ? $"added {string.Join(", ", added)}" : "") +
+        (added.Length > 0 && removed.Length > 0 ? "; " : "") +
+        (removed.Length > 0 ? $"removed {string.Join(", ", removed)}" : "") is { Length: > 0 } d ? d : "unchanged");
+    return Results.Ok(after);
+}).Produces<string[]>();
 
 // Verify FIRST, store only on success. The old order stored the key and then asked SteamGridDB
 // about it, answering 200 with { ok: false } either way — so a typo silently replaced a working

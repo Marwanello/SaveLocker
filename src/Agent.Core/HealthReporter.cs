@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using SaveLocker.Shared;
 
@@ -19,6 +19,10 @@ namespace SaveLocker.Agent;
 /// </summary>
 public sealed class HealthReporter
 {
+    /// <summary>The update this host has staged but not applied, for the heartbeat. Set by a host that
+    /// stages (the Linux agent); the Windows installer applies at once, so it leaves this null.</summary>
+    public static Func<AgentConfig, string?>? StagedVersion { get; set; }
+
     private sealed class Pending
     {
         public string Code { get; set; } = "";
@@ -181,7 +185,8 @@ public sealed class HealthReporter
                 e.Code, e.Severity, e.Message, e.GameId, e.OccurredAt)).ToArray(),
             ResolvedGameIds: resolved,
             PathCandidates: pathCandidates.Length == 0 ? null : pathCandidates,
-            Os: OsIdentity.This);
+            Os: OsIdentity.This,
+            StagedVersion: StagedVersion?.Invoke(config));
 
         AgentHeartbeatResponse response;
         try
