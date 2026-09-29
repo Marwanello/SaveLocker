@@ -1,4 +1,4 @@
-import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule } from './types';
+import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule } from './types';
 
 // The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
 // itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
@@ -234,6 +234,17 @@ export const api = {
         // unannounced whenever it next connects. The server leaves such machines out and names them.
         skipMachinesUnseenForSeconds: skipUnseenForSeconds,
       }),
+    }),
+
+  /**
+   * Console "Cancel" beside a running Sync all. Withdraws the commands no agent has claimed yet (they
+   * become `Cancelled`); a claimed one cannot be recalled and comes back under `alreadyRunning`.
+   */
+  cancelCommands: (ids: string[]) =>
+    request<CancelCommandsResponse>('/commands/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
     }),
 
   /** "Sign out everywhere": ends every session on the server, this browser's included. */

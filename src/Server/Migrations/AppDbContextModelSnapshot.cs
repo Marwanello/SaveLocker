@@ -157,6 +157,21 @@ namespace SaveLocker.Server.Migrations
                     b.Property<int>("OfflineQueueDepth")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("OsDevice")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OsId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OsIdLike")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OsName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OsVariantId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Platform")
                         .HasColumnType("TEXT");
 

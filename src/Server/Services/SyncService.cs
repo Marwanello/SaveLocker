@@ -904,7 +904,7 @@ public sealed class SyncService
         long maxBytes, SHA256 aggregate)
     {
         var entry = dest.CreateEntry(path, CompressionLevel.Optimal);
-        entry.LastWriteTime = src.LastWriteTime;
+        SaveArchive.CopyWriteTime(src, entry);
 
         using var sha = SHA256.Create();
         using var srcStream = src.Open();
@@ -1873,6 +1873,82 @@ public sealed class SyncService
         return await _db.AgentCommands.Include(c => c.Machine).FirstAsync(c => c.Id == cmd.Id);
     }
 
+    public const string CancelledResult = "Cancelled from the console before any agent picked it up.";
+    public const string CancelledLapsedResult =
+        "Cancelled from the console after the agent that took it stopped answering (its claim had lapsed).";
+
+    /// <summary>
+    /// Dashboard: the console's Cancel beside a running Sync all. Withdraws the listed commands no agent
+    /// holds (Pending, or Dispatched with a lapsed claim → Cancelled) and reports the rest for what they
+    /// are — a live claim is executing on its machine and cannot be recalled, so it runs to completion.
+    /// <para>
+    /// "Holds" is exactly the claim's own predicate in <see cref="DequeueCommandsAsync"/>: a claim whose
+    /// lease ran out unanswered is due to be handed out again on the next poll, so it is as withdrawable
+    /// as one never handed out (and the console already shows it as Queued).
+    /// </para>
+    /// <para>
+    /// The withdrawal is ONE conditional UPDATE on that predicate, so a command an agent polls for in the
+    /// same instant lands on exactly one side: the agent gets it and it is reported as running, or it is
+    /// cancelled and no poll ever hands it out. It runs inside a transaction with the reads around it and
+    /// the audit rows, which serialises two cancels of the same batch (SQLite's writer lock is taken at
+    /// BEGIN): the second one reads the first one's result, so a withdrawal is reported and audited once.
+    /// </para>
+    /// Every id must exist (<c>Unknown</c> names the ones that do not, for a 404) — the same all-or-nothing
+    /// rule as <see cref="EnqueueCommandsAsync"/>, so a typo cannot quietly cancel half a batch.
+    /// </summary>
+    public async Task<(CancelCommandsResponse? Result, string? Invalid, List<Guid>? Unknown)> CancelCommandsAsync(
+        CancelCommandsRequest req)
+    {
+        var ids = req.Ids?.Distinct().ToList() ?? new List<Guid>();
+        if (ids.Count == 0) return (null, "At least one command id is required.", null);
+        if (ids.Count > MaxBulkCommands) return (null, $"At most {MaxBulkCommands} commands can be cancelled in one call.", null);
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+
+        var before = await _db.AgentCommands
+            .Where(c => ids.Contains(c.Id))
+            .Select(c => new { c.Id, c.MachineId, c.GameId, c.Type, c.Status })
+            .ToDictionaryAsync(c => c.Id);
+        var unknown = ids.Where(id => !before.ContainsKey(id)).ToList();
+        if (unknown.Count > 0) return (null, null, unknown);
+
+        var now = DateTime.UtcNow;
+        await _db.AgentCommands
+            .Where(c => ids.Contains(c.Id)
+                        && (c.Status == CommandStatus.Pending
+                            || (c.Status == CommandStatus.Dispatched
+                                && c.LeaseExpiresAt != null
+                                && c.LeaseExpiresAt < now)))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.Result, c => c.Status == CommandStatus.Pending ? CancelledResult : CancelledLapsedResult)
+                .SetProperty(c => c.Status, CommandStatus.Cancelled)
+                .SetProperty(c => c.CompletedAt, now)
+                .SetProperty(c => c.LeaseExpiresAt, (DateTime?)null));
+
+        var after = await _db.AgentCommands
+            .Where(c => ids.Contains(c.Id))
+            .Select(c => new { c.Id, c.Status })
+            .ToDictionaryAsync(c => c.Id, c => c.Status);
+
+        var withdrawn = new List<Guid>();
+        var running = new List<Guid>();
+        var finished = new List<Guid>();
+        foreach (var id in ids)
+        {
+            var was = before[id];
+            if (was.Status != CommandStatus.Cancelled && after[id] == CommandStatus.Cancelled)
+            {
+                withdrawn.Add(id);
+                await Audit(was.MachineId, was.GameId, "command.cancel", was.Type.ToString());
+            }
+            else if (after[id] == CommandStatus.Dispatched) running.Add(id);
+            else finished.Add(id);
+        }
+        await _db.SaveChangesAsync();
+        await tx.CommitAsync();
+        return (new CancelCommandsResponse(withdrawn, running, finished), null, null);
+    }
+
     /// <summary>
     /// Agent: claim this machine's due commands under a <b>visibility lease</b>.
     /// <para>
@@ -1946,7 +2022,7 @@ public sealed class SyncService
     {
         var cmd = await _db.AgentCommands.FindAsync(commandId);
         if (cmd is null || cmd.MachineId != machineId) return false;
-        if (cmd.Status is CommandStatus.Done or CommandStatus.Failed) return true;
+        if (cmd.Status is CommandStatus.Done or CommandStatus.Failed or CommandStatus.Cancelled) return true;
         if (cmd.ClaimToken != claimToken) return true;
 
         cmd.Status = status == CommandStatus.Failed ? CommandStatus.Failed : CommandStatus.Done;

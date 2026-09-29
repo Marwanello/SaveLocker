@@ -8,9 +8,10 @@ interface Props {
   dwellMs?: number;
 }
 
-/** A single toast, positioned by its caller (there is no global toast host yet — plan.md's "No
- *  modals" rule is about dialogs, not this). Confirms in the past tense, per plan.md "Voice":
- *  "Synced 6 games — 19.3 MB sent" rather than "Sync completed successfully!". */
+/** A single toast, drawn by `Toaster` — which positions it and also announces it to screen readers, so
+ *  this element is not itself a live region (plan.md's "No modals" rule is about dialogs, not this).
+ *  Confirms in the past tense, per plan.md "Voice": "Synced 6 games — 19.3 MB sent" rather than "Sync
+ *  completed successfully!". */
 export function Toast({ children, onDismiss, dwellMs = 2600 }: Props) {
   // The callback is read through a ref, not listed as a dependency: a caller that passes an inline
   // arrow (or a parent that re-renders every poll) would otherwise restart the dwell timer each
@@ -24,7 +25,6 @@ export function Toast({ children, onDismiss, dwellMs = 2600 }: Props) {
 
   return (
     <div
-      role="status"
       className="animate-toast-in bg-panel border border-line rounded-xl px-4 py-3 text-[13px] text-fg shadow-lg"
     >
       {children}

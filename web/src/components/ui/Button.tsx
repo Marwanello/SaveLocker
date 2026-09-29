@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, Ref } from 'react';
 
 type Variant = 'default' | 'primary' | 'selected' | 'quiet' | 'alert';
 type Size = 'default' | 'sm';
@@ -6,6 +6,8 @@ type Size = 'default' | 'sm';
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
+  /** React 19 passes `ref` as a prop; InlineConfirm uses it to hand focus back. */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 const VARIANT: Record<Variant, string> = {
@@ -28,7 +30,8 @@ const SIZE: Record<Size, string> = {
 export function Button({ variant = 'default', size = 'default', className = '', ...rest }: Props) {
   return (
     <button
-      className={`font-[inherit] font-medium rounded-full border cursor-pointer whitespace-nowrap
+      className={`inline-flex items-center justify-center gap-[7px]
+        font-[inherit] font-medium rounded-full border cursor-pointer whitespace-nowrap
         transition-[background-color,transform,box-shadow] duration-150 ease-[var(--ease)]
         hover:opacity-100 hover:-translate-y-px active:scale-[.96]
         disabled:opacity-50 disabled:cursor-default disabled:hover:translate-y-0 disabled:active:scale-100

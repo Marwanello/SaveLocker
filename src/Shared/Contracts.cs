@@ -378,7 +378,14 @@ public enum CommandStatus
     /// </summary>
     Dispatched,
     Done,
-    Failed
+    Failed,
+    /// <summary>
+    /// Withdrawn from the console (<c>POST /commands/cancel</c>) while no agent held it: still Pending, or
+    /// Dispatched with a claim that lapsed unanswered. Terminal, like Done and Failed, and never handed
+    /// out: a claim only takes Pending or an expired Dispatched. Appended last so the stored integers of
+    /// the four values above do not move.
+    /// </summary>
+    Cancelled
 }
 
 /// <summary>A command the dashboard wants an agent to run (null GameId = all games).</summary>
@@ -398,6 +405,17 @@ public record SkippedCommandDto(Guid MachineId, string MachineName, string Reaso
 /// including, for a machine that already had an identical command Pending, that EXISTING command
 /// (so pressing Sync all twice does not stack two syncs behind one another).</summary>
 public record BulkEnqueueResponse(List<AgentCommandDto> Queued, List<SkippedCommandDto> Skipped);
+
+/// <summary>The console's Cancel: withdraw these commands if no agent has claimed them yet.</summary>
+public record CancelCommandsRequest(List<Guid> Ids);
+
+/// <summary>
+/// What a cancel did, per command. <c>Withdrawn</c> were still Pending (or held only by a lapsed claim)
+/// and are now Cancelled; <c>AlreadyRunning</c> are held by a live claim and will finish (a claim cannot
+/// be recalled);
+/// <c>AlreadyFinished</c> had reached a terminal state before the request arrived.
+/// </summary>
+public record CancelCommandsResponse(List<Guid> Withdrawn, List<Guid> AlreadyRunning, List<Guid> AlreadyFinished);
 
 public record AgentCommandDto(
     Guid Id,
@@ -564,7 +582,24 @@ public record AgentHeartbeat(
     // Appended, and optional, on purpose: an older agent simply omits it and a newer agent talking
     // to an older server has it ignored, so the fleet and the container can be upgraded in either
     // order (see CONTEXT.md's deploy note).
-    ScanPathCandidate[]? PathCandidates = null);
+    ScanPathCandidate[]? PathCandidates = null,
+    // Appended and optional for the same reason. Null from an agent that predates it.
+    AgentOsInfo? Os = null);
+
+/// <summary>
+/// Which operating system an agent runs on, so the console can put the right logo beside a machine.
+/// On Linux the fields are <c>/etc/os-release</c>'s own (<c>ID</c>, <c>ID_LIKE</c>, <c>VARIANT_ID</c>,
+/// <c>PRETTY_NAME</c>), passed through rather than mapped: the console owns the id → logo table, so a
+/// distro it learns to draw later needs no agent update. On Windows <paramref name="Id"/> is
+/// <c>windows</c>. <paramref name="Device"/> names known hardware (a Steam Deck) or <c>WSL</c>, and is otherwise null.
+/// Agent-reported, so display text only: the server clamps each field and never branches on it.
+/// </summary>
+public record AgentOsInfo(
+    string Id,
+    string Name,
+    string? IdLike = null,
+    string? VariantId = null,
+    string? Device = null);
 
 /// <summary>An unresolved conflict old enough to demand attention on an agent that can toast.</summary>
 public record ConflictEscalationDto(
@@ -626,7 +661,9 @@ public record AgentHealthDto(
     int TrackedGames,
     int UnmappedGames,
     int OfflineQueueDepth,
-    AgentEventDto[] OpenEvents);
+    AgentEventDto[] OpenEvents,
+    // Null until the machine's agent reports it (an older agent never does).
+    AgentOsInfo? Os = null);
 
 // ----- Agent update channel -----
 

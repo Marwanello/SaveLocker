@@ -72,6 +72,12 @@ DB produces shifting, misleading failures. Give it a fresh `Storage__DbPath`/`Ar
 <br>**Untested:** the `Storage:MaxUploadMb` ceiling on a reconstructed archive. Exercising it needs
 either a >500 MB fixture or a second server started with a tiny cap; neither was worth it, but it is
 the one fix here resting on inspection rather than a test.
+<br>**2026-09-28 — a version's "newest change" is its real UTC write time (branch `fix-archive-utc-timestamps`, merged into `group-8-ui-redesign` / PR #52).** It read 3 h late
+from a UTC+3 uploader: zip's DOS timestamp is the writer's local wall clock and `GetArchiveStats` labelled it UTC. Each
+archive entry now also carries `mtime-utc=<UTC>` in its comment (the DOS field stays local, so other zip tools are
+unchanged); the server's delta rebuild copies that record forward. Old archives still read shifted — nothing in them
+says which zone they came from. Why not UTC in the DOS field or the 0x5455 extra field: [[Decisions]]. Verified live via
+`testenv conflict -Windows -Wsl`: both sides' newest change equals the file's own UTC mtime to the tick.
 
 v0.5.7's rollout (2026-08-15) is complete: console redeployed, the Windows agent took it from the
 tray's *Check for updates*, and **the Deck updated itself** — see below, it is the first time that
@@ -1554,7 +1560,42 @@ status rows in `plan.md` and both task files. The Wayland options are written ou
 (a chrome-less browser app window + a `.desktop` launcher; WebKitGTK stays rejected) — **decided 2026-09-28: option 1**
 (see `Decisions.md` → *Linux UI*); the launcher stays out of Steam, Game Mode keeps `savelocker ui`. **Regrouped 2026-09-28 at the maintainer's request** from nine groups into three coarse ones worked as
 ordered parts: 8 console kit + top bar + Games page, 9 Backups + Configuration + the other console pages, 10 agent UI +
-Deck + assets + Wayland. **Next action:** Group 8 or Group 10 (independent of each other).
+Deck + assets + Wayland.
+<br>**Group 8 shipped 2026-09-28 (branch `group-8-ui-redesign`, three commits: 8a `e6514ce`, 8b `1566de8`,
+8c `24074a0`) — in review as PR https://github.com/Marwanello/SaveLocker/pull/52, not yet in a release.** The console's page kit (`web/src/components/ui/`: `Page`, `PageHead`,
+`DataTable`, `KV`, `PathField`, `Banner`, `EmptyState`, `SearchField`, `FilterChips`, `Meter`, `Dot`, `InlineConfirm`, `Icon`,
+a global `Toaster`), the top bar (pill tabs, an always-present bell with per-item actions, the conflict pill, Sync all's
+full-width rail + **Cancel**), and the Games page re-laid out to the prototype with **no `alert`/`confirm`/`prompt` left on it**.
+One new route, `POST /api/commands/cancel`, and a new terminal `CommandStatus.Cancelled` (appended; agents never see it);
+`openapi.json` + `web/src/api-types.ts` regenerated. `run-console-security-tests` 172 → **189** (API-03, mutation-checked),
+`run-appearance-consistency-tests` 33 → **35**. Verified live through `testenv` with real conflicts made by editing each
+side's save; that pass found and fixed one real bug (a conflict side pushed while the page was open was invisible to it, so
+"Keep both" named the older save "the newer"). Decisions taken with the maintainer, the departures, and what was not verified:
+`tasks/checkpoint-ui/implementation-grouping.md` → Group 8; the step-by-step checklist is `tasks/checkpoint-ui/group-8-verification.md`.
+Found in passing and fixed in the same PR (the "real UTC write time" entry above): a version's "newest change" read hours off east of UTC (zip entries were
+stamped in local time, read as UTC — `SaveArchive`).
+<br>**Same branch, same day — OS logos and a real machine picker (maintainer's request).** Agents now say what they run:
+`AgentOsInfo` rides the heartbeat (appended, optional), filled by `Agent.Core/OsIdentity.cs` from os-release on Linux
+(`ID`, `ID_LIKE`, `VARIANT_ID`, `PRETTY_NAME`, plus "Steam Deck"/"Steam Deck OLED" from a Valve board and "WSL") and the
+build number on Windows; the server stores it on `AgentHealth` (migration `AddAgentOsInfo`, five nullable columns) and
+serves it on `GET /admin/health`. The console's conflict panel became the agent's conflict card with each side led by its
+machine's OS logo (pick a side → the sentence says what happens → "Resolve with X", keep-the-other as a checkbox), and the
+game page's machine dropdowns (Push/Pull target, Rules' preferred machine, and the policy beside it) are a listbox with
+the logo, the OS and online state (`ui/Select.tsx`, `game/MachineSelect.tsx`). Logos: Simple Icons 16.33.0 (CC0) for
+the distros, the Windows 11 squares, Bazzite's own press-kit mark; an unknown distro is Tux, an older agent falls back to
+its platform. `run-console-security-tests` **195** (UI-02). Verified live: WSL reported "Ubuntu 26.04 LTS · WSL", a real
+conflict resolved through the new panel. Not seen: a real Deck/Bazzite report, and a Windows agent at this build (the rig's
+tray that day was an elevated one this session could not rebuild — `Gotchas` → Testing).
+<br>**PR #52 reviewed the same day, every finding addressed (branch `group-8-review-fixes`, pushed onto
+`group-8-ui-redesign`).** 14 findings; write-up in `tasks/checkpoint-ui/implementation-grouping.md` → Group 8 →
+*Review fixes*. The two that mattered: **the UTC "newest change" fix had nothing left showing it** — `b3caca9` dropped
+it from the conflict tile, and the "verified live … to the tick" line in the UTC entry above was checked against
+`main`'s old panel, not this branch; it is back on the tile. And **Discard in Exclude patterns left the abandoned draft's
+dry-run count on screen.** Server: Cancel now also withdraws a claim that **lapsed** unanswered (the claim's own
+predicate) and runs in one transaction, so two cancels at once audit once. `run-console-security-tests` 195 → **205**
+(8 of the 10 new checks fail against the PR-head server), `web` build + lint clean, and the UI fixes checked live
+through `testenv` with a real conflict.
+**Next action:** review and merge PR #52 (Group 8 + the OS-logo follow-up), then Group 9 (now unblocked) or Group 10.
 
 ---
 

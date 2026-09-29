@@ -14,7 +14,7 @@ phases to do in one session, in what order, and why. Driven by three things weig
    23 files, multiple review rounds) was a heavy session. Treat ~1,500 insertions as the ceiling for
    a group that still gets reviewed properly.
 
-## Status (updated 2026-09-27)
+## Status (updated 2026-09-28)
 
 | Group | Contents | Status |
 |---|---|---|
@@ -25,8 +25,8 @@ phases to do in one session, in what order, and why. Driven by three things weig
 | 5 | Phase 4 appearance + fleet sync | ✅ Shipped 2026-09-21 — the `Ui:*` setting and its console card, the heartbeat push, the per-machine "Follow the console" override, the favicon, the brand mark, the Windows tray + window icon; **and the theme default now follows the OS**, after every hardcoded hex left the views (303 in `web`, 166 in `agent-ui` → 0). **Phase 4 item 4 (the Deck's accent) ➡️ moved to Group 6**: `Theme.cs`'s `AccentGreen` means both "accent" and "healthy" at 68 sites, so an accent switch there needs Group 6's token split; the plumbing it needs is done. See the Group 5 write-up below |
 | 6 | Phase 6 items 1-3 (Deck) | ✅ Shipped 2026-09-22 (branch `claude/group-6-ui-redesign-6d9b06`) — Checkpoint tokens, the accent/healthy split, 62px two-line rows, the button legend, Sync all on Y. `savelocker ui --screenshot` and `--nav` turned out to run on this Windows box (no WSLg needed — SDL/GL resolved natively), so this was verified live, not by build alone: real pixel colours sampled off real screenshots, and the L1/R1 section-switch driven through `--nav r1,r1,r1` with `--nav-debug` open. That pass caught and fixed a genuine focus-timing bug (below) a build could never have shown. Same-day follow-up (below) fixed a mis-angled Sync icon and replaced the header's stale pre-Checkpoint logo with a live, mark-aware, accent-coloured `AppMark`. Archivo shipped the same day. Reviewed as PR #49 on 2026-09-23 and every finding fixed (*Review fixes*, below). Still not run on a real Deck or under gamescope's actual input path |
 | 7 | Phase 7 (notifications) | ✅ Shipped 2026-09-24 (branch `group-7-ui-redesign`, PR #50) — both halves on shared rules (`Agent.Core/Notifications.cs`): a real Windows toast (`ToastPresenter`) and the Linux notifier generalised from `ConflictNotifier` (`DesktopNotifier`). **A button is a link to the agent UI, not a callback** — a custom URL scheme was built end to end and the shell's toast host refused every freshly registered one (measured), so "Retry now"/"Install now" became "Open game" and a pointer to the tray menu. Verified live on Windows (real toast, real click, the five-minute rule, withdrawal) and on a real Deck in Desktop Mode 2026-09-27 (the popup, and *Choose a save* opening the flatpak default browser at the queue); the installer's shortcut change compiles but has not been run. Reviewed as PR #50 on 2026-09-27 and every finding fixed (*Review fixes*, below). See the Group 7 write-up below |
-| 8 | Phases 9 + 10 — console page kit, top bar (pill tabs, bell, conflict pill, progress rail + Cancel) and the Games page (sidebar, full-width grid, game page re-layout, no `alert`/`confirm`) | ⏳ Not started — added by the 2026-09-27 gap audit, as are 9 and 10. Parts 8a → 8b → 8c. Gates 9 |
-| 9 | Phases 11 + 12 + Phase 2's release-history table — the **Backups** tab (does not exist today) and its routes, Configuration, Audit log, Help, What's new, sign-in | ⏳ Not started. Parts 9a → 9b → 9c. After 8 |
+| 8 | Phases 9 + 10 — console page kit, top bar (pill tabs, bell, conflict pill, progress rail + Cancel) and the Games page (sidebar, full-width grid, game page re-layout, no `alert`/`confirm`) | ✅ Shipped 2026-09-28 (branch `group-8-ui-redesign`, PR #52) — 8a kit + top bar + `POST /commands/cancel` (`e6514ce`), 8b the `GameDetail.tsx` split (`1566de8`), 8c the Games page (`24074a0`). Verified live through `testenv` with real conflicts; one real bug found that way and fixed (a conflict side pushed while the page was open). Replay the live checks with `group-8-verification.md`. Same-day follow-up on the branch: each machine's OS logo on the conflict panel and a listbox machine picker (`b3caca9`). Reviewed as PR #52 on 2026-09-28 and every finding addressed (*Review fixes*, below). See the Group 8 write-up below. Group 9 is unblocked |
+| 9 | Phases 11 + 12 + Phase 2's release-history table — the **Backups** tab (does not exist today) and its routes, Configuration, Audit log, Help, What's new, sign-in | ⏳ Not started. Parts 9a → 9b → 9c. Unblocked: Group 8's kit shipped 2026-09-28 |
 | 10 | Phases 13 + 14 + the Phase 8 remainder + Phase 6 item 4 — agent UI completed, Deck Game Mode completed, Steam art / favicons / installer icon, the Wayland window | ⏳ Not started. Parts 10a → 10b, 10c any time, 10d (Wayland — option 1 decided 2026-09-28) any time after 10c's manifest. Independent of 8–9 |
 
 **2026-09-20 review pass (a code review of Groups 1–2, all findings fixed on branch
@@ -571,6 +571,92 @@ keyboard focus visible on every new control, and — for the console — the con
 touched front end's `api-types.ts`.
 
 ### Group 8 — Console: page kit, top bar, Games page (Phases 9 and 10). `web` + one server route.
+
+✅ **Shipped 2026-09-28 (branch `group-8-ui-redesign`, PR #52), three commits.** Written up here; the original
+scope follows it. Live checklist: [[group-8-verification]].
+<br>**Four calls settled with the maintainer before building:** a withdrawn command becomes a new, terminal
+`CommandStatus.Cancelled` (kept in history) rather than a deleted row; a sidebar row's live chip lights **only for a
+command that names that game** (a Push/Pull from its page) — a console Sync all is one game-less command per machine
+and the console cannot know which games a machine tracks, so Sync all moves only the top bar; the game page's
+Push/Pull are **unforced**, with the forced variants behind *Force…* on each machine, each naming what it overwrites
+(they were forced, with no confirmation, before); and the *Initial sync* card is **dropped** (Set as Latest covers it).
+<br>**8a (`e6514ce`).** *Server:* `POST /api/commands/cancel { ids }` → `{ withdrawn, alreadyRunning, alreadyFinished }`.
+One conditional `UPDATE … WHERE Status = Pending` — the mirror of the claim in `DequeueCommandsAsync` — so a command an
+agent polls in the same instant lands on exactly one side. All-or-nothing on an unknown id (404), 400 on empty / over 100
+/ malformed, admin-only, audited `command.cancel`; a late agent result cannot reopen a cancelled command.
+`run-console-security-tests` **API-03**, 17 checks (suite 172 → **189**), mutation-checked: with the `Pending` filter and
+the terminal guard broken, 5 fail. *Kit* (`web/src/components/ui/`): `Page` (canvas + the `rise` stagger, `backwards`
+fill so it never pins a child's transform), `PageHead`, `DataTable`, `KV`, `PathField`, `Banner`, `EmptyState`,
+`SearchField`, `FilterChips`, `Meter`, `Dot`, `InlineConfirm`, `Icon` (lucide 0.511.0's own geometry), and a global
+`Toaster` (`src/toast.ts`); `format.ts` for time/size. *Top bar:* pill tabs; the bell **always present** with the
+prototype's empty state, severity dots, per-item Resolve / Set folder / Retry (a `Push` for that machine and game) and
+Dismiss, and an Open audit log footer; the SVG lock; the conflict pill for any open conflict with its age; no refresh
+button; Sync all's progress as the full-width rail plus a chip and Cancel. The poll lives in `src/syncAll.ts` behind
+`useSyncExternalStore` slices — **measured**: across a tick the chip text and the rail width changed on the same DOM
+nodes with zero mutations in the tab strip. `SyncAllProgress.tsx` is gone.
+<br>**8b (`1566de8`).** A pure move of `GameDetail.tsx` into `components/game/`. Verified by DOM comparison against the
+live console: all 156 nodes identical (tags, classes, inline styles).
+<br>**8c (`24074a0`).** The Games page as the plan's 10.1–10.6 (see the commit for the whole list). Destructive actions
+are `InlineConfirm` (27 `alert`/`confirm`/`prompt` calls → 0), guarded by a new check in
+`run-appearance-consistency-tests` (**35**), which fails with exactly those 27 against the 8b code.
+<br>**A real bug caught by running it, not building it:** the page read a game's versions once. A diverged push that
+arrived with the page open left one conflict side unfindable, and **Keep both named the older save "the newer"** (the
+action itself did what its consequence line said, but the label and hint were wrong). The page now re-reads versions
+when the head, the stored total or a conflict's sides change, and Keep both waits until both sides are known.
+Re-verified by folding a newer save into an open conflict with the page left open.
+<br>**Deliberate departures:** version labels are short ids, not the prototype's `v26` (versions have no sequence and
+prune makes a position unstable); no `steam:<appid>` (the console has none); the no-art tile is the initials on a token
+tile like agent-ui's, not per-game hues (the colour check forbids `hsl()` in a view, rightly); **Prune N** names a real
+count only when the game has its own Keep N — the server-wide default (`Storage:RetainVersionsPerGame`) is not sent to
+the console, so otherwise it reads "Apply retention"; the Sync-all chip counts machines ("· 1 of 2 machines done"),
+since machines run in parallel; the exclude dry run runs on demand or while editing, not on every page open (it reads
+the head archive). **Followed the plan over earlier precedent, flag if unwanted:** the current tab and the current
+sidebar row are `accent-soft` as plan 9.3/10.1 say, where Groups 3/6 had made the agent's and the Deck's current nav
+item neutral.
+<br>**Found, not fixed (out of scope):** a version's *newest change* (conflict panel) reads hours off on a machine east
+of UTC — `CreateArchive` stamps zip entries in local time and `GetArchiveStats` labels them UTC. Filed as a follow-up
+task — fixed on `fix-archive-utc-timestamps` and merged into this PR ([[Decisions]]). And the header `Mark` re-sets its SVG on every 15 s data poll (pre-existing, harmless).
+<br>**Not verified:** the WebView2 tray window (the console only), a real Deck, and real Tab presses on the 8c
+controls — the Browser pane stopped drawing mid-session (see [[Gotchas]]); every control carries the focus-visible
+ring class (checked for all 43 on the page) and 8a's real Tab test showed that ring rendering.
+<br>**Review fixes (PR #52, 2026-09-28): 14 findings, all addressed.** The two that mattered:
+(1) **the UTC "newest change" fix had nothing left showing it** — the OS-logo follow-up (`b3caca9`) dropped "newest
+change" from the conflict tile, and the fix branch, cut from `main`, had been checked against main's old panel. It is
+back on the tile, on its own line under "files · size · uploaded …". (2) **Exclude patterns: Discard left the abandoned
+draft's dry run on screen** — its count under the saved patterns' wording, or its refusal of a pattern no longer there.
+A preview is now tagged with the draft it answered and shown only while the draft is still that one.
+*Server:* Cancel withdraws exactly what the claim would hand out again — Pending **and a Dispatched command whose claim
+lapsed unanswered** (8a's "mirror of the claim" was not one; the sidebar already called that state Queued, and the
+console's Cancel now counts it too) — and runs in one transaction with its reads and audit rows, so two cancels at once
+report and audit the withdrawal once. `HealthService.Clean` no longer cuts a surrogate pair at its cap.
+*Web:* holding Enter on an inline confirmation can no longer open **and** confirm it (a repeated keydown is ignored on the
+confirm button); the Sync all tracker is dropped when the console locks or its session ends; Delete is not offered on a
+side of an open conflict (the server refuses it); timestamps are ordered by time (`format.toMs`), not as strings; the
+conflict-policy help says what the agent does (`keepBoth` off, so the loser is prunable history; Prefer a machine only
+auto-resolves that machine's own pushes); toasts are announced through two always-mounted live regions (failures
+assertively) instead of each toast being a freshly created one; the Push/Pull picker no longer pins a fleet-wide default
+before the game's machines load, and keeps an explicit pick; a conflict pill link names its conflict, and a link that
+names only the game is pinned to the conflict that was first when it arrived — resolving it no longer springs the next
+one open; `ConfigView` / `AgentUpdatesCard` use `format.ts`.
+*Left as they are, on purpose:* `Meter`, `SearchField`, `FilterChips` still have no caller — they are plan 9.1
+deliverables whose callers are Group 9 (11.6's storage meter, 12.1's audit search and machine chips). The archive-format
+change riding a UI PR is not split out; the PR description names its commits for anyone bisecting.
+<br>**Verified:** `run-console-security-tests` **205/205** (+10: two cancels at once; Phase 5c, a 6 s lease with two
+machines — the lapsed claim withdrawn, the live one reported running, no re-delivery, a late result a no-op; the
+surrogate-pair cap). **Mutation-checked:** with the PR-head `SyncService` / `HealthService` swapped back in, 8 of the
+10 fail (the other two are setup) — and the race was real: two overlapping cancels **both** withdrew and audited
+("got 2"). `web` build + lint clean. **Live through `testenv`** (console + Windows tray + WSL, a real conflict): the
+conflict pill opened that conflict's panel with "newest change" on both tiles (10 s before each upload — the settle
+wait — so the UTC fix reads right); an Exclude draft's count, and a refused `a/../b`'s error, both gone after Discard,
+and *Preview* then answered for the saved patterns; the Conflicting side under Backups offered no Delete; the three policy
+texts; the picker kept an explicit WinTest across a data poll; a toast reached the polite announcer and the visible
+toast carried no role; a keep-both resolve through the panel (after a test Push had folded a newer LinuxTest save
+into the conflict — the panel resolved with it); and with WSL down so a Sync-all command stayed Pending, ending the
+session (an admin password set on the test console) dropped the chip, rail and Cancel and stopped the 2 s command
+poll. The Enter guard was checked by dispatching keydowns (a repeat is `defaultPrevented`, a fresh press is not) —
+the hidden Browser pane takes no real key presses ([[Gotchas]]). **Not run live:** the pinned Resolve target with two
+conflicts on one game, and a lapsed claim reaching the console's Cancel (the suite covers the server half). The rig's
+WSL agent was at `c03dc0a` (`build` does not sync the clone — [[Gotchas]]); nothing here touches the agent.
 
 Everything the console user sees on the Games tab, plus the kit every later console page is built from.
 One group because `NavBar.tsx`, `NotificationsMenu.tsx` and `GameDetail.tsx` are the files it rewrites,

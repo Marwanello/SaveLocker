@@ -2537,6 +2537,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/commands/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CancelCommandsRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CancelCommandsResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/audit": {
         parameters: {
             query?: never;
@@ -3112,6 +3151,7 @@ export interface components {
             /** Format: int32 */
             offlineQueueDepth: number;
             openEvents: components["schemas"]["AgentEventDto"][];
+            os?: null | components["schemas"]["AgentOsInfo"];
         };
         AgentHeartbeat: {
             agentVersion: string;
@@ -3136,6 +3176,7 @@ export interface components {
             events?: null | components["schemas"]["AgentEventReport"][];
             resolvedGameIds?: null | string[];
             pathCandidates?: null | components["schemas"]["ScanPathCandidate"][];
+            os?: null | components["schemas"]["AgentOsInfo"];
         };
         AgentHeartbeatResponse: {
             escalatedConflicts: components["schemas"]["ConflictEscalationDto"][];
@@ -3153,6 +3194,13 @@ export interface components {
             platform: string;
             /** @default manual */
             source: string;
+        };
+        AgentOsInfo: {
+            id: string;
+            name: string;
+            idLike?: null | string;
+            variantId?: null | string;
+            device?: null | string;
         };
         AgentVersionInfo: {
             latestVersion: string;
@@ -3246,6 +3294,14 @@ export interface components {
             queued: components["schemas"]["AgentCommandDto"][];
             skipped: components["schemas"]["SkippedCommandDto"][];
         };
+        CancelCommandsRequest: {
+            ids: string[];
+        };
+        CancelCommandsResponse: {
+            withdrawn: string[];
+            alreadyRunning: string[];
+            alreadyFinished: string[];
+        };
         ChunkAppendResponse: {
             /** Format: int64 */
             bytesReceived: number;
@@ -3257,7 +3313,7 @@ export interface components {
             claimToken?: null | string;
         };
         /** @enum {unknown} */
-        CommandStatus: "Pending" | "Dispatched" | "Done" | "Failed";
+        CommandStatus: "Pending" | "Dispatched" | "Done" | "Failed" | "Cancelled";
         ConflictDto: {
             /** Format: uuid */
             id: string;
@@ -3545,6 +3601,7 @@ export interface components {
             theme: string;
             accent: string;
             mark: string;
+            /** @default true */
             pushToAgents: boolean;
         };
         SetConflictPolicyRequest: {

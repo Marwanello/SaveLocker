@@ -274,6 +274,13 @@ public class AgentHealth
     public string? AgentVersion { get; set; }
     public string? Platform { get; set; }
 
+    /// <summary>The heartbeat's <see cref="AgentOsInfo"/>, flattened. Display only; null from an older agent.</summary>
+    public string? OsId { get; set; }
+    public string? OsName { get; set; }
+    public string? OsIdLike { get; set; }
+    public string? OsVariantId { get; set; }
+    public string? OsDevice { get; set; }
+
     /// <summary>The agent's own last successful sync — not the server's view of it.</summary>
     public DateTime? LastSyncTime { get; set; }
 

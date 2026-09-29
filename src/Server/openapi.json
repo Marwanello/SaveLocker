@@ -2078,6 +2078,35 @@
         }
       }
     },
+    "/api/commands/cancel": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelCommandsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelCommandsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/audit": {
       "get": {
         "tags": [
@@ -2723,6 +2752,16 @@
             "items": {
               "$ref": "#/components/schemas/AgentEventDto"
             }
+          },
+          "os": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentOsInfo"
+              }
+            ]
           }
         }
       },
@@ -2788,6 +2827,16 @@
             "items": {
               "$ref": "#/components/schemas/ScanPathCandidate"
             }
+          },
+          "os": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentOsInfo"
+              }
+            ]
           }
         }
       },
@@ -2851,6 +2900,39 @@
           "source": {
             "type": "string",
             "default": "manual"
+          }
+        }
+      },
+      "AgentOsInfo": {
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "idLike": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "variantId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "device": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -3233,6 +3315,52 @@
           }
         }
       },
+      "CancelCommandsRequest": {
+        "required": [
+          "ids"
+        ],
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
+      "CancelCommandsResponse": {
+        "required": [
+          "withdrawn",
+          "alreadyRunning",
+          "alreadyFinished"
+        ],
+        "type": "object",
+        "properties": {
+          "withdrawn": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "alreadyRunning": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "alreadyFinished": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
       "ChunkAppendResponse": {
         "required": [
           "bytesReceived"
@@ -3275,7 +3403,8 @@
           "Pending",
           "Dispatched",
           "Done",
-          "Failed"
+          "Failed",
+          "Cancelled"
         ]
       },
       "ConflictDto": {
@@ -4325,8 +4454,7 @@
         "required": [
           "theme",
           "accent",
-          "mark",
-          "pushToAgents"
+          "mark"
         ],
         "type": "object",
         "properties": {
@@ -4340,7 +4468,8 @@
             "type": "string"
           },
           "pushToAgents": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
           }
         }
       },

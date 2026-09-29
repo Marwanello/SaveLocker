@@ -145,6 +145,15 @@ Set them per-process and clear them afterwards — leaving either set in a shell
 behave in ways that look like bugs.
 
 ## `tests/testenv.ps1` (throwaway test rig)
+- **`down` ignores `-Only` and stops everything** — console container, Windows tray and WSL daemon alike, although
+  `up -Only <target>` honours it. Found 2026-09-28 wanting only the WSL agent down (to leave a console command
+  unclaimed for Group 8's Cancel): `down -Only linux` took the console with it. Bring back what you need with
+  `up -Only console` / `up -Only windows` / `up -Only linux`, one at a time.
+- **A test tray started from an ELEVATED shell is invisible to a normal one.** `Get-TestTray` finds the tray by
+  its command line, and Windows hides an elevated process's command line from an unelevated caller, so
+  `down` prints "no test tray running" while the tray keeps serving :5188 and locking `src/Agent/bin/Debug`
+  (every agent build then fails with MSB3027, and `Stop-Process` is "Access is denied"). Found 2026-09-28.
+  Run `testenv.ps1` from the same kind of shell every time, or stop that tray from the elevated one.
 - **`build` (any `-Only` target) never fetches or checks out anything itself — it builds whatever
   commit the WSL clone already has.** `sync` is a separate command that does the fetch+checkout (see
   *Sync the WSL clone from `git status`* below); running `build -Only deck` right after switching
@@ -241,6 +250,11 @@ behave in ways that look like bugs.
   `agent-ui/src` and `web/src` — sat untracked in the clone on 2026-09-20 while existing in no tree and no
   commit on any branch). `rm` it in the clone by hand; a blanket `git clean` was not added because
   nothing proves the clone holds nothing un-ignored that it needs.
+  **The same leftovers break a branch switch** (2026-09-28): files synced while untracked on branch A and
+  committed there afterwards stay untracked in the clone when you `sync` branch B, which never had them —
+  `src/Agent.Core/OsIdentity.cs` from the Group 8 branch failed the Linux build of a branch cut from `main`
+  (`AgentOsInfo` not found). Remove exactly A's additions: `git diff --name-only --diff-filter=A main A` on
+  Windows, then in the clone `rm` each listed path that `git ls-files --error-unmatch` does not know.
 - **`conflict -Wsl` on its own seeds no conflict.** It creates the game and pushes once from WSL — the
   rig prints "only seeding WSL" — and by then the game has a head, so a following `-Windows -Wsl` puts
   the divergence on the wrong machine. Recovering takes a full `clean` and a rebuild. Start with
@@ -416,7 +430,10 @@ documentation that was found. Read before touching the presenter.
   dispatched in the rendering step, which a minimised or hidden window does not run (screenshots time out for the same
   reason). `matchMedia().matches` flips, but neither the app's listener nor a control listener of your own is called, so a
   System-theme page keeps the accent it derived for the OLD scheme (Cobalt's light `#3a5cbe` on a dark page — a convincing
-  "the accent is stale after an OS flip" that is not a bug). Reloading re-derives correctly; to test the handler itself,
+  "the accent is stale after an OS flip" that is not a bug). The same stall freezes every CSS transition mid-way
+  (`getAnimations()` reports them `running` indefinitely — measure with transitions off) and makes `computer` key presses
+  fail with "could not get the tab ready for input" (Group 8, 2026-09-28: a real-Tab focus walk had to be replaced by a
+  class check). Reloading re-derives correctly; to test the handler itself,
   wrap `MediaQueryList.prototype.addEventListener` to capture the callback, flip the scheme, and call it. A visible
   window is expected to deliver the event (the spec queues it in the rendering step); **that was not observed** — no
   visible pane was available.
@@ -532,6 +549,16 @@ documentation that was found. Read before touching the presenter.
   itself is still a real refusal.
 
 ## Testing
+- **A test of a timestamp's timezone only fails off UTC.** `SaveArchiveTimestampTests` and
+  `run-delta-upload-tests` section 10 pin files to known UTC instants; the old local-clock stamping was right by
+  accident on a UTC+0 machine, so a CI runner at UTC cannot catch that regression — this UTC+3 box can. The offset
+  also moves with the date (Africa/Cairo is +2 in January, +3 in September), so an expected value computed from
+  "today's" offset is wrong for a fixture dated in another season: compare against the UTC instant, never
+  `now`'s offset.
+- **A locked `src/Agent/bin` does not have to block a Windows agent build.** A command-line output folder wins over
+  the project's pinned one: `dotnet build src/Agent/SaveLocker.Agent.csproj -p:OutDir=<scratch>\agentbin\` builds
+  everything the agent needs there; point a copy of a suite's `$agentDll` at it. Used 2026-09-28 while a test tray
+  held the real folder.
 - **`run-linux-tests.sh` fails two "no session" checks under WSLg — that is the machine, not the code.** "no session:
   graphical session reported no" and "…D-Bus session bus reported no" assume the harness has no graphical session, but WSLg
   injects `DISPLAY`, `WAYLAND_DISPLAY` and `DBUS_SESSION_BUS_ADDRESS` into every WSL shell, **even under `env -i`**. Expect

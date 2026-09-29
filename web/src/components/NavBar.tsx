@@ -1,21 +1,24 @@
-import { useCallback, useState } from 'react';
-import { api } from '../api';
-import type { AgentEvent, Conflict, Machine, ServerBuildInfo } from '../types';
+import { useState } from 'react';
+import { api, errorText } from '../api';
+import type { AgentEvent, Conflict, GameIntent, Machine, ServerBuildInfo } from '../types';
+import { age, plural, toMs } from '../format';
+import { syncAll, useSyncAllActive, useSyncAllProgress } from '../syncAll';
+import type { SyncAllOutcome } from '../syncAll';
 import { Mark } from './ui/Mark';
 import { Button } from './ui/Button';
-import { Toast } from './ui/Toast';
+import { Dot } from './ui/Dot';
+import { Icon } from './ui/Icon';
+import { toast, toastError } from '../toast';
 import { NotificationsMenu } from './NotificationsMenu';
-import { SyncAllProgress } from './SyncAllProgress';
-import type { SyncAllOutcome } from './SyncAllProgress';
 
-type View = 'games' | 'config' | 'audit' | 'help' | 'whats-new';
+export type View = 'games' | 'config' | 'audit' | 'help' | 'whats-new';
 
 const NAV_ITEMS: { key: View; label: string }[] = [
   { key: 'games', label: 'Games' },
   { key: 'config', label: 'Configuration' },
-  { key: 'audit', label: 'Audit Log' },
+  { key: 'audit', label: 'Audit log' },
   { key: 'help', label: 'Help' },
-  { key: 'whats-new', label: "What's New" },
+  { key: 'whats-new', label: 'What’s new' },
 ];
 
 /** An agent polls every 20 s and the server stamps `lastSeen` on each contact, so three minutes of
@@ -26,6 +29,7 @@ const ONLINE_WINDOW_SECONDS = 180;
 interface Props {
   view: View;
   onViewChange: (v: View) => void;
+  /** Reload the console's data — after a Sync all finishes, or a notification action queued work. */
   onRefresh: () => void;
   /** Forgets the session and returns to SignIn — plan.md's "lock button". Absent when the server has
    *  no admin password: there is nothing to lock, and a Lock button that does nothing is a lie. */
@@ -38,176 +42,243 @@ interface Props {
   /** Open problems reported by agents, worst first. This is the only way a headless Deck's
    *  failures reach a human — it cannot toast, so the console has to (Decisions.md §2). */
   problems?: AgentEvent[];
-  escalatedConflicts?: Conflict[];
+  /** Every open conflict — the pill shows for any of them, not only the escalated ones. */
+  conflicts?: Conflict[];
   onDismissProblems?: (ids: string[]) => Promise<void>;
-  /** Navigate to Games and select a specific game — used by the notifications menu's deep links. */
-  onOpenGame: (gameId: string | null) => void;
+  /** Navigate to Games and open one game, optionally at a specific place on its page. */
+  onOpenGame: (gameId: string, intent?: GameIntent) => void;
 }
 
-const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 const shorten = (s: string, max = 90) => (s.length > max ? s.slice(0, max - 1) + '…' : s);
 
-export function NavBar({
-  view,
-  onViewChange,
-  onRefresh,
-  onLock,
-  machines,
-  build,
-  unreadNotes = false,
-  problems = [],
-  escalatedConflicts = [],
-  onDismissProblems,
-  onOpenGame,
-}: Props) {
-  const [syncCommandIds, setSyncCommandIds] = useState<string[]>([]);
-  const [syncing, setSyncing] = useState(false);
-  const [toast, setToast] = useState<{ text: string; ms: number } | null>(null);
-  const dismissToast = useCallback(() => setToast(null), []);
+/** Past tense, per plan.md "Voice": what happened, not "completed successfully!". */
+function outcomeText(r: SyncAllOutcome): { text: string; ms: number } {
+  const ran = r.total - r.cancelled;
+  if (r.timedOut) {
+    const left = r.total - r.succeeded - r.failures.length - r.cancelled;
+    return { text: `${plural(left, 'machine')} still working — they will finish in the background.`, ms: 7000 };
+  }
+  if (ran === 0) return { text: 'Sync all cancelled before any machine started.', ms: 4000 };
+  const cancelled = r.cancelled > 0 ? ` ${r.cancelled} cancelled before starting.` : '';
+  if (r.failures.length > 0) {
+    const first = r.failures[0];
+    return {
+      text: `Synced ${r.succeeded} of ${plural(ran, 'machine')} — ${first.machine} failed: ${shorten(first.reason)}` +
+        (r.failures.length > 1 ? ` (+${r.failures.length - 1} more)` : '') + '.' + cancelled,
+      ms: 9000,
+    };
+  }
+  return { text: `Synced ${plural(r.succeeded, 'machine')}.${cancelled}`, ms: r.cancelled > 0 ? 4500 : 3200 };
+}
 
-  // A batch still being tracked counts as "busy" too — pressing again mid-batch used to queue a second
-  // sync behind the first on every machine.
-  const busy = syncing || syncCommandIds.length > 0;
+export function NavBar({
+  view, onViewChange, onRefresh, onLock, machines, build, unreadNotes = false,
+  problems = [], conflicts = [], onDismissProblems, onOpenGame,
+}: Props) {
+  const [starting, setStarting] = useState(false);
+  // Flips twice a batch — a progress tick never re-renders this bar (see syncAll.ts).
+  const active = useSyncAllActive();
+  const busy = starting || active;
 
   async function handleSyncAll() {
     if (machines.length === 0 || busy) return;
-    setSyncing(true);
+    setStarting(true);
     try {
       const res = await api.queueSyncAll(machines.map(m => m.id), ONLINE_WINDOW_SECONDS);
       const offline = res.skipped.map(s => s.machineName);
       if (res.queued.length === 0) {
-        setToast({
-          text: offline.length > 0
-            ? `Nothing was queued — ${offline.join(', ')} ${offline.length === 1 ? 'is' : 'are'} offline.`
-            : 'Nothing to sync.',
-          ms: 6000,
-        });
+        toast(offline.length > 0
+          ? `Nothing was queued — ${offline.join(', ')} ${offline.length === 1 ? 'is' : 'are'} offline.`
+          : 'Nothing to sync.', 6000);
       } else {
-        setSyncCommandIds(res.queued.map(c => c.id));
-        if (offline.length > 0) setToast({ text: `Left out ${offline.join(', ')} — offline.`, ms: 5000 });
+        syncAll.start(res.queued.map(c => c.id), r => {
+          onRefresh(); // the games list should show what just synced without waiting for the next poll
+          const t = outcomeText(r);
+          toast(t.text, t.ms);
+        });
+        onRefresh();
+        if (offline.length > 0) toast(`Left out ${offline.join(', ')} — offline.`, 5000);
       }
     } catch (e) {
-      setToast({ text: 'Could not start Sync all: ' + (e as Error).message, ms: 7000 });
+      toastError('Could not start Sync all: ' + errorText(e));
     } finally {
-      setSyncing(false);
+      setStarting(false);
     }
   }
 
-  // Past tense, per plan.md "Voice": what happened, not "completed successfully!".
-  function handleSyncDone(r: SyncAllOutcome) {
-    setSyncCommandIds([]);
-    onRefresh(); // the games list should show what just synced without waiting for the next poll
-    if (r.timedOut) {
-      setToast({ text: `${plural(r.total - r.done, 'machine')} still working — they will finish in the background.`, ms: 7000 });
-    } else if (r.failures.length > 0) {
-      const first = r.failures[0];
-      setToast({
-        text: `Synced ${r.total - r.failures.length} of ${plural(r.total, 'machine')} — ${first.machine} failed: ${shorten(first.reason)}` +
-          (r.failures.length > 1 ? ` (+${r.failures.length - 1} more)` : ''),
-        ms: 9000,
-      });
-    } else {
-      setToast({ text: `Synced ${plural(r.total, 'machine')}.`, ms: 3200 });
+  // The oldest open conflict drives the pill: it is the one that has waited longest for a decision.
+  const oldest = conflicts.length > 0
+    ? conflicts.reduce((a, b) => (toMs(a.createdAt) <= toMs(b.createdAt) ? a : b))
+    : null;
+  const anyEscalated = conflicts.some(c => c.escalated);
+
+  return (
+    <div className="sticky top-0 z-20">
+      {/* min-h + wrap, not a fixed height: with the conflict pill, the progress chip and the bell all
+          showing, one row is wider than a 1024 px window, and because the page is overflow-hidden the
+          last controls — Lock included — were pushed off-screen with no way to scroll to them. */}
+      <header className="bg-panel border-b border-line px-5 py-2 min-h-16 flex flex-wrap items-center gap-x-3.5 gap-y-2">
+        <div className="flex items-center gap-[11px]">
+          <a
+            href="#"
+            onClick={e => { e.preventDefault(); onViewChange('games'); }}
+            className="flex items-center gap-[11px] select-none rounded-lg
+              focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+          >
+            <Mark size={30} />
+            <span className="text-lg font-bold tracking-[-0.035em] text-fg">
+              Save<span className="text-accent">Locker</span>
+            </span>
+          </a>
+
+          {/* What the console is running, always on screen. Answering "is my fix deployed?" should
+              not require opening a page, let alone reading a Docker tag on another machine. */}
+          <button
+            type="button"
+            onClick={() => onViewChange('whats-new')}
+            title={
+              build
+                ? `SaveLocker console ${build.version}` +
+                  (build.commit ? ` (commit ${build.commit})` : '') +
+                  (build.builtAt ? ` — built ${new Date(build.builtAt).toLocaleString()}` : '') +
+                  `\nClick for release notes.`
+                : 'Release notes'
+            }
+            className={`inline-flex items-center gap-1.5 px-2.5 py-[3px] rounded-full border border-line bg-raise text-[10.5px] font-mono
+              focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2
+              ${build?.isRelease === false ? 'text-watch-ink' : 'text-dim'}`}
+          >
+            {build ? (build.version === 'dev' ? 'dev' : `v${build.version}`) : '—'}
+            {/* `--safe`, not the prototype's accent: unread notes are not a decision waiting. */}
+            {unreadNotes && <span title="New release notes" className="w-1.5 h-1.5 rounded-full bg-safe shrink-0" />}
+          </button>
+        </div>
+
+        {/* plan.md Phase 9.3: pill tabs — transparent at rest, raised on hover, and the current one in
+            the soft accent with its accent line. */}
+        <nav aria-label="Console" className="flex flex-wrap gap-[3px]">
+          {NAV_ITEMS.map(item => {
+            const current = view === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                aria-current={current ? 'page' : undefined}
+                onClick={() => onViewChange(item.key)}
+                className={`text-[13.5px] px-3.5 py-2 rounded-full border cursor-pointer
+                  transition-[background-color,color,transform] duration-150 ease-[var(--ease)] active:scale-[.97]
+                  focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2
+                  ${current
+                    ? 'bg-accent-soft border-accent-line text-accent-ink font-semibold'
+                    : 'bg-transparent border-transparent text-dim font-medium hover:bg-raise hover:text-fg hover:opacity-100'}`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-[9px]">
+          {oldest && (
+            <Button
+              variant="alert"
+              onClick={() => onOpenGame(oldest.gameId, { kind: 'resolve', conflictId: oldest.id })}
+              title={anyEscalated
+                ? 'Unresolved for more than six hours. Sync is paused for these games until you choose.'
+                : 'Sync is paused for these games until you choose which save to keep.'}
+            >
+              {plural(conflicts.length, 'conflict')} · {age(oldest.createdAt)}
+            </Button>
+          )}
+
+          {/* plan.md Surfaces: "Sync all primary" — the one filled button, since it is the thing you
+              most likely came to do. While a batch runs it becomes the progress chip and Cancel. */}
+          {active
+            ? <SyncAllStatus />
+            : (
+              <Button variant="primary" onClick={() => void handleSyncAll()} disabled={busy || machines.length === 0}
+                title={machines.length === 0 ? 'No machines are registered yet.' : 'Sync every game on every connected machine'}>
+                <Icon name="refresh-cw" size={13} strokeWidth={2.3} />
+                {starting ? 'Starting…' : 'Sync all'}
+              </Button>
+            )}
+
+          <NotificationsMenu
+            problems={problems}
+            onOpenGame={onOpenGame}
+            onDismissProblems={onDismissProblems}
+            onOpenAudit={() => onViewChange('audit')}
+            onRefresh={onRefresh}
+          />
+
+          {onLock && (
+            <Button className="!px-[9px]" onClick={onLock} title="Lock — end this session and sign in again" aria-label="Lock the console">
+              <Icon name="lock" size={14} strokeWidth={2.1} />
+            </Button>
+          )}
+        </div>
+      </header>
+
+      <SyncAllRail />
+    </div>
+  );
+}
+
+/** The chip and Cancel that stand in for Sync all while a batch runs. Reads every tick; nothing
+ *  around it does. */
+function SyncAllStatus() {
+  const p = useSyncAllProgress();
+  const [cancelling, setCancelling] = useState(false);
+  if (!p) return null;
+
+  async function cancel() {
+    setCancelling(true);
+    try {
+      const r = await syncAll.cancel();
+      const w = r.withdrawn.length, running = r.alreadyRunning.length;
+      toast(
+        w === 0
+          ? `Nothing left to withdraw — ${plural(running, 'machine')} already running will finish.`
+          : `Withdrew ${plural(w, 'machine')}.` + (running > 0 ? ` ${running} already running will finish.` : ''),
+        running > 0 ? 5000 : 3200,
+      );
+    } catch (e) {
+      toastError('Could not cancel: ' + errorText(e));
+    } finally {
+      setCancelling(false);
     }
   }
 
   return (
-    // min-h + wrap, not a fixed height: with the progress rail, "Overdue conflicts" and the
-    // notifications badge all showing, a single row is wider than a 1024 px window, and because the
-    // page is overflow-hidden the last controls — Lock included — were pushed off-screen with no way
-    // to scroll to them. Extra controls now wrap onto a second row instead.
-    <header className="bg-panel border-b border-line px-5 py-1 min-h-[72px] flex flex-wrap items-center justify-between gap-x-4 gap-y-2 sticky top-0 z-20">
-      {/* Brand + version */}
-      <div className="flex items-center gap-2.5">
-        <a
-          href="#"
-          onClick={e => { e.preventDefault(); onViewChange('games'); }}
-          className="flex items-center gap-[9px] select-none"
-        >
-          <Mark size={40} />
-          <span className="text-[17px] font-bold tracking-[-0.4px] text-fg">
-            Save<span className="text-accent">Locker</span>
-          </span>
-        </a>
-
-        {/* What the console is running, always on screen. Answering "is my fix deployed?" should
-            not require opening a page, let alone reading a Docker tag on another machine. */}
-        <button
-          onClick={() => onViewChange('whats-new')}
-          title={
-            build
-              ? `SaveLocker console ${build.version}` +
-                (build.commit ? ` (commit ${build.commit})` : '') +
-                (build.builtAt ? ` — built ${new Date(build.builtAt).toLocaleString()}` : '') +
-                `\nClick for release notes.`
-              : 'Release notes'
-          }
-          className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-line text-[11px] font-mono
-            ${view === 'whats-new' ? 'bg-raise' : 'bg-transparent'}
-            ${build?.isRelease === false ? 'text-watch' : 'text-dim'}`}
-        >
-          {build ? (build.version === 'dev' ? 'dev' : `v${build.version}`) : '—'}
-          {unreadNotes && (
-            <span title="New release notes" className="w-1.5 h-1.5 rounded-full bg-safe flex-shrink-0" />
-          )}
-        </button>
-      </div>
-
-      {/* Controls */}
-      <div className="flex flex-wrap items-center justify-end gap-1.5">
-        {NAV_ITEMS.map(item => (
-          <Button
-            key={item.key}
-            variant={view === item.key ? 'selected' : 'default'}
-            size="sm"
-            aria-current={view === item.key ? 'page' : undefined}
-            onClick={() => onViewChange(item.key)}
-          >
-            {item.label}
-          </Button>
-        ))}
-
-        <div className="w-px h-5 bg-line mx-1" aria-hidden />
-
-        {/* plan.md Surfaces: "Sync all primary". One filled button per view, per plan.md
-            Components — this is the thing you most likely came to do, so it alone holds the accent. */}
-        <Button variant="primary" size="sm" onClick={handleSyncAll} disabled={busy || machines.length === 0}>
-          {syncing ? 'Starting…' : busy ? 'Syncing…' : 'Sync all'}
+    <>
+      <span
+        role="status"
+        className="inline-flex items-center gap-2 text-[12.5px] px-3 py-[7px] rounded-full border border-accent-line bg-accent-soft text-accent-ink tabular-nums"
+      >
+        <Dot tone="crit" live />
+        Syncing {p.total === 1 ? '1 machine' : `· ${p.done} of ${p.total} machines done`}
+      </span>
+      {/* Only while something can still be withdrawn: a command an agent has claimed cannot be. */}
+      {p.pending > 0 && (
+        <Button onClick={() => void cancel()} disabled={cancelling}
+          title="Withdraw the syncs no machine has started yet. One already running finishes.">
+          {cancelling ? 'Cancelling…' : 'Cancel'}
         </Button>
-        {syncCommandIds.length > 0 && (
-          <SyncAllProgress commandIds={syncCommandIds} onDone={handleSyncDone} />
-        )}
-
-        <Button variant="default" size="sm" style={{ fontSize: 14, lineHeight: 1 }} onClick={onRefresh} title="Refresh" aria-label="Refresh">
-          ↻
-        </Button>
-
-        {escalatedConflicts.length > 0 && (
-          <Button
-            variant="alert"
-            size="sm"
-            onClick={() => onOpenGame(escalatedConflicts[0].gameId)}
-            title="These conflicts have been unresolved for more than six hours"
-          >
-            Overdue conflicts: {escalatedConflicts.length}
-          </Button>
-        )}
-
-        {/* Absent when there are none — a healthy fleet should be quiet. */}
-        <NotificationsMenu problems={problems} onOpenGame={onOpenGame} onDismissProblems={onDismissProblems} />
-
-        {onLock && (
-          <Button variant="quiet" size="sm" onClick={onLock} title="Lock — end this session and sign in again" aria-label="Lock">
-            🔒
-          </Button>
-        )}
-      </div>
-
-      {toast && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 w-max max-w-[min(92vw,560px)]">
-          <Toast key={toast.text} dwellMs={toast.ms} onDismiss={dismissToast}>{toast.text}</Toast>
-        </div>
       )}
-    </header>
+    </>
+  );
+}
+
+/** plan.md Phase 9.6: the 3 px rail across the full width under the top bar — width transitions, the
+ *  sweep runs while anything is still going. */
+function SyncAllRail() {
+  const p = useSyncAllProgress();
+  if (!p) return null;
+  // Half a step for the machines in flight, so the rail moves as soon as the batch starts.
+  const pct = Math.round(((p.done + (p.done < p.total ? 0.5 : 0)) / p.total) * 100);
+  return (
+    <div className="sync-rail" role="progressbar" aria-label="Sync all progress" aria-valuemin={0} aria-valuemax={p.total} aria-valuenow={p.done}>
+      <i style={{ width: `${pct}%` }} />
+    </div>
   );
 }

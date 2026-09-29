@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback, type CSSProperties } from 'react';
 import { api } from '../api';
 import type { AgentInstallerStatus, AgentPlatform, AutoFetchSchedule, InstallerHashVerification, Settings } from '../types';
-
-const asUtc = (t: string) => /[Z+]/.test(t.slice(-6)) ? t : t + 'Z';
+import { asUtc } from '../format';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 

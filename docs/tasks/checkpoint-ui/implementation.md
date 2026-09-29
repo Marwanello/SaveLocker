@@ -7,7 +7,7 @@ Read [[plan]] first for tokens, type, motion and the colour rule, and
 [[implementation-grouping]] before starting any phase — it regroups the list below **by surface**
 rather than by phase number, because several phases edit the same components.
 
-## Status (updated 2026-09-27, after the gap audit)
+## Status (updated 2026-09-28)
 
 | Phase | Status |
 |---|---|
@@ -20,8 +20,8 @@ rather than by phase number, because several phases edit the same components.
 | 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22 (Group 6) — verified live (real screenshots, pixel-sampled colours, `--nav`-scripted L1/R1 with `--nav-debug`) since `savelocker ui` runs on this Windows box without WSLg; a real focus-timing bug was found and fixed this way — see `implementation-grouping.md` → Group 6. No real Deck/gamescope pass yet. Item 4 (Wayland) ⏳ Group 10 (part 10d) — **decided 2026-09-28: option 1**, a chrome-less browser app window (see below); a short Deck measurement comes first |
 | 7 — OS notifications | ✅ Shipped 2026-09-24 (Group 7) — shared rules, a real Windows toast and the generalised Linux notifier. Buttons are links to the agent UI, not callbacks (measured: Windows' toast host refuses freshly registered URL schemes); "Retry now"/"Install now" did not survive that. See Phase 7 below |
 | 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1). Remainder (Steam library art, PNG favicons, the installer icon — all still the pre-Checkpoint brand) ⏳ Group 10 (part 10c) |
-| 9 — Console page kit and top bar | ⏳ Not started — Group 8 (from the 2026-09-27 audit) |
-| 10 — Console Games page | ⏳ Not started — Group 8 |
+| 9 — Console page kit and top bar | ✅ Shipped 2026-09-28 (Group 8a) — the `ui/` kit, pill tabs, the always-present bell with per-item actions, the SVG lock, the conflict pill, the full-width rail with Cancel (`POST /commands/cancel`, new `Cancelled` status). The Backups tab arrives with Group 9 |
+| 10 — Console Games page | ✅ Shipped 2026-09-28 (Groups 8b + 8c) — split into `components/game/`, then re-laid out; no `alert()`/`confirm()`/`prompt()` left on the page (guarded by `run-appearance-consistency-tests`). Departures: see `implementation-grouping.md` → Group 8 |
 | 11 — Backups tab and Configuration | ⏳ Not started — Group 9. The Backups tab does not exist at all |
 | 12 — Console Audit log, Help, What's new, sign-in | ⏳ Not started — Group 9 |
 | 13 — Agent UI, completed | ⏳ Not started — Group 10 |

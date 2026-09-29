@@ -56,11 +56,9 @@ public static class SaveArchive
     }
 
     /// <summary>File count and the newest per-file write time inside a save archive — read
-    /// straight from the zip's own entry metadata, never re-extracted or re-hashed.
-    /// <see cref="CreateArchive"/> has always stamped <c>entry.LastWriteTime</c> from the source
-    /// file, so this works on archives written long before this method existed, not just future
-    /// ones. Meant to help tell two conflicting versions apart beyond a bare size and upload time —
-    /// by a human in the console today, and by whatever decides conflicts automatically later.</summary>
+    /// straight from the zip's own entry metadata, never re-extracted or re-hashed. Meant to help
+    /// tell two conflicting versions apart beyond a bare size and upload time — by a human in the
+    /// console today, and by whatever decides conflicts automatically later.</summary>
     public readonly record struct ArchiveStats(int FileCount, DateTime? NewestFileWriteUtc);
 
     /// <summary>Read <see cref="ArchiveStats"/> from an archive already on disk.</summary>
@@ -73,15 +71,70 @@ public static class SaveArchive
         {
             if (string.IsNullOrEmpty(entry.Name)) continue; // directory entry, no content
             count++;
-            // entry.LastWriteTime is a DOS-format zip timestamp with no embedded offset — .UtcDateTime
-            // would reinterpret the stored wall-clock value using THIS process's local timezone, which
-            // is wrong whenever the server isn't in the same timezone the agent was in at upload time.
-            // Take the wall-clock value as written and treat it as UTC instead, so the result is at
-            // least deterministic and doesn't additionally depend on the server's configured timezone.
-            var mtime = DateTime.SpecifyKind(entry.LastWriteTime.DateTime, DateTimeKind.Utc);
+            var mtime = EntryWriteTimeUtc(entry);
             if (newest is null || mtime > newest) newest = mtime;
         }
         return new ArchiveStats(count, newest);
+    }
+
+    /// <summary>
+    /// Where an entry's real UTC write time lives: its comment, as <c>mtime-utc=</c> + a round-trip
+    /// ("o") UTC timestamp.
+    /// <para>
+    /// Zip's own timestamp is a DOS date/time with no zone — by the spec's convention the writer's
+    /// local wall clock — so it cannot say when a file was written unless you also know where. Read
+    /// as UTC it came out shifted by the uploader's offset (+3 h from a UTC+3 machine, 2026-09-28).
+    /// That field stays the local wall clock, so Explorer, 7-Zip and every older reader show what they
+    /// always did; the UTC record rides beside it. Not the "extended timestamp" extra field (0x5455),
+    /// which would be the standard home for it: .NET 10's zip API cannot write extra fields, and
+    /// hand-assembling zip headers in the one format every save passes through is not worth that.
+    /// </para>
+    /// <para>
+    /// It is per ENTRY, not per archive, because a delta rebuild on the server copies entries out of
+    /// older archives into a new one — an archive can hold both kinds.
+    /// </para>
+    /// </summary>
+    private const string UtcWriteTimePrefix = "mtime-utc=";
+
+    /// <summary>
+    /// When the entry's file was last written, in UTC. An entry written before the UTC record existed
+    /// has only the uploader's wall clock and nothing saying which timezone that was; it reads as it
+    /// always has — that wall clock labelled UTC, off by the uploader's offset — rather than a guess.
+    /// Deterministic either way: never interpreted in the reading process's own timezone.
+    /// </summary>
+    public static DateTime EntryWriteTimeUtc(ZipArchiveEntry entry) =>
+        TryReadUtcWriteTime(entry.Comment, out var utc)
+            ? utc
+            : DateTime.SpecifyKind(entry.LastWriteTime.DateTime, DateTimeKind.Utc);
+
+    /// <summary>Stamp both: the local wall clock zip tools expect, and the UTC record beside it.</summary>
+    public static void StampWriteTime(ZipArchiveEntry entry, DateTime writtenUtc)
+    {
+        var utc = DateTime.SpecifyKind(ZipSafeTimestamp(writtenUtc), DateTimeKind.Utc);
+        entry.LastWriteTime = ZipSafeTimestamp(utc.ToLocalTime());
+        entry.Comment = UtcWriteTimePrefix + utc.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Carry an entry's write time into a copy of it. Only a well-formed UTC record crosses: the
+    /// source may be an agent's upload, and whatever else its comment says is not ours to store.
+    /// </summary>
+    public static void CopyWriteTime(ZipArchiveEntry from, ZipArchiveEntry to)
+    {
+        to.LastWriteTime = from.LastWriteTime;
+        if (TryReadUtcWriteTime(from.Comment, out var utc))
+            to.Comment = UtcWriteTimePrefix + utc.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static bool TryReadUtcWriteTime(string? comment, out DateTime utc)
+    {
+        utc = default;
+        return comment is not null
+            && comment.StartsWith(UtcWriteTimePrefix, StringComparison.Ordinal)
+            && DateTime.TryParseExact(comment[UtcWriteTimePrefix.Length..], "o",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind, out utc)
+            && utc.Kind == DateTimeKind.Utc;
     }
 
     /// <summary>
@@ -202,7 +255,7 @@ public static class SaveArchive
     /// <para>
     /// The source file is OPENED FIRST, before the entry exists, and the order is load-bearing. A
     /// file that vanished between being listed and being archived makes
-    /// <see cref="File.GetLastWriteTime"/> return 1601-01-01 rather than throwing, and
+    /// <see cref="File.GetLastWriteTimeUtc"/> return 1601-01-01 rather than throwing, and
     /// <c>ZipArchiveEntry.LastWriteTime</c> rejects anything before 1980 with an
     /// ArgumentOutOfRangeException — an exception no caller up the stack expects, standing in for
     /// the FileNotFoundException that would have said what actually happened.
@@ -217,7 +270,7 @@ public static class SaveArchive
         // guarantees the writer has actually finished.
         using var src = OpenShared(full);
         var entry = zip.CreateEntry(rel, CompressionLevel.Optimal);
-        entry.LastWriteTime = ZipSafeTimestamp(File.GetLastWriteTime(full));
+        StampWriteTime(entry, File.GetLastWriteTimeUtc(full));
         using var dst = entry.Open();
         src.CopyTo(dst);
     }
