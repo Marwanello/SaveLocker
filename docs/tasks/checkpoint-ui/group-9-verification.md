@@ -38,8 +38,11 @@ Rig facts that matter here:
    admin password), then the table. The first row is a **Nightly** chip.
 5. Press **Back up now**. The toast reads **Snapshot written. N KB.**, and a new top row appears named
    `savelocker-YYYYMMDD-HHMMSS-manual.db` with an amber **Manual** chip.
-6. Press **Download** on the Manual row. A `.db` file saves. Open it with
-   `python -c "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute('PRAGMA integrity_check').fetchone())" <file>`.
+6. Press **Download** on the Manual row. A `.db` file saves to Downloads. Check it:
+   ```powershell
+   $f = (Get-ChildItem "$env:USERPROFILE\Downloads\savelocker-*-manual.db" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+   python -c "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute('PRAGMA integrity_check').fetchone())" $f
+   ```
    It should print `('ok',)`.
 7. Go to **Audit log**. There are `backup.manual` and `backup.download` rows, each naming the file.
 8. Check the security headers from PowerShell:
@@ -70,9 +73,14 @@ Rig facts that matter here:
    `.\tests\testenv.ps1 up -Only console`. Then run `up -Only windows` and `up -Only linux` to bring the agents back.
 3. `status` shows the console `v0.5.99-test`. **Backups** has a new row `…-before-upgrade.db` with an amber **Before
    upgrade** chip.
-4. Prove it predates the new start: download it and run
-   `python -c "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute(\"select Value from Settings where Key='Server:LastStartedVersion'\").fetchone())" <file>`.
-   It should print the **old** version (`0.5.13-test`), not `0.5.99-test`.
+4. Prove it predates the new start. Download it, then in PowerShell (the setting name goes in as an argument,
+   because Windows PowerShell 5.1 strips `\"` from arguments it passes to python):
+   ```powershell
+   $f = (Get-ChildItem "$env:USERPROFILE\Downloads\*-before-upgrade.db" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+   python -c "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute('select Value from Settings where [Key]=?',(sys.argv[2],)).fetchone())" $f Server:LastStartedVersion
+   ```
+   It should print the **old** version, `('0.5.13-test',)`, not `0.5.99-test`. `None` means that database had never recorded
+   a version (the first start of this branch on an older volume). Repeat step 3 and check the second snapshot.
 5. Run `down` and `up -Only console` again at the same version. **No** second before-upgrade row appears.
 6. Rebuild at the normal version (`.\tests\testenv.ps1 build -Only console`, `down`, `up`) before continuing. That
    also takes a before-upgrade snapshot, which is expected.
