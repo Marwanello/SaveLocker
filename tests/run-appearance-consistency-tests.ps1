@@ -225,6 +225,28 @@ Check "notifications: NoticeAction.Game's route (game:<id>) and the conflicts ch
     ($notif -match 'View\(\$"game:\{id:D\}"\)') -and ($notif -match 'View\("conflicts:queue"\)') -and
     ($routeTs -match "base === 'game'") -and ($routeTs -match "rest === 'queue'"))
 
+# ---- the Steam art (Group 10c): the same Pixel lock as the console, rasterised from SVG sources ---------------
+# `npm run export:art` writes packaging/linux/artwork/src/*.svg by copying the mark's shapes out of
+# web/src/assets/marks/pixel-lock.svg. Nothing else ties the four lockups to that mark, so an edit to the mark
+# (or to a lockup by hand) would leave the Steam art quietly showing an old lock.
+$lockGeo = @(Geometry (Read-Src "web/src/assets/marks/pixel-lock.svg") | Where-Object { $_ -ne "width=32" -and $_ -ne "height=32" })
+foreach ($piece in @("capsule", "capsule-wide", "hero", "logo")) {
+    $src = Read-Src "packaging/linux/artwork/src/$piece.svg"
+    $inLockup = @(Geometry ([regex]::Match($src, '<g transform="translate[^"]*">(.*?)</g>', 'Singleline').Groups[1].Value))
+    Check "steam art: '$piece.svg' carries the Pixel lock's exact shapes ($($lockGeo.Count) attributes)" ($lockGeo.Count -gt 12 -and (Same $lockGeo $inLockup))
+    Check "steam art: '$piece.svg' uses only the default accent and no CSS variable" (($src -match '#e0533c') -and ($src -notmatch 'var\('))
+}
+$png = @{ "capsule" = @(600, 900); "capsule-wide" = @(920, 430); "hero" = @(1920, 620) }
+foreach ($piece in $png.Keys) {
+    $bytes = [System.IO.File]::ReadAllBytes((Join-Path $root "packaging/linux/artwork/dist/$piece.png"))
+    # A PNG's IHDR holds width and height as big-endian ints at byte 16 and 20.
+    $w = ($bytes[16] * 16777216) + ($bytes[17] * 65536) + ($bytes[18] * 256) + $bytes[19]
+    $h = ($bytes[20] * 16777216) + ($bytes[21] * 65536) + ($bytes[22] * 256) + $bytes[23]
+    Check "steam art: dist/$piece.png is $($png[$piece][0])x$($png[$piece][1]), Steam's size ($w x $h)" ($w -eq $png[$piece][0] -and $h -eq $png[$piece][1])
+}
+$manifest = Read-Src "web/public/site.webmanifest"
+Check "web manifest: has a name and the dark theme colour (it shipped empty and white)" (($manifest -match '"name":\s*"SaveLocker"') -and ($manifest -match '"theme_color":\s*"#0f0f10"'))
+
 Write-Host ""
 Write-Host "==== $pass passed, $fail failed ===="
 if ($fail -gt 0) { exit 1 }

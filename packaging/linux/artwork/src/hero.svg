@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="620" viewBox="0 0 1920 620">
+
+  <defs>
+    <radialGradient id="wash" gradientUnits="userSpaceOnUse" cx="422.4" cy="49.6" r="2304">
+      <stop offset="0" stop-color="#672c25"/>
+      <stop offset=".68" stop-color="#0b0b0e"/>
+    </radialGradient>
+    <pattern id="lines" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(25)">
+      <rect width="2" height="9" fill="#ffffff" fill-opacity=".05"/>
+    </pattern>
+  </defs>
+  <rect width="1920" height="620" fill="url(#wash)"/>
+  <rect width="1920" height="620" fill="url(#lines)"/><g transform="translate(110 300) scale(6.25)"><rect x="12" y="3" width="8" height="4" fill="#e0533c"/>
+  <rect x="8" y="7" width="4" height="5" fill="#e0533c"/>
+  <rect x="20" y="7" width="4" height="5" fill="#e0533c"/>
+  <rect x="5" y="12" width="22" height="16" fill="#e0533c"/>
+  <rect x="14" y="16" width="4" height="4" fill="#160f0e"/>
+  <rect x="15" y="20" width="2" height="5" fill="#160f0e"/></g><text x="350" y="440" font-family="Archivo" font-weight="600" font-size="150" letter-spacing="-5.250000000000001"><tspan fill="#ffffff">Save</tspan><tspan fill="#e0533c">Locker</tspan></text><text x="356" y="500" font-family="Archivo" font-weight="400" font-size="24" letter-spacing="3.84" fill="#ffffff" fill-opacity=".72">HUB-AND-SPOKE SAVE SYNC · WINDOWS · LINUX · STEAM DECK</text>
+</svg>
