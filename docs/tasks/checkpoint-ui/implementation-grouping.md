@@ -26,7 +26,7 @@ phases to do in one session, in what order, and why. Driven by three things weig
 | 6 | Phase 6 items 1-3 (Deck) | ✅ Shipped 2026-09-22 (branch `claude/group-6-ui-redesign-6d9b06`) — Checkpoint tokens, the accent/healthy split, 62px two-line rows, the button legend, Sync all on Y. `savelocker ui --screenshot` and `--nav` turned out to run on this Windows box (no WSLg needed — SDL/GL resolved natively), so this was verified live, not by build alone: real pixel colours sampled off real screenshots, and the L1/R1 section-switch driven through `--nav r1,r1,r1` with `--nav-debug` open. That pass caught and fixed a genuine focus-timing bug (below) a build could never have shown. Same-day follow-up (below) fixed a mis-angled Sync icon and replaced the header's stale pre-Checkpoint logo with a live, mark-aware, accent-coloured `AppMark`. Archivo shipped the same day. Reviewed as PR #49 on 2026-09-23 and every finding fixed (*Review fixes*, below). Still not run on a real Deck or under gamescope's actual input path |
 | 7 | Phase 7 (notifications) | ✅ Shipped 2026-09-24 (branch `group-7-ui-redesign`, PR #50) — both halves on shared rules (`Agent.Core/Notifications.cs`): a real Windows toast (`ToastPresenter`) and the Linux notifier generalised from `ConflictNotifier` (`DesktopNotifier`). **A button is a link to the agent UI, not a callback** — a custom URL scheme was built end to end and the shell's toast host refused every freshly registered one (measured), so "Retry now"/"Install now" became "Open game" and a pointer to the tray menu. Verified live on Windows (real toast, real click, the five-minute rule, withdrawal) and on a real Deck in Desktop Mode 2026-09-27 (the popup, and *Choose a save* opening the flatpak default browser at the queue); the installer's shortcut change compiles but has not been run. Reviewed as PR #50 on 2026-09-27 and every finding fixed (*Review fixes*, below). See the Group 7 write-up below |
 | 8 | Phases 9 + 10 — console page kit, top bar (pill tabs, bell, conflict pill, progress rail + Cancel) and the Games page (sidebar, full-width grid, game page re-layout, no `alert`/`confirm`) | ✅ Shipped 2026-09-28 (branch `group-8-ui-redesign`, PR #52) — 8a kit + top bar + `POST /commands/cancel` (`e6514ce`), 8b the `GameDetail.tsx` split (`1566de8`), 8c the Games page (`24074a0`). Verified live through `testenv` with real conflicts; one real bug found that way and fixed (a conflict side pushed while the page was open). Replay the live checks with `group-8-verification.md`. Same-day follow-up on the branch: each machine's OS logo on the conflict panel and a listbox machine picker (`b3caca9`). Reviewed as PR #52 on 2026-09-28 and every finding addressed (*Review fixes*, below). See the Group 8 write-up below. Group 9 is unblocked |
-| 9 | Phases 11 + 12 + Phase 2's release-history table — the **Backups** tab and its routes, Configuration, Audit log, Help, What's new, sign-in | 🚧 In progress (branch `group-9-ui-redesign`). **9a ✅ 2026-09-29** — the Backups tab, its status / download / settings routes, the before-upgrade snapshot, the KB article; security bar met (BK-01, every download defence mutation-checked). 9b, 9c ⏳. See the Group 9 write-up below |
+| 9 | Phases 11 + 12 + Phase 2's release-history table — the **Backups** tab and its routes, Configuration, Audit log, Help, What's new, sign-in | ✅ Shipped 2026-09-29 (branch `group-9-ui-redesign`) — 9a Backups (`5c01638`), then 9b Configuration + 9c Audit/Help/What's new/sign-in in one commit (they share `Contracts.cs`, `Program.cs`, `api.ts`, the regenerated types and the test file). Security bar met (BK-01 + CFG-01, mutation-checked). Verified in a browser against a scratch server; the `testenv` pass is written as `group-9-verification.md` and **not yet run**. See the Group 9 write-up below |
 | 10 | Phases 13 + 14 + the Phase 8 remainder + Phase 6 item 4 — agent UI completed, Deck Game Mode completed, Steam art / favicons / installer icon, the Wayland window | ⏳ Not started. Parts 10a → 10b, 10c any time, 10d (Wayland — option 1 decided 2026-09-28) any time after 10c's manifest. Independent of 8–9 |
 
 **2026-09-20 review pass (a code review of Groups 1–2, all findings fixed on branch
@@ -687,7 +687,7 @@ Push/Pull reaching the WSL agent; list ↔ grid and back to a game.
 
 Every other console tab. After Group 8: built on its kit, and Configuration reuses its exclude-chip editor.
 
-🚧 **In progress on branch `group-9-ui-redesign`.**
+✅ **Shipped 2026-09-29 on branch `group-9-ui-redesign`; the `testenv` checklist is [[group-9-verification]] (not yet run).**
 <br>**9a ✅ (2026-09-29).** *Server:* `BackupInfo` gained `Reason` (`Nightly` / `Manual` / `BeforeUpgrade`), carried in
 the file name after the timestamp (`-manual`, `-before-upgrade`; no suffix = Nightly, so every older snapshot reads right and
 the ordinal sort / prune pattern are unchanged). `GET /admin/backups/status` → `BackupStatusDto` (a sibling route, so the
@@ -704,7 +704,7 @@ failed migration retries its snapshot next start. A fresh install takes none. *W
 tab (`#backups`, after Audit log as in the prototype): last-run chip (ok under 26 h, watch when older, empty or failed),
 Back up now, four stats, the snapshot table with a Download that fetches with the session header into a blob, and the
 "what this file holds" line beside it. KB `database-backups.md`. Audit tones for the three new actions (a download is
-`warn`). **Also fixed:** `index.css`'s `a` reset was unlayered, so it beat every link's `underline` / `text-*` utility
+`warn` — superseded in 9c, where the audit table colours only failures and conflicts). **Also fixed:** `index.css`'s `a` reset was unlayered, so it beat every link's `underline` / `text-*` utility
 (Gotchas → *Web console*) — it now sits in `@layer base`; the brand and help links compute the same as before.
 <br>**Verified:** `run-console-security-tests` gains **BK-01, 34 checks** — 401s, the reason in the name, `no-store`, the
 audit row, nine traversal / absolute / encoded / unlisted / case-changed names → 404, settings validation + wake +
@@ -719,6 +719,54 @@ backups are off", the focus ring on Back up now, the help link. **Not done:** th
 (rebuild at a different version) — the restarts above exercise the same code path, but not in Docker; the failed-run
 banner was not seen live (no way to make `VACUUM INTO` fail on a running scratch server here).
 
+<br>**9b ✅ (2026-09-29).** *Server:* the default exclude list is now console-editable — `POST /api/settings/default-excludes`
+(validated by the same `GlobConfig.Validate` as a game's list, audited `settings.default_excludes` with its diff), stored as a
+**JSON array** under `Sync:DefaultExcludeGlobs` so an emptied list (`[]`, "no defaults") is told apart from never saved
+(config applies). `SettingsService.GetDefaultExcludesAsync` is what the agent game list, a new enrollment file and the
+settings DTO all read — `GlobConfig.GlobalDefaults(cfg)` became `ConfigDefaults` and `Effective` takes the list. Agents needed
+no change: `CommandPoller` already copies a changed list into its config on the next poll (read, not assumed). The settings
+DTO gained `DefaultExcludeGlobsFromConsole` and `Storage` (`ServerStorageDto`: archive root, `DriveInfo` total/free of its
+volume, archive bytes, games with archives, the default keep, the escalation window). *Web:* `ConfigView.tsx` rewritten on the
+kit as the prototype's rows — **Server** (public URL, storage, build + Copy, escalation, the meter, SteamGridDB) beside
+Appearance; **Enroll a machine** (history as a `DataTable`: Used / Expired / Valid chips) beside **Defaults & maintenance**
+(the agent auto-update switch — the fetch schedule's on/off —, 9a's nightly-backup switch with hour and keep, default keep,
+the default exclude chips); **Machines** (`DataTable`: OS badge, platform, agent, a last-seen chip, games, Force-release
+N leases when it holds any, Delete); then Agent updates and Admin password. The chip editor moved to `ui/GlobChips.tsx`,
+shared with the game's Exclude patterns card. `AgentUpdatesCard`'s Edit is **in place, not a modal**. The 31
+`alert`/`confirm` calls are gone and the `run-appearance-consistency-tests` guard now covers **all of `web/src`** (70 files;
+against the 9a files it reports exactly 31).
+<br>**9c ✅ (2026-09-29).** *Server:* `AgentHeartbeat.StagedVersion` (appended; the Linux daemon sets
+`HealthReporter.StagedVersion = Updater.PendingVersion`; Windows applies at once so sends none) stored on `AgentHealth`
+(migration `AddAgentStagedVersion`, one nullable column) and served on `AgentHealthDto`; cleared by a beat that carries none.
+`ServerBuildInfo.LatestRelease` — the newest agent-repo tag `AgentInstallerService` has read from GitHub since start
+(poller or manual fetch), on `/admin/status`. *Web:* Audit log on the kit — search over action / game / detail, machine
+`FilterChips` (+ Server), the action accent only for failures, conflicts and lockouts, and the 200-row cap stated when hit;
+Export CSV exports what is shown. Help as the `docs` grid; `.help-content` restyled to the prototype's `.prose` (shared by
+What's new). What's new: the three newest releases in full with **Running** / **Available**, the full **Release history**
+table (Phase 2's split-off item; a row opens that release's notes above), and **Agent versions** (signed in only): agent,
+installer hosted for its platform, Current / Behind / Update staged / No installer hosted. Sign-in: the two-column lock
+screen, the error sentence under the field, **Remember this browser for 30 days** (on → `localStorage`, off →
+`sessionStorage`; `signIn` defaults to wherever the current token lives, so re-signing after a password change keeps the
+choice), host · version footer, and the forgotten-password hint pointing at the documented reset (no `passwd` verb was
+written). No fleet chips on the lock screen.
+<br>**Deliberate departures:** *Settle* is not in Defaults & maintenance — it is a per-agent setting with no server value to
+show. The per-game **Save retention** table left Configuration (each game's Keep is on its Rules card since 8c; the default
+keep is shown). Remember defaults to **on**, as in the prototype (and as sign-in behaved before). The audit table's tone
+badges gave way to the plan's two-colour action text.
+<br>**Verified (9b + 9c):** `run-console-security-tests` gains **CFG-01, 17 checks** (401, `..` refused and nothing stored,
+>100 refused, echo, fromConsole flag, the agent's game list AND a new enrollment file carrying the list, the config defaults
+gone, `[]` meaning none, the audited diff, the storage figures, StagedVersion reaching the console and clearing, no
+LatestRelease before a GitHub read). **Mutation-checked:** the agent game list put back on config defaults → 3 fail. BK-01 +
+CFG-01 51/51 through the pwsh-7 shim (the suite is Windows PowerShell 5.1; CI runs it whole). `run-appearance-consistency-tests`
+35/35. `web` build + lint clean; Server and Agent.Linux build. **Live in Chromium** against a scratch server + dev console,
+both themes: every page; the wrong-password sentence; Remember off → token in `sessionStorage`, signed in after a reload,
+signed out after closing the browser; on → `localStorage`, still signed in; `a/../b` refused inline in Defaults; `*.dmp`
+saved → an inherited dashed chip on the game page + the audit row; the backup switch off/on audited; What's new's history
+link opening a release above; Agent versions reading **Update staged · 0.5.12** for a heartbeat carrying one. One test of mine
+was racy (the top bar renders while locked, so "the Configuration tab is visible" proved nothing) — redone on the password
+field disappearing. **Not done:** the `testenv` pass (no Windows/WSL/Docker rig here) — [[group-9-verification]] is the
+checklist; a real agent applying a changed default (the server half is tested, the agent code path was read); a
+`LatestRelease` from a real GitHub fetch.
 - **9a — Backups (11.1–11.5, 11.8).** Server first: the status shape and `Reason` (11.2), the download
   route (11.3), the before-upgrade snapshot (11.4), DB-backed backup settings read by the scheduler each
   loop (11.5); then `BackupsView.tsx`, the **Backups** tab, and the `database-backups.md` KB article.

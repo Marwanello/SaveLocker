@@ -1604,8 +1604,16 @@ migrating whenever it starts on a different build. `BackupsView.tsx` + KB `datab
 `web/src/api-types.ts` regenerated (additive). `run-console-security-tests` +34 (BK-01, mutation-checked) — run here only
 as that one phase through a pwsh-7 shim; CI runs the whole suite. Details and what was not verified:
 `tasks/checkpoint-ui/implementation-grouping.md` → Group 9.
-**Next action:** 9b (Configuration re-layout, storage meter, editable default excludes — it also puts 9a's schedule
-toggle on the page), then 9c.
+<br>**Same day — 9b and 9c done too; Group 9 is complete in code.** 9b: Configuration rebuilt on the kit (Server with a
+`DriveInfo` storage meter, Enroll, Defaults & maintenance with the auto-update and nightly-backup switches, Machines,
+Agent updates edited in place, Admin password) and the **default exclude list editable** (`POST /api/settings/default-excludes`,
+stored as a JSON array so `[]` means "none"); no `alert`/`confirm` left anywhere in `web/src` (guard widened). 9c: Audit log
+search + machine chips, Help as the docs grid, What's new with the release-history table and Agent versions, the two-column
+sign-in with **Remember this browser** (localStorage vs sessionStorage); server extends `AgentHeartbeat.StagedVersion`
+(migration `AddAgentStagedVersion`) and `ServerBuildInfo.LatestRelease`. `run-console-security-tests` +17 (CFG-01,
+mutation-checked). All verified in a browser against a scratch server, **not yet through `testenv`** — the step-by-step
+is `tasks/checkpoint-ui/group-9-verification.md`.
+**Next action:** run `group-9-verification.md` on the Windows rig, then open the Group 9 PR; then Group 10.
 
 ---
 

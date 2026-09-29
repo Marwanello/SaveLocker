@@ -13,7 +13,7 @@ rather than by phase number, because several phases edit the same components.
 |---|---|
 | 1 — Design system foundation, web half | ✅ Shipped 2026-09-17 (Group 1); theme default corrected 2026-09-20 (dark base, light opt-in — see `implementation-grouping.md`) |
 | 1 — Design system foundation, agent half | ✅ Shipped 2026-09-20 (Group 3) — `tokens.css`, `ui.css`, Archivo, `components/ui/` |
-| 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in moved to revocable sessions 2026-09-20. The release-history table (split off) ➡️ Group 9 |
+| 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in moved to revocable sessions 2026-09-20. The release-history table (split off) ✅ shipped 2026-09-29 with Group 9c |
 | 3 — Sync all and progress | ✅ Items 1, 2, 4 shipped 2026-09-18 (Group 2 — console side); item 3 (agent Sync all + progress) shipped 2026-09-20 (Group 3); item 5 (per-game Sync this game) ✅ shipped 2026-09-21 (Group 4) with the game page and a new per-game agent route |
 | 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5); item 4 — the Deck's accent ➡️ shipped 2026-09-22 (Group 6). The theme default now follows the OS (every hex colour left the views first). See `implementation-grouping.md` → Groups 5/6 |
 | 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
@@ -22,8 +22,8 @@ rather than by phase number, because several phases edit the same components.
 | 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1). Remainder (Steam library art, PNG favicons, the installer icon — all still the pre-Checkpoint brand) ⏳ Group 10 (part 10c) |
 | 9 — Console page kit and top bar | ✅ Shipped 2026-09-28 (Group 8a) — the `ui/` kit, pill tabs, the always-present bell with per-item actions, the SVG lock, the conflict pill, the full-width rail with Cancel (`POST /commands/cancel`, new `Cancelled` status). The Backups tab arrives with Group 9 |
 | 10 — Console Games page | ✅ Shipped 2026-09-28 (Groups 8b + 8c) — split into `components/game/`, then re-laid out; no `alert()`/`confirm()`/`prompt()` left on the page (guarded by `run-appearance-consistency-tests`). Departures: see `implementation-grouping.md` → Group 8 |
-| 11 — Backups tab and Configuration | 🚧 Items 11.1–11.5 and 11.8 ✅ shipped 2026-09-29 (Group 9a) — the Backups tab, status / download / settings routes, before-upgrade snapshot, KB article. 11.6–11.7 (Configuration) ⏳ Group 9b |
-| 12 — Console Audit log, Help, What's new, sign-in | ⏳ Not started — Group 9 |
+| 11 — Backups tab and Configuration | ✅ Shipped 2026-09-29 (Group 9a: 11.1–11.5, 11.8; 9b: 11.6–11.7). `testenv` pass written, not yet run — `group-9-verification.md` |
+| 12 — Console Audit log, Help, What's new, sign-in | ✅ Shipped 2026-09-29 (Group 9c) — `StagedVersion` on the heartbeat, `LatestRelease` on `ServerBuildInfo`, Remember this browser. No `passwd` verb: the hint points at the documented reset |
 | 13 — Agent UI, completed | ⏳ Not started — Group 10 |
 | 14 — Deck Game Mode, completed | ⏳ Not started — Group 10 |
 
