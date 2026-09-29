@@ -15,11 +15,15 @@
 #                                 preview count is right against a real uploaded archive.
 #   BK-01   backups               a zip of the database + each game's LATEST save only; its download is
 #                                 admin-only, matched against the listing (traversal, absolute, encoded,
-#                                 unlisted names are 404s), audited, `no-store`. The schedule (daily /
+#                                 unlisted names are 404s), audited, `no-store`; the console's single-use
+#                                 download ticket works once, with no session. The schedule (daily /
 #                                 weekly, UTC) is validated, audited and wakes the scheduler. Restore:
 #                                 refuses a non-backup before changing anything, takes a safety backup,
 #                                 swaps the database, puts back a lost latest save, is audited and can
-#                                 itself be undone. Delete removes one listed backup, audited. The SteamGridDB key is encrypted at rest (a legacy
+#                                 itself be undone; a database needing the startup fix-ups restores; a
+#                                 failed backup leaves no .tmp; retention keeps the newest undo point.
+#                                 Delete removes one listed backup, audited. The SteamGridDB key is
+#                                 encrypted at rest (a legacy
 #                                 plain one at the next start) and no backup carries it in the clear.
 #                                 A new build's first start backs up BEFORE migrating, once.
 #   CFG-01  server defaults       the default exclude list is editable from the console: admin-only,
@@ -663,6 +667,20 @@ Check "BK-01: ... sent Cache-Control: no-store" (("" + $dl.Headers["Cache-Contro
 Check "BK-01: ... and audited as backup.download, naming the file" `
     ((@((Http GET "/api/audit?limit=500" $null $bk).Json | Where-Object { $_.action -eq "backup.download" -and $_.detail -eq $name })).Count -eq 1)
 Check "BK-01: Back up now is audited too" ((@((Http GET "/api/audit?limit=500" $null $bk).Json | Where-Object { $_.action -eq "backup.manual" })).Count -ge 1)
+
+# ---- the console's download path: a single-use ticket, so a plain link streams the file to disk
+Check "BK-01: a download ticket without a session -> 401" ((Http POST "/api/admin/backups/$name/download-ticket").Status -eq 401)
+Check "BK-01: a ticket for an unlisted name -> 404" ((Http POST "/api/admin/backups/..%2Fsavelocker.db/download-ticket" $null $bk).Status -eq 404)
+$tk = Http POST "/api/admin/backups/$name/download-ticket" $null $bk
+Check "BK-01: a ticket with a session -> 200, a link under /api/backup-download/" ($tk.Status -eq 200 -and ("" + $tk.Json.url) -like "/api/backup-download/*")
+$td = Http GET ("" + $tk.Json.url)
+$tdPath = Join-Path $scratch "bk-ticket.zip"; SaveBytes $td $tdPath
+Check "BK-01: ... the link downloads the backup with no session (the ticket is the credential)" `
+    ($td.Status -eq 200 -and (@(ZipEntries $tdPath)) -contains "savelocker.db" -and (("" + $td.Headers["Cache-Control"]) -match "no-store"))
+Check "BK-01: ... once: the same link a second time -> 404" ((Http GET ("" + $tk.Json.url)).Status -eq 404)
+Check "BK-01: ... a made-up ticket -> 404" ((Http GET "/api/backup-download/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef").Status -eq 404)
+Check "BK-01: ... and issuing it is audited as a download" `
+    ((@((Http GET "/api/audit?limit=500" $null $bk).Json | Where-Object { $_.action -eq "backup.download" -and $_.detail -eq $name })).Count -eq 2)
 Set-Content -Path (Join-Path $backupDir "notes.txt") -Value "not a backup"
 Set-Content -Path (Join-Path $backupDir "savelocker-20000101-000000.zip.tmp") -Value "half-written"
 foreach ($bad in @("..%2Fsavelocker.db", "%2E%2E%2Fsavelocker.db", "..%5Csavelocker.db", "%2Fetc%2Fpasswd",
@@ -742,9 +760,39 @@ Check "BK-01: ... audited as backup.delete, naming the file" `
     ((@((Http GET "/api/audit?limit=500" $null $bk).Json | Where-Object { $_.action -eq "backup.delete" -and $_.detail -eq $del })).Count -eq 1)
 Check "BK-01: deleting it again -> 404" ((Http DELETE "/api/admin/backups/$del" $null $bk).Status -eq 404)
 
+# A restored database gets exactly what a start gives it, not Migrate() alone: a database whose MachineSavePaths
+# table predates its migration row (made out-of-band, as old installs were) makes a bare Migrate() throw "table
+# already exists" AFTER the live file was replaced. Built from the downloaded backup's database, as a legacy .db.
+if ($sqliteOk) {
+    $z = [System.IO.Compression.ZipFile]::OpenRead($dlPath); $legacy = Join-Path $backupDir "savelocker-20000102-000000.db"
+    try { [System.IO.Compression.ZipFileExtensions]::ExtractToFile($z.GetEntry("savelocker.db"), $legacy, $true) } finally { $z.Dispose() }
+    Invoke-Sqlite "DELETE FROM __EFMigrationsHistory WHERE MigrationId = '20260706022305_AddMachineSavePaths';" -Write -Db $legacy | Out-Null
+    $lr = Http POST "/api/admin/backups/savelocker-20000102-000000.db/restore" $null $bk
+    Check "BK-01: restoring a database that needs the startup fix-ups -> 200 (not a half-finished 500)" ($lr.Status -eq 200)
+    Check "BK-01: ... and the server still answers from it (BK Keep back, BK Later gone)" `
+        ((@((Http GET "/api/overview" $null $bk).Json | Where-Object { $_.game.name -eq "BK Keep" })).Count -eq 1 -and
+         (@((Http GET "/api/overview" $null $bk).Json | Where-Object { $_.game.name -eq "BK Later" })).Count -eq 0)
+} else { Skip "BK-01: the restore fix-up check needs Python 3" }
+
+# A backup that fails part-way leaves no half-written .zip.tmp behind: hold BK Keep's latest archive open with
+# no sharing, so zipping it throws.
+$held = @(Get-ChildItem $lostDir -File)[0]
+$lock = [System.IO.File]::Open($held.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None)
+try { $failed = Http POST "/api/admin/backup" $null $bk } finally { $lock.Dispose() }
+Check "BK-01: a backup that cannot read a save fails (ok=false) ..." ($failed.Status -eq 200 -and $failed.Json.ok -eq $false)
+Check "BK-01: ... and leaves no temporary file behind" `
+    ((@(Get-ChildItem $backupDir -Force -File -Filter "*.tmp" | Where-Object { $_.Name -ne "savelocker-20000101-000000.zip.tmp" })).Count -eq 0)
+Check "BK-01: ... and the status reports the failure" ($null -ne (Http GET "/api/admin/backups/status" $null $bk).Json.lastError)
+
 Http POST "/api/admin/backups/settings" @{ enabled = $true; retentionCount = 2; hourOfDay = 4; frequency = "weekly"; dayOfWeek = 3 } $bk | Out-Null
+$newestUndo = "" + (@(Backups | Where-Object { $_.reason -eq "BeforeRestore" }))[0].fileName
 1..3 | ForEach-Object { Start-Sleep -Milliseconds 1100; Http POST "/api/admin/backup" $null $bk | Out-Null }
-Check "BK-01: retention prunes to the new keep (2)" ((Backups).Count -eq 2)
+$kept = @(Backups)
+$undoPoint = @($kept | Where-Object { $_.reason -eq "BeforeRestore" })
+Check "BK-01: retention prunes to the new keep (2) ..." ((@($kept | Where-Object { $_.reason -eq "Manual" })).Count -eq 2 -and $kept.Count -eq 3)
+Check "BK-01: ... but always keeps the newest Before restore backup, the undo for the last restore" `
+    ($undoPoint.Count -eq 1 -and $newestUndo -ne "" -and $undoPoint[0].fileName -eq $newestUndo)
+Check "BK-01: ... and a successful backup clears the last failure" ($null -eq (Http GET "/api/admin/backups/status" $null $bk).Json.lastError)
 Http POST "/api/admin/backups/settings" @{ enabled = $false; retentionCount = 20; hourOfDay = 3; frequency = "weekly"; dayOfWeek = 0 } $bk | Out-Null
 Check "BK-01: no before-upgrade backup on a first start (nothing to protect yet)" ((@(Backups | Where-Object { $_.reason -eq "BeforeUpgrade" })).Count -eq 0)
 Stop-Phase

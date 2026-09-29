@@ -1,4 +1,4 @@
-﻿namespace SaveLocker.Agent.Linux;
+namespace SaveLocker.Agent.Linux;
 
 /// <summary>
 /// The headless agent. There is no tray and no toast on a Deck (Game Mode has no desktop), so

@@ -54,6 +54,7 @@ public sealed class SettingsService
     /// </summary>
     private static readonly HashSet<string> Secrets = new(StringComparer.Ordinal) { SteamGridDbApiKey };
     private const string EncryptedPrefix = "enc:v1:";
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> UndecryptableWarned = new();
 
     private readonly AppDbContext _db;
     private readonly IConfiguration _cfg;
@@ -68,13 +69,21 @@ public sealed class SettingsService
         _log = log;
     }
 
-    /// <summary>The DB value if set, else the configuration value, else null. Secrets come back decrypted.</summary>
+    /// <summary>The DB value if set, else the configuration value, else null. Secrets come back decrypted; one
+    /// this server cannot decrypt counts as unset, so the configuration's value (if any) applies.</summary>
     public async Task<string?> GetEffectiveAsync(string key, CancellationToken ct = default)
     {
-        var row = await _db.Settings.FindAsync(new object?[] { key }, ct);
-        if (!string.IsNullOrWhiteSpace(row?.Value)) return Secrets.Contains(key) ? Reveal(key, row!.Value) : row!.Value;
+        if (await GetStoredAsync(key, ct) is { } stored) return stored;
         var fromCfg = _cfg[key];
         return string.IsNullOrWhiteSpace(fromCfg) ? null : fromCfg;
+    }
+
+    /// <summary>The DB value alone (decrypted), or null when there is none or it cannot be decrypted.</summary>
+    private async Task<string?> GetStoredAsync(string key, CancellationToken ct)
+    {
+        var row = await _db.Settings.FindAsync(new object?[] { key }, ct);
+        if (string.IsNullOrWhiteSpace(row?.Value)) return null;
+        return Secrets.Contains(key) ? Reveal(key, row.Value) : row.Value;
     }
 
     /// <summary>Store (or clear, when null/blank) a setting in the DB.</summary>
@@ -111,8 +120,10 @@ public sealed class SettingsService
         try { return _protector.Unprotect(stored[EncryptedPrefix.Length..]); }
         catch (System.Security.Cryptography.CryptographicException)
         {
-            // A database from another server (a restored backup) or a lost key ring: unusable, so unset.
-            _log.LogWarning("The stored {Key} cannot be decrypted with this server's keys; treating it as unset.", key);
+            // A database from another server (a restored backup) or a lost key ring: unusable, so unset. Said once
+            // per key per process — this is read on every settings load and art fetch.
+            if (UndecryptableWarned.TryAdd(key, 0))
+                _log.LogWarning("The stored {Key} cannot be decrypted with this server's keys; treating it as unset. Enter it again under Configuration.", key);
             return null;
         }
     }
@@ -271,7 +282,7 @@ public sealed class SettingsService
             try
             {
                 if (System.Text.Json.JsonSerializer.Deserialize<string[]>(row.Value) is { } saved)
-                    return (saved.Select(s => s.Trim()).Where(s => s.Length > 0).ToArray(), true);
+                    return (saved.Select(s => s?.Trim() ?? "").Where(s => s.Length > 0).ToArray(), true);
             }
             catch (System.Text.Json.JsonException) { /* unreadable: fall back to config, never to "none" */ }
         }
@@ -281,12 +292,13 @@ public sealed class SettingsService
     /// <summary>Store the console's default list (already validated). An empty list means "no defaults".</summary>
     public Task SetDefaultExcludesAsync(IEnumerable<string> patterns, CancellationToken ct = default) =>
         SetAsync(DefaultExcludeGlobs, System.Text.Json.JsonSerializer.Serialize(
-            patterns.Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()), ct);
+            patterns.Select(p => p?.Trim() ?? "").Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()), ct);
 
     /// <summary>The dashboard-facing settings snapshot (never includes the raw key).</summary>
     public async Task<ServerSettingsDto> GetServerSettingsDtoAsync(CancellationToken ct = default)
     {
-        var inDb = await _db.Settings.AnyAsync(s => s.Key == SteamGridDbApiKey && s.Value != "", ct);
+        // "In the DB" means a USABLE stored key: one this server cannot decrypt falls through to config.
+        var inDb = await GetStoredAsync(SteamGridDbApiKey, ct) is not null;
         var key = await GetEffectiveAsync(SteamGridDbApiKey, ct);
         var schedule = await GetAutoFetchScheduleAsync(ct);
         var (defaults, defaultsFromConsole) = await GetDefaultExcludesAsync(ct);

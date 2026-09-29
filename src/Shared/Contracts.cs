@@ -784,7 +784,12 @@ public record BackupResult(bool Ok, string? Message, BackupInfo? Backup, int Tot
 
 /// <summary>A restore that went through: what it came from, the safety backup taken just before it, and how many
 /// save archives it put back (the rest were already on disk — archives never change once written).</summary>
-public record BackupRestoreResult(string RestoredFrom, string SafetyBackup, int SavesRestored, int SavesAlreadyPresent);
+/// <paramref name="Warning"/> is set when the database was restored but putting the saves back stopped part-way.
+public record BackupRestoreResult(string RestoredFrom, string SafetyBackup, int SavesRestored, int SavesAlreadyPresent, string? Warning = null);
+
+/// <summary>A single-use link to one backup, valid until <paramref name="ExpiresAt"/> (UTC, about a minute). The console
+/// follows it with a plain link so the browser streams the file to disk instead of buffering it.</summary>
+public record BackupDownloadTicket(string Url, DateTime ExpiresAt);
 
 // ----- Audit log -----
 

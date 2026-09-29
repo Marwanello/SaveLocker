@@ -1,4 +1,4 @@
-﻿using SaveLocker.Shared;
+using SaveLocker.Shared;
 
 namespace SaveLocker.Server.Services;
 

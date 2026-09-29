@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, errorText } from '../api';
+import { api, errorText, ApiError } from '../api';
 import type { BackupInfo, BackupStatus } from '../types';
 import { ago, fmtSize, plural, toMs, localDayClock, utcClock, when } from '../format';
 import { toast, toastError } from '../toast';
@@ -93,10 +93,16 @@ export function BackupsView({ onRestored }: Props) {
   async function restore(b: BackupInfo) {
     try {
       const r = await api.restoreBackup(b.fileName);
-      toast(`Restored ${r.restoredFrom}. ${plural(r.savesRestored, 'save')} put back; the state before it is in ${r.safetyBackup}.`, 8000);
+      if (r.warning) toastError(`Restored ${r.restoredFrom}, with a problem: ${r.warning} The state before it is in ${r.safetyBackup}.`);
+      else toast(`Restored ${r.restoredFrom}. ${plural(r.savesRestored, 'save')} put back; the state before it is in ${r.safetyBackup}.`, 8000);
     } catch (e) {
-      toastError('Nothing was restored: ' + errorText(e));
-      return;
+      // 400/404 are refusals made before anything changed. Anything else (a 500 that says the database was
+      // replaced but not finished, a proxy timeout, a dropped connection) may have changed it: never claim otherwise.
+      const refused = e instanceof ApiError && (e.status === 400 || e.status === 404);
+      toastError(refused
+        ? 'Nothing was restored: ' + errorText(e)
+        : 'The restore may not have finished: ' + errorText(e) + ' Reload this page to see the current state.');
+      if (refused) return;
     }
     await load();
     onRestored();

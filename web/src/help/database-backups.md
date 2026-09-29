@@ -45,7 +45,11 @@ On the **Backups** page, press **Restore** on a row and confirm. The server then
 
 Everything returns to the moment of the backup: games, versions, machines, settings (including the admin password and this backup schedule) and the audit log. You may be asked to sign in again. **To undo a restore**, restore the **Before restore** backup it made.
 
-After a restore, older versions whose files were pruned since the backup still appear in the list, but they can't be downloaded. Machines aren't told about the restore. After their next sync, check the Games page and resolve any conflict a machine that saved since the backup reports.
+After a restore, older versions whose files were pruned since the backup still appear in the list, but they can't be downloaded. Machines aren't told about the restore. After their next sync, check the Games page and resolve any conflict a machine that saved since the backup reports. A machine **enrolled after** the backup isn't in the restored database, so its key stops working: enroll it again.
+
+If a restore reports that it **did not finish**, the database *was* replaced but couldn't be brought up to this build. Restart the server to finish it, or restore the **Before restore** backup named in the message to go back. The newest **Before restore** backup is always kept, however few backups you keep, so the last restore can always be undone.
+
+**Download** saves the file straight to disk, however large, through a one-time link that works for about a minute.
 
 ### Restoring by hand (server won't start)
 

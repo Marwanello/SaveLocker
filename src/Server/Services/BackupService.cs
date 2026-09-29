@@ -154,7 +154,7 @@ public sealed class BackupService
 
     private async Task<BackupResult> BackupCoreAsync(BackupReason reason, int? retention, bool saves, CancellationToken ct)
     {
-        string? tempDb = null;
+        string? tempDb = null, tempZip = null;
         try
         {
             Directory.CreateDirectory(_options.BackupRoot);
@@ -168,7 +168,7 @@ public sealed class BackupService
                 finalPath = Path.Combine(_options.BackupRoot, fileName);
                 stamp = stamp.AddSeconds(1);
             } while (File.Exists(finalPath) || Directory.EnumerateFiles(_options.BackupRoot, fileName[..(Prefix.Length + StampLength)] + "*").Any());
-            var tempZip = finalPath + ".tmp";
+            tempZip = finalPath + ".tmp";
             tempDb = Path.Combine(_options.BackupRoot, $".{Guid.NewGuid():N}.db.tmp");
             if (File.Exists(tempZip)) File.Delete(tempZip);
 
@@ -220,6 +220,9 @@ public sealed class BackupService
         finally
         {
             if (tempDb is not null) TryDelete(tempDb);
+            // A failure or cancel mid-zip leaves a partial file under a fresh name each time — on a full disk,
+            // exactly the file that makes it fuller. After a successful move there is nothing here to delete.
+            if (tempZip is not null && File.Exists(tempZip)) TryDelete(tempZip);
             SqliteConnection.ClearAllPools(); // release the temp file on Windows
         }
     }
@@ -238,15 +241,20 @@ public sealed class BackupService
         var work = Path.Combine(_options.BackupRoot, $".restore-{Guid.NewGuid():N}");
         try
         {
+            // ---- Before the swap: cancellable, and every refusal leaves the live database untouched. ----
             Directory.CreateDirectory(work);
             var dbCopy = Path.Combine(work, DbEntry);
             var isZip = source.EndsWith(ZipExt, StringComparison.OrdinalIgnoreCase);
             if (isZip)
             {
-                using var zip = ZipFile.OpenRead(source);
-                var entry = zip.GetEntry(DbEntry);
-                if (entry is null) return (null, "That backup has no database in it.");
-                entry.ExtractToFile(dbCopy);
+                try
+                {
+                    using var zip = ZipFile.OpenRead(source);
+                    var entry = zip.GetEntry(DbEntry);
+                    if (entry is null) return (null, "That backup has no database in it.");
+                    entry.ExtractToFile(dbCopy);
+                }
+                catch (InvalidDataException) { return (null, "That backup is not a readable zip."); }
             }
             else File.Copy(source, dbCopy);
 
@@ -255,55 +263,125 @@ public sealed class BackupService
             var safety = await BackupCoreAsync(BackupReason.BeforeRestore, retention: null, saves: true, ct);
             if (!safety.Ok) return (null, $"The safety backup failed, so nothing was restored: {safety.Message}");
 
-            // Online backup: page-by-page into the live file, under SQLite's own locking.
             SqliteConnection.ClearAllPools();
-            await using (var from = new SqliteConnection($"Data Source={dbCopy};Mode=ReadOnly"))
-            await using (var to = new SqliteConnection($"Data Source={_options.DbPath}"))
-            {
-                await from.OpenAsync(ct);
-                await to.OpenAsync(ct);
-                from.BackupDatabase(to);
-                await using var wal = to.CreateCommand();
-                wal.CommandText = "PRAGMA journal_mode=WAL;";
-                await wal.ExecuteNonQueryAsync(ct);
-            }
-            SqliteConnection.ClearAllPools();
+            if (await CopyIntoLiveAsync(dbCopy, ct) is { } busy) return (null, busy);
 
-            // A backup from an older build carries an older schema: bring it up to this build's, exactly as a start would.
-            using (var scope = _scopes.CreateScope())
-                await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync(ct);
+            // ---- After the swap: never cancelled. A closed tab or a proxy timeout here would leave the live
+            // database on the backup's (possibly older) schema with nothing put back — worse than a slow restore. ----
+            try
+            {
+                using var scope = _scopes.CreateScope();
+                await DatabaseSetup.PrepareAsync(scope.ServiceProvider, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Restored the database from {File} but could not bring it up to this build.", fileName);
+                throw new RestoreIncompleteException(
+                    $"The database was restored from {fileName}, but bringing it up to this build failed ({ex.Message}). " +
+                    $"Restart the server to finish it, or restore {safety.Backup!.FileName} to go back.", ex);
+            }
 
             int restored = 0, present = 0;
+            string? warning = null;
             if (isZip)
             {
-                using var zip = ZipFile.OpenRead(source);
-                foreach (var e in zip.Entries.Where(e => e.FullName.StartsWith(ArchivesDir, StringComparison.Ordinal) && e.Length > 0))
+                try { (restored, present) = PutBackSaves(source); }
+                catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
                 {
-                    var rel = e.FullName[ArchivesDir.Length..];
-                    // The same zip-slip rule as a save restore: the entry must land inside the archive root.
-                    var full = Path.GetFullPath(_store.FullPath(rel));
-                    var root = Path.GetFullPath(_store.Root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-                    if (!full.StartsWith(root, StringComparison.Ordinal)) continue;
-                    // Archives never change once written, so an existing file IS this one.
-                    if (File.Exists(full)) { present++; continue; }
-                    Directory.CreateDirectory(Path.GetDirectoryName(full)!);
-                    e.ExtractToFile(full + ".tmp", overwrite: true);
-                    File.Move(full + ".tmp", full, overwrite: false);
-                    restored++;
+                    _log.LogError(ex, "Restored the database from {File} but could not put its saves back.", fileName);
+                    warning = $"The database was restored, but putting its saves back stopped: {ex.Message}";
                 }
             }
 
             _wake.Release(); // the schedule is a setting, and the restored database may hold a different one
             _log.LogWarning("Restored the database from {File}; safety backup {Safety}; {Restored} saves put back.",
                 fileName, safety.Backup!.FileName, restored);
-            return (new BackupRestoreResult(Path.GetFileName(source), safety.Backup.FileName, restored, present), null);
+            return (new BackupRestoreResult(Path.GetFileName(source), safety.Backup.FileName, restored, present, warning), null);
         }
-        catch (InvalidDataException) { return (null, "That backup is not a readable zip."); }
         finally
         {
+            SqliteConnection.ClearAllPools(); // the extracted copy may still be held by a pooled handle
             try { Directory.Delete(work, recursive: true); } catch { /* best effort */ }
             _run.Release();
         }
+    }
+
+    /// <summary>
+    /// Copy <paramref name="dbCopy"/> page by page into the live file with SQLite's online backup API. A write in
+    /// flight (an agent's heartbeat) makes the step fail with BUSY/LOCKED before it changes anything, so retry a few
+    /// times. Returns null on success, else why nothing was restored.
+    /// </summary>
+    private async Task<string?> CopyIntoLiveAsync(string dbCopy, CancellationToken ct)
+    {
+        const int attempts = 5;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await using var from = new SqliteConnection($"Data Source={dbCopy};Mode=ReadOnly;Pooling=False");
+                await using var to = new SqliteConnection($"Data Source={_options.DbPath};Pooling=False");
+                await from.OpenAsync(ct);
+                await to.OpenAsync(ct);
+                from.BackupDatabase(to);
+                return null;
+            }
+            catch (SqliteException ex) when (ex.SqliteErrorCode is 5 or 6) // SQLITE_BUSY, SQLITE_LOCKED
+            {
+                if (attempt == attempts)
+                    return "The database stayed busy with other work, so nothing was restored. Try again in a moment.";
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), ct);
+            }
+        }
+    }
+
+    /// <summary>Extract each latest save in the backup that is missing on disk. Returns (put back, already there).</summary>
+    private (int Restored, int Present) PutBackSaves(string source)
+    {
+        int restored = 0, present = 0;
+        var root = Path.GetFullPath(_store.Root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        using var zip = ZipFile.OpenRead(source);
+        foreach (var e in zip.Entries.Where(e => e.FullName.StartsWith(ArchivesDir, StringComparison.Ordinal) && e.Length > 0))
+        {
+            var rel = e.FullName[ArchivesDir.Length..];
+            // The same zip-slip rule as a save restore: the entry must land inside the archive root.
+            var full = Path.GetFullPath(_store.FullPath(rel));
+            if (!full.StartsWith(root, StringComparison.Ordinal)) continue;
+            // Archives never change once written, so an existing file IS this one.
+            if (File.Exists(full)) { present++; continue; }
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            e.ExtractToFile(full + ".tmp", overwrite: true);
+            File.Move(full + ".tmp", full, overwrite: false);
+            restored++;
+        }
+        return (restored, present);
+    }
+
+    // ----- Download tickets -----
+    //
+    // A backup can be gigabytes, so the console must not fetch it into a blob in memory; a plain <a href> streams
+    // it to disk but cannot carry the X-Admin-Session header. So an admin asks for a ticket (session-checked,
+    // audited) and the browser follows a link carrying it: random, single-use, about a minute, bound to one file.
+
+    private static readonly TimeSpan TicketLifetime = TimeSpan.FromSeconds(60);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string File, DateTime Expires)> _tickets = new();
+
+    /// <summary>A single-use ticket for <paramref name="fileName"/>, or null when no such backup is listed.</summary>
+    public (string Ticket, DateTime ExpiresAt)? IssueDownloadTicket(string fileName)
+    {
+        if (Find(fileName) is null) return null;
+        var now = DateTime.UtcNow;
+        foreach (var (key, t) in _tickets) if (t.Expires <= now) _tickets.TryRemove(key, out _);
+        var ticket = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        var expires = now + TicketLifetime;
+        _tickets[ticket] = (fileName, expires);
+        return (ticket, expires);
+    }
+
+    /// <summary>The full path the ticket was issued for, consuming it; null when unknown, used or expired.</summary>
+    public string? RedeemDownloadTicket(string ticket)
+    {
+        if (!_tickets.TryRemove(ticket, out var t) || t.Expires <= DateTime.UtcNow) return null;
+        return Find(t.File);
     }
 
     private static string? Validate(string dbPath)
@@ -413,15 +491,21 @@ public sealed class BackupService
             .OrderByDescending(f => f.Name[..Math.Min(f.Name.Length, Prefix.Length + StampLength)], StringComparer.Ordinal)
             .ThenByDescending(f => f.Name, StringComparer.Ordinal);
 
+    /// <summary>Keep the newest <paramref name="retention"/> backups — and always the newest <b>Before restore</b>
+    /// one, even past the count: it is the only way to undo the last restore, and a small keep plus a scheduled run
+    /// soon after a restore would otherwise delete it.</summary>
     private int Prune(int retention)
     {
         var files = EnumerateNewestFirst().ToList();
-        foreach (var stale in files.Skip(Math.Max(0, retention)))
+        var undo = files.FirstOrDefault(f => ReasonOf(f.Name) == BackupReason.BeforeRestore);
+        var kept = 0;
+        for (var i = 0; i < files.Count; i++)
         {
-            try { stale.Delete(); }
-            catch (Exception ex) { _log.LogWarning(ex, "Failed to prune old backup {File}.", stale.Name); }
+            if (i < Math.Max(0, retention) || files[i] == undo) { kept++; continue; }
+            try { files[i].Delete(); }
+            catch (Exception ex) { _log.LogWarning(ex, "Failed to prune old backup {File}.", files[i].Name); kept++; }
         }
-        return Math.Min(files.Count, Math.Max(0, retention));
+        return kept;
     }
 
     private static void TryDelete(string path) { try { File.Delete(path); } catch { /* best effort */ } }
@@ -449,15 +533,22 @@ public sealed class BackupScheduler : BackgroundService
     {
         try
         {
-            var first = await _backup.GetSettingsAsync(ct);
-            if (first.Enabled && (MostRecentAge() is not { } age || age > first.Interval))
-                await _backup.BackupAsync(BackupReason.Scheduled, first.RetentionCount, ct);
-
+            // Inside the loop's catch, not before it: an exception escaping ExecuteAsync stops the whole host.
+            var caughtUp = false;
             while (!ct.IsCancellationRequested)
             {
                 try
                 {
                     var s = await _backup.GetSettingsAsync(ct);
+                    if (!caughtUp)
+                    {
+                        caughtUp = true;
+                        if (s.Enabled && (MostRecentAge() is not { } age || age > s.Interval))
+                        {
+                            await _backup.BackupAsync(BackupReason.Scheduled, s.RetentionCount, ct);
+                            continue;
+                        }
+                    }
                     if (!s.Enabled)
                     {
                         _backup.NextRunAt = null;
@@ -468,7 +559,9 @@ public sealed class BackupScheduler : BackgroundService
                     var next = BackupService.NextRun(s, DateTime.UtcNow);
                     _backup.NextRunAt = next;
                     _log.LogInformation("Next backup at {Next:u}.", next);
-                    if (await _backup.WaitForWakeAsync(next - DateTime.UtcNow, ct)) continue;
+                    // Clamped: a negative timeout throws, and the retry a minute later would plan the NEXT run and skip this one.
+                    var delay = next - DateTime.UtcNow;
+                    if (await _backup.WaitForWakeAsync(delay > TimeSpan.Zero ? delay : TimeSpan.Zero, ct)) continue;
 
                     // Read again: the retention may have changed while this slept.
                     var now = await _backup.GetSettingsAsync(ct);
@@ -490,3 +583,7 @@ public sealed class BackupScheduler : BackgroundService
         return newest is null ? null : DateTime.UtcNow - newest.CreatedAt;
     }
 }
+
+/// <summary>A restore that replaced the live database but could not finish bringing it up to this build. The
+/// message says so and what to do; it must never read as "nothing was restored".</summary>
+public sealed class RestoreIncompleteException(string message, Exception inner) : Exception(message, inner);

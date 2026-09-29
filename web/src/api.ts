@@ -1,4 +1,4 @@
-import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest } from './types';
+import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
 
 // The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
 // itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
@@ -22,7 +22,8 @@ function writeStore(key: string, value: string | null, store: 'local' | 'session
 }
 
 // plan.md 12.4 "Remember this browser": remembered → localStorage (outlives the browser, until the
-// server's own 7-day idle / 30-day limit); not → sessionStorage, gone when the browser closes.
+// server's own 7-day idle / 30-day limit); not → sessionStorage, which is per TAB: gone when the tab closes,
+// and a new tab asks again.
 let sessionToken = readStore(SESSION_KEY, 'session') || readStore(SESSION_KEY);
 let remembered = sessionToken !== '' && readStore(SESSION_KEY, 'session') === '';
 
@@ -326,19 +327,17 @@ export const api = {
   setBackupSettings: (body: SetBackupSettingsRequest) =>
     request<void>('/admin/backups/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   /**
-   * A snapshot holds every credential hash the server has, so it is fetched with the session header into
-   * a blob — never an `<a href>` (which cannot carry `X-Admin-Session`) and never a credential in the URL.
-   * `fileName` comes from the listing; the server matches it against its own listing again.
+   * A backup can be gigabytes, so it is never fetched into a blob in memory: the session header buys a
+   * single-use ticket (about a minute, this one file, audited), and a plain link carrying it lets the browser
+   * stream the file to disk. Never the session itself in the URL. `fileName` comes from the listing; the
+   * server matches it against its own listing again.
    */
   downloadBackup: async (fileName: string) => {
-    const res = await fetch(`/api/admin/backups/${encodeURIComponent(fileName)}`, { headers: headers(), cache: 'no-store' });
-    if (!res.ok) { const why = await explain(res); throw new ApiError(res.status, why, why); }
-    const url = URL.createObjectURL(await res.blob());
+    const t = await request<BackupDownloadTicket>(`/admin/backups/${encodeURIComponent(fileName)}/download-ticket`, { method: 'POST' });
     const a = document.createElement('a');
-    a.href = url;
+    a.href = t.url;
     a.download = fileName;
     a.click();
-    URL.revokeObjectURL(url);
   },
 
   setAdminPassword: (password: string | null) =>

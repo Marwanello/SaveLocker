@@ -70,7 +70,7 @@ export function SignIn({ notice = null, busy = false, build, onSubmit }: Props) 
           <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)}
             className="w-[15px] h-[15px] accent-[var(--color-accent)]
               focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2" />
-          Remember this browser for 30 days
+          Remember this browser <span className="text-faint">(up to 30 days; 7 without use)</span>
         </label>
 
         <Button type="submit" variant="primary" className="w-full" disabled={busy}>

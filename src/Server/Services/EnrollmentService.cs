@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using SaveLocker.Server.Data;
 using SaveLocker.Shared;
 

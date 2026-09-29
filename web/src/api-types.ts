@@ -241,6 +241,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/backup-download/{ticket}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    ticket: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games": {
         parameters: {
             query?: never;
@@ -2848,6 +2883,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/backups/{file}/download-ticket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    file: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BackupDownloadTicket"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/backups/{file}/restore": {
         parameters: {
             query?: never;
@@ -3460,6 +3532,11 @@ export interface components {
             dayOfMonth: number;
             timeOfDay: string;
         };
+        BackupDownloadTicket: {
+            url: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
         BackupInfo: {
             fileName: string;
             /** Format: int64 */
@@ -3479,6 +3556,7 @@ export interface components {
             savesRestored: number;
             /** Format: int32 */
             savesAlreadyPresent: number;
+            warning?: null | string;
         };
         BackupResult: {
             ok: boolean;

@@ -171,8 +171,6 @@ SyncService.MaxUploadBytes(app.Configuration);
 // rather than attempting to recreate tables that are already there.
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
     // A before-upgrade snapshot when this build differs from the one that last started cleanly — taken
     // BEFORE the fix-ups below or Migrate() can write: the one moment the server itself can damage the
     // DB, when the only other copy is last night's. A fresh install has nothing to protect.
@@ -183,69 +181,8 @@ using (var scope = app.Services.CreateScope())
         if (!snap.Ok) app.Logger.LogWarning("Before-upgrade snapshot failed ({Error}); starting anyway.", snap.Message);
     }
 
-    var historyExists = db.Database
-        .SqlQuery<int>($"SELECT COUNT(*) AS \"Value\" FROM sqlite_master WHERE type='table' AND name='__EFMigrationsHistory'")
-        .Single() > 0;
-
-    if (!historyExists)
-    {
-        var gamesTableExists = db.Database
-            .SqlQuery<int>($"SELECT COUNT(*) AS \"Value\" FROM sqlite_master WHERE type='table' AND name='Games'")
-            .Single() > 0;
-
-        if (gamesTableExists)
-        {
-            // Pre-migration DB: schema is already at InitialSchema; just seed the history table.
-            db.Database.ExecuteSqlRaw("""
-                CREATE TABLE "__EFMigrationsHistory" (
-                    "MigrationId" TEXT NOT NULL CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY,
-                    "ProductVersion" TEXT NOT NULL
-                );
-                """);
-            db.Database.ExecuteSqlRaw("""
-                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-                VALUES ('20260624011934_InitialSchema', '9.0.9');
-                """);
-            historyExists = true;
-
-            // If RetainVersions was already added by the pre-migration manual workaround,
-            // stamp the migration as applied so EF doesn't attempt the ALTER TABLE again.
-            var hasRetainVersions = db.Database
-                .SqlQueryRaw<string>("SELECT name FROM pragma_table_info('Games')")
-                .ToList()
-                .Contains("RetainVersions");
-            if (hasRetainVersions)
-                db.Database.ExecuteSqlRaw("""
-                    INSERT OR IGNORE INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-                    VALUES ('20260626031438_AddGameRetainVersions', '9.0.9');
-                    """);
-        }
-    }
-
-    // MachineSavePaths used to be created out-of-band via CREATE TABLE IF NOT EXISTS
-    // (it predates being an EF entity). On any DB where that table already exists,
-    // stamp the AddMachineSavePaths migration as applied so Migrate() doesn't try to
-    // recreate it (which would throw "table already exists"). Only meaningful once a
-    // history table is present — a fresh DB has neither and gets the table from Migrate().
-    if (historyExists)
-    {
-        var machineSavePathsExists = db.Database
-            .SqlQuery<int>($"SELECT COUNT(*) AS \"Value\" FROM sqlite_master WHERE type='table' AND name='MachineSavePaths'")
-            .Single() > 0;
-        if (machineSavePathsExists)
-            db.Database.ExecuteSqlRaw("""
-                INSERT OR IGNORE INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-                VALUES ('20260706022305_AddMachineSavePaths', '9.0.9');
-                """);
-    }
-
-    db.Database.Migrate();
-    await scope.ServiceProvider.GetRequiredService<SettingsService>().SetAsync(LastStartedVersionKey, BuildInfo.Current.Version);
-    await scope.ServiceProvider.GetRequiredService<SettingsService>().EncryptPlaintextSecretsAsync();
-
-    // WAL mode: allows concurrent readers alongside the single writer, which prevents
-    // "database is locked" 500s when the dashboard fires several parallel API calls.
-    db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
+    // Fix-ups, Migrate(), the post-migration chores and WAL — shared with a backup restore.
+    await DatabaseSetup.PrepareAsync(scope.ServiceProvider);
 }
 
 // Anything still staged is an upload that died with the process that started it. Swept once at
@@ -1106,29 +1043,45 @@ admin.MapPost("/admin/backups/settings", async (SetBackupSettingsRequest req, Ba
     return Results.NoContent();
 });
 
-// A snapshot holds every credential hash the server has (machine keys, the admin password, session
-// tokens) and the SteamGridDB key in plain text. So: admin-only (the group), the name matched against
-// the listing and never joined into a path, audited, and never cached by the browser or a proxy.
+// A backup holds every credential hash the server has (machine keys, the admin password, session tokens)
+// and the SteamGridDB key encrypted, plus every game's latest save. So: admin-only (the group), the name
+// matched against the listing and never joined into a path, audited, and never cached by the browser or a proxy.
 admin.MapGet("/admin/backups/{file}", async (string file, BackupService backup, SyncService sync, HttpContext http) =>
 {
     if (backup.Find(file) is not { } path) return Results.NotFound();
-    var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
     await sync.LogAuditAsync("backup.download", Path.GetFileName(path));
-    http.Response.Headers.CacheControl = "no-store";
-    var type = path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? "application/zip" : "application/vnd.sqlite3";
-    return Results.Stream(stream, type, Path.GetFileName(path));
+    return StreamBackup(http, path);
 }).Produces(StatusCodes.Status200OK, contentType: "application/zip");
+
+// The console's download path: a backup can be gigabytes, which the browser must stream to disk through a
+// plain link rather than buffer into a blob — and a link cannot carry X-Admin-Session. So the admin asks for a
+// ticket here (session-checked and audited as the download), then follows the public link below with it.
+admin.MapPost("/admin/backups/{file}/download-ticket", async (string file, BackupService backup, SyncService sync) =>
+{
+    if (backup.IssueDownloadTicket(file) is not { } t) return Results.NotFound();
+    await sync.LogAuditAsync("backup.download", file);
+    return Results.Ok(new BackupDownloadTicket($"/api/backup-download/{t.Ticket}", t.ExpiresAt));
+}).Produces<BackupDownloadTicket>();
 
 // Restore: replaces the live database (and puts back the latest saves the backup holds that are missing on
 // disk). A safety backup of the current state is taken first. Audited into the RESTORED database — the one the
 // console reads afterwards — naming both files, so the restore can be traced and undone.
+// 400 = refused, nothing changed. 500 with a Problem = the database WAS replaced but not finished (the
+// detail says what to do) — the console must not report that as "nothing was restored".
 admin.MapPost("/admin/backups/{file}/restore", async (string file, BackupService backup, IServiceProvider sp, CancellationToken ct) =>
 {
-    var (result, error) = await backup.RestoreAsync(file, ct);
+    BackupRestoreResult? result;
+    string? error;
+    try { (result, error) = await backup.RestoreAsync(file, ct); }
+    catch (RestoreIncompleteException ex)
+    {
+        return Results.Problem(title: "The restore did not finish", detail: ex.Message, statusCode: StatusCodes.Status500InternalServerError);
+    }
     if (result is null) return error is null ? Results.NotFound() : Results.BadRequest(error);
     using (var scope = sp.CreateScope())
         await scope.ServiceProvider.GetRequiredService<SyncService>().LogAuditAsync("backup.restore",
-            $"restored {result.RestoredFrom}; {result.SavesRestored} saves put back; safety backup {result.SafetyBackup}");
+            $"restored {result.RestoredFrom}; {result.SavesRestored} saves put back; safety backup {result.SafetyBackup}" +
+            (result.Warning is null ? "" : $"; {result.Warning}"));
     return Results.Ok(result);
 }).Produces<BackupRestoreResult>();
 
@@ -1138,6 +1091,12 @@ admin.MapDelete("/admin/backups/{file}", async (string file, BackupService backu
     await sync.LogAuditAsync("backup.delete", deleted);
     return Results.NoContent();
 });
+
+// Public on purpose: the ticket IS the credential — 256 random bits, single-use, about a minute, one file,
+// minted only behind the admin session above (which also audited it).
+app.MapGet("/api/backup-download/{ticket}", (string ticket, BackupService backup, HttpContext http) =>
+    backup.RedeemDownloadTicket(ticket) is { } path ? StreamBackup(http, path) : Results.NotFound())
+    .Produces(StatusCodes.Status200OK, contentType: "application/zip");
 
 // ---- Agent health (admin) ----
 admin.MapGet("/admin/health", async (HealthService health) =>
@@ -1327,6 +1286,14 @@ static IResult UnknownPlatform(string? requested) => Results.BadRequest(
 
 // Streams a downloaded version, exposing its id and content hash as response
 // headers so the agent can record the parent version for its next upload.
+static IResult StreamBackup(HttpContext http, string path)
+{
+    http.Response.Headers.CacheControl = "no-store";
+    var type = path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? "application/zip" : "application/vnd.sqlite3";
+    return Results.Stream(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete),
+        type, Path.GetFileName(path));
+}
+
 static IResult StreamVersion(HttpContext http, (SaveVersion version, Stream content)? dl)
 {
     if (dl is null) return Results.NotFound();

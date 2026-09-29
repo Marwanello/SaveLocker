@@ -43,6 +43,7 @@ export type BackupStatus = Schemas['BackupStatusDto'];
 export type BackupResult = Schemas['BackupResult'];
 export type BackupRestoreResult = Schemas['BackupRestoreResult'];
 export type SetBackupSettingsRequest = Schemas['SetBackupSettingsRequest'];
+export type BackupDownloadTicket = Schemas['BackupDownloadTicket'];
 export type ArtOption = NonNullable<Schemas['ArtOptionDto']>;
 
 /**

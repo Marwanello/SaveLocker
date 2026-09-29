@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:5191/"
+      "url": "http://localhost:5179/"
     }
   ],
   "paths": {
@@ -147,6 +147,28 @@
           {
             "name": "platform",
             "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/backup-download/{ticket}": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "ticket",
+            "in": "path",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -2299,6 +2321,35 @@
         }
       }
     },
+    "/api/admin/backups/{file}/download-ticket": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "file",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupDownloadTicket"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/backups/{file}/restore": {
       "post": {
         "tags": [
@@ -3306,6 +3357,22 @@
           }
         }
       },
+      "BackupDownloadTicket": {
+        "required": [
+          "url",
+          "expiresAt"
+        ],
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "BackupInfo": {
         "required": [
           "fileName",
@@ -3365,6 +3432,12 @@
           "savesAlreadyPresent": {
             "type": "integer",
             "format": "int32"
+          },
+          "warning": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
