@@ -141,6 +141,17 @@ internal sealed class TrayContext : ApplicationContext
             postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
             syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct),
             openView: view => _ui.Post(() => OpenWindow(view)),
+            // Explorer: a file is selected in its folder (a bare open would hand a large log to
+            // whatever editor owns .log), a folder is simply opened.
+            openFile: path =>
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe")
+                {
+                    Arguments = Directory.Exists(path) ? $"\"{path}\"" : $"/select,\"{path}\"",
+                    UseShellExecute = false,
+                });
+                return true;
+            },
             // GET /api/playnite-plugin (tasks/playnite-plugin/plan.md, Phase 14) — lets the plugin
             // itself ask whether a newer version of itself is waiting on the server.
             playnitePluginStatus: () => PlaynitePlugin.StatusAsync(_config, AgentLogger.Log),

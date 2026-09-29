@@ -1,4 +1,4 @@
-# Agent health reporting (Linux agent Phase 5) - 19 checks. Runs on BOTH Windows and Linux.
+﻿# Agent health reporting (Linux agent Phase 5) - 19 checks. Runs on BOTH Windows and Linux.
 #
 #   Windows: drives src/Agent (net10.0-windows).  Linux: drives src/Agent.Linux (net10.0).
 #
@@ -55,7 +55,7 @@ if (-not (Test-Path $serverDll)) { Write-Host "Server not built: $serverDll"; ex
 $state = Join-Path $scratch "state"
 New-Item -ItemType Directory -Force (Join-Path $state "archives") | Out-Null
 
-# The port and the dev DB path come from launchSettings.json, which ONLY `dotnet run` reads —
+# The port and the dev DB path come from launchSettings.json, which ONLY `dotnet run` reads â€”
 # launching the DLL directly binds :5000 and loads the production config. So both are passed
 # explicitly here (see Gotchas.md).
 $env:ASPNETCORE_URLS      = $server
@@ -161,12 +161,12 @@ $adminConflict = Invoke-RestMethod "$server/api/conflicts" | Select-Object -Firs
 Check "stale conflict is escalated in the console contract" ($adminConflict.escalated -eq $true)
 
 # The conflict card's file-count / newest-mtime delta (derived from the archive on demand, not
-# stored) — pcSave has exactly one file at this point, so the count is exact, not just "present".
+# stored) â€” pcSave has exactly one file at this point, so the count is exact, not just "present".
 $conflictStats = Invoke-RestMethod "$server/api/games/$($adminConflict.gameId)/versions/$($adminConflict.versionBId)/stats"
 Check "conflict version stats report the real file count" ($conflictStats.fileCount -eq 1)
 Check "conflict version stats report a newest mtime"       ($null -ne $conflictStats.newestFileWriteUtc)
 
-# Same stats, through the agent-scoped route (machine key, not admin auth) — built ahead of need
+# Same stats, through the agent-scoped route (machine key, not admin auth) â€” built ahead of need
 # for a future agent-side auto-resolver, so it needs its own coverage, not just the admin route's.
 $pcApiKey = (Get-Content $pcCfg | ConvertFrom-Json).ApiKey
 $agentStats = Invoke-RestMethod "$server/api/versions/$($adminConflict.versionBId)/stats" -Headers @{ "X-Api-Key" = $pcApiKey }
@@ -214,7 +214,7 @@ Check "a missing save folder is a Warning"            ($missing.severity -eq "Wa
 # event must persist to disk and go out after contact returns. If this only worked while online it
 # would be reporting nothing at the exact moment it is needed.
 ClearEvents
-# Stop OUR server only — never every dotnet process on the box, which would take the dev server (and
+# Stop OUR server only â€” never every dotnet process on the box, which would take the dev server (and
 # on CI, the job) down with it.
 Stop-Process -Id $serverProc.Id -Force
 Start-Sleep -Seconds 2
@@ -245,6 +245,38 @@ if ($null -ne $unreachable) {
     Check "a dismissed event leaves the open set"     $false
 }
 
+# =====================================================================================
+# 8. What the agent UI's game page and "Recently resolved" table read (checkpoint-ui Phase 13)
+# =====================================================================================
+$agentKey = @{ "X-Api-Key" = $pcApiKey }
+# Windows PowerShell 5.1 hands a JSON array back as ONE object, so @(Invoke-RestMethod ...) is a one-element array; the pipeline unrolls it.
+function Rows($uri) { @(Invoke-RestMethod $uri -Headers $agentKey | ForEach-Object { $_ }) }
+$agentVersions = (Rows "$server/api/agent/games/$($adminConflict.gameId)/versions")
+Check "agent-scoped version list answers with a machine key (no admin password)" ($agentVersions.Length -ge 2)
+Check "... newest first, and carries the uploading machine" ($agentVersions[0].machineName -and ([datetime]$agentVersions[0].createdAt) -ge ([datetime]$agentVersions[-1].createdAt))
+
+# Section 4's force-pull left nothing open, so seed a fresh divergence to resolve.
+Agent pull $gameName --force --config $lapCfg | Out-Null
+"save data v3 (pc)" | Set-Content (Join-Path $pcSave "save.dat") -Encoding utf8
+Agent push $gameName --config $pcCfg | Out-Null
+"laptop v3, divergent" | Set-Content (Join-Path $lapSave "save.dat") -Encoding utf8
+Agent push $gameName --config $lapCfg | Out-Null
+
+$since = [uri]::EscapeDataString((Get-Date).ToUniversalTime().AddDays(-1).ToString("o"))
+$noneYet = (Rows "$server/api/agent/conflicts?resolvedSince=$since")
+Check "resolvedSince lists nothing while the conflict is still open" ($noneYet.Length -eq 0)
+Check "... and the plain route still lists the open one" ((Rows "$server/api/agent/conflicts").Length -ge 1)
+
+$openNow = (Rows "$server/api/agent/conflicts")[0]
+Invoke-RestMethod "$server/api/agent/conflicts/$($openNow.id)/resolve?version=$($openNow.versionBId)" -Method Post -Headers $agentKey | Out-Null
+$resolvedNow = (Rows "$server/api/agent/conflicts?resolvedSince=$since")
+$mine = $resolvedNow | Where-Object { $_.id -eq $openNow.id }
+Check "a resolved conflict appears under resolvedSince, with what was kept" `
+    ($null -ne $mine -and $mine.status -eq "Resolved" -and $mine.resolvedVersionId -eq $openNow.versionBId)
+Check "... newest resolution first" ($resolvedNow[0].id -eq $openNow.id)
+$future = [uri]::EscapeDataString((Get-Date).ToUniversalTime().AddMinutes(5).ToString("o"))
+Check "... and not under a resolvedSince later than the resolution" ((Rows "$server/api/agent/conflicts?resolvedSince=$future").Length -eq 0)
+
 ClearEvents
 if ($serverProc -and -not $serverProc.HasExited) { Stop-Process -Id $serverProc.Id -Force }
 Remove-Item Env:ASPNETCORE_URLS, Env:Storage__DbPath, Env:Storage__ArchiveRoot, Env:Backup__Enabled, Env:Conflicts__EscalationAfterSeconds, Env:Logging__EventLog__LogLevel__Default -ErrorAction SilentlyContinue
@@ -252,3 +284,4 @@ Remove-Item Env:ASPNETCORE_URLS, Env:Storage__DbPath, Env:Storage__ArchiveRoot, 
 Write-Host ""
 Write-Host "Health: $pass passed, $fail failed."
 if ($fail -gt 0) { exit 1 }
+

@@ -5,7 +5,7 @@ import type { View } from './types'
  * `hashchange`, which is what lets something outside the page (a toast button, the tray reopening a
  * window that is already up) take it to an exact screen instead of only ever working on a fresh load.
  *
- *   #overview  #games  #addGames  #conflicts  #settings   the sidebar's own views
+ *   #overview  #games  #addGames  #conflicts  #activity  #settings   the sidebar's own views
  *   #conflicts:queue                                        the conflicts view, with the one-at-a-time
  *                                                           chooser raised straight away
  *   #game:<id>                                              one game's page
@@ -21,7 +21,7 @@ export interface Route {
   queue: boolean
 }
 
-const VIEWS: readonly View[] = ['overview', 'games', 'addGames', 'conflicts', 'settings']
+const VIEWS: readonly View[] = ['overview', 'games', 'addGames', 'conflicts', 'activity', 'settings']
 
 /**
  * Take the hash off the address once it has been read: a deep link is a request, not a place the app

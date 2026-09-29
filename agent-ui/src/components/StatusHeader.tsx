@@ -3,9 +3,9 @@ import type { ReactNode } from 'react'
 import { Check, GitBranch, RefreshCw, Unplug } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { api } from '../api'
-import { formatBytes } from '../format'
-import { refreshActivity, useActivityBusy, useActivityCurrent } from '../useActivity'
-import type { AgentState, Conflict, TrackedGame } from '../types'
+import { formatAgo, formatBytes } from '../format'
+import { refreshActivity, useActivityBusy, useActivityCurrent, useActivityLastRun } from '../useActivity'
+import type { AgentState, Conflict, SyncRun, TrackedGame } from '../types'
 import { Button } from './ui/Button'
 import { Chip } from './ui/Chip'
 import { Toast } from './ui/Toast'
@@ -27,9 +27,32 @@ interface Summary {
   chip: ReactNode
 }
 
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+
+/** The done state's sentence: what a finished (or cancelled) Sync all did. Counts are what really
+ *  happened per game, never a guess: a game that was current is "already current", not "synced". */
+function describeRun(run: SyncRun): { title: string; detail: string } {
+  const parts: string[] = []
+  if (run.uploaded > 0) parts.push(`${run.uploaded} uploaded`)
+  if (run.alreadyCurrent > 0) parts.push(`${run.alreadyCurrent} already current`)
+  if (run.conflicts > 0) parts.push(plural(run.conflicts, 'conflict'))
+  if (run.failed > 0) parts.push(`${run.failed} failed — see Activity`)
+  const detail = `${parts.join(', ') || 'nothing to do'} · ${formatAgo(run.finishedAtUtc)}`
+  const sent = run.bytesSent > 0 ? ` — ${formatBytes(run.bytesSent)} sent` : ''
+  return {
+    title: run.cancelled
+      ? `Sync cancelled after ${run.games} ${run.games === 1 ? 'game' : 'games'}${sent}`
+      : `Synced ${plural(run.games, 'game')}${sent}`,
+    detail,
+  }
+}
+
 /** What the header says when nothing is syncing. Ordered by what a person most needs to know:
- *  a machine that cannot sync at all, then a decision waiting, then "all clear". */
-function summarize(state: AgentState | null, conflicts: Conflict[], games: TrackedGame[]): Summary {
+ *  a machine that cannot sync at all, then a decision waiting, then what the last run did, then
+ *  "all clear". */
+function summarize(
+  state: AgentState | null, conflicts: Conflict[], games: TrackedGame[], lastRun: SyncRun | null | undefined,
+): Summary {
   if (!state) {
     return { tone: 'neutral', Icon: Check, title: 'Starting…', detail: 'Reading this machine\'s state.', chip: null }
   }
@@ -48,10 +71,16 @@ function summarize(state: AgentState | null, conflicts: Conflict[], games: Track
       chip: <Chip tone="crit">{conflicts.length} conflict{conflicts.length === 1 ? '' : 's'}</Chip>,
     }
   }
-  const last = state.lastSyncAgo === '—' ? 'no sync yet' : `last sync ${state.lastSyncAgo}`
+  if (lastRun) {
+    const { title, detail } = describeRun(lastRun)
+    return { tone: 'ok', Icon: Check, title, detail, chip: <Chip tone="ok">All clear</Chip> }
+  }
+  const last = state.lastSyncAgo === '—' ? 'no push yet' : `last push ${state.lastSyncAgo}`
+  const queue = state.offlineQueueCount > 0 ? ` · offline queue ${state.offlineQueueCount}` : ''
   return {
     tone: 'ok', Icon: Check, title: 'Idle — nothing syncing right now.',
-    detail: `${state.machineName} · ${last}`, chip: <Chip tone="ok">All clear</Chip>,
+    detail: `${state.machineName} · ${last} · settle ${state.settleQuietSeconds}s${queue}`,
+    chip: <Chip tone="ok">All clear</Chip>,
   }
 }
 
@@ -66,12 +95,13 @@ function summarize(state: AgentState | null, conflicts: Conflict[], games: Track
  */
 export function StatusHeader({ state, conflicts, games, onSynced }: Props) {
   const activityBusy = useActivityBusy()
+  const lastRun = useActivityLastRun()
   const [syncing, setSyncing] = useState(false)
   const [toast, setToast] = useState<{ text: string; failed: boolean } | null>(null)
   // A sync the tray, a game exit or the Deck's own UI started is not this component's own request,
   // but it is just as much "busy" — and a second press would only be told a sync is already running.
   const busy = syncing || activityBusy
-  const summary = summarize(state, conflicts, games)
+  const summary = summarize(state, conflicts, games, lastRun)
   const canSync = state?.connected === true
 
   async function syncAll() {
@@ -95,6 +125,7 @@ export function StatusHeader({ state, conflicts, games, onSynced }: Props) {
         <HeroStatus busy={busy} summary={summary} />
         <div className="sl-hero__right">
           {!busy && summary.chip}
+          {busy && <CancelButton />}
           <Button
             variant="primary"
             onClick={() => void syncAll()}
@@ -112,6 +143,26 @@ export function StatusHeader({ state, conflicts, games, onSynced }: Props) {
         </Toast>
       )}
     </>
+  )
+}
+
+/** Only a Sync all is a run with games left to skip — a single game's sync, a launch or an exit push
+ *  has nothing to cancel, so the button is not offered for them. Reads its own slice so a progress
+ *  tick does not re-render the header around it. */
+function CancelButton() {
+  const current = useActivityCurrent()
+  const [asked, setAsked] = useState(false)
+  if (!current || current.total === 0) return null
+  const stopping = asked || current.cancelRequested
+  return (
+    <Button
+      size="sm"
+      disabled={stopping}
+      title="The game being synced right now finishes first, so no save is left half-written."
+      onClick={() => { setAsked(true); void api.cancelSync().finally(refreshActivity) }}
+    >
+      {stopping ? 'Stopping after this game…' : 'Cancel'}
+    </Button>
   )
 }
 
@@ -137,9 +188,13 @@ function HeroStatus({ busy, summary }: { busy: boolean; summary: Summary }) {
   const game = current?.gameName
   const determinate = phase === 'Pushing' && (current?.bytesTotal ?? 0) > 0
   const pct = determinate ? Math.min(100, Math.round((current!.bytesDone / current!.bytesTotal) * 100)) : 0
+  const position = current && current.total > 0 ? `${current.index} of ${current.total}` : ''
 
+  // "Syncing 2 of 6 — Hades II"; a single game's sync has no position and names its phase instead
+  // ("Pushing Hades II…"). The legend below carries the phase for a run.
   let title = 'Syncing…'
-  if (game) {
+  if (position) title = game ? `Syncing ${position} — ${game}` : `Syncing ${position}…`
+  else if (game) {
     if (phase === 'Pushing') title = `Pushing ${game}…`
     else if (phase === 'Pulling') title = `Pulling ${game}…`
     else if (phase === 'Settling') title = `Waiting for ${game} to finish writing…`
@@ -165,12 +220,11 @@ function HeroStatus({ busy, summary }: { busy: boolean; summary: Summary }) {
             style={determinate ? { width: `${pct}%` } : undefined}
           />
         </div>
-        {determinate && (
-          <div className="sl-hero__legend">
-            <span>{formatBytes(current!.bytesDone)} of {formatBytes(current!.bytesTotal)}</span>
-            <span>{pct}%</span>
-          </div>
-        )}
+        <div className="sl-hero__legend">
+          <span>{phase === 'Idle' ? 'Between games' : phase}</span>
+          {determinate && <span>{formatBytes(current!.bytesDone)} of {formatBytes(current!.bytesTotal)} sent</span>}
+          {determinate && <span>{pct}%</span>}
+        </div>
       </div>
     </>
   )

@@ -1,4 +1,4 @@
-import type { Activity, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, Conflict, DeckyStatus, GameState, GameSyncMode, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, TrackedGame, VersionStats } from './types'
+import type { Activity, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, Conflict, DeckyStatus, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, TestConnection, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -29,6 +29,15 @@ function post<T = unknown>(path: string, body?: object): Promise<T> {
   })
 }
 
+/** A POST whose 409 is an answer, not a failure: "there is no desktop to show that on" carries the path
+ *  the page should show instead, in the same shape as the 200. Anything else still throws. */
+async function postShow(path: string): Promise<OpenPathResult> {
+  const res = await fetch(path, { method: 'POST', headers: authHeaders() })
+  if (res.ok || res.status === 409) return res.json() as Promise<OpenPathResult>
+  const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
+  throw new Error(err.error ?? res.statusText)
+}
+
 export const api = {
   state: () => req<AgentState>('/api/state'),
   candidates: () => req<Candidate[]>('/api/candidates'),
@@ -42,6 +51,8 @@ export const api = {
     machineName?: string
     startWithWindows?: boolean
     settleQuietSeconds?: number
+    // Whether the Linux agent may stage a newer version by itself.
+    autoUpdate?: boolean
     // startWithWindows is the EFFECTIVE state read back from the platform, not what was asked for.
     // A refusal comes back as a failed request; this covers the quieter case where the entry was
     // written and then reverted underneath us.
@@ -83,6 +94,23 @@ export const api = {
   // Pull then push every tracked game, same as the tray menu's "Sync All". The response is a
   // one-line summary; progress for whichever game is mid-sync shows up on the next activity() poll.
   syncNow: () => post<{ message: string }>('/api/sync'),
+  // Stops a running Sync all AFTER the game it is on — that game always finishes, so a cancel can
+  // never leave a save folder half-replaced. `requested` is false when nothing was running.
+  cancelSync: () => post<{ requested: boolean }>('/api/sync/cancel'),
+  // What is waiting for the server to come back (pushes that could not be sent).
+  offlineQueue: () => req<OfflineQueueEntry[]>('/api/offline-queue'),
+  // Show agent.log / a game's save folder on this machine's desktop. `opened: false` means there was
+  // none (a headless box) — show `path` with a Copy button instead.
+  openLog: () => postShow('/api/open-log'),
+  openFolder: (id: string) => postShow(`/api/games/${id}/open-folder`),
+  testConnection: () => post<TestConnection>('/api/test-connection'),
+  // How many games the LAST scan suggested; null before any scan. Never scans by itself.
+  cachedCandidates: () => req<{ suggested: number | null }>('/api/candidates/cached'),
+  // Every version the server keeps of one game, newest first.
+  gameVersions: (id: string) => req<SaveVersion[]>(`/api/games/${id}/versions`),
+  resolvedConflicts: () => req<Conflict[]>('/api/conflicts/resolved'),
+  // How big a game's save folder is now — a plain directory walk, so fine to ask on opening the page.
+  localSize: (id: string) => req<{ bytes: number }>(`/api/games/${id}/local-size`),
   // Conflict resolution (tasks/conflict-resolution-ui/plan.md, Phase 6) — every open conflict on the
   // server this machine's key can see, not only this machine's own. Resolution itself already lives
   // in Agent.Core (Phase 0/1); this just gives it a UI both hosts can reach.

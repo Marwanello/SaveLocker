@@ -1373,6 +1373,24 @@ public sealed class SyncService
             .ToList();
     }
 
+    /// <summary>
+    /// Conflicts resolved at or after <paramref name="since"/>, newest resolution first, capped at
+    /// <paramref name="limit"/> — what an agent's "Recently resolved" table reads. Bounded on both
+    /// sides so a long-lived fleet's history cannot make a poll heavy.
+    /// </summary>
+    public async Task<List<ConflictDto>> ListResolvedConflictsAsync(DateTime since, int limit = 50)
+    {
+        var now = DateTime.UtcNow;
+        var conflicts = (await _db.Conflicts
+            .Where(c => c.Status == ConflictStatus.Resolved && c.ResolvedAt != null)
+            .ToListAsync())
+            .Where(c => c.ResolvedAt >= since)
+            .OrderByDescending(c => c.ResolvedAt)
+            .Take(Math.Clamp(limit, 1, 200))
+            .ToList();
+        return conflicts.Select(c => c.ToDto(_conflictEscalation.IsEscalated(c, now))).ToList();
+    }
+
     /// <summary>One conflict by id (open or already resolved), for an agent fetching the detail it
     /// needs to present a chooser or carry out a policy decision. Null if the id is unknown.</summary>
     public async Task<ConflictDto?> GetConflictAsync(Guid conflictId)

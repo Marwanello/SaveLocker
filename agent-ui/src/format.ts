@@ -1,7 +1,18 @@
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
+/** "4h 12m" / "35m" / "20s" for a span in milliseconds — how long something has been waiting. */
+export function formatSpan(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  return m % 60 === 0 ? `${h}h` : `${h}h ${m % 60}m`
 }
 
 /** Server timestamps have no zone suffix but are UTC (System.Text.Json's default) — without this a

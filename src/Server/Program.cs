@@ -588,9 +588,19 @@ agent.MapPost("/agent/games/{id:guid}/template", async (Guid id, string? value, 
 // the admin password. The comparison is always this machine's local save vs. the cloud head, so
 // nothing here is scoped to "a conflict about me" — a machine sees every open conflict and its own
 // frontend decides what to show.
-agent.MapGet("/agent/conflicts", async (SyncService sync) =>
-    Results.Ok(await sync.ListOpenConflictsAsync()))
+// With `resolvedSince` it answers the other question — what was RESOLVED since then — for the agent
+// UI's "Recently resolved" table; without it, the open list, unchanged.
+agent.MapGet("/agent/conflicts", async (SyncService sync, DateTime? resolvedSince) =>
+    Results.Ok(resolvedSince is { } since
+        ? await sync.ListResolvedConflictsAsync(since.ToUniversalTime())
+        : await sync.ListOpenConflictsAsync()))
     .Produces<List<ConflictDto>>();
+
+// One game's version list with a MACHINE key. The admin route of the same shape needs the console
+// password, which an agent has no business holding; under /agent/ so the two cannot collide on a path.
+agent.MapGet("/agent/games/{id:guid}/versions", async (Guid id, SyncService sync) =>
+    Results.Ok((await sync.ListVersionsAsync(id)).Select(v => v.ToDto())))
+    .Produces<List<SaveVersionDto>>();
 
 agent.MapGet("/agent/conflicts/{id:guid}", async (Guid id, SyncService sync) =>
     await sync.GetConflictAsync(id) is { } c ? Results.Ok(c) : Results.NotFound())

@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { AgentState, Conflict, LeaseWarning, TrackedGame, View } from '../types'
 import { api } from '../api'
+import { formatBytes } from '../format'
 import { RecentCard } from './RecentCard'
 import { Banner } from './ui/Banner'
 import { Button } from './ui/Button'
@@ -23,10 +25,28 @@ interface Props {
  */
 export function OverviewView({ state, conflicts, games, onWarningDismissed, onNavigate }: Props) {
   const warnings = state?.leaseWarnings ?? []
+  const [rescanning, setRescanning] = useState(false)
+  const [rescanNote, setRescanNote] = useState<string | null>(null)
 
   async function dismiss(w: LeaseWarning) {
     try { await api.dismissLeaseWarning(w.gameName) } catch { /* ignore */ }
     onWarningDismissed()
+  }
+
+  // Rescan is an explicit request — the one place this page walks the disk — and reports what it found.
+  async function rescan() {
+    setRescanning(true)
+    setRescanNote(null)
+    try {
+      const found = await api.rescan()
+      const suggested = found.filter(c => !c.hasSteamCloud).length
+      setRescanNote(`Found ${found.length} game${found.length === 1 ? '' : 's'}, ${suggested} suggested.`)
+      onWarningDismissed() // refreshes the sidebar's suggestion count along with the state
+    } catch (err) {
+      setRescanNote(err instanceof Error ? err.message : 'The scan failed.')
+    } finally {
+      setRescanning(false)
+    }
   }
 
   const banners: ReactNode[] = []
@@ -60,6 +80,16 @@ export function OverviewView({ state, conflicts, games, onWarningDismissed, onNa
       />,
     )
   }
+  if (state && state.offlineQueueCount > 0) {
+    banners.push(
+      <Banner
+        key="queue" tone="warn"
+        title={`${state.offlineQueueCount} save${state.offlineQueueCount === 1 ? '' : 's'} waiting to upload`}
+        detail="The server could not be reached. They are kept safely and sent as soon as the connection is back."
+        action={<Button size="sm" onClick={() => onNavigate('activity')}>See queue</Button>}
+      />,
+    )
+  }
   if (state?.connected && banners.length === 0) {
     banners.push(
       <Banner
@@ -71,13 +101,18 @@ export function OverviewView({ state, conflicts, games, onWarningDismissed, onNa
   }
 
   const tracked = state?.gamesTracked
+  const queued = state?.offlineQueueCount ?? 0
 
   return (
     <div className="sl-page">
       <div className="sl-grid3">
         <Stat label="Tracked here" value={tracked ?? '…'} context="games on this machine" />
         <Stat label="Saves backed up" value={state?.savesBacked ?? '…'} context="new versions pushed, in total" />
-        <Stat label="Last sync" value={state?.lastSyncAgo ?? '—'} context="last push or pull" />
+        <Stat
+          label="Sent today"
+          value={state ? formatBytes(state.sentTodayBytes) : '…'}
+          context={`last sync ${state?.lastSyncAgo ?? '—'}`}
+        />
       </div>
 
       {banners}
@@ -97,9 +132,17 @@ export function OverviewView({ state, conflicts, games, onWarningDismissed, onNa
                   ? `Push after ${state.settleQuietSeconds} seconds of quiet`
                   : 'Push straight away'}
             </dd>
+            <dt>Queue</dt>
+            <dd>{state === null ? '…' : queued === 0 ? 'Nothing waiting to upload' : `${queued} waiting for the server`}</dd>
             <dt>Server</dt>
             <dd>{state?.serverUrl ? state.serverUrl.replace(/^https?:\/\//, '') : '—'}</dd>
           </dl>
+          <div className="sl-inline" style={{ marginTop: 14 }}>
+            <Button size="sm" disabled={rescanning} onClick={() => void rescan()}>
+              {rescanning ? 'Scanning…' : 'Rescan library'}
+            </Button>
+            {rescanNote && <span style={{ fontSize: 12, color: 'var(--color-dim)' }}>{rescanNote}</span>}
+          </div>
         </Card>
         <RecentCard />
       </div>

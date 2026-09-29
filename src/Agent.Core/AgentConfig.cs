@@ -46,6 +46,16 @@ public sealed class AgentConfig
     public int TotalSavesPushed { get; set; }
     /// <summary>UTC timestamp of the most recent push or pull across all games.</summary>
     public DateTime? LastSyncTime { get; set; }
+    /// <summary>Bytes this machine has uploaded on <see cref="SentTodayDate"/> (the machine's local
+    /// day). Read it through <see cref="SentTodayBytesNow"/>: a counter from yesterday is not today's.</summary>
+    public long SentTodayBytes { get; set; }
+    /// <summary>The local calendar day (<c>yyyy-MM-dd</c>) <see cref="SentTodayBytes"/> counts.</summary>
+    public string? SentTodayDate { get; set; }
+
+    private static string LocalDay() => DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>Bytes uploaded today, or 0 when the stored counter belongs to an earlier day.</summary>
+    public long SentTodayBytesNow() => SentTodayDate == LocalDay() ? SentTodayBytes : 0;
     /// <summary>Version string the user chose to skip ("Skip This Version"); suppresses update prompts for that version.</summary>
     public string? SkipVersion { get; set; }
     /// <summary>UTC timestamp of the last update check; used to enforce a 24 h cooldown between background checks.</summary>
@@ -218,9 +228,13 @@ public sealed class AgentConfig
                 game.LastKnownVersionId = stored.LastKnownVersionId;
                 game.LastSyncedHash = stored.LastSyncedHash;
                 game.ConsecutiveConflicts = stored.ConsecutiveConflicts;
+                game.LastPushBytes = stored.LastPushBytes;
+                game.LastPushAt = stored.LastPushAt;
             }
             TotalSavesPushed = onDisk.TotalSavesPushed;
             LastSyncTime = onDisk.LastSyncTime;
+            SentTodayBytes = onDisk.SentTodayBytes;
+            SentTodayDate = onDisk.SentTodayDate;
             // Same reasoning as the sync state above: SetTracked owns this list, and a host that
             // loaded its config at boot must not write a stale copy over another process's opt-out.
             UntrackedGameIds = onDisk.UntrackedGameIds;
@@ -337,6 +351,9 @@ public sealed class AgentConfig
         LocalAppearance = fresh.LocalAppearance;
         TotalSavesPushed = fresh.TotalSavesPushed;
         LastSyncTime = fresh.LastSyncTime;
+        SentTodayBytes = fresh.SentTodayBytes;
+        SentTodayDate = fresh.SentTodayDate;
+        AutoUpdate = fresh.AutoUpdate;
         Games = fresh.Games;
         UntrackedGameIds = fresh.UntrackedGameIds;
     }
@@ -555,6 +572,8 @@ public sealed class AgentConfig
         game.LastKnownVersionId = stored.LastKnownVersionId;
         game.LastSyncedHash = stored.LastSyncedHash;
         game.ConsecutiveConflicts = stored.ConsecutiveConflicts;
+        game.LastPushBytes = stored.LastPushBytes;
+        game.LastPushAt = stored.LastPushAt;
     }
 
     /// <summary>
@@ -571,7 +590,8 @@ public sealed class AgentConfig
     /// So: re-read what is on disk under the lock, apply only this game's fields plus the counters
     /// this call earned, and write that back.
     /// </summary>
-    public void SaveGameSyncState(TrackedGame game, bool countPush = false, bool touchSyncTime = false)
+    public void SaveGameSyncState(TrackedGame game, bool countPush = false, bool touchSyncTime = false,
+        long sentBytes = 0)
     {
         using var guard = AgentStateLock.Acquire("config", StateDir);
 
@@ -599,10 +619,17 @@ public sealed class AgentConfig
             target.LastSyncedHash = game.LastSyncedHash;
             target.ConsecutiveConflicts = game.ConsecutiveConflicts;
             target.SaveDirectory = game.SaveDirectory;
+            target.LastPushBytes = game.LastPushBytes;
+            target.LastPushAt = game.LastPushAt;
         }
 
         if (countPush) onDisk.TotalSavesPushed++;
         if (touchSyncTime) onDisk.LastSyncTime = DateTime.UtcNow;
+        if (sentBytes > 0)
+        {
+            onDisk.SentTodayBytes = onDisk.SentTodayBytesNow() + sentBytes;
+            onDisk.SentTodayDate = LocalDay();
+        }
 
         AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(onDisk, JsonOpts),
             restrictPermissions: true);
@@ -611,6 +638,8 @@ public sealed class AgentConfig
         // process does not push a stale counter back over it.
         TotalSavesPushed = onDisk.TotalSavesPushed;
         LastSyncTime = onDisk.LastSyncTime;
+        SentTodayBytes = onDisk.SentTodayBytes;
+        SentTodayDate = onDisk.SentTodayDate;
     }
 
     /// <summary>
@@ -790,6 +819,11 @@ public sealed class TrackedGame
     /// sending full archives until a clean pull/push resets the count; forced pushes still bypass it.
     /// </summary>
     public int ConsecutiveConflicts { get; set; }
+    /// <summary>Bytes the last accepted push actually sent — a delta is far smaller than the save.
+    /// Null until this machine has pushed since the field existed.</summary>
+    public long? LastPushBytes { get; set; }
+    /// <summary>When <see cref="LastPushBytes"/> was recorded (UTC).</summary>
+    public DateTime? LastPushAt { get; set; }
     /// <summary>Effective exclude globs (global defaults ∪ per-game) from the server;
     /// files matching these are skipped when hashing and archiving.</summary>
     public List<string> ExcludeGlobs { get; set; } = new();

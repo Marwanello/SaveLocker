@@ -51,6 +51,20 @@ public readonly record struct DesktopSessionInfo(
 /// </summary>
 public static class DesktopEnvironment
 {
+    /// <summary>
+    /// Hand a file to the desktop's default handler. False — without trying — when there is no session
+    /// bus to be a desktop on (a headless box, an SSH shell), so a caller can say so instead of
+    /// launching an `xdg-open` that has nowhere to show anything.
+    /// </summary>
+    public static bool TryOpenFile(string path)
+    {
+        if (!Detect().HasSessionBus) return false;
+        var psi = new System.Diagnostics.ProcessStartInfo("xdg-open") { UseShellExecute = false };
+        psi.ArgumentList.Add(path);
+        ApplySessionEnv(psi.Environment);
+        return System.Diagnostics.Process.Start(psi) is not null;
+    }
+
     public static DesktopSessionInfo Detect()
     {
         var hasGraphicalSession = HasEnv("WAYLAND_DISPLAY") || HasEnv("DISPLAY");

@@ -506,6 +506,30 @@ public sealed class ApiClient
         Guid? machineId, CancellationToken ct = default) =>
         (await GetOpenConflictsAsync(ct)).Where(c => c.MachineId == machineId).ToList();
 
+    /// <summary>Conflicts resolved since <paramref name="since"/>, newest first — the agent UI's
+    /// "Recently resolved" table. An older server without the parameter ignores it and answers the
+    /// OPEN list, so anything not actually <see cref="ConflictStatus.Resolved"/> is dropped here.</summary>
+    public async Task<List<ConflictDto>> GetResolvedConflictsAsync(DateTime since, CancellationToken ct = default)
+    {
+        var url = "/api/agent/conflicts?resolvedSince=" +
+                  Uri.EscapeDataString(since.ToUniversalTime().ToString("O"));
+        var resp = await _http.GetAsync(url, ct);
+        if (resp.StatusCode is HttpStatusCode.NotFound) return new();
+        resp.EnsureSuccessStatusCode();
+        var all = await resp.Content.ReadFromJsonAsync<List<ConflictDto>>(cancellationToken: ct) ?? new();
+        return all.Where(c => c.Status == ConflictStatus.Resolved).ToList();
+    }
+
+    /// <summary>Every version the server keeps of one game, newest first; empty for a server too old
+    /// to have the route, so the game page degrades to "no version list" instead of an error.</summary>
+    public async Task<List<SaveVersionDto>> GetGameVersionsAsync(Guid gameId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/versions", ct);
+        if (resp.StatusCode is HttpStatusCode.NotFound) return new();
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<List<SaveVersionDto>>(cancellationToken: ct) ?? new();
+    }
+
     /// <summary>One conflict by id, or null if the server does not know it (a stale reference, or a
     /// server too old to have this route).</summary>
     public async Task<ConflictDto?> GetConflictAsync(Guid conflictId, CancellationToken ct = default)

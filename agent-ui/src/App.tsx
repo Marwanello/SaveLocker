@@ -10,10 +10,13 @@ import { AddGamesView } from './components/AddGamesView'
 import { ConflictsView } from './components/ConflictsView'
 import { SyncConflictModal } from './components/SyncConflictModal'
 import { SettingsView } from './components/SettingsView'
+import { ActivityView } from './components/ActivityView'
 import { Chip } from './components/ui/Chip'
 import { Mark } from './components/ui/Mark'
+import { unseenWarnings } from './activitySeen'
 import { isCurrentPoll, looksEpoch, setLook } from './appearance'
 import { clearRouteHash, parseRoute } from './route'
+import { useActivityRecent } from './useActivity'
 
 export default function App() {
   // The tray's native Sync All / Force Pull / Force Push (TrayApp.cs, Phase 7) open this window at
@@ -35,8 +38,14 @@ export default function App() {
   // own — only an explicit Sync all does, so nothing interrupts the user unprompted.
   const [syncQueue, setSyncQueue] = useState<Conflict[] | null>(null)
 
+  // How many games the LAST scan suggested — read from the agent's cache, never triggering a scan, so
+  // the sidebar count costs nothing and navigating never walks the disk. Null until one has run.
+  const [suggested, setSuggested] = useState<number | null>(null)
+  const recent = useActivityRecent()
+
   const refreshState = useCallback(() => {
     api.state().then(setState).catch(console.error)
+    api.cachedCandidates().then(c => setSuggested(c.suggested)).catch(() => {})
   }, [])
 
   // What this window looks like: the console's look or this machine's own (Settings > Appearance). Adopted
@@ -169,7 +178,13 @@ export default function App() {
           <Sidebar
             activeView={view}
             onNavigate={navigate}
-            conflictCount={conflicts.length}
+            counts={{
+              games: state?.gamesTracked,
+              addGames: suggested ?? 0,
+              conflicts: conflicts.length,
+              // Being on the page is what clears it; leaving starts the count again from now.
+              activity: view === 'activity' ? 0 : unseenWarnings(recent),
+            }}
             agentLabel={state?.buildLabel ?? state?.currentVersion ?? '…'}
             machineName={state?.machineName ?? ''}
             serverHost={(state?.serverUrl ?? '').replace(/^https?:\/\//, '')}
@@ -194,9 +209,12 @@ export default function App() {
                     game={open}
                     conflicts={conflicts}
                     machineName={state?.machineName ?? ''}
+                    platform={state?.platform}
                     onBack={() => setOpenGameId(null)}
                     onNavigate={navigate}
                     onSynced={() => handleGameSynced(open.id)}
+                    onChanged={() => { refreshState(); void refreshConflicts() }}
+                    onRemoved={() => setOpenGameId(null)}
                   />
                 )
                 : <GamesView games={games} conflicts={conflicts} onOpen={setOpenGameId} onNavigate={navigate} />
@@ -210,7 +228,16 @@ export default function App() {
                 onRefresh={refreshConflicts}
               />
             )}
-            {view === 'settings' && <SettingsView state={state} onSaved={refreshState} appearance={appearance} onAppearanceChanged={adoptAppearance} />}
+            {view === 'activity' && <ActivityView />}
+            {view === 'settings' && (
+              <SettingsView
+                state={state}
+                onSaved={refreshState}
+                appearance={appearance}
+                onAppearanceChanged={adoptAppearance}
+                onOpenGame={id => { setOpenGameId(id); setView('games') }}
+              />
+            )}
           </main>
         </div>
 

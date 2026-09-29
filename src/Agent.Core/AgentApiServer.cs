@@ -67,6 +67,9 @@ public sealed class AgentApiServer : IDisposable
     // Raises the host's own window at a route: what a Windows toast button reaches through /open.
     // Null on a host with no window of its own, where /open falls through to the browser UI.
     private readonly Action<string>? _openView;
+    // Hands a file to the desktop (Explorer's "select it" on Windows, xdg-open on Linux). Returns
+    // false when there is nowhere to show it — a headless box — so /api/open-log can say so.
+    private readonly Func<string, bool>? _openFile;
     // Per-game save-dir resolution for /api/candidates/lookup and /api/manifest/search (Phase 5).
     // Host-agnostic (its own Windows-only checks no-op cleanly on Linux), so it is taken directly
     // rather than through a delegate — unlike _doScan/_enroll, nothing here differs per host.
@@ -121,8 +124,10 @@ public sealed class AgentApiServer : IDisposable
         Func<Task<PlaynitePluginCardStatusDto>>? playnitePluginCardStatus = null,
         Func<Task<PlaynitePluginStatusDto>>? playnitePluginInstall = null,
         Func<TrackedGame, GameSyncMode, CancellationToken, Task<string>>? syncGame = null,
-        Action<string>? openView = null)
+        Action<string>? openView = null,
+        Func<string, bool>? openFile = null)
     {
+        _openFile = openFile;
         _browser = new PathBrowser(browseRoots);
         Port = port;
         _config = config;
@@ -276,7 +281,12 @@ public sealed class AgentApiServer : IDisposable
                 warnings,
                 _config.SettleQuietSeconds,
                 OperatingSystem.IsWindows() ? "Windows" : "Linux",
-                _config.MachineId);
+                _config.MachineId,
+                _config.SentTodayBytesNow(),
+                OfflineQueue.For(_config).GetAll().Count,
+                !_config.ServerUrl.StartsWith("https", StringComparison.OrdinalIgnoreCase) ? "plain-http"
+                    : string.IsNullOrEmpty(_config.ServerPin) ? "unpinned" : "pinned",
+                _config.AutoUpdate);
         }).Produces<AgentStateDto>();
 
         app.MapPost("/api/lease-warnings/dismiss", (DismissWarningRequest body) =>
@@ -287,6 +297,61 @@ public sealed class AgentApiServer : IDisposable
 
         app.MapGet("/api/candidates", async () => ToCandidateDtos(
             _candidateCache ?? await RescanAsync())).Produces<CandidateDto[]>();
+
+        // How many games the LAST scan suggested, without scanning: the sidebar count must never make
+        // navigating (or a poll) walk the disk. Null before any scan has run this session.
+        app.MapGet("/api/candidates/cached", () => new CandidateCountDto(
+            _candidateCache?.Count(c => !c.HasSteamCloud))).Produces<CandidateCountDto>();
+
+        // "Can this machine reach its server, and how fast" — one anonymous GET of /health through the
+        // same TLS policy every other call uses (so a pin mismatch shows up here too). Never throws:
+        // the answer IS the failure.
+        app.MapPost("/api/test-connection", async () =>
+        {
+            if (string.IsNullOrWhiteSpace(_config.ServerUrl))
+                return new TestConnectionDto(false, null, 0, "No server URL is set.");
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                using var http = ServerHttp.Create(_config, withApiKey: false);
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                using var resp = await http.GetAsync("/health", cts.Token);
+                return new TestConnectionDto(resp.IsSuccessStatusCode, (int)resp.StatusCode, sw.ElapsedMilliseconds,
+                    resp.IsSuccessStatusCode ? null : $"The server answered {(int)resp.StatusCode}.");
+            }
+            catch (OperationCanceledException)
+            {
+                return new TestConnectionDto(false, null, sw.ElapsedMilliseconds, "The server did not answer within 10 seconds.");
+            }
+            catch (Exception ex)
+            {
+                return new TestConnectionDto(false, null, sw.ElapsedMilliseconds, ex.InnerException?.Message ?? ex.Message);
+            }
+        }).Produces<TestConnectionDto>();
+
+        // How big the save folder is right now, by a plain directory walk — no hashing, so unlike
+        // sync-status it is cheap enough for the game page to ask on open. Never on a list or a timer.
+        app.MapGet("/api/games/{id:guid}/local-size", Results<Ok<LocalSizeDto>, NotFound> (Guid id) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            return game is null
+                ? TypedResults.NotFound()
+                : TypedResults.Ok(new LocalSizeDto(DirectorySize(game.SaveDirectory)));
+        }).Produces<LocalSizeDto>();
+
+        // Show a game's save folder in the desktop's file manager. Same seam as /api/open-log: false
+        // means there was no desktop to show it on, and the caller shows the path instead.
+        app.MapPost("/api/games/{id:guid}/open-folder",
+            Results<Ok<OpenLogResponse>, Conflict<OpenLogResponse>, NotFound> (Guid id) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.NotFound();
+            var opened = false;
+            try { opened = Directory.Exists(game.SaveDirectory) && _openFile?.Invoke(game.SaveDirectory) == true; }
+            catch (Exception ex) { AgentLogger.LogException("AgentApiServer.open-folder", ex); }
+            var body = new OpenLogResponse(opened, game.SaveDirectory);
+            return opened ? TypedResults.Ok(body) : TypedResults.Conflict(body);
+        }).Produces<OpenLogResponse>().Produces<OpenLogResponse>(StatusCodes.Status409Conflict);
 
         app.MapPost("/api/candidates/rescan", async () =>
             ToCandidateDtos(await RescanAsync())).Produces<CandidateDto[]>();
@@ -324,6 +389,14 @@ public sealed class AgentApiServer : IDisposable
                 if (!auto.Ok)
                     return TypedResults.BadRequest(new ErrorResponse(
                         auto.Error ?? "Could not change the startup setting."));
+            }
+
+            // Whether this agent may stage a newer version by itself (Linux). A single-field write
+            // through UpdateSettings, so it cannot undo what another process changed in between.
+            if (body.AutoUpdate.HasValue)
+            {
+                try { _config.UpdateSettings(c => c.AutoUpdate = body.AutoUpdate.Value); }
+                catch (AgentStateLockException ex) { return TypedResults.BadRequest(new ErrorResponse(ex.Message)); }
             }
 
             // Only the server URL means "connection changed" — the engine's lease/API client are
@@ -438,7 +511,7 @@ public sealed class AgentApiServer : IDisposable
             .Select(g => new TrackedGameDto(
                 g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray(), g.Alias,
                 SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()), g.PullBeforeLaunchEnabled,
-                g.HasSteamCloud, g.PushAfterExitEnabled, g.InstallDir))
+                g.HasSteamCloud, g.PushAfterExitEnabled, g.InstallDir, g.LastPushBytes, g.LastPushAt))
             .ToArray()).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
@@ -717,12 +790,53 @@ public sealed class AgentApiServer : IDisposable
             var recent = _activity.Recent()
                 .Select(e => new ActivityLogEntryDto(e.TimestampUtc, e.Message))
                 .ToArray();
+            var run = _activity.LastRun();
             return new ActivityDto(
                 new ActivitySnapshotDto(
                     current.GameName, current.Phase.ToString(), current.BytesDone, current.BytesTotal,
-                    current.StartedAtUtc),
-                recent);
+                    current.StartedAtUtc, current.Index, current.Total, current.CancelRequested),
+                recent,
+                run is null ? null : new SyncRunDto(
+                    run.FinishedAtUtc, run.Games, run.Uploaded, run.AlreadyCurrent, run.Conflicts,
+                    run.Skipped, run.BytesSent, run.Cancelled));
         }).Produces<ActivityDto>();
+
+        // Stops a running Sync all after the game it is on. Cooperative on purpose — see
+        // SyncActivityTracker.RequestCancel: the game in progress always finishes, so a cancel never
+        // lands between a restore's "delete files" and "write files". A per-game sync is not a run and
+        // has nothing to cancel.
+        app.MapPost("/api/sync/cancel", () => new CancelSyncResponse(_activity.RequestCancel()))
+            .Produces<CancelSyncResponse>();
+
+        // What is waiting for the server to come back. Read fresh from disk every time (the launch
+        // wrapper queues from another process). Size is a plain directory walk — cheap, unlike the
+        // hash a sync-status does — because "how big is what is waiting" is the point of the card.
+        app.MapGet("/api/offline-queue", () =>
+        {
+            var entries = OfflineQueue.For(_config).GetAll()
+                .OrderBy(e => e.QueuedAt)
+                .Select(e => new OfflineQueueEntryDto(
+                    e.GameId, e.GameName, e.QueuedAt.UtcDateTime, e.RetryCount,
+                    e.LastAttemptAt?.UtcDateTime, e.Force,
+                    DirectorySize(_config.Games.FirstOrDefault(g => g.GameId == e.GameId)?.SaveDirectory)))
+                .ToArray();
+            return entries;
+        }).Produces<OfflineQueueEntryDto[]>();
+
+        // Show agent.log to a person at this machine. Windows selects it in Explorer; Linux xdg-opens
+        // it with the borrowed desktop-session environment. With no desktop to show it on (a headless
+        // box) it answers 409 CARRYING THE PATH — the page shows it with a Copy button rather than
+        // pretending something opened.
+        app.MapPost("/api/open-log",
+            Results<Ok<OpenLogResponse>, Conflict<OpenLogResponse>> () =>
+        {
+            var path = AgentLogger.LogPath;
+            var opened = false;
+            try { opened = File.Exists(path) && _openFile?.Invoke(path) == true; }
+            catch (Exception ex) { AgentLogger.LogException("AgentApiServer.open-log", ex); }
+            var body = new OpenLogResponse(opened, path);
+            return opened ? TypedResults.Ok(body) : TypedResults.Conflict(body);
+        }).Produces<OpenLogResponse>().Produces<OpenLogResponse>(StatusCodes.Status409Conflict);
 
         // The Overview page's "Sync now" button: pull then push every tracked game, same as the tray
         // menu's "Sync All". Fire-and-poll from the UI's side — the response is a summary line, and
@@ -920,6 +1034,32 @@ public sealed class AgentApiServer : IDisposable
             {
                 await ApiClient.For(_config).SetConflictPolicyAsync(id, body.Policy, body.PreferredMachineId);
                 return TypedResults.Ok(new OkResponse());
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        // Every version the server keeps of one game, for the game page's "Versions on the server".
+        // One small server round trip, no disk work here.
+        app.MapGet("/api/games/{id:guid}/versions",
+            async Task<Results<Ok<SaveVersionDto[]>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            if (_config.Games.All(g => g.GameId != id)) return TypedResults.NotFound();
+            try { return TypedResults.Ok((await ApiClient.For(_config).GetGameVersionsAsync(id)).ToArray()); }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        });
+
+        // Conflicts this machine was a party to that have since been resolved, newest first — the
+        // Conflicts page's "Recently resolved" table. `days` bounds the look-back (default a week).
+        app.MapGet("/api/conflicts/resolved",
+            async Task<Results<Ok<ConflictDto[]>, InternalServerError<ErrorResponse>>> (int? days) =>
+        {
+            try
+            {
+                var since = DateTime.UtcNow.AddDays(-Math.Clamp(days ?? 7, 1, 90));
+                var mine = (await ApiClient.For(_config).GetResolvedConflictsAsync(since))
+                    .Where(c => c.MachineId == _config.MachineId)
+                    .ToArray();
+                return TypedResults.Ok(mine);
             }
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         });
@@ -1307,6 +1447,24 @@ public sealed class AgentApiServer : IDisposable
             candidate.SuggestedProcessName,
             candidate.Store.ToString())).ToArray();
 
+    /// <summary>Bytes under a folder by plain enumeration (no hashing, symlinks not followed); 0 for a
+    /// missing or unreadable one — this describes a queue entry, it must never fail the listing.</summary>
+    private static long DirectorySize(string? dir)
+    {
+        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir)) return 0;
+        try
+        {
+            var opts = new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                AttributesToSkip = FileAttributes.ReparsePoint,
+            };
+            return new DirectoryInfo(dir).EnumerateFiles("*", opts).Sum(f => f.Length);
+        }
+        catch { return 0; }
+    }
+
     private static string FormatAgo(TimeSpan ago)
     {
         if (ago.TotalSeconds < 60) return "just now";
@@ -1368,7 +1526,16 @@ public sealed record AgentStateDto(
     /// <summary>This device's own machine id, once registered — null before then. Lets a local
     /// frontend (Decky, agent-ui) offer "prefer THIS device" for <see cref="ConflictPolicy.PreferMachine"/>
     /// without needing the fleet-wide machine list only the dashboard's admin API exposes.</summary>
-    Guid? MachineId = null);
+    Guid? MachineId = null,
+    /// <summary>Bytes this machine uploaded today (its local day) — the Overview's "Sent today".</summary>
+    long SentTodayBytes = 0,
+    /// <summary>Pushes waiting for the server to come back; the Activity nav count.</summary>
+    int OfflineQueueCount = 0,
+    /// <summary><c>pinned</c> (the server's TLS key was recorded on first connect), <c>unpinned</c>
+    /// (https, nothing recorded yet) or <c>plain-http</c> (no identity to pin).</summary>
+    string ServerTrust = "plain-http",
+    /// <summary>Whether this agent may stage a newer version by itself (only the Linux agent stages).</summary>
+    bool AutoUpdate = true);
 /// <param name="ProcessName">
 /// The process discovery is confident means this game is running, or null when it cannot know —
 /// which is every source but a non-Steam shortcut. Null tells the UI that enrolling this candidate
@@ -1433,7 +1600,11 @@ public sealed record TrackedGameDto(
     /// a game discovery never recorded one for (a save-root match, most non-Steam shortcuts before
     /// this field existed).
     /// </summary>
-    string? InstallDir = null);
+    string? InstallDir = null,
+    /// <summary>What this machine's last accepted push actually put on the wire (a delta is far
+    /// smaller than the save); null until it has pushed since the field existed.</summary>
+    long? LastPushBytes = null,
+    DateTime? LastPushAt = null);
 
 /// <param name="Mode"><c>sync</c> (pull then push), <c>push</c> or <c>pull</c>; case-insensitive.</param>
 public sealed record GameSyncRequest(string? Mode);
@@ -1594,7 +1765,8 @@ public sealed record ConfigRequest(
     string? ServerUrl,
     string? MachineName,
     bool? StartWithWindows,
-    int? SettleQuietSeconds);
+    int? SettleQuietSeconds,
+    bool? AutoUpdate = null);
 public sealed record RegisterRequest(string? AdminPassword = null);
 /// <param name="Confirm">
 /// Accept a path the sanity heuristics flagged. It never overrides <see cref="SavePathGuard"/> —
@@ -1622,8 +1794,28 @@ public sealed record SuggestedPathDto(string? Path);
 /// <param name="BytesDone">Meaningful only during "Pushing" — see the chunk loop in
 /// <see cref="ApiClient.UploadAsync"/>, the only place that knows progress mid-transfer. Zero for
 /// every other phase.</param>
+/// <param name="Index">During a Sync all: which game (1-based) of <paramref name="Total"/> is running;
+/// both 0 outside one, so a single-game sync never claims to be "1 of 1".</param>
+/// <param name="CancelRequested">A cancel was asked for and the run will stop after the current game.</param>
 public sealed record ActivitySnapshotDto(
-    string? GameName, string Phase, long BytesDone, long BytesTotal, DateTime? StartedAtUtc);
+    string? GameName, string Phase, long BytesDone, long BytesTotal, DateTime? StartedAtUtc,
+    int Index = 0, int Total = 0, bool CancelRequested = false);
 public sealed record ActivityLogEntryDto(DateTime TimestampUtc, string Message);
-public sealed record ActivityDto(ActivitySnapshotDto Current, ActivityLogEntryDto[] Recent);
+/// <param name="LastRun">What the most recent Sync all did, until the next one begins; null before any.</param>
+public sealed record ActivityDto(
+    ActivitySnapshotDto Current, ActivityLogEntryDto[] Recent, SyncRunDto? LastRun = null);
+public sealed record SyncRunDto(
+    DateTime FinishedAtUtc, int Games, int Uploaded, int AlreadyCurrent, int Conflicts, int Failed,
+    long BytesSent, bool Cancelled);
 public sealed record SyncNowResponse(string Message);
+/// <param name="Requested">False when no Sync all was running, so there was nothing to cancel.</param>
+public sealed record CancelSyncResponse(bool Requested);
+/// <param name="Size">Bytes in the save folder now (a plain directory walk, no hashing); 0 if it is gone.</param>
+public sealed record OfflineQueueEntryDto(
+    Guid GameId, string GameName, DateTime QueuedAt, int Attempts, DateTime? LastAttemptAt, bool Force, long Size);
+/// <param name="Opened">The desktop was handed the file. False on a headless box, where the caller shows <paramref name="Path"/>.</param>
+public sealed record OpenLogResponse(bool Opened, string Path);
+/// <param name="Suggested">Candidates the last scan proposed (those Steam Cloud does not already back up); null before a scan.</param>
+public sealed record CandidateCountDto(int? Suggested);
+public sealed record LocalSizeDto(long Bytes);
+public sealed record TestConnectionDto(bool Ok, int? Status, long LatencyMs, string? Error);

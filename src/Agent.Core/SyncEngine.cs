@@ -228,6 +228,23 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         finally { gate.Release(); _activity?.End(); }
     }
 
+    /// <summary>
+    /// Bytes one push actually put on the wire, summed across its attempts. An upload reports its
+    /// running total, so a value that goes DOWN means a fresh attempt began (the delta fell back to a
+    /// full archive) and what the earlier one sent still counts.
+    /// </summary>
+    private sealed class SentBytes
+    {
+        private long _last;
+        public long Total { get; private set; }
+
+        public void Report(long done)
+        {
+            Total += done >= _last ? done - _last : done;
+            _last = done;
+        }
+    }
+
     private async Task<UploadResult?> PushCoreAsync(TrackedGame game, bool force, bool settle, CancellationToken ct)
     {
         // Re-checked at the boundary, not merely where the path was configured. A mapping accepted
@@ -287,7 +304,8 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
 
         try
         {
-            var result = await SendPushAsync(game, hash, manifest, force, ct);
+            var sent = new SentBytes();
+            var result = await SendPushAsync(game, hash, manifest, force, sent, ct);
             if (result is null) return null;   // refused outright; SendPushAsync already alerted
 
             var countPush = false;
@@ -344,7 +362,12 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                         AgentEventCodes.Conflict, AgentEventSeverity.Error, game.GameId);
                     break;
             }
-            _config.SaveGameSyncState(game, countPush, touchSyncTime);
+            if (countPush)
+            {
+                game.LastPushBytes = sent.Total;
+                game.LastPushAt = DateTime.UtcNow;
+            }
+            _config.SaveGameSyncState(game, countPush, touchSyncTime, countPush ? sent.Total : 0);
             return result;
         }
         // A non-null StatusCode means the server ANSWERED and rejected us (e.g. 413: the save blew
@@ -407,9 +430,13 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// </summary>
     private async Task<UploadResult?> SendPushAsync(
         TrackedGame game, string hash, IReadOnlyList<FileManifestEntry> manifest, bool force,
-        CancellationToken ct)
+        SentBytes sent, CancellationToken ct)
     {
-        void Progress(long done, long total) => _activity?.Progress(done, total);
+        void Progress(long done, long total)
+        {
+            sent.Report(done);
+            _activity?.Progress(done, total);
+        }
 
         var deltaWorthwhile = !force
             && game.LastKnownVersionId is not null
@@ -683,11 +710,40 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     public async Task<string> SyncAllAsync(IReadOnlyList<TrackedGame> games, CancellationToken ct = default)
     {
         var skipped = new List<string>();
-        foreach (var g in games)
+        int done = 0, uploaded = 0, current = 0, conflicts = 0, failed = 0;
+        long bytes = 0;
+        var cancelled = false;
+
+        _activity?.BeginRun(games.Count);
+        try
         {
-            var (pullSkipped, _) = await PullThenPushAsync(g, ct);
-            if (pullSkipped) skipped.Add(g.Name);
+            foreach (var g in games)
+            {
+                // Between games only: the one in progress always finishes, so a cancel can never land
+                // between a restore's "delete files" and "write files". See SyncActivityTracker.RequestCancel.
+                if (_activity?.CancelRequested == true) { cancelled = true; break; }
+
+                _activity?.RunAt(done + 1);
+                var (pullSkipped, push) = await PullThenPushAsync(g, ct);
+                done++;
+                if (pullSkipped) skipped.Add(g.Name);
+                switch (push?.Status)
+                {
+                    case UploadStatus.Created: uploaded++; bytes += g.LastPushBytes ?? 0; break;
+                    case UploadStatus.NoChange: current++; break;
+                    case UploadStatus.Conflict: conflicts++; break;
+                    default: failed++; break;
+                }
+            }
         }
+        finally
+        {
+            _activity?.EndRun(new SyncRunSummary(
+                DateTime.UtcNow, done, uploaded, current, conflicts, failed, bytes, cancelled));
+        }
+
+        if (cancelled)
+            return $"Sync all cancelled after {done} of {games.Count} games.";
         return skipped.Count == 0
             ? "Sync all complete."
             : $"Sync all complete. Not pulled (still running): {string.Join(", ", skipped)}.";

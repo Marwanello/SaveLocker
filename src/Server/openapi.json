@@ -747,6 +747,16 @@
         "tags": [
           "SaveLocker.Server"
         ],
+        "parameters": [
+          {
+            "name": "resolvedSince",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -756,6 +766,39 @@
                   "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/ConflictDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/games/{id}/versions": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SaveVersionDto"
                   }
                 }
               }

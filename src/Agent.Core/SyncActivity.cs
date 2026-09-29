@@ -13,7 +13,13 @@ public enum SyncPhase
 /// <summary>A moment-in-time read of the current sync attempt, or all-default fields when nothing
 /// is running.</summary>
 public sealed record SyncActivitySnapshot(
-    string? GameName, SyncPhase Phase, long BytesDone, long BytesTotal, DateTime? StartedAtUtc);
+    string? GameName, SyncPhase Phase, long BytesDone, long BytesTotal, DateTime? StartedAtUtc,
+    int Index = 0, int Total = 0, bool CancelRequested = false);
+
+/// <summary>What a finished Sync all did, for the hero's "Synced 6 games — 19.3 MB sent" line.</summary>
+public sealed record SyncRunSummary(
+    DateTime FinishedAtUtc, int Games, int Uploaded, int AlreadyCurrent, int Conflicts, int Skipped,
+    long BytesSent, bool Cancelled);
 
 public sealed record ActivityLogEntry(DateTime TimestampUtc, string Message);
 
@@ -53,6 +59,12 @@ public sealed class SyncActivityTracker
     private long _bytesDone;
     private long _bytesTotal;
     private DateTime? _startedAtUtc;
+    // A Sync all run spans many Begin/End pairs (one per game push or pull), so its own position and
+    // the cancel request live apart from the per-game fields those reset.
+    private int _runIndex;
+    private int _runTotal;
+    private bool _cancelRequested;
+    private SyncRunSummary? _lastRun;
     private readonly LinkedList<ActivityLogEntry> _recent = new();
     private DateTime _lastPersistUtc = DateTime.MinValue;
 
@@ -75,6 +87,59 @@ public sealed class SyncActivityTracker
             _flushTimer = new System.Threading.Timer(_ => PersistNow(), null,
                 Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
+
+    /// <summary>A Sync all run of <paramref name="total"/> games begins. Clears any earlier cancel request.</summary>
+    public void BeginRun(int total)
+    {
+        lock (_lock)
+        {
+            _runIndex = 0;
+            _runTotal = total;
+            _cancelRequested = false;
+            _lastRun = null;
+        }
+        PersistNow();
+    }
+
+    /// <summary>The run moves on to its <paramref name="index"/>th game (1-based).</summary>
+    public void RunAt(int index)
+    {
+        lock (_lock) _runIndex = index;
+        PersistNow();
+    }
+
+    /// <summary>The run is over. Keeps the summary for the UI's done state until the next run begins.</summary>
+    public void EndRun(SyncRunSummary summary)
+    {
+        lock (_lock)
+        {
+            _runIndex = 0;
+            _runTotal = 0;
+            _cancelRequested = false;
+            _lastRun = summary;
+        }
+        PersistNow();
+    }
+
+    /// <summary>
+    /// Ask the running Sync all to stop after the game it is on. Cooperative on purpose: the game in
+    /// progress always finishes, so a cancel can never land between a restore's "delete files" and
+    /// "write files" and leave a save folder half-replaced. False when no run is active.
+    /// </summary>
+    public bool RequestCancel()
+    {
+        lock (_lock)
+        {
+            if (_runTotal == 0) return false;
+            _cancelRequested = true;
+        }
+        PersistNow();
+        return true;
+    }
+
+    public bool CancelRequested { get { lock (_lock) return _cancelRequested; } }
+
+    public SyncRunSummary? LastRun() { lock (_lock) return _lastRun; }
 
     /// <summary>Start (or restart) tracking one game's sync attempt.</summary>
     public void Begin(string gameName, SyncPhase phase)
@@ -150,7 +215,8 @@ public sealed class SyncActivityTracker
 
     public SyncActivitySnapshot Current()
     {
-        lock (_lock) return new SyncActivitySnapshot(_gameName, _phase, _bytesDone, _bytesTotal, _startedAtUtc);
+        lock (_lock) return new SyncActivitySnapshot(_gameName, _phase, _bytesDone, _bytesTotal, _startedAtUtc,
+            _runIndex, _runTotal, _cancelRequested);
     }
 
     /// <summary>Newest first — what a UI wants to render top-to-bottom without reversing it itself.</summary>
