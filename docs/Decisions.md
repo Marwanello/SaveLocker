@@ -671,6 +671,25 @@ session can judge an edge case, not to reopen the choice.
   with the output folder pinned so nothing that hardcodes the old path moves; the price is Windows 10 2004 as the
   minimum and ~8 MB on the exe.
 
+- **Backups are one zip — the database plus every game's latest save — on a UTC schedule, restorable in place**
+  (2026-09-29, maintainer's call, checkpoint-ui Group 9). *Latest only*, not every version: the smallest backup that
+  still gets every game playing again; older versions whose archives were pruned since stay listed but cannot be
+  downloaded after a restore. *One schedule* (daily or weekly, day + hour in **UTC**, default weekly Sunday 03:00)
+  replaced the nightly database-only one. *Restore runs live*: SQLite's online backup API copies the backup's database
+  into the open file, then `Migrate()` brings an older schema forward — no container restart (a `docker run` without a
+  restart policy would not come back). It validates first (`integrity_check`, the SaveLocker tables) and takes a
+  **Before restore** backup, so every restore is undoable by restoring that. Missing latest saves are extracted,
+  never overwritten (archives are immutable). Backup names never repeat: a safety backup taken in the same second as
+  its source would otherwise overwrite it (found by the suite).
+- **Secrets the server must use are encrypted at rest; the rest stay hashed** (2026-09-29). Machine API keys
+  (SHA-256 of a 256-bit key), the admin password (PBKDF2), sessions and enrollment tokens were already one-way
+  hashes — stronger than encryption, nothing to decrypt. The one plain-text secret was the SteamGridDB key: it is now
+  `enc:v1:` + ASP.NET Data Protection, key ring in `{data}/keys` (`Security:KeyRingPath`), outside the database and
+  outside every backup, so neither carries it in the clear. A plain value from before is encrypted at the next start.
+  The price: a backup restored onto a *different* server reads the key as unset (re-enter it). Not done: the
+  agent's own `config.json` still holds its API key in plain text on the client (0600 / ACL-locked, [[Gotchas]]) —
+  DPAPI on Windows would fit, Linux has no keystore to lean on; a separate decision.
+
 ## Environment facts (user-provided)
 - Games are standalone builds, not bought on Steam/Epic → manifest-based detection + manual
   `--dir` fallback is the primary path, not a fallback, on Linux.

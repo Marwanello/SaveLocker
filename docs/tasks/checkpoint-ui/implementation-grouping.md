@@ -767,6 +767,21 @@ was racy (the top bar renders while locked, so "the Configuration tab is visible
 field disappearing. **Not done:** the `testenv` pass (no Windows/WSL/Docker rig here) — [[group-9-verification]] is the
 checklist; a real agent applying a changed default (the server half is tested, the agent code path was read); a
 `LatestRelease` from a real GitHub fetch.
+<br>**Follow-up, same day (maintainer's requests after a first look):** *(1)* a backup is now **one zip** — the database
+compressed plus **every game's latest save** (not older versions: the maintainer's pick, for size) and a manifest;
+legacy `.db` snapshots still list and restore. *(2)* One **editable schedule, daily or weekly, day + hour in UTC**
+(default weekly Sunday 03:00) replaced the nightly one; reason `Nightly` → `Scheduled`, new `BeforeRestore`.
+*(3)* **Restore** from the Backups page (`POST /admin/backups/{file}/restore`): validates first, takes a Before restore
+backup, copies the database in with SQLite's online backup API (no restart), migrates it, puts back missing latest
+saves; undo = restore the Before restore backup. *(4)* **Encryption at rest** for the one plain-text secret (the
+SteamGridDB key) with Data Protection, key ring in `/data/keys`, outside the DB and every backup; the others were
+already hashes — [[Decisions]]. *(5)* "UTC" on every schedule time. *(6)* **The lock screen's top bar** showed the tabs,
+Sync all and the bell (with the fleet's problems) to anyone — it now shows only the brand and version (plus *Back to
+sign in* on Help / What's new). Found by the suite while building it: a restore's safety backup taken in the same second
+as the backup being restored had the **same name and overwrote it** — names now never repeat. BK-01 is now 42 checks
+(zip contents, restore + undo + refusal before change, UTC schedules, encryption of a legacy plain key); BK-01 + CFG-01
+78/78 through the shim. Live in Chromium: the locked bar (no tabs / Sync all / bell), the schedule selects, a restore
+and its toast.
 - **9a — Backups (11.1–11.5, 11.8).** Server first: the status shape and `Reason` (11.2), the download
   route (11.3), the before-upgrade snapshot (11.4), DB-backed backup settings read by the scheduler each
   loop (11.5); then `BackupsView.tsx`, the **Backups** tab, and the `database-backups.md` KB article.

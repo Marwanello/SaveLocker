@@ -1,4 +1,4 @@
-# Group 9 (Backups, Configuration, Audit log, Help, What's new, sign-in) — live verification through testenv
+﻿# Group 9 (Backups, Configuration, Audit log, Help, What's new, sign-in) — live verification through testenv
 
 Run from the repo root in PowerShell on the Windows box. Each step says what you should SEE. If a step doesn't match,
 report it as a failure; don't work around it. The rig is the Docker console, the Windows tray agent and the headless
@@ -23,67 +23,103 @@ Rig facts that matter here:
    and a daemon pid.
 5. Open `http://localhost:5080` at 1280×800 or wider. Resolve the conflict (keep either side) so the pill is gone.
 
-## 1. Backups — the page (9a)
+## 1. Backups — the page and Back up now (9a, reworked 2026-09-29)
 
 1. The tab strip reads **Games · Configuration · Audit log · Backups · Help · What's new**. Click **Backups**.
-2. You see the title **Backups** with "nightly snapshots of the database · keeps the newest 7". On the right are a chip
-   and **Back up now**. The chip is green **Last just now** because `up` took a catch-up snapshot on the fresh
-   volume; with no snapshot at all it would read amber **No snapshots yet**.
+2. The head reads **Backups**, "the database and every game's latest save · every Sunday at 03:00 UTC · keeps the newest 7",
+   with a chip (green **Last just now**: `up` took a catch-up backup on the fresh volume) and **Back up now**.
 3. Four tiles:
-   - **Snapshots** with the oldest date
-   - **On disk** with `/data/backups`
-   - **Archives** with "N versions · not included in snapshots"
-   - **Next run** reading `03:00` and "in Xh Ym"
-4. Under **Recent snapshots** there's a line saying what a snapshot holds (credential hashes, as sensitive as the
-   admin password), then the table. The first row is a **Nightly** chip.
-5. Press **Back up now**. The toast reads **Snapshot written. N KB.**, and a new top row appears named
-   `savelocker-YYYYMMDD-HHMMSS-manual.db` with an amber **Manual** chip.
-6. Press **Download** on the Manual row. A `.db` file saves to Downloads. Check it:
+   - **Backups**
+   - **On disk** (`/data/backups`)
+   - **All save versions**, with "only each game's latest is backed up"
+   - **Next run**, reading **Sun 03:00 UTC** and "in Nd Nh"
+4. The table has File (`….zip`), Taken ("… · HH:MM UTC"), Size, **Holds** ("Database + latest saves"), Reason, and
+   **Download** / **Restore** on every row.
+5. **Back up now**: the toast reads **Backup written. N KB.**, and a new `savelocker-YYYYMMDD-HHMMSS-manual.zip` row
+   appears with an amber **Manual** chip. The timestamp in the name is UTC.
+6. **Download** it, then check what's inside. Conflict Game has several versions, but only **one** archive must be in
+   the zip:
    ```powershell
-   $f = (Get-ChildItem "$env:USERPROFILE\Downloads\savelocker-*-manual.db" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
-   python -c "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute('PRAGMA integrity_check').fetchone())" $f
+   $f = (Get-ChildItem "$env:USERPROFILE\Downloads\savelocker-*-manual.zip" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+   Add-Type -AssemblyName System.IO.Compression.FileSystem
+   [IO.Compression.ZipFile]::OpenRead($f).Entries | Select-Object FullName, Length, CompressedLength
    ```
-   It should print `('ok',)`.
+   Expect `savelocker.db` (its CompressedLength much smaller than Length), `manifest.json`, and exactly one
+   `archives/<gameid>/<versionid>.zip`, the Latest shown on the game page.
 7. Go to **Audit log**. There are `backup.manual` and `backup.download` rows, each naming the file.
-8. Check the security headers from PowerShell:
-   `curl.exe -s -o NUL -w "%{http_code}" http://localhost:5080/api/admin/backups/<that file>`
-   - With no admin password set, it answers `200`, because the console is open.
-   - Set a password in step 4.8 and repeat. Expect `401` without a session.
+8. Security, from PowerShell, once a password is set (step 4.6):
+   - `curl.exe -s -o NUL -w "%{http_code}" http://localhost:5080/api/admin/backups/<file>` returns `401`.
    - `curl.exe -s -D - -o NUL -H "X-Admin-Password: <pw>" http://localhost:5080/api/admin/backups/<file>` shows
      `Cache-Control: no-store`.
    - `.../api/admin/backups/..%2Fsavelocker.db` returns `404`.
-9. Press **restoring one** in the note. The **Database backups (snapshots)** help article opens.
 
-## 2. Backups — the schedule (9a + 9b)
+## 2. The schedule, in UTC (9a + 9b)
 
-1. Open **Configuration → Defaults & maintenance**. **Nightly database backup** is on and reads "VACUUM INTO a snapshot
-   at 03:00, keep 7".
-2. Switch it **off**. The toast reads "Nightly backups are off…". Go to **Backups**: **Next run** reads **Off ·
-   Scheduled backups are off**.
-3. Switch it back **on**, and change the hour to `04:00` and keep to `3`. The toast names the new schedule. **Backups**
-   now reads **Next run 04:00** and "keeps the newest 3".
-4. Press **Back up now** twice. The table never holds more than 3 rows (retention prunes).
-5. The Audit log has `settings.backup` rows with "(was …)".
+1. **Configuration → Defaults & maintenance → Scheduled backup** is on and reads "The database and every game's latest
+   save, zipped, [weekly] on [Sunday] at [03:00 UTC], keep [7]".
+2. Change it to **Wednesday** and **04:00 UTC**. The toast reads "Backups on: every Wednesday at 04:00 UTC, keeping 7."
+   **Backups → Next run** reads **Wed 04:00 UTC**.
+3. Switch to **daily**. The day picker disappears and Next run is within 24 h. Switch back to weekly.
+4. Switch it **off**. Next run reads **Off**. Switch it on again.
+5. Set keep to **2** and press Back up now three times. Only 2 rows remain. Set keep back to 7.
+6. The Audit log has `settings.backup` rows such as "scheduled on, weekly on Wednesday at 04:00 UTC, keep 7 (was …)".
 
-## 3. Before-upgrade snapshot (9a)
+## 3. Restore from the Backups page (new)
 
-1. Note the current snapshot names on **Backups**.
-2. Rebuild the console at a different version, keeping its volume:
-   `.\tests\testenv.ps1 build -Only console -Version 0.5.99-test`, then `.\tests\testenv.ps1 down`,
-   `.\tests\testenv.ps1 up -Only console`. Then run `up -Only windows` and `up -Only linux` to bring the agents back.
-3. `status` shows the console `v0.5.99-test`. **Backups** has a new row `…-before-upgrade.db` with an amber **Before
-   upgrade** chip.
-4. Prove it predates the new start. Download it, then in PowerShell (the setting name goes in as an argument,
-   because Windows PowerShell 5.1 strips `\"` from arguments it passes to python):
+1. Note the newest backup (call it **B**). Then change something visible. For example, add a game with **+ Add game**
+   named `After-B`, and on WSL make a new save:
+   `wsl -d Ubuntu -- bash -c "echo after-b >> ~/savelocker-test/conflict-save/save.txt"`. Wait until Conflict Game shows
+   a new Latest.
+2. Simulate lost save files. Delete Conflict Game's archives inside the container:
+   `docker exec savelocker-test sh -c 'ls /data/archives'`, then
+   `docker exec savelocker-test sh -c 'rm /data/archives/<that game folder>/*'`.
+3. On **Backups**, press **Restore** on **B**. It expands into a sentence saying it replaces the whole database, a
+   **Before restore** backup is taken first, and you may have to sign in again. Confirm **Restore B**.
+4. The toast reads "Restored B. 1 save put back; the state before it is in …-before-restore.zip". A **Before restore**
+   row appears at the top.
+5. Check the state:
+   - **Games**: `After-B` is gone.
+   - Conflict Game's Latest is the one from B, and **Download** on it works (the archive was put back).
+   - `docker exec savelocker-test sh -c 'ls /data/archives/<folder>'` shows the file again.
+6. The Audit log has a `backup.restore` row naming B and the safety backup.
+7. **Undo**: press **Restore** on the **Before restore** row. `After-B` is back. (The WSL save from step 1 was in the
+   database's history, so its version row returns. Its file was deleted in step 2 and wasn't in B, so that version
+   lists but won't download.)
+8. Garbage is refused: `docker exec savelocker-test sh -c 'echo junk > /data/backups/savelocker-20000101-000000-manual.zip'`,
+   reload, **Restore** it. A red toast "Nothing was restored: …" appears and no Before restore row is added. Then delete
+   the file with `docker exec … rm`.
+
+## 3b. Before-upgrade backup
+
+1. Rebuild the console at a different version, keeping its volume:
+   `.\tests\testenv.ps1 build -Only console -Version 0.5.99-test`, then `down`, `up -Only console`, `up -Only windows`,
+   `up -Only linux`.
+2. `status` shows the console `v0.5.99-test`. **Backups** has a new `…-before-upgrade.zip` row. Its Holds column reads
+   **Database only**: it runs before migrations.
+3. Prove it predates the new start:
    ```powershell
-   $f = (Get-ChildItem "$env:USERPROFILE\Downloads\*-before-upgrade.db" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
-   python -c "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute('select Value from Settings where [Key]=?',(sys.argv[2],)).fetchone())" $f Server:LastStartedVersion
+   $f = (Get-ChildItem "$env:USERPROFILE\Downloads\*-before-upgrade.zip" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+   Add-Type -AssemblyName System.IO.Compression.FileSystem
+   $z = [IO.Compression.ZipFile]::OpenRead($f); [IO.Compression.ZipFileExtensions]::ExtractToFile($z.GetEntry('savelocker.db'), "$env:TEMP\bu.db", $true); $z.Dispose()
+   python -c "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute('select Value from Settings where [Key]=?',(sys.argv[2],)).fetchone())" "$env:TEMP\bu.db" Server:LastStartedVersion
    ```
-   It should print the **old** version, `('0.5.13-test',)`, not `0.5.99-test`. `None` means that database had never recorded
-   a version (the first start of this branch on an older volume). Repeat step 3 and check the second snapshot.
-5. Run `down` and `up -Only console` again at the same version. **No** second before-upgrade row appears.
-6. Rebuild at the normal version (`.\tests\testenv.ps1 build -Only console`, `down`, `up`) before continuing. That
-   also takes a before-upgrade snapshot, which is expected.
+   It should print `('0.5.13-test',)`, the old build.
+4. `down` + `up -Only console` again at the same version: **no** second before-upgrade row.
+5. Rebuild at the normal version (`build -Only console`, `down`, `up`) before continuing.
+
+## 3c. Encryption at rest
+
+1. Configuration → **SteamGridDB artwork**: paste a real key and **Save key** (or run `testenv up` with the stub from
+   *Testing artwork* in Build and Run). The chip reads **Key set** with the last 4 characters.
+2. Prove it isn't stored in plain text. Copy the database out and read the row:
+   ```powershell
+   docker cp savelocker-test:/data/savelocker.db "$env:TEMP\live.db"
+   python -c "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute('select Value from Settings where [Key]=?',(sys.argv[2],)).fetchone())" "$env:TEMP\live.db" SteamGridDb:ApiKey
+   ```
+   It should print `('enc:v1:…',)`, never the key itself. (A copy taken while the server runs can miss the newest
+   writes, which sit in the WAL; save the key a minute before copying.)
+3. `docker exec savelocker-test ls /data/keys` shows a `key-….xml`. That's the key ring, and it's not in any backup (a
+   downloaded zip has only `savelocker.db`, `manifest.json` and `archives/…`).
 
 ## 4. Configuration (9b)
 
@@ -137,16 +173,17 @@ Rig facts that matter here:
 
 ## 6. Sign-in and Remember this browser (9c)
 
-1. Press the lock icon in the top bar. You get the **Unlock SaveLocker** screen: an accent wash, the lead sentence, a
-   **Password** field, **Remember this browser for 30 days** (checked), **Unlock**, a footer with the host and the
-   version, the "Forgot it?" hint naming `Admin:PasswordHash` with a **Troubleshooting** link, and a **While it is
-   locked** aside on the right. There are **no** fleet chips (agents/conflicts).
+1. Press the lock icon in the top bar. You get the **Unlock SaveLocker** screen with an accent wash, the lead sentence,
+   a **Password** field, **Remember this browser for 30 days** (checked), **Unlock**, a host · version footer, the
+   "Forgot it?" hint with a **Troubleshooting** link, and a **While it is locked** aside. **The top bar shows only the
+   logo and version: no tabs, no Sync all, no bell, no lock.** There is no fleet status anywhere.
 2. Enter a wrong password. The field border turns accent and "That password didn't work. It is the one set on the
    server, not your Steam or system login." appears beneath it.
 3. **Remember off:** untick it and unlock. Reload the tab and you're still signed in. Close the **whole** browser,
    reopen `http://localhost:5080`, and you're signed out.
 4. **Remember on:** tick it and unlock. Close the whole browser, reopen, and you're still signed in.
-5. The **Troubleshooting** link works while locked (Help needs no sign-in).
+5. The **Troubleshooting** link works while locked (Help needs no sign-in). The top bar then shows only
+   **Back to sign in**, and pressing it returns to the lock screen.
 
 ## 7. Audit log, Help, What's new (9c)
 

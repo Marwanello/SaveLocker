@@ -1613,6 +1613,10 @@ sign-in with **Remember this browser** (localStorage vs sessionStorage); server 
 (migration `AddAgentStagedVersion`) and `ServerBuildInfo.LatestRelease`. `run-console-security-tests` +17 (CFG-01,
 mutation-checked). All verified in a browser against a scratch server, **not yet through `testenv`** — the step-by-step
 is `tasks/checkpoint-ui/group-9-verification.md`.
+<br>**Same day, maintainer follow-ups:** backups are now zips of the database + every game's latest save on an
+editable UTC daily/weekly schedule, restorable from the Backups page (safety backup first, undoable); the SteamGridDB key
+is encrypted at rest (key ring `/data/keys`, never in a backup); the lock screen no longer shows the top bar's tabs,
+Sync all or bell. Write-up: `implementation-grouping.md` → Group 9 → *Follow-up*; decisions in `Decisions.md`.
 **Next action:** run `group-9-verification.md` on the Windows rig, then open the Group 9 PR; then Group 10.
 
 ---
