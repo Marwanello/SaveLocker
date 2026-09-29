@@ -1619,7 +1619,7 @@ is encrypted at rest (key ring `/data/keys`, never in a backup); the lock screen
 Sync all or bell. Write-up: `implementation-grouping.md` → Group 9 → *Follow-up*; decisions in `Decisions.md`.
 <br>**PR #53 opened and reviewed the same day; every finding fixed on the branch.** Restore no longer cancels after the
 database swap and runs the start's own setup (`Data/DatabaseSetup.cs`); downloads go through a single-use ticket so a
-multi-GB backup streams to disk. `run-console-security-tests` **306/306** on Windows (BK-01 +14, mutation-checked).
+multi-GB backup streams to disk. `run-console-security-tests` **308/308** on Windows (BK-01 +14, mutation-checked).
 Detail: `implementation-grouping.md` → Group 9 → *Review fixes (PR #53)*.
 <br>**Release notes for the next release must cover:** backups are now zips of the database + every game's latest save,
 restorable from the Backups page; **the schedule changes for upgraders** — default **weekly** (Sunday) instead of nightly,
