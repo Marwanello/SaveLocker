@@ -11,12 +11,13 @@ import { Icon } from './ui/Icon';
 import { toast, toastError } from '../toast';
 import { NotificationsMenu } from './NotificationsMenu';
 
-export type View = 'games' | 'config' | 'audit' | 'help' | 'whats-new';
+export type View = 'games' | 'config' | 'audit' | 'backups' | 'help' | 'whats-new';
 
 const NAV_ITEMS: { key: View; label: string }[] = [
   { key: 'games', label: 'Games' },
   { key: 'config', label: 'Configuration' },
   { key: 'audit', label: 'Audit log' },
+  { key: 'backups', label: 'Backups' },
   { key: 'help', label: 'Help' },
   { key: 'whats-new', label: 'What’s new' },
 ];

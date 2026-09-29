@@ -2648,6 +2648,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/backups/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BackupStatusDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/backup": {
         parameters: {
             query?: never;
@@ -2677,6 +2712,78 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/backups/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetBackupSettingsRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/backups/{file}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    file: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3262,13 +3369,34 @@ export interface components {
             sizeBytes: number;
             /** Format: date-time */
             createdAt: string;
+            reason: components["schemas"]["BackupReason"];
         };
+        /** @enum {unknown} */
+        BackupReason: "Nightly" | "Manual" | "BeforeUpgrade";
         BackupResult: {
             ok: boolean;
             message: null | string;
             backup: null | components["schemas"]["BackupInfo"];
             /** Format: int32 */
             totalBackups: number;
+        };
+        BackupStatusDto: {
+            enabled: boolean;
+            /** Format: int32 */
+            retentionCount: number;
+            /** Format: int32 */
+            hourOfDay: number;
+            /** Format: date-time */
+            nextRunAt: null | string;
+            backupRoot: string;
+            lastError: null | string;
+            /** Format: date-time */
+            lastErrorAt: null | string;
+            /** Format: int64 */
+            archivesBytes: number;
+            /** Format: int32 */
+            archivesCount: number;
+            backups: components["schemas"]["BackupInfo"][];
         };
         BeginUploadRequest: {
             contentHash: string;
@@ -3603,6 +3731,13 @@ export interface components {
             mark: string;
             /** @default true */
             pushToAgents: boolean;
+        };
+        SetBackupSettingsRequest: {
+            enabled: boolean;
+            /** Format: int32 */
+            retentionCount: number;
+            /** Format: int32 */
+            hourOfDay: number;
         };
         SetConflictPolicyRequest: {
             policy: components["schemas"]["ConflictPolicy"];

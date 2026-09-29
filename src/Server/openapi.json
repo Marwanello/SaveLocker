@@ -2162,6 +2162,25 @@
         }
       }
     },
+    "/api/admin/backups/status": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupStatusDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/backup": {
       "post": {
         "tags": [
@@ -2177,6 +2196,50 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/admin/backups/settings": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetBackupSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/admin/backups/{file}": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "file",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
           }
         }
       }
@@ -3151,7 +3214,8 @@
         "required": [
           "fileName",
           "sizeBytes",
-          "createdAt"
+          "createdAt",
+          "reason"
         ],
         "type": "object",
         "properties": {
@@ -3165,8 +3229,18 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/BackupReason"
           }
         }
+      },
+      "BackupReason": {
+        "enum": [
+          "Nightly",
+          "Manual",
+          "BeforeUpgrade"
+        ]
       },
       "BackupResult": {
         "required": [
@@ -3199,6 +3273,71 @@
           "totalBackups": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "BackupStatusDto": {
+        "required": [
+          "enabled",
+          "retentionCount",
+          "hourOfDay",
+          "nextRunAt",
+          "backupRoot",
+          "lastError",
+          "lastErrorAt",
+          "archivesBytes",
+          "archivesCount",
+          "backups"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "retentionCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hourOfDay": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "nextRunAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "backupRoot": {
+            "type": "string"
+          },
+          "lastError": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lastErrorAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "archivesBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "archivesCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "backups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BackupInfo"
+            }
           }
         }
       },
@@ -4470,6 +4609,27 @@
           "pushToAgents": {
             "type": "boolean",
             "default": true
+          }
+        }
+      },
+      "SetBackupSettingsRequest": {
+        "required": [
+          "enabled",
+          "retentionCount",
+          "hourOfDay"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "retentionCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hourOfDay": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },

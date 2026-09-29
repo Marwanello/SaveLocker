@@ -133,7 +133,8 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--color-line); border-radius: 3px; }
 
 button { cursor: pointer; font-family: inherit; }
-a { text-decoration: none; color: inherit; }
+/* Layered, so a link's own `underline` / `text-*` utilities win over it (Gotchas → Web console). */
+@layer base { a { text-decoration: none; color: inherit; } }
 input::placeholder { color: var(--color-faint); }
 /* Accent border on focus, over the inline `border` the unmigrated inputs set. !important is what makes
    it beat an inline style; the OUTLINE rule lives in @layer base above so a utility can override it. */

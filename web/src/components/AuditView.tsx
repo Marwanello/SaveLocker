@@ -42,6 +42,10 @@ const ACTION_TONE: Record<string, Tone> = {
   'agent_installer.fetch_github': 'info',
   'agent_installer.auto_fetch': 'info',
   'settings.appearance': 'mute',
+  'settings.backup': 'mute',
+  'backup.manual': 'info',
+  // A snapshot carries every credential hash the server holds: a download is worth a second look.
+  'backup.download': 'warn',
 };
 
 function ActionBadge({ action }: { action: string }) {

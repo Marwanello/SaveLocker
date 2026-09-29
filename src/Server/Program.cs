@@ -165,6 +165,16 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+    // A before-upgrade snapshot when this build differs from the one that last started cleanly — taken
+    // BEFORE the fix-ups below or Migrate() can write: the one moment the server itself can damage the
+    // DB, when the only other copy is last night's. A fresh install has nothing to protect.
+    var lastStartedVersion = ReadLastStartedVersion(dbPath);
+    if (lastStartedVersion.HasGames && lastStartedVersion.Version != BuildInfo.Current.Version)
+    {
+        var snap = await app.Services.GetRequiredService<BackupService>().BackupAsync(BackupReason.BeforeUpgrade, retention: null);
+        if (!snap.Ok) app.Logger.LogWarning("Before-upgrade snapshot failed ({Error}); starting anyway.", snap.Message);
+    }
+
     var historyExists = db.Database
         .SqlQuery<int>($"SELECT COUNT(*) AS \"Value\" FROM sqlite_master WHERE type='table' AND name='__EFMigrationsHistory'")
         .Single() > 0;
@@ -222,6 +232,7 @@ using (var scope = app.Services.CreateScope())
     }
 
     db.Database.Migrate();
+    await scope.ServiceProvider.GetRequiredService<SettingsService>().SetAsync(LastStartedVersionKey, BuildInfo.Current.Version);
 
     // WAL mode: allows concurrent readers alongside the single writer, which prevents
     // "database is locked" 500s when the dashboard fires several parallel API calls.
@@ -1010,9 +1021,51 @@ admin.MapGet("/admin/backups", (BackupService backup) =>
     Results.Ok(backup.ListBackups()))
     .Produces<List<BackupInfo>>();
 
-admin.MapPost("/admin/backup", async (BackupService backup, CancellationToken ct) =>
-    Results.Ok(await backup.BackupAsync(ct)))
-    .Produces<BackupResult>();
+admin.MapGet("/admin/backups/status", async (BackupService backup, AppDbContext db, CancellationToken ct) =>
+{
+    var s = await backup.GetSettingsAsync(ct);
+    var (error, errorAt) = backup.LastError;
+    var archivesBytes = await db.SaveVersions.SumAsync(v => (long?)v.Size, ct) ?? 0;
+    var archivesCount = await db.SaveVersions.CountAsync(ct);
+    return Results.Ok(new BackupStatusDto(
+        s.Enabled, s.RetentionCount, s.HourOfDay, s.Enabled ? backup.NextRunAt : null,
+        backup.Options.BackupRoot, error, errorAt, archivesBytes, archivesCount,
+        backup.ListBackups().ToList()));
+}).Produces<BackupStatusDto>();
+
+admin.MapPost("/admin/backup", async (BackupService backup, SyncService sync, CancellationToken ct) =>
+{
+    var s = await backup.GetSettingsAsync(ct);
+    var result = await backup.BackupAsync(BackupReason.Manual, s.RetentionCount, ct);
+    if (result.Ok) await sync.LogAuditAsync("backup.manual", result.Backup!.FileName);
+    return Results.Ok(result);
+}).Produces<BackupResult>();
+
+admin.MapPost("/admin/backups/settings", async (SetBackupSettingsRequest req, BackupService backup, SyncService sync, CancellationToken ct) =>
+{
+    if (req.RetentionCount is < 1 or > BackupService.MaxRetention)
+        return Results.BadRequest($"Keep between 1 and {BackupService.MaxRetention} snapshots.");
+    if (req.HourOfDay is < 0 or > 23)
+        return Results.BadRequest("The hour must be 0–23.");
+    var before = await backup.GetSettingsAsync(ct);
+    await backup.SetSettingsAsync(req, ct);
+    await sync.LogAuditAsync("settings.backup",
+        $"scheduled {(req.Enabled ? "on" : "off")}, keep {req.RetentionCount}, at {req.HourOfDay:00}:00" +
+        $" (was {(before.Enabled ? "on" : "off")}, keep {before.RetentionCount}, at {before.HourOfDay:00}:00)");
+    return Results.NoContent();
+});
+
+// A snapshot holds every credential hash the server has (machine keys, the admin password, session
+// tokens) and the SteamGridDB key in plain text. So: admin-only (the group), the name matched against
+// the listing and never joined into a path, audited, and never cached by the browser or a proxy.
+admin.MapGet("/admin/backups/{file}", async (string file, BackupService backup, SyncService sync, HttpContext http) =>
+{
+    if (backup.Find(file) is not { } path) return Results.NotFound();
+    var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+    await sync.LogAuditAsync("backup.download", Path.GetFileName(path));
+    http.Response.Headers.CacheControl = "no-store";
+    return Results.Stream(stream, "application/vnd.sqlite3", Path.GetFileName(path));
+}).Produces(StatusCodes.Status200OK, contentType: "application/vnd.sqlite3");
 
 // ---- Agent health (admin) ----
 admin.MapGet("/admin/health", async (HealthService health) =>
@@ -1212,4 +1265,27 @@ static IResult StreamVersion(HttpContext http, (SaveVersion version, Stream cont
         enableRangeProcessing: false);
 }
 
-public partial class Program { }
+public partial class Program
+{
+    /// <summary>The build that last started (written after migrations succeed).</summary>
+    internal const string LastStartedVersionKey = "Server:LastStartedVersion";
+
+    // What the before-upgrade check compares against, read with a bare connection because it runs before
+    // Migrate(): the Settings table may not exist yet. `HasGames` false = a fresh install, which has
+    // nothing a migration could damage.
+    internal static (bool HasGames, string? Version) ReadLastStartedVersion(string dbPath)
+    {
+        if (!File.Exists(dbPath)) return (false, null);
+        using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath};Mode=ReadOnly");
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('Games','Settings')";
+        var tables = new HashSet<string>();
+        using (var r = cmd.ExecuteReader()) while (r.Read()) tables.Add(r.GetString(0));
+        if (!tables.Contains("Games")) return (false, null);
+        if (!tables.Contains("Settings")) return (true, null);
+        cmd.CommandText = "SELECT Value FROM Settings WHERE Key = $key";
+        cmd.Parameters.AddWithValue("$key", LastStartedVersionKey);
+        return (true, cmd.ExecuteScalar() as string);
+    }
+}

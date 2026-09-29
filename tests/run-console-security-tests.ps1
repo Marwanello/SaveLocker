@@ -1,4 +1,4 @@
-# Console API + security hardening (SEC-*). Needs only the SERVER built in Debug — no agent.
+﻿# Console API + security hardening (SEC-*). Needs only the SERVER built in Debug — no agent.
 #
 # Each section proves an attack or a defect FAILS/IS FIXED, so most checks assert on the thing an
 # attacker (or a bad input) would have gained, not just that the happy path still works.
@@ -13,6 +13,11 @@
 #   API-02  exclude patterns     a pattern the matcher cannot evaluate (".." mid-pattern) is refused on
 #                                 save AND preview instead of throwing inside every agent's hash; the
 #                                 preview count is right against a real uploaded archive.
+#   BK-01   database backups      a snapshot holds every credential hash, so its download is admin-only,
+#                                 matched against the listing (traversal, absolute, encoded and unlisted
+#                                 names are 404s), audited and `no-store`; the reason rides in the name;
+#                                 the schedule settings are validated, audited and wake the scheduler;
+#                                 a new build's first start snapshots the DB BEFORE migrating it, once.
 #   UI-01   appearance            the console's theme/accent/mark: validated against closed id lists (a
 #                                 CSS-shaped value is a 400), stored all-or-nothing, admin-only and
 #                                 audited; the heartbeat carries it to any machine, and carries NOTHING
@@ -105,7 +110,7 @@ function Http($method, $path, $body = $null, $headers = @{}, $raw = $null) {
         $content = $reader.ReadToEnd(); $hdrs = $resp.Headers
     }
     $json = $null
-    try { $json = $content | ConvertFrom-Json } catch { }
+    if ($content -isnot [byte[]]) { try { $json = $content | ConvertFrom-Json } catch { } }
     [pscustomobject]@{ Status = $status; Content = $content; Json = $json; Headers = $hdrs }
 }
 function Session($token) { return @{ "X-Admin-Session" = $token } }
@@ -156,7 +161,7 @@ foreach ($cmd in @(Get-Command python, python3 -CommandType Application -All -Er
     if ($ver -match "^Python 3") { $script:pyNative = $cmd.Source; break }
 }
 function ConvertTo-WslPath($p) { $d = $p.Substring(0, 1).ToLower(); return "/mnt/$d" + ($p.Substring(2) -replace '\\', '/') }
-function Invoke-Sqlite($sql, [switch]$Write) {
+function Invoke-Sqlite($sql, [switch]$Write, $Db = $null) {
     $py = Join-Path $scratch "query.py"; $sqlFile = Join-Path $scratch "query.sql"
     @'
 import sqlite3, sys
@@ -172,7 +177,7 @@ else:
         print("|".join("" if c is None else str(c) for c in row))
 '@ | Set-Content -Path $py -Encoding utf8
     Set-Content -Path $sqlFile -Value $sql -Encoding utf8
-    $db = Join-Path $script:state "savelocker.db"
+    $db = if ($Db) { $Db } else { Join-Path $script:state "savelocker.db" }
     $mode = if ($Write) { "rw" } else { "ro" }
     if ($script:pyNative) { return (& $script:pyNative $py $db $sqlFile $mode 2>&1) }
     return (& wsl -d $WslDistro -- python3 (ConvertTo-WslPath $py) (ConvertTo-WslPath $db) (ConvertTo-WslPath $sqlFile) $mode 2>&1)
@@ -590,6 +595,77 @@ Check "config: ... and so the heartbeat carries no appearance" ($cb.Status -eq 2
 Check "config: the admin can still override it from the console (200), which then wins over the env var" `
     ((Http POST "/api/settings/appearance" @{ theme = "dark"; accent = "stealth"; mark = "pixel"; pushToAgents = $true }).Status -eq 200 -and
      (Http GET "/api/settings").Json.appearance.look.accent -eq "stealth")
+Stop-Phase
+
+# =====================================================================================
+Write-Host ""; Write-Host "==== Phase 5d: BK-01 database backups ===="
+Start-Phase "backups" @{ Security__MaxFailedAttempts = "1000"; SAVELOCKER_VERSION = "9.0.0-bk-a" }
+Http POST "/api/admin/password" @{ password = $pw } | Out-Null
+$bk = Session (Login $pw).Json.token
+$backupDir = Join-Path $script:state "backups"
+Check "BK-01: status without a session -> 401" ((Http GET "/api/admin/backups/status").Status -eq 401)
+Check "BK-01: Back up now without a session -> 401" ((Http POST "/api/admin/backup").Status -eq 401)
+$made = Http POST "/api/admin/backup" $null $bk
+$name = "" + $made.Json.backup.fileName
+Check "BK-01: Back up now writes a snapshot named for its reason" ($made.Status -eq 200 -and $made.Json.ok -and $name -like "savelocker-*-manual.db")
+$st = (Http GET "/api/admin/backups/status" $null $bk).Json
+Check "BK-01: status lists it as Manual" ((@($st.backups | Where-Object { $_.fileName -eq $name -and $_.reason -eq "Manual" })).Count -eq 1)
+Check "BK-01: scheduled backups off (the suite's Backup__Enabled=false) -> no next run" ($st.enabled -eq $false -and $null -eq $st.nextRunAt)
+Check "BK-01: status names the backup folder" ($st.backupRoot -eq $backupDir)
+Check "BK-01: download without a session -> 401" ((Http GET "/api/admin/backups/$name").Status -eq 401)
+Check "BK-01: download with a forged session -> 401" ((Http GET "/api/admin/backups/$name" $null (Session "forged")).Status -eq 401)
+$dl = Http GET "/api/admin/backups/$name" $null $bk
+$magic = if ($dl.Content -is [byte[]]) { [Text.Encoding]::ASCII.GetString($dl.Content, 0, 15) } else { ("" + $dl.Content).Substring(0, 15) }
+Check "BK-01: download with a session -> 200, a real SQLite file" ($dl.Status -eq 200 -and $magic -eq "SQLite format 3")
+Check "BK-01: ... sent Cache-Control: no-store" (("" + $dl.Headers["Cache-Control"]) -match "no-store")
+Check "BK-01: ... and audited as backup.download, naming the file" `
+    ((@((Http GET "/api/audit?limit=500" $null $bk).Json | Where-Object { $_.action -eq "backup.download" -and $_.detail -eq $name })).Count -eq 1)
+Check "BK-01: Back up now is audited too" ((@((Http GET "/api/audit?limit=500" $null $bk).Json | Where-Object { $_.action -eq "backup.manual" })).Count -ge 1)
+# Things beside the snapshots that must never be served: the live DB one level up, a stray file in the folder.
+Set-Content -Path (Join-Path $backupDir "notes.txt") -Value "not a snapshot"
+Set-Content -Path (Join-Path $backupDir "savelocker-20000101-000000.db.tmp") -Value "half-written"
+foreach ($bad in @("..%2Fsavelocker.db", "%2E%2E%2Fsavelocker.db", "..%5Csavelocker.db", "%2Fetc%2Fpasswd",
+                   "C%3A%5CWindows%5Cwin.ini", "notes.txt", "savelocker-20000101-000000.db.tmp",
+                   "savelocker-20000101-000000.db", ($name.ToUpperInvariant()))) {
+    Check "BK-01: '$bad' -> 404" ((Http GET "/api/admin/backups/$bad" $null $bk).Status -eq 404)
+}
+$liveDl = Http GET "/api/admin/backups/..%2F..%2Fsavelocker.db" $null $bk
+Check "BK-01: nothing path-shaped ever returns the live database" (-not ($liveDl.Status -eq 200))
+Check "BK-01: settings without a session -> 401" ((Http POST "/api/admin/backups/settings" @{ enabled = $true; retentionCount = 2; hourOfDay = 4 }).Status -eq 401)
+Check "BK-01: keep 0 -> 400" ((Http POST "/api/admin/backups/settings" @{ enabled = $true; retentionCount = 0; hourOfDay = 4 } $bk).Status -eq 400)
+Check "BK-01: hour 24 -> 400" ((Http POST "/api/admin/backups/settings" @{ enabled = $true; retentionCount = 2; hourOfDay = 24 } $bk).Status -eq 400)
+Check "BK-01: valid settings -> 204" ((Http POST "/api/admin/backups/settings" @{ enabled = $true; retentionCount = 2; hourOfDay = 4 } $bk).Status -eq 204)
+$next = $null
+foreach ($i in 1..20) { Start-Sleep -Milliseconds 250; $s2 = (Http GET "/api/admin/backups/status" $null $bk).Json; if ($s2.nextRunAt) { $next = $s2; break } }
+Check "BK-01: turning the schedule on wakes the scheduler: a next run appears, keep 2, at 04:00" `
+    ($null -ne $next -and $next.enabled -and $next.retentionCount -eq 2 -and $next.hourOfDay -eq 4 -and
+     ([DateTime]$next.nextRunAt).ToLocalTime().Hour -eq 4)
+Check "BK-01: the settings change is audited, old and new" `
+    ((@((Http GET "/api/audit?limit=500" $null $bk).Json | Where-Object { $_.action -eq "settings.backup" -and $_.detail -match "keep 2" -and $_.detail -match "was off" })).Count -eq 1)
+1..3 | ForEach-Object { Start-Sleep -Milliseconds 1100; Http POST "/api/admin/backup" $null $bk | Out-Null }
+Check "BK-01: retention prunes to the new keep (2)" ((@((Http GET "/api/admin/backups/status" $null $bk).Json.backups)).Count -eq 2)
+Http POST "/api/admin/backups/settings" @{ enabled = $false; retentionCount = 7; hourOfDay = 3 } $bk | Out-Null
+$before = @((Http GET "/api/admin/backups/status" $null $bk).Json.backups | Where-Object { $_.reason -eq "BeforeUpgrade" }).Count
+Check "BK-01: no before-upgrade snapshot on a first start (nothing to protect yet)" ($before -eq 0)
+Stop-Phase
+Start-Phase "backups" @{ Security__MaxFailedAttempts = "1000"; SAVELOCKER_VERSION = "9.0.0-bk-a" }
+$bk = Session (Login $pw).Json.token
+Check "BK-01: restarting the SAME build takes no before-upgrade snapshot" `
+    ((@((Http GET "/api/admin/backups/status" $null $bk).Json.backups | Where-Object { $_.reason -eq "BeforeUpgrade" })).Count -eq 0)
+Stop-Phase
+Start-Phase "backups" @{ Security__MaxFailedAttempts = "1000"; SAVELOCKER_VERSION = "9.0.0-bk-b" }
+$bk = Session (Login $pw).Json.token
+$up = @((Http GET "/api/admin/backups/status" $null $bk).Json.backups | Where-Object { $_.reason -eq "BeforeUpgrade" })
+Check "BK-01: a NEW build's first start takes exactly one before-upgrade snapshot" ($up.Count -eq 1 -and $up[0].fileName -like "*-before-upgrade.db")
+Stop-Phase
+if ($up.Count -eq 1 -and $sqliteOk) {
+    $snapVer = ("" + (Invoke-Sqlite "SELECT Value FROM Settings WHERE [Key]='Server:LastStartedVersion'" -Db (Join-Path $backupDir $up[0].fileName))).Trim()
+    Check "BK-01: ... and it predates the new start: it still records the OLD build" ($snapVer -eq "9.0.0-bk-a")
+} else { Skip "BK-01: reading the snapshot's recorded build needs Python 3" }
+Start-Phase "backups" @{ Security__MaxFailedAttempts = "1000"; SAVELOCKER_VERSION = "9.0.0-bk-b" }
+$bk = Session (Login $pw).Json.token
+Check "BK-01: ... and only once (a second start of that build takes none)" `
+    ((@((Http GET "/api/admin/backups/status" $null $bk).Json.backups | Where-Object { $_.reason -eq "BeforeUpgrade" })).Count -eq 1)
 Stop-Phase
 
 # =====================================================================================

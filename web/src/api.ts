@@ -1,4 +1,4 @@
-import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule } from './types';
+import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule, BackupStatus, BackupResult, SetBackupSettingsRequest } from './types';
 
 // The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
 // itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
@@ -295,6 +295,26 @@ export const api = {
       .then(res => { if (!res.ok) throw new Error(`${res.status}`); }),
 
   audit: (limit = 200) => request<AuditEntry[]>(`/audit?limit=${limit}`),
+
+  backupStatus: () => request<BackupStatus>('/admin/backups/status'),
+  backupNow: () => request<BackupResult>('/admin/backup', { method: 'POST' }),
+  setBackupSettings: (body: SetBackupSettingsRequest) =>
+    request<void>('/admin/backups/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  /**
+   * A snapshot holds every credential hash the server has, so it is fetched with the session header into
+   * a blob — never an `<a href>` (which cannot carry `X-Admin-Session`) and never a credential in the URL.
+   * `fileName` comes from the listing; the server matches it against its own listing again.
+   */
+  downloadBackup: async (fileName: string) => {
+    const res = await fetch(`/api/admin/backups/${encodeURIComponent(fileName)}`, { headers: headers(), cache: 'no-store' });
+    if (!res.ok) { const why = await explain(res); throw new ApiError(res.status, why, why); }
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 
   setAdminPassword: (password: string | null) =>
     request<{ ok: boolean; message: string }>('/admin/password', {

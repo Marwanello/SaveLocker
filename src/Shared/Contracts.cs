@@ -733,7 +733,28 @@ public record AdminStatus(bool PasswordRequired, ServerBuildInfo Build);
 // ----- Server backups (admin) -----
 
 /// <summary>One on-box SQLite snapshot file. <paramref name="CreatedAt"/> is UTC.</summary>
-public record BackupInfo(string FileName, long SizeBytes, DateTime CreatedAt);
+public record BackupInfo(string FileName, long SizeBytes, DateTime CreatedAt, BackupReason Reason);
+
+/// <summary>Why a snapshot was taken. Carried in the file name after the timestamp, so a name with no
+/// suffix (every snapshot from before reasons existed) reads as <see cref="Nightly"/>.</summary>
+public enum BackupReason { Nightly, Manual, BeforeUpgrade }
+
+/// <summary>Everything the console's Backups page shows. <c>NextRunAt</c> is null while scheduled
+/// backups are off. <c>ArchivesBytes</c> is the save archives the snapshots do NOT contain.</summary>
+public record BackupStatusDto(
+    bool Enabled,
+    int RetentionCount,
+    int HourOfDay,
+    DateTime? NextRunAt,
+    string BackupRoot,
+    string? LastError,
+    DateTime? LastErrorAt,
+    long ArchivesBytes,
+    int ArchivesCount,
+    List<BackupInfo> Backups);
+
+/// <summary>The scheduled-backup settings (DB-backed; each overrides <c>Backup:*</c> in config).</summary>
+public record SetBackupSettingsRequest(bool Enabled, int RetentionCount, int HourOfDay);
 
 /// <summary>Outcome of a manual/scheduled backup run and the resulting retained count.</summary>
 public record BackupResult(bool Ok, string? Message, BackupInfo? Backup, int TotalBackups);
