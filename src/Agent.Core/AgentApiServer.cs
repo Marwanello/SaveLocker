@@ -336,7 +336,7 @@ public sealed class AgentApiServer : IDisposable
             var game = _config.Games.FirstOrDefault(g => g.GameId == id);
             return game is null
                 ? TypedResults.NotFound()
-                : TypedResults.Ok(new LocalSizeDto(DirectorySize(game.SaveDirectory)));
+                : TypedResults.Ok(new LocalSizeDto(FolderSize.Of(game.SaveDirectory)));
         }).Produces<LocalSizeDto>();
 
         // Show a game's save folder in the desktop's file manager. Same seam as /api/open-log: false
@@ -818,7 +818,7 @@ public sealed class AgentApiServer : IDisposable
                 .Select(e => new OfflineQueueEntryDto(
                     e.GameId, e.GameName, e.QueuedAt.UtcDateTime, e.RetryCount,
                     e.LastAttemptAt?.UtcDateTime, e.Force,
-                    DirectorySize(_config.Games.FirstOrDefault(g => g.GameId == e.GameId)?.SaveDirectory)))
+                    FolderSize.Of(_config.Games.FirstOrDefault(g => g.GameId == e.GameId)?.SaveDirectory)))
                 .ToArray();
             return entries;
         }).Produces<OfflineQueueEntryDto[]>();
@@ -1446,24 +1446,6 @@ public sealed class AgentApiServer : IDisposable
             SaveLocker.Shared.WinePrefix.BrowseStart(candidate.PrefixPath),
             candidate.SuggestedProcessName,
             candidate.Store.ToString())).ToArray();
-
-    /// <summary>Bytes under a folder by plain enumeration (no hashing, symlinks not followed); 0 for a
-    /// missing or unreadable one — this describes a queue entry, it must never fail the listing.</summary>
-    private static long DirectorySize(string? dir)
-    {
-        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir)) return 0;
-        try
-        {
-            var opts = new EnumerationOptions
-            {
-                RecurseSubdirectories = true,
-                IgnoreInaccessible = true,
-                AttributesToSkip = FileAttributes.ReparsePoint,
-            };
-            return new DirectoryInfo(dir).EnumerateFiles("*", opts).Sum(f => f.Length);
-        }
-        catch { return 0; }
-    }
 
     private static string FormatAgo(TimeSpan ago)
     {

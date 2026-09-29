@@ -254,6 +254,41 @@ static class Icons
             "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
             "M8 16H3v5");
 
+    /// <summary>lucide's activity (icons/activity.js): the pulse line. The rail's Activity entry.</summary>
+    public static readonly Glyph Activity = (dl, p, s, c, w) =>
+        Svg(dl, p, s, c, w,
+            "M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2");
+
+    /// <summary>lucide's gamepad-2 (icons/gamepad-2.js): the body outline is lucide's own path, the d-pad and the
+    /// two buttons are its lines. The rail's Tracked games entry.</summary>
+    public static readonly Glyph Gamepad = (dl, p, s, c, w) =>
+    {
+        Svg(dl, p, s, c, w,
+            "M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z");
+        Line(dl, p, s, c, w, 6, 11, 10, 11);
+        Line(dl, p, s, c, w, 8, 9, 8, 13);
+        Dot(dl, p, s, c, 15, 12, 1f);
+        Dot(dl, p, s, c, 18, 10, 1f);
+    };
+
+    /// <summary>lucide's battery (icons/battery.js): the outline alone; <see cref="Battery"/> fills it.</summary>
+    public static readonly Glyph BatteryOutline = (dl, p, s, c, w) =>
+    {
+        Rect(dl, p, s, c, w, 2, 7, 18, 17, 2);
+        Line(dl, p, s, c, w, 22, 11, 22, 13);
+    };
+
+    /// <summary>A battery with its charge filled in, 0..1 — the header's reading.</summary>
+    public static void Battery(ImDrawListPtr dl, Vector2 pos, float size, Vector4 colour, float level)
+    {
+        var col = Widgets.U32(colour);
+        var stroke = MathF.Max(1f, size * StrokeRatio);
+        BatteryOutline(dl, pos, size, col, stroke);
+        var fill = Math.Clamp(level, 0f, 1f) * 12f;   // the body's inner width, on the 24 grid
+        if (fill > 0.4f)
+            dl.AddRectFilled(P(pos, size, 4, 9), P(pos, size, 4 + fill, 15), col, size * 0.04f);
+    }
+
     /// <summary>
     /// A spinner. Unlike the others this is time-dependent: it sweeps an arc whose phase comes from
     /// ImGui's frame clock, so it animates without the caller holding any state.

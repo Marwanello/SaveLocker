@@ -21,9 +21,9 @@ namespace SaveLocker.Agent.Linux.Ui;
 /// API wraps (<see cref="LinuxGameScanner"/>, <see cref="PathBrowser"/>, <see cref="Enroller"/>,
 /// <see cref="AgentConfig"/>) in-process — no second API client, no duplicated sync logic.
 /// </summary>
-sealed class UiApp
+sealed partial class UiApp
 {
-    private enum Screen { Status, AddGame, SetFolder, LaunchSetup, Conflicts, Settings, Gallery, FakeGame }
+    private enum Screen { Status, Games, Game, AddGame, SetFolder, LaunchSetup, Conflicts, Activity, Settings, Gallery, FakeGame }
 
     private readonly AgentConfig _config;
     private readonly LinuxGameScanner _scanner;
@@ -287,7 +287,7 @@ sealed class UiApp
         _scanner = new LinuxGameScanner(new Detection(config));
         _browser = new PathBrowser(SteamRoots.BrowseRoots().Concat(HeroicRoots.BrowseRoots()));
         _launch = Daemon.LinuxLaunchCommand();
-        _settings = new SettingsScreen(config, new SystemdAutoStart());
+        _settings = new SettingsScreen(config, new SystemdAutoStart(), () => Go(Screen.LaunchSetup));
         _leaseWarnings = LeaseWarningStore.For(config);
         _activityStore = SyncActivityStore.For(config);
         // "Sync now" reaches the daemon over its own local API — the daemon holds the one SyncEngine
@@ -321,6 +321,17 @@ sealed class UiApp
         {
             var target = ParseScreen(startScreen);
             if (target == Screen.SetFolder) { app._screen = Screen.AddGame; app._pendingFolderScreen = true; }
+            else if (target == Screen.Game)
+            {
+                // `--screen game` opens the first game that has a save folder, `--screen game:hades` the first
+                // whose name contains "hades" — a game's page needs a game, and a capture cannot press A.
+                var wanted = startScreen.Contains(':') ? startScreen[(startScreen.IndexOf(':') + 1)..] : "";
+                var pick = config.Games.FirstOrDefault(g => wanted.Length > 0
+                    ? g.Name.Contains(wanted, StringComparison.OrdinalIgnoreCase)
+                    : !string.IsNullOrEmpty(g.SaveDirectory));
+                if (pick is null) app._screen = Screen.Games;
+                else { app._screen = Screen.Game; app._game = pick; app.LoadGame(pick); }
+            }
             else app._screen = target;
         }
         app._autoScan = autoScan;
@@ -333,12 +344,15 @@ sealed class UiApp
     /// any screen unattended, so a layout change can be reviewed across the whole UI without a person
     /// driving it. Not something a user has any reason to pass.
     /// </summary>
-    private static Screen ParseScreen(string name) => name.ToLowerInvariant() switch
+    private static Screen ParseScreen(string name) => name.ToLowerInvariant().Split(':')[0] switch
     {
         "status" or "overview" => Screen.Status,
         "add" or "addgame" => Screen.AddGame,
         "folder" or "setfolder" => Screen.SetFolder,
         "launch" or "launchsetup" or "steam" => Screen.LaunchSetup,
+        "games" or "tracked" => Screen.Games,
+        "game" => Screen.Game,
+        "activity" => Screen.Activity,
         "conflicts" or "conflict" => Screen.Conflicts,
         "settings" or "config" => Screen.Settings,
         "gallery" => Screen.Gallery,
@@ -426,6 +440,7 @@ sealed class UiApp
         _window.Closing += () =>
         {
             Sound.Shutdown();
+            ReleaseArt();
             _pruneTimer?.Dispose();
             _controller?.Dispose();
             _input?.Dispose();
@@ -553,6 +568,8 @@ sealed class UiApp
         // reconciled it since the last frame. First frame included (_diskReadAt == 0), which is
         // the reconcile-on-launch half — a ghost deleted before startup never paints at all.
         PollDiskState();
+        // The game screens' background work (art decode, a game's state) lands on the render thread here.
+        PollGameScreens();
         // Before any draw, so the header (on every screen) and the Overview read the same outcome.
         CollectSyncNow();
         // Before Update, which is what calls NewFrame: a queued mouse position must be in the queue
@@ -637,6 +654,8 @@ sealed class UiApp
         // resolve request the button just started ever reaches the server.
         var busy = _scanTask is { IsCompleted: false } || _enrollTask is { IsCompleted: false }
                    || _syncNowTask is { IsCompleted: false } || _resolveTask is { IsCompleted: false }
+                   || _gameStateTask is not null || _gameVersionsTask is not null || _gameSyncTask is not null
+                   || _folderTask is not null || _sizeTasks.Count > 0 || _artInFlight > 0
                    || _pendingFolderScreen || _screenFade < 1f || _navScript.Count > 0;
         _settleFrames = busy ? 0 : _settleFrames + 1;
 
@@ -730,7 +749,7 @@ sealed class UiApp
                 }
                 else
                 {
-                    _screen = Screen.AddGame;
+                    _screen = _folderGame is not null ? Screen.Game : Screen.AddGame;
                     _bestContentId = 0;
                     _focusZone = Zone.Rail;
                     Widgets.RequestFocus(_activeRailId);
@@ -753,15 +772,23 @@ sealed class UiApp
     private static readonly (string Label, Icons.Glyph Icon, Screen Target)[] RailEntries =
     {
         ("Overview", Icons.Monitor, Screen.Status),
-        ("Add game", Icons.Plus, Screen.AddGame),
+        ("Tracked games", Icons.Gamepad, Screen.Games),
+        ("Add a game", Icons.Plus, Screen.AddGame),
         ("Conflicts", Icons.GitBranch, Screen.Conflicts),
-        ("Steam setup", Icons.HardDrive, Screen.LaunchSetup),
+        ("Activity", Icons.Activity, Screen.Activity),
         ("Settings", Icons.Settings, Screen.Settings),
     };
 
-    /// <summary>The rail entry a screen lives under. Set save folder is a sub-flow of Add game, so it
-    /// shares that entry's slot rather than being one of its own.</summary>
-    private static Screen RailTarget(Screen screen) => screen == Screen.SetFolder ? Screen.AddGame : screen;
+    /// <summary>The rail entry a screen lives under. Set save folder is a sub-flow of Add game (or, opened from a
+    /// game's own page, of Tracked games); a game's page lives under Tracked games; Steam setup is folded into
+    /// Settings (agent-ui did the same with its launch-setup card).</summary>
+    private Screen RailTarget(Screen screen) => screen switch
+    {
+        Screen.SetFolder => _folderGame is not null ? Screen.Games : Screen.AddGame,
+        Screen.Game => Screen.Games,
+        Screen.LaunchSetup => Screen.Settings,
+        _ => screen,
+    };
 
     /// <summary>
     /// Y (Sync all) and L1/R1 (switch rail section) — implementation.md Phase 6 item 3 ("Sync all in
@@ -889,12 +916,33 @@ sealed class UiApp
             ImGui.SameLine(0, Theme.Space.Md);
         }
 
+        // The wordmark (accent "Locker", as the console's brand position draws it) and, beside it, the
+        // connection as a chip. Explicit cursor positions on the header's centre line, like the right-hand
+        // block below: the two-line eyebrow-and-text group this replaces had a taller box than either item.
         ImGui.BeginGroup();
-        Widgets.EyebrowLabel("Agent Status");
-        var statusColour = Connected ? Theme.Safe : Theme.Watch;
-        Widgets.StatusDot(statusColour, 8f);
-        ImGui.SameLine(0, Theme.Space.Sm);
-        Widgets.Text(Connected ? "CONNECTED" : "NOT ENROLLED", statusColour, Theme.BodyStrong);
+        {
+            Theme.PushFont(Theme.Title);
+            var wordH = ImGui.GetTextLineHeight();
+            Theme.PopFont(Theme.Title);
+            var top = (Theme.Layout.HeaderHeight - Theme.Space.Sm * 2 - wordH) / 2f;
+            ImGui.SetCursorPosY(Theme.Space.Sm + MathF.Max(0f, top));
+            Theme.PushFont(Theme.Title);
+            var save = ImGui.CalcTextSize("Save").X;
+            var wordPos = ImGui.GetCursorScreenPos();
+            var wdl = ImGui.GetWindowDrawList();
+            wdl.AddText(wordPos, Widgets.U32(Theme.Fg), "Save");
+            wdl.AddText(wordPos + new Vector2(save, 0), Widgets.U32(Theme.Accent), "Locker");
+            var wordW = save + ImGui.CalcTextSize("Locker").X;
+            Theme.PopFont(Theme.Title);
+            ImGui.Dummy(new Vector2(wordW, wordH));
+            ImGui.SameLine(0, Theme.Space.Md);
+
+            var chipText = Connected ? "CONNECTED" : "NOT ENROLLED";
+            var connChipSize = Widgets.MeasureBadge(chipText, Connected ? Icons.Check : Icons.AlertTriangle);
+            ImGui.SetCursorPosY((Theme.Layout.HeaderHeight - connChipSize.Y) / 2f);
+            Widgets.Badge(chipText, Connected ? Theme.Safe : Theme.Watch,
+                Connected ? Icons.Check : Icons.AlertTriangle);
+        }
         ImGui.EndGroup();
 
         // Right side, as one right-aligned block (checkpoint-ui/prototype.html's Deck header): the last
@@ -905,10 +953,23 @@ sealed class UiApp
         var leftEnd = ImGui.GetItemRectMax().X - ImGui.GetWindowPos().X;   // right edge of the status group
         var rightEdge = ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X;
 
-        var url = _config.ServerUrl?.Replace("https://", "").Replace("http://", "") ?? "";
-        var chipSize = string.IsNullOrEmpty(url)
-            ? Vector2.Zero
-            : Widgets.MeasureBadge(url, Icons.Server, mono: true);
+        // After Sync all and its Y: this machine's name, the battery (hidden when there is none) and the
+        // clock — the three things a handheld's own status bar would say, which Game Mode hides behind
+        // the Steam menu. The server's host moved to the Agent Status tile's sub-line.
+        var machine = string.IsNullOrWhiteSpace(_config.MachineName) ? "" : _config.MachineName!;
+        var battery = ReadBattery();
+        var clock = DateTime.Now.ToString("HH:mm");
+        var batteryText = battery is { } bat ? $"{bat}%" : "";
+        Theme.PushFont(Theme.Caption);
+        var machineW = machine.Length == 0 ? 0f : ImGui.CalcTextSize(machine).X;
+        var batteryTextW = batteryText.Length == 0 ? 0f : ImGui.CalcTextSize(batteryText).X;
+        var clockW = ImGui.CalcTextSize(clock).X;
+        var glyph = ImGui.GetTextLineHeight() + 4f;
+        Theme.PopFont(Theme.Caption);
+        var extrasW = clockW
+            + (machineW > 0f ? machineW + Theme.Space.Md : 0f)
+            + (battery is not null ? glyph + Theme.Space.Xs + batteryTextW + Theme.Space.Md : 0f);
+        var chipSize = new Vector2(extrasW, 0f);
 
         bool syncingAll = _syncNowTask is { IsCompleted: false };
         var syncLabel = syncingAll ? "Syncing..." : "Sync all";
@@ -959,10 +1020,28 @@ sealed class UiApp
         Widgets.Text("Y", Theme.Dim, Theme.Caption);
         x += hintW;
 
-        if (chipSize.X > 0f)
         {
-            ImGui.SetCursorPos(new Vector2(x + Theme.Space.Lg, rowTop + (rowH - chipSize.Y) / 2f));
-            Widgets.Badge(url, Theme.Safe, Icons.Server, mono: true);
+            var ex = x + Theme.Space.Lg;
+            var wdl = ImGui.GetWindowDrawList();
+            var origin = ImGui.GetWindowPos();
+            var mid = origin.Y + rowTop + rowH / 2f;
+            Theme.PushFont(Theme.Caption);
+            var lineH = ImGui.GetTextLineHeight();
+            if (machineW > 0f)
+            {
+                wdl.AddText(new Vector2(origin.X + ex, mid - lineH / 2f), Widgets.U32(Theme.Dim), machine);
+                ex += machineW + Theme.Space.Md;
+            }
+            if (battery is { } level)
+            {
+                Icons.Battery(wdl, new Vector2(origin.X + ex, mid - glyph / 2f), glyph,
+                    level <= 15 ? Theme.Watch : Theme.Dim, level / 100f);
+                ex += glyph + Theme.Space.Xs;
+                wdl.AddText(new Vector2(origin.X + ex, mid - lineH / 2f), Widgets.U32(Theme.Dim), batteryText);
+                ex += batteryTextW + Theme.Space.Md;
+            }
+            wdl.AddText(new Vector2(origin.X + ex, mid - lineH / 2f), Widgets.U32(Theme.Fg), clock);
+            Theme.PopFont(Theme.Caption);
         }
 
         ImGui.EndChild();
@@ -1099,6 +1178,9 @@ sealed class UiApp
         switch (_screen)
         {
             case Screen.Status: DrawStatus(); break;
+            case Screen.Games: DrawGames(); break;
+            case Screen.Game: DrawGame(); break;
+            case Screen.Activity: DrawActivityScreen(); break;
             case Screen.AddGame: DrawAddGame(); break;
             case Screen.SetFolder: DrawSetFolder(); break;
             case Screen.LaunchSetup: DrawLaunchSetup(); break;
@@ -1172,6 +1254,7 @@ sealed class UiApp
     {
         if (_screen == target) return;
         _screen = target;
+        OnScreenChanged(target);
         _copyResult = "";
         // The new screen's content has not been measured yet, and the cursor stays on the rail
         // entry the user just activated.
@@ -1194,16 +1277,27 @@ sealed class UiApp
 
         // Stat tiles: the console's headline element, and what fills the top of the panel.
         var avail = ImGui.GetContentRegionAvail().X;
-        var tileW = (avail - Theme.Space.Md * 2) / 3f;
+        var tileW = (avail - Theme.Space.Md * 3) / 4f;
         var lastSync = _config.LastSyncTime.HasValue
             ? FormatAgo(DateTime.UtcNow - _config.LastSyncTime.Value)
             : "-";
+        var host = _config.ServerUrl?.Replace("https://", "").Replace("http://", "").TrimEnd('/') ?? "";
+        var conflictedGame = _config.Games.FirstOrDefault(g => _openConflicts.Any(c => c.GameId == g.GameId));
+        // Which game the last sync touched: the newest push this machine recorded. A game in conflict is
+        // what the tile says instead — "paused" is the true state of that game, not "synced".
+        var lastPushed = _config.Games.Where(g => g.LastPushAt.HasValue).OrderByDescending(g => g.LastPushAt).FirstOrDefault();
+        var lastSub = conflictedGame is not null ? $"paused - {conflictedGame.Name} is in conflict"
+            : lastPushed is not null ? lastPushed.Name : "nothing pushed yet";
 
-        Widgets.StatTile(_config.Games.Count.ToString(), "Games Tracked", Theme.Safe, tileW, 112f);
+        Widgets.StatTile(Connected ? "CONNECTED" : "NOT ENROLLED", "Agent Status",
+            Connected ? Theme.Safe : Theme.Watch, tileW, 112f, sub: host.Length > 0 ? host : "no server set");
         ImGui.SameLine(0, Theme.Space.Md);
-        Widgets.StatTile(_config.TotalSavesPushed.ToString(), "Saves Backed Up", Theme.Fg, tileW, 112f);
+        Widgets.StatTile(_config.Games.Count.ToString(), "Games Tracked", Theme.Safe, tileW, 112f, sub: "on this Deck");
         ImGui.SameLine(0, Theme.Space.Md);
-        Widgets.StatTile(lastSync, "Last Sync", Theme.Dim, tileW, 112f);
+        Widgets.StatTile(_config.TotalSavesPushed.ToString(), "Saves Backed Up", Theme.Fg, tileW, 112f,
+            sub: $"{FormatBytes(_config.SentTodayBytesNow())} sent today");
+        ImGui.SameLine(0, Theme.Space.Md);
+        Widgets.StatTile(lastSync, "Last Sync", conflictedGame is not null ? Theme.Watch : Theme.Dim, tileW, 112f, sub: lastSub);
 
         Widgets.Gap(Theme.Space.Lg);
 
@@ -1247,8 +1341,9 @@ sealed class UiApp
                             trailing: conflicted && missing ? "conflict + needs setup"
                                 : conflicted ? "conflict" : missing ? "needs setup" : null,
                             trailingColour: (conflicted || missing) ? Theme.Watch : null,
-                            chevron: conflicted);
-                        if (pressed && conflicted) Go(Screen.Conflicts);
+                            chevron: true);
+                        // A conflict is the decision to make; otherwise a row opens the game's own page.
+                        if (pressed) { if (conflicted) Go(Screen.Conflicts); else OpenGame(g); }
                     }
                     Widgets.Gap(Theme.Space.Md);
                     if (Widgets.PillButton("Add a game", Widgets.ButtonKind.Primary, Icons.Plus))
@@ -1482,7 +1577,13 @@ sealed class UiApp
     {
         Widgets.Text(label, Theme.Dim, Theme.Caption);
         ImGui.SameLine(96f);
-        Widgets.Text(value, colour ?? Theme.Fg, mono ? Theme.Mono : Theme.Body);
+        // A save path is the value that runs past its column: elided in the middle, where the game's own
+        // folder name at the end (the part that tells one from another) survives.
+        var font = mono ? Theme.Mono : Theme.Body;
+        Theme.PushFont(font);
+        var shown = Widgets.Elide(value, MathF.Max(40f, ImGui.GetContentRegionAvail().X - Theme.Space.Sm), middle: true);
+        Theme.PopFont(font);
+        Widgets.Text(shown, colour ?? Theme.Fg, font);
     }
 
     private void DrawAddGame()
@@ -1735,6 +1836,7 @@ sealed class UiApp
 
     private void EnterSetFolder(int candidateId)
     {
+        _folderGame = null;
         _folderTargetId = candidateId;
         var c = _candidates[candidateId];
         // Seed the browser inside the game's own prefix so a Deck user never hunts the Wine tree:
@@ -1748,13 +1850,19 @@ sealed class UiApp
 
     private void DrawSetFolder()
     {
-        if (_folderTargetId < 0 || _folderTargetId >= _candidates.Count)
+        // Two callers share this browser: Add game (a candidate, applied on enrolment) and a tracked
+        // game's own page (applied through the daemon, which owns config.json). A tracked game has no
+        // candidate, so a stand-in carries its name and starting point through the shared body below.
+        var forGame = _folderGame;
+        if (forGame is null && (_folderTargetId < 0 || _folderTargetId >= _candidates.Count))
         {
             _screen = Screen.AddGame;
             return;
         }
 
-        var c = _candidates[_folderTargetId];
+        var c = forGame is not null
+            ? new ScanCandidate(forGame.Name, forGame.SaveDirectory, ScanSource.SteamShortcut, false)
+            : _candidates[_folderTargetId];
         Widgets.Text($"Save folder for {c.Name}", Theme.Fg, Theme.Title);
         if (!string.IsNullOrEmpty(c.PrefixPath))
             Widgets.TextWrapped(
@@ -1823,14 +1931,41 @@ sealed class UiApp
         Widgets.Gap(Theme.Space.Sm);
 
         bool canUse = !string.IsNullOrEmpty(_listing.Path);
+
+        // The daemon refused a folder its sanity heuristics flagged (a suspected Wine prefix, an oversized
+        // folder): asked about here in the agent's own words, never applied without an explicit yes.
+        if (forGame is not null && _folderFlag is { } flagged)
+        {
+            Widgets.Banner("folderflag", "Use this folder anyway?", flagged.Ask, Theme.Watch, Icons.AlertTriangle);
+            Widgets.Gap(Theme.Space.Sm);
+            if (Widgets.PillButton("Use it anyway", Widgets.ButtonKind.Primary, Icons.Check))
+                ApplyGameFolder(forGame, flagged.Path, confirm: true);
+            ImGui.SameLine(0, Theme.Space.Sm);
+            if (Widgets.PillButton("Choose another", Widgets.ButtonKind.Ghost)) _folderFlag = null;
+            return;
+        }
+        if (forGame is not null && _folderError is not null)
+        {
+            Widgets.Text(_folderError, Theme.WatchInk, Theme.Caption);
+            Widgets.Gap(Theme.Space.Xs);
+        }
+
         if (Widgets.PillButton("Use this folder", Widgets.ButtonKind.Primary, Icons.Check, enabled: canUse))
         {
-            _candidates[_folderTargetId] = c with { SuggestedSaveDir = _listing.Path };
-            _selected.Add(_folderTargetId);
-            _screen = Screen.AddGame;
+            if (forGame is not null) ApplyGameFolder(forGame, _listing.Path, confirm: false);
+            else
+            {
+                _candidates[_folderTargetId] = c with { SuggestedSaveDir = _listing.Path };
+                _selected.Add(_folderTargetId);
+                _screen = Screen.AddGame;
+            }
         }
         ImGui.SameLine(0, Theme.Space.Sm);
-        if (Widgets.PillButton("Cancel", Widgets.ButtonKind.Ghost)) _screen = Screen.AddGame;
+        if (Widgets.PillButton("Cancel", Widgets.ButtonKind.Ghost))
+        {
+            _screen = forGame is not null ? Screen.Game : Screen.AddGame;
+            _folderFlag = null;
+        }
     }
 
     private void DrawLaunchSetup()

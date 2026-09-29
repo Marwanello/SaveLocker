@@ -62,6 +62,8 @@
     <PackageReference Include="Silk.NET.Input.Sdl" Version="2.22.0" />
     <PackageReference Include="Silk.NET.OpenGL" Version="2.22.0" />
     <PackageReference Include="Silk.NET.OpenGL.Extensions.ImGui" Version="2.22.0" />
+    <!-- Pure C# PNG/JPEG/WebP decode (no native library) for the cover art on the Deck's game rows. -->
+    <PackageReference Include="StbImageSharp" Version="2.30.15" />
   </ItemGroup>
 
   <!-- The daemon serves the same React agent UI as the tray (Decisions.md §2): it is the

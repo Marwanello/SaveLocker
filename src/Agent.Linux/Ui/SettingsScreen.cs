@@ -16,6 +16,8 @@ sealed class SettingsScreen
 {
     private readonly AgentConfig _config;
     private readonly IAutoStart _autoStart;
+    // Steam's launch-options step lives under Settings now (agent-ui did the same with its launch-setup card).
+    private readonly Action? _openSteamSetup;
 
     private int _settleSeconds;
     private bool _autoStartOn;
@@ -24,10 +26,11 @@ sealed class SettingsScreen
     private string _status = "";
     private readonly HashSet<string> _toRemove = new();
 
-    public SettingsScreen(AgentConfig config, IAutoStart autoStart)
+    public SettingsScreen(AgentConfig config, IAutoStart autoStart, Action? openSteamSetup = null)
     {
         _config = config;
         _autoStart = autoStart;
+        _openSteamSetup = openSteamSetup;
     }
 
     /// <summary>
@@ -66,6 +69,18 @@ sealed class SettingsScreen
             "These are set during enrolment. Game Mode has no keyboard, so change them from Desktop "
             + "Mode with  savelocker set-server  or in the web console.",
             Theme.Dim, Theme.Caption);
+
+        if (_openSteamSetup is not null)
+        {
+            Widgets.Gap(Theme.Space.Md);
+            Widgets.SectionHeader("Steam setup");
+            Widgets.TextWrapped(
+                "Each game needs the SaveLocker launch option set once in Steam before it syncs. "
+                + "This shows the exact command and which games already carry it.",
+                Theme.Dim, Theme.Caption);
+            Widgets.Gap(Theme.Space.Sm);
+            if (Widgets.PillButton("Open Steam setup", Widgets.ButtonKind.Secondary, Icons.HardDrive)) _openSteamSetup();
+        }
 
         Widgets.SectionHeader("Sync safety");
         Widgets.TextWrapped(
