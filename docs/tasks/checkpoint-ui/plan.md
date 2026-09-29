@@ -21,7 +21,7 @@ Brand kit: `brand-kit.html`, beside this file (also mirrored at
 |---|---|
 | 1 — Design system foundation, web half | ✅ Shipped 2026-09-17 (Group 1). **Corrected 2026-09-20:** dark is the base and light is opt-in (`data-theme="light"`) until the unmigrated views are converted — see the note below |
 | 1 — Design system foundation, agent half | ✅ Shipped 2026-09-20 (Group 3) — dark base, light opt-in, like the console |
-| 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in reworked onto revocable sessions 2026-09-20. The release-history table ⏳ Group 9 |
+| 2 — Console shell | ✅ Shipped 2026-09-18 (Group 2); sign-in reworked onto revocable sessions 2026-09-20. The release-history table ✅ shipped 2026-09-29 (Group 9c) |
 | 3 — Sync all and progress | ✅ Items 1, 2, 4 shipped (console side; 2026-09-20 review: offline machines are left out, no duplicate stacking, failures reported); item 3 (agent Sync all + progress) shipped 2026-09-20 (Group 3); item 5 (per-game Sync this game) ✅ shipped 2026-09-21 (Group 4) with the game page and a new per-game agent route |
 | 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5), **including flipping the theme default to follow the OS**; item 4 (the Deck's accent) ➡️ shipped 2026-09-22 (Group 6) |
 | 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
@@ -30,8 +30,8 @@ Brand kit: `brand-kit.html`, beside this file (also mirrored at
 | 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1). Steam library art, PNG favicons and the installer icon are still the pre-Checkpoint brand ⏳ Group 10 |
 | 9 — Console page kit and top bar | ✅ Shipped 2026-09-28 (Group 8a). Added 2026-09-27 by the gap audit ([[implementation]] → *The 2026-09-27 audit*), as are 10–14 |
 | 10 — Console Games page | ✅ Shipped 2026-09-28 (Groups 8b + 8c). PR #52 reviewed the same day, every finding addressed ([[implementation-grouping]] → Group 8 → *Review fixes*) |
-| 11 — Backups tab and Configuration | ⏳ Not started — Group 9 (the Backups tab does not exist today) |
-| 12 — Console Audit log, Help, What's new, sign-in | ⏳ Not started — Group 9 |
+| 11 — Backups tab and Configuration | ✅ Shipped 2026-09-29 (Groups 9a + 9b, PR #53) — extended the same day at the maintainer's request: backups are zips of the database + every game's latest save on a UTC daily/weekly schedule, restorable in place; the SteamGridDB key encrypted at rest. PR #53 reviewed the same day, every finding fixed. The `testenv` pass (`group-9-verification.md`) is not yet run |
+| 12 — Console Audit log, Help, What's new, sign-in | ✅ Shipped 2026-09-29 (Group 9c, PR #53) — the lock screen shows only the brand and version while signed out |
 | 13 — Agent UI, completed | ⏳ Not started — Group 10 |
 | 14 — Deck Game Mode, completed | ⏳ Not started — Group 10 |
 

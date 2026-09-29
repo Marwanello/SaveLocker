@@ -1617,7 +1617,16 @@ is `tasks/checkpoint-ui/group-9-verification.md`.
 editable UTC daily/weekly schedule, restorable from the Backups page (safety backup first, undoable); the SteamGridDB key
 is encrypted at rest (key ring `/data/keys`, never in a backup); the lock screen no longer shows the top bar's tabs,
 Sync all or bell. Write-up: `implementation-grouping.md` → Group 9 → *Follow-up*; decisions in `Decisions.md`.
-**Next action:** run `group-9-verification.md` on the Windows rig, then open the Group 9 PR; then Group 10.
+<br>**PR #53 opened and reviewed the same day; every finding fixed on the branch.** Restore no longer cancels after the
+database swap and runs the start's own setup (`Data/DatabaseSetup.cs`); downloads go through a single-use ticket so a
+multi-GB backup streams to disk. `run-console-security-tests` **306/306** on Windows (BK-01 +14, mutation-checked).
+Detail: `implementation-grouping.md` → Group 9 → *Review fixes (PR #53)*.
+<br>**Release notes for the next release must cover:** backups are now zips of the database + every game's latest save,
+restorable from the Backups page; **the schedule changes for upgraders** — default **weekly** (Sunday) instead of nightly,
+and the hour is now **UTC**, not the container's local time (an unRAID template's `TZ` no longer shifts it) — so anyone who
+relied on nightly backups should set *daily* under Configuration; the SteamGridDB key is encrypted at rest, and a backup
+restored onto a different server needs it re-entered; a machine enrolled after a restored backup must re-enroll.
+**Next action:** run `group-9-verification.md` on the Windows rig, then merge PR #53; then Group 10.
 
 ---
 
