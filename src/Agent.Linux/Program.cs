@@ -48,6 +48,9 @@ static class Program
             case "doctor":
                 return await Doctor.RunAsync(config);
 
+            case "open":
+                return await OpenWindowAsync(opts, config);
+
             // Exists for the updater's smoke test above all: a staged agent has to be able to prove
             // it can start and say what it is before it is allowed to replace a working one. Useful
             // in its own right — it is the first thing any bug report needs.
@@ -455,6 +458,40 @@ static class Program
         return false;
     }
 
+    /// <summary>
+    /// `savelocker open [--port n] [--view route]` — the agent UI in its own window, for Desktop Mode. This
+    /// is what the KDE-menu entry install.sh writes runs; Game Mode keeps `savelocker ui`, and the two sit
+    /// side by side over the same daemon. It does not start the daemon (systemd does, at login): a launcher
+    /// that quietly spawned a second one would race the first over the same state, so it says how to start it.
+    /// </summary>
+    private static async Task<int> OpenWindowAsync(Dictionary<string, string> opts, AgentConfig config)
+    {
+        var port = opts.ContainsKey("port") ? ParsePort(opts) : config.DaemonApiPort ?? 5178;
+        var origin = $"http://localhost:{port}";
+
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+        var up = false;
+        try { up = (await http.GetAsync(origin + "/")).IsSuccessStatusCode; } catch { /* not listening */ }
+        if (!up)
+        {
+            Console.Error.WriteLine($"The agent is not answering on {origin}.");
+            Console.Error.WriteLine("Start it with:  systemctl --user start savelocker.service");
+            return 1;
+        }
+
+        var view = opts.GetValueOrDefault("view");
+        var url = origin + "/" + (string.IsNullOrWhiteSpace(view) ? "" : "#" + view.TrimStart('#'));
+        if (AppWindow.TryOpen(url, out var plan))
+        {
+            Console.WriteLine($"Opened SaveLocker {plan!.Description}.");
+            return 0;
+        }
+
+        Console.Error.WriteLine("There is no desktop session to open a window on (this looks like a headless shell).");
+        Console.Error.WriteLine($"Open {url} in a browser here, or tunnel it:  ssh -L {port}:localhost:{port} <user>@<this-machine>");
+        return 1;
+    }
+
     private static void PrintUsage() => Console.WriteLine(
         """
         savelocker — SaveLocker agent for Linux (Proton / Steam Deck)
@@ -485,6 +522,7 @@ static class Program
 
         Daemon
           daemon [--port <n>]                              Run headless; serves the agent UI on localhost:5178
+          open [--port <n>] [--view <route>]               Open the agent UI in its own window (Desktop Mode)
           autostart --enable | --disable                   systemd --user unit
 
         Updates

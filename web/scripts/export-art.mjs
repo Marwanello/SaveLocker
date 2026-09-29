@@ -157,7 +157,31 @@ for (const [name, size] of [['favicon-16x16', 16], ['favicon-32x32', 32], ['appl
                             ['android-chrome-192x192', 192], ['android-chrome-512x512', 512]]) {
   files.set(at('web', 'public', `${name}.png`), Buffer.from(render(faviconSvg, size).asPng()))
 }
+// The application-menu icon install.sh points the .desktop entry at.
+files.set(at('packaging', 'linux', 'artwork', 'dist', 'icon.png'), Buffer.from(render(faviconSvg, 256).asPng()))
 files.set(at('web', 'public', 'site.webmanifest'), MANIFEST)
+
+// The agent UI is installable as a PWA from any Chromium too (`savelocker open` prefers an --app= window,
+// but a person can also use the browser's own "Install"), and until now it had no icon at all. Its page is
+// served without a token gate on static files, so the manifest and icons load like the rest of the bundle.
+const AGENT_MANIFEST = JSON.stringify({
+  name: 'SaveLocker Agent',
+  short_name: 'SaveLocker',
+  description: 'SaveLocker on this machine',
+  start_url: '/?app',
+  scope: '/',
+  icons: [
+    { src: '/android-chrome-192x192.png', sizes: '192x192', type: 'image/png' },
+    { src: '/android-chrome-512x512.png', sizes: '512x512', type: 'image/png' },
+  ],
+  theme_color: '#0f0f10',
+  background_color: '#0f0f10',
+  display: 'standalone',
+}) + '\n'
+files.set(at('agent-ui', 'public', 'site.webmanifest'), AGENT_MANIFEST)
+files.set(at('agent-ui', 'public', 'favicon.svg'), faviconSvg)
+files.set(at('agent-ui', 'public', 'android-chrome-192x192.png'), Buffer.from(render(faviconSvg, 192).asPng()))
+files.set(at('agent-ui', 'public', 'android-chrome-512x512.png'), Buffer.from(render(faviconSvg, 512).asPng()))
 files.set(at('src', 'Agent', 'Assets', 'favicon.png'), Buffer.from(render(faviconSvg, 64).asPng()))
 const icoBytes = ico(faviconSvg, [16, 24, 32, 48, 64, 128, 256])
 files.set(at('web', 'public', 'favicon.ico'), icoBytes)

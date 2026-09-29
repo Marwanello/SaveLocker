@@ -66,6 +66,29 @@ chmod +x "${prefix}/savelocker"
 ln -sf "${prefix}/savelocker" "${bindir}/savelocker"
 echo "==> Linked ${bindir}/savelocker"
 
+# A SaveLocker entry in the desktop's application menu (KDE's, on a Deck in Desktop Mode): `savelocker open`
+# shows the agent UI in its own window. Deliberately NOT added to Steam — Game Mode shows Steam shortcuts,
+# and there the gamepad UI (`savelocker ui`, step 4 below) stays the way in. A menu entry is a bonus like
+# the auto-start unit: failing to write it never fails the install.
+appsdir="${HOME}/.local/share/applications"
+if mkdir -p "${appsdir}" 2>/dev/null && cat > "${appsdir}/savelocker.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=SaveLocker
+Comment=Game save sync for this machine
+Exec=${prefix}/savelocker open
+Icon=${prefix}/artwork/icon.png
+Terminal=false
+Categories=Utility;Game;
+StartupNotify=false
+DESKTOP
+then
+  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "${appsdir}" >/dev/null 2>&1 || true
+  echo "==> Added SaveLocker to the application menu"
+else
+  echo "!! could not write ${appsdir}/savelocker.desktop — open the UI with:  savelocker open"
+fi
+
 # Auto-start is a BONUS, never a reason to fail the install. The agent is already installed and
 # usable by this point, so every failure below is a warning with a next step — not an abort.
 #

@@ -256,13 +256,10 @@ public sealed class DesktopNotifier : INotificationPresenter, IDisposable
 
         try
         {
-            var psi = new ProcessStartInfo("xdg-open") { UseShellExecute = false };
-            psi.ArgumentList.Add(url);
-            // See DesktopEnvironment.ApplySessionEnv: this process's own display and session
-            // variables can be missing or left over from Game Mode even while a desktop session is
-            // running. xdg-open gets the session's current values from the systemd user manager.
-            DesktopEnvironment.ApplySessionEnv(psi.Environment);
-            Process.Start(psi);
+            // The same launcher the KDE-menu entry uses (`savelocker open`), so a click lands in the
+            // app window when a Chromium-family browser is there, and in the default browser
+            // (xdg-open, with the session's environment) when it is not.
+            AppWindow.TryOpen(url, out _);
         }
         catch (Exception ex)
         {

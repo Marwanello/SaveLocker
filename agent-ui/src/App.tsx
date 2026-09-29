@@ -14,6 +14,7 @@ import { ActivityView } from './components/ActivityView'
 import { Chip } from './components/ui/Chip'
 import { Mark } from './components/ui/Mark'
 import { unseenWarnings } from './activitySeen'
+import { inAppWindow } from './appWindow'
 import { isCurrentPoll, looksEpoch, setLook } from './appearance'
 import { clearRouteHash, parseRoute } from './route'
 import { useActivityRecent } from './useActivity'
@@ -155,7 +156,9 @@ export default function App() {
             <Mark size={30} />
             <div>
               <div className="sl-brand__name">SaveLocker</div>
-              <div className="sl-brand__sub">Agent</div>
+              <div className="sl-brand__sub">
+                {inAppWindow && state?.machineName ? `${state.machineName} — desktop session` : 'Agent'}
+              </div>
             </div>
           </div>
           <div className="sl-topbar__tools">
