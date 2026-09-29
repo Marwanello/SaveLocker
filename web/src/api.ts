@@ -1,4 +1,4 @@
-import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule } from './types';
+import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
 
 // The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
 // itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
@@ -9,17 +9,33 @@ import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conf
 const SESSION_KEY = 'sl_session';
 const LEGACY_PASSWORD_KEY = 'sl_password';
 
-// localStorage can throw (private windows, blocked site data). A console that cannot persist a
-// session still works — it just asks again after a reload.
-function readStore(key: string): string { try { return localStorage.getItem(key) ?? ''; } catch { return ''; } }
-function writeStore(key: string, value: string | null) {
-  try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key); } catch { /* see above */ }
+// Web storage can throw (private windows, blocked site data). A console that cannot persist a session
+// still works — it just asks again after a reload.
+function readStore(key: string, store: 'local' | 'session' = 'local'): string {
+  try { return (store === 'local' ? localStorage : sessionStorage).getItem(key) ?? ''; } catch { return ''; }
+}
+function writeStore(key: string, value: string | null, store: 'local' | 'session' = 'local') {
+  try {
+    const s = store === 'local' ? localStorage : sessionStorage;
+    if (value) s.setItem(key, value); else s.removeItem(key);
+  } catch { /* see above */ }
 }
 
-let sessionToken = readStore(SESSION_KEY);
+// plan.md 12.4 "Remember this browser": remembered → localStorage (outlives the browser, until the
+// server's own 7-day idle / 30-day limit); not → sessionStorage, which is per TAB: gone when the tab closes,
+// and a new tab asks again.
+let sessionToken = readStore(SESSION_KEY, 'session') || readStore(SESSION_KEY);
+let remembered = sessionToken !== '' && readStore(SESSION_KEY, 'session') === '';
+
+function keepSession(token: string, remember: boolean) {
+  sessionToken = token;
+  remembered = remember;
+  writeStore(SESSION_KEY, remember ? token : null);
+  writeStore(SESSION_KEY, remember ? null : token, 'session');
+}
 
 export function hasSession() { return sessionToken !== ''; }
-export function clearSession() { sessionToken = ''; writeStore(SESSION_KEY, null); }
+export function clearSession() { sessionToken = ''; writeStore(SESSION_KEY, null); writeStore(SESSION_KEY, null, 'session'); }
 
 /** A failed request. `status` lets a caller react to a refusal by kind instead of matching message text. */
 export class ApiError extends Error {
@@ -59,11 +75,13 @@ export type SignInResult =
   | { ok: false; reason: 'wrong' | 'throttled' | 'error'; message: string };
 
 /**
- * Exchange the admin password for a session. The password is sent once, here, and never stored. On a
+ * Exchange the admin password for a session. The password is sent once, here, and never stored.
+ * `remember` picks where the token lives; it defaults to where the current one does, so re-signing in
+ * after a password change keeps the choice made at sign-in. On a
  * server that has no admin password the answer carries no token and this simply reports success —
  * there is nothing to sign in to.
  */
-export async function signIn(password: string): Promise<SignInResult> {
+export async function signIn(password: string, remember = remembered): Promise<SignInResult> {
   let res: Response;
   try {
     res = await fetch('/api/admin/session', {
@@ -73,13 +91,13 @@ export async function signIn(password: string): Promise<SignInResult> {
 
   if (res.ok) {
     const body = await res.json().catch(() => null) as { token?: string | null } | null;
-    if (body?.token) { sessionToken = body.token; writeStore(SESSION_KEY, body.token); }
+    if (body?.token) keepSession(body.token, remember);
     else clearSession();
     return { ok: true };
   }
   // 429's message comes from the server and says how long to wait ("…Try again in 14 minutes.").
   const detail = await explain(res);
-  if (res.status === 401) return { ok: false, reason: 'wrong', message: 'Wrong password. Try again.' };
+  if (res.status === 401) return { ok: false, reason: 'wrong', message: 'That password didn’t work. It is the one set on the server, not your Steam or system login.' };
   if (res.status === 429) return { ok: false, reason: 'throttled', message: detail };
   return { ok: false, reason: 'error', message: detail };
 }
@@ -295,6 +313,32 @@ export const api = {
       .then(res => { if (!res.ok) throw new Error(`${res.status}`); }),
 
   audit: (limit = 200) => request<AuditEntry[]>(`/audit?limit=${limit}`),
+
+  /** The exclude patterns every game inherits; validated like a game's own list (400 with the reason). */
+  setDefaultExcludes: (patterns: string[]) =>
+    request<string[]>('/settings/default-excludes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patterns) }),
+  backupStatus: () => request<BackupStatus>('/admin/backups/status'),
+  backupNow: () => request<BackupResult>('/admin/backup', { method: 'POST' }),
+  /** Replace the server's database with a backup's (a safety backup is taken first). */
+  deleteBackup: (fileName: string) =>
+    request<void>(`/admin/backups/${encodeURIComponent(fileName)}`, { method: 'DELETE' }),
+  restoreBackup: (fileName: string) =>
+    request<BackupRestoreResult>(`/admin/backups/${encodeURIComponent(fileName)}/restore`, { method: 'POST' }),
+  setBackupSettings: (body: SetBackupSettingsRequest) =>
+    request<void>('/admin/backups/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  /**
+   * A backup can be gigabytes, so it is never fetched into a blob in memory: the session header buys a
+   * single-use ticket (about a minute, this one file, audited), and a plain link carrying it lets the browser
+   * stream the file to disk. Never the session itself in the URL. `fileName` comes from the listing; the
+   * server matches it against its own listing again.
+   */
+  downloadBackup: async (fileName: string) => {
+    const t = await request<BackupDownloadTicket>(`/admin/backups/${encodeURIComponent(fileName)}/download-ticket`, { method: 'POST' });
+    const a = document.createElement('a');
+    a.href = t.url;
+    a.download = fileName;
+    a.click();
+  },
 
   setAdminPassword: (password: string | null) =>
     request<{ ok: boolean; message: string }>('/admin/password', {

@@ -1,16 +1,19 @@
 import { useState, useEffect, useMemo } from 'react';
 import { HelpMarkdown } from './HelpMarkdown';
 import { articles, categories } from '../help/index';
+import { Page } from './ui/Page';
+import { PageHead } from './ui/PageHead';
+import { Card } from './ui/Card';
+import { SearchField } from './ui/SearchField';
 
 function getSlugFromHash(): string | null {
   const m = location.hash.match(/^#help\/(.+)$/);
   return m ? m[1] : null;
 }
 
+/** plan.md Phase 12.2: the prototype's `docs` grid — the article list beside the article, on the kit. */
 export function HelpView() {
-  const [selectedSlug, setSelectedSlug] = useState<string>(
-    getSlugFromHash() ?? articles[0].slug
-  );
+  const [selectedSlug, setSelectedSlug] = useState<string>(getSlugFromHash() ?? articles[0].slug);
   const [query, setQuery] = useState('');
 
   useEffect(() => {
@@ -30,111 +33,59 @@ export function HelpView() {
   const filtered = useMemo(() => {
     if (!query.trim()) return articles;
     const q = query.toLowerCase();
-    return articles.filter(a =>
-      a.title.toLowerCase().includes(q) ||
-      a.content.toLowerCase().includes(q)
-    );
+    return articles.filter(a => a.title.toLowerCase().includes(q) || a.content.toLowerCase().includes(q));
   }, [query]);
 
   const current = articles.find(a => a.slug === selectedSlug) ?? articles[0];
 
   return (
-    <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-      {/* Sidebar */}
-      <aside style={{
-        width: 240,
-        flexShrink: 0,
-        background: 'var(--color-panel)',
-        borderRight: '1px solid var(--color-line)',
-        display: 'flex',
-        flexDirection: 'column',
-        overflowY: 'auto',
-      }}>
-        {/* Search */}
-        <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--color-line)' }}>
-          <input
-            type="search"
-            placeholder="Search articles…"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            style={{
-              width: '100%',
-              background: 'var(--color-raise)',
-              border: '1px solid var(--color-line)',
-              borderRadius: 4,
-              padding: '5px 9px',
-              color: 'var(--color-fg)',
-              fontSize: 12,
-              fontFamily: 'inherit',
-              boxSizing: 'border-box',
-            }}
-          />
-        </div>
-
-        {/* Article list grouped by category */}
-        {query.trim()
-          ? (
-            <div>
-              <div style={{ padding: '6px 14px 2px', fontSize: 10, fontWeight: 700, color: 'var(--color-safe-ink)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-                Results ({filtered.length})
-              </div>
-              {filtered.map(a => (
-                <SidebarItem key={a.slug} title={a.title} active={a.slug === selectedSlug} onClick={() => selectArticle(a.slug)} />
-              ))}
-              {filtered.length === 0 && (
-                <div style={{ padding: '12px 14px', fontSize: 12, color: 'var(--color-dim)' }}>No articles match.</div>
-              )}
-            </div>
-          )
-          : categories.map(cat => {
-            const catArticles = articles.filter(a => a.category === cat);
-            return (
-              <div key={cat}>
-                <div style={{ padding: '8px 14px 4px', fontSize: 10, fontWeight: 700, color: 'var(--color-safe-ink)', textTransform: 'uppercase', letterSpacing: '0.12em', borderBottom: '1px solid var(--color-line)' }}>
-                  {cat}
-                </div>
-                {catArticles.map(a => (
-                  <SidebarItem key={a.slug} title={a.title} active={a.slug === selectedSlug} onClick={() => selectArticle(a.slug)} />
+    <Page>
+      <PageHead
+        title="Help"
+        sub={`${articles.length} articles · ships with the console, works offline`}
+        actions={<SearchField value={query} onChange={setQuery} placeholder="Search articles" aria-label="Search help articles" />}
+      />
+      <div className="grid gap-3 md:grid-cols-[240px_minmax(0,1fr)] items-start">
+        <Card flush className="md:sticky md:top-0">
+          <nav aria-label="Help articles" className="py-1.5">
+            {query.trim()
+              ? <>
+                  <Heading>Results ({filtered.length})</Heading>
+                  {filtered.map(a => <Item key={a.slug} title={a.title} active={a.slug === current.slug} onClick={() => selectArticle(a.slug)} />)}
+                  {filtered.length === 0 && <p className="px-4 py-3 text-xs text-dim">No articles match.</p>}
+                </>
+              : categories.map(cat => (
+                  <div key={cat}>
+                    <Heading>{cat}</Heading>
+                    {articles.filter(a => a.category === cat).map(a =>
+                      <Item key={a.slug} title={a.title} active={a.slug === current.slug} onClick={() => selectArticle(a.slug)} />)}
+                  </div>
                 ))}
-              </div>
-            );
-          })
-        }
-      </aside>
-
-      {/* Content pane */}
-      <main style={{
-        flex: 1,
-        overflowY: 'auto',
-        padding: '28px 40px',
-        maxWidth: 780,
-      }}>
-        <div className="help-content">
-          <HelpMarkdown>{current.content}</HelpMarkdown>
-        </div>
-      </main>
-    </div>
+          </nav>
+        </Card>
+        <Card>
+          <article className="help-content max-w-[68ch]">
+            <HelpMarkdown>{current.content}</HelpMarkdown>
+          </article>
+        </Card>
+      </div>
+    </Page>
   );
 }
 
-function SidebarItem({ title, active, onClick }: { title: string; active: boolean; onClick: () => void }) {
+function Heading({ children }: { children: React.ReactNode }) {
+  return <div className="px-4 pt-3 pb-1.5 text-[10px] tracking-[0.12em] uppercase text-faint">{children}</div>;
+}
+
+function Item({ title, active, onClick }: { title: string; active: boolean; onClick: () => void }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      style={{
-        display: 'block',
-        width: '100%',
-        textAlign: 'left',
-        padding: '7px 14px 7px 16px',
-        background: active ? 'var(--color-raise)' : 'transparent',
-        border: 'none',
-        borderLeft: active ? '2px solid var(--color-line)' : '2px solid transparent',
-        borderBottom: '1px solid var(--color-line)',
-        cursor: 'pointer',
-        fontSize: 12,
-        color: active ? 'var(--color-fg)' : 'var(--color-dim)',
-        fontWeight: active ? 600 : 400,
-      }}
+      aria-current={active ? 'page' : undefined}
+      className={`block w-[calc(100%-12px)] mx-1.5 text-left px-2.5 py-[7px] rounded-lg text-[12.5px] border-0 cursor-pointer
+        focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent
+        ${active ? 'bg-accent-soft text-accent-ink font-semibold' : 'bg-transparent text-dim hover:bg-hover hover:text-fg'}`}
     >
       {title}
     </button>

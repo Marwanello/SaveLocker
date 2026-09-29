@@ -5,7 +5,7 @@ import { plural } from '../../format';
 import { toast, toastError } from '../../toast';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
-import { Icon } from '../ui/Icon';
+import { GlobChips } from '../ui/GlobChips';
 
 interface Props {
   game: Game;
@@ -19,7 +19,6 @@ interface Props {
 export function ExcludePatternsCard({ game, onRefresh }: Props) {
   const saved = game.excludeGlobs ?? [];
   const [draft, setDraft] = useState<string[]>(saved);
-  const [adding, setAdding] = useState('');
   const [defaults, setDefaults] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   // The dry run reads the head archive's zip index on the server, so it runs only once asked for (or
@@ -64,12 +63,6 @@ export function ExcludePatternsCard({ game, onRefresh }: Props) {
     return () => { cancelled = true; };
   }, [game.id, draft, previewOn, dirty]);
 
-  function add() {
-    const p = adding.trim();
-    if (p && !draft.includes(p)) setDraft(d => [...d, p]);
-    setAdding('');
-  }
-
   async function save() {
     setSaving(true);
     try {
@@ -91,37 +84,14 @@ export function ExcludePatternsCard({ game, onRefresh }: Props) {
         <code className="font-mono text-[11px]">cache/**</code> is relative to this game's save folder.
       </p>
 
-      <div className="flex flex-wrap gap-[7px]">
-        {draft.map(p => (
-          <span key={p} className="inline-flex items-center gap-2 font-mono text-[11.5px] bg-tile border border-line rounded-lg pl-[11px] pr-2 py-1.5 text-fg">
-            {p}
-            <button type="button" onClick={() => setDraft(d => d.filter(x => x !== p))}
-              title={`Remove ${p}`} aria-label={`Remove ${p}`}
-              className="w-[18px] h-[18px] grid place-items-center rounded-[5px] border-0 bg-transparent text-dim cursor-pointer
-                hover:bg-panel hover:text-accent-ink hover:opacity-100
-                focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-              <Icon name="x" size={12} />
-            </button>
-          </span>
-        ))}
-        {/* The field itself is borderless inside the dashed box, so the box carries the focus ring. */}
-        <span className="inline-flex items-center gap-2 bg-tile border border-dashed border-line rounded-lg px-2.5
-          focus-within:outline focus-within:outline-2 focus-within:outline-accent focus-within:outline-offset-1">
-          <input
-            value={adding}
-            onChange={e => setAdding(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
-            placeholder="add a pattern…"
-            aria-label="Add an exclude pattern (Enter adds it)"
-            className="bg-transparent border-0 outline-none text-fg font-mono text-[11.5px] py-[7px] w-[150px] focus:!border-0"
-          />
-          <span aria-hidden className="font-mono text-[10px] text-faint">↵</span>
-        </span>
-      </div>
+      <GlobChips patterns={draft} onChange={setDraft} addLabel="Add an exclude pattern (Enter adds it)" />
 
       {defaults.length > 0 && (
         <div className="mt-3.5">
-          <div className="text-[10px] tracking-[0.1em] uppercase text-faint mb-2">Inherited from the server</div>
+          <div className="text-[10px] tracking-[0.1em] uppercase text-faint mb-2">
+            Inherited from the server · <a href="#config" className="normal-case tracking-normal text-dim underline underline-offset-2 rounded
+              focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">edit in Configuration</a>
+          </div>
           <div className="flex flex-wrap gap-[7px]">
             {defaults.map(p => (
               <span key={p} title="A server default — applies to every game"

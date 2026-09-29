@@ -1,5 +1,6 @@
 ﻿using SaveLocker.Server.Data;
 using SaveLocker.Shared;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
 namespace SaveLocker.Server.Services;
@@ -41,22 +42,48 @@ public sealed class SettingsService
     /// prototype's default, and the reason "set it once, every machine matches" works out of the box.</summary>
     public const string UiPushToAgents = "Ui:PushToAgents";
 
+    /// <summary>The console's default exclude list, as a JSON array — JSON so that an admin who removes
+    /// every default ("[]") is told apart from one who never saved a list (no row: config applies).</summary>
+    public const string DefaultExcludeGlobs = "Sync:DefaultExcludeGlobs";
+
+    /// <summary>
+    /// Settings that are secrets the server must be able to USE (so they cannot be hashed like the admin
+    /// password or machine keys): stored encrypted with ASP.NET Data Protection. Its key ring lives in
+    /// <c>{data}/keys</c>, outside the database — so the database file and every backup of it carry only
+    /// ciphertext. A backup restored onto a different server cannot decrypt them: the key reads as unset.
+    /// </summary>
+    private static readonly HashSet<string> Secrets = new(StringComparer.Ordinal) { SteamGridDbApiKey };
+    private const string EncryptedPrefix = "enc:v1:";
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> UndecryptableWarned = new();
+
     private readonly AppDbContext _db;
     private readonly IConfiguration _cfg;
+    private readonly IDataProtector _protector;
+    private readonly ILogger<SettingsService> _log;
 
-    public SettingsService(AppDbContext db, IConfiguration cfg)
+    public SettingsService(AppDbContext db, IConfiguration cfg, IDataProtectionProvider protection, ILogger<SettingsService> log)
     {
         _db = db;
         _cfg = cfg;
+        _protector = protection.CreateProtector("SaveLocker.Settings.v1");
+        _log = log;
     }
 
-    /// <summary>The DB value if set, else the configuration value, else null.</summary>
+    /// <summary>The DB value if set, else the configuration value, else null. Secrets come back decrypted; one
+    /// this server cannot decrypt counts as unset, so the configuration's value (if any) applies.</summary>
     public async Task<string?> GetEffectiveAsync(string key, CancellationToken ct = default)
     {
-        var row = await _db.Settings.FindAsync(new object?[] { key }, ct);
-        if (!string.IsNullOrWhiteSpace(row?.Value)) return row!.Value;
+        if (await GetStoredAsync(key, ct) is { } stored) return stored;
         var fromCfg = _cfg[key];
         return string.IsNullOrWhiteSpace(fromCfg) ? null : fromCfg;
+    }
+
+    /// <summary>The DB value alone (decrypted), or null when there is none or it cannot be decrypted.</summary>
+    private async Task<string?> GetStoredAsync(string key, CancellationToken ct)
+    {
+        var row = await _db.Settings.FindAsync(new object?[] { key }, ct);
+        if (string.IsNullOrWhiteSpace(row?.Value)) return null;
+        return Secrets.Contains(key) ? Reveal(key, row.Value) : row.Value;
     }
 
     /// <summary>Store (or clear, when null/blank) a setting in the DB.</summary>
@@ -81,9 +108,41 @@ public sealed class SettingsService
             return true;
         }
 
+        if (Secrets.Contains(key)) value = EncryptedPrefix + _protector.Protect(value);
         if (row is null) _db.Settings.Add(new AppSetting { Key = key, Value = value });
         else row.Value = value;
         return true;
+    }
+
+    private string? Reveal(string key, string stored)
+    {
+        if (!stored.StartsWith(EncryptedPrefix, StringComparison.Ordinal)) return stored; // written before encryption
+        try { return _protector.Unprotect(stored[EncryptedPrefix.Length..]); }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            // A database from another server (a restored backup) or a lost key ring: unusable, so unset. Said once
+            // per key per process — this is read on every settings load and art fetch.
+            if (UndecryptableWarned.TryAdd(key, 0))
+                _log.LogWarning("The stored {Key} cannot be decrypted with this server's keys; treating it as unset. Enter it again under Configuration.", key);
+            return null;
+        }
+    }
+
+    /// <summary>Encrypt any secret still stored in plain text (written before encryption existed). Run once at startup.</summary>
+    public async Task EncryptPlaintextSecretsAsync(CancellationToken ct = default)
+    {
+        var rows = await _db.Settings.Where(s => Secrets.Contains(s.Key)).ToListAsync(ct);
+        var changed = 0;
+        foreach (var row in rows.Where(r => r.Value.Length > 0 && !r.Value.StartsWith(EncryptedPrefix, StringComparison.Ordinal)))
+        {
+            row.Value = EncryptedPrefix + _protector.Protect(row.Value);
+            changed++;
+        }
+        if (changed > 0)
+        {
+            await _db.SaveChangesAsync(ct);
+            _log.LogInformation("Encrypted {Count} stored secret(s) that predate encryption at rest.", changed);
+        }
     }
 
     public async Task<bool> HasAdminPasswordAsync(CancellationToken ct = default) =>
@@ -214,22 +273,46 @@ public sealed class SettingsService
         await _db.SaveChangesAsync(ct);
     }
 
+    /// <summary>The exclude patterns every game inherits, and whether they were saved from the console.</summary>
+    public async Task<(string[] Globs, bool FromConsole)> GetDefaultExcludesAsync(CancellationToken ct = default)
+    {
+        var row = await _db.Settings.FindAsync(new object?[] { DefaultExcludeGlobs }, ct);
+        if (row is not null && !string.IsNullOrWhiteSpace(row.Value))
+        {
+            try
+            {
+                if (System.Text.Json.JsonSerializer.Deserialize<string[]>(row.Value) is { } saved)
+                    return (saved.Select(s => s?.Trim() ?? "").Where(s => s.Length > 0).ToArray(), true);
+            }
+            catch (System.Text.Json.JsonException) { /* unreadable: fall back to config, never to "none" */ }
+        }
+        return (GlobConfig.ConfigDefaults(_cfg), false);
+    }
+
+    /// <summary>Store the console's default list (already validated). An empty list means "no defaults".</summary>
+    public Task SetDefaultExcludesAsync(IEnumerable<string> patterns, CancellationToken ct = default) =>
+        SetAsync(DefaultExcludeGlobs, System.Text.Json.JsonSerializer.Serialize(
+            patterns.Select(p => p?.Trim() ?? "").Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()), ct);
+
     /// <summary>The dashboard-facing settings snapshot (never includes the raw key).</summary>
     public async Task<ServerSettingsDto> GetServerSettingsDtoAsync(CancellationToken ct = default)
     {
-        var inDb = await _db.Settings.AnyAsync(s => s.Key == SteamGridDbApiKey && s.Value != "", ct);
+        // "In the DB" means a USABLE stored key: one this server cannot decrypt falls through to config.
+        var inDb = await GetStoredAsync(SteamGridDbApiKey, ct) is not null;
         var key = await GetEffectiveAsync(SteamGridDbApiKey, ct);
         var schedule = await GetAutoFetchScheduleAsync(ct);
+        var (defaults, defaultsFromConsole) = await GetDefaultExcludesAsync(ct);
         return new ServerSettingsDto(
             SteamGridDbConfigured: !string.IsNullOrWhiteSpace(key),
             SteamGridDbKeyMasked: Mask(key),
             SteamGridDbFromConfig: !inDb && !string.IsNullOrWhiteSpace(key),
             AdminPasswordSet: await HasAdminPasswordAsync(ct),
-            DefaultExcludeGlobs: GlobConfig.GlobalDefaults(_cfg),
+            DefaultExcludeGlobs: defaults,
             AutoFetchHours: schedule.Hours,
             Schedule: schedule,
             NextAutoFetchRunAt: AutoFetchScheduler.ComputeNextRun(schedule, DateTime.UtcNow),
-            Appearance: await GetAppearanceAsync(ct));
+            Appearance: await GetAppearanceAsync(ct),
+            DefaultExcludeGlobsFromConsole: defaultsFromConsole);
     }
 
     /// <summary>Show only the last 4 characters so the dashboard can confirm which key is set.</summary>

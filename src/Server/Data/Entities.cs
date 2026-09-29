@@ -281,6 +281,9 @@ public class AgentHealth
     public string? OsVariantId { get; set; }
     public string? OsDevice { get; set; }
 
+    /// <summary>An update the agent has staged but not applied. Null when none (or an older agent).</summary>
+    public string? StagedVersion { get; set; }
+
     /// <summary>The agent's own last successful sync — not the server's view of it.</summary>
     public DateTime? LastSyncTime { get; set; }
 

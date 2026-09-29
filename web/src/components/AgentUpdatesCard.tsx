@@ -1,5 +1,10 @@
 import { useState, useEffect, useRef, useCallback, type CSSProperties } from 'react';
-import { api } from '../api';
+import { api, errorText } from '../api';
+import { toast, toastError } from '../toast';
+import { Card } from './ui/Card';
+import { Chip } from './ui/Chip';
+import { Button } from './ui/Button';
+import { InlineConfirm } from './ui/InlineConfirm';
 import type { AgentInstallerStatus, AgentPlatform, AutoFetchSchedule, InstallerHashVerification, Settings } from '../types';
 import { asUtc } from '../format';
 
@@ -117,70 +122,54 @@ export function AgentUpdatesCard({
   useEffect(() => { reload(); }, [reload]);
 
   return (
-    <div style={card}>
-      <div style={cardHeader}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-fg)' }}>Agent updates</span>
-        <span style={{ fontSize: 11.5, color: 'var(--color-dim)' }}>hosted packages</span>
-      </div>
-
-      <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <Card title="Agent updates" headerRight={<span className="text-[11.5px] text-dim">hosted packages</span>}>
+      <div className="flex flex-col gap-2.5">
         {INSTALLER_SLOTS.map(slot => {
           const status = statuses[slot.platform];
           return (
-            <div key={slot.platform} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, color: 'var(--color-fg)', fontWeight: 600, minWidth: 122 }}>{slot.label}</span>
-              {loading ? (
-                <span style={{ fontSize: 12, color: 'var(--color-dim)' }}>Loading…</span>
-              ) : status ? (
-                <>
-                  <span style={{ padding: '2px 7px', background: 'var(--color-safe-soft)', color: 'var(--color-safe-ink)', borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>
-                    v{status.version}
-                  </span>
-                  <span style={{ fontSize: 11, color: 'var(--color-dim)' }}>{sourceLabel(status.source)}</span>
-                  <span style={{ fontSize: 11, color: 'var(--color-dim)' }}>· {new Date(asUtc(status.uploadedAt)).toLocaleDateString()}</span>
-                </>
-              ) : (
-                <span style={{ padding: '2px 7px', border: '1px solid var(--color-line)', color: 'var(--color-dim)', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>
-                  none — these agents won't be offered updates
-                </span>
-              )}
+            <div key={slot.platform} className="flex items-center gap-2.5 flex-wrap">
+              <span className="text-[13px] font-semibold text-fg min-w-[122px]">{slot.label}</span>
+              {loading
+                ? <span className="text-xs text-dim">Loading…</span>
+                : status
+                  ? <>
+                      <Chip tone="ok">v{status.version}</Chip>
+                      <span className="text-[11px] text-dim">{sourceLabel(status.source)} · {new Date(asUtc(status.uploadedAt)).toLocaleDateString()}</span>
+                    </>
+                  : <Chip>none — these agents won't be offered updates</Chip>}
             </div>
           );
         })}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 4, borderTop: '1px solid var(--color-line)' }}>
-          <span style={{ fontSize: 12, color: 'var(--color-dim)' }}>{describeSchedule(settings.schedule ?? undefined, settings.nextAutoFetchRunAt)}</span>
+        <div className="pt-2.5 border-t border-line text-xs text-dim">
+          {describeSchedule(settings.schedule ?? undefined, settings.nextAutoFetchRunAt)}
         </div>
 
-        <div style={{ marginTop: 4 }}>
-          <button
-            onClick={() => setShowEdit(true)}
-            style={{ padding: '6px 16px', background: 'transparent', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-          >
-            Edit
-          </button>
+        <div>
+          <Button size="sm" aria-expanded={showEdit} onClick={() => setShowEdit(v => !v)}>
+            {showEdit ? 'Done editing' : 'Edit'}
+          </Button>
         </div>
       </div>
 
+      {/* In place, not a modal (plan.md "No modals"): the editor opens inside the card it edits. */}
       {showEdit && (
-        <AgentUpdatesModal
+        <AgentUpdatesEditor
           statuses={statuses}
           schedule={settings.schedule ?? undefined}
-          onClose={() => setShowEdit(false)}
           onChanged={reload}
           onScheduleChanged={onScheduleChanged}
         />
       )}
-    </div>
+    </Card>
   );
 }
 
-function AgentUpdatesModal({
-  statuses, schedule, onClose, onChanged, onScheduleChanged,
+function AgentUpdatesEditor({
+  statuses, schedule, onChanged, onScheduleChanged,
 }: {
   statuses: StatusMap;
   schedule: AutoFetchSchedule | undefined;
-  onClose: () => void;
   onChanged: () => Promise<void>;
   onScheduleChanged: () => void;
 }) {
@@ -192,7 +181,7 @@ function AgentUpdatesModal({
 
   async function handleBulkFetch() {
     const targets = INSTALLER_SLOTS.filter(s => checked[s.platform]);
-    if (targets.length === 0) { alert('Check at least one package first.'); return; }
+    if (targets.length === 0) { toastError('Check at least one package first.'); return; }
     setBulkFetching(true);
     setBulkResults({});
     // Sequential, not Promise.all: these share one server-side gate per platform anyway, and
@@ -202,7 +191,7 @@ function AgentUpdatesModal({
         const info = await api.fetchInstallerFromGitHub(slot.platform);
         setBulkResults(prev => ({ ...prev, [slot.platform]: `✓ v${info.version}` }));
       } catch (e) {
-        setBulkResults(prev => ({ ...prev, [slot.platform]: `✗ ${(e as Error).message}` }));
+        setBulkResults(prev => ({ ...prev, [slot.platform]: `✗ ${errorText(e)}` }));
       }
     }
     setBulkFetching(false);
@@ -210,31 +199,7 @@ function AgentUpdatesModal({
   }
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
-      }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          width: 'min(720px, 92vw)', maxHeight: '86vh', overflowY: 'auto',
-          background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 8,
-          boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-        }}
-      >
-        <div style={{ ...cardHeader, position: 'sticky', top: 0, background: 'var(--color-panel)', zIndex: 1 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-fg)' }}>Edit agent updates</span>
-          <button
-            onClick={onClose}
-            style={{ padding: '3px 9px', background: 'transparent', border: '1px solid var(--color-line)', borderRadius: 4, color: 'var(--color-dim)', fontSize: 12, cursor: 'pointer' }}
-          >
-            Close
-          </button>
-        </div>
-
+    <div className="animate-drop mt-4 -mx-4 -mb-[15px] border-t border-line">
         <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1px solid var(--color-line)' }}>
           <span style={{ fontSize: 13, color: 'var(--color-fg)', fontWeight: 600 }}>Fetch latest for all packages</span>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -256,13 +221,9 @@ function AgentUpdatesModal({
             ))}
           </div>
           <div>
-            <button
-              onClick={handleBulkFetch}
-              disabled={bulkFetching}
-              style={{ padding: '7px 16px', background: bulkFetching ? 'var(--color-raise)' : 'var(--color-accent)', color: bulkFetching ? 'var(--color-dim)' : 'var(--color-on-accent)', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: bulkFetching ? 'default' : 'pointer' }}
-            >
+            <Button size="sm" onClick={() => void handleBulkFetch()} disabled={bulkFetching}>
               {bulkFetching ? 'Fetching…' : 'Fetch selected from GitHub'}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -282,7 +243,6 @@ function AgentUpdatesModal({
             />
           ))}
         </div>
-      </div>
     </div>
   );
 }
@@ -319,7 +279,8 @@ function ScheduleEditor({
     try {
       await api.setAutoFetchSchedule(draft);
       onChanged();
-    } catch (e) { alert('Could not save the schedule: ' + (e as Error).message); }
+      toast('Saved the fetch schedule.');
+    } catch (e) { toastError('Could not save the schedule: ' + errorText(e)); }
     finally { setSaving(false); }
   }
 
@@ -390,13 +351,9 @@ function ScheduleEditor({
           </>
         )}
 
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          style={{ padding: '6px 14px', background: saving ? 'var(--color-raise)' : 'var(--color-accent)', color: saving ? 'var(--color-dim)' : 'var(--color-on-accent)', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: saving ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
-        >
+        <Button size="sm" onClick={() => void handleSave()} disabled={saving}>
           {saving ? 'Saving…' : 'Save schedule'}
-        </button>
+        </Button>
       </div>
 
       <p style={{ fontSize: 11, color: 'var(--color-dim)', margin: 0 }}>
@@ -435,9 +392,9 @@ function InstallerSlotEditor({
 
   async function handleUpload() {
     const file = fileInputRef.current?.files?.[0];
-    if (!file) { alert(`Choose a ${slot.label} package first.`); return; }
+    if (!file) { toastError(`Choose a ${slot.label} package first.`); return; }
     const ver = versionOverride.trim() || slot.parseVersion(file.name);
-    if (!ver) { alert('Could not parse version from filename. Enter it in the Version field.'); return; }
+    if (!ver) { toastError('Could not read a version from the file name. Enter it in the Version field.'); return; }
     setUploading(true);
     try {
       const fd = new FormData();
@@ -447,14 +404,16 @@ function InstallerSlotEditor({
       if (fileInputRef.current) fileInputRef.current.value = '';
       setVerification(null);
       await refreshStatus();
-    } catch (e) { alert('Upload failed: ' + (e as Error).message); }
+      toast(`Uploaded ${slot.label} v${ver}.`);
+    } catch (e) { toastError('Upload failed: ' + errorText(e)); }
     finally { setUploading(false); }
   }
 
   async function handleDelete() {
-    if (!confirm(`Remove the hosted ${slot.label} package? Those agents will no longer be offered an update until a new one is uploaded.`)) return;
-    try { await api.deleteInstaller(slot.platform); setVerification(null); await refreshStatus(); }
-    catch (e) { alert('Delete failed: ' + (e as Error).message); }
+    try {
+      await api.deleteInstaller(slot.platform); setVerification(null); await refreshStatus();
+      toast(`Removed the hosted ${slot.label} package.`);
+    } catch (e) { toastError('Delete failed: ' + errorText(e)); }
   }
 
   async function handleFetchGitHub() {
@@ -463,15 +422,15 @@ function InstallerSlotEditor({
       const info = await api.fetchInstallerFromGitHub(slot.platform);
       setVerification(null);
       await refreshStatus();
-      alert(`Fetched v${info.version} (${info.fileName}) from GitHub.`);
-    } catch (e) { alert('Fetch from GitHub failed: ' + (e as Error).message); }
+      toast(`Fetched v${info.version} (${info.fileName}) from GitHub.`, 4000);
+    } catch (e) { toastError('Fetch from GitHub failed: ' + errorText(e)); }
     finally { setFetching(false); }
   }
 
   async function handleVerify() {
     setVerifying(true);
     try { setVerification(await api.verifyInstallerHash(slot.platform)); }
-    catch (e) { alert('Hash check failed: ' + (e as Error).message); }
+    catch (e) { toastError('Hash check failed: ' + errorText(e)); }
     finally { setVerifying(false); }
   }
 
@@ -497,12 +456,12 @@ function InstallerSlotEditor({
             >
               Download ↓
             </a>
-            <button
-              onClick={handleDelete}
-              style={{ padding: '2px 10px', border: '1px solid var(--color-watch-line)', color: 'var(--color-watch-ink)', background: 'transparent', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
-            >
-              Delete
-            </button>
+            <InlineConfirm
+              label="Delete"
+              consequence={`Removes the hosted ${slot.label} package. Those agents are not offered an update until a new one is uploaded.`}
+              confirmLabel={`Delete the ${slot.label} package`}
+              onConfirm={handleDelete}
+            />
           </>
         ) : (
           <span style={{ padding: '2px 7px', border: '1px solid var(--color-line)', color: 'var(--color-dim)', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>none — these agents won't be offered updates</span>
@@ -514,13 +473,9 @@ function InstallerSlotEditor({
           look at. */}
       {status && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <button
-            onClick={handleVerify}
-            disabled={verifying}
-            style={{ padding: '3px 10px', background: 'transparent', color: 'var(--color-dim)', border: '1px solid var(--color-line)', borderRadius: 4, fontSize: 11, cursor: verifying ? 'default' : 'pointer' }}
-          >
+          <Button size="sm" variant="quiet" onClick={() => void handleVerify()} disabled={verifying}>
             {verifying ? 'Checking…' : 'Verify hash against GitHub'}
-          </button>
+          </Button>
           {verification && (
             <span
               title={verification.note ?? (verification.publishedSha256 ? `Published: ${verification.publishedSha256}\nHosted: ${status.sha256}` : undefined)}
@@ -557,20 +512,12 @@ function InstallerSlotEditor({
           aria-label={`${slot.label} package version`}
           style={{ width: 140, padding: '7px 10px', background: 'transparent', color: 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 5, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}
         />
-        <button
-          onClick={handleUpload}
-          disabled={uploading}
-          style={{ padding: '6px 14px', background: uploading ? 'var(--color-raise)' : 'var(--color-accent)', color: uploading ? 'var(--color-dim)' : 'var(--color-on-accent)', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: uploading ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
-        >
+        <Button size="sm" onClick={() => void handleUpload()} disabled={uploading}>
           {uploading ? 'Uploading…' : 'Upload'}
-        </button>
-        <button
-          onClick={handleFetchGitHub}
-          disabled={fetching}
-          style={{ padding: '6px 14px', background: 'transparent', color: fetching ? 'var(--color-dim)' : 'var(--color-fg)', border: '1px solid var(--color-line)', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: fetching ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
-        >
+        </Button>
+        <Button size="sm" onClick={() => void handleFetchGitHub()} disabled={fetching}>
           {fetching ? 'Fetching…' : 'Fetch from GitHub'}
-        </button>
+        </Button>
       </div>
       <p style={{ fontSize: 11, color: 'var(--color-dim)', marginTop: -4 }}>
         <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10 }}>{slot.fileHint}</code>
@@ -580,11 +527,3 @@ function InstallerSlotEditor({
     </div>
   );
 }
-
-const card: CSSProperties = {
-  background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 8, overflow: 'hidden',
-};
-const cardHeader: CSSProperties = {
-  padding: '11px 18px', borderBottom: '1px solid var(--color-line)',
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-};

@@ -1,74 +1,30 @@
 import { useEffect, useState, useCallback } from 'react';
-import { api } from '../api';
+import { api, errorText } from '../api';
 import type { AuditEntry } from '../types';
+import { plural, toMs, when } from '../format';
+import { Page } from './ui/Page';
+import { PageHead } from './ui/PageHead';
+import { Card } from './ui/Card';
+import { Button } from './ui/Button';
+import { Banner } from './ui/Banner';
+import { SearchField } from './ui/SearchField';
+import { FilterChips } from './ui/FilterChips';
+import { DataTable } from './ui/DataTable';
+import type { Column } from './ui/DataTable';
+import { EmptyState } from './ui/EmptyState';
 
-// plan.md colour rule, applied to history: ok = it went fine, warn = it needed a second look or removed
-// something, crit = a decision was waiting (a conflict), info/mute = neutral bookkeeping. The old map used
-// six hex colours; a badge is now one of five tones, each built from the same derived tokens as Chip.
-type Tone = 'ok' | 'warn' | 'crit' | 'info' | 'mute';
+/** What the server hands back per request (`GET /audit?limit=`). The page searches only these. */
+const LOADED = 200;
 
-const TONES: Record<Tone, { bg: string; line: string; ink: string }> = {
-  ok:   { bg: 'var(--color-safe-soft)',   line: 'var(--color-safe-line)',   ink: 'var(--color-safe-ink)' },
-  warn: { bg: 'var(--color-watch-soft)',  line: 'var(--color-watch-line)',  ink: 'var(--color-watch-ink)' },
-  crit: { bg: 'var(--color-accent-soft)', line: 'var(--color-accent-line)', ink: 'var(--color-accent-ink)' },
-  info: { bg: 'var(--color-raise)',       line: 'var(--color-line)',        ink: 'var(--color-fg)' },
-  mute: { bg: 'var(--color-raise)',       line: 'var(--color-line)',        ink: 'var(--color-dim)' },
-};
-
-const ACTION_TONE: Record<string, Tone> = {
-  'upload.create': 'ok',
-  'upload.force': 'ok',
-  'upload.conflict': 'crit',
-  'conflict.resolve': 'ok',
-  'lease.acquire': 'info',
-  'lease.release': 'info',
-  'lease.force_release': 'warn',
-  'game.create': 'ok',
-  'game.delete': 'warn',
-  'game.enable': 'ok',
-  'game.disable': 'mute',
-  'game.save_dir': 'mute',
-  'machine.register': 'ok',
-  'machine.reregister': 'info',
-  'machine.delete': 'warn',
-  'machine_path.set': 'mute',
-  'command.enqueue': 'info',
-  'command.complete': 'ok',
-  'enrollment.create': 'info',
-  'enrollment.redeem': 'ok',
-  'enrollment.revoke': 'warn',
-  'enrollment.expire': 'mute',
-  'agent_installer.upload': 'info',
-  'agent_installer.fetch_github': 'info',
-  'agent_installer.auto_fetch': 'info',
-  'settings.appearance': 'mute',
-};
-
-function ActionBadge({ action }: { action: string }) {
-  const tone = TONES[ACTION_TONE[action] ?? 'mute'];
-  return (
-    <span style={{
-      display: 'inline-block',
-      padding: '2px 7px',
-      borderRadius: 4,
-      fontSize: 11,
-      fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace",
-      background: tone.bg,
-      color: tone.ink,
-      border: `1px solid ${tone.line}`,
-      whiteSpace: 'nowrap',
-    }}>
-      {action}
-    </span>
-  );
-}
+/** plan.md 12.1: the action is `accent-ink` when something failed or a decision was waiting, dim otherwise. */
+const loud = (action: string) => /fail|conflict|lockout/.test(action);
 
 function csvCell(v: string | null | undefined): string {
   const s = v ?? '';
   return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
-/** Exports what's currently loaded, not the server's whole history — GetAuditLogAsync caps at 200. */
+/** Exports what the filter shows — which is only ever what was loaded, never the server's whole history. */
 function exportCsv(entries: AuditEntry[]) {
   const header = ['Time', 'Machine', 'Game', 'Action', 'Detail'];
   const rows = entries.map(e => [
@@ -85,123 +41,89 @@ function exportCsv(entries: AuditEntry[]) {
   URL.revokeObjectURL(url);
 }
 
-function formatTs(iso: string) {
-  const normalized = /[Z+]/.test(iso.slice(-6)) ? iso : iso + 'Z';
-  const d = new Date(normalized);
-  return d.toLocaleString(undefined, {
-    month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-  });
-}
+const stamp = (t: string) => new Date(toMs(t)).toLocaleString(undefined, {
+  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
+});
+
+const SERVER = '__server';
 
 export function AuditView() {
-  const [entries, setEntries] = useState<AuditEntry[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [entries, setEntries] = useState<AuditEntry[] | null>(null);
   const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [machine, setMachine] = useState('all');
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
     try {
-      setEntries(await api.audit());
+      setEntries(await api.audit(LOADED));
+      setError('');
     } catch (e) {
-      setError('Failed to load audit log: ' + (e as Error).message);
-    } finally {
-      setLoading(false);
+      setError(errorText(e));
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load]);
+
+  const all = entries ?? [];
+  const machines = [...new Set(all.map(e => e.machineName).filter((n): n is string => !!n))].sort();
+  const hasServer = all.some(e => !e.machineName);
+  const q = query.trim().toLowerCase();
+  const shown = all.filter(e =>
+    (machine === 'all' || (machine === SERVER ? !e.machineName : e.machineName === machine)) &&
+    (!q || `${e.action} ${e.gameName ?? ''} ${e.detail ?? ''}`.toLowerCase().includes(q)));
+  const capped = all.length >= LOADED;
+
+  const columns: Column<AuditEntry>[] = [
+    { head: 'Time', cell: e => <span title={when(e.timestamp)}>{stamp(e.timestamp)}</span>, kind: 'm' },
+    { head: 'Machine', cell: e => e.machineName ?? <span className="text-faint">server</span>, kind: 'm' },
+    { head: 'Game', cell: e => e.gameName ?? <span className="text-faint">—</span>, kind: 'k' },
+    { head: 'Action', cell: e => <span className={loud(e.action) ? 'text-accent-ink' : 'text-dim'}>{e.action}</span>, kind: 'm' },
+    { head: 'Detail', cell: e => e.detail ?? '', kind: 'wrap' },
+  ];
 
   return (
-    <div style={{ padding: '20px 24px', flex: 1, minHeight: 0, overflowY: 'auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <span style={{ color: 'var(--color-safe-ink)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-          Audit Log — last {entries.length} events
-        </span>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={() => exportCsv(entries)}
-            disabled={entries.length === 0}
-            title={`Export the ${entries.length} loaded event(s) as CSV`}
-            style={{
-              padding: '5px 13px', background: 'transparent', border: '1px solid var(--color-line)',
-              borderRadius: 4, color: entries.length === 0 ? 'var(--color-dim)' : 'var(--color-fg)', fontSize: 12,
-              cursor: entries.length === 0 ? 'default' : 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            ⤓ Export CSV
-          </button>
-          <button
-            onClick={load}
-            style={{
-              padding: '5px 13px', background: 'transparent', border: '1px solid var(--color-line)',
-              borderRadius: 4, color: 'var(--color-fg)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            ↻ Refresh
-          </button>
-        </div>
-      </div>
+    <Page>
+      <PageHead
+        title="Audit log"
+        sub={entries
+          ? <>{shown.length} of {plural(all.length, 'event')} · newest first{capped && ` · the newest ${LOADED} only — older events are not searched`}</>
+          : 'loading…'}
+        actions={<>
+          <SearchField value={query} onChange={setQuery} placeholder="Filter by action, game or detail" aria-label="Filter audit events" />
+          <Button onClick={() => exportCsv(shown)} disabled={shown.length === 0}
+            title={`Export the ${shown.length} event(s) shown as CSV`}>Export CSV</Button>
+          <Button variant="quiet" onClick={() => void load()}>Refresh</Button>
+        </>}
+      />
 
-      {error && <div style={{ color: 'var(--color-accent-ink)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
-      {loading && entries.length === 0 && (
-        <div style={{ color: 'var(--color-dim)', fontSize: 13 }}>Loading…</div>
+      {error && <Banner tone="watch" title="Could not read the audit log">{error}</Banner>}
+
+      {machines.length + (hasServer ? 1 : 0) > 1 && (
+        <FilterChips
+          aria-label="Filter by machine"
+          value={machine}
+          onChange={setMachine}
+          options={[
+            { value: 'all', label: 'All machines', count: all.length },
+            ...machines.map(m => ({ value: m, label: m, count: all.filter(e => e.machineName === m).length })),
+            ...(hasServer ? [{ value: SERVER, label: 'Server', count: all.filter(e => !e.machineName).length }] : []),
+          ]}
+        />
       )}
 
-      {entries.length > 0 && (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--color-line)' }}>
-                {['Time', 'Machine', 'Game', 'Action', 'Detail'].map(h => (
-                  <th key={h} style={{
-                    padding: '6px 10px', textAlign: 'left',
-                    color: 'var(--color-dim)', fontSize: 10, textTransform: 'uppercase',
-                    letterSpacing: '0.09em', fontWeight: 600, whiteSpace: 'nowrap',
-                  }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e, i) => (
-                <tr
-                  key={e.id}
-                  style={{
-                    borderBottom: '1px solid var(--color-row)',
-                    background: i % 2 === 0 ? 'transparent' : 'color-mix(in oklab, var(--color-fg) 3%, transparent)',
-                  }}
-                >
-                  <td style={{ padding: '7px 10px', color: 'var(--color-dim)', whiteSpace: 'nowrap', fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace", fontSize: 11 }}>
-                    {formatTs(e.timestamp)}
-                  </td>
-                  <td style={{ padding: '7px 10px', color: 'var(--color-fg)', whiteSpace: 'nowrap' }}>
-                    {e.machineName ?? <span style={{ color: 'var(--color-dim)' }}>—</span>}
-                  </td>
-                  <td style={{ padding: '7px 10px', color: 'var(--color-fg)', whiteSpace: 'nowrap' }}>
-                    {e.gameName ?? <span style={{ color: 'var(--color-dim)' }}>—</span>}
-                  </td>
-                  <td style={{ padding: '7px 10px' }}>
-                    <ActionBadge action={e.action} />
-                  </td>
-                  <td style={{
-                    padding: '7px 10px', color: 'var(--color-dim)',
-                    fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace",
-                    fontSize: 11, maxWidth: 380,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {e.detail ?? ''}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {!loading && entries.length === 0 && !error && (
-        <div style={{ color: 'var(--color-dim)', fontSize: 13 }}>No audit events yet.</div>
-      )}
-    </div>
+      <Card flush>
+        <DataTable
+          caption="Audit events, newest first"
+          columns={columns}
+          rows={shown}
+          rowKey={e => e.id}
+          empty={entries === null
+            ? <div className="px-5 py-10 text-center text-[13px] text-dim">Loading…</div>
+            : all.length === 0
+              ? <EmptyState title="No events yet">Uploads, conflicts, sign-ins and settings changes are recorded here.</EmptyState>
+              : <EmptyState title="Nothing matches that filter">Clear the search or pick a different machine.</EmptyState>}
+        />
+      </Card>
+    </Page>
   );
 }

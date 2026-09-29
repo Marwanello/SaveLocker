@@ -69,7 +69,20 @@ public record ServerSettingsDto(
     double AutoFetchHours = 0,
     AutoFetchSchedule? Schedule = null,
     DateTime? NextAutoFetchRunAt = null,
-    AppearanceSettingsDto? Appearance = null);
+    AppearanceSettingsDto? Appearance = null,
+    bool DefaultExcludeGlobsFromConsole = false,
+    ServerStorageDto? Storage = null);
+
+/// <summary>What the Configuration page's Server card reads: where archives live and how full that volume
+/// is (null sizes when the volume cannot be read), the default keep, and the conflict-escalation window.</summary>
+public record ServerStorageDto(
+    string ArchiveRoot,
+    long? VolumeTotalBytes,
+    long? VolumeFreeBytes,
+    long ArchivesBytes,
+    int GamesWithArchives,
+    int DefaultRetainVersions,
+    double EscalationAfterSeconds);
 
 /// <summary>
 /// When the server automatically checks GitHub for newer agent/plugin packages.
@@ -584,7 +597,10 @@ public record AgentHeartbeat(
     // order (see CONTEXT.md's deploy note).
     ScanPathCandidate[]? PathCandidates = null,
     // Appended and optional for the same reason. Null from an agent that predates it.
-    AgentOsInfo? Os = null);
+    AgentOsInfo? Os = null,
+    // An update downloaded and verified but not yet applied (the Linux agent swaps it in at its next
+    // start). Null when none is staged — and from any agent that predates the field.
+    string? StagedVersion = null);
 
 /// <summary>
 /// Which operating system an agent runs on, so the console can put the right logo beside a machine.
@@ -663,7 +679,8 @@ public record AgentHealthDto(
     int OfflineQueueDepth,
     AgentEventDto[] OpenEvents,
     // Null until the machine's agent reports it (an older agent never does).
-    AgentOsInfo? Os = null);
+    AgentOsInfo? Os = null,
+    string? StagedVersion = null);
 
 // ----- Agent update channel -----
 
@@ -725,18 +742,54 @@ public record SyncStatusDto(bool InSync, bool HasOpenConflict, Guid? ConflictId 
 /// the whole repo); it carries a <c>+{n}.{sha}</c> suffix on builds after the nearest tag.
 /// <paramref name="BuiltAt"/> is UTC, null when unstamped.
 /// </summary>
-public record ServerBuildInfo(string Version, string Commit, DateTime? BuiltAt, bool IsRelease);
+/// <param name="LatestRelease">The newest release tag the server has read from its GitHub repo (the agent
+/// update poll or a manual fetch), without a leading "v"; null until one has been read since start.</param>
+public record ServerBuildInfo(string Version, string Commit, DateTime? BuiltAt, bool IsRelease, string? LatestRelease = null);
 
 /// <summary>Response of /api/admin/status — reachability, auth requirement and build identity.</summary>
 public record AdminStatus(bool PasswordRequired, ServerBuildInfo Build);
 
 // ----- Server backups (admin) -----
 
-/// <summary>One on-box SQLite snapshot file. <paramref name="CreatedAt"/> is UTC.</summary>
-public record BackupInfo(string FileName, long SizeBytes, DateTime CreatedAt);
+/// <summary>One backup file. <paramref name="CreatedAt"/> is UTC. <paramref name="IncludesSaves"/> is true for a
+/// <c>.zip</c> backup (the database plus every game's latest save); a legacy <c>.db</c> is the database alone.</summary>
+public record BackupInfo(string FileName, long SizeBytes, DateTime CreatedAt, BackupReason Reason, bool IncludesSaves = false);
+
+/// <summary>Why a backup was taken. Carried in the file name after the timestamp, so a name with no
+/// suffix reads as <see cref="Scheduled"/> (every snapshot from before reasons existed was nightly).</summary>
+public enum BackupReason { Scheduled, Manual, BeforeUpgrade, BeforeRestore }
+
+/// <summary>Everything the console's Backups page shows. Times are UTC. <c>NextRunAt</c> is null while
+/// scheduled backups are off. <c>ArchivesBytes</c> is every stored version; a backup holds only each game's latest.</summary>
+public record BackupStatusDto(
+    bool Enabled,
+    int RetentionCount,
+    int HourOfDay,
+    DateTime? NextRunAt,
+    string BackupRoot,
+    string? LastError,
+    DateTime? LastErrorAt,
+    long ArchivesBytes,
+    int ArchivesCount,
+    List<BackupInfo> Backups,
+    string Frequency = "weekly",
+    int DayOfWeek = 0);
+
+/// <summary>The backup schedule (DB-backed; each overrides <c>Backup:*</c> in config). <c>HourOfDay</c> is UTC;
+/// <c>Frequency</c> is "daily" or "weekly"; <c>DayOfWeek</c> (0 = Sunday) applies to weekly.</summary>
+public record SetBackupSettingsRequest(bool Enabled, int RetentionCount, int HourOfDay, string Frequency = "weekly", int DayOfWeek = 0);
 
 /// <summary>Outcome of a manual/scheduled backup run and the resulting retained count.</summary>
 public record BackupResult(bool Ok, string? Message, BackupInfo? Backup, int TotalBackups);
+
+/// <summary>A restore that went through: what it came from, the safety backup taken just before it, and how many
+/// save archives it put back (the rest were already on disk — archives never change once written).</summary>
+/// <paramref name="Warning"/> is set when the database was restored but putting the saves back stopped part-way.
+public record BackupRestoreResult(string RestoredFrom, string SafetyBackup, int SavesRestored, int SavesAlreadyPresent, string? Warning = null);
+
+/// <summary>A single-use link to one backup, valid until <paramref name="ExpiresAt"/> (UTC, about a minute). The console
+/// follows it with a plain link so the browser streams the file to disk instead of buffering it.</summary>
+public record BackupDownloadTicket(string Url, DateTime ExpiresAt);
 
 // ----- Audit log -----
 

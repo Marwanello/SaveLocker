@@ -1595,7 +1595,38 @@ dry-run count on screen.** Server: Cancel now also withdraws a claim that **laps
 predicate) and runs in one transaction, so two cancels at once audit once. `run-console-security-tests` 195 → **205**
 (8 of the 10 new checks fail against the PR-head server), `web` build + lint clean, and the UI fixes checked live
 through `testenv` with a real conflict.
-**Next action:** review and merge PR #52 (Group 8 + the OS-logo follow-up), then Group 9 (now unblocked) or Group 10.
+PR #52 merged.
+<br>**Group 9 started 2026-09-29 (branch `group-9-ui-redesign`) — 9a done: the console's Backups tab.** New admin routes
+`GET /admin/backups/status`, `POST /admin/backups/settings` (DB-backed schedule, re-read every scheduler loop) and
+`GET /admin/backups/{file}` (the download: admin-only, name matched against the listing, audited, `no-store`); a snapshot's
+reason (Nightly / Manual / Before upgrade) rides in its file name; the server takes a **before-upgrade snapshot** before
+migrating whenever it starts on a different build. `BackupsView.tsx` + KB `database-backups.md`. `openapi.json` +
+`web/src/api-types.ts` regenerated (additive). `run-console-security-tests` +34 (BK-01, mutation-checked) — run here only
+as that one phase through a pwsh-7 shim; CI runs the whole suite. Details and what was not verified:
+`tasks/checkpoint-ui/implementation-grouping.md` → Group 9.
+<br>**Same day — 9b and 9c done too; Group 9 is complete in code.** 9b: Configuration rebuilt on the kit (Server with a
+`DriveInfo` storage meter, Enroll, Defaults & maintenance with the auto-update and nightly-backup switches, Machines,
+Agent updates edited in place, Admin password) and the **default exclude list editable** (`POST /api/settings/default-excludes`,
+stored as a JSON array so `[]` means "none"); no `alert`/`confirm` left anywhere in `web/src` (guard widened). 9c: Audit log
+search + machine chips, Help as the docs grid, What's new with the release-history table and Agent versions, the two-column
+sign-in with **Remember this browser** (localStorage vs sessionStorage); server extends `AgentHeartbeat.StagedVersion`
+(migration `AddAgentStagedVersion`) and `ServerBuildInfo.LatestRelease`. `run-console-security-tests` +17 (CFG-01,
+mutation-checked). All verified in a browser against a scratch server, **not yet through `testenv`** — the step-by-step
+is `tasks/checkpoint-ui/group-9-verification.md`.
+<br>**Same day, maintainer follow-ups:** backups are now zips of the database + every game's latest save on an
+editable UTC daily/weekly schedule, restorable from the Backups page (safety backup first, undoable); the SteamGridDB key
+is encrypted at rest (key ring `/data/keys`, never in a backup); the lock screen no longer shows the top bar's tabs,
+Sync all or bell. Write-up: `implementation-grouping.md` → Group 9 → *Follow-up*; decisions in `Decisions.md`.
+<br>**PR #53 opened and reviewed the same day; every finding fixed on the branch.** Restore no longer cancels after the
+database swap and runs the start's own setup (`Data/DatabaseSetup.cs`); downloads go through a single-use ticket so a
+multi-GB backup streams to disk. `run-console-security-tests` **308/308** on Windows (BK-01 +14, mutation-checked).
+Detail: `implementation-grouping.md` → Group 9 → *Review fixes (PR #53)*.
+<br>**Release notes for the next release must cover:** backups are now zips of the database + every game's latest save,
+restorable from the Backups page; **the schedule changes for upgraders** — default **weekly** (Sunday) instead of nightly,
+and the hour is now **UTC**, not the container's local time (an unRAID template's `TZ` no longer shifts it) — so anyone who
+relied on nightly backups should set *daily* under Configuration; the SteamGridDB key is encrypted at rest, and a backup
+restored onto a different server needs it re-entered; a machine enrolled after a restored backup must re-enroll.
+**Next action:** run `group-9-verification.md` on the Windows rig, then merge PR #53; then Group 10.
 
 ---
 

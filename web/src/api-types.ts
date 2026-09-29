@@ -241,6 +241,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/backup-download/{ticket}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    ticket: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games": {
         parameters: {
             query?: never;
@@ -1740,6 +1775,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/default-excludes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": string[];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string[];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/steamgriddb-key": {
         parameters: {
             query?: never;
@@ -2648,6 +2722,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/backups/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BackupStatusDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/backup": {
         parameters: {
             query?: never;
@@ -2673,6 +2782,180 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["BackupResult"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/backups/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetBackupSettingsRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/backups/{file}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    file: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    file: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/backups/{file}/download-ticket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    file: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BackupDownloadTicket"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/backups/{file}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    file: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BackupRestoreResult"];
                     };
                 };
             };
@@ -3152,6 +3435,7 @@ export interface components {
             offlineQueueDepth: number;
             openEvents: components["schemas"]["AgentEventDto"][];
             os?: null | components["schemas"]["AgentOsInfo"];
+            stagedVersion?: null | string;
         };
         AgentHeartbeat: {
             agentVersion: string;
@@ -3177,6 +3461,7 @@ export interface components {
             resolvedGameIds?: null | string[];
             pathCandidates?: null | components["schemas"]["ScanPathCandidate"][];
             os?: null | components["schemas"]["AgentOsInfo"];
+            stagedVersion?: null | string;
         };
         AgentHeartbeatResponse: {
             escalatedConflicts: components["schemas"]["ConflictEscalationDto"][];
@@ -3256,12 +3541,31 @@ export interface components {
             dayOfMonth: number;
             timeOfDay: string;
         };
+        BackupDownloadTicket: {
+            url: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
         BackupInfo: {
             fileName: string;
             /** Format: int64 */
             sizeBytes: number;
             /** Format: date-time */
             createdAt: string;
+            reason: components["schemas"]["BackupReason"];
+            /** @default false */
+            includesSaves: boolean;
+        };
+        /** @enum {unknown} */
+        BackupReason: "Scheduled" | "Manual" | "BeforeUpgrade" | "BeforeRestore";
+        BackupRestoreResult: {
+            restoredFrom: string;
+            safetyBackup: string;
+            /** Format: int32 */
+            savesRestored: number;
+            /** Format: int32 */
+            savesAlreadyPresent: number;
+            warning?: null | string;
         };
         BackupResult: {
             ok: boolean;
@@ -3269,6 +3573,31 @@ export interface components {
             backup: null | components["schemas"]["BackupInfo"];
             /** Format: int32 */
             totalBackups: number;
+        };
+        BackupStatusDto: {
+            enabled: boolean;
+            /** Format: int32 */
+            retentionCount: number;
+            /** Format: int32 */
+            hourOfDay: number;
+            /** Format: date-time */
+            nextRunAt: null | string;
+            backupRoot: string;
+            lastError: null | string;
+            /** Format: date-time */
+            lastErrorAt: null | string;
+            /** Format: int64 */
+            archivesBytes: number;
+            /** Format: int32 */
+            archivesCount: number;
+            backups: components["schemas"]["BackupInfo"][];
+            /** @default weekly */
+            frequency: string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            dayOfWeek: number;
         };
         BeginUploadRequest: {
             contentHash: string;
@@ -3572,6 +3901,7 @@ export interface components {
             /** Format: date-time */
             builtAt: null | string;
             isRelease: boolean;
+            latestRelease?: null | string;
         };
         ServerSettingsDto: {
             steamGridDbConfigured: boolean;
@@ -3588,6 +3918,24 @@ export interface components {
             /** Format: date-time */
             nextAutoFetchRunAt?: null | string;
             appearance?: null | components["schemas"]["AppearanceSettingsDto"];
+            /** @default false */
+            defaultExcludeGlobsFromConsole: boolean;
+            storage?: null | components["schemas"]["ServerStorageDto"];
+        };
+        ServerStorageDto: {
+            archiveRoot: string;
+            /** Format: int64 */
+            volumeTotalBytes: null | number;
+            /** Format: int64 */
+            volumeFreeBytes: null | number;
+            /** Format: int64 */
+            archivesBytes: number;
+            /** Format: int32 */
+            gamesWithArchives: number;
+            /** Format: int32 */
+            defaultRetainVersions: number;
+            /** Format: double */
+            escalationAfterSeconds: number;
         };
         SessionResponse: {
             token: null | string;
@@ -3603,6 +3951,20 @@ export interface components {
             mark: string;
             /** @default true */
             pushToAgents: boolean;
+        };
+        SetBackupSettingsRequest: {
+            enabled: boolean;
+            /** Format: int32 */
+            retentionCount: number;
+            /** Format: int32 */
+            hourOfDay: number;
+            /** @default weekly */
+            frequency: string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            dayOfWeek: number;
         };
         SetConflictPolicyRequest: {
             policy: components["schemas"]["ConflictPolicy"];

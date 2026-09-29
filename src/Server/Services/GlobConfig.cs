@@ -5,7 +5,8 @@ namespace SaveLocker.Server.Services;
 /// <summary>
 /// Helpers for the save-file exclude globs. Per-game patterns are stored on the
 /// <see cref="Data.Game"/> entity as newline-separated text; the global defaults come
-/// from <c>Sync:DefaultExcludeGlobs</c> (or a built-in junk list). Agents receive the
+/// from the console's own list (<see cref="SettingsService.GetDefaultExcludesAsync"/>), else
+/// <c>Sync:DefaultExcludeGlobs</c>, else a built-in junk list. Agents receive the
 /// <see cref="Effective"/> (global ∪ per-game) set and apply it when hashing/archiving.
 /// </summary>
 public static class GlobConfig
@@ -13,8 +14,9 @@ public static class GlobConfig
     private static readonly string[] BuiltInDefaults =
         { "*.tmp", "*.log", "*.bak", "Thumbs.db", "desktop.ini" };
 
-    /// <summary>The global exclude defaults applied to every game.</summary>
-    public static string[] GlobalDefaults(IConfiguration cfg)
+    /// <summary>The exclude defaults from configuration (or the built-in list) — what applies until an
+    /// admin saves a list from the console.</summary>
+    public static string[] ConfigDefaults(IConfiguration cfg)
     {
         var configured = cfg.GetSection("Sync:DefaultExcludeGlobs").Get<string[]>();
         var source = configured is { Length: > 0 } ? configured : BuiltInDefaults;
@@ -46,12 +48,12 @@ public static class GlobConfig
     /// not. Storage is newline-separated, so a control character inside a pattern would silently
     /// split it in two; an unmatchable shape would throw inside the agent's hash of the save folder.
     /// </summary>
-    public static string? Validate(IEnumerable<string>? patterns)
+    public static string? Validate(IEnumerable<string>? patterns, string scope = "per game")
     {
         if (patterns is null) return "A list of patterns is required.";
         var cleaned = patterns.Select(p => p?.Trim() ?? "").Where(p => p.Length > 0).ToList();
         if (cleaned.Count > MaxPatterns)
-            return $"At most {MaxPatterns} exclude patterns are allowed per game (got {cleaned.Count}).";
+            return $"At most {MaxPatterns} exclude patterns are allowed {scope} (got {cleaned.Count}).";
         foreach (var p in cleaned)
         {
             if (p.Length > MaxPatternLength)
@@ -64,8 +66,8 @@ public static class GlobConfig
     }
 
     /// <summary>Global defaults plus a game's own patterns, de-duplicated.</summary>
-    public static string[] Effective(IConfiguration cfg, string? perGameRaw) =>
-        GlobalDefaults(cfg)
+    public static string[] Effective(IEnumerable<string> defaults, string? perGameRaw) =>
+        defaults
             .Concat(Parse(perGameRaw))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
