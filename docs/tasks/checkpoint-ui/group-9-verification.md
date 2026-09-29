@@ -86,8 +86,11 @@ Rig facts that matter here:
    database's history, so its version row returns. Its file was deleted in step 2 and wasn't in B, so that version
    lists but won't download.)
 8. Garbage is refused: `docker exec savelocker-test sh -c 'echo junk > /data/backups/savelocker-20000101-000000-manual.zip'`,
-   reload, **Restore** it. A red toast "Nothing was restored: …" appears and no Before restore row is added. Then delete
-   the file with `docker exec … rm`.
+   reload, **Restore** it. A red toast "Nothing was restored: …" appears and no Before restore row is added.
+9. **Delete**: press the red trash button on that junk row. It expands to "Deletes this backup from the server for
+   good…" and a **Delete savelocker-20000101-000000-manual.zip** button. Press it: a "Deleted …" toast, the row is gone,
+   `docker exec savelocker-test ls /data/backups` no longer lists it, and the Audit log has a `backup.delete` row
+   naming it. Cancel (or Escape) on another row's trash folds it back without deleting.
 
 ## 3b. Before-upgrade backup
 

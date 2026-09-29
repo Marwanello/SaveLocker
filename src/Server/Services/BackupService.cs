@@ -345,6 +345,22 @@ public sealed class BackupService
     private sealed record ManifestGame(string GameId, string Name, string VersionId, string ArchivePath, long SizeBytes);
     private sealed record Manifest(int Format, DateTime CreatedAt, string Reason, string ServerVersion, List<ManifestGame> Games);
 
+    /// <summary>
+    /// Deletes one backup. Taken under the same lock as a backup or restore, so a restore is never left reading a
+    /// file that disappears under it. Returns the deleted file's name, or null if there is no such backup.
+    /// </summary>
+    public async Task<string?> DeleteAsync(string fileName, CancellationToken ct = default)
+    {
+        await _run.WaitAsync(ct);
+        try
+        {
+            if (Find(fileName) is not { } path) return null;
+            File.Delete(path);
+            return Path.GetFileName(path);
+        }
+        finally { _run.Release(); }
+    }
+
     /// <summary>Existing backups (zip and legacy db), newest first.</summary>
     public IReadOnlyList<BackupInfo> ListBackups()
     {

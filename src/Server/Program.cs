@@ -1132,6 +1132,13 @@ admin.MapPost("/admin/backups/{file}/restore", async (string file, BackupService
     return Results.Ok(result);
 }).Produces<BackupRestoreResult>();
 
+admin.MapDelete("/admin/backups/{file}", async (string file, BackupService backup, SyncService sync, CancellationToken ct) =>
+{
+    if (await backup.DeleteAsync(file, ct) is not { } deleted) return Results.NotFound();
+    await sync.LogAuditAsync("backup.delete", deleted);
+    return Results.NoContent();
+});
+
 // ---- Agent health (admin) ----
 admin.MapGet("/admin/health", async (HealthService health) =>
     Results.Ok(await health.ListAsync()))

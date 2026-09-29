@@ -14,6 +14,7 @@ import { InlineConfirm } from './ui/InlineConfirm';
 import { DataTable } from './ui/DataTable';
 import type { Column } from './ui/DataTable';
 import { EmptyState } from './ui/EmptyState';
+import { Icon } from './ui/Icon';
 
 const REASON: Record<BackupInfo['reason'], string> = {
   Scheduled: 'Scheduled',
@@ -101,6 +102,16 @@ export function BackupsView({ onRestored }: Props) {
     onRestored();
   }
 
+  async function remove(b: BackupInfo) {
+    try {
+      await api.deleteBackup(b.fileName);
+      toast(`Deleted ${b.fileName}.`);
+    } catch (e) {
+      toastError('Could not delete: ' + errorText(e));
+    }
+    await load();
+  }
+
   if (!status) {
     return (
       <Page>
@@ -151,6 +162,18 @@ export function BackupsView({ onRestored }: Props) {
             </>}
             confirmLabel={`Restore ${b.fileName}`}
             onConfirm={() => restore(b)}
+          />
+          <InlineConfirm
+            label={<Icon name="trash-2" />}
+            ariaLabel={`Delete ${b.fileName}`}
+            title={`Delete ${b.fileName}`}
+            triggerVariant="alert"
+            consequence={<>
+              Deletes this backup from the server for good. It can't be restored afterwards
+              {b === newest ? '; the next scheduled run still takes a new one' : ''}. Download it first if you may need it.
+            </>}
+            confirmLabel={`Delete ${b.fileName}`}
+            onConfirm={() => remove(b)}
           />
         </div>
       ),

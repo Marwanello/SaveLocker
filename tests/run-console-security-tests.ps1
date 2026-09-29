@@ -19,7 +19,7 @@
 #                                 weekly, UTC) is validated, audited and wakes the scheduler. Restore:
 #                                 refuses a non-backup before changing anything, takes a safety backup,
 #                                 swaps the database, puts back a lost latest save, is audited and can
-#                                 itself be undone. The SteamGridDB key is encrypted at rest (a legacy
+#                                 itself be undone. Delete removes one listed backup, audited. The SteamGridDB key is encrypted at rest (a legacy
 #                                 plain one at the next start) and no backup carries it in the clear.
 #                                 A new build's first start backs up BEFORE migrating, once.
 #   CFG-01  server defaults       the default exclude list is editable from the console: admin-only,
@@ -725,6 +725,22 @@ Check "BK-01: restoring the safety backup undoes it: BK Later is back" `
     ($undo.Status -eq 200 -and (@((Http GET "/api/overview" $null $bk).Json | Where-Object { $_.game.name -eq "BK Later" })).Count -eq 1)
 Check "BK-01: ... and the undo's own safety backup never overwrote the backup it restored from (same second)" `
     ($undo.Json.safetyBackup -ne $undo.Json.restoredFrom -and (@(Backups | Where-Object { $_.fileName -eq $rs.Json.safetyBackup })).Count -eq 1)
+
+# ---- delete one backup
+$del = "" + $undo.Json.safetyBackup
+$before = @(Backups).Count
+Check "BK-01: delete without a session -> 401" ((Http DELETE "/api/admin/backups/$del").Status -eq 401)
+foreach ($bad in @("..%2Fsavelocker.db", "notes.txt", "savelocker-20000101-000000.zip")) {
+    Check "BK-01: delete '$bad' -> 404" ((Http DELETE "/api/admin/backups/$bad" $null $bk).Status -eq 404)
+}
+Check "BK-01: ... and the live database and the non-backup file are untouched" `
+    ((Test-Path (Join-Path $backupDir "notes.txt")) -and (Http GET "/api/admin/backups/status" $null $bk).Status -eq 200)
+Check "BK-01: delete a backup -> 204" ((Http DELETE "/api/admin/backups/$del" $null $bk).Status -eq 204)
+Check "BK-01: ... it is gone from the listing and the disk, and only it" `
+    ((@(Backups).Count -eq $before - 1) -and -not (Test-Path (Join-Path $backupDir $del)) -and (@(Backups | Where-Object { $_.fileName -eq $name })).Count -eq 1)
+Check "BK-01: ... audited as backup.delete, naming the file" `
+    ((@((Http GET "/api/audit?limit=500" $null $bk).Json | Where-Object { $_.action -eq "backup.delete" -and $_.detail -eq $del })).Count -eq 1)
+Check "BK-01: deleting it again -> 404" ((Http DELETE "/api/admin/backups/$del" $null $bk).Status -eq 404)
 
 Http POST "/api/admin/backups/settings" @{ enabled = $true; retentionCount = 2; hourOfDay = 4; frequency = "weekly"; dayOfWeek = 3 } $bk | Out-Null
 1..3 | ForEach-Object { Start-Sleep -Milliseconds 1100; Http POST "/api/admin/backup" $null $bk | Out-Null }

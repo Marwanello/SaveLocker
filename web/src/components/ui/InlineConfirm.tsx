@@ -17,6 +17,8 @@ interface Props {
   size?: 'default' | 'sm';
   disabled?: boolean;
   title?: string;
+  /** The trigger's accessible name, for an icon-only `label`. */
+  ariaLabel?: string;
   className?: string;
 }
 
@@ -28,7 +30,7 @@ interface Props {
  */
 export function InlineConfirm({
   label, consequence, confirmLabel, onConfirm, tone = 'alert', triggerVariant = 'default',
-  size = 'sm', disabled = false, title, className = '',
+  size = 'sm', disabled = false, title, ariaLabel, className = '',
 }: Props) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -53,7 +55,7 @@ export function InlineConfirm({
     return (
       <Button
         ref={triggerRef} variant={triggerVariant} size={size} disabled={disabled} title={title}
-        aria-expanded={false} onClick={() => setOpen(true)} className={className}
+        aria-label={ariaLabel} aria-expanded={false} onClick={() => setOpen(true)} className={className}
       >
         {label}
       </Button>

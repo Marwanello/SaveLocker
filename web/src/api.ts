@@ -319,6 +319,8 @@ export const api = {
   backupStatus: () => request<BackupStatus>('/admin/backups/status'),
   backupNow: () => request<BackupResult>('/admin/backup', { method: 'POST' }),
   /** Replace the server's database with a backup's (a safety backup is taken first). */
+  deleteBackup: (fileName: string) =>
+    request<void>(`/admin/backups/${encodeURIComponent(fileName)}`, { method: 'DELETE' }),
   restoreBackup: (fileName: string) =>
     request<BackupRestoreResult>(`/admin/backups/${encodeURIComponent(fileName)}/restore`, { method: 'POST' }),
   setBackupSettings: (body: SetBackupSettingsRequest) =>

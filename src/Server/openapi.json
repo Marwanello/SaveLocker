@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:5179/"
+      "url": "http://127.0.0.1:5191/"
     }
   ],
   "paths": {
@@ -2259,6 +2259,26 @@
     },
     "/api/admin/backups/{file}": {
       "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "file",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
         "tags": [
           "SaveLocker.Server"
         ],

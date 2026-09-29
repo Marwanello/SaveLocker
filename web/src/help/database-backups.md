@@ -28,7 +28,7 @@ Treat a downloaded backup as private anyway: it is your whole save history.
 | **Before upgrade** | When the server starts on a **different build** from the one that last ran, *before* any database migration. This one holds the database only. |
 | **Before restore** | Automatically, right before any restore. It captures the current state, so a restore can be undone. |
 
-All times are UTC, the server's own clock. Only the newest backups are kept (7 by default); older ones are deleted.
+All times are UTC, the server's own clock. Only the newest backups are kept (7 by default); older ones are deleted. To delete one yourself, press the red trash button on its row and confirm. A deleted backup can't be restored, so download it first if you may need it.
 
 ## Where they are
 
