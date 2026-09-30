@@ -27,7 +27,7 @@ phases to do in one session, in what order, and why. Driven by three things weig
 | 7 | Phase 7 (notifications) | ✅ Shipped 2026-09-24 (branch `group-7-ui-redesign`, PR #50) — both halves on shared rules (`Agent.Core/Notifications.cs`): a real Windows toast (`ToastPresenter`) and the Linux notifier generalised from `ConflictNotifier` (`DesktopNotifier`). **A button is a link to the agent UI, not a callback** — a custom URL scheme was built end to end and the shell's toast host refused every freshly registered one (measured), so "Retry now"/"Install now" became "Open game" and a pointer to the tray menu. Verified live on Windows (real toast, real click, the five-minute rule, withdrawal) and on a real Deck in Desktop Mode 2026-09-27 (the popup, and *Choose a save* opening the flatpak default browser at the queue); the installer's shortcut change compiles but has not been run. Reviewed as PR #50 on 2026-09-27 and every finding fixed (*Review fixes*, below). See the Group 7 write-up below |
 | 8 | Phases 9 + 10 — console page kit, top bar (pill tabs, bell, conflict pill, progress rail + Cancel) and the Games page (sidebar, full-width grid, game page re-layout, no `alert`/`confirm`) | ✅ Shipped 2026-09-28 (branch `group-8-ui-redesign`, PR #52) — 8a kit + top bar + `POST /commands/cancel` (`e6514ce`), 8b the `GameDetail.tsx` split (`1566de8`), 8c the Games page (`24074a0`). Verified live through `testenv` with real conflicts; one real bug found that way and fixed (a conflict side pushed while the page was open). Replay the live checks with `group-8-verification.md`. Same-day follow-up on the branch: each machine's OS logo on the conflict panel and a listbox machine picker (`b3caca9`). Reviewed as PR #52 on 2026-09-28 and every finding addressed (*Review fixes*, below). See the Group 8 write-up below. Group 9 is unblocked |
 | 9 | Phases 11 + 12 + Phase 2's release-history table — the **Backups** tab and its routes, Configuration, Audit log, Help, What's new, sign-in | ✅ Shipped 2026-09-29 (branch `group-9-ui-redesign`) — 9a Backups (`5c01638`), then 9b Configuration + 9c Audit/Help/What's new/sign-in in one commit (they share `Contracts.cs`, `Program.cs`, `api.ts`, the regenerated types and the test file). Security bar met (BK-01 + CFG-01, mutation-checked). Verified in a browser against a scratch server; the `testenv` pass is written as `group-9-verification.md` and **not yet run**. Reviewed as PR #53 on 2026-09-29 and every finding fixed (*Review fixes*, below). See the Group 9 write-up below |
-| 10 | Phases 13 + 14 + the Phase 8 remainder + Phase 6 item 4 — agent UI completed, Deck Game Mode completed, Steam art / favicons / installer icon, the Wayland window | ✅ Shipped 2026-09-29 — 10a `7f80be6`, 10c `a88fbe1`, 10d `f2d01d2`, 10b `81321d7`. Still owed: one real-Deck session (gamescope input, battery, KWin `--app=` window, Steam tiles) |
+| 10 | Phases 13 + 14 + the Phase 8 remainder + Phase 6 item 4 — agent UI completed, Deck Game Mode completed, Steam art / favicons / installer icon, the Wayland window | ✅ Shipped 2026-09-29 — 10a `7f80be6`, 10c `a88fbe1`, 10d `f2d01d2`, 10b `81321d7`. Reviewed as PR #54 on 2026-09-30 and every finding fixed (*Review fixes*, below). Still owed: one real-Deck session (gamescope input, battery, KWin `--app=` window — from the menu entry and from a notification click — and the Steam tiles) |
 
 **2026-09-20 review pass (a code review of Groups 1–2, all findings fixed on branch
 `console-review-fixes-and-security-hardening`).** Two things here change what later groups may assume:
@@ -831,6 +831,53 @@ browser → signed out; with it on → still signed in.
 Everything outside the console. Independent of Groups 8–9 — different packages, different routes — so it can
 run in parallel with them. Ordered so each part consumes what the one before it built.
 
+**Review fixes (PR #54, 2026-09-30, branch `group-10-review-fixes`): six findings and the smaller ones, all fixed.**
+- **A pull that never reached the server was reported as a success by three callers.** The follow-up commit
+  made `PullAsync` return `false` instead of throwing when the server is unreachable — right for Sync, but the
+  tray's *Force Pull* then toasted "force-pulled latest save", a dashboard Pull/Sync command was reported
+  `Done`, and the CLI exited 0. `PullAsync` now returns a `PullOutcome` (Restored / UpToDate / NothingOnServer /
+  Refused / Busy / Unreachable): the tray says what happened, the command is reported `Failed` with the reason,
+  `savelocker pull` exits 1. The `onUnreachable` callback is gone.
+- **Two checks in `run-local-api-tests` could not fail.** `Check "…" (x).count -eq N` hands `Check` the bare
+  count and `-eq N` as stray arguments, so it passed for any non-zero value ([[Gotchas]] → *Testing*). One of
+  them was the only test of "the tracked count leaves out games with no folder here".
+- **The header read "Synced 6 games · All clear" after a run where nothing reached the server.** A run's games
+  now land in exactly one of uploaded / pulled / already current / conflict / **queued** / **not checked**
+  (server unreachable, nothing to queue) / failed; the line is green only when every game synced, and it
+  carries the live offline-queue count. `SyncRunSummary.Skipped` was the DTO's `Failed` under another name.
+- **"Is there a desktop?" asked for a session bus**, which `systemd --user` keeps alive on a headless box and
+  for an SSH login — so *Open agent.log* / *Open folder* answered `opened: true` there and `savelocker open`
+  printed "Opened" with nothing to draw on. It now asks for a display in the session's environment
+  (`AppWindowPlanner.HasDisplay`).
+- **A notification click made the daemon start the browser itself**, as a child of `savelocker.service`: in
+  the unit's cgroup (killed by every restart, each self-update included — [[Gotchas]] → *Linux agent*) and
+  behind its sandbox. Under the unit the app window is now started by the user manager
+  (`systemd-run --user`, `AppWindowPlanner.ThroughUserManager`); if that fails, or there is no Chromium-family
+  browser, the link goes to `xdg-open` — the path verified on a Deck on 2026-09-27. **Not seen on hardware.**
+- **The Deck's game page showed the previous game's server data while loading**; opening a game clears it.
+  Its rows and header no longer say "Synced" for a game this device has never synced.
+- Smaller: the resolved-conflicts query filters, sorts and caps **in SQL**, and takes `machineId` so the cap
+  applies after the per-machine filter; the offline queue's folder sizes are measured once a minute, not on
+  every 5 s poll; the Add-games bar ignores the previous batch's finished state and stops polling while the
+  list is re-read; a detected save folder can be changed before adding again (the old toolbar button did
+  that); "may this refusal be clicked past?" is the agent's `needsConfirm` field, no longer a sentence two
+  clients matched; the application-menu entry comes from one template (`packaging/linux/savelocker.desktop`)
+  and an agent that updated itself writes it once on its next start (`DesktopEntry.cs`);
+  `export:art --check` no longer reports a CRLF checkout's text files; `run-health-tests.ps1` lost the BOM
+  and the mojibake it had picked up; CI gained a `unit-tests` job (`dotnet test` + `export:art --check`).
+  One review nit was wrong and nothing changed for it: `SentBytes` cannot undercount, because every upload
+  attempt begins by reporting 0. The sidebar's Add-games count including already-added games is what
+  Phase 13.2 specifies ("suggested candidates from the last scan") and is left as is.
+
+**Verified:** `dotnet test` **156** (+10), `run-local-api-tests` **110** on Windows (3 new, 2 made real),
+`run-health-tests` **33** (+4: `machineId`, and a pull with the server down exits 1), `run-agent-tests` 47,
+`run-delta-upload-tests` 33, `run-concurrency-tests` 26, `run-appearance-consistency-tests` 47; Server and
+Agent.Linux build with 0 warnings; `agent-ui` and `web` build + lint clean; `openapi.json` and both
+`api-types.ts` regenerated from scratch instances (additive only). **Not verified:** any of the UI changes
+in a browser or the tray — the `testenv` rig was up and in use (its Windows agent mapped to real save
+folders), so it was left alone; `run-linux-tests` (same rig); the new CI job on a runner; and everything
+that needs a Deck.
+
 - **10a — Agent UI completed (Phase 13).** The Activity tab and offline queue, sidebar counts, the hero's
   N of M / Cancel / done summary, Sent today, the game page's stats, server versions and per-game actions
   (closes the Backlog's *Agent game page: version list and bytes sent*), and the Add games / Settings /
@@ -853,7 +900,8 @@ run in parallel with them. Ordered so each part consumes what the one before it 
 - **10d — The Wayland desktop window (Phase 6 item 4). Option 1, decided 2026-09-28** — see *Decisions taken* below: a `savelocker open` verb and a `.desktop` launcher from `install.sh`, a Chromium-family
   `--app=` window when one is installed (Flatpak included), `xdg-open` otherwise, agent-ui drawing the
   prototype's header bar only outside browser chrome, and `DesktopNotifier.Open` routing a notification click
-  through the same launcher. **Measure on the Deck before building:** which browsers are there, what `--app=`
+  through the same launcher (from the daemon via `systemd-run --user`, never as its own child — *Review fixes*
+  above). **Measure on the Deck before building:** which browsers are there, what `--app=`
   looks like under KWin, whether Window Controls Overlay works.
 
 **Verify:** the Windows tray and WSL agent through `testenv` — take the console down to queue a push, see it

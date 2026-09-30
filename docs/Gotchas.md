@@ -551,6 +551,14 @@ documentation that was found. Read before touching the presenter.
 
 ## Testing
 
+- **`Check "name" (expr).prop -eq 1` cannot fail.** PowerShell parses a command's arguments, not an
+  expression: `Check` receives the bare property as its condition and `-eq`, `1` as stray arguments, so the
+  check passes for any non-zero value. Wrap the whole comparison: `Check "name" ((expr).prop -eq 1)`. Two
+  checks in `run-local-api-tests.ps1` shipped like that (PR #54); reproduce with a deliberately wrong value
+  before trusting a new check.
+- **`export:art --check` compares text outputs without their line endings.** A Windows checkout
+  (`core.autocrlf`) holds the SVG sources and outputs with CRLF; read raw, the script copied CRLF into the
+  generated SVGs and reported six files it had no quarrel with. The PNG and ICO outputs are byte-compared.
 - **A test of a timestamp's timezone only fails off UTC.** `SaveArchiveTimestampTests` and
   `run-delta-upload-tests` section 10 pin files to known UTC instants; the old local-clock stamping was right by
   accident on a UTC+0 machine, so a CI runner at UTC cannot catch that regression — this UTC+3 box can. The offset
@@ -747,6 +755,13 @@ documentation that was found. Read before touching the presenter.
   by the daemon dies together with the unit it just stopped. That is why the update swap runs from
   `ExecStartPre` of the *next* invocation rather than from the daemon, and why `savelocker update`
   can restart the service safely — it runs in the user's shell session, not in the unit.
+  <br>**The same goes for a window.** A browser the daemon starts itself is a child of the unit: it dies
+  with the next restart and sits behind `PrivateTmp` and the address-family allow-list. `xdg-open` is
+  fine (the desktop starts what it is handed); an `--app=` window must go through
+  `systemd-run --user` (`AppWindow.OpenFromDaemon`). Reasoned from the unit file, not yet seen on a Deck.
+- **A session bus is not a desktop.** `systemd --user` keeps one alive on a headless box, over SSH and in
+  Game Mode (measured, `DesktopSessionInfo`), so "is there somewhere to show this?" asks for `DISPLAY` /
+  `WAYLAND_DISPLAY` in the session's environment (`AppWindowPlanner.HasDisplay`), never for the bus.
 - **The Linux install prefix IS the state directory** (`~/.local/share/SaveLocker`), so
   `config.json` — this machine's server API key — sits inside the tree an update replaces. Anything
   that "replaces the install" must copy file-by-file, never swap or rename the directory.

@@ -1650,7 +1650,20 @@ on every change (`Agent.Linux/Art`: `SteamArt`, `SteamArtRenderer`, `SteamArtHos
 files as custom artwork once. No SVG renderer in the agent: `export-art.mjs` also writes text and mark **layers** (`src/Agent.Linux/Art/layers/`,
 ~220 KB, embedded) and the agent tints and composites them — for Ember/Pixel lock it reproduces the bundled PNGs (test-held). `savelocker steam-art
 [--out dir]`; testenv: `.	ests	estenv.ps1 art` (XDG_DATA_HOME keeps it in the rig's state). Not verified on a real Deck.
-**Next action:** run `group-9-verification.md` on the Windows rig, merge PR #53, then review the Group 10 PR.
+<br>**PR #54 reviewed 2026-09-30; every finding fixed on branch `group-10-review-fixes` (local, not pushed).** The one that
+mattered: the follow-up's `PullAsync` returned `false` for an unreachable server, and the tray's Force Pull, a dashboard
+pull command and the CLI all reported that as a pull that went through — it is a `PullOutcome` now. Also: two test checks
+that could not fail, a green "Synced 6 games · All clear" after a run that reached nothing, a "no desktop" test that a
+headless box passed, a notification click starting the browser inside the unit's cgroup (now through `systemd-run --user`,
+`xdg-open` as the fallback — **unverified on a Deck**), and the Deck's game page showing the previous game's data.
+`ErrorResponse.needsConfirm`, `SyncRunDto.pulled/queued/unreachable` and `?machineId=` on the resolved-conflicts route are
+additive. Detail, counts and what was not verified: `tasks/checkpoint-ui/implementation-grouping.md` → Group 10 → *Review fixes*.
+**Not seen in a browser:** the `testenv` rig was in use (its Windows agent mapped to real save folders) and was left alone.
+<br>**Release notes for the next release must cover (Group 10):** the agent UI's Activity tab and offline queue; Sync all's
+N of M, Cancel and summary; games on the server with no folder here listed apart; `savelocker open` and the application-menu
+entry (added once by an agent that updates itself); `savelocker pull` exits non-zero when the server cannot be reached.
+**Next action:** push `group-10-review-fixes` onto PR #54 and merge; run `group-9-verification.md` on the Windows rig;
+then the owed real-Deck session (Group 10's status row lists what it must cover).
 
 ---
 
