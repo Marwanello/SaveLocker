@@ -4,19 +4,15 @@ using Xunit;
 namespace SaveLocker.Agent.Tests;
 
 /// <summary>
-/// Painting SaveLocker's own Steam shortcut: which shortcut, which files, when they are rewritten, and — the one
-/// that matters to a person — that art they chose themselves is never overwritten.
+/// Repainting the bundled artwork folder: only an existing folder, only when the look changed, never Steam.
 /// </summary>
 public sealed class SteamArtTests : IDisposable
 {
-    private const int SignedId = -1234567890;
-    private static readonly uint Id = unchecked((uint)SignedId);
-
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "savelocker-art-" + Guid.NewGuid().ToString("N"));
+    private readonly string _dir = Path.Combine(Path.GetTempPath(), "savelocker-art-" + Guid.NewGuid().ToString("N"));
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, recursive: true); } catch (IOException) { }
+        try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
     }
 
     private static byte[] Layer(string name)
@@ -26,94 +22,60 @@ public sealed class SteamArtTests : IDisposable
         return File.ReadAllBytes(Path.Combine(dir!.FullName, "src", "Agent.Linux", "Art", "layers", name));
     }
 
-    private string Grid => Path.Combine(_root, "userdata", "10001", "config", "grid");
-
-    private void Shortcut(string name, string exe)
-    {
-        var cfg = Path.Combine(_root, "userdata", "10001", "config");
-        Directory.CreateDirectory(cfg);
-        File.WriteAllBytes(Path.Combine(cfg, "shortcuts.vdf"), SteamArt.BuildShortcutsVdf(name, exe, SignedId));
-    }
-
     private SteamArt.Outcome Apply(string accent = "ember", string mark = "pixel") =>
-        SteamArt.Apply([_root], accent, mark, Layer);
+        SteamArt.Apply(_dir, accent, mark, Layer);
 
-    [Theory]
-    [InlineData("SaveLocker", "\"/opt/x/savelocker\" ui")]
-    [InlineData("savelocker", "/home/deck/notes")]
-    [InlineData("Whatever I Named It", "\"/home/deck/.local/share/SaveLocker/savelocker\"")]
-    [InlineData("Whatever I Named It", "/home/deck/SaveLocker/savelocker")]
-    public void FindsTheShortcut_ByNameOrByProgram(string name, string exe)
-    {
-        Shortcut(name, exe);
-        var target = Assert.Single(SteamArt.FindTargets([_root]));
-        Assert.Equal(Id, target.AppId);
-        Assert.Equal(Grid, target.GridDir);
-    }
+    private byte[] Read(string piece) => File.ReadAllBytes(Path.Combine(_dir, piece + ".png"));
 
     [Fact]
-    public void IgnoresOtherShortcuts_AndWritesNothingWithoutOne()
+    public void WithoutTheFolder_NothingIsCreated()
     {
-        Shortcut("Hades", "\"/games/hades\"");
-        Assert.Empty(SteamArt.FindTargets([_root]));
         Assert.Equal(SteamArt.Outcome.None, Apply());
-        Assert.False(Directory.Exists(Grid));
+        Assert.False(Directory.Exists(_dir));
     }
 
     [Fact]
-    public void WritesTheFourPieces_UnderSteamsOwnNames()
+    public void ReplacesTheOldPictures_InPlace()
     {
-        Shortcut("SaveLocker", "\"/opt/x/savelocker\" ui");
-        var outcome = Apply();
+        Directory.CreateDirectory(_dir);
+        foreach (var piece in SteamArtRenderer.Pieces) File.WriteAllText(Path.Combine(_dir, piece + ".png"), "old art");
 
-        Assert.Equal(new SteamArt.Outcome(1, 4, 0), outcome);
-        foreach (var file in new[] { $"{Id}p.png", $"{Id}.png", $"{Id}_hero.png", $"{Id}_logo.png" })
-            Assert.True(File.Exists(Path.Combine(Grid, file)), file);
+        Assert.Equal(new SteamArt.Outcome(true, 4), Apply());
+        foreach (var piece in SteamArtRenderer.Pieces) Assert.True(Read(piece).Length > 1000, piece);
     }
 
     [Fact]
     public void RepaintsOnlyWhenTheLookChanged()
     {
-        Shortcut("SaveLocker", "\"/opt/x/savelocker\" ui");
+        Directory.CreateDirectory(_dir);
         Apply("ember", "pixel");
-        var before = File.ReadAllBytes(Path.Combine(Grid, $"{Id}p.png"));
+        var before = Read("capsule");
 
         Assert.Equal(0, Apply("ember", "pixel").Written);
 
         Assert.Equal(4, Apply("coolant", "pixel").Written);
-        var after = File.ReadAllBytes(Path.Combine(Grid, $"{Id}p.png"));
+        var after = Read("capsule");
         Assert.NotEqual(before, after);
 
         Assert.Equal(4, Apply("coolant", "cartridge").Written);
-        Assert.NotEqual(after, File.ReadAllBytes(Path.Combine(Grid, $"{Id}p.png")));
+        Assert.NotEqual(after, Read("capsule"));
     }
 
     [Fact]
-    public void ArtThePersonChose_IsNeverOverwritten()
+    public void ReinstalledFixedArt_IsPaintedOverAgain()
     {
-        Shortcut("SaveLocker", "\"/opt/x/savelocker\" ui");
-        Directory.CreateDirectory(Grid);
-        var mine = Path.Combine(Grid, $"{Id}p.png");
-        File.WriteAllBytes(mine, [1, 2, 3]);                       // set by hand before we ever ran
+        Directory.CreateDirectory(_dir);
+        Apply("coolant", "pixel");
+        File.WriteAllText(Path.Combine(_dir, "hero.png"), "orange again");   // install.sh copied the fixed art back
 
-        var first = Apply();
-        Assert.Equal(new SteamArt.Outcome(1, 3, 1), first);
-        Assert.Equal(new byte[] { 1, 2, 3 }, File.ReadAllBytes(mine));
-
-        // And one they set after we had painted it.
-        var hero = Path.Combine(Grid, $"{Id}_hero.png");
-        File.WriteAllBytes(hero, [9, 9]);
-        var second = Apply("arcade", "memcard");
-        Assert.Equal(new byte[] { 9, 9 }, File.ReadAllBytes(hero));
-        Assert.Equal(new byte[] { 1, 2, 3 }, File.ReadAllBytes(mine));
-        Assert.Equal(2, second.LeftAlone);
-        Assert.Equal(2, second.Written);
+        Assert.Equal(1, Apply("coolant", "pixel").Written);
+        Assert.True(Read("hero").Length > 1000);
     }
 
     [Fact]
     public void Export_WritesFourPictures_WithoutSteam()
     {
-        var files = SteamArt.Export(Path.Combine(_root, "preview"), "emerald", "memcard", Layer);
+        var files = SteamArt.Export(Path.Combine(_dir, "preview"), "emerald", "memcard", Layer);
         Assert.Equal(4, files.Count);
         Assert.All(files, f => Assert.True(new FileInfo(f).Length > 1000));
     }

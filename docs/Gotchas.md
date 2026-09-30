@@ -114,9 +114,6 @@ These exist because the production values are far too slow to observe in a suite
 `Agent.Core` and are **not** user settings — nothing in the UI or docs offers them.
 - **`SAVELOCKER_LEASE_RENEW_SECONDS`** — lease renewal interval (production: 3 hours). WA-06's test
   needs several renewals inside a few seconds.
-- **`SAVELOCKER_STEAM_ROOT`** — makes `SteamRoots.Find()` return only this directory (which needs a `userdata/`),
-  ignoring any real Steam. `tests/testenv.sh` points it at a fake tree under the rig's own state directory so the
-  Steam-art painter (`Agent.Linux/Art`) can be exercised on a box with no Steam: `testenv.ps1 art`.
 - **`SAVELOCKER_SYNC_LOCK_SECONDS`** — how long to wait for another process's game lock
   (production: settle gate + upload window + margin, ~13 minutes). WA-07's test would otherwise
   wait that out twice.

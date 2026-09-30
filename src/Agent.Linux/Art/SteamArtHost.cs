@@ -1,9 +1,13 @@
 namespace SaveLocker.Agent.Linux.Art;
 
-/// <summary>The Linux side of <see cref="SteamArt"/>: where the layers live, where Steam is, and when to repaint.</summary>
+/// <summary>The Linux side of <see cref="SteamArt"/>: where the layers and the artwork folder are, and when to repaint.</summary>
 public static class SteamArtHost
 {
     private static readonly object Gate = new();
+
+    /// <summary>Where install.sh puts the bundled art; XDG_DATA_HOME moves it, as it does the rest of the agent's state.</summary>
+    public static string ArtworkDir =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SaveLocker", "artwork");
 
     public static byte[] Layer(string name)
     {
@@ -15,7 +19,7 @@ public static class SteamArtHost
         return ms.ToArray();
     }
 
-    /// <summary>Paint the shortcut's art for the look in effect right now. Never throws: art is decoration.</summary>
+    /// <summary>Repaint the artwork folder for the look in effect right now. Never throws: art is decoration.</summary>
     public static SteamArt.Outcome Sync(AgentConfig config)
     {
         try
@@ -23,10 +27,10 @@ public static class SteamArtHost
             var look = config.EffectiveAppearance;
             lock (Gate)
             {
-                var outcome = SteamArt.Apply(SteamRoots.Find(), look.Accent, look.Mark, Layer);
+                var outcome = SteamArt.Apply(ArtworkDir, look.Accent, look.Mark, Layer);
                 if (outcome.Written > 0)
-                    AgentLogger.Log($"Steam art: painted {outcome.Written} picture(s) for {outcome.Shortcuts} SaveLocker shortcut(s) " +
-                                    $"in {look.Accent}/{look.Mark}. Steam shows them after it restarts.");
+                    AgentLogger.Log($"Steam art: repainted {outcome.Written} picture(s) in {ArtworkDir} " +
+                                    $"as {look.Accent}/{look.Mark}. Set them as custom artwork in Steam to use them.");
                 return outcome;
             }
         }

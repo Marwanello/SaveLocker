@@ -54,19 +54,16 @@ static class Program
             case "steam-art":
                 return SteamArtCommand(opts, config);
 
-            // Test rig only: a fake Steam root holding a "SaveLocker" shortcut, for `steam-art` and the
-            // daemon's repaint to find. Never touches a real Steam (SAVELOCKER_STEAM_ROOT is required).
+            // Test rig only: stale placeholder pictures in the artwork folder, standing in for the fixed art
+            // install.sh bundles, so `steam-art` and the daemon's repaint have something to replace.
             case "dev-steam-art-fixture":
             {
                 if (!TestCommandsAllowed(out var fixtureDenial)) { Console.Error.WriteLine(fixtureDenial); return 2; }
-                var fake = Environment.GetEnvironmentVariable("SAVELOCKER_STEAM_ROOT");
-                if (string.IsNullOrEmpty(fake)) { Console.Error.WriteLine("dev-steam-art-fixture needs SAVELOCKER_STEAM_ROOT."); return 2; }
-                var cfgDir = Path.Combine(fake, "userdata", "10001", "config");
-                Directory.CreateDirectory(cfgDir);
-                var vdf = Path.Combine(cfgDir, "shortcuts.vdf");
-                if (!File.Exists(vdf))
-                    File.WriteAllBytes(vdf, Art.SteamArt.BuildShortcutsVdf("SaveLocker", "\"/opt/savelocker/savelocker\" ui", -1234567890));
-                Console.WriteLine($"fixture ready: {vdf}");
+                var dir = Art.SteamArtHost.ArtworkDir;
+                Directory.CreateDirectory(dir);
+                foreach (var piece in Art.SteamArtRenderer.Pieces)
+                    if (!File.Exists(Path.Combine(dir, piece + ".png"))) File.WriteAllText(Path.Combine(dir, piece + ".png"), "old art");
+                Console.WriteLine($"fixture ready: {dir}");
                 return 0;
             }
 
@@ -478,9 +475,9 @@ static class Program
     }
 
     /// <summary>
-    /// `savelocker steam-art [--out DIR] [--accent id] [--mark id]` — paint the SaveLocker shortcut's Steam library
-    /// art for the look in effect (or the one named), or with --out just write the four pictures into DIR. The daemon
-    /// does the first by itself at start and on every change; this is for doing it by hand and for seeing the result.
+    /// `savelocker steam-art [--out DIR] [--accent id] [--mark id]` — repaint the four library pictures in the artwork
+    /// folder install.sh bundles, for the look in effect (or the one named), or with --out just write them into DIR.
+    /// The daemon does the first by itself at start and on every change; this is for doing it by hand and for seeing it.
     /// </summary>
     private static int SteamArtCommand(Dictionary<string, string> opts, AgentConfig config)
     {
@@ -494,14 +491,13 @@ static class Program
             return 0;
         }
 
-        var outcome = Art.SteamArt.Apply(SteamRoots.Find(), accent, mark, Art.SteamArtHost.Layer);
-        if (outcome.Shortcuts == 0)
+        var outcome = Art.SteamArt.Apply(Art.SteamArtHost.ArtworkDir, accent, mark, Art.SteamArtHost.Layer);
+        if (!outcome.FolderFound)
         {
-            Console.WriteLine("No SaveLocker shortcut found in Steam. Add it as a non-Steam game named \"SaveLocker\" first (install.sh, step 4).");
+            Console.WriteLine($"No artwork folder at {Art.SteamArtHost.ArtworkDir} — it is created by install.sh. Use --out <dir> to write the pictures elsewhere.");
             return 1;
         }
-        Console.WriteLine($"{accent}/{mark}: {outcome.Written} picture(s) written, {outcome.LeftAlone} left alone " +
-                          $"(custom art you set yourself), {outcome.Shortcuts} shortcut(s). Restart Steam to see them.");
+        Console.WriteLine($"{accent}/{mark}: {outcome.Written} picture(s) written in {Art.SteamArtHost.ArtworkDir}.");
         return 0;
     }
 
