@@ -8,7 +8,10 @@
 // four Steam pieces are the same lockup at four crops, written as SVG to packaging/linux/artwork/src/ and
 // rasterised to packaging/linux/artwork/dist/ — an accent change is a re-export, not a redraw. They are
 // fixed to the default mark and Ember: a Steam shortcut's art is a file on disk, which the Appearance
-// setting cannot repaint.
+// setting cannot repaint. The agent CAN, though: it repaints them itself for the accent and mark in effect
+// (src/Agent.Linux/Art), compositing the LAYER files this script also writes to src/Agent.Linux/Art/layers/
+// — text and mark shapes rasterised once, here, by the same renderer as everything else, and tinted at run
+// time. tests/SaveLocker.Agent.Tests/SteamArtRendererTests holds the two paths to the same picture.
 //
 // Text is drawn with the Archivo files the Deck UI already embeds (src/Agent.Linux/Ui/Fonts), and only
 // those: no system fonts are loaded, so the output does not depend on the machine it ran on.
@@ -29,26 +32,31 @@ const FONTS = [
   at('src', 'Agent.Linux', 'Ui', 'Fonts', 'Archivo-SemiBold.ttf'),
 ]
 
-/** The mark's shapes, straight from the shipped SVG, with the CSS variables resolved to Ember. */
-function markShapes() {
-  const svg = readFileSync(at('web', 'src', 'assets', 'marks', 'pixel-lock.svg'), 'utf8')
+const MARK_FILES = { pixel: 'pixel-lock', cartridge: 'cartridge', memcard: 'memory-card' }
+
+/** A mark's shapes, straight from the shipped SVG. Without colours the CSS variables resolve to their
+ *  Ember defaults; with them, to the two given (the layer files use pure red and blue as placeholders). */
+function markShapes(id = 'pixel', accent, on) {
+  const svg = readFileSync(at('web', 'src', 'assets', 'marks', `${MARK_FILES[id]}.svg`), 'utf8')
   const body = svg.slice(svg.indexOf('>') + 1, svg.lastIndexOf('</svg>'))
     .replace(/<title>[\s\S]*?<\/title>/, '')
-    .replace(/var\(--color-accent, (#[0-9a-f]{6})\)/gi, '$1')
-    .replace(/var\(--color-on-accent, (#[0-9a-f]{6})\)/gi, '$1')
+    .replace(/var\(--color-accent, (#[0-9a-f]{6})\)/gi, accent ?? '$1')
+    .replace(/var\(--color-on-accent, (#[0-9a-f]{6})\)/gi, on ?? '$1')
   return body.trim()
 }
 
 /** The mark, `size` px square at (x, y). Its own box is 32 units. */
-const mark = (x, y, size) => `<g transform="translate(${x} ${y}) scale(${size / 32})">${markShapes()}</g>`
+const mark = (x, y, size, id, accent, on) =>
+  `<g transform="translate(${x} ${y}) scale(${size / 32})">${markShapes(id, accent, on)}</g>`
 
-const wordmark = (x, y, size, fg = '#ffffff') =>
+// `fg` is "Save", `locker` is "Locker"; 'none' hides a half while keeping the other where it sits.
+const wordmark = (x, y, size, fg = '#ffffff', locker = EMBER) =>
   `<text x="${x}" y="${y}" font-family="Archivo" font-weight="600" font-size="${size}" letter-spacing="${-size * 0.035}">` +
-  `<tspan fill="${fg}">Save</tspan><tspan fill="${EMBER}">Locker</tspan></text>`
+  `<tspan fill="${fg}">Save</tspan><tspan fill="${locker}">Locker</tspan></text>`
 
-const tagline = (x, y, size, text) =>
+const tagline = (x, y, size, text, fill = '#ffffff') =>
   `<text x="${x}" y="${y}" font-family="Archivo" font-weight="400" font-size="${size}" letter-spacing="${size * 0.16}" ` +
-  `fill="#ffffff" fill-opacity=".72">${text.toUpperCase()}</text>`
+  `fill="${fill}" fill-opacity=".72">${text.toUpperCase()}</text>`
 
 /** The lockup background: the brand kit's radial wash (accent 42% into #101014, fading to #0b0b0e) and its
  *  faint diagonal hairlines. `color-mix` is resolved to sRGB here, once. */
@@ -71,15 +79,33 @@ const svgDoc = (w, h, inner) =>
 // ---- the four Steam pieces -----------------------------------------------------------------------------
 // The vertical capsule keeps the wordmark low and the mark high on purpose: Steam overlays a progress bar
 // and a Play badge across the LOWER THIRD of a grid tile, so the wordmark sits above that band.
-const STEAM = {
-  'capsule': svgDoc(600, 900, backdrop(600, 900) +
-    mark(64, 72, 170) + wordmark(58, 600, 88) + tagline(64, 656, 20, 'self-hosted save sync')),
-  'capsule-wide': svgDoc(920, 430, backdrop(920, 430) +
-    mark(86, 120, 190) + wordmark(330, 250, 98) + tagline(334, 302, 22, 'your saves, on every machine')),
-  'hero': svgDoc(1920, 620, backdrop(1920, 620) +
-    mark(110, 300, 200) + wordmark(350, 440, 150) + tagline(356, 500, 24, 'hub-and-spoke save sync · windows · linux · steam deck')),
+const PIECES = {
+  'capsule': { w: 600, h: 900, wash: true, mark: [64, 72, 170], word: [58, 600, 88], tag: [64, 656, 20, 'self-hosted save sync'] },
+  'capsule-wide': { w: 920, h: 430, wash: true, mark: [86, 120, 190], word: [330, 250, 98], tag: [334, 302, 22, 'your saves, on every machine'] },
+  'hero': { w: 1920, h: 620, wash: true, mark: [110, 300, 200], word: [350, 440, 150],
+    tag: [356, 500, 24, 'hub-and-spoke save sync · windows · linux · steam deck'] },
   // Transparent: Steam lays it over the hero. White "Save" so it reads on that dark banner.
-  'logo': svgDoc(1000, 340, mark(20, 60, 220) + wordmark(280, 200, 128)),
+  'logo': { w: 1000, h: 340, wash: false, mark: [20, 60, 220], word: [280, 200, 128], tag: null },
+}
+
+const STEAM = Object.fromEntries(Object.entries(PIECES).map(([name, p]) => [name,
+  svgDoc(p.w, p.h, (p.wash ? backdrop(p.w, p.h) : '') + mark(...p.mark) + wordmark(...p.word) +
+    (p.tag ? tagline(...p.tag) : ''))]))
+
+// ---- the layers the agent tints at run time ------------------------------------------------------------
+// One transparent picture per thing that changes with the look, drawn in placeholder colours that the agent
+// maps back: `white` is the white text (its alpha), `accent` the accent text (alpha), and each mark is
+// rasterised with red where the accent goes and blue where the on-accent ink goes — so a pixel's blue share
+// says how much ink it is, and anti-aliased seams between the two come out right for any pair of colours.
+const LAYER_MARKS = ['pixel', 'cartridge', 'memcard']
+function layerSvgs(name) {
+  const p = PIECES[name]
+  const out = {
+    white: svgDoc(p.w, p.h, wordmark(...p.word, '#ffffff', 'none') + (p.tag ? tagline(...p.tag) : '')),
+    accent: svgDoc(p.w, p.h, wordmark(p.word[0], p.word[1], p.word[2], 'none', '#ff0000')),
+  }
+  for (const id of LAYER_MARKS) out[`mark-${id}`] = svgDoc(p.w, p.h, mark(...p.mark, id, '#ff0000', '#0000ff'))
+  return out
 }
 
 // ---- rendering -----------------------------------------------------------------------------------------
@@ -151,6 +177,11 @@ const files = new Map()   // absolute path -> Buffer | string
 for (const [name, svg] of Object.entries(STEAM)) {
   files.set(at('packaging', 'linux', 'artwork', 'src', `${name}.svg`), svg)
   files.set(at('packaging', 'linux', 'artwork', 'dist', `${name}.png`), Buffer.from(render(svg).asPng()))
+}
+for (const name of Object.keys(PIECES)) {
+  for (const [layer, svg] of Object.entries(layerSvgs(name))) {
+    files.set(at('src', 'Agent.Linux', 'Art', 'layers', `${name}.${layer}.png`), Buffer.from(render(svg).asPng()))
+  }
 }
 for (const [name, size] of [['favicon-16x16', 16], ['favicon-32x32', 32], ['apple-touch-icon', 180],
                             ['android-chrome-192x192', 192], ['android-chrome-512x512', 512]]) {

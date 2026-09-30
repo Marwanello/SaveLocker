@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="StbImageSharp" Version="2.30.15" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
@@ -31,6 +32,9 @@
     <Compile Include="..\..\src\Agent.Linux\Ui\SvgPath.cs" Link="SvgPath.cs" />
     <!-- Same reason: the launcher's choice of program is pure, only its probing touches the machine. -->
     <Compile Include="..\..\src\Agent.Linux\AppWindowPlan.cs" Link="AppWindowPlan.cs" />
+    <!-- The Steam art compositor is pure too: layers in, PNG out. -->
+    <Compile Include="..\..\src\Agent.Linux\Art\SteamArtRenderer.cs" Link="SteamArtRenderer.cs" />
+    <Compile Include="..\..\src\Agent.Linux\Art\SteamArt.cs" Link="SteamArt.cs" />
   </ItemGroup>
 
 </Project>

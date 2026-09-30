@@ -42,6 +42,13 @@
     <EmbeddedResource Include="Ui\Fonts\JetBrainsMono-Regular.ttf" />
   </ItemGroup>
 
+  <!-- The Steam art's text and mark layers (written by web/scripts/export-art.mjs, ~220 KB): the agent tints
+       them for the accent and mark in effect and paints the SaveLocker shortcut's library art with them. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Art\layers\*.png"
+                      LogicalName="SaveLocker.Agent.Linux.Art.layers.%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <!-- THE systemd unit. Embedded from packaging/ rather than duplicated in C#, because this file
        has two writers — install.sh drops the packaged copy, and `savelocker autostart` writes one
        itself — and they had already drifted. Now they emit the same text, with only the executable

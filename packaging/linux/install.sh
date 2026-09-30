@@ -194,8 +194,11 @@ Installed. Next:
      the game's own Proton prefix, enroll, and copy the launch command from step 3.
      This is the last Desktop Mode step you need to take.
 
-  5. (Optional) Replace the grey box with proper SaveLocker library art. The
-     images are bundled at:
+  5. (Automatic) Library art. Once the shortcut above exists, the SaveLocker agent
+     paints it with the SaveLocker art in your accent colour and logo (Settings ->
+     Appearance) and repaints it when you change them; restart Steam to see it.
+     Art you set yourself is never replaced. `savelocker steam-art` does it on
+     demand. To use the fixed orange art instead, the images are bundled at:
 
          ${HOME}/.local/share/SaveLocker/artwork/
 

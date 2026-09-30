@@ -13,6 +13,11 @@ public static class SteamRoots
     /// </summary>
     public static IReadOnlyList<string> Find()
     {
+        // Test rig only: a fake Steam tree under the rig's own state directory, so art and shortcut
+        // handling can be exercised on a machine with no Steam — and never against a real one.
+        if (Environment.GetEnvironmentVariable("SAVELOCKER_STEAM_ROOT") is { Length: > 0 } fake)
+            return Directory.Exists(Path.Combine(fake, "userdata")) ? [RealPath(fake)] : [];
+
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
         var candidates = new[]

@@ -22,6 +22,8 @@
 #                                 used to point it at tests/sgdb-stub.py (a stand-in SteamGridDB) so
 #                                 artwork can be tried without a real key; see Build and Run.md →
 #                                 "Testing artwork"
+#   .	ests	estenv.ps1 art       paint the WSL agent's Steam library art (fake Steam tree, no Steam needed) for the
+#                                 current accent and mark; copies the four pictures to .art-preview\
 #   .\tests\testenv.ps1 down      stop them; the installed agent is never touched
 #   .\tests\testenv.ps1 status    what is running, and which build
 #   .\tests\testenv.ps1 test      run the suites
@@ -134,7 +136,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'conflict', 'clean', 'deck-config')]
+    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'conflict', 'art', 'clean', 'deck-config')]
     [string]$Command = 'status',
 
     # Never a released version number. A test build stamped with one compares equal to the real
@@ -1422,6 +1424,16 @@ switch ($Command) {
         Write-Host ''
         Write-Host "Next: .\tests\testenv.ps1 up   (tray/daemon start LAST, after all seeding)"
         Write-Host "then check each side's own conflicts view (CLI 'conflicts', doctor, the dashboard, or the Decky/Game-Mode/Playnite UI)."
+    }
+
+    'art' {
+        # The WSL agent's Steam library art: paints the (fake-Steam) SaveLocker shortcut for the look in effect and
+        # copies the four pictures to .art-preview\ so they can be opened from Windows. Run it, change the accent
+        # or mark in the console's Appearance, wait a heartbeat (~20 s), run it again: the pictures follow.
+        $preview = Join-Path $root '.art-preview'
+        New-Item -ItemType Directory -Force $preview | Out-Null
+        Invoke-Wsl 'art' -ArtifactDir $preview
+        Say "pictures for the look in effect: $preview"
     }
 
     'logs' {

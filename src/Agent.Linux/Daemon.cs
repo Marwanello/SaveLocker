@@ -126,6 +126,7 @@ public sealed class Daemon : IAsyncDisposable
         }
 
         BackfillSteamAppIds();
+        Art.SteamArtHost.Watch(_config);
 
         _apiServer = new AgentApiServer(
             port: _apiPort,

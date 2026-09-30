@@ -1644,6 +1644,12 @@ The Deck's Tracked games screen groups the same way ("On this Deck" / "On the se
 Tests: `OfflineSyncTests` (3, mutation-checked), `run-local-api-tests` 110/110, `run-agent-tests` 47/47, `run-health-tests` 29/29,
 `run-appearance-consistency-tests` 47/47, xunit 146/146. Verified in a browser against a scratch daemon and the dev server, **not** through
 `testenv` (Docker was not running).
+<br>**Steam art follows the look (2026-09-30).** The agent paints the shortcut named "SaveLocker" in Steam with the four library
+pictures in the accent and mark in effect, at start and on every change (`Agent.Linux/Art`: `SteamArt`, `SteamArtRenderer`, `SteamArtHost`).
+No SVG renderer in the agent: `export-art.mjs` also writes text and mark **layers** (`src/Agent.Linux/Art/layers/`, ~220 KB, embedded) and the
+agent tints and composites them — for Ember/Pixel lock it reproduces the bundled PNGs (test-held). Art the person set by hand is never replaced
+(a per-shortcut marker keeps the hashes of what we wrote). `savelocker steam-art [--out dir]`; testenv: `.	ests	estenv.ps1 art` (fake Steam tree via
+`SAVELOCKER_STEAM_ROOT`). Not verified on a real Deck/Steam (Steam only shows new art after a restart).
 **Next action:** run `group-9-verification.md` on the Windows rig, merge PR #53, then review the Group 10 PR.
 
 ---

@@ -51,6 +51,25 @@ static class Program
             case "open":
                 return await OpenWindowAsync(opts, config);
 
+            case "steam-art":
+                return SteamArtCommand(opts, config);
+
+            // Test rig only: a fake Steam root holding a "SaveLocker" shortcut, for `steam-art` and the
+            // daemon's repaint to find. Never touches a real Steam (SAVELOCKER_STEAM_ROOT is required).
+            case "dev-steam-art-fixture":
+            {
+                if (!TestCommandsAllowed(out var fixtureDenial)) { Console.Error.WriteLine(fixtureDenial); return 2; }
+                var fake = Environment.GetEnvironmentVariable("SAVELOCKER_STEAM_ROOT");
+                if (string.IsNullOrEmpty(fake)) { Console.Error.WriteLine("dev-steam-art-fixture needs SAVELOCKER_STEAM_ROOT."); return 2; }
+                var cfgDir = Path.Combine(fake, "userdata", "10001", "config");
+                Directory.CreateDirectory(cfgDir);
+                var vdf = Path.Combine(cfgDir, "shortcuts.vdf");
+                if (!File.Exists(vdf))
+                    File.WriteAllBytes(vdf, Art.SteamArt.BuildShortcutsVdf("SaveLocker", "\"/opt/savelocker/savelocker\" ui", -1234567890));
+                Console.WriteLine($"fixture ready: {vdf}");
+                return 0;
+            }
+
             // Exists for the updater's smoke test above all: a staged agent has to be able to prove
             // it can start and say what it is before it is allowed to replace a working one. Useful
             // in its own right — it is the first thing any bug report needs.
@@ -459,6 +478,34 @@ static class Program
     }
 
     /// <summary>
+    /// `savelocker steam-art [--out DIR] [--accent id] [--mark id]` — paint the SaveLocker shortcut's Steam library
+    /// art for the look in effect (or the one named), or with --out just write the four pictures into DIR. The daemon
+    /// does the first by itself at start and on every change; this is for doing it by hand and for seeing the result.
+    /// </summary>
+    private static int SteamArtCommand(Dictionary<string, string> opts, AgentConfig config)
+    {
+        var look = config.EffectiveAppearance;
+        var accent = opts.GetValueOrDefault("accent") ?? look.Accent;
+        var mark = opts.GetValueOrDefault("mark") ?? look.Mark;
+        if (opts.GetValueOrDefault("out") is { Length: > 0 } dir)
+        {
+            foreach (var path in Art.SteamArt.Export(dir, accent, mark, Art.SteamArtHost.Layer)) Console.WriteLine(path);
+            Console.WriteLine($"({accent}/{mark})");
+            return 0;
+        }
+
+        var outcome = Art.SteamArt.Apply(SteamRoots.Find(), accent, mark, Art.SteamArtHost.Layer);
+        if (outcome.Shortcuts == 0)
+        {
+            Console.WriteLine("No SaveLocker shortcut found in Steam. Add it as a non-Steam game named \"SaveLocker\" first (install.sh, step 4).");
+            return 1;
+        }
+        Console.WriteLine($"{accent}/{mark}: {outcome.Written} picture(s) written, {outcome.LeftAlone} left alone " +
+                          $"(custom art you set yourself), {outcome.Shortcuts} shortcut(s). Restart Steam to see them.");
+        return 0;
+    }
+
+    /// <summary>
     /// `savelocker open [--port n] [--view route]` — the agent UI in its own window, for Desktop Mode. This
     /// is what the KDE-menu entry install.sh writes runs; Game Mode keeps `savelocker ui`, and the two sit
     /// side by side over the same daemon. It does not start the daemon (systemd does, at login): a launcher
@@ -523,6 +570,8 @@ static class Program
         Daemon
           daemon [--port <n>]                              Run headless; serves the agent UI on localhost:5178
           open [--port <n>] [--view <route>]               Open the agent UI in its own window (Desktop Mode)
+          steam-art [--out <dir>] [--accent <id>] [--mark <id>]
+                                                           Paint the SaveLocker shortcut's Steam art in the current look
           autostart --enable | --disable                   systemd --user unit
 
         Updates
