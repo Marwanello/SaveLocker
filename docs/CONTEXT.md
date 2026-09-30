@@ -1632,7 +1632,17 @@ per-game stats/versions/open-folder, resolved conflicts, "Sent today"; new serve
 10b: Deck rail of six sections, Tracked games with cover art (StbImageSharp), Game and Activity screens, battery, Steam setup under Settings; `SvgPath` gained cubics.
 10c: `npm run export:art` (resvg, Archivo only) regenerates Steam art, PNG/ICO favicons, installer icon. 10d: `savelocker open` (Chromium `--app=`, Flatpak and xdg-open fallbacks, pure `AppWindowPlanner`) + `.desktop` entry from `install.sh`.
 Not verified: a real Deck, Windows tray/WebView2, the WA suites. **Gotcha:** `testenv clean` wipes the rig shared by all worktrees — it disrupted another worktree's process on :5188.
-**Next action:** run `group-9-verification.md` on the Windows rig, merge PR #53, then open/review the Group 10 PR (branch `claude/group-10-ui-redesign-2083d5`).
+<br>**Group 10 follow-ups (2026-09-30, branch `group-10-ui-redesign`).** (1) **Sync with the server down no longer throws:** `PullAsync` let the
+`HttpRequestException` out, so "Sync this game" answered 500 and the push that would have queued the save never ran (Sync all aborted the same way).
+It now reports *server unreachable*, returns false, and the push queues; the game page says "queued and will upload when it is back".
+(2) **Games not set up on this machine** (`TrackedGame.IsEnrolledHere` = has a save folder) are listed apart in the agent UI's Games tab
+("On this machine" / "On the server"), have no Sync/Push/Pull/Check now (the route refuses with 400), are skipped by Sync all and the Windows tray menu,
+and are not counted in "games tracked". (3) The games list no longer disappears with the server down (`App.tsx` fetched it together with the
+server-side conflicts). (4) Add games shows a real progress bar: `GET /api/enroll/progress`, fed by `Enroller` step by step.
+Tests: `OfflineSyncTests` (3, mutation-checked), `run-local-api-tests` 110/110, `run-agent-tests` 47/47, `run-health-tests` 29/29,
+`run-appearance-consistency-tests` 47/47, xunit 146/146. Verified in a browser against a scratch daemon and the dev server, **not** through
+`testenv` (Docker was not running).
+**Next action:** run `group-9-verification.md` on the Windows rig, merge PR #53, then review the Group 10 PR.
 
 ---
 

@@ -107,7 +107,9 @@ export function GameManagement({ game, platform, onChanged, onRemoved }: Props) 
     <Card title="This game on this device">
       <div className="sl-stack">
         <div className="sl-inline">
-          <Button size="sm" onClick={() => void changeFolder()}>Change folder</Button>
+          <Button size="sm" variant={game.path ? undefined : 'primary'} onClick={() => void changeFolder()}>
+            {game.path ? 'Change folder' : 'Choose save folder'}
+          </Button>
           <Button size="sm" disabled={!game.path} onClick={() => void openFolder()}>Open folder</Button>
           {needsProcess && (
             <Button size="sm" onClick={() => { setProcessText(game.processNames.join(', ')); setEditingProcess(e => !e) }}>

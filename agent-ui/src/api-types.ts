@@ -363,6 +363,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/enroll/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnrollProgressDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config": {
         parameters: {
             query?: never;
@@ -2637,6 +2672,19 @@ export interface components {
         };
         DismissWarningRequest: {
             gameName: null | string;
+        };
+        EnrollProgressDto: {
+            active: boolean;
+            /** Format: int32 */
+            index: number;
+            /** Format: int32 */
+            total: number;
+            game: null | string;
+            step: string;
+            /** Format: int32 */
+            enrolled: number;
+            /** Format: int32 */
+            skipped: number;
         };
         EnrollRequest: {
             ids: null | number[];

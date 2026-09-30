@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { RefreshCw, FolderSearch } from 'lucide-react'
-import type { Candidate } from '../types'
+import type { Candidate, EnrollProgress } from '../types'
 import { api } from '../api'
 import { useFolderPicker } from '../useFolderPicker'
 import { PathBrowserModal } from './PathBrowserModal'
@@ -61,6 +61,36 @@ const STORES: { id: string; label: string }[] = [
   { id: 'Unknown', label: 'Other' },
 ]
 
+function EnrollProgressBar({ progress, picked }: { progress: EnrollProgress | null; picked: number }) {
+  const total = progress?.total || picked
+  const started = progress !== null && progress.total > 0
+  // Fills as games finish, and a game part-way through counts as half — each is several round trips,
+  // so a bar that only moved between games would sit still for most of the wait.
+  const pct = started ? Math.min(100, Math.round(((progress.index - 0.5) / total) * 100)) : 0
+  const what = progress?.game
+    ? `${progress.step} — ${progress.game}`
+    : progress?.step || 'Getting ready…'
+  return (
+    <div className="sl-enrollbar" role="status" aria-live="polite">
+      <div className="sl-enrollbar__head">
+        <span>{started ? `Adding game ${progress.index} of ${total}` : 'Adding games…'}</span>
+        {started && <span>{pct}%</span>}
+      </div>
+      <div
+        className="sl-meter"
+        role="progressbar"
+        aria-label="Adding games"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={started ? pct : undefined}
+      >
+        <i className={started ? undefined : 'sl-meter__sweep'} style={started ? { width: `${pct}%` } : undefined} />
+      </div>
+      <div className="sl-enrollbar__step">{what}</div>
+    </div>
+  )
+}
+
 export function AddGamesView({ onEnrolled }: Props) {
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [checked, setChecked] = useState<Set<number>>(new Set())
@@ -72,6 +102,7 @@ export function AddGamesView({ onEnrolled }: Props) {
   const [enrolling, setEnrolling] = useState(false)
   const [status, setStatus] = useState('')
   const [enrolled, setEnrolled] = useState(false)
+  const [progress, setProgress] = useState<EnrollProgress | null>(null)
   const picker = useFolderPicker()
 
   const scan = useCallback(async (force = false) => {
@@ -122,10 +153,22 @@ export function AddGamesView({ onEnrolled }: Props) {
     .map(id => candidates.find(c => c.id === id))
     .filter((c): c is Candidate => !!c && !c.path)
 
+  // Adding a game is a round trip to the server per game, so the request can stay open for a while.
+  // Its own progress is asked for beside it, or the page would look frozen on "Adding…".
+  useEffect(() => {
+    if (!enrolling) return
+    let live = true
+    const tick = () => api.enrollProgress().then(p => { if (live) setProgress(p) }).catch(() => {})
+    void tick()
+    const id = setInterval(tick, 350)
+    return () => { live = false; clearInterval(id) }
+  }, [enrolling])
+
   const enroll = async () => {
     if (checked.size === 0 || missing.length > 0) return
     setEnrolling(true)
-    setStatus('Adding…')
+    setProgress(null)
+    setStatus('')
     try {
       const result = await api.enroll([...checked])
       setStatus(
@@ -135,11 +178,13 @@ export function AddGamesView({ onEnrolled }: Props) {
       if (result.enrolled > 0) setEnrolled(true)
       setChecked(new Set())
       onEnrolled()
+      setProgress({ active: true, index: 0, total: 0, game: null, step: 'Refreshing the list of games…', enrolled: 0, skipped: 0 })
       await scan(false)
     } catch (e) {
       setStatus('Could not add them: ' + (e as Error).message)
     } finally {
       setEnrolling(false)
+      setProgress(null)
     }
   }
 
@@ -312,6 +357,7 @@ export function AddGamesView({ onEnrolled }: Props) {
       {enrolled && <LaunchSetupCard />}
 
       <div className="sl-footbar">
+        {enrolling && <EnrollProgressBar progress={progress} picked={checked.size} />}
         <span className="sl-footbar__txt" style={enrollBlocked && !status ? { color: 'var(--color-watch-ink)' } : undefined}>
           {footText}
         </span>

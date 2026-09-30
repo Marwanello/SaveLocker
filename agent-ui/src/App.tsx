@@ -63,15 +63,17 @@ export default function App() {
   }, [adoptAppearance])
 
   const refreshConflicts = useCallback(async (): Promise<Conflict[]> => {
-    try {
-      const [cs, gs] = await Promise.all([api.conflicts(), api.games()])
-      setConflicts(cs)
-      setGames(gs)
-      return cs
-    } catch (err) {
-      console.error(err)
-      return []
+    // Separate requests, not Promise.all: the game list is this machine's own config, but conflicts come
+    // from the server. With the server down the pair used to fail together and the list never loaded.
+    const [cs, gs] = await Promise.allSettled([api.conflicts(), api.games()])
+    if (gs.status === 'fulfilled') setGames(gs.value)
+    else console.error(gs.reason)
+    if (cs.status === 'fulfilled') {
+      setConflicts(cs.value)
+      return cs.value
     }
+    console.error(cs.reason)
+    return []
   }, [])
 
   // Read through a ref: Sync all is a long request, and `handleSynced` runs when it FINISHES. A `view`

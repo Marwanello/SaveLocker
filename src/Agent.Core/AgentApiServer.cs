@@ -275,7 +275,7 @@ public sealed class AgentApiServer : IDisposable
                 _config.MachineName,
                 _config.ServerUrl,
                 _autoStart.IsEnabled(),
-                _config.Games.Count,
+                _config.Games.Count(g => g.IsEnrolledHere),
                 _config.TotalSavesPushed,
                 lastSyncAgo,
                 warnings,
@@ -365,6 +365,14 @@ public sealed class AgentApiServer : IDisposable
             var (enrolled, skipped) = await _enroll(candidates, body.Ids);
             return TypedResults.Ok(new EnrollResponse(enrolled, skipped));
         });
+
+        // Read by the Add games page while its POST /api/enroll is still open: enrolling creates each
+        // game on the server one round trip at a time, which from the browser looked like a hang.
+        app.MapGet("/api/enroll/progress", () =>
+        {
+            var p = Enroller.Progress;
+            return new EnrollProgressDto(p.Active, p.Index, p.Total, p.Game, p.Step, p.Enrolled, p.Skipped);
+        }).Produces<EnrollProgressDto>();
 
         app.MapGet("/api/config", () => new AgentConfigDto(
             _config.ServerUrl,
@@ -872,6 +880,9 @@ public sealed class AgentApiServer : IDisposable
         {
             var game = _config.Games.FirstOrDefault(g => g.GameId == id);
             if (game is null) return TypedResults.NotFound();
+            if (!game.IsEnrolledHere)
+                return TypedResults.BadRequest(new ErrorResponse(
+                    "This game has no save folder on this machine yet. Choose a folder first."));
             if (!Enum.TryParse<GameSyncMode>(body.Mode, ignoreCase: true, out var mode) || !Enum.IsDefined(mode))
                 return TypedResults.BadRequest(new ErrorResponse("mode must be sync, push or pull."));
 
@@ -1765,6 +1776,7 @@ public sealed record LocalResolveRequest(Guid WinningVersionId, bool KeepBoth = 
 public sealed record OkResponse(bool Ok = true);
 public sealed record ErrorResponse(string Error);
 public sealed record EnrollResponse(int Enrolled, int Skipped);
+public sealed record EnrollProgressDto(bool Active, int Index, int Total, string? Game, string Step, int Enrolled, int Skipped);
 public sealed record RegisterResponse(string MachineName);
 public sealed record FolderResponse(string? Path);
 public sealed record SuggestedPathDto(string? Path);

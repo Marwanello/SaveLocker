@@ -24,7 +24,6 @@ const check = process.argv.includes('--check')
 const at = (...p) => join(root, ...p)
 
 const EMBER = '#e0533c'
-const ON_EMBER = '#160f0e'
 const FONTS = [
   at('src', 'Agent.Linux', 'Ui', 'Fonts', 'Archivo-Regular.ttf'),
   at('src', 'Agent.Linux', 'Ui', 'Fonts', 'Archivo-SemiBold.ttf'),

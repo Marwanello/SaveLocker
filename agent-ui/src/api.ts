@@ -1,4 +1,4 @@
-import type { Activity, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, Conflict, DeckyStatus, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, TestConnection, TrackedGame, VersionStats } from './types'
+import type { Activity, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, Conflict, DeckyStatus, EnrollProgress, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, TestConnection, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -43,6 +43,8 @@ export const api = {
   candidates: () => req<Candidate[]>('/api/candidates'),
   rescan: () => post<Candidate[]>('/api/candidates/rescan'),
   enroll: (ids: number[]) => post<{ enrolled: number; skipped: number }>('/api/enroll', { ids }),
+  // Asked while enroll() is still open: which game and which step the agent is on.
+  enrollProgress: () => req<EnrollProgress>('/api/enroll/progress'),
   // identityCleared is true when the server URL moved to a different origin: the machine key, id
   // and TLS pin were issued by the old server and have been dropped, so this agent must register
   // or enroll again before it can sync.

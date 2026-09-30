@@ -445,6 +445,9 @@ foreach ($n in $artGames.Keys) {
     "x" | Set-Content (Join-Path $dir "s.sav") -Encoding utf8
     $artGameCfg += @{ GameId = $id; Name = "Art $n"; SaveDirectory = $dir }
 }
+# On the server but with no folder on this machine — never synced, never counted as tracked here.
+$noFolderId = [guid]::NewGuid().ToString()
+$artGameCfg += @{ GameId = $noFolderId; Name = "Art nofolder"; SaveDirectory = "" }
 $artCfg = Join-Path $artDir "cfg.json"
 @{
     ServerUrl   = $artStubUrl
@@ -807,6 +810,16 @@ try {
         ((ArtCall "GET" "/api/games/$goodId/versions" $artToken $null).Status -eq 200)
     Check "open-folder for an unknown game is a 404" ((ArtCall "POST" "/api/games/$([guid]::NewGuid())/open-folder" $artToken $null).Status -eq 404)
     Check "candidates/cached answers without scanning" ((ArtCall "GET" "/api/candidates/cached" $artToken $null).Status -eq 200)
+
+    # Enrollment progress and games that exist only on the server.
+    Check "GET /api/enroll/progress needs the local token" ((ArtCall "GET" "/api/enroll/progress" $null $null).Status -eq 401)
+    $prog = (ArtCall "GET" "/api/enroll/progress" $artToken $null).Body | ConvertFrom-Json
+    Check "enroll progress is idle when nothing is being added" ($prog.active -eq $false -and $prog.total -eq 0)
+    Check "state counts only games with a folder here as tracked ($($artGames.Count) of $($artGames.Count + 1))" `
+        ((ArtCall "GET" "/api/state" $artToken $null).Body | ConvertFrom-Json).gamesTracked -eq $artGames.Count
+    $syncNoFolder = ArtCall "POST" "/api/games/$noFolderId/sync" $artToken '{"mode":"sync"}'
+    Check "syncing a game with no folder on this machine is refused (400), not attempted" `
+        ($syncNoFolder.Status -eq 400 -and $syncNoFolder.Body -match "no save folder")
 }
 finally {
     if ($artProc) { Stop-Process -Id $artProc.Id -Force -ErrorAction SilentlyContinue }

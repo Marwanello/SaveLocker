@@ -550,6 +550,9 @@ documentation that was found. Read before touching the presenter.
   itself is still a real refusal.
 
 ## Testing
+
+- **`run-agent-tests.ps1` fails 3 checks ("Laptop pull restores save" and two after it) when a previous run left `.verify/` behind.** `laptop_save` still holds
+  the last run's pulled file, so the pull reads "already up to date". Delete `.verify/` (and, if the dev DB is old, `src/Server/localstate/`) before a run.
 - **A test of a timestamp's timezone only fails off UTC.** `SaveArchiveTimestampTests` and
   `run-delta-upload-tests` section 10 pin files to known UTC instants; the old local-clock stamping was right by
   accident on a UTC+0 machine, so a CI runner at UTC cannot catch that regression — this UTC+3 box can. The offset

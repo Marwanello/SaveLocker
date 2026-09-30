@@ -320,7 +320,7 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add("Open SaveLocker…", null, (_, _) => OpenWindow());
         menu.Items.Add(new ToolStripSeparator());
 
-        foreach (var g in _config.Games)
+        foreach (var g in _config.Games.Where(g => g.IsEnrolledHere))
         {
             var game = g;
             var sub = new ToolStripMenuItem(game.Name);
@@ -349,7 +349,7 @@ internal sealed class TrayContext : ApplicationContext
             }));
             menu.Items.Add(sub);
         }
-        if (_config.Games.Count > 0)
+        if (_config.Games.Any(g => g.IsEnrolledHere))
             menu.Items.Add(new ToolStripSeparator());
 
         menu.Items.Add("Sync All (pull then push)", null, (_, _) => FireAndForget(SyncAll));

@@ -71,6 +71,9 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
   }, [game.id, syncCount, game.path])
 
   const inConflict = conflicts.some(c => c.gameId === game.id)
+  // Without a save folder here there is nothing to push, pull or compare — the game only exists on the
+  // server until one is chosen (Games groups it apart for the same reason).
+  const enrolled = !!game.path
 
   async function run(mode: GameSyncMode) {
     setPending(mode)
@@ -114,6 +117,7 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
         <div className="sl-gamehead__main">
           <h2 className="sl-gamehead__title">{game.name}</h2>
           <div className="sl-gamehead__chips">
+            {!enrolled && <Chip tone="warn">Not set up on this device</Chip>}
             {inConflict && <Chip tone="crit">Conflict</Chip>}
             {heldElsewhere && <Chip tone="warn">Checked out by {holder}</Chip>}
             {check && !check.hasOpenConflict && (check.inSync ? <Chip tone="ok">Matches the cloud</Chip> : <Chip tone="warn">Differs from the cloud</Chip>)}
@@ -130,18 +134,26 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
         />
       )}
 
-      <div className="sl-actions">
-        <Button variant="primary" disabled={locked} onClick={() => void run('sync')}>
-          {pending === 'sync' ? 'Syncing…' : 'Sync this game'}
-        </Button>
-        <Button disabled={locked} onClick={() => void run('push')}>{pending === 'push' ? 'Pushing…' : 'Push now'}</Button>
-        <Button disabled={locked} onClick={() => void run('pull')}>{pending === 'pull' ? 'Pulling…' : 'Pull latest'}</Button>
-        <Button variant="quiet" disabled={locked} onClick={() => void checkNow()}>
-          {pending === 'check' ? 'Checking…' : 'Check now'}
-        </Button>
-      </div>
+      {enrolled ? (
+        <div className="sl-actions">
+          <Button variant="primary" disabled={locked} onClick={() => void run('sync')}>
+            {pending === 'sync' ? 'Syncing…' : 'Sync this game'}
+          </Button>
+          <Button disabled={locked} onClick={() => void run('push')}>{pending === 'push' ? 'Pushing…' : 'Push now'}</Button>
+          <Button disabled={locked} onClick={() => void run('pull')}>{pending === 'pull' ? 'Pulling…' : 'Pull latest'}</Button>
+          <Button variant="quiet" disabled={locked} onClick={() => void checkNow()}>
+            {pending === 'check' ? 'Checking…' : 'Check now'}
+          </Button>
+        </div>
+      ) : (
+        <Banner
+          tone="warn"
+          title={`${game.name} has no save folder on this device`}
+          detail="It is on your server, but this machine does not sync it yet. Choose its save folder below to start."
+        />
+      )}
 
-      <div className="sl-grid4">
+      {enrolled && <div className="sl-grid4">
         <Stat
           label="Save here"
           value={localBytes === null ? '…' : formatBytes(localBytes)}
@@ -162,7 +174,7 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
           value={game.lastPushBytes != null ? formatBytes(game.lastPushBytes) : '—'}
           context="only what changed goes over"
         />
-      </div>
+      </div>}
 
       <div className="sl-grid2">
         <Card title="On the server">

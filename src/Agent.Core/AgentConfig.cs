@@ -733,6 +733,12 @@ public sealed class TrackedGame
 {
     public Guid GameId { get; set; }
     public string Name { get; set; } = "";
+    /// <summary>
+    /// Whether this machine has a save folder for the game. Every server game is adopted into
+    /// <c>Games</c>, but only the ones with a folder here can be synced, watched or shown as this
+    /// machine's own; the rest are "on the server" until someone picks a folder.
+    /// </summary>
+    [JsonIgnore] public bool IsEnrolledHere => !string.IsNullOrWhiteSpace(SaveDirectory);
     public string? ManifestKey { get; set; }
     /// <summary>
     /// A manual override for the name this game is matched against outside SaveLocker's own naming —
