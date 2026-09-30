@@ -212,7 +212,12 @@ sealed partial class UiApp
         if (!_sizesLoaded) LoadGameSizes();
         DrawLeaseWarnings();
         Widgets.Text("Tracked games", Theme.Fg, Theme.Title);
-        Widgets.Text($"{_config.Games.Count} on this Deck - press A to open one", Theme.Dim, Theme.Caption);
+        var here = _config.Games.Where(g => g.IsEnrolledHere).ToList();
+        var elsewhere = _config.Games.Where(g => !g.IsEnrolledHere).ToList();
+        Widgets.Text(elsewhere.Count == 0
+                ? $"{here.Count} on this Deck - press A to open one"
+                : $"{here.Count} on this Deck, {elsewhere.Count} more on the server - press A to open one",
+            Theme.Dim, Theme.Caption);
         Widgets.Gap(Theme.Space.Md);
 
         if (_config.Games.Count == 0)
@@ -223,21 +228,35 @@ sealed partial class UiApp
             return;
         }
 
-        foreach (var g in _config.Games.ToList())
+        // Games with a save folder here come first; the rest exist only on the server until someone
+        // picks a folder, so they sit under their own heading instead of looking like synced games.
+        if (elsewhere.Count > 0 && here.Count > 0) Widgets.SectionHeader("On this Deck");
+        foreach (var g in here) DrawGameRow(g);
+        if (elsewhere.Count > 0)
         {
-            var missing = string.IsNullOrEmpty(g.SaveDirectory);
-            var conflicted = _openConflicts.Any(c => c.GameId == g.GameId);
-            var last = g.LastPushAt is { } at ? "synced " + FormatAgo(DateTime.UtcNow - at) : "not pushed yet";
-            var size = _sizes.TryGetValue(g.GameId, out var bytes) && bytes > 0 ? FormatBytes(bytes) : null;
-            var sub = string.Join(" · ", new[] { size, last, missing ? "no save folder" : g.SaveDirectory }.Where(s => s is not null));
-
-            var (tex, aspect) = Cover(g.GameId);
-            var pressed = Widgets.ListRow($"gm{g.GameId}", g.Name, sub, chevron: true,
-                cover: true, coverTexture: tex, coverAspect: aspect, coverInitial: g.Name,
-                chip: conflicted ? "Conflict" : missing ? "Needs setup" : "Synced",
-                chipColour: conflicted ? Theme.Accent : missing ? Theme.Watch : Theme.Safe);
-            if (pressed) OpenGame(g);
+            Widgets.SectionHeader("On the server");
+            Widgets.TextWrapped("No save folder on this Deck yet. Open one to choose it.", Theme.Dim, Theme.Caption);
+            Widgets.Gap(Theme.Space.Sm);
+            foreach (var g in elsewhere) DrawGameRow(g);
         }
+    }
+
+    private void DrawGameRow(TrackedGame g)
+    {
+        var missing = !g.IsEnrolledHere;
+        var conflicted = _openConflicts.Any(c => c.GameId == g.GameId);
+        var last = g.LastPushAt is { } at ? "synced " + FormatAgo(DateTime.UtcNow - at) : "not pushed yet";
+        var size = _sizes.TryGetValue(g.GameId, out var bytes) && bytes > 0 ? FormatBytes(bytes) : null;
+        var sub = missing
+            ? "no save folder on this Deck"
+            : string.Join(" · ", new[] { size, last, g.SaveDirectory }.Where(s => s is not null));
+
+        var (tex, aspect) = Cover(g.GameId);
+        var pressed = Widgets.ListRow($"gm{g.GameId}", g.Name, sub, chevron: true,
+            cover: true, coverTexture: tex, coverAspect: aspect, coverInitial: g.Name,
+            chip: conflicted ? "Conflict" : missing ? "Not set up" : "Synced",
+            chipColour: conflicted ? Theme.Accent : missing ? Theme.Watch : Theme.Safe);
+        if (pressed) OpenGame(g);
     }
 
     // ── One game ─────────────────────────────────────────────────────────────────────────────
@@ -320,17 +339,23 @@ sealed partial class UiApp
 
         // Actions — the daemon's per-game sync (never forced, so a pull still refuses to overwrite local
         // changes and a diverged push still becomes a conflict), plus the existing folder browser.
-        if (Widgets.PillButton(busy ? "Syncing..." : "Sync this game", Widgets.ButtonKind.Primary, Icons.Sync,
-                enabled: !busy && Connected && !missing))
-            StartGameSync(g, "sync");
-        ImGui.SameLine(0, Theme.Space.Sm);
-        if (Widgets.PillButton("Push now", Widgets.ButtonKind.Secondary, enabled: !busy && Connected && !missing))
-            StartGameSync(g, "push");
-        ImGui.SameLine(0, Theme.Space.Sm);
-        if (Widgets.PillButton("Pull latest", Widgets.ButtonKind.Secondary, enabled: !busy && Connected && !missing))
-            StartGameSync(g, "pull");
-        ImGui.SameLine(0, Theme.Space.Sm);
-        if (Widgets.PillButton("Change folder", Widgets.ButtonKind.Ghost, Icons.Folder)) EnterSetFolderForGame(g);
+        // A game with no folder here has nothing to sync, so it is offered a folder instead of buttons
+        // that could only refuse (the agent UI does the same).
+        if (!missing)
+        {
+            if (Widgets.PillButton(busy ? "Syncing..." : "Sync this game", Widgets.ButtonKind.Primary, Icons.Sync,
+                    enabled: !busy && Connected))
+                StartGameSync(g, "sync");
+            ImGui.SameLine(0, Theme.Space.Sm);
+            if (Widgets.PillButton("Push now", Widgets.ButtonKind.Secondary, enabled: !busy && Connected))
+                StartGameSync(g, "push");
+            ImGui.SameLine(0, Theme.Space.Sm);
+            if (Widgets.PillButton("Pull latest", Widgets.ButtonKind.Secondary, enabled: !busy && Connected))
+                StartGameSync(g, "pull");
+            ImGui.SameLine(0, Theme.Space.Sm);
+        }
+        if (Widgets.PillButton(missing ? "Choose save folder" : "Change folder",
+                missing ? Widgets.ButtonKind.Primary : Widgets.ButtonKind.Ghost, Icons.Folder)) EnterSetFolderForGame(g);
 
         if (!string.IsNullOrEmpty(_gameSyncMessage))
         {

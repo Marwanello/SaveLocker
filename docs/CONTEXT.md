@@ -1639,6 +1639,8 @@ It now reports *server unreachable*, returns false, and the push queues; the gam
 ("On this machine" / "On the server"), have no Sync/Push/Pull/Check now (the route refuses with 400), are skipped by Sync all and the Windows tray menu,
 and are not counted in "games tracked". (3) The games list no longer disappears with the server down (`App.tsx` fetched it together with the
 server-side conflicts). (4) Add games shows a real progress bar: `GET /api/enroll/progress`, fed by `Enroller` step by step.
+The Deck's Tracked games screen groups the same way ("On this Deck" / "On the server"), a game with no folder gets "Choose save folder" instead of Sync/Push/Pull, and the Games Tracked tile counts enrolled games only.
+`run-agent-tests` is now repeatable against a used dev server: it starts from an empty `.verify/` and names its games per run (`$stamp` was never set, so "TemplateGuard-" was one shared game).
 Tests: `OfflineSyncTests` (3, mutation-checked), `run-local-api-tests` 110/110, `run-agent-tests` 47/47, `run-health-tests` 29/29,
 `run-appearance-consistency-tests` 47/47, xunit 146/146. Verified in a browser against a scratch daemon and the dev server, **not** through
 `testenv` (Docker was not running).

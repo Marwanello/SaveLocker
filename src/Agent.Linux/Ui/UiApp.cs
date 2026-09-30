@@ -1292,7 +1292,7 @@ sealed partial class UiApp
         Widgets.StatTile(Connected ? "CONNECTED" : "NOT ENROLLED", "Agent Status",
             Connected ? Theme.Safe : Theme.Watch, tileW, 112f, sub: host.Length > 0 ? host : "no server set");
         ImGui.SameLine(0, Theme.Space.Md);
-        Widgets.StatTile(_config.Games.Count.ToString(), "Games Tracked", Theme.Safe, tileW, 112f, sub: "on this Deck");
+        Widgets.StatTile(_config.Games.Count(g => g.IsEnrolledHere).ToString(), "Games Tracked", Theme.Safe, tileW, 112f, sub: "on this Deck");
         ImGui.SameLine(0, Theme.Space.Md);
         Widgets.StatTile(_config.TotalSavesPushed.ToString(), "Saves Backed Up", Theme.Fg, tileW, 112f,
             sub: $"{FormatBytes(_config.SentTodayBytesNow())} sent today");
