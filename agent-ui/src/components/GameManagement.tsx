@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api } from '../api'
+import { api, ApiError, CONFIRM_HINT } from '../api'
 import { copyText } from '../clipboard'
 import { useFolderPicker } from '../useFolderPicker'
 import type { TrackedGame } from '../types'
@@ -44,10 +44,10 @@ export function GameManagement({ game, platform, onChanged, onRemoved }: Props) 
       onChanged()
     } catch (e) {
       const message = (e as Error).message
-      // Only the heuristic warnings carry this sentence, so a hard refusal (a drive root, a user
-      // profile) can never be clicked past.
-      if (!confirm && message.includes('Re-send with confirm')) {
-        setFlagged({ ask: message.replace(' Re-send with confirm to use it anyway.', ''), path: next })
+      // Only the heuristic warnings are confirmable, and the agent says so in a field of its own — so a
+      // hard refusal (a drive root, a user profile) can never be clicked past, whatever its wording.
+      if (!confirm && e instanceof ApiError && e.needsConfirm) {
+        setFlagged({ ask: message.replace(CONFIRM_HINT, ''), path: next })
         return
       }
       setNote({ text: `Could not set the save folder: ${message}`, failed: true })

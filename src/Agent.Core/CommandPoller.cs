@@ -478,6 +478,7 @@ public sealed class CommandPoller : IDisposable
 
         var engine = _engine();
         var running = new List<string>();
+        var unreachable = new List<string>();
         foreach (var g in targets)
         {
             // A dashboard force-pull is the most dangerous surface there is: the person clicking it
@@ -490,17 +491,27 @@ public sealed class CommandPoller : IDisposable
             switch (cmd.Type)
             {
                 case AgentCommandType.Pull:
-                    if (!active) await engine.PullAsync(g, cmd.Force);
+                    if (!active && await engine.PullAsync(g, cmd.Force) is PullOutcome.Unreachable)
+                        unreachable.Add(g.Name);
                     break;
                 case AgentCommandType.Push:
                     await engine.PushAsync(g, cmd.Force);
                     break;
                 case AgentCommandType.Sync:
-                    if (!active) await engine.PullAsync(g, cmd.Force);
+                    if (!active && await engine.PullAsync(g, cmd.Force) is PullOutcome.Unreachable)
+                        unreachable.Add(g.Name);
                     await engine.PushAsync(g, cmd.Force);
                     break;
             }
         }
+
+        // Thrown, so the command is reported Failed with this as its reason. The pull no longer throws
+        // by itself, and answering "pulled" for a download that never arrived (a gateway timeout in
+        // front of the server is the realistic case — the command itself just came from that server)
+        // would tell the person at the dashboard the opposite of what happened.
+        if (unreachable.Count > 0)
+            throw new HttpRequestException(
+                $"the server did not answer — nothing was pulled for {string.Join(", ", unreachable)}.");
 
         if (running.Count > 0 && cmd.Type == AgentCommandType.Pull)
             return $"REFUSED — still running: {string.Join(", ", running)}. " +

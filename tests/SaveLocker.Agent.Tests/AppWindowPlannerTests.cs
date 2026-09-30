@@ -57,4 +57,30 @@ public class AppWindowPlannerTests
     [InlineData("http://localhost:5178/?app#a", "http://localhost:5178/?app#a")]
     public void TheAppFlag_GoesBeforeTheRoute_AndIsNotAddedTwice(string input, string expected) =>
         Assert.Equal(expected, AppWindowPlanner.WithAppFlag(input));
+
+    // The daemon must not start the browser itself: as a child of savelocker.service it would die with
+    // the unit's next restart. The command has to arrive intact behind `--`, or systemd-run would read
+    // the browser's own `--app=` as one of its options.
+    [Fact]
+    public void FromTheDaemon_TheUserManagerStartsTheWindow_WithTheCommandIntactAfterTheSeparator()
+    {
+        var plan = AppWindowPlanner.ThroughUserManager(Choose(flatpaks: ["com.google.Chrome"]));
+        Assert.Equal("systemd-run", plan.FileName);
+        Assert.Equal("--user", plan.Args[0]);
+        var separator = plan.Args.ToList().IndexOf("--");
+        Assert.True(separator > 0);
+        Assert.Equal(["flatpak", "run", "com.google.Chrome", "--app=http://localhost:5178/?app#conflicts"],
+            plan.Args.Skip(separator + 1));
+        Assert.True(plan.IsAppWindow);
+    }
+
+    // "Is there a desktop to open this on" used to ask for a session bus, which systemd --user keeps
+    // alive on a headless box too — so the 409-with-the-path fallback never fired where it was meant to.
+    [Theory]
+    [InlineData("DISPLAY", ":0", true)]
+    [InlineData("WAYLAND_DISPLAY", "wayland-0", true)]
+    [InlineData("DISPLAY", "", false)]
+    [InlineData("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus", false)]
+    public void OnlyADisplay_CountsAsADesktop_NotASessionBus(string key, string value, bool expected) =>
+        Assert.Equal(expected, AppWindowPlanner.HasDisplay(new Dictionary<string, string?> { [key] = value, ["HOME"] = "/home/deck" }));
 }

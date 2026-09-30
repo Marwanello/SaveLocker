@@ -1,4 +1,4 @@
-﻿# Agent health reporting (Linux agent Phase 5) - 19 checks. Runs on BOTH Windows and Linux.
+# Agent health reporting (Linux agent Phase 5) - 19 checks. Runs on BOTH Windows and Linux.
 #
 #   Windows: drives src/Agent (net10.0-windows).  Linux: drives src/Agent.Linux (net10.0).
 #
@@ -55,7 +55,7 @@ if (-not (Test-Path $serverDll)) { Write-Host "Server not built: $serverDll"; ex
 $state = Join-Path $scratch "state"
 New-Item -ItemType Directory -Force (Join-Path $state "archives") | Out-Null
 
-# The port and the dev DB path come from launchSettings.json, which ONLY `dotnet run` reads â€”
+# The port and the dev DB path come from launchSettings.json, which ONLY `dotnet run` reads —
 # launching the DLL directly binds :5000 and loads the production config. So both are passed
 # explicitly here (see Gotchas.md).
 $env:ASPNETCORE_URLS      = $server
@@ -161,12 +161,12 @@ $adminConflict = Invoke-RestMethod "$server/api/conflicts" | Select-Object -Firs
 Check "stale conflict is escalated in the console contract" ($adminConflict.escalated -eq $true)
 
 # The conflict card's file-count / newest-mtime delta (derived from the archive on demand, not
-# stored) â€” pcSave has exactly one file at this point, so the count is exact, not just "present".
+# stored) — pcSave has exactly one file at this point, so the count is exact, not just "present".
 $conflictStats = Invoke-RestMethod "$server/api/games/$($adminConflict.gameId)/versions/$($adminConflict.versionBId)/stats"
 Check "conflict version stats report the real file count" ($conflictStats.fileCount -eq 1)
 Check "conflict version stats report a newest mtime"       ($null -ne $conflictStats.newestFileWriteUtc)
 
-# Same stats, through the agent-scoped route (machine key, not admin auth) â€” built ahead of need
+# Same stats, through the agent-scoped route (machine key, not admin auth) — built ahead of need
 # for a future agent-side auto-resolver, so it needs its own coverage, not just the admin route's.
 $pcApiKey = (Get-Content $pcCfg | ConvertFrom-Json).ApiKey
 $agentStats = Invoke-RestMethod "$server/api/versions/$($adminConflict.versionBId)/stats" -Headers @{ "X-Api-Key" = $pcApiKey }
@@ -214,7 +214,7 @@ Check "a missing save folder is a Warning"            ($missing.severity -eq "Wa
 # event must persist to disk and go out after contact returns. If this only worked while online it
 # would be reporting nothing at the exact moment it is needed.
 ClearEvents
-# Stop OUR server only â€” never every dotnet process on the box, which would take the dev server (and
+# Stop OUR server only — never every dotnet process on the box, which would take the dev server (and
 # on CI, the job) down with it.
 Stop-Process -Id $serverProc.Id -Force
 Start-Sleep -Seconds 2
@@ -224,6 +224,14 @@ Agent push $gameName --config $pcCfg | Out-Null   # server is down: this must fa
 
 $persisted = if (Test-Path $eventsFile) { Get-Content $eventsFile -Raw } else { "" }
 Check "an offline failure is persisted to disk"       ($persisted -match "server.unreachable")
+
+# A PULL with the server down is a failed command: it says the server was not there and exits
+# non-zero. The engine no longer throws for this, and as a bare "nothing pulled" the CLI exited 0 -
+# which a script reads as "this machine has the latest save".
+$offlinePull = Agent pull $gameName --config $pcCfg
+$offlinePullExit = $LASTEXITCODE
+Check "a pull with the server down says the server is unreachable" (($offlinePull -join "`n") -match "unreachable")
+Check "... and exits non-zero"                                     ($offlinePullExit -eq 1)
 
 # Bring the server back on the SAME state, then make the agent talk to it about a DIFFERENT game,
 # so the pending event is delivered rather than being dropped by that game's own recovery.
@@ -276,6 +284,12 @@ Check "a resolved conflict appears under resolvedSince, with what was kept" `
 Check "... newest resolution first" ($resolvedNow[0].id -eq $openNow.id)
 $future = [uri]::EscapeDataString((Get-Date).ToUniversalTime().AddMinutes(5).ToString("o"))
 Check "... and not under a resolvedSince later than the resolution" ((Rows "$server/api/agent/conflicts?resolvedSince=$future").Length -eq 0)
+# machineId narrows it to the conflicts one machine was the stuck party of, on the server (before its cap).
+$stuck = (Rows "$server/api/agent/conflicts?resolvedSince=$since&machineId=$($openNow.machineId)")
+Check "machineId keeps the stuck machine's resolved conflicts" `
+    (@($stuck | Where-Object { $_.id -eq $openNow.id }).Length -eq 1 -and @($stuck | Where-Object { $_.machineId -ne $openNow.machineId }).Length -eq 0)
+Check "... and another machine's id lists none of them" `
+    (@((Rows "$server/api/agent/conflicts?resolvedSince=$since&machineId=$([guid]::NewGuid())")).Length -eq 0)
 
 ClearEvents
 if ($serverProc -and -not $serverProc.HasExited) { Stop-Process -Id $serverProc.Id -Force }

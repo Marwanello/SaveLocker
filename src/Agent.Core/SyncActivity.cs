@@ -16,10 +16,16 @@ public sealed record SyncActivitySnapshot(
     string? GameName, SyncPhase Phase, long BytesDone, long BytesTotal, DateTime? StartedAtUtc,
     int Index = 0, int Total = 0, bool CancelRequested = false);
 
-/// <summary>What a finished Sync all did, for the hero's "Synced 6 games — 19.3 MB sent" line.</summary>
+/// <summary>What a finished Sync all did, for the hero's "Synced 6 games — 19.3 MB sent" line. Every
+/// game the run visited lands in exactly one of the counts.</summary>
+/// <param name="Failed">The push was refused or could not run (the activity log says why) — never a
+/// save that is merely waiting in the offline queue; that is <paramref name="Queued"/>.</param>
+/// <param name="Pulled">A newer save was restored from the server.</param>
+/// <param name="Queued">The server was unreachable and the save is in the offline queue.</param>
+/// <param name="Unreachable">The server was unreachable and there was nothing local to queue.</param>
 public sealed record SyncRunSummary(
-    DateTime FinishedAtUtc, int Games, int Uploaded, int AlreadyCurrent, int Conflicts, int Skipped,
-    long BytesSent, bool Cancelled);
+    DateTime FinishedAtUtc, int Games, int Uploaded, int AlreadyCurrent, int Conflicts, int Failed,
+    long BytesSent, bool Cancelled, int Pulled = 0, int Queued = 0, int Unreachable = 0);
 
 public sealed record ActivityLogEntry(DateTime TimestampUtc, string Message);
 

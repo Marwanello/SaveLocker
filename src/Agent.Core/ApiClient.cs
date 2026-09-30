@@ -508,11 +508,14 @@ public sealed class ApiClient
 
     /// <summary>Conflicts resolved since <paramref name="since"/>, newest first — the agent UI's
     /// "Recently resolved" table. An older server without the parameter ignores it and answers the
-    /// OPEN list, so anything not actually <see cref="ConflictStatus.Resolved"/> is dropped here.</summary>
-    public async Task<List<ConflictDto>> GetResolvedConflictsAsync(DateTime since, CancellationToken ct = default)
+    /// OPEN list, so anything not actually <see cref="ConflictStatus.Resolved"/> is dropped here.
+    /// <paramref name="machineId"/> narrows it to one machine's conflicts on the server, before its cap.</summary>
+    public async Task<List<ConflictDto>> GetResolvedConflictsAsync(
+        DateTime since, Guid? machineId = null, CancellationToken ct = default)
     {
         var url = "/api/agent/conflicts?resolvedSince=" +
                   Uri.EscapeDataString(since.ToUniversalTime().ToString("O"));
+        if (machineId is { } machine) url += $"&machineId={machine:D}";
         var resp = await _http.GetAsync(url, ct);
         if (resp.StatusCode is HttpStatusCode.NotFound) return new();
         resp.EnsureSuccessStatusCode();

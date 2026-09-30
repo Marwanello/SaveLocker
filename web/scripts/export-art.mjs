@@ -26,6 +26,11 @@ const root = resolve(here, '..', '..')
 const check = process.argv.includes('--check')
 const at = (...p) => join(root, ...p)
 
+// Every text file is read without its line endings' carriage returns. A Windows checkout
+// (core.autocrlf) holds the sources AND the outputs with CRLF, so reading them raw copied CRLF into the
+// generated SVGs and made --check report files it had no quarrel with.
+const readText = path => readFileSync(path, 'utf8').replaceAll('\r\n', '\n')
+
 const EMBER = '#e0533c'
 const FONTS = [
   at('src', 'Agent.Linux', 'Ui', 'Fonts', 'Archivo-Regular.ttf'),
@@ -37,7 +42,7 @@ const MARK_FILES = { pixel: 'pixel-lock', cartridge: 'cartridge', memcard: 'memo
 /** A mark's shapes, straight from the shipped SVG. Without colours the CSS variables resolve to their
  *  Ember defaults; with them, to the two given (the layer files use pure red and blue as placeholders). */
 function markShapes(id = 'pixel', accent, on) {
-  const svg = readFileSync(at('web', 'src', 'assets', 'marks', `${MARK_FILES[id]}.svg`), 'utf8')
+  const svg = readText(at('web', 'src', 'assets', 'marks', `${MARK_FILES[id]}.svg`))
   const body = svg.slice(svg.indexOf('>') + 1, svg.lastIndexOf('</svg>'))
     .replace(/<title>[\s\S]*?<\/title>/, '')
     .replace(/var\(--color-accent, (#[0-9a-f]{6})\)/gi, accent ?? '$1')
@@ -171,7 +176,7 @@ const MANIFEST = JSON.stringify({
 }) + '\n'
 
 // ---- the plan: every file this script owns ------------------------------------------------------------
-const faviconSvg = readFileSync(at('web', 'public', 'favicon.svg'), 'utf8')
+const faviconSvg = readText(at('web', 'public', 'favicon.svg'))
 const files = new Map()   // absolute path -> Buffer | string
 
 for (const [name, svg] of Object.entries(STEAM)) {
@@ -219,8 +224,9 @@ files.set(at('src', 'Agent', 'Assets', 'SaveLocker.ico'), icoBytes)
 
 let differing = 0
 for (const [path, content] of files) {
-  const next = Buffer.isBuffer(content) ? content : Buffer.from(content)
-  const same = existsSync(path) && readFileSync(path).equals(next)
+  const isText = !Buffer.isBuffer(content)
+  const next = isText ? Buffer.from(content) : content
+  const same = existsSync(path) && (isText ? readText(path) === content : readFileSync(path).equals(next))
   if (check) {
     if (!same) { differing++; console.log(`differs  ${relative(root, path)}`) }
     continue

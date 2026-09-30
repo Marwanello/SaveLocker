@@ -78,6 +78,8 @@ public sealed class AgentApiServer : IDisposable
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     // One manual sync per GAME (POST /api/games/{id}/sync). Deliberately not _syncGate — see that route.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> _gameSyncGates = new();
+    // A queued game's folder size, measured at most once a minute — see /api/offline-queue.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, (long Bytes, long MeasuredAt)> _queuedSizes = new();
     // A game's art URLs change only when someone re-picks a cover, so a grid of covers does not need
     // one state request per image. Entries expire ArtUrlTtl after they were FETCHED — a hit must not
     // refresh them, or a cover viewed more often than that would never be looked up again.
@@ -612,7 +614,7 @@ public sealed class AgentApiServer : IDisposable
                     if (problems.Count > 0)
                         return TypedResults.BadRequest(new ErrorResponse(
                             "That folder looks wrong: " + string.Join(" ", problems) +
-                            " Re-send with confirm to use it anyway."));
+                            ErrorResponse.ConfirmHint, NeedsConfirm: true));
                 }
 
                 // The canonical form is stored, not the typed text: a relative path or a path with
@@ -806,7 +808,7 @@ public sealed class AgentApiServer : IDisposable
                 recent,
                 run is null ? null : new SyncRunDto(
                     run.FinishedAtUtc, run.Games, run.Uploaded, run.AlreadyCurrent, run.Conflicts,
-                    run.Skipped, run.BytesSent, run.Cancelled));
+                    run.Failed, run.BytesSent, run.Cancelled, run.Pulled, run.Queued, run.Unreachable));
         }).Produces<ActivityDto>();
 
         // Stops a running Sync all after the game it is on. Cooperative on purpose — see
@@ -816,19 +818,32 @@ public sealed class AgentApiServer : IDisposable
         app.MapPost("/api/sync/cancel", () => new CancelSyncResponse(_activity.RequestCancel()))
             .Produces<CancelSyncResponse>();
 
-        // What is waiting for the server to come back. Read fresh from disk every time (the launch
-        // wrapper queues from another process). Size is a plain directory walk — cheap, unlike the
-        // hash a sync-status does — because "how big is what is waiting" is the point of the card.
+        // What is waiting for the server to come back. The list is read fresh from disk every time
+        // (the launch wrapper queues from another process) because the Activity page polls it to watch
+        // the queue drain. The size beside each entry is a directory walk, so it is NOT re-measured on
+        // every poll: once a minute per queued game is plenty for "how big is what is waiting".
         app.MapGet("/api/offline-queue", () =>
         {
-            var entries = OfflineQueue.For(_config).GetAll()
+            var queued = OfflineQueue.For(_config).GetAll();
+            foreach (var stale in _queuedSizes.Keys.Where(id => queued.All(e => e.GameId != id)).ToList())
+                _queuedSizes.TryRemove(stale, out _);
+
+            var now = Environment.TickCount64;
+            long SizeOf(Guid gameId)
+            {
+                if (_queuedSizes.TryGetValue(gameId, out var known) && now - known.MeasuredAt < 60_000)
+                    return known.Bytes;
+                var bytes = FolderSize.Of(_config.Games.FirstOrDefault(g => g.GameId == gameId)?.SaveDirectory);
+                _queuedSizes[gameId] = (bytes, now);
+                return bytes;
+            }
+
+            return queued
                 .OrderBy(e => e.QueuedAt)
                 .Select(e => new OfflineQueueEntryDto(
                     e.GameId, e.GameName, e.QueuedAt.UtcDateTime, e.RetryCount,
-                    e.LastAttemptAt?.UtcDateTime, e.Force,
-                    FolderSize.Of(_config.Games.FirstOrDefault(g => g.GameId == e.GameId)?.SaveDirectory)))
+                    e.LastAttemptAt?.UtcDateTime, e.Force, SizeOf(e.GameId)))
                 .ToArray();
-            return entries;
         }).Produces<OfflineQueueEntryDto[]>();
 
         // Show agent.log to a person at this machine. Windows selects it in Explorer; Linux xdg-opens
@@ -1067,7 +1082,9 @@ public sealed class AgentApiServer : IDisposable
             try
             {
                 var since = DateTime.UtcNow.AddDays(-Math.Clamp(days ?? 7, 1, 90));
-                var mine = (await ApiClient.For(_config).GetResolvedConflictsAsync(since))
+                // The server filters to this machine before it caps the list; the Where stays for a
+                // server too old to know the parameter, which answers with every machine's.
+                var mine = (await ApiClient.For(_config).GetResolvedConflictsAsync(since, _config.MachineId))
                     .Where(c => c.MachineId == _config.MachineId)
                     .ToArray();
                 return TypedResults.Ok(mine);
@@ -1774,7 +1791,15 @@ public sealed record DismissWarningRequest(string? GameName);
 /// <param name="KeepBoth">Also protect the losing version as a downloadable backup.</param>
 public sealed record LocalResolveRequest(Guid WinningVersionId, bool KeepBoth = false);
 public sealed record OkResponse(bool Ok = true);
-public sealed record ErrorResponse(string Error);
+/// <param name="NeedsConfirm">The request was refused by a heuristic that has false positives, and
+/// re-sending it with <c>confirm</c> will be accepted. A client decides "may this be clicked past?" from
+/// this field alone, never from the wording of <paramref name="Error"/> — a hard refusal never sets it.</param>
+public sealed record ErrorResponse(string Error, bool NeedsConfirm = false)
+{
+    /// <summary>The sentence a confirmable refusal ends with. Kept in the message for clients that
+    /// predate <see cref="NeedsConfirm"/>; newer ones drop it and ask the question in their own words.</summary>
+    public const string ConfirmHint = " Re-send with confirm to use it anyway.";
+}
 public sealed record EnrollResponse(int Enrolled, int Skipped);
 public sealed record EnrollProgressDto(bool Active, int Index, int Total, string? Game, string Step, int Enrolled, int Skipped);
 public sealed record RegisterResponse(string MachineName);
@@ -1798,9 +1823,11 @@ public sealed record ActivityLogEntryDto(DateTime TimestampUtc, string Message);
 /// <param name="LastRun">What the most recent Sync all did, until the next one begins; null before any.</param>
 public sealed record ActivityDto(
     ActivitySnapshotDto Current, ActivityLogEntryDto[] Recent, SyncRunDto? LastRun = null);
+/// <param name="Failed">Pushes that were refused or could not run. A save waiting in the offline queue
+/// is <paramref name="Queued"/>, and a game the server could not be asked about is <paramref name="Unreachable"/>.</param>
 public sealed record SyncRunDto(
     DateTime FinishedAtUtc, int Games, int Uploaded, int AlreadyCurrent, int Conflicts, int Failed,
-    long BytesSent, bool Cancelled);
+    long BytesSent, bool Cancelled, int Pulled = 0, int Queued = 0, int Unreachable = 0);
 public sealed record SyncNowResponse(string Message);
 /// <param name="Requested">False when no Sync all was running, so there was nothing to cancel.</param>
 public sealed record CancelSyncResponse(bool Requested);

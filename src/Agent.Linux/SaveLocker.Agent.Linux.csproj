@@ -57,6 +57,10 @@
   <ItemGroup>
     <EmbeddedResource Include="..\..\packaging\linux\savelocker.service"
                       LogicalName="SaveLocker.Agent.Linux.savelocker.service" />
+    <!-- The application-menu entry, on the same rule: install.sh renders this file with sed and
+         DesktopEntry.cs renders the embedded copy, so an install and a self-update write the same text. -->
+    <EmbeddedResource Include="..\..\packaging\linux\savelocker.desktop"
+                      LogicalName="SaveLocker.Agent.Linux.savelocker.desktop" />
   </ItemGroup>
 
 

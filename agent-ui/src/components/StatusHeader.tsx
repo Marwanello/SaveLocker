@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { Check, GitBranch, RefreshCw, Unplug } from 'lucide-react'
+import { AlertTriangle, Check, GitBranch, RefreshCw, Unplug } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { api } from '../api'
 import { formatAgo, formatBytes } from '../format'
@@ -20,7 +20,7 @@ interface Props {
 }
 
 interface Summary {
-  tone: 'neutral' | 'ok' | 'crit'
+  tone: 'neutral' | 'ok' | 'warn' | 'crit'
   Icon: LucideIcon
   title: string
   detail: string
@@ -29,21 +29,49 @@ interface Summary {
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
-/** The done state's sentence: what a finished (or cancelled) Sync all did. Counts are what really
- *  happened per game, never a guess: a game that was current is "already current", not "synced". */
-function describeRun(run: SyncRun): { title: string; detail: string } {
+/**
+ * The done state: what a finished (or cancelled) Sync all did. Every game the run visited is in
+ * exactly one count, and each count says what really happened — a game that was current is "already
+ * current", a save waiting for the server is "queued", not "failed". The line is only green when
+ * every game synced: a run that reached nothing must not read "Synced 6 games · All clear".
+ * `waiting` is the offline queue NOW, which can have drained (or grown) since the run ended.
+ */
+function describeRun(run: SyncRun, waiting: number): Summary {
+  const synced = run.uploaded + run.pulled + run.alreadyCurrent
+  const offline = run.queued + run.unreachable
   const parts: string[] = []
   if (run.uploaded > 0) parts.push(`${run.uploaded} uploaded`)
+  if (run.pulled > 0) parts.push(`${run.pulled} pulled`)
   if (run.alreadyCurrent > 0) parts.push(`${run.alreadyCurrent} already current`)
   if (run.conflicts > 0) parts.push(plural(run.conflicts, 'conflict'))
+  if (run.queued > 0) parts.push(`${run.queued} queued for upload`)
+  if (run.unreachable > 0) parts.push(`${run.unreachable} not checked`)
   if (run.failed > 0) parts.push(`${run.failed} failed — see Activity`)
-  const detail = `${parts.join(', ') || 'nothing to do'} · ${formatAgo(run.finishedAtUtc)}`
+  const queue = waiting > 0 ? ` · ${waiting} waiting to upload` : ''
+  const detail = `${parts.join(', ') || 'nothing to do'} · ${formatAgo(run.finishedAtUtc)}${queue}`
   const sent = run.bytesSent > 0 ? ` — ${formatBytes(run.bytesSent)} sent` : ''
+
+  if (offline > 0 && synced === 0 && run.failed === 0 && run.conflicts === 0) {
+    return {
+      tone: 'warn', Icon: Unplug, title: 'The server could not be reached', detail,
+      chip: <Chip tone="warn">Last sync incomplete</Chip>,
+    }
+  }
+  if (offline > 0 || run.failed > 0) {
+    return {
+      tone: 'warn', Icon: AlertTriangle, title: `Synced ${synced} of ${plural(run.games, 'game')}${sent}`, detail,
+      chip: <Chip tone="warn">Last sync incomplete</Chip>,
+    }
+  }
+  if (run.cancelled) {
+    return {
+      tone: 'neutral', Icon: Check, title: `Sync cancelled after ${plural(run.games, 'game')}${sent}`, detail,
+      chip: <Chip>Cancelled</Chip>,
+    }
+  }
   return {
-    title: run.cancelled
-      ? `Sync cancelled after ${run.games} ${run.games === 1 ? 'game' : 'games'}${sent}`
-      : `Synced ${plural(run.games, 'game')}${sent}`,
-    detail,
+    tone: 'ok', Icon: Check, title: `Synced ${plural(run.games, 'game')}${sent}`, detail,
+    chip: <Chip tone="ok">All clear</Chip>,
   }
 }
 
@@ -71,10 +99,7 @@ function summarize(
       chip: <Chip tone="crit">{conflicts.length} conflict{conflicts.length === 1 ? '' : 's'}</Chip>,
     }
   }
-  if (lastRun) {
-    const { title, detail } = describeRun(lastRun)
-    return { tone: 'ok', Icon: Check, title, detail, chip: <Chip tone="ok">All clear</Chip> }
-  }
+  if (lastRun) return describeRun(lastRun, state.offlineQueueCount)
   const last = state.lastSyncAgo === '—' ? 'no push yet' : `last push ${state.lastSyncAgo}`
   const queue = state.offlineQueueCount > 0 ? ` · offline queue ${state.offlineQueueCount}` : ''
   return {

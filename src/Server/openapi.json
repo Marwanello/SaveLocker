@@ -777,6 +777,14 @@
               "type": "string",
               "format": "date-time"
             }
+          },
+          {
+            "name": "machineId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {

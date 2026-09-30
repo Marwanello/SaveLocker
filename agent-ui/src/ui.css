@@ -109,6 +109,7 @@ button:disabled { cursor: default; }
   background: var(--color-raise); border: 1px solid var(--color-line); color: var(--color-dim);
 }
 .sl-hero__badge--ok   { background: var(--color-safe-soft);   border-color: var(--color-safe-line);   color: var(--color-safe-ink); }
+.sl-hero__badge--warn { background: var(--color-watch-soft);  border-color: var(--color-watch-line);  color: var(--color-watch-ink); }
 .sl-hero__badge--crit { background: var(--color-accent-soft); border-color: var(--color-accent-line); color: var(--color-accent-ink); }
 .sl-spin { animation: sl-spin 1.1s linear infinite; }
 .sl-hero__main { flex: 1; min-width: 0; }

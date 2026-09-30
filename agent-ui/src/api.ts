@@ -12,11 +12,27 @@ function authHeaders(extra?: HeadersInit): HeadersInit | undefined {
   return { ...(extra as Record<string, string> | undefined), 'X-SaveLocker-Token': TOKEN }
 }
 
+/** A refused request. `needsConfirm` is the agent saying "a heuristic flagged this, and the same request
+ *  with `confirm` will be accepted" — read from its own field, never inferred from the message, so a hard
+ *  refusal can never be offered as something to click past. */
+export class ApiError extends Error {
+  readonly needsConfirm: boolean
+  constructor(message: string, needsConfirm = false) {
+    super(message)
+    this.name = 'ApiError'
+    this.needsConfirm = needsConfirm
+  }
+}
+
+/** The sentence the agent ends a confirmable refusal with (for clients older than `needsConfirm`). The
+ *  page asks the question in its own words, so it is dropped from what is shown. */
+export const CONFIRM_HINT = ' Re-send with confirm to use it anyway.'
+
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(path, { ...options, headers: authHeaders(options?.headers) })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
-    throw new Error(err.error ?? res.statusText)
+    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string; needsConfirm?: boolean }
+    throw new ApiError(err.error ?? res.statusText, err.needsConfirm === true)
   }
   return res.json() as Promise<T>
 }

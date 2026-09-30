@@ -334,8 +334,13 @@ internal sealed class TrayContext : ApplicationContext
                            (proc is null ? "" : $" ({proc}.exe)") + ". Close it and try again.");
                     return;
                 }
-                await _engine.PullAsync(game, force: true);
-                Notify($"{game.Name}: force-pulled latest save.");
+                // The engine's own answer, not an assumption: a server that did not reply used to
+                // be announced as "force-pulled latest save".
+                Notify(await _engine.PullAsync(game, force: true) switch
+                {
+                    PullOutcome.Restored => $"{game.Name}: force-pulled latest save.",
+                    var other => SyncEngine.DescribePull(game, other),
+                });
                 // A force-pull never resolves an open ConflictFlag itself (unlike force-push, which
                 // Phase 2 already closes server-side) — it only overwrites this machine's local copy.
                 // Surface it rather than leave the user thinking Force Pull was the fix.

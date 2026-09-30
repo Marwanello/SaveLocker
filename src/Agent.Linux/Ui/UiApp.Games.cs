@@ -200,6 +200,14 @@ sealed partial class UiApp
 
     private void OpenGame(TrackedGame game)
     {
+        // Another game's answers must not stand in while this one's load: the page would show the
+        // previous game's latest save, size and versions under this game's name until the fetch landed.
+        if (_game?.GameId != game.GameId)
+        {
+            _gameState = null;
+            _gameStateError = null;
+            _gameVersions = null;
+        }
         _game = game;
         _gameSyncMessage = null;
         LoadGame(game);
@@ -252,10 +260,13 @@ sealed partial class UiApp
             : string.Join(" · ", new[] { size, last, g.SaveDirectory }.Where(s => s is not null));
 
         var (tex, aspect) = Cover(g.GameId);
+        // "Synced" only for a game this device has actually synced (a push or a pull recorded its hash):
+        // a game added a minute ago has not been, and a green chip would say otherwise.
+        var synced = g.LastSyncedHash is not null;
         var pressed = Widgets.ListRow($"gm{g.GameId}", g.Name, sub, chevron: true,
             cover: true, coverTexture: tex, coverAspect: aspect, coverInitial: g.Name,
-            chip: conflicted ? "Conflict" : missing ? "Not set up" : "Synced",
-            chipColour: conflicted ? Theme.Accent : missing ? Theme.Watch : Theme.Safe);
+            chip: conflicted ? "Conflict" : missing ? "Not set up" : synced ? "Synced" : "Not synced yet",
+            chipColour: conflicted ? Theme.Accent : missing ? Theme.Watch : synced ? Theme.Safe : Theme.Dim);
         if (pressed) OpenGame(g);
     }
 
@@ -323,6 +334,7 @@ sealed partial class UiApp
             Widgets.Text(g.Name, Theme.Fg, Theme.Title);
             if (conflicted) Widgets.Badge("Conflict", Theme.Accent, Icons.GitBranch);
             else if (missing) Widgets.Badge("Needs a save folder", Theme.Watch, Icons.AlertTriangle);
+            else if (g.LastSyncedHash is null) Widgets.Badge("Not synced yet", Theme.Dim);
             else Widgets.Badge("In sync as far as this device knows", Theme.Safe, Icons.Check);
             ImGui.EndGroup();
         }
@@ -458,10 +470,12 @@ sealed partial class UiApp
     {
         using var response = await DaemonClient().PostAsJsonAsync($"api/games/{id}/folder", new FolderRequest(path, confirm));
         if (response.IsSuccessStatusCode) return (true, null, null, null);
-        var message = (await response.Content.ReadFromJsonAsync<ErrorResponse>())?.Error ?? "The agent refused that folder.";
-        // Only the heuristic warnings carry this sentence, so a hard refusal can never be clicked past.
-        return message.Contains("Re-send with confirm")
-            ? (false, null, message.Replace(" Re-send with confirm to use it anyway.", ""), path)
+        var refusal = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        var message = refusal?.Error ?? "The agent refused that folder.";
+        // Only the heuristic warnings are confirmable, and the agent says so in a field of its own, so a
+        // hard refusal can never be clicked past — whatever either message happens to say.
+        return refusal?.NeedsConfirm == true
+            ? (false, null, message.Replace(ErrorResponse.ConfirmHint, ""), path)
             : (false, message, null, null);
     }
 

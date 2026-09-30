@@ -6,6 +6,7 @@
 # a rule.
 *.sh            text eol=lf
 *.service       text eol=lf
+*.desktop       text eol=lf
 
 # Normalise the rest to LF in the repository, letting Git check out the platform's native endings.
 *.cs            text

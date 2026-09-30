@@ -548,10 +548,11 @@ agent.MapPost("/agent/games/{id:guid}/template", async (Guid id, string? value, 
 // nothing here is scoped to "a conflict about me" — a machine sees every open conflict and its own
 // frontend decides what to show.
 // With `resolvedSince` it answers the other question — what was RESOLVED since then — for the agent
-// UI's "Recently resolved" table; without it, the open list, unchanged.
-agent.MapGet("/agent/conflicts", async (SyncService sync, DateTime? resolvedSince) =>
+// UI's "Recently resolved" table; without it, the open list, unchanged. `machineId` narrows the
+// resolved list to the conflicts one machine was the stuck party of (it has no effect on the open list).
+agent.MapGet("/agent/conflicts", async (SyncService sync, DateTime? resolvedSince, Guid? machineId) =>
     Results.Ok(resolvedSince is { } since
-        ? await sync.ListResolvedConflictsAsync(since.ToUniversalTime())
+        ? await sync.ListResolvedConflictsAsync(since.ToUniversalTime(), machineId)
         : await sync.ListOpenConflictsAsync()))
     .Produces<List<ConflictDto>>();
 

@@ -2697,6 +2697,8 @@ export interface components {
         };
         ErrorResponse: {
             error: string;
+            /** @default false */
+            needsConfirm: boolean;
         };
         FolderRequest: {
             path: null | string;
@@ -2904,6 +2906,21 @@ export interface components {
             /** Format: int64 */
             bytesSent: number;
             cancelled: boolean;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            pulled: number;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            queued: number;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            unreachable: number;
         };
         SyncStatusDto: {
             inSync: boolean;

@@ -792,8 +792,10 @@ try {
     $q = (ArtCall "GET" "/api/offline-queue" $artToken $null).Body | ConvertFrom-Json
     Check "the offline queue lists what is waiting (game, attempts, size of the save folder)" `
         (@($q).Count -eq 1 -and $q[0].gameName -eq "Art queued" -and $q[0].attempts -eq 3 -and $q[0].size -gt 0)
+    # The whole comparison in ONE pair of parentheses: `Check "..." (x).count -eq 1` hands Check the
+    # bare count as its condition and `-eq 1` as stray arguments, so it passed for any non-zero value.
     Check "... and state counts it for the Activity badge" `
-        ((ArtCall "GET" "/api/state" $artToken $null).Body | ConvertFrom-Json).offlineQueueCount -eq 1
+        (((ArtCall "GET" "/api/state" $artToken $null).Body | ConvertFrom-Json).offlineQueueCount -eq 1)
     Remove-Item (Join-Path $artDir "offline-queue.json") -Force -ErrorAction SilentlyContinue
 
     # With no desktop to show a file on, the log route answers 409 CARRYING THE PATH instead of pretending.
@@ -816,10 +818,24 @@ try {
     $prog = (ArtCall "GET" "/api/enroll/progress" $artToken $null).Body | ConvertFrom-Json
     Check "enroll progress is idle when nothing is being added" ($prog.active -eq $false -and $prog.total -eq 0)
     Check "state counts only games with a folder here as tracked ($($artGames.Count) of $($artGames.Count + 1))" `
-        ((ArtCall "GET" "/api/state" $artToken $null).Body | ConvertFrom-Json).gamesTracked -eq $artGames.Count
+        (((ArtCall "GET" "/api/state" $artToken $null).Body | ConvertFrom-Json).gamesTracked -eq $artGames.Count)
     $syncNoFolder = ArtCall "POST" "/api/games/$noFolderId/sync" $artToken '{"mode":"sync"}'
     Check "syncing a game with no folder on this machine is refused (400), not attempted" `
         ($syncNoFolder.Status -eq 400 -and $syncNoFolder.Body -match "no save folder")
+
+    # "May this refusal be clicked past?" is a FIELD, not a sentence a client matches. A heuristic
+    # warning (a folder that looks like a Wine prefix) says needsConfirm; a hard refusal never does.
+    $winePrefix = Join-Path $artDir "wine\drive_c"
+    New-Item -ItemType Directory -Force $winePrefix | Out-Null
+    $flagged = ArtCall "POST" "/api/games/$noFolderId/folder" $artToken (@{ path = $winePrefix } | ConvertTo-Json -Compress)
+    Check "a folder the heuristics flag is refused with needsConfirm = true" `
+        ($flagged.Status -eq 400 -and ($flagged.Body | ConvertFrom-Json).needsConfirm -eq $true)
+    $profileDir = [Environment]::GetFolderPath("UserProfile")
+    $hard = ArtCall "POST" "/api/games/$noFolderId/folder" $artToken (@{ path = $profileDir } | ConvertTo-Json -Compress)
+    Check "a hard refusal (the user profile) never offers a confirm" `
+        ($hard.Status -eq 400 -and ($hard.Body | ConvertFrom-Json).needsConfirm -eq $false)
+    Check "... and neither refusal set the folder" `
+        (((ArtCall "GET" "/api/state" $artToken $null).Body | ConvertFrom-Json).gamesTracked -eq $artGames.Count)
 }
 finally {
     if ($artProc) { Stop-Process -Id $artProc.Id -Force -ErrorAction SilentlyContinue }

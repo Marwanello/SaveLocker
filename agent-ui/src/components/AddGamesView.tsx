@@ -63,7 +63,9 @@ const STORES: { id: string; label: string }[] = [
 
 function EnrollProgressBar({ progress, picked }: { progress: EnrollProgress | null; picked: number }) {
   const total = progress?.total || picked
-  const started = progress !== null && progress.total > 0
+  // Counting starts with the first game: before it (and while the list is re-read afterwards) there is
+  // no "game 0 of N" to show, only the sweep.
+  const started = progress !== null && progress.total > 0 && progress.index > 0
   // Fills as games finish, and a game part-way through counts as half — each is several round trips,
   // so a bar that only moved between games would sit still for most of the wait.
   const pct = started ? Math.min(100, Math.round(((progress.index - 0.5) / total) * 100)) : 0
@@ -103,6 +105,9 @@ export function AddGamesView({ onEnrolled }: Props) {
   const [status, setStatus] = useState('')
   const [enrolled, setEnrolled] = useState(false)
   const [progress, setProgress] = useState<EnrollProgress | null>(null)
+  // The games are added and the list is being re-read: the agent's progress no longer describes what
+  // the page is waiting on, so polling it stops.
+  const [refreshing, setRefreshing] = useState(false)
   const picker = useFolderPicker()
 
   const scan = useCallback(async (force = false) => {
@@ -156,13 +161,15 @@ export function AddGamesView({ onEnrolled }: Props) {
   // Adding a game is a round trip to the server per game, so the request can stay open for a while.
   // Its own progress is asked for beside it, or the page would look frozen on "Adding…".
   useEffect(() => {
-    if (!enrolling) return
+    if (!enrolling || refreshing) return
     let live = true
-    const tick = () => api.enrollProgress().then(p => { if (live) setProgress(p) }).catch(() => {})
+    // Only an ACTIVE answer is this batch's: until the agent has started it, the route still holds the
+    // finished state of the previous one, which would flash "game 3 of 3" before "game 1 of 2".
+    const tick = () => api.enrollProgress().then(p => { if (live && p.active) setProgress(p) }).catch(() => {})
     void tick()
     const id = setInterval(tick, 350)
     return () => { live = false; clearInterval(id) }
-  }, [enrolling])
+  }, [enrolling, refreshing])
 
   const enroll = async () => {
     if (checked.size === 0 || missing.length > 0) return
@@ -178,12 +185,14 @@ export function AddGamesView({ onEnrolled }: Props) {
       if (result.enrolled > 0) setEnrolled(true)
       setChecked(new Set())
       onEnrolled()
+      setRefreshing(true)
       setProgress({ active: true, index: 0, total: 0, game: null, step: 'Refreshing the list of games…', enrolled: 0, skipped: 0 })
       await scan(false)
     } catch (e) {
       setStatus('Could not add them: ' + (e as Error).message)
     } finally {
       setEnrolling(false)
+      setRefreshing(false)
       setProgress(null)
     }
   }
@@ -332,7 +341,19 @@ export function AddGamesView({ onEnrolled }: Props) {
                 <Chip tone={c.path ? 'ok' : 'warn'}>{c.path ? 'Detected' : 'Not detected'}</Chip>
               </div>
               {c.path ? (
-                <div className="sl-path" style={{ marginTop: 4 }}>{c.path}</div>
+                // A detected folder can be the wrong one (a launcher's, another profile's), and it has
+                // to be correctable before the game is added — the old toolbar button did this.
+                <div className="sl-inline" style={{ marginTop: 4 }}>
+                  <span className="sl-path">{c.path}</span>
+                  <Button
+                    size="sm"
+                    variant="quiet"
+                    aria-label={`Change the save folder for ${c.name}`}
+                    onClick={e => { e.preventDefault(); void pickFolderFor(c) }}
+                  >
+                    Change
+                  </Button>
+                </div>
               ) : (
                 // The per-row button is what a Deck user actually hits — it appears exactly on the
                 // rows that block enrollment.

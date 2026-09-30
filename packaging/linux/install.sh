@@ -52,7 +52,7 @@ fi
 copy_failed=0
 while IFS= read -r -d '' item; do
   cp -r --remove-destination "${item}" "${prefix}/" || copy_failed=1
-done < <(find "${src}" -maxdepth 1 -mindepth 1 ! -name install.sh ! -name savelocker.service -print0)
+done < <(find "${src}" -maxdepth 1 -mindepth 1 ! -name install.sh ! -name savelocker.service ! -name savelocker.desktop -print0)
 
 if [ "${copy_failed}" -ne 0 ]; then
   echo "!! Install FAILED: could not replace files in ${prefix}"
@@ -70,18 +70,14 @@ echo "==> Linked ${bindir}/savelocker"
 # shows the agent UI in its own window. Deliberately NOT added to Steam — Game Mode shows Steam shortcuts,
 # and there the gamepad UI (`savelocker ui`, step 4 below) stays the way in. A menu entry is a bonus like
 # the auto-start unit: failing to write it never fails the install.
+#
+# Rendered from the packaged savelocker.desktop, which the agent embeds too: an install that updates
+# itself never runs this script, so the daemon writes the same entry once (DesktopEntry.cs). One
+# template, two writers, only the prefix substituted — the rule the systemd unit follows.
 appsdir="${HOME}/.local/share/applications"
-if mkdir -p "${appsdir}" 2>/dev/null && cat > "${appsdir}/savelocker.desktop" <<DESKTOP
-[Desktop Entry]
-Type=Application
-Name=SaveLocker
-Comment=Game save sync for this machine
-Exec=${prefix}/savelocker open
-Icon=${prefix}/artwork/icon.png
-Terminal=false
-Categories=Utility;Game;
-StartupNotify=false
-DESKTOP
+prefix_for_sed="$(printf '%s' "${prefix}" | sed 's/[&|\\]/\\&/g')"
+if mkdir -p "${appsdir}" 2>/dev/null \
+   && sed "s|@PREFIX@|${prefix_for_sed}|g" "${src}/savelocker.desktop" > "${appsdir}/savelocker.desktop" 2>/dev/null
 then
   command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "${appsdir}" >/dev/null 2>&1 || true
   echo "==> Added SaveLocker to the application menu"

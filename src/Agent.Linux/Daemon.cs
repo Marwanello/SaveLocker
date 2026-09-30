@@ -118,6 +118,7 @@ public sealed class Daemon : IAsyncDisposable
     public async Task RunAsync(CancellationToken ct)
     {
         AgentLogger.Log($"SaveLocker daemon starting — machine '{_config.MachineName}', server {_config.ServerUrl}");
+        DesktopEntry.OfferForInstalledAgent(_config, AgentLogger.Log);
 
         if (_config.DaemonApiPort != _apiPort)
         {

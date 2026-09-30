@@ -43,6 +43,34 @@ public static class AppWindowPlanner
         return head + (head.Contains('?') ? "&app" : "?app") + tail;
     }
 
+    /// <summary>
+    /// Whether an environment names a display to draw on. This, not a reachable session bus, is what
+    /// "there is a desktop here" means: <c>systemd --user</c> keeps a bus alive on a headless box and
+    /// for an SSH login alike (measured on a Deck, see <c>DesktopSessionInfo</c>), so the bus says
+    /// nothing about whether a window or a file manager has anywhere to appear.
+    /// </summary>
+    public static bool HasDisplay(IEnumerable<KeyValuePair<string, string?>> environment) =>
+        environment.Any(kv => kv.Key is "DISPLAY" or "WAYLAND_DISPLAY" && !string.IsNullOrEmpty(kv.Value));
+
+    /// <summary>
+    /// The same plan, started by the user's service manager instead of by the caller:
+    /// <c>systemd-run --user</c> runs it as a transient unit of its own. That is how the daemon opens a
+    /// window — anything it starts itself is a child of <c>savelocker.service</c>, so it would live in the
+    /// unit's cgroup (killed by every restart of the unit, each self-update included) and behind the unit's
+    /// sandbox (<c>PrivateTmp</c>, the address-family allow-list). A transient unit gets the manager's own
+    /// environment, which is the desktop session's — the same values <c>ApplySessionEnv</c> borrows.
+    /// <c>--service-type=exec</c> makes a program that cannot be started an error here, not a silent nothing.
+    /// </summary>
+    public static AppWindowPlan ThroughUserManager(AppWindowPlan plan) => plan with
+    {
+        FileName = "systemd-run",
+        Args = ["--user", "--collect", "--quiet", "--service-type=exec", "--", plan.FileName, .. plan.Args],
+    };
+
+    /// <summary>The fallback every plan ends at: the plain URL in the default browser.</summary>
+    public static AppWindowPlan DefaultBrowser(string url) =>
+        new("xdg-open", [url], "in your default browser", IsAppWindow: false);
+
     public static AppWindowPlan Choose(
         string url, Func<string, bool> binaryOnPath, Func<string, bool> flatpakInstalled)
     {
@@ -57,6 +85,6 @@ public static class AppWindowPlanner
                 return new AppWindowPlan("flatpak", ["run", id, $"--app={appUrl}"], $"in {id}'s app window", IsAppWindow: true);
 
         // The plain URL, not the app one: in an ordinary tab the browser already draws its own chrome.
-        return new AppWindowPlan("xdg-open", [url], "in your default browser", IsAppWindow: false);
+        return DefaultBrowser(url);
     }
 }

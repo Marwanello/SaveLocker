@@ -42,6 +42,9 @@ public static class Enroller
 
         try
         {
+            // Before the first candidate: a poll that lands now must see THIS batch starting, not the
+            // finished state the last one left behind.
+            Step(null, "Getting ready");
             foreach (var id in ids)
             {
                 if (id < 0 || id >= candidates.Count) continue;

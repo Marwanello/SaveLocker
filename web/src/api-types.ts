@@ -964,6 +964,7 @@ export interface paths {
             parameters: {
                 query?: {
                     resolvedSince?: string;
+                    machineId?: string;
                 };
                 header?: never;
                 path?: never;

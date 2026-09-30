@@ -35,6 +35,10 @@
     <!-- The Steam art compositor is pure too: layers in, PNG out. -->
     <Compile Include="..\..\src\Agent.Linux\Art\SteamArtRenderer.cs" Link="SteamArtRenderer.cs" />
     <Compile Include="..\..\src\Agent.Linux\Art\SteamArt.cs" Link="SteamArt.cs" />
+    <!-- And the menu entry: plain file I/O, with the template it renders embedded under the same name. -->
+    <Compile Include="..\..\src\Agent.Linux\DesktopEntry.cs" Link="DesktopEntry.cs" />
+    <EmbeddedResource Include="..\..\packaging\linux\savelocker.desktop"
+                      LogicalName="SaveLocker.Agent.Linux.savelocker.desktop" />
   </ItemGroup>
 
 </Project>

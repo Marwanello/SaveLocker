@@ -1376,18 +1376,20 @@ public sealed class SyncService
     /// <summary>
     /// Conflicts resolved at or after <paramref name="since"/>, newest resolution first, capped at
     /// <paramref name="limit"/> — what an agent's "Recently resolved" table reads. Bounded on both
-    /// sides so a long-lived fleet's history cannot make a poll heavy.
+    /// sides IN THE QUERY, so a long-lived fleet's history cannot make the read heavy.
+    /// <paramref name="machineId"/> keeps only the conflicts that machine was the stuck party of;
+    /// applied before the cap, so a busy fleet cannot crowd one machine's own rows out of it.
     /// </summary>
-    public async Task<List<ConflictDto>> ListResolvedConflictsAsync(DateTime since, int limit = 50)
+    public async Task<List<ConflictDto>> ListResolvedConflictsAsync(
+        DateTime since, Guid? machineId = null, int limit = 50)
     {
         var now = DateTime.UtcNow;
-        var conflicts = (await _db.Conflicts
-            .Where(c => c.Status == ConflictStatus.Resolved && c.ResolvedAt != null)
-            .ToListAsync())
-            .Where(c => c.ResolvedAt >= since)
+        var query = _db.Conflicts.Where(c => c.Status == ConflictStatus.Resolved && c.ResolvedAt >= since);
+        if (machineId is { } machine) query = query.Where(c => c.MachineId == machine);
+        var conflicts = await query
             .OrderByDescending(c => c.ResolvedAt)
             .Take(Math.Clamp(limit, 1, 200))
-            .ToList();
+            .ToListAsync();
         return conflicts.Select(c => c.ToDto(_conflictEscalation.IsEscalated(c, now))).ToList();
     }
 

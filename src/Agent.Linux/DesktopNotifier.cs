@@ -258,8 +258,9 @@ public sealed class DesktopNotifier : INotificationPresenter, IDisposable
         {
             // The same launcher the KDE-menu entry uses (`savelocker open`), so a click lands in the
             // app window when a Chromium-family browser is there, and in the default browser
-            // (xdg-open, with the session's environment) when it is not.
-            AppWindow.TryOpen(url, out _);
+            // (xdg-open, with the session's environment) when it is not. Through OpenFromDaemon, which
+            // keeps that browser out of this unit's cgroup and sandbox.
+            AppWindow.OpenFromDaemon(url);
         }
         catch (Exception ex)
         {
