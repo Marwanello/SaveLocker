@@ -869,7 +869,28 @@ run in parallel with them. Ordered so each part consumes what the one before it 
   attempt begins by reporting 0. The sidebar's Add-games count including already-added games is what
   Phase 13.2 specifies ("suggested candidates from the last scan") and is left as is.
 
-**Verified:** `dotnet test` **156** (+10), `run-local-api-tests` **110** on Windows (3 new, 2 made real),
+**Second pass (same day): the two Steam-art commits pushed after the review (`071d1f8`, `fc69670`).**
+- **"Set them once and they stay current" cannot happen.** `fc69670` stopped painting the shortcut's own art and
+  repaints the bundled `artwork/` folder instead, on the premise that Steam shows whatever those files hold. It does
+  not: *Set Custom Artwork* hands Steam the image, and Steam keeps its own copy under `userdata/<id>/config/grid/`
+  ([[Gotchas]] → *Linux agent*). The installer's step 5, the CLI reference, `SteamArt`'s own description and the log
+  line now say the pictures must be set again after a look change. **The design question is open:** this (Steam
+  never touched, one manual step per look change) or `071d1f8`'s (paint `grid/`, automatic, inside Steam's folder).
+- The artwork folder was `LocalApplicationData/SaveLocker/artwork` for every agent on the machine; it is this
+  agent's own state directory now (`SteamArtHost.ArtworkDir(config)`), so a second agent run with `--config` leaves
+  the installed one's pictures alone — the rule the menu entry already follows.
+- `steam-art --accent purple` painted Ember, stamped the folder "purple" and said so; an unknown `--accent` /
+  `--mark` is refused (exit 2, with the known ids), ids are lower-cased, and painting a look that is not the one in
+  effect says the agent will paint its own again.
+- Smaller: the look is read inside the repaint gate (two quick changes could finish in the wrong order); an
+  unchanged look no longer rewrites the marker on every start (test mutation-checked); every piece × mark layer is
+  asserted to exist; `testenv.ps1` and CONTEXT had `.\tests\testenv.ps1` with its `\t`s turned into tabs; usage
+  and csproj comments still described the first design.
+- `dotnet test` **173** (156 + the art tests + 1), Agent.Linux 0 warnings, `export:art --check` clean with the 20
+  layer files, `steam-art` exercised by hand against a scratch state folder (refusals, `--out`, repaint, no-op).
+  **Not verified:** the daemon's repaint on a look change (needs the rig), and anything in Steam.
+
+**Verified (first pass):** `dotnet test` **156** (+10), `run-local-api-tests` **110** on Windows (3 new, 2 made real),
 `run-health-tests` **33** (+4: `machineId`, and a pull with the server down exits 1), `run-agent-tests` 47,
 `run-delta-upload-tests` 33, `run-concurrency-tests` 26, `run-appearance-consistency-tests` 47; Server and
 Agent.Linux build with 0 warnings; `agent-ui` and `web` build + lint clean; `openapi.json` and both

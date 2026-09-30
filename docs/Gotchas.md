@@ -762,6 +762,10 @@ documentation that was found. Read before touching the presenter.
 - **A session bus is not a desktop.** `systemd --user` keeps one alive on a headless box, over SSH and in
   Game Mode (measured, `DesktopSessionInfo`), so "is there somewhere to show this?" asks for `DISPLAY` /
   `WAYLAND_DISPLAY` in the session's environment (`AppWindowPlanner.HasDisplay`), never for the bus.
+- **Steam keeps its own copy of custom artwork.** *Set Custom Artwork* hands Steam the image (the client call
+  takes the picture's bytes, not a path) and Steam stores it under `userdata/<id>/config/grid/`. Changing the
+  file that was picked changes nothing in the library, so the agent's repainted `artwork/` folder reaches Steam
+  only when the person sets the pictures again. Painting `grid/` directly is the only automatic route.
 - **The Linux install prefix IS the state directory** (`~/.local/share/SaveLocker`), so
   `config.json` — this machine's server API key — sits inside the tree an update replaces. Anything
   that "replaces the install" must copy file-by-file, never swap or rename the directory.

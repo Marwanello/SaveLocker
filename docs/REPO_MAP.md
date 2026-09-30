@@ -180,6 +180,10 @@ SaveLocker/
 │       │                               #   the window is started through `systemd-run --user`, never as its own child
 │       ├── DesktopEntry.cs              # The application-menu entry, offered once by the daemon for installs that
 │       │                               #   updated themselves (install.sh writes it otherwise) — same template
+│       ├── Art/                         # The bundled Steam library art (artwork/*.png) repainted in the look in effect,
+│       │                               #   at start and on every change: SteamArt (which files, the marker), SteamArtRenderer
+│       │                               #   (pure: tints and composites layers/*.png, written by export-art.mjs — no SVG
+│       │                               #   renderer here), SteamArtHost (the folder, the daemon hook). Steam is never touched
 │       ├── Doctor.cs                    # Diagnoses the whole chain (the only UI a Deck has)
 │       ├── SystemdAutoStart.cs          # IAutoStart: systemd --user unit
 │       └── Ui/                          # `savelocker ui` — Game Mode surface (SDL + GL + ImGui)
@@ -338,7 +342,7 @@ SaveLocker/
 │   │                                   #   container at it. Build and Run → "Testing artwork"
 │   ├── SaveLocker.Agent.Tests/         # The one xUnit project (`dotnet test`; CI's `unit-tests` job): PlayniteLibrary's
 │   │                                   #   LiteDB fixture, the OpenAPI sorter, the notification rules, offline sync, and —
-│   │                                   #   source linked in — SvgPath, AppWindowPlanner and DesktopEntry
+│   │                                   #   source linked in — SvgPath, AppWindowPlanner, DesktopEntry and the Steam art painter
 │   ├── run-appearance-consistency-tests.ps1 # Source-only drift check (~1 s): the accent table in four places, the id
 │   │                                   #   lists the server validates, mark geometry vs the SVGs AND vs the two C# ports
 │   │                                   #   (MarkIcon.cs, AppMark.cs), the token files AND the Deck's Theme.cs, the

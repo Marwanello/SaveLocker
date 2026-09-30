@@ -1646,11 +1646,12 @@ Tests: `OfflineSyncTests` (3, mutation-checked), `run-local-api-tests` 110/110, 
 `testenv` (Docker was not running).
 <br>**Steam art follows the look (2026-09-30).** The agent repaints the four library pictures the installer bundles
 (`~/.local/share/SaveLocker/artwork/`: capsule, capsule-wide, hero, logo — only if that folder exists) in the accent and mark in effect, at start and
-on every change (`Agent.Linux/Art`: `SteamArt`, `SteamArtRenderer`, `SteamArtHost`). Steam and its shortcuts are **not** touched; the person sets the
-files as custom artwork once. No SVG renderer in the agent: `export-art.mjs` also writes text and mark **layers** (`src/Agent.Linux/Art/layers/`,
+on every change (`Agent.Linux/Art`: `SteamArt`, `SteamArtRenderer`, `SteamArtHost`). Steam and its shortcuts are **not** touched — and **Steam keeps its
+own copy of a picture once it is set**, so the library shows a new look only after the person sets the files as custom artwork again (review, below).
+No SVG renderer in the agent: `export-art.mjs` also writes text and mark **layers** (`src/Agent.Linux/Art/layers/`,
 ~220 KB, embedded) and the agent tints and composites them — for Ember/Pixel lock it reproduces the bundled PNGs (test-held). `savelocker steam-art
-[--out dir]`; testenv: `.	ests	estenv.ps1 art` (XDG_DATA_HOME keeps it in the rig's state). Not verified on a real Deck.
-<br>**PR #54 reviewed 2026-09-30; every finding fixed on branch `group-10-review-fixes` (local, not pushed).** The one that
+[--out dir]`; testenv: `.\tests\testenv.ps1 art` (XDG_DATA_HOME keeps it in the rig's state). Not verified on a real Deck.
+<br>**PR #54 reviewed 2026-09-30, twice; every finding fixed and pushed onto the PR's branch.** The one that
 mattered: the follow-up's `PullAsync` returned `false` for an unreachable server, and the tray's Force Pull, a dashboard
 pull command and the CLI all reported that as a pull that went through — it is a `PullOutcome` now. Also: two test checks
 that could not fail, a green "Synced 6 games · All clear" after a run that reached nothing, a "no desktop" test that a
@@ -1659,11 +1660,19 @@ headless box passed, a notification click starting the browser inside the unit's
 `ErrorResponse.needsConfirm`, `SyncRunDto.pulled/queued/unreachable` and `?machineId=` on the resolved-conflicts route are
 additive. Detail, counts and what was not verified: `tasks/checkpoint-ui/implementation-grouping.md` → Group 10 → *Review fixes*.
 **Not seen in a browser:** the `testenv` rig was in use (its Windows agent mapped to real save folders) and was left alone.
+<br>**Second pass — the two Steam-art commits.** The premise of the second one was wrong: *Set Custom Artwork* hands Steam the
+image, not its path, so "set them once and they stay current" cannot happen — the installer's text, the CLI reference and the
+log line now say to set them again after a look change. **Open decision:** keep that (Steam untouched, one manual step per
+look change) or go back to painting the shortcut's own `grid/` files as `071d1f8` did (automatic, but writes inside Steam's
+folder). Also fixed: the artwork folder is this agent's own (`config.StateDir`), so a `--config` second agent cannot repaint
+the installed one's pictures; `steam-art --accent/--mark` refuses an unknown id instead of painting Ember under the typed
+name; an unchanged look no longer rewrites the marker at every start.
 <br>**Release notes for the next release must cover (Group 10):** the agent UI's Activity tab and offline queue; Sync all's
 N of M, Cancel and summary; games on the server with no folder here listed apart; `savelocker open` and the application-menu
 entry (added once by an agent that updates itself); `savelocker pull` exits non-zero when the server cannot be reached.
-**Next action:** push `group-10-review-fixes` onto PR #54 and merge; run `group-9-verification.md` on the Windows rig;
-then the owed real-Deck session (Group 10's status row lists what it must cover).
+**Next action:** decide the Steam-art question above, then merge PR #54; run `group-9-verification.md` on the Windows rig;
+then the owed real-Deck session (Group 10's status row lists what it must cover — add "set custom artwork, change the
+accent, see what Steam shows").
 
 ---
 
