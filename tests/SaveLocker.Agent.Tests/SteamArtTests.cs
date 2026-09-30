@@ -62,6 +62,20 @@ public sealed class SteamArtTests : IDisposable
     }
 
     [Fact]
+    public void AnUnchangedLook_WritesNothing_NotEvenTheMarker()
+    {
+        Directory.CreateDirectory(_dir);
+        Apply();
+        var marker = Path.Combine(_dir, ".savelocker-art.json");
+        var pieces = SteamArtRenderer.Pieces.Select(p => Path.Combine(_dir, p + ".png")).Append(marker).ToArray();
+        var old = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        foreach (var path in pieces) File.SetLastWriteTimeUtc(path, old);
+
+        Assert.Equal(new SteamArt.Outcome(true, 0), Apply());
+        Assert.All(pieces, path => Assert.Equal(old, File.GetLastWriteTimeUtc(path)));
+    }
+
+    [Fact]
     public void ReinstalledFixedArt_IsPaintedOverAgain()
     {
         Directory.CreateDirectory(_dir);

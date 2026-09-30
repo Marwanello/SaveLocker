@@ -43,7 +43,7 @@
   </ItemGroup>
 
   <!-- The Steam art's text and mark layers (written by web/scripts/export-art.mjs, ~220 KB): the agent tints
-       them for the accent and mark in effect and paints the SaveLocker shortcut's library art with them. -->
+       them for the accent and mark in effect and repaints the bundled library art (artwork/) with them. -->
   <ItemGroup>
     <EmbeddedResource Include="Art\layers\*.png"
                       LogicalName="SaveLocker.Agent.Linux.Art.layers.%(Filename)%(Extension)" />

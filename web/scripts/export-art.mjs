@@ -102,14 +102,13 @@ const STEAM = Object.fromEntries(Object.entries(PIECES).map(([name, p]) => [name
 // maps back: `white` is the white text (its alpha), `accent` the accent text (alpha), and each mark is
 // rasterised with red where the accent goes and blue where the on-accent ink goes — so a pixel's blue share
 // says how much ink it is, and anti-aliased seams between the two come out right for any pair of colours.
-const LAYER_MARKS = ['pixel', 'cartridge', 'memcard']
 function layerSvgs(name) {
   const p = PIECES[name]
   const out = {
     white: svgDoc(p.w, p.h, wordmark(...p.word, '#ffffff', 'none') + (p.tag ? tagline(...p.tag) : '')),
     accent: svgDoc(p.w, p.h, wordmark(p.word[0], p.word[1], p.word[2], 'none', '#ff0000')),
   }
-  for (const id of LAYER_MARKS) out[`mark-${id}`] = svgDoc(p.w, p.h, mark(...p.mark, id, '#ff0000', '#0000ff'))
+  for (const id of Object.keys(MARK_FILES)) out[`mark-${id}`] = svgDoc(p.w, p.h, mark(...p.mark, id, '#ff0000', '#0000ff'))
   return out
 }
 

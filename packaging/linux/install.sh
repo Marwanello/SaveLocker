@@ -190,17 +190,17 @@ Installed. Next:
      the game's own Proton prefix, enroll, and copy the launch command from step 3.
      This is the last Desktop Mode step you need to take.
 
-  5. (Automatic) Library art. The images are bundled at:
+  5. (Optional) Library art. The images are bundled at:
 
          ${HOME}/.local/share/SaveLocker/artwork/
 
      The SaveLocker agent repaints them in your accent colour and logo (Settings ->
-     Appearance) at start and whenever you change either, so they always match.
-     `savelocker steam-art` does it on demand. Steam is not touched, so set them once:
+     Appearance) at start and whenever you change either; `savelocker steam-art`
+     does it on demand. Steam is not touched, and it keeps its own copy of a picture
+     once you set it -- so set them now, and again after changing the look:
 
      In your library, right-click SaveLocker -> Manage -> Set Custom Artwork, and
-     pick each of these (they are already sized for Steam). Restart Steam after a
-     look change to see the new pictures:
+     pick each of these (they are already sized for Steam):
 
          capsule.png       the vertical grid tile (portrait)
          capsule-wide.png  the wide/horizontal capsule

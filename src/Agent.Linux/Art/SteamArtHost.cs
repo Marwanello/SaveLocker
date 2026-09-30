@@ -5,9 +5,9 @@ public static class SteamArtHost
 {
     private static readonly object Gate = new();
 
-    /// <summary>Where install.sh puts the bundled art; XDG_DATA_HOME moves it, as it does the rest of the agent's state.</summary>
-    public static string ArtworkDir =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SaveLocker", "artwork");
+    /// <summary>Where install.sh puts the bundled art: beside this agent's own state. A second agent run with
+    /// <c>--config</c>, or the test rig's, has its own folder and never repaints the installed one's pictures.</summary>
+    public static string ArtworkDir(AgentConfig config) => Path.Combine(config.StateDir, "artwork");
 
     public static byte[] Layer(string name)
     {
@@ -24,13 +24,16 @@ public static class SteamArtHost
     {
         try
         {
-            var look = config.EffectiveAppearance;
             lock (Gate)
             {
-                var outcome = SteamArt.Apply(ArtworkDir, look.Accent, look.Mark, Layer);
+                // Read inside the gate: two changes in quick succession each start a repaint, and the one that
+                // read the older look must not be the one that finishes last.
+                var look = config.EffectiveAppearance;
+                var dir = ArtworkDir(config);
+                var outcome = SteamArt.Apply(dir, look.Accent, look.Mark, Layer);
                 if (outcome.Written > 0)
-                    AgentLogger.Log($"Steam art: repainted {outcome.Written} picture(s) in {ArtworkDir} " +
-                                    $"as {look.Accent}/{look.Mark}. Set them as custom artwork in Steam to use them.");
+                    AgentLogger.Log($"Steam art: repainted {outcome.Written} picture(s) in {dir} as {look.Accent}/{look.Mark}. " +
+                                    "Steam keeps its own copy of a picture — set them as custom artwork again to see them there.");
                 return outcome;
             }
         }

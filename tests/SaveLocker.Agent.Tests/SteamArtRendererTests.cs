@@ -127,6 +127,9 @@ public class SteamArtRendererTests
     {
         // A new mark or accent added to the app must not silently fall back to the default in Steam.
         Assert.Equal(Appearances.Marks.OrderBy(x => x), SteamArtRenderer.Marks.OrderBy(x => x));
+        foreach (var piece in SteamArtRenderer.Pieces)
+            foreach (var mark in SteamArtRenderer.Marks)
+                Assert.NotEmpty(Layer($"{piece}.mark-{mark}.png"));
         foreach (var accent in Appearances.Accents)
         {
             var c = SaveLocker.Agent.AppearancePalette.For(accent);

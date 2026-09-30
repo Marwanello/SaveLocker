@@ -59,7 +59,7 @@ static class Program
             case "dev-steam-art-fixture":
             {
                 if (!TestCommandsAllowed(out var fixtureDenial)) { Console.Error.WriteLine(fixtureDenial); return 2; }
-                var dir = Art.SteamArtHost.ArtworkDir;
+                var dir = Art.SteamArtHost.ArtworkDir(config);
                 Directory.CreateDirectory(dir);
                 foreach (var piece in Art.SteamArtRenderer.Pieces)
                     if (!File.Exists(Path.Combine(dir, piece + ".png"))) File.WriteAllText(Path.Combine(dir, piece + ".png"), "old art");
@@ -482,8 +482,9 @@ static class Program
     private static int SteamArtCommand(Dictionary<string, string> opts, AgentConfig config)
     {
         var look = config.EffectiveAppearance;
-        var accent = opts.GetValueOrDefault("accent") ?? look.Accent;
-        var mark = opts.GetValueOrDefault("mark") ?? look.Mark;
+        if (!TryLookId(opts, "accent", SaveLocker.Shared.Appearances.Accents, look.Accent, out var accent) ||
+            !TryLookId(opts, "mark", SaveLocker.Shared.Appearances.Marks, look.Mark, out var mark))
+            return 2;
         if (opts.GetValueOrDefault("out") is { Length: > 0 } dir)
         {
             foreach (var path in Art.SteamArt.Export(dir, accent, mark, Art.SteamArtHost.Layer)) Console.WriteLine(path);
@@ -491,14 +492,27 @@ static class Program
             return 0;
         }
 
-        var outcome = Art.SteamArt.Apply(Art.SteamArtHost.ArtworkDir, accent, mark, Art.SteamArtHost.Layer);
+        var artwork = Art.SteamArtHost.ArtworkDir(config);
+        var outcome = Art.SteamArt.Apply(artwork, accent, mark, Art.SteamArtHost.Layer);
         if (!outcome.FolderFound)
         {
-            Console.WriteLine($"No artwork folder at {Art.SteamArtHost.ArtworkDir} — it is created by install.sh. Use --out <dir> to write the pictures elsewhere.");
+            Console.WriteLine($"No artwork folder at {artwork} — it is created by install.sh. Use --out <dir> to write the pictures elsewhere.");
             return 1;
         }
-        Console.WriteLine($"{accent}/{mark}: {outcome.Written} picture(s) written in {Art.SteamArtHost.ArtworkDir}.");
+        Console.WriteLine($"{accent}/{mark}: {outcome.Written} picture(s) written in {artwork}.");
+        if (accent != look.Accent || mark != look.Mark)
+            Console.WriteLine($"That is not the look in effect ({look.Accent}/{look.Mark}): the agent paints its own again " +
+                              "the next time it starts or the look changes.");
         return 0;
+    }
+
+    // Without this an id the painter does not know is painted as the default and reported under the name typed.
+    private static bool TryLookId(Dictionary<string, string> opts, string name, string[] known, string inEffect, out string id)
+    {
+        id = opts.GetValueOrDefault(name)?.Trim().ToLowerInvariant() ?? inEffect;
+        if (known.Contains(id)) return true;
+        Console.Error.WriteLine($"Unknown --{name} '{id}'. Known: {string.Join(", ", known)}.");
+        return false;
     }
 
     /// <summary>
@@ -567,7 +581,7 @@ static class Program
           daemon [--port <n>]                              Run headless; serves the agent UI on localhost:5178
           open [--port <n>] [--view <route>]               Open the agent UI in its own window (Desktop Mode)
           steam-art [--out <dir>] [--accent <id>] [--mark <id>]
-                                                           Paint the SaveLocker shortcut's Steam art in the current look
+                                                           Repaint the bundled Steam library art in the current look
           autostart --enable | --disable                   systemd --user unit
 
         Updates

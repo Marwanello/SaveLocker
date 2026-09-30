@@ -5,8 +5,9 @@ namespace SaveLocker.Agent.Linux.Art;
 
 /// <summary>
 /// Keeps the SaveLocker library art the installer bundles (<c>~/.local/share/SaveLocker/artwork/</c>) in the accent
-/// and mark the agent is showing, and repaints it when they change. Steam is never touched: the person still points
-/// their shortcut at these files (Set Custom Artwork), and the files stay current from then on.
+/// and mark the agent is showing, and repaints it when they change. Steam is never touched — and Steam keeps its
+/// own copy of a picture once it is set (Set Custom Artwork hands it the image, not the path), so a repainted file
+/// reaches the library only when the person sets it again.
 /// <para>
 /// Only a folder that already exists is repainted — it is there because the installer put the fixed art in it, and
 /// those are the old assets being replaced. The four files are <c>capsule</c>, <c>capsule-wide</c>, <c>hero</c>
@@ -53,7 +54,8 @@ public static class SteamArt
             files[piece] = Sha(png);
             written++;
         }
-        AtomicFile.WriteAllText(markerPath, JsonSerializer.Serialize(new Marker(stamp, files)));
+        // Nothing written means every piece matched the marker, which therefore already says exactly this.
+        if (written > 0) AtomicFile.WriteAllText(markerPath, JsonSerializer.Serialize(new Marker(stamp, files)));
         return new Outcome(true, written);
     }
 

@@ -22,7 +22,7 @@
 #                                 used to point it at tests/sgdb-stub.py (a stand-in SteamGridDB) so
 #                                 artwork can be tried without a real key; see Build and Run.md →
 #                                 "Testing artwork"
-#   .	ests	estenv.ps1 art       repaint the WSL agent's artwork folder (the bundled Steam library art) for the
+#   .\tests\testenv.ps1 art       repaint the WSL agent's artwork folder (the bundled Steam library art) for the
 #                                 current accent and mark; copies the four pictures to .art-preview\
 #   .\tests\testenv.ps1 down      stop them; the installed agent is never touched
 #   .\tests\testenv.ps1 status    what is running, and which build
