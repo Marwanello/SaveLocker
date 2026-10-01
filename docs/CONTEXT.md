@@ -1667,6 +1667,14 @@ look change) or go back to painting the shortcut's own `grid/` files as `071d1f8
 folder). Also fixed: the artwork folder is this agent's own (`config.StateDir`), so a `--config` second agent cannot repaint
 the installed one's pictures; `steam-art --accent/--mark` refuses an unknown id instead of painting Ember under the typed
 name; an unchanged look no longer rewrites the marker at every start.
+<br>**Third pass (2026-10-01) — the eight commits after that** (background-only hero, render-and-compare instead of the
+marker, the rig's "SaveLocker Test" shortcut with art and its Desktop Mode entry, Decky skip-reinstall). Fixed: the two test
+shortcuts share one backup, created-file marker and grid folder, and `Remove` still assumed one — removing "Conflict Game"
+deleted "SaveLocker Test"'s art, removing "SaveLocker Test" left its art in Steam's `grid/` whenever the entry was already
+gone or the file SaveLocker created was deleted, and removing an absent one beside the other was a refusal ("delete the backup
+manually"). `DevSteamShortcut` is now unit-tested on a temp `shortcuts.vdf` (its CRC-32 moved out of `Ui.Screenshot` into
+`Crc32.cs` so the tests can link it). Also: `steam-art` crashed instead of reporting a folder it cannot write; `--kind ui
+--port abc` fell back to the real agent's :5178. Note: every repaint now renders all four pieces (~0.7 s here) to compare.
 <br>**Release notes for the next release must cover (Group 10):** the agent UI's Activity tab and offline queue; Sync all's
 N of M, Cancel and summary; games on the server with no folder here listed apart; `savelocker open` and the application-menu
 entry (added once by an agent that updates itself); `savelocker pull` exits non-zero when the server cannot be reached.

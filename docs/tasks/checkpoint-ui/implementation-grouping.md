@@ -27,7 +27,7 @@ phases to do in one session, in what order, and why. Driven by three things weig
 | 7 | Phase 7 (notifications) | ✅ Shipped 2026-09-24 (branch `group-7-ui-redesign`, PR #50) — both halves on shared rules (`Agent.Core/Notifications.cs`): a real Windows toast (`ToastPresenter`) and the Linux notifier generalised from `ConflictNotifier` (`DesktopNotifier`). **A button is a link to the agent UI, not a callback** — a custom URL scheme was built end to end and the shell's toast host refused every freshly registered one (measured), so "Retry now"/"Install now" became "Open game" and a pointer to the tray menu. Verified live on Windows (real toast, real click, the five-minute rule, withdrawal) and on a real Deck in Desktop Mode 2026-09-27 (the popup, and *Choose a save* opening the flatpak default browser at the queue); the installer's shortcut change compiles but has not been run. Reviewed as PR #50 on 2026-09-27 and every finding fixed (*Review fixes*, below). See the Group 7 write-up below |
 | 8 | Phases 9 + 10 — console page kit, top bar (pill tabs, bell, conflict pill, progress rail + Cancel) and the Games page (sidebar, full-width grid, game page re-layout, no `alert`/`confirm`) | ✅ Shipped 2026-09-28 (branch `group-8-ui-redesign`, PR #52) — 8a kit + top bar + `POST /commands/cancel` (`e6514ce`), 8b the `GameDetail.tsx` split (`1566de8`), 8c the Games page (`24074a0`). Verified live through `testenv` with real conflicts; one real bug found that way and fixed (a conflict side pushed while the page was open). Replay the live checks with `group-8-verification.md`. Same-day follow-up on the branch: each machine's OS logo on the conflict panel and a listbox machine picker (`b3caca9`). Reviewed as PR #52 on 2026-09-28 and every finding addressed (*Review fixes*, below). See the Group 8 write-up below. Group 9 is unblocked |
 | 9 | Phases 11 + 12 + Phase 2's release-history table — the **Backups** tab and its routes, Configuration, Audit log, Help, What's new, sign-in | ✅ Shipped 2026-09-29 (branch `group-9-ui-redesign`) — 9a Backups (`5c01638`), then 9b Configuration + 9c Audit/Help/What's new/sign-in in one commit (they share `Contracts.cs`, `Program.cs`, `api.ts`, the regenerated types and the test file). Security bar met (BK-01 + CFG-01, mutation-checked). Verified in a browser against a scratch server; the `testenv` pass is written as `group-9-verification.md` and **not yet run**. Reviewed as PR #53 on 2026-09-29 and every finding fixed (*Review fixes*, below). See the Group 9 write-up below |
-| 10 | Phases 13 + 14 + the Phase 8 remainder + Phase 6 item 4 — agent UI completed, Deck Game Mode completed, Steam art / favicons / installer icon, the Wayland window | ✅ Shipped 2026-09-29 — 10a `7f80be6`, 10c `a88fbe1`, 10d `f2d01d2`, 10b `81321d7`. Reviewed as PR #54 on 2026-09-30 and every finding fixed (*Review fixes*, below). Still owed: one real-Deck session (gamescope input, battery, KWin `--app=` window — from the menu entry and from a notification click — and the Steam tiles) |
+| 10 | Phases 13 + 14 + the Phase 8 remainder + Phase 6 item 4 — agent UI completed, Deck Game Mode completed, Steam art / favicons / installer icon, the Wayland window | ✅ Shipped 2026-09-29 — 10a `7f80be6`, 10c `a88fbe1`, 10d `f2d01d2`, 10b `81321d7`. Reviewed as PR #54 on 2026-09-30, again for the commits pushed after (2026-09-30 and 2026-10-01), and every finding fixed (*Review fixes*, below). Still owed: one real-Deck session (gamescope input, battery, KWin `--app=` window — from the menu entry and from a notification click — and the Steam tiles) |
 
 **2026-09-20 review pass (a code review of Groups 1–2, all findings fixed on branch
 `console-review-fixes-and-security-hardening`).** Two things here change what later groups may assume:
@@ -889,6 +889,30 @@ run in parallel with them. Ordered so each part consumes what the one before it 
 - `dotnet test` **173** (156 + the art tests + 1), Agent.Linux 0 warnings, `export:art --check` clean with the 20
   layer files, `steam-art` exercised by hand against a scratch state folder (refusals, `--out`, repaint, no-op).
   **Not verified:** the daemon's repaint on a look change (needs the rig), and anything in Steam.
+
+**Third pass (2026-10-01): the eight commits after the second (`58ffc06`..`1a762e4`).** The background-only hero,
+render-and-compare in place of the marker, the Decky skip-reinstall and the Desktop Mode test entry hold up. Fixed:
+- **The two test shortcuts share one backup, one created-file marker and one grid folder; `Remove` still assumed
+  one.** Removing "Conflict Game" deleted "SaveLocker Test"'s art (and could delete the grid folder, after which the
+  daemon stops repainting it); removing "SaveLocker Test" left its four pictures in Steam's `grid/` on every path but
+  the plain splice (entry already gone, file SaveLocker created deleted, backup restored); removing an entry that is
+  absent while the other is present refused ("the file differs from the backup — delete it manually"); and the first
+  removal deleted the backup, so the next `up` re-took it with "Conflict Game" inside. The art now goes with the UI
+  entry on every path and never with the other, and the backup and marker stay until the last test entry is gone.
+- `DevSteamShortcut` had no tests: it is linked into the xUnit project now and driven on a temp `shortcuts.vdf`
+  (`AddTo` / `RemoveFrom`; 6 tests, 4 of them failing before the fix, plus the AppID pinned against zlib's CRC-32).
+  Its CRC-32 lived in `Ui.Screenshot` (OpenGL), so it moved to `Crc32.cs`, which both use.
+- `steam-art`: `Apply` creates the folder now, so the "Could not write" branch was dead and an unwritable folder
+  escaped as an unhandled exception — it is caught and reported (exit 1). `dev-shortcut-add --kind ui --port abc`
+  fell back to `ParsePort`'s default, the real agent's :5178 — the one thing that shortcut must never open.
+- Smaller: the art list in Steam's grid folder was rewritten at every daemon start; the CLI reference still said
+  "says so if the artwork folder is missing"; `SteamArt`, `DevSteamShortcut` and REPO_MAP still said Steam is never
+  touched / one fixed entry.
+- **A trade-off, not changed:** without the marker every repaint renders all four pieces to compare them — ~0.7 s on
+  this desktop (Debug), off the caller's thread, at each daemon start and look change.
+- `dotnet test` **181**, Agent.Linux 0 warnings, `run-appearance-consistency-tests` **46**, `export:art --check`
+  clean, `steam-art` and `dev-shortcut-add --kind ui` exercised by hand on a scratch state folder. **Not verified:**
+  `testenv-deck.sh` on a Deck (the new `up`/`clean` steps, the menu entry, Steam showing the shortcut's art).
 
 **Verified (first pass):** `dotnet test` **156** (+10), `run-local-api-tests` **110** on Windows (3 new, 2 made real),
 `run-health-tests` **33** (+4: `machineId`, and a pull with the server down exits 1), `run-agent-tests` 47,
