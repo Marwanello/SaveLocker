@@ -1682,8 +1682,7 @@ entry (added once by an agent that updates itself); `savelocker pull` exits non-
 put new plugin submissions on hold until Playnite 11's new add-on database. The listing, the self-update proof and four
 unchecked surfaces are now their own Backlog tasks (`tasks/playnite-*`).
 **Next action:** decide the Steam-art question above, then merge PR #54; run `group-9-verification.md` on the Windows rig;
-then the owed real-Deck session (Group 10's status row lists what it must cover — add "set custom artwork, change the
-accent, see what Steam shows").
+Group 10's real-Deck session is done (verified by the maintainer 2026-10-01).
 
 ---
 
