@@ -4,7 +4,7 @@ using Xunit;
 namespace SaveLocker.Agent.Tests;
 
 /// <summary>
-/// Repainting the bundled artwork folder: only an existing folder, only when the look changed, never Steam.
+/// Repainting the bundled artwork folder: created if missing, a piece rewritten only when it differs from a fresh render, never Steam.
 /// </summary>
 public sealed class SteamArtTests : IDisposable
 {
@@ -57,17 +57,16 @@ public sealed class SteamArtTests : IDisposable
         var after = Read("capsule");
         Assert.NotEqual(before, after);
 
-        Assert.Equal(4, Apply("coolant", "cartridge").Written);
+        Assert.Equal(3, Apply("coolant", "cartridge").Written);   // the hero is background only, the same for every mark
         Assert.NotEqual(after, Read("capsule"));
     }
 
     [Fact]
-    public void AnUnchangedLook_WritesNothing_NotEvenTheMarker()
+    public void AnUnchangedLook_WritesNothing()
     {
         Directory.CreateDirectory(_dir);
         Apply();
-        var marker = Path.Combine(_dir, ".savelocker-art.json");
-        var pieces = SteamArtRenderer.Pieces.Select(p => Path.Combine(_dir, p + ".png")).Append(marker).ToArray();
+        var pieces = SteamArtRenderer.Pieces.Select(p => Path.Combine(_dir, p + ".png")).ToArray();
         var old = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         foreach (var path in pieces) File.SetLastWriteTimeUtc(path, old);
 
@@ -84,6 +83,21 @@ public sealed class SteamArtTests : IDisposable
 
         Assert.Equal(1, Apply("coolant", "pixel").Written);
         Assert.True(Read("hero").Length > 1000);
+    }
+
+    [Fact]
+    public void ArtFromAnOlderBuild_IsReplaced_EvenWithTheSameLook()
+    {
+        Directory.CreateDirectory(_dir);
+        Apply("coolant", "pixel");
+        var hero = Path.Combine(_dir, "hero.png");
+        var fresh = Read("hero");
+        File.WriteAllBytes(hero, SteamArtRenderer.RenderPng("capsule-wide", SaveLocker.Agent.AppearancePalette.For("coolant").Dark, SaveLocker.Agent.AppearancePalette.For("coolant").DarkOn, "pixel", Layer));   // a hero still carrying the logo
+        File.WriteAllText(Path.Combine(_dir, ".savelocker-art.json"), "{\"Stamp\":\"coolant|pixel|2\",\"Files\":{}}");
+
+        Assert.Equal(1, Apply("coolant", "pixel").Written);
+        Assert.Equal(fresh, Read("hero"));
+        Assert.False(File.Exists(Path.Combine(_dir, ".savelocker-art.json")));
     }
 
     [Fact]

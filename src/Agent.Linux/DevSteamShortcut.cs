@@ -388,10 +388,11 @@ public static class DevSteamShortcut
     }
 
     /// <summary>Writes the four pieces for the shortcut and the list <see cref="Remove"/> deletes them by.</summary>
-    public static void PaintArt(string grid, uint appId, string accent, string mark, Func<string, byte[]> layers)
+    public static int PaintArt(string grid, uint appId, string accent, string mark, Func<string, byte[]> layers)
     {
         var written = Art.SteamArt.WriteForShortcut(grid, appId, accent, mark, layers);
-        AtomicFile.WriteAllText(Path.Combine(grid, ArtListSuffix), string.Join(Environment.NewLine, written));
+        AtomicFile.WriteAllText(Path.Combine(grid, ArtListSuffix), string.Join(Environment.NewLine, Art.SteamArt.ShortcutFiles(appId).Select(f => f.Name)));
+        return written;
     }
 
     private static void RemoveArt(string vdfPath)
