@@ -38,6 +38,9 @@ BIN="$PREFIX/savelocker"
 export SAVELOCKER_ALLOW_TEST_COMMANDS=1
 export XDG_DATA_HOME="${PREFIX}-state"
 STATE="$XDG_DATA_HOME/SaveLocker"
+# Desktop Mode's application menu entry for this test build. Its own file name, so the real install's
+# savelocker.desktop is never touched.
+TEST_DESKTOP_ENTRY="$HOME/.local/share/applications/savelocker-test.desktop"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -144,6 +147,27 @@ cmd_up() {
     echo "Restart Steam on the Deck to see 'SaveLocker Test' with its art in your library."
   else
     echo "WARNING: could not add the 'SaveLocker Test' shortcut - the test daemon is still up." >&2
+  fi
+
+  # The agent only writes its own menu entry for the real install (DesktopEntry.cs), so the test build
+  # gets one here: the same entry, pointed at the test agent's state and port.
+  echo "== adding 'SaveLocker Test' to the Desktop Mode application menu =="
+  if mkdir -p "$(dirname "$TEST_DESKTOP_ENTRY")" && cat > "$TEST_DESKTOP_ENTRY" <<ENTRY
+[Desktop Entry]
+Type=Application
+Name=SaveLocker Test
+Comment=SaveLocker test agent (testenv) - not your real install
+Exec=env XDG_DATA_HOME=$XDG_DATA_HOME $BIN open --port $PORT
+Icon=$PREFIX/artwork/icon.png
+Terminal=false
+Categories=Utility;Game;
+StartupNotify=false
+ENTRY
+  then
+    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$(dirname "$TEST_DESKTOP_ENTRY")" >/dev/null 2>&1
+    echo "In Desktop Mode: application menu -> search 'SaveLocker Test'."
+  else
+    echo "WARNING: could not write $TEST_DESKTOP_ENTRY" >&2
   fi
 }
 
@@ -291,6 +315,11 @@ cmd_clean() {
   if [ -x "$BIN" ]; then
     SAVELOCKER_ALLOW_TEST_COMMANDS=1 "$BIN" dev-shortcut-remove --kind ui
     SAVELOCKER_ALLOW_TEST_COMMANDS=1 "$BIN" dev-shortcut-remove
+  fi
+  if [ -f "$TEST_DESKTOP_ENTRY" ]; then
+    rm -f "$TEST_DESKTOP_ENTRY"
+    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$(dirname "$TEST_DESKTOP_ENTRY")" >/dev/null 2>&1
+    echo "removed $TEST_DESKTOP_ENTRY"
   fi
   rm -f "$TARBALL"
   if [ -d "$PREFIX" ]; then rm -rf "$PREFIX"; echo "removed $PREFIX"; fi
