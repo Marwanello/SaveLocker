@@ -78,7 +78,7 @@ the agent UI imports the same file; the Deck UI mirrors the dark set in `Ui/Them
 --hover                #202124         #e8e3dc
 --fg       text        #f0eee9         #191719
 --dim      secondary   #a09d97         #57534d
---faint    tertiary    #6b6862         #8b8780
+--faint    tertiary    #817e78         #79756f    (was #6b6862 / #8b8780; raised to 4.5:1 on --panel, 2026-10-01)
 --line     border      #242427         #e2ddd5
 --row      table rule  #1d1d20         #eeeae3
 --safe     healthy     #7fa96a         #4c7b3e

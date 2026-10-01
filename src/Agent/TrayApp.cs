@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
+using Microsoft.Win32;
 using SaveLocker.Shared;
 
 namespace SaveLocker.Agent;
@@ -39,6 +40,8 @@ internal sealed class TrayContext : ApplicationContext
     private readonly NotificationCenter _notices;
     // The icon _icon currently shows, owned here so a swap can dispose the one it replaces.
     private Icon? _trayIcon;
+    // The taskbar theme _trayIcon was drawn for. UI thread only.
+    private bool _taskbarLight;
     // Created, disposed and replaced only on the UI thread (StartFolderWatchers is the sole writer
     // and every caller of it dispatches). WA-09.
     private readonly List<FolderWatcher> _folderWatchers = new();
@@ -106,6 +109,9 @@ internal sealed class TrayContext : ApplicationContext
         _icon.DoubleClick += (_, _) => OpenWindow();
         // Raised from the heartbeat's thread or a request's; the icon belongs to the UI thread.
         config.AppearanceChanged += look => _ui.Post(() => ApplyLook(look));
+        // The icon's body colour depends on the taskbar's theme too, which can flip mid-session.
+        _taskbarLight = MarkIcon.TaskbarIsLight();
+        SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         RebuildMenu();
 
         StartFolderWatchers();
@@ -631,6 +637,19 @@ internal sealed class TrayContext : ApplicationContext
 
     // ─── Infrastructure ──────────────────────────────────────────────────────────
 
+    // Raised for every kind of settings change; only a taskbar light/dark flip redraws.
+    private void OnUserPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e)
+    {
+        if (e.Category != UserPreferenceCategory.General) return;
+        _ui.Post(() =>
+        {
+            var light = MarkIcon.TaskbarIsLight();
+            if (light == _taskbarLight) return;
+            _taskbarLight = light;
+            ApplyLook(_config.EffectiveAppearance);
+        });
+    }
+
     /// <summary>Re-draw the tray icon and any open window's icon in a new look. UI thread only.</summary>
     private void ApplyLook(SaveLocker.Shared.AppearanceDto look)
     {
@@ -681,6 +700,8 @@ internal sealed class TrayContext : ApplicationContext
     {
         if (disposing)
         {
+            // A static event: left subscribed, it would keep this context alive and keep posting to it.
+            SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
             _updateTimer.Dispose();
             _drainer.Dispose();
             _apiServer.Dispose();

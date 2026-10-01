@@ -169,7 +169,7 @@ internal static class MarkIcon
 
     /// <summary>Whether the taskbar (where the tray lives) is currently light. Dark unless the user's
     /// own personalisation says otherwise, which is also what a Windows without the setting does.</summary>
-    private static bool TaskbarIsLight()
+    internal static bool TaskbarIsLight()
     {
         try
         {

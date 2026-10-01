@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
+using Microsoft.Win32;
 
 namespace SaveLocker.Agent;
 
@@ -44,7 +45,7 @@ internal sealed class AgentWindow : Form
         ClientSize = new Size((int)(900 * dpiScale), (int)(600 * dpiScale));
         FormBorderStyle = FormBorderStyle.Sizable;
         StartPosition = FormStartPosition.CenterScreen;
-        BackColor = Color.FromArgb(0x0d, 0x11, 0x14);
+        ApplyBackground(look);
         Controls.Add(_webView);
     }
 
@@ -60,6 +61,32 @@ internal sealed class AgentWindow : Form
         Icon = next;
         _ownedIcon?.Dispose();
         _ownedIcon = next;
+        ApplyBackground(look);
+    }
+
+    // Shown before WebView2's first paint, so it is the page's own background (agent-ui's --color-ink)
+    // for the theme in effect; a fixed dark one flashed on every open for someone in light mode.
+    private void ApplyBackground(SaveLocker.Shared.AppearanceDto? look)
+    {
+        var theme = look?.Theme ?? "system";
+        var light = theme == "light" || (theme == "system" && AppsUseLightTheme());
+        var ink = light ? Color.FromArgb(0xf5, 0xf3, 0xef) : Color.FromArgb(0x0f, 0x0f, 0x10);
+        BackColor = ink;
+        _webView.DefaultBackgroundColor = ink;
+    }
+
+    private static bool AppsUseLightTheme()
+    {
+        try
+        {
+            return Registry.GetValue(
+                @"HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                "AppsUseLightTheme", 0) is int v && v == 1;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     protected override void Dispose(bool disposing)

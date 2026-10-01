@@ -7,7 +7,7 @@ Not-yet-done work only. Each line is the task's title, linked to its plan or sum
 ## High priority
 
 - [Decide the registration default (security)](tasks/registration-default/summary.md)
-- [Appearance follow-ups (left by Group 5)](tasks/appearance-follow-ups/summary.md)
+- [Appearance follow-up: "N machines following" (left by Group 5)](tasks/appearance-follow-ups/summary.md)
 - [Playnite plugin](tasks/playnite-plugin/plan.md)
 - [v0.5.4 surfaces without hardware coverage](tasks/unverified-ui-surfaces/summary.md)
 - [Emulator saves](tasks/emulator-saves/plan.md)
