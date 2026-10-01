@@ -48,6 +48,25 @@ static class Program
             case "doctor":
                 return await Doctor.RunAsync(config);
 
+            case "open":
+                return await OpenWindowAsync(opts, config);
+
+            case "steam-art":
+                return SteamArtCommand(opts, config);
+
+            // Test rig only: stale placeholder pictures in the artwork folder, standing in for the fixed art
+            // install.sh bundles, so `steam-art` and the daemon's repaint have something to replace.
+            case "dev-steam-art-fixture":
+            {
+                if (!TestCommandsAllowed(out var fixtureDenial)) { Console.Error.WriteLine(fixtureDenial); return 2; }
+                var dir = Art.SteamArtHost.ArtworkDir(config);
+                Directory.CreateDirectory(dir);
+                foreach (var piece in Art.SteamArtRenderer.Pieces)
+                    if (!File.Exists(Path.Combine(dir, piece + ".png"))) File.WriteAllText(Path.Combine(dir, piece + ".png"), "old art");
+                Console.WriteLine($"fixture ready: {dir}");
+                return 0;
+            }
+
             // Exists for the updater's smoke test above all: a staged agent has to be able to prove
             // it can start and say what it is before it is allowed to replace a working one. Useful
             // in its own right — it is the first thing any bug report needs.
@@ -119,10 +138,36 @@ static class Program
                     Console.Error.WriteLine("dev-shortcut-add needs --prefix <dir>");
                     return 2;
                 }
+                if (DevSteamShortcut.KindNamed(opts.GetValueOrDefault("kind")) is not { } addKind)
+                {
+                    Console.Error.WriteLine("dev-shortcut-add --kind must be 'conflict' or 'ui'.");
+                    return 2;
+                }
                 try
                 {
-                    var appId = DevSteamShortcut.Add(prefix, opts.ContainsKey("with-launch-command"));
+                    // The Deck UI entry must open the TEST agent: its daemon port, and its state directory (config, api
+                    // token) via XDG_DATA_HOME — without both, `savelocker ui` reads the real install and talks to :5178.
+                    string? uiArgs = null, uiLaunch = null;
+                    if (addKind == DevSteamShortcut.DeckUi)
+                    {
+                        var state = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+                        // Parsed here rather than with ParsePort, whose fallback is the real agent's own port.
+                        if (string.IsNullOrEmpty(state) || state.IndexOf('"') >= 0 ||
+                            !int.TryParse(opts.GetValueOrDefault("port"), out var uiPort) || uiPort is < 1 or > 65535)
+                        {
+                            Console.Error.WriteLine("dev-shortcut-add --kind ui needs --port <n> and XDG_DATA_HOME set to the test state directory.");
+                            return 2;
+                        }
+                        uiArgs = $"--port {uiPort}";
+                        uiLaunch = $"XDG_DATA_HOME=\"{state}\" %command%";
+                    }
+                    var appId = DevSteamShortcut.Add(prefix, opts.ContainsKey("with-launch-command"), addKind, uiArgs, uiLaunch);
                     if (appId is null) return 1;
+                    if (addKind == DevSteamShortcut.DeckUi)
+                    {
+                        var look = config.EffectiveAppearance;
+                        DevSteamShortcut.WriteArt(appId.Value, config.StateDir, look.Accent, look.Mark, Art.SteamArtHost.Layer);
+                    }
                     Console.WriteLine($"APPID={appId}");
                     return 0;
                 }
@@ -135,9 +180,16 @@ static class Program
 
             case "dev-shortcut-remove":
                 if (!TestCommandsAllowed(out var removeDenial)) { Console.Error.WriteLine(removeDenial); return 2; }
+                if (DevSteamShortcut.KindNamed(opts.GetValueOrDefault("kind")) is not { } removeKind)
+                {
+                    Console.Error.WriteLine("dev-shortcut-remove --kind must be 'conflict' or 'ui'.");
+                    return 2;
+                }
                 try
                 {
-                    return DevSteamShortcut.Remove() ? 0 : 1;
+                    var removed = DevSteamShortcut.Remove(removeKind);
+                    if (removed && removeKind == DevSteamShortcut.DeckUi) DevSteamShortcut.ForgetArtRecord(config.StateDir);
+                    return removed ? 0 : 1;
                 }
                 catch (Exception ex)
                 {
@@ -455,6 +507,83 @@ static class Program
         return false;
     }
 
+    /// <summary>
+    /// `savelocker steam-art [--out DIR] [--accent id] [--mark id]` — repaint the four library pictures in the artwork
+    /// folder install.sh bundles, for the look in effect (or the one named), or with --out just write them into DIR.
+    /// The daemon does the first by itself at start and on every change; this is for doing it by hand and for seeing it.
+    /// </summary>
+    private static int SteamArtCommand(Dictionary<string, string> opts, AgentConfig config)
+    {
+        var look = config.EffectiveAppearance;
+        if (!TryLookId(opts, "accent", SaveLocker.Shared.Appearances.Accents, look.Accent, out var accent) ||
+            !TryLookId(opts, "mark", SaveLocker.Shared.Appearances.Marks, look.Mark, out var mark))
+            return 2;
+        if (opts.GetValueOrDefault("out") is { Length: > 0 } dir)
+        {
+            foreach (var path in Art.SteamArt.Export(dir, accent, mark, Art.SteamArtHost.Layer)) Console.WriteLine(path);
+            Console.WriteLine($"({accent}/{mark})");
+            return 0;
+        }
+
+        var artwork = Art.SteamArtHost.ArtworkDir(config);
+        Art.SteamArt.Outcome outcome;
+        // Apply creates the folder, so the one way left to fail is not being able to write there.
+        try { outcome = Art.SteamArt.Apply(artwork, accent, mark, Art.SteamArtHost.Layer); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"Could not write to {artwork} ({ex.Message}). Use --out <dir> to write the pictures elsewhere.");
+            return 1;
+        }
+        Console.WriteLine($"{accent}/{mark}: {outcome.Written} picture(s) written in {artwork}.");
+        if (accent != look.Accent || mark != look.Mark)
+            Console.WriteLine($"That is not the look in effect ({look.Accent}/{look.Mark}): the agent paints its own again " +
+                              "the next time it starts or the look changes.");
+        return 0;
+    }
+
+    // Without this an id the painter does not know is painted as the default and reported under the name typed.
+    private static bool TryLookId(Dictionary<string, string> opts, string name, string[] known, string inEffect, out string id)
+    {
+        id = opts.GetValueOrDefault(name)?.Trim().ToLowerInvariant() ?? inEffect;
+        if (known.Contains(id)) return true;
+        Console.Error.WriteLine($"Unknown --{name} '{id}'. Known: {string.Join(", ", known)}.");
+        return false;
+    }
+
+    /// <summary>
+    /// `savelocker open [--port n] [--view route]` — the agent UI in its own window, for Desktop Mode. This
+    /// is what the KDE-menu entry install.sh writes runs; Game Mode keeps `savelocker ui`, and the two sit
+    /// side by side over the same daemon. It does not start the daemon (systemd does, at login): a launcher
+    /// that quietly spawned a second one would race the first over the same state, so it says how to start it.
+    /// </summary>
+    private static async Task<int> OpenWindowAsync(Dictionary<string, string> opts, AgentConfig config)
+    {
+        var port = opts.ContainsKey("port") ? ParsePort(opts) : config.DaemonApiPort ?? 5178;
+        var origin = $"http://localhost:{port}";
+
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+        var up = false;
+        try { up = (await http.GetAsync(origin + "/")).IsSuccessStatusCode; } catch { /* not listening */ }
+        if (!up)
+        {
+            Console.Error.WriteLine($"The agent is not answering on {origin}.");
+            Console.Error.WriteLine("Start it with:  systemctl --user start savelocker.service");
+            return 1;
+        }
+
+        var view = opts.GetValueOrDefault("view");
+        var url = origin + "/" + (string.IsNullOrWhiteSpace(view) ? "" : "#" + view.TrimStart('#'));
+        if (AppWindow.TryOpen(url, out var plan))
+        {
+            Console.WriteLine($"Opened SaveLocker {plan!.Description}.");
+            return 0;
+        }
+
+        Console.Error.WriteLine("There is no desktop session to open a window on (this looks like a headless shell).");
+        Console.Error.WriteLine($"Open {url} in a browser here, or tunnel it:  ssh -L {port}:localhost:{port} <user>@<this-machine>");
+        return 1;
+    }
+
     private static void PrintUsage() => Console.WriteLine(
         """
         savelocker — SaveLocker agent for Linux (Proton / Steam Deck)
@@ -485,6 +614,9 @@ static class Program
 
         Daemon
           daemon [--port <n>]                              Run headless; serves the agent UI on localhost:5178
+          open [--port <n>] [--view <route>]               Open the agent UI in its own window (Desktop Mode)
+          steam-art [--out <dir>] [--accent <id>] [--mark <id>]
+                                                           Repaint the bundled Steam library art in the current look
           autostart --enable | --disable                   systemd --user unit
 
         Updates

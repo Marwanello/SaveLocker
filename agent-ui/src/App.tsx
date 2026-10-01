@@ -10,10 +10,14 @@ import { AddGamesView } from './components/AddGamesView'
 import { ConflictsView } from './components/ConflictsView'
 import { SyncConflictModal } from './components/SyncConflictModal'
 import { SettingsView } from './components/SettingsView'
+import { ActivityView } from './components/ActivityView'
 import { Chip } from './components/ui/Chip'
 import { Mark } from './components/ui/Mark'
+import { unseenWarnings } from './activitySeen'
+import { inAppWindow } from './appWindow'
 import { isCurrentPoll, looksEpoch, setLook } from './appearance'
 import { clearRouteHash, parseRoute } from './route'
+import { useActivityRecent } from './useActivity'
 
 export default function App() {
   // The tray's native Sync All / Force Pull / Force Push (TrayApp.cs, Phase 7) open this window at
@@ -35,8 +39,14 @@ export default function App() {
   // own — only an explicit Sync all does, so nothing interrupts the user unprompted.
   const [syncQueue, setSyncQueue] = useState<Conflict[] | null>(null)
 
+  // How many games the LAST scan suggested — read from the agent's cache, never triggering a scan, so
+  // the sidebar count costs nothing and navigating never walks the disk. Null until one has run.
+  const [suggested, setSuggested] = useState<number | null>(null)
+  const recent = useActivityRecent()
+
   const refreshState = useCallback(() => {
     api.state().then(setState).catch(console.error)
+    api.cachedCandidates().then(c => setSuggested(c.suggested)).catch(() => {})
   }, [])
 
   // What this window looks like: the console's look or this machine's own (Settings > Appearance). Adopted
@@ -53,15 +63,17 @@ export default function App() {
   }, [adoptAppearance])
 
   const refreshConflicts = useCallback(async (): Promise<Conflict[]> => {
-    try {
-      const [cs, gs] = await Promise.all([api.conflicts(), api.games()])
-      setConflicts(cs)
-      setGames(gs)
-      return cs
-    } catch (err) {
-      console.error(err)
-      return []
+    // Separate requests, not Promise.all: the game list is this machine's own config, but conflicts come
+    // from the server. With the server down the pair used to fail together and the list never loaded.
+    const [cs, gs] = await Promise.allSettled([api.conflicts(), api.games()])
+    if (gs.status === 'fulfilled') setGames(gs.value)
+    else console.error(gs.reason)
+    if (cs.status === 'fulfilled') {
+      setConflicts(cs.value)
+      return cs.value
     }
+    console.error(cs.reason)
+    return []
   }, [])
 
   // Read through a ref: Sync all is a long request, and `handleSynced` runs when it FINISHES. A `view`
@@ -146,7 +158,9 @@ export default function App() {
             <Mark size={30} />
             <div>
               <div className="sl-brand__name">SaveLocker</div>
-              <div className="sl-brand__sub">Agent</div>
+              <div className="sl-brand__sub">
+                {inAppWindow && state?.machineName ? `${state.machineName} — desktop session` : 'Agent'}
+              </div>
             </div>
           </div>
           <div className="sl-topbar__tools">
@@ -169,7 +183,13 @@ export default function App() {
           <Sidebar
             activeView={view}
             onNavigate={navigate}
-            conflictCount={conflicts.length}
+            counts={{
+              games: state?.gamesTracked,
+              addGames: suggested ?? 0,
+              conflicts: conflicts.length,
+              // Being on the page is what clears it; leaving starts the count again from now.
+              activity: view === 'activity' ? 0 : unseenWarnings(recent),
+            }}
             agentLabel={state?.buildLabel ?? state?.currentVersion ?? '…'}
             machineName={state?.machineName ?? ''}
             serverHost={(state?.serverUrl ?? '').replace(/^https?:\/\//, '')}
@@ -194,9 +214,12 @@ export default function App() {
                     game={open}
                     conflicts={conflicts}
                     machineName={state?.machineName ?? ''}
+                    platform={state?.platform}
                     onBack={() => setOpenGameId(null)}
                     onNavigate={navigate}
                     onSynced={() => handleGameSynced(open.id)}
+                    onChanged={() => { refreshState(); void refreshConflicts() }}
+                    onRemoved={() => setOpenGameId(null)}
                   />
                 )
                 : <GamesView games={games} conflicts={conflicts} onOpen={setOpenGameId} onNavigate={navigate} />
@@ -210,7 +233,16 @@ export default function App() {
                 onRefresh={refreshConflicts}
               />
             )}
-            {view === 'settings' && <SettingsView state={state} onSaved={refreshState} appearance={appearance} onAppearanceChanged={adoptAppearance} />}
+            {view === 'activity' && <ActivityView />}
+            {view === 'settings' && (
+              <SettingsView
+                state={state}
+                onSaved={refreshState}
+                appearance={appearance}
+                onAppearanceChanged={adoptAppearance}
+                onOpenGame={id => { setOpenGameId(id); setView('games') }}
+              />
+            )}
           </main>
         </div>
 

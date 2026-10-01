@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SaveLocker
+Comment=Game save sync for this machine
+Exec=@PREFIX@/savelocker open
+Icon=@PREFIX@/artwork/icon.png
+Terminal=false
+Categories=Utility;Game;
+StartupNotify=false

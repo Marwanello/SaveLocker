@@ -51,6 +51,32 @@ public readonly record struct DesktopSessionInfo(
 /// </summary>
 public static class DesktopEnvironment
 {
+    /// <summary>
+    /// A start-info carrying the desktop session's environment (<see cref="ApplySessionEnv"/>), for a
+    /// program that shows something there — or null when that environment names no display, so a
+    /// caller can say "there is no desktop here" instead of starting a program with nowhere to draw.
+    /// The caller sets <c>FileName</c> and the arguments.
+    /// </summary>
+    public static System.Diagnostics.ProcessStartInfo? DesktopStartInfo()
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo { UseShellExecute = false };
+        ApplySessionEnv(psi.Environment);
+        return AppWindowPlanner.HasDisplay(psi.Environment) ? psi : null;
+    }
+
+    /// <summary>
+    /// Hand a file to the desktop's default handler. False — without trying — when there is no
+    /// display to show it on (a headless box, an SSH tunnel into the agent UI), so the caller can
+    /// show the path instead.
+    /// </summary>
+    public static bool TryOpenFile(string path)
+    {
+        if (DesktopStartInfo() is not { } psi) return false;
+        psi.FileName = "xdg-open";
+        psi.ArgumentList.Add(path);
+        return System.Diagnostics.Process.Start(psi) is not null;
+    }
+
     public static DesktopSessionInfo Detect()
     {
         var hasGraphicalSession = HasEnv("WAYLAND_DISPLAY") || HasEnv("DISPLAY");
@@ -62,8 +88,11 @@ public static class DesktopEnvironment
             // unreachable/absent bus can't own anything, and this skips spawning gdbus for nothing.
             NotificationDaemonPresent: hasSessionBus && NotificationsNameOwned(),
             IsInteractiveTty: IsInteractiveTtySafe(),
-            RunningAsSystemdUnit: HasEnv("INVOCATION_ID"));
+            RunningAsSystemdUnit: RunningAsSystemdUnit);
     }
+
+    /// <summary>systemd sets <c>INVOCATION_ID</c> for a unit's processes and for nothing a person starts.</summary>
+    public static bool RunningAsSystemdUnit => HasEnv("INVOCATION_ID");
 
     /// <summary>
     /// Console.IsInputRedirected can throw when stdin is in an unusual state (e.g. its file

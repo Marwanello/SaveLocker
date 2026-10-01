@@ -8,6 +8,9 @@ import type { Conflict, SaveVersion, VersionStats } from './types'
  * cached here — an archive's stats never change once uploaded, so `requestedRef` stops a caller's own
  * poll from re-fetching what it already has, even though the `conflicts` array it passes in is a
  * fresh reference every time (the same pattern the dashboard's `GameDetail.tsx` uses).
+ *
+ * A side's parent — the version it was built on top of — is fetched too (its version only, not its
+ * stats), which is what the "Why did this happen?" card names as the common base.
  */
 export function useConflictVersions(conflicts: Conflict[]) {
   const [versions, setVersions] = useState<Record<string, SaveVersion>>({})
@@ -15,13 +18,23 @@ export function useConflictVersions(conflicts: Conflict[]) {
   const requestedRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
+    const loadVersion = (vid: string, withParent: boolean) => {
+      api.version(vid)
+        .then(v => {
+          setVersions(prev => ({ ...prev, [vid]: v }))
+          if (withParent && v.parentVersionId && !requestedRef.current.has(v.parentVersionId)) {
+            requestedRef.current.add(v.parentVersionId)
+            loadVersion(v.parentVersionId, false)
+          }
+        })
+        .catch(() => requestedRef.current.delete(vid)) // best-effort — retry on the next poll
+    }
+
     for (const c of conflicts) {
       for (const vid of [c.versionAId, c.versionBId]) {
         if (requestedRef.current.has(vid)) continue
         requestedRef.current.add(vid)
-        api.version(vid)
-          .then(v => setVersions(prev => ({ ...prev, [vid]: v })))
-          .catch(() => requestedRef.current.delete(vid)) // best-effort — retry on the next poll
+        loadVersion(vid, true)
         api.versionStats(vid)
           .then(s => setStats(prev => ({ ...prev, [vid]: s })))
           .catch(() => { /* stats are a bonus line, not load-bearing */ })

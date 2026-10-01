@@ -73,6 +73,11 @@ jobs:
           HOME="$fake_home" bash "$fake_home/SaveLocker/install.sh"
           test -x "$fake_home/.local/share/SaveLocker/savelocker" || { echo "binary not installed"; exit 1; }
           test -L "$fake_home/.local/bin/savelocker"              || { echo "symlink not created"; exit 1; }
+          # The application-menu entry is rendered from a template; a placeholder left in it, or a
+          # path that is not the installed binary, is a menu item that opens nothing.
+          grep -qx "Exec=$fake_home/.local/share/SaveLocker/savelocker open" "$fake_home/.local/share/applications/savelocker.desktop" \
+            || { echo "the menu entry does not run the installed binary"; cat "$fake_home/.local/share/applications/savelocker.desktop"; exit 1; }
+          test -f "$fake_home/.local/share/SaveLocker/artwork/icon.png" || { echo "the menu entry's icon was not installed"; exit 1; }
 
           # The installed binary must actually RUN — self-contained, on a box with no .NET runtime
           # of its own for it to fall back on. And it must report the version it was stamped with:
@@ -459,3 +464,35 @@ jobs:
       - name: Run the console / security suite
         shell: powershell
         run: .\tests\run-console-security-tests.ps1
+
+  # The one xUnit project (tests/SaveLocker.Agent.Tests) and the brand-asset export's --check. Both were
+  # local-only, so a pull request leaning on either ("fails without the fix", "regenerates
+  # deterministically") had nothing in CI holding it to that. Windows because the test project targets
+  # the Windows agent's framework — and it builds that agent, so it needs Node and agent-ui's
+  # dependencies, like the cross-OS legs.
+  unit-tests:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            agent-ui/package-lock.json
+            web/package-lock.json
+      - run: npm ci
+        working-directory: agent-ui
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Unit tests
+        run: dotnet test tests/SaveLocker.Agent.Tests/SaveLocker.Agent.Tests.csproj
+      # Every brand asset re-rendered from its SVG source and compared with what is committed. Text
+      # outputs are compared without their line endings — this is a CRLF checkout.
+      - run: npm ci
+        working-directory: web
+      - name: Brand assets are what export:art produces
+        run: npm run export:art -- --check
+        working-directory: web

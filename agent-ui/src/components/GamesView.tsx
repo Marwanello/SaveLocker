@@ -21,8 +21,54 @@ function readMode(): Mode {
   try { return localStorage.getItem(MODE_KEY) === 'grid' ? 'grid' : 'list' } catch { return 'list' }
 }
 
+interface GroupProps {
+  title: string
+  note: string
+  games: TrackedGame[]
+  mode: Mode
+  conflicted: Set<string>
+  onOpen: (id: string) => void
+}
+
+function Group({ title, note, games, mode, conflicted, onOpen }: GroupProps) {
+  return (
+    <section className="sl-group" aria-label={title}>
+      <div className="sl-group__head">
+        <h3>{title} · {games.length}</h3>
+        <span>{note}</span>
+      </div>
+      {mode === 'list' ? (
+        <div className="sl-list">
+          {games.map(g => (
+            <Row
+              key={g.id}
+              onClick={() => onOpen(g.id)}
+              cover={<GameArt id={g.id} name={g.name} kind="icon" w={96} />}
+              title={g.name}
+              subtext={g.path || 'No save folder on this machine'}
+              end={conflicted.has(g.id) ? <Chip tone="crit">Conflict</Chip> : undefined}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="sl-wall">
+          {games.map(g => (
+            <button key={g.id} type="button" className="sl-tile" onClick={() => onOpen(g.id)} title={g.name}>
+              <span className="sl-tile__cover">
+                <GameArt id={g.id} name={g.name} kind="grid" w={256} />
+                {conflicted.has(g.id) && <span className="sl-tile__pin"><Chip tone="crit">Conflict</Chip></span>}
+              </span>
+              <span className="sl-tile__name">{g.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 /**
- * The games this machine tracks (plan.md Phase 5). Renders from `GET /api/games` only — that list is
+ * The games this machine tracks (plan.md Phase 5), in two groups: those with a save folder here, and the rest of the server's. Renders from `GET /api/games` only — that list is
  * config, so it costs nothing. `sync-status` hashes a save folder and is never asked for here: it is
  * for the one game a person has opened, on an explicit "Check now".
  */
@@ -37,6 +83,10 @@ export function GamesView({ games, conflicts, onOpen, onNavigate }: Props) {
       .sort((a, b) => a.name.localeCompare(b.name))
       .filter(g => !q || g.name.toLowerCase().includes(q) || g.path.toLowerCase().includes(q))
   }, [games, query])
+  // A game is this machine's own once it has a save folder here. Everything else was adopted from the
+  // server and cannot sync until a folder is chosen, so it is listed apart rather than mixed in.
+  const here = useMemo(() => visible.filter(g => g.path), [visible])
+  const elsewhere = useMemo(() => visible.filter(g => !g.path), [visible])
 
   function pick(next: Mode) {
     setMode(next)
@@ -48,7 +98,7 @@ export function GamesView({ games, conflicts, onOpen, onNavigate }: Props) {
       <div className="sl-page">
         <Card>
           <div className="sl-empty">
-            <p>No games are tracked on this machine yet.</p>
+            <p>No games are on this machine or the server yet.</p>
             <p style={{ marginTop: 12 }}>
               <Button variant="primary" onClick={() => onNavigate('addGames')}>Add games</Button>
             </p>
@@ -83,36 +133,28 @@ export function GamesView({ games, conflicts, onOpen, onNavigate }: Props) {
       </div>
 
       {visible.length === 0 && (
-        <Card><div className="sl-empty">No tracked game matches “{query.trim()}”.</div></Card>
+        <Card><div className="sl-empty">No game matches “{query.trim()}”.</div></Card>
       )}
 
-      {mode === 'list' && visible.length > 0 && (
-        <div className="sl-list">
-          {visible.map(g => (
-            <Row
-              key={g.id}
-              onClick={() => onOpen(g.id)}
-              cover={<GameArt id={g.id} name={g.name} kind="icon" w={96} />}
-              title={g.name}
-              subtext={g.path || 'No save folder set'}
-              end={conflicted.has(g.id) ? <Chip tone="crit">Conflict</Chip> : undefined}
-            />
-          ))}
-        </div>
+      {here.length > 0 && (
+        <Group
+          title="On this machine"
+          note="Save folder set here — these sync."
+          games={here}
+          mode={mode}
+          conflicted={conflicted}
+          onOpen={onOpen}
+        />
       )}
-
-      {mode === 'grid' && visible.length > 0 && (
-        <div className="sl-wall">
-          {visible.map(g => (
-            <button key={g.id} type="button" className="sl-tile" onClick={() => onOpen(g.id)} title={g.name}>
-              <span className="sl-tile__cover">
-                <GameArt id={g.id} name={g.name} kind="grid" w={256} />
-                {conflicted.has(g.id) && <span className="sl-tile__pin"><Chip tone="crit">Conflict</Chip></span>}
-              </span>
-              <span className="sl-tile__name">{g.name}</span>
-            </button>
-          ))}
-        </div>
+      {elsewhere.length > 0 && (
+        <Group
+          title="On the server"
+          note="Not set up on this machine yet. Open one to choose its save folder."
+          games={elsewhere}
+          mode={mode}
+          conflicted={conflicted}
+          onOpen={onOpen}
+        />
       )}
     </div>
   )

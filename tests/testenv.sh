@@ -224,6 +224,25 @@ cmd_conflict() {
   dotnet "$DLL" push "Conflict Game" || die "push failed"
 }
 
+# Seeds stale pictures in the artwork folder (standing in for the fixed art install.sh bundles), repaints them for
+# the look in effect, and shows what is on disk. The running daemon repaints them itself whenever the look changes
+# (Appearance in the console, or this machine's own setting), so the usual test is: run this once, change the accent,
+# run `art` again - or just list the folder - and see the pictures follow. XDG_DATA_HOME keeps it off a real install.
+cmd_art() {
+  [ -f "$DLL" ] || die "not built - run: testenv.ps1 build"
+  dotnet "$DLL" version | grep -q . || die "agent will not start"
+  SAVELOCKER_ALLOW_TEST_COMMANDS=1 dotnet "$DLL" dev-steam-art-fixture || die "the agent build predates the art feature - run: testenv.ps1 sync, then testenv.ps1 build"
+  dotnet "$DLL" steam-art || die "steam-art failed"
+  local dir="$XDG_DATA_HOME/SaveLocker/artwork"
+  echo "== $dir =="
+  ls -l --time-style=+%H:%M:%S "$dir"/*.png | sed 's|  */| |'
+  (cd "$dir" && sha256sum *.png | cut -c1-16,65-)
+  if [ -n "${SAVELOCKER_ARTIFACT_DIR:-}" ]; then
+    mkdir -p "$SAVELOCKER_ARTIFACT_DIR" && cp "$dir"/*.png "$SAVELOCKER_ARTIFACT_DIR"/ &&
+      echo "copied the pictures to $SAVELOCKER_ARTIFACT_DIR"
+  fi
+}
+
 cmd_status() {
   local pids token out
   pids=$(pgrep -f "$DAEMON_PATTERN" | tr '\n' ' ')
@@ -375,6 +394,7 @@ case "$CMD" in
   test)        cmd_test ;;
   sync)        cmd_sync ;;
   conflict)    cmd_conflict ;;
+  art)         cmd_art ;;
   clean)       cmd_clean ;;
   *)           die "unknown command '$CMD'" ;;
 esac

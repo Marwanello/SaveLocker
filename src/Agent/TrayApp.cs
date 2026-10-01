@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
+using Microsoft.Win32;
 using SaveLocker.Shared;
 
 namespace SaveLocker.Agent;
@@ -39,6 +40,8 @@ internal sealed class TrayContext : ApplicationContext
     private readonly NotificationCenter _notices;
     // The icon _icon currently shows, owned here so a swap can dispose the one it replaces.
     private Icon? _trayIcon;
+    // The taskbar theme _trayIcon was drawn for. UI thread only.
+    private bool _taskbarLight;
     // Created, disposed and replaced only on the UI thread (StartFolderWatchers is the sole writer
     // and every caller of it dispatches). WA-09.
     private readonly List<FolderWatcher> _folderWatchers = new();
@@ -106,6 +109,9 @@ internal sealed class TrayContext : ApplicationContext
         _icon.DoubleClick += (_, _) => OpenWindow();
         // Raised from the heartbeat's thread or a request's; the icon belongs to the UI thread.
         config.AppearanceChanged += look => _ui.Post(() => ApplyLook(look));
+        // The icon's body colour depends on the taskbar's theme too, which can flip mid-session.
+        _taskbarLight = MarkIcon.TaskbarIsLight();
+        SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         RebuildMenu();
 
         StartFolderWatchers();
@@ -141,6 +147,17 @@ internal sealed class TrayContext : ApplicationContext
             postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
             syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct),
             openView: view => _ui.Post(() => OpenWindow(view)),
+            // Explorer: a file is selected in its folder (a bare open would hand a large log to
+            // whatever editor owns .log), a folder is simply opened.
+            openFile: path =>
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe")
+                {
+                    Arguments = Directory.Exists(path) ? $"\"{path}\"" : $"/select,\"{path}\"",
+                    UseShellExecute = false,
+                });
+                return true;
+            },
             // GET /api/playnite-plugin (tasks/playnite-plugin/plan.md, Phase 14) — lets the plugin
             // itself ask whether a newer version of itself is waiting on the server.
             playnitePluginStatus: () => PlaynitePlugin.StatusAsync(_config, AgentLogger.Log),
@@ -309,7 +326,7 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add("Open SaveLocker…", null, (_, _) => OpenWindow());
         menu.Items.Add(new ToolStripSeparator());
 
-        foreach (var g in _config.Games)
+        foreach (var g in _config.Games.Where(g => g.IsEnrolledHere))
         {
             var game = g;
             var sub = new ToolStripMenuItem(game.Name);
@@ -323,8 +340,13 @@ internal sealed class TrayContext : ApplicationContext
                            (proc is null ? "" : $" ({proc}.exe)") + ". Close it and try again.");
                     return;
                 }
-                await _engine.PullAsync(game, force: true);
-                Notify($"{game.Name}: force-pulled latest save.");
+                // The engine's own answer, not an assumption: a server that did not reply used to
+                // be announced as "force-pulled latest save".
+                Notify(await _engine.PullAsync(game, force: true) switch
+                {
+                    PullOutcome.Restored => $"{game.Name}: force-pulled latest save.",
+                    var other => SyncEngine.DescribePull(game, other),
+                });
                 // A force-pull never resolves an open ConflictFlag itself (unlike force-push, which
                 // Phase 2 already closes server-side) — it only overwrites this machine's local copy.
                 // Surface it rather than leave the user thinking Force Pull was the fix.
@@ -338,7 +360,7 @@ internal sealed class TrayContext : ApplicationContext
             }));
             menu.Items.Add(sub);
         }
-        if (_config.Games.Count > 0)
+        if (_config.Games.Any(g => g.IsEnrolledHere))
             menu.Items.Add(new ToolStripSeparator());
 
         menu.Items.Add("Sync All (pull then push)", null, (_, _) => FireAndForget(SyncAll));
@@ -615,6 +637,19 @@ internal sealed class TrayContext : ApplicationContext
 
     // ─── Infrastructure ──────────────────────────────────────────────────────────
 
+    // Raised for every kind of settings change; only a taskbar light/dark flip redraws.
+    private void OnUserPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e)
+    {
+        if (e.Category != UserPreferenceCategory.General) return;
+        _ui.Post(() =>
+        {
+            var light = MarkIcon.TaskbarIsLight();
+            if (light == _taskbarLight) return;
+            _taskbarLight = light;
+            ApplyLook(_config.EffectiveAppearance);
+        });
+    }
+
     /// <summary>Re-draw the tray icon and any open window's icon in a new look. UI thread only.</summary>
     private void ApplyLook(SaveLocker.Shared.AppearanceDto look)
     {
@@ -665,6 +700,8 @@ internal sealed class TrayContext : ApplicationContext
     {
         if (disposing)
         {
+            // A static event: left subscribed, it would keep this context alive and keep posting to it.
+            SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
             _updateTimer.Dispose();
             _drainer.Dispose();
             _apiServer.Dispose();

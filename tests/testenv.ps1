@@ -22,6 +22,8 @@
 #                                 used to point it at tests/sgdb-stub.py (a stand-in SteamGridDB) so
 #                                 artwork can be tried without a real key; see Build and Run.md →
 #                                 "Testing artwork"
+#   .\tests\testenv.ps1 art       repaint the WSL agent's artwork folder (the bundled Steam library art) for the
+#                                 current accent and mark; copies the four pictures to .art-preview\
 #   .\tests\testenv.ps1 down      stop them; the installed agent is never touched
 #   .\tests\testenv.ps1 status    what is running, and which build
 #   .\tests\testenv.ps1 test      run the suites
@@ -83,6 +85,18 @@
 #                                 rest of that Playnite install), any seeded conflict folders, the
 #                                 "Conflict Game" Steam shortcut (shortcuts.vdf restored from its
 #                                 pre-conflict backup), and the dashboard container/image/volume
+#   .\tests\testenv.ps1 playnite-import [-PlayniteSource <dir>]
+#                                 copy a real Playnite's library, add-ons, add-on data, themes and
+#                                 settings (default source %AppData%\Playnite) into the portable
+#                                 -PlaynitePath, so the plugin can be tried against a real library.
+#                                 Both Playnites must be closed. Rewrites config.json's paths that
+#                                 name the source (DatabasePath ships as "%AppData%\Playnite\library",
+#                                 which would otherwise point the portable copy back at the REAL
+#                                 library), skips caches/logs, and leaves out every copy of the
+#                                 SaveLocker plugin and its settings so the test build installed by
+#                                 `up` starts clean (pointed at :5177, not the real agent). Anything
+#                                 already there is moved into "<PlaynitePath>\pre-import-<stamp>"
+#                                 first, never overwritten. `clean` does not undo it.
 #   .\tests\testenv.ps1 deck-config -DeckHost deck@<ip> [-DeckServerUrl http://<lan-ip>:5080]
 #                                 write/update tests/testenv.local.ps1 (below) instead of hand-
 #                                 editing it; no args just prints what's currently saved
@@ -134,7 +148,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'conflict', 'clean', 'deck-config')]
+    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'conflict', 'art', 'clean', 'deck-config', 'playnite-import')]
     [string]$Command = 'status',
 
     # Never a released version number. A test build stamped with one compares equal to the real
@@ -195,6 +209,9 @@ param(
     # DeckyPluginRepo above — Playnite's plugin database requires a plugin's own folder to BE the
     # plugin). Defaults to the sibling checkout every contributor already has next to this one.
     [string]$PlaynitePluginRepo = $env:SAVELOCKER_PLAYNITE_PLUGIN_REPO,
+    # 'playnite-import' only: the Playnite data folder to copy FROM. An installed Playnite keeps it
+    # in %AppData%; a portable one keeps it beside its own exe (pass that folder instead).
+    [string]$PlayniteSource = (Join-Path $env:APPDATA 'Playnite'),
 
     [ValidateSet('all', 'windows', 'linux', 'deck', 'console', 'playnite')]
     [string]$Only = 'all',
@@ -671,6 +688,21 @@ function Install-DeckyPluginOnDeck {
         throw "decky plugin not built - run: .\tests\testenv.ps1 build -Only deck (then up again)"
     }
 
+    # Restarting plugin_loader reloads EVERY Decky plugin into Steam's UI, which stalls a Deck with many plugins
+    # for a while — so when the installed copy already matches this build byte for byte, leave it alone.
+    $remoteTarget = "~/homebrew/plugins/$deckyTestPluginName"
+    $local = @(Get-ChildItem -LiteralPath $deckyStagePath -Recurse -File | ForEach-Object {
+        $rel = $_.FullName.Substring($deckyStagePath.Length).TrimStart('\').Replace('\', '/')
+        "$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant())  $rel"
+    } | Sort-Object -CaseSensitive)
+    $remote = @(& ssh -o ConnectTimeout=5 $DeckHost "cd $remoteTarget 2>/dev/null && find . -type f -print0 | xargs -0 -r sha256sum | sed 's|  \./|  |'" |
+        Sort-Object -CaseSensitive)
+    if ($LASTEXITCODE -eq 0 -and $remote.Count -gt 0 -and
+        (Compare-Object $local $remote -CaseSensitive -SyncWindow 0).Count -eq 0) {
+        Write-Host "  '$deckyTestPluginName' is already installed and identical to this build - not reinstalling (Decky not restarted)"
+        return
+    }
+
     Say "installing '$deckyTestPluginName' to $DeckHost (separate from any real SaveLocker plugin)"
     $remoteStage = '~/.savelocker-testenv-decky-stage'
     & ssh -o ConnectTimeout=5 $DeckHost "rm -rf $remoteStage"
@@ -693,7 +725,6 @@ function Install-DeckyPluginOnDeck {
     # the difference between the plugin loading at all and Decky silently never starting it: a
     # root-owned SaveLocker-Test directory produced NO running process whatsoever, confirmed via
     # `ps -eo user,pid,cmd | grep -i savelocker` showing only the real, untouched SaveLocker.
-    $remoteTarget = "~/homebrew/plugins/$deckyTestPluginName"
     & ssh -o ConnectTimeout=5 $DeckHost "sudo rm -rf $remoteTarget && sudo cp -r $remoteStage $remoteTarget && sudo chown -R deck:deck $remoteTarget && sudo systemctl restart plugin_loader"
     if ($LASTEXITCODE -ne 0) {
         throw "install on $DeckHost failed - if sudo asked for a password, see this file's header " +
@@ -818,6 +849,92 @@ function Remove-PlaynitePlugin {
         throw "could not remove '$ext' - if Playnite is still running from this path, close it first " +
               "(it locks the DLL while loaded): $($_.Exception.Message)"
     }
+}
+
+# SaveLocker-Playnite's extension.yaml Id. An import leaves out every add-on folder carrying it (a
+# release install, a stale hand copy) and its ExtensionsData settings: those settings point at the
+# REAL agent (:5178), and two folders with one Id make Playnite load neither.
+$playnitePluginId = '4d7017e5-87c0-4011-92c4-83f5dde2ada2'
+
+function Copy-PlayniteTree {
+    param([string]$From, [string]$To, [string[]]$ExcludeDirs = @())
+    if (-not (Test-Path $From)) { return }
+    $rc = @($From, $To, '/E', '/NFL', '/NDL', '/NJH', '/NJS', '/NP', '/R:1', '/W:1')
+    if ($ExcludeDirs.Count) { $rc += '/XD'; $rc += $ExcludeDirs }
+    & robocopy @rc | Out-Null
+    # robocopy's 0-7 are degrees of success; 8+ means something was not copied.
+    if ($LASTEXITCODE -ge 8) { throw "copying '$From' failed (robocopy exit $LASTEXITCODE)" }
+    $global:LASTEXITCODE = 0
+}
+
+function Import-PlayniteData {
+    if (-not $PlaynitePath) { throw "No Playnite configured - set -PlaynitePath or `$env:SAVELOCKER_PLAYNITE_PATH." }
+    if (-not (Test-Path (Join-Path $PlaynitePath 'Playnite.DesktopApp.exe'))) {
+        throw "no Playnite.DesktopApp.exe under '$PlaynitePath' - extract Playnite Portable there first."
+    }
+    # Playnite runs portable only when its uninstaller is absent; an installed one reads %AppData%
+    # whatever sits beside its exe, so an import there would land somewhere Playnite never looks.
+    if (Test-Path (Join-Path $PlaynitePath 'unins000.exe')) {
+        throw "'$PlaynitePath' is an installed Playnite, not a portable one - import only into a portable extraction."
+    }
+    $src = (Resolve-Path -LiteralPath $PlayniteSource -ErrorAction Stop).Path.TrimEnd('\')
+    $dst = (Resolve-Path -LiteralPath $PlaynitePath).Path.TrimEnd('\')
+    if ($src -eq $dst) { throw "source and destination are the same folder ('$src')." }
+    if (-not (Test-Path (Join-Path $src 'library'))) { throw "no library folder under '$src' - not a Playnite data folder." }
+
+    $running = @(Get-Process Playnite.DesktopApp, Playnite.FullscreenApp -ErrorAction SilentlyContinue)
+    if ($running.Count) {
+        throw "close every Playnite first (pid $($running.Id -join ', ')) - a library copied while Playnite has it open can be corrupt."
+    }
+
+    # Rewritten and checked before anything is touched: the stock DatabasePath is
+    # "%AppData%\Playnite\library", and copied as-is it would point the portable instance at the real
+    # library. Config strings are JSON, so every backslash is doubled.
+    $jsonDst = $dst.Replace('\', '\\')
+    $configs = @{}
+    foreach ($name in 'config.json', 'fullscreenConfig.json') {
+        $from = Join-Path $src $name
+        if (-not (Test-Path $from)) { continue }
+        $json = [IO.File]::ReadAllText($from)
+        foreach ($old in '%AppData%\Playnite', $src) {
+            $pattern = [regex]::Escape($old.Replace('\', '\\')) + '(?=\\\\|")'
+            $json = [regex]::Replace($json, $pattern, $jsonDst.Replace('$', '$$'), 'IgnoreCase')
+        }
+        if ($name -eq 'config.json') {
+            $db = [Environment]::ExpandEnvironmentVariables([string]($json | ConvertFrom-Json).DatabasePath)
+            if ($db -and $db -notlike '{PlayniteDir}*' -and -not $db.StartsWith($dst, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "config.json's DatabasePath is '$db', outside '$dst' - refusing to import a config that would open another library."
+            }
+        }
+        $configs[$name] = $json
+    }
+
+    $excludeExt = @(Get-ChildItem (Join-Path $src 'Extensions') -Directory -ErrorAction SilentlyContinue | Where-Object {
+        $y = Join-Path $_.FullName 'extension.yaml'
+        (Test-Path $y) -and (Select-String -LiteralPath $y -Pattern "^\s*Id:\s*$playnitePluginId\s*$" -Quiet)
+    } | ForEach-Object FullName)
+
+    # Themes is merged rather than moved aside: a portable extraction ships its built-in themes there.
+    $existing = @('library', 'Extensions', 'ExtensionsData', 'config.json', 'fullscreenConfig.json' |
+        Where-Object { Test-Path (Join-Path $dst $_) })
+    if ($existing.Count) {
+        $backup = Join-Path $dst ('pre-import-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+        New-Item -ItemType Directory -Path $backup | Out-Null
+        foreach ($i in $existing) { Move-Item -LiteralPath (Join-Path $dst $i) -Destination $backup -ErrorAction Stop }
+        Say "moved the portable Playnite's existing $($existing -join ', ') to $backup"
+    }
+
+    Say "copying $src -> $dst (the library's artwork can take a few minutes)"
+    Copy-PlayniteTree (Join-Path $src 'library') (Join-Path $dst 'library')
+    Copy-PlayniteTree (Join-Path $src 'Extensions') (Join-Path $dst 'Extensions') $excludeExt
+    Copy-PlayniteTree (Join-Path $src 'ExtensionsData') (Join-Path $dst 'ExtensionsData') @(Join-Path $src "ExtensionsData\$playnitePluginId")
+    Copy-PlayniteTree (Join-Path $src 'Themes') (Join-Path $dst 'Themes')
+    $utf8 = New-Object Text.UTF8Encoding $false
+    foreach ($name in $configs.Keys) { [IO.File]::WriteAllText((Join-Path $dst $name), $configs[$name], $utf8) }
+
+    foreach ($e in $excludeExt) { Write-Host "  left out the SaveLocker plugin at $e" }
+    Write-Host "  imported library, add-ons, add-on data, themes and settings into $dst"
+    Write-Host "  next: .\tests\testenv.ps1 build -Only playnite; .\tests\testenv.ps1 up -Only playnite"
 }
 
 # The installed release agent runs as SaveLocker.Agent.exe, so a dotnet.exe host with the agent DLL
@@ -1424,6 +1541,16 @@ switch ($Command) {
         Write-Host "then check each side's own conflicts view (CLI 'conflicts', doctor, the dashboard, or the Decky/Game-Mode/Playnite UI)."
     }
 
+    'art' {
+        # The WSL agent's Steam library art: repaints the artwork folder for the look in effect and
+        # copies the four pictures to .art-preview\ so they can be opened from Windows. Run it, change the accent
+        # or mark in the console's Appearance, wait a heartbeat (~20 s), run it again: the pictures follow.
+        $preview = Join-Path $root '.art-preview'
+        New-Item -ItemType Directory -Force $preview | Out-Null
+        Invoke-Wsl 'art' -ArtifactDir $preview
+        Say "pictures for the look in effect: $preview"
+    }
+
     'logs' {
         $winLog = Join-Path $winState 'agent.log'
         if (Test-Path $winLog) { Say "windows test agent — $winLog"; Get-Content $winLog -Tail 20 }
@@ -1510,6 +1637,8 @@ switch ($Command) {
             Write-Host "  removed $container / $volume / $image"
         }
     }
+
+    'playnite-import' { Import-PlayniteData }
 
     'deck-config' {
         # $DeckHost/$DeckServerUrl already reflect explicit flag > saved file > env var by this

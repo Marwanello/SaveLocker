@@ -414,6 +414,7 @@ public static class AgentCli
                 {
                     var engine = Engine();
                     var force = opts.ContainsKey("force");
+                    var unreachable = false;
                     foreach (var g in GamesFor(positionals.FirstOrDefault(), config))
                     {
                         if (string.IsNullOrWhiteSpace(g.SaveDirectory))
@@ -432,9 +433,12 @@ public static class AgentCli
                                 "Restoring under a live game loses the restored save. Close it first.");
                             continue;
                         }
-                        await engine.PullAsync(g, force);
+                        unreachable |= await engine.PullAsync(g, force) is PullOutcome.Unreachable;
                     }
                     await health.SendAsync(Api(), config, null, Log);
+                    // A pull that never reached the server is a failed command, as it was when the
+                    // engine threw: a script must not read exit 0 as "this machine has the latest save".
+                    if (unreachable) return 1;
                     break;
                 }
 

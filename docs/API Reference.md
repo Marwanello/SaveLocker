@@ -70,6 +70,12 @@ Server endpoints (`src/Server/Program.cs`).
 - `POST /api/conflicts/{id}/resolve?version={winningVersionId}&keepBoth={bool}` → 200 / 400.
   Refuses to replace a newer current head with an older conflict option. With `keepBoth=true`, the
   chosen version becomes Latest and both conflict snapshots are protected from retention.
+- `GET /api/agent/conflicts` → open `ConflictDto[]` *(agent-auth — the machine-key twin of the route
+  above; every open conflict, not only the caller's)*. With **`?resolvedSince={utc}`** it answers the
+  other question: conflicts **resolved** at or after that time, newest resolution first, at most 50 —
+  the agent UI's *Recently resolved* table. **`&machineId={guid}`** keeps only the conflicts that machine
+  was the stuck party of, applied before the cap; it has no effect on the open list. A server older
+  than the parameter ignores it and answers the open list, so a caller drops anything not `Resolved`.
 - `POST /api/games/{id}/rollback?version={versionId}` → 200 / 400.
 - `POST /api/games/{id}/set-latest?version={versionId}` → 200 / 400. Same head-pointer move as rollback; backs the **"Set as Latest"** dashboard action + initial-sync wizard.
 
@@ -152,6 +158,7 @@ when the GitHub release is newer than the hosted installer.
 Polling model: agent makes outbound requests (~20 s). Each poll also reconciles the game list (adopt new server games, drop deleted ones).
 - `POST /api/agent/games` `{ name, manifestKey?, suggestedSaveDir? }` → `GameDto` — agent enrollment (agent-auth; no admin password required).
 - `GET /api/agent/games/{id}/state` → `GameStateDto` / 404. The agent-auth twin of `/api/games/{id}/state`, so an agent can read one game's head without an admin password.
+- `GET /api/agent/games/{id}/versions` → `SaveVersionDto[]`, newest first (empty for an unknown game). The agent-auth twin of `/api/games/{id}/versions`, for the agent UI's and the Deck's *Versions on the server*.
 - `POST /api/agent/games/{id}/template?value={template}` → 200 / 204 / 400. An agent describing the save location **generically** (a manifest-style template), so every other machine expands it for itself rather than inheriting a literal path that means nothing on its filesystem. **Only fills an empty value** — it never overwrites one machine's answer with another's — and rejects anything that is not a template. **204** means there was already a value.
 - `GET /api/agent/commands` → `AgentCommandDto[]` — claims the calling machine's due commands under a **visibility lease** (`Commands:LeaseMinutes`, default 10). Due = `Pending`, or `Dispatched` with an expired lease. One atomic claim, so two pollers on one machine identity cannot both get a command; `claimCount > 1` means an earlier delivery went unanswered. Delivery is at-least-once — see `Decisions.md`.
 - `POST /api/agent/commands/{id}/result` `{ status, result, claimToken }` → 200 / 404 (`claimToken` is the one the claim handed out; a result carrying a stale token is accepted as a no-op). Idempotent: a late or duplicate report for an already-completed command returns 200 without reopening it.

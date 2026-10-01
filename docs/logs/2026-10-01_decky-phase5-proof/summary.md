@@ -1,5 +1,8 @@
 # Decky plugin Phase 5 — prove it on real hardware — summary
 
+**Done 2026-10-01.** The maintainer has since updated the Deck's Decky plugin through several later releases, which
+is the unattended update path this item was waiting to see. Closed on that basis; the notes below are as they stood.
+
 Seeded 2026-09-08 from `docs/Backlog.md` during the vault reorg (`chore/vault-docs-reorg`). No plan file exists yet — this is the backlog entry verbatim (only `logs/` links repointed at `../logs/`), kept as the starting point for a future `plan.md`.
 
 ---

@@ -3253,3 +3253,33 @@ pushed to the fork: PR https://github.com/Marwanello/SaveLocker/pull/52. Commits
   Deck/Bazzite report, screenshots (hidden pane).
 - **Found, not fixed:** a Linux agent's stale "conflict unresolved" latch whose push still says "pushed" (Backlog).
 - **Open:** PR #52 review — it now also carries the UTC-offset "newest change" fix, merged from `fix-archive-utc-timestamps`.
+
+## 2026-09-30 / 10-01 — PR #54 follow-ups: Steam art, the Deck test rig, a plugin task for the Game Mode shortcut
+
+Full write-up: [[session_summary]]. Branch `group-10-ui-redesign`, PR #54 (still open). Plugin task: Marwanello/SaveLocker-Decky#4.
+
+| Commit | What |
+|---|---|
+| `fc69670`, `58ffc06` | Steam art repaints the bundled artwork folder (`<state>/artwork/{capsule,capsule-wide,hero,logo}.png`) instead of the Steam shortcut, and creates the folder so every install (test ones too) gets it |
+| `88a6a25` | `testenv up` on the Deck adds a "SaveLocker Test" Steam shortcut (`savelocker ui`) with art; `clean` removes it |
+| `476240c` | `testenv up` skips reinstalling the Decky test plugin, and restarting Decky, when the Deck already has this exact build (SHA-256 manifest compare) |
+| `12c8ab7` | The hero is background only (no mark, wordmark or tagline); the test shortcut opens the test agent (`XDG_DATA_HOME` + `--port 5177`), not the real install |
+| `4b8a507` | The test shortcut's Steam grid art follows the look; only an agent with testenv's record in its own state does this, a real install never writes into Steam |
+| `fd1bfa1` | Each art piece is rendered and compared with the file, so a hero an older build painted with the logo is replaced even when the look is unchanged; the stamp marker is gone |
+| `34b5d22` | `testenv up` on the Deck adds a "SaveLocker Test" Desktop Mode menu entry (`savelocker-test.desktop`, `open --port 5177` on the test state); `clean` removes it |
+| `15a236f`, `b9b56a8` | Review pass (separate session): two test shortcuts sharing one backup and grid folder, `DevSteamShortcut` unit tests, `Crc32.cs` |
+
+- **Deck slowness, measured on the real Deck:** not SaveLocker. The installed agent idles at ~0% CPU. The cost was ~45 Decky
+  plugins (now 36 after the maintainer removed EmuDeck and some plugins) and a Decky restart reloading all of them, which
+  `testenv up` now avoids when the plugin is unchanged. EmuSync.Agent had a 157 CPU-second start burst (now removed).
+  Decky's log runs at DEBUG and records Steam store cookies (maintainer told).
+- **Game Mode shortcut, investigated:** the Decky plugin can call `SteamClient.Apps.AddShortcut` (returns the appId, no
+  restart) and `SetCustomArtworkForApp` (live art, types 0 grid / 1 hero / 2 logo / 3 wide), as NonSteamLaunchers and
+  decky-steamgriddb already do on the test Deck. Writing `shortcuts.vdf` from install.sh is only safe with Steam closed.
+  Plan in the plugin repo: `docs/tasks/steam-shortcut-and-art/plan.md` (PR Marwanello/SaveLocker-Decky#4).
+- **Tests:** art tests 19/19; appearance consistency 46/46. Verified in WSL: the test shortcut's art repaints on a look
+  change and not otherwise.
+- **Not verified:** any of it on the real Deck (`sync`, `build -Only deck`, `up -Only deck`, restart Steam); the test
+  menu entry was checked with `bash -n` only.
+- **Open:** fonts in the Decky plugin (Steam's own fonts; the fix would be bundling Archivo/JetBrains Mono in SaveLocker-Decky),
+  waiting on which screen the maintainer meant; a Desktop Mode tray icon for the Linux agent was offered, not decided.

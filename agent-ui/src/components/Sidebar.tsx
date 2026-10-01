@@ -3,7 +3,8 @@ import type { View } from '../types'
 interface Props {
   activeView: View
   onNavigate: (v: View) => void
-  conflictCount: number
+  /** Per-section counts. A count is only ever drawn when it is above zero. */
+  counts: Partial<Record<View, number>>
   /** `state.buildLabel`, not the version number: several builds share one, and on a machine running
    *  a test build beside the installed one that is the whole question. Case is left alone — a commit
    *  hash in caps reads as a different string. */
@@ -17,15 +18,20 @@ const NAV: { view: View; label: string }[] = [
   { view: 'games', label: 'Games' },
   { view: 'addGames', label: 'Add Games' },
   { view: 'conflicts', label: 'Conflicts' },
+  { view: 'activity', label: 'Activity' },
   { view: 'settings', label: 'Settings' },
 ]
 
-export function Sidebar({ activeView, onNavigate, conflictCount, agentLabel, machineName, serverHost }: Props) {
+/** Only Conflicts is a decision waiting, so only it takes the accent (plan.md's colour rule); the other
+ *  counts are information — how many games, how many suggestions, how many warnings — and stay neutral. */
+const URGENT: readonly View[] = ['conflicts']
+
+export function Sidebar({ activeView, onNavigate, counts, agentLabel, machineName, serverHost }: Props) {
   return (
     <aside className="sl-aside">
       <nav aria-label="Sections" style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {NAV.map(({ view, label }) => {
-          const badge = view === 'conflicts' ? conflictCount : 0
+          const badge = counts[view] ?? 0
           return (
             <button
               key={view}
@@ -35,7 +41,14 @@ export function Sidebar({ activeView, onNavigate, conflictCount, agentLabel, mac
               onClick={() => onNavigate(view)}
             >
               <span>{label}</span>
-              {badge > 0 && <span className="sl-count" aria-label={`${badge} open`}>{badge}</span>}
+              {badge > 0 && (
+                <span
+                  className={`sl-count ${URGENT.includes(view) ? '' : 'sl-count--quiet'}`.trim()}
+                  aria-label={`${badge} ${view === 'conflicts' ? 'open' : ''}`.trim()}
+                >
+                  {badge}
+                </span>
+              )}
             </button>
           )
         })}

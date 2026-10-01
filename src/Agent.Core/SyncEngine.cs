@@ -27,6 +27,28 @@ public enum GameSyncMode
     Pull
 }
 
+/// <summary>
+/// How <see cref="SyncEngine.PullAsync"/> ended. A bool could only say "restored or not", and every
+/// caller that has to tell a person what happened (the tray, the CLI's exit code, a dashboard
+/// command's result) then reported a server that never answered as a pull that went through.
+/// </summary>
+public enum PullOutcome
+{
+    /// <summary>The server's head was downloaded and written over the local save.</summary>
+    Restored,
+    /// <summary>The local save already matches the server's head; nothing was written.</summary>
+    UpToDate,
+    /// <summary>The server holds no save for this game yet.</summary>
+    NothingOnServer,
+    /// <summary>The agent declined, and has already reported why: the game is running, local changes
+    /// were never pushed, the path or the archive is unsafe, or this engine was retired.</summary>
+    Refused,
+    /// <summary>Another SaveLocker process is syncing this game; nothing was read or written.</summary>
+    Busy,
+    /// <summary>The server did not answer (or a gateway answered in its place); nothing was pulled.</summary>
+    Unreachable
+}
+
 /// <summary>Result of <see cref="SyncEngine.PrepareLaunchAsync"/> — the Linux launch wrapper's own
 /// answer to "is it safe to start this game right now" (tasks/conflict-resolution-ui/plan.md, Phase 4).</summary>
 public record LaunchGateResult(
@@ -228,6 +250,23 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         finally { gate.Release(); _activity?.End(); }
     }
 
+    /// <summary>
+    /// Bytes one push actually put on the wire, summed across its attempts. An upload reports its
+    /// running total, so a value that goes DOWN means a fresh attempt began (the delta fell back to a
+    /// full archive) and what the earlier one sent still counts.
+    /// </summary>
+    private sealed class SentBytes
+    {
+        private long _last;
+        public long Total { get; private set; }
+
+        public void Report(long done)
+        {
+            Total += done >= _last ? done - _last : done;
+            _last = done;
+        }
+    }
+
     private async Task<UploadResult?> PushCoreAsync(TrackedGame game, bool force, bool settle, CancellationToken ct)
     {
         // Re-checked at the boundary, not merely where the path was configured. A mapping accepted
@@ -287,7 +326,8 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
 
         try
         {
-            var result = await SendPushAsync(game, hash, manifest, force, ct);
+            var sent = new SentBytes();
+            var result = await SendPushAsync(game, hash, manifest, force, sent, ct);
             if (result is null) return null;   // refused outright; SendPushAsync already alerted
 
             var countPush = false;
@@ -344,7 +384,12 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                         AgentEventCodes.Conflict, AgentEventSeverity.Error, game.GameId);
                     break;
             }
-            _config.SaveGameSyncState(game, countPush, touchSyncTime);
+            if (countPush)
+            {
+                game.LastPushBytes = sent.Total;
+                game.LastPushAt = DateTime.UtcNow;
+            }
+            _config.SaveGameSyncState(game, countPush, touchSyncTime, countPush ? sent.Total : 0);
             return result;
         }
         // A non-null StatusCode means the server ANSWERED and rejected us (e.g. 413: the save blew
@@ -407,9 +452,13 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// </summary>
     private async Task<UploadResult?> SendPushAsync(
         TrackedGame game, string hash, IReadOnlyList<FileManifestEntry> manifest, bool force,
-        CancellationToken ct)
+        SentBytes sent, CancellationToken ct)
     {
-        void Progress(long done, long total) => _activity?.Progress(done, total);
+        void Progress(long done, long total)
+        {
+            sent.Report(done);
+            _activity?.Progress(done, total);
+        }
 
         var deltaWorthwhile = !force
             && game.LastKnownVersionId is not null
@@ -542,9 +591,9 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     }
 
     /// <summary>Download the server head and restore it locally if it differs.</summary>
-    public async Task<bool> PullAsync(TrackedGame game, bool force = false, CancellationToken ct = default)
+    public async Task<PullOutcome> PullAsync(TrackedGame game, bool force = false, CancellationToken ct = default)
     {
-        if (RefuseIfRetired(game, "pull")) return false;
+        if (RefuseIfRetired(game, "pull")) return PullOutcome.Refused;
         using var linked = LinkRetirement(ct);
         ct = linked.Token;
 
@@ -556,12 +605,12 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         {
             Alert(GameActivity.RefusalMessage(game, activeProc),
                 AgentEventCodes.PullBlockedRunning, AgentEventSeverity.Error, game.GameId);
-            return false;
+            return PullOutcome.Refused;
         }
 
         // A pull is the direction that DELETES. Whatever this path points at now is what a
         // force-pull is about to replace, so it is checked here and again below. WA-02.
-        if (RefuseUnsafePath(game, "pull")) return false;
+        if (RefuseUnsafePath(game, "pull")) return PullOutcome.Refused;
 
         var archive = TempArchive(game.GameId, "pull");
         AgentStateLock crossProcess;
@@ -574,7 +623,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         catch (AgentStateLockException ex)
         {
             ReportContention(game, "pull", ex);
-            return false;
+            return PullOutcome.Busy;
         }
 
         using var _lock = crossProcess;
@@ -591,7 +640,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             if (head is null)
             {
                 _log($"[{game.Name}] server has no saves yet; nothing to pull.");
-                return false;
+                return PullOutcome.NothingOnServer;
             }
 
             var (versionId, headHash) = head.Value;
@@ -604,7 +653,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                 _config.SaveGameSyncState(game);
                 _log($"[{game.Name}] already up to date.");
                 MarkSynced(game.GameId);
-                return false;
+                return PullOutcome.UpToDate;
             }
 
             // Safety: never silently overwrite local saves that hold changes which
@@ -620,7 +669,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                      "would be overwritten. Push first (your progress becomes the server version), " +
                      "or force-pull to discard local and take the server copy.",
                     AgentEventCodes.PullBlocked, AgentEventSeverity.Error, game.GameId);
-                return false;
+                return PullOutcome.Refused;
             }
 
             // Re-checked here and not only at entry: the download above can take minutes on a large
@@ -630,13 +679,13 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             {
                 Alert(GameActivity.RefusalMessage(game, lateProc),
                     AgentEventCodes.PullBlockedRunning, AgentEventSeverity.Error, game.GameId);
-                return false;
+                return PullOutcome.Refused;
             }
 
             // Re-canonicalized here for the same reason the activity check is: the download took
             // time, and a reparse point can be re-pointed during it. This check sits closest to the
             // delete-and-replace, so it is the last word.
-            if (RefuseUnsafePath(game, "pull")) return false;
+            if (RefuseUnsafePath(game, "pull")) return PullOutcome.Refused;
 
             try
             {
@@ -650,7 +699,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                 // the console is the only place anyone would ever find out (Decisions.md §2).
                 Alert($"[{game.Name}] REFUSED the server's save: {ex.Message}",
                     AgentEventCodes.PullBlocked, AgentEventSeverity.Error, game.GameId);
-                return false;
+                return PullOutcome.Refused;
             }
             game.LastKnownVersionId = versionId;
             game.LastSyncedHash = headHash;
@@ -658,14 +707,25 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             _config.SaveGameSyncState(game, touchSyncTime: true);
             _log($"[{game.Name}] restored latest save from server.");
             MarkSynced(game.GameId);
-            return true;
+            return PullOutcome.Restored;
         }
         catch (AgentStateLockException ex)
         {
             // The per-game lock is held above, but the sync-state write takes the separate 'config'
             // lock and can be contended on its own. Same answer either way: report it, change nothing.
             ReportContention(game, "pull", ex);
-            return false;
+            return PullOutcome.Busy;
+        }
+        // The server not answering is an outcome of a pull, not a crash: throwing here made "Sync" on
+        // an offline game surface as an internal error and — worse — skipped the push that would have
+        // queued the save for retry. Only unreachability is absorbed; an answered rejection still throws.
+        // It is its own outcome, never folded into "nothing to pull": a caller that reports a result
+        // (the tray, the CLI, a dashboard command) has to be able to say the server was not there.
+        catch (Exception ex) when (!ct.IsCancellationRequested && ServerReachability.IsUnreachable(ex))
+        {
+            Alert($"[{game.Name}] server unreachable — nothing was pulled. ({ex.Message})",
+                AgentEventCodes.ServerUnreachable, AgentEventSeverity.Error, game.GameId);
+            return PullOutcome.Unreachable;
         }
         finally
         {
@@ -680,14 +740,52 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// place so the two cannot drift. A running game still gets pushed: that is the normal folder-
     /// watch behaviour and costs the user nothing, it only forgoes restoring a save out from under it.
     /// </summary>
-    public async Task<string> SyncAllAsync(IReadOnlyList<TrackedGame> games, CancellationToken ct = default)
+    public async Task<string> SyncAllAsync(IReadOnlyList<TrackedGame> allGames, CancellationToken ct = default)
     {
+        // A game on the server with no folder here has nothing to push or pull; visiting it would
+        // only raise a "save directory missing" warning and inflate the "N of M" count.
+        var games = allGames.Where(g => g.IsEnrolledHere).ToList();
         var skipped = new List<string>();
-        foreach (var g in games)
+        int done = 0, uploaded = 0, pulled = 0, current = 0, conflicts = 0, queued = 0, unreachable = 0, failed = 0;
+        long bytes = 0;
+        var cancelled = false;
+
+        _activity?.BeginRun(games.Count);
+        try
         {
-            var (pullSkipped, _) = await PullThenPushAsync(g, ct);
-            if (pullSkipped) skipped.Add(g.Name);
+            foreach (var g in games)
+            {
+                // Between games only: the one in progress always finishes, so a cancel can never land
+                // between a restore's "delete files" and "write files". See SyncActivityTracker.RequestCancel.
+                if (_activity?.CancelRequested == true) { cancelled = true; break; }
+
+                _activity?.RunAt(done + 1);
+                var (pullSkipped, pull, push) = await PullThenPushAsync(g, ct);
+                done++;
+                if (pullSkipped) skipped.Add(g.Name);
+                // One bucket per game, and each says what really happened: a save waiting in the offline
+                // queue is not a failure, and a game the server could not be asked about is not "current".
+                switch (push?.Status)
+                {
+                    case UploadStatus.Created: uploaded++; bytes += g.LastPushBytes ?? 0; break;
+                    case UploadStatus.NoChange when pull is PullOutcome.Restored: pulled++; break;
+                    case UploadStatus.NoChange when pull is PullOutcome.Unreachable: unreachable++; break;
+                    case UploadStatus.NoChange: current++; break;
+                    case UploadStatus.Conflict: conflicts++; break;
+                    case null when _offlineQueue?.Contains(g.GameId) == true: queued++; break;
+                    default: failed++; break;
+                }
+            }
         }
+        finally
+        {
+            _activity?.EndRun(new SyncRunSummary(
+                DateTime.UtcNow, done, uploaded, current, conflicts, failed, bytes, cancelled,
+                pulled, queued, unreachable));
+        }
+
+        if (cancelled)
+            return $"Sync all cancelled after {done} of {games.Count} games.";
         return skipped.Count == 0
             ? "Sync all complete."
             : $"Sync all complete. Not pulled (still running): {string.Join(", ", skipped)}.";
@@ -696,13 +794,13 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// <summary>
     /// The one per-game step both <see cref="SyncAllAsync"/> and <see cref="SyncGameAsync"/> run, so
     /// what "sync" means for a game cannot differ between them: pull unless the game is running, then
-    /// push either way.
+    /// push either way. <c>Pull</c> is null when the pull was skipped for a running game.
     /// </summary>
-    private async Task<(bool PullSkipped, UploadResult? Push)> PullThenPushAsync(TrackedGame game, CancellationToken ct)
+    private async Task<(bool PullSkipped, PullOutcome? Pull, UploadResult? Push)> PullThenPushAsync(TrackedGame game, CancellationToken ct)
     {
         var running = GameActivity.IsActive(game);
-        if (!running) await PullAsync(game, ct: ct);
-        return (running, await PushAsync(game, ct: ct));
+        PullOutcome? pull = running ? null : await PullAsync(game, ct: ct);
+        return (running, pull, await PushAsync(game, ct: ct));
     }
 
     /// <summary>
@@ -717,23 +815,36 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         {
             case GameSyncMode.Pull:
                 if (GameActivity.IsActive(game)) return $"{game.Name} is running, so its save was not replaced.";
-                return await PullAsync(game, ct: ct)
-                    ? $"Pulled the latest save of {game.Name}."
-                    : $"Nothing was pulled for {game.Name}: it is already up to date, or the pull was refused. The activity log says which.";
+                return DescribePull(game, await PullAsync(game, ct: ct));
             case GameSyncMode.Push:
                 return DescribePush(game, await PushAsync(game, ct: ct));
             default:
-                var (pullSkipped, push) = await PullThenPushAsync(game, ct);
+                var (pullSkipped, pull, push) = await PullThenPushAsync(game, ct);
                 var pushed = DescribePush(game, push);
+                if (pull is PullOutcome.Unreachable && push?.Status is UploadStatus.NoChange)
+                    pushed += " The server is unreachable, so nothing was pulled.";
                 return pullSkipped ? $"{pushed} Not pulled: the game is running." : pushed;
         }
     }
 
-    private static string DescribePush(TrackedGame game, UploadResult? result) => result?.Status switch
+    /// <summary>What a pull did, as one sentence — shared by every surface that answers a person.</summary>
+    public static string DescribePull(TrackedGame game, PullOutcome outcome) => outcome switch
+    {
+        PullOutcome.Restored => $"Pulled the latest save of {game.Name}.",
+        PullOutcome.UpToDate => $"{game.Name} is already up to date.",
+        PullOutcome.NothingOnServer => $"The server has no save of {game.Name} yet.",
+        PullOutcome.Unreachable => $"The server is unreachable, so nothing was pulled for {game.Name}.",
+        PullOutcome.Busy => $"Another SaveLocker process is syncing {game.Name}. Nothing was pulled.",
+        _ => $"The pull of {game.Name} was refused. The activity log says why.",
+    };
+
+    private string DescribePush(TrackedGame game, UploadResult? result) => result?.Status switch
     {
         UploadStatus.Conflict => $"{game.Name} has a conflict. Choose a side in Conflicts.",
         UploadStatus.Created => $"Pushed a new save of {game.Name}.",
         UploadStatus.NoChange => $"No local changes to push for {game.Name}.",
+        null when _offlineQueue?.Contains(game.GameId) == true =>
+            $"The server is unreachable. {game.Name} is queued and will upload when it is back.",
         null => $"Nothing was pushed for {game.Name}. The activity log says why.",
         _ => $"{game.Name} was synced.",
     };

@@ -517,7 +517,8 @@ static class Widgets
     /// A stat tile: big tabular number over a muted caption. Mirrors the console's StatCard, which
     /// is the agent UI's headline element.
     /// </summary>
-    public static void StatTile(string value, string label, Vector4 valueColour, float width, float height)
+    public static void StatTile(string value, string label, Vector4 valueColour, float width, float height,
+        string? sub = null)
     {
         var dl = ImGui.GetWindowDrawList();
         var min = ImGui.GetCursorScreenPos();
@@ -531,13 +532,31 @@ static class Widgets
                    new Vector2(max.X - Theme.Rounding.Card, min.Y + 1f),
                    U32(Theme.Alpha(valueColour, 0.75f)), 2f);
 
-        Theme.PushFont(Theme.Display);
+        // A word ("CONNECTED") is wider than the digits the display face is sized for: step down to the
+        // title face rather than run over the tile's edges.
+        var valueFont = Theme.Display;
+        Theme.PushFont(valueFont);
+        if (ImGui.CalcTextSize(value).X > width - Theme.Space.Md * 2)
+        {
+            Theme.PopFont(valueFont);
+            valueFont = Theme.Title;
+            Theme.PushFont(valueFont);
+        }
         var vs = ImGui.CalcTextSize(value);
         dl.AddText(new Vector2(min.X + (width - vs.X) / 2f, min.Y + height * 0.28f - vs.Y / 2f),
             U32(valueColour), value);
-        Theme.PopFont(Theme.Display);
+        Theme.PopFont(valueFont);
 
         Theme.PushFont(Theme.Caption);
+        // The sub-line: one muted line of context under the number ("on this Deck", the server's host),
+        // elided to the tile so a long host never runs out of it.
+        if (sub is not null)
+        {
+            var shown = Elide(sub, width - Theme.Space.Md * 2);
+            var ss = ImGui.CalcTextSize(shown);
+            dl.AddText(new Vector2(min.X + (width - ss.X) / 2f, min.Y + height * 0.28f + vs.Y / 2f + Theme.Space.Xs),
+                U32(Theme.Dim), shown);
+        }
         var ls = ImGui.CalcTextSize(label);
         dl.AddText(new Vector2(min.X + (width - ls.X) / 2f, max.Y - ls.Y - Theme.Space.Md),
             U32(Theme.Dim), label);
@@ -590,13 +609,19 @@ static class Widgets
     /// <summary>A small rounded chip — the server-URL pill and inline state markers.</summary>
     public static void Badge(string text, Vector4 colour, Icons.Glyph? icon = null, bool mono = false)
     {
+        var size = PaintBadge(ImGui.GetWindowDrawList(), ImGui.GetCursorScreenPos(), text, colour, icon, mono);
+        ImGui.Dummy(size);
+    }
+
+    /// <summary>Paint a badge at a screen position without laying anything out — for a chip drawn inside a
+    /// custom widget (a list row's end chip). Returns its size.</summary>
+    public static Vector2 PaintBadge(ImDrawListPtr dl, Vector2 min, string text, Vector4 colour,
+        Icons.Glyph? icon = null, bool mono = false)
+    {
         var font = mono ? Theme.Mono : Theme.Caption;
         var (size, iconSize, padX, padY) = BadgeMetrics(text, icon, mono);
         var width = size.X;
         var height = size.Y;
-
-        var dl = ImGui.GetWindowDrawList();
-        var min = ImGui.GetCursorScreenPos();
         var max = min + new Vector2(width, height);
 
         dl.AddRectFilled(min, max, U32(Theme.Alpha(colour, 0.09f)), Theme.Rounding.Chip);
@@ -613,7 +638,7 @@ static class Widgets
         dl.AddText(new Vector2(x, min.Y + padY), U32(colour), text);
         Theme.PopFont(font);
 
-        ImGui.Dummy(new Vector2(width, height));
+        return size;
     }
 
     /// <summary>A pulsing status dot with a glow, as in the console's StatusHeader.</summary>
@@ -824,13 +849,30 @@ static class Widgets
         return changed;
     }
 
+    /// <summary>UVs that centre-crop a portrait (or landscape) cover to the square a row draws, so a 2:3
+    /// cover is cropped rather than squashed.</summary>
+    public static (Vector2 Uv0, Vector2 Uv1) CropSquare(float aspect)
+    {
+        if (aspect <= 0f || MathF.Abs(aspect - 1f) < 0.01f) return (Vector2.Zero, Vector2.One);
+        if (aspect < 1f)
+        {
+            var v0 = (1f - aspect) / 2f;
+            return (new Vector2(0f, v0), new Vector2(1f, v0 + aspect));
+        }
+        var u = 1f / aspect;
+        var u0 = (1f - u) / 2f;
+        return (new Vector2(u0, 0f), new Vector2(u0 + u, 1f));
+    }
+
     /// <summary>
     /// A tappable list row: optional leading icon, title, subtitle, trailing text and chevron.
     /// The whole row is one focus target, which is what makes a long list navigable by D-pad.
     /// </summary>
     public static bool ListRow(string id, string title, string? subtitle = null,
         Icons.Glyph? icon = null, string? trailing = null, Vector4? trailingColour = null,
-        bool chevron = true, bool selected = false, bool enabled = true)
+        bool chevron = true, bool selected = false, bool enabled = true,
+        bool cover = false, IntPtr coverTexture = default, float coverAspect = 1f, string? coverInitial = null,
+        string? chip = null, Vector4? chipColour = null)
     {
         // Fixed, not measured from the current font's line height (plan.md "Layout rules" — "Two-line
         // rows" — and checkpoint-ui/prototype.html's Deck screen: "Rows are 62px tall"): a constant
@@ -870,7 +912,31 @@ static class Widgets
         dl.AddLine(new Vector2(min.X, max.Y), new Vector2(max.X, max.Y), U32(Theme.Row), 1f);
 
         var x = min.X + Theme.Space.Md;
-        if (icon is not null)
+        if (cover)
+        {
+            // A 38 px cover (prototype: "a 38 px cover"), the game's art when it has loaded and its initial
+            // on a tile until then — or for good, when it has none. Art is a decorated luxury on a Deck: a
+            // row must read completely without it.
+            const float coverSize = 38f;
+            var cMin = new Vector2(x, min.Y + (height - coverSize) / 2f);
+            var cMax = cMin + new Vector2(coverSize);
+            if (coverTexture != default)
+            {
+                var (uv0, uv1) = CropSquare(coverAspect);
+                dl.AddImageRounded(coverTexture, cMin, cMax, uv0, uv1, U32(Vector4.One), 6f);
+            }
+            else
+            {
+                dl.AddRectFilled(cMin, cMax, U32(Theme.Tile), 6f);
+                var initial = string.IsNullOrEmpty(coverInitial) ? "?" : coverInitial[..1].ToUpperInvariant();
+                Theme.PushFont(Theme.BodyStrong);
+                var isz = ImGui.CalcTextSize(initial);
+                dl.AddText(cMin + (new Vector2(coverSize) - isz) / 2f, U32(Theme.Dim), initial);
+                Theme.PopFont(Theme.BodyStrong);
+            }
+            x += coverSize + Theme.Space.Md;
+        }
+        else if (icon is not null)
         {
             Icons.DrawAt(dl, icon, new Vector2(x, min.Y + (height - lineH) / 2f), lineH,
                 enabled ? Mix(Theme.Dim, Theme.Accent, lift) : Theme.Faint);
@@ -886,6 +952,15 @@ static class Widgets
                 new Vector2(rightEdge - lineH, min.Y + (height - lineH) / 2f), lineH,
                 Mix(Theme.Faint, Theme.Accent, lift));
             rightEdge -= lineH + Theme.Space.Sm;
+        }
+
+        // An end chip (Conflict / Needs setup / Synced): a real badge, not muted text, so the state is the
+        // first thing the eye finds at the right edge of the row.
+        if (chip is not null)
+        {
+            var cs = MeasureBadge(chip);
+            PaintBadge(dl, new Vector2(rightEdge - cs.X, min.Y + (height - cs.Y) / 2f), chip, chipColour ?? Theme.Dim);
+            rightEdge -= cs.X + Theme.Space.Md;
         }
 
         if (trailing is not null)
