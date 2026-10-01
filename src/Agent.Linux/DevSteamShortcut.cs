@@ -38,18 +38,31 @@ namespace SaveLocker.Agent.Linux;
 /// </summary>
 public static class DevSteamShortcut
 {
-    private const string ShortcutName = "Conflict Game";
+    /// <summary>One of the fixed test entries: its display name and the savelocker subcommand its Exe runs.</summary>
+    public sealed record Kind(string Name, string Args)
+    {
+        public byte[] AppNameMarker => Concat([0x01], CStringBytes("AppName"), CStringBytes(Name));
+    }
+
+    /// <summary>The fullscreen fake game the conflict tests launch.</summary>
+    public static readonly Kind Conflict = new("Conflict Game", "fake-game");
+    /// <summary>SaveLocker's own Deck UI (the one a real install's shortcut opens), with its art.</summary>
+    public static readonly Kind DeckUi = new("SaveLocker Test", "ui");
+
+    public static Kind? KindNamed(string? name) => name switch
+    {
+        null or "" or "conflict" => Conflict,
+        "ui" => DeckUi,
+        _ => null,
+    };
+
+    private const string ArtListSuffix = ".savelocker-art-files";
     private const string BackupSuffix = ".savelocker-backup";
     // Marks "we created shortcuts.vdf; there was nothing here before" — Remove deletes the file
     // outright in that case instead of restoring a backup that was never taken.
     private const string CreatedMarkerSuffix = ".savelocker-created";
 
     private static readonly byte[] RootHeader = BuildRootHeader();
-    // Identifies our entry by its AppName field rather than a fixed key: the key is now assigned
-    // sequentially (see AnalyzeShortcuts), same as every real writer does, so it isn't stable
-    // enough on its own to search for.
-    private static readonly byte[] AppNameMarker =
-        Concat([0x01], CStringBytes("AppName"), CStringBytes(ShortcutName));
     // The Exe field header: the display name alone could belong to a real user shortcut, so an
     // entry only counts as ours when its Exe value points at the savelocker binary.
     private static readonly byte[] ExeKeyMarker =
@@ -61,7 +74,13 @@ public static class DevSteamShortcut
     /// derived from the fixed name and exe (which embeds this machine's prefixDir) — or null if
     /// nothing was found or written.
     /// </summary>
-    public static int? Add(string prefixDir, bool withLaunchCommand = false)
+    public static int? Add(string prefixDir, bool withLaunchCommand = false, Kind? kind = null)
+    {
+        kind ??= Conflict;
+        return AddEntry(prefixDir, withLaunchCommand, kind);
+    }
+
+    private static int? AddEntry(string prefixDir, bool withLaunchCommand, Kind kind)
     {
         if (string.IsNullOrEmpty(prefixDir) || prefixDir.IndexOf('"') >= 0 || prefixDir.Any(char.IsControl))
         {
@@ -80,10 +99,10 @@ public static class DevSteamShortcut
         // Steam's Exe field is a shell-style string, not just a bare path — the quoted binary
         // followed by its fixed argument is how every other non-Steam-shortcut tool (Boilr, Lutris,
         // etc.) passes a subcommand this way, since shortcuts.vdf has no separate "arguments" key.
-        var exeField = $"\"{exe}\" fake-game";
+        var exeField = $"\"{exe}\" {kind.Args}";
         // The AppID stays derived from exeField alone even when a launch command is written — the
         // LaunchOptions wrapper must not change which shortcut Steam maps this entry to.
-        var appId = ComputeShortcutAppId(exeField, ShortcutName);
+        var appId = ComputeShortcutAppId(exeField, kind.Name);
         // The one place this invocation string is spelled — see LaunchOptions.cs's own doc comment.
         var launchOptions = withLaunchCommand ? LaunchOptions.Invocation(exe) : string.Empty;
 
@@ -93,7 +112,7 @@ public static class DevSteamShortcut
             // closing 0x08 here (not the double-plus this class sees on real, tool-edited files) —
             // the minimal structure SteamVdf.Parse itself already expects and this class's own
             // AnalyzeShortcuts will happily read back on the next Add.
-            var fresh = Concat(RootHeader, BuildEntryBytes("0", appId, exeField, prefixDir, launchOptions), [0x08]);
+            var fresh = Concat(RootHeader, BuildEntryBytes(kind, "0", appId, exeField, prefixDir, launchOptions), [0x08]);
             var createdMarkerPath = vdfPath + CreatedMarkerSuffix;
             File.WriteAllBytes(createdMarkerPath, []);
             AtomicFile.WriteAllBytes(vdfPath, fresh);
@@ -110,16 +129,16 @@ public static class DevSteamShortcut
         var originalLength = original.Length;
         var originalMtime = File.GetLastWriteTimeUtc(vdfPath);
 
-        if (IndexOf(original, AppNameMarker) >= 0)
+        if (IndexOf(original, kind.AppNameMarker) >= 0)
         {
             // The fixed display name alone could belong to a real user shortcut — only an entry
             // whose Exe points at savelocker is ours to leave alone.
-            if (!TryLocateOwnEntry(original, out var ownStart, out var ownEnd) || !EntryExeLooksOurs(original, ownStart, ownEnd))
+            if (!TryLocateOwnEntry(original, kind, out var ownStart, out var ownEnd) || !EntryExeLooksOurs(original, ownStart, ownEnd))
             {
-                Console.Error.WriteLine("refusing: a 'Conflict Game' entry is present but it does not point at savelocker - leaving shortcuts.vdf untouched.");
+                Console.Error.WriteLine($"refusing: a '{kind.Name}' entry is present but it does not point at savelocker - leaving shortcuts.vdf untouched.");
                 return null;
             }
-            Console.WriteLine("'Conflict Game' shortcut already present - leaving shortcuts.vdf untouched.");
+            Console.WriteLine($"'{kind.Name}' shortcut already present - leaving shortcuts.vdf untouched.");
             return appId;
         }
 
@@ -140,7 +159,7 @@ public static class DevSteamShortcut
             return null;
         }
 
-        var entryBytes = BuildEntryBytes(analysis.nextIndex.ToString(), appId, exeField, prefixDir, launchOptions);
+        var entryBytes = BuildEntryBytes(kind, analysis.nextIndex.ToString(), appId, exeField, prefixDir, launchOptions);
 
         var backupPath = vdfPath + BackupSuffix;
         if (!File.Exists(backupPath)) AtomicFile.WriteAllBytes(backupPath, original);
@@ -166,8 +185,9 @@ public static class DevSteamShortcut
     /// Safe to call even if <see cref="Add"/> never ran — it is then a no-op.
     /// Returns true when the file is clean (or there was nothing to do), false on any refusal.
     /// </summary>
-    public static bool Remove()
+    public static bool Remove(Kind? kind = null)
     {
+        kind ??= Conflict;
         var vdfPath = FindShortcutsVdf();
         if (vdfPath is null) return true;
 
@@ -192,13 +212,13 @@ public static class DevSteamShortcut
         var currentLength = current.Length;
         var currentMtime = File.GetLastWriteTimeUtc(vdfPath);
 
-        if (TryLocateOwnEntry(current, out var start, out var endExclusive))
+        if (TryLocateOwnEntry(current, kind, out var start, out var endExclusive))
         {
             // Same guard as Add's no-op path: only splice an entry whose Exe points at savelocker,
             // never a real user shortcut sharing the fixed display name.
             if (!EntryExeLooksOurs(current, start, endExclusive))
             {
-                Console.Error.WriteLine("refusing: the located 'Conflict Game' entry does not point at savelocker - leaving shortcuts.vdf untouched.");
+                Console.Error.WriteLine($"refusing: the located '{kind.Name}' entry does not point at savelocker - leaving shortcuts.vdf untouched.");
                 return false;
             }
             if (FileChangedSince(vdfPath, currentLength, currentMtime))
@@ -220,15 +240,17 @@ public static class DevSteamShortcut
             }
             AtomicFile.WriteAllBytes(vdfPath, updated);
             try { File.Delete(backupPath); } catch { }
-            try { File.Delete(createdMarkerPath); } catch { }
-            Console.WriteLine($"removed the 'Conflict Game' shortcut from {vdfPath} (other entries untouched).");
+            // Kept while the file still holds another of our entries, so removing that one can still delete a file we created.
+            if (!FileContainsOwnExe(updated)) try { File.Delete(createdMarkerPath); } catch { }
+            RemoveArt(vdfPath);
+            Console.WriteLine($"removed the '{kind.Name}' shortcut from {vdfPath} (other entries untouched).");
             return true;
         }
 
         // Computed once and reused below — TryLocateOwnEntry already scanned for this same marker
         // internally, but it doesn't report a plain "found at all" answer, so one fresh scan here
         // is the cheapest way to get it without reshaping that method's contract.
-        var marker = IndexOf(current, AppNameMarker);
+        var marker = IndexOf(current, kind.AppNameMarker);
         if (marker < 0)
         {
             if (!File.Exists(backupPath))
@@ -270,14 +292,14 @@ public static class DevSteamShortcut
 
         // The name is present but the entry is no longer locatable — never splice blindly here.
         // A duplicate display name (one of them the user's) must not trigger a backup restore.
-        if (IndexOf(current, AppNameMarker, marker + 1) >= 0)
+        if (IndexOf(current, kind.AppNameMarker, marker + 1) >= 0)
         {
-            Console.Error.WriteLine("refusing: more than one 'Conflict Game' entry is present - remove the unwanted one from Steam itself. Nothing was written.");
+            Console.Error.WriteLine($"refusing: more than one '{kind.Name}' entry is present - remove the unwanted one from Steam itself. Nothing was written.");
             return false;
         }
         if (!FileContainsOwnExe(current))
         {
-            Console.Error.WriteLine("refusing: a 'Conflict Game' entry is present but no Exe in the file points at savelocker - leaving shortcuts.vdf untouched.");
+            Console.Error.WriteLine($"refusing: a '{kind.Name}' entry is present but no Exe in the file points at savelocker - leaving shortcuts.vdf untouched.");
             return false;
         }
 
@@ -317,9 +339,41 @@ public static class DevSteamShortcut
         {
             Console.Error.WriteLine(
                 $"our entry is present but cannot be located precisely and no backup exists - refusing to touch '{vdfPath}'. " +
-                "Remove the 'Conflict Game' shortcut from Steam itself.");
+                $"Remove the '{kind.Name}' shortcut from Steam itself.");
             return false;
         }
+    }
+
+    /// <summary>The grid folder beside the located shortcuts.vdf — where Steam looks for a shortcut's art.</summary>
+    private static string GridDirOf(string vdfPath) => Path.Combine(Path.GetDirectoryName(vdfPath)!, "grid");
+
+    /// <summary>
+    /// Writes the four library pictures for the shortcut under Steam's own names, and records which files, so
+    /// <see cref="Remove"/> deletes exactly those. Test rig only: a real install is never given art this way.
+    /// </summary>
+    public static void WriteArt(int appId, string accent, string mark, Func<string, byte[]> layers)
+    {
+        var vdfPath = FindShortcutsVdf();
+        if (vdfPath is null) return;
+        var grid = GridDirOf(vdfPath);
+        var written = Art.SteamArt.WriteForShortcut(grid, unchecked((uint)appId), accent, mark, layers);
+        AtomicFile.WriteAllText(Path.Combine(grid, ArtListSuffix), string.Join(Environment.NewLine, written));
+        Console.WriteLine($"painted {written.Count} picture(s) in {grid}");
+    }
+
+    private static void RemoveArt(string vdfPath)
+    {
+        var grid = GridDirOf(vdfPath);
+        var list = Path.Combine(grid, ArtListSuffix);
+        if (!File.Exists(list)) return;
+        try
+        {
+            foreach (var name in File.ReadAllLines(list))
+                if (name.Length > 0 && name == Path.GetFileName(name)) File.Delete(Path.Combine(grid, name));
+            File.Delete(list);
+            if (!Directory.EnumerateFileSystemEntries(grid).Any()) Directory.Delete(grid);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     private static bool IsEmptyShortcutsFile(byte[] data)
@@ -335,12 +389,12 @@ public static class DevSteamShortcut
         }
     }
 
-    private static bool TryLocateOwnEntry(byte[] data, out int start, out int endExclusive)
+    private static bool TryLocateOwnEntry(byte[] data, Kind kind, out int start, out int endExclusive)
     {
         start = -1;
         endExclusive = -1;
-        var marker = IndexOf(data, AppNameMarker);
-        if (marker < 0 || IndexOf(data, AppNameMarker, marker + 1) >= 0) return false;
+        var marker = IndexOf(data, kind.AppNameMarker);
+        if (marker < 0 || IndexOf(data, kind.AppNameMarker, marker + 1) >= 0) return false;
 
         // Order-independent: an entry's fields may come in any order (a third-party writer decides),
         // so instead of assuming appid-then-AppName, scan backwards for every plausible numeric
@@ -368,7 +422,7 @@ public static class DevSteamShortcut
                 int end;
                 try { SkipEntryChildren(data, ref pos); end = pos; }
                 catch (InvalidDataException) { continue; }
-                if (end < marker + AppNameMarker.Length) continue;
+                if (end < marker + kind.AppNameMarker.Length) continue;
                 candidateStart = s;
                 candidateEnd = end;
                 candidateCount++;
@@ -577,14 +631,14 @@ public static class DevSteamShortcut
         return Concat([0x00], CStringBytes("shortcuts"));
     }
 
-    private static byte[] BuildEntryBytes(string key, int appId, string exeField, string startDir, string launchOptions)
+    private static byte[] BuildEntryBytes(Kind kind, string key, int appId, string exeField, string startDir, string launchOptions)
     {
         using var ms = new MemoryStream();
         ms.WriteByte(0x00);
         WriteBytes(ms, CStringBytes(key));
 
         WriteInt(ms, "appid", appId);
-        WriteString(ms, "AppName", ShortcutName);
+        WriteString(ms, "AppName", kind.Name);
         WriteString(ms, "Exe", exeField);
         WriteString(ms, "StartDir", $"\"{startDir}\"");
         WriteString(ms, "icon", "");

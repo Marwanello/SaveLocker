@@ -74,6 +74,21 @@ public static class SteamArt
         return written;
     }
 
+    /// <summary>The four pieces under Steam's names for a shortcut's AppID, in its grid folder. Returns the file names.</summary>
+    public static IReadOnlyList<string> WriteForShortcut(string gridDir, uint appId, string accent, string mark, Func<string, byte[]> layers)
+    {
+        Directory.CreateDirectory(gridDir);
+        var colours = AppearancePalette.For(accent);
+        var names = new List<string>();
+        foreach (var (piece, name) in new[]
+                 { ("capsule", $"{appId}p.png"), ("capsule-wide", $"{appId}.png"), ("hero", $"{appId}_hero.png"), ("logo", $"{appId}_logo.png") })
+        {
+            AtomicFile.WriteAllBytes(Path.Combine(gridDir, name), SteamArtRenderer.RenderPng(piece, colours.Dark, colours.DarkOn, mark, layers));
+            names.Add(name);
+        }
+        return names;
+    }
+
     private sealed record Marker(string Stamp, Dictionary<string, string> Files);
 
     private static Marker ReadMarker(string path)

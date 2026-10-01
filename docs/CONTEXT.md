@@ -1650,7 +1650,7 @@ on every change (`Agent.Linux/Art`: `SteamArt`, `SteamArtRenderer`, `SteamArtHos
 own copy of a picture once it is set**, so the library shows a new look only after the person sets the files as custom artwork again (review, below).
 No SVG renderer in the agent: `export-art.mjs` also writes text and mark **layers** (`src/Agent.Linux/Art/layers/`,
 ~220 KB, embedded) and the agent tints and composites them — for Ember/Pixel lock it reproduces the bundled PNGs (test-held). `savelocker steam-art
-[--out dir]`; testenv: `.\tests\testenv.ps1 art` (XDG_DATA_HOME keeps it in the rig's state). Not verified on a real Deck.
+[--out dir]`; testenv: `.\tests\testenv.ps1 art` (XDG_DATA_HOME keeps it in the rig's state). Not verified on a real Deck. Deck rig: `testenv.ps1 up` also adds a "SaveLocker Test" Steam shortcut (`savelocker ui`) with the art in its grid folder (`dev-shortcut-add --kind ui`); `clean` removes both it and "Conflict Game".
 <br>**PR #54 reviewed 2026-09-30, twice; every finding fixed and pushed onto the PR's branch.** The one that
 mattered: the follow-up's `PullAsync` returned `false` for an unreachable server, and the tray's Force Pull, a dashboard
 pull command and the CLI all reported that as a pull that went through — it is a `PullOutcome` now. Also: two test checks

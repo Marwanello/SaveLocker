@@ -138,10 +138,20 @@ static class Program
                     Console.Error.WriteLine("dev-shortcut-add needs --prefix <dir>");
                     return 2;
                 }
+                if (DevSteamShortcut.KindNamed(opts.GetValueOrDefault("kind")) is not { } addKind)
+                {
+                    Console.Error.WriteLine("dev-shortcut-add --kind must be 'conflict' or 'ui'.");
+                    return 2;
+                }
                 try
                 {
-                    var appId = DevSteamShortcut.Add(prefix, opts.ContainsKey("with-launch-command"));
+                    var appId = DevSteamShortcut.Add(prefix, opts.ContainsKey("with-launch-command"), addKind);
                     if (appId is null) return 1;
+                    if (addKind == DevSteamShortcut.DeckUi)
+                    {
+                        var look = config.EffectiveAppearance;
+                        DevSteamShortcut.WriteArt(appId.Value, look.Accent, look.Mark, Art.SteamArtHost.Layer);
+                    }
                     Console.WriteLine($"APPID={appId}");
                     return 0;
                 }
@@ -154,9 +164,14 @@ static class Program
 
             case "dev-shortcut-remove":
                 if (!TestCommandsAllowed(out var removeDenial)) { Console.Error.WriteLine(removeDenial); return 2; }
+                if (DevSteamShortcut.KindNamed(opts.GetValueOrDefault("kind")) is not { } removeKind)
+                {
+                    Console.Error.WriteLine("dev-shortcut-remove --kind must be 'conflict' or 'ui'.");
+                    return 2;
+                }
                 try
                 {
-                    return DevSteamShortcut.Remove() ? 0 : 1;
+                    return DevSteamShortcut.Remove(removeKind) ? 0 : 1;
                 }
                 catch (Exception ex)
                 {

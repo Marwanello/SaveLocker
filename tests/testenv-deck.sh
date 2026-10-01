@@ -133,6 +133,16 @@ cmd_up() {
   fi
   echo "$out"
   show_real_game_mappings
+
+  # A Steam library entry for this test build's own Deck UI ("SaveLocker Test", runs `savelocker ui`), with the
+  # SaveLocker art for the look in effect. Removed again by clean. Not fatal: the daemon is already up.
+  # Steam only lists a new shortcut, and shows new art, after it restarts.
+  echo "== adding a Steam shortcut 'SaveLocker Test' (the Deck UI) =="
+  if SAVELOCKER_ALLOW_TEST_COMMANDS=1 "$BIN" dev-shortcut-add --prefix "$PREFIX" --kind ui; then
+    echo "Restart Steam on the Deck to see 'SaveLocker Test' with its art in your library."
+  else
+    echo "WARNING: could not add the 'SaveLocker Test' shortcut - the test daemon is still up." >&2
+  fi
 }
 
 # Seeds the Deck's side of a throwaway "Conflict Game" game. Mirrors testenv.ps1's own
@@ -276,7 +286,10 @@ cmd_clean() {
   # Must run BEFORE the binary is deleted below — dev-shortcut-remove deletes just the test entry
   # (other shortcuts untouched). A no-op if `conflict` was never run, so an ordinary clean on a
   # rig that never added the shortcut does nothing here.
-  if [ -x "$BIN" ]; then "$BIN" dev-shortcut-remove; fi
+  if [ -x "$BIN" ]; then
+    SAVELOCKER_ALLOW_TEST_COMMANDS=1 "$BIN" dev-shortcut-remove --kind ui
+    SAVELOCKER_ALLOW_TEST_COMMANDS=1 "$BIN" dev-shortcut-remove
+  fi
   rm -f "$TARBALL"
   if [ -d "$PREFIX" ]; then rm -rf "$PREFIX"; echo "removed $PREFIX"; fi
   # $XDG_DATA_HOME also holds cmd_conflict's own "conflict-save" folder — one rm -rf clears both.
