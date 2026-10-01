@@ -176,6 +176,15 @@ behave in ways that look like bugs.
   at build time, so `up` installs straight from the plugin repo's own `src\bin\Release\net462`
   output. `-PlaynitePluginRepo` / `$env:SAVELOCKER_PLAYNITE_PLUGIN_REPO` overrides the sibling-repo
   guess (`Get-PlaynitePluginRepo`), same convention and same reasoning as `-DeckyPluginRepo`.
+- **`testenv playnite-import` must not copy `config.json` verbatim.** An installed Playnite's
+  `config.json` stores `"DatabasePath": "%AppData%\\Playnite\\library"`, so a copied config makes the
+  portable instance open the **real** library. The command rewrites every path naming the source
+  folder to the portable root, then refuses if `DatabasePath` still points outside it. It also leaves
+  out every add-on folder whose `extension.yaml` carries SaveLocker-Playnite's Id (the real install
+  had both `SaveLocker` and a `SaveLocker.OLD-STALE-COPY`) and that Id's `ExtensionsData` settings,
+  which point at the real agent on :5178. Run it with every Playnite closed. It moves whatever the
+  portable folder already had into `pre-import-<stamp>` rather than overwriting it, and `clean`
+  does not undo it.
 - **The Deck is only awake when the maintainer wakes it** (CONTEXT.md). Every SSH/`scp` call the
   rig makes carries `-o ConnectTimeout=5` and every caller wraps it in try/catch, reporting
   "unreachable" rather than hanging on the OS default TCP timeout or aborting `up`/`down`/`status`
