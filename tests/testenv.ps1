@@ -673,6 +673,21 @@ function Install-DeckyPluginOnDeck {
         throw "decky plugin not built - run: .\tests\testenv.ps1 build -Only deck (then up again)"
     }
 
+    # Restarting plugin_loader reloads EVERY Decky plugin into Steam's UI, which stalls a Deck with many plugins
+    # for a while — so when the installed copy already matches this build byte for byte, leave it alone.
+    $remoteTarget = "~/homebrew/plugins/$deckyTestPluginName"
+    $local = @(Get-ChildItem -LiteralPath $deckyStagePath -Recurse -File | ForEach-Object {
+        $rel = $_.FullName.Substring($deckyStagePath.Length).TrimStart('\').Replace('\', '/')
+        "$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant())  $rel"
+    } | Sort-Object -CaseSensitive)
+    $remote = @(& ssh -o ConnectTimeout=5 $DeckHost "cd $remoteTarget 2>/dev/null && find . -type f -print0 | xargs -0 -r sha256sum | sed 's|  \./|  |'" |
+        Sort-Object -CaseSensitive)
+    if ($LASTEXITCODE -eq 0 -and $remote.Count -gt 0 -and
+        (Compare-Object $local $remote -CaseSensitive -SyncWindow 0).Count -eq 0) {
+        Write-Host "  '$deckyTestPluginName' is already installed and identical to this build - not reinstalling (Decky not restarted)"
+        return
+    }
+
     Say "installing '$deckyTestPluginName' to $DeckHost (separate from any real SaveLocker plugin)"
     $remoteStage = '~/.savelocker-testenv-decky-stage'
     & ssh -o ConnectTimeout=5 $DeckHost "rm -rf $remoteStage"
@@ -695,7 +710,6 @@ function Install-DeckyPluginOnDeck {
     # the difference between the plugin loading at all and Decky silently never starting it: a
     # root-owned SaveLocker-Test directory produced NO running process whatsoever, confirmed via
     # `ps -eo user,pid,cmd | grep -i savelocker` showing only the real, untouched SaveLocker.
-    $remoteTarget = "~/homebrew/plugins/$deckyTestPluginName"
     & ssh -o ConnectTimeout=5 $DeckHost "sudo rm -rf $remoteTarget && sudo cp -r $remoteStage $remoteTarget && sudo chown -R deck:deck $remoteTarget && sudo systemctl restart plugin_loader"
     if ($LASTEXITCODE -ne 0) {
         throw "install on $DeckHost failed - if sudo asked for a password, see this file's header " +
