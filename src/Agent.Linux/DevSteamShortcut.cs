@@ -4,11 +4,13 @@ using System.Text;
 namespace SaveLocker.Agent.Linux;
 
 /// <summary>
-/// Test-only: adds or removes ONE hardcoded non-Steam shortcut, "Conflict Game", pointing at
-/// <c>savelocker fake-game</c> (<see cref="Ui.UiApp"/>'s FakeGame screen). Wired only from
-/// <c>tests/testenv.ps1</c>'s <c>conflict</c>/<c>clean</c> commands (via testenv-deck.sh) — never
-/// reachable from the shipped agent's normal command surface, and never anything but this one
-/// fixed entry (see tasks/conflict-resolution-ui/plan.md).
+/// Test-only: adds or removes one of TWO hardcoded non-Steam shortcuts — "Conflict Game", pointing at
+/// <c>savelocker fake-game</c> (<see cref="Ui.UiApp"/>'s FakeGame screen), and "SaveLocker Test",
+/// pointing at the test build's own <c>savelocker ui</c>, with its library art in Steam's grid folder.
+/// Wired only from <c>tests/testenv.ps1</c>'s <c>up</c>/<c>conflict</c>/<c>clean</c> commands (via
+/// testenv-deck.sh) — never reachable from the shipped agent's normal command surface, and never
+/// anything but these fixed entries (see tasks/conflict-resolution-ui/plan.md). The two share one
+/// backup and one created-file marker, which stay until the last of them is removed.
 ///
 /// <para>
 /// <b>Deliberately does NOT parse-and-rewrite the whole file.</b> An earlier version read it with
@@ -77,13 +79,11 @@ public static class DevSteamShortcut
     /// <param name="extraArgs">Appended to the Exe after the kind's own subcommand.</param>
     /// <param name="launchOptions">Written as the entry's LaunchOptions, in place of the launch-gate wrapper.</param>
     public static int? Add(string prefixDir, bool withLaunchCommand = false, Kind? kind = null,
-        string? extraArgs = null, string? launchOptions = null)
-    {
-        kind ??= Conflict;
-        return AddEntry(prefixDir, withLaunchCommand, kind, extraArgs, launchOptions);
-    }
+        string? extraArgs = null, string? launchOptions = null) =>
+        AddTo(FindShortcutsVdf(), prefixDir, withLaunchCommand, kind ?? Conflict, extraArgs, launchOptions);
 
-    private static int? AddEntry(string prefixDir, bool withLaunchCommand, Kind kind, string? extraArgs, string? customLaunchOptions)
+    /// <summary><see cref="Add"/> against a given shortcuts.vdf (null: Steam was not found) — what the tests drive.</summary>
+    internal static int? AddTo(string? vdfPath, string prefixDir, bool withLaunchCommand, Kind kind, string? extraArgs, string? customLaunchOptions)
     {
         if (string.IsNullOrEmpty(prefixDir) || prefixDir.IndexOf('"') >= 0 || prefixDir.Any(char.IsControl))
         {
@@ -91,7 +91,6 @@ public static class DevSteamShortcut
             return null;
         }
 
-        var vdfPath = FindShortcutsVdf();
         if (vdfPath is null)
         {
             Console.Error.WriteLine("no Steam userdata directory found - is Steam installed and has it signed in at least once?");
@@ -181,8 +180,9 @@ public static class DevSteamShortcut
     }
 
     /// <summary>
-    /// Removes the "Conflict Game" shortcut again. Deletes just our entry's own bytes when they
-    /// can still be located, so shortcuts Steam or the user added meanwhile survive — the backup
+    /// Removes one of the fixed shortcuts again (and, for "SaveLocker Test", its art). Deletes just
+    /// our entry's own bytes when they can still be located, so shortcuts Steam or the user added
+    /// meanwhile survive — the backup
     /// is only restored when our entry is present but no longer structurally intact (e.g. a writer
     /// reordered its fields). Refuses to overwrite rather than silently discarding unknown changes.
     /// Safe to call even if <see cref="Add"/> never ran — it is then a no-op.
@@ -190,10 +190,21 @@ public static class DevSteamShortcut
     /// </summary>
     public static bool Remove(Kind? kind = null)
     {
-        kind ??= Conflict;
         var vdfPath = FindShortcutsVdf();
-        if (vdfPath is null) return true;
+        return vdfPath is null || RemoveFrom(vdfPath, kind ?? Conflict);
+    }
 
+    /// <summary><see cref="Remove"/> against a given shortcuts.vdf — what the tests drive.</summary>
+    internal static bool RemoveFrom(string vdfPath, Kind kind)
+    {
+        var removed = RemoveEntry(vdfPath, kind);
+        // Only the Deck UI entry has art: it goes on every path that leaves that entry gone, and never with the other.
+        if (removed && kind == DeckUi) RemoveArt(vdfPath);
+        return removed;
+    }
+
+    private static bool RemoveEntry(string vdfPath, Kind kind)
+    {
         var backupPath = vdfPath + BackupSuffix;
         var createdMarkerPath = vdfPath + CreatedMarkerSuffix;
 
@@ -242,10 +253,13 @@ public static class DevSteamShortcut
                 return true;
             }
             AtomicFile.WriteAllBytes(vdfPath, updated);
-            try { File.Delete(backupPath); } catch { }
-            // Kept while the file still holds another of our entries, so removing that one can still delete a file we created.
-            if (!FileContainsOwnExe(updated)) try { File.Delete(createdMarkerPath); } catch { }
-            RemoveArt(vdfPath);
+            // The backup and the created-file marker describe the file before EITHER of our entries: kept while
+            // the other is still here, so its removal can still restore or delete what was there before.
+            if (!OtherOwnEntryPresent(updated, kind))
+            {
+                try { File.Delete(backupPath); } catch { }
+                try { File.Delete(createdMarkerPath); } catch { }
+            }
             Console.WriteLine($"removed the '{kind.Name}' shortcut from {vdfPath} (other entries untouched).");
             return true;
         }
@@ -256,6 +270,12 @@ public static class DevSteamShortcut
         var marker = IndexOf(current, kind.AppNameMarker);
         if (marker < 0)
         {
+            // The file differs from the backup because our other entry is in it, not because anything is wrong.
+            if (OtherOwnEntryPresent(current, kind))
+            {
+                Console.WriteLine($"no '{kind.Name}' shortcut in {vdfPath} - nothing to remove.");
+                return true;
+            }
             if (!File.Exists(backupPath))
             {
                 if (File.Exists(createdMarkerPath))
@@ -391,7 +411,10 @@ public static class DevSteamShortcut
     public static int PaintArt(string grid, uint appId, string accent, string mark, Func<string, byte[]> layers)
     {
         var written = Art.SteamArt.WriteForShortcut(grid, appId, accent, mark, layers);
-        AtomicFile.WriteAllText(Path.Combine(grid, ArtListSuffix), string.Join(Environment.NewLine, Art.SteamArt.ShortcutFiles(appId).Select(f => f.Name)));
+        var list = Path.Combine(grid, ArtListSuffix);
+        var names = string.Join(Environment.NewLine, Art.SteamArt.ShortcutFiles(appId).Select(f => f.Name));
+        // The daemon calls this at every start: like the pictures, the list is only written when it would change.
+        if (!File.Exists(list) || File.ReadAllText(list) != names) AtomicFile.WriteAllText(list, names);
         return written;
     }
 
@@ -470,6 +493,10 @@ public static class DevSteamShortcut
         endExclusive = candidateEnd;
         return true;
     }
+
+    private static bool OtherOwnEntryPresent(byte[] data, Kind kind) =>
+        new[] { Conflict, DeckUi }.Any(other => other != kind &&
+            TryLocateOwnEntry(data, other, out var start, out var end) && EntryExeLooksOurs(data, start, end));
 
     // Only an entry whose Exe value points at the savelocker binary is ours to keep or splice —
     // the display name alone could belong to a real user shortcut.
@@ -651,7 +678,7 @@ public static class DevSteamShortcut
     /// </summary>
     private static int ComputeShortcutAppId(string exe, string appName)
     {
-        var crc = Ui.Screenshot.Crc32(Encoding.UTF8.GetBytes(exe + appName));
+        var crc = Crc32.Compute(Encoding.UTF8.GetBytes(exe + appName));
         return unchecked((int)(crc | 0x80000000u));
     }
 

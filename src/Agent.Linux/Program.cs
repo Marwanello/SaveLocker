@@ -151,12 +151,14 @@ static class Program
                     if (addKind == DevSteamShortcut.DeckUi)
                     {
                         var state = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
-                        if (string.IsNullOrEmpty(state) || state.IndexOf('"') >= 0 || !opts.ContainsKey("port"))
+                        // Parsed here rather than with ParsePort, whose fallback is the real agent's own port.
+                        if (string.IsNullOrEmpty(state) || state.IndexOf('"') >= 0 ||
+                            !int.TryParse(opts.GetValueOrDefault("port"), out var uiPort) || uiPort is < 1 or > 65535)
                         {
                             Console.Error.WriteLine("dev-shortcut-add --kind ui needs --port <n> and XDG_DATA_HOME set to the test state directory.");
                             return 2;
                         }
-                        uiArgs = $"--port {ParsePort(opts)}";
+                        uiArgs = $"--port {uiPort}";
                         uiLaunch = $"XDG_DATA_HOME=\"{state}\" %command%";
                     }
                     var appId = DevSteamShortcut.Add(prefix, opts.ContainsKey("with-launch-command"), addKind, uiArgs, uiLaunch);
@@ -524,10 +526,12 @@ static class Program
         }
 
         var artwork = Art.SteamArtHost.ArtworkDir(config);
-        var outcome = Art.SteamArt.Apply(artwork, accent, mark, Art.SteamArtHost.Layer);
-        if (!outcome.FolderFound)
+        Art.SteamArt.Outcome outcome;
+        // Apply creates the folder, so the one way left to fail is not being able to write there.
+        try { outcome = Art.SteamArt.Apply(artwork, accent, mark, Art.SteamArtHost.Layer); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Console.WriteLine($"Could not write to {artwork}. Use --out <dir> to write the pictures elsewhere.");
+            Console.Error.WriteLine($"Could not write to {artwork} ({ex.Message}). Use --out <dir> to write the pictures elsewhere.");
             return 1;
         }
         Console.WriteLine($"{accent}/{mark}: {outcome.Written} picture(s) written in {artwork}.");

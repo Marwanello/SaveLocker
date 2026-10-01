@@ -2,13 +2,15 @@ namespace SaveLocker.Agent.Linux.Art;
 
 /// <summary>
 /// Keeps the SaveLocker library art the installer bundles (<c>~/.local/share/SaveLocker/artwork/</c>) in the accent
-/// and mark the agent is showing, and repaints it when they change. Steam is never touched — and Steam keeps its
+/// and mark the agent is showing, and repaints it when they change. A real install never touches Steam (only the
+/// test rig's own shortcut is painted in Steam's grid folder, <see cref="WriteForShortcut"/>) — and Steam keeps its
 /// own copy of a picture once it is set (Set Custom Artwork hands it the image, not the path), so a repainted file
 /// reaches the library only when the person sets it again.
 /// <para>
 /// The folder is created if it is missing, so every install (release, test, or a tarball unpacked by hand) gets
-/// the art without running install.sh; where the installer already put the fixed art, that is what gets replaced. The four files are <c>capsule</c>, <c>capsule-wide</c>, <c>hero</c>
-/// and <c>logo</c>, the names the installer gives them.
+/// the art without running install.sh; where the installer already put the fixed art, that is what gets replaced.
+/// The four files are <c>capsule</c>, <c>capsule-wide</c>, <c>hero</c> and <c>logo</c>, the names the installer
+/// gives them.
 /// </para>
 /// </summary>
 public static class SteamArt

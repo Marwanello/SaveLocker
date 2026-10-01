@@ -35,6 +35,10 @@
     <!-- The Steam art compositor is pure too: layers in, PNG out. -->
     <Compile Include="..\..\src\Agent.Linux\Art\SteamArtRenderer.cs" Link="SteamArtRenderer.cs" />
     <Compile Include="..\..\src\Agent.Linux\Art\SteamArt.cs" Link="SteamArt.cs" />
+    <!-- The test rig's Steam shortcuts: byte splicing on a shortcuts.vdf the tests hand it. -->
+    <Compile Include="..\..\src\Agent.Linux\DevSteamShortcut.cs" Link="DevSteamShortcut.cs" />
+    <Compile Include="..\..\src\Agent.Linux\SteamRoots.cs" Link="SteamRoots.cs" />
+    <Compile Include="..\..\src\Agent.Linux\Crc32.cs" Link="Crc32.cs" />
     <!-- And the menu entry: plain file I/O, with the template it renders embedded under the same name. -->
     <Compile Include="..\..\src\Agent.Linux\DesktopEntry.cs" Link="DesktopEntry.cs" />
     <EmbeddedResource Include="..\..\packaging\linux\savelocker.desktop"
