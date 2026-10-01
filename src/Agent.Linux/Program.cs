@@ -145,7 +145,21 @@ static class Program
                 }
                 try
                 {
-                    var appId = DevSteamShortcut.Add(prefix, opts.ContainsKey("with-launch-command"), addKind);
+                    // The Deck UI entry must open the TEST agent: its daemon port, and its state directory (config, api
+                    // token) via XDG_DATA_HOME — without both, `savelocker ui` reads the real install and talks to :5178.
+                    string? uiArgs = null, uiLaunch = null;
+                    if (addKind == DevSteamShortcut.DeckUi)
+                    {
+                        var state = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+                        if (string.IsNullOrEmpty(state) || state.IndexOf('"') >= 0 || !opts.ContainsKey("port"))
+                        {
+                            Console.Error.WriteLine("dev-shortcut-add --kind ui needs --port <n> and XDG_DATA_HOME set to the test state directory.");
+                            return 2;
+                        }
+                        uiArgs = $"--port {ParsePort(opts)}";
+                        uiLaunch = $"XDG_DATA_HOME=\"{state}\" %command%";
+                    }
+                    var appId = DevSteamShortcut.Add(prefix, opts.ContainsKey("with-launch-command"), addKind, uiArgs, uiLaunch);
                     if (appId is null) return 1;
                     if (addKind == DevSteamShortcut.DeckUi)
                     {

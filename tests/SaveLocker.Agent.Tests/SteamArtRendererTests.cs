@@ -90,11 +90,18 @@ public class SteamArtRendererTests
     [Fact]
     public void DifferentMarks_DrawDifferentShapes()
     {
-        var pixel = Render("hero", Ember, EmberInk, "pixel");
-        var cart = Render("hero", Ember, EmberInk, "cartridge");
-        var card = Render("hero", Ember, EmberInk, "memcard");
+        var pixel = Render("capsule", Ember, EmberInk, "pixel");
+        var cart = Render("capsule", Ember, EmberInk, "cartridge");
+        var card = Render("capsule", Ember, EmberInk, "memcard");
         Assert.NotEqual(pixel.Rgba, cart.Rgba);
         Assert.NotEqual(cart.Rgba, card.Rgba);
+    }
+
+    [Fact]
+    public void TheHero_IsBackgroundOnly_TheSameForEveryMark()
+    {
+        // Steam lays the logo piece over the hero, so the hero carries no mark or wordmark of its own.
+        Assert.Equal(Render("hero", Ember, EmberInk, "pixel").Rgba, Render("hero", Ember, EmberInk, "memcard").Rgba);
     }
 
     [Fact]

@@ -138,7 +138,9 @@ cmd_up() {
   # SaveLocker art for the look in effect. Removed again by clean. Not fatal: the daemon is already up.
   # Steam only lists a new shortcut, and shows new art, after it restarts.
   echo "== adding a Steam shortcut 'SaveLocker Test' (the Deck UI) =="
-  if SAVELOCKER_ALLOW_TEST_COMMANDS=1 "$BIN" dev-shortcut-add --prefix "$PREFIX" --kind ui; then
+  # Removed first so an entry written by an older build (a different Exe or LaunchOptions) is replaced, not kept.
+  "$BIN" dev-shortcut-remove --kind ui >/dev/null 2>&1
+  if "$BIN" dev-shortcut-add --prefix "$PREFIX" --kind ui --port "$PORT"; then
     echo "Restart Steam on the Deck to see 'SaveLocker Test' with its art in your library."
   else
     echo "WARNING: could not add the 'SaveLocker Test' shortcut - the test daemon is still up." >&2

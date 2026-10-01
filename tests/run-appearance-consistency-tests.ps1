@@ -230,12 +230,15 @@ Check "notifications: NoticeAction.Game's route (game:<id>) and the conflicts ch
 # web/src/assets/marks/pixel-lock.svg. Nothing else ties the four lockups to that mark, so an edit to the mark
 # (or to a lockup by hand) would leave the Steam art quietly showing an old lock.
 $lockGeo = @(Geometry (Read-Src "web/src/assets/marks/pixel-lock.svg") | Where-Object { $_ -ne "width=32" -and $_ -ne "height=32" })
-foreach ($piece in @("capsule", "capsule-wide", "hero", "logo")) {
+foreach ($piece in @("capsule", "capsule-wide", "logo")) {
     $src = Read-Src "packaging/linux/artwork/src/$piece.svg"
     $inLockup = @(Geometry ([regex]::Match($src, '<g transform="translate[^"]*">(.*?)</g>', 'Singleline').Groups[1].Value))
     Check "steam art: '$piece.svg' carries the Pixel lock's exact shapes ($($lockGeo.Count) attributes)" ($lockGeo.Count -gt 12 -and (Same $lockGeo $inLockup))
     Check "steam art: '$piece.svg' uses only the default accent and no CSS variable" (($src -match '#e0533c') -and ($src -notmatch 'var\('))
 }
+# The hero is background only (Steam lays the logo piece over it), so it must carry no lock and no text.
+$heroSrc = Read-Src "packaging/linux/artwork/src/hero.svg"
+Check "steam art: 'hero.svg' is background only - no mark, no text" (($heroSrc -notmatch '<g transform="translate') -and ($heroSrc -notmatch '<text'))
 $png = @{ "capsule" = @(600, 900); "capsule-wide" = @(920, 430); "hero" = @(1920, 620) }
 foreach ($piece in $png.Keys) {
     $bytes = [System.IO.File]::ReadAllBytes((Join-Path $root "packaging/linux/artwork/dist/$piece.png"))

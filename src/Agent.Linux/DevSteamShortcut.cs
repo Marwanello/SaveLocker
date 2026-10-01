@@ -74,13 +74,16 @@ public static class DevSteamShortcut
     /// derived from the fixed name and exe (which embeds this machine's prefixDir) — or null if
     /// nothing was found or written.
     /// </summary>
-    public static int? Add(string prefixDir, bool withLaunchCommand = false, Kind? kind = null)
+    /// <param name="extraArgs">Appended to the Exe after the kind's own subcommand.</param>
+    /// <param name="launchOptions">Written as the entry's LaunchOptions, in place of the launch-gate wrapper.</param>
+    public static int? Add(string prefixDir, bool withLaunchCommand = false, Kind? kind = null,
+        string? extraArgs = null, string? launchOptions = null)
     {
         kind ??= Conflict;
-        return AddEntry(prefixDir, withLaunchCommand, kind);
+        return AddEntry(prefixDir, withLaunchCommand, kind, extraArgs, launchOptions);
     }
 
-    private static int? AddEntry(string prefixDir, bool withLaunchCommand, Kind kind)
+    private static int? AddEntry(string prefixDir, bool withLaunchCommand, Kind kind, string? extraArgs, string? customLaunchOptions)
     {
         if (string.IsNullOrEmpty(prefixDir) || prefixDir.IndexOf('"') >= 0 || prefixDir.Any(char.IsControl))
         {
@@ -99,12 +102,12 @@ public static class DevSteamShortcut
         // Steam's Exe field is a shell-style string, not just a bare path — the quoted binary
         // followed by its fixed argument is how every other non-Steam-shortcut tool (Boilr, Lutris,
         // etc.) passes a subcommand this way, since shortcuts.vdf has no separate "arguments" key.
-        var exeField = $"\"{exe}\" {kind.Args}";
+        var exeField = string.IsNullOrEmpty(extraArgs) ? $"\"{exe}\" {kind.Args}" : $"\"{exe}\" {kind.Args} {extraArgs}";
         // The AppID stays derived from exeField alone even when a launch command is written — the
         // LaunchOptions wrapper must not change which shortcut Steam maps this entry to.
         var appId = ComputeShortcutAppId(exeField, kind.Name);
         // The one place this invocation string is spelled — see LaunchOptions.cs's own doc comment.
-        var launchOptions = withLaunchCommand ? LaunchOptions.Invocation(exe) : string.Empty;
+        var launchOptions = customLaunchOptions ?? (withLaunchCommand ? LaunchOptions.Invocation(exe) : string.Empty);
 
         if (!File.Exists(vdfPath))
         {

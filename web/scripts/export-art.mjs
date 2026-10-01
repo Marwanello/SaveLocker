@@ -87,15 +87,15 @@ const svgDoc = (w, h, inner) =>
 const PIECES = {
   'capsule': { w: 600, h: 900, wash: true, mark: [64, 72, 170], word: [58, 600, 88], tag: [64, 656, 20, 'self-hosted save sync'] },
   'capsule-wide': { w: 920, h: 430, wash: true, mark: [86, 120, 190], word: [330, 250, 98], tag: [334, 302, 22, 'your saves, on every machine'] },
-  'hero': { w: 1920, h: 620, wash: true, mark: [110, 300, 200], word: [350, 440, 150],
-    tag: [356, 500, 24, 'hub-and-spoke save sync · windows · linux · steam deck'] },
+  // Background only: Steam lays the logo piece over the hero, so a mark or wordmark here would show twice.
+  'hero': { w: 1920, h: 620, wash: true, mark: null, word: null, tag: null },
   // Transparent: Steam lays it over the hero. White "Save" so it reads on that dark banner.
   'logo': { w: 1000, h: 340, wash: false, mark: [20, 60, 220], word: [280, 200, 128], tag: null },
 }
 
 const STEAM = Object.fromEntries(Object.entries(PIECES).map(([name, p]) => [name,
-  svgDoc(p.w, p.h, (p.wash ? backdrop(p.w, p.h) : '') + mark(...p.mark) + wordmark(...p.word) +
-    (p.tag ? tagline(...p.tag) : ''))]))
+  svgDoc(p.w, p.h, (p.wash ? backdrop(p.w, p.h) : '') + (p.mark ? mark(...p.mark) : '') +
+    (p.word ? wordmark(...p.word) : '') + (p.tag ? tagline(...p.tag) : ''))]))
 
 // ---- the layers the agent tints at run time ------------------------------------------------------------
 // One transparent picture per thing that changes with the look, drawn in placeholder colours that the agent
@@ -105,10 +105,11 @@ const STEAM = Object.fromEntries(Object.entries(PIECES).map(([name, p]) => [name
 function layerSvgs(name) {
   const p = PIECES[name]
   const out = {
-    white: svgDoc(p.w, p.h, wordmark(...p.word, '#ffffff', 'none') + (p.tag ? tagline(...p.tag) : '')),
-    accent: svgDoc(p.w, p.h, wordmark(p.word[0], p.word[1], p.word[2], 'none', '#ff0000')),
+    white: svgDoc(p.w, p.h, (p.word ? wordmark(...p.word, '#ffffff', 'none') : '') + (p.tag ? tagline(...p.tag) : '')),
+    accent: svgDoc(p.w, p.h, p.word ? wordmark(p.word[0], p.word[1], p.word[2], 'none', '#ff0000') : ''),
   }
-  for (const id of Object.keys(MARK_FILES)) out[`mark-${id}`] = svgDoc(p.w, p.h, mark(...p.mark, id, '#ff0000', '#0000ff'))
+  for (const id of Object.keys(MARK_FILES))
+    out[`mark-${id}`] = svgDoc(p.w, p.h, p.mark ? mark(...p.mark, id, '#ff0000', '#0000ff') : '')
   return out
 }
 
