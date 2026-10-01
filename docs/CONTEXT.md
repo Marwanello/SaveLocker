@@ -1678,6 +1678,9 @@ manually"). `DevSteamShortcut` is now unit-tested on a temp `shortcuts.vdf` (its
 <br>**Release notes for the next release must cover (Group 10):** the agent UI's Activity tab and offline queue; Sync all's
 N of M, Cancel and summary; games on the server with no folder here listed apart; `savelocker open` and the application-menu
 entry (added once by an agent that updates itself); `savelocker pull` exits non-zero when the server cannot be reached.
+<br>**Playnite plugin closed as done (2026-10-01).** Submitted as JosefNemec/PlayniteAddonDatabase#661; the maintainer
+put new plugin submissions on hold until Playnite 11's new add-on database. The listing, the self-update proof and four
+unchecked surfaces are now their own Backlog tasks (`tasks/playnite-*`).
 **Next action:** decide the Steam-art question above, then merge PR #54; run `group-9-verification.md` on the Windows rig;
 then the owed real-Deck session (Group 10's status row lists what it must cover — add "set custom artwork, change the
 accent, see what Steam shows").

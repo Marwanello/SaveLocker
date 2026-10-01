@@ -8,7 +8,6 @@ Not-yet-done work only. Each line is the task's title, linked to its plan or sum
 
 - [Decide the registration default (security)](tasks/registration-default/summary.md)
 - [Appearance follow-up: "N machines following" (left by Group 5)](tasks/appearance-follow-ups/summary.md)
-- [Playnite plugin](tasks/playnite-plugin/plan.md)
 - [v0.5.4 surfaces without hardware coverage](tasks/unverified-ui-surfaces/summary.md)
 - [Emulator saves](tasks/emulator-saves/plan.md)
 - [Native Linux save support](tasks/native-linux-saves/summary.md)
@@ -25,6 +24,8 @@ Not-yet-done work only. Each line is the task's title, linked to its plan or sum
 - [Art picker: choose which SteamGridDB game to pull from](tasks/art-picker-game-choice/summary.md)
 - [Art files outlive their game](tasks/art-cleanup-on-delete/summary.md)
 - [Interactive setup guide](tasks/interactive-setup-guide/summary.md)
+- [Playnite plugin: surfaces not yet checked on hardware](tasks/playnite-unverified-surfaces/summary.md)
+- [Playnite plugin: prove the self-update against a real release](tasks/playnite-self-update-proof/summary.md)
 - [Decky Phase 5 hardware proof](tasks/decky-phase5-proof/summary.md)
 - [QAM left-stick scrolling](tasks/decky-qam-scrolling/summary.md)
 - [Duplicate-shortcut warnings outside doctor](tasks/duplicate-shortcut-warnings/summary.md)
@@ -38,4 +39,5 @@ Not-yet-done work only. Each line is the task's title, linked to its plan or sum
 - [Steam shortcut and library art from the Decky plugin](https://github.com/Marwanello/SaveLocker-Decky/blob/steam-shortcut-and-art/docs/tasks/steam-shortcut-and-art/plan.md)
 - [A Linux agent's "conflict still unresolved" latch outlives the conflict](tasks/conflict-latch/summary.md)
 - [`post-exit-sync` while Sync all runs](tasks/post-exit-sync-during-sync-all/summary.md)
+- [Playnite add-on database submission (on hold until Playnite 11)](tasks/playnite-addon-submission/summary.md)
 - [Other stores' cloud flags](tasks/other-stores-cloud-flags/summary.md)
