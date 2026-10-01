@@ -496,7 +496,7 @@ static class Program
         var outcome = Art.SteamArt.Apply(artwork, accent, mark, Art.SteamArtHost.Layer);
         if (!outcome.FolderFound)
         {
-            Console.WriteLine($"No artwork folder at {artwork} — it is created by install.sh. Use --out <dir> to write the pictures elsewhere.");
+            Console.WriteLine($"Could not write to {artwork}. Use --out <dir> to write the pictures elsewhere.");
             return 1;
         }
         Console.WriteLine($"{accent}/{mark}: {outcome.Written} picture(s) written in {artwork}.");

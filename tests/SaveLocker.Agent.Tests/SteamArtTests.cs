@@ -28,10 +28,10 @@ public sealed class SteamArtTests : IDisposable
     private byte[] Read(string piece) => File.ReadAllBytes(Path.Combine(_dir, piece + ".png"));
 
     [Fact]
-    public void WithoutTheFolder_NothingIsCreated()
+    public void WithoutTheFolder_ItIsCreatedAndPainted()
     {
-        Assert.Equal(SteamArt.Outcome.None, Apply());
-        Assert.False(Directory.Exists(_dir));
+        Assert.Equal(new SteamArt.Outcome(true, 4), Apply());
+        Assert.True(Directory.Exists(_dir));
     }
 
     [Fact]

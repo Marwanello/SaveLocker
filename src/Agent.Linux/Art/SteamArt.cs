@@ -9,8 +9,8 @@ namespace SaveLocker.Agent.Linux.Art;
 /// own copy of a picture once it is set (Set Custom Artwork hands it the image, not the path), so a repainted file
 /// reaches the library only when the person sets it again.
 /// <para>
-/// Only a folder that already exists is repainted — it is there because the installer put the fixed art in it, and
-/// those are the old assets being replaced. The four files are <c>capsule</c>, <c>capsule-wide</c>, <c>hero</c>
+/// The folder is created if it is missing, so every install (release, test, or a tarball unpacked by hand) gets
+/// the art without running install.sh; where the installer already put the fixed art, that is what gets replaced. The four files are <c>capsule</c>, <c>capsule-wide</c>, <c>hero</c>
 /// and <c>logo</c>, the names the installer gives them.
 /// </para>
 /// </summary>
@@ -29,7 +29,7 @@ public static class SteamArt
     /// </summary>
     public static Outcome Apply(string dir, string accent, string mark, Func<string, byte[]> layers)
     {
-        if (!Directory.Exists(dir)) return Outcome.None;
+        Directory.CreateDirectory(dir);
 
         var colours = AppearancePalette.For(accent);
         var stamp = $"{accent.ToLowerInvariant()}|{mark.ToLowerInvariant()}|{MarkerVersion}";
