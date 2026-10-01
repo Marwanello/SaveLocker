@@ -1,3 +1,4 @@
+using SaveLocker.Shared;
 namespace SaveLocker.Agent.Linux.Art;
 
 /// <summary>The Linux side of <see cref="SteamArt"/>: where the layers and the artwork folder are, and when to repaint.</summary>
@@ -34,6 +35,7 @@ public static class SteamArtHost
                 if (outcome.Written > 0)
                     AgentLogger.Log($"Steam art: repainted {outcome.Written} picture(s) in {dir} as {look.Accent}/{look.Mark}. " +
                                     "Steam keeps its own copy of a picture — set them as custom artwork again to see them there.");
+                RepaintTestShortcut(config, look);
                 return outcome;
             }
         }
@@ -42,6 +44,33 @@ public static class SteamArtHost
             AgentLogger.LogException("SteamArtHost.Sync", ex);
             return SteamArt.Outcome.None;
         }
+    }
+
+    /// <summary>
+    /// Test rig only: testenv's "SaveLocker Test" shortcut leaves a record in THIS agent's state directory, and its art in
+    /// Steam's grid folder follows the look like the artwork folder does. A real install never has the record, so it
+    /// never writes into Steam. Repainted only when the look changed since the last paint, and Steam shows it after a restart.
+    /// </summary>
+    private static string? _testShortcutLook;
+
+    private static void RepaintTestShortcut(AgentConfig config, AppearanceDto look)
+    {
+        if (DevSteamShortcut.ReadArtRecord(config.StateDir) is not { } record || !Directory.Exists(record.GridDir)) return;
+        var stamp = $"{look.Accent}|{look.Mark}";
+        if (_testShortcutLook is null) { _testShortcutLook = stamp; if (!ArtLooksStale(record, look)) return; }
+        else if (_testShortcutLook == stamp) return;
+        DevSteamShortcut.PaintArt(record.GridDir, record.AppId, look.Accent, look.Mark, Layer);
+        _testShortcutLook = stamp;
+        AgentLogger.Log($"Steam art: repainted the test shortcut's library art as {look.Accent}/{look.Mark}. Restart Steam to see it.");
+    }
+
+    // At start the daemon cannot know which look the grid files were painted in, so compare one piece with a fresh render.
+    private static bool ArtLooksStale(DevSteamShortcut.ArtRecord record, AppearanceDto look)
+    {
+        var path = Path.Combine(record.GridDir, $"{record.AppId}p.png");
+        if (!File.Exists(path)) return true;
+        var colours = AppearancePalette.For(look.Accent);
+        return !File.ReadAllBytes(path).AsSpan().SequenceEqual(SteamArtRenderer.RenderPng("capsule", colours.Dark, colours.DarkOn, look.Mark, Layer));
     }
 
     /// <summary>Paint now, and again whenever the look changes. Rendering is off the caller's thread — the change

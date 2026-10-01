@@ -354,14 +354,44 @@ public static class DevSteamShortcut
     /// Writes the four library pictures for the shortcut under Steam's own names, and records which files, so
     /// <see cref="Remove"/> deletes exactly those. Test rig only: a real install is never given art this way.
     /// </summary>
-    public static void WriteArt(int appId, string accent, string mark, Func<string, byte[]> layers)
+    /// <param name="stateDir">The test agent's state directory: a record left there tells that agent's daemon to
+    /// repaint these files whenever the look changes (see <see cref="Art.SteamArtHost"/>). No real install ever has one.</param>
+    public static void WriteArt(int appId, string stateDir, string accent, string mark, Func<string, byte[]> layers)
     {
         var vdfPath = FindShortcutsVdf();
         if (vdfPath is null) return;
         var grid = GridDirOf(vdfPath);
-        var written = Art.SteamArt.WriteForShortcut(grid, unchecked((uint)appId), accent, mark, layers);
+        PaintArt(grid, unchecked((uint)appId), accent, mark, layers);
+        Directory.CreateDirectory(stateDir);
+        AtomicFile.WriteAllText(Path.Combine(stateDir, ArtRecordFile), System.Text.Json.JsonSerializer.Serialize(new ArtRecord(grid, unchecked((uint)appId))));
+        Console.WriteLine($"painted the shortcut's art in {grid}");
+    }
+
+    public sealed record ArtRecord(string GridDir, uint AppId);
+
+    /// <summary>In the test agent's state directory: which shortcut's grid art its daemon keeps in step with the look.</summary>
+    public const string ArtRecordFile = "test-shortcut-art.json";
+
+    public static ArtRecord? ReadArtRecord(string stateDir)
+    {
+        try
+        {
+            var path = Path.Combine(stateDir, ArtRecordFile);
+            return File.Exists(path) ? System.Text.Json.JsonSerializer.Deserialize<ArtRecord>(File.ReadAllText(path)) : null;
+        }
+        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or UnauthorizedAccessException) { return null; }
+    }
+
+    public static void ForgetArtRecord(string stateDir)
+    {
+        try { File.Delete(Path.Combine(stateDir, ArtRecordFile)); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+    /// <summary>Writes the four pieces for the shortcut and the list <see cref="Remove"/> deletes them by.</summary>
+    public static void PaintArt(string grid, uint appId, string accent, string mark, Func<string, byte[]> layers)
+    {
+        var written = Art.SteamArt.WriteForShortcut(grid, appId, accent, mark, layers);
         AtomicFile.WriteAllText(Path.Combine(grid, ArtListSuffix), string.Join(Environment.NewLine, written));
-        Console.WriteLine($"painted {written.Count} picture(s) in {grid}");
     }
 
     private static void RemoveArt(string vdfPath)

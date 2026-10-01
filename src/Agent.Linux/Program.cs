@@ -164,7 +164,7 @@ static class Program
                     if (addKind == DevSteamShortcut.DeckUi)
                     {
                         var look = config.EffectiveAppearance;
-                        DevSteamShortcut.WriteArt(appId.Value, look.Accent, look.Mark, Art.SteamArtHost.Layer);
+                        DevSteamShortcut.WriteArt(appId.Value, config.StateDir, look.Accent, look.Mark, Art.SteamArtHost.Layer);
                     }
                     Console.WriteLine($"APPID={appId}");
                     return 0;
@@ -185,7 +185,9 @@ static class Program
                 }
                 try
                 {
-                    return DevSteamShortcut.Remove(removeKind) ? 0 : 1;
+                    var removed = DevSteamShortcut.Remove(removeKind);
+                    if (removed && removeKind == DevSteamShortcut.DeckUi) DevSteamShortcut.ForgetArtRecord(config.StateDir);
+                    return removed ? 0 : 1;
                 }
                 catch (Exception ex)
                 {
