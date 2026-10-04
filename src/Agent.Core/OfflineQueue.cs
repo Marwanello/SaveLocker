@@ -74,6 +74,11 @@ public sealed class OfflineQueue
         }
     }
 
+    public bool Contains(Guid gameId)
+    {
+        lock (_lock) return _entries.ContainsKey(gameId);
+    }
+
     public void Remove(Guid gameId)
     {
         lock (_lock)

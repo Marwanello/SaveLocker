@@ -38,6 +38,9 @@ BIN="$PREFIX/savelocker"
 export SAVELOCKER_ALLOW_TEST_COMMANDS=1
 export XDG_DATA_HOME="${PREFIX}-state"
 STATE="$XDG_DATA_HOME/SaveLocker"
+# Desktop Mode's application menu entry for this test build. Its own file name, so the real install's
+# savelocker.desktop is never touched.
+TEST_DESKTOP_ENTRY="$HOME/.local/share/applications/savelocker-test.desktop"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -77,11 +80,22 @@ show_real_game_mappings() {
   grep -o '"SaveDirectory": *"[^"]*"' "$cfg" | sed -E 's/.*"SaveDirectory": *"([^"]*)"/\1/' |
   while IFS= read -r dir; do
     case "$dir" in
-      "$XDG_DATA_HOME"*) ;;
+      ""|"$XDG_DATA_HOME"*) ;;
       *) echo "WARNING: the test agent maps a real folder: $dir" >&2
          echo "  a pull from the test console would restore over it." >&2 ;;
     esac
   done || true
+}
+
+# A key the console no longer knows counts as no key: the console's data volume can be recreated
+# (testenv clean, or a new volume) while this state directory survives, and then every call from
+# the agent - heartbeats, polls, adding a game - answers 401. Only a definite 401 means re-register;
+# any other answer (including no answer) keeps the key.
+has_live_key() {
+  local key
+  key=$(grep -oi '"apikey": *"[^"]*"' "$STATE/config.json" 2>/dev/null | sed -E 's/.*: *"([^"]*)"/\1/')
+  [ -n "$key" ] || return 1
+  [ "$(curl -s -o /dev/null -m 5 -w '%{http_code}' -H "X-Api-Key: $key" "$SERVER_URL/api/games")" != 401 ]
 }
 
 cmd_up() {
@@ -96,8 +110,8 @@ cmd_up() {
   fi
 
   # Registering is idempotent from the caller's point of view but rotates the key, so only do it
-  # when this state directory has no credential yet.
-  if ! grep -qi '"apikey"' "$STATE/config.json" 2>/dev/null; then
+  # when this state directory has no credential the console still accepts.
+  if ! has_live_key; then
     echo "== registering '$MACHINE' against $SERVER_URL =="
     "$BIN" set-server --url "$SERVER_URL" >/dev/null || die "set-server failed"
     "$BIN" register --name "$MACHINE" | head -2
@@ -133,6 +147,39 @@ cmd_up() {
   fi
   echo "$out"
   show_real_game_mappings
+
+  # A Steam library entry for this test build's own Deck UI ("SaveLocker Test", runs `savelocker ui`), with the
+  # SaveLocker art for the look in effect. Removed again by clean. Not fatal: the daemon is already up.
+  # Steam only lists a new shortcut, and shows new art, after it restarts.
+  echo "== adding a Steam shortcut 'SaveLocker Test' (the Deck UI) =="
+  # Removed first so an entry written by an older build (a different Exe or LaunchOptions) is replaced, not kept.
+  "$BIN" dev-shortcut-remove --kind ui >/dev/null 2>&1
+  if "$BIN" dev-shortcut-add --prefix "$PREFIX" --kind ui --port "$PORT"; then
+    echo "Restart Steam on the Deck to see 'SaveLocker Test' with its art in your library."
+  else
+    echo "WARNING: could not add the 'SaveLocker Test' shortcut - the test daemon is still up." >&2
+  fi
+
+  # The agent only writes its own menu entry for the real install (DesktopEntry.cs), so the test build
+  # gets one here: the same entry, pointed at the test agent's state and port.
+  echo "== adding 'SaveLocker Test' to the Desktop Mode application menu =="
+  if mkdir -p "$(dirname "$TEST_DESKTOP_ENTRY")" && cat > "$TEST_DESKTOP_ENTRY" <<ENTRY
+[Desktop Entry]
+Type=Application
+Name=SaveLocker Test
+Comment=SaveLocker test agent (testenv) - not your real install
+Exec=env XDG_DATA_HOME=$XDG_DATA_HOME $BIN open --port $PORT
+Icon=$PREFIX/artwork/icon.png
+Terminal=false
+Categories=Utility;Game;
+StartupNotify=false
+ENTRY
+  then
+    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$(dirname "$TEST_DESKTOP_ENTRY")" >/dev/null 2>&1
+    echo "In Desktop Mode: application menu -> search 'SaveLocker Test'."
+  else
+    echo "WARNING: could not write $TEST_DESKTOP_ENTRY" >&2
+  fi
 }
 
 # Seeds the Deck's side of a throwaway "Conflict Game" game. Mirrors testenv.ps1's own
@@ -193,7 +240,7 @@ cmd_conflict() {
     echo "  seeded $CONFLICT_FILES file(s), ~$CONFLICT_SIZE_MB MB total, in $dir"
   fi
 
-  if ! grep -qi '"apikey"' "$STATE/config.json" 2>/dev/null; then
+  if ! has_live_key; then
     echo "== registering '$MACHINE' against $SERVER_URL =="
     "$BIN" set-server --url "$SERVER_URL" >/dev/null || die "set-server failed"
     "$BIN" register --name "$MACHINE" | head -2
@@ -276,7 +323,15 @@ cmd_clean() {
   # Must run BEFORE the binary is deleted below — dev-shortcut-remove deletes just the test entry
   # (other shortcuts untouched). A no-op if `conflict` was never run, so an ordinary clean on a
   # rig that never added the shortcut does nothing here.
-  if [ -x "$BIN" ]; then "$BIN" dev-shortcut-remove; fi
+  if [ -x "$BIN" ]; then
+    SAVELOCKER_ALLOW_TEST_COMMANDS=1 "$BIN" dev-shortcut-remove --kind ui
+    SAVELOCKER_ALLOW_TEST_COMMANDS=1 "$BIN" dev-shortcut-remove
+  fi
+  if [ -f "$TEST_DESKTOP_ENTRY" ]; then
+    rm -f "$TEST_DESKTOP_ENTRY"
+    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$(dirname "$TEST_DESKTOP_ENTRY")" >/dev/null 2>&1
+    echo "removed $TEST_DESKTOP_ENTRY"
+  fi
   rm -f "$TARBALL"
   if [ -d "$PREFIX" ]; then rm -rf "$PREFIX"; echo "removed $PREFIX"; fi
   # $XDG_DATA_HOME also holds cmd_conflict's own "conflict-save" folder — one rm -rf clears both.

@@ -1,6 +1,11 @@
 import type { components } from './api-types'
 
-export type View = 'overview' | 'games' | 'addGames' | 'conflicts' | 'settings'
+export type View = 'overview' | 'games' | 'addGames' | 'conflicts' | 'activity' | 'settings'
+export type SyncRun = components['schemas']['SyncRunDto']
+export type EnrollProgress = components['schemas']['EnrollProgressDto']
+export type OfflineQueueEntry = components['schemas']['OfflineQueueEntryDto']
+export type OpenPathResult = components['schemas']['OpenLogResponse']
+export type TestConnection = components['schemas']['TestConnectionDto']
 export type LeaseWarning = components['schemas']['LeaseWarningDto']
 export type AgentState = Omit<components['schemas']['AgentStateDto'],
   'gamesTracked' | 'savesBacked' | 'settleQuietSeconds'> & {

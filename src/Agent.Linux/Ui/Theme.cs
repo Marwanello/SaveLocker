@@ -32,7 +32,7 @@ static class Theme
     public static readonly Vector4 Hover = Rgb(0x202124);
     public static readonly Vector4 Fg    = Rgb(0xf0eee9);   // text
     public static readonly Vector4 Dim   = Rgb(0xa09d97);   // secondary text
-    public static readonly Vector4 Faint = Rgb(0x6b6862);   // tertiary text
+    public static readonly Vector4 Faint = Rgb(0x817e78);   // tertiary text
     public static readonly Vector4 Line  = Rgb(0x242427);   // border
     public static readonly Vector4 Row   = Rgb(0x1d1d20);   // table rule
 

@@ -1,4 +1,4 @@
-import type { Activity, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, Conflict, DeckyStatus, GameState, GameSyncMode, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, TrackedGame, VersionStats } from './types'
+import type { Activity, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, Conflict, DeckyStatus, EnrollProgress, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, TestConnection, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -12,11 +12,27 @@ function authHeaders(extra?: HeadersInit): HeadersInit | undefined {
   return { ...(extra as Record<string, string> | undefined), 'X-SaveLocker-Token': TOKEN }
 }
 
+/** A refused request. `needsConfirm` is the agent saying "a heuristic flagged this, and the same request
+ *  with `confirm` will be accepted" — read from its own field, never inferred from the message, so a hard
+ *  refusal can never be offered as something to click past. */
+export class ApiError extends Error {
+  readonly needsConfirm: boolean
+  constructor(message: string, needsConfirm = false) {
+    super(message)
+    this.name = 'ApiError'
+    this.needsConfirm = needsConfirm
+  }
+}
+
+/** The sentence the agent ends a confirmable refusal with (for clients older than `needsConfirm`). The
+ *  page asks the question in its own words, so it is dropped from what is shown. */
+export const CONFIRM_HINT = ' Re-send with confirm to use it anyway.'
+
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(path, { ...options, headers: authHeaders(options?.headers) })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
-    throw new Error(err.error ?? res.statusText)
+    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string; needsConfirm?: boolean }
+    throw new ApiError(err.error ?? res.statusText, err.needsConfirm === true)
   }
   return res.json() as Promise<T>
 }
@@ -29,11 +45,22 @@ function post<T = unknown>(path: string, body?: object): Promise<T> {
   })
 }
 
+/** A POST whose 409 is an answer, not a failure: "there is no desktop to show that on" carries the path
+ *  the page should show instead, in the same shape as the 200. Anything else still throws. */
+async function postShow(path: string): Promise<OpenPathResult> {
+  const res = await fetch(path, { method: 'POST', headers: authHeaders() })
+  if (res.ok || res.status === 409) return res.json() as Promise<OpenPathResult>
+  const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
+  throw new Error(err.error ?? res.statusText)
+}
+
 export const api = {
   state: () => req<AgentState>('/api/state'),
   candidates: () => req<Candidate[]>('/api/candidates'),
   rescan: () => post<Candidate[]>('/api/candidates/rescan'),
   enroll: (ids: number[]) => post<{ enrolled: number; skipped: number }>('/api/enroll', { ids }),
+  // Asked while enroll() is still open: which game and which step the agent is on.
+  enrollProgress: () => req<EnrollProgress>('/api/enroll/progress'),
   // identityCleared is true when the server URL moved to a different origin: the machine key, id
   // and TLS pin were issued by the old server and have been dropped, so this agent must register
   // or enroll again before it can sync.
@@ -42,6 +69,8 @@ export const api = {
     machineName?: string
     startWithWindows?: boolean
     settleQuietSeconds?: number
+    // Whether the Linux agent may stage a newer version by itself.
+    autoUpdate?: boolean
     // startWithWindows is the EFFECTIVE state read back from the platform, not what was asked for.
     // A refusal comes back as a failed request; this covers the quieter case where the entry was
     // written and then reverted underneath us.
@@ -83,6 +112,23 @@ export const api = {
   // Pull then push every tracked game, same as the tray menu's "Sync All". The response is a
   // one-line summary; progress for whichever game is mid-sync shows up on the next activity() poll.
   syncNow: () => post<{ message: string }>('/api/sync'),
+  // Stops a running Sync all AFTER the game it is on — that game always finishes, so a cancel can
+  // never leave a save folder half-replaced. `requested` is false when nothing was running.
+  cancelSync: () => post<{ requested: boolean }>('/api/sync/cancel'),
+  // What is waiting for the server to come back (pushes that could not be sent).
+  offlineQueue: () => req<OfflineQueueEntry[]>('/api/offline-queue'),
+  // Show agent.log / a game's save folder on this machine's desktop. `opened: false` means there was
+  // none (a headless box) — show `path` with a Copy button instead.
+  openLog: () => postShow('/api/open-log'),
+  openFolder: (id: string) => postShow(`/api/games/${id}/open-folder`),
+  testConnection: () => post<TestConnection>('/api/test-connection'),
+  // How many games the LAST scan suggested; null before any scan. Never scans by itself.
+  cachedCandidates: () => req<{ suggested: number | null }>('/api/candidates/cached'),
+  // Every version the server keeps of one game, newest first.
+  gameVersions: (id: string) => req<SaveVersion[]>(`/api/games/${id}/versions`),
+  resolvedConflicts: () => req<Conflict[]>('/api/conflicts/resolved'),
+  // How big a game's save folder is now — a plain directory walk, so fine to ask on opening the page.
+  localSize: (id: string) => req<{ bytes: number }>(`/api/games/${id}/local-size`),
   // Conflict resolution (tasks/conflict-resolution-ui/plan.md, Phase 6) — every open conflict on the
   // server this machine's key can see, not only this machine's own. Resolution itself already lives
   // in Agent.Core (Phase 0/1); this just gives it a UI both hosts can reach.

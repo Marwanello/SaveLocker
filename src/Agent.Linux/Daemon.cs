@@ -118,6 +118,7 @@ public sealed class Daemon : IAsyncDisposable
     public async Task RunAsync(CancellationToken ct)
     {
         AgentLogger.Log($"SaveLocker daemon starting — machine '{_config.MachineName}', server {_config.ServerUrl}");
+        DesktopEntry.OfferForInstalledAgent(_config, AgentLogger.Log);
 
         if (_config.DaemonApiPort != _apiPort)
         {
@@ -126,6 +127,7 @@ public sealed class Daemon : IAsyncDisposable
         }
 
         BackfillSteamAppIds();
+        Art.SteamArtHost.Watch(_config);
 
         _apiServer = new AgentApiServer(
             port: _apiPort,
@@ -174,7 +176,8 @@ public sealed class Daemon : IAsyncDisposable
             syncAll: () => _engine.SyncAllAsync(_config.Games),
             prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct),
             postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
-            syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct));
+            syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct),
+            openFile: DesktopEnvironment.TryOpenFile);
         _apiServer.Start();
 
         _drainer = new OfflineQueueDrainer(_offlineQueue, _config, () => _engine, AgentLogger.Log);

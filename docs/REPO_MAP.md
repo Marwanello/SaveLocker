@@ -119,7 +119,9 @@ SaveLocker/
 │   │   ├── AgentLogger.cs               # Rolling agent.log
 │   │   ├── AgentCli.cs                  # Shared one-shot commands (register/push/pull/status/…)
 │   │   ├── CliArgs.cs                   # Minimal command-line parser
-│   │   ├── Enroller.cs                  # Candidate → server game + tracked game
+│   │   ├── Enroller.cs                  # Candidate → server game + tracked game; publishes its progress
+│   │   │                               #   (GET /api/enroll/progress) for the Add games bar
+│   │   ├── FolderSize.cs                # Bytes under a save folder by plain enumeration (no hashing)
 │   │   ├── FileLockProbe.cs             # "Is anyone still writing?" — FileShare (Win) / /proc (Linux)
 │   │   ├── SteamLayout.cs               # The parts of Steam's on-disk layout that are identical on
 │   │   │                               #   every platform. FINDING Steam is not here — that is a
@@ -173,10 +175,23 @@ SaveLocker/
 │       ├── DesktopNotifier.cs           # freedesktop delivery for NotificationCenter: `notify-send --wait --print-id
 │       │                               #   --action`, one process per live notification (the connection that sent an
 │       │                               #   action's notification must outlive it — hardware-verified, see its doc)
+│       ├── AppWindow.cs · AppWindowPlan.cs # `savelocker open`: the agent UI in a Chromium `--app=` window (PATH, then
+│       │                               #   Flatpak, else xdg-open). The planner is pure and unit-tested; from the DAEMON
+│       │                               #   the window is started through `systemd-run --user`, never as its own child
+│       ├── DesktopEntry.cs              # The application-menu entry, offered once by the daemon for installs that
+│       │                               #   updated themselves (install.sh writes it otherwise) — same template
+│       ├── Art/                         # The bundled Steam library art (artwork/*.png) repainted in the look in effect,
+│       │                               #   at start and on every change: SteamArt (which files; one is rewritten only when a
+│       │                               #   fresh render differs), SteamArtRenderer (pure: tints and composites layers/*.png,
+│       │                               #   written by export-art.mjs — no SVG renderer here), SteamArtHost (the folder, the
+│       │                               #   daemon hook). A real install never touches Steam; the test rig's "SaveLocker Test"
+│       │                               #   shortcut (DevSteamShortcut) is the one whose grid art it repaints
 │       ├── Doctor.cs                    # Diagnoses the whole chain (the only UI a Deck has)
 │       ├── SystemdAutoStart.cs          # IAutoStart: systemd --user unit
 │       └── Ui/                          # `savelocker ui` — Game Mode surface (SDL + GL + ImGui)
-│           ├── UiApp.cs                 # Window, gamepad nav glue, the four screens
+│           ├── UiApp.cs                 # Window, gamepad nav glue, the rail's six sections
+│           ├── UiApp.Games.cs           # Tracked games (cover art → GL textures), one game's page, Activity and
+│           │                            #   the offline queue. Everything that changes anything asks the daemon
 │           ├── Theme.cs                 # THE source of truth for colour/type/metrics. Palette is
 │           │                            #   lifted from web/src/index.css so console + agent UI +
 │           │                            #   Deck stay in lockstep. No literal colour lives elsewhere
@@ -275,7 +290,11 @@ SaveLocker/
 │           ├── GamesView.tsx · GameDetailView.tsx · GameArt.tsx   # The Games tab: list/grid + search,
 │           │                           #   the per-game page (Sync/Push/Pull, "Check now"), art tile. Art comes
 │           │                           #   through `useArt.ts` (fetch with the token → blob URL), never `<img src>`
-│           ├── StatusHeader.tsx         # The strip on EVERY page: status + Sync all + live progress
+│           ├── StatusHeader.tsx         # The strip on EVERY page: status + Sync all (N of M, Cancel) + the last
+│           │                           #   run's summary — green only when every game synced
+│           ├── ActivityView.tsx         # The full feed, the offline queue, Open agent.log
+│           ├── VersionsCard.tsx · GameManagement.tsx   # The game page's server versions; its folder / process /
+│           │                           #   stop-tracking controls (a confirm is the agent's `needsConfirm`, never a sentence)
 │           ├── OverviewView.tsx · RecentCard.tsx   # Quick info only; "Recent" expands to the full log
 │           ├── AddGamesView.tsx · SettingsView.tsx
 │           ├── LaunchSetupCard.tsx      # The Steam launch-options command + Copy. Renders nothing
@@ -298,8 +317,12 @@ SaveLocker/
 ├── packaging/linux/
 │   ├── build-linux.sh                   # Self-contained publish → tarball (build on OLDEST glibc)
 │   ├── install.sh                       # Installs to ~/.local/share/SaveLocker — never /usr
-│   └── savelocker.service               # systemd --user unit. ONE file: SystemdAutoStart generates
-│                                       #   from this, so the packaged and generated units cannot drift
+│   ├── savelocker.service               # systemd --user unit. ONE file: SystemdAutoStart generates
+│   │                                   #   from this, so the packaged and generated units cannot drift
+│   ├── savelocker.desktop               # The application-menu entry (`savelocker open`), on the same rule:
+│   │                                   #   install.sh renders it with sed, DesktopEntry.cs the embedded copy
+│   └── artwork/                         # Steam art + the menu icon: src/*.svg → dist/*.png, written by
+│                                       #   `npm --prefix web run export:art` (web/scripts/export-art.mjs)
 │
 ├── tests/                               # Counts + baselines: [[Build and Run]] → Suite baseline
 │   ├── run-agent-tests.ps1             # Integration checks. Runs on BOTH OSes: PowerShell Core
@@ -319,8 +342,10 @@ SaveLocker/
 │   ├── sgdb-stub.py                    # A stand-in SteamGridDB for trying art BY HAND (any key works):
 │   │                                   #   `testenv up -Only console -ConsoleEnv …` points the console
 │   │                                   #   container at it. Build and Run → "Testing artwork"
-│   ├── SaveLocker.Agent.Tests/         # The one xUnit project (`dotnet test`, not in CI): PlayniteLibrary's LiteDB
-│   │                                   #   fixture, the OpenAPI sorter, and SvgPath (its source is linked in)
+│   ├── SaveLocker.Agent.Tests/         # The one xUnit project (`dotnet test`; CI's `unit-tests` job): PlayniteLibrary's
+│   │                                   #   LiteDB fixture, the OpenAPI sorter, the notification rules, offline sync, and —
+│   │                                   #   source linked in — SvgPath, AppWindowPlanner, DesktopEntry, the Steam art painter
+│   │                                   #   and the test rig's Steam shortcuts (DevSteamShortcut, on a temp shortcuts.vdf)
 │   ├── run-appearance-consistency-tests.ps1 # Source-only drift check (~1 s): the accent table in four places, the id
 │   │                                   #   lists the server validates, mark geometry vs the SVGs AND vs the two C# ports
 │   │                                   #   (MarkIcon.cs, AppMark.cs), the token files AND the Deck's Theme.cs, the

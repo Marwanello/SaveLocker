@@ -80,36 +80,9 @@ static class Screenshot
         output.Write(data);
 
         // The CRC covers the type and the data, but not the length.
-        var crc = Crc32(typeBytes, data);
+        var crc = Linux.Crc32.Compute(typeBytes, data);
         Span<byte> crcBytes = stackalloc byte[4];
         BinaryPrimitives.WriteUInt32BigEndian(crcBytes, crc);
         output.Write(crcBytes);
     }
-
-    private static readonly uint[] CrcTable = BuildCrcTable();
-
-    private static uint[] BuildCrcTable()
-    {
-        var table = new uint[256];
-        for (uint n = 0; n < 256; n++)
-        {
-            var c = n;
-            for (int k = 0; k < 8; k++)
-                c = (c & 1) != 0 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
-            table[n] = c;
-        }
-        return table;
-    }
-
-    private static uint Crc32(byte[] a, byte[] b)
-    {
-        var c = 0xFFFFFFFFu;
-        foreach (var x in a) c = CrcTable[(c ^ x) & 0xFF] ^ (c >> 8);
-        foreach (var x in b) c = CrcTable[(c ^ x) & 0xFF] ^ (c >> 8);
-        return c ^ 0xFFFFFFFFu;
-    }
-
-    // The standard CRC-32 (poly 0xEDB88320) above, table-accelerated instead of bit-by-bit —
-    // shared with DevSteamShortcut's AppID computation so the two don't carry independent copies.
-    internal static uint Crc32(byte[] data) => Crc32(data, []);
 }

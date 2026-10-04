@@ -42,6 +42,13 @@
     <EmbeddedResource Include="Ui\Fonts\JetBrainsMono-Regular.ttf" />
   </ItemGroup>
 
+  <!-- The Steam art's text and mark layers (written by web/scripts/export-art.mjs, ~220 KB): the agent tints
+       them for the accent and mark in effect and repaints the bundled library art (artwork/) with them. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Art\layers\*.png"
+                      LogicalName="SaveLocker.Agent.Linux.Art.layers.%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <!-- THE systemd unit. Embedded from packaging/ rather than duplicated in C#, because this file
        has two writers — install.sh drops the packaged copy, and `savelocker autostart` writes one
        itself — and they had already drifted. Now they emit the same text, with only the executable
@@ -50,6 +57,10 @@
   <ItemGroup>
     <EmbeddedResource Include="..\..\packaging\linux\savelocker.service"
                       LogicalName="SaveLocker.Agent.Linux.savelocker.service" />
+    <!-- The application-menu entry, on the same rule: install.sh renders this file with sed and
+         DesktopEntry.cs renders the embedded copy, so an install and a self-update write the same text. -->
+    <EmbeddedResource Include="..\..\packaging\linux\savelocker.desktop"
+                      LogicalName="SaveLocker.Agent.Linux.savelocker.desktop" />
   </ItemGroup>
 
 
@@ -62,6 +73,8 @@
     <PackageReference Include="Silk.NET.Input.Sdl" Version="2.22.0" />
     <PackageReference Include="Silk.NET.OpenGL" Version="2.22.0" />
     <PackageReference Include="Silk.NET.OpenGL.Extensions.ImGui" Version="2.22.0" />
+    <!-- Pure C# PNG/JPEG/WebP decode (no native library) for the cover art on the Deck's game rows. -->
+    <PackageReference Include="StbImageSharp" Version="2.30.15" />
   </ItemGroup>
 
   <!-- The daemon serves the same React agent UI as the tray (Decisions.md §2): it is the

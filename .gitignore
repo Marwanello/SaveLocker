@@ -9,6 +9,7 @@
 
 # Test scratch
 /.verify/
+/.art-preview/
 /crossos-work/
 
 # testenv's Deck settings — names your LAN (SSH host, this PC's IP), not the project's.

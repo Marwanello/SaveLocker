@@ -99,6 +99,17 @@ cmd_build_deck() {
   echo "artifact: $dest/$(basename "$tarball")"
 }
 
+# A key the console no longer knows counts as no key: the console's data volume can be recreated
+# (testenv clean, or a new volume) while this state directory survives, and then every call from
+# the agent - heartbeats, polls, adding a game - answers 401. Only a definite 401 means re-register;
+# any other answer (including no answer) keeps the key.
+has_live_key() {
+  local key
+  key=$(grep -oi '"apikey": *"[^"]*"' "$STATE/config.json" 2>/dev/null | sed -E 's/.*: *"([^"]*)"/\1/')
+  [ -n "$key" ] || return 1
+  [ "$(curl -s -o /dev/null -m 5 -w '%{http_code}' -H "X-Api-Key: $key" "$SERVER_URL/api/games")" != 401 ]
+}
+
 cmd_up() {
   [ -f "$DLL" ] || die "not built — run: testenv.ps1 build"
   cmd_down >/dev/null 2>&1
@@ -108,9 +119,9 @@ cmd_up() {
   fi
 
   # Registering is idempotent from the caller's point of view but rotates the key, so only do it
-  # when this state directory has no credential yet.
+  # when this state directory has no credential the console still accepts.
   # Case-insensitive: AgentConfig serialises with no naming policy, so the key on disk is "ApiKey".
-  if ! grep -qi '"apikey"' "$STATE/config.json" 2>/dev/null; then
+  if ! has_live_key; then
     echo "== registering '$MACHINE' against $SERVER_URL =="
     dotnet "$DLL" set-server --url "$SERVER_URL" >/dev/null || die "set-server failed"
     dotnet "$DLL" register --name "$MACHINE" | head -2
@@ -214,7 +225,7 @@ cmd_conflict() {
     echo "  seeded $CONFLICT_FILES file(s), ~$CONFLICT_SIZE_MB MB total, in $dir"
   fi
 
-  if ! grep -qi '"apikey"' "$STATE/config.json" 2>/dev/null; then
+  if ! has_live_key; then
     echo "== registering '$MACHINE' against $SERVER_URL =="
     dotnet "$DLL" set-server --url "$SERVER_URL" >/dev/null || die "set-server failed"
     dotnet "$DLL" register --name "$MACHINE" | head -2
@@ -222,6 +233,25 @@ cmd_conflict() {
 
   dotnet "$DLL" add-game --name "Conflict Game" --dir "$dir" || die "add-game failed"
   dotnet "$DLL" push "Conflict Game" || die "push failed"
+}
+
+# Seeds stale pictures in the artwork folder (standing in for the fixed art install.sh bundles), repaints them for
+# the look in effect, and shows what is on disk. The running daemon repaints them itself whenever the look changes
+# (Appearance in the console, or this machine's own setting), so the usual test is: run this once, change the accent,
+# run `art` again - or just list the folder - and see the pictures follow. XDG_DATA_HOME keeps it off a real install.
+cmd_art() {
+  [ -f "$DLL" ] || die "not built - run: testenv.ps1 build"
+  dotnet "$DLL" version | grep -q . || die "agent will not start"
+  SAVELOCKER_ALLOW_TEST_COMMANDS=1 dotnet "$DLL" dev-steam-art-fixture || die "the agent build predates the art feature - run: testenv.ps1 sync, then testenv.ps1 build"
+  dotnet "$DLL" steam-art || die "steam-art failed"
+  local dir="$XDG_DATA_HOME/SaveLocker/artwork"
+  echo "== $dir =="
+  ls -l --time-style=+%H:%M:%S "$dir"/*.png | sed 's|  */| |'
+  (cd "$dir" && sha256sum *.png | cut -c1-16,65-)
+  if [ -n "${SAVELOCKER_ARTIFACT_DIR:-}" ]; then
+    mkdir -p "$SAVELOCKER_ARTIFACT_DIR" && cp "$dir"/*.png "$SAVELOCKER_ARTIFACT_DIR"/ &&
+      echo "copied the pictures to $SAVELOCKER_ARTIFACT_DIR"
+  fi
 }
 
 cmd_status() {
@@ -375,6 +405,7 @@ case "$CMD" in
   test)        cmd_test ;;
   sync)        cmd_sync ;;
   conflict)    cmd_conflict ;;
+  art)         cmd_art ;;
   clean)       cmd_clean ;;
   *)           die "unknown command '$CMD'" ;;
 esac

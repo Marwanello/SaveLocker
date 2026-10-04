@@ -113,6 +113,173 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/candidates/cached": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CandidateCountDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/test-connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TestConnectionDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/local-size": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LocalSizeDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/open-folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OpenLogResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OpenLogResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/candidates/rescan": {
         parameters: {
             query?: never;
@@ -190,6 +357,41 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/enroll/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EnrollProgressDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1219,6 +1421,120 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sync/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CancelSyncResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/offline-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OfflineQueueEntryDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/open-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OpenLogResponse"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OpenLogResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sync": {
         parameters: {
             query?: never;
@@ -1694,6 +2010,105 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SaveVersionDto"][];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conflicts/resolved": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    days?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConflictDto"][];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/versions/{id}": {
         parameters: {
             query?: never;
@@ -2060,6 +2475,7 @@ export interface components {
         ActivityDto: {
             current: components["schemas"]["ActivitySnapshotDto"];
             recent: components["schemas"]["ActivityLogEntryDto"][];
+            lastRun?: null | components["schemas"]["SyncRunDto"];
         };
         ActivityLogEntryDto: {
             /** Format: date-time */
@@ -2075,6 +2491,18 @@ export interface components {
             bytesTotal: number;
             /** Format: date-time */
             startedAtUtc: null | string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            index: number;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            total: number;
+            /** @default false */
+            cancelRequested: boolean;
         };
         AgentAppearanceDto: {
             follow: boolean;
@@ -2113,6 +2541,20 @@ export interface components {
             platform: string;
             /** Format: uuid */
             machineId?: null | string;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            sentTodayBytes: number;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            offlineQueueCount: number;
+            /** @default plain-http */
+            serverTrust: string;
+            /** @default true */
+            autoUpdate: boolean;
         };
         AgentVersionDto: {
             currentVersion: string;
@@ -2137,6 +2579,13 @@ export interface components {
             path: string;
             parent: null | string;
             entries: components["schemas"]["BrowseEntry"][];
+        };
+        CancelSyncResponse: {
+            requested: boolean;
+        };
+        CandidateCountDto: {
+            /** Format: int32 */
+            suggested: null | number;
         };
         CandidateDto: {
             /** Format: int32 */
@@ -2171,6 +2620,7 @@ export interface components {
             startWithWindows: null | boolean;
             /** Format: int32 */
             settleQuietSeconds: null | number;
+            autoUpdate?: null | boolean;
         };
         ConflictDto: {
             /** Format: uuid */
@@ -2223,6 +2673,19 @@ export interface components {
         DismissWarningRequest: {
             gameName: null | string;
         };
+        EnrollProgressDto: {
+            active: boolean;
+            /** Format: int32 */
+            index: number;
+            /** Format: int32 */
+            total: number;
+            game: null | string;
+            step: string;
+            /** Format: int32 */
+            enrolled: number;
+            /** Format: int32 */
+            skipped: number;
+        };
         EnrollRequest: {
             ids: null | number[];
         };
@@ -2234,6 +2697,8 @@ export interface components {
         };
         ErrorResponse: {
             error: string;
+            /** @default false */
+            needsConfirm: boolean;
         };
         FolderRequest: {
             path: null | string;
@@ -2333,9 +2798,31 @@ export interface components {
             /** @default false */
             keepBoth: boolean;
         };
+        LocalSizeDto: {
+            /** Format: int64 */
+            bytes: number;
+        };
+        OfflineQueueEntryDto: {
+            /** Format: uuid */
+            gameId: string;
+            gameName: string;
+            /** Format: date-time */
+            queuedAt: string;
+            /** Format: int32 */
+            attempts: number;
+            /** Format: date-time */
+            lastAttemptAt: null | string;
+            force: boolean;
+            /** Format: int64 */
+            size: number;
+        };
         OkResponse: {
             /** @default true */
             ok: boolean;
+        };
+        OpenLogResponse: {
+            opened: boolean;
+            path: string;
         };
         PlaynitePluginCardStatusDto: {
             applicable: boolean;
@@ -2403,11 +2890,51 @@ export interface components {
         SyncNowResponse: {
             message: string;
         };
+        SyncRunDto: {
+            /** Format: date-time */
+            finishedAtUtc: string;
+            /** Format: int32 */
+            games: number;
+            /** Format: int32 */
+            uploaded: number;
+            /** Format: int32 */
+            alreadyCurrent: number;
+            /** Format: int32 */
+            conflicts: number;
+            /** Format: int32 */
+            failed: number;
+            /** Format: int64 */
+            bytesSent: number;
+            cancelled: boolean;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            pulled: number;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            queued: number;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            unreachable: number;
+        };
         SyncStatusDto: {
             inSync: boolean;
             hasOpenConflict: boolean;
             /** Format: uuid */
             conflictId?: null | string;
+        };
+        TestConnectionDto: {
+            ok: boolean;
+            /** Format: int32 */
+            status: null | number;
+            /** Format: int64 */
+            latencyMs: number;
+            error: null | string;
         };
         TrackedGameDto: {
             /** Format: uuid */
@@ -2422,6 +2949,10 @@ export interface components {
             hasSteamCloud: null | boolean;
             pushAfterExitEnabled?: null | boolean;
             installDir?: null | string;
+            /** Format: int64 */
+            lastPushBytes?: null | number;
+            /** Format: date-time */
+            lastPushAt?: null | string;
         };
         VersionStatsDto: {
             /** Format: int32 */

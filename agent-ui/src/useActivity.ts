@@ -36,9 +36,12 @@ async function fetchOnce() {
     const merged: Activity = {
       current: prev && same(prev.current, next.current) ? prev.current : next.current,
       recent: prev && same(prev.recent, next.recent) ? prev.recent : next.recent,
+      lastRun: prev && same(prev.lastRun, next.lastRun) ? prev.lastRun : next.lastRun,
     }
     snapshot = merged
-    if (!prev || merged.current !== prev.current || merged.recent !== prev.recent) listeners.forEach(l => l())
+    if (!prev || merged.current !== prev.current || merged.recent !== prev.recent || merged.lastRun !== prev.lastRun) {
+      listeners.forEach(l => l())
+    }
   } catch {
     // The agent restarts under this page while it applies an update; the next tick recovers.
   }
@@ -87,7 +90,15 @@ export function useActivityCurrent(): SyncActivitySnapshot | undefined {
 /** Whether anything is syncing. A boolean, so a component that only needs this (the Sync all button)
  *  re-renders when it flips and not on every byte of progress in between. */
 export function useActivityBusy(): boolean {
-  return useSyncExternalStore(subscribe, () => (snapshot?.current.phase ?? 'Idle') !== 'Idle')
+  // `total > 0` covers the gap between two games of a Sync all, when the phase is briefly Idle but the
+  // run is very much still going — without it the button would flicker enabled between games.
+  return useSyncExternalStore(subscribe, () =>
+    (snapshot?.current.phase ?? 'Idle') !== 'Idle' || (snapshot?.current.total ?? 0) > 0)
+}
+
+/** What the most recent Sync all did, until the next one starts. Unchanged by a progress tick. */
+export function useActivityLastRun(): Activity['lastRun'] {
+  return useSyncExternalStore(subscribe, () => snapshot?.lastRun)
 }
 
 /** The rolling history, newest first. Unchanged by a progress tick. */

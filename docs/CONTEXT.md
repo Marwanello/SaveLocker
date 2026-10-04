@@ -1626,7 +1626,68 @@ restorable from the Backups page; **the schedule changes for upgraders** — def
 and the hour is now **UTC**, not the container's local time (an unRAID template's `TZ` no longer shifts it) — so anyone who
 relied on nightly backups should set *daily* under Configuration; the SteamGridDB key is encrypted at rest, and a backup
 restored onto a different server needs it re-entered; a machine enrolled after a restored backup must re-enroll.
-**Next action:** run `group-9-verification.md` on the Windows rig, then merge PR #53; then Group 10.
+<br>**Group 10 shipped 2026-09-29 (branch `claude/group-10-ui-redesign-2083d5`, four commits: 10a `7f80be6`, 10c `a88fbe1`, 10d `f2d01d2`, 10b `81321d7`; no PR yet).**
+10a: agent UI Activity tab, offline queue, Sync-all "N of M" + cooperative Cancel (between games, `POST /api/sync/cancel`), last-run summary,
+per-game stats/versions/open-folder, resolved conflicts, "Sent today"; new server agent routes `games/{id}/versions` and `conflicts?resolvedSince=`.
+10b: Deck rail of six sections, Tracked games with cover art (StbImageSharp), Game and Activity screens, battery, Steam setup under Settings; `SvgPath` gained cubics.
+10c: `npm run export:art` (resvg, Archivo only) regenerates Steam art, PNG/ICO favicons, installer icon. 10d: `savelocker open` (Chromium `--app=`, Flatpak and xdg-open fallbacks, pure `AppWindowPlanner`) + `.desktop` entry from `install.sh`.
+Not verified: a real Deck, Windows tray/WebView2, the WA suites. **Gotcha:** `testenv clean` wipes the rig shared by all worktrees — it disrupted another worktree's process on :5188.
+<br>**Group 10 follow-ups (2026-09-30, branch `group-10-ui-redesign`).** (1) **Sync with the server down no longer throws:** `PullAsync` let the
+`HttpRequestException` out, so "Sync this game" answered 500 and the push that would have queued the save never ran (Sync all aborted the same way).
+It now reports *server unreachable*, returns false, and the push queues; the game page says "queued and will upload when it is back".
+(2) **Games not set up on this machine** (`TrackedGame.IsEnrolledHere` = has a save folder) are listed apart in the agent UI's Games tab
+("On this machine" / "On the server"), have no Sync/Push/Pull/Check now (the route refuses with 400), are skipped by Sync all and the Windows tray menu,
+and are not counted in "games tracked". (3) The games list no longer disappears with the server down (`App.tsx` fetched it together with the
+server-side conflicts). (4) Add games shows a real progress bar: `GET /api/enroll/progress`, fed by `Enroller` step by step.
+The Deck's Tracked games screen groups the same way ("On this Deck" / "On the server"), a game with no folder gets "Choose save folder" instead of Sync/Push/Pull, and the Games Tracked tile counts enrolled games only.
+`run-agent-tests` is now repeatable against a used dev server: it starts from an empty `.verify/` and names its games per run (`$stamp` was never set, so "TemplateGuard-" was one shared game).
+Tests: `OfflineSyncTests` (3, mutation-checked), `run-local-api-tests` 110/110, `run-agent-tests` 47/47, `run-health-tests` 29/29,
+`run-appearance-consistency-tests` 47/47, xunit 146/146. Verified in a browser against a scratch daemon and the dev server, **not** through
+`testenv` (Docker was not running).
+<br>**Steam art follows the look (2026-09-30).** The agent repaints the four library pictures the installer bundles
+(`~/.local/share/SaveLocker/artwork/`: capsule, capsule-wide, hero, logo — only if that folder exists) in the accent and mark in effect, at start and
+on every change (`Agent.Linux/Art`: `SteamArt`, `SteamArtRenderer`, `SteamArtHost`). Steam and its shortcuts are **not** touched — and **Steam keeps its
+own copy of a picture once it is set**, so the library shows a new look only after the person sets the files as custom artwork again (review, below).
+No SVG renderer in the agent: `export-art.mjs` also writes text and mark **layers** (`src/Agent.Linux/Art/layers/`,
+~220 KB, embedded) and the agent tints and composites them — for Ember/Pixel lock it reproduces the bundled PNGs (test-held). `savelocker steam-art
+[--out dir]`; testenv: `.\tests\testenv.ps1 art` (XDG_DATA_HOME keeps it in the rig's state). Not verified on a real Deck. Deck rig: `testenv.ps1 up` also adds a "SaveLocker Test" Steam shortcut (`savelocker ui`) with the art in its grid folder (`dev-shortcut-add --kind ui`). It also writes a "SaveLocker Test" Desktop Mode menu entry (`~/.local/share/applications/savelocker-test.desktop`, `savelocker open --port 5177` on the test state; the agent only writes its own entry for the real install). `clean` removes the shortcut, the menu entry and "Conflict Game".
+<br>**PR #54 reviewed 2026-09-30, twice; every finding fixed and pushed onto the PR's branch.** The one that
+mattered: the follow-up's `PullAsync` returned `false` for an unreachable server, and the tray's Force Pull, a dashboard
+pull command and the CLI all reported that as a pull that went through — it is a `PullOutcome` now. Also: two test checks
+that could not fail, a green "Synced 6 games · All clear" after a run that reached nothing, a "no desktop" test that a
+headless box passed, a notification click starting the browser inside the unit's cgroup (now through `systemd-run --user`,
+`xdg-open` as the fallback — **unverified on a Deck**), and the Deck's game page showing the previous game's data.
+`ErrorResponse.needsConfirm`, `SyncRunDto.pulled/queued/unreachable` and `?machineId=` on the resolved-conflicts route are
+additive. Detail, counts and what was not verified: `tasks/checkpoint-ui/implementation-grouping.md` → Group 10 → *Review fixes*.
+**Not seen in a browser:** the `testenv` rig was in use (its Windows agent mapped to real save folders) and was left alone.
+<br>**Second pass — the two Steam-art commits.** The premise of the second one was wrong: *Set Custom Artwork* hands Steam the
+image, not its path, so "set them once and they stay current" cannot happen — the installer's text, the CLI reference and the
+log line now say to set them again after a look change. **Open decision:** keep that (Steam untouched, one manual step per
+look change) or go back to painting the shortcut's own `grid/` files as `071d1f8` did (automatic, but writes inside Steam's
+folder). Also fixed: the artwork folder is this agent's own (`config.StateDir`), so a `--config` second agent cannot repaint
+the installed one's pictures; `steam-art --accent/--mark` refuses an unknown id instead of painting Ember under the typed
+name; an unchanged look no longer rewrites the marker at every start.
+<br>**Third pass (2026-10-01) — the eight commits after that** (background-only hero, render-and-compare instead of the
+marker, the rig's "SaveLocker Test" shortcut with art and its Desktop Mode entry, Decky skip-reinstall). Fixed: the two test
+shortcuts share one backup, created-file marker and grid folder, and `Remove` still assumed one — removing "Conflict Game"
+deleted "SaveLocker Test"'s art, removing "SaveLocker Test" left its art in Steam's `grid/` whenever the entry was already
+gone or the file SaveLocker created was deleted, and removing an absent one beside the other was a refusal ("delete the backup
+manually"). `DevSteamShortcut` is now unit-tested on a temp `shortcuts.vdf` (its CRC-32 moved out of `Ui.Screenshot` into
+`Crc32.cs` so the tests can link it). Also: `steam-art` crashed instead of reporting a folder it cannot write; `--kind ui
+--port abc` fell back to the real agent's :5178. Note: every repaint now renders all four pieces (~0.7 s here) to compare.
+<br>**Fourth pass (2026-10-04) — the nine commits after that** (appearance follow-ups, `playnite-import`, the Deck's enroll
+progress bar). Fixed: `has_live_key` in `testenv-deck.sh`/`testenv.sh` had a literal 0x01 byte for sed's `\1`, so it never
+sent the stored key — check for that byte when a sed backreference is written by a tool; the Deck's progress line and the new
+401 message used `—`/`…`/`→`, which Game Mode's Latin-1 font draws as boxes.
+<br>**Release notes for the next release must cover (Group 10):** the agent UI's Activity tab and offline queue; Sync all's
+N of M, Cancel and summary; games on the server with no folder here listed apart; `savelocker open` and the application-menu
+entry (added once by an agent that updates itself); `savelocker pull` exits non-zero when the server cannot be reached.
+<br>**Playnite plugin closed as done (2026-10-01).** Submitted as JosefNemec/PlayniteAddonDatabase#661; the maintainer
+put new plugin submissions on hold until Playnite 11's new add-on database. The listing, the self-update proof and four
+unchecked surfaces are now their own Backlog tasks (`tasks/playnite-*`).
+<br>**Checkpoint UI closed as done (2026-10-04)**, merging with PR #54; the Group 9 `testenv` checklist is its own
+Backlog task now (`tasks/checkpoint-ui-group-9-check/`).
+**Next action:** merge PR #54.
 
 ---
 

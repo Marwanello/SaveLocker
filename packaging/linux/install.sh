@@ -52,7 +52,7 @@ fi
 copy_failed=0
 while IFS= read -r -d '' item; do
   cp -r --remove-destination "${item}" "${prefix}/" || copy_failed=1
-done < <(find "${src}" -maxdepth 1 -mindepth 1 ! -name install.sh ! -name savelocker.service -print0)
+done < <(find "${src}" -maxdepth 1 -mindepth 1 ! -name install.sh ! -name savelocker.service ! -name savelocker.desktop -print0)
 
 if [ "${copy_failed}" -ne 0 ]; then
   echo "!! Install FAILED: could not replace files in ${prefix}"
@@ -65,6 +65,25 @@ chmod +x "${prefix}/savelocker"
 
 ln -sf "${prefix}/savelocker" "${bindir}/savelocker"
 echo "==> Linked ${bindir}/savelocker"
+
+# A SaveLocker entry in the desktop's application menu (KDE's, on a Deck in Desktop Mode): `savelocker open`
+# shows the agent UI in its own window. Deliberately NOT added to Steam — Game Mode shows Steam shortcuts,
+# and there the gamepad UI (`savelocker ui`, step 4 below) stays the way in. A menu entry is a bonus like
+# the auto-start unit: failing to write it never fails the install.
+#
+# Rendered from the packaged savelocker.desktop, which the agent embeds too: an install that updates
+# itself never runs this script, so the daemon writes the same entry once (DesktopEntry.cs). One
+# template, two writers, only the prefix substituted — the rule the systemd unit follows.
+appsdir="${HOME}/.local/share/applications"
+prefix_for_sed="$(printf '%s' "${prefix}" | sed 's/[&|\\]/\\&/g')"
+if mkdir -p "${appsdir}" 2>/dev/null \
+   && sed "s|@PREFIX@|${prefix_for_sed}|g" "${src}/savelocker.desktop" > "${appsdir}/savelocker.desktop" 2>/dev/null
+then
+  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "${appsdir}" >/dev/null 2>&1 || true
+  echo "==> Added SaveLocker to the application menu"
+else
+  echo "!! could not write ${appsdir}/savelocker.desktop — open the UI with:  savelocker open"
+fi
 
 # Auto-start is a BONUS, never a reason to fail the install. The agent is already installed and
 # usable by this point, so every failure below is a warning with a next step — not an abort.
@@ -171,13 +190,17 @@ Installed. Next:
      the game's own Proton prefix, enroll, and copy the launch command from step 3.
      This is the last Desktop Mode step you need to take.
 
-  5. (Optional) Replace the grey box with proper SaveLocker library art. The
-     images are bundled at:
+  5. (Optional) Library art. The images are bundled at:
 
          ${HOME}/.local/share/SaveLocker/artwork/
 
+     The SaveLocker agent repaints them in your accent colour and logo (Settings ->
+     Appearance) at start and whenever you change either; `savelocker steam-art`
+     does it on demand. Steam is not touched, and it keeps its own copy of a picture
+     once you set it -- so set them now, and again after changing the look:
+
      In your library, right-click SaveLocker -> Manage -> Set Custom Artwork, and
-     set each of these (they are already sized for Steam):
+     pick each of these (they are already sized for Steam):
 
          capsule.png       the vertical grid tile (portrait)
          capsule-wide.png  the wide/horizontal capsule

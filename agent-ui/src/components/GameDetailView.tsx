@@ -1,36 +1,54 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Conflict, GameState, GameSyncMode, SyncStatus, TrackedGame, View } from '../types'
+import type { Conflict, GameState, GameSyncMode, SaveVersion, SyncStatus, TrackedGame, View } from '../types'
 import { api } from '../api'
 import { formatAgo, formatBytes, formatDateTime } from '../format'
 import { refreshActivity, useActivityBusy } from '../useActivity'
 import { GameArt } from './GameArt'
+import { GameManagement } from './GameManagement'
+import { VersionsCard } from './VersionsCard'
 import { Banner } from './ui/Banner'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
 import { Chip } from './ui/Chip'
+import { Stat } from './ui/Stat'
 import { Toast } from './ui/Toast'
 
 interface Props {
   game: TrackedGame
   conflicts: Conflict[]
   machineName: string
+  platform: string | undefined
   onBack: () => void
   onNavigate: (v: View) => void
   /** Called when a sync this page started has finished, so the shell can refresh and, if it turned up
    *  a conflict, raise the same pop-up Sync all does. */
   onSynced: () => void
+  /** The game's folder or process names changed — the shell re-reads the list. */
+  onChanged: () => void
+  /** The game was removed from this device: the shell leaves its page. */
+  onRemoved: () => void
 }
 
 const onOff = (v: boolean | null | undefined, unset: string) => (v == null ? unset : v ? 'On' : 'Off')
+
+const POLICY: Record<string, string> = {
+  Manual: 'Ask me',
+  NewestWins: 'Newest wins',
+  PreferMachine: 'Prefer one machine',
+}
 
 /**
  * One tracked game: what the server holds, what this machine watches, and Sync / Push now / Pull
  * latest. The server's side is one small request (`/state`) made when the page opens. The save
  * folder is only hashed on "Check now" — `sync-status` walks every file, so it is never automatic.
  */
-export function GameDetailView({ game, conflicts, machineName, onBack, onNavigate, onSynced }: Props) {
+export function GameDetailView({ game, conflicts, machineName, platform, onBack, onNavigate, onSynced, onChanged, onRemoved }: Props) {
   const busy = useActivityBusy()
   const [state, setState] = useState<GameState | null>(null)
+  const [versions, setVersions] = useState<SaveVersion[] | null>(null)
+  const [localBytes, setLocalBytes] = useState<number | null>(null)
+  // Bumped after every sync this page runs so the versions list follows what that sync just did.
+  const [syncCount, setSyncCount] = useState(0)
   const [stateError, setStateError] = useState<string | null>(null)
   const [pending, setPending] = useState<GameSyncMode | 'check' | null>(null)
   const [check, setCheck] = useState<SyncStatus | null>(null)
@@ -44,7 +62,18 @@ export function GameDetailView({ game, conflicts, machineName, onBack, onNavigat
 
   useEffect(() => { setState(null); setCheck(null); load() }, [load])
 
+  // A plain directory walk on the agent (no hashing), so asking on open — and after a sync — is fine.
+  // Never on a timer: the point is what is here now, not a live gauge.
+  useEffect(() => {
+    let live = true
+    api.localSize(game.id).then(s => { if (live) setLocalBytes(s.bytes) }).catch(() => { if (live) setLocalBytes(null) })
+    return () => { live = false }
+  }, [game.id, syncCount, game.path])
+
   const inConflict = conflicts.some(c => c.gameId === game.id)
+  // Without a save folder here there is nothing to push, pull or compare — the game only exists on the
+  // server until one is chosen (Games groups it apart for the same reason).
+  const enrolled = !!game.path
 
   async function run(mode: GameSyncMode) {
     setPending(mode)
@@ -57,6 +86,7 @@ export function GameDetailView({ game, conflicts, machineName, onBack, onNavigat
       setToast({ text: err instanceof Error ? err.message : 'Sync failed.', failed: true })
     } finally {
       setPending(null)
+      setSyncCount(n => n + 1)
       refreshActivity()
       load()
       onSynced()
@@ -87,6 +117,7 @@ export function GameDetailView({ game, conflicts, machineName, onBack, onNavigat
         <div className="sl-gamehead__main">
           <h2 className="sl-gamehead__title">{game.name}</h2>
           <div className="sl-gamehead__chips">
+            {!enrolled && <Chip tone="warn">Not set up on this device</Chip>}
             {inConflict && <Chip tone="crit">Conflict</Chip>}
             {heldElsewhere && <Chip tone="warn">Checked out by {holder}</Chip>}
             {check && !check.hasOpenConflict && (check.inSync ? <Chip tone="ok">Matches the cloud</Chip> : <Chip tone="warn">Differs from the cloud</Chip>)}
@@ -103,16 +134,47 @@ export function GameDetailView({ game, conflicts, machineName, onBack, onNavigat
         />
       )}
 
-      <div className="sl-actions">
-        <Button variant="primary" disabled={locked} onClick={() => void run('sync')}>
-          {pending === 'sync' ? 'Syncing…' : 'Sync this game'}
-        </Button>
-        <Button disabled={locked} onClick={() => void run('push')}>{pending === 'push' ? 'Pushing…' : 'Push now'}</Button>
-        <Button disabled={locked} onClick={() => void run('pull')}>{pending === 'pull' ? 'Pulling…' : 'Pull latest'}</Button>
-        <Button variant="quiet" disabled={locked} onClick={() => void checkNow()}>
-          {pending === 'check' ? 'Checking…' : 'Check now'}
-        </Button>
-      </div>
+      {enrolled ? (
+        <div className="sl-actions">
+          <Button variant="primary" disabled={locked} onClick={() => void run('sync')}>
+            {pending === 'sync' ? 'Syncing…' : 'Sync this game'}
+          </Button>
+          <Button disabled={locked} onClick={() => void run('push')}>{pending === 'push' ? 'Pushing…' : 'Push now'}</Button>
+          <Button disabled={locked} onClick={() => void run('pull')}>{pending === 'pull' ? 'Pulling…' : 'Pull latest'}</Button>
+          <Button variant="quiet" disabled={locked} onClick={() => void checkNow()}>
+            {pending === 'check' ? 'Checking…' : 'Check now'}
+          </Button>
+        </div>
+      ) : (
+        <Banner
+          tone="warn"
+          title={`${game.name} has no save folder on this device`}
+          detail="It is on your server, but this machine does not sync it yet. Choose its save folder below to start."
+        />
+      )}
+
+      {enrolled && <div className="sl-grid4">
+        <Stat
+          label="Save here"
+          value={localBytes === null ? '…' : formatBytes(localBytes)}
+          context="in the save folder now"
+        />
+        <Stat
+          label="Last push"
+          value={game.lastPushAt ? formatAgo(game.lastPushAt) : 'None yet'}
+          context={state ? `Conflicts: ${POLICY[state.game.conflictPolicy ?? 'Manual'] ?? state.game.conflictPolicy}` : '…'}
+        />
+        <Stat
+          label="Versions"
+          value={versions ? versions.length : '…'}
+          context={state?.game.retainVersions ? `keeps the newest ${state.game.retainVersions}` : 'server default retention'}
+        />
+        <Stat
+          label="Sent last push"
+          value={game.lastPushBytes != null ? formatBytes(game.lastPushBytes) : '—'}
+          context="only what changed goes over"
+        />
+      </div>}
 
       <div className="sl-grid2">
         <Card title="On the server">
@@ -152,8 +214,21 @@ export function GameDetailView({ game, conflicts, machineName, onBack, onNavigat
             <dd>{onOff(game.pullBeforeLaunchEnabled, 'Default')}</dd>
             <dt>Push after exit</dt>
             <dd>{onOff(game.pushAfterExitEnabled, 'On (default)')}</dd>
+            <dt>Excludes</dt>
+            <dd className="sl-mono">
+              {state?.game.excludeGlobs && state.game.excludeGlobs.length > 0
+                ? state.game.excludeGlobs.join('  ')
+                : 'None — every file in the folder is saved'}
+            </dd>
+            <dt>Launch</dt>
+            <dd>{platform === 'Linux' ? 'Through the Steam launch command (Settings)' : 'Watched by process name'}</dd>
           </dl>
         </Card>
+      </div>
+
+      <div className="sl-grid2">
+        <VersionsCard gameId={game.id} headId={state?.head?.id ?? null} refreshKey={syncCount} onLoaded={setVersions} />
+        <GameManagement game={game} platform={platform} onChanged={onChanged} onRemoved={onRemoved} />
       </div>
 
       {toast && (

@@ -139,9 +139,59 @@ public class SvgPathTests
         Assert.Equal(new[] { new Vector2(0, 0), new Vector2(1.5f, 0.5f) }, Only("M0 0L1.5.5").Points);
     }
 
+    // ── cubic Bezier (added for lucide's gamepad-2, whose body outline is built from them) ───────
+
+    [Fact]
+    public void RelativeCubic_ControlPointsAreRelativeToTheSegmentStart_NotToEachOther()
+    {
+        var pts = Only("M2 2c1 1 2 2 3 3").Points;
+        Assert.Equal(new Vector2(2, 2), pts[0]);
+        Assert.Equal(new Vector2(5, 5), pts[^1]);
+        // All four control points are collinear on y = x, so every flattened point must lie on it.
+        Assert.All(pts, p => Assert.InRange(p.X - p.Y, -1e-3f, 1e-3f));
+    }
+
+    [Fact]
+    public void Cubic_ArcsThroughItsControlPoints_AndEndsExactlyOnTheEndPoint()
+    {
+        // Control points 10 below the chord: the curve's midpoint is 3/4 of the way there (3 * 0.125 * 10 * 2).
+        var (min, max) = Bounds(Only("M0 0c0 10 10 10 10 0"));
+        Assert.Equal(Vector2.Zero, min);
+        Assert.Equal(10f, max.X, 3);
+        Assert.InRange(max.Y, 7.5f - Tol, 7.5f + Tol);
+        Assert.Equal(new Vector2(10, 0), Only("M0 0c0 10 10 10 10 0").Points[^1]);
+    }
+
+    [Fact]
+    public void AbsoluteCubic_And_ImplicitRepeats_AreRead()
+    {
+        Assert.Equal(new Vector2(4, 0), Only("M0 0C1 1 3 1 4 0").Points[^1]);
+        // A bare argument set after `c` repeats it, from where the previous segment ended.
+        var pts = Only("M0 0c1 1 2 1 3 0 1 1 2 1 3 0").Points;
+        Assert.Equal(new Vector2(6, 0), pts[^1]);
+    }
+
+    [Fact]
+    public void LucideGamepad2_Flattens_AsOneClosedOutline_WithTheRightExtent()
+    {
+        var body = Only(
+            "M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z");
+        Assert.True(body.Closed);
+        var (min, max) = Bounds(body);
+        Assert.InRange(min.X, 2f - Tol, 2f + Tol);
+        Assert.InRange(max.X, 22f - Tol, 22f + Tol);
+        Assert.InRange(min.Y, 5f - 0.6f, 5f + Tol);   // the top edge, less the corner arcs' tiny overshoot
+        Assert.InRange(max.Y, 19f - Tol, 19f + Tol);
+    }
+
     [Theory]
-    [InlineData("M0 0c1 2 3 4 5 6")]       // cubic — a regex tokenizer skipped the letter and reused the numbers
-    [InlineData("M0 0C1 2 3 4 5 6")]
+    [InlineData("M0 0c1 2 3")]              // a cubic needs three points: missing arguments are malformed, not silently short
+    public void Cubic_WithMissingArguments_IsMalformed(string d)
+    {
+        Assert.Throws<FormatException>(() => SvgPath.Flatten(d));
+    }
+
+    [Theory]
     [InlineData("M0 0s1 2 3 4")]
     [InlineData("M0 0q1 2 3 4")]
     [InlineData("M0 0t1 2")]

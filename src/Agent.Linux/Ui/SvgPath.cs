@@ -9,8 +9,8 @@ namespace SaveLocker.Agent.Linux.Ui;
 /// path data instead of a hand-guessed copy of the shape. Pure — no ImGui here, so it can be unit-tested
 /// and the result cached per string (the strokes are then just a few <c>PathLineTo</c> calls a frame).
 ///
-/// Supports M/L/H/V/A/Z and their lowercase relative forms, and only circular arcs (rx == ry, no
-/// rotation) — which is all the lucide icons this UI draws use. Anything else throws
+/// Supports M/L/H/V/C/A/Z and their lowercase relative forms, and only circular arcs (rx == ry, no
+/// rotation) — which is all the lucide icons this UI draws use. Anything else (S/Q/T, elliptical arcs) throws
 /// <see cref="NotSupportedException"/>: an icon this cannot draw faithfully must fail loudly the first
 /// time it is drawn, not render as a plausible wrong shape.
 /// </summary>
@@ -89,6 +89,28 @@ static class SvgPath
                             $"SvgPath: only circular, unrotated arcs are supported (in \"{d}\")");
                     Begun();
                     ArcTo(pts, cur, end, MathF.Abs(rx), largeArc, sweep);
+                    cur = end;
+                    break;
+                }
+                case 'C':
+                case 'c':
+                {
+                    // Cubic Bezier: two control points and an end, all relative to the CURRENT point for the
+                    // lowercase form (not to each other). lucide's gamepad-2 body is built from these.
+                    var c1 = r.ReadPoint();
+                    var c2 = r.ReadPoint();
+                    var end = r.ReadPoint();
+                    if (cmd == 'c') { c1 += cur; c2 += cur; end += cur; }
+                    Begun();
+                    var from = cur;
+                    // 12 steps: smooth at the 14-40 px this UI draws icons at, and the result is cached.
+                    const int steps = 12;
+                    for (int k = 1; k <= steps; k++)
+                    {
+                        var t = k / (float)steps;
+                        var u = 1f - t;
+                        pts.Add(u * u * u * from + 3f * u * u * t * c1 + 3f * u * t * t * c2 + t * t * t * end);
+                    }
                     cur = end;
                     break;
                 }

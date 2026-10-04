@@ -1,21 +1,17 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { RefreshCw, FolderOpen, FolderSearch } from 'lucide-react'
-import type { Candidate } from '../types'
+import { RefreshCw, FolderSearch } from 'lucide-react'
+import type { Candidate, EnrollProgress } from '../types'
 import { api } from '../api'
 import { useFolderPicker } from '../useFolderPicker'
 import { PathBrowserModal } from './PathBrowserModal'
 import { LaunchSetupCard } from './LaunchSetupCard'
+import { Button } from './ui/Button'
+import { Card } from './ui/Card'
+import { Chip } from './ui/Chip'
+import { PageHead } from './ui/PageHead'
 
 interface Props {
   onEnrolled: () => void
-}
-
-const BTN_BASE: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 5,
-  padding: '5px 11px', background: 'transparent',
-  border: '1px solid var(--color-line)', borderRadius: 4,
-  color: 'var(--color-fg)', fontSize: 12, cursor: 'pointer',
-  fontFamily: 'inherit',
 }
 
 /**
@@ -65,16 +61,36 @@ const STORES: { id: string; label: string }[] = [
   { id: 'Unknown', label: 'Other' },
 ]
 
-function chipStyle(active: boolean): React.CSSProperties {
-  return {
-    display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px',
-    background: active ? 'var(--color-safe-soft)' : 'transparent',
-    border: `1px solid ${active ? 'var(--color-safe-line)' : 'var(--color-line)'}`,
-    borderRadius: 999,
-    color: active ? 'var(--color-safe-ink)' : 'var(--color-dim)',
-    fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit',
-    whiteSpace: 'nowrap',
-  }
+function EnrollProgressBar({ progress, picked }: { progress: EnrollProgress | null; picked: number }) {
+  const total = progress?.total || picked
+  // Counting starts with the first game: before it (and while the list is re-read afterwards) there is
+  // no "game 0 of N" to show, only the sweep.
+  const started = progress !== null && progress.total > 0 && progress.index > 0
+  // Fills as games finish, and a game part-way through counts as half — each is several round trips,
+  // so a bar that only moved between games would sit still for most of the wait.
+  const pct = started ? Math.min(100, Math.round(((progress.index - 0.5) / total) * 100)) : 0
+  const what = progress?.game
+    ? `${progress.step} — ${progress.game}`
+    : progress?.step || 'Getting ready…'
+  return (
+    <div className="sl-enrollbar" role="status" aria-live="polite">
+      <div className="sl-enrollbar__head">
+        <span>{started ? `Adding game ${progress.index} of ${total}` : 'Adding games…'}</span>
+        {started && <span>{pct}%</span>}
+      </div>
+      <div
+        className="sl-meter"
+        role="progressbar"
+        aria-label="Adding games"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={started ? pct : undefined}
+      >
+        <i className={started ? undefined : 'sl-meter__sweep'} style={started ? { width: `${pct}%` } : undefined} />
+      </div>
+      <div className="sl-enrollbar__step">{what}</div>
+    </div>
+  )
 }
 
 export function AddGamesView({ onEnrolled }: Props) {
@@ -88,6 +104,10 @@ export function AddGamesView({ onEnrolled }: Props) {
   const [enrolling, setEnrolling] = useState(false)
   const [status, setStatus] = useState('')
   const [enrolled, setEnrolled] = useState(false)
+  const [progress, setProgress] = useState<EnrollProgress | null>(null)
+  // The games are added and the list is being re-read: the agent's progress no longer describes what
+  // the page is waiting on, so polling it stops.
+  const [refreshing, setRefreshing] = useState(false)
   const picker = useFolderPicker()
 
   const scan = useCallback(async (force = false) => {
@@ -97,9 +117,9 @@ export function AddGamesView({ onEnrolled }: Props) {
       const result = force ? await api.rescan() : await api.candidates()
       setCandidates(result)
       // Cleared, not set to a count. This used to report result.length — every candidate, including
-      // the filtered ones — and because footerStatus prefers `status` over its computed message, it
-      // won: the footer claimed "Found 29 candidate(s)" above a list of 16 and the hidden-count
-      // hint never rendered. Leaving it empty lets the computed message describe what is on screen.
+      // the filtered ones — and because the foot bar prefers `status` over its computed message, it
+      // won: it claimed "Found 29 candidate(s)" above a list of 16 and the hidden-count hint never
+      // rendered. Leaving it empty lets the computed message describe what is on screen.
       setStatus('')
     } catch (e) {
       setStatus('Scan failed: ' + (e as Error).message)
@@ -113,7 +133,8 @@ export function AddGamesView({ onEnrolled }: Props) {
   const toggle = (id: number) => {
     setChecked(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }
@@ -131,37 +152,48 @@ export function AddGamesView({ onEnrolled }: Props) {
     },
   })
 
-  const setSaveFolder = () => {
-    const ids = [...checked]
-    if (ids.length !== 1) return
-    const c = candidates.find(x => x.id === ids[0])
-    if (c) void pickFolderFor(c)
-  }
-
   // Enrolling a game with no save folder is what produced the silent Deck failures — it lands a
   // tracked game the archiver cannot back up. Named here so the block is actionable, not just off.
   const missing = [...checked]
     .map(id => candidates.find(c => c.id === id))
     .filter((c): c is Candidate => !!c && !c.path)
 
+  // Adding a game is a round trip to the server per game, so the request can stay open for a while.
+  // Its own progress is asked for beside it, or the page would look frozen on "Adding…".
+  useEffect(() => {
+    if (!enrolling || refreshing) return
+    let live = true
+    // Only an ACTIVE answer is this batch's: until the agent has started it, the route still holds the
+    // finished state of the previous one, which would flash "game 3 of 3" before "game 1 of 2".
+    const tick = () => api.enrollProgress().then(p => { if (live && p.active) setProgress(p) }).catch(() => {})
+    void tick()
+    const id = setInterval(tick, 350)
+    return () => { live = false; clearInterval(id) }
+  }, [enrolling, refreshing])
+
   const enroll = async () => {
     if (checked.size === 0 || missing.length > 0) return
     setEnrolling(true)
-    setStatus('Enrolling…')
+    setProgress(null)
+    setStatus('')
     try {
       const result = await api.enroll([...checked])
       setStatus(
-        `Enrolled ${result.enrolled} game(s).` +
+        `Added ${result.enrolled} game${result.enrolled === 1 ? '' : 's'}.` +
         (result.skipped > 0 ? ` Skipped ${result.skipped} already tracked.` : '')
       )
       if (result.enrolled > 0) setEnrolled(true)
       setChecked(new Set())
       onEnrolled()
+      setRefreshing(true)
+      setProgress({ active: true, index: 0, total: 0, game: null, step: 'Refreshing the list of games…', enrolled: 0, skipped: 0 })
       await scan(false)
     } catch (e) {
-      setStatus('Enroll failed: ' + (e as Error).message)
+      setStatus('Could not add them: ' + (e as Error).message)
     } finally {
       setEnrolling(false)
+      setRefreshing(false)
+      setProgress(null)
     }
   }
 
@@ -211,37 +243,31 @@ export function AddGamesView({ onEnrolled }: Props) {
       : pathMode !== 'all' ? ' Set Path to “All” to see every one.'
       : filter !== 'all' ? ' Choose “All” to see every one.'
       : ''
-  const footerStatus = status || (
-    enrollBlocked
-      ? `Set a save folder for: ${missing.map(c => c.name).join(', ')}`
-      : `Showing ${visible.length} of ${candidates.length} game(s) found.` +
-        (hiddenCount > 0 ? undoHint : '')
-  )
+
+  // The line under the filters: what the current filter means, and — when a search narrows it — how far.
+  const filterLine = needle
+    ? `Matching “${query.trim()}” — ${visible.length} of ${sourceFiltered.length}`
+    : `${active.hint}${hiddenCount > 0 ? '.' + undoHint : ''}`
+
+  const selectedLine = checked.size === 0
+    ? 'Tick the games you want to sync.'
+    : `${checked.size} selected · they start syncing after the next time you quit each game`
+  const footText = status || (enrollBlocked ? `Set a save folder for: ${missing.map(c => c.name).join(', ')}` : selectedLine)
 
   return (
-    <div style={{
-      position: 'absolute', inset: 0,
-      display: 'flex', flexDirection: 'column',
-      gap: 11, padding: '16px 20px', overflow: 'hidden',
-    }}>
-      <p style={{ color: 'var(--color-dim)', fontSize: 12, lineHeight: 1.65, flexShrink: 0 }}>
-        Tick games to sync. Games without a known save folder need one set before enrolling.
-      </p>
+    <div className="sl-page">
+      <PageHead
+        title="Add games"
+        sub={`${candidates.length} found on this machine · ${candidates.filter(c => !c.hasSteamCloud).length} suggested`}
+        actions={
+          <Button disabled={busy} onClick={() => void scan(true)}>
+            <RefreshCw size={13} strokeWidth={1.9} className={scanning ? 'sl-spin' : undefined} aria-hidden="true" />
+            Rescan
+          </Button>
+        }
+      />
 
-      {/* Toolbar */}
-      <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
-        <button style={BTN_BASE} disabled={busy} onClick={() => void scan(true)}>
-          <RefreshCw size={13} strokeWidth={1.75} color="var(--color-dim)" />
-          <span>Rescan</span>
-        </button>
-        <button
-          style={{ ...BTN_BASE, opacity: checked.size !== 1 ? 0.45 : 1 }}
-          disabled={busy || checked.size !== 1}
-          onClick={() => setSaveFolder()}
-        >
-          <FolderOpen size={13} strokeWidth={1.75} color="var(--color-dim)" />
-          <span>Set save folder…</span>
-        </button>
+      <div className="sl-tools">
         <input
           type="search"
           className="sl-search"
@@ -252,169 +278,116 @@ export function AddGamesView({ onEnrolled }: Props) {
         />
       </div>
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 5, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
-        {chips.map(f => (
-          <button
-            key={f.id}
-            title={f.hint}
-            onClick={() => { setFilter(f.id); setStore(null) }}
-            style={chipStyle(filter === f.id)}
-          >
-            <span>{f.label}</span>
-            <span style={{ fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace", fontSize: 10.5 }}>
-              {f.count}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {/* Heroic storefronts — a second axis, shown only while the Heroic filter is on. */}
-      {stores.length > 1 && (
-        <div style={{ display: 'flex', gap: 5, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center', paddingLeft: 2 }}>
-          <span style={{ color: 'var(--color-dim)', fontSize: 11 }}>Store:</span>
-          <button onClick={() => setStore(null)} style={chipStyle(store === null)}>All</button>
-          {stores.map(s => (
-            <button key={s.id} onClick={() => setStore(s.id)} style={chipStyle(store === s.id)}>
-              <span>{s.label}</span>
-              <span style={{ fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace", fontSize: 10.5 }}>
-                {s.count}
-              </span>
+      <div className="sl-stack" style={{ gap: 9 }}>
+        <div className="sl-filters">
+          {chips.map(f => (
+            <button
+              key={f.id}
+              type="button"
+              className="sl-fchip"
+              aria-pressed={filter === f.id}
+              title={f.hint}
+              onClick={() => { setFilter(f.id); setStore(null) }}
+            >
+              {f.label} <b>{f.count}</b>
             </button>
           ))}
         </div>
-      )}
 
-      {/* Save-path detection — a second axis like Store, so it stacks with the source filter
-          instead of replacing it. Always visible: unlike Store it isn't specific to one source. */}
-      <div style={{ display: 'flex', gap: 5, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center', paddingLeft: 2 }}>
-        <span style={{ color: 'var(--color-dim)', fontSize: 11 }}>Path:</span>
-        {PATH_MODES.map(p => (
-          <button key={p.id} onClick={() => setPathMode(p.id)} style={chipStyle(pathMode === p.id)}>
-            <span>{p.label}</span>
-            {p.id !== 'all' && (
-              <span style={{ fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace", fontSize: 10.5 }}>
-                {sourceFiltered.filter(p.match).length}
-              </span>
-            )}
-          </button>
-        ))}
+        {/* Heroic storefronts — a second axis, shown only while the Heroic filter is on. */}
+        {stores.length > 1 && (
+          <div className="sl-filters">
+            <span className="sl-filters__label">Store</span>
+            <button type="button" className="sl-fchip" aria-pressed={store === null} onClick={() => setStore(null)}>All</button>
+            {stores.map(s => (
+              <button key={s.id} type="button" className="sl-fchip" aria-pressed={store === s.id} onClick={() => setStore(s.id)}>
+                {s.label} <b>{s.count}</b>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Save-path detection — a second axis like Store, so it stacks with the source filter
+            instead of replacing it. Always visible: unlike Store it isn't specific to one source. */}
+        <div className="sl-filters">
+          <span className="sl-filters__label">Save folder</span>
+          {PATH_MODES.map(p => (
+            <button key={p.id} type="button" className="sl-fchip" aria-pressed={pathMode === p.id} onClick={() => setPathMode(p.id)}>
+              {p.label}{p.id !== 'all' && <> <b>{sourceFiltered.filter(p.match).length}</b></>}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ fontSize: 12, color: 'var(--color-dim)' }}>{filterLine}</div>
       </div>
 
-      {/* Game list */}
-      <div style={{
-        background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 6,
-        overflowY: 'auto', flex: 1, minHeight: 0,
-      }}>
-        {visible.map(c => (
-          <div
-            key={c.id}
-            style={{
-              display: 'flex', alignItems: 'flex-start',
-              padding: '10px 13px',
-              borderBottom: '1px solid var(--color-line)',
-              gap: 10,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={checked.has(c.id)}
-              onChange={() => toggle(c.id)}
-              style={{ marginTop: 2 }}
-            />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                <span style={{ color: 'var(--color-fg)', fontSize: 13, fontWeight: 500 }}>{c.name}</span>
-                <span style={{
-                  color: 'var(--color-dim)', fontSize: 10,
-                  background: 'var(--color-raise)',
-                  border: '1px solid var(--color-line)',
-                  padding: '1px 6px', borderRadius: 3,
-                  fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace",
-                }}>
-                  {c.source}
-                </span>
+      <Card flush>
+        {visible.length === 0 ? (
+          <div className="sl-empty">
+            {scanning ? 'Scanning…' : candidates.length === 0 ? 'No games found yet. Rescan once a game has been installed.' : 'Nothing matches that filter.'}
+          </div>
+        ) : visible.map(c => (
+          <label key={c.id} className="sl-check-row">
+            <input type="checkbox" checked={checked.has(c.id)} onChange={() => toggle(c.id)} />
+            <div className="sl-check-row__main">
+              <div className="sl-check-row__name">
+                <span>{c.name}</span>
+                <Chip>{c.source}</Chip>
                 {/* Only when it adds something the source does not already say. */}
                 {c.store && c.store !== 'Unknown' && c.store !== 'Steam' && (
-                  <span style={{
-                    color: 'var(--color-dim)', fontSize: 10,
-                    background: 'var(--color-raise)',
-                    border: '1px solid var(--color-line)',
-                    padding: '1px 6px', borderRadius: 3,
-                  }}>
-                    {STORES.find(s => s.id === c.store)?.label ?? c.store}
-                  </span>
+                  <Chip>{STORES.find(s => s.id === c.store)?.label ?? c.store}</Chip>
                 )}
-                {c.hasSteamCloud && (
-                  <span style={{
-                    color: 'var(--color-dim)', fontSize: 10,
-                    background: 'var(--color-raise)',
-                    border: '1px solid var(--color-line)',
-                    padding: '1px 6px', borderRadius: 3,
-                  }}>
-                    Steam Cloud
-                  </span>
-                )}
+                {c.hasSteamCloud && <Chip>Steam Cloud</Chip>}
+                <Chip tone={c.path ? 'ok' : 'warn'}>{c.path ? 'Detected' : 'Not detected'}</Chip>
               </div>
               {c.path ? (
-                <div style={{
-                  color: 'var(--color-dim)', fontSize: 10, marginTop: 3,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace",
-                }}>
-                  {c.path}
+                // A detected folder can be the wrong one (a launcher's, another profile's), and it has
+                // to be correctable before the game is added — the old toolbar button did this.
+                <div className="sl-inline" style={{ marginTop: 4 }}>
+                  <span className="sl-path">{c.path}</span>
+                  <Button
+                    size="sm"
+                    variant="quiet"
+                    aria-label={`Change the save folder for ${c.name}`}
+                    onClick={e => { e.preventDefault(); void pickFolderFor(c) }}
+                  >
+                    Change
+                  </Button>
                 </div>
               ) : (
-                // The per-row button is what a Deck user actually hits — the toolbar button needs
-                // a tick first, and this appears exactly on the rows that block enrollment.
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
-                  <span style={{ color: 'var(--color-watch-ink)', fontSize: 11 }}>No save folder set</span>
-                  <button
-                    onClick={() => void pickFolderFor(c)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 5,
-                      padding: '4px 9px', background: 'transparent',
-                      border: '1px solid var(--color-line)', borderRadius: 4,
-                      color: 'var(--color-fg)', fontSize: 11, fontWeight: 600,
-                      cursor: 'pointer', fontFamily: 'inherit',
-                    }}
+                // The per-row button is what a Deck user actually hits — it appears exactly on the
+                // rows that block enrollment.
+                <div className="sl-inline" style={{ marginTop: 6 }}>
+                  <span style={{ color: 'var(--color-watch-ink)', fontSize: 12 }}>No save folder set</span>
+                  <Button
+                    size="sm"
+                    onClick={e => { e.preventDefault(); void pickFolderFor(c) }}
                   >
-                    <FolderSearch size={12} strokeWidth={1.75} />
-                    <span>Set save folder</span>
-                  </button>
+                    <FolderSearch size={12} strokeWidth={1.75} aria-hidden="true" />
+                    Set save folder
+                  </Button>
                 </div>
               )}
             </div>
-          </div>
+          </label>
         ))}
-      </div>
+      </Card>
 
       {/* Launch setup appears once a game is enrolled — the "success state" (Linux only; the card
           hides itself when there is no command, i.e. on Windows). */}
-      {enrolled && (
-        <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
-          <LaunchSetupCard />
-        </div>
-      )}
+      {enrolled && <LaunchSetupCard />}
 
-      {/* Footer */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <span style={{ color: enrollBlocked && !status ? 'var(--color-watch-ink)' : 'var(--color-dim)', fontSize: 12 }}>
-          {footerStatus}
+      <div className="sl-footbar">
+        {enrolling && <EnrollProgressBar progress={progress} picked={checked.size} />}
+        <span className="sl-footbar__txt" style={enrollBlocked && !status ? { color: 'var(--color-watch-ink)' } : undefined}>
+          {footText}
         </span>
-        <button
-          onClick={() => void enroll()}
-          disabled={busy || checked.size === 0 || enrollBlocked}
-          style={{
-            padding: '7px 18px', background: 'var(--color-accent)', border: 'none', borderRadius: 5,
-            color: 'var(--color-on-accent)', fontSize: 13, fontWeight: 600,
-            cursor: checked.size > 0 && !busy && !enrollBlocked ? 'pointer' : 'default',
-            fontFamily: 'inherit', letterSpacing: '0.01em',
-            opacity: checked.size === 0 || busy || enrollBlocked ? 0.5 : 1,
-          }}
-        >
-          Enroll selected
-        </button>
+        <div className="sl-inline">
+          <Button size="sm" variant="quiet" disabled={checked.size === 0 || busy} onClick={() => setChecked(new Set())}>Clear</Button>
+          <Button variant="primary" disabled={busy || checked.size === 0 || enrollBlocked} onClick={() => void enroll()}>
+            {checked.size === 0 ? 'Add games' : `Add ${checked.size} game${checked.size === 1 ? '' : 's'}`}
+          </Button>
+        </div>
       </div>
 
       {picker.browsing && (

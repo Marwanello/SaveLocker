@@ -225,6 +225,14 @@ Agent push $gameName --config $pcCfg | Out-Null   # server is down: this must fa
 $persisted = if (Test-Path $eventsFile) { Get-Content $eventsFile -Raw } else { "" }
 Check "an offline failure is persisted to disk"       ($persisted -match "server.unreachable")
 
+# A PULL with the server down is a failed command: it says the server was not there and exits
+# non-zero. The engine no longer throws for this, and as a bare "nothing pulled" the CLI exited 0 -
+# which a script reads as "this machine has the latest save".
+$offlinePull = Agent pull $gameName --config $pcCfg
+$offlinePullExit = $LASTEXITCODE
+Check "a pull with the server down says the server is unreachable" (($offlinePull -join "`n") -match "unreachable")
+Check "... and exits non-zero"                                     ($offlinePullExit -eq 1)
+
 # Bring the server back on the SAME state, then make the agent talk to it about a DIFFERENT game,
 # so the pending event is delivered rather than being dropped by that game's own recovery.
 $serverProc = Start-TestServer
@@ -245,6 +253,44 @@ if ($null -ne $unreachable) {
     Check "a dismissed event leaves the open set"     $false
 }
 
+# =====================================================================================
+# 8. What the agent UI's game page and "Recently resolved" table read (checkpoint-ui Phase 13)
+# =====================================================================================
+$agentKey = @{ "X-Api-Key" = $pcApiKey }
+# Windows PowerShell 5.1 hands a JSON array back as ONE object, so @(Invoke-RestMethod ...) is a one-element array; the pipeline unrolls it.
+function Rows($uri) { @(Invoke-RestMethod $uri -Headers $agentKey | ForEach-Object { $_ }) }
+$agentVersions = (Rows "$server/api/agent/games/$($adminConflict.gameId)/versions")
+Check "agent-scoped version list answers with a machine key (no admin password)" ($agentVersions.Length -ge 2)
+Check "... newest first, and carries the uploading machine" ($agentVersions[0].machineName -and ([datetime]$agentVersions[0].createdAt) -ge ([datetime]$agentVersions[-1].createdAt))
+
+# Section 4's force-pull left nothing open, so seed a fresh divergence to resolve.
+Agent pull $gameName --force --config $lapCfg | Out-Null
+"save data v3 (pc)" | Set-Content (Join-Path $pcSave "save.dat") -Encoding utf8
+Agent push $gameName --config $pcCfg | Out-Null
+"laptop v3, divergent" | Set-Content (Join-Path $lapSave "save.dat") -Encoding utf8
+Agent push $gameName --config $lapCfg | Out-Null
+
+$since = [uri]::EscapeDataString((Get-Date).ToUniversalTime().AddDays(-1).ToString("o"))
+$noneYet = (Rows "$server/api/agent/conflicts?resolvedSince=$since")
+Check "resolvedSince lists nothing while the conflict is still open" ($noneYet.Length -eq 0)
+Check "... and the plain route still lists the open one" ((Rows "$server/api/agent/conflicts").Length -ge 1)
+
+$openNow = (Rows "$server/api/agent/conflicts")[0]
+Invoke-RestMethod "$server/api/agent/conflicts/$($openNow.id)/resolve?version=$($openNow.versionBId)" -Method Post -Headers $agentKey | Out-Null
+$resolvedNow = (Rows "$server/api/agent/conflicts?resolvedSince=$since")
+$mine = $resolvedNow | Where-Object { $_.id -eq $openNow.id }
+Check "a resolved conflict appears under resolvedSince, with what was kept" `
+    ($null -ne $mine -and $mine.status -eq "Resolved" -and $mine.resolvedVersionId -eq $openNow.versionBId)
+Check "... newest resolution first" ($resolvedNow[0].id -eq $openNow.id)
+$future = [uri]::EscapeDataString((Get-Date).ToUniversalTime().AddMinutes(5).ToString("o"))
+Check "... and not under a resolvedSince later than the resolution" ((Rows "$server/api/agent/conflicts?resolvedSince=$future").Length -eq 0)
+# machineId narrows it to the conflicts one machine was the stuck party of, on the server (before its cap).
+$stuck = (Rows "$server/api/agent/conflicts?resolvedSince=$since&machineId=$($openNow.machineId)")
+Check "machineId keeps the stuck machine's resolved conflicts" `
+    (@($stuck | Where-Object { $_.id -eq $openNow.id }).Length -eq 1 -and @($stuck | Where-Object { $_.machineId -ne $openNow.machineId }).Length -eq 0)
+Check "... and another machine's id lists none of them" `
+    (@((Rows "$server/api/agent/conflicts?resolvedSince=$since&machineId=$([guid]::NewGuid())")).Length -eq 0)
+
 ClearEvents
 if ($serverProc -and -not $serverProc.HasExited) { Stop-Process -Id $serverProc.Id -Force }
 Remove-Item Env:ASPNETCORE_URLS, Env:Storage__DbPath, Env:Storage__ArchiveRoot, Env:Backup__Enabled, Env:Conflicts__EscalationAfterSeconds, Env:Logging__EventLog__LogLevel__Default -ErrorAction SilentlyContinue
@@ -252,3 +298,4 @@ Remove-Item Env:ASPNETCORE_URLS, Env:Storage__DbPath, Env:Storage__ArchiveRoot, 
 Write-Host ""
 Write-Host "Health: $pass passed, $fail failed."
 if ($fail -gt 0) { exit 1 }
+

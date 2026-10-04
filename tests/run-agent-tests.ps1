@@ -41,6 +41,8 @@ if (-not (Test-Path $dll)) {
     exit 2
 }
 
+# Always from empty: a leftover laptop_save from the last run made the first pull read "already up to date".
+Remove-Item $scratch -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $scratch | Out-Null
 
 $pcCfg   = Join-Path $scratch "pc-config.json"
@@ -147,6 +149,12 @@ Check "two spellings of one game converge on ONE server game" ($canonAId -eq $ca
 $canonAName = (Get-Content $canonA -Raw | ConvertFrom-Json).Games[0].Name
 Check "the shared game carries the manifest's canonical name" ($canonAName -eq "LGS Test Game")
 
+# The server keeps its games between runs, so everything this run creates gets its own name: a fixed
+# one would already hold the last run's saves (the first push becomes "no change") or template. $stamp
+# was referenced below without ever being set, which made "TemplateGuard-" the same game every run.
+$stamp = Get-Date -Format "yyyyMMddHHmmssfff"
+$gameName = "SyncGame-$stamp"
+
 # ---- Register two machines ----
 $pcReg  = Agent register --config $pcCfg  --name PC
 $lapReg = Agent register --config $lapCfg --name Laptop
@@ -155,13 +163,13 @@ Check "Laptop registered" (($lapReg -join "`n") -like "*Registered 'Laptop'*")
 
 # ---- PC: track game, create a save, push ----
 Set-Content -Path (Join-Path $pcSave "slot1.sav") -Value "level=1" -Encoding utf8
-Agent add-game --config $pcCfg --name "SyncGame" --dir $pcSave | Out-Null
-$push1 = Agent push --config $pcCfg SyncGame
+Agent add-game --config $pcCfg --name $gameName --dir $pcSave | Out-Null
+$push1 = Agent push --config $pcCfg $gameName
 Check "PC initial push succeeds" (($push1 -join "`n") -like "*pushed new version*")
 
 # ---- Laptop: track same game at its own dir, pull ----
-Agent add-game --config $lapCfg --name "SyncGame" --dir $lapSave | Out-Null
-$pull1 = Agent pull --config $lapCfg SyncGame
+Agent add-game --config $lapCfg --name $gameName --dir $lapSave | Out-Null
+$pull1 = Agent pull --config $lapCfg $gameName
 Check "Laptop pull restores save" (($pull1 -join "`n") -like "*restored latest save*")
 Check "pulled file content matches PC" (
     (Test-Path (Join-Path $lapSave "slot1.sav")) -and
@@ -169,16 +177,16 @@ Check "pulled file content matches PC" (
 )
 
 # ---- Second pull is a no-op ----
-$pull2 = Agent pull --config $lapCfg SyncGame
+$pull2 = Agent pull --config $lapCfg $gameName
 Check "second pull is a no-op (up to date)" (($pull2 -join "`n") -like "*already up to date*")
 
 # ---- PC advances (v2), stale laptop push -> conflict ----
 Set-Content -Path (Join-Path $pcSave "slot1.sav") -Value "level=2" -Encoding utf8
-$push2 = Agent push --config $pcCfg SyncGame
+$push2 = Agent push --config $pcCfg $gameName
 Check "PC second push succeeds (v2)" (($push2 -join "`n") -like "*pushed new version*")
 
 Set-Content -Path (Join-Path $lapSave "slot1.sav") -Value "level=2-laptop" -Encoding utf8
-$pushConflict = Agent push --config $lapCfg SyncGame
+$pushConflict = Agent push --config $lapCfg $gameName
 Check "Laptop stale push reports CONFLICT" (($pushConflict -join "`n") -like "*CONFLICT*")
 
 # ---- An agent may DESCRIBE a save location, but never hijack one ----
@@ -224,7 +232,7 @@ Check "an existing template is not overwritten"  ($secondCode -eq 204)
 Check "the original template survived"           ((CurrentSuggested) -eq "<winDocuments>/My Games/Guard")
 
 $status = Agent status --config $pcCfg
-Check "status shows conflict for SyncGame" (($status -join "`n") -like "*SyncGame*CONFLICT*")
+Check "status shows conflict for the sync game" (($status -join "`n") -like "*$gameName*CONFLICT*")
 
 # ---- Resolving a conflict must un-stick BOTH machines (backlog 0.4) ----
 # Resolving used to be a database edit that merely looked like an action. An agent's parent version
@@ -249,14 +257,14 @@ function JsonArray($url) { @((Invoke-WebRequest $url -UseBasicParsing).Content |
 # made it worse from the other side: prune was reachable only from the fast-forward path, so a
 # conflicted game pruned nothing AND had every version pinned by an open conflict - 80 versions and
 # 2.66 GB on a game configured to keep 5.
-$syncGame = (JsonArray "http://localhost:5179/api/overview") | Where-Object { $_.game.name -eq "SyncGame" }
+$syncGame = (JsonArray "http://localhost:5179/api/overview") | Where-Object { $_.game.name -eq $gameName }
 $gameId   = "$($syncGame.game.id)"
 Invoke-RestMethod "http://localhost:5179/api/games/$gameId/retain?value=2" -Method Post | Out-Null
 
 Set-Content -Path (Join-Path $lapSave "slot1.sav") -Value "level=2b-laptop" -Encoding utf8
-Agent push --config $lapCfg SyncGame | Out-Null
+Agent push --config $lapCfg $gameName | Out-Null
 Set-Content -Path (Join-Path $lapSave "slot1.sav") -Value "level=2c-laptop" -Encoding utf8
-Agent push --config $lapCfg SyncGame | Out-Null
+Agent push --config $lapCfg $gameName | Out-Null
 
 $open = @((JsonArray "http://localhost:5179/api/conflicts") | Where-Object { "$($_.gameId)" -eq $gameId })
 Check "three divergent pushes produced ONE conflict" ($open.Count -eq 1)
@@ -270,7 +278,7 @@ Check "the conflict names the stuck machine"        (-not [string]::IsNullOrWhit
 # Three rejected payloads are enough evidence. A fourth ordinary push reports the condition but
 # must not archive or upload the same divergent save again; a force-push remains the explicit escape.
 $beforeBackoff = JsonArray "http://localhost:5179/api/games/$gameId/versions"
-$backedOff = Agent push --config $lapCfg SyncGame
+$backedOff = Agent push --config $lapCfg $gameName
 $afterBackoff = JsonArray "http://localhost:5179/api/games/$gameId/versions"
 $openAfterBackoff = @((JsonArray "http://localhost:5179/api/conflicts") | Where-Object { "$($_.gameId)" -eq $gameId })
 Check "fourth conflicted push reports upload backoff" (($backedOff -join "`n") -like "*upload paused after 3*")
@@ -323,18 +331,18 @@ Check "the queued pulls are GUARDED, not forced"   (@($queued | Where-Object { $
 
 # The winner: its content already matches the head, so the pull short-circuits before touching a
 # single file and simply repairs the pointer.
-$lapPull = Agent pull --config $lapCfg SyncGame
+$lapPull = Agent pull --config $lapCfg $gameName
 Check "the winner's pull is a no-op that repairs it" (($lapPull -join "`n") -like "*already up to date*")
 
 # THE ASSERTION. This is the exact failure that stranded a real user: resolve, play, conflict again.
 Set-Content -Path (Join-Path $lapSave "slot1.sav") -Value "level=3-laptop" -Encoding utf8
-$lapPush = Agent push --config $lapCfg SyncGame
+$lapPush = Agent push --config $lapCfg $gameName
 Check "the winner's next push no longer conflicts"  (($lapPush -join "`n") -like "*pushed new version*")
 
 # The loser had cleanly synced its own version, so it has nothing unpushed and the guarded pull
 # restores the winner over it. (A loser carrying NEWER local edits is blocked instead, which is the
 # honest answer - forcing it would destroy work the server has never seen.)
-$pcPull = Agent pull --config $pcCfg SyncGame
+$pcPull = Agent pull --config $pcCfg $gameName
 Check "the loser pulls the winner cleanly" (
     (Test-Path (Join-Path $pcSave "slot1.sav")) -and
     ((Get-Content (Join-Path $pcSave "slot1.sav") -Raw).Trim() -eq "level=3-laptop")
@@ -387,7 +395,7 @@ try {
 
     $statusPw = Agent status --config $pcCfg
     $statusExit = $LASTEXITCODE
-    Check "status still works once an admin password is set" (($statusPw -join "`n") -like "*SyncGame*")
+    Check "status still works once an admin password is set" (($statusPw -join "`n") -like "*$gameName*")
     Check "status exits successfully with an admin password" ($statusExit -eq 0)
 }
 finally {

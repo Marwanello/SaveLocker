@@ -1,44 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { FolderSearch, Trash2 } from 'lucide-react'
-import type { AgentAppearance, AgentState, AgentVersion, TrackedGame } from '../types'
+import type { AgentAppearance, AgentState, AgentVersion, TestConnection, TrackedGame } from '../types'
 import { api } from '../api'
-import { useFolderPicker } from '../useFolderPicker'
-import { PathBrowserModal } from './PathBrowserModal'
 import { LaunchSetupCard } from './LaunchSetupCard'
 import { DeckyPluginCard } from './DeckyPluginCard'
 import { PlaynitePluginCard } from './PlaynitePluginCard'
-import { Chip } from './ui/Chip'
 import { AppearanceCard } from './AppearanceCard'
+import { Button } from './ui/Button'
+import { Card } from './ui/Card'
+import { Chip } from './ui/Chip'
+import { PageHead } from './ui/PageHead'
 
 interface Props {
   state: AgentState | null
   onSaved: () => void
   appearance: AgentAppearance | null
   onAppearanceChanged: (next: AgentAppearance) => void
-}
-
-const INPUT: React.CSSProperties = {
-  background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 4,
-  padding: '7px 10px', color: 'var(--color-fg)', outline: 'none', fontFamily: 'inherit',
-}
-const LABEL: React.CSSProperties = {
-  color: 'var(--color-dim)', fontSize: 11, display: 'block', marginBottom: 5,
-}
-const BTN_PRIMARY: React.CSSProperties = {
-  padding: '7px 15px', background: 'var(--color-accent)', border: 'none', borderRadius: 4,
-  color: 'var(--color-on-accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-  fontFamily: 'inherit', flexShrink: 0,
-}
-const BTN_SECONDARY: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 5,
-  padding: '7px 11px', background: 'transparent',
-  border: '1px solid var(--color-line)', borderRadius: 4,
-  color: 'var(--color-fg)', fontSize: 12, cursor: 'pointer',
-  fontFamily: 'inherit', flexShrink: 0, whiteSpace: 'nowrap',
-}
-const SECTION_HEADER: React.CSSProperties = {
-  color: 'var(--color-dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.11em',
-  marginBottom: 14, paddingBottom: 8, borderBottom: '1px solid var(--color-line)',
+  /** Open one game's page — where its folder, process and tracking are managed. */
+  onOpenGame: (id: string) => void
 }
 
 /**
@@ -62,22 +40,20 @@ function UpdateStatus({ platform }: { platform?: string }) {
     api.agentVersion().then(setInfo).catch(() => setFailed(true))
   }, [])
 
-  if (failed) return <div style={{ color: 'var(--color-dim)', fontSize: 12 }}>Could not read the agent version.</div>
-  if (!info) return <div style={{ color: 'var(--color-dim)', fontSize: 12 }}>Checking…</div>
-
-  const badge = (text: string, tone: 'ok' | 'warn') => <Chip tone={tone}>{text}</Chip>
+  if (failed) return <p className="sl-empty" style={{ padding: 0 }}>Could not read the agent version.</p>
+  if (!info) return <p className="sl-empty" style={{ padding: 0 }}>Checking…</p>
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ color: 'var(--color-fg)', fontSize: 13 }}>Running v{info.currentVersion}</span>
+    <div className="sl-stack" style={{ gap: 8 }}>
+      <div className="sl-inline">
+        <span style={{ fontSize: 13 }}>Running v{info.currentVersion}</span>
         {info.stagedVersion
-          ? badge(`v${info.stagedVersion} READY`, 'ok')
+          ? <Chip tone="ok">v{info.stagedVersion} READY</Chip>
           : info.updateAvailable && info.latestVersion
-            ? badge(`v${info.latestVersion} AVAILABLE`, 'warn')
+            ? <Chip tone="warn">v{info.latestVersion} AVAILABLE</Chip>
             : null}
       </div>
-      <div style={{ color: 'var(--color-dim)', fontSize: 11, lineHeight: 1.5 }}>
+      <small style={{ fontSize: 11.5, color: 'var(--color-dim)', lineHeight: 1.5 }}>
         {info.stagedVersion
           // The agent's own words for what blocks it, verbatim: it knows which game is running and
           // this UI does not, and re-phrasing it here is how three surfaces start disagreeing.
@@ -90,12 +66,19 @@ function UpdateStatus({ platform }: { platform?: string }) {
               ? 'The agent downloads and verifies it on its next check (every few hours), then ' +
                 'installs it at the following start. Run `savelocker update` to do it now.'
               : 'The tray icon offers the update — accept it there to install and restart.'}
-      </div>
+      </small>
     </div>
   )
 }
 
-export function SettingsView({ state, onSaved, appearance, onAppearanceChanged }: Props) {
+/** The TOFU pin as a chip: what the agent will do if the server's TLS key ever changes. */
+function TrustChip({ trust }: { trust: string | undefined }) {
+  if (trust === 'pinned') return <Chip tone="ok">Pinned on first connect</Chip>
+  if (trust === 'unpinned') return <Chip tone="warn">Not pinned yet</Chip>
+  return <Chip tone="warn">Not pinned (plain HTTP)</Chip>
+}
+
+export function SettingsView({ state, onSaved, appearance, onAppearanceChanged, onOpenGame }: Props) {
   const [serverUrl, setServerUrl] = useState('')
   const [machineName, setMachineName] = useState('')
   const [adminPassword, setAdminPassword] = useState('')
@@ -103,10 +86,12 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged }
   const [settleQuietSeconds, setSettleQuietSeconds] = useState('10')
   const [games, setGames] = useState<TrackedGame[]>([])
   const [selectedGames, setSelectedGames] = useState<Set<string>>(new Set())
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [saving, setSaving] = useState(false)
   const [registering, setRegistering] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [test, setTest] = useState<TestConnection | null>(null)
   const [status, setStatus] = useState('')
-  const picker = useFolderPicker()
   const dirtyFields = useRef<Set<string>>(new Set())
 
   useEffect(() => {
@@ -135,6 +120,7 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged }
         settleQuietSeconds: Number.isFinite(seconds) ? Math.min(Math.max(seconds, 0), 300) : undefined,
       })
       dirtyFields.current.clear()
+      setTest(null)
       onSaved()
       if (res.identityCleared) {
         // Left on screen rather than auto-cleared: the agent cannot sync until the user acts on it,
@@ -170,6 +156,16 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged }
     }
   }
 
+  // Tests the SAVED server URL, not what is typed: that is the one the agent actually uses, and a test
+  // that answered for an unsaved address would pass right up until the next sync failed.
+  const testConnection = async () => {
+    setTesting(true)
+    setTest(null)
+    try { setTest(await api.testConnection()) }
+    catch (e) { setTest({ ok: false, status: null, latencyMs: 0, error: (e as Error).message }) }
+    finally { setTesting(false) }
+  }
+
   // The toggle shows what the machine will actually do at login, not what was clicked. The registry
   // write can be refused outright (group policy, security software) or written and then reverted,
   // and the box used to stay ticked through both. WA-10.
@@ -187,10 +183,20 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged }
     }
   }
 
+  const toggleAutoUpdate = async (val: boolean) => {
+    try {
+      await api.saveConfig({ autoUpdate: val })
+      onSaved()
+    } catch (e) {
+      setStatus((e as Error).message)
+    }
+  }
+
   const toggleGame = (id: string) => {
     setSelectedGames(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }
@@ -198,178 +204,118 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged }
   const removeSelected = async () => {
     for (const id of selectedGames) await api.removeGame(id)
     setSelectedGames(new Set())
+    setConfirmingRemove(false)
     loadGames()
     onSaved()
   }
 
-  // Settings is edit-only now: the save folder is *first* set in Add Games (enrollment is gated on
-  // it there). Native dialog first — on Windows the tray keeps the Explorer dialog it always had,
-  // which can reach paths the browser deliberately cannot — falling through to the in-app browser
-  // when there is no dialog (a headless Deck), where the browser opens at the game's current path
-  // or its scan-time suggestion.
-  const pickFolderFor = (game: TrackedGame) => picker.pick({
-    name: game.name,
-    start: async () => game.path
-      || (await api.suggestedPath(game.id).catch(() => ({ path: null }))).path,
-    nativePick: () => api.folderPick(),
-    apply: async (path) => {
-      const send = async (confirm: boolean) => {
-        await api.setGameFolder(game.id, path, confirm)
-        loadGames()
-        onSaved()
-        setStatus(`Save folder for ${game.name} set to ${path}`)
-        setTimeout(() => setStatus(''), 4000)
-      }
-      try {
-        await send(false)
-      } catch (e) {
-        const message = (e as Error).message
-        // The agent asks for confirmation only for the heuristic warnings, which have false
-        // positives. Hard refusals never carry this sentence, so they can never be clicked past —
-        // and the prompt repeats the agent's own wording rather than a cheerful paraphrase, because
-        // the whole point is that the user reads what is actually wrong.
-        if (message.includes('Re-send with confirm')) {
-          const ask = message.replace(' Re-send with confirm to use it anyway.', '')
-          if (!window.confirm(`${ask}\n\nUse ${path} anyway?`)) {
-            setStatus('Save folder unchanged.')
-            return
-          }
-          try { await send(true) }
-          catch (e2) { setStatus('Could not set the save folder: ' + (e2 as Error).message) }
-          return
-        }
-        setStatus('Could not set the save folder: ' + message)
-      }
-    },
-  })
-
-  // A prompt rather than an inline field: this is an occasional correction, not something the user
-  // edits while reading the list, and a text input per row would crowd out the save path.
-  const editProcessesFor = async (game: TrackedGame) => {
-    const current = game.processNames.join(', ')
-    const next = window.prompt(
-      `Which process means "${game.name}" is running?\n\n` +
-      'Use the executable name, e.g. "stardew valley" or "game.exe". ' +
-      'Separate several with commas.\n\n' +
-      'Until this is set, SaveLocker cannot take a lease when you launch, push when you quit, ' +
-      'or stop a pull from overwriting saves while the game is open.',
-      current)
-    if (next === null) return
-
-    try {
-      await api.setGameProcesses(game.id, next.split(',').map(s => s.trim()).filter(Boolean))
-      loadGames()
-      onSaved()
-      setStatus(`Launch/exit sync for ${game.name} updated.`)
-      setTimeout(() => setStatus(''), 4000)
-    } catch (e) {
-      setStatus('Could not set the game process: ' + (e as Error).message)
-    }
-  }
-
-  const startupLabel = state?.platform === 'Linux'
-    ? 'Start on login (launch agent when you sign in)'
-    : 'Start with Windows (launch agent at login)'
-
+  const isLinux = state?.platform === 'Linux'
+  const startupLabel = isLinux ? 'Start on login' : 'Start with Windows'
   const busy = saving || registering
 
   return (
-    <div style={{
-      position: 'absolute', inset: 0, overflowY: 'auto',
-      padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 22,
-    }}>
+    <div className="sl-page">
+      <PageHead title="Settings" sub={`${state?.machineName ?? '…'} · ${state?.serverUrl ? state.serverUrl.replace(/^https?:\/\//, '') : 'no server'}`} />
+
+      <Card title="Connection" headerRight={<TrustChip trust={state?.serverTrust} />}>
+        <div className="sl-stack">
+          <div className="sl-field">
+            <label htmlFor="server-url">Server URL</label>
+            <input
+              id="server-url" className="sl-input sl-input--mono" value={serverUrl}
+              onChange={e => { dirtyFields.current.add('serverUrl'); setServerUrl(e.target.value) }}
+            />
+          </div>
+          <div className="sl-field">
+            <label htmlFor="machine-name">Machine name</label>
+            <input
+              id="machine-name" className="sl-input" style={{ maxWidth: 280 }} value={machineName}
+              onChange={e => { dirtyFields.current.add('machineName'); setMachineName(e.target.value) }}
+            />
+          </div>
+          <div className="sl-field">
+            <label htmlFor="admin-password">Admin password</label>
+            <input
+              id="admin-password" className="sl-input" style={{ maxWidth: 280 }} type="password" autoComplete="off"
+              placeholder="only needed to re-register this name"
+              value={adminPassword} onChange={e => setAdminPassword(e.target.value)}
+            />
+          </div>
+
+          <div className="sl-inline">
+            <Button variant="primary" onClick={() => void save()} disabled={busy}>Save</Button>
+            <Button onClick={() => void testConnection()} disabled={busy || testing}>
+              {testing ? 'Testing…' : 'Test connection'}
+            </Button>
+            <Button onClick={() => void register()} disabled={busy}>Register / Re-register</Button>
+            {test && (
+              <Chip tone={test.ok ? 'ok' : 'warn'}>
+                {test.ok ? `Reachable · ${test.latencyMs} ms` : test.error ?? 'Not reachable'}
+              </Chip>
+            )}
+          </div>
+          {status && <div role="status" style={{ fontSize: 12.5, color: 'var(--color-dim)' }}>{status}</div>}
+
+          <div className="sl-setting__note" style={{ marginTop: 0 }}>
+            {state?.connected
+              ? 'Registered — this machine holds a key for the server. '
+              : 'Not registered yet. '}
+            The key is kept in the agent's config file and never shown here. If it is ever exposed, use
+            Register / Re-register to rotate it.
+          </div>
+        </div>
+      </Card>
+
       <AppearanceCard appearance={appearance} onChanged={onAppearanceChanged} />
 
-      {/* Connection */}
-      <div>
-        <div style={SECTION_HEADER}>Connection</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-
-          <div>
-            <label style={LABEL}>Server URL</label>
-            <div style={{ display: 'flex', gap: 6 }}>
+      <Card title="Sync safety">
+        <div className="sl-stack">
+          <div className="sl-field">
+            <label htmlFor="settle">Wait for saves to settle (seconds)</label>
+            <div className="sl-inline">
               <input
-                type="text" value={serverUrl} onChange={e => { dirtyFields.current.add('serverUrl'); setServerUrl(e.target.value) }}
-                style={{ ...INPUT, flex: 1, minWidth: 0, fontSize: 12, fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace" }}
+                id="settle" className="sl-input" style={{ width: 90 }} type="number" min={0} max={300}
+                value={settleQuietSeconds}
+                onChange={e => { dirtyFields.current.add('settleQuietSeconds'); setSettleQuietSeconds(e.target.value) }}
               />
-              <button style={BTN_PRIMARY} onClick={() => void save()} disabled={busy}>Save</button>
-              <button style={BTN_SECONDARY} onClick={() => void register()} disabled={busy}>
-                Register / Re-register
-              </button>
+              <Button variant="primary" onClick={() => void save()} disabled={busy}>Save</Button>
             </div>
+            <small>
+              After a game closes, SaveLocker waits until its save folder stops changing for this long before
+              backing it up — so a game that keeps writing for a few seconds after exit can't be captured
+              half-finished. Raise it if a game is slow to flush its save. 0 backs up immediately. Manual syncs
+              are never delayed.
+            </small>
           </div>
 
-          <div>
-            <label style={LABEL}>Machine Name</label>
-            <input
-              type="text" value={machineName} onChange={e => { dirtyFields.current.add('machineName'); setMachineName(e.target.value) }}
-              style={{ ...INPUT, width: 240, fontSize: 13 }}
+          <div className="sl-setting">
+            <div className="sl-setting__label">
+              {startupLabel}
+              <small>{isLinux ? 'Launch the agent when you sign in.' : 'Launch the agent at login.'}</small>
+            </div>
+            <button
+              type="button" className="sl-switch" role="switch" aria-checked={startWithWindows}
+              aria-label={startupLabel} onClick={() => void toggleStartup(!startWithWindows)}
             />
           </div>
 
-          <div>
-            <label style={LABEL}>Admin Password</label>
-            <input
-              type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)}
-              placeholder="only needed to re-register this name"
-              autoComplete="off"
-              style={{ ...INPUT, width: 240, fontSize: 13 }}
-            />
-          </div>
-
-          <div>
-            <label style={LABEL}>Connection Status</label>
-            <div style={{ color: state?.connected ? 'var(--color-safe-ink)' : 'var(--color-watch-ink)', fontSize: 13 }}>
-              {state?.connected
-                ? 'Registered — this machine holds a key for the server.'
-                : 'Not registered yet.'}
+          {isLinux && (
+            <div className="sl-setting">
+              <div className="sl-setting__label">
+                Install agent updates automatically
+                <small>The agent downloads and verifies a newer version and installs it at the next start. Off, it only tells you one is waiting.</small>
+              </div>
+              <button
+                type="button" className="sl-switch" role="switch" aria-checked={state?.autoUpdate ?? true}
+                aria-label="Install agent updates automatically"
+                onClick={() => void toggleAutoUpdate(!(state?.autoUpdate ?? true))}
+              />
             </div>
-            <div style={{ color: 'var(--color-dim)', fontSize: 11, marginTop: 5, lineHeight: 1.5 }}>
-              The machine key is kept in the agent's config file and never shown here. If it is ever
-              exposed, use Register / Re-register above to rotate it.
-            </div>
-          </div>
-
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
-            <input
-              type="checkbox" checked={startWithWindows}
-              onChange={e => void toggleStartup(e.target.checked)}
-            />
-            <span style={{ color: 'var(--color-fg)', fontSize: 13 }}>{startupLabel}</span>
-          </label>
+          )}
         </div>
+      </Card>
 
-        {status && (
-          <div style={{ color: 'var(--color-dim)', fontSize: 12, marginTop: 8 }}>{status}</div>
-        )}
-      </div>
-
-      {/* Updates */}
-      <div>
-        <div style={SECTION_HEADER}>Updates</div>
-        <UpdateStatus platform={state?.platform} />
-      </div>
-
-      {/* Sync Safety */}
-      <div>
-        <div style={SECTION_HEADER}>Sync Safety</div>
-        <label style={LABEL}>Wait for saves to settle (seconds)</label>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input
-            type="number" min={0} max={300}
-            value={settleQuietSeconds}
-            onChange={e => { dirtyFields.current.add('settleQuietSeconds'); setSettleQuietSeconds(e.target.value) }}
-            style={{ ...INPUT, width: 80, fontSize: 13 }}
-          />
-          <button style={BTN_PRIMARY} onClick={() => void save()} disabled={busy}>Save</button>
-        </div>
-        <div style={{ color: 'var(--color-dim)', fontSize: 11, marginTop: 7, lineHeight: 1.5 }}>
-          After a game closes, SaveLocker waits until its save folder stops changing for this long
-          before backing it up — so a game that keeps writing for a few seconds after exit can't be
-          captured half-finished. Raise it if a game is slow to flush its save. 0 backs up
-          immediately. Manual syncs are never delayed.
-        </div>
-      </div>
+      <Card title="Updates"><UpdateStatus platform={state?.platform} /></Card>
 
       {/* Moved here from the Overview when it was trimmed to quick info (checkpoint-ui plan.md,
           Phase 5) — this is where the prototype puts them. The launch-options card is still the
@@ -382,128 +328,51 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged }
         <PlaynitePluginCard />
       </div>
 
-      {/* Tracked Games */}
-      <div>
-        <div style={SECTION_HEADER}>Currently Tracked Games</div>
-
-        <div style={{
-          background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 5,
-          overflow: 'hidden', marginBottom: 10,
-        }}>
-          {games.length === 0 ? (
-            <div style={{ padding: '14px 13px', color: 'var(--color-dim)', fontSize: 12 }}>
-              No games tracked yet. Go to Add Games to enroll.
+      <Card
+        title="Tracked games"
+        flush
+        headerRight={selectedGames.size > 0 && (
+          confirmingRemove ? (
+            <div className="sl-confirm">
+              <span>Stop syncing {selectedGames.size} here? Their saves stay on the server.</span>
+              <Button size="sm" variant="primary" onClick={() => void removeSelected()}>Stop tracking {selectedGames.size}</Button>
+              <Button size="sm" variant="quiet" onClick={() => setConfirmingRemove(false)}>Keep</Button>
             </div>
-          ) : games.map(g => (
-            <div
-              key={g.id}
-              style={{
-                display: 'flex', alignItems: 'flex-start',
-                padding: '10px 13px',
-                borderBottom: '1px solid var(--color-line)',
-                gap: 10,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={selectedGames.has(g.id)}
-                onChange={() => toggleGame(g.id)}
-                style={{ marginTop: 2 }}
-              />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: 'var(--color-fg)', fontSize: 13, fontWeight: 500, marginBottom: 3 }}>
-                  {g.name}
-                </div>
-                {g.path && (
-                  <div style={{
-                    color: 'var(--color-dim)', fontSize: 10, marginBottom: 5,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace",
-                  }}>
-                    {g.path}
-                  </div>
-                )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: g.path ? 0 : 3 }}>
-                  {/* An unmapped game (enrolled before Add Games gated on a folder) needs a path
-                      set; a mapped one only ever needs it changed. Distinct labels, and neither
-                      collides with Add Games' "Set save folder". */}
-                  {!g.path && <span style={{ color: 'var(--color-watch-ink)', fontSize: 11 }}>No save folder set</span>}
-                  <button
-                    onClick={() => void pickFolderFor(g)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 5,
-                      padding: '5px 10px', background: 'transparent',
-                      border: `1px solid ${g.path ? 'var(--color-line)' : 'var(--color-accent-line)'}`, borderRadius: 4,
-                      color: g.path ? 'var(--color-dim)' : 'var(--color-accent-ink)', fontSize: 11, fontWeight: 600,
-                      cursor: 'pointer', fontFamily: 'inherit',
-                    }}
-                  >
-                    <FolderSearch size={12} strokeWidth={1.75} />
-                    <span>{g.path ? 'Change save path' : 'Set save path'}</span>
-                  </button>
-                </div>
-
-                {/* Launch/exit sync state, stated honestly. An empty process list means the
-                    watcher excludes this game entirely — no lease, no push when you quit, and no
-                    refusal to overwrite saves while it is running. Claiming automatic sync here
-                    would be a lie, so the row says which it is and offers the fix. WA-08. */}
-                {state?.platform !== 'Linux' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                    {g.processNames.length > 0 ? (
-                      <span style={{ color: 'var(--color-dim)', fontSize: 10 }}>
-                        Launch/exit sync: {g.processNames.join(', ')}
-                      </span>
-                    ) : (
-                      <span style={{ color: 'var(--color-watch-ink)', fontSize: 11 }}>
-                        Launch/exit sync not configured
-                      </span>
-                    )}
-                    <button
-                      onClick={() => void editProcessesFor(g)}
-                      style={{
-                        padding: '4px 9px', background: 'transparent',
-                        border: `1px solid ${g.processNames.length > 0 ? 'var(--color-line)' : 'var(--color-watch-line)'}`,
-                        borderRadius: 4,
-                        color: g.processNames.length > 0 ? 'var(--color-dim)' : 'var(--color-watch-ink)',
-                        fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
-                      }}
-                    >
-                      {g.processNames.length > 0 ? 'Edit' : 'Set game process'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button
-            onClick={() => void removeSelected()}
-            disabled={selectedGames.size === 0}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              padding: '6px 12px', background: 'transparent',
-              border: '1px solid var(--color-watch-line)', borderRadius: 4,
-              color: 'var(--color-watch-ink)', fontSize: 12, cursor: 'pointer',
-              fontFamily: 'inherit',
-              opacity: selectedGames.size === 0 ? 0.45 : 1,
-            }}
-          >
-            <Trash2 size={13} strokeWidth={1.75} color="var(--color-watch-ink)" />
-            <span>Remove selected</span>
-          </button>
-        </div>
-      </div>
-
-      {picker.browsing && (
-        <PathBrowserModal
-          gameName={picker.browsing.name}
-          initialPath={picker.browsing.start}
-          onConfirm={path => void picker.confirmBrowsed(path)}
-          onCancel={picker.cancel}
-        />
-      )}
+          ) : (
+            <Button size="sm" onClick={() => setConfirmingRemove(true)}>Remove {selectedGames.size} selected…</Button>
+          )
+        )}
+      >
+        {games.length === 0 ? (
+          <div className="sl-empty">No games tracked yet. Go to Add Games to enroll.</div>
+        ) : (
+          <div className="sl-table-wrap">
+            <table className="sl-table">
+              <tbody>
+                {games.map(g => (
+                  <tr key={g.id}>
+                    <td style={{ width: 28 }}>
+                      <input
+                        type="checkbox" aria-label={`Select ${g.name}`}
+                        checked={selectedGames.has(g.id)} onChange={() => toggleGame(g.id)}
+                      />
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{g.name}</div>
+                      <div className="sl-path">{g.path || 'No save folder set'}</div>
+                    </td>
+                    <td>
+                      {!g.path && <Chip tone="warn">No save folder</Chip>}
+                      {!isLinux && g.processNames.length === 0 && <> <Chip tone="warn">Launch/exit sync off</Chip></>}
+                    </td>
+                    <td className="sl-num"><Button size="sm" onClick={() => onOpenGame(g.id)}>Manage</Button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   )
 }

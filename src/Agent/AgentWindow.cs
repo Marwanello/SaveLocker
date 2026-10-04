@@ -36,7 +36,8 @@ internal sealed class AgentWindow : Form
         _pendingUrl = UrlForView(port, view);
         Text = "SaveLocker";
         Icon = AppResources.Icon;
-        if (look is not null) ApplyLook(look);
+        // ApplyLook sets the background as well; with no look the packaged icon stays, so only the background is set.
+        if (look is not null) ApplyLook(look); else ApplyBackground(null);
         // WinForms ClientSize units are physical pixels even when DeviceDpi > 96.
         // WebView2 divides physical px by devicePixelRatio (= DeviceDpi/96) to get CSS px.
         // So to get 900×600 CSS pixels we need 900*(DeviceDpi/96) × 600*(DeviceDpi/96) physical px.
@@ -44,7 +45,6 @@ internal sealed class AgentWindow : Form
         ClientSize = new Size((int)(900 * dpiScale), (int)(600 * dpiScale));
         FormBorderStyle = FormBorderStyle.Sizable;
         StartPosition = FormStartPosition.CenterScreen;
-        BackColor = Color.FromArgb(0x0d, 0x11, 0x14);
         Controls.Add(_webView);
     }
 
@@ -60,6 +60,18 @@ internal sealed class AgentWindow : Form
         Icon = next;
         _ownedIcon?.Dispose();
         _ownedIcon = next;
+        ApplyBackground(look);
+    }
+
+    // Shown before WebView2's first paint, so it is the page's own background (agent-ui's --color-ink)
+    // for the theme in effect; a fixed dark one flashed on every open for someone in light mode.
+    private void ApplyBackground(SaveLocker.Shared.AppearanceDto? look)
+    {
+        var theme = look?.Theme ?? "system";
+        var light = theme == "light" || (theme == "system" && MarkIcon.AppsAreLight());
+        var ink = light ? Color.FromArgb(0xf5, 0xf3, 0xef) : Color.FromArgb(0x0f, 0x0f, 0x10);
+        BackColor = ink;
+        _webView.DefaultBackgroundColor = ink;
     }
 
     protected override void Dispose(bool disposing)
