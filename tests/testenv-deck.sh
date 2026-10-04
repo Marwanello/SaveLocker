@@ -80,11 +80,22 @@ show_real_game_mappings() {
   grep -o '"SaveDirectory": *"[^"]*"' "$cfg" | sed -E 's/.*"SaveDirectory": *"([^"]*)"/\1/' |
   while IFS= read -r dir; do
     case "$dir" in
-      "$XDG_DATA_HOME"*) ;;
+      ""|"$XDG_DATA_HOME"*) ;;
       *) echo "WARNING: the test agent maps a real folder: $dir" >&2
          echo "  a pull from the test console would restore over it." >&2 ;;
     esac
   done || true
+}
+
+# A key the console no longer knows counts as no key: the console's data volume can be recreated
+# (testenv clean, or a new volume) while this state directory survives, and then every call from
+# the agent - heartbeats, polls, adding a game - answers 401. Only a definite 401 means re-register;
+# any other answer (including no answer) keeps the key.
+has_live_key() {
+  local key
+  key=$(grep -oi '"apikey": *"[^"]*"' "$STATE/config.json" 2>/dev/null | sed -E 's/.*: *"([^"]*)"//')
+  [ -n "$key" ] || return 1
+  [ "$(curl -s -o /dev/null -m 5 -w '%{http_code}' -H "X-Api-Key: $key" "$SERVER_URL/api/games")" != 401 ]
 }
 
 cmd_up() {
@@ -99,8 +110,8 @@ cmd_up() {
   fi
 
   # Registering is idempotent from the caller's point of view but rotates the key, so only do it
-  # when this state directory has no credential yet.
-  if ! grep -qi '"apikey"' "$STATE/config.json" 2>/dev/null; then
+  # when this state directory has no credential the console still accepts.
+  if ! has_live_key; then
     echo "== registering '$MACHINE' against $SERVER_URL =="
     "$BIN" set-server --url "$SERVER_URL" >/dev/null || die "set-server failed"
     "$BIN" register --name "$MACHINE" | head -2
@@ -229,7 +240,7 @@ cmd_conflict() {
     echo "  seeded $CONFLICT_FILES file(s), ~$CONFLICT_SIZE_MB MB total, in $dir"
   fi
 
-  if ! grep -qi '"apikey"' "$STATE/config.json" 2>/dev/null; then
+  if ! has_live_key; then
     echo "== registering '$MACHINE' against $SERVER_URL =="
     "$BIN" set-server --url "$SERVER_URL" >/dev/null || die "set-server failed"
     "$BIN" register --name "$MACHINE" | head -2

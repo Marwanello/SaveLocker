@@ -193,6 +193,9 @@ sealed partial class UiApp
     private readonly HashSet<int> _selected = new();
     private Task<(int enrolled, int skipped)>? _enrollTask;
     private string _addStatus = "";
+    // Shown just above the Enroll button rather than in the status line at the top: a failure has to
+    // be where the person is looking, which is the button they just pressed.
+    private string _enrollError = "";
 
     /// <summary>
     /// Which discovered games the list shows. Not cosmetic on a Deck: the scan now returns installed
@@ -1656,7 +1659,7 @@ sealed partial class UiApp
             }
             else
             {
-                _addStatus = "Enroll failed: " + (_enrollTask.Exception?.GetBaseException().Message ?? "unknown error");
+                _enrollError = "Couldn't add the games: " + (_enrollTask.Exception?.GetBaseException().Message ?? "unknown error");
             }
             _enrollTask = null;
         }
@@ -1731,6 +1734,8 @@ sealed partial class UiApp
         // covers the button, the gap above it, and ImGui's item spacing on both.
         var buttonH = ImGui.GetTextLineHeight() + (Theme.Space.Sm + 2f) * 2;
         var barH = buttonH + Theme.Space.Sm + ImGui.GetStyle().ItemSpacing.Y * 2 + Theme.Space.Sm;
+        if (!string.IsNullOrEmpty(_enrollError) && _enrollTask is not { IsCompleted: false })
+            barH += ImGui.GetTextLineHeight() * 2 + Theme.Space.Xs;
         var listH = MathF.Max(120f, ImGui.GetContentRegionAvail().Y - barH);
 
         // AlwaysUseWindowPadding: a child without it gets ZERO padding, so these full-width rows would
@@ -1766,10 +1771,35 @@ sealed partial class UiApp
 
         Widgets.Gap(Theme.Space.Sm);
 
-        bool blocked = _selected.Count == 0 || missing.Count > 0 || _enrollTask is { IsCompleted: false };
+        if (_enrollTask is { IsCompleted: false })
+        {
+            // While a batch runs the button gives way to where it is, so a slow server or a failure is
+            // never a button that just looks pressed. Same steps and fill as the browser agent UI's bar.
+            var p = Enroller.Progress;
+            var total = p.Total > 0 ? p.Total : _selected.Count;
+            var started = p.Active && p.Index > 0 && total > 0;
+            var head = started ? $"Adding game {p.Index} of {total}" : "Adding games";
+            var step = !p.Active || string.IsNullOrEmpty(p.Step) ? "Getting ready"
+                : p.Game is null ? p.Step : $"{p.Game}: {p.Step.ToLowerInvariant()}";
+            Widgets.Text($"{head} — {step}…", Theme.Fg, Theme.Caption);
+            Widgets.Gap(Theme.Space.Xs);
+            Widgets.ProgressBar(started ? (p.Index - 0.5f) / total : 0f, ImGui.GetContentRegionAvail().X);
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(_enrollError))
+        {
+            Widgets.TextWrapped(_enrollError, Theme.WatchInk, Theme.Caption);
+            Widgets.Gap(Theme.Space.Xs);
+        }
+
+        bool blocked = _selected.Count == 0 || missing.Count > 0;
         var label = _selected.Count > 0 ? $"Enroll {_selected.Count} selected" : "Enroll selected";
         if (Widgets.PillButton(label, Widgets.ButtonKind.Primary, Icons.Check, enabled: !blocked))
+        {
+            _enrollError = "";
             _enrollTask = Enroller.EnrollAsync(_config, new List<ScanCandidate>(_candidates), _selected.ToArray());
+        }
 
         if (missing.Count > 0)
         {

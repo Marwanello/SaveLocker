@@ -1074,13 +1074,31 @@ function Start-Console {
     Warn "console did not answer on :$ConsolePort"
 }
 
+# A key the console no longer knows counts as no key: the console's data volume can be recreated
+# (clean, or a new volume) while the agent's state survives, and then every call it makes answers
+# 401. Only a definite 401 means re-register; no answer at all keeps the key.
+function Test-LiveKey {
+    param([string]$Cfg)
+    if (-not (Test-Path $Cfg)) { return $false }
+    $m = [regex]::Match((Get-Content $Cfg -Raw), '"apiKey"\s*:\s*"([^"]+)"', 'IgnoreCase')
+    if (-not $m.Success) { return $false }
+    try {
+        Invoke-WebRequest -Uri "$serverUrl/api/games" -Headers @{ 'X-Api-Key' = $m.Groups[1].Value } `
+            -UseBasicParsing -TimeoutSec 5 | Out-Null
+        return $true
+    } catch {
+        $r = $_.Exception.Response
+        return -not ($r -and [int]$r.StatusCode -eq 401)
+    }
+}
+
 function Start-Windows {
     if (-not (Test-Path $agentDll)) { throw "not built — run: .\tests\testenv.ps1 build" }
     Stop-Windows | Out-Null
     Use-TestEnvVars
     try {
         $cfg = Join-Path $winState 'config.json'
-        $registered = (Test-Path $cfg) -and ((Get-Content $cfg -Raw) -match '"apiKey"')
+        $registered = Test-LiveKey $cfg
         if (-not $registered) {
             Say "registering the Windows test agent against $serverUrl"
             & $dotnet $agentDll set-server --url $serverUrl | Out-Null
@@ -1198,7 +1216,7 @@ function New-ConflictOnWindows {
         New-SyntheticSaveFiles -Dir $dir -SizeMb $Size -FileCount $Files
 
         $cfg = Join-Path $winState 'config.json'
-        $registered = (Test-Path $cfg) -and ((Get-Content $cfg -Raw) -match '"apiKey"')
+        $registered = Test-LiveKey $cfg
         if (-not $registered) {
             Say "registering the Windows test agent against $serverUrl"
             & $dotnet $agentDll set-server --url $serverUrl | Out-Null

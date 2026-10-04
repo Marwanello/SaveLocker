@@ -99,6 +99,17 @@ cmd_build_deck() {
   echo "artifact: $dest/$(basename "$tarball")"
 }
 
+# A key the console no longer knows counts as no key: the console's data volume can be recreated
+# (testenv clean, or a new volume) while this state directory survives, and then every call from
+# the agent - heartbeats, polls, adding a game - answers 401. Only a definite 401 means re-register;
+# any other answer (including no answer) keeps the key.
+has_live_key() {
+  local key
+  key=$(grep -oi '"apikey": *"[^"]*"' "$STATE/config.json" 2>/dev/null | sed -E 's/.*: *"([^"]*)"//')
+  [ -n "$key" ] || return 1
+  [ "$(curl -s -o /dev/null -m 5 -w '%{http_code}' -H "X-Api-Key: $key" "$SERVER_URL/api/games")" != 401 ]
+}
+
 cmd_up() {
   [ -f "$DLL" ] || die "not built — run: testenv.ps1 build"
   cmd_down >/dev/null 2>&1
@@ -108,9 +119,9 @@ cmd_up() {
   fi
 
   # Registering is idempotent from the caller's point of view but rotates the key, so only do it
-  # when this state directory has no credential yet.
+  # when this state directory has no credential the console still accepts.
   # Case-insensitive: AgentConfig serialises with no naming policy, so the key on disk is "ApiKey".
-  if ! grep -qi '"apikey"' "$STATE/config.json" 2>/dev/null; then
+  if ! has_live_key; then
     echo "== registering '$MACHINE' against $SERVER_URL =="
     dotnet "$DLL" set-server --url "$SERVER_URL" >/dev/null || die "set-server failed"
     dotnet "$DLL" register --name "$MACHINE" | head -2
@@ -214,7 +225,7 @@ cmd_conflict() {
     echo "  seeded $CONFLICT_FILES file(s), ~$CONFLICT_SIZE_MB MB total, in $dir"
   fi
 
-  if ! grep -qi '"apikey"' "$STATE/config.json" 2>/dev/null; then
+  if ! has_live_key; then
     echo "== registering '$MACHINE' against $SERVER_URL =="
     dotnet "$DLL" set-server --url "$SERVER_URL" >/dev/null || die "set-server failed"
     dotnet "$DLL" register --name "$MACHINE" | head -2

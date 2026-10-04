@@ -73,7 +73,16 @@ public static class Enroller
                 // Falls back to the scanned name for anything the manifest does not know.
                 var serverName = c.ManifestKey ?? c.Name;
                 Step(c.Name, "Creating it on the server");
-                var game = await api.CreateGameAsync(new CreateGameRequest(serverName, c.ManifestKey, null));
+                GameDto game;
+                try { game = await api.CreateGameAsync(new CreateGameRequest(serverName, c.ManifestKey, null)); }
+                catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    // Every game would fail the same way, and a bare "401 (Unauthorized)" says nothing
+                    // about the fix: the server no longer knows this machine's key.
+                    throw new InvalidOperationException(
+                        "the server doesn't recognise this machine's key (401). It may have been reset, or " +
+                        "this machine removed from it. Register again: agent UI → Settings → Register / Re-register.", ex);
+                }
                 // Persisted per candidate, not once at the end: a later candidate that fails — or a UI
                 // window closed mid-batch — must not lose the games already created on the server, along
                 // with their Steam AppIDs. SetTracked also clears any per-machine opt-out, so re-adding
