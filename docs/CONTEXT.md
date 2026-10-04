@@ -1681,8 +1681,9 @@ entry (added once by an agent that updates itself); `savelocker pull` exits non-
 <br>**Playnite plugin closed as done (2026-10-01).** Submitted as JosefNemec/PlayniteAddonDatabase#661; the maintainer
 put new plugin submissions on hold until Playnite 11's new add-on database. The listing, the self-update proof and four
 unchecked surfaces are now their own Backlog tasks (`tasks/playnite-*`).
-**Next action:** decide the Steam-art question above, then merge PR #54; run `group-9-verification.md` on the Windows rig;
-Group 10's real-Deck session is done (verified by the maintainer 2026-10-01).
+<br>**Checkpoint UI closed as done (2026-10-04)**, merging with PR #54; the Group 9 `testenv` checklist is its own
+Backlog task now (`tasks/checkpoint-ui-group-9-check/`).
+**Next action:** merge PR #54.
 
 ---
 

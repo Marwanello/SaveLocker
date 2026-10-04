@@ -7,7 +7,9 @@ Read [[plan]] first for tokens, type, motion and the colour rule, and
 [[implementation-grouping]] before starting any phase — it regroups the list below **by surface**
 rather than by phase number, because several phases edit the same components.
 
-## Status (updated 2026-09-29)
+## Status (updated 2026-10-04 — ✅ done)
+
+**Closed as done 2026-10-04**, merging with PR #54. What was left has its own task: the Group 9 `testenv` checklist (`tasks/checkpoint-ui-group-9-check/`), the appearance follow-up (b) (`tasks/appearance-follow-ups/`) and the notification buttons (`tasks/notification-follow-ups/`).
 
 | Phase | Status |
 |---|---|
@@ -17,15 +19,15 @@ rather than by phase number, because several phases edit the same components.
 | 3 — Sync all and progress | ✅ Items 1, 2, 4 shipped 2026-09-18 (Group 2 — console side); item 3 (agent Sync all + progress) shipped 2026-09-20 (Group 3); item 5 (per-game Sync this game) ✅ shipped 2026-09-21 (Group 4) with the game page and a new per-game agent route |
 | 4 — Appearance, and syncing it to the fleet | ✅ Shipped 2026-09-21 (Group 5); item 4 — the Deck's accent ➡️ shipped 2026-09-22 (Group 6). The theme default now follows the OS (every hex colour left the views first). See `implementation-grouping.md` → Groups 5/6 |
 | 5 — Agent UI | ✅ Shipped 2026-09-21 (Groups 3–4): Overview trim, Games tab (list + grid), per-game page, art through the agent, Add-games search. Verified in a browser against the test rig; not verified in the WebView2 tray window or on a Deck |
-| 6 — Deck and Wayland | 🚧 Items 1-3 ✅ shipped 2026-09-22 (Group 6) — verified live (real screenshots, pixel-sampled colours, `--nav`-scripted L1/R1 with `--nav-debug`) since `savelocker ui` runs on this Windows box without WSLg; a real focus-timing bug was found and fixed this way — see `implementation-grouping.md` → Group 6. No real Deck/gamescope pass yet. Item 4 (Wayland) ⏳ Group 10 (part 10d) — **decided 2026-09-28: option 1**, a chrome-less browser app window (see below); a short Deck measurement comes first |
+| 6 — Deck and Wayland | ✅ Items 1-3 shipped 2026-09-22 (Group 6); item 4 (Wayland: a chrome-less browser app window) shipped 2026-09-29 (Group 10d). Checked on a real Deck by the maintainer 2026-10-01 |
 | 7 — OS notifications | ✅ Shipped 2026-09-24 (Group 7) — shared rules, a real Windows toast and the generalised Linux notifier. Buttons are links to the agent UI, not callbacks (measured: Windows' toast host refuses freshly registered URL schemes); "Retry now"/"Install now" did not survive that. See Phase 7 below |
-| 8 — Assets | 🚧 Partially shipped 2026-09-17 (Group 1). Remainder (Steam library art, PNG favicons, the installer icon — all still the pre-Checkpoint brand) ⏳ Group 10 (part 10c) |
+| 8 — Assets | ✅ Shipped — marks + SVG favicon 2026-09-17 (Group 1); Steam library art, PNG favicons, the installer icon 2026-09-29 (Group 10c) |
 | 9 — Console page kit and top bar | ✅ Shipped 2026-09-28 (Group 8a) — the `ui/` kit, pill tabs, the always-present bell with per-item actions, the SVG lock, the conflict pill, the full-width rail with Cancel (`POST /commands/cancel`, new `Cancelled` status). The Backups tab arrives with Group 9 |
 | 10 — Console Games page | ✅ Shipped 2026-09-28 (Groups 8b + 8c) — split into `components/game/`, then re-laid out; no `alert()`/`confirm()`/`prompt()` left on the page (guarded by `run-appearance-consistency-tests`). Departures: see `implementation-grouping.md` → Group 8 |
 | 11 — Backups tab and Configuration | ✅ Shipped 2026-09-29 (Group 9a: 11.1–11.5, 11.8; 9b: 11.6–11.7). `testenv` pass written, not yet run — `group-9-verification.md` |
 | 12 — Console Audit log, Help, What's new, sign-in | ✅ Shipped 2026-09-29 (Group 9c) — `StagedVersion` on the heartbeat, `LatestRelease` on `ServerBuildInfo`, Remember this browser. No `passwd` verb: the hint points at the documented reset |
-| 13 — Agent UI, completed | ⏳ Not started — Group 10 |
-| 14 — Deck Game Mode, completed | ⏳ Not started — Group 10 |
+| 13 — Agent UI, completed | ✅ Shipped 2026-09-29 (Group 10a) |
+| 14 — Deck Game Mode, completed | ✅ Shipped 2026-09-29 (Group 10b); checked on a real Deck 2026-10-01 |
 
 ## The 2026-09-27 audit — what the prototype shows that did not ship
 
