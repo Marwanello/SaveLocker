@@ -18,7 +18,7 @@ requirements the emulator branch found. This file supersedes its "proposed phase
 
 | Phase | Status |
 |---|---|
-| 1 — Archive core | ⏳ Not started |
+| 1 — Archive core | ✅ Shipped 2026-10-04 — `SaveRoot` + multi-root `SaveArchive`, include primitive ported; `MultiRootArchiveTests` 16 + `IncludeGlobTests` 9, every guard mutation-checked; unit 206/206, hardening 33, delta 33 |
 | 2 — Server model + wire | ⏳ Not started |
 | 3 — Agent sync core | ⏳ Not started |
 | 4 — Reconcile, CLI, local API, doctor | ⏳ Not started |

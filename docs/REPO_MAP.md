@@ -12,7 +12,9 @@ SaveLocker/
 │   │   ├── Contracts.cs                 # Wire DTOs — shared by server + agent
 │   │   ├── AgentEventCodes.cs           # The fixed vocabulary of agent event codes (dedupe keys)
 │   │   ├── SaveArchive.cs               # Content hashing + atomic zip restore + per-file manifest
-│   │   │                               #   (`ComputeManifest`) for delta uploads
+│   │   │                               #   (`ComputeManifest`) for delta uploads. Several save folders per
+│   │   │                               #   game: primary at the zip root, extras under `.savelocker/`
+│   │   ├── SaveRoot.cs                  # One save folder of a game: key (`main` or an extra), dir, include scope
 │   │   ├── ManifestLoader.cs            # Ludusavi manifest downloader + cloud/tag parsing
 │   │   ├── Appearance.cs                # The look (theme/accent/mark) as three closed id lists + the DTOs,
 │   │   │                               #   and `Appearances.Normalize` — every reader normalises, none rejects
