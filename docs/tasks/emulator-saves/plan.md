@@ -23,7 +23,8 @@ continue past a phase's own stopping point unless explicitly instructed to.
 
 | Phase | Status |
 |-------|--------|
-| 1 — `SaveArchive` include-globs + RetroArch | 🚧 In progress — code + tests done 2026-10-04 (branch `emulator-saves`), verified on a scratch two-machine rig and through `testenv` (Windows + fixture). **Waiting on the real-hardware pass** (EmuDeck on the Deck + EmuDeck for Windows). Deviations below under *Phase 1 — as built*. |
+| 1 — `SaveArchive` include-globs + RetroArch | 🚧 In progress — code + tests done 2026-10-04 (branch `emulator-saves`), verified on a scratch two-machine rig and through `testenv` (Windows + fixture). **Waiting on the real-hardware pass** (EmuDeck on the Deck + EmuDeck for Windows). Deviations below under *Phase 1 — as built*. **Branch paused** (maintainer, 2026-10-04): *Multiple save paths* is built and merged first, then this branch is rebased and continues with 1b. |
+| 1b — RetroArch save states | ⏳ Not started — **blocked on [Multiple save paths](../multiple-save-paths/summary.md)**. Decided 2026-10-04, below under *Save states — decided*. |
 | 2 — PCSX2 / Dolphin / DuckStation + shared-card warning | ⏳ Not started |
 | 3 — `gamelist.xml` names | ⏳ Not started — **revisit**: Phase 1 made the cleaned file name the game's identity, so a nicer display name can no longer change the name |
 | 4 — PrimeHack | ⏳ Not started |
@@ -53,6 +54,31 @@ a game whose server-side scope differs from the candidate's. `EmulatorSystem` co
 `Emulation/roms/<system>` folder the ROM is in (ES-DE vocabulary, as Phase 7 wants); `EmulatorCore` is the
 per-core folder name. Windows `SuggestedProcessName` stays null (no lease/exit-push lifecycle for emulator
 games yet — that is the deferred SRM item).
+
+### Save states — decided (2026-10-04, maintainer), reversing "out of scope everywhere" for RetroArch
+
+- **They will be synced, always — not opt-in.** The maintainer accepts the cross-version risk: a state
+  is tied to the core build that wrote it and often fails to load after a core update, and never across
+  emulators (libretro/RetroArch#18033, #17836) — the Deck's Flatpak RetroArch and a Windows RetroArch can
+  run different core versions. The `.srm` is unaffected either way.
+- **As a second save path of the same game, after *Multiple save paths* lands — not now.** The considered
+  alternative (point the game at the RetroArch folder and scope it to `saves/<rom>.srm` +
+  `states/<rom>.state*`, which works on EmuDeck because both are siblings on both OSes) was turned down in
+  favour of the cleaner model.
+- **What 1b reads**, researched 2026-10-04: EmuDeck links `Emulation/saves/retroarch/states` to
+  `~/.var/app/org.libretro.RetroArch/config/retroarch/states` (SteamOS) and
+  `%USERPROFILE%\emudeck\EmulationStation-DE\Emulators\RetroArch\states` (Windows) —
+  emudeck.github.io/save-management/steamos and /emulators/windows/retroarch. A standalone RetroArch has
+  `savestate_directory` in `retroarch.cfg` (already parsed, unused) and a "sort states by core" option.
+  Files per ROM: `<rom>.state`, `<rom>.state1…N`, `<rom>.state.auto` (written on every exit when auto-save
+  is on — expect a push after every session) and `<rom>.state*.png` thumbnails. Scope for the states path:
+  `<rom>.state*` (catches all of them, thumbnails included). Sizes run from a few hundred KB (SNES) to
+  tens of MB (N64/PS1), so the per-file delta upload matters here.
+
+Also fixed the same day: Phase 1 looked for EmuDeck-for-Windows' RetroArch under a guessed `%APPDATA%`
+path; the documented one is `%USERPROFILE%\emudeck\EmulationStation-DE\Emulators\RetroArch`, now a config
+root. It matters because EmuDeck's docs call `Emulation\saves\retroarch\saves` a "shortcut" — if that is a
+`.lnk` file and not a link, the EmuDeck path finds nothing on Windows and this is the only way in.
 
 Known limits: two saves that clean to one name on the same machine (two regions, two cores) keep only the
 newest; two machines with different dumps of a game (`(USA)` vs `(USA) (Rev 1)`) get the same name but different

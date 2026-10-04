@@ -56,9 +56,10 @@ public static class RetroArchConfig
             return new[]
             {
                 Path.Combine(appData, "RetroArch"),
-                // EmuDeck for Windows' own RetroArch copy. Not confirmed against a real install yet;
-                // its saves are found through Emulation/saves/retroarch/saves regardless.
-                Path.Combine(appData, "emudeck", "Emulators", "RetroArch"),
+                // EmuDeck for Windows' own RetroArch (emudeck.github.io/emulators/windows/retroarch). Its
+                // docs call Emulation\saves\retroarch\saves a "shortcut"; if that is a .lnk file rather
+                // than a link, the EmuDeck path finds nothing and this is the only way in.
+                Path.Combine(home, "emudeck", "EmulationStation-DE", "Emulators", "RetroArch"),
             };
         }
         return new[]

@@ -1710,7 +1710,15 @@ delta 33, hardening 33, health 33; a scratch two-machine round trip (Linux daemo
 leaving the other ROMs' saves intact); and through `testenv` — `emu-fixture` (new) → the Windows test tray's
 Add games listed the fixture's saves, adding Chrono Trigger and Sync all uploaded a one-file archive. **Not
 verified:** a real EmuDeck install on the Deck or on Windows (`Build and Run` → *Testing emulator saves*).
-<br>**Next action for this item:** the hardware pass; then Phase 2 (PCSX2/Dolphin/DuckStation) in a new session.
+<br>**Same day, follow-up: save states decided, and the branch is PAUSED.** RetroArch states will sync, always
+(not opt-in), as a second save path of the same game — so they wait for *Multiple save paths*, which the
+maintainer chose to build first in its own session/branch off `main`; `emulator-saves` is then rebased and
+continues with Phase 1b (states). What that feature must provide for emulators is appended to
+`tasks/multiple-save-paths/summary.md`; the states research is in `tasks/emulator-saves/plan.md` → *Save states
+— decided*. Also fixed: EmuDeck for Windows' RetroArch lives at
+`%USERPROFILE%\emudeck\EmulationStation-DE\Emulators\RetroArch` (Phase 1 had guessed an `%APPDATA%` path).
+<br>**Next action for this item:** a new session builds *Multiple save paths* (start with a `plan.md`); the
+EmuDeck hardware pass for Phase 1 can happen before or after it.
 
 ---
 

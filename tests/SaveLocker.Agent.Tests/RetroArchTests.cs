@@ -96,6 +96,17 @@ public sealed class RetroArchTests : IDisposable
     }
 
     [Fact]
+    public void A_config_root_without_a_cfg_falls_back_to_its_saves_folder()
+    {
+        // EmuDeck for Windows: the RetroArch folder itself, reached when Emulation\saves is a .lnk.
+        var config = Path.Combine(_root, "RetroArch");
+        Touch("RetroArch/saves/Tetris.srm");
+
+        Assert.Equal(new[] { Path.Combine(config, "saves") },
+            RetroArchConfig.SaveDirectories(Array.Empty<string>(), new[] { config }));
+    }
+
+    [Fact]
     public void Config_parse_and_path_expansion()
     {
         var cfg = RetroArchConfig.Parse("a = \"1\"\r\nbad line\n# x = 2\nsavefile_directory = \"default\"\na = \"3\"\n");
