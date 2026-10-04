@@ -24,7 +24,6 @@ Not-yet-done work only. Each line is the task's title, linked to its plan or sum
 - [Art picker: choose which SteamGridDB game to pull from](tasks/art-picker-game-choice/summary.md)
 - [Art files outlive their game](tasks/art-cleanup-on-delete/summary.md)
 - [Interactive setup guide](tasks/interactive-setup-guide/summary.md)
-- [Playnite plugin: launching a game another machine has open](tasks/playnite-lease-held-elsewhere/summary.md)
 - [Playnite plugin: prove the self-update against a real release](tasks/playnite-self-update-proof/summary.md)
 - [QAM left-stick scrolling](tasks/decky-qam-scrolling/summary.md)
 - [Duplicate-shortcut warnings outside doctor](tasks/duplicate-shortcut-warnings/summary.md)

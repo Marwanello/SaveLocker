@@ -29,7 +29,7 @@ against. Phase 1 below (scaffold + load) is genuinely attemptable here, not just
 **Closed as done 2026-10-01.** The plugin is released (v0.1.2), installs from the agent UI card and the Releases
 page, and was submitted to the add-on database ([JosefNemec/PlayniteAddonDatabase#661](https://github.com/JosefNemec/PlayniteAddonDatabase/pull/661)),
 where new plugin submissions are on hold until Playnite 11's new add-on database. What is left has its own task:
-`tasks/playnite-addon-submission/`, `tasks/playnite-self-update-proof/` and `tasks/playnite-lease-held-elsewhere/`.
+`tasks/playnite-addon-submission/` and `tasks/playnite-self-update-proof/`. The held-lease launch was confirmed on hardware 2026-10-04.
 
 Same status-table convention `conflict-resolution-ui/plan.md` established — kept current as phases
 ship, not written once and left stale. See `implementation-grouping.md` for which phases share a
