@@ -298,6 +298,7 @@ public sealed class SyncService
             ManifestKey = req.ManifestKey,
             CustomPathsJson = req.CustomPathsJson,
             SuggestedSaveDir = string.IsNullOrWhiteSpace(req.SuggestedSaveDir) ? null : req.SuggestedSaveDir.Trim(),
+            IncludeGlobs = req.IncludeGlobs is null ? null : GlobConfig.Join(req.IncludeGlobs),
             Enabled = true
         };
         _db.Games.Add(game);

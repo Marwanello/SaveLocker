@@ -432,6 +432,10 @@ public sealed class AgentConfig
         if (tracked)
         {
             onDisk.UntrackedGameIds.RemoveAll(id => id == gameId);
+            // An entry with no folder on this machine (adopted from the server) is a placeholder, and
+            // enrolling the game here is exactly what fills it in. A mapped one is never replaced.
+            if (entry is not null)
+                onDisk.Games.RemoveAll(g => g.GameId == gameId && !g.IsEnrolledHere);
             if (entry is not null && onDisk.Games.All(g => g.GameId != gameId))
                 onDisk.Games.Add(entry);
         }
@@ -450,7 +454,11 @@ public sealed class AgentConfig
         MutateGames(list =>
         {
             if (!tracked) list.RemoveAll(g => g.GameId == gameId);
-            else if (entry is not null && list.All(g => g.GameId != gameId)) list.Add(entry);
+            else if (entry is not null)
+            {
+                list.RemoveAll(g => g.GameId == gameId && !g.IsEnrolledHere);
+                if (list.All(g => g.GameId != gameId)) list.Add(entry);
+            }
         });
     }
 
@@ -833,6 +841,11 @@ public sealed class TrackedGame
     /// <summary>Effective exclude globs (global defaults ∪ per-game) from the server;
     /// files matching these are skipped when hashing and archiving.</summary>
     public List<string> ExcludeGlobs { get; set; } = new();
+    /// <summary>The server game's include scope (<see cref="GameDto.IncludeGlobs"/>): when non-empty,
+    /// only these files of <see cref="SaveDirectory"/> belong to this game. Mirrored from the server
+    /// by the poller like <see cref="ExcludeGlobs"/>; every hash, archive and restore must pass it,
+    /// or a restore into a shared emulator saves folder deletes the other games' saves.</summary>
+    public List<string> IncludeGlobs { get; set; } = new();
     /// <summary>
     /// When something last confirmed this game's Steam launch options carry the wrapper, and what
     /// went wrong if it could not.

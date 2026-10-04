@@ -26,7 +26,14 @@ public enum ScanSource
     /// axis that tells the two-store cases apart, the same relationship <see cref="Heroic"/> already
     /// has to four different runners.
     /// </summary>
-    Playnite
+    Playnite,
+    /// <summary>
+    /// One game's save file inside an emulator's saves folder — found by the save itself, not by a
+    /// launcher's library, so it works however the ROM was launched (EmuDeck's ES-DE, Steam ROM
+    /// Manager shortcuts, or the emulator's own menu). <see cref="ScanCandidate.EmulatorName"/> says
+    /// which emulator; <see cref="ScanCandidate.IncludeGlobs"/> scopes the shared folder to this game.
+    /// </summary>
+    Emulator
 }
 
 /// <summary>
@@ -100,4 +107,19 @@ public sealed record ScanCandidate(
     /// the Cyberpunk shape is otherwise a row that looks like any other unresolved shortcut.
     /// Null for every other source.
     /// </summary>
-    string? MoonDeckAppId = null);
+    string? MoonDeckAppId = null,
+    /// <summary>"RetroArch", "PCSX2", … — free text, not an enum: which emulators exist changes
+    /// faster than this codebase does. Null for every non-emulator source.</summary>
+    string? EmulatorName = null,
+    /// <summary>The emulated console in EmuDeck/ES-DE's own folder vocabulary ("snes", "psx", …) —
+    /// the <c>Emulation/roms/&lt;system&gt;</c> folder the ROM was found in. Null when no ROM was found.</summary>
+    string? EmulatorSystem = null,
+    /// <summary>The libretro core whose per-core saves folder the file sits in (RetroArch's "Sort
+    /// saves by core"), else null. Diagnostic only — not part of the game's identity.</summary>
+    string? EmulatorCore = null,
+    /// <summary>
+    /// When <see cref="SuggestedSaveDir"/> is shared with other games, the files in it that are THIS
+    /// game's. Sent to the server when the game is created and applied by every machine from then on
+    /// (<see cref="SaveLocker.Shared.GameDto.IncludeGlobs"/>). Null means the whole folder.
+    /// </summary>
+    IReadOnlyList<string>? IncludeGlobs = null);

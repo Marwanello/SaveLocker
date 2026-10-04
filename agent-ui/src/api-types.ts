@@ -2597,6 +2597,8 @@ export interface components {
             prefixPath: null | string;
             processName: null | string;
             store: string;
+            emulatorName?: null | string;
+            emulatorSystem?: null | string;
         };
         CandidateLookupRequest: {
             name: string;
@@ -2727,6 +2729,7 @@ export interface components {
             conflictPolicy?: components["schemas"]["ConflictPolicy"];
             /** Format: uuid */
             preferredMachineId?: null | string;
+            includeGlobs?: null | string[];
         };
         GameStateDto: {
             game: components["schemas"]["GameDto"];

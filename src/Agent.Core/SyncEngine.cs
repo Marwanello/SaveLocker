@@ -287,7 +287,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         if (settle)
         {
             var quiet = await SaveSettler.WaitForQuietAsync(
-                game.SaveDirectory, game.ExcludeGlobs,
+                game.SaveDirectory, game.ExcludeGlobs, game.IncludeGlobs,
                 TimeSpan.FromSeconds(_config.SettleQuietSeconds),
                 TimeSpan.FromSeconds(_config.SettleMaxWaitSeconds),
                 m => _log($"[{game.Name}] {m}"), ct);
@@ -307,7 +307,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         // One pass over the save folder answers both questions a push asks of it: the aggregate
         // content hash (has anything changed at all?) and the per-file manifest a delta negotiates
         // with. Hashing the directory and then building a manifest read every byte twice.
-        var (manifest, hash) = SaveArchive.ComputeManifest(game.SaveDirectory, game.ExcludeGlobs);
+        var (manifest, hash) = SaveArchive.ComputeManifest(game.SaveDirectory, game.ExcludeGlobs, game.IncludeGlobs);
         if (!force && hash == game.LastSyncedHash)
         {
             _log($"[{game.Name}] no local changes since last sync.");
@@ -496,7 +496,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             }
             else
             {
-                SaveArchive.CreateArchive(game.SaveDirectory, payload, game.ExcludeGlobs);
+                SaveArchive.CreateArchive(game.SaveDirectory, payload, game.ExcludeGlobs, game.IncludeGlobs);
             }
 
             var result = await _api.UploadSessionPayloadAsync(game.GameId, begin.SessionId!.Value,
@@ -519,7 +519,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         var archive = TempArchive(game.GameId, "push");
         try
         {
-            SaveArchive.CreateArchive(game.SaveDirectory, archive, game.ExcludeGlobs);
+            SaveArchive.CreateArchive(game.SaveDirectory, archive, game.ExcludeGlobs, game.IncludeGlobs);
             return await _api.UploadAsync(
                 game.GameId, hash, game.LastKnownVersionId, force, archive, onProgress, ct);
         }
@@ -644,7 +644,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             }
 
             var (versionId, headHash) = head.Value;
-            var localHash = SaveArchive.HashDirectory(game.SaveDirectory, game.ExcludeGlobs);
+            var localHash = SaveArchive.HashDirectory(game.SaveDirectory, game.ExcludeGlobs, game.IncludeGlobs);
             if (localHash == headHash)
             {
                 game.LastKnownVersionId = versionId;
@@ -660,7 +660,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             // were never pushed (e.g. the real progress on a machine's first sync).
             // localHash != LastSyncedHash means local has un-pushed edits — or this
             // machine has never synced and already has save data.
-            var hasUnsyncedLocal = HasLocalData(game.SaveDirectory) && localHash != game.LastSyncedHash;
+            var hasUnsyncedLocal = HasLocalData(game) && localHash != game.LastSyncedHash;
             if (hasUnsyncedLocal && !force)
             {
                 // The machine is now stuck: it will not pull, and it cannot push without conflicting.
@@ -689,7 +689,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
 
             try
             {
-                SaveArchive.RestoreArchive(archive, game.SaveDirectory, _tempDir);
+                SaveArchive.RestoreArchive(archive, game.SaveDirectory, _tempDir, game.IncludeGlobs);
             }
             catch (SaveArchive.UnsafeArchiveException ex)
             {
@@ -933,8 +933,13 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         return true;
     }
 
-    private static bool HasLocalData(string dir) =>
-        Directory.Exists(dir) && Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Any();
+    // Scoped to the game's own files: in a shared emulator saves folder the OTHER games' saves are not
+    // this game's unsynced progress, and counting them would block its first pull on every machine.
+    private static bool HasLocalData(TrackedGame game) =>
+        game.IncludeGlobs.Count == 0
+            ? Directory.Exists(game.SaveDirectory) &&
+              Directory.EnumerateFiles(game.SaveDirectory, "*", SearchOption.AllDirectories).Any()
+            : SaveArchive.ListFiles(game.SaveDirectory, includeGlobs: game.IncludeGlobs).Count > 0;
 
     /// <summary>
     /// Game launch: take the lease (warn if held elsewhere), and pull the latest save only if the

@@ -44,6 +44,11 @@ public class Game
     /// of the server global defaults when agents hash + archive this game's saves.</summary>
     public string? ExcludeGlobs { get; set; }
 
+    /// <summary>Newline-separated include globs, or null for "the whole save folder". Narrows the folder
+    /// to this game's own files when other games share it (an emulator's saves folder). Set at
+    /// creation by the enrolling agent; see <see cref="GameDto.IncludeGlobs"/>.</summary>
+    public string? IncludeGlobs { get; set; }
+
     /// <summary>What the server does when an upload diverges from the current head.</summary>
     public ConflictPolicy ConflictPolicy { get; set; } = ConflictPolicy.Manual;
 

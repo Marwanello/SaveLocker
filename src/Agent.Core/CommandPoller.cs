@@ -142,6 +142,12 @@ public sealed class CommandPoller : IDisposable
                     local.ExcludeGlobs = serverGlobs.ToList();
                     changed = true;
                 }
+                var serverIncludes = sg.IncludeGlobs ?? Array.Empty<string>();
+                if (!serverIncludes.SequenceEqual(local.IncludeGlobs))
+                {
+                    local.IncludeGlobs = serverIncludes.ToList();
+                    changed = true;
+                }
 
                 // Server now has a stored path for this machine → apply it (highest authority).
                 // "Highest authority" is not "unconditionally trusted": this is the one path source
@@ -214,7 +220,8 @@ public sealed class CommandPoller : IDisposable
                 Name = sg.Name,
                 ManifestKey = sg.ManifestKey,
                 SaveDirectory = dir ?? "",
-                ExcludeGlobs = (sg.ExcludeGlobs ?? Array.Empty<string>()).ToList()
+                ExcludeGlobs = (sg.ExcludeGlobs ?? Array.Empty<string>()).ToList(),
+                IncludeGlobs = (sg.IncludeGlobs ?? Array.Empty<string>()).ToList()
             }));
             changed = true;
             _notify(dir is null

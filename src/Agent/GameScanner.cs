@@ -59,6 +59,7 @@ public sealed class GameScanner : IGameScanner
 
         all.AddRange(await SafeSourceAsync("common save roots", () => ScanSaveRootsAsync(ct), ct));
         all.AddRange(await SafeSourceAsync("Playnite library", () => ScanPlayniteLibraryAsync(ct), ct));
+        all.AddRange(await SafeSourceAsync("RetroArch saves", () => Task.Run(RetroArchSaves.Scan, ct), ct));
 
         // De-dupe by name: prefer a candidate that already has a suggested save dir.
         // Grouped on the NORMALISED name: the same game reaches us spelled differently by

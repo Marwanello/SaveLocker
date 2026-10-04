@@ -65,6 +65,31 @@ public static class GlobConfig
         return null;
     }
 
+    /// <summary>
+    /// Null when <paramref name="patterns"/> may be stored as a game's include scope, else why not.
+    /// Same storage limits as excludes, plus one rule of its own: an include may not climb out of the
+    /// save folder (<c>..</c>) or be absolute — it names files INSIDE the folder every machine maps.
+    /// </summary>
+    public static string? ValidateIncludes(IEnumerable<string>? patterns)
+    {
+        if (patterns is null) return null;
+        var cleaned = patterns.Select(p => p?.Trim() ?? "").Where(p => p.Length > 0).ToList();
+        if (cleaned.Count > MaxPatterns)
+            return $"At most {MaxPatterns} include patterns are allowed per game (got {cleaned.Count}).";
+        foreach (var p in cleaned)
+        {
+            if (p.Length > MaxPatternLength)
+                return $"An include pattern may be at most {MaxPatternLength} characters.";
+            if (p.Any(char.IsControl))
+                return "Include patterns cannot contain control characters or line breaks.";
+            if (p.StartsWith('/') || p.StartsWith('\\') || p.Contains(':') ||
+                p.Replace('\\', '/').Split('/').Contains(".."))
+                return $"Include pattern '{p}' must be a path inside the save folder.";
+            if (SaveArchive.ValidateIncludeGlob(p) is { } why) return why;
+        }
+        return null;
+    }
+
     /// <summary>Global defaults plus a game's own patterns, de-duplicated.</summary>
     public static string[] Effective(IEnumerable<string> defaults, string? perGameRaw) =>
         defaults

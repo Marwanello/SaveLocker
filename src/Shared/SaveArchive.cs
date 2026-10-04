@@ -19,15 +19,18 @@ public static class SaveArchive
     /// machines and runs. Returns the all-zero hash for a missing/empty dir.
     /// <paramref name="excludeGlobs"/> (e.g. <c>*.log</c>, <c>cache/**</c>) are skipped —
     /// pass the SAME globs used for <see cref="CreateArchive"/> so the hash matches the archive.
+    /// <paramref name="includeGlobs"/>, when non-empty, narrows the set to files matching at least one
+    /// of them before excludes apply — see <see cref="FilterIncluded"/>.
     /// </summary>
-    public static string HashDirectory(string sourceDir, IEnumerable<string>? excludeGlobs = null)
+    public static string HashDirectory(string sourceDir, IEnumerable<string>? excludeGlobs = null,
+        IEnumerable<string>? includeGlobs = null)
     {
         using var sha = SHA256.Create();
 
         if (!Directory.Exists(sourceDir))
             return Convert.ToHexString(new byte[32]).ToLowerInvariant();
 
-        var files = EnumerateRelativeFiles(sourceDir, excludeGlobs);
+        var files = EnumerateRelativeFiles(sourceDir, excludeGlobs, includeGlobs);
 
         foreach (var rel in files)
         {
@@ -147,7 +150,8 @@ public static class SaveArchive
     /// save folder for a value no call site reads.
     /// </para>
     /// </summary>
-    public static void CreateArchive(string sourceDir, string destinationZip, IEnumerable<string>? excludeGlobs = null)
+    public static void CreateArchive(string sourceDir, string destinationZip, IEnumerable<string>? excludeGlobs = null,
+        IEnumerable<string>? includeGlobs = null)
     {
         if (!Directory.Exists(sourceDir))
             throw new DirectoryNotFoundException($"Save directory not found: {sourceDir}");
@@ -156,7 +160,7 @@ public static class SaveArchive
 
         // Add files individually (not ZipFile.CreateFromDirectory) so excluded files are skipped.
         using var zip = ZipFile.Open(destinationZip, ZipArchiveMode.Create);
-        foreach (var rel in EnumerateRelativeFiles(sourceDir, excludeGlobs))
+        foreach (var rel in EnumerateRelativeFiles(sourceDir, excludeGlobs, includeGlobs))
             AddEntry(zip, sourceDir, rel);
     }
 
@@ -202,13 +206,13 @@ public static class SaveArchive
     /// </para>
     /// </summary>
     public static (IReadOnlyList<FileManifestEntry> Files, string ContentHash) ComputeManifest(
-        string sourceDir, IEnumerable<string>? excludeGlobs = null)
+        string sourceDir, IEnumerable<string>? excludeGlobs = null, IEnumerable<string>? includeGlobs = null)
     {
         if (!Directory.Exists(sourceDir))
             return (Array.Empty<FileManifestEntry>(), Convert.ToHexString(new byte[32]).ToLowerInvariant());
 
         using var aggregate = SHA256.Create();
-        var files = EnumerateRelativeFiles(sourceDir, excludeGlobs);
+        var files = EnumerateRelativeFiles(sourceDir, excludeGlobs, includeGlobs);
         var result = new List<FileManifestEntry>(files.Count);
         var buffer = new byte[81920];
 
@@ -336,8 +340,16 @@ public static class SaveArchive
     /// agent may have been pointed at by a forged enrollment file (Decisions.md §4). It is size- and
     /// count-checked before extraction, and no destination path may traverse a symlink.
     /// </para>
+    /// <para>
+    /// <paramref name="includeGlobs"/> scopes BOTH passes to the game's own files when its save folder
+    /// is shared with other games (a RetroArch saves folder holds every ROM's <c>.srm</c>): only
+    /// matching archive entries are written, and only matching local files may be deleted. Without
+    /// it the delete pass would remove every other game's save, because none of them are in this
+    /// game's archive. Empty directories are left alone for the same reason.
+    /// </para>
     /// </summary>
-    public static void RestoreArchive(string archiveZip, string targetDir, string? stagingRoot = null)
+    public static void RestoreArchive(string archiveZip, string targetDir, string? stagingRoot = null,
+        IEnumerable<string>? includeGlobs = null)
     {
         if (!File.Exists(archiveZip))
             throw new FileNotFoundException($"Archive not found: {archiveZip}");
@@ -377,10 +389,17 @@ public static class SaveArchive
                     "level. Set SAVELOCKER_ALLOW_NESTED_RESTORE=1 only if this really is a save " +
                     "folder that legitimately repeats its own name.");
             }
+            var includes = CleanGlobs(includeGlobs);
+            bool InScope(string rel) =>
+                includes.Count == 0 || FilterIncluded(new[] { rel.Replace('\\', '/') }, includes).Count == 1;
+
             var checkedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var src in Directory.EnumerateFiles(stagingDir, "*", SearchOption.AllDirectories))
             {
                 var rel = Path.GetRelativePath(stagingFull, src);
+                // Another machine may have archived the whole shared folder; its copy of some OTHER
+                // game's save must not overwrite this machine's.
+                if (!InScope(rel)) continue;
                 var dst = Path.Combine(targetFull, rel);
 
                 // The delete pass below is no-follow, but this copy pass was not: if the target
@@ -406,9 +425,12 @@ public static class SaveArchive
 
             foreach (var tgt in EnumerateFilesNoFollow(targetFull))
             {
-                if (!archiveRel.Contains(Path.GetRelativePath(targetFull, tgt)))
+                var rel = Path.GetRelativePath(targetFull, tgt);
+                if (InScope(rel) && !archiveRel.Contains(rel))
                     File.Delete(tgt);
             }
+
+            if (includes.Count > 0) return;
 
             // Prune empty subdirectories left behind by deletions (deepest first, links skipped —
             // deleting a symlinked directory would remove the user's link, which we never created).
@@ -564,8 +586,9 @@ public static class SaveArchive
     /// same files (e.g. waiting for writes to settle) should use this so they never disagree
     /// with what actually gets archived.
     /// </summary>
-    public static IReadOnlyList<string> ListFiles(string root, IEnumerable<string>? excludeGlobs = null) =>
-        Directory.Exists(root) ? EnumerateRelativeFiles(root, excludeGlobs) : Array.Empty<string>();
+    public static IReadOnlyList<string> ListFiles(string root, IEnumerable<string>? excludeGlobs = null,
+        IEnumerable<string>? includeGlobs = null) =>
+        Directory.Exists(root) ? EnumerateRelativeFiles(root, excludeGlobs, includeGlobs) : Array.Empty<string>();
 
     /// <summary>
     /// Raised (best-effort) when a symlink or junction is skipped, so the agent can say so rather
@@ -698,16 +721,18 @@ public static class SaveArchive
 
     /// <summary>
     /// Ordered, forward-slash relative paths of the files under <paramref name="root"/>,
-    /// minus any matching <paramref name="excludeGlobs"/>. Ordering is stable (Ordinal) so
+    /// narrowed to <paramref name="includeGlobs"/> when any are given, minus any matching
+    /// <paramref name="excludeGlobs"/>. Ordering is stable (Ordinal) so
     /// the hash is reproducible. The same result drives both hashing and archiving.
     /// </summary>
-    private static List<string> EnumerateRelativeFiles(string root, IEnumerable<string>? excludeGlobs = null)
+    private static List<string> EnumerateRelativeFiles(string root, IEnumerable<string>? excludeGlobs = null,
+        IEnumerable<string>? includeGlobs = null)
     {
         var rootFull = Path.GetFullPath(root);
         var all = EnumerateFilesNoFollow(rootFull)
             .Select(f => Path.GetRelativePath(rootFull, f).Replace('\\', '/'));
 
-        var kept = FilterExcluded(all, excludeGlobs);
+        var kept = FilterExcluded(FilterIncluded(all, includeGlobs), excludeGlobs);
         kept.Sort(StringComparer.Ordinal);
         return kept;
     }
@@ -738,6 +763,45 @@ public static class SaveArchive
         var kept = new HashSet<string>(matcher.Match(all).Files.Select(m => m.Path), StringComparer.Ordinal);
         return all.Where(kept.Contains).ToList();
     }
+
+    /// <summary>
+    /// Which of <paramref name="relativePaths"/> match at least one of <paramref name="includeGlobs"/>;
+    /// all of them when there are none. This is how one game owns a single file inside a folder other
+    /// games share — RetroArch writes every ROM's <c>&lt;rom&gt;.srm</c> side by side. It cannot be
+    /// expressed as excludes: the matcher has no negation, so "exclude everything but X" archives
+    /// nothing. Patterns are anchored at the save folder's root (no gitignore-style any-depth
+    /// matching), because a save folder's own subfolders can belong to other games too.
+    /// </summary>
+    public static List<string> FilterIncluded(IEnumerable<string> relativePaths, IEnumerable<string>? includeGlobs)
+    {
+        var all = relativePaths.ToList();
+        var globs = CleanGlobs(includeGlobs);
+        if (globs.Count == 0) return all;
+
+        var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
+        foreach (var g in globs)
+        {
+            try { matcher.AddInclude(g); }
+            catch (ArgumentException ex)
+            {
+                throw new ArgumentException($"Invalid include pattern '{g}': {ex.Message}", ex);
+            }
+        }
+        var kept = new HashSet<string>(matcher.Match(all).Files.Select(m => m.Path), StringComparer.Ordinal);
+        return all.Where(kept.Contains).ToList();
+    }
+
+    /// <summary>Null when <paramref name="glob"/> is a usable include pattern, else why it is not.</summary>
+    public static string? ValidateIncludeGlob(string glob)
+    {
+        var g = glob.Trim();
+        if (g.Length == 0) return null;
+        try { new Matcher(StringComparison.OrdinalIgnoreCase).AddInclude(g); return null; }
+        catch (ArgumentException ex) { return ex.Message; }
+    }
+
+    private static List<string> CleanGlobs(IEnumerable<string>? globs) =>
+        globs?.Where(g => !string.IsNullOrWhiteSpace(g)).Select(g => g.Trim()).ToList() ?? new List<string>();
 
     /// <summary>
     /// Null when <paramref name="glob"/> is usable, else why it is not. The matcher rejects some

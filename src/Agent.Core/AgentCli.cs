@@ -244,6 +244,7 @@ public static class AgentCli
                     tracked.Name = game.Name;
                     tracked.ManifestKey = manifestKey;
                     tracked.SaveDirectory = dir!;
+                    tracked.IncludeGlobs = (game.IncludeGlobs ?? Array.Empty<string>()).ToList();
                     if (opts.TryGetValue("appid", out var appId) && !string.IsNullOrWhiteSpace(appId))
                         tracked.SteamAppId = appId.Trim();
                     if (opts.TryGetValue("proc", out var proc) && !string.IsNullOrWhiteSpace(proc))
@@ -371,7 +372,7 @@ public static class AgentCli
                     if (keep == "local")
                     {
                         game.LastKnownVersionId = winningVersionId;
-                        game.LastSyncedHash = SaveArchive.HashDirectory(game.SaveDirectory, game.ExcludeGlobs);
+                        game.LastSyncedHash = SaveArchive.HashDirectory(game.SaveDirectory, game.ExcludeGlobs, game.IncludeGlobs);
                         config.SaveGameSyncState(game);
                     }
 
@@ -396,7 +397,7 @@ public static class AgentCli
                     }
 
                     foreach (var g in GamesFor(positionals.FirstOrDefault(), config))
-                        Console.WriteLine($"  {g.Name}: {SaveArchive.HashDirectory(g.SaveDirectory, g.ExcludeGlobs)}");
+                        Console.WriteLine($"  {g.Name}: {SaveArchive.HashDirectory(g.SaveDirectory, g.ExcludeGlobs, g.IncludeGlobs)}");
                     break;
                 }
 

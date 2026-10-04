@@ -27,6 +27,7 @@ public static class SaveSettler
     public static async Task<bool> WaitForQuietAsync(
         string directory,
         IEnumerable<string>? excludeGlobs,
+        IEnumerable<string>? includeGlobs,
         TimeSpan quietPeriod,
         TimeSpan maxWait,
         Action<string>? log = null,
@@ -36,6 +37,7 @@ public static class SaveSettler
             return true;
 
         var globs = excludeGlobs?.ToList();
+        var includes = includeGlobs?.ToList();
         var pollMs = Math.Clamp(quietPeriod.TotalMilliseconds / 5, 250, 2000);
         var poll = TimeSpan.FromMilliseconds(pollMs);
 
@@ -57,8 +59,8 @@ public static class SaveSettler
         {
             ct.ThrowIfCancellationRequested();
 
-            var print = Fingerprint(directory, globs);
-            var probe = FileLockProbe.FirstWriter(directory, SaveArchive.ListFiles(directory, globs));
+            var print = Fingerprint(directory, globs, includes);
+            var probe = FileLockProbe.FirstWriter(directory, SaveArchive.ListFiles(directory, globs, includes));
             var locked = probe.LockedFile;
 
             // A probe that cannot answer must not read as "quiet" — say so once, then lean on the
@@ -98,10 +100,11 @@ public static class SaveSettler
     }
 
     /// <summary>Cheap snapshot of the directory's observable state — no file contents read.</summary>
-    private static string Fingerprint(string directory, IEnumerable<string>? excludeGlobs)
+    private static string Fingerprint(string directory, IEnumerable<string>? excludeGlobs,
+        IEnumerable<string>? includeGlobs)
     {
         var sb = new StringBuilder();
-        foreach (var rel in SaveArchive.ListFiles(directory, excludeGlobs))
+        foreach (var rel in SaveArchive.ListFiles(directory, excludeGlobs, includeGlobs))
         {
             var full = Path.Combine(directory, rel.Replace('/', Path.DirectorySeparatorChar));
             try

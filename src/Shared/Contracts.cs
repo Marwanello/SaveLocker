@@ -34,7 +34,11 @@ public record GameDto(
     // carries the effective set (global defaults ∪ per-game) that agents apply.
     string[]? ExcludeGlobs = null,
     ConflictPolicy ConflictPolicy = ConflictPolicy.Manual,
-    Guid? PreferredMachineId = null);
+    Guid? PreferredMachineId = null,
+    // Null/empty: the whole save folder is the game's. Otherwise only files matching one of these
+    // belong to it — one ROM's save inside a folder every other ROM's save shares (RetroArch). Set
+    // once, by the agent that creates the game; every machine applies it to hash, archive AND restore.
+    string[]? IncludeGlobs = null);
 
 /// <summary>A specific machine's stored save path for one game.</summary>
 public record MachineSavePathDto(Guid MachineId, string MachineName, string SavePath);
@@ -55,7 +59,10 @@ public record CreateGameRequest(
     string Name,
     string? ManifestKey,
     string? CustomPathsJson,
-    string? SuggestedSaveDir = null);
+    string? SuggestedSaveDir = null,
+    // Applied only when this request creates the game; an existing game keeps its own scope, and the
+    // caller compares the returned GameDto.IncludeGlobs against what it asked for.
+    string[]? IncludeGlobs = null);
 
 // ----- Server settings (dashboard-managed) -----
 

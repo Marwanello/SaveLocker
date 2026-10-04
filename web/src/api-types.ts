@@ -3757,6 +3757,7 @@ export interface components {
             manifestKey: null | string;
             customPathsJson: null | string;
             suggestedSaveDir?: null | string;
+            includeGlobs?: null | string[];
         };
         CreateSessionRequest: {
             password: null | string;
@@ -3837,6 +3838,7 @@ export interface components {
             conflictPolicy?: components["schemas"]["ConflictPolicy"];
             /** Format: uuid */
             preferredMachineId?: null | string;
+            includeGlobs?: null | string[];
         };
         GameStateDto: {
             game: components["schemas"]["GameDto"];

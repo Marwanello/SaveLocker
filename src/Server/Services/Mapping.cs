@@ -12,12 +12,16 @@ public static class Mapping
     public static GameDto ToDto(this Game g) =>
         new(g.Id, g.Name, g.ManifestKey, g.CustomPathsJson, g.Enabled, g.SuggestedSaveDir,
             null, g.GridUrl, g.HeroUrl, g.LogoUrl, g.IconUrl, g.RetainVersions,
-            GlobConfig.Parse(g.ExcludeGlobs), g.ConflictPolicy, g.PreferredMachineId);
+            GlobConfig.Parse(g.ExcludeGlobs), g.ConflictPolicy, g.PreferredMachineId,
+            NullIfEmpty(GlobConfig.Parse(g.IncludeGlobs)));
 
     public static GameDto ToDtoWithPath(this Game g, string? machineSavePath) =>
         new(g.Id, g.Name, g.ManifestKey, g.CustomPathsJson, g.Enabled, g.SuggestedSaveDir,
             machineSavePath, g.GridUrl, g.HeroUrl, g.LogoUrl, g.IconUrl, g.RetainVersions,
-            GlobConfig.Parse(g.ExcludeGlobs), g.ConflictPolicy, g.PreferredMachineId);
+            GlobConfig.Parse(g.ExcludeGlobs), g.ConflictPolicy, g.PreferredMachineId,
+            NullIfEmpty(GlobConfig.Parse(g.IncludeGlobs)));
+
+    private static string[]? NullIfEmpty(string[] globs) => globs.Length == 0 ? null : globs;
 
     public static SaveVersionDto ToDto(this SaveVersion v) =>
         new(v.Id, v.GameId, v.MachineId, UploaderName(v), v.CreatedAt,

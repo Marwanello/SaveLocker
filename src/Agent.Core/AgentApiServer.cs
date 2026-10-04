@@ -610,7 +610,7 @@ public sealed class AgentApiServer : IDisposable
                 // second, explicit confirmation rather than being silently ignored.
                 if (!body.Confirm)
                 {
-                    var problems = SaveDirSanity.Inspect(check.Canonical, game.ExcludeGlobs);
+                    var problems = SaveDirSanity.Inspect(check.Canonical, game.ExcludeGlobs, game.IncludeGlobs);
                     if (problems.Count > 0)
                         return TypedResults.BadRequest(new ErrorResponse(
                             "That folder looks wrong: " + string.Join(" ", problems) +
@@ -1135,7 +1135,7 @@ public sealed class AgentApiServer : IDisposable
                 var state = await api.GetStateAsync(id);
                 var headHash = state?.Head?.ContentHash;
                 var localHash = !string.IsNullOrWhiteSpace(game.SaveDirectory) && Directory.Exists(game.SaveDirectory)
-                    ? await Task.Run(() => SaveArchive.HashDirectory(game.SaveDirectory, game.ExcludeGlobs))
+                    ? await Task.Run(() => SaveArchive.HashDirectory(game.SaveDirectory, game.ExcludeGlobs, game.IncludeGlobs))
                     : null;
                 var inSync = headHash is not null && localHash is not null &&
                              string.Equals(headHash, localHash, StringComparison.OrdinalIgnoreCase);
@@ -1473,7 +1473,9 @@ public sealed class AgentApiServer : IDisposable
             candidate.SuggestedSaveDir ?? "",
             SaveLocker.Shared.WinePrefix.BrowseStart(candidate.PrefixPath),
             candidate.SuggestedProcessName,
-            candidate.Store.ToString())).ToArray();
+            candidate.Store.ToString(),
+            candidate.EmulatorName,
+            candidate.EmulatorSystem)).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -1559,7 +1561,9 @@ public sealed record AgentStateDto(
 /// </param>
 public sealed record CandidateDto(
     int Id, string Name, string Source, bool HasSteamCloud, string Path, string? PrefixPath,
-    string? ProcessName, string Store);
+    string? ProcessName, string Store,
+    // Which emulator and console, for an emulator save (null otherwise) — the Add games filter's keys.
+    string? EmulatorName = null, string? EmulatorSystem = null);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the

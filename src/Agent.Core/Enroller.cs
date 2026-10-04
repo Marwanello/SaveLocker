@@ -51,7 +51,11 @@ public static class Enroller
                 var c = candidates[id];
                 index++;
                 Step(c.Name, "Checking the save folder");
-                if (config.FindGame(c.Name) is not null) { skipped++; continue; }
+                // A game already set up here is skipped. One that is tracked but has no folder on this
+                // machine (adopted from the server, its template unresolvable here — an emulator game
+                // enrolled on the Deck, seen from Windows) is mapped by enrolling it: the server hands
+                // back the same game and the entry below replaces the empty one.
+                if (config.FindGame(c.Name) is { IsEnrolledHere: true }) { skipped++; continue; }
                 if (string.IsNullOrEmpty(c.SuggestedSaveDir)) { skipped++; continue; }
 
                 // A scanner's save-root heuristic can land on something far too broad — an install tree,
@@ -74,7 +78,11 @@ public static class Enroller
                 var serverName = c.ManifestKey ?? c.Name;
                 Step(c.Name, "Creating it on the server");
                 GameDto game;
-                try { game = await api.CreateGameAsync(new CreateGameRequest(serverName, c.ManifestKey, null)); }
+                try
+                {
+                    game = await api.CreateGameAsync(new CreateGameRequest(serverName, c.ManifestKey, null,
+                        IncludeGlobs: c.IncludeGlobs?.ToArray()));
+                }
                 catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
                     // Every game would fail the same way, and a bare "401 (Unauthorized)" says nothing
@@ -86,6 +94,17 @@ public static class Enroller
                         "this machine removed from it. Register again with Register / Re-register in the agent " +
                         "UI's Settings (on a Deck, from Desktop Mode).", ex);
                 }
+                // The server keeps an existing game's scope. If it differs from what this candidate needs,
+                // mapping it would sync the wrong files — a whole shared emulator folder as one game, or
+                // one ROM's save as a PC game that happens to share its name.
+                if (!SameScope(game.IncludeGlobs, c.IncludeGlobs))
+                {
+                    AgentLogger.Log($"Enrollment skipped '{c.Name}': the server already has a game named " +
+                                    $"'{game.Name}' that covers different files in its save folder.");
+                    skipped++;
+                    continue;
+                }
+
                 // Persisted per candidate, not once at the end: a later candidate that fails — or a UI
                 // window closed mid-batch — must not lose the games already created on the server, along
                 // with their Steam AppIDs. SetTracked also clears any per-machine opt-out, so re-adding
@@ -102,6 +121,7 @@ public static class Enroller
                         SteamAppId = c.SteamAppId,
                         HasSteamCloud = c.HasSteamCloud,
                         InstallDir = c.InstallDir,
+                        IncludeGlobs = (game.IncludeGlobs ?? Array.Empty<string>()).ToList(),
                         // Without this the Windows ProcessWatcher excludes the game outright, so lease,
                         // exit-push and the running-game pull refusal never run for anything enrolled
                         // through the UI. Only the CLI's --proc used to populate it. WA-08.
@@ -137,4 +157,9 @@ public static class Enroller
 
         return (enrolled, skipped);
     }
+
+    private static bool SameScope(IReadOnlyList<string>? a, IReadOnlyList<string>? b) =>
+        (a ?? Array.Empty<string>()).Select(g => g.Trim()).Order(StringComparer.OrdinalIgnoreCase)
+            .SequenceEqual((b ?? Array.Empty<string>()).Select(g => g.Trim()).Order(StringComparer.OrdinalIgnoreCase),
+                StringComparer.OrdinalIgnoreCase);
 }

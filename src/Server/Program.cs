@@ -497,6 +497,8 @@ agent.MapPost("/agent/games", async (HttpContext http, CreateGameRequest req, Sy
 {
     if (string.IsNullOrWhiteSpace(req.Name))
         return Results.BadRequest("Game name is required.");
+    if (GlobConfig.ValidateIncludes(req.IncludeGlobs) is { } includeError)
+        return Results.BadRequest(includeError);
     var game = await sync.CreateGameAsync(req);
     if (string.IsNullOrEmpty(game.GridUrl)) await art.TryRefreshOnEnrollAsync(game.Id);
     return Results.Ok(game.ToDto());
@@ -882,6 +884,8 @@ admin.MapDelete("/admin/sessions", async (AdminAuth auth) =>
 
 admin.MapPost("/games", async (CreateGameRequest req, SyncService sync, ArtService art) =>
 {
+    if (GlobConfig.ValidateIncludes(req.IncludeGlobs) is { } includeError)
+        return Results.BadRequest(includeError);
     var game = await sync.CreateGameAsync(req);
     if (string.IsNullOrEmpty(game.GridUrl)) await art.TryRefreshOnEnrollAsync(game.Id);
     return Results.Ok(game.ToDto());
