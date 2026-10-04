@@ -8,7 +8,7 @@ updated as each one ships.
 
 | Group | Contents | Status |
 |---|---|---|
-| A — Foundation | Phases 1–2 (archive core, server model + wire) | 🚧 In progress — Phase 1 shipped 2026-10-04 (`0aa0520`); Phase 2 not started |
+| A — Foundation | Phases 1–2 (archive core, server model + wire) | ✅ Done 2026-10-04 — branch `multiple-save-paths-group-a`; nothing user-visible yet, every check automated |
 | B — End to end | Phases 3–5 (agent sync core, reconcile/CLI/local API/doctor, scanners declare extra paths) | ⏳ Not started |
 | C — Suggestions + UI | Phases 6–7 (manifest suggestions, agent-ui/dashboard/Deck) | ⏳ Not started |
 

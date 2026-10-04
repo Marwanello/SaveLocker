@@ -619,6 +619,46 @@
         }
       }
     },
+    "/api/agent/games/{id}/save-paths": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddSavePathRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavePathDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agent/commands": {
       "get": {
         "tags": [
@@ -695,6 +735,13 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -751,6 +798,13 @@
           },
           {
             "name": "value",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
             "in": "query",
             "schema": {
               "type": "string"
@@ -1121,6 +1175,84 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/games/{id}/save-paths": {
+      "post": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddSavePathRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavePathDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/games/{id}/save-paths/{key}": {
+      "delete": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1408,6 +1540,13 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1437,6 +1576,13 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -2730,6 +2876,41 @@
   },
   "components": {
     "schemas": {
+      "AddSavePathRequest": {
+        "required": [
+          "key",
+          "label",
+          "template",
+          "includeGlobs"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "template": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "includeGlobs": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "AdminStatus": {
         "required": [
           "passwordRequired",
@@ -4059,6 +4240,24 @@
               "null",
               "string"
             ]
+          },
+          "includeGlobs": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "extraPaths": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SavePathDto"
+            }
           }
         }
       },
@@ -4383,6 +4582,24 @@
               "string"
             ],
             "format": "uuid"
+          },
+          "includeGlobs": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "extraPaths": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SavePathDto"
+            }
           }
         }
       },
@@ -4592,6 +4809,10 @@
           },
           "savePath": {
             "type": "string"
+          },
+          "pathKey": {
+            "type": "string",
+            "default": "main"
           }
         }
       },
@@ -4654,6 +4875,47 @@
           },
           "machineName": {
             "type": "string"
+          }
+        }
+      },
+      "SavePathDto": {
+        "required": [
+          "key",
+          "label",
+          "template",
+          "includeGlobs"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "template": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "includeGlobs": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "machinePath": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

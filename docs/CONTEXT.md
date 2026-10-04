@@ -1702,7 +1702,11 @@ just emulators, in 7 phases and 3 groups (`implementation-grouping.md`):
 - A machine that can't map a path keeps a **shadow** copy, so every push carries every path. Without it, two machines
   push the path back and forth forever.
 - `Games.SuggestedSaveDir` is kept; dropping it would rebuild the table every FK points at.
-- **Next:** Group A on its own branch off `main`. `emulator-saves` rebases after Group B.
+- **Group A shipped (2026-10-04, branch `multiple-save-paths-group-a`, not merged):** Phase 1 `SaveArchive` takes several
+  `SaveRoot`s (layout, markers, one Ordinal hash order, per-slice restore checks); Phase 2 adds the migration
+  `AddMultipleSavePaths`, key-aware path routes and `save-paths` add/remove. Nothing user-visible yet — no agent uses it.
+  Suites: [[Build and Run]] → Suite baseline. Upgrade checked against a DB seeded by `main`'s server (orphans removed).
+- **Next:** Group B (agent sync core, reconcile/CLI, scanners declare extra paths). `emulator-saves` rebases after Group B.
 
 ---
 

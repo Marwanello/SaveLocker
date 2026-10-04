@@ -19,7 +19,7 @@ requirements the emulator branch found. This file supersedes its "proposed phase
 | Phase | Status |
 |---|---|
 | 1 — Archive core | ✅ Shipped 2026-10-04 — `SaveRoot` + multi-root `SaveArchive`, include primitive ported; `MultiRootArchiveTests` 16 + `IncludeGlobTests` 9, every guard mutation-checked; unit 206/206, hardening 33, delta 33 |
-| 2 — Server model + wire | ⏳ Not started |
+| 2 — Server model + wire | ✅ Shipped 2026-10-04 — migration `AddMultipleSavePaths` (only the leaf `MachineSavePaths` is rebuilt; orphans deleted first), key-aware path/template routes, `save-paths` add/remove (admin + agent), DTOs additive (API diffs: additions only). Upgrade checked by seeding a DB with `main`'s server (plus orphan rows) and starting this one on it. `run-console-security-tests` 335 (+27, `SP-01`), `run-server-bugbounty-tests` 216, `run-health-tests` 33 |
 | 3 — Agent sync core | ⏳ Not started |
 | 4 — Reconcile, CLI, local API, doctor | ⏳ Not started |
 | 5 — Scanners declare extra paths | ⏳ Not started |

@@ -10,7 +10,12 @@
 #                                 it out again), is never handed out afterwards, ignores a late result,
 #                                 all-or-nothing on an unknown id (404), admin-only, audited once even when
 #                                 two cancels race.
-#   API-02  exclude patterns     a pattern the matcher cannot evaluate (".." mid-pattern) is refused on
+#   SP-01   extra save folders    a game's extra folders are defined once and mapped per machine BY KEY:
+#                                 bad/duplicate/'main' keys and out-of-folder include patterns refused,
+#                                 an unknown key stores nothing, the primary folder stays where an older
+#                                 agent reads it, templates first-come per key, and removing a folder, a
+#                                 machine or a game takes every path with it (FKs on MachineSavePaths).
+#   API-02  exclude patterns    a pattern the matcher cannot evaluate (".." mid-pattern) is refused on
 #                                 save AND preview instead of throwing inside every agent's hash; the
 #                                 preview count is right against a real uploaded archive.
 #   BK-01   backups               a zip of the database + each game's LATEST save only; its download is
@@ -925,6 +930,84 @@ Check "cancel: M1's next poll is NOT handed the withdrawn command again" `
 $lateL = Http POST "/api/agent/commands/$lapsedId/result" @{ status = "Done"; result = "late"; claimToken = $firstClaim.claimToken } @{ "X-Api-Key" = $l1.apiKey }
 Check "cancel: M1's late result under its old claim is a no-op (still Cancelled)" `
     ($lateL.Status -eq 200 -and @((Http GET "/api/commands").Json | Where-Object { $_.id -eq $lapsedId })[0].status -eq "Cancelled")
+Stop-Phase
+
+# =====================================================================================
+Write-Host ""; Write-Host "==== Phase 5d: SP-01 a game's extra save folders (tasks/multiple-save-paths) ===="
+# The primary folder stays where every older agent reads it (suggestedSaveDir / machineSavePath); extra
+# folders are defined once per game and mapped per machine BY KEY. A key becomes a path segment in every
+# archive on every machine and can never be renamed, so a bad one must be refused before it is stored.
+Start-Phase "savepaths" @{ Security__MaxFailedAttempts = "1000" }
+$sp1 = (Http POST "/api/machines/register" @{ name = "SP-M1" }).Json
+$sp2 = (Http POST "/api/machines/register" @{ name = "SP-M2" }).Json
+$spk1 = @{ "X-Api-Key" = $sp1.apiKey }; $spk2 = @{ "X-Api-Key" = $sp2.apiKey }
+$spGame = (Http POST "/api/games" @{ name = "SP Game" }).Json
+$spId = $spGame.id
+Check "SP-01 a new game has no extra folders" ($null -ne $spId -and $null -eq $spGame.extraPaths)
+
+$spAdd = Http POST "/api/games/$spId/save-paths" @{ key = "states"; label = "Save states"; template = "<home>/states"; includeGlobs = @("Game.state*") }
+Check "SP-01 add: an extra folder is stored and returned with its scope" `
+    ($spAdd.Status -eq 200 -and $spAdd.Json.key -eq "states" -and @($spAdd.Json.includeGlobs)[0] -eq "Game.state*")
+Check "SP-01 add: 'main' is refused - it is the primary folder" ((Http POST "/api/games/$spId/save-paths" @{ key = "main" }).Status -eq 400)
+Check "SP-01 add: a key that is not a lower-case slug is refused" ((Http POST "/api/games/$spId/save-paths" @{ key = "States" }).Status -eq 400)
+Check "SP-01 add: a key that would climb out of the archive is refused" ((Http POST "/api/games/$spId/save-paths" @{ key = "../x" }).Status -eq 400)
+Check "SP-01 add: a duplicate key is refused" ((Http POST "/api/games/$spId/save-paths" @{ key = "states" }).Status -eq 400)
+Check "SP-01 add: an include pattern outside the folder is refused" `
+    ((Http POST "/api/games/$spId/save-paths" @{ key = "cfg"; includeGlobs = @("../other.cfg") }).Status -eq 400)
+Check "SP-01 add: an unknown game is a 404" ((Http POST "/api/games/$([guid]::NewGuid())/save-paths" @{ key = "x" }).Status -eq 404)
+Check "SP-01 add: an agent may add one with its machine key" ((Http POST "/api/agent/games/$spId/save-paths" @{ key = "appdata" } $spk1).Status -eq 200)
+Check "SP-01 add: ... and nobody may without one" ((Http POST "/api/agent/games/$spId/save-paths" @{ key = "other" }).Status -eq 401)
+
+Http POST "/api/agent/path/$spId`?value=C:/saves/main" $null $spk1 | Out-Null
+Http POST "/api/agent/path/$spId`?value=C:/saves/states&path=states" $null $spk1 | Out-Null
+Http POST "/api/agent/path/$spId`?value=C:/saves/nope&path=nope" $null $spk1 | Out-Null
+Http POST "/api/agent/path/$spId`?value=D:/m2/main" $null $spk2 | Out-Null
+$spPaths = @((Http GET "/api/games/$spId/paths").Json)
+Check "SP-01 paths: each machine's folder is stored per key (main for both machines, states for M1)" `
+    ($spPaths.Count -eq 3 -and @($spPaths | Where-Object { $_.pathKey -eq "states" -and $_.savePath -eq "C:/saves/states" }).Count -eq 1)
+Check "SP-01 paths: a key the game does not have stores nothing" (@($spPaths | Where-Object { $_.pathKey -eq "nope" }).Count -eq 0)
+Check "SP-01 paths: the primary folder's rows come first" ($spPaths[0].pathKey -eq "main" -and $spPaths[1].pathKey -eq "main")
+
+$spAgent = @((Http GET "/api/games" $null $spk1).Json | Where-Object { $_.id -eq $spId })[0]
+Check "SP-01 agent list: the primary folder stays in machineSavePath, where an older agent reads it" ($spAgent.machineSavePath -eq "C:/saves/main")
+$spStates = @($spAgent.extraPaths | Where-Object { $_.key -eq "states" })[0]
+Check "SP-01 agent list: an extra folder carries its template, its scope and THIS machine's folder" `
+    ($spStates.template -eq "<home>/states" -and @($spStates.includeGlobs)[0] -eq "Game.state*" -and $spStates.machinePath -eq "C:/saves/states")
+$spAgent2 = @((Http GET "/api/games" $null $spk2).Json | Where-Object { $_.id -eq $spId })[0]
+Check "SP-01 agent list: another machine sees the folder, but not M1's path for it" `
+    ($spAgent2.machineSavePath -eq "D:/m2/main" -and $null -eq @($spAgent2.extraPaths | Where-Object { $_.key -eq "states" })[0].machinePath)
+
+Check "SP-01 template: an agent's template never replaces an extra folder's existing one" `
+    ((Http POST "/api/agent/games/$spId/template?value=%3CwinDocuments%3E/x&path=states" $null $spk1).Status -eq 204)
+Check "SP-01 template: ... but fills one that has none" `
+    ((Http POST "/api/agent/games/$spId/template?value=%3CwinAppData%3E/Game&path=appdata" $null $spk1).Status -eq 200)
+Http POST "/api/games/$spId/save-dir?value=%3Chome%3E/new&path=states" | Out-Null
+$spState = (Http GET "/api/games/$spId/state").Json
+Check "SP-01 save-dir: the console sets an extra folder's template by key, and the primary one is untouched" `
+    (@($spState.game.extraPaths | Where-Object { $_.key -eq "states" })[0].template -eq "<home>/new" -and $null -eq $spState.game.suggestedSaveDir)
+
+$spEmu = Http POST "/api/games" @{ name = "SP Emu"; includeGlobs = @("Game.srm"); extraPaths = @(@{ key = "states"; includeGlobs = @("Game.state*") }) }
+Check "SP-01 create: a game is created with its primary scope and its extra folders" `
+    ($spEmu.Status -eq 200 -and @($spEmu.Json.includeGlobs)[0] -eq "Game.srm" -and @($spEmu.Json.extraPaths)[0].key -eq "states")
+$spBad = Http POST "/api/games" @{ name = "SP Bad"; extraPaths = @(@{ key = "Bad Key" }) }
+Check "SP-01 create: a bad extra key refuses the whole request - no half-defined game" `
+    ($spBad.Status -eq 400 -and @((Http GET "/api/overview").Json | Where-Object { $_.game.name -eq "SP Bad" }).Count -eq 0)
+
+Check "SP-01 remove: the primary folder cannot be removed" ((Http DELETE "/api/games/$spId/save-paths/main").Status -eq 400)
+Check "SP-01 remove: an unknown key is a 404" ((Http DELETE "/api/games/$spId/save-paths/nope").Status -eq 404)
+Check "SP-01 remove: removing an extra folder drops every machine's path for it" `
+    ((Http DELETE "/api/games/$spId/save-paths/states").Status -eq 204 -and
+     @((Http GET "/api/games/$spId/paths").Json | Where-Object { $_.pathKey -eq "states" }).Count -eq 0)
+
+Http DELETE "/api/machines/$($sp2.machineId)" | Out-Null
+Check "SP-01 delete machine: its folders for every game go with it" `
+    (@((Http GET "/api/games/$spId/paths").Json | Where-Object { $_.machineId -eq $sp2.machineId }).Count -eq 0)
+Http DELETE "/api/games/$spId" | Out-Null
+$spLeft = Invoke-Sqlite ("SELECT (SELECT COUNT(*) FROM GameSavePaths WHERE lower(GameId) = '$spId') + " +
+    "(SELECT COUNT(*) FROM MachineSavePaths WHERE lower(GameId) = '$spId')")
+Check "SP-01 delete game: its extra folders and every machine's paths go with it" ("$spLeft".Trim() -eq "0")
+$spFks = Invoke-Sqlite "SELECT COUNT(*) FROM pragma_foreign_key_list('MachineSavePaths')"
+Check "SP-01 schema: MachineSavePaths now has foreign keys to both Machines and Games" ("$spFks".Trim() -eq "2")
 Stop-Phase
 
 # =====================================================================================

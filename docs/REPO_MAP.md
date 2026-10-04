@@ -29,7 +29,8 @@ SaveLocker/
 │   │   │   ├── AppDbContext.cs          # EF Core context
 │   │   │   └── Entities.cs             # Machine, Game, SaveVersion, SaveVersionFile (per-version
 │   │   │                               #   per-file delta-upload baseline), Lease, ConflictFlag,
-│   │   │                               #   AuditLog, AgentCommand, AppSetting, MachineSavePath
+│   │   │                               #   AuditLog, AgentCommand, AppSetting, MachineSavePath (per
+│   │   │                               #   machine per save folder key), GameSavePath (extra folders)
 │   │   ├── Migrations/                  # EF migrations (InitialSchema + incremental)
 │   │   ├── Services/
 │   │   │   ├── SyncService.cs           # Core: lease, upload, conflict, prune, resolve

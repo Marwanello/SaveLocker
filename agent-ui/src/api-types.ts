@@ -2727,6 +2727,8 @@ export interface components {
             conflictPolicy?: components["schemas"]["ConflictPolicy"];
             /** Format: uuid */
             preferredMachineId?: null | string;
+            includeGlobs?: null | string[];
+            extraPaths?: null | components["schemas"]["SavePathDto"][];
         };
         GameStateDto: {
             game: components["schemas"]["GameDto"];
@@ -2860,6 +2862,13 @@ export interface components {
             steamAppId: number;
             desired: string;
             changed: boolean;
+        };
+        SavePathDto: {
+            key: string;
+            label: null | string;
+            template: null | string;
+            includeGlobs: null | string[];
+            machinePath?: null | string;
         };
         SaveVersionDto: {
             /** Format: uuid */
