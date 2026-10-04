@@ -1675,6 +1675,10 @@ gone or the file SaveLocker created was deleted, and removing an absent one besi
 manually"). `DevSteamShortcut` is now unit-tested on a temp `shortcuts.vdf` (its CRC-32 moved out of `Ui.Screenshot` into
 `Crc32.cs` so the tests can link it). Also: `steam-art` crashed instead of reporting a folder it cannot write; `--kind ui
 --port abc` fell back to the real agent's :5178. Note: every repaint now renders all four pieces (~0.7 s here) to compare.
+<br>**Fourth pass (2026-10-04) — the nine commits after that** (appearance follow-ups, `playnite-import`, the Deck's enroll
+progress bar). Fixed: `has_live_key` in `testenv-deck.sh`/`testenv.sh` had a literal 0x01 byte for sed's `\1`, so it never
+sent the stored key — check for that byte when a sed backreference is written by a tool; the Deck's progress line and the new
+401 message used `—`/`…`/`→`, which Game Mode's Latin-1 font draws as boxes.
 <br>**Release notes for the next release must cover (Group 10):** the agent UI's Activity tab and offline queue; Sync all's
 N of M, Cancel and summary; games on the server with no folder here listed apart; `savelocker open` and the application-menu
 entry (added once by an agent that updates itself); `savelocker pull` exits non-zero when the server cannot be reached.

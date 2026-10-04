@@ -29,7 +29,7 @@ phases to do in one session, in what order, and why. Driven by three things weig
 | 7 | Phase 7 (notifications) | ✅ Shipped 2026-09-24 (branch `group-7-ui-redesign`, PR #50) — both halves on shared rules (`Agent.Core/Notifications.cs`): a real Windows toast (`ToastPresenter`) and the Linux notifier generalised from `ConflictNotifier` (`DesktopNotifier`). **A button is a link to the agent UI, not a callback** — a custom URL scheme was built end to end and the shell's toast host refused every freshly registered one (measured), so "Retry now"/"Install now" became "Open game" and a pointer to the tray menu. Verified live on Windows (real toast, real click, the five-minute rule, withdrawal) and on a real Deck in Desktop Mode 2026-09-27 (the popup, and *Choose a save* opening the flatpak default browser at the queue); the installer's shortcut change compiles but has not been run. Reviewed as PR #50 on 2026-09-27 and every finding fixed (*Review fixes*, below). See the Group 7 write-up below |
 | 8 | Phases 9 + 10 — console page kit, top bar (pill tabs, bell, conflict pill, progress rail + Cancel) and the Games page (sidebar, full-width grid, game page re-layout, no `alert`/`confirm`) | ✅ Shipped 2026-09-28 (branch `group-8-ui-redesign`, PR #52) — 8a kit + top bar + `POST /commands/cancel` (`e6514ce`), 8b the `GameDetail.tsx` split (`1566de8`), 8c the Games page (`24074a0`). Verified live through `testenv` with real conflicts; one real bug found that way and fixed (a conflict side pushed while the page was open). Replay the live checks with `group-8-verification.md`. Same-day follow-up on the branch: each machine's OS logo on the conflict panel and a listbox machine picker (`b3caca9`). Reviewed as PR #52 on 2026-09-28 and every finding addressed (*Review fixes*, below). See the Group 8 write-up below. Group 9 is unblocked |
 | 9 | Phases 11 + 12 + Phase 2's release-history table — the **Backups** tab and its routes, Configuration, Audit log, Help, What's new, sign-in | ✅ Shipped 2026-09-29 (branch `group-9-ui-redesign`) — 9a Backups (`5c01638`), then 9b Configuration + 9c Audit/Help/What's new/sign-in in one commit (they share `Contracts.cs`, `Program.cs`, `api.ts`, the regenerated types and the test file). Security bar met (BK-01 + CFG-01, mutation-checked). Verified in a browser against a scratch server; the `testenv` pass (`group-9-verification.md`) moved to `tasks/checkpoint-ui-group-9-check/` 2026-10-04. Reviewed as PR #53 on 2026-09-29 and every finding fixed (*Review fixes*, below). See the Group 9 write-up below |
-| 10 | Phases 13 + 14 + the Phase 8 remainder + Phase 6 item 4 — agent UI completed, Deck Game Mode completed, Steam art / favicons / installer icon, the Wayland window | ✅ Shipped 2026-09-29 — 10a `7f80be6`, 10c `a88fbe1`, 10d `f2d01d2`, 10b `81321d7`. Reviewed as PR #54 on 2026-09-30, again for the commits pushed after (2026-09-30 and 2026-10-01), and every finding fixed (*Review fixes*, below). Real-Deck session done and verified by the maintainer 2026-10-01 (gamescope input, battery, KWin `--app=` window, the Steam tiles, custom artwork and an accent change) |
+| 10 | Phases 13 + 14 + the Phase 8 remainder + Phase 6 item 4 — agent UI completed, Deck Game Mode completed, Steam art / favicons / installer icon, the Wayland window | ✅ Shipped 2026-09-29 — 10a `7f80be6`, 10c `a88fbe1`, 10d `f2d01d2`, 10b `81321d7`. Reviewed as PR #54 on 2026-09-30, again for the commits pushed after (2026-09-30, 2026-10-01 and 2026-10-04), and every finding fixed (*Review fixes*, below). Real-Deck session done and verified by the maintainer 2026-10-01 (gamescope input, battery, KWin `--app=` window, the Steam tiles, custom artwork and an accent change) |
 
 **2026-09-20 review pass (a code review of Groups 1–2, all findings fixed on branch
 `console-review-fixes-and-security-hardening`).** Two things here change what later groups may assume:
@@ -912,6 +912,21 @@ render-and-compare in place of the marker, the Decky skip-reinstall and the Desk
   touched / one fixed entry.
 - **A trade-off, not changed:** without the marker every repaint renders all four pieces to compare them — ~0.7 s on
   this desktop (Debug), off the caller's thread, at each daemon start and look change.
+
+**Fourth pass (2026-10-04): the nine commits after the third (`1d340a2`..`6e16b44`).** The appearance follow-ups (c)-(f),
+`testenv playnite-import`, the Deck's enroll progress bar and the vault closing-out hold up. Fixed:
+- **`has_live_key` (testenv-deck.sh, testenv.sh) never read the key.** Its sed replacement held a literal 0x01 byte
+  where `\1` belonged, so the key it sent was never the stored one: a dead key went unnoticed, or every `up`
+  re-registered and rotated a good one. Checked against a stub server afterwards: a live key kept, a 401 re-registers,
+  no answer keeps it.
+- Game Mode's enroll progress line used `—` and `…`, which the Latin-1 font atlas draws as boxes; Enroller's new 401
+  message had `→` arrows (Game Mode shows it too) and pointed at a "Settings" that Game Mode's screen has but cannot
+  register from — it now names the agent UI's Settings, from Desktop Mode on a Deck. The space kept above the button for
+  an error is measured from the wrapped text, not a fixed two lines.
+- Smaller: `AgentWindow` read the Personalize key with its own copy of `MarkIcon`'s helper and set the background twice;
+  `playnite-import`'s DatabasePath check took `D:\Playnite-real\library` as inside `D:\Playnite`.
+- Not changed: `--color-faint` meets 4.5:1 on a card (the stated target) but is 4.13:1 on the light page background.
+- `dotnet test` **181**, both agents build; the Deck screen change is not seen running (it needs a batch in flight).
 - `dotnet test` **181**, Agent.Linux 0 warnings, `run-appearance-consistency-tests` **46**, `export:art --check`
   clean, `steam-art` and `dev-shortcut-add --kind ui` exercised by hand on a scratch state folder. **Not verified:**
   `testenv-deck.sh` on a Deck (the new `up`/`clean` steps, the menu entry, Steam showing the shortcut's art).
