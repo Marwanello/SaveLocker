@@ -272,6 +272,19 @@ session can judge an edge case, not to reopen the choice.
   trade this decision accepts.
 - **Enrollment model:** a game is defined once on the server; each agent maps its own local save
   dir. The server game is the single definition; scanners only suggest candidates.
+- **A game can own part of a save folder: its include scope lives on the server** (2026-10-04, emulator
+  saves Phase 1, maintainer's choice). RetroArch writes every ROM's `.srm` into one folder, so one game
+  is `SaveDirectory` + `Game.IncludeGlobs`. It is server data, not agent-local, because the agent that
+  adds the game is not the only one that maps it — the poller adopts it everywhere and fills the
+  folder from a path template — and a machine mapping the shared folder without the scope would upload
+  every ROM's save as one game and, on pull, **delete the others** (a restore removes local files absent
+  from the archive). Restore is scoped too: only matching files are written or deleted. Set once at
+  creation; an existing game's scope is never changed by a later create. This amends the emulator plan's
+  original "no server changes" line, which was written about `Game.Platform`, not this.
+- **Emulator games are named from the save file, with the emulator as a suffix** (2026-10-04,
+  maintainer's choice): `Chrono Trigger (USA).srm` → `Chrono Trigger (RetroArch)`. Deterministic on every
+  machine (no playlist one machine has and another lacks), and the suffix keeps an SNES save from
+  merging with a PC release of the same title. Only ROMs with a save file are candidates.
 - **"Latest" = `Game.HeadVersionId`.** UI label "Latest"; admin action "Set as Latest".
 - **Artwork:** SteamGridDB images are downloaded/cached server-side, not stored as bare URLs
   (offline-safe, survives upstream changes).

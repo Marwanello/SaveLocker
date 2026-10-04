@@ -23,7 +23,7 @@ Server endpoints (`src/Server/Program.cs`).
 - `GET /api/games` → `GameDto[]`
 - `GET /api/machines` → `MachineDto[]` `{ id, name, createdAt, lastSeen }`
 - `DELETE /api/machines/{id}` → 204 / 404 / 400. Removes leases + pending commands; keeps `SaveVersion`s. **400** if targeting the machine whose key authenticated the call.
-- `POST /api/games` `{ name, manifestKey?, suggestedSaveDir? }` → `GameDto` (dedupes by name, case-insensitive + trimmed). Dashboard/admin use. Agents use `POST /api/agent/games`.
+- `POST /api/games` `{ name, manifestKey?, suggestedSaveDir?, includeGlobs? }` → `GameDto` (dedupes by name, case-insensitive + trimmed). Dashboard/admin use. Agents use `POST /api/agent/games`. `includeGlobs` is stored **only when the call creates the game** — an existing game keeps its own — and is 400 when a pattern is absolute, has a drive (`:`), climbs out with `..`, or is not a valid glob. `GameDto.includeGlobs` (null = the whole save folder) is what every agent applies to hash, archive **and restore**: the files of the save folder that are this game's, when other games share the folder (an emulator's saves folder — tasks/emulator-saves).
 - `POST /api/games/{id}/enabled?value={bool}` → 200 / 404 (enable/disable a game; disabled games are skipped by agents).
 - `POST /api/games/{id}/save-dir?value={path}` → 200 / 404. Set/clear the game's **suggested save folder**. Propagated to agents, which use it only if that path exists on that machine.
 - `POST /api/games/{id}/art/refresh` → `{ message }` 200, or 400 if no SteamGridDB key configured. (Re)fetches SteamGridDB's *default* cover/hero/logo/icon — replacing ones chosen by hand — and caches under `/data/art/{gameId}/`. Also fetches automatically on first enrollment (best-effort).
@@ -156,7 +156,7 @@ when the GitHub release is newer than the hosted installer.
 
 ## Agent command channel (agent-auth)
 Polling model: agent makes outbound requests (~20 s). Each poll also reconciles the game list (adopt new server games, drop deleted ones).
-- `POST /api/agent/games` `{ name, manifestKey?, suggestedSaveDir? }` → `GameDto` — agent enrollment (agent-auth; no admin password required).
+- `POST /api/agent/games` `{ name, manifestKey?, suggestedSaveDir?, includeGlobs? }` → `GameDto` — agent enrollment (agent-auth; no admin password required). `includeGlobs` as for `POST /api/games`; the enrolling agent compares the returned game's scope with the one it asked for and skips the game when they differ.
 - `GET /api/agent/games/{id}/state` → `GameStateDto` / 404. The agent-auth twin of `/api/games/{id}/state`, so an agent can read one game's head without an admin password.
 - `GET /api/agent/games/{id}/versions` → `SaveVersionDto[]`, newest first (empty for an unknown game). The agent-auth twin of `/api/games/{id}/versions`, for the agent UI's and the Deck's *Versions on the server*.
 - `POST /api/agent/games/{id}/template?value={template}` → 200 / 204 / 400. An agent describing the save location **generically** (a manifest-style template), so every other machine expands it for itself rather than inheriting a literal path that means nothing on its filesystem. **Only fills an empty value** — it never overwrites one machine's answer with another's — and rejects anything that is not a template. **204** means there was already a value.

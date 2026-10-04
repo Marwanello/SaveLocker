@@ -19,6 +19,45 @@ vault use** (see `Backlog.md` → *Native Linux save support*). Execute **one ph
 verify it per that phase's own Verify section, and commit before moving to the next — do not
 continue past a phase's own stopping point unless explicitly instructed to.
 
+## Status
+
+| Phase | Status |
+|-------|--------|
+| 1 — `SaveArchive` include-globs + RetroArch | 🚧 In progress — code + tests done 2026-10-04 (branch `emulator-saves`), verified on a scratch two-machine rig and through `testenv` (Windows + fixture). **Waiting on the real-hardware pass** (EmuDeck on the Deck + EmuDeck for Windows). Deviations below under *Phase 1 — as built*. |
+| 2 — PCSX2 / Dolphin / DuckStation + shared-card warning | ⏳ Not started |
+| 3 — `gamelist.xml` names | ⏳ Not started — **revisit**: Phase 1 made the cleaned file name the game's identity, so a nicer display name can no longer change the name |
+| 4 — PrimeHack | ⏳ Not started |
+| 5 — RPCS3 / Xenia | ⏳ Not started |
+| 6 — Switch (Eden) | ⏳ Not started |
+| 7 — UI filter | ⏳ Not started |
+
+### Phase 1 — as built (2026-10-04), and where it departs from the plan below
+
+Decided with the maintainer at the start of the session:
+- **The include scope lives on the server** (`Game.IncludeGlobs`, migration `AddGameIncludeGlobs`,
+  `GameDto`/`CreateGameRequest.IncludeGlobs`), not only in the agent — overriding this plan's "no server
+  changes" line. Reason: the poller adopts a game on every machine and fills its folder from a template;
+  without the scope there, a second machine maps the whole shared folder and a pull deletes the other
+  ROMs' saves. [[Decisions]] has the full entry.
+- **Only ROMs with a save file are candidates**, found from the `.srm` files themselves, not from
+  `playlists/*.lpl` (under EmuDeck, ES-DE/SRM launch ROMs directly and the playlists are usually empty).
+  No playlist reader was built.
+- **Names are the cleaned file name + ` (RetroArch)`** (`RomNames`, pulled forward from Phase 2).
+
+Found and fixed, not in the plan: **`RestoreArchive` deletes every local file absent from the archive**,
+so it takes the include scope too — only matching files are written or deleted
+(`IncludeGlobTests.Scoped_restore_*`, mutation-checked). `HasLocalData` (the pull guard) is scoped as well, or
+the other ROMs' saves would block a game's first pull on every machine. `Enroller` now fills in a game that is
+tracked here but has no folder (adopted from the server) instead of skipping it, and skips — with a log line —
+a game whose server-side scope differs from the candidate's. `EmulatorSystem` comes from the
+`Emulation/roms/<system>` folder the ROM is in (ES-DE vocabulary, as Phase 7 wants); `EmulatorCore` is the
+per-core folder name. Windows `SuggestedProcessName` stays null (no lease/exit-push lifecycle for emulator
+games yet — that is the deferred SRM item).
+
+Known limits: two saves that clean to one name on the same machine (two regions, two cores) keep only the
+newest; two machines with different dumps of a game (`(USA)` vs `(USA) (Rev 1)`) get the same name but different
+scopes, so the second machine's enrollment is skipped (logged) rather than syncing the wrong file.
+
 ---
 
 ## Motivation

@@ -264,6 +264,19 @@ an error instead of a silent no-op. Because the Deck is only awake when woken (s
 handoff section in [[CONTEXT]]), every SSH/`scp` call has a short connect timeout and reports
 "unreachable" rather than hanging or aborting the rest of the rig.
 
+### Testing emulator saves (a fake EmuDeck folder)
+
+```powershell
+.\tests\testenv.ps1 build -Only windows; .\tests\testenv.ps1 build -Only console
+.\tests\testenv.ps1 emu-fixture          # <StateRoot>\Emulation: Chrono Trigger, Zelda, Snes9x\Super Metroid
+.\tests\testenv.ps1 up -Only console; .\tests\testenv.ps1 up -Only windows
+```
+The Windows test tray then scans **only** that fixture (`SAVELOCKER_EMUDECK_PATH`), never a real EmuDeck
+or RetroArch on the box. Add games lists `Chrono Trigger (RetroArch)` etc. with an *Emulator* chip; the
+dedicated filter is Phase 7. `-EmuDeckPath <dir>` points it at any other folder — a **copy** of a real
+`Emulation` folder is the safe way to try real saves. The Deck needs no override: its test daemon scans
+the Deck's real EmuDeck install, so add only a game whose save you have backed up.
+
 ### Testing artwork (a stub SteamGridDB)
 
 The test console has no SteamGridDB key, and a real one would put real traffic on a third party — so
@@ -324,6 +337,7 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 | Group 8 review fixes (PR #52, 2026-09-28) | `run-console-security-tests` **205** (+10: two cancels at once withdraw and audit once; Phase 5c, a 6 s lease — a lapsed claim is withdrawn, a live one reported running, the withdrawn one never handed out again, a late result a no-op; the OS name's cap never splits a surrogate pair) · `web` `npm run build` + `npm run lint` clean |
 | Group 10 + PR #54 review fixes (2026-09-30) | `dotnet test tests/SaveLocker.Agent.Tests` **181** (now also CI's `unit-tests` job) · `run-local-api-tests` **110** on Windows (`SL_LOCALAPI_PORT` moves it off :5188 when the rig's tray holds that) · `run-health-tests` **33** · `run-agent-tests` 47 · `run-delta-upload-tests` 33 · `run-concurrency-tests` 26 · `run-appearance-consistency-tests` **46** · `npm --prefix web run export:art -- --check` clean · `agent-ui` and `web` build + lint clean |
 | Group 9 + PR #53 review fixes (2026-09-29) | `run-console-security-tests` **308** on Windows (BK-01 **84**: zip backups, download ticket, delete, restore + undo + the start's own setup, temp-file cleanup, the kept undo point, encryption at rest, before-upgrade; CFG-01 **17**; each new check mutation-checked) · `web` `npm run build` + `npm run lint` clean |
+| Emulator saves Phase 1 (2026-10-04) | `dotnet test tests/SaveLocker.Agent.Tests` **202** (+21: `IncludeGlobTests` 9 — the three scoped-restore checks mutation-checked — and `RetroArchTests` 12) · `run-delta-upload-tests` **33** · `run-hardening-tests` **33** · `run-health-tests` **33** · full solution build at the 1-warning baseline |
 | Archive UTC write times (2026-09-28) | `dotnet test tests/SaveLocker.Agent.Tests` **114** (+9: `SaveArchiveTimestampTests` — fail before the fix off UTC) · `run-delta-upload-tests` **33** (+4: section 10, newest change through full and delta pushes; mutation-checked — dropping the server copy fails 1, the old agent stamp fails 3) · `run-hardening-tests` **33** · `run-health-tests` **22** |
 
 The two platforms differ by design — each suite skips the other's cases. The detection drop from

@@ -1697,6 +1697,21 @@ Social preview (an upload only the maintainer can make). The old tray and instal
 pre-redesign; there is no headless way to capture either.
 **Next action:** merge `release-0.6.0`, tag `v0.6.0`, upload `docs/brand/social-preview.png` as the repo's social preview.
 
+**Emulator saves Phase 1 built (2026-10-04, branch `emulator-saves`) — RetroArch, both OSes; waiting on the
+real-hardware pass.** One Add-games candidate per RetroArch `.srm` (EmuDeck's `Emulation/saves/retroarch/saves`,
+else a standalone `retroarch.cfg`), named `<cleaned file name> (RetroArch)` and scoped to that ROM's files by a
+new **server-side** `Game.IncludeGlobs` (migration `AddGameIncludeGlobs`; `openapi.json` and both `api-types.ts`
+regenerated, additions only). `SaveArchive` hashes/archives/lists **and restores** within the scope — a restore
+deletes local files absent from the archive, so an unscoped pull into a shared saves folder would delete every
+other ROM's save (a test proves it, and the three scoped-restore tests fail with the scope disabled). Decisions
+taken with the maintainer and every deviation from the plan: `tasks/emulator-saves/plan.md` → *Status* /
+*Phase 1 — as built*; [[Decisions]] → *A game can own part of a save folder*. **Verified:** xunit 202 (+21),
+delta 33, hardening 33, health 33; a scratch two-machine round trip (Linux daemon + Windows CLI, each pull
+leaving the other ROMs' saves intact); and through `testenv` — `emu-fixture` (new) → the Windows test tray's
+Add games listed the fixture's saves, adding Chrono Trigger and Sync all uploaded a one-file archive. **Not
+verified:** a real EmuDeck install on the Deck or on Windows (`Build and Run` → *Testing emulator saves*).
+<br>**Next action for this item:** the hardware pass; then Phase 2 (PCSX2/Dolphin/DuckStation) in a new session.
+
 ---
 
 ## Where things stand
