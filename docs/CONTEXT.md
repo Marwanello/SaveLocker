@@ -1687,7 +1687,15 @@ put new plugin submissions on hold until Playnite 11's new add-on database. The 
 unchecked surfaces are now their own Backlog tasks (`tasks/playnite-*`).
 <br>**Checkpoint UI closed as done (2026-10-04)**, merging with PR #54; the Group 9 `testenv` checklist is its own
 Backlog task now (`tasks/checkpoint-ui-group-9-check/`).
-**Next action:** merge PR #54.
+<br>**v0.6.0 prepared (2026-10-04, branch `release-0.6.0`) — not yet tagged.** PR #54 is merged. Release notes in
+`web/src/releases/0.6.0.md` (covering everything since v0.5.12: the whole Checkpoint redesign, Groups 1–10, plus backup
+restore and the encrypted SteamGridDB key; three migrations). A minor bump, not 0.5.13, because of the redesign's size and
+the migrations. The README was rewritten around the redesign with fresh screenshots in `docs/screenshots/` (console,
+agent UI and Deck Game Mode, all captured from the `testenv` rig seeded with a showcase fleet and placeholder covers), and
+`docs/brand/` holds the README banner, `icon.svg` and a 1280×640 `social-preview.png` for the GitHub repo's Settings →
+Social preview (an upload only the maintainer can make). The old tray and installer screenshots were dropped as
+pre-redesign; there is no headless way to capture either.
+**Next action:** merge `release-0.6.0`, tag `v0.6.0`, upload `docs/brand/social-preview.png` as the repo's social preview.
 
 ---
 
