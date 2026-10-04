@@ -87,7 +87,7 @@ A gamepad-native UI that launches from your Steam library — no keyboard, no De
 |---|---|---|
 | ![Deck overview](docs/screenshots/deck-overview.png) | ![Deck tracked games](docs/screenshots/deck-games.png) | ![Deck game page](docs/screenshots/deck-game.png) |
 
-<sub>Screenshots are from the project's own test rig with placeholder cover art.</sub>
+<sub>Screenshots are from the project's own test rig. Cover art from <a href="https://www.steamgriddb.com/">SteamGridDB</a>; game titles and art belong to their respective owners.</sub>
 
 ---
 
