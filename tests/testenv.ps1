@@ -902,7 +902,9 @@ function Import-PlayniteData {
         }
         if ($name -eq 'config.json') {
             $db = [Environment]::ExpandEnvironmentVariables([string]($json | ConvertFrom-Json).DatabasePath)
-            if ($db -and $db -notlike '{PlayniteDir}*' -and -not $db.StartsWith($dst, [StringComparison]::OrdinalIgnoreCase)) {
+            # "$dst\", not $dst: D:\Playnite would otherwise pass a library in D:\Playnite-real.
+            $inside = $db -eq $dst -or $db.StartsWith("$dst\", [StringComparison]::OrdinalIgnoreCase)
+            if ($db -and $db -notlike '{PlayniteDir}*' -and -not $inside) {
                 throw "config.json's DatabasePath is '$db', outside '$dst' - refusing to import a config that would open another library."
             }
         }

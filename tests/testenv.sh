@@ -105,7 +105,7 @@ cmd_build_deck() {
 # any other answer (including no answer) keeps the key.
 has_live_key() {
   local key
-  key=$(grep -oi '"apikey": *"[^"]*"' "$STATE/config.json" 2>/dev/null | sed -E 's/.*: *"([^"]*)"//')
+  key=$(grep -oi '"apikey": *"[^"]*"' "$STATE/config.json" 2>/dev/null | sed -E 's/.*: *"([^"]*)"/\1/')
   [ -n "$key" ] || return 1
   [ "$(curl -s -o /dev/null -m 5 -w '%{http_code}' -H "X-Api-Key: $key" "$SERVER_URL/api/games")" != 401 ]
 }

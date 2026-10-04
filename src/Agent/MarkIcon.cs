@@ -167,15 +167,21 @@ internal static class MarkIcon
 
     private static Color Rgb(int rgb) => Color.FromArgb(0xFF, (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
 
-    /// <summary>Whether the taskbar (where the tray lives) is currently light. Dark unless the user's
-    /// own personalisation says otherwise, which is also what a Windows without the setting does.</summary>
-    internal static bool TaskbarIsLight()
+    /// <summary>Whether the taskbar (where the tray lives) is currently light.</summary>
+    internal static bool TaskbarIsLight() => PersonalizationIsLight("SystemUsesLightTheme");
+
+    /// <summary>Whether apps are currently light: what a page following the system theme shows.</summary>
+    internal static bool AppsAreLight() => PersonalizationIsLight("AppsUseLightTheme");
+
+    /// <summary>Dark unless the user's own personalisation says otherwise, which is also what a Windows
+    /// without the setting does.</summary>
+    private static bool PersonalizationIsLight(string value)
     {
         try
         {
             return Registry.GetValue(
                 @"HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize",
-                "SystemUsesLightTheme", 0) is int v && v == 1;
+                value, 0) is int v && v == 1;
         }
         catch
         {

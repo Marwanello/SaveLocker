@@ -1735,7 +1735,14 @@ sealed partial class UiApp
         var buttonH = ImGui.GetTextLineHeight() + (Theme.Space.Sm + 2f) * 2;
         var barH = buttonH + Theme.Space.Sm + ImGui.GetStyle().ItemSpacing.Y * 2 + Theme.Space.Sm;
         if (!string.IsNullOrEmpty(_enrollError) && _enrollTask is not { IsCompleted: false })
-            barH += ImGui.GetTextLineHeight() * 2 + Theme.Space.Xs;
+        {
+            // Measured, not a fixed two lines: a message that wraps to three would push the button off
+            // the bottom of the screen.
+            Theme.PushFont(Theme.Caption);
+            barH += ImGui.CalcTextSize(_enrollError, false, ImGui.GetContentRegionAvail().X).Y;
+            Theme.PopFont(Theme.Caption);
+            barH += ImGui.GetStyle().ItemSpacing.Y * 2 + Theme.Space.Xs;
+        }
         var listH = MathF.Max(120f, ImGui.GetContentRegionAvail().Y - barH);
 
         // AlwaysUseWindowPadding: a child without it gets ZERO padding, so these full-width rows would
@@ -1781,7 +1788,8 @@ sealed partial class UiApp
             var head = started ? $"Adding game {p.Index} of {total}" : "Adding games";
             var step = !p.Active || string.IsNullOrEmpty(p.Step) ? "Getting ready"
                 : p.Game is null ? p.Step : $"{p.Game}: {p.Step.ToLowerInvariant()}";
-            Widgets.Text($"{head} — {step}…", Theme.Fg, Theme.Caption);
+            // ASCII only: the font atlas is Latin-1 (Theme.LoadFonts), so an em dash or ellipsis is a box.
+            Widgets.Text($"{head} - {step}...", Theme.Fg, Theme.Caption);
             Widgets.Gap(Theme.Space.Xs);
             Widgets.ProgressBar(started ? (p.Index - 0.5f) / total : 0f, ImGui.GetContentRegionAvail().X);
             return;

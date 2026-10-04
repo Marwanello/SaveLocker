@@ -3,7 +3,6 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
-using Microsoft.Win32;
 
 namespace SaveLocker.Agent;
 
@@ -37,7 +36,8 @@ internal sealed class AgentWindow : Form
         _pendingUrl = UrlForView(port, view);
         Text = "SaveLocker";
         Icon = AppResources.Icon;
-        if (look is not null) ApplyLook(look);
+        // ApplyLook sets the background as well; with no look the packaged icon stays, so only the background is set.
+        if (look is not null) ApplyLook(look); else ApplyBackground(null);
         // WinForms ClientSize units are physical pixels even when DeviceDpi > 96.
         // WebView2 divides physical px by devicePixelRatio (= DeviceDpi/96) to get CSS px.
         // So to get 900×600 CSS pixels we need 900*(DeviceDpi/96) × 600*(DeviceDpi/96) physical px.
@@ -45,7 +45,6 @@ internal sealed class AgentWindow : Form
         ClientSize = new Size((int)(900 * dpiScale), (int)(600 * dpiScale));
         FormBorderStyle = FormBorderStyle.Sizable;
         StartPosition = FormStartPosition.CenterScreen;
-        ApplyBackground(look);
         Controls.Add(_webView);
     }
 
@@ -69,24 +68,10 @@ internal sealed class AgentWindow : Form
     private void ApplyBackground(SaveLocker.Shared.AppearanceDto? look)
     {
         var theme = look?.Theme ?? "system";
-        var light = theme == "light" || (theme == "system" && AppsUseLightTheme());
+        var light = theme == "light" || (theme == "system" && MarkIcon.AppsAreLight());
         var ink = light ? Color.FromArgb(0xf5, 0xf3, 0xef) : Color.FromArgb(0x0f, 0x0f, 0x10);
         BackColor = ink;
         _webView.DefaultBackgroundColor = ink;
-    }
-
-    private static bool AppsUseLightTheme()
-    {
-        try
-        {
-            return Registry.GetValue(
-                @"HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize",
-                "AppsUseLightTheme", 0) is int v && v == 1;
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     protected override void Dispose(bool disposing)

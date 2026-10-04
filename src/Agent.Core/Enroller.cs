@@ -78,10 +78,13 @@ public static class Enroller
                 catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
                     // Every game would fail the same way, and a bare "401 (Unauthorized)" says nothing
-                    // about the fix: the server no longer knows this machine's key.
+                    // about the fix: the server no longer knows this machine's key. ASCII only, and no "Settings"
+                    // without saying whose: Game Mode's screen shows this too, its font has no arrows, and its
+                    // own Settings cannot register.
                     throw new InvalidOperationException(
                         "the server doesn't recognise this machine's key (401). It may have been reset, or " +
-                        "this machine removed from it. Register again: agent UI → Settings → Register / Re-register.", ex);
+                        "this machine removed from it. Register again with Register / Re-register in the agent " +
+                        "UI's Settings (on a Deck, from Desktop Mode).", ex);
                 }
                 // Persisted per candidate, not once at the end: a later candidate that fails — or a UI
                 // window closed mid-batch — must not lose the games already created on the server, along
