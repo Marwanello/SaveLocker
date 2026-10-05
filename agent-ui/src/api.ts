@@ -1,4 +1,4 @@
-import type { Activity, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, Conflict, DeckyStatus, EnrollProgress, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, TestConnection, TrackedGame, VersionStats } from './types'
+import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, Conflict, DeckyStatus, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, TestConnection, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -17,10 +17,13 @@ function authHeaders(extra?: HeadersInit): HeadersInit | undefined {
  *  refusal can never be offered as something to click past. */
 export class ApiError extends Error {
   readonly needsConfirm: boolean
-  constructor(message: string, needsConfirm = false) {
+  /** Mapping a save folder met different files here and in the cloud's copy: re-send with a side to keep. */
+  readonly needsChoice: boolean
+  constructor(message: string, needsConfirm = false, needsChoice = false) {
     super(message)
     this.name = 'ApiError'
     this.needsConfirm = needsConfirm
+    this.needsChoice = needsChoice
   }
 }
 
@@ -31,8 +34,8 @@ export const CONFIRM_HINT = ' Re-send with confirm to use it anyway.'
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(path, { ...options, headers: authHeaders(options?.headers) })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string; needsConfirm?: boolean }
-    throw new ApiError(err.error ?? res.statusText, err.needsConfirm === true)
+    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string; needsConfirm?: boolean; needsChoice?: boolean }
+    throw new ApiError(err.error ?? res.statusText, err.needsConfirm === true, err.needsChoice === true)
   }
   return res.json() as Promise<T>
 }
@@ -58,7 +61,9 @@ export const api = {
   state: () => req<AgentState>('/api/state'),
   candidates: () => req<Candidate[]>('/api/candidates'),
   rescan: () => post<Candidate[]>('/api/candidates/rescan'),
-  enroll: (ids: number[]) => post<{ enrolled: number; skipped: number }>('/api/enroll', { ids }),
+  // `alsoSync` names, per candidate, the "Also found" folders to add with it; a candidate left out adds none.
+  enroll: (ids: number[], alsoSync?: { id: number; paths: string[] }[]) =>
+    post<{ enrolled: number; skipped: number }>('/api/enroll', { ids, alsoSync }),
   // Asked while enroll() is still open: which game and which step the agent is on.
   enrollProgress: () => req<EnrollProgress>('/api/enroll/progress'),
   // identityCleared is true when the server URL moved to a different origin: the machine key, id
@@ -82,8 +87,20 @@ export const api = {
   // `confirm` accepts a folder the sanity heuristics flagged (a suspected Wine prefix, an oversized
   // folder). It never overrides the hard refusals — a drive root or a user profile is refused with
   // or without it.
-  setGameFolder: (id: string, path: string, confirm = false) =>
-    post(`/api/games/${id}/folder`, { path, confirm }),
+  // `key` picks one of the game's extra save folders (none: the main one); `keep` answers a needsChoice.
+  setGameFolder: (id: string, path: string, confirm = false, key?: string, keep?: 'local' | 'cloud') =>
+    post(`/api/games/${id}/folder`, { path, confirm, key, keep }),
+  // Another save folder for the game, on every device. No `key`: the agent names it after the folder.
+  addGameFolder: (id: string, body: { path: string; key?: string; freeKey?: boolean; includeGlobs?: string[]; keep?: 'local' | 'cloud'; confirm?: boolean }) =>
+    post<AddFolderResult>(`/api/games/${id}/paths`, body),
+  // Stop syncing an extra folder on every device; its files stay where they are.
+  removeGameFolder: (id: string, key: string) =>
+    req(`/api/games/${id}/paths/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+  // "Also found": folders the manifest knows for tracked games that exist here and are not synced.
+  folderSuggestions: () => req<FolderSuggestion[]>('/api/folder-suggestions'),
+  // ignore = never suggest again; defer = "Skip for now" (stays on the game's page, not asked at start-up).
+  answerFolderSuggestions: (gameId: string, answer: { ignore?: string[]; defer?: string[] }) =>
+    post('/api/folder-suggestions/answer', { gameId, ...answer }),
   // Process names that mean the game is running. Empty means the Windows agent cannot detect it at
   // all — no lease, no exit push, no refusal to pull under a live game.
   setGameProcesses: (id: string, processNames: string[]) =>

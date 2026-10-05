@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, errorText } from '../../api';
-import type { Game, GameIntent, Machine, MachineSavePath, MachineScanCandidate, Version } from '../../types';
+import type { AgentHealth, Game, GameIntent, Machine, MachineSavePath, MachineScanCandidate, Version, VersionFolder } from '../../types';
 import { ago, when } from '../../format';
 import { isTemplate, toTemplate } from '../../savePathTemplate';
 import { toast, toastError } from '../../toast';
@@ -8,6 +8,9 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { PathField } from '../ui/PathField';
 import { InlineConfirm } from '../ui/InlineConfirm';
+import { Chip } from '../ui/Chip';
+import { compareVersions, isTestBuild, parseVersion } from '../../versionSkew';
+import { AddFolderForm, ExtraFolderSection, FolderFiles, IncludePatterns, MAIN_KEY } from './SaveFolderParts';
 
 interface Props {
   game: Game;
@@ -20,6 +23,25 @@ interface Props {
   /** A notification's "Set folder" lands here; `seq` makes each request act exactly once. */
   intent?: { value: GameIntent; seq: number } | null;
   onRefresh: () => void;
+  /** Each machine's agent version, to flag one too old for several save folders. */
+  health: AgentHealth[];
+  /** Latest, whose files are listed under each folder. */
+  head: Version | null | undefined;
+}
+
+/** The first agent release that syncs several save folders per game (tasks/multiple-save-paths). */
+const MULTI_FOLDER_AGENT = parseVersion('0.7.0')!;
+
+/**
+ * An agent older than {@link MULTI_FOLDER_AGENT} still syncs such a game: it carries the extra folders as
+ * a `.savelocker/` folder inside the main one and pushes them back unchanged (plan §1, "Mixed fleet").
+ * Nothing is lost, but those folders do not reach their real place on that machine until it updates.
+ * A dev or CI build is never flagged — its version says nothing about what it can do.
+ */
+function tooOldForFolders(agentVersion: string | null | undefined): boolean {
+  if (!agentVersion || isTestBuild(agentVersion)) return false;
+  const v = parseVersion(agentVersion);
+  return v !== null && compareVersions(v, MULTI_FOLDER_AGENT) < 0;
 }
 
 const inputCls = `w-full min-w-0 bg-tile text-fg border border-line rounded-lg px-2.5 py-[7px] font-mono text-[11.5px]
@@ -31,7 +53,20 @@ const inputCls = `w-full min-w-0 bg-tile text-fg border border-line rounded-lg p
  * Save paths per machine). The forced Push / Pull sit behind "Force…" on each machine, each naming
  * what it overwrites: the plain ones never destroy anything, the forced ones can.
  */
-export function SaveFoldersCard({ game, machines, paths, candidates, pathsLoaded, latestByMachine, reloadPaths, intent, onRefresh }: Props) {
+export function SaveFoldersCard({ game, machines, paths: allPaths, candidates, pathsLoaded, latestByMachine, reloadPaths, intent, onRefresh, health, head }: Props) {
+  // The main folder's rows below are the card as it always was; every extra folder gets its own section.
+  const paths = allPaths.filter(p => (p.pathKey ?? MAIN_KEY) === MAIN_KEY);
+  const extraPaths = game.extraPaths ?? [];
+  const [folders, setFolders] = useState<VersionFolder[]>([]);
+  const headId = head?.id ?? null;
+  useEffect(() => {
+    if (!headId) { setFolders([]); return; }
+    let live = true;
+    api.versionFolders(game.id, headId).then(f => { if (live) setFolders(f); }).catch(() => { if (live) setFolders([]); });
+    return () => { live = false; };
+  }, [game.id, headId]);
+  const folderOf = (key: string) => folders.find(f => f.key === key);
+  const agentOf = (m: Machine) => health.find(h => h.machineId === m.id)?.agentVersion;
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -90,6 +125,9 @@ export function SaveFoldersCard({ game, machines, paths, candidates, pathsLoaded
 
   return (
     <Card title="Save folders" flush>
+      {extraPaths.length > 0 && (
+        <div className="px-4 pt-3 text-[13px] font-semibold text-fg">Main folder</div>
+      )}
       <div className="px-4 py-3 border-b border-row flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-2 flex-wrap">
           <span className="text-[10px] tracking-[0.1em] uppercase text-faint">{templated ? 'Template · every machine' : 'Fallback path'}</span>
@@ -119,6 +157,8 @@ export function SaveFoldersCard({ game, machines, paths, candidates, pathsLoaded
               : template ? `${template}\nA literal path, used only where it happens to exist. "Use as template" on a machine turns one into a path every machine can use.` : undefined}
           />
         )}
+        <IncludePatterns game={game} folderKey={MAIN_KEY} saved={game.includeGlobs ?? []} onRefresh={onRefresh} />
+        {extraPaths.length > 0 && <FolderFiles folder={folderOf(MAIN_KEY)} latestAt={head?.createdAt} />}
       </div>
 
       {machines.length === 0 && <p className="px-4 py-4 text-[13px] text-dim">No machines registered.</p>}
@@ -131,7 +171,14 @@ export function SaveFoldersCard({ game, machines, paths, candidates, pathsLoaded
         return (
           <div key={m.id} ref={el => { rowRefs.current[m.id] = el; }} className="px-4 py-3 border-b border-row last:border-b-0 flex flex-col gap-2">
             <div className="flex items-baseline justify-between gap-2 flex-wrap">
-              <span className="text-[13px] font-semibold text-fg">{m.name}</span>
+              <span className="text-[13px] font-semibold text-fg inline-flex items-center gap-2">
+                {m.name}
+                {extraPaths.length > 0 && tooOldForFolders(agentOf(m)) && (
+                  <span title={`${m.name} runs agent ${agentOf(m)}. Until it updates to 0.7.0 or later it keeps this game's other folders as a .savelocker folder inside the main one — nothing is lost, they just don't reach their own place on that machine.`}>
+                    <Chip tone="warn">agent too old for several folders</Chip>
+                  </span>
+                )}
+              </span>
               <span className="text-[11px] text-dim tabular-nums" title={last ? when(last.createdAt) : undefined}>
                 {last ? `last upload ${ago(last.createdAt)}` : 'nothing uploaded yet'}
               </span>
@@ -214,6 +261,21 @@ export function SaveFoldersCard({ game, machines, paths, candidates, pathsLoaded
           </div>
         );
       })}
+
+      {extraPaths.map(sp => (
+        <ExtraFolderSection
+          key={sp.key}
+          game={game}
+          sp={sp}
+          machines={machines}
+          paths={allPaths}
+          folder={folderOf(sp.key)}
+          latestAt={head?.createdAt}
+          onPathsChanged={reloadPaths}
+          onRefresh={onRefresh}
+        />
+      ))}
+      <AddFolderForm game={game} onAdded={() => { onRefresh(); void reloadPaths(); }} />
     </Card>
   );
 }

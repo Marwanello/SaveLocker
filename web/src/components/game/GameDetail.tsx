@@ -159,6 +159,8 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
             reloadPaths={reloadPaths}
             intent={intent}
             onRefresh={onRefresh}
+            health={health}
+            head={head}
           />
           <RulesCard game={game} machines={machines} health={health} onRefresh={onRefresh} />
           <ExcludePatternsCard game={game} onRefresh={onRefresh} />

@@ -171,19 +171,37 @@ export function AddGamesView({ onEnrolled }: Props) {
     return () => { live = false; clearInterval(id) }
   }, [enrolling, refreshing])
 
+  // "Also found" folders the user unticked. Ticked is the default: every folder the manifest names for
+  // the game that exists here is added with it unless the user says otherwise.
+  const [alsoOff, setAlsoOff] = useState<Set<string>>(new Set())
+  const alsoId = (c: Candidate, path: string) => `${c.id}\n${path}`
+  const toggleAlso = (c: Candidate, path: string) => setAlsoOff(prev => {
+    const next = new Set(prev)
+    const id = alsoId(c, path)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+
   const enroll = async () => {
     if (checked.size === 0 || missing.length > 0) return
     setEnrolling(true)
     setProgress(null)
     setStatus('')
     try {
-      const result = await api.enroll([...checked])
+      const alsoSync = [...checked].flatMap(id => {
+        const c = candidates.find(x => x.id === id)
+        const paths = (c?.alsoFound ?? []).map(f => f.path).filter(p => c && !alsoOff.has(alsoId(c, p)))
+        return c && paths.length > 0 ? [{ id, paths }] : []
+      })
+      const result = await api.enroll([...checked], alsoSync)
       setStatus(
         `Added ${result.enrolled} game${result.enrolled === 1 ? '' : 's'}.` +
         (result.skipped > 0 ? ` Skipped ${result.skipped} already tracked.` : '')
       )
       if (result.enrolled > 0) setEnrolled(true)
       setChecked(new Set())
+      setAlsoOff(new Set())
       onEnrolled()
       setRefreshing(true)
       setProgress({ active: true, index: 0, total: 0, game: null, step: 'Refreshing the list of games…', enrolled: 0, skipped: 0 })
@@ -366,6 +384,34 @@ export function AddGamesView({ onEnrolled }: Props) {
                     <FolderSearch size={12} strokeWidth={1.75} aria-hidden="true" />
                     Set save folder
                   </Button>
+                </div>
+              )}
+              {c.path && (c.alsoFound ?? []).length > 0 && (
+                // Other folders the manifest names for this game that exist here. Ticked by default; the
+                // manifest cannot tell saves from settings, so each one can be left out before adding.
+                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 11.5, color: 'var(--color-dim)' }}>Also found — synced with it unless you untick:</span>
+                  {(c.alsoFound ?? []).map(f => {
+                    const on = !alsoOff.has(alsoId(c, f.path))
+                    return (
+                      <span
+                        key={f.path}
+                        className="sl-inline"
+                        style={{ gap: 6 }}
+                        // The row is the game's own label: a click here must toggle this folder, not the game.
+                        onClick={e => { e.preventDefault(); toggleAlso(c, f.path) }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          aria-label={`Also sync ${f.path}`}
+                          onClick={e => e.stopPropagation()}
+                          onChange={() => toggleAlso(c, f.path)}
+                        />
+                        <span className="sl-path">{f.path}</span>
+                      </span>
+                    )
+                  })}
                 </div>
               )}
             </div>

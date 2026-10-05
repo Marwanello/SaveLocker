@@ -2170,6 +2170,48 @@
         }
       }
     },
+    "/api/games/{id}/versions/{versionId}/folders": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VersionFolderDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/games/{id}/prune": {
       "post": {
         "tags": [
@@ -5430,6 +5472,58 @@
           "Conflict",
           "RetryFull"
         ]
+      },
+      "VersionFileDto": {
+        "required": [
+          "path",
+          "size",
+          "modifiedUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "modifiedUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "VersionFolderDto": {
+        "required": [
+          "key",
+          "fileCount",
+          "totalBytes",
+          "files"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "fileCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VersionFileDto"
+            }
+          }
+        }
       },
       "VersionStatsDto": {
         "required": [

@@ -2554,6 +2554,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/versions/{versionId}/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    versionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VersionFolderDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games/{id}/prune": {
         parameters: {
             query?: never;
@@ -4266,6 +4304,21 @@ export interface components {
         };
         /** @enum {unknown} */
         UploadStatus: "Created" | "NoChange" | "Conflict" | "RetryFull";
+        VersionFileDto: {
+            path: string;
+            /** Format: int64 */
+            size: number;
+            /** Format: date-time */
+            modifiedUtc: null | string;
+        };
+        VersionFolderDto: {
+            key: string;
+            /** Format: int32 */
+            fileCount: number;
+            /** Format: int64 */
+            totalBytes: number;
+            files: components["schemas"]["VersionFileDto"][];
+        };
         VersionStatsDto: {
             /** Format: int32 */
             fileCount: number;

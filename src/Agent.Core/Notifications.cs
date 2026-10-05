@@ -39,6 +39,8 @@ public readonly record struct NoticeAction(NoticeActionKind Kind, string? Route 
     /// <summary>Straight to the one-at-a-time chooser, the same one the status header's Sync all raises.</summary>
     public static NoticeAction Conflicts => View("conflicts:queue");
     public static NoticeAction Game(Guid id) => View($"game:{id:D}");
+    /// <summary>The "Also found" prompt over the Games list: one game at a time, add or skip.</summary>
+    public static NoticeAction Folders => View("games:folders");
 
     /// <summary>The link a button carries: the agent UI's root plus this route as its hash
     /// (<c>agent-ui/src/route.ts</c> is what reads it). Null for <see cref="None"/>.</summary>
@@ -152,6 +154,18 @@ public static class NoticeCatalog
             AgentEventSeverity.Error, NoticeAction.Conflicts, "Choose a save", "Later",
             ClearedBySync: false);
     }
+
+    /// <summary>
+    /// Tracked games keep saves in folders SaveLocker is not syncing yet ("Also found",
+    /// tasks/multiple-save-paths plan §8). Raised once per start, and only for folders nobody has
+    /// answered — the button opens the same one-game-at-a-time prompt the agent UI shows.
+    /// </summary>
+    public static AgentNotice FoldersFound(int games) => new(
+        "folders:found", null,
+        games == 1 ? "A game keeps saves in another folder" : $"{games} games keep saves in other folders",
+        "SaveLocker found save folders it is not syncing yet. Choose which to add, or skip for now.",
+        AgentEventSeverity.Info, NoticeAction.Folders, "Review folders", "Later",
+        ClearedBySync: false);
 
     public static AgentNotice ServerUnreachable(TimeSpan down)
     {

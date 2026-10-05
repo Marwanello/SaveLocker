@@ -294,6 +294,14 @@ public record SaveVersionDto(
 /// Mainly for telling apart the two sides of an open conflict.</summary>
 public record VersionStatsDto(int FileCount, DateTime? NewestFileWriteUtc);
 
+/// <summary>One save folder's files inside a version (tasks/multiple-save-paths): the primary folder is
+/// <c>main</c>, each extra folder its key. <paramref name="Files"/> holds at most the first 500 by name;
+/// <paramref name="FileCount"/> and <paramref name="TotalBytes"/> count every file.</summary>
+public record VersionFolderDto(string Key, int FileCount, long TotalBytes, VersionFileDto[] Files);
+
+/// <param name="Path">Relative to its save folder, with forward slashes.</param>
+public record VersionFileDto(string Path, long Size, DateTime? ModifiedUtc);
+
 /// <summary>How many files already tracked in a game's head version would stop being uploaded
 /// under a draft (not-yet-saved) set of exclude patterns — a dry run for the console's exclude
 /// editor. Necessarily one-directional: a file that ALREADY matches a saved pattern was never

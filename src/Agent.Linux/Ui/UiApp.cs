@@ -1901,7 +1901,10 @@ sealed partial class UiApp
         var c = forGame is not null
             ? new ScanCandidate(forGame.Name, forGame.SaveDirectory, ScanSource.SteamShortcut, false)
             : _candidates[_folderTargetId];
-        Widgets.Text($"Save folder for {c.Name}", Theme.Fg, Theme.Title);
+        var folderName = forGame is not null && _folderKey != SaveRoot.PrimaryKey
+            ? forGame.ExtraPaths.FirstOrDefault(p => p.Key == _folderKey)?.Label ?? _folderKey
+            : null;
+        Widgets.Text(folderName is null ? $"Save folder for {c.Name}" : $"{c.Name}: {folderName} folder", Theme.Fg, Theme.Title);
         if (!string.IsNullOrEmpty(c.PrefixPath))
             Widgets.TextWrapped(
                 "Opened inside this game's Proton prefix. Saves usually sit under Documents, "
@@ -1972,6 +1975,21 @@ sealed partial class UiApp
 
         // The daemon refused a folder its sanity heuristics flagged (a suspected Wine prefix, an oversized
         // folder): asked about here in the agent's own words, never applied without an explicit yes.
+        if (forGame is not null && _folderFlag is { Choice: true } differ)
+        {
+            // This Deck's files and the cloud's copy of that folder differ: keeping one replaces the other
+            // on every device, so it is asked, never guessed.
+            Widgets.Banner("folderchoice", "Which copy should every device keep?", differ.Ask, Theme.Watch, Icons.AlertTriangle);
+            Widgets.Gap(Theme.Space.Sm);
+            if (Widgets.PillButton("This Deck's files", Widgets.ButtonKind.Primary, Icons.Check))
+                ApplyGameFolder(forGame, differ.Path, confirm: true, keep: "local");
+            ImGui.SameLine(0, Theme.Space.Sm);
+            if (Widgets.PillButton("The cloud's copy", Widgets.ButtonKind.Secondary))
+                ApplyGameFolder(forGame, differ.Path, confirm: true, keep: "cloud");
+            ImGui.SameLine(0, Theme.Space.Sm);
+            if (Widgets.PillButton("Choose another", Widgets.ButtonKind.Ghost)) _folderFlag = null;
+            return;
+        }
         if (forGame is not null && _folderFlag is { } flagged)
         {
             Widgets.Banner("folderflag", "Use this folder anyway?", flagged.Ask, Theme.Watch, Icons.AlertTriangle);

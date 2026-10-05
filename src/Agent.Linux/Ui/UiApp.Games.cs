@@ -177,10 +177,24 @@ sealed partial class UiApp
                 : "Sync failed: " + (gs.Exception?.GetBaseException().Message ?? "unknown error");
             if (_game is not null) LoadGame(_game);   // what the sync just did is what the page should now say
         }
+        if (_suggestionsTask is { IsCompleted: true } sg)
+        {
+            _suggestionsTask = null;
+            _suggestions = sg.IsCompletedSuccessfully && sg.Result is { } all && _game is { } shown
+                ? all.Where(s => s.GameId == shown.GameId).ToList()
+                : new();
+        }
+        if (_suggestionActionTask is { IsCompleted: true } sa)
+        {
+            _suggestionActionTask = null;
+            _gameSyncMessage = sa.IsCompletedSuccessfully ? sa.Result : sa.Exception?.GetBaseException().Message;
+            _diskReadAt = 0;                   // the daemon may just have written a new folder
+            if (_game is not null) LoadGame(_game);
+        }
         if (_folderTask is { IsCompleted: true } ft)
         {
             _folderTask = null;
-            var (ok, error, ask, path) = ft.IsCompletedSuccessfully ? ft.Result : (false, ft.Exception?.GetBaseException().Message, null, null);
+            var (ok, error, ask, path, choice) = ft.IsCompletedSuccessfully ? ft.Result : (false, ft.Exception?.GetBaseException().Message, null, null, false);
             if (ok)
             {
                 _folderFlag = null;
@@ -191,7 +205,7 @@ sealed partial class UiApp
                 _folderGame = null;
                 if (target is not null) { _screen = Screen.Game; _bestContentId = 0; _focusZone = Zone.Rail; }
             }
-            else if (ask is not null) _folderFlag = (ask, path!);
+            else if (ask is not null) _folderFlag = (ask, path!, choice);
             else _folderError = error ?? "Could not set the save folder.";
         }
     }
@@ -207,6 +221,7 @@ sealed partial class UiApp
             _gameState = null;
             _gameStateError = null;
             _gameVersions = null;
+            _suggestions = new();
         }
         _game = game;
         _gameSyncMessage = null;
@@ -282,15 +297,24 @@ sealed partial class UiApp
     private string? _gameSyncMessage;
 
     private TrackedGame? _folderGame;
-    private Task<(bool Ok, string? Error, string? Ask, string? Path)>? _folderTask;
-    private (string Ask, string Path)? _folderFlag;
+    /// <summary>Which of <see cref="_folderGame"/>'s save folders the browser sets: <c>main</c> or an extra key.</summary>
+    private string _folderKey = SaveRoot.PrimaryKey;
+    private Task<(bool Ok, string? Error, string? Ask, string? Path, bool Choice)>? _folderTask;
+    /// <summary>The daemon's question about a folder: a heuristic flagged it, or (<c>Choice</c>) this Deck's
+    /// files and the cloud's copy differ and one has to be kept.</summary>
+    private (string Ask, string Path, bool Choice)? _folderFlag;
     private string? _folderError;
+    // "Also found": folders the save database lists for this game that exist here and are not synced.
+    private Task<List<FolderSuggestionDto>?>? _suggestionsTask;
+    private List<FolderSuggestionDto> _suggestions = new();
+    private Task<string?>? _suggestionActionTask;
 
     private void LoadGame(TrackedGame g)
     {
         var id = g.GameId;
         _gameStateTask = DaemonGet<GameStateDto>($"api/games/{id}/state");
         _gameVersionsTask = DaemonGet<List<SaveVersionDto>>($"api/games/{id}/versions");
+        _suggestionsTask = DaemonGet<List<FolderSuggestionDto>>("api/folder-suggestions");
     }
 
     private void DrawGame()
@@ -369,6 +393,16 @@ sealed partial class UiApp
         if (Widgets.PillButton(missing ? "Choose save folder" : "Change folder",
                 missing ? Widgets.ButtonKind.Primary : Widgets.ButtonKind.Ghost, Icons.Folder)) EnterSetFolderForGame(g);
 
+        // The game's other save folders (tasks/multiple-save-paths). One not set on this Deck still syncs —
+        // the agent keeps a copy of it — so choosing its folder here is an offer, never a fault to fix.
+        foreach (var p in g.ExtraPaths)
+        {
+            ImGui.SameLine(0, Theme.Space.Sm);
+            if (Widgets.PillButton(p.IsMapped ? $"Change {p.Label ?? p.Key}" : $"Choose {p.Label ?? p.Key} folder",
+                    Widgets.ButtonKind.Ghost, Icons.Folder))
+                EnterSetFolderForGame(g, p.Key);
+        }
+
         if (!string.IsNullOrEmpty(_gameSyncMessage))
         {
             Widgets.Gap(Theme.Space.Sm);
@@ -400,13 +434,36 @@ sealed partial class UiApp
             right: () =>
             {
                 Widgets.SectionHeader("On this device");
-                InfoRow("Folder", missing ? "not set" : g.SaveDirectory, mono: true);
+                InfoRow(g.ExtraPaths.Count == 0 ? "Folder" : "Main", missing ? "not set" : g.SaveDirectory, mono: true);
+                foreach (var p in g.ExtraPaths)
+                    InfoRow(p.Label ?? p.Key, p.Directory ?? "kept as a copy (not on this Deck)", mono: p.IsMapped,
+                        colour: p.IsMapped ? null : Theme.Dim);
                 InfoRow("Last push", g.LastPushAt is { } at ? FormatAgo(DateTime.UtcNow - at) : "none yet");
                 InfoRow("Sent", g.LastPushBytes is { } b ? FormatBytes(b) : "-");
                 InfoRow("Steam app", g.ResolveSteamAppId() ?? "-", mono: true);
             },
             // Fixed: the default fills the pane, which pushed the versions below it out of sight.
-            height: 190f);
+            height: 190f + 24f * g.ExtraPaths.Count);
+
+        if (_suggestions.Count > 0)
+        {
+            Widgets.Gap(Theme.Space.Lg);
+            Widgets.SectionHeader("Also found");
+            Widgets.TextWrapped("The save database lists these folders for this game too, and they exist on this Deck. " +
+                                "It cannot tell saves from settings, so nothing syncs until you add it.", Theme.Dim, Theme.Caption);
+            var acting = _suggestionActionTask is { IsCompleted: false };
+            foreach (var s in _suggestions)
+            {
+                ImGui.PushID(s.Path);   // every row has the same two labels
+                Widgets.Text(s.Path, Theme.Fg, Theme.Caption);
+                if (Widgets.PillButton("Add", Widgets.ButtonKind.Secondary, Icons.Check, enabled: !acting && Connected))
+                    _suggestionActionTask = AddSuggestedFolderAsync(s);
+                ImGui.SameLine(0, Theme.Space.Sm);
+                if (Widgets.PillButton("Don't sync", Widgets.ButtonKind.Ghost, enabled: !acting))
+                    _suggestionActionTask = IgnoreSuggestedFolderAsync(s);
+                ImGui.PopID();
+            }
+        }
 
         Widgets.Gap(Theme.Space.Lg);
         Widgets.SectionHeader("Versions on the server");
@@ -446,37 +503,60 @@ sealed partial class UiApp
         return err?.Error ?? $"The agent answered {(int)response.StatusCode}.";
     }
 
-    private void EnterSetFolderForGame(TrackedGame g)
+    private async Task<string?> AddSuggestedFolderAsync(FolderSuggestionDto s)
+    {
+        using var response = await DaemonClient().PostAsJsonAsync($"api/games/{s.GameId}/paths",
+            new AddFolderRequest(s.Path, s.Key, FreeKey: true));
+        if (response.IsSuccessStatusCode)
+            return $"Now syncing {s.Path} on every device.";
+        var err = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        // A flagged folder or files on both sides are asked in the folder browser: the folder exists for the
+        // game by then, so its own "Choose" button on this page takes it from here.
+        return err?.Error ?? $"The agent answered {(int)response.StatusCode}.";
+    }
+
+    private async Task<string?> IgnoreSuggestedFolderAsync(FolderSuggestionDto s)
+    {
+        using var response = await DaemonClient().PostAsJsonAsync("api/folder-suggestions/answer",
+            new FolderSuggestionAnswerRequest(s.GameId, Ignore: new[] { s.Path }));
+        return response.IsSuccessStatusCode ? "SaveLocker won't suggest that folder again." : "Could not save that answer.";
+    }
+
+    private void EnterSetFolderForGame(TrackedGame g, string key = SaveRoot.PrimaryKey)
     {
         _folderGame = g;
+        _folderKey = key;
         _folderFlag = null;
         _folderError = null;
-        _browsePath = !string.IsNullOrEmpty(g.SaveDirectory) && Directory.Exists(g.SaveDirectory)
+        var current = key == SaveRoot.PrimaryKey
             ? g.SaveDirectory
-            : "";
+            : g.ExtraPaths.FirstOrDefault(p => p.Key == key)?.Directory ?? g.SaveDirectory;
+        _browsePath = !string.IsNullOrEmpty(current) && Directory.Exists(current) ? current : "";
         _lastListedPath = null;
         _screen = Screen.SetFolder;
     }
 
     /// <summary>Ask the daemon to change a game's folder (it validates: the hard refusals are absolute, the
     /// heuristic warnings come back as a question the caller must answer with confirm).</summary>
-    private void ApplyGameFolder(TrackedGame g, string path, bool confirm)
+    private void ApplyGameFolder(TrackedGame g, string path, bool confirm, string? keep = null)
     {
         _folderError = null;
-        _folderTask = SetFolderAsync(g.GameId, path, confirm);
+        _folderTask = SetFolderAsync(g.GameId, path, confirm, _folderKey, keep);
     }
 
-    private async Task<(bool Ok, string? Error, string? Ask, string? Path)> SetFolderAsync(Guid id, string path, bool confirm)
+    private async Task<(bool Ok, string? Error, string? Ask, string? Path, bool Choice)> SetFolderAsync(
+        Guid id, string path, bool confirm, string key, string? keep)
     {
-        using var response = await DaemonClient().PostAsJsonAsync($"api/games/{id}/folder", new FolderRequest(path, confirm));
-        if (response.IsSuccessStatusCode) return (true, null, null, null);
+        using var response = await DaemonClient().PostAsJsonAsync($"api/games/{id}/folder",
+            new FolderRequest(path, confirm, key == SaveRoot.PrimaryKey ? null : key, keep));
+        if (response.IsSuccessStatusCode) return (true, null, null, null, false);
         var refusal = await response.Content.ReadFromJsonAsync<ErrorResponse>();
         var message = refusal?.Error ?? "The agent refused that folder.";
         // Only the heuristic warnings are confirmable, and the agent says so in a field of its own, so a
         // hard refusal can never be clicked past — whatever either message happens to say.
-        return refusal?.NeedsConfirm == true
-            ? (false, null, message.Replace(ErrorResponse.ConfirmHint, ""), path)
-            : (false, message, null, null);
+        if (refusal?.NeedsConfirm == true) return (false, null, message.Replace(ErrorResponse.ConfirmHint, ""), path, false);
+        if (refusal?.NeedsChoice == true && keep is null) return (false, null, message, path, true);
+        return (false, message, null, null, false);
     }
 
     // ── Activity ─────────────────────────────────────────────────────────────────────────────

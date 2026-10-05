@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError, CONFIRM_HINT } from '../api'
 import { copyText } from '../clipboard'
 import { useFolderPicker } from '../useFolderPicker'
-import type { TrackedGame } from '../types'
+import type { FolderSuggestion, SaveFolder, TrackedGame } from '../types'
 import { PathBrowserModal } from './PathBrowserModal'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
+import { Chip } from './ui/Chip'
 
 interface Props {
   game: TrackedGame
@@ -18,12 +19,28 @@ interface Props {
 
 type Note = { text: string; failed?: boolean }
 
+/** What a folder request was for, kept so the agent's follow-up question (a flagged folder, files on
+ *  both sides) can re-send exactly it with the answer. */
+type FolderAction =
+  | { kind: 'main'; path: string }
+  | { kind: 'change'; key: string; path: string }
+  | { kind: 'add'; path: string; key?: string; freeKey?: boolean; include?: string[] }
+
+/** A suggested folder key from a folder's name, as the agent would make it — the user can change it. */
+function keyFrom(path: string): string {
+  const name = path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? ''
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32).replace(/-+$/, '')
+  return slug || 'extra'
+}
+
+const MAIN_KEY = 'main'
+
 /**
- * What used to live only in Settings' tracked-games list, on the page of the game it is about:
- * change the save folder, open it, say which process means "running", stop tracking. Nothing here
- * uses `alert`/`confirm`/`prompt` — a confirmation is the button expanding into its own consequence
- * (plan.md: no modals), and the one heuristic warning the agent can raise about a folder is asked
- * about in place.
+ * What used to live only in Settings' tracked-games list, on the page of the game it is about: its save
+ * folders (the main one and any extra ones, tasks/multiple-save-paths), open it, say which process
+ * means "running", stop tracking. Nothing here uses `alert`/`confirm`/`prompt` — a confirmation is the
+ * button expanding into its own consequence (plan.md: no modals), and the questions the agent can ask
+ * about a folder (a heuristic flagged it; it and the cloud's copy hold different files) are asked in place.
  */
 export function GameManagement({ game, platform, onChanged, onRemoved }: Props) {
   const picker = useFolderPicker()
@@ -31,39 +48,112 @@ export function GameManagement({ game, platform, onChanged, onRemoved }: Props) 
   const [path, setPath] = useState<{ where: string; copied: boolean } | null>(null)
   // A folder the agent's sanity heuristics flagged (a suspected Wine prefix, an oversized folder):
   // never applied without an explicit yes, and the question repeats the agent's own words.
-  const [flagged, setFlagged] = useState<{ ask: string; path: string } | null>(null)
+  const [flagged, setFlagged] = useState<{ ask: string; action: FolderAction } | null>(null)
+  // Files here and in the cloud's copy of the folder differ: which one wins is the user's call.
+  const [choice, setChoice] = useState<{ ask: string; action: FolderAction } | null>(null)
+  // A folder picked for "Add save folder", waiting for its name and optional include patterns.
+  const [adding, setAdding] = useState<{ path: string; key: string; include: string } | null>(null)
+  const [removing, setRemoving] = useState<string | null>(null)
+  const [suggestions, setSuggestions] = useState<FolderSuggestion[]>([])
   const [editingProcess, setEditingProcess] = useState(false)
   const [processText, setProcessText] = useState('')
   const [stopping, setStopping] = useState(false)
 
-  async function applyFolder(next: string, confirm: boolean) {
+  const folders: SaveFolder[] = game.paths?.length
+    ? game.paths
+    : [{ key: MAIN_KEY, label: null, path: game.path, mapped: !!game.path, includeGlobs: [] }]
+  const extras = folders.filter(f => f.key !== MAIN_KEY)
+
+  const loadSuggestions = useCallback(() => {
+    api.folderSuggestions()
+      .then(all => setSuggestions(all.filter(s => s.gameId === game.id)))
+      .catch(() => setSuggestions([]))
+  }, [game.id])
+  useEffect(() => { loadSuggestions() }, [loadSuggestions, game.paths?.length])
+
+  function clearPrompts() {
+    setFlagged(null)
+    setChoice(null)
+  }
+
+  async function run(action: FolderAction, confirm = false, keep?: 'local' | 'cloud') {
     try {
-      await api.setGameFolder(game.id, next, confirm)
-      setFlagged(null)
-      setNote({ text: `Save folder set to ${next}.` })
+      if (action.kind === 'main') await api.setGameFolder(game.id, action.path, confirm)
+      else if (action.kind === 'change') await api.setGameFolder(game.id, action.path, confirm, action.key, keep)
+      else {
+        const added = await api.addGameFolder(game.id, {
+          path: action.path, key: action.key, includeGlobs: action.include, keep, confirm,
+          freeKey: action.freeKey,
+        })
+        action = { ...action, key: added.key }
+      }
+      clearPrompts()
+      setAdding(null)
+      setNote({
+        text: action.kind === 'main' ? `Save folder set to ${action.path}.`
+          : action.kind === 'add' ? `Now syncing ${action.path} as “${action.key}”, on every device.`
+          : `“${action.key}” is now ${action.path} on this device.`,
+      })
       onChanged()
+      loadSuggestions()
     } catch (e) {
       const message = (e as Error).message
       // Only the heuristic warnings are confirmable, and the agent says so in a field of its own — so a
       // hard refusal (a drive root, a user profile) can never be clicked past, whatever its wording.
       if (!confirm && e instanceof ApiError && e.needsConfirm) {
-        setFlagged({ ask: message.replace(CONFIRM_HINT, ''), path: next })
+        setChoice(null)
+        setFlagged({ ask: message.replace(CONFIRM_HINT, ''), action })
+        return
+      }
+      if (!keep && e instanceof ApiError && e.needsChoice) {
+        setFlagged(null)
+        setChoice({ ask: message, action })
         return
       }
       setNote({ text: `Could not set the save folder: ${message}`, failed: true })
     }
   }
 
-  const changeFolder = () => {
+  const pickFor = (apply: (next: string) => Promise<void>, start: string | null) => {
     setNote(null)
-    setFlagged(null)
+    clearPrompts()
     return picker.pick({
       name: game.name,
-      start: async () => game.path
+      start: async () => start
+        || game.path
         || (await api.suggestedPath(game.id).catch(() => ({ path: null }))).path,
       nativePick: () => api.folderPick(),
-      apply: next => applyFolder(next, false),
+      apply,
     })
+  }
+
+  const changeFolder = (f: SaveFolder) => pickFor(
+    next => run(f.key === MAIN_KEY ? { kind: 'main', path: next } : { kind: 'change', key: f.key, path: next }),
+    f.path || null)
+
+  const addFolder = () => pickFor(async next => {
+    setAdding({ path: next, key: keyFrom(next), include: '' })
+  }, null)
+
+  async function removeFolder(key: string) {
+    try {
+      await api.removeGameFolder(game.id, key)
+      setRemoving(null)
+      setNote({ text: `“${key}” no longer syncs, on any device. Its files are still where they were.` })
+      onChanged()
+      loadSuggestions()
+    } catch (e) {
+      setNote({ text: `Could not remove “${key}”: ${(e as Error).message}`, failed: true })
+    }
+  }
+
+  async function dontSync(s: FolderSuggestion) {
+    try {
+      await api.answerFolderSuggestions(game.id, { ignore: [s.path] })
+      loadSuggestions()
+    } catch (e) {
+      setNote({ text: (e as Error).message, failed: true })
+    }
   }
 
   async function openFolder() {
@@ -102,21 +192,109 @@ export function GameManagement({ game, platform, onChanged, onRemoved }: Props) 
   // A Linux game is launched through the Steam wrapper, which already knows what it launched; only the
   // Windows watcher needs a process name to know the game is running.
   const needsProcess = platform !== 'Linux'
+  const actionPath = (a: FolderAction) => a.path
 
   return (
     <Card title="This game on this device">
       <div className="sl-stack">
-        <div className="sl-inline">
-          <Button size="sm" variant={game.path ? undefined : 'primary'} onClick={() => void changeFolder()}>
-            {game.path ? 'Change folder' : 'Choose save folder'}
-          </Button>
-          <Button size="sm" disabled={!game.path} onClick={() => void openFolder()}>Open folder</Button>
-          {needsProcess && (
-            <Button size="sm" onClick={() => { setProcessText(game.processNames.join(', ')); setEditingProcess(e => !e) }}>
-              {game.processNames.length > 0 ? 'Edit game process' : 'Set game process'}
+        <div className="sl-field">
+          <label>Save folders</label>
+          {folders.map(f => (
+            <div key={f.key} className="sl-confirm" style={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: 1 }}>
+                <span className="sl-inline" style={{ gap: 6 }}>
+                  <b style={{ color: 'var(--color-fg)', fontWeight: 600 }}>{f.key === MAIN_KEY ? 'Main' : (f.label || f.key)}</b>
+                  {f.key !== MAIN_KEY && !f.mapped && <Chip tone="warn">Not on this device</Chip>}
+                  {f.includeGlobs.length > 0 && <Chip>only {f.includeGlobs.join(', ')}</Chip>}
+                </span>
+                {f.path
+                  ? <span className="sl-path">{f.path}</span>
+                  : <span style={{ fontSize: 12 }}>
+                      {f.key === MAIN_KEY
+                        ? 'Not set yet.'
+                        : 'SaveLocker keeps a copy of this folder so your other devices still get it. Choose where it lives here to use it.'}
+                    </span>}
+              </div>
+              <div className="sl-inline">
+                <Button size="sm" variant={f.path ? undefined : 'primary'} onClick={() => void changeFolder(f)}>
+                  {f.path ? 'Change' : 'Choose folder'}
+                </Button>
+                {f.key === MAIN_KEY && (
+                  <Button size="sm" disabled={!game.path} onClick={() => void openFolder()}>Open folder</Button>
+                )}
+                {f.key !== MAIN_KEY && (
+                  <Button size="sm" variant="quiet" onClick={() => setRemoving(r => (r === f.key ? null : f.key))}>Remove…</Button>
+                )}
+              </div>
+              {removing === f.key && (
+                <div className="sl-confirm" role="alert" style={{ width: '100%' }}>
+                  <span>
+                    Stop syncing “{f.label || f.key}” on every device? Its files stay where they are, and versions already
+                    uploaded still hold it.
+                  </span>
+                  <Button size="sm" variant="primary" onClick={() => void removeFolder(f.key)}>Stop syncing it</Button>
+                  <Button size="sm" variant="quiet" onClick={() => setRemoving(null)}>Keep it</Button>
+                </div>
+              )}
+            </div>
+          ))}
+          <div className="sl-inline">
+            <Button size="sm" disabled={!game.path} onClick={() => void addFolder()}
+              title={game.path ? undefined : 'Choose the main save folder first.'}>
+              Add save folder…
             </Button>
-          )}
+            {extras.length === 0 && (
+              <small>For a game that keeps saves in more than one place — say Documents and AppData.</small>
+            )}
+          </div>
         </div>
+
+        {adding && (
+          <div className="sl-field" role="group" aria-label="New save folder">
+            <span className="sl-path">{adding.path}</span>
+            <div className="sl-inline">
+              <label htmlFor="folder-key" style={{ fontSize: 11.5 }}>Name</label>
+              <input
+                id="folder-key" className="sl-input sl-input--mono" style={{ width: 160 }}
+                value={adding.key} onChange={e => setAdding({ ...adding, key: e.target.value })}
+              />
+              <label htmlFor="folder-include" style={{ fontSize: 11.5 }}>Only these files</label>
+              <input
+                id="folder-include" className="sl-input sl-input--mono" style={{ flex: 1, minWidth: 160 }}
+                value={adding.include} placeholder="optional, e.g. *.sav, slot*"
+                onChange={e => setAdding({ ...adding, include: e.target.value })}
+              />
+            </div>
+            <small>
+              Every device that syncs {game.name} gets this folder. The name is how they recognise it: lower-case
+              letters, digits and “-”, and it cannot be changed later.
+            </small>
+            <div className="sl-inline">
+              <Button size="sm" variant="primary" onClick={() => void run({
+                kind: 'add', path: adding.path, key: adding.key.trim() || undefined,
+                include: adding.include.split(',').map(s => s.trim()).filter(Boolean),
+              })}>Add folder</Button>
+              <Button size="sm" variant="quiet" onClick={() => setAdding(null)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+
+        {suggestions.length > 0 && (
+          <div className="sl-field">
+            <label>Also found</label>
+            <small>
+              The save database lists these folders for {game.name} too, and they exist here. It cannot tell saves from
+              settings, so nothing is synced until you add it.
+            </small>
+            {suggestions.map(s => (
+              <div key={s.path} className="sl-confirm">
+                <span className="sl-path" style={{ flex: 1, minWidth: 0 }}>{s.path}</span>
+                <Button size="sm" onClick={() => void run({ kind: 'add', path: s.path, key: s.key, freeKey: true })}>Add</Button>
+                <Button size="sm" variant="quiet" onClick={() => void dontSync(s)}>Don’t sync</Button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {path && (
           <div className="sl-confirm" role="status">
@@ -131,9 +309,27 @@ export function GameManagement({ game, platform, onChanged, onRemoved }: Props) 
         {flagged && (
           <div className="sl-confirm" role="alert">
             <span>{flagged.ask}</span>
-            <span>Use <span className="sl-path">{flagged.path}</span> anyway?</span>
-            <Button size="sm" variant="primary" onClick={() => void applyFolder(flagged.path, true)}>Use it anyway</Button>
+            <span>Use <span className="sl-path">{actionPath(flagged.action)}</span> anyway?</span>
+            <Button size="sm" variant="primary" onClick={() => void run(flagged.action, true)}>Use it anyway</Button>
             <Button size="sm" variant="quiet" onClick={() => { setFlagged(null); setNote({ text: 'Save folder unchanged.' }) }}>Cancel</Button>
+          </div>
+        )}
+
+        {choice && (
+          <div className="sl-confirm" role="alert">
+            <span>{choice.ask}</span>
+            <span>Which copy should every device keep?</span>
+            <Button size="sm" variant="primary" onClick={() => void run(choice.action, true, 'local')}>This device’s files</Button>
+            <Button size="sm" onClick={() => void run(choice.action, true, 'cloud')}>The cloud’s copy</Button>
+            <Button size="sm" variant="quiet" onClick={() => { setChoice(null); setNote({ text: 'Save folder unchanged.' }) }}>Cancel</Button>
+          </div>
+        )}
+
+        {needsProcess && (
+          <div className="sl-inline">
+            <Button size="sm" onClick={() => { setProcessText(game.processNames.join(', ')); setEditingProcess(e => !e) }}>
+              {game.processNames.length > 0 ? 'Edit game process' : 'Set game process'}
+            </Button>
           </div>
         )}
 

@@ -981,6 +981,12 @@ admin.MapGet("/games/{id:guid}/versions/{versionId:guid}/stats", async (
     await sync.GetVersionStatsAsync(id, versionId) is { } stats ? Results.Ok(stats) : Results.NotFound())
     .Produces<VersionStatsDto>();
 
+// Which files each save folder holds in a version — the console lists them under each folder.
+admin.MapGet("/games/{id:guid}/versions/{versionId:guid}/folders", async (
+    Guid id, Guid versionId, SyncService sync) =>
+    await sync.GetVersionFoldersAsync(id, versionId) is { } folders ? Results.Ok(folders) : Results.NotFound())
+    .Produces<VersionFolderDto[]>();
+
 // Apply retention immediately, instead of only as a side effect of the next upload.
 admin.MapPost("/games/{id:guid}/prune", async (Guid id, SyncService sync) =>
     Results.Ok(new PruneResult(await sync.PruneNowAsync(id))));

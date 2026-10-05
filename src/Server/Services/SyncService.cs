@@ -21,6 +21,7 @@ public sealed class SyncService
     // lifetime the first time anyone asks — cleared only by a restart, which is fine since a
     // pruned/deleted version's id is never reused.
     private readonly ConcurrentDictionary<Guid, VersionStatsDto> _versionStatsCache = new();
+    private readonly ConcurrentDictionary<Guid, VersionFolderDto[]> _versionFoldersCache = new();
     private readonly int _retainPerGame;
     /// <summary>
     /// How long a claimed command stays invisible to other claims. It has to outlast a real
@@ -1530,6 +1531,22 @@ public sealed class SyncService
         var stats = SaveArchive.GetArchiveStats(_store.FullPath(version.ArchivePath));
         var dto = new VersionStatsDto(stats.FileCount, stats.NewestFileWriteUtc);
         _versionStatsCache[versionId] = dto;
+        return dto;
+    }
+
+    /// <summary>A version's files grouped by save folder, for the console's Save folders card. Cached per
+    /// version id like <see cref="GetVersionStatsAsync"/>: an archive never changes once stored.</summary>
+    public async Task<VersionFolderDto[]?> GetVersionFoldersAsync(Guid gameId, Guid versionId)
+    {
+        var version = await _db.SaveVersions.FindAsync(versionId);
+        if (version is null || version.GameId != gameId || !_store.Exists(version.ArchivePath)) return null;
+        if (_versionFoldersCache.TryGetValue(versionId, out var cached)) return cached;
+
+        var dto = SaveArchive.ListArchiveFolders(_store.FullPath(version.ArchivePath))
+            .Select(f => new VersionFolderDto(f.Key, f.FileCount, f.TotalBytes,
+                f.Files.Select(x => new VersionFileDto(x.Path, x.Size, x.ModifiedUtc)).ToArray()))
+            .ToArray();
+        _versionFoldersCache[versionId] = dto;
         return dto;
     }
 

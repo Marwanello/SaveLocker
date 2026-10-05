@@ -19,7 +19,7 @@ public sealed class AgentApiServer : IDisposable
 {
     private readonly AgentConfig _config;
     private readonly Func<Task<IReadOnlyList<ScanCandidate>>> _doScan;
-    private readonly Func<IReadOnlyList<ScanCandidate>, int[], Task<(int enrolled, int skipped)>> _enroll;
+    private readonly Func<IReadOnlyList<ScanCandidate>, int[], IReadOnlyDictionary<int, string[]>?, Task<(int enrolled, int skipped)>> _enroll;
     private readonly IAutoStart _autoStart;
     private readonly Func<Task<string?>> _pickFolder;
     private readonly Func<LaunchCommandDto> _launchInfo;
@@ -72,6 +72,12 @@ public sealed class AgentApiServer : IDisposable
     private readonly Func<string, bool>? _openFile;
     /// <summary>Maps one of a game's extra save folders through the engine, which carries its shadow over.</summary>
     private readonly Func<TrackedGame, string, string, KeepSide?, Task<MapFolderResult>> _mapFolder;
+    // SyncEngine.ForgetSavePathAsync: dropping an extra folder deletes its shadow, so it runs under the
+    // game's lock in whichever engine is current.
+    private readonly Func<TrackedGame, string, Task<bool>> _forgetFolder;
+    // "Also found" for tracked games (tasks/multiple-save-paths plan §8). Reads the manifest and a few
+    // folders per game, so it is computed on request, never on a timer.
+    private readonly FolderSuggestions _suggestions;
     // Per-game save-dir resolution for /api/candidates/lookup and /api/manifest/search (Phase 5).
     // Host-agnostic (its own Windows-only checks no-op cleanly on Linux), so it is taken directly
     // rather than through a delegate — unlike _doScan/_enroll, nothing here differs per host.
@@ -109,7 +115,7 @@ public sealed class AgentApiServer : IDisposable
         int port,
         AgentConfig config,
         Func<Task<IReadOnlyList<ScanCandidate>>> doScan,
-        Func<IReadOnlyList<ScanCandidate>, int[], Task<(int enrolled, int skipped)>> enroll,
+        Func<IReadOnlyList<ScanCandidate>, int[], IReadOnlyDictionary<int, string[]>?, Task<(int enrolled, int skipped)>> enroll,
         IAutoStart autoStart,
         Detection detection,
         Func<Task<string?>>? pickFolder = null,
@@ -130,8 +136,12 @@ public sealed class AgentApiServer : IDisposable
         Func<TrackedGame, GameSyncMode, CancellationToken, Task<string>>? syncGame = null,
         Action<string>? openView = null,
         Func<string, bool>? openFile = null,
-        Func<TrackedGame, string, string, KeepSide?, Task<MapFolderResult>>? mapFolder = null)
+        Func<TrackedGame, string, string, KeepSide?, Task<MapFolderResult>>? mapFolder = null,
+        Func<TrackedGame, string, Task<bool>>? forgetFolder = null,
+        Func<string, string?>? prefixForAppId = null)
     {
+        _forgetFolder = forgetFolder ?? ((_, _) => Task.FromResult(false));
+        _suggestions = new FolderSuggestions(config, detection, prefixForAppId);
         _openFile = openFile;
         _mapFolder = mapFolder ?? ((_, _, _, _) => Task.FromResult(new MapFolderResult(false, "Not available.")));
         _browser = new PathBrowser(browseRoots);
@@ -368,7 +378,10 @@ public sealed class AgentApiServer : IDisposable
             if (body.Ids is null)
                 return TypedResults.BadRequest(new ErrorResponse("ids is required"));
             var candidates = _candidateCache ?? Array.Empty<ScanCandidate>();
-            var (enrolled, skipped) = await _enroll(candidates, body.Ids);
+            var alsoSync = body.AlsoSync?
+                .GroupBy(c => c.Id)
+                .ToDictionary(g => g.Key, g => g.SelectMany(c => c.Paths ?? Array.Empty<string>()).ToArray());
+            var (enrolled, skipped) = await _enroll(candidates, body.Ids, alsoSync);
             return TypedResults.Ok(new EnrollResponse(enrolled, skipped));
         });
 
@@ -689,6 +702,94 @@ public sealed class AgentApiServer : IDisposable
                     catch (Exception ex) { AgentLogger.LogException("AgentApiServer.SetMachinePath", ex); }
                 }
             }
+            return TypedResults.Ok(new OkResponse());
+        }).Produces<OkResponse>();
+
+        // "Also found" (tasks/multiple-save-paths plan §8): the manifest's other locations of every
+        // tracked game that exist here. Nothing is added until the user says so.
+        app.MapGet("/api/folder-suggestions", async (CancellationToken ct) =>
+            (await _suggestions.AllAsync(ct))
+                .Select(s => new FolderSuggestionDto(s.GameId, s.GameName, s.Key, s.Directory, s.Deferred))
+                .ToArray()).Produces<FolderSuggestionDto[]>();
+
+        app.MapPost("/api/folder-suggestions/answer", Results<Ok<OkResponse>, NotFound, BadRequest<ErrorResponse>>
+            (FolderSuggestionAnswerRequest body) =>
+        {
+            if (_config.Games.All(g => g.GameId != body.GameId)) return TypedResults.NotFound();
+            static string[] Clean(string[]? dirs) =>
+                (dirs ?? Array.Empty<string>()).Select(SavePathGuard.Canonicalize).OfType<string>().ToArray();
+            try { _config.SaveGameFolderChoices(body.GameId, Clean(body.Ignore), Clean(body.Defer)); }
+            catch (AgentStateLockException ex) { return TypedResults.BadRequest(new ErrorResponse(ex.Message)); }
+            return TypedResults.Ok(new OkResponse());
+        }).Produces<OkResponse>();
+
+        // Another save folder for a tracked game, for every machine — what `add-path` does. A refusal a
+        // heuristic made is confirmable (NeedsConfirm); different files on both sides ask for a side
+        // (NeedsChoice) — the folder exists for the fleet by then, so re-sending maps it.
+        app.MapPost("/api/games/{id:guid}/paths",
+            async Task<Results<Ok<AddFolderResponse>, NotFound, BadRequest<ErrorResponse>>> (Guid id, AddFolderRequest body) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.NotFound();
+            if (string.IsNullOrWhiteSpace(body.Path))
+                return TypedResults.BadRequest(new ErrorResponse("path is required."));
+            if (string.IsNullOrEmpty(_config.ApiKey))
+                return TypedResults.BadRequest(new ErrorResponse("Register this machine first: a new save folder is defined on the server."));
+            if (!game.IsEnrolledHere)
+                return TypedResults.BadRequest(new ErrorResponse($"Choose the main save folder of '{game.Name}' first."));
+            KeepSide? keep;
+            switch (body.Keep?.Trim().ToLowerInvariant())
+            {
+                case null or "": keep = null; break;
+                case "local": keep = KeepSide.Local; break;
+                case "cloud": keep = KeepSide.Cloud; break;
+                default: return TypedResults.BadRequest(new ErrorResponse("keep must be 'local' or 'cloud'."));
+            }
+            var named = !string.IsNullOrWhiteSpace(body.Key);
+            var taken = new HashSet<string>(game.RemovedPathKeys, StringComparer.Ordinal);
+            if (body.FreeKey) taken.UnionWith(game.ExtraPaths.Select(p => p.Key));
+            var key = named
+                ? body.FreeKey ? FolderSuggestions.KeyFor(body.Key!.Trim(), taken) : body.Key!.Trim()
+                : FolderSuggestions.KeyFor(Path.GetFileName(body.Path.TrimEnd('/', '\\')),
+                    new HashSet<string>(game.ExtraPaths.Select(p => p.Key).Concat(game.RemovedPathKeys), StringComparer.Ordinal));
+
+            SavePathChange result;
+            try
+            {
+                result = await SavePathEditor.AddAsync(_config, ApiClient.For(_config), _mapFolder, game, key, body.Path,
+                    body.IncludeGlobs, body.Label, keep, body.Confirm, pickFreeKey: !named || body.FreeKey);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                return TypedResults.BadRequest(new ErrorResponse($"Could not reach the server: {ex.Message}"));
+            }
+            catch (AgentStateLockException ex) { return TypedResults.BadRequest(new ErrorResponse(ex.Message)); }
+            if (result.Added || result.Ok) _onGamesChanged?.Invoke();
+            if (!result.Ok)
+                return TypedResults.BadRequest(new ErrorResponse(
+                    result.NeedsConfirm ? result.Error + ErrorResponse.ConfirmHint : result.Error ?? "Could not add the folder.",
+                    NeedsConfirm: result.NeedsConfirm, NeedsChoice: result.NeedsChoice));
+            return TypedResults.Ok(new AddFolderResponse(result.Key!, result.Directory!, result.Template));
+        }).Produces<AddFolderResponse>();
+
+        // Stop syncing one of a game's extra folders, on every machine — what `remove-path` does. The
+        // folder's files stay where they are.
+        app.MapDelete("/api/games/{id:guid}/paths/{key}",
+            async Task<Results<Ok<OkResponse>, NotFound, BadRequest<ErrorResponse>>> (Guid id, string key) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.NotFound();
+            if (string.IsNullOrEmpty(_config.ApiKey))
+                return TypedResults.BadRequest(new ErrorResponse("Register this machine first: save folders are defined on the server."));
+            SavePathChange result;
+            try { result = await SavePathEditor.RemoveAsync(_config, ApiClient.For(_config), _forgetFolder, game, key); }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                return TypedResults.BadRequest(new ErrorResponse($"Could not reach the server: {ex.Message}"));
+            }
+            catch (AgentStateLockException ex) { return TypedResults.BadRequest(new ErrorResponse(ex.Message)); }
+            if (!result.Ok) return TypedResults.BadRequest(new ErrorResponse(result.Error ?? "Could not remove the folder."));
+            _onGamesChanged?.Invoke();
             return TypedResults.Ok(new OkResponse());
         }).Produces<OkResponse>();
 
@@ -1529,6 +1630,9 @@ public sealed class AgentApiServer : IDisposable
             candidate.ExtraSaveDirs is { Count: > 0 } extras
                 ? extras.Select(e => new SaveFolderDto(e.Key, null, e.Dir, true,
                     (e.IncludeGlobs ?? Array.Empty<string>()).ToArray())).ToArray()
+                : null,
+            candidate.AlternateSaveDirs is { Count: > 0 } also
+                ? also.Select(a => new SaveFolderDto(a.Key, null, a.Dir, false, Array.Empty<string>())).ToArray()
                 : null)).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
@@ -1618,7 +1722,10 @@ public sealed record CandidateDto(
     string? ProcessName, string Store,
     /// <summary>The other save folders discovery found this game keeps (an emulator's save states),
     /// adopted with it on enrollment. Null when there are none.</summary>
-    SaveFolderDto[]? ExtraFolders = null);
+    SaveFolderDto[]? ExtraFolders = null,
+    /// <summary>The manifest's other locations for this game that exist here ("Also found"): added only
+    /// when the enroll request names them in <see cref="EnrollRequest.AlsoSync"/>. Null when there are none.</summary>
+    SaveFolderDto[]? AlsoFound = null);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the
@@ -1838,7 +1945,24 @@ public sealed record ResolvedLaunchOptionDto(uint SteamAppId, string Desired, bo
 
 public sealed record LaunchOptionsAppliedRequest(uint SteamAppId, bool Applied, string? Error);
 
-public sealed record EnrollRequest(int[]? Ids);
+/// <param name="AlsoSync">Which "Also found" folders (<see cref="CandidateDto.AlsoFound"/>) to add with each
+/// candidate. A candidate missing here adds none.</param>
+public sealed record EnrollRequest(int[]? Ids, EnrollFolderChoice[]? AlsoSync = null);
+public sealed record EnrollFolderChoice(int Id, string[]? Paths);
+
+/// <summary>A folder a tracked game could also sync ("Also found"), from the manifest.</summary>
+/// <param name="Deferred">"Skip for now" was chosen: listed on the game's page, not asked about at start-up.</param>
+public sealed record FolderSuggestionDto(Guid GameId, string GameName, string Key, string Path, bool Deferred);
+/// <param name="Ignore">Folders this game does not sync: never suggested again.</param>
+/// <param name="Defer">Folders put off ("Skip for now"): no longer asked about at start-up.</param>
+public sealed record FolderSuggestionAnswerRequest(Guid GameId, string[]? Ignore = null, string[]? Defer = null);
+/// <param name="Key">The folder's key. Null: one is made from the folder's name.</param>
+/// <param name="Keep"><c>local</c> or <c>cloud</c>, when both this folder and the fleet's copy hold files.</param>
+/// <param name="FreeKey"><paramref name="Key"/> is only a preference (a suggestion's): if the game has or
+/// had it, take the next free one instead of refusing.</param>
+public sealed record AddFolderRequest(string? Path, string? Key = null, string? Label = null,
+    string[]? IncludeGlobs = null, string? Keep = null, bool Confirm = false, bool FreeKey = false);
+public sealed record AddFolderResponse(string Key, string Path, string? Template);
 /// <param name="IdentityCleared">
 /// True when the server URL moved to a different origin, so this machine's key, id and TLS pin were
 /// dropped and it must register or enroll again. See <see cref="ServerOrigin"/>.
