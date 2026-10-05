@@ -29,14 +29,19 @@ interface Props {
   head: Version | null | undefined;
 }
 
-/** The first agent release that syncs several save folders per game (tasks/multiple-save-paths). */
-const MULTI_FOLDER_AGENT = parseVersion('0.7.0')!;
+/**
+ * The first agent version that syncs several save folders per game (tasks/multiple-save-paths). The
+ * feature ships as 0.7.0, but its agent half reached `main` after v0.6.0 was tagged, so every build since
+ * reports 0.6.1 until the release bump — comparing against 0.7.0 flagged the very agents that have it.
+ * Every release that lacks it is 0.6.0 or older either way.
+ */
+const MULTI_FOLDER_AGENT = parseVersion('0.6.1')!;
 
 /**
  * An agent older than {@link MULTI_FOLDER_AGENT} still syncs such a game: it carries the extra folders as
  * a `.savelocker/` folder inside the main one and pushes them back unchanged (plan §1, "Mixed fleet").
  * Nothing is lost, but those folders do not reach their real place on that machine until it updates.
- * A dev or CI build is never flagged — its version says nothing about what it can do.
+ * A CI build is never flagged — its version says nothing about what it can do.
  */
 function tooOldForFolders(agentVersion: string | null | undefined): boolean {
   if (!agentVersion || isTestBuild(agentVersion)) return false;

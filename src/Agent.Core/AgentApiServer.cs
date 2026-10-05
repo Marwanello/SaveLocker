@@ -352,7 +352,8 @@ public sealed class AgentApiServer : IDisposable
             var game = _config.Games.FirstOrDefault(g => g.GameId == id);
             return game is null
                 ? TypedResults.NotFound()
-                : TypedResults.Ok(new LocalSizeDto(FolderSize.Of(game.SaveDirectory)));
+                // Every folder of the game on this machine; an unmapped one's shadow is SaveLocker's, not "here".
+                : TypedResults.Ok(new LocalSizeDto(game.RealRoots(_config.StateDir).Sum(r => FolderSize.Of(r.Directory))));
         }).Produces<LocalSizeDto>();
 
         // Show a game's save folder in the desktop's file manager. Same seam as /api/open-log: false

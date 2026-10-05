@@ -133,8 +133,9 @@ sealed partial class UiApp
         foreach (var g in _config.Games.ToList())
         {
             if (_sizeTasks.ContainsKey(g.GameId)) continue;
-            var dir = g.SaveDirectory;
-            _sizeTasks[g.GameId] = Task.Run(() => FolderSize.Of(dir));
+            // Every folder of the game that is on this Deck, not just the main one.
+            var dirs = g.RealRoots(_config.StateDir).Select(r => r.Directory).ToList();
+            _sizeTasks[g.GameId] = Task.Run(() => dirs.Sum(FolderSize.Of));
         }
     }
 
