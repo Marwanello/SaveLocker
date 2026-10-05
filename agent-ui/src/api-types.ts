@@ -2597,6 +2597,7 @@ export interface components {
             prefixPath: null | string;
             processName: null | string;
             store: string;
+            extraFolders?: null | components["schemas"]["SaveFolderDto"][];
         };
         CandidateLookupRequest: {
             name: string;

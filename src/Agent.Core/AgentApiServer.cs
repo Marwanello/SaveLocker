@@ -1517,7 +1517,11 @@ public sealed class AgentApiServer : IDisposable
             candidate.SuggestedSaveDir ?? "",
             SaveLocker.Shared.WinePrefix.BrowseStart(candidate.PrefixPath),
             candidate.SuggestedProcessName,
-            candidate.Store.ToString())).ToArray();
+            candidate.Store.ToString(),
+            candidate.ExtraSaveDirs is { Count: > 0 } extras
+                ? extras.Select(e => new SaveFolderDto(e.Key, null, e.Dir, true,
+                    (e.IncludeGlobs ?? Array.Empty<string>()).ToArray())).ToArray()
+                : null)).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -1603,7 +1607,10 @@ public sealed record AgentStateDto(
 /// </param>
 public sealed record CandidateDto(
     int Id, string Name, string Source, bool HasSteamCloud, string Path, string? PrefixPath,
-    string? ProcessName, string Store);
+    string? ProcessName, string Store,
+    /// <summary>The other save folders discovery found this game keeps (an emulator's save states),
+    /// adopted with it on enrollment. Null when there are none.</summary>
+    SaveFolderDto[]? ExtraFolders = null);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the
