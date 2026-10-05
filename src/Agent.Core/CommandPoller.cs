@@ -191,6 +191,8 @@ public sealed class CommandPoller : IDisposable
                 // A machine that has a working path can describe it generically for the others.
                 if (!string.IsNullOrWhiteSpace(local.SaveDirectory))
                     ReportTemplateAsync(sg, local.SaveDirectory);
+
+                changed |= await ReconcileFoldersAsync(local, sg);
                 continue;
             }
 
@@ -208,14 +210,16 @@ public sealed class CommandPoller : IDisposable
             // re-deriving it from the name against the manifest is the exact mistake TrackedGame
             // .HasSteamCloud documents. Null lets the Decky plugin fall back to its own heuristic;
             // a false here would tell it, wrongly, that a Steam Cloud game definitely is not one.
-            _config.MutateGames(list => list.Add(new TrackedGame
+            var adopted = new TrackedGame
             {
                 GameId = sg.Id,
                 Name = sg.Name,
                 ManifestKey = sg.ManifestKey,
                 SaveDirectory = dir ?? "",
                 ExcludeGlobs = (sg.ExcludeGlobs ?? Array.Empty<string>()).ToList()
-            }));
+            };
+            _config.MutateGames(list => list.Add(adopted));
+            await ReconcileFoldersAsync(adopted, sg);
             changed = true;
             _notify(dir is null
                 ? $"'{sg.Name}' was added on the server — set its save folder in Settings…"
@@ -227,6 +231,116 @@ public sealed class CommandPoller : IDisposable
             _config.Save();
             _onGamesChanged();
         }
+    }
+
+    /// <summary>
+    /// The include scopes and the extra save folders (tasks/multiple-save-paths plan §7): the same
+    /// steps the primary folder gets above, once per key — apply the server's stored folder for this
+    /// machine, else expand the folder's template here, report what is in use, and describe it
+    /// generically for the fleet. Manifest detection is never a fallback here: which manifest
+    /// locations belong together is exactly what the manifest cannot say (plan, "The ambiguity").
+    /// <para>
+    /// A folder nothing maps stays a shadow, and mapping one goes through
+    /// <see cref="SyncEngine.MapSavePathAsync"/>, which carries the shadow's files over — never a
+    /// bare assignment, or this machine's next push would drop the fleet's copy of that folder.
+    /// </para>
+    /// </summary>
+    private async Task<bool> ReconcileFoldersAsync(TrackedGame local, GameDto sg)
+    {
+        var changed = false;
+        var include = (sg.IncludeGlobs ?? Array.Empty<string>()).ToList();
+        if (!include.SequenceEqual(local.IncludeGlobs))
+        {
+            local.IncludeGlobs = include;
+            changed = true;
+        }
+
+        var serverPaths = sg.ExtraPaths ?? Array.Empty<SavePathDto>();
+        foreach (var gone in local.ExtraPaths.Select(p => p.Key).Where(k => serverPaths.All(s => s.Key != k)).ToList())
+        {
+            local.ForgetExtraPath(gone, _config.StateDir);
+            changed = true;
+            _notify($"'{sg.Name}' no longer syncs its '{gone}' save folder — it was removed on the server.");
+        }
+
+        foreach (var sp in serverPaths)
+        {
+            if (SaveRoot.ValidateExtraKey(sp.Key) is not null) continue;   // a server must not name a path segment
+            var lp = local.ExtraPaths.FirstOrDefault(p => p.Key == sp.Key);
+            if (lp is null)
+            {
+                lp = new TrackedSavePath { Key = sp.Key };
+                local.ExtraPaths.Add(lp);
+                local.RemovedPathKeys.Remove(sp.Key);
+                changed = true;
+            }
+
+            var scope = (sp.IncludeGlobs ?? Array.Empty<string>()).ToList();
+            if (lp.Label != sp.Label || lp.Template != sp.Template || !scope.SequenceEqual(lp.IncludeGlobs))
+            {
+                lp.Label = sp.Label;
+                lp.Template = sp.Template;
+                lp.IncludeGlobs = scope;
+                changed = true;
+            }
+
+            // The server's stored folder for this machine first, as for the primary folder; else the
+            // template, expanded here, when it names a folder that exists.
+            var fromServer = !string.IsNullOrWhiteSpace(sp.MachinePath);
+            var want = fromServer
+                ? (SavePathGuard.Canonicalize(sp.MachinePath) == SavePathGuard.Canonicalize(lp.Directory) ? null : sp.MachinePath)
+                : lp.IsMapped ? null : ResolveExtraDir(sg, sp);
+            if (want is not null && await TryMapFolderAsync(local, sg, lp.Key, want, fromServer))
+                changed = true;
+
+            if (!lp.IsMapped) continue;
+            if (!fromServer) ReportPathAsync(sg.Id, lp.Directory!, lp.Key);
+            if (string.IsNullOrWhiteSpace(sp.Template)) ReportTemplateAsync(sg, lp.Directory!, lp.Key);
+        }
+        return changed;
+    }
+
+    /// <summary>Where an extra folder's template lands on this machine, when that folder exists here.</summary>
+    private string? ResolveExtraDir(GameDto sg, SavePathDto sp)
+    {
+        if (string.IsNullOrWhiteSpace(sp.Template)) return null;
+        if (!PathResolver.IsTemplate(sp.Template))
+            return Directory.Exists(sp.Template) ? sp.Template : null;
+        return ResolverForGame(sg)?.ResolveToDirectory(sp.Template) is { } expanded && Directory.Exists(expanded)
+            ? expanded
+            : null;
+    }
+
+    /// <summary>Folders already reported as not mappable, so a 20 s poll says so once, not forever.</summary>
+    private readonly HashSet<string> _unmappedReported = new(StringComparer.Ordinal);
+
+    private async Task<bool> TryMapFolderAsync(TrackedGame local, GameDto sg, string key, string dir, bool fromServer)
+    {
+        MapFolderResult result;
+        try { result = await _engine().MapSavePathAsync(local, key, dir); }
+        catch (Exception ex)
+        {
+            AgentLogger.LogException($"CommandPoller.MapFolder {sg.Name}/{key}", ex);
+            return false;
+        }
+
+        if (result.Ok)
+        {
+            _notify($"Mapped '{sg.Name}' save folder '{key}' to {result.Directory}.");
+            return true;
+        }
+
+        if (!_unmappedReported.Add($"{sg.Id:N}/{key}/{dir}")) return false;
+        if (result.NeedsChoice)
+            _health?.Report(AgentEventCodes.SaveFolderNeedsChoice, AgentEventSeverity.Warning,
+                $"'{sg.Name}' save folder '{key}': {result.Error} " +
+                $"Run: savelocker add-path \"{sg.Name}\" --key {key} --dir \"{dir}\" --keep local|cloud", sg.Id);
+        else if (fromServer)
+            _health?.Report(AgentEventCodes.UnsafeSavePath, AgentEventSeverity.Error,
+                $"Refused the server's folder for '{sg.Name}' save folder '{key}': {result.Error} " +
+                $"(server sent '{dir}'). It keeps syncing through its shadow copy.", sg.Id);
+        AgentLogger.Log($"Did not map '{sg.Name}' save folder '{key}' to '{dir}': {result.Error}");
+        return false;
     }
 
     /// <summary>
@@ -383,27 +497,27 @@ public sealed class CommandPoller : IDisposable
     /// teaches the fleet and later ones are declined harmlessly.
     /// </para>
     /// </summary>
-    private void ReportTemplateAsync(GameDto sg, string localPath)
+    private void ReportTemplateAsync(GameDto sg, string localPath, string key = SaveRoot.PrimaryKey)
     {
-        if (!string.IsNullOrWhiteSpace(sg.SuggestedSaveDir)) return;
+        if (key == SaveRoot.PrimaryKey && !string.IsNullOrWhiteSpace(sg.SuggestedSaveDir)) return;
         if (ResolverForGame(sg)?.Tokenize(localPath) is not { } template) return;
 
         _ = Task.Run(async () =>
         {
             try
             {
-                if (await _api().TrySetSaveTemplateAsync(sg.Id, template))
-                    AgentLogger.Log($"Described '{sg.Name}' save location for the fleet: {template}");
+                if (await _api().TrySetSaveTemplateAsync(sg.Id, template, key))
+                    AgentLogger.Log($"Described '{sg.Name}' save location ({key}) for the fleet: {template}");
             }
             catch (Exception ex) { AgentLogger.LogException("CommandPoller.ReportTemplate", ex); }
         });
     }
 
-    /// <summary>Best-effort: tell the server what save path this machine resolved for a game.</summary>
-    private void ReportPathAsync(Guid gameId, string path) =>
+    /// <summary>Best-effort: tell the server what save path this machine resolved for one of a game's folders.</summary>
+    private void ReportPathAsync(Guid gameId, string path, string key = SaveRoot.PrimaryKey) =>
         _ = Task.Run(async () =>
         {
-            try { await _api().SetMachinePathAsync(gameId, path); }
+            try { await _api().SetMachinePathAsync(gameId, path, key); }
             catch (Exception ex) { AgentLogger.LogException("CommandPoller.ReportPath", ex); }
         });
 

@@ -178,6 +178,7 @@ public sealed class Daemon : IAsyncDisposable
             prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct),
             postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
             syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct),
+            mapFolder: (game, key, dir, keep) => _engine.MapSavePathAsync(game, key, dir, keep),
             openFile: DesktopEnvironment.TryOpenFile);
         _apiServer.Start();
 

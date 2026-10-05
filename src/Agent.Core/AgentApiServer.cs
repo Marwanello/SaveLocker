@@ -70,6 +70,8 @@ public sealed class AgentApiServer : IDisposable
     // Hands a file to the desktop (Explorer's "select it" on Windows, xdg-open on Linux). Returns
     // false when there is nowhere to show it — a headless box — so /api/open-log can say so.
     private readonly Func<string, bool>? _openFile;
+    /// <summary>Maps one of a game's extra save folders through the engine, which carries its shadow over.</summary>
+    private readonly Func<TrackedGame, string, string, KeepSide?, Task<MapFolderResult>> _mapFolder;
     // Per-game save-dir resolution for /api/candidates/lookup and /api/manifest/search (Phase 5).
     // Host-agnostic (its own Windows-only checks no-op cleanly on Linux), so it is taken directly
     // rather than through a delegate — unlike _doScan/_enroll, nothing here differs per host.
@@ -127,9 +129,11 @@ public sealed class AgentApiServer : IDisposable
         Func<Task<PlaynitePluginStatusDto>>? playnitePluginInstall = null,
         Func<TrackedGame, GameSyncMode, CancellationToken, Task<string>>? syncGame = null,
         Action<string>? openView = null,
-        Func<string, bool>? openFile = null)
+        Func<string, bool>? openFile = null,
+        Func<TrackedGame, string, string, KeepSide?, Task<MapFolderResult>>? mapFolder = null)
     {
         _openFile = openFile;
+        _mapFolder = mapFolder ?? ((_, _, _, _) => Task.FromResult(new MapFolderResult(false, "Not available.")));
         _browser = new PathBrowser(browseRoots);
         Port = port;
         _config = config;
@@ -521,7 +525,8 @@ public sealed class AgentApiServer : IDisposable
             .Select(g => new TrackedGameDto(
                 g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray(), g.Alias,
                 SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()), g.PullBeforeLaunchEnabled,
-                g.HasSteamCloud, g.PushAfterExitEnabled, g.InstallDir, g.LastPushBytes, g.LastPushAt))
+                g.HasSteamCloud, g.PushAfterExitEnabled, g.InstallDir, g.LastPushBytes, g.LastPushAt,
+                SaveFolderDto.Of(g)))
             .ToArray()).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
@@ -597,11 +602,50 @@ public sealed class AgentApiServer : IDisposable
             (Guid id, FolderRequest body) =>
         {
             var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is not null && body.Path is not null &&
+                body.Key is { Length: > 0 } key && key != SaveRoot.PrimaryKey)
+            {
+                // One of the game's extra folders (tasks/multiple-save-paths). The same two tiers of
+                // checks as the primary folder below; the engine adds the folder rules and carries the
+                // shadow's files over, so this is never a bare assignment.
+                if (game.ExtraPaths.All(p => p.Key != key))
+                    return TypedResults.BadRequest(new ErrorResponse($"'{game.Name}' has no save folder called '{key}'."));
+                KeepSide? keep = body.Keep?.Trim().ToLowerInvariant() switch
+                {
+                    "local" => KeepSide.Local,
+                    "cloud" => KeepSide.Cloud,
+                    _ => null,
+                };
+                var extraCheck = SavePathGuard.CheckFolder(game, key, body.Path, _config.StateDir);
+                if (!extraCheck.Ok)
+                    return TypedResults.BadRequest(new ErrorResponse($"Can't use that folder: {extraCheck.Reason}"));
+                if (!body.Confirm)
+                {
+                    var problems = SaveDirSanity.Inspect(extraCheck.Canonical, game.ExcludeGlobs);
+                    if (problems.Count > 0)
+                        return TypedResults.BadRequest(new ErrorResponse(
+                            "That folder looks wrong: " + string.Join(" ", problems) +
+                            ErrorResponse.ConfirmHint, NeedsConfirm: true));
+                }
+
+                var mapped = await _mapFolder(game, key, extraCheck.Canonical!, keep);
+                if (!mapped.Ok)
+                    return TypedResults.BadRequest(new ErrorResponse(mapped.Error ?? "Could not map the folder.",
+                        NeedsChoice: mapped.NeedsChoice));
+                _onGamesChanged?.Invoke();
+                if (!string.IsNullOrEmpty(_config.ApiKey))
+                {
+                    try { await ApiClient.For(_config).SetMachinePathAsync(id, mapped.Directory!, key); }
+                    catch (Exception ex) { AgentLogger.LogException("AgentApiServer.SetMachinePath", ex); }
+                }
+                return TypedResults.Ok(new OkResponse());
+            }
             if (game is not null && body.Path is not null)
             {
                 // Typed paths and picked paths arrive here alike, and neither was validated before.
                 // The hard check has no override — nothing makes C:\Users a save folder. WA-02.
-                var check = SavePathGuard.Check(body.Path, _config.StateDir);
+                // CheckFolder adds the rules between the game's folders: nothing nested in another.
+                var check = SavePathGuard.CheckFolder(game, SaveRoot.PrimaryKey, body.Path, _config.StateDir);
                 if (!check.Ok)
                     return TypedResults.BadRequest(new ErrorResponse($"Can't use that folder: {check.Reason}"));
 
@@ -1614,7 +1658,22 @@ public sealed record TrackedGameDto(
     /// <summary>What this machine's last accepted push actually put on the wire (a delta is far
     /// smaller than the save); null until it has pushed since the field existed.</summary>
     long? LastPushBytes = null,
-    DateTime? LastPushAt = null);
+    DateTime? LastPushAt = null,
+    /// <summary>Every save folder of the game, primary (<c>main</c>) first (tasks/multiple-save-paths).
+    /// <see cref="Path"/> stays the primary folder, for readers that predate this.</summary>
+    SaveFolderDto[]? Paths = null);
+
+/// <summary>One save folder of a tracked game on this machine.</summary>
+/// <param name="Path">This machine's folder, or <c>""</c> when it is not mapped here — an unmapped
+/// extra folder keeps syncing through a shadow copy in the agent's own state.</param>
+public sealed record SaveFolderDto(string Key, string? Label, string Path, bool Mapped, string[] IncludeGlobs)
+{
+    public static SaveFolderDto[] Of(TrackedGame g) =>
+        new[] { new SaveFolderDto(SaveRoot.PrimaryKey, null, g.SaveDirectory, g.IsEnrolledHere, g.IncludeGlobs.ToArray()) }
+            .Concat(g.ExtraPaths.Select(p =>
+                new SaveFolderDto(p.Key, p.Label, p.Directory ?? "", p.IsMapped, p.IncludeGlobs.ToArray())))
+            .ToArray();
+}
 
 /// <param name="Mode"><c>sync</c> (pull then push), <c>push</c> or <c>pull</c>; case-insensitive.</param>
 public sealed record GameSyncRequest(string? Mode);
@@ -1782,7 +1841,9 @@ public sealed record RegisterRequest(string? AdminPassword = null);
 /// Accept a path the sanity heuristics flagged. It never overrides <see cref="SavePathGuard"/> —
 /// those refusals are absolute.
 /// </param>
-public sealed record FolderRequest(string? Path, bool Confirm = false);
+/// <param name="Key">Which of the game's save folders: absent or <c>main</c> for the primary one.</param>
+/// <param name="Keep"><c>local</c> or <c>cloud</c>, when a previous attempt answered NeedsChoice.</param>
+public sealed record FolderRequest(string? Path, bool Confirm = false, string? Key = null, string? Keep = null);
 public sealed record DismissWarningRequest(string? GameName);
 /// <param name="WinningVersionId">
 /// The version to keep — the conflict's VersionB to keep this machine's local save, VersionA to keep
@@ -1794,7 +1855,9 @@ public sealed record OkResponse(bool Ok = true);
 /// <param name="NeedsConfirm">The request was refused by a heuristic that has false positives, and
 /// re-sending it with <c>confirm</c> will be accepted. A client decides "may this be clicked past?" from
 /// this field alone, never from the wording of <paramref name="Error"/> — a hard refusal never sets it.</param>
-public sealed record ErrorResponse(string Error, bool NeedsConfirm = false)
+/// <param name="NeedsChoice">Mapping a save folder met different files on both sides; re-send with
+/// <c>keep</c> (<c>local</c> or <c>cloud</c>) to say which wins. Nothing changed.</param>
+public sealed record ErrorResponse(string Error, bool NeedsConfirm = false, bool NeedsChoice = false)
 {
     /// <summary>The sentence a confirmable refusal ends with. Kept in the message for clients that
     /// predate <see cref="NeedsConfirm"/>; newer ones drop it and ask the question in their own words.</summary>

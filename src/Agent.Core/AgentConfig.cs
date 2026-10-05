@@ -230,6 +230,7 @@ public sealed class AgentConfig
                 game.ConsecutiveConflicts = stored.ConsecutiveConflicts;
                 game.LastPushBytes = stored.LastPushBytes;
                 game.LastPushAt = stored.LastPushAt;
+                game.KeepMappedFolders(stored);
             }
             TotalSavesPushed = onDisk.TotalSavesPushed;
             LastSyncTime = onDisk.LastSyncTime;
@@ -574,6 +575,7 @@ public sealed class AgentConfig
         game.ConsecutiveConflicts = stored.ConsecutiveConflicts;
         game.LastPushBytes = stored.LastPushBytes;
         game.LastPushAt = stored.LastPushAt;
+        game.KeepMappedFolders(stored);
     }
 
     /// <summary>
@@ -615,6 +617,7 @@ public sealed class AgentConfig
         var target = onDisk.Games.FirstOrDefault(g => g.GameId == game.GameId);
         if (target is not null)
         {
+            game.KeepMappedFolders(target);
             target.LastKnownVersionId = game.LastKnownVersionId;
             target.LastSyncedHash = game.LastSyncedHash;
             target.ConsecutiveConflicts = game.ConsecutiveConflicts;
@@ -662,7 +665,7 @@ public sealed class AgentConfig
     /// therefore be a plain single-field write that does not read the entry it is handed, since the
     /// two entries it runs against are different objects. No-op when the game is gone or never here.
     /// </summary>
-    private void MutateGameUnderLock(Guid gameId, Action<TrackedGame> apply)
+    private void MutateGameUnderLock(Guid gameId, Action<TrackedGame> apply, TrackedGame? source = null)
     {
         using var guard = AgentStateLock.Acquire("config", StateDir);
 
@@ -690,8 +693,10 @@ public sealed class AgentConfig
 
         // ReferenceEquals, not an unconditional second apply: the catch above can leave onDisk as
         // `this`, in which case target and mine are the same object and it has already been applied.
+        // `source` already holds the values: re-applying them to it would only swap its lists for copies
+        // under a caller still holding entries of the old ones.
         var mine = Games.FirstOrDefault(g => g.GameId == gameId);
-        if (mine is not null && !ReferenceEquals(mine, target)) apply(mine);
+        if (mine is not null && !ReferenceEquals(mine, target) && !ReferenceEquals(mine, source)) apply(mine);
     }
 
     /// <summary>
@@ -747,7 +752,7 @@ public sealed class AgentConfig
             g.IncludeGlobs = include.ToList();
             g.ExtraPaths = extras.Select(p => p.Clone()).ToList();
             g.RemovedPathKeys = removed.ToList();
-        });
+        }, source: game);
     }
 
     public TrackedGame? FindGame(string name) =>
@@ -902,6 +907,20 @@ public sealed class TrackedGame
     /// </summary>
     public static string ShadowDir(string stateDir, Guid gameId, string key) =>
         Path.Combine(stateDir, "shadow", gameId.ToString("N"), key);
+
+    /// <summary>
+    /// Keep a folder mapping <paramref name="stored"/> (what is on disk) has and this copy lacks.
+    /// Mapping a folder moves its shadow in and deletes it, and the launch wrapper does that in its own
+    /// process: a long-lived host still holding "not mapped" would otherwise write that back, and then
+    /// sync an empty shadow — dropping the folder from its next push. Nothing un-maps a folder, so a
+    /// mapping on disk is never stale relative to "none".
+    /// </summary>
+    public void KeepMappedFolders(TrackedGame stored)
+    {
+        foreach (var p in ExtraPaths)
+            if (!p.IsMapped && stored.ExtraPaths.FirstOrDefault(s => s.Key == p.Key) is { IsMapped: true } s)
+                p.Directory = s.Directory;
+    }
 
     /// <summary>
     /// Drop an extra folder the server no longer has: the next push leaves it out, and older versions
