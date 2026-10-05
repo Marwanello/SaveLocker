@@ -1696,6 +1696,17 @@ agent UI and Deck Game Mode, all captured from the `testenv` rig seeded with a s
 Social preview (an upload only the maintainer can make). The old tray and installer screenshots were dropped as
 pre-redesign; there is no headless way to capture either.
 **Next action:** merge `release-0.6.0`, tag `v0.6.0`, upload `docs/brand/social-preview.png` as the repo's social preview.
+<br>**Multiple save paths planned (2026-10-04, docs only).** `tasks/multiple-save-paths/plan.md` covers any game, not
+just emulators, in 7 phases and 3 groups (`implementation-grouping.md`):
+- The primary path stays at the archive root. Extra paths go under `.savelocker/paths/<key>/`, each with a marker entry.
+- A machine that can't map a path keeps a **shadow** copy, so every push carries every path. Without it, two machines
+  push the path back and forth forever.
+- `Games.SuggestedSaveDir` is kept; dropping it would rebuild the table every FK points at.
+- **Group A shipped (2026-10-04, branch `multiple-save-paths-group-a`, not merged):** Phase 1 `SaveArchive` takes several
+  `SaveRoot`s (layout, markers, one Ordinal hash order, per-slice restore checks); Phase 2 adds the migration
+  `AddMultipleSavePaths`, key-aware path routes and `save-paths` add/remove. Nothing user-visible yet — no agent uses it.
+  Suites: [[Build and Run]] → Suite baseline. Upgrade checked against a DB seeded by `main`'s server (orphans removed).
+- **Next:** Group B (agent sync core, reconcile/CLI, scanners declare extra paths). `emulator-saves` rebases after Group B.
 
 ---
 
