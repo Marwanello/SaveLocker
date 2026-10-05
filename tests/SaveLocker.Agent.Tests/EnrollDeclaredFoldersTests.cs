@@ -184,4 +184,63 @@ public sealed class EnrollDeclaredFoldersTests : IClassFixture<ServerProcess>, I
         Assert.Equal((0, 1), result);
         Assert.DoesNotContain(await ApiClient.For(a).ListGamesAsync(), g => g.Name == game);
     }
+
+    /// <summary>A manifest-shaped candidate: one save folder, two more locations "Also found".</summary>
+    private ScanCandidate WithAlsoFound(string game, string machine) => new(
+        game, Dir(machine, "docs"), ScanSource.SteamInstalled, false,
+        AlternateSaveDirs: new[]
+        {
+            new DeclaredSavePath("appdata", Dir(machine, "appdata")),
+            new DeclaredSavePath("config", Dir(machine, "config")),
+        });
+
+    [Fact]
+    public async Task Only_the_ticked_also_found_folders_are_added()
+    {
+        var game = "AlsoFound-" + Guid.NewGuid().ToString("N")[..8];
+        var a = await Machine("a-" + game);
+
+        var result = await Enroller.EnrollAsync(a, new[] { WithAlsoFound(game, "a") }, new[] { 0 },
+            alsoSync: new Dictionary<int, string[]> { [0] = new[] { Path.Combine(_dir, "a", "appdata") } });
+
+        Assert.Equal((1, 0), result);
+        var tracked = AgentConfig.Load(a.ConfigPath).FindGame(game)!;
+        var appdata = Assert.Single(tracked.ExtraPaths);
+        Assert.Equal("appdata", appdata.Key);
+        Assert.Equal(Path.Combine(_dir, "a", "appdata"), appdata.Directory);
+
+        var server = (await ApiClient.For(a).ListGamesAsync()).Single(g => g.Name == game);
+        var serverPath = Assert.Single(server.ExtraPaths!);
+        Assert.Equal("appdata", serverPath.Key);
+        Assert.Equal(Path.Combine(_dir, "a", "appdata"), serverPath.MachinePath);
+    }
+
+    [Fact]
+    public async Task Nothing_ticked_enrolls_the_primary_folder_alone()
+    {
+        var game = "NoneTicked-" + Guid.NewGuid().ToString("N")[..8];
+        var a = await Machine("a-" + game);
+
+        Assert.Equal((1, 0), await Enroller.EnrollAsync(a, new[] { WithAlsoFound(game, "a") }, new[] { 0 }));
+
+        Assert.Empty(AgentConfig.Load(a.ConfigPath).FindGame(game)!.ExtraPaths);
+        Assert.Empty((await ApiClient.For(a).ListGamesAsync()).Single(g => g.Name == game).ExtraPaths ?? []);
+    }
+
+    [Fact]
+    public async Task A_folder_the_fleet_already_has_is_joined_not_added_twice()
+    {
+        var game = "AlsoJoined-" + Guid.NewGuid().ToString("N")[..8];
+        var a = await Machine("a-" + game);
+        var b = await Machine("b-" + game);
+        var ticks = (string m) => new Dictionary<int, string[]> { [0] = new[] { Path.Combine(_dir, m, "appdata") } };
+        await Enroller.EnrollAsync(a, new[] { WithAlsoFound(game, "a") }, new[] { 0 }, alsoSync: ticks("a"));
+
+        var second = await Enroller.EnrollAsync(b, new[] { WithAlsoFound(game, "b") }, new[] { 0 }, alsoSync: ticks("b"));
+
+        // Joined, not skipped; the folder stays one folder (the poller maps b's copy of it).
+        Assert.Equal((1, 0), second);
+        var server = (await ApiClient.For(b).ListGamesAsync()).Single(g => g.Name == game);
+        Assert.Equal("appdata", Assert.Single(server.ExtraPaths!).Key);
+    }
 }
