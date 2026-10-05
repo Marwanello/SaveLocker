@@ -249,6 +249,9 @@ public class GameSavePath
     /// <summary>Newline-separated include globs, or null for the whole folder.</summary>
     public string? IncludeGlobs { get; set; }
     public int SortOrder { get; set; }
+    /// <summary>When the folder was removed. A retired row is hidden from every query (a filter on
+    /// the context) and kept only so its key is never reused: stored versions may still hold its files.</summary>
+    public DateTime? RetiredAt { get; set; }
 }
 
 /// <summary>

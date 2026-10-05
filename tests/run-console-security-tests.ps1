@@ -14,7 +14,9 @@
 #                                 bad/duplicate/'main' keys and out-of-folder include patterns refused,
 #                                 an unknown key stores nothing, the primary folder stays where an older
 #                                 agent reads it, templates first-come per key, and removing a folder, a
-#                                 machine or a game takes every path with it (FKs on MachineSavePaths).
+#                                 machine or a game takes every path with it (FKs on MachineSavePaths); a removed
+#                                 key is retired, never reused; an agent may add a folder only as a template;
+#                                 any folder's include scope can be replaced later; bad input is a 4xx, never a 500.
 #   API-02  exclude patterns    a pattern the matcher cannot evaluate (".." mid-pattern) is refused on
 #                                 save AND preview instead of throwing inside every agent's hash; the
 #                                 preview count is right against a real uploaded archive.
@@ -957,6 +959,13 @@ Check "SP-01 add: an include pattern outside the folder is refused" `
 Check "SP-01 add: an unknown game is a 404" ((Http POST "/api/games/$([guid]::NewGuid())/save-paths" @{ key = "x" }).Status -eq 404)
 Check "SP-01 add: an agent may add one with its machine key" ((Http POST "/api/agent/games/$spId/save-paths" @{ key = "appdata" } $spk1).Status -eq 200)
 Check "SP-01 add: ... and nobody may without one" ((Http POST "/api/agent/games/$spId/save-paths" @{ key = "other" }).Status -eq 401)
+# An agent defines the folder for every machine, so only generically: a template, never its own literal path.
+Check "SP-01 add: an agent's literal path is refused - only a template" `
+    ((Http POST "/api/agent/games/$spId/save-paths" @{ key = "lit"; template = "/home/deck/.ssh" } $spk1).Status -eq 400)
+Check "SP-01 add: ... and the console may still set one" `
+    ((Http POST "/api/games/$spId/save-paths" @{ key = "lit"; template = "D:/Saves/Lit" }).Status -eq 200)
+$spAddAudit = @((Http GET "/api/audit?limit=50").Json | Where-Object { $_.action -eq "game.save_path.add" -and $_.detail -eq "appdata" })[0]
+Check "SP-01 add: an agent's add is audited under its machine" ($spAddAudit.machineId -eq $sp1.machineId)
 
 Http POST "/api/agent/path/$spId`?value=C:/saves/main" $null $spk1 | Out-Null
 Http POST "/api/agent/path/$spId`?value=C:/saves/states&path=states" $null $spk1 | Out-Null
@@ -967,6 +976,8 @@ Check "SP-01 paths: each machine's folder is stored per key (main for both machi
     ($spPaths.Count -eq 3 -and @($spPaths | Where-Object { $_.pathKey -eq "states" -and $_.savePath -eq "C:/saves/states" }).Count -eq 1)
 Check "SP-01 paths: a key the game does not have stores nothing" (@($spPaths | Where-Object { $_.pathKey -eq "nope" }).Count -eq 0)
 Check "SP-01 paths: the primary folder's rows come first" ($spPaths[0].pathKey -eq "main" -and $spPaths[1].pathKey -eq "main")
+Check "SP-01 paths: the console setting a path for a machine that does not exist is a 404, not a 500" `
+    ((Http POST "/api/games/$spId/paths/$([guid]::NewGuid())?value=C:/x").Status -eq 404)
 
 $spAgent = @((Http GET "/api/games" $null $spk1).Json | Where-Object { $_.id -eq $spId })[0]
 Check "SP-01 agent list: the primary folder stays in machineSavePath, where an older agent reads it" ($spAgent.machineSavePath -eq "C:/saves/main")
@@ -992,12 +1003,44 @@ Check "SP-01 create: a game is created with its primary scope and its extra fold
 $spBad = Http POST "/api/games" @{ name = "SP Bad"; extraPaths = @(@{ key = "Bad Key" }) }
 Check "SP-01 create: a bad extra key refuses the whole request - no half-defined game" `
     ($spBad.Status -eq 400 -and @((Http GET "/api/overview").Json | Where-Object { $_.game.name -eq "SP Bad" }).Count -eq 0)
+Check "SP-01 create: a null folder entry is a 400, not a 500" `
+    ((Http POST "/api/games" $null @{} '{"name":"SP Null","extraPaths":[null]}').Status -eq 400)
+Check "SP-01 create: two keys that trim alike are one key used twice (400, not a 500)" `
+    ((Http POST "/api/games" $null @{} '{"name":"SP Twice","extraPaths":[{"key":"states"},{"key":" states "}]}').Status -eq 400)
+$spNullGlob = Http POST "/api/games" $null @{} '{"name":"SP Null Glob","includeGlobs":[null,"a.sav"]}'
+Check "SP-01 create: a null include pattern is skipped, not a 500" ($spNullGlob.Status -eq 200 -and (@($spNullGlob.Json.includeGlobs) -join ",") -eq "a.sav")
+Check "SP-01 create: an agent's literal extra path refuses the whole request" `
+    ((Http POST "/api/agent/games" @{ name = "SP Agent Lit"; extraPaths = @(@{ key = "states"; template = "C:/Users/me/states" }) } $spk1).Status -eq 400)
+
+# Include scopes can be changed after the game exists, per folder.
+Check "SP-01 include: the primary folder's scope is replaced" `
+    ((Http POST "/api/games/$($spEmu.Json.id)/include-globs" @("Game.srm", "Game.rtc")).Status -eq 200 -and
+     (@((Http GET "/api/games/$($spEmu.Json.id)/state").Json.game.includeGlobs) -join ",") -eq "Game.srm,Game.rtc")
+Check "SP-01 include: an extra folder's scope is replaced by key" `
+    ((Http POST "/api/games/$($spEmu.Json.id)/include-globs?path=states" @("Game.state1")).Status -eq 200 -and
+     @(@((Http GET "/api/games/$($spEmu.Json.id)/state").Json.game.extraPaths)[0].includeGlobs)[0] -eq "Game.state1")
+Check "SP-01 include: an empty list means the whole folder again" `
+    ((Http POST "/api/games/$($spEmu.Json.id)/include-globs" $null @{} '[]').Status -eq 200 -and
+     $null -eq (Http GET "/api/games/$($spEmu.Json.id)/state").Json.game.includeGlobs)
+Check "SP-01 include: a pattern outside the folder is refused" `
+    ((Http POST "/api/games/$($spEmu.Json.id)/include-globs" @("../x")).Status -eq 400)
+Check "SP-01 include: an unknown folder key is a 404" `
+    ((Http POST "/api/games/$($spEmu.Json.id)/include-globs?path=nope" @("x")).Status -eq 404)
 
 Check "SP-01 remove: the primary folder cannot be removed" ((Http DELETE "/api/games/$spId/save-paths/main").Status -eq 400)
 Check "SP-01 remove: an unknown key is a 404" ((Http DELETE "/api/games/$spId/save-paths/nope").Status -eq 404)
 Check "SP-01 remove: removing an extra folder drops every machine's path for it" `
     ((Http DELETE "/api/games/$spId/save-paths/states").Status -eq 204 -and
      @((Http GET "/api/games/$spId/paths").Json | Where-Object { $_.pathKey -eq "states" }).Count -eq 0)
+Check "SP-01 remove: the removed folder is gone from the game" `
+    (@((Http GET "/api/games/$spId/state").Json.game.extraPaths | Where-Object { $_.key -eq "states" }).Count -eq 0)
+Check "SP-01 remove: ... and from every agent's list" `
+    (@(@((Http GET "/api/games" $null $spk1).Json | Where-Object { $_.id -eq $spId })[0].extraPaths | Where-Object { $_.key -eq "states" }).Count -eq 0)
+Check "SP-01 remove: a removed key can never be added again (stored versions may hold its files)" `
+    ((Http POST "/api/games/$spId/save-paths" @{ key = "states" }).Status -eq 400)
+Check "SP-01 remove: ... and a removed folder cannot be mapped or removed again" `
+    ((Http POST "/api/games/$spId/paths/$($sp1.machineId)?value=C:/x&path=states").Status -eq 404 -and
+     (Http DELETE "/api/games/$spId/save-paths/states").Status -eq 404)
 
 Http DELETE "/api/machines/$($sp2.machineId)" | Out-Null
 Check "SP-01 delete machine: its folders for every game go with it" `

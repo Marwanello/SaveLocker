@@ -37,6 +37,7 @@ public sealed partial record SaveRoot(string Key, string Directory, IReadOnlyLis
             : $"Save folder key '{key}' must be 1-32 lower-case letters, digits or '-', starting with a letter or digit.";
     }
 
-    [GeneratedRegex("^[a-z0-9][a-z0-9-]{0,31}$")]
+    // \z, not $: .NET's $ also matches just before a trailing newline, which would let "states\n" through.
+    [GeneratedRegex(@"^[a-z0-9][a-z0-9-]{0,31}\z")]
     private static partial Regex KeyShape();
 }

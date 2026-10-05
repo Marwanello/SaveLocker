@@ -30,9 +30,9 @@ public static class GlobConfig
             : raw.Split('\n').Select(s => s.Trim()).Where(s => s.Length > 0).ToArray();
 
     /// <summary>Join cleaned patterns back to newline-separated storage form (null if empty).</summary>
-    public static string? Join(IEnumerable<string> patterns)
+    public static string? Join(IEnumerable<string?> patterns)
     {
-        var cleaned = patterns.Select(p => p.Trim()).Where(p => p.Length > 0).ToArray();
+        var cleaned = patterns.Select(p => p?.Trim() ?? "").Where(p => p.Length > 0).ToArray();
         return cleaned.Length > 0 ? string.Join('\n', cleaned) : null;
     }
 
@@ -70,7 +70,7 @@ public static class GlobConfig
     /// not. Same storage limits as excludes, plus one rule of its own: an include may not climb out of
     /// the save folder (<c>..</c>) or be absolute — it names files INSIDE the folder every machine maps.
     /// </summary>
-    public static string? ValidateIncludes(IEnumerable<string>? patterns)
+    public static string? ValidateIncludes(IEnumerable<string?>? patterns)
     {
         if (patterns is null) return null;
         var cleaned = patterns.Select(p => p?.Trim() ?? "").Where(p => p.Length > 0).ToList();
@@ -100,8 +100,12 @@ public static class GlobConfig
         var keys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var p in paths)
         {
-            if (SaveRoot.ValidateExtraKey(p.Key) is { } why) return why;
-            if (!keys.Add(p.Key)) return $"Save folder key '{p.Key}' is used twice.";
+            if (p is null) return "A save folder entry is empty.";
+            // Judged as stored: the key is trimmed before it is saved, so two spellings that trim alike
+            // are one key.
+            var key = p.Key?.Trim();
+            if (SaveRoot.ValidateExtraKey(key) is { } why) return why;
+            if (!keys.Add(key!)) return $"Save folder key '{key}' is used twice.";
             if (p.Label is { Length: > 100 }) return "A save folder label may be at most 100 characters.";
             if (p.Template is { Length: > MaxPatternLength }) return $"A save folder template may be at most {MaxPatternLength} characters.";
             if (ValidateIncludes(p.IncludeGlobs) is { } inc) return inc;

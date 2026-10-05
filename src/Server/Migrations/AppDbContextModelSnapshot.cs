@@ -385,6 +385,9 @@ namespace SaveLocker.Server.Migrations
                     b.Property<string>("Label")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("RetiredAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("SortOrder")
                         .HasColumnType("INTEGER");
 

@@ -498,7 +498,7 @@ agent.MapPost("/agent/games", async (HttpContext http, CreateGameRequest req, Sy
 {
     if (string.IsNullOrWhiteSpace(req.Name))
         return Results.BadRequest("Game name is required.");
-    if (ValidateNewGameFolders(req) is { } folderError)
+    if (ValidateNewGameFolders(req, fromAgent: true) is { } folderError)
         return Results.BadRequest(folderError);
     var game = await sync.CreateGameAsync(req);
     if (string.IsNullOrEmpty(game.GridUrl)) await art.TryRefreshOnEnrollAsync(game.Id);
@@ -507,8 +507,8 @@ agent.MapPost("/agent/games", async (HttpContext http, CreateGameRequest req, Sy
 
 // An agent adding an extra save folder to a game it found more of (tasks/multiple-save-paths) — the
 // fleet-wide definition; each machine still reports its own folder for it through /agent/path.
-agent.MapPost("/agent/games/{id:guid}/save-paths", async (Guid id, AddSavePathRequest req, SyncService sync) =>
-    SavePathResult(await sync.AddSavePathAsync(id, req)))
+agent.MapPost("/agent/games/{id:guid}/save-paths", async (Guid id, HttpContext http, AddSavePathRequest req, SyncService sync) =>
+    SavePathResult(await sync.AddSavePathAsync(id, req, http.CurrentMachine().Id)))
     .Produces<SavePathDto>();
 
 // ---- Agent command channel ----
@@ -688,6 +688,13 @@ admin.MapDelete("/games/{id:guid}/save-paths/{key}", async (Guid id, string key,
 
 admin.MapPost("/games/{id:guid}/retain", async (Guid id, int? value, SyncService sync) =>
     await sync.SetGameRetentionAsync(id, value) ? Results.Ok() : Results.NotFound());
+
+// One save folder's include scope (`path`: absent means the primary one). An empty list: the whole folder.
+admin.MapPost("/games/{id:guid}/include-globs", async (Guid id, string?[] patterns, string? path, SyncService sync) =>
+{
+    var (found, error) = await sync.SetIncludeGlobsAsync(id, patterns, PathKeyOf(path));
+    return !found ? Results.NotFound() : error is not null ? Results.BadRequest(error) : Results.Ok();
+});
 
 admin.MapPost("/games/{id:guid}/excludes", async (Guid id, string[] patterns, SyncService sync) =>
 {
@@ -926,10 +933,10 @@ admin.MapGet("/games/{id:guid}/art/options", async (
 
 // Use one of those options. `kind` is "grid" (cover) or "icon"; the body carries the option's URL.
 admin.MapPut("/games/{id:guid}/art/{kind}", async (
-    Guid id, string kind, SetGameArtRequest req, ArtService art, CancellationToken ct) =>
+    Guid id, string kind, SetGameArtRequest req, ArtService art, SyncService sync, CancellationToken ct) =>
 {
     var (ok, message, game) = await art.SetArtAsync(id, kind, req.Url, ct);
-    return ok ? Results.Ok(game!.ToDto()) : Results.BadRequest(new { message });
+    return ok ? Results.Ok(game!.ToDto(await sync.GetExtraSavePathsAsync(id))) : Results.BadRequest(new { message });
 }).Produces<GameDto>();
 
 admin.MapDelete("/games/{id:guid}", async (Guid id, SyncService sync) =>
@@ -1328,9 +1335,11 @@ static string PathKeyOf(string? path) =>
     string.IsNullOrWhiteSpace(path) ? SaveRoot.PrimaryKey : path.Trim();
 
 // The folders a create request asks for are checked before the game exists, so a bad key or scope
-// refuses the request instead of creating a half-defined game.
-static string? ValidateNewGameFolders(CreateGameRequest req) =>
-    GlobConfig.ValidateIncludes(req.IncludeGlobs) ?? GlobConfig.ValidateExtraPaths(req.ExtraPaths);
+// refuses the request instead of creating a half-defined game. An agent's extra folders must be templates
+// (SyncService.AgentTemplateError): it is defining them for every machine.
+static string? ValidateNewGameFolders(CreateGameRequest req, bool fromAgent = false) =>
+    GlobConfig.ValidateIncludes(req.IncludeGlobs) ?? GlobConfig.ValidateExtraPaths(req.ExtraPaths) ??
+    (fromAgent ? req.ExtraPaths?.Select(SyncService.AgentTemplateError).FirstOrDefault(e => e is not null) : null);
 
 static IResult SavePathResult((GameSavePath? Path, string? Error) added) =>
     added.Path is { } path ? Results.Ok(path.ToDto())

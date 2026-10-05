@@ -226,8 +226,8 @@ public sealed class MultiRootArchiveTests : IDisposable
         // One directory, but not both scoped.
         Assert.Throws<ArgumentException>(() => SaveArchive.HashDirectory(new[]
             { SaveRoot.Primary(shared), new SaveRoot("states", shared, new[] { "*.state" }) }));
-        // Both scoped, but both claim Game.state.
-        Assert.Throws<ArgumentException>(() => SaveArchive.HashDirectory(new[]
+        // Both scoped, but both claim Game.state: found only once a file matches both, so it has its own type.
+        Assert.Throws<SaveArchive.OverlappingSaveFoldersException>(() => SaveArchive.HashDirectory(new[]
             { SaveRoot.Primary(shared, new[] { "Game.*" }), new SaveRoot("states", shared, new[] { "*.state" }) }));
         // One inside the other.
         Assert.Throws<ArgumentException>(() => SaveArchive.HashDirectory(Game(shared, Path.Combine(shared, "states"))));
@@ -316,6 +316,30 @@ public sealed class MultiRootArchiveTests : IDisposable
     }
 
     [Fact]
+    public void A_later_formats_part_of_the_reserved_folder_passes_through_the_primary_folder()
+    {
+        // A newer agent's version carries a .savelocker/ subtree this one does not know. Dropping it would
+        // take it out of the head on the next push, and the hash would never match the head again.
+        var newer = Dir("lf/newer", ("slot.sav", "s"), (".savelocker/registry/HKCU.reg", "reg"));
+        var zip = P("later.zip");
+        SaveArchive.CreateArchive(newer, zip);
+        Assert.Contains(".savelocker/registry/HKCU.reg", Entries(zip));
+
+        var saves = Dir("lf/saves", ("slot.sav", "old"));
+        var states = P("lf", "states");
+        SaveArchive.RestoreArchive(zip, Game(saves, states), Stage());
+
+        Assert.Equal("reg", File.ReadAllText(Path.Combine(saves, ".savelocker", "registry", "HKCU.reg")));
+        Assert.Equal(SaveArchive.HashDirectory(newer), SaveArchive.HashDirectory(Game(saves, states)));
+
+        // And it goes again when a version without it is restored, like any file of the primary folder.
+        var plain = P("plain.zip");
+        SaveArchive.CreateArchive(Dir("lf/plain", ("slot.sav", "s")), plain);
+        SaveArchive.RestoreArchive(plain, Game(saves, states), Stage());
+        Assert.Equal(new[] { "slot.sav" }, FilesUnder(saves));
+    }
+
+    [Fact]
     public void Excludes_match_archive_names_and_markers_ride_in_the_manifest()
     {
         var game = Game(
@@ -356,6 +380,7 @@ public sealed class MultiRootArchiveTests : IDisposable
         Assert.NotNull(SaveRoot.ValidateExtraKey("-x"));
         Assert.NotNull(SaveRoot.ValidateExtraKey(new string('a', 33)));
         Assert.NotNull(SaveRoot.ValidateExtraKey(""));
+        Assert.NotNull(SaveRoot.ValidateExtraKey("states\n"));
 
         var a = P("va");
         Assert.Throws<ArgumentException>(() => SaveArchive.HashDirectory(new[] { new SaveRoot("states", a) }));

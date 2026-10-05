@@ -364,6 +364,14 @@ public static class SaveArchive
     public sealed class UnsafeArchiveException(string message) : Exception(message);
 
     /// <summary>
+    /// Thrown while listing a game's files when one file falls inside two of its save folders' include
+    /// scopes. Unlike a bad folder set (an <see cref="ArgumentException"/> from the moment it is
+    /// configured), this can start on any push, the first time a new file matches both, so it has its
+    /// own type for a caller to report as "narrow one folder's include patterns".
+    /// </summary>
+    public sealed class OverlappingSaveFoldersException(string message) : Exception(message);
+
+    /// <summary>
     /// Ceiling on entries in one archive. A restore that needs more than this is not a save folder.
     /// Override with <c>SAVELOCKER_MAX_RESTORE_ENTRIES</c>.
     /// </summary>
@@ -448,16 +456,19 @@ public static class SaveArchive
             foreach (var src in EnumerateFilesNoFollow(stagingFull))
             {
                 var name = Path.GetRelativePath(stagingFull, src).Replace('\\', '/');
-                if (!IsReserved(name))
-                    slices[SaveRoot.PrimaryKey].Add(new StagedFile(name, src));
-                else if (IsMarker(name))
+                if (IsMarker(name))
                     markers.Add(name[KeysPrefix.Length..]);
                 else if (TrySplitExtra(name, out var key, out var rel))
                 {
                     if (!slices.TryGetValue(key, out var slice)) slices[key] = slice = new();
                     slice.Add(new StagedFile(rel, src));
                 }
-                // Anything else under the reserved prefix belongs to a later format: never restored.
+                else if (!IsSliceName(name))
+                    // Includes any OTHER .savelocker/ subtree — a later format this agent does not know.
+                    // It rides in the primary folder byte-for-byte, as everything did on an older agent,
+                    // so the next push carries it back and the hash still matches the head.
+                    slices[SaveRoot.PrimaryKey].Add(new StagedFile(name, src));
+                // A malformed name under paths/ belongs to no folder: never restored.
             }
 
             var plans = new List<RestorePlan>();
@@ -505,7 +516,7 @@ public static class SaveArchive
             // skipped, never deleted — we did not archive them, so their absence from the archive
             // must not read as "the user removed this file". Only files in the folder's include scope
             // may go: in a shared emulator saves folder every other game's save is absent from this
-            // game's archive. The primary folder never touches the reserved prefix.
+            // game's archive. The primary folder never touches the other folders' slices.
             foreach (var plan in plans)
             {
                 var inSlice = plan.Files.Select(f => f.Rel).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -513,7 +524,7 @@ public static class SaveArchive
                 foreach (var tgt in EnumerateFilesNoFollow(plan.TargetFull))
                 {
                     var rel = Path.GetRelativePath(plan.TargetFull, tgt).Replace('\\', '/');
-                    if (plan.Root.IsPrimary && IsReserved(rel)) continue;
+                    if (plan.Root.IsPrimary && IsSliceName(rel)) continue;
                     if (inScope(rel) && !inSlice.Contains(rel))
                         File.Delete(tgt);
                 }
@@ -885,8 +896,9 @@ public static class SaveArchive
     /// <c>.savelocker/keys/&lt;key&gt;</c>, so a restore can tell "this folder is empty" apart from "this
     /// version does not contain this folder".</item>
     /// </list>
-    /// <c>.savelocker/</c> is reserved: the primary folder's own <c>.savelocker</c> directory is never
-    /// hashed, archived or deleted. An older agent that knows none of this restores those entries as a
+    /// <c>.savelocker/paths/</c> and <c>.savelocker/keys/</c> are reserved: the primary folder's own copies
+    /// of them are never hashed, archived or deleted. Any other <c>.savelocker/</c> name (a later format's)
+    /// is an ordinary file of the primary folder and passes through unchanged. An older agent that knows none of this restores those entries as a
     /// real folder inside its primary save folder and pushes them back byte-for-byte; because every
     /// name is hashed in ONE Ordinal order — never folder by folder — its hash is the same as ours.
     /// Excludes match these archive names; include scopes match each folder's own relative paths.
@@ -901,9 +913,15 @@ public static class SaveArchive
     public static bool IsMarker(string archiveName) =>
         archiveName.StartsWith(KeysPrefix, StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsReserved(string name) =>
-        name.StartsWith(ReservedPrefix, StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(name, ReservedPrefix.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// A name in another folder's slice (<c>paths/</c>) or a marker (<c>keys/</c>): what the primary
+    /// folder never lists, archives or deletes. Every other <c>.savelocker/</c> name is a plain file of
+    /// the primary folder, so a subtree a LATER format adds (registry saves) passes through this agent
+    /// unchanged instead of being dropped from the head by its next push.
+    /// </summary>
+    private static bool IsSliceName(string name) =>
+        name.StartsWith(PathsPrefix, StringComparison.OrdinalIgnoreCase) ||
+        name.StartsWith(KeysPrefix, StringComparison.OrdinalIgnoreCase);
 
     private static string NamePrefix(SaveRoot root) => root.IsPrimary ? "" : PathsPrefix + root.Key + "/";
 
@@ -924,7 +942,7 @@ public static class SaveArchive
     /// no folder of this game.</summary>
     private static (SaveRoot Root, string Rel)? ResolveName(IReadOnlyList<SaveRoot> roots, string name)
     {
-        if (!IsReserved(name)) return (roots.Single(r => r.IsPrimary), name);
+        if (!IsSliceName(name)) return (roots.Single(r => r.IsPrimary), name);
         if (!TrySplitExtra(name, out var key, out var rel)) return null;
         var root = roots.FirstOrDefault(r => !r.IsPrimary && r.Key == key);
         return root is null ? null : (root, rel);
@@ -950,7 +968,7 @@ public static class SaveArchive
             var rootFull = Path.GetFullPath(root.Directory);
             var rels = EnumerateFilesNoFollow(rootFull)
                 .Select(f => Path.GetRelativePath(rootFull, f).Replace('\\', '/'));
-            if (root.IsPrimary) rels = rels.Where(r => !IsReserved(r));
+            if (root.IsPrimary) rels = rels.Where(r => !IsSliceName(r));
 
             var prefix = NamePrefix(root);
             var named = FilterIncluded(rels, root.IncludeGlobs).Select(r => (Name: prefix + r, Rel: r)).ToList();
@@ -963,7 +981,7 @@ public static class SaveArchive
                 // Two folders sharing one directory must keep their files apart; a file in both would
                 // be archived twice and restored by whichever slice ran last.
                 if (!owner.TryAdd(full, root.Key))
-                    throw new ArgumentException(
+                    throw new OverlappingSaveFoldersException(
                         $"'{full}' belongs to both the '{owner[full]}' and '{root.Key}' save folders of this " +
                         "game. A file can only be synced once — narrow one folder's include patterns.");
                 items.Add(new SaveItem(name, full));

@@ -69,6 +69,7 @@ public class AppDbContext : DbContext
             .OnDelete(DeleteBehavior.Cascade);
 
         b.Entity<GameSavePath>().HasKey(p => new { p.GameId, p.Key });
+        b.Entity<GameSavePath>().HasQueryFilter(p => p.RetiredAt == null);
         b.Entity<GameSavePath>()
             .HasOne<Game>().WithMany()
             .HasForeignKey(p => p.GameId)

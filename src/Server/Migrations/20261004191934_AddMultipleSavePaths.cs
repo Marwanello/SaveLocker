@@ -50,7 +50,8 @@ namespace SaveLocker.Server.Migrations
                     Label = table.Column<string>(type: "TEXT", nullable: true),
                     Template = table.Column<string>(type: "TEXT", nullable: true),
                     IncludeGlobs = table.Column<string>(type: "TEXT", nullable: true),
-                    SortOrder = table.Column<int>(type: "INTEGER", nullable: false)
+                    SortOrder = table.Column<int>(type: "INTEGER", nullable: false),
+                    RetiredAt = table.Column<DateTime>(type: "TEXT", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -88,6 +89,9 @@ namespace SaveLocker.Server.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // The old key is (MachineId, GameId): only the primary folder's row per pair can survive it.
+            migrationBuilder.Sql("DELETE FROM \"MachineSavePaths\" WHERE \"PathKey\" <> 'main';");
+
             migrationBuilder.DropForeignKey(
                 name: "FK_MachineSavePaths_Games_GameId",
                 table: "MachineSavePaths");
