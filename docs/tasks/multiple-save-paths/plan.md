@@ -18,8 +18,8 @@ requirements the emulator branch found. This file supersedes its "proposed phase
 
 | Phase | Status |
 |---|---|
-| 1 — Archive core | ✅ Shipped 2026-10-04 — `SaveRoot` + multi-root `SaveArchive`, include primitive ported; `MultiRootArchiveTests` 16 + `IncludeGlobTests` 9, every guard mutation-checked; unit 206/206, hardening 33, delta 33 |
-| 2 — Server model + wire | ✅ Shipped 2026-10-04 — migration `AddMultipleSavePaths` (only the leaf `MachineSavePaths` is rebuilt; orphans deleted first), key-aware path/template routes, `save-paths` add/remove (admin + agent), DTOs additive (API diffs: additions only). Upgrade checked by seeding a DB with `main`'s server (plus orphan rows) and starting this one on it. `run-console-security-tests` 335 (+27, `SP-01`), `run-server-bugbounty-tests` 216, `run-health-tests` 33 |
+| 1 — Archive core | ✅ Shipped 2026-10-04 — `SaveRoot` + multi-root `SaveArchive`, include primitive ported; `MultiRootArchiveTests` 17 + `IncludeGlobTests` 9, every guard mutation-checked; unit 207/207, hardening 33, delta 33 |
+| 2 — Server model + wire | ✅ Shipped 2026-10-04 — migration `AddMultipleSavePaths` (only the leaf `MachineSavePaths` is rebuilt; orphans deleted first), key-aware path/template routes, `save-paths` add/remove (admin + agent), DTOs additive (API diffs: additions only). Upgrade checked by seeding a DB with `main`'s server (plus orphan rows) and starting this one on it. `run-console-security-tests` 352 (+44, `SP-01`; review fixes 2026-10-05: removed keys retired, agent paths templates only, include scopes editable), `run-server-bugbounty-tests` 216, `run-health-tests` 33 |
 | 3 — Agent sync core | ⏳ Not started |
 | 4 — Reconcile, CLI, local API, doctor | ⏳ Not started |
 | 5 — Scanners declare extra paths | ⏳ Not started |
@@ -76,9 +76,12 @@ The manifest doesn't say whether two locations are **alternatives** (pick the on
   Without one, a restore can't tell an empty path from one the version never had. Markers are synthetic:
   they are listed in the manifest with the empty-file hash, and `CreateArchiveSubset` writes one when
   asked for it.
-- **Reserved prefix.** `.savelocker/` is reserved. The primary folder's own listing skips it, so it never
-  counts it, archives it or deletes it. Registry saves (`tasks/registry-saves`) can use the same prefix
-  later.
+- **Reserved prefix.** `.savelocker/paths/` and `.savelocker/keys/` are reserved. The primary folder's own
+  listing skips them, so it never counts, archives or deletes them. Any **other** `.savelocker/` name is an
+  ordinary file of the primary folder: a subtree a later format adds (registry saves,
+  `tasks/registry-saves`) passes through an agent that doesn't know it, exactly as everything does through
+  an older agent. Dropping it instead would take it out of the head on that agent's next push, and its hash
+  would never match the head again — the loop §3 exists to prevent.
 - **One ordering.** The hash, manifest and archive treat all of a game's folders as **one list of final
   archive names, sorted once in Ordinal order**. `ReconstructDelta` hashes exactly that list. An older
   agent that has `.savelocker/…` sitting inside its primary folder must also produce the same hash.
@@ -155,7 +158,10 @@ conflict that blocks launches. Emulators across OSes will hit this often; it is 
   ever failed to take effect, that rebuild's `DROP TABLE Games` would cascade through every version row.
   Keeping the column also leaves `EnrollmentService`, `Mapping` and the template endpoints untouched.
 - **New `GameSavePath`** holds the extra paths: PK `(GameId, Key)`, FK to `Game` with cascade, plus
-  `Label`, `Template`, `IncludeGlobs` (newline-separated) and `SortOrder`.
+  `Label`, `Template`, `IncludeGlobs` (newline-separated), `SortOrder` and `RetiredAt`.
+  - **Removing a path retires its row** (a query filter hides it) instead of deleting it, so the key is
+    never reused: a stored version rolled back to would otherwise put the old folder's files into whatever
+    folder the key names now.
 - **`MachineSavePath` gets PK `(MachineId, GameId, PathKey)`**, backfilled with `main`, plus FKs to
   `Machine` and `Game` with cascade.
   - It's a leaf table, so the rebuild is safe.
@@ -181,7 +187,13 @@ conflict that blocks launches. Emulators across OSes will hit this often; it is 
   `ExtraPaths`, applied only when the request creates the game; the caller compares what comes back, the
   way the emulator branch's `SameScope` check does.
 - **Routes.** The path and template routes take `?path=<key>`, defaulting to `main`. New admin routes
-  add and remove an extra path.
+  add and remove an extra path, and replace any path's include scope (`include-globs?path=<key>`).
+- **Agents define paths generically.** An agent adding a path (`/agent/games/{id}/save-paths`, or
+  `extraPaths` when it creates a game) defines it for every machine, so its template must be a real
+  template, as `/agent/games/{id}/template` already requires. Literal paths are the console's.
+  - **Open for Group B:** whether a path an agent adds to an *existing* game should wait for console
+    confirmation before other machines adopt it (as scan candidates do). Phase 5's declared extras and
+    Phase 6's user-confirmed suggestions both go through this route; decide before wiring the poller.
 - **Agent local API.** `TrackedGameDto` gets a trailing optional `Paths` field. `id`/`path` stay frozen:
   `path` is the primary path, `""` when unmapped. `/api/games/{id}/folder` without a key means `main`.
   The pre-launch, sync-status, alias and pull/push-toggle routes don't change shape. Only what `inSync`
