@@ -1722,6 +1722,14 @@ just emulators, in 7 phases and 3 groups (`implementation-grouping.md`):
   the steps and screenshots; it caught two bugs, fixed in `7bbca5c`). **The Deck target has not run.**
 - **Next:** `-Only deck` for Group C, the Group B testenv pass if it is still wanted separately, then merge both; `emulator-saves` rebases after that (`plan.md` → *Rebase notes*). The task folder stays in `tasks/`
   until then — `emulator-saves/plan.md` links into it.
+<br>**Settle-gate test flake fixed (2026-10-05, on `multiple-save-paths-group-c` / PR #58).**
+`MultiPathAgentTests.The_settle_gate_waits_on_every_real_folder` failed once on windows-latest (PR #58): the gate
+never went quiet in 10 s. The Windows lock probe opens with `FileShare.Read`, so a reader that shares reads does
+**not** count as a writer (now pinned by a test). One that denies reads, though, such as an AV scanner or indexer
+opening exclusively, raises the same sharing violation as a writer and holds the gate. The probe was not narrowed
+because a game writing with `FileShare.None` looks identical. The test now pins the probe quiet through an internal
+`SaveSettler` overload and still proves the second folder restarts the quiet period. Reproduced off Windows with an
+always-locked probe (same `false` at maxWait). Recorded in [[Gotchas]] → *Testing*.
 
 ---
 

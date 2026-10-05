@@ -578,6 +578,11 @@ documentation that was found. Read before touching the presenter.
   the project's pinned one: `dotnet build src/Agent/SaveLocker.Agent.csproj -p:OutDir=<scratch>\agentbin\` builds
   everything the agent needs there; point a copy of a suite's `$agentDll` at it. Used 2026-09-28 while a test tray
   held the real folder.
+- **A test of the settle gate must pin `FileLockProbe`, not run the real one.** On Windows, a handle that denies
+  read sharing raises the same sharing violation as a writer, whether it belongs to a game or to a CI runner's
+  scanner or indexer. It holds the gate for as long as it is open, which made `The_settle_gate_waits_on_every_real_folder`
+  flake on windows-latest. The real probe's own deny-writers handle can also make a test's mid-wait `WriteAllText` throw.
+  Use the internal `SaveSettler.WaitForQuietAsync(..., probeWriters, ...)` overload and test the probe on its own.
 - **`run-linux-tests.sh` fails two "no session" checks under WSLg — that is the machine, not the code.** "no session:
   graphical session reported no" and "…D-Bus session bus reported no" assume the harness has no graphical session, but WSLg
   injects `DISPLAY`, `WAYLAND_DISPLAY` and `DBUS_SESSION_BUS_ADDRESS` into every WSL shell, **even under `env -i`**. Expect
