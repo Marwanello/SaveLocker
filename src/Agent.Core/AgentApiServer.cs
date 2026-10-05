@@ -1135,7 +1135,7 @@ public sealed class AgentApiServer : IDisposable
                 var state = await api.GetStateAsync(id);
                 var headHash = state?.Head?.ContentHash;
                 var localHash = !string.IsNullOrWhiteSpace(game.SaveDirectory) && Directory.Exists(game.SaveDirectory)
-                    ? await Task.Run(() => SaveArchive.HashDirectory(game.SaveDirectory, game.ExcludeGlobs))
+                    ? await Task.Run(() => game.LocalHash(_config.StateDir))
                     : null;
                 var inSync = headHash is not null && localHash is not null &&
                              string.Equals(headHash, localHash, StringComparison.OrdinalIgnoreCase);

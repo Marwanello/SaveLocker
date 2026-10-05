@@ -2129,7 +2129,7 @@ sealed partial class UiApp
                         if (game is not null)
                         {
                             game.LastKnownVersionId = _resolvingWinningVersionId;
-                            game.LastSyncedHash = SaveArchive.HashDirectory(game.SaveDirectory, game.ExcludeGlobs);
+                            game.LastSyncedHash = game.LocalHash(_config.StateDir);
                             _config.SaveGameSyncState(game);
                         }
                     }

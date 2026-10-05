@@ -303,7 +303,8 @@ internal sealed class TrayContext : ApplicationContext
         {
             replaced = _engine;
             _engine = new SyncEngine(_config, api, log: Log, notices: _notices,
-                offlineQueue: _offlineQueue, health: _health, activity: _activity);
+                offlineQueue: _offlineQueue, health: _health, activity: _activity,
+                onFoldersChanged: () => _ui.Post(StartFolderWatchers));
         }
 
         // Retire the engine we just replaced, or its lease timers keep renewing against the old
@@ -391,7 +392,7 @@ internal sealed class TrayContext : ApplicationContext
         foreach (var g in _config.Games.Where(g => Directory.Exists(g.SaveDirectory)))
         {
             var game = g;
-            _folderWatchers.Add(new FolderWatcher(game.SaveDirectory, () =>
+            _folderWatchers.Add(new FolderWatcher(game.RealRoots(_config.StateDir).Select(r => r.Directory), () =>
             {
                 if (!IsRunning(game)) FireAndForget(() => _engine.PushAsync(game, settle: true));
             }));

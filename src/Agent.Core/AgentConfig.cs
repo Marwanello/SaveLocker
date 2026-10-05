@@ -619,6 +619,11 @@ public sealed class AgentConfig
             target.LastSyncedHash = game.LastSyncedHash;
             target.ConsecutiveConflicts = game.ConsecutiveConflicts;
             target.SaveDirectory = game.SaveDirectory;
+            // With the primary folder, and for the same reason: which folders this game has is what
+            // the hash just written covers, so the two must never be stored out of step.
+            target.IncludeGlobs = game.IncludeGlobs.ToList();
+            target.ExtraPaths = game.ExtraPaths.Select(p => p.Clone()).ToList();
+            target.RemovedPathKeys = game.RemovedPathKeys.ToList();
             target.LastPushBytes = game.LastPushBytes;
             target.LastPushAt = game.LastPushAt;
         }
@@ -723,6 +728,27 @@ public sealed class AgentConfig
     /// </summary>
     public void SaveGameSteamAppId(Guid gameId, string appId) =>
         MutateGameUnderLock(gameId, g => g.SteamAppId = appId);
+
+    /// <summary>
+    /// Persist which folders <paramref name="game"/> has here — primary folder, its scope and the
+    /// extra folders — without clobbering anything else, for the paths that change them mid-sync (a
+    /// pull meeting a folder key it did not know, a mapping moving a shadow in). See
+    /// <see cref="MutateGameUnderLock"/>.
+    /// </summary>
+    public void SaveGameFolders(TrackedGame game)
+    {
+        var dir = game.SaveDirectory;
+        var include = game.IncludeGlobs.ToList();
+        var extras = game.ExtraPaths.Select(p => p.Clone()).ToList();
+        var removed = game.RemovedPathKeys.ToList();
+        MutateGameUnderLock(game.GameId, g =>
+        {
+            g.SaveDirectory = dir;
+            g.IncludeGlobs = include.ToList();
+            g.ExtraPaths = extras.Select(p => p.Clone()).ToList();
+            g.RemovedPathKeys = removed.ToList();
+        });
+    }
 
     public TrackedGame? FindGame(string name) =>
         Games.FirstOrDefault(g => string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase));
@@ -833,6 +859,77 @@ public sealed class TrackedGame
     /// <summary>Effective exclude globs (global defaults ∪ per-game) from the server;
     /// files matching these are skipped when hashing and archiving.</summary>
     public List<string> ExcludeGlobs { get; set; } = new();
+    /// <summary>The primary save folder's include scope, from the server (identical on every machine).
+    /// Empty: the whole folder is the game's.</summary>
+    public List<string> IncludeGlobs { get; set; } = new();
+    /// <summary>
+    /// The game's extra save folders (tasks/multiple-save-paths), reconciled from the server. One
+    /// with no <see cref="TrackedSavePath.Directory"/> is not mapped here, and syncs through its
+    /// shadow copy instead (<see cref="Roots"/>) so that every push still carries it.
+    /// </summary>
+    public List<TrackedSavePath> ExtraPaths { get; set; } = new();
+    /// <summary>Extra folder keys the server removed from this game. Versions stored before the
+    /// removal still carry them, and a pull must not take one back in as a new folder.</summary>
+    public List<string> RemovedPathKeys { get; set; } = new();
+
+    /// <summary>
+    /// Every save folder of this game as the archive sees it: the primary folder, then each extra
+    /// one — its mapped folder here, or its shadow when it has none. Everything that hashes,
+    /// archives or restores a game goes through this, so no caller can hash the primary folder alone
+    /// and disagree with what a push sends.
+    /// </summary>
+    public IReadOnlyList<SaveRoot> Roots(string stateDir)
+    {
+        var roots = new List<SaveRoot> { SaveRoot.Primary(SaveDirectory, IncludeGlobs) };
+        foreach (var p in ExtraPaths)
+            roots.Add(new SaveRoot(p.Key, p.Directory ?? ShadowDir(stateDir, GameId, p.Key), p.IncludeGlobs));
+        return roots;
+    }
+
+    /// <summary>The roots that are real folders on this machine (no shadows) — what is watched,
+    /// settled, guarded and checked for running writers.</summary>
+    public IReadOnlyList<SaveRoot> RealRoots(string stateDir) =>
+        Roots(stateDir).Where(r => r.IsPrimary || ExtraPaths.Any(p => p.Key == r.Key && p.IsMapped)).ToList();
+
+    /// <summary>The content hash of every save folder at once — the value a push compares and sends.</summary>
+    public string LocalHash(string stateDir) => SaveArchive.HashDirectory(Roots(stateDir), ExcludeGlobs);
+
+    /// <summary>
+    /// Where an unmapped extra folder's files live on this machine: inside the agent's own state, so
+    /// a pull has somewhere to put that slice and the next push carries it back unchanged. Without it,
+    /// a machine that cannot map a folder drops it from every push, and two machines then hand it
+    /// back and forth forever (plan §3).
+    /// </summary>
+    public static string ShadowDir(string stateDir, Guid gameId, string key) =>
+        Path.Combine(stateDir, "shadow", gameId.ToString("N"), key);
+
+    /// <summary>
+    /// Drop an extra folder the server no longer has: the next push leaves it out, and older versions
+    /// keep it. Its shadow goes with it; a mapped folder stays on disk — those are the user's files,
+    /// they just stop syncing. In memory only; the caller persists.
+    /// </summary>
+    public bool ForgetExtraPath(string key, string stateDir)
+    {
+        if (ExtraPaths.RemoveAll(p => p.Key == key) == 0) return false;
+        if (!RemovedPathKeys.Contains(key)) RemovedPathKeys.Add(key);
+        DeleteShadow(stateDir, key);
+        return true;
+    }
+
+    /// <summary>Best-effort: a shadow left behind costs disk, never correctness.</summary>
+    public void DeleteShadow(string stateDir, string key)
+    {
+        try
+        {
+            var dir = ShadowDir(stateDir, GameId, key);
+            if (System.IO.Directory.Exists(dir)) System.IO.Directory.Delete(dir, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AgentLogger.Log($"Could not delete the shadow of '{Name}' folder '{key}': {ex.Message}");
+        }
+    }
+
     /// <summary>
     /// When something last confirmed this game's Steam launch options carry the wrapper, and what
     /// went wrong if it could not.
@@ -865,4 +962,29 @@ public sealed class TrackedGame
         string.IsNullOrWhiteSpace(SteamAppId)
             ? SteamLayout.CompatDataIdIn(SaveDirectory)
             : SteamAppId;
+}
+
+/// <summary>
+/// One extra save folder of a tracked game (tasks/multiple-save-paths). <see cref="Key"/>, the
+/// scope, label and template come from the server and are the same on every machine;
+/// <see cref="Directory"/> is this machine's own folder for it, or null while it has none.
+/// </summary>
+public sealed class TrackedSavePath
+{
+    public string Key { get; set; } = "";
+    public string? Label { get; set; }
+    /// <summary>The fleet-wide description of the folder (<c>&lt;winAppData&gt;/Game/States</c>), which
+    /// each machine expands for itself; null when it was only ever set as one machine's literal path.</summary>
+    public string? Template { get; set; }
+    /// <summary>This machine's folder, or null: not mapped here, synced through its shadow.</summary>
+    public string? Directory { get; set; }
+    public List<string> IncludeGlobs { get; set; } = new();
+
+    [JsonIgnore] public bool IsMapped => !string.IsNullOrWhiteSpace(Directory);
+
+    public TrackedSavePath Clone() => new()
+    {
+        Key = Key, Label = Label, Template = Template, Directory = Directory,
+        IncludeGlobs = IncludeGlobs.ToList(),
+    };
 }

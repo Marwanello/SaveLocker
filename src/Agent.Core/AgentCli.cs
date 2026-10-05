@@ -371,7 +371,7 @@ public static class AgentCli
                     if (keep == "local")
                     {
                         game.LastKnownVersionId = winningVersionId;
-                        game.LastSyncedHash = SaveArchive.HashDirectory(game.SaveDirectory, game.ExcludeGlobs);
+                        game.LastSyncedHash = game.LocalHash(config.StateDir);
                         config.SaveGameSyncState(game);
                     }
 
@@ -396,7 +396,7 @@ public static class AgentCli
                     }
 
                     foreach (var g in GamesFor(positionals.FirstOrDefault(), config))
-                        Console.WriteLine($"  {g.Name}: {SaveArchive.HashDirectory(g.SaveDirectory, g.ExcludeGlobs)}");
+                        Console.WriteLine($"  {g.Name}: {g.LocalHash(config.StateDir)}");
                     break;
                 }
 
