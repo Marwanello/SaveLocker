@@ -1713,8 +1713,15 @@ just emulators, in 7 phases and 3 groups (`implementation-grouping.md`):
   is settled in [[Decisions]] (adopt at once; `remove-path` fleet-wide; a folder with no template is still added).
   New `tests/run-multipath-tests.ps1` (39, two machines) — counts in [[Build and Run]] → Suite baseline.
   **Not yet run on the testenv rig or hardware.**
-- **Next:** the testenv pass for Group B (Windows + WSL, steps in the PR), then merge; `emulator-saves` rebases after
-  that (`plan.md` → *Rebase notes*), then Group C (manifest suggestions + UI).
+- **Group C shipped (2026-10-05, branch `multiple-save-paths-group-c`, PR to the fork, not merged):** Phase 6 "Also
+  found" — the manifest's other existing locations are suggested (`FolderSuggestions`, `ScanCandidate.AlternateSaveDirs`),
+  never adopted on their own; Phase 7 UI in all three surfaces: agent-ui folder list + Add/Remove + a start-up "More save
+  folders found" prompt, Add games pre-ticked, console one section per folder with Latest's files (new
+  `GET …/versions/{v}/folders`) and agents < 0.7.0 flagged, Deck per-folder browser. The maintainer's three calls are in
+  [[Decisions]]. Counts in [[Build and Run]] → Suite baseline. **testenv pass done on Windows + WSL + console** (the PR has
+  the steps and screenshots; it caught two bugs, fixed in `7bbca5c`). **The Deck target has not run.**
+- **Next:** `-Only deck` for Group C, the Group B testenv pass if it is still wanted separately, then merge both; `emulator-saves` rebases after that (`plan.md` → *Rebase notes*). The task folder stays in `tasks/`
+  until then — `emulator-saves/plan.md` links into it.
 
 ---
 

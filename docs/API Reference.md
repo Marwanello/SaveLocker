@@ -67,6 +67,7 @@ Server endpoints (`src/Server/Program.cs`).
 - `GET /api/games/{id}/download` → head zip; response headers `X-Version-Id`, `X-Content-Hash`.
 - `GET /api/versions/{versionId}/download` → that version's zip.
 - `GET /api/versions/{versionId}/stats` (agent) and `GET /api/games/{id}/versions/{versionId}/stats` (admin) → `VersionStatsDto { fileCount, newestFileWriteUtc? }`, read from the archive's own entries and cached per version. `newestFileWriteUtc` is the newest file's real UTC write time for archives written since 2026-09-28 (each entry carries an `mtime-utc=` record — see `Decisions.md`); an older archive only has the uploader's local wall clock, so its value is that clock labelled UTC and reads **shifted by the uploader's UTC offset** (e.g. 3 h later from a UTC+3 machine).
+- `GET /api/games/{id}/versions/{versionId}/folders` (admin) → `VersionFolderDto[] { key, fileCount, totalBytes, files: { path, size, modifiedUtc? }[] }`: the version's files grouped by save folder — `main` first, then each extra folder by key, names relative to their folder (never the `.savelocker/paths/<key>/` archive prefix). An extra folder whose marker is in the archive but which holds nothing is listed with `fileCount: 0`. `files` holds the first 500 by name; the counts cover every file. Read from the zip's directory and cached per version. 404 for a version of another game.
 
 ## Admin
 - `GET /api/conflicts` → open `ConflictDto[]`. `escalated` becomes true after the conflict has been

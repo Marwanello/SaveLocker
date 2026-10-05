@@ -1,96 +1,69 @@
-# Session summary — 2026-10-05 — Multiple save paths Group B
+# Session summary — 2026-10-05 — Multiple save paths Group C
 
 Standalone: the facts below do not need the rest of the vault.
 
-Branch `multiple-save-paths-group-b`, PR Marwanello/SaveLocker#57 (open). Plan: `docs/tasks/multiple-save-paths/plan.md`.
+Branch `multiple-save-paths-group-c` (off `main` at Group B, #57), PR to the fork (Marwanello/SaveLocker). Plan:
+`docs/tasks/multiple-save-paths/plan.md`, Phases 6–7. Commits: `930fb74` Phase 6, `435b42f` Phase 7, `7bbca5c` fixes
+from the testenv pass, then this docs commit.
 
 ## What was built, in plain terms
 
-Group B makes the agents actually sync several save folders per game. Group A only made the save package and the server
-able to hold them.
+- **SaveLocker notices a game's other save folders.** When the save database (the Ludusavi manifest) lists more than
+  one location for a game and they exist on this machine, the first stays the main folder (exactly as before). The
+  others are offered as **Also found**. Nothing is added on its own: the database can't tell a second save folder from
+  a settings folder or another store's copy (DRAGON QUEST III's second location is its `Config`).
+- **Where it is offered.**
+  - **Add games:** the extra folders are listed under the game, ticked; untick to leave one out.
+  - **The game's page** in the agent: **Add** / **Don't sync**.
+  - **Once per start**, for games tracked before this release: an OS notification, and in the agent window a
+    one-game-at-a-time **More save folders found** prompt with every folder ticked. **Skip for now** leaves them on the
+    game's page and out of the prompt.
+  - The CLI's `scan` and `status` print *also found*, with the `add-path` command for each.
+- **Agent game page:** the save folders as a list (Main + extras), each with Change, and Remove on the extras (every
+  device; files stay). **Add save folder…** asks for a name and, optionally, "only these files". When this device's
+  files and the cloud's copy differ, it asks which to keep.
+- **Console:** one section per folder (template, include patterns, each machine's folder, what Latest holds with a
+  file list), add/remove for the fleet. Machines on an agent ≤ 0.6.0 are flagged *agent too old for several folders*.
+- **Deck:** every folder listed with its own Choose/Change, the browser sets the chosen one and asks *This Deck's files /
+  The cloud's copy*; Also found with Add / Don't sync.
 
-- **Any folders, anywhere.** A game keeps its main folder (`main`) and can have any number of extra folders. Each extra
-  folder has a **key**: 1–32 lower-case letters, digits or `-` (for example `settings`, `appdata`, `profile`).
-  - The key is only how machines recognise the same folder. Each machine has its own path for it, just as the main
-    folder already did.
-  - The demo used `states`, but nothing is emulator-specific.
-  - All of a game's folders sync together as one version.
-- **Hidden copies ("shadows").** A machine with no path for a folder keeps a hidden copy in its own data folder, under
-  `shadow/<game>/<key>/`. It receives that folder's files and sends them back on every push.
-  - Without it, that machine would push versions missing the folder, and others would push it back, forever.
-  - Example: Windows describes a folder as `<winLocalAppData>/…`. Plain WSL has no Proton prefix to resolve that in, so
-    WSL holds a hidden copy until it is given a folder.
-- **CLI (Phase 4).**
-  - `add-path <game> --key <k> --dir <folder>` adds a folder for every machine, or maps one this machine only holds as
-    a shadow. An empty target gets the shadow's files moved in; identical files map as-is.
-  - If the folder already holds different files, it refuses until you pass `--keep local` or `--keep cloud`.
-  - `remove-path <game> --key <k>` stops syncing that folder on every machine, within about 20 seconds. Files stay on disk.
-  - `status`, `list` and `doctor` show every folder; `doctor` gives the shadow's size.
-- **Other machines (Phase 4).** A newly added folder is adopted on every machine at once. A machine uses a folder when the
-  template points at one that exists there; otherwise it keeps a shadow.
-- **Scanners (Phase 5).** A game scanner can now declare extra folders, and they are adopted at enrollment. The
-  `emulator-saves` branch needs this next.
+## Maintainer decisions (recorded in Decisions.md)
+
+1. Suggestions stay on the agent (no server table), plus the start-up prompt; the console lists the folders and their
+   files.
+2. Minimum agent 0.7.0 → implemented as "flag ≤ 0.6.0" (the compare value is 0.6.1), because every build since v0.6.0
+   reports 0.6.1 and has the feature. Same flags for the released fleet.
+3. Add games: extra folders pre-ticked.
 
 ## Technical notes
 
-- `TrackedGame` gains `IncludeGlobs`, `ExtraPaths` (`TrackedSavePath`) and `RemovedPathKeys`. `Roots()` and `LocalHash()`
-  cover every folder, using the shadow for an unmapped key.
-- Every sync path covers all folders: push, pull, hash, settle, the open-file probe, the folder watchers, safety checks,
-  `hash`, `resolve-conflict` and the Deck's keep-local. A pull that meets an unknown key adopts it as a shadow.
-- `SyncEngine.MapSavePathAsync` holds the push semaphore and the game lock. Config writes keep any mapping already on
-  disk, so a daemon can't undo one the launch wrapper just made.
-- New route `DELETE /api/agent/games/{id}/save-paths/{key}`, audited under the machine. Local API: `TrackedGameDto.paths`,
-  plus `key`/`keep` on `/folder`. Event `savedir.needs_choice`. `openapi.json` and both `api-types.ts` changed by
-  additions only; the Decky contract (`id`/`path`) is unchanged.
-- Decisions (in `Decisions.md`): an agent-added folder is adopted fleet-wide at once; `remove-path` is fleet-wide; a
-  folder no template describes is added without a template.
-- **Review fixes** (commit `5970ff2`):
-  - Mapping onto files when this machine never received the folder now asks first, instead of ending in a conflict.
-  - `ExtraPaths` is swapped, never edited in place, across threads; removal runs under the game lock.
-  - An unanswered keep-local/cloud choice is not re-hashed every poll.
-  - A local mapping the server has not heard of is re-reported, not reverted.
-
-## Ludusavi manifest
-
-The manifest does not feed this yet. The scanner still uses the first of a game's manifest locations that exists, so
-other locations need `add-path` by hand.
-- **Phase 6 (Group C)** will offer them: "Also found: … — add as a save folder", for new and tracked games. Nothing is
-  added until the user confirms.
-- **Not covered by this design:**
-  - single-file entries: an `--include` filter on the file's folder approximates them;
-  - registry saves: `tasks/registry-saves`;
-  - a location nested inside another location.
-
-## UI
-
-None. The screens are Phase 7 (Group C).
+- `ManifestLoader.ResolveSaveLocations` keeps each folder's template; `ResolveSaveDirectories` projects it.
+- `ScanCandidate.AlternateSaveDirs` from both scanners; `FolderSuggestions` (keys, per-game suggestions, resolver per
+  tracked game); `TrackedGame.IgnoredFolders` / `DeferredFolders` via `AgentConfig.SaveGameFolderChoices`.
+- `SavePathEditor` holds add/remove for the CLI, the local API and the prompt. A *suggested* key moves on to the next free
+  one when the server has or had it.
+- `Enroller` adds the ticked folders. One the fleet already has (same key or template) is joined, never duplicated — a
+  test caught `appdata-2` before the fix.
+- New local routes: `GET /api/folder-suggestions`, `POST /api/folder-suggestions/answer`, `POST /api/games/{id}/paths`,
+  `DELETE /api/games/{id}/paths/{key}`. New server route: `GET /api/games/{id}/versions/{versionId}/folders`.
+- Notice `NoticeCatalog.FoldersFound` → agent-ui route `#games:folders`.
 
 ## Verified
 
-- **Tests:**
+| Check | Result |
+|---|---|
+| Unit | 247/247 (+19) |
+| `run-local-api-tests` | 119/119 (+6; with the new routes carved out of the token guard, 4 fail) |
+| `run-multipath-tests` | 39/39 |
+| `run-appearance-consistency-tests` | 46/46 |
+| Detection sweep, 300 games, seed 1 | 286/299 (95.7%) — identical to `main` |
+| `web` + `agent-ui` | lint, typecheck, build clean |
+| testenv (Windows + WSL + console) | steps 1–9 of the PR run by hand, with screenshots; it found two bugs, fixed in `7bbca5c` |
 
-  | Suite | Result |
-  |---|---|
-  | Unit | 228/228 (+21: `MultiPathAgentTests` 18, `EnrollDeclaredFoldersTests` 3 against a real server) |
-  | New `run-multipath-tests` (two machines, real CLI) | 39/39 |
-  | Agent | 47 |
-  | Delta upload | 33 |
-  | Concurrency | 26 |
-  | Hardening | 33 |
-  | Local API | 113 |
-  | Linux regression | 15 |
-  | Linux (WSL) | 201 pass / 2 fail, identical to `main` (the known WSLg pair) |
-  | `web` + `agent-ui` build | clean |
-
-- **Mutation check:** with shadows disabled, `run-multipath-tests` fails 14 checks and two sync cycles create 3 extra
-  versions.
-- **testenv rig:** steps are in the PR description. The demo folders are deleted (`C:\SLDemo`, `%LOCALAPPDATA%\SLDemo`,
-  WSL `~/sldemo`). `%LOCALAPPDATA%\SaveLocker-test` remains; run `.\tests\testenv.ps1 clean` to reset it.
-- **Not verified:** a full testenv pass by the maintainer, and anything on the real Deck.
+Not verified: the Deck target (none configured here), and Add games' pre-ticked list against a real Steam/Playnite
+candidate (automated tests cover the enrollment side).
 
 ## Open
 
-- Rename the demo key `states` to something neutral (for example `settings`) in the PR steps and test script: offered,
-  not decided.
-- Phase 6 confirm-before-adding versus automatic adoption: recommended confirm, not decided.
-- Next: testenv pass → merge #57 → rebase `emulator-saves` → Group C.
+- `-Only deck` pass, then merge (Group B's PR #57 first if it is still open), then rebase `emulator-saves`.
+- `docs/tasks/multiple-save-paths/` stays in `tasks/` until then — `emulator-saves/plan.md` links into it.

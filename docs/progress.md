@@ -3433,3 +3433,24 @@ None. The screens are Phase 7 (Group C).
   not decided.
 - Phase 6 confirm-before-adding versus automatic adoption: recommended confirm, not decided.
 - Next: testenv pass → merge #57 → rebase `emulator-saves` → Group C.
+
+---
+
+## 2026-10-05 — Multiple save paths Group C (Phases 6–7)
+
+**Branch:** `multiple-save-paths-group-c`, PR to the fork.
+
+### Request sequence
+
+1. Implement Group C; ask about anything unclear in the plan; give step-by-step testenv verification and a technical
+   and non-technical account; open a PR on the fork with branch `multiple-save-paths-group-c`.
+2. Three questions asked. Answers: suggestions on the agent only, plus a start-up prompt like the conflict one with
+   "Skip for now"; the console lists the extra folders and their files; minimum agent 0.7.0; Add games pre-ticked.
+
+### Verified
+
+- Unit 247/247, local-api 119/119 (mutation-checked), multipath 39/39, appearance 46/46, detection sweep identical to
+  `main` (286/299).
+- testenv by hand on Windows + WSL + console. It found agents on this branch flagged "too old" (they report 0.6.1) and
+  "Save here" counting only the main folder; both fixed in `7bbca5c`.
+- Not verified: the Deck.
