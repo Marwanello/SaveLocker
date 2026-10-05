@@ -913,6 +913,28 @@ public static class SaveArchive
     public static bool IsMarker(string archiveName) =>
         archiveName.StartsWith(KeysPrefix, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>The extra save folders an archive holds — one per marker, so an empty folder counts.</summary>
+    public static IReadOnlyList<string> ArchiveKeys(string zipPath)
+    {
+        using var zip = ZipFile.OpenRead(zipPath);
+        return zip.Entries
+            .Select(e => e.FullName)
+            .Where(IsMarker)
+            .Select(n => n[KeysPrefix.Length..])
+            .Where(k => SaveRoot.ValidateExtraKey(k) is null)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>Why these folders cannot be one game's (nested, an unscoped shared directory, a bad
+    /// key), or null when they can — the check every archive call makes, for a caller that wants to
+    /// refuse a mapping before it is saved rather than fail the next sync.</summary>
+    public static string? FolderRulesError(IReadOnlyList<SaveRoot> roots)
+    {
+        try { ValidateRoots(roots); return null; }
+        catch (ArgumentException ex) { return ex.Message; }
+    }
+
     /// <summary>
     /// A name in another folder's slice (<c>paths/</c>) or a marker (<c>keys/</c>): what the primary
     /// folder never lists, archives or deletes. Every other <c>.savelocker/</c> name is a plain file of

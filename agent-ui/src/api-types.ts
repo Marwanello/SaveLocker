@@ -2597,6 +2597,7 @@ export interface components {
             prefixPath: null | string;
             processName: null | string;
             store: string;
+            extraFolders?: null | components["schemas"]["SaveFolderDto"][];
         };
         CandidateLookupRequest: {
             name: string;
@@ -2699,11 +2700,15 @@ export interface components {
             error: string;
             /** @default false */
             needsConfirm: boolean;
+            /** @default false */
+            needsChoice: boolean;
         };
         FolderRequest: {
             path: null | string;
             /** @default false */
             confirm: boolean;
+            key?: null | string;
+            keep?: null | string;
         };
         FolderResponse: {
             path: null | string;
@@ -2863,6 +2868,13 @@ export interface components {
             desired: string;
             changed: boolean;
         };
+        SaveFolderDto: {
+            key: string;
+            label: null | string;
+            path: string;
+            mapped: boolean;
+            includeGlobs: string[];
+        };
         SavePathDto: {
             key: string;
             label: null | string;
@@ -2962,6 +2974,7 @@ export interface components {
             lastPushBytes?: null | number;
             /** Format: date-time */
             lastPushAt?: null | string;
+            paths?: null | components["schemas"]["SaveFolderDto"][];
         };
         VersionStatsDto: {
             /** Format: int32 */

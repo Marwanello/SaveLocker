@@ -58,6 +58,7 @@ artifacts/
 .verify-concurrency/
 .verify-server-bugbounty/
 .verify-delta-upload/
+.verify-multipath/
 .verify-console-security/
 .verify-winagent/
 .verify-detection/

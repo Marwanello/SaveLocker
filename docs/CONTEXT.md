@@ -1706,7 +1706,15 @@ just emulators, in 7 phases and 3 groups (`implementation-grouping.md`):
   `SaveRoot`s (layout, markers, one Ordinal hash order, per-slice restore checks); Phase 2 adds the migration
   `AddMultipleSavePaths`, key-aware path routes and `save-paths` add/remove. Nothing user-visible yet — no agent uses it.
   Suites: [[Build and Run]] → Suite baseline. Upgrade checked against a DB seeded by `main`'s server (orphans removed).
-- **Next:** Group B (agent sync core, reconcile/CLI, scanners declare extra paths). `emulator-saves` rebases after Group B.
+- **Group B shipped (2026-10-05, branch `multiple-save-paths-group-b`, PR to the fork, not merged):** Phase 3 the agent
+  hashes/pushes/pulls/watches every folder (`TrackedGame.Roots()`, shadows in `<state>/shadow/<game>/<key>/`,
+  `SyncEngine.MapSavePathAsync`); Phase 4 per-key reconcile, `add-path`/`remove-path`, local API `Paths` + keyed
+  `/folder`, doctor, ProtonRun; Phase 5 `ScanCandidate.ExtraSaveDirs` adopted by `Enroller`. The plan's open question
+  is settled in [[Decisions]] (adopt at once; `remove-path` fleet-wide; a folder with no template is still added).
+  New `tests/run-multipath-tests.ps1` (39, two machines) — counts in [[Build and Run]] → Suite baseline.
+  **Not yet run on the testenv rig or hardware.**
+- **Next:** the testenv pass for Group B (Windows + WSL, steps in the PR), then merge; `emulator-saves` rebases after
+  that (`plan.md` → *Rebase notes*), then Group C (manifest suggestions + UI).
 
 ---
 
