@@ -258,7 +258,7 @@ public sealed class CommandPoller : IDisposable
         var serverPaths = sg.ExtraPaths ?? Array.Empty<SavePathDto>();
         foreach (var gone in local.ExtraPaths.Select(p => p.Key).Where(k => serverPaths.All(s => s.Key != k)).ToList())
         {
-            local.ForgetExtraPath(gone, _config.StateDir);
+            if (!await _engine().ForgetSavePathAsync(local, gone)) continue;   // lock busy: next poll
             changed = true;
             _notify($"'{sg.Name}' no longer syncs its '{gone}' save folder — it was removed on the server.");
         }
@@ -270,8 +270,9 @@ public sealed class CommandPoller : IDisposable
             if (lp is null)
             {
                 lp = new TrackedSavePath { Key = sp.Key };
-                local.ExtraPaths.Add(lp);
-                local.RemovedPathKeys.Remove(sp.Key);
+                // New lists, never in-place edits: a push or the local API may be enumerating these.
+                local.ExtraPaths = [.. local.ExtraPaths, lp];
+                local.RemovedPathKeys = local.RemovedPathKeys.Where(k => k != sp.Key).ToList();
                 changed = true;
             }
 
@@ -284,9 +285,19 @@ public sealed class CommandPoller : IDisposable
                 changed = true;
             }
 
+            // A folder this machine mapped that the server has not heard of yet: tell it first. Until
+            // then (and for the rest of this pass, whose snapshot predates the report) the server's
+            // stored folder is the old one, and applying it would move the folder straight back.
+            var localWins = lp.IsMapped && lp.PathUnreported;
+            if (localWins && await ReportPathNowAsync(sg, lp))
+            {
+                lp.PathUnreported = false;
+                changed = true;
+            }
+
             // The server's stored folder for this machine first, as for the primary folder; else the
             // template, expanded here, when it names a folder that exists.
-            var fromServer = !string.IsNullOrWhiteSpace(sp.MachinePath);
+            var fromServer = !localWins && !string.IsNullOrWhiteSpace(sp.MachinePath);
             var want = fromServer
                 ? (SavePathGuard.Canonicalize(sp.MachinePath) == SavePathGuard.Canonicalize(lp.Directory) ? null : sp.MachinePath)
                 : lp.IsMapped ? null : ResolveExtraDir(sg, sp);
@@ -294,7 +305,7 @@ public sealed class CommandPoller : IDisposable
                 changed = true;
 
             if (!lp.IsMapped) continue;
-            if (!fromServer) ReportPathAsync(sg.Id, lp.Directory!, lp.Key);
+            if (!fromServer && !localWins) ReportPathAsync(sg.Id, lp.Directory!, lp.Key);
             if (string.IsNullOrWhiteSpace(sp.Template)) ReportTemplateAsync(sg, lp.Directory!, lp.Key);
         }
         return changed;
@@ -311,11 +322,36 @@ public sealed class CommandPoller : IDisposable
             : null;
     }
 
+    private async Task<bool> ReportPathNowAsync(GameDto sg, TrackedSavePath lp)
+    {
+        try
+        {
+            await _api().SetMachinePathAsync(sg.Id, lp.Directory!, lp.Key);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            AgentLogger.LogException($"CommandPoller.ReportPath {sg.Name}/{lp.Key}", ex);
+            return false;
+        }
+    }
+
     /// <summary>Folders already reported as not mappable, so a 20 s poll says so once, not forever.</summary>
     private readonly HashSet<string> _unmappedReported = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Mappings that ended in <see cref="MapFolderResult.NeedsChoice"/>, with a stamp of both copies
+    /// when they did. Answering that hashes both folders under the game's lock, so it is asked again
+    /// only once something it depends on changed — not every 20 s for as long as nobody answers.
+    /// </summary>
+    private readonly Dictionary<string, string> _awaitingChoice = new(StringComparer.Ordinal);
+
     private async Task<bool> TryMapFolderAsync(TrackedGame local, GameDto sg, string key, string dir, bool fromServer)
     {
+        var id = $"{sg.Id:N}/{key}/{dir}";
+        var stamp = ChoiceStamp(local, key, dir);
+        if (_awaitingChoice.TryGetValue(id, out var asked) && asked == stamp) return false;
+
         MapFolderResult result;
         try { result = await _engine().MapSavePathAsync(local, key, dir); }
         catch (Exception ex)
@@ -324,13 +360,16 @@ public sealed class CommandPoller : IDisposable
             return false;
         }
 
+        if (result.NeedsChoice) _awaitingChoice[id] = stamp;
+        else _awaitingChoice.Remove(id);
+
         if (result.Ok)
         {
             _notify($"Mapped '{sg.Name}' save folder '{key}' to {result.Directory}.");
             return true;
         }
 
-        if (!_unmappedReported.Add($"{sg.Id:N}/{key}/{dir}")) return false;
+        if (!_unmappedReported.Add(id)) return false;
         if (result.NeedsChoice)
             _health?.Report(AgentEventCodes.SaveFolderNeedsChoice, AgentEventSeverity.Warning,
                 $"'{sg.Name}' save folder '{key}': {result.Error} " +
@@ -341,6 +380,37 @@ public sealed class CommandPoller : IDisposable
                 $"(server sent '{dir}'). It keeps syncing through its shadow copy.", sg.Id);
         AgentLogger.Log($"Did not map '{sg.Name}' save folder '{key}' to '{dir}': {result.Error}");
         return false;
+    }
+
+    /// <summary>
+    /// What a <see cref="SyncEngine.MapSavePathAsync"/> answer depends on, read from file metadata only:
+    /// the folder's scope, and each file's name, size and time in both the target and the copy this
+    /// machine syncs now (whether that copy exists at all included).
+    /// </summary>
+    private string ChoiceStamp(TrackedGame game, string key, string dir)
+    {
+        var path = game.ExtraPaths.FirstOrDefault(p => p.Key == key);
+        if (path is null) return "";
+        var source = path.Directory ?? TrackedGame.ShadowDir(_config.StateDir, game.GameId, key);
+        var sb = new System.Text.StringBuilder(string.Join(';', path.IncludeGlobs)).Append('|');
+        foreach (var folder in new[] { source, dir })
+        {
+            sb.Append(Directory.Exists(folder) ? '+' : '-').Append(folder).Append('|');
+            try
+            {
+                foreach (var f in SaveArchive.ListSaveFiles(new[] { SaveRoot.Primary(folder, path.IncludeGlobs) }))
+                {
+                    var info = new FileInfo(f.FullPath);
+                    sb.Append(f.ArchiveName).Append('|').Append(info.Exists ? info.Length : -1)
+                      .Append('|').Append(info.Exists ? info.LastWriteTimeUtc.Ticks : 0).Append(';');
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                sb.Append('?').Append(ex.GetType().Name);
+            }
+        }
+        return sb.ToString();
     }
 
     /// <summary>

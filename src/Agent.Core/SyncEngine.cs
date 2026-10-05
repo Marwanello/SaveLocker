@@ -1004,7 +1004,11 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// <item>nothing to carry, or the new folder already holds exactly that: just map it;</item>
     /// <item>the new folder has none of this folder's files: the copy moves in;</item>
     /// <item>both hold different files: <paramref name="keep"/> decides, and without it nothing
-    /// changes (<see cref="MapFolderResult.NeedsChoice"/>).</item>
+    /// changes (<see cref="MapFolderResult.NeedsChoice"/>);</item>
+    /// <item>no pull has brought this folder here yet (its shadow was never created) and the new
+    /// folder has files: also a choice, because an empty copy says nothing about what the fleet
+    /// holds — mapping those files silently would make the next sync a conflict. Only
+    /// <see cref="KeepSide.Local"/> can answer it (the machine adding the folder passes that).</item>
     /// </list>
     /// A shadow is deleted once its files have a real home. The game's hash only changes when the
     /// local copy is kept, which is exactly when there is something new to push.
@@ -1031,11 +1035,25 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         try
         {
             using var crossProcess = AgentStateLock.ForGame(game.GameId, _config.StateDir, GameLockTimeout, ct);
-            var source = path.Directory ?? TrackedGame.ShadowDir(_config.StateDir, game.GameId, key);
+            var shadow = TrackedGame.ShadowDir(_config.StateDir, game.GameId, key);
+            var source = path.Directory ?? shadow;
             var from = new[] { SaveRoot.Primary(source, path.IncludeGlobs) };
             var to = new[] { SaveRoot.Primary(target, path.IncludeGlobs) };
             var carried = SaveArchive.ListSaveFiles(from).Count;
             var present = SaveArchive.ListSaveFiles(to).Count;
+
+            // A pull restores every key its archive marks, creating the shadow even for an empty slice,
+            // so no shadow at all means nothing was received yet — not that the fleet's copy is empty.
+            if (path.Directory is null && !Directory.Exists(shadow) && present > 0 && keep != KeepSide.Local)
+                return keep == KeepSide.Cloud
+                    ? new MapFolderResult(false,
+                        $"This machine has no synced copy of the '{key}' folder yet. Pull the game first, then map it.")
+                    : new MapFolderResult(false,
+                        $"{target} already holds files, and this machine has not received the '{key}' folder from " +
+                        "the server yet, so it cannot tell whether they match the fleet's. Pull the game first, or " +
+                        "keep local (that folder's files).",
+                        NeedsChoice: true);
+
             var differ = carried > 0 && present > 0 &&
                          SaveArchive.HashDirectory(from) != SaveArchive.HashDirectory(to);
 
@@ -1053,6 +1071,9 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
 
             var wasShadow = path.Directory is null;
             path.Directory = target;
+            // Until the server hears of it, its stored folder for this machine is the old one, and the
+            // poller would otherwise apply that straight back (CommandPoller.ReconcileFoldersAsync).
+            path.PathUnreported = true;
             _config.SaveGameFolders(game);
             if (wasShadow) game.DeleteShadow(_config.StateDir, key);
             _onFoldersChanged?.Invoke();
@@ -1065,6 +1086,28 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         catch (SaveArchive.UnsafeArchiveException ex)
         {
             return new MapFolderResult(false, ex.Message);
+        }
+        finally { gate.Release(); }
+    }
+
+    /// <summary>
+    /// <see cref="TrackedGame.ForgetExtraPath"/> under the game's locks: it deletes the folder's shadow,
+    /// which a pull may be restoring into at that moment. False when the folder was not there, or the
+    /// lock was not free — the caller tries again on its next pass.
+    /// </summary>
+    public async Task<bool> ForgetSavePathAsync(TrackedGame game, string key, CancellationToken ct = default)
+    {
+        var gate = _pushLocks.GetOrAdd(game.GameId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
+        {
+            using var crossProcess = AgentStateLock.ForGame(game.GameId, _config.StateDir, GameLockTimeout, ct);
+            return game.ForgetExtraPath(key, _config.StateDir);
+        }
+        catch (AgentStateLockException ex)
+        {
+            _log($"[{game.Name}] could not drop the removed save folder '{key}' yet: {ex.Message}");
+            return false;
         }
         finally { gate.Release(); }
     }
@@ -1100,7 +1143,8 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             .ToList();
         if (added.Count == 0) return;
 
-        game.ExtraPaths.AddRange(added.Select(k => new TrackedSavePath { Key = k }));
+        // A new list, never an in-place AddRange: other threads enumerate this one (TrackedGame.Roots).
+        game.ExtraPaths = [.. game.ExtraPaths, .. added.Select(k => new TrackedSavePath { Key = k })];
         _config.SaveGameFolders(game);
         _log($"[{game.Name}] the server's save has new folder(s) ({string.Join(", ", added)}); " +
              "kept as shadow copies until this machine maps them.");

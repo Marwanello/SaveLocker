@@ -290,7 +290,12 @@ public static class ProtonRun
                     continue;
                 }
                 log($"mapped '{game.Name}' save folder '{p.Key}' to {result.Directory} (resolved inside the prefix).");
-                try { await api.SetMachinePathAsync(game.GameId, result.Directory!, p.Key); }
+                try
+                {
+                    await api.SetMachinePathAsync(game.GameId, result.Directory!, p.Key);
+                    p.PathUnreported = false;
+                    config.SaveGameFolders(game);
+                }
                 catch (Exception ex) { log($"could not report the folder to the server: {ex.Message}"); }
             }
             catch (Exception ex) { log($"mapping '{game.Name}' save folder '{p.Key}' failed: {ex.Message}"); }

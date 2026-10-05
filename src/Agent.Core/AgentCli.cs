@@ -305,7 +305,12 @@ public static class AgentCli
                         return 1;
                     }
                     var dir = game.ExtraPaths.First(p => p.Key == key).Directory;
-                    game.ForgetExtraPath(key, config.StateDir);
+                    if (!await Engine().ForgetSavePathAsync(game, key))
+                    {
+                        Console.WriteLine($"Removed on the server. '{game.Name}' is busy here, so this machine drops " +
+                                          $"the '{key}' folder on the agent's next poll.");
+                        break;
+                    }
                     config.SaveGameFolders(game);
                     Console.WriteLine($"'{game.Name}' no longer syncs its '{key}' save folder, on any machine." +
                                       (dir is null ? "" : $" Its files stay where they are ({dir})."));
@@ -874,7 +879,9 @@ public static class AgentCli
                 : $"Added save folder '{key}' to '{game.Name}' for every machine: {template}");
         }
 
-        var result = await engine.MapSavePathAsync(game, key, canonical, keep);
+        // A folder this command just created on the server has no copy anywhere but here: its files
+        // are the folder's content by definition, so there is nothing to choose between.
+        var result = await engine.MapSavePathAsync(game, key, canonical, existing is null ? keep ?? KeepSide.Local : keep);
         if (!result.Ok)
         {
             Console.Error.WriteLine(result.NeedsChoice
@@ -882,7 +889,16 @@ public static class AgentCli
                 : $"Could not map '{key}': {result.Error}");
             return 1;
         }
-        await api.SetMachinePathAsync(game.GameId, canonical, key);
+        try
+        {
+            await api.SetMachinePathAsync(game.GameId, canonical, key);
+            game.ExtraPaths.First(p => p.Key == key).PathUnreported = false;
+            config.SaveGameFolders(game);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            Console.WriteLine($"Note: could not tell the server yet ({ex.Message}); the agent does on its next poll.");
+        }
         Console.WriteLine($"'{game.Name}' save folder '{key}' -> {canonical}");
         return 0;
     }

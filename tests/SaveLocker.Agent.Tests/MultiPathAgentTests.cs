@@ -222,6 +222,88 @@ public sealed class MultiPathAgentTests : IDisposable
     }
 
     [Fact]
+    public async Task A_folder_never_received_here_asks_before_mapping_onto_files()
+    {
+        // The poller learns of a key before this machine has pulled it: no shadow exists, so an empty
+        // copy says nothing about the fleet's files, and mapping these silently would end in a conflict.
+        var (engine, _, game) = Rig();
+        var target = Dir("real-states");
+        Write(target, "quick.state", "this machine's own states");
+
+        var asked = await engine.MapSavePathAsync(game, "states", target);
+        Assert.False(asked.Ok);
+        Assert.True(asked.NeedsChoice);
+        Assert.Null(game.ExtraPaths[0].Directory);
+
+        var cloud = await engine.MapSavePathAsync(game, "states", target, KeepSide.Cloud);
+        Assert.False(cloud.Ok);
+        Assert.False(cloud.NeedsChoice);   // there is no synced copy to take: pull first
+        Assert.Equal("this machine's own states", File.ReadAllText(Path.Combine(target, "quick.state")));
+
+        var local = await engine.MapSavePathAsync(game, "states", target, KeepSide.Local);
+        Assert.True(local.Ok, local.Error);
+        Assert.Equal(target, game.ExtraPaths[0].Directory);
+    }
+
+    [Fact]
+    public async Task A_received_but_empty_copy_maps_onto_files_without_asking()
+    {
+        var (engine, config, game) = Rig();
+        Directory.CreateDirectory(Shadow(config, game));   // a pull restored the key's (empty) slice
+        var target = Dir("real-states");
+        Write(target, "quick.state", "bytes");
+
+        var result = await engine.MapSavePathAsync(game, "states", target);
+
+        Assert.True(result.Ok, result.Error);
+    }
+
+    [Fact]
+    public async Task Mapping_marks_the_folder_unreported_until_the_server_hears_of_it()
+    {
+        var (engine, config, game) = Rig();
+        Assert.True((await engine.MapSavePathAsync(game, "states", Dir("real-states"))).Ok);
+
+        Assert.True(game.ExtraPaths[0].PathUnreported);
+        Assert.True(AgentConfig.Load(config.ConfigPath).Games.Single().ExtraPaths.Single().PathUnreported);
+    }
+
+    [Fact]
+    public async Task Saving_folders_from_a_stale_copy_keeps_a_mapping_another_process_wrote()
+    {
+        var (_, config, game) = Rig();
+        // The launch wrapper's own process maps the folder and writes it to disk.
+        var other = AgentConfig.Load(config.ConfigPath);
+        var otherEngine = new SyncEngine(other, ApiClient.For(other));
+        var target = Dir("real-states");
+        Assert.True((await otherEngine.MapSavePathAsync(other.Games.Single(), "states", target)).Ok);
+
+        // This process still holds "not mapped" and writes its folders (a pull met a new key).
+        game.ExtraPaths = [.. game.ExtraPaths, new TrackedSavePath { Key = "cfg" }];
+        config.SaveGameFolders(game);
+
+        var onDisk = AgentConfig.Load(config.ConfigPath).Games.Single();
+        Assert.Equal(target, onDisk.ExtraPaths.Single(p => p.Key == "states").Directory);
+        Assert.Contains(onDisk.ExtraPaths, p => p.Key == "cfg");
+        Assert.Equal(target, game.ExtraPaths.Single(p => p.Key == "states").Directory);
+    }
+
+    [Fact]
+    public async Task Forgetting_under_the_lock_swaps_the_list_rather_than_editing_it()
+    {
+        var (engine, config, game) = Rig();
+        Write(Shadow(config, game), "quick.state", "bytes");
+        var seenByAPush = game.ExtraPaths;   // a push on another thread is enumerating this
+
+        Assert.True(await engine.ForgetSavePathAsync(game, "states"));
+
+        Assert.Single(seenByAPush);
+        Assert.Empty(game.ExtraPaths);
+        Assert.Contains("states", game.RemovedPathKeys);
+        Assert.False(Directory.Exists(Shadow(config, game)));
+    }
+
+    [Fact]
     public async Task The_settle_gate_waits_on_every_real_folder()
     {
         var a = Dir("a");

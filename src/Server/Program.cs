@@ -517,7 +517,8 @@ agent.MapDelete("/agent/games/{id:guid}/save-paths/{key}", async (Guid id, strin
 {
     var (ok, error) = await sync.RemoveSavePathAsync(id, key, http.CurrentMachine().Id);
     return ok ? Results.NoContent() : error == "not_found" ? Results.NotFound() : Results.BadRequest(error);
-});
+}).Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
+  .Produces(StatusCodes.Status404NotFound);
 
 // ---- Agent command channel ----
 agent.MapGet("/agent/commands", async (HttpContext http, SyncService sync) =>

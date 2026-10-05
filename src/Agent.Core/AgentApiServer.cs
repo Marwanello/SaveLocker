@@ -610,12 +610,15 @@ public sealed class AgentApiServer : IDisposable
                 // shadow's files over, so this is never a bare assignment.
                 if (game.ExtraPaths.All(p => p.Key != key))
                     return TypedResults.BadRequest(new ErrorResponse($"'{game.Name}' has no save folder called '{key}'."));
-                KeepSide? keep = body.Keep?.Trim().ToLowerInvariant() switch
+                KeepSide? keep;
+                switch (body.Keep?.Trim().ToLowerInvariant())
                 {
-                    "local" => KeepSide.Local,
-                    "cloud" => KeepSide.Cloud,
-                    _ => null,
-                };
+                    case null or "": keep = null; break;
+                    case "local": keep = KeepSide.Local; break;
+                    case "cloud": keep = KeepSide.Cloud; break;
+                    default:
+                        return TypedResults.BadRequest(new ErrorResponse("keep must be 'local' or 'cloud'."));
+                }
                 var extraCheck = SavePathGuard.CheckFolder(game, key, body.Path, _config.StateDir);
                 if (!extraCheck.Ok)
                     return TypedResults.BadRequest(new ErrorResponse($"Can't use that folder: {extraCheck.Reason}"));
@@ -635,7 +638,12 @@ public sealed class AgentApiServer : IDisposable
                 _onGamesChanged?.Invoke();
                 if (!string.IsNullOrEmpty(_config.ApiKey))
                 {
-                    try { await ApiClient.For(_config).SetMachinePathAsync(id, mapped.Directory!, key); }
+                    try
+                    {
+                        await ApiClient.For(_config).SetMachinePathAsync(id, mapped.Directory!, key);
+                        game.ExtraPaths.First(p => p.Key == key).PathUnreported = false;
+                        _config.SaveGameFolders(game);
+                    }
                     catch (Exception ex) { AgentLogger.LogException("AgentApiServer.SetMachinePath", ex); }
                 }
                 return TypedResults.Ok(new OkResponse());

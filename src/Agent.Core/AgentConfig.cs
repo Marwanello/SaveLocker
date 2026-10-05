@@ -740,20 +740,18 @@ public sealed class AgentConfig
     /// pull meeting a folder key it did not know, a mapping moving a shadow in). See
     /// <see cref="MutateGameUnderLock"/>.
     /// </summary>
-    public void SaveGameFolders(TrackedGame game)
-    {
-        var dir = game.SaveDirectory;
-        var include = game.IncludeGlobs.ToList();
-        var extras = game.ExtraPaths.Select(p => p.Clone()).ToList();
-        var removed = game.RemovedPathKeys.ToList();
+    public void SaveGameFolders(TrackedGame game) =>
         MutateGameUnderLock(game.GameId, g =>
         {
-            g.SaveDirectory = dir;
-            g.IncludeGlobs = include.ToList();
-            g.ExtraPaths = extras.Select(p => p.Clone()).ToList();
-            g.RemovedPathKeys = removed.ToList();
+            if (ReferenceEquals(g, game)) return;
+            // As in SaveGameSyncState: a folder another process mapped (the launch wrapper) wins over
+            // this copy's "not mapped", or writing it back would drop that folder from the next push.
+            game.KeepMappedFolders(g);
+            g.SaveDirectory = game.SaveDirectory;
+            g.IncludeGlobs = game.IncludeGlobs.ToList();
+            g.ExtraPaths = game.ExtraPaths.Select(p => p.Clone()).ToList();
+            g.RemovedPathKeys = game.RemovedPathKeys.ToList();
         }, source: game);
-    }
 
     public TrackedGame? FindGame(string name) =>
         Games.FirstOrDefault(g => string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase));
@@ -919,7 +917,10 @@ public sealed class TrackedGame
     {
         foreach (var p in ExtraPaths)
             if (!p.IsMapped && stored.ExtraPaths.FirstOrDefault(s => s.Key == p.Key) is { IsMapped: true } s)
+            {
                 p.Directory = s.Directory;
+                p.PathUnreported = s.PathUnreported;
+            }
     }
 
     /// <summary>
@@ -929,8 +930,10 @@ public sealed class TrackedGame
     /// </summary>
     public bool ForgetExtraPath(string key, string stateDir)
     {
-        if (ExtraPaths.RemoveAll(p => p.Key == key) == 0) return false;
-        if (!RemovedPathKeys.Contains(key)) RemovedPathKeys.Add(key);
+        if (ExtraPaths.All(p => p.Key != key)) return false;
+        // New lists, never in-place edits: a push or the local API may be enumerating these right now.
+        ExtraPaths = ExtraPaths.Where(p => p.Key != key).ToList();
+        if (!RemovedPathKeys.Contains(key)) RemovedPathKeys = [.. RemovedPathKeys, key];
         DeleteShadow(stateDir, key);
         return true;
     }
@@ -998,12 +1001,15 @@ public sealed class TrackedSavePath
     /// <summary>This machine's folder, or null: not mapped here, synced through its shadow.</summary>
     public string? Directory { get; set; }
     public List<string> IncludeGlobs { get; set; } = new();
+    /// <summary>This machine mapped <see cref="Directory"/> and the server may not know yet: until it
+    /// does, its stored folder for this machine is stale and must not be applied back over this one.</summary>
+    public bool PathUnreported { get; set; }
 
     [JsonIgnore] public bool IsMapped => !string.IsNullOrWhiteSpace(Directory);
 
     public TrackedSavePath Clone() => new()
     {
         Key = Key, Label = Label, Template = Template, Directory = Directory,
-        IncludeGlobs = IncludeGlobs.ToList(),
+        IncludeGlobs = IncludeGlobs.ToList(), PathUnreported = PathUnreported,
     };
 }
