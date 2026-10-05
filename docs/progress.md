@@ -3383,6 +3383,11 @@ able to hold them.
   additions only; the Decky contract (`id`/`path`) is unchanged.
 - Decisions (in `Decisions.md`): an agent-added folder is adopted fleet-wide at once; `remove-path` is fleet-wide; a
   folder no template describes is added without a template.
+- **Review fixes** (commit `5970ff2`):
+  - Mapping onto files when this machine never received the folder now asks first, instead of ending in a conflict.
+  - `ExtraPaths` is swapped, never edited in place, across threads; removal runs under the game lock.
+  - An unanswered keep-local/cloud choice is not re-hashed every poll.
+  - A local mapping the server has not heard of is re-reported, not reverted.
 
 ### Ludusavi manifest
 
@@ -3405,7 +3410,7 @@ None. The screens are Phase 7 (Group C).
 
   | Suite | Result |
   |---|---|
-  | Unit | 223/223 (+16: `MultiPathAgentTests` 13, `EnrollDeclaredFoldersTests` 3 against a real server) |
+  | Unit | 228/228 (+21: `MultiPathAgentTests` 18, `EnrollDeclaredFoldersTests` 3 against a real server) |
   | New `run-multipath-tests` (two machines, real CLI) | 39/39 |
   | Agent | 47 |
   | Delta upload | 33 |
