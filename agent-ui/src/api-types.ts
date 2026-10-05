@@ -2713,6 +2713,8 @@ export interface components {
             keep?: null | string;
             /** @default false */
             confirm: boolean;
+            /** @default false */
+            freeKey: boolean;
         };
         AddFolderResponse: {
             key: string;
