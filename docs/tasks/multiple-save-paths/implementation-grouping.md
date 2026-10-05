@@ -9,7 +9,7 @@ updated as each one ships.
 | Group | Contents | Status |
 |---|---|---|
 | A — Foundation | Phases 1–2 (archive core, server model + wire) | ✅ Done 2026-10-04 — branch `multiple-save-paths-group-a`; nothing user-visible yet, every check automated |
-| B — End to end | Phases 3–5 (agent sync core, reconcile/CLI/local API/doctor, scanners declare extra paths) | ⏳ Not started |
+| B — End to end | Phases 3–5 (agent sync core, reconcile/CLI/local API/doctor, scanners declare extra paths) | ✅ Done 2026-10-05 — branch `multiple-save-paths-group-b`; automated two-machine suite `run-multipath-tests` 39/39; the testenv (Windows + WSL) pass is still to do |
 | C — Suggestions + UI | Phases 6–7 (manifest suggestions, agent-ui/dashboard/Deck) | ⏳ Not started |
 
 ## Groups

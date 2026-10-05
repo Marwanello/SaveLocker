@@ -20,9 +20,9 @@ requirements the emulator branch found. This file supersedes its "proposed phase
 |---|---|
 | 1 — Archive core | ✅ Shipped 2026-10-04 — `SaveRoot` + multi-root `SaveArchive`, include primitive ported; `MultiRootArchiveTests` 17 + `IncludeGlobTests` 9, every guard mutation-checked; unit 207/207, hardening 33, delta 33 |
 | 2 — Server model + wire | ✅ Shipped 2026-10-04 — migration `AddMultipleSavePaths` (only the leaf `MachineSavePaths` is rebuilt; orphans deleted first), key-aware path/template routes, `save-paths` add/remove (admin + agent), DTOs additive (API diffs: additions only). Upgrade checked by seeding a DB with `main`'s server (plus orphan rows) and starting this one on it. `run-console-security-tests` 352 (+44, `SP-01`; review fixes 2026-10-05: removed keys retired, agent paths templates only, include scopes editable), `run-server-bugbounty-tests` 216, `run-health-tests` 33 |
-| 3 — Agent sync core | ⏳ Not started |
-| 4 — Reconcile, CLI, local API, doctor | ⏳ Not started |
-| 5 — Scanners declare extra paths | ⏳ Not started |
+| 3 — Agent sync core | ✅ Shipped 2026-10-05 — `Roots()`/`LocalHash()`, shadows, `MapSavePathAsync`, multi-folder settle/lock probe/watchers; `MultiPathAgentTests` 13; unit 220, agent 47, delta 33, concurrency 26, hardening 33 |
+| 4 — Reconcile, CLI, local API, doctor | ✅ Shipped 2026-10-05 — per-key reconcile, `add-path`/`remove-path` (+ agent `DELETE …/save-paths/{key}`), `Paths` + keyed `/folder`, doctor, ProtonRun; new `run-multipath-tests` 39 (two machines, mutation-checked); local-api 113. **Not yet run on the testenv rig** |
+| 5 — Scanners declare extra paths | ✅ Shipped 2026-10-05 — `ScanCandidate.IncludeGlobs`/`ExtraSaveDirs`, Enroller adopts and compares; `EnrollDeclaredFoldersTests` 3 against a real server; unit 223 |
 | 6 — Manifest suggestions | ⏳ Not started |
 | 7 — UI | ⏳ Not started |
 
@@ -191,9 +191,12 @@ conflict that blocks launches. Emulators across OSes will hit this often; it is 
 - **Agents define paths generically.** An agent adding a path (`/agent/games/{id}/save-paths`, or
   `extraPaths` when it creates a game) defines it for every machine, so its template must be a real
   template, as `/agent/games/{id}/template` already requires. Literal paths are the console's.
-  - **Open for Group B:** whether a path an agent adds to an *existing* game should wait for console
-    confirmation before other machines adopt it (as scan candidates do). Phase 5's declared extras and
-    Phase 6's user-confirmed suggestions both go through this route; decide before wiring the poller.
+  - **Decided for Group B (maintainer, 2026-10-05):** a path an agent adds to an *existing* game is
+    adopted by the other machines straight away — no console confirmation. Each machine maps it only if
+    its template resolves to a folder that already exists there; otherwise it keeps a shadow. The CLI's
+    `remove-path` removes a folder **fleet-wide** (new agent route `DELETE
+    /api/agent/games/{id}/save-paths/{key}`), and `add-path` on a folder no token describes adds the key
+    with no template (other machines shadow it until their own folder is set).
 - **Agent local API.** `TrackedGameDto` gets a trailing optional `Paths` field. `id`/`path` stay frozen:
   `path` is the primary path, `""` when unmapped. `/api/games/{id}/folder` without a key means `main`.
   The pre-launch, sync-status, alias and pull/push-toggle routes don't change shape. Only what `inSync`
