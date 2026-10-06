@@ -2816,7 +2816,8 @@ export interface components {
             store: string;
             extraFolders?: null | components["schemas"]["SaveFolderDto"][];
             alsoFound?: null | components["schemas"]["SaveFolderDto"][];
-            enrolled?: boolean;
+            /** @default false */
+            enrolled: boolean;
         };
         CandidateLookupRequest: {
             name: string;
