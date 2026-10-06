@@ -383,7 +383,8 @@ public sealed class AgentApiServer : IDisposable
                 .GroupBy(c => c.Id)
                 .ToDictionary(g => g.Key, g => g.SelectMany(c => c.Paths ?? Array.Empty<string>()).ToArray());
             var (enrolled, skipped) = await _enroll(candidates, body.Ids, alsoSync);
-            return TypedResults.Ok(new EnrollResponse(enrolled, skipped));
+            return TypedResults.Ok(new EnrollResponse(enrolled, skipped,
+                Enroller.Progress.Notes is { Count: > 0 } notes ? notes.ToArray() : null));
         });
 
         // Read by the Add games page while its POST /api/enroll is still open: enrolling creates each
@@ -687,9 +688,11 @@ public sealed class AgentApiServer : IDisposable
                 // The canonical form is stored, not the typed text: a relative path or a path with
                 // a trailing separator must not reach the server as a different string than the one
                 // that was validated.
+                // A game set up here by picking its folder, not by a scan: it was added by hand. Moving the
+                // folder of one already set up says nothing about how it was found, and stamping it here would
+                // keep a scan from ever recording the real answer for a game enrolled before sources were.
+                if (!game.IsEnrolledHere) game.Source ??= GameSources.Manual(GameSources.FolderPickedInAgent);
                 game.SaveDirectory = check.Canonical!;
-                // A game set up here by picking its folder, not by a scan: it was added by hand.
-                game.Source ??= GameSources.Manual(GameSources.FolderPickedInAgent);
                 // Save first: watchers must be built from the config that is on disk, never from
                 // one a concurrent write is about to supersede.
                 try { _config.Save(); }
@@ -1654,9 +1657,10 @@ public sealed class AgentApiServer : IDisposable
             candidate.AlternateSaveDirs is { Count: > 0 } also
                 ? also.Select(a => new SaveFolderDto(a.Key, null, a.Dir, false, Array.Empty<string>())).ToArray()
                 : null,
-            _config.FindGame(candidate.Name) is { IsEnrolledHere: true },
+            Enroller.TrackedFor(_config, candidate) is { IsEnrolledHere: true },
             candidate.EmulatorName,
-            candidate.EmulatorSystem)).ToArray();
+            candidate.EmulatorSystem,
+            candidate.EmulatorRom)).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -1753,7 +1757,9 @@ public sealed record CandidateDto(
     /// A game adopted from the server with no folder on this machine is not enrolled: adding it maps it.</summary>
     bool Enrolled = false,
     // Which emulator and console, for an emulator save (null otherwise) — the Add games filter's keys.
-    string? EmulatorName = null, string? EmulatorSystem = null);
+    string? EmulatorName = null, string? EmulatorSystem = null,
+    // The save file's own name ("Chrono Trigger (Japan)"): two ROMs can share a title.
+    string? EmulatorRom = null);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the
@@ -2037,7 +2043,9 @@ public sealed record ErrorResponse(string Error, bool NeedsConfirm = false, bool
     /// predate <see cref="NeedsConfirm"/>; newer ones drop it and ask the question in their own words.</summary>
     public const string ConfirmHint = " Re-send with confirm to use it anyway.";
 }
-public sealed record EnrollResponse(int Enrolled, int Skipped);
+/// <param name="Notes">Why each refused game was not added ("Chrono Trigger: the server's …"), one line each;
+/// null when every skip was a game already set up here.</param>
+public sealed record EnrollResponse(int Enrolled, int Skipped, string[]? Notes = null);
 public sealed record EnrollProgressDto(bool Active, int Index, int Total, string? Game, string Step, int Enrolled, int Skipped);
 public sealed record RegisterResponse(string MachineName);
 public sealed record FolderResponse(string? Path);

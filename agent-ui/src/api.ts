@@ -66,7 +66,7 @@ export const api = {
   rescan: () => post<Candidate[]>('/api/candidates/rescan'),
   // `alsoSync` names, per candidate, the "Also found" folders to add with it; a candidate left out adds none.
   enroll: (ids: number[], alsoSync?: { id: number; paths: string[] }[]) =>
-    post<{ enrolled: number; skipped: number }>('/api/enroll', { ids, alsoSync }),
+    post<{ enrolled: number; skipped: number; notes?: string[] | null }>('/api/enroll', { ids, alsoSync }),
   // Asked while enroll() is still open: which game and which step the agent is on.
   enrollProgress: () => req<EnrollProgress>('/api/enroll/progress'),
   // identityCleared is true when the server URL moved to a different origin: the machine key, id

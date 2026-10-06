@@ -236,7 +236,8 @@ export function AddGamesView({ onEnrolled }: Props) {
       const result = await api.enroll([...checked], alsoSync)
       setStatus(
         `Added ${result.enrolled} game${result.enrolled === 1 ? '' : 's'}.` +
-        (result.skipped > 0 ? ` Skipped ${result.skipped} already tracked.` : '')
+        (result.skipped > (result.notes?.length ?? 0) ? ` Skipped ${result.skipped - (result.notes?.length ?? 0)} already tracked.` : '') +
+        (result.notes?.length ? ` Not added: ${result.notes.join(' ')}` : '')
       )
       if (result.enrolled > 0) setEnrolled(true)
       setChecked(new Set())
@@ -427,6 +428,8 @@ export function AddGamesView({ onEnrolled }: Props) {
                 <span className="sl-check-row__title">{c.name}</span>
                 <Chip>{c.source}</Chip>
                 {c.emulatorName && <Chip>{c.emulatorName}</Chip>}
+                {/* The save file's own name: two ROMs (two regions, two consoles) can share a title. */}
+                {c.emulatorRom && c.emulatorRom !== c.name && <Chip>{c.emulatorRom}</Chip>}
                 {/* Only when it adds something the source does not already say. */}
                 {c.store && c.store !== 'Unknown' && c.store !== 'Steam' && (
                   <Chip>{STORES.find(s => s.id === c.store)?.label ?? c.store}</Chip>

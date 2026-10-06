@@ -18,9 +18,11 @@ public static class GameSources
         {
             case ScanSource.Emulator:
                 if (SystemLabel(c.EmulatorSystem) is { } system) tags.Add(system);
+                // The folder is its real path, so it says Flatpak but never EmuDeck: EmuDeck's saves folders
+                // are links into the emulator's own. The scanner says which root it came through.
                 var dir = (c.SuggestedSaveDir ?? "").Replace('\\', '/');
                 if (dir.Contains("/.var/app/", StringComparison.Ordinal)) tags.Add("Flatpak");
-                if (dir.Contains("/saves/retroarch/", StringComparison.OrdinalIgnoreCase)) tags.Add("EmuDeck");
+                if (c.ViaEmuDeck) tags.Add("EmuDeck");
                 return Make(GameSourceKinds.Emulator, c.EmulatorName ?? "Emulator", tags);
             case ScanSource.SteamInstalled:
                 if (c.SteamAppId is { } appId) tags.Add("AppID " + appId);
@@ -44,7 +46,11 @@ public static class GameSources
     public static GameSourceDto Manual(string detail) => new(GameSourceKinds.Manual, detail);
 
     private static GameSourceDto Make(string kind, string detail, List<string> tags) =>
-        new(kind, detail, tags.Count == 0 ? null : tags.ToArray());
+        new(kind, Clip(detail, GameSourceDto.MaxDetailLength),
+            tags.Count == 0 ? null : tags.Select(t => Clip(t, GameSourceDto.MaxTagLength)).ToArray());
+
+    // The server refuses longer; a folder name is the only text here not written by this file.
+    private static string Clip(string s, int max) => s.Length <= max ? s : s[..max];
 
     /// <summary>The first level as people read it. An unknown kind shows as itself.</summary>
     public static string KindLabel(string kind) => kind switch
@@ -95,22 +101,6 @@ public static class GameSources
     };
 
     /// <summary>
-    /// Emulated games are named by their title alone, so one can share a name with a PC release this
-    /// machine also has ("Chrono Trigger"). Scans merge candidates by name, and the server matches games
-    /// by name, so a clashing emulated game gets its console appended ("Chrono Trigger (SNES)").
-    /// </summary>
-    public static IReadOnlyList<ScanCandidate> AvoidNameClashes(IEnumerable<ScanCandidate> emulated,
-        IEnumerable<string> otherNames)
-    {
-        var taken = new HashSet<string>(otherNames.Select(ManifestLoader.NormalizeName), StringComparer.Ordinal);
-        return emulated
-            .Select(c => taken.Contains(ManifestLoader.NormalizeName(c.Name))
-                ? c with { Name = $"{c.Name} ({SystemLabel(c.EmulatorSystem) ?? c.EmulatorName ?? "Emulator"})" }
-                : c)
-            .ToList();
-    }
-
-    /// <summary>
     /// Fill in the source of games enrolled before sources were recorded, from a scan that found them
     /// at the same folder. Returns the games it changed (already saved), for the caller to report.
     /// </summary>
@@ -119,7 +109,7 @@ public static class GameSources
         var changed = new List<TrackedGame>();
         foreach (var c in candidates)
         {
-            if (config.FindGame(c.Name) is not { IsEnrolledHere: true, Source: null } game) continue;
+            if (Enroller.TrackedFor(config, c) is not { IsEnrolledHere: true, Source: null } game) continue;
             if (c.SuggestedSaveDir is null ||
                 !string.Equals(SavePathGuard.Canonicalize(c.SuggestedSaveDir), SavePathGuard.Canonicalize(game.SaveDirectory),
                     OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
@@ -132,15 +122,30 @@ public static class GameSources
         return changed;
     }
 
-    /// <summary>Tell the server how this machine found <paramref name="game"/>. Best effort: the poller
-    /// re-sends a source the server does not have.</summary>
-    public static async Task ReportAsync(ApiClient api, TrackedGame game)
+    /// <summary>
+    /// Tell the server how this machine found <paramref name="game"/>. Best effort: the poller re-sends a
+    /// source the server does not have. True once the server has answered — stored, or refused (a console
+    /// older than this route says 404 to every game, every time) — so a caller knows asking again is
+    /// pointless; false when it could not be reached and a later try may succeed.
+    /// </summary>
+    public static async Task<bool> ReportAsync(ApiClient api, TrackedGame game)
     {
-        if (game.Source is not { } source) return;
-        try { await api.SetGameSourceAsync(game.GameId, source); }
+        if (game.Source is not { } source) return true;
+        try
+        {
+            await api.SetGameSourceAsync(game.GameId, source);
+            return true;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode is { } status && (int)status < 500)
+        {
+            AgentLogger.Log($"The server did not take how '{game.Name}' was found ({(int)status}); " +
+                            "not sent again until it changes.");
+            return true;
+        }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
             AgentLogger.Log($"Could not report how '{game.Name}' was found yet ({ex.Message}); the next poll does.");
+            return false;
         }
     }
 }

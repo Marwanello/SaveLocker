@@ -15,8 +15,10 @@ public sealed class GameSourcesTests : IDisposable
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
     }
 
-    private static ScanCandidate Emulated(string name, string? system = "snes", string dir = "/home/deck/Emulation/saves/retroarch/saves") =>
-        new(name, dir, ScanSource.Emulator, false, EmulatorName: RetroArchSaves.EmulatorName, EmulatorSystem: system);
+    private static ScanCandidate Emulated(string name, string? system = "snes", string dir = "/home/deck/Emulation/saves/retroarch/saves",
+        bool viaEmuDeck = false) =>
+        new(name, dir, ScanSource.Emulator, false, EmulatorName: RetroArchSaves.EmulatorName, EmulatorSystem: system,
+            ViaEmuDeck: viaEmuDeck);
 
     [Fact]
     public void An_emulated_game_names_its_emulator_then_its_console()
@@ -26,7 +28,23 @@ public sealed class GameSourcesTests : IDisposable
         Assert.Equal("RetroArch", s.Detail);
         Assert.Equal(new[] { "SNES", "Flatpak" }, s.Tags);
         Assert.Equal("Emulator › RetroArch", GameSources.Describe(s));
-        Assert.Equal(new[] { "SNES", "EmuDeck" }, GameSources.From(Emulated("Chrono Trigger")).Tags);
+    }
+
+    [Fact]
+    public void EmuDeck_is_said_by_the_scanner_not_read_off_the_folder()
+    {
+        // EmuDeck's saves folder is a link into the Flatpak's, and the folder is recorded by its real path:
+        // the path alone would never say EmuDeck. Mutation-checked: deriving it from the path fails this.
+        var linked = Emulated("Chrono Trigger", dir: "/home/deck/.var/app/org.libretro.RetroArch/config/retroarch/saves", viaEmuDeck: true);
+        Assert.Equal(new[] { "SNES", "Flatpak", "EmuDeck" }, GameSources.From(linked).Tags);
+        Assert.Equal(new[] { "SNES" }, GameSources.From(Emulated("Chrono Trigger")).Tags);
+    }
+
+    [Fact]
+    public void A_source_compares_as_the_server_stores_it()
+    {
+        Assert.True(new GameSourceDto("steam", "Installed game ", [" Proton", ""]).SameAs(new GameSourceDto("steam", "Installed game", ["Proton"])));
+        Assert.False(new GameSourceDto("steam", "Installed game").SameAs(new GameSourceDto("steam", "Non-Steam shortcut")));
     }
 
     [Fact]
@@ -43,12 +61,24 @@ public sealed class GameSourcesTests : IDisposable
     }
 
     [Fact]
-    public void An_emulated_game_that_shares_a_pc_games_name_gets_its_console_appended()
+    public void An_emulated_games_names_come_from_its_save_file_alone()
     {
-        var kept = GameSources.AvoidNameClashes(
-            [Emulated("Chrono Trigger"), Emulated("Super Metroid"), Emulated("Tetris", system: null)],
-            ["CHRONO TRIGGER", "Tetris"]);
-        Assert.Equal(new[] { "Chrono Trigger (SNES)", "Super Metroid", "Tetris (RetroArch)" }, kept.Select(c => c.Name));
+        var japan = Emulated("Chrono Trigger") with { EmulatorRom = "Chrono Trigger (Japan)" };
+        Assert.Equal(new[] { "Chrono Trigger", "Chrono Trigger (RetroArch)", "Chrono Trigger (Japan) (RetroArch)" },
+            Enroller.NamesFor(japan));
+        Assert.Equal(new[] { "Tetris", "Tetris (RetroArch)" }, Enroller.NamesFor(Emulated("Tetris") with { EmulatorRom = "Tetris" }));
+        Assert.Equal(new[] { "Hades II" }, Enroller.NamesFor(new ScanCandidate("Hades II", "/x", ScanSource.Heroic, false)));
+    }
+
+    [Fact]
+    public void A_pc_game_and_an_emulator_save_with_one_title_stay_two_rows()
+    {
+        var steam = new ScanCandidate("Chrono Trigger", "/pc", ScanSource.SteamInstalled, false);
+        var usa = Emulated("Chrono Trigger") with { EmulatorRom = "Chrono Trigger (USA)" };
+        var japan = Emulated("Chrono Trigger") with { EmulatorRom = "Chrono Trigger (Japan)" };
+        Assert.Equal(3, new[] { steam, usa, japan }.Select(ScanCandidate.DedupeKey).Distinct().Count());
+        Assert.Equal(ScanCandidate.DedupeKey(steam),
+            ScanCandidate.DedupeKey(new ScanCandidate("CHRONO TRIGGER", null, ScanSource.SteamShortcut, false)));
     }
 
     [Fact]

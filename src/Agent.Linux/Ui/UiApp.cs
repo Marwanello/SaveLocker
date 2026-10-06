@@ -253,7 +253,7 @@ sealed partial class UiApp
 
     /// <summary>Tracked here with a folder, which is what <see cref="Enroller"/> skips on. A game adopted
     /// from the server with no folder on this machine is not: enrolling it is how it gets one.</summary>
-    private bool IsTracked(ScanCandidate c) => _config.FindGame(c.Name) is { IsEnrolledHere: true };
+    private bool IsTracked(ScanCandidate c) => Enroller.TrackedFor(_config, c) is { IsEnrolledHere: true };
 
     private bool Listed(ScanCandidate c) => !_hideEnrolled || !IsTracked(c);
 
@@ -1688,6 +1688,8 @@ sealed partial class UiApp
             {
                 var (enrolled, skipped) = _enrollTask.Result;
                 _addStatus = $"Enrolled {enrolled}, skipped {skipped}.";
+                if (Enroller.Progress.Notes is { Count: > 0 } notes)
+                    _addStatus += " Not added: " + string.Join(" ", notes);
                 _selected.Clear();
                 _candidates.Clear();
                 _screen = Screen.LaunchSetup;

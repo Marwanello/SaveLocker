@@ -9,8 +9,11 @@ namespace SaveLocker.Agent;
 public static class Enroller
 {
     /// <summary>Where an enrollment batch is, for a UI that would otherwise stare at one long request.</summary>
+    /// <param name="Notes">Why a game was refused rather than skipped as already set up here, one line each,
+    /// for the UI to say once the batch is done — a bare "skipped" count reads as "already tracked".</param>
     public sealed record EnrollProgress(
-        bool Active, int Index, int Total, string? Game, string Step, int Enrolled, int Skipped);
+        bool Active, int Index, int Total, string? Game, string Step, int Enrolled, int Skipped,
+        IReadOnlyList<string>? Notes = null);
 
     private static readonly object ProgressLock = new();
     private static EnrollProgress _progress = new(false, 0, 0, null, "", 0, 0);
@@ -41,8 +44,18 @@ public static class Enroller
         var skipped = 0;
         var total = ids.Count(i => i >= 0 && i < candidates.Count);
         var index = 0;
+        var notes = new List<string>();
+        // The fleet's games, read once for the batch and kept current as it creates more: an emulator
+        // game's name is decided against it (ServerNameFor).
+        List<GameDto>? serverGames = null;
         void Step(string? game, string step) =>
-            Report(new EnrollProgress(true, index, total, game, step, enrolled, skipped));
+            Report(new EnrollProgress(true, index, total, game, step, enrolled, skipped, notes.ToArray()));
+        void Refuse(string game, string why)
+        {
+            AgentLogger.Log($"Enrollment skipped '{game}': {why}");
+            notes.Add($"{game}: {why}");
+            skipped++;
+        }
 
         try
         {
@@ -59,7 +72,7 @@ public static class Enroller
                 // machine (adopted from the server, its template unresolvable here — an emulator game
                 // enrolled on the Deck, seen from Windows) is mapped by enrolling it: the server hands
                 // back the same game and the entry below replaces the empty one.
-                if (config.FindGame(c.Name) is { IsEnrolledHere: true }) { skipped++; continue; }
+                if (TrackedFor(config, c) is { IsEnrolledHere: true }) { skipped++; continue; }
                 if (string.IsNullOrEmpty(c.SuggestedSaveDir)) { skipped++; continue; }
 
                 // A scanner's save-root heuristic can land on something far too broad — an install tree,
@@ -89,6 +102,17 @@ public static class Enroller
                     continue;
                 }
 
+                if (c.Source == ScanSource.Emulator)
+                {
+                    serverGames ??= await api.ListGamesAsync();
+                    if (ServerNameFor(serverGames, c, extras) is not { } named)
+                    {
+                        Refuse(c.Name, "every name it could take on the server is already another game's.");
+                        continue;
+                    }
+                    serverName = named;
+                }
+
                 Step(c.Name, "Creating it on the server");
                 GameDto game;
                 try
@@ -114,11 +138,24 @@ public static class Enroller
                 // already existed keeps its own, and a game whose saves are defined differently than
                 // this scanner knows them would sync the wrong files — or another game's, in a shared
                 // emulator folder. Left for a human; the game stays on the server as it was.
+                if (serverGames is not null && serverGames.All(g => g.Id != game.Id)) serverGames.Add(game);
                 if ((c.IncludeGlobs is { Count: > 0 } || extras.Count > 0) && !SameFolders(game, c, extras))
                 {
-                    AgentLogger.Log($"Enrollment skipped '{c.Name}': the server already has '{game.Name}' " +
-                                    "with different save folders or include patterns than this scan found.");
-                    skipped++;
+                    Refuse(c.Name, $"the server already has '{game.Name}' with different save folders or " +
+                                   "include patterns than this scan found.");
+                    continue;
+                }
+                // The other direction: a candidate with no scope of its own joining a game that has one. The
+                // game's patterns would apply here too, and when none of this folder's files match them —
+                // a PC release joining the same-named emulator game — nothing of this machine's would ever
+                // be backed up, with every screen reporting it in sync. A folder with no files yet has
+                // nothing to lose, and one some of whose files match is the same game (patterns set in the
+                // console), so both join as before.
+                if (c.IncludeGlobs is not { Count: > 0 } && game.IncludeGlobs is { Length: > 0 } scope &&
+                    NothingInScope(check.Canonical!, game.ExcludeGlobs, scope))
+                {
+                    Refuse(c.Name, $"the server's '{game.Name}' only keeps {string.Join(", ", scope)}, and " +
+                                   "nothing in this game's save folder matches that.");
                     continue;
                 }
 
@@ -183,15 +220,16 @@ public static class Enroller
                 {
                     await api.SetMachinePathAsync(game.Id, check.Canonical!);
                     foreach (var e in extras) await api.SetMachinePathAsync(game.Id, e.Dir, e.Key);
-                    await api.SetGameSourceAsync(game.Id, GameSources.From(c));
                 }
                 catch (Exception ex) { AgentLogger.LogException("Enroller.SetMachinePath", ex); }
+                try { await api.SetGameSourceAsync(game.Id, GameSources.From(c)); }
+                catch (Exception ex) { AgentLogger.LogException("Enroller.SetGameSource", ex); }
                 enrolled++;
             }
         }
         finally
         {
-            Report(new EnrollProgress(false, index, total, null, "Done", enrolled, skipped));
+            Report(new EnrollProgress(false, index, total, null, "Done", enrolled, skipped, notes.ToArray()));
         }
 
         return (enrolled, skipped);
@@ -316,15 +354,71 @@ public static class Enroller
     private static string[]? Scope(IReadOnlyList<string>? globs) =>
         globs is { Count: > 0 } ? globs.ToArray() : null;
 
+    /// <summary>
+    /// The names a candidate may hold on the server, preferred first. A PC game has one: its manifest's
+    /// spelling. An emulator save is named by its cleaned title ("Chrono Trigger"), then that title with
+    /// its emulator ("Chrono Trigger (RetroArch)"), then the save file's own name with it ("Chrono Trigger
+    /// (Japan) (RetroArch)"). Every one of them comes from the save file alone, so every machine walks the
+    /// same list — which of them it takes is then decided by the server (<see cref="ServerNameFor"/>), the
+    /// one thing every machine sees alike. Deciding it from what else a machine has installed split one ROM
+    /// into two games across a Deck and a PC (a Steam ROM Manager shortcut on one, nothing on the other).
+    /// </summary>
+    public static IReadOnlyList<string> NamesFor(ScanCandidate c)
+    {
+        if (c.Source != ScanSource.Emulator) return [c.Name];
+        var by = c.EmulatorName ?? "Emulator";
+        var names = new List<string> { c.Name, $"{c.Name} ({by})" };
+        if (c.EmulatorRom is { Length: > 0 } rom && !string.Equals(rom, c.Name, StringComparison.OrdinalIgnoreCase))
+            names.Add($"{rom} ({by})");
+        return names;
+    }
+
+    /// <summary>
+    /// The game this machine tracks for <paramref name="c"/>, if any: one under any of its names
+    /// (<see cref="NamesFor"/>) that keeps the same files. A same-named game with other include patterns is
+    /// a different game — "Chrono Trigger" from Steam is not the SNES save of the same name.
+    /// </summary>
+    public static TrackedGame? TrackedFor(AgentConfig config, ScanCandidate c)
+    {
+        foreach (var name in NamesFor(c))
+            if (config.FindGame(name) is { } g && SameScope(g.IncludeGlobs, c.IncludeGlobs)) return g;
+        return null;
+    }
+
+    /// <summary>
+    /// Which of <see cref="NamesFor"/> an emulator save takes on the server: the one whose game already
+    /// keeps exactly these files, else the first no game has. Null when every name belongs to a different
+    /// game. Order-independent across machines: whoever enrolls a ROM first, the next machine finds it by
+    /// its files, not by being first to a name.
+    /// </summary>
+    internal static string? ServerNameFor(IReadOnlyList<GameDto> server, ScanCandidate c, IReadOnlyList<DeclaredSavePath> extras)
+    {
+        var names = NamesFor(c);
+        GameDto? Named(string n) => server.FirstOrDefault(g => string.Equals(g.Name, n, StringComparison.OrdinalIgnoreCase));
+        return names.FirstOrDefault(n => Named(n) is { } g && SameFolders(g, c, extras))
+               ?? names.FirstOrDefault(n => Named(n) is null);
+    }
+
+    /// <summary>The folder has files, and none of them is in <paramref name="scope"/>.</summary>
+    internal static bool NothingInScope(string dir, IEnumerable<string>? excludeGlobs, IReadOnlyList<string> scope)
+    {
+        try
+        {
+            return SaveArchive.ListFiles(dir, excludeGlobs).Count > 0 &&
+                   SaveArchive.ListFiles(dir, excludeGlobs, scope).Count == 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+    }
+
+    private static bool SameScope(IEnumerable<string>? a, IEnumerable<string>? b) =>
+        (a ?? Array.Empty<string>()).SequenceEqual(b ?? Array.Empty<string>(), StringComparer.Ordinal);
+
     /// <summary>Does the server's game hold exactly the scopes and folder keys this candidate declared?</summary>
     internal static bool SameFolders(GameDto game, ScanCandidate c, IReadOnlyList<DeclaredSavePath> extras)
     {
-        static bool Same(IEnumerable<string>? a, IEnumerable<string>? b) =>
-            (a ?? Array.Empty<string>()).SequenceEqual(b ?? Array.Empty<string>(), StringComparer.Ordinal);
-
-        if (!Same(game.IncludeGlobs, c.IncludeGlobs)) return false;
+        if (!SameScope(game.IncludeGlobs, c.IncludeGlobs)) return false;
         var server = game.ExtraPaths ?? Array.Empty<SavePathDto>();
         if (server.Length != extras.Count) return false;
-        return extras.All(e => server.FirstOrDefault(s => s.Key == e.Key) is { } s && Same(s.IncludeGlobs, e.IncludeGlobs));
+        return extras.All(e => server.FirstOrDefault(s => s.Key == e.Key) is { } s && SameScope(s.IncludeGlobs, e.IncludeGlobs));
     }
 }

@@ -71,15 +71,42 @@ public sealed class RetroArchTests : IDisposable
     }
 
     [Fact]
-    public void Two_saves_with_one_clean_name_keep_the_newest()
+    public void One_roms_save_under_two_cores_keeps_the_newest()
     {
         Touch("Emulation/saves/retroarch/saves/Snes9x/Chrono Trigger (USA).srm", writtenUtc: new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
-        Touch("Emulation/saves/retroarch/saves/bsnes/Chrono Trigger (Japan).srm", writtenUtc: new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        Touch("Emulation/saves/retroarch/saves/bsnes/Chrono Trigger (USA).srm", writtenUtc: new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
 
         var found = RetroArchSaves.Scan(new[] { new RetroArchFolders(Saves, States) }, Array.Empty<string>());
 
         var only = Assert.Single(found);
         Assert.Equal("bsnes", only.EmulatorCore);
+    }
+
+    [Fact]
+    public void Two_roms_with_one_clean_title_are_two_candidates()
+    {
+        // Two regions: the older one used to vanish from Add games with nothing to say it had been found.
+        Touch("Emulation/saves/retroarch/saves/Chrono Trigger (USA).srm", writtenUtc: new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        Touch("Emulation/saves/retroarch/saves/Chrono Trigger (Japan).srm", writtenUtc: new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        var found = RetroArchSaves.Scan(EmuDeckFolders, Array.Empty<string>());
+
+        Assert.Equal(new[] { "Chrono Trigger (Japan)", "Chrono Trigger (USA)" }, found.Select(c => c.EmulatorRom));
+        Assert.All(found, c => Assert.Equal("Chrono Trigger", c.Name));
+        Assert.All(found, c => Assert.True(c.ViaEmuDeck));
+    }
+
+    [Fact]
+    public void A_configured_saves_folder_replaces_the_default_one()
+    {
+        // A "saves" folder left over from before savefile_directory was set is not where RetroArch saves.
+        var config = Path.Combine(_root, "retroarch");
+        Touch("retroarch/retroarch.cfg", "savefile_directory = \":/mysaves\"\n");
+        Touch("retroarch/mysaves/Tetris.srm");
+        Touch("retroarch/saves/Old Game.srm");
+
+        Assert.Equal(new[] { Path.Combine(config, "mysaves") },
+            RetroArchConfig.Folders(Array.Empty<string>(), new[] { config }).Select(f => f.Saves));
     }
 
     [Fact]

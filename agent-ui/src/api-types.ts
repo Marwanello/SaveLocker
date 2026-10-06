@@ -2824,6 +2824,7 @@ export interface components {
             enrolled: boolean;
             emulatorName?: null | string;
             emulatorSystem?: null | string;
+            emulatorRom?: null | string;
         };
         CandidateLookupRequest: {
             name: string;
@@ -2927,6 +2928,7 @@ export interface components {
             enrolled: number;
             /** Format: int32 */
             skipped: number;
+            notes?: null | string[];
         };
         ErrorResponse: {
             error: string;

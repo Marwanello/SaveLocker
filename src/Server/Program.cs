@@ -545,6 +545,15 @@ agent.MapPut("/agent/source/{gameId:guid}", async (Guid gameId, GameSourceDto so
 {
     if (string.IsNullOrWhiteSpace(source.Kind) || string.IsNullOrWhiteSpace(source.Detail))
         return Results.BadRequest("kind and detail are required");
+    // Display text, stored per machine and shown on every game page — bounded like any other text a
+    // machine key can write. A newline is refused rather than stored: tags are kept newline-separated.
+    var tags = GameSourceDto.CleanTags(source.Tags).ToList();
+    if (source.Kind.Trim().Length > GameSourceDto.MaxKindLength || source.Detail.Trim().Length > GameSourceDto.MaxDetailLength ||
+        tags.Count > GameSourceDto.MaxTags || tags.Any(t => t.Length > GameSourceDto.MaxTagLength))
+        return Results.BadRequest($"kind, detail or tags too long (at most {GameSourceDto.MaxKindLength}, " +
+                                  $"{GameSourceDto.MaxDetailLength}, and {GameSourceDto.MaxTags} tags of {GameSourceDto.MaxTagLength})");
+    if (new[] { source.Kind, source.Detail }.Concat(tags).Any(s => s.Contains('\n') || s.Contains('\r')))
+        return Results.BadRequest("kind, detail and tags are one line each");
     return await sync.SetMachineSourceAsync(http.CurrentMachine().Id, gameId, source)
         ? Results.NoContent() : Results.NotFound();
 }).Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)

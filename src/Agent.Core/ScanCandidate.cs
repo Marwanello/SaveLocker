@@ -131,7 +131,24 @@ public sealed record ScanCandidate(
     string? EmulatorSystem = null,
     /// <summary>The libretro core whose per-core saves folder the file sits in (RetroArch's "Sort
     /// saves by core"), else null. Diagnostic only — not part of the game's identity.</summary>
-    string? EmulatorCore = null);
+    string? EmulatorCore = null,
+    /// <summary>The save file's name without its extension, exactly as on disk ("Chrono Trigger (USA)"):
+    /// what the include patterns name, and the last name <see cref="Enroller.NamesFor"/> falls back to.</summary>
+    string? EmulatorRom = null,
+    /// <summary>Found through EmuDeck's <c>Emulation</c> folder rather than a standalone RetroArch. Carried
+    /// because the folder itself is recorded by its real path, which no longer says so.</summary>
+    bool ViaEmuDeck = false)
+{
+    /// <summary>
+    /// What a scanner merges duplicates on: the normalised name, so one game found by two sources is one
+    /// row — except an emulator save, which is one ROM's file and never the same game as a PC release or
+    /// another ROM that happens to share its title ("Chrono Trigger" on Steam and on the SNES).
+    /// </summary>
+    public static string DedupeKey(ScanCandidate c) =>
+        c.Source == ScanSource.Emulator
+            ? $"\0{c.EmulatorName}\0{c.EmulatorRom ?? c.Name}".ToLowerInvariant()
+            : ManifestLoader.NormalizeName(c.Name);
+}
 
 /// <summary>
 /// One extra save folder a scanner declares for a candidate. <see cref="Key"/> names the folder on

@@ -39,7 +39,7 @@ public sealed class LinuxGameScanner : IGameScanner
         // picks the Heroic one — the shortcut's copy cannot resolve, because Steam never made a
         // compatdata prefix for a game it does not launch.
         return results
-            .GroupBy(r => ManifestLoader.NormalizeName(r.Candidate.Name), StringComparer.Ordinal)
+            .GroupBy(r => ScanCandidate.DedupeKey(r.Candidate), StringComparer.Ordinal)
             .Select(g => PickWinner(g).Candidate)
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -134,8 +134,7 @@ public sealed class LinuxGameScanner : IGameScanner
         // Its own failure domain: a broken emulator folder must not cost the rest of the scan.
         try
         {
-            var emulated = await Task.Run(RetroArchSaves.Scan, ct);
-            results.AddRange(GameSources.AvoidNameClashes(emulated, results.Select(r => r.Candidate.Name)).Select(c => (c, false)));
+            results.AddRange((await Task.Run(RetroArchSaves.Scan, ct)).Select(c => (c, false)));
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex) { AgentLogger.LogException("Scan source 'RetroArch saves'", ex); }

@@ -54,9 +54,17 @@ public record GameDto(
 /// </summary>
 public record GameSourceDto(string Kind, string Detail, string[]? Tags = null)
 {
+    /// <summary>Equal as the server stores them: trimmed, with empty tags dropped — so an agent comparing
+    /// its own copy with the server's echo never sees a difference the server made itself.</summary>
     public bool SameAs(GameSourceDto? other) =>
-        other is not null && Kind == other.Kind && Detail == other.Detail &&
-        (Tags ?? Array.Empty<string>()).SequenceEqual(other.Tags ?? Array.Empty<string>());
+        other is not null && Kind.Trim() == other.Kind.Trim() && Detail.Trim() == other.Detail.Trim() &&
+        CleanTags(Tags).SequenceEqual(CleanTags(other.Tags));
+
+    public static IEnumerable<string> CleanTags(IEnumerable<string>? tags) =>
+        (tags ?? Array.Empty<string>()).Select(t => t.Trim()).Where(t => t.Length > 0);
+
+    /// <summary>Longest <see cref="Kind"/>, <see cref="Detail"/> and tag the server stores, and most tags.</summary>
+    public const int MaxKindLength = 32, MaxDetailLength = 200, MaxTagLength = 64, MaxTags = 16;
 }
 
 /// <summary>The <see cref="GameSourceDto.Kind"/> values. Free text on the wire: a console shows a kind

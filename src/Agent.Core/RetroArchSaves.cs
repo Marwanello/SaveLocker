@@ -37,17 +37,19 @@ public static class RetroArchSaves
         foreach (var f in folders)
         {
             // The folder itself (sorting off), then one level of per-core folders (sorting on).
-            found.AddRange(SavesIn(f.Saves, core: null, f.States, systems));
+            found.AddRange(SavesIn(f.Saves, core: null, f.States, f.EmuDeck, systems));
             foreach (var sub in SafeSubdirs(f.Saves))
-                found.AddRange(SavesIn(sub, core: Path.GetFileName(sub), f.States, systems));
+                found.AddRange(SavesIn(sub, core: Path.GetFileName(sub), f.States, f.EmuDeck, systems));
         }
 
-        // Two saves can clean to one name — the same ROM under two cores, or two regions of one game.
-        // One name is one server game, so only the most recently written survives.
+        // The same ROM's save under two cores is one game: the most recently written copy is the one being
+        // played. Two DIFFERENT ROMs that clean to one title (two regions, or Tetris on two consoles) stay
+        // two candidates — the enroller gives the second a name of its own (Enroller.NamesFor).
         return found
-            .GroupBy(f => f.Candidate.Name, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(f => f.Candidate.EmulatorRom, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.OrderByDescending(f => f.WrittenUtc).First().Candidate)
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(c => c.EmulatorRom, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
@@ -92,7 +94,7 @@ public static class RetroArchSaves
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     private static IEnumerable<(ScanCandidate, DateTime)> SavesIn(
-        string dir, string? core, string statesRoot, IReadOnlyDictionary<string, string> systems)
+        string dir, string? core, string statesRoot, bool viaEmuDeck, IReadOnlyDictionary<string, string> systems)
     {
         FileInfo[] files;
         try { files = new DirectoryInfo(dir).GetFiles("*.srm"); }
@@ -117,6 +119,8 @@ public static class RetroArchSaves
                 EmulatorName: EmulatorName,
                 EmulatorSystem: systems.GetValueOrDefault(romBase),
                 EmulatorCore: core,
+                EmulatorRom: romBase,
+                ViaEmuDeck: viaEmuDeck,
                 IncludeGlobs: IncludeGlobsFor(romBase),
                 ExtraSaveDirs: new[]
                 {

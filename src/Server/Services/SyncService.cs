@@ -403,7 +403,7 @@ public sealed class SyncService
         if (!await _db.Games.AnyAsync(g => g.Id == gameId)) return false;
         var kind = source.Kind.Trim();
         var detail = source.Detail.Trim();
-        var tags = string.Join('\n', (source.Tags ?? Array.Empty<string>()).Select(x => x.Trim()).Where(x => x.Length > 0));
+        var tags = string.Join('\n', GameSourceDto.CleanTags(source.Tags));
         var stored = tags.Length == 0 ? null : tags;
         var row = await _db.MachineGameSources.FindAsync(machineId, gameId);
         if (row is null)
