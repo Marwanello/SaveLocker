@@ -98,8 +98,10 @@
 #                                 already there is moved into "<PlaynitePath>\pre-import-<stamp>"
 #                                 first, never overwritten. `clean` does not undo it.
 #   .\tests\testenv.ps1 emu-fixture [-EmuDeckPath <dir>]
-#                                 write a fake EmuDeck "Emulation" folder (three RetroArch saves, one ROM)
-#                                 for the emulator-saves feature. Default location is "<StateRoot>\Emulation",
+#                                 write a fake EmuDeck "Emulation" folder (three RetroArch saves, two ROMs'
+#                                 save states, one ROM) for the emulator-saves feature, plus a second one at
+#                                 "<StateRoot>\Emulation-wsl" that the WSL test agent scans (an old Chrono save,
+#                                 no Chrono states). Default location is "<StateRoot>\Emulation",
 #                                 which the Windows test agent then scans INSTEAD of any real EmuDeck/RetroArch
 #                                 install (restart it with `up -Only windows`); `clean` deletes it with the rest
 #                                 of the state. -EmuDeckPath (or $env:SAVELOCKER_EMUDECK_PATH) points the agent
@@ -344,6 +346,7 @@ function Use-TestEnvVars {
 }
 # The fixture lives under the rig's own state, so finding it there is never a real install.
 function Get-EmuDeckFixturePath { return (Join-Path $StateRoot 'Emulation') }
+function Get-EmuDeckWslFixturePath { return (Join-Path $StateRoot 'Emulation-wsl') }
 function Get-EmuDeckPath {
     if ($EmuDeckPath) { return $EmuDeckPath }
     $fixture = Get-EmuDeckFixturePath
@@ -358,15 +361,40 @@ function New-EmuDeckFixture {
         throw "refusing to write a fixture into '$target' - it exists, is not empty and was not made by emu-fixture"
     }
     $saves = Join-Path $target 'saves\retroarch\saves'
-    New-Item -ItemType Directory -Force (Join-Path $saves 'Snes9x'), (Join-Path $target 'roms\snes') | Out-Null
+    $states = Join-Path $target 'saves\retroarch\states'
+    New-Item -ItemType Directory -Force (Join-Path $saves 'Snes9x'), $states, (Join-Path $target 'roms\snes') | Out-Null
     Set-Content -NoNewline -Encoding ascii (Join-Path $saves 'Chrono Trigger (USA).srm') "chrono $(Get-Date -Format o)"
+    Set-Content -NoNewline -Encoding ascii (Join-Path $states 'Chrono Trigger (USA).state1') "chrono slot 1 $(Get-Date -Format o)"
+    Set-Content -NoNewline -Encoding ascii (Join-Path $states 'Chrono Trigger (USA).state1.png') 'thumbnail'
     Set-Content -NoNewline -Encoding ascii (Join-Path $saves 'Zelda (USA).srm') 'zelda - must survive every Chrono pull'
+    Set-Content -NoNewline -Encoding ascii (Join-Path $states 'Zelda (USA).state') 'zelda state - must survive every Chrono pull'
     Set-Content -NoNewline -Encoding ascii -LiteralPath (Join-Path $saves 'Snes9x\Super Metroid (USA) [!].srm') 'metroid'
     Set-Content -NoNewline -Encoding ascii (Join-Path $target 'roms\snes\Chrono Trigger (USA).sfc') ''
     Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
     Say "EmuDeck fixture at $target"
-    Write-Host "  saves: $saves"
-    Write-Host "  restart the Windows test agent to scan it: .\tests\testenv.ps1 up -Only windows"
+    Write-Host "  saves:  $saves"
+    Write-Host "  states: $states"
+
+    # The second machine: the WSL test agent's own Emulation folder, unless -EmuDeckPath picked one.
+    # An old Chrono save and no Chrono states (what a pull must bring), and its own Zelda (what a pull
+    # must leave alone).
+    if (-not $EmuDeckPath) {
+        $wsl = Get-EmuDeckWslFixturePath
+        $wslMarker = Join-Path $wsl '.savelocker-emu-fixture'
+        if ((Test-Path $wsl) -and -not (Test-Path $wslMarker) -and (Get-ChildItem $wsl -Force | Select-Object -First 1)) {
+            throw "refusing to write a fixture into '$wsl' - it exists, is not empty and was not made by emu-fixture"
+        }
+        $wSaves = Join-Path $wsl 'saves\retroarch\saves'
+        $wStates = Join-Path $wsl 'saves\retroarch\states'
+        New-Item -ItemType Directory -Force $wSaves, $wStates | Out-Null
+        Get-ChildItem $wStates -Filter 'Chrono Trigger (USA).state*' -ErrorAction SilentlyContinue | Remove-Item -Force
+        Set-Content -NoNewline -Encoding ascii (Join-Path $wSaves 'Chrono Trigger (USA).srm') 'old chrono save on the WSL machine'
+        Set-Content -NoNewline -Encoding ascii (Join-Path $wSaves 'Zelda (USA).srm') 'wsl zelda - must survive every Chrono pull'
+        Set-Content -NoNewline -Encoding ascii (Join-Path $wStates 'Zelda (USA).state') 'wsl zelda state - must survive every Chrono pull'
+        Set-Content -NoNewline -Encoding ascii $wslMarker 'written by tests/testenv.ps1 emu-fixture'
+        Say "WSL EmuDeck fixture at $wsl"
+    }
+    Write-Host "  restart the test agents to scan them: .\tests\testenv.ps1 up -Only windows, then up -Only linux"
 }
 function Clear-TestEnvVars {
     # Leaving any of these set makes later runs in this shell behave in ways that look like bugs.
@@ -397,6 +425,11 @@ function Invoke-Wsl {
         "SAVELOCKER_TEST_VERSION='$Version'",
         "SAVELOCKER_WIN_REPO='$(ConvertTo-WslPath $root)'"
     )
+    # emu-fixture's second machine: the Linux daemon scans it instead of any EmuDeck/RetroArch in WSL.
+    $wslEmu = Get-EmuDeckWslFixturePath
+    if (Test-Path (Join-Path $wslEmu '.savelocker-emu-fixture')) {
+        $vars += "SAVELOCKER_EMUDECK_PATH='$(ConvertTo-WslPath $wslEmu)'"
+    }
     if ($Sub -eq 'sync') {
         # The COMMON git dir, not this worktree: a worktree's .git is a file pointing at a Windows
         # path that WSL cannot follow, while branches live in the shared object store.

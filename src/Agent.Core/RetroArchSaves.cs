@@ -11,6 +11,11 @@ namespace SaveLocker.Agent;
 /// <see cref="ScanCandidate.IncludeGlobs"/> name just that ROM's files, so the game's archive holds
 /// <c>&lt;rom&gt;.srm</c> at its root whichever layout each machine uses.
 /// </para>
+/// <para>
+/// Save states are the game's second folder (<see cref="StatesKey"/>), scoped the same way to
+/// <c>&lt;rom&gt;.state*</c>. Always declared, even before the first state exists, so every machine
+/// defines the game with the same folders (tasks/emulator-saves → <i>Save states — decided</i>).
+/// </para>
 /// </summary>
 public static class RetroArchSaves
 {
@@ -23,22 +28,25 @@ public static class RetroArchSaves
     /// </summary>
     public const string NameSuffix = " (RetroArch)";
 
+    /// <summary>The save-states folder's key on the server — the same on every machine.</summary>
+    public const string StatesKey = "states";
+
     /// <summary>The candidates on this machine. Never throws for a missing or unreadable folder.</summary>
     public static IReadOnlyList<ScanCandidate> Scan() =>
-        Scan(RetroArchConfig.SaveDirectories(), EmuDeckRoots.Find());
+        Scan(RetroArchConfig.Folders(), EmuDeckRoots.Find());
 
     /// <summary>The same, from explicit folders — what the tests drive.</summary>
-    public static IReadOnlyList<ScanCandidate> Scan(IEnumerable<string> saveDirectories, IEnumerable<string> emuDeckRoots)
+    public static IReadOnlyList<ScanCandidate> Scan(IEnumerable<RetroArchFolders> folders, IEnumerable<string> emuDeckRoots)
     {
         var systems = RomSystems(emuDeckRoots);
         var found = new List<(ScanCandidate Candidate, DateTime WrittenUtc)>();
 
-        foreach (var saveDir in saveDirectories)
+        foreach (var f in folders)
         {
             // The folder itself (sorting off), then one level of per-core folders (sorting on).
-            found.AddRange(SavesIn(saveDir, core: null, systems));
-            foreach (var sub in SafeSubdirs(saveDir))
-                found.AddRange(SavesIn(sub, core: Path.GetFileName(sub), systems));
+            found.AddRange(SavesIn(f.Saves, core: null, f.States, systems));
+            foreach (var sub in SafeSubdirs(f.Saves))
+                found.AddRange(SavesIn(sub, core: Path.GetFileName(sub), f.States, systems));
         }
 
         // Two saves can clean to one name — the same ROM under two cores, or two regions of one game.
@@ -58,8 +66,40 @@ public static class RetroArchSaves
     public static IReadOnlyList<string> IncludeGlobsFor(string romBaseName) =>
         new[] { romBaseName + ".srm", romBaseName + ".rtc" };
 
+    /// <summary>One ROM's save states: <c>&lt;rom&gt;.state</c>, the numbered slots, <c>.state.auto</c> and
+    /// each one's <c>.png</c> thumbnail.</summary>
+    public static IReadOnlyList<string> StateGlobsFor(string romBaseName) =>
+        new[] { romBaseName + ".state*" };
+
+    /// <summary>
+    /// The folder holding this ROM's states. "Sort save states by core" is a separate setting from
+    /// sorting saves, so the states may sit in a core folder while the save does not, or the reverse:
+    /// whichever folder already has them wins, then the save's own core folder, then the states root.
+    /// </summary>
+    public static string StatesDirFor(string statesRoot, string? core, string romBase)
+    {
+        var coreDir = core is null ? null : Path.Combine(statesRoot, core);
+        var lookIn = new List<string>();
+        if (coreDir is not null) lookIn.Add(coreDir);
+        lookIn.Add(statesRoot);
+        lookIn.AddRange(SafeSubdirs(statesRoot).Where(d => coreDir is null || !PathsEqual(d, coreDir)));
+        foreach (var dir in lookIn)
+            if (HasStates(dir, romBase)) return dir;
+        return coreDir is not null && Directory.Exists(coreDir) ? coreDir : statesRoot;
+    }
+
+    private static bool HasStates(string dir, string romBase)
+    {
+        try { return Directory.Exists(dir) && Directory.EnumerateFiles(dir, romBase + ".state*").Any(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { return false; }
+    }
+
+    private static bool PathsEqual(string a, string b) =>
+        string.Equals(Path.GetFullPath(a), Path.GetFullPath(b),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
     private static IEnumerable<(ScanCandidate, DateTime)> SavesIn(
-        string dir, string? core, IReadOnlyDictionary<string, string> systems)
+        string dir, string? core, string statesRoot, IReadOnlyDictionary<string, string> systems)
     {
         FileInfo[] files;
         try { files = new DirectoryInfo(dir).GetFiles("*.srm"); }
@@ -84,7 +124,12 @@ public static class RetroArchSaves
                 EmulatorName: EmulatorName,
                 EmulatorSystem: systems.GetValueOrDefault(romBase),
                 EmulatorCore: core,
-                IncludeGlobs: IncludeGlobsFor(romBase)), file.LastWriteTimeUtc);
+                IncludeGlobs: IncludeGlobsFor(romBase),
+                ExtraSaveDirs: new[]
+                {
+                    new DeclaredSavePath(StatesKey, EmuDeckRoots.RealPath(StatesDirFor(statesRoot, core, romBase)),
+                        StateGlobsFor(romBase)),
+                }), file.LastWriteTimeUtc);
         }
     }
 

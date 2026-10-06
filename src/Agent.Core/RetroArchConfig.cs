@@ -1,47 +1,50 @@
 namespace SaveLocker.Agent;
 
 /// <summary>
-/// Where RetroArch keeps save files on this machine: EmuDeck's documented
-/// <c>Emulation/saves/retroarch/saves</c> first, then any standalone RetroArch's own
-/// <c>savefile_directory</c> from its <c>retroarch.cfg</c>.
-/// <para>
-/// Save STATES are deliberately not looked for: a state is tied to the exact core build that wrote
-/// it, unlike an SRAM save, which follows the emulated hardware's format (tasks/emulator-saves).
-/// </para>
+/// Where RetroArch keeps saves and save states on this machine: EmuDeck's documented
+/// <c>Emulation/saves/retroarch/{saves,states}</c> first, then any standalone RetroArch's own
+/// <c>savefile_directory</c>/<c>savestate_directory</c> from its <c>retroarch.cfg</c>.
 /// </summary>
 public static class RetroArchConfig
 {
-    /// <summary>Every existing folder RetroArch writes <c>.srm</c> saves into, real paths, no duplicates.</summary>
-    public static IReadOnlyList<string> SaveDirectories() =>
-        SaveDirectories(EmuDeckRoots.Find(), EmuDeckRoots.Override is null ? ConfigRoots() : Array.Empty<string>());
+    /// <summary>Every RetroArch setup whose saves folder exists, real paths, no duplicate saves folder.</summary>
+    public static IReadOnlyList<RetroArchFolders> Folders() =>
+        Folders(EmuDeckRoots.Find(), EmuDeckRoots.Override is null ? ConfigRoots() : Array.Empty<string>());
 
     /// <summary>The same, from explicit inputs — what the tests drive.</summary>
-    public static IReadOnlyList<string> SaveDirectories(IEnumerable<string> emuDeckRoots, IEnumerable<string> configRoots)
+    public static IReadOnlyList<RetroArchFolders> Folders(IEnumerable<string> emuDeckRoots, IEnumerable<string> configRoots)
     {
-        var candidates = new List<string>();
+        var candidates = new List<RetroArchFolders>();
         foreach (var root in emuDeckRoots)
-            candidates.Add(Path.Combine(root, "saves", "retroarch", "saves"));
+        {
+            var retroArch = Path.Combine(root, "saves", "retroarch");
+            candidates.Add(new RetroArchFolders(Path.Combine(retroArch, "saves"), Path.Combine(retroArch, "states")));
+        }
 
         foreach (var configRoot in configRoots)
         {
             var cfg = Path.Combine(configRoot, "retroarch.cfg");
             var settings = File.Exists(cfg) ? Parse(SafeRead(cfg)) : new Dictionary<string, string>();
+            // RetroArch's own defaults when a key is unset or "default".
+            var states = settings.TryGetValue("savestate_directory", out var st) && ExpandPath(st, configRoot) is { } s
+                ? s : Path.Combine(configRoot, "states");
             if (settings.TryGetValue("savefile_directory", out var dir) && ExpandPath(dir, configRoot) is { } expanded)
-                candidates.Add(expanded);
-            // RetroArch's own default when the key is unset or "default".
-            candidates.Add(Path.Combine(configRoot, "saves"));
+                candidates.Add(new RetroArchFolders(expanded, states));
+            candidates.Add(new RetroArchFolders(Path.Combine(configRoot, "saves"), states));
         }
 
         var seen = new HashSet<string>(OperatingSystem.IsWindows()
             ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-        var found = new List<string>();
+        var found = new List<RetroArchFolders>();
         foreach (var c in candidates)
         {
             bool exists;
-            try { exists = Directory.Exists(c); } catch { exists = false; }
+            try { exists = Directory.Exists(c.Saves); } catch { exists = false; }
             if (!exists) continue;
-            var real = EmuDeckRoots.RealPath(c);
-            if (seen.Add(real)) found.Add(real);
+            var real = EmuDeckRoots.RealPath(c.Saves);
+            // A states folder that does not exist yet is still this setup's: RetroArch creates it on the
+            // first state, and a pull creates it from another machine's.
+            if (seen.Add(real)) found.Add(new RetroArchFolders(real, EmuDeckRoots.RealPath(c.States)));
         }
         return found;
     }
@@ -113,3 +116,7 @@ public static class RetroArchConfig
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return ""; }
     }
 }
+
+/// <summary>One RetroArch setup's folders: where it writes SRAM saves (<c>.srm</c>) and where it writes
+/// save states (<c>.state*</c>). The states folder may not exist yet.</summary>
+public sealed record RetroArchFolders(string Saves, string States);

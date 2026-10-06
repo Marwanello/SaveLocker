@@ -25,6 +25,9 @@ public sealed class RetroArchTests : IDisposable
 
     private string Emulation => Path.Combine(_root, "Emulation");
     private string Saves => Path.Combine(Emulation, "saves", "retroarch", "saves");
+    private string States => Path.Combine(Emulation, "saves", "retroarch", "states");
+
+    private RetroArchFolders[] EmuDeckFolders => RetroArchConfig.Folders(new[] { Emulation }, Array.Empty<string>()).ToArray();
 
     [Theory]
     [InlineData("Chrono Trigger (USA) (Rev 1) [!]", "Chrono Trigger")]
@@ -44,8 +47,7 @@ public sealed class RetroArchTests : IDisposable
         Touch("Emulation/saves/retroarch/saves/Chrono Trigger (USA).state");
         Touch("Emulation/roms/snes/Chrono Trigger (USA).sfc");
 
-        var found = RetroArchSaves.Scan(RetroArchConfig.SaveDirectories(new[] { Emulation }, Array.Empty<string>()),
-            new[] { Emulation });
+        var found = RetroArchSaves.Scan(EmuDeckFolders, new[] { Emulation });
 
         Assert.Equal(new[] { "Chrono Trigger (RetroArch)", "Super Metroid (RetroArch)" }, found.Select(c => c.Name));
 
@@ -57,6 +59,10 @@ public sealed class RetroArchTests : IDisposable
         Assert.False(chrono.HasSteamCloud);
         Assert.Equal(Path.GetFullPath(Saves), chrono.SuggestedSaveDir);
         Assert.Equal(new[] { "Chrono Trigger (USA).srm", "Chrono Trigger (USA).rtc" }, chrono.IncludeGlobs);
+        var states = Assert.Single(chrono.ExtraSaveDirs!);
+        Assert.Equal("states", states.Key);
+        Assert.Equal(Path.GetFullPath(States), states.Dir);
+        Assert.Equal(new[] { "Chrono Trigger (USA).state*" }, states.IncludeGlobs);
 
         var metroid = found[1];
         Assert.Equal(Path.Combine(Path.GetFullPath(Saves), "Snes9x"), metroid.SuggestedSaveDir);
@@ -70,7 +76,7 @@ public sealed class RetroArchTests : IDisposable
         Touch("Emulation/saves/retroarch/saves/Snes9x/Chrono Trigger (USA).srm", writtenUtc: new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
         Touch("Emulation/saves/retroarch/saves/bsnes/Chrono Trigger (Japan).srm", writtenUtc: new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
 
-        var found = RetroArchSaves.Scan(new[] { Saves }, Array.Empty<string>());
+        var found = RetroArchSaves.Scan(new[] { new RetroArchFolders(Saves, States) }, Array.Empty<string>());
 
         var only = Assert.Single(found);
         Assert.Equal("bsnes", only.EmulatorCore);
@@ -79,8 +85,9 @@ public sealed class RetroArchTests : IDisposable
     [Fact]
     public void A_missing_saves_folder_yields_nothing()
     {
-        Assert.Empty(RetroArchSaves.Scan(new[] { Path.Combine(_root, "nope") }, new[] { Path.Combine(_root, "nope2") }));
-        Assert.Empty(RetroArchConfig.SaveDirectories(new[] { Path.Combine(_root, "nope") }, Array.Empty<string>()));
+        Assert.Empty(RetroArchSaves.Scan(new[] { new RetroArchFolders(Path.Combine(_root, "nope"), Path.Combine(_root, "nope3")) },
+            new[] { Path.Combine(_root, "nope2") }));
+        Assert.Empty(RetroArchConfig.Folders(new[] { Path.Combine(_root, "nope") }, Array.Empty<string>()));
     }
 
     [Fact]
@@ -90,9 +97,10 @@ public sealed class RetroArchTests : IDisposable
         Touch("retroarch/retroarch.cfg", "# comment\nsavefile_directory = \":/mysaves\"\nsavestate_directory = \"~/states\"\n");
         Touch("retroarch/mysaves/Tetris.srm");
 
-        var dirs = RetroArchConfig.SaveDirectories(Array.Empty<string>(), new[] { config });
+        var dirs = RetroArchConfig.Folders(Array.Empty<string>(), new[] { config });
 
-        Assert.Equal(new[] { Path.Combine(config, "mysaves") }, dirs);
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        Assert.Equal(new[] { new RetroArchFolders(Path.Combine(config, "mysaves"), Path.Combine(home, "states")) }, dirs);
     }
 
     [Fact]
@@ -102,8 +110,8 @@ public sealed class RetroArchTests : IDisposable
         var config = Path.Combine(_root, "RetroArch");
         Touch("RetroArch/saves/Tetris.srm");
 
-        Assert.Equal(new[] { Path.Combine(config, "saves") },
-            RetroArchConfig.SaveDirectories(Array.Empty<string>(), new[] { config }));
+        Assert.Equal(new[] { new RetroArchFolders(Path.Combine(config, "saves"), Path.Combine(config, "states")) },
+            RetroArchConfig.Folders(Array.Empty<string>(), new[] { config }));
     }
 
     [Fact]
@@ -142,9 +150,60 @@ public sealed class RetroArchTests : IDisposable
             return; // Windows without Developer Mode cannot create links; Linux CI covers it.
         }
 
-        var found = RetroArchSaves.Scan(RetroArchConfig.SaveDirectories(new[] { Emulation }, Array.Empty<string>()),
-            Array.Empty<string>());
+        var found = RetroArchSaves.Scan(EmuDeckFolders, Array.Empty<string>());
 
         Assert.Equal(Path.GetFullPath(real), Assert.Single(found).SuggestedSaveDir);
+    }
+
+    [Fact]
+    public void States_are_found_wherever_sort_by_core_put_them()
+    {
+        // Saves sorted by core, states not — and the reverse — and a ROM with no state yet.
+        Touch("Emulation/saves/retroarch/saves/Snes9x/Super Metroid (USA).srm");
+        Touch("Emulation/saves/retroarch/states/Super Metroid (USA).state1");
+        Touch("Emulation/saves/retroarch/saves/Chrono Trigger (USA).srm");
+        Touch("Emulation/saves/retroarch/states/bsnes/Chrono Trigger (USA).state.auto");
+        Touch("Emulation/saves/retroarch/saves/Snes9x/Zelda (USA).srm");
+        Directory.CreateDirectory(Path.Combine(States, "Snes9x"));
+
+        var found = RetroArchSaves.Scan(EmuDeckFolders, Array.Empty<string>()).ToDictionary(c => c.Name);
+
+        Assert.Equal(Path.GetFullPath(States), found["Super Metroid (RetroArch)"].ExtraSaveDirs![0].Dir);
+        Assert.Equal(Path.Combine(Path.GetFullPath(States), "bsnes"), found["Chrono Trigger (RetroArch)"].ExtraSaveDirs![0].Dir);
+        Assert.Equal(Path.Combine(Path.GetFullPath(States), "Snes9x"), found["Zelda (RetroArch)"].ExtraSaveDirs![0].Dir);
+    }
+
+    [Fact]
+    public void A_missing_states_folder_is_still_declared()
+    {
+        Touch("Emulation/saves/retroarch/saves/Tetris.srm");
+
+        var tetris = Assert.Single(RetroArchSaves.Scan(EmuDeckFolders, Array.Empty<string>()));
+
+        Assert.False(Directory.Exists(States));
+        Assert.Equal(Path.GetFullPath(States), Assert.Single(tetris.ExtraSaveDirs!).Dir);
+    }
+
+    [Fact]
+    public void Standalone_config_savestate_directory_is_honoured()
+    {
+        var config = Path.Combine(_root, "retroarch");
+        Touch("retroarch/retroarch.cfg", "savestate_directory = \":/st\"\n");
+        Touch("retroarch/saves/Tetris.srm");
+
+        Assert.Equal(new[] { new RetroArchFolders(Path.Combine(config, "saves"), Path.Combine(config, "st")) },
+            RetroArchConfig.Folders(Array.Empty<string>(), new[] { config }));
+    }
+
+    [Fact]
+    public void The_state_scope_takes_every_slot_and_thumbnail_of_one_rom_only()
+    {
+        var files = new[]
+        {
+            "Tetris.state", "Tetris.state1", "Tetris.state12", "Tetris.state.auto", "Tetris.state1.png",
+            "Tetris (Rev 1).state", "Tetris.srm", "Snes9x/Tetris.state",
+        };
+        Assert.Equal(new[] { "Tetris.state", "Tetris.state1", "Tetris.state12", "Tetris.state.auto", "Tetris.state1.png" },
+            SaveLocker.Shared.SaveArchive.FilterIncluded(files, RetroArchSaves.StateGlobsFor("Tetris")));
     }
 }
