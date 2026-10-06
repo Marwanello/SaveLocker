@@ -158,7 +158,7 @@ with its `SaveVersion`, and a version with no rows here just has no stored basel
 store), `MachineSavePath` (composite key `(MachineId, GameId, PathKey)` → a machine's stored folder
 for one of a game's save folders; `PathKey` is `main` for the primary one; FKs cascade), `GameSavePath`
 (a game's EXTRA save folders — key, label, template, include scope; the primary folder stays on `Game`).
-How several folders share one archive: `tasks/multiple-save-paths/plan.md` §1.
+How several folders share one archive: `logs/2026-10-06_multiple-save-paths/plan.md` §1.
 
 > **"Latest" = the head.** `Game.HeadVersionId` is the authoritative version agents pull; the dashboard labels it **Latest**; the admin action to set it is **"Set as Latest"**.
 

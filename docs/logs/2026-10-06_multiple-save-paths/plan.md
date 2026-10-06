@@ -6,7 +6,7 @@ Planned 2026-10-04. Lets one game sync several save folders, for **any** game:
 - a folder a user adds by hand,
 - an emulator's saves and save states.
 
-It blocks [emulator saves](../emulator-saves/plan.md): RetroArch save states are a second folder of the
+It blocks [emulator saves](../../tasks/emulator-saves/plan.md): RetroArch save states are a second folder of the
 same game, and PCSX2, Dolphin and DuckStation need two folders each. That branch (`emulator-saves`) waits
 until Group B here is merged, then gets rebased (see *Rebase notes*).
 

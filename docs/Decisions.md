@@ -717,7 +717,7 @@ session can judge an edge case, not to reopen the choice.
 - **An extra save folder an agent defines is the fleet's at once; the CLI removes one fleet-wide** (2026-10-05,
   maintainer's call, multiple-save-paths Group B). No console confirmation step before other machines adopt a folder
   `add-path` or a scanner declared: adoption is cheap and safe, because a machine maps it only where its template
-  names a folder that already exists, and otherwise keeps a shadow (`tasks/multiple-save-paths/plan.md` §3). A folder
+  names a folder that already exists, and otherwise keeps a shadow (`logs/2026-10-06_multiple-save-paths/plan.md` §3). A folder
   that exists but holds different files is never mapped automatically — the user picks `--keep local|cloud`.
   `remove-path` retires the key for every machine (agent route `DELETE /api/agent/games/{id}/save-paths/{key}`),
   mirroring `add-path`. A folder no token describes is added with **no template**, never refused: other machines

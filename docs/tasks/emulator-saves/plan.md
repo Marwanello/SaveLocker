@@ -23,15 +23,15 @@ continue past a phase's own stopping point unless explicitly instructed to.
 
 | Phase | Status |
 |-------|--------|
-| 1 — `SaveArchive` include-globs + RetroArch | 🚧 In progress — code + tests done 2026-10-04 (branch `emulator-saves`); **merged with *Multiple save paths* 2026-10-06**, whose per-folder include scopes replaced this phase's own server column and archive code (below, *Merged onto multiple save paths*). Verified through `testenv` (Windows + WSL fixtures). **Waiting on the real-hardware pass** (EmuDeck on the Deck + EmuDeck for Windows). |
-| 1b — RetroArch save states | 🚧 In progress — built 2026-10-06: each RetroArch game declares a second folder, key `states`, scoped to `<rom>.state*`; `RetroArchSyncTests` (two machines, real server) + 4 new `RetroArchTests`, unit 247; testenv Windows ↔ WSL. Same hardware pass as Phase 1 still to do. |
+| 1 — `SaveArchive` include-globs + RetroArch | ✅ Shipped 2026-10-07 (PR from `emulator-saves-phase-1`) — code + tests done 2026-10-04 (branch `emulator-saves`); **merged with *Multiple save paths* 2026-10-06**, whose per-folder include scopes replaced this phase's own server column and archive code (below, *Merged onto multiple save paths*). Verified through `testenv` (Windows + WSL fixtures). **Waiting on the real-hardware pass** (EmuDeck on the Deck + EmuDeck for Windows). |
+| 1b — RetroArch save states | ✅ Shipped 2026-10-07 (same PR) — built 2026-10-06: each RetroArch game declares a second folder, key `states`, scoped to `<rom>.state*`; `RetroArchSyncTests` (two machines, real server) + 4 new `RetroArchTests`, unit 247; testenv Windows ↔ WSL. Same hardware pass as Phase 1 still to do. |
 | 2 — PCSX2 / Dolphin / DuckStation + shared-card warning | ⏳ Not started |
 | 3 — `gamelist.xml` names | ⏳ Not started — **revisit**: Phase 1 made the cleaned file name the game's identity, so a nicer display name can no longer change the name |
 | 4 — PrimeHack | ⏳ Not started |
 | 5 — RPCS3 / Xenia | ⏳ Not started |
 | 6 — Switch (Eden) | ⏳ Not started |
-| 7 — UI filter | 🚧 In progress — 2026-10-07: agent UI *Emulators* chip with an *Emulator* row under it (one chip per emulator, RetroArch today), Deck *Emulators* pill. A per-console breakdown is not built (below, *Game sources and names*). |
-| 7b — Game source per machine, names without "(RetroArch)" | 🚧 In progress — built 2026-10-07 (maintainer asked; picked variation B of a clickable mockup on all three screens). Unit 280. Console checked in the browser against a seeded dev server; agent UI and Deck need the testenv pass. |
+| 7 — UI filter | ✅ Shipped 2026-10-07 (same PR), filter by emulator — agent UI *Emulators* chip with an *Emulator* row under it (one chip per emulator, RetroArch today), Deck *Emulators* pill. A per-console sub-breakdown was not built — it comes back with Phase 2, when more than one console has saves. |
+| 7b — Game source per machine, names without "(RetroArch)" | ✅ Shipped 2026-10-07 (same PR) — built 2026-10-07 (maintainer asked; picked variation B of a clickable mockup on all three screens). Unit 280. Console checked in the browser against a seeded dev server; agent UI and Deck need the testenv pass. |
 
 ### Phase 1 — as built (2026-10-04), and where it departs from the plan below
 

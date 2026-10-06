@@ -1696,7 +1696,7 @@ agent UI and Deck Game Mode, all captured from the `testenv` rig seeded with a s
 Social preview (an upload only the maintainer can make). The old tray and installer screenshots were dropped as
 pre-redesign; there is no headless way to capture either.
 **Next action:** merge `release-0.6.0`, tag `v0.6.0`, upload `docs/brand/social-preview.png` as the repo's social preview.
-<br>**Multiple save paths planned (2026-10-04, docs only).** `tasks/multiple-save-paths/plan.md` covers any game, not
+<br>**Multiple save paths planned (2026-10-04, docs only).** `logs/2026-10-06_multiple-save-paths/plan.md` covers any game, not
 just emulators, in 7 phases and 3 groups (`implementation-grouping.md`):
 - The primary path stays at the archive root. Extra paths go under `.savelocker/paths/<key>/`, each with a marker entry.
 - A machine that can't map a path keeps a **shadow** copy, so every push carries every path. Without it, two machines
@@ -1720,8 +1720,8 @@ just emulators, in 7 phases and 3 groups (`implementation-grouping.md`):
   `GET …/versions/{v}/folders`) and agents < 0.7.0 flagged, Deck per-folder browser. The maintainer's three calls are in
   [[Decisions]]. Counts in [[Build and Run]] → Suite baseline. **testenv pass done on Windows + WSL + console** (the PR has
   the steps and screenshots; it caught two bugs, fixed in `7bbca5c`). **The Deck target has not run.**
-- **Next:** `-Only deck` for Group C, the Group B testenv pass if it is still wanted separately, then merge both; `emulator-saves` rebases after that (`plan.md` → *Rebase notes*). The task folder stays in `tasks/`
-  until then — `emulator-saves/plan.md` links into it.
+- **Done (2026-10-07):** merged as PRs #56–#58 and released in v0.7.0; moved to `logs/2026-10-06_multiple-save-paths/`
+  and indexed in `logs/shipped-2026-10.md`. The Deck testenv target never ran.
 <br>**Settle-gate test flake fixed (2026-10-05, on `multiple-save-paths-group-c` / PR #58).**
 `MultiPathAgentTests.The_settle_gate_waits_on_every_real_folder` failed once on windows-latest (PR #58): the gate
 never went quiet in 10 s. The Windows lock probe opens with `FileShare.Read`, so a reader that shares reads does
@@ -1748,7 +1748,7 @@ verified:** a real EmuDeck install on the Deck or on Windows (`Build and Run` �
 (not opt-in), as a second save path of the same game — so they wait for *Multiple save paths*, which the
 maintainer chose to build first in its own session/branch off `main`; `emulator-saves` is then rebased and
 continues with Phase 1b (states). What that feature must provide for emulators is appended to
-`tasks/multiple-save-paths/summary.md`; the states research is in `tasks/emulator-saves/plan.md` → *Save states
+`logs/2026-10-06_multiple-save-paths/summary.md`; the states research is in `tasks/emulator-saves/plan.md` → *Save states
 — decided*. Also fixed: EmuDeck for Windows' RetroArch lives at
 `%USERPROFILE%\emudeck\EmulationStation-DE\Emulators\RetroArch` (Phase 1 had guessed an `%APPDATA%` path).
 <br>**Resumed 2026-10-06: `main` (multiple save paths Groups A+B) merged in, Phase 1b (save states) built.** The
