@@ -74,6 +74,19 @@ sealed partial class UiApp
     // elsewhere in the process is always picked up on the next call.
     private ApiClient Api() => ApiClient.For(_config);
 
+    /// <summary>Record how this device found games enrolled before sources were, from a scan that found
+    /// them at the same folder. This process has no poller, so it tells the server itself.</summary>
+    private void BackfillSources(IReadOnlyList<ScanCandidate> found)
+    {
+        try
+        {
+            var filled = GameSources.Backfill(_config, found);
+            if (filled.Count > 0 && !string.IsNullOrEmpty(_config.ApiKey))
+                _ = Task.Run(async () => { foreach (var g in filled) await GameSources.ReportAsync(Api(), g); });
+        }
+        catch (AgentStateLockException ex) { AgentLogger.LogException("UiApp.BackfillSources", ex); }
+    }
+
     // Polled on a timer, not per frame: unlike the lease-warning/activity files this is a real
     // network round trip. Filtered to conflicts THIS machine is a party to — same "no bystander
     // case" rule AgentCli.cs's `conflicts` command and Doctor.cs already apply (plan.md decision 2).
@@ -203,7 +216,7 @@ sealed partial class UiApp
     /// it can be narrowed. Mirrors the browser UI's filter chips, minus the store axis — Heroic's
     /// storefronts are a Desktop Mode concern and each extra pill costs a d-pad press here.
     /// </summary>
-    private enum AddFilter { Suggested, All, Steam, Shortcut, Heroic }
+    private enum AddFilter { Suggested, All, Steam, Shortcut, Heroic, Emulator }
     private AddFilter _addFilter = AddFilter.Suggested;
 
     private static bool MatchesFilter(ScanCandidate c, AddFilter f) => f switch
@@ -212,6 +225,7 @@ sealed partial class UiApp
         AddFilter.Steam => c.Source == ScanSource.SteamInstalled,
         AddFilter.Shortcut => c.Source == ScanSource.SteamShortcut,
         AddFilter.Heroic => c.Source == ScanSource.Heroic,
+        AddFilter.Emulator => c.Source == ScanSource.Emulator,
         _ => true,
     };
 
@@ -221,6 +235,7 @@ sealed partial class UiApp
         AddFilter.Steam => "Steam",
         AddFilter.Shortcut => "Added to Steam",
         AddFilter.Heroic => "Heroic",
+        AddFilter.Emulator => "Emulators",
         _ => "All",
     };
 
@@ -1650,6 +1665,7 @@ sealed partial class UiApp
             _alsoOff.Clear();
             _addStatus = $"Found {_candidates.Count} game(s).";
             _scanTask = null;
+            BackfillSources(done.Result);
 
             // Dev affordance: `--screen folder` has nothing to browse until a scan has produced a
             // candidate, so entering that screen is deferred until one exists.

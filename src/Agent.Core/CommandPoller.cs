@@ -195,6 +195,11 @@ public sealed class CommandPoller : IDisposable
                 if (!string.IsNullOrWhiteSpace(local.SaveDirectory))
                     ReportTemplateAsync(sg, local.SaveDirectory);
 
+                // How this machine found the game: re-sent whenever the server's copy differs (a game
+                // enrolled offline, or by a process that could not reach the server).
+                if (local is { IsEnrolledHere: true, Source: { } source } && !source.SameAs(sg.MachineSource))
+                    _ = Task.Run(() => GameSources.ReportAsync(_api(), local));
+
                 changed |= await ReconcileFoldersAsync(local, sg);
                 continue;
             }

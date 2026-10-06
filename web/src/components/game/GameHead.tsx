@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { RefObject } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { api, errorText } from '../../api';
 import type { AgentHealth, GameSummary, Machine } from '../../types';
 import { ago, fmtSize, plural } from '../../format';
@@ -27,13 +27,15 @@ interface Props {
   onToggleArt: () => void;
   penRef: RefObject<HTMLButtonElement | null>;
   onRefresh: () => void;
+  /** How each machine found the game, under the facts line. */
+  source?: ReactNode;
 }
 
 const STATE_TONE = { ok: 'ok', warn: 'warn', crit: 'crit', idle: 'default' } as const;
 
 /** plan.md Phase 10.3: the cover (its pen opens the art picker), the name, the facts line, the state /
  *  policy / keep chips, Push and Pull for one machine, and Refresh art. */
-export function GameHead({ summary, standing, versionCount, machines, allMachines, health, artOpen, onToggleArt, penRef, onRefresh }: Props) {
+export function GameHead({ summary, standing, versionCount, machines, allMachines, health, artOpen, onToggleArt, penRef, onRefresh, source }: Props) {
   const { game, head, totalStorageBytes } = summary;
   // Null until someone picks. The default is the first machine of the list as it is NOW: pinning one at
   // mount pinned a machine from the whole fleet, before this game's versions and folders had loaded and
@@ -104,11 +106,14 @@ export function GameHead({ summary, standing, versionCount, machines, allMachine
       <div className="flex-1 min-w-0">
         <PageHead
           title={game.name}
-          sub={[
-            plural(versionCount, 'version'),
-            fmtSize(totalStorageBytes),
-            head ? `latest ${ago(head.createdAt)}` : 'no saves yet',
-          ].join(' · ')}
+          sub={<>
+            {[
+              plural(versionCount, 'version'),
+              fmtSize(totalStorageBytes),
+              head ? `latest ${ago(head.createdAt)}` : 'no saves yet',
+            ].join(' · ')}
+            {source && <div className="mt-2.5">{source}</div>}
+          </>}
           actions={<>
             <Chip tone={STATE_TONE[standing.tone]}><Dot tone={standing.tone} />{standing.label}</Chip>
             <Chip>{preferred ? `Prefer ${preferred}` : POLICY_LABEL[policy] ?? policy}</Chip>

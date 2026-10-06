@@ -148,6 +148,7 @@ public static class Enroller
                         SteamAppId = c.SteamAppId,
                         HasSteamCloud = c.HasSteamCloud,
                         InstallDir = c.InstallDir,
+                        Source = GameSources.From(c),
                         // Without this the Windows ProcessWatcher excludes the game outright, so lease,
                         // exit-push and the running-game pull refusal never run for anything enrolled
                         // through the UI. Only the CLI's --proc used to populate it. WA-08.
@@ -182,6 +183,7 @@ public static class Enroller
                 {
                     await api.SetMachinePathAsync(game.Id, check.Canonical!);
                     foreach (var e in extras) await api.SetMachinePathAsync(game.Id, e.Dir, e.Key);
+                    await api.SetGameSourceAsync(game.Id, GameSources.From(c));
                 }
                 catch (Exception ex) { AgentLogger.LogException("Enroller.SetMachinePath", ex); }
                 enrolled++;

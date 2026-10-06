@@ -49,7 +49,7 @@ public sealed class RetroArchTests : IDisposable
 
         var found = RetroArchSaves.Scan(EmuDeckFolders, new[] { Emulation });
 
-        Assert.Equal(new[] { "Chrono Trigger (RetroArch)", "Super Metroid (RetroArch)" }, found.Select(c => c.Name));
+        Assert.Equal(new[] { "Chrono Trigger", "Super Metroid" }, found.Select(c => c.Name));
 
         var chrono = found[0];
         Assert.Equal(ScanSource.Emulator, chrono.Source);
@@ -168,9 +168,9 @@ public sealed class RetroArchTests : IDisposable
 
         var found = RetroArchSaves.Scan(EmuDeckFolders, Array.Empty<string>()).ToDictionary(c => c.Name);
 
-        Assert.Equal(Path.GetFullPath(States), found["Super Metroid (RetroArch)"].ExtraSaveDirs![0].Dir);
-        Assert.Equal(Path.Combine(Path.GetFullPath(States), "bsnes"), found["Chrono Trigger (RetroArch)"].ExtraSaveDirs![0].Dir);
-        Assert.Equal(Path.Combine(Path.GetFullPath(States), "Snes9x"), found["Zelda (RetroArch)"].ExtraSaveDirs![0].Dir);
+        Assert.Equal(Path.GetFullPath(States), found["Super Metroid"].ExtraSaveDirs![0].Dir);
+        Assert.Equal(Path.Combine(Path.GetFullPath(States), "bsnes"), found["Chrono Trigger"].ExtraSaveDirs![0].Dir);
+        Assert.Equal(Path.Combine(Path.GetFullPath(States), "Snes9x"), found["Zelda"].ExtraSaveDirs![0].Dir);
     }
 
     [Fact]

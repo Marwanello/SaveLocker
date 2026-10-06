@@ -42,7 +42,37 @@ public record GameDto(
     // The game's EXTRA save folders (tasks/multiple-save-paths), null when it has none. The primary
     // folder stays in SuggestedSaveDir / MachineSavePath / IncludeGlobs, so an older agent keeps
     // working on it unchanged.
-    SavePathDto[]? ExtraPaths = null);
+    SavePathDto[]? ExtraPaths = null,
+    // How the calling machine found this game (agent routes only); null when it has not said.
+    GameSourceDto? MachineSource = null);
+
+/// <summary>
+/// How a machine found a game, in two levels: <see cref="Kind"/> (one of <see cref="GameSourceKinds"/>:
+/// an emulator, Steam, Heroic, …) and <see cref="Detail"/>, which one ("RetroArch", "Installed game",
+/// "Epic Games"). <see cref="Tags"/> are extra facts worth a glance ("SNES", "Flatpak", "AppID 1245620").
+/// Every string is display text the agent wrote, so a console never needs to know a new kind to show it.
+/// </summary>
+public record GameSourceDto(string Kind, string Detail, string[]? Tags = null)
+{
+    public bool SameAs(GameSourceDto? other) =>
+        other is not null && Kind == other.Kind && Detail == other.Detail &&
+        (Tags ?? Array.Empty<string>()).SequenceEqual(other.Tags ?? Array.Empty<string>());
+}
+
+/// <summary>The <see cref="GameSourceDto.Kind"/> values. Free text on the wire: a console shows a kind
+/// it does not know with a generic icon.</summary>
+public static class GameSourceKinds
+{
+    public const string Emulator = "emulator";
+    public const string Steam = "steam";
+    public const string Heroic = "heroic";
+    public const string Playnite = "playnite";
+    public const string SaveFolder = "save-folder";
+    public const string Manual = "manual";
+}
+
+/// <summary>One machine's <see cref="GameSourceDto"/> for a game, as the console lists them.</summary>
+public record MachineGameSourceDto(Guid MachineId, string MachineName, GameSourceDto Source, DateTime UpdatedAt);
 
 /// <summary>
 /// One extra save folder of a game. <see cref="Key"/> is the same on every machine and names the

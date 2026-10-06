@@ -231,6 +231,8 @@ public sealed class AgentConfig
                 game.LastPushBytes = stored.LastPushBytes;
                 game.LastPushAt = stored.LastPushAt;
                 game.KeepMappedFolders(stored);
+                // Set once and never cleared, so another process's is never stale against "none".
+                game.Source ??= stored.Source;
             }
             TotalSavesPushed = onDisk.TotalSavesPushed;
             LastSyncTime = onDisk.LastSyncTime;
@@ -761,6 +763,10 @@ public sealed class AgentConfig
             g.RemovedPathKeys = game.RemovedPathKeys.ToList();
         }, source: game);
 
+    /// <summary>Persist how this machine found a game — see <see cref="MutateGameUnderLock"/>.</summary>
+    public void SaveGameSource(Guid gameId, GameSourceDto source) =>
+        MutateGameUnderLock(gameId, g => g.Source = source);
+
     /// <summary>
     /// Persist the user's answers to a game's "Also found" suggestions — see
     /// <see cref="MutateGameUnderLock"/>. A folder is in at most one of the two lists.
@@ -827,6 +833,9 @@ public sealed class TrackedGame
     public bool? PushAfterExitEnabled { get; set; }
     /// <summary>The local save directory to archive/restore.</summary>
     public string SaveDirectory { get; set; } = "";
+    /// <summary>How this machine found the game ("Emulator › RetroArch"), set when it was enrolled here.
+    /// Null for a game enrolled before sources were recorded, or picked up from the server.</summary>
+    public GameSourceDto? Source { get; set; }
     /// <summary>Process names (without .exe) that, when running, mean the game is in use.</summary>
     public List<string> ProcessNames { get; set; } = new();
     /// <summary>

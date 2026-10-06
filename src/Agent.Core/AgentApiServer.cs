@@ -540,7 +540,7 @@ public sealed class AgentApiServer : IDisposable
                 g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray(), g.Alias,
                 SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()), g.PullBeforeLaunchEnabled,
                 g.HasSteamCloud, g.PushAfterExitEnabled, g.InstallDir, g.LastPushBytes, g.LastPushAt,
-                SaveFolderDto.Of(g)))
+                SaveFolderDto.Of(g), g.IsEnrolledHere ? g.Source : null))
             .ToArray()).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
@@ -688,6 +688,8 @@ public sealed class AgentApiServer : IDisposable
                 // a trailing separator must not reach the server as a different string than the one
                 // that was validated.
                 game.SaveDirectory = check.Canonical!;
+                // A game set up here by picking its folder, not by a scan: it was added by hand.
+                game.Source ??= GameSources.Manual(GameSources.FolderPickedInAgent);
                 // Save first: watchers must be built from the config that is on disk, never from
                 // one a concurrent write is about to supersede.
                 try { _config.Save(); }
@@ -702,6 +704,7 @@ public sealed class AgentApiServer : IDisposable
                 {
                     try { await ApiClient.For(_config).SetMachinePathAsync(id, check.Canonical!); }
                     catch (Exception ex) { AgentLogger.LogException("AgentApiServer.SetMachinePath", ex); }
+                    await GameSources.ReportAsync(ApiClient.For(_config), game);
                 }
             }
             return TypedResults.Ok(new OkResponse());
@@ -1613,6 +1616,13 @@ public sealed class AgentApiServer : IDisposable
     {
         var result = await _doScan();
         _candidateCache = result;
+        try
+        {
+            var filled = GameSources.Backfill(_config, result);
+            if (filled.Count > 0 && !string.IsNullOrEmpty(_config.ApiKey))
+                foreach (var game in filled) await GameSources.ReportAsync(ApiClient.For(_config), game);
+        }
+        catch (AgentStateLockException ex) { AgentLogger.LogException("AgentApiServer.BackfillSources", ex); }
         return result;
     }
 
@@ -1801,7 +1811,10 @@ public sealed record TrackedGameDto(
     DateTime? LastPushAt = null,
     /// <summary>Every save folder of the game, primary (<c>main</c>) first (tasks/multiple-save-paths).
     /// <see cref="Path"/> stays the primary folder, for readers that predate this.</summary>
-    SaveFolderDto[]? Paths = null);
+    SaveFolderDto[]? Paths = null,
+    /// <summary>How this machine found the game; null when it was enrolled before sources were recorded,
+    /// or is not set up here.</summary>
+    GameSourceDto? Source = null);
 
 /// <summary>One save folder of a tracked game on this machine.</summary>
 /// <param name="Path">This machine's folder, or <c>""</c> when it is not mapped here — an unmapped

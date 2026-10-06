@@ -21,13 +21,6 @@ public static class RetroArchSaves
 {
     public const string EmulatorName = "RetroArch";
 
-    /// <summary>
-    /// Suffix on every RetroArch game's name. It is part of the server-side identity on purpose: an
-    /// SNES save and a PC release of the same title are different games with incompatible saves,
-    /// and both would otherwise clean to the same name and merge on the server.
-    /// </summary>
-    public const string NameSuffix = " (RetroArch)";
-
     /// <summary>The save-states folder's key on the server — the same on every machine.</summary>
     public const string StatesKey = "states";
 
@@ -117,7 +110,7 @@ public static class RetroArchSaves
             if (romBase.Length == 0 || romBase.Contains('*') || romBase.Contains(':')) continue;
 
             yield return (new ScanCandidate(
-                Name: RomNames.CleanTitle(romBase) + NameSuffix,
+                Name: RomNames.CleanTitle(romBase),
                 SuggestedSaveDir: realDir,
                 Source: ScanSource.Emulator,
                 HasSteamCloud: false,

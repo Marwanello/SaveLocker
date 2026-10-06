@@ -2981,6 +2981,12 @@ export interface components {
             preferredMachineId?: null | string;
             includeGlobs?: null | string[];
             extraPaths?: null | components["schemas"]["SavePathDto"][];
+            machineSource?: null | components["schemas"]["GameSourceDto"];
+        };
+        GameSourceDto: {
+            kind: string;
+            detail: string;
+            tags?: null | string[];
         };
         GameStateDto: {
             game: components["schemas"]["GameDto"];
@@ -3222,6 +3228,7 @@ export interface components {
             /** Format: date-time */
             lastPushAt?: null | string;
             paths?: null | components["schemas"]["SaveFolderDto"][];
+            source?: null | components["schemas"]["GameSourceDto"];
         };
         VersionStatsDto: {
             /** Format: int32 */

@@ -55,9 +55,9 @@ public sealed class RetroArchSyncTests : IClassFixture<ServerProcess>, IDisposab
     {
         var found = RetroArchSaves.Scan(RetroArchConfig.Folders(new[] { Emulation(machine) }, Array.Empty<string>()),
             Array.Empty<string>()).ToList();
-        var id = found.FindIndex(c => c.Name == "Chrono Trigger (RetroArch)");
+        var id = found.FindIndex(c => c.Name == "Chrono Trigger");
         Assert.Equal((1, 0), await Enroller.EnrollAsync(config, found, new[] { id }));
-        return AgentConfig.Load(config.ConfigPath).FindGame("Chrono Trigger (RetroArch)")!;
+        return AgentConfig.Load(config.ConfigPath).FindGame("Chrono Trigger")!;
     }
 
     [Fact]
@@ -79,6 +79,20 @@ public sealed class RetroArchSyncTests : IClassFixture<ServerProcess>, IDisposab
         var gameA = await Enroll(a, "a");
         var gameB = await Enroll(b, "b");
         Assert.Equal(gameA.GameId, gameB.GameId);
+
+        // Each machine told the server how it found the game, and reads its own back on the game list.
+        using (var http = new HttpClient())
+        {
+            var sources = await System.Net.Http.Json.HttpClientJsonExtensions.GetFromJsonAsync<List<SaveLocker.Shared.MachineGameSourceDto>>(
+                http, $"{_server.Url}/api/games/{gameA.GameId}/sources");
+            // The class shares one server, and its other test enrolls the same game on machines of its own.
+            sources = sources!.Where(s => s.MachineId == a.MachineId || s.MachineId == b.MachineId).ToList();
+            Assert.Equal(2, sources.Count);
+            Assert.All(sources, s => Assert.True(
+                new SaveLocker.Shared.GameSourceDto("emulator", "RetroArch", ["EmuDeck"]).SameAs(s.Source)));
+        }
+        Assert.Equal("RetroArch", (await ApiClient.For(a).ListGamesAsync()).Single(g => g.Id == gameA.GameId).MachineSource?.Detail);
+        Assert.Equal("RetroArch", gameA.Source?.Detail);
 
         await using var engineA = new SyncEngine(a, ApiClient.For(a));
         await using var engineB = new SyncEngine(b, ApiClient.For(b));

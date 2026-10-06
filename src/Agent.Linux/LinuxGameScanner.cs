@@ -132,7 +132,11 @@ public sealed class LinuxGameScanner : IGameScanner
         results.AddRange((await ScanHeroicAsync(ct)).Select(c => (c, false)));
 
         // Its own failure domain: a broken emulator folder must not cost the rest of the scan.
-        try { results.AddRange((await Task.Run(RetroArchSaves.Scan, ct)).Select(c => (c, false))); }
+        try
+        {
+            var emulated = await Task.Run(RetroArchSaves.Scan, ct);
+            results.AddRange(GameSources.AvoidNameClashes(emulated, results.Select(r => r.Candidate.Name)).Select(c => (c, false)));
+        }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex) { AgentLogger.LogException("Scan source 'RetroArch saves'", ex); }
 

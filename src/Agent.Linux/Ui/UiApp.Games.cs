@@ -361,6 +361,12 @@ sealed partial class UiApp
             else if (missing) Widgets.Badge("Needs a save folder", Theme.Watch, Icons.AlertTriangle);
             else if (g.LastSyncedHash is null) Widgets.Badge("Not synced yet", Theme.Dim);
             else Widgets.Badge("In sync as far as this device knows", Theme.Safe, Icons.Check);
+            // How this device found the game. "·", not "›": Game Mode's font has Latin-1 only.
+            if (!missing && g.Source is { } source)
+            {
+                ImGui.SameLine(0, Theme.Space.Xs);
+                Widgets.Badge(SourceLine(source), Theme.Dim, SourceIcon(source.Kind));
+            }
             ImGui.EndGroup();
         }
         Widgets.Gap(Theme.Space.Md);
@@ -651,4 +657,14 @@ sealed partial class UiApp
         catch { /* no battery reading is an answer, not an error */ }
         return null;
     }
+
+    private static string SourceLine(GameSourceDto s) =>
+        string.Join(" · ", new[] { GameSources.KindLabel(s.Kind), s.Detail }.Concat(s.Tags ?? Array.Empty<string>()));
+
+    private static Icons.Glyph? SourceIcon(string kind) => kind switch
+    {
+        GameSourceKinds.Emulator => Icons.Gamepad,
+        GameSourceKinds.SaveFolder or GameSourceKinds.Manual => Icons.Folder,
+        _ => null,
+    };
 }
