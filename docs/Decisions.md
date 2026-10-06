@@ -697,6 +697,32 @@ session can judge an edge case, not to reopen the choice.
   `remove-path` retires the key for every machine (agent route `DELETE /api/agent/games/{id}/save-paths/{key}`),
   mirroring `add-path`. A folder no token describes is added with **no template**, never refused: other machines
   shadow it until their own folder is set, which the server already allowed (agents may not send literal templates).
+- **"Also found" folders are suggested on the agent, asked about once at start-up, and pre-ticked on Add games**
+  (2026-10-05, maintainer's call, multiple-save-paths Group C). The manifest's extra locations for a tracked game are
+  worked out by the agent (`FolderSuggestions`) and offered there only — the game's page (Add / Don't sync), Add games,
+  `scan`/`status` — never sent to the server: the machine that has the folder is also the only one that can answer
+  "keep this device's files or the cloud's". For games tracked before an agent could sync several folders, the agent
+  asks once per start (an OS notification + the agent UI's one-game-at-a-time prompt, like the sync-time conflict
+  queue) about folders nobody has answered; **Skip for now** (`DeferredFolders`) leaves them on the game's page and
+  out of the prompt, **Don't sync** (`IgnoredFolders`) hides them for good. On **Add games** the extra locations are
+  **ticked by default** — the user unticks what they don't want — even though the plan's "nothing is adopted until
+  the user confirms" leaned toward unticked: enrolling *is* the confirmation, with every folder shown. The console
+  lists every save folder of a game and what Latest holds in each (`GET /api/games/{id}/versions/{v}/folders`).
+  Agents older than **0.7.0** are flagged on games with extra folders (they carry them as `.savelocker/` inside the
+  main folder until they update). The console compares against **0.6.1**, not 0.7.0: the agent half reached `main`
+  after v0.6.0, so every build since reports 0.6.1 until the release bump, and the testenv rig's agents — which have
+  the feature — came up flagged. Every release without it is 0.6.0 or older, so the released fleet sees the same flags.
+- **One folder, one key: the server refuses a second extra folder with a template the game already has**
+  (2026-10-06, PR #58 review). Two machines answering the same "Also found" question within one poll used to define
+  the folder twice (`config`, then `config-2` with the same template), putting two save folders on one directory on
+  every machine that expands it. The server answers **409** `template_taken` with the existing folder and the agent
+  **joins** it (`SavePathChange.Joined`) — the fleet's key, label and scope win, and since the fleet has a copy, mapping
+  it here asks which to keep. Allowed only when both folders have include patterns, as the folder rules allow two
+  scoped folders on one directory. Key refusals (`key_taken`, `key_retired`) are 409 codes too, so the free-key retry
+  no longer reads the sentence. The agent UI's **Add save folder** never moves an existing folder (`mustBeNew`): a
+  name matching one is refused, and moving a folder stays **Change**. Enrollment joins an "Also found" folder on the
+  same template, or on the same key only when a template is missing on either side; two templates under one key are
+  two folders.
 
 ## Environment facts (user-provided)
 - Games are standalone builds, not bought on Steam/Epic → manifest-based detection + manual

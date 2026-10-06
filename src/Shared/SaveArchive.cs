@@ -67,6 +67,47 @@ public static class SaveArchive
         return new ArchiveStats(count, newest);
     }
 
+    /// <summary>One save folder's files inside an archive, as the console lists them.</summary>
+    /// <param name="Files">Relative to the folder, Ordinal order, at most the cap the caller asked for.</param>
+    public sealed record ArchiveFolder(string Key, int FileCount, long TotalBytes,
+        IReadOnlyList<(string Path, long Size, DateTime? ModifiedUtc)> Files);
+
+    /// <summary>
+    /// The archive's files grouped by save folder (tasks/multiple-save-paths plan §1): the primary
+    /// folder's at the root, each extra folder's under its own prefix, names relative to their folder.
+    /// An extra folder whose marker is there but which holds nothing is listed empty — this version
+    /// holds it, emptied. Read from the zip's directory, never extracted.
+    /// </summary>
+    public static IReadOnlyList<ArchiveFolder> ListArchiveFolders(string zipPath, int maxFilesPerFolder = 500)
+    {
+        using var zip = ZipFile.OpenRead(zipPath);
+        var folders = new SortedDictionary<string, List<(string, long, DateTime?)>>(StringComparer.Ordinal)
+        {
+            [SaveRoot.PrimaryKey] = new(),
+        };
+        foreach (var entry in zip.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name)) continue; // directory entry, no content
+            var name = entry.FullName.Replace('\\', '/');
+            if (IsMarker(name))
+            {
+                var marked = name[KeysPrefix.Length..];
+                if (SaveRoot.ValidateExtraKey(marked) is null && !folders.ContainsKey(marked)) folders[marked] = new();
+                continue;
+            }
+            var (key, rel) = TrySplitExtra(name, out var k, out var r) ? (k, r) : (SaveRoot.PrimaryKey, name);
+            if (!folders.TryGetValue(key, out var files)) folders[key] = files = new();
+            files.Add((rel, entry.Length, EntryWriteTimeUtc(entry)));
+        }
+
+        // The primary folder first, then the extra ones by key.
+        return folders
+            .OrderBy(f => f.Key == SaveRoot.PrimaryKey ? 0 : 1).ThenBy(f => f.Key, StringComparer.Ordinal)
+            .Select(f => new ArchiveFolder(f.Key, f.Value.Count, f.Value.Sum(x => x.Item2),
+                f.Value.OrderBy(x => x.Item1, StringComparer.Ordinal).Take(maxFilesPerFolder).ToList()))
+            .ToList();
+    }
+
     /// <summary>
     /// Where an entry's real UTC write time lives: its comment, as <c>mtime-utc=</c> + a round-trip
     /// ("o") UTC timestamp.

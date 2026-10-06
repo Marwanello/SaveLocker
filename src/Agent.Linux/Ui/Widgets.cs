@@ -641,6 +641,19 @@ static class Widgets
         return size;
     }
 
+    /// <summary>A glyph on a rounded tinted square — Add game's per-row state (agent-ui's <c>.sl-status</c>).
+    /// <paramref name="fill"/> null tints <paramref name="ink"/> itself.</summary>
+    public static void StatusTile(Icons.Glyph glyph, Vector4 ink, float size, Vector4? fill = null)
+    {
+        var dl = ImGui.GetWindowDrawList();
+        var min = ImGui.GetCursorScreenPos();
+        dl.AddRectFilled(min, min + new Vector2(size, size), U32(fill ?? Theme.Alpha(ink, 0.16f)), size * 0.27f);
+        var pad = size * 0.2f;
+        var glyphSize = size - pad * 2;
+        glyph(dl, min + new Vector2(pad, pad), glyphSize, U32(ink), MathF.Max(1.5f, glyphSize * 2.3f / 24f));
+        ImGui.Dummy(new Vector2(size, size));
+    }
+
     /// <summary>A pulsing status dot with a glow, as in the console's StatusHeader.</summary>
     public static void StatusDot(Vector4 colour, float diameter = 9f)
     {

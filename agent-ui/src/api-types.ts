@@ -884,6 +884,209 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/folder-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    gameId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FolderSuggestionDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/folder-suggestions/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["FolderSuggestionAnswerRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OkResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/paths": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AddFolderRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AddFolderResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/paths/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OkResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/folder-pick": {
         parameters: {
             query?: never;
@@ -2504,6 +2707,24 @@ export interface components {
             /** @default false */
             cancelRequested: boolean;
         };
+        AddFolderRequest: {
+            path: null | string;
+            key?: null | string;
+            label?: null | string;
+            includeGlobs?: null | string[];
+            keep?: null | string;
+            /** @default false */
+            confirm: boolean;
+            /** @default false */
+            freeKey: boolean;
+        };
+        AddFolderResponse: {
+            key: string;
+            path: string;
+            template: null | string;
+            /** @default false */
+            joined: boolean;
+        };
         AgentAppearanceDto: {
             follow: boolean;
             effective: components["schemas"]["AppearanceDto"];
@@ -2598,6 +2819,9 @@ export interface components {
             processName: null | string;
             store: string;
             extraFolders?: null | components["schemas"]["SaveFolderDto"][];
+            alsoFound?: null | components["schemas"]["SaveFolderDto"][];
+            /** @default false */
+            enrolled: boolean;
         };
         CandidateLookupRequest: {
             name: string;
@@ -2674,6 +2898,11 @@ export interface components {
         DismissWarningRequest: {
             gameName: null | string;
         };
+        EnrollFolderChoice: {
+            /** Format: int32 */
+            id: number;
+            paths: null | string[];
+        };
         EnrollProgressDto: {
             active: boolean;
             /** Format: int32 */
@@ -2689,6 +2918,7 @@ export interface components {
         };
         EnrollRequest: {
             ids: null | number[];
+            alsoSync?: null | components["schemas"]["EnrollFolderChoice"][];
         };
         EnrollResponse: {
             /** Format: int32 */
@@ -2702,6 +2932,7 @@ export interface components {
             needsConfirm: boolean;
             /** @default false */
             needsChoice: boolean;
+            key?: null | string;
         };
         FolderRequest: {
             path: null | string;
@@ -2712,6 +2943,20 @@ export interface components {
         };
         FolderResponse: {
             path: null | string;
+        };
+        FolderSuggestionAnswerRequest: {
+            /** Format: uuid */
+            gameId: string;
+            ignore?: null | string[];
+            defer?: null | string[];
+        };
+        FolderSuggestionDto: {
+            /** Format: uuid */
+            gameId: string;
+            gameName: string;
+            key: string;
+            path: string;
+            deferred: boolean;
         };
         GameDto: {
             /** Format: uuid */

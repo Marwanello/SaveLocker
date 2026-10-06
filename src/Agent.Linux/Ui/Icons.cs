@@ -169,6 +169,14 @@ static class Icons
     public static readonly Glyph Check = (dl, p, s, c, w) =>
         Poly(dl, p, s, c, w, false, 4, 12.5f, 9.5f, 18, 20, 6);
 
+    /// <summary>lucide's search-check (<c>icons/search-check.js</c>): Add game's "save folder detected"
+    /// mark, as in agent-ui's AddGamesView.</summary>
+    public static readonly Glyph SearchCheck = (dl, p, s, c, w) =>
+    {
+        Svg(dl, p, s, c, w, "m8 11 2 2 4-4", "m21 21-4.3-4.3");
+        dl.AddCircle(P(p, s, 11, 11), 8f / 24f * s, c, 24, w);
+    };
+
     public static readonly Glyph X = (dl, p, s, c, w) =>
     {
         Line(dl, p, s, c, w, 5.5f, 5.5f, 18.5f, 18.5f);

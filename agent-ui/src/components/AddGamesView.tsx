@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { RefreshCw, FolderSearch } from 'lucide-react'
+import { RefreshCw, FolderSearch, Check, SearchCheck, TriangleAlert } from 'lucide-react'
 import type { Candidate, EnrollProgress } from '../types'
 import { api } from '../api'
 import { useFolderPicker } from '../useFolderPicker'
@@ -9,6 +9,7 @@ import { Button } from './ui/Button'
 import { Card } from './ui/Card'
 import { Chip } from './ui/Chip'
 import { PageHead } from './ui/PageHead'
+import { Switch } from './ui/Switch'
 
 interface Props {
   onEnrolled: () => void
@@ -40,13 +41,37 @@ const FILTERS: { id: FilterId; label: string; hint: string; match: (c: Candidate
  * them: there was no way to ask for "Heroic games still missing a path". Always visible, same idea
  * as the Store row under Heroic, and stacks with the source filter and store above.
  */
-type PathMode = 'all' | 'has' | 'missing'
+type PathMode = 'all' | 'has' | 'missing' | 'enrolled'
 
+/** `enrolled` is only offered while Hide enrolled is off. Detected / Not detected leave enrolled games
+ * out, so each game sits under exactly one of the three. */
 const PATH_MODES: { id: PathMode; label: string; match: (c: Candidate) => boolean }[] = [
   { id: 'all', label: 'All', match: () => true },
-  { id: 'has', label: 'Detected', match: c => !!c.path },
-  { id: 'missing', label: 'Not detected', match: c => !c.path },
+  { id: 'has', label: 'Detected', match: c => !c.enrolled && !!c.path },
+  { id: 'missing', label: 'Not detected', match: c => !c.enrolled && !c.path },
+  { id: 'enrolled', label: 'Enrolled', match: c => !!c.enrolled },
 ]
+
+const HIDE_ENROLLED_KEY = 'savelocker.agent.addGames.hideEnrolled'
+
+function readHideEnrolled(): boolean {
+  try { return localStorage.getItem(HIDE_ENROLLED_KEY) !== '0' } catch { return true }
+}
+
+const STATUS = {
+  enrolled: { Icon: Check, label: 'Enrolled on this machine', tone: 'ok' },
+  has: { Icon: SearchCheck, label: 'Save folder detected', tone: 'has' },
+  missing: { Icon: TriangleAlert, label: 'Save folder not detected', tone: 'warn' },
+} as const
+
+function StatusMark({ c }: { c: Candidate }) {
+  const s = STATUS[c.enrolled ? 'enrolled' : c.path ? 'has' : 'missing']
+  return (
+    <span className={`sl-status sl-status--${s.tone}`} role="img" aria-label={s.label} title={s.label}>
+      <s.Icon size={13} strokeWidth={2.3} aria-hidden="true" />
+    </span>
+  )
+}
 
 /** Storefronts, as a second axis under the Heroic and Playnite filters. `Unknown` covers a runner
  * or library plugin we don't map. `Steam` only ever has entries under Playnite — Heroic manages no
@@ -99,6 +124,12 @@ export function AddGamesView({ onEnrolled }: Props) {
   const [filter, setFilter] = useState<FilterId>('suggested')
   const [store, setStore] = useState<string | null>(null)
   const [pathMode, setPathMode] = useState<PathMode>('all')
+  const [hideEnrolled, setHideEnrolledState] = useState(readHideEnrolled)
+  const setHideEnrolled = (hide: boolean) => {
+    setHideEnrolledState(hide)
+    if (hide && pathMode === 'enrolled') setPathMode('all')
+    try { localStorage.setItem(HIDE_ENROLLED_KEY, hide ? '1' : '0') } catch { /* private window / blocked storage */ }
+  }
   const [query, setQuery] = useState('')
   const [scanning, setScanning] = useState(false)
   const [enrolling, setEnrolling] = useState(false)
@@ -171,19 +202,37 @@ export function AddGamesView({ onEnrolled }: Props) {
     return () => { live = false; clearInterval(id) }
   }, [enrolling, refreshing])
 
+  // "Also found" folders the user unticked. Ticked is the default: every folder the manifest names for
+  // the game that exists here is added with it unless the user says otherwise.
+  const [alsoOff, setAlsoOff] = useState<Set<string>>(new Set())
+  const alsoId = (c: Candidate, path: string) => `${c.id}\n${path}`
+  const toggleAlso = (c: Candidate, path: string) => setAlsoOff(prev => {
+    const next = new Set(prev)
+    const id = alsoId(c, path)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+
   const enroll = async () => {
     if (checked.size === 0 || missing.length > 0) return
     setEnrolling(true)
     setProgress(null)
     setStatus('')
     try {
-      const result = await api.enroll([...checked])
+      const alsoSync = [...checked].flatMap(id => {
+        const c = candidates.find(x => x.id === id)
+        const paths = (c?.alsoFound ?? []).map(f => f.path).filter(p => c && !alsoOff.has(alsoId(c, p)))
+        return c && paths.length > 0 ? [{ id, paths }] : []
+      })
+      const result = await api.enroll([...checked], alsoSync)
       setStatus(
         `Added ${result.enrolled} game${result.enrolled === 1 ? '' : 's'}.` +
         (result.skipped > 0 ? ` Skipped ${result.skipped} already tracked.` : '')
       )
       if (result.enrolled > 0) setEnrolled(true)
       setChecked(new Set())
+      setAlsoOff(new Set())
       onEnrolled()
       setRefreshing(true)
       setProgress({ active: true, index: 0, total: 0, game: null, step: 'Refreshing the list of games…', enrolled: 0, skipped: 0 })
@@ -202,25 +251,30 @@ export function AddGamesView({ onEnrolled }: Props) {
   // Only chips that would show something are offered — an empty "Heroic" chip on a machine with no
   // Heroic install is a dead end that reads like a bug. Suggested and All always render, so the
   // toolbar never collapses to nothing.
+  const pool = useMemo(
+    () => hideEnrolled ? candidates.filter(c => !c.enrolled) : candidates,
+    [candidates, hideEnrolled])
+  const enrolledCount = candidates.filter(c => c.enrolled).length
+
   const chips = useMemo(
     () => FILTERS
-      .map(f => ({ ...f, count: candidates.filter(f.match).length }))
+      .map(f => ({ ...f, count: pool.filter(f.match).length }))
       .filter(f => f.count > 0 || f.id === 'suggested' || f.id === 'all'),
-    [candidates])
+    [pool])
 
   const stores = useMemo(() => {
     if (filter !== 'heroic' && filter !== 'playnite') return []
     const source = filter === 'heroic' ? 'Heroic' : 'Playnite'
-    const inSource = candidates.filter(c => c.source === source)
+    const inSource = pool.filter(c => c.source === source)
     return STORES
       .map(s => ({ ...s, count: inSource.filter(c => c.store === s.id).length }))
       .filter(s => s.count > 0)
-  }, [candidates, filter])
+  }, [pool, filter])
 
   const active = FILTERS.find(f => f.id === filter) ?? FILTERS[0]
   // Filtered by source (+ store) but not yet by path — the base the path row's own counts are
   // drawn against, so "Detected" and "Not detected" describe the set the user is already looking at.
-  const sourceFiltered = candidates
+  const sourceFiltered = pool
     .filter(active.match)
     .filter(c => !((filter === 'heroic' || filter === 'playnite') && store) || c.store === store)
   const activePathMode = PATH_MODES.find(p => p.id === pathMode) ?? PATH_MODES[0]
@@ -233,7 +287,7 @@ export function AddGamesView({ onEnrolled }: Props) {
   // Named, not just counted. A user looking for a game they can plainly see in Steam needs to be
   // told it was filtered and by which control — silently showing a shorter list reads as "the scan
   // didn't find it".
-  const hiddenCount = candidates.length - visible.length
+  const hiddenCount = pool.length - visible.length
   // Which control to name depends on which one is actually hiding things — there are two axes now,
   // and telling someone to choose “All” while “All” is already selected is worse than saying
   // nothing. Path is named first: it is the row that can hide everything while the source row
@@ -247,7 +301,10 @@ export function AddGamesView({ onEnrolled }: Props) {
   // The line under the filters: what the current filter means, and — when a search narrows it — how far.
   const filterLine = needle
     ? `Matching “${query.trim()}” — ${visible.length} of ${sourceFiltered.length}`
-    : `${active.hint}${hiddenCount > 0 ? '.' + undoHint : ''}`
+    : `${active.hint}${hiddenCount > 0 ? '.' + undoHint : ''}` +
+      (hideEnrolled && enrolledCount > 0
+        ? `${hiddenCount > 0 ? '' : '.'} ${enrolledCount} enrolled game${enrolledCount === 1 ? ' is' : 's are'} hidden.`
+        : '')
 
   const selectedLine = checked.size === 0
     ? 'Tick the games you want to sync.'
@@ -292,6 +349,10 @@ export function AddGamesView({ onEnrolled }: Props) {
               {f.label} <b>{f.count}</b>
             </button>
           ))}
+          <label className="sl-filters__toggle">
+            <Switch checked={hideEnrolled} onChange={setHideEnrolled} aria-label="Hide enrolled games" />
+            Hide enrolled
+          </label>
         </div>
 
         {/* Heroic storefronts — a second axis, shown only while the Heroic filter is on. */}
@@ -311,8 +372,9 @@ export function AddGamesView({ onEnrolled }: Props) {
             instead of replacing it. Always visible: unlike Store it isn't specific to one source. */}
         <div className="sl-filters">
           <span className="sl-filters__label">Save folder</span>
-          {PATH_MODES.map(p => (
+          {PATH_MODES.filter(p => p.id !== 'enrolled' || !hideEnrolled).map(p => (
             <button key={p.id} type="button" className="sl-fchip" aria-pressed={pathMode === p.id} onClick={() => setPathMode(p.id)}>
+              {p.id === 'enrolled' && <Check size={12} strokeWidth={2.4} className="sl-fchip__ok" aria-hidden="true" />}
               {p.label}{p.id !== 'all' && <> <b>{sourceFiltered.filter(p.match).length}</b></>}
             </button>
           ))}
@@ -327,20 +389,26 @@ export function AddGamesView({ onEnrolled }: Props) {
             {scanning ? 'Scanning…' : candidates.length === 0 ? 'No games found yet. Rescan once a game has been installed.' : 'Nothing matches that filter.'}
           </div>
         ) : visible.map(c => (
-          <label key={c.id} className="sl-check-row">
-            <input type="checkbox" checked={checked.has(c.id)} onChange={() => toggle(c.id)} />
+          <label key={c.id} className={c.enrolled ? 'sl-check-row sl-check-row--enrolled' : 'sl-check-row'}>
+            {/* Enrolling a tracked game again is skipped, so its box is shown ticked and locked. */}
+            <input type="checkbox" checked={!!c.enrolled || checked.has(c.id)} disabled={!!c.enrolled} onChange={() => toggle(c.id)} />
             <div className="sl-check-row__main">
               <div className="sl-check-row__name">
-                <span>{c.name}</span>
+                <StatusMark c={c} />
+                <span className="sl-check-row__title">{c.name}</span>
                 <Chip>{c.source}</Chip>
                 {/* Only when it adds something the source does not already say. */}
                 {c.store && c.store !== 'Unknown' && c.store !== 'Steam' && (
                   <Chip>{STORES.find(s => s.id === c.store)?.label ?? c.store}</Chip>
                 )}
                 {c.hasSteamCloud && <Chip>Steam Cloud</Chip>}
-                <Chip tone={c.path ? 'ok' : 'warn'}>{c.path ? 'Detected' : 'Not detected'}</Chip>
               </div>
-              {c.path ? (
+              {c.enrolled ? (
+                <div className="sl-inline" style={{ marginTop: 4 }}>
+                  {c.path && <span className="sl-path">{c.path}</span>}
+                  <span className="sl-check-row__note">Already added on this machine</span>
+                </div>
+              ) : c.path ? (
                 // A detected folder can be the wrong one (a launcher's, another profile's), and it has
                 // to be correctable before the game is added — the old toolbar button did this.
                 <div className="sl-inline" style={{ marginTop: 4 }}>
@@ -366,6 +434,34 @@ export function AddGamesView({ onEnrolled }: Props) {
                     <FolderSearch size={12} strokeWidth={1.75} aria-hidden="true" />
                     Set save folder
                   </Button>
+                </div>
+              )}
+              {!c.enrolled && c.path && (c.alsoFound ?? []).length > 0 && (
+                // Other folders the manifest names for this game that exist here. Ticked by default; the
+                // manifest cannot tell saves from settings, so each one can be left out before adding.
+                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 11.5, color: 'var(--color-dim)' }}>Also found — synced with it unless you untick:</span>
+                  {(c.alsoFound ?? []).map(f => {
+                    const on = !alsoOff.has(alsoId(c, f.path))
+                    return (
+                      <span
+                        key={f.path}
+                        className="sl-inline"
+                        style={{ gap: 6 }}
+                        // The row is the game's own label: a click here must toggle this folder, not the game.
+                        onClick={e => { e.preventDefault(); toggleAlso(c, f.path) }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          aria-label={`Also sync ${f.path}`}
+                          onClick={e => e.stopPropagation()}
+                          onChange={() => toggleAlso(c, f.path)}
+                        />
+                        <span className="sl-path">{f.path}</span>
+                      </span>
+                    )
+                  })}
                 </div>
               )}
             </div>

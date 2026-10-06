@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import type { View, AgentState, AgentAppearance, Conflict, TrackedGame } from './types'
+import type { View, AgentState, AgentAppearance, Conflict, FolderSuggestion, TrackedGame } from './types'
 import { api } from './api'
 import { Sidebar } from './components/Sidebar'
 import { StatusHeader } from './components/StatusHeader'
@@ -9,6 +9,7 @@ import { GameDetailView } from './components/GameDetailView'
 import { AddGamesView } from './components/AddGamesView'
 import { ConflictsView } from './components/ConflictsView'
 import { SyncConflictModal } from './components/SyncConflictModal'
+import { FolderSuggestionsModal } from './components/FolderSuggestionsModal'
 import { SettingsView } from './components/SettingsView'
 import { ActivityView } from './components/ActivityView'
 import { Chip } from './components/ui/Chip'
@@ -38,6 +39,17 @@ export default function App() {
   // Deliberately separate from `conflicts`: the passive 15s poll below must never open this on its
   // own — only an explicit Sync all does, so nothing interrupts the user unprompted.
   const [syncQueue, setSyncQueue] = useState<Conflict[] | null>(null)
+  // "More save folders found": folders the manifest names for tracked games that nobody has answered
+  // for yet. Asked once when the window opens (and when a notification links here), never by a poll.
+  const [folderQueue, setFolderQueue] = useState<FolderSuggestion[] | null>(null)
+  const askAboutFolders = useCallback(() => {
+    api.folderSuggestions()
+      .then(all => {
+        const open = all.filter(s => !s.deferred)
+        if (open.length > 0) setFolderQueue(q => q ?? open)
+      })
+      .catch(() => {})
+  }, [])
 
   // How many games the LAST scan suggested — read from the agent's cache, never triggering a scan, so
   // the sidebar count costs nothing and navigating never walks the disk. Null until one has run.
@@ -128,6 +140,11 @@ export default function App() {
   // consumed here, after both reads, rather than there. See clearRouteHash for why it goes at all.
   useEffect(() => { clearRouteHash() }, [])
 
+  // Once per window: a conflict the user asked to see goes first, so the folder prompt waits for it.
+  useEffect(() => {
+    if (!autoQueueRequested) askAboutFolders()
+  }, [autoQueueRequested, askAboutFolders])
+
   // Runs once, only when a native tray action opened this window looking for a conflict to show.
   // The passive 15s poll above must never do this on its own — see handleSynced's own comment.
   useEffect(() => {
@@ -146,10 +163,11 @@ export default function App() {
       setView(route.view)
       setOpenGameId(route.gameId)
       if (route.queue) refreshConflicts().then(cs => { if (cs.length > 0) setSyncQueue(cs) })
+      if (route.folders) askAboutFolders()
     }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
-  }, [refreshConflicts])
+  }, [refreshConflicts, askAboutFolders])
 
   return (
     <div className="sl-app">
@@ -256,6 +274,13 @@ export default function App() {
             onResolved={refreshConflicts}
             onAllDone={() => setSyncQueue(null)}
             onLater={() => { setSyncQueue(null); setView('conflicts') }}
+          />
+        )}
+        {folderQueue && !syncQueue && (
+          <FolderSuggestionsModal
+            suggestions={folderQueue}
+            onChanged={() => { refreshState(); void refreshConflicts() }}
+            onDone={() => setFolderQueue(null)}
           />
         )}
     </div>

@@ -1,4 +1,4 @@
-import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineScanCandidate, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
+import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineScanCandidate, SavePath, VersionFolder, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
 
 // The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
 // itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
@@ -152,6 +152,11 @@ async function explain(res: Response): Promise<string> {
   return `${res.status} ${res.statusText}`;
 }
 
+/** `&path=<key>` for one of a game's extra save folders; nothing for the main one. */
+function pathParam(key: string | undefined): string {
+  return key && key !== 'main' ? `&path=${encodeURIComponent(key)}` : '';
+}
+
 async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch('/api' + path, {
     ...opts,
@@ -178,6 +183,9 @@ export const api = {
    * listing versions never has to open a zip for ones nobody is looking at. */
   versionStats: (gameId: string, versionId: string) =>
     request<VersionStats>(`/games/${gameId}/versions/${versionId}/stats`),
+  /** One version's files grouped by save folder (`main` first), read from its archive on demand. */
+  versionFolders: (gameId: string, versionId: string) =>
+    request<VersionFolder[]>(`/games/${gameId}/versions/${versionId}/folders`),
 
   refreshArt: (gameId: string) => request<{ message?: string }>(`/games/${gameId}/art/refresh`, { method: 'POST' }),
   /** Five SteamGridDB covers or icons for a game, with inline previews. `page` counts from 0. */
@@ -190,7 +198,23 @@ export const api = {
   deleteGame: (gameId: string) => request<void>(`/games/${gameId}`, { method: 'DELETE' }),
   addGame: (name: string, suggestedSaveDir: string | null) =>
     request<void>('/games', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, manifestKey: null, customPathsJson: null, suggestedSaveDir }) }),
-  setSaveDir: (gameId: string, value: string) => request<void>(`/games/${gameId}/save-dir?value=${encodeURIComponent(value)}`, { method: 'POST' }),
+  /** A save folder's template for every machine; `key` names an extra folder (none: the main one). */
+  setSaveDir: (gameId: string, value: string, key?: string) =>
+    request<void>(`/games/${gameId}/save-dir?value=${encodeURIComponent(value)}${pathParam(key)}`, { method: 'POST' }),
+  /** Another save folder for the game, on every machine that syncs it (tasks/multiple-save-paths). */
+  addSavePath: (gameId: string, body: { key: string; label?: string | null; template?: string | null; includeGlobs?: string[] | null }) =>
+    request<SavePath>(`/games/${gameId}/save-paths`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: null, template: null, includeGlobs: null, ...body }),
+    }),
+  /** Stop syncing an extra folder everywhere. Its key is retired; stored versions keep its files. */
+  removeSavePath: (gameId: string, key: string) =>
+    request<void>(`/games/${gameId}/save-paths/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+  /** One save folder's include scope. Empty: the whole folder. */
+  setIncludeGlobs: (gameId: string, patterns: string[], key?: string) =>
+    request<void>(`/games/${gameId}/include-globs${key ? `?path=${encodeURIComponent(key)}` : ''}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patterns),
+    }),
   setRetention: (gameId: string, value: number | null) =>
     request<void>(`/games/${gameId}/retain${value !== null ? `?value=${value}` : ''}`, { method: 'POST' }),
   setExcludes: (gameId: string, patterns: string[]) =>
@@ -306,10 +330,10 @@ export const api = {
     request<MachineSavePath[]>(`/games/${gameId}/paths`),
   getGamePathCandidates: (gameId: string) =>
     request<MachineScanCandidate[]>(`/games/${gameId}/path-candidates`),
-  setMachinePath: (gameId: string, machineId: string, path: string) =>
-    request<void>(`/games/${gameId}/paths/${machineId}?value=${encodeURIComponent(path)}`, { method: 'POST' }),
-  clearMachinePath: (gameId: string, machineId: string) =>
-    fetch(`/api/games/${gameId}/paths/${machineId}`, { method: 'DELETE', headers: headers() })
+  setMachinePath: (gameId: string, machineId: string, path: string, key?: string) =>
+    request<void>(`/games/${gameId}/paths/${machineId}?value=${encodeURIComponent(path)}${pathParam(key)}`, { method: 'POST' }),
+  clearMachinePath: (gameId: string, machineId: string, key?: string) =>
+    fetch(`/api/games/${gameId}/paths/${machineId}${key ? `?path=${encodeURIComponent(key)}` : ''}`, { method: 'DELETE', headers: headers() })
       .then(res => { if (!res.ok) throw new Error(`${res.status}`); }),
 
   audit: (limit = 200) => request<AuditEntry[]>(`/audit?limit=${limit}`),

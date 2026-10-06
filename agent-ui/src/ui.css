@@ -339,6 +339,18 @@ button:disabled { cursor: default; }
 .sl-check-row:has(input:checked) { background: var(--color-tile); }
 .sl-check-row input { margin-top: 3px; }
 .sl-check-row__main { flex: 1; min-width: 0; }
+/* Add games: an enrolled game, shown while Hide enrolled is off. color-mix keeps the tint right in both themes. */
+.sl-check-row--enrolled, .sl-check-row--enrolled:has(input:checked) { background: color-mix(in oklab, var(--color-safe) 7%, var(--color-panel)); }
+.sl-check-row--enrolled input { cursor: default; }
+.sl-check-row--enrolled .sl-check-row__title { color: color-mix(in oklab, var(--color-safe-ink) 70%, var(--color-dim)); }
+.sl-check-row--enrolled .sl-path { color: var(--color-faint); }
+.sl-check-row__note { font-size: 11.5px; color: var(--color-safe-ink); }
+.sl-status { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 22px; height: 22px; border-radius: 6px; }
+.sl-status--ok   { background: var(--color-safe-soft);  color: var(--color-safe-ink); }
+.sl-status--has  { background: var(--color-tile);       color: var(--color-fg); }
+.sl-status--warn { background: var(--color-watch-soft); color: var(--color-watch-ink); }
+.sl-filters__toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--color-fg); cursor: pointer; }
+.sl-fchip__ok { color: var(--color-safe); }
 .sl-check-row__name { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 13px; font-weight: 600; }
 .sl-footbar {
   position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;

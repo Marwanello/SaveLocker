@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronLeft, Folder, Check, X } from 'lucide-react'
 import type { BrowseListing } from '../types'
 import { api } from '../api'
@@ -17,12 +18,13 @@ interface Props {
 const ROW_HEIGHT = 44
 
 const OVERLAY: React.CSSProperties = {
-  position: 'absolute', inset: 0, background: 'rgba(13,17,20,0.82)',
-  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
+  position: 'fixed', inset: 0, zIndex: 1000,
+  background: 'rgba(8,10,12,0.62)', backdropFilter: 'blur(1.5px)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
 }
 const PANEL: React.CSSProperties = {
   background: 'var(--color-panel)', border: '1px solid var(--color-line)', borderRadius: 6,
-  width: '86%', maxWidth: 620, maxHeight: '86%',
+  width: '100%', maxWidth: 620, height: 'min(560px, 100%)',
   display: 'flex', flexDirection: 'column', overflow: 'hidden',
 }
 const BTN: React.CSSProperties = {
@@ -97,7 +99,9 @@ export function PathBrowserModal({ gameName, initialPath, onConfirm, onCancel }:
     }
   }
 
-  return (
+  // Portalled: a parent with a transform (the page's entrance animation) would otherwise turn the
+  // fixed overlay into a box the size of that parent.
+  return createPortal(
     <div style={OVERLAY} onKeyDown={onKeyDown}>
       <div style={PANEL}>
         <div style={{ padding: '13px 15px', borderBottom: '1px solid var(--color-line)' }}>
@@ -187,6 +191,7 @@ export function PathBrowserModal({ gameName, initialPath, onConfirm, onCancel }:
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

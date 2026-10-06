@@ -130,13 +130,19 @@ public sealed class Daemon : IAsyncDisposable
         BackfillSteamAppIds();
         Art.SteamArtHost.Watch(_config);
 
+        // Lets a templated save path expand inside the game's own Proton prefix. Core has no way to find
+        // it: only the Linux host knows where Steam keeps compatdata.
+        string? PrefixForAppId(string appId) => SteamRoots.Find()
+            .Select(root => SteamRoots.CompatDataPath(root, appId))
+            .FirstOrDefault(p => p is not null);
+
         _apiServer = new AgentApiServer(
             port: _apiPort,
             config: _config,
             doScan: () => _scanner.ScanAsync(),
-            enroll: async (candidates, ids) =>
+            enroll: async (candidates, ids, alsoSync) =>
             {
-                var result = await Enroller.EnrollAsync(_config, candidates, ids, ct);
+                var result = await Enroller.EnrollAsync(_config, candidates, ids, ct, alsoSync);
                 if (result.enrolled > 0) StartFolderWatchers();
                 return result;
             },
@@ -179,6 +185,8 @@ public sealed class Daemon : IAsyncDisposable
             postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
             syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct),
             mapFolder: (game, key, dir, keep) => _engine.MapSavePathAsync(game, key, dir, keep),
+            forgetFolder: (game, key) => _engine.ForgetSavePathAsync(game, key),
+            prefixForAppId: PrefixForAppId,
             openFile: DesktopEnvironment.TryOpenFile);
         _apiServer.Start();
 
@@ -195,11 +203,7 @@ public sealed class Daemon : IAsyncDisposable
             pollMs: _pollMs ?? 20000,
             health: _health,
             offlineQueue: _offlineQueue,
-            // Lets a templated save path expand inside the game's own Proton prefix. Core has no
-            // way to find it: only the Linux host knows where Steam keeps compatdata.
-            prefixForAppId: appId => SteamRoots.Find()
-                .Select(root => SteamRoots.CompatDataPath(root, appId))
-                .FirstOrDefault(p => p is not null),
+            prefixForAppId: PrefixForAppId,
             notices: _notices);
         _commandPoller.Start();
 

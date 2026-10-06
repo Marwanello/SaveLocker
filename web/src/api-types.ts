@@ -801,6 +801,15 @@ export interface paths {
                         "application/json": components["schemas"]["SavePathDto"];
                     };
                 };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SavePathRefusalDto"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -1510,6 +1519,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["SavePathDto"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SavePathRefusalDto"];
                     };
                 };
             };
@@ -2542,6 +2560,44 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["VersionStatsDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/versions/{versionId}/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    versionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VersionFolderDto"][];
                     };
                 };
             };
@@ -4148,6 +4204,11 @@ export interface components {
             includeGlobs: null | string[];
             machinePath?: null | string;
         };
+        SavePathRefusalDto: {
+            error: string;
+            code: string;
+            existing?: null | components["schemas"]["SavePathDto"];
+        };
         SaveVersionDto: {
             /** Format: uuid */
             id: string;
@@ -4266,6 +4327,21 @@ export interface components {
         };
         /** @enum {unknown} */
         UploadStatus: "Created" | "NoChange" | "Conflict" | "RetryFull";
+        VersionFileDto: {
+            path: string;
+            /** Format: int64 */
+            size: number;
+            /** Format: date-time */
+            modifiedUtc: null | string;
+        };
+        VersionFolderDto: {
+            key: string;
+            /** Format: int32 */
+            fileCount: number;
+            /** Format: int64 */
+            totalBytes: number;
+            files: components["schemas"]["VersionFileDto"][];
+        };
         VersionStatsDto: {
             /** Format: int32 */
             fileCount: number;

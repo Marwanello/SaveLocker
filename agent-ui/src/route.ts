@@ -8,6 +8,8 @@ import type { View } from './types'
  *   #overview  #games  #addGames  #conflicts  #activity  #settings   the sidebar's own views
  *   #conflicts:queue                                        the conflicts view, with the one-at-a-time
  *                                                           chooser raised straight away
+ *   #games:folders                                          the Games list, with the "more save folders
+ *                                                           found" prompt raised
  *   #game:<id>                                              one game's page
  *
  * Anything else lands on Games, as it always has. Never throws: this reads a value a person or another
@@ -19,6 +21,8 @@ export interface Route {
   gameId: string | null
   /** `#conflicts:queue`: raise the chooser rather than just showing the list. */
   queue: boolean
+  /** `#games:folders`: raise the "more save folders found" prompt. */
+  folders?: boolean
 }
 
 const VIEWS: readonly View[] = ['overview', 'games', 'addGames', 'conflicts', 'activity', 'settings']
@@ -42,5 +46,7 @@ export function parseRoute(hash: string): Route {
 
   if (base === 'game' && rest) return { view: 'games', gameId: rest, queue: false }
   const view = (VIEWS as readonly string[]).includes(base) ? (base as View) : 'games'
-  return { view, gameId: null, queue: view === 'conflicts' && rest === 'queue' }
+  const route: Route = { view, gameId: null, queue: view === 'conflicts' && rest === 'queue' }
+  if (view === 'games' && rest === 'folders') route.folders = true
+  return route
 }
