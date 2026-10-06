@@ -953,7 +953,8 @@ Check "SP-01 add: an extra folder is stored and returned with its scope" `
 Check "SP-01 add: 'main' is refused - it is the primary folder" ((Http POST "/api/games/$spId/save-paths" @{ key = "main" }).Status -eq 400)
 Check "SP-01 add: a key that is not a lower-case slug is refused" ((Http POST "/api/games/$spId/save-paths" @{ key = "States" }).Status -eq 400)
 Check "SP-01 add: a key that would climb out of the archive is refused" ((Http POST "/api/games/$spId/save-paths" @{ key = "../x" }).Status -eq 400)
-Check "SP-01 add: a duplicate key is refused" ((Http POST "/api/games/$spId/save-paths" @{ key = "states" }).Status -eq 400)
+$spDup = Http POST "/api/games/$spId/save-paths" @{ key = "states" }
+Check "SP-01 add: a duplicate key is refused (409 key_taken)" ($spDup.Status -eq 409 -and $spDup.Json.code -eq "key_taken")
 Check "SP-01 add: an include pattern outside the folder is refused" `
     ((Http POST "/api/games/$spId/save-paths" @{ key = "cfg"; includeGlobs = @("../other.cfg") }).Status -eq 400)
 Check "SP-01 add: an unknown game is a 404" ((Http POST "/api/games/$([guid]::NewGuid())/save-paths" @{ key = "x" }).Status -eq 404)
@@ -1036,8 +1037,9 @@ Check "SP-01 remove: the removed folder is gone from the game" `
     (@((Http GET "/api/games/$spId/state").Json.game.extraPaths | Where-Object { $_.key -eq "states" }).Count -eq 0)
 Check "SP-01 remove: ... and from every agent's list" `
     (@(@((Http GET "/api/games" $null $spk1).Json | Where-Object { $_.id -eq $spId })[0].extraPaths | Where-Object { $_.key -eq "states" }).Count -eq 0)
+$spRetired = Http POST "/api/games/$spId/save-paths" @{ key = "states" }
 Check "SP-01 remove: a removed key can never be added again (stored versions may hold its files)" `
-    ((Http POST "/api/games/$spId/save-paths" @{ key = "states" }).Status -eq 400)
+    ($spRetired.Status -eq 409 -and $spRetired.Json.code -eq "key_retired")
 Check "SP-01 remove: ... and a removed folder cannot be mapped or removed again" `
     ((Http POST "/api/games/$spId/paths/$($sp1.machineId)?value=C:/x&path=states").Status -eq 404 -and
      (Http DELETE "/api/games/$spId/save-paths/states").Status -eq 404)

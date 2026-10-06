@@ -10,7 +10,7 @@ updated as each one ships.
 |---|---|---|
 | A — Foundation | Phases 1–2 (archive core, server model + wire) | ✅ Done 2026-10-04 — branch `multiple-save-paths-group-a`; nothing user-visible yet, every check automated |
 | B — End to end | Phases 3–5 (agent sync core, reconcile/CLI/local API/doctor, scanners declare extra paths) | ✅ Done 2026-10-05 — branch `multiple-save-paths-group-b`; automated two-machine suite `run-multipath-tests` 39/39; the testenv (Windows + WSL) pass is still to do |
-| C — Suggestions + UI | Phases 6–7 (manifest suggestions, agent-ui/dashboard/Deck) | ⏳ Not started |
+| C — Suggestions + UI | Phases 6–7 (manifest suggestions, agent-ui/dashboard/Deck) | ✅ Done 2026-10-05 — branch `multiple-save-paths-group-c`; every automated check green (unit 247, local-api 119, multipath 39); testenv pass done on Windows + WSL + console with screenshots (two bugs it found are fixed); the Deck target is still to do |
 
 ## Groups
 

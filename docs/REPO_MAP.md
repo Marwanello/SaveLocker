@@ -124,6 +124,10 @@ SaveLocker/
 │   │   ├── CliArgs.cs                   # Minimal command-line parser
 │   │   ├── Enroller.cs                  # Candidate → server game + tracked game; publishes its progress
 │   │   │                               #   (GET /api/enroll/progress) for the Add games bar
+│   │   ├── FolderSuggestions.cs         # "Also found": a manifest game's other locations that exist here —
+│   │   │                               #   keys from templates, what is still to suggest per tracked game
+│   │   ├── SavePathEditor.cs            # Add/remove an extra save folder — one implementation for add-path,
+│   │   │                               #   remove-path, the local API and the start-up prompt
 │   │   ├── FolderSize.cs                # Bytes under a save folder by plain enumeration (no hashing)
 │   │   ├── FileLockProbe.cs             # "Is anyone still writing?" — FileShare (Win) / /proc (Linux)
 │   │   ├── SteamLayout.cs               # The parts of Steam's on-disk layout that are identical on
@@ -256,8 +260,9 @@ SaveLocker/
 │   │       ├── GamesView.tsx            # Sidebar + game page, or the full-width grid
 │   │       ├── game/                    # The game page, one file per card: GameDetail (owns versions and
 │   │       │                           #   paths), GameHead, ConflictPanel (the agent's conflict card with
-│   │       │                           #   OS logos), GameStats, VersionsCard, SaveFoldersCard, RulesCard,
-│   │       │                           #   ExcludePatternsCard, RemoteCommandsCard, MachineSelect
+│   │       │                           #   OS logos), GameStats, VersionsCard, SaveFoldersCard (+ SaveFolderParts:
+│   │       │                           #   one section per extra folder, include patterns, Latest's files),
+│   │       │                           #   RulesCard, ExcludePatternsCard, RemoteCommandsCard, MachineSelect
 │   │       ├── ArtPicker.tsx            # Inline cover/icon chooser under the game card (the pen over the
 │   │       │                           #   cover opens it): SteamGridDB options, five per page
 │   │       ├── ConfigView.tsx           # SteamGridDB, Console build card, Machines/API keys,
@@ -303,6 +308,8 @@ SaveLocker/
 │           ├── ActivityView.tsx         # The full feed, the offline queue, Open agent.log
 │           ├── VersionsCard.tsx · GameManagement.tsx   # The game page's server versions; its folder / process /
 │           │                           #   stop-tracking controls (a confirm is the agent's `needsConfirm`, never a sentence)
+│           ├── FolderSuggestionsModal.tsx # "More save folders found": the start-up, one-game-at-a-time
+│           │                           #   prompt for "Also found" folders (Add ticked / Skip for now)
 │           ├── OverviewView.tsx · RecentCard.tsx   # Quick info only; "Recent" expands to the full log
 │           ├── AddGamesView.tsx · SettingsView.tsx
 │           ├── LaunchSetupCard.tsx      # The Steam launch-options command + Copy. Renders nothing

@@ -184,4 +184,85 @@ public sealed class EnrollDeclaredFoldersTests : IClassFixture<ServerProcess>, I
         Assert.Equal((0, 1), result);
         Assert.DoesNotContain(await ApiClient.For(a).ListGamesAsync(), g => g.Name == game);
     }
+
+    /// <summary>A manifest-shaped candidate: one save folder, two more locations "Also found".</summary>
+    private ScanCandidate WithAlsoFound(string game, string machine) => new(
+        game, Dir(machine, "docs"), ScanSource.SteamInstalled, false,
+        AlternateSaveDirs: new[]
+        {
+            new DeclaredSavePath("appdata", Dir(machine, "appdata")),
+            new DeclaredSavePath("config", Dir(machine, "config")),
+        });
+
+    [Fact]
+    public async Task Only_the_ticked_also_found_folders_are_added()
+    {
+        var game = "AlsoFound-" + Guid.NewGuid().ToString("N")[..8];
+        var a = await Machine("a-" + game);
+
+        var result = await Enroller.EnrollAsync(a, new[] { WithAlsoFound(game, "a") }, new[] { 0 },
+            alsoSync: new Dictionary<int, string[]> { [0] = new[] { Path.Combine(_dir, "a", "appdata") } });
+
+        Assert.Equal((1, 0), result);
+        var tracked = AgentConfig.Load(a.ConfigPath).FindGame(game)!;
+        var appdata = Assert.Single(tracked.ExtraPaths);
+        Assert.Equal("appdata", appdata.Key);
+        Assert.Equal(Path.Combine(_dir, "a", "appdata"), appdata.Directory);
+
+        var server = (await ApiClient.For(a).ListGamesAsync()).Single(g => g.Name == game);
+        var serverPath = Assert.Single(server.ExtraPaths!);
+        Assert.Equal("appdata", serverPath.Key);
+        Assert.Equal(Path.Combine(_dir, "a", "appdata"), serverPath.MachinePath);
+    }
+
+    [Fact]
+    public async Task Nothing_ticked_enrolls_the_primary_folder_alone()
+    {
+        var game = "NoneTicked-" + Guid.NewGuid().ToString("N")[..8];
+        var a = await Machine("a-" + game);
+
+        Assert.Equal((1, 0), await Enroller.EnrollAsync(a, new[] { WithAlsoFound(game, "a") }, new[] { 0 }));
+
+        Assert.Empty(AgentConfig.Load(a.ConfigPath).FindGame(game)!.ExtraPaths);
+        Assert.Empty((await ApiClient.For(a).ListGamesAsync()).Single(g => g.Name == game).ExtraPaths ?? []);
+    }
+
+    [Fact]
+    public async Task A_folder_the_fleet_already_has_is_joined_not_added_twice()
+    {
+        var game = "AlsoJoined-" + Guid.NewGuid().ToString("N")[..8];
+        var a = await Machine("a-" + game);
+        var b = await Machine("b-" + game);
+        // The same manifest location on both machines — one folder, so one template wherever a token describes it.
+        var appdata = Dir("shared", "appdata");
+        ScanCandidate Shared(string machine) => new(game, Dir(machine, "docs"), ScanSource.SteamInstalled, false,
+            AlternateSaveDirs: new[] { new DeclaredSavePath("appdata", appdata) });
+        var ticks = new Dictionary<int, string[]> { [0] = new[] { appdata } };
+        await Enroller.EnrollAsync(a, new[] { Shared("a") }, new[] { 0 }, alsoSync: ticks);
+
+        var second = await Enroller.EnrollAsync(b, new[] { Shared("b") }, new[] { 0 }, alsoSync: ticks);
+
+        // Joined, not skipped; the folder stays one folder (the poller maps b's copy of it).
+        Assert.Equal((1, 0), second);
+        var server = (await ApiClient.For(b).ListGamesAsync()).Single(g => g.Name == game);
+        Assert.Equal("appdata", Assert.Single(server.ExtraPaths!).Key);
+    }
+
+    [Theory]
+    // The same template is the same folder, whatever its key.
+    [InlineData("appdata", "<winAppData>/Game", "config", "<winAppData>/Game", true)]
+    [InlineData("appdata", "<winAppData>/Game", "appdata", "<WINAPPDATA>/Game", true)]
+    // A key match with nothing to compare (a template missing on either side): the key came from the
+    // same manifest template on every machine, so it is that folder.
+    [InlineData("appdata", null, "appdata", "<winAppData>/Game", true)]
+    [InlineData("appdata", "<winAppData>/Game", "appdata", null, true)]
+    // One key, two different folders: someone added an unrelated "appdata" — this one is another folder.
+    [InlineData("appdata", "<winDocuments>/Elsewhere", "appdata", "<winAppData>/Game", false)]
+    [InlineData("config", "<winAppData>/Game/Config", "appdata", "<winAppData>/Game", false)]
+    public void The_fleet_has_an_also_found_folder_by_template_or_by_a_key_nothing_contradicts(
+        string serverKey, string? serverTemplate, string key, string? template, bool joins)
+    {
+        var server = new[] { new SavePathDto(serverKey, null, serverTemplate, null) };
+        Assert.Equal(joins, Enroller.FleetHasFolder(server, key, template));
+    }
 }

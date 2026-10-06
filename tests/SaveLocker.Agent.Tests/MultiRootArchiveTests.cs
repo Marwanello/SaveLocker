@@ -389,4 +389,29 @@ public sealed class MultiRootArchiveTests : IDisposable
         Assert.Throws<ArgumentException>(() => SaveArchive.HashDirectory(new[]
             { SaveRoot.Primary(a), new SaveRoot("../up", P("vb")) }));
     }
+
+    [Fact]
+    public void The_console_listing_groups_files_by_folder_and_keeps_an_emptied_one()
+    {
+        var saves = Dir("ls/saves", ("slot1.sav", "a"), ("sub/slot2.sav", "bb"));
+        var states = Dir("ls/states", ("x.state", "ccc"));
+        var empty = Dir("ls/empty");
+        var zip = P("ls.zip");
+        SaveArchive.CreateArchive(new[] { SaveRoot.Primary(saves), new SaveRoot("states", states), new SaveRoot("config", empty) }, zip);
+
+        var folders = SaveArchive.ListArchiveFolders(zip);
+
+        Assert.Equal(new[] { "main", "config", "states" }, folders.Select(f => f.Key));
+        var main = folders[0];
+        Assert.Equal(new[] { "slot1.sav", "sub/slot2.sav" }, main.Files.Select(f => f.Path));
+        Assert.Equal(3, main.TotalBytes);
+        Assert.Equal(0, folders[1].FileCount);
+        Assert.Equal("x.state", Assert.Single(folders[2].Files).Path);
+
+        // A single-folder archive (what every older version is) lists as its main folder alone.
+        var single = P("single.zip");
+        SaveArchive.CreateArchive(saves, single);
+        Assert.Equal("main", Assert.Single(SaveArchive.ListArchiveFolders(single)).Key);
+        Assert.Single(SaveArchive.ListArchiveFolders(zip, maxFilesPerFolder: 1)[0].Files);
+    }
 }

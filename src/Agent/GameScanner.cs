@@ -154,9 +154,9 @@ public sealed class GameScanner : IGameScanner
         var results = new List<ScanCandidate>();
         foreach (var s in await SteamShortcuts.ReadAllAsync(steamPath, ct))
         {
-            var save = await SuggestSaveDirAsync(s.AppName, ct, NullIfMissing(s.StartDir), steamPath);
+            var (save, also) = await SuggestSaveDirAsync(s.AppName, ct, NullIfMissing(s.StartDir), steamPath);
             results.Add(new ScanCandidate(
-                s.AppName, save, ScanSource.SteamShortcut,
+                s.AppName, save, ScanSource.SteamShortcut, AlternateSaveDirs: also,
                 HasSteamCloud: false, ManifestKey: await CanonicalKeyAsync(s.AppName, save, ct),
                 InstallDir: NullIfMissing(s.StartDir),
                 SteamAppId: s.AppId,
@@ -211,7 +211,7 @@ public sealed class GameScanner : IGameScanner
                 // folder and the user was sent to type one by hand, even for the thousands of
                 // titles the manifest describes exactly.
                 var trimmed = name.Trim();
-                var save = await SuggestSaveDirAsync(trimmed, ct, installPath, libraryRoot);
+                var (save, also) = await SuggestSaveDirAsync(trimmed, ct, installPath, libraryRoot);
 
                 // Flagged rather than hidden here — the UI's default view is what hides them, and
                 // the scan must still return them or no filter could bring them back.
@@ -223,7 +223,7 @@ public sealed class GameScanner : IGameScanner
                 // absent from the manifest keeps the old assumption: no data is not evidence of no
                 // Cloud, and that case is unchanged from before.
                 results.Add(new ScanCandidate(
-                    trimmed, save, ScanSource.SteamInstalled,
+                    trimmed, save, ScanSource.SteamInstalled, AlternateSaveDirs: also,
                     HasSteamCloud: await _detection.HasSteamCloudAsync(trimmed, ct) ?? true,
                     ManifestKey: await CanonicalKeyAsync(trimmed, save, ct),
                     InstallDir: installPath, Store: GameStore.Steam,
@@ -263,10 +263,10 @@ public sealed class GameScanner : IGameScanner
             // Playnite's own library instead of libraryfolders.vdf.
             var isSteam = PlayniteLibrary.IsSteam(game.PluginId);
             var storeRoot = isSteam ? steamPath : null;
-            var save = await SuggestSaveDirAsync(game.Name, ct, game.InstallDirectory, storeRoot);
+            var (save, also) = await SuggestSaveDirAsync(game.Name, ct, game.InstallDirectory, storeRoot);
 
             results.Add(new ScanCandidate(
-                game.Name, save, ScanSource.Playnite,
+                game.Name, save, ScanSource.Playnite, AlternateSaveDirs: also,
                 // Only a Steam-owned entry has a Cloud flag worth asking the manifest about — every
                 // other store's Cloud coverage isn't something this manifest tracks.
                 HasSteamCloud: isSteam && (await _detection.HasSteamCloudAsync(game.Name, ct) ?? true),
@@ -371,7 +371,8 @@ public sealed class GameScanner : IGameScanner
     // ----- Helpers -----
 
     /// <summary>
-    /// Resolve the first existing save dir the manifest knows for a name.
+    /// Resolve the first existing save dir the manifest knows for a name, and the other locations
+    /// that exist too — offered as "Also found", never adopted on their own (multiple-save-paths §8).
     /// <para>
     /// <paramref name="installDir"/> and <paramref name="storeRoot"/> are what the manifest calls
     /// <c>&lt;base&gt;</c> and <c>&lt;root&gt;</c>. They are optional because not every discovery
@@ -380,11 +381,12 @@ public sealed class GameScanner : IGameScanner
     /// combined.
     /// </para>
     /// </summary>
-    private async Task<string?> SuggestSaveDirAsync(
+    private async Task<(string? Save, IReadOnlyList<DeclaredSavePath>? Also)> SuggestSaveDirAsync(
         string name, CancellationToken ct, string? installDir = null, string? storeRoot = null)
     {
-        var dirs = await _detection.ResolveWindowsAsync(name, installDir, storeRoot, ct);
-        return dirs.FirstOrDefault();
+        var locations = await _detection.ResolveWindowsLocationsAsync(name, installDir, storeRoot, ct);
+        var save = locations.FirstOrDefault()?.Directory;
+        return (save, FolderSuggestions.AlsoFound(locations, save));
     }
 
     /// <summary>

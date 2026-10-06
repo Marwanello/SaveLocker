@@ -41,6 +41,8 @@ public sealed class CommandPoller : IDisposable
     /// <summary>How often an unmapped game is worth re-scanning for. See UpdatePathCandidatesAsync.</summary>
     private static readonly TimeSpan CandidateScanInterval = TimeSpan.FromMinutes(15);
     private DateTime _lastCandidateScan = DateTime.MinValue;
+    /// <summary>Whether this start has looked for "Also found" folders yet. See AnnounceFolderSuggestionsAsync.</summary>
+    private bool _foldersAnnounced;
 
     public CommandPoller(
         AgentConfig config,
@@ -85,6 +87,7 @@ public sealed class CommandPoller : IDisposable
             // reports nothing of the kind on its own — it is queued and retried — so this is the one
             // place "unreachable for five minutes" can be measured (NotificationCenter.ObserveServer).
             _notices?.ObserveServer(true);
+            await AnnounceFolderSuggestionsAsync();
             await UpdatePathCandidatesAsync();
             // Independent of each other — RunCommandsAsync executes dashboard commands,
             // CheckConflictsAsync only reads _config.Games and hits its own endpoint — so run them
@@ -519,6 +522,30 @@ public sealed class CommandPoller : IDisposable
         }
 
         _health.SetPathCandidates(reports);
+    }
+
+    /// <summary>
+    /// Once per start, after the first reconcile: if any tracked game has folders the manifest knows
+    /// and nobody has answered for (not added, not skipped, not refused), say so. That is what puts the
+    /// question to someone who tracked games before this agent could sync more than one folder — the
+    /// answer itself is the agent UI's (the notice opens its prompt).
+    /// </summary>
+    private async Task AnnounceFolderSuggestionsAsync()
+    {
+        if (_foldersAnnounced || _notices is null) return;
+        _foldersAnnounced = true;
+        try
+        {
+            var pending = (await new FolderSuggestions(_config, _detection, _prefixForAppId).AllAsync())
+                .Where(s => !s.Deferred)
+                .Select(s => s.GameId)
+                .Distinct()
+                .Count();
+            if (pending == 0) return;
+            AgentLogger.Log($"{pending} tracked game(s) keep saves in folders not synced yet (\"Also found\").");
+            _notices.Raise(NoticeCatalog.FoldersFound(pending));
+        }
+        catch (Exception ex) { AgentLogger.LogException("CommandPoller.AnnounceFolderSuggestions", ex); }
     }
 
     /// <summary>
