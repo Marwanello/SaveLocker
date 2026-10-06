@@ -1736,8 +1736,13 @@ continues with Phase 1b (states). What that feature must provide for emulators i
 `tasks/multiple-save-paths/summary.md`; the states research is in `tasks/emulator-saves/plan.md` → *Save states
 — decided*. Also fixed: EmuDeck for Windows' RetroArch lives at
 `%USERPROFILE%\emudeck\EmulationStation-DE\Emulators\RetroArch` (Phase 1 had guessed an `%APPDATA%` path).
-<br>**Next action for this item:** a new session builds *Multiple save paths* (start with a `plan.md`); the
-EmuDeck hardware pass for Phase 1 can happen before or after it.
+<br>**Resumed 2026-10-06: `main` (multiple save paths Groups A+B) merged in, Phase 1b (save states) built.** The
+merge kept `main`'s version of every shared file — its per-folder include scopes replace this branch's migration,
+DTO fields, server validation and `SaveArchive` code (`tasks/emulator-saves/plan.md` → *Merged onto multiple save
+paths*). A RetroArch game is now two scoped folders: `main` (`<rom>.srm`/`.rtc`) and `states` (`<rom>.state*`),
+the states folder declared even before it exists. `testenv emu-fixture` now writes a second tree for the WSL
+daemon, so the Windows ↔ WSL round trip runs on the rig. Unit **247**, multipath **39**, delta **33**.
+<br>**Next action for this item:** the EmuDeck hardware pass (Deck + Windows) for Phases 1 and 1b, then a PR.
 
 ---
 

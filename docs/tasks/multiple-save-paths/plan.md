@@ -358,6 +358,8 @@ local API's `Paths` and keyed `/folder`, and doctor.
   might recover some of those 702 manifest entries. Measure first.
 
 ## Rebase notes for `emulator-saves`
+*Done 2026-10-06* — merged rather than rebased (`main` into `emulator-saves`); see
+`../emulator-saves/plan.md` → *Merged onto multiple save paths*.
 - Drop its migration `AddGameIncludeGlobs` and its `Game.IncludeGlobs`/`GameDto.IncludeGlobs`/
   `CreateGameRequest.IncludeGlobs` changes. This feature adds the same column and fields.
 - Drop its `SaveArchive` include changes, which are ported here; keep its readers.

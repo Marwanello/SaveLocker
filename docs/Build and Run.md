@@ -267,12 +267,14 @@ handoff section in [[CONTEXT]]), every SSH/`scp` call has a short connect timeou
 ### Testing emulator saves (a fake EmuDeck folder)
 
 ```powershell
-.\tests\testenv.ps1 build -Only windows; .\tests\testenv.ps1 build -Only console
-.\tests\testenv.ps1 emu-fixture          # <StateRoot>\Emulation: Chrono Trigger, Zelda, Snes9x\Super Metroid
-.\tests\testenv.ps1 up -Only console; .\tests\testenv.ps1 up -Only windows
+.\tests\testenv.ps1 build -Only console; .\tests\testenv.ps1 build -Only windows; .\tests\testenv.ps1 build -Only linux
+.\tests\testenv.ps1 emu-fixture          # <StateRoot>\Emulation (Windows) + <StateRoot>\Emulation-wsl (WSL)
+.\tests\testenv.ps1 up -Only console; .\tests\testenv.ps1 up -Only windows; .\tests\testenv.ps1 up -Only linux
 ```
-The Windows test tray then scans **only** that fixture (`SAVELOCKER_EMUDECK_PATH`), never a real EmuDeck
-or RetroArch on the box. Add games lists `Chrono Trigger (RetroArch)` etc. with an *Emulator* chip; the
+The Windows test tray then scans **only** `Emulation` and the WSL daemon **only** `Emulation-wsl`
+(`SAVELOCKER_EMUDECK_PATH`), never a real EmuDeck or RetroArch on the box. Windows has Chrono Trigger's save,
+a state slot and its thumbnail; WSL has an older Chrono save and no states; both have their own Zelda save
+and state, which no Chrono sync may touch. Add games lists `Chrono Trigger (RetroArch)` etc. with an *Emulator* chip; the
 dedicated filter is Phase 7. `-EmuDeckPath <dir>` points it at any other folder — a **copy** of a real
 `Emulation` folder is the safe way to try real saves. The Deck needs no override: its test daemon scans
 the Deck's real EmuDeck install, so add only a game whose save you have backed up.
@@ -339,6 +341,7 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 | Multiple save paths Group A (2026-10-04) | `dotnet test tests/SaveLocker.Agent.Tests` **207** (+26: `MultiRootArchiveTests` 17, `IncludeGlobTests` 9; every archive guard mutation-checked) · `run-console-security-tests` **352** (+44, `SP-01`) · `run-server-bugbounty-tests` **216** · `run-health-tests` **33** · `run-hardening-tests` **33** · `run-delta-upload-tests` **33** · `web` + `agent-ui` build, `web` lint clean |
 | Multiple save paths Group B (2026-10-05) | `dotnet test tests/SaveLocker.Agent.Tests` **223** (+16: `MultiPathAgentTests` 13, `EnrollDeclaredFoldersTests` 3 — the latter starts the server's own build output, which the test project now references for build order) · new `run-multipath-tests` **39** (:5199; without shadows 14 fail) · `run-agent-tests` 47 · `run-delta-upload-tests` 33 · `run-concurrency-tests` 26 · `run-hardening-tests` 33 · `run-local-api-tests` **113** · `run-linux-tests` in WSL **201 pass / 2 fail**, identical to `main` run the same way (the 2 are the WSLg session pair; both then stop at the root-only `chattr +i` Decky probe) · `run-linux-regression-tests` 15 · `web` + `agent-ui` build |
 | Group 9 + PR #53 review fixes (2026-09-29) | `run-console-security-tests` **308** on Windows (BK-01 **84**: zip backups, download ticket, delete, restore + undo + the start's own setup, temp-file cleanup, the kept undo point, encryption at rest, before-upgrade; CFG-01 **17**; each new check mutation-checked) · `web` `npm run build` + `npm run lint` clean |
+| Emulator saves merged onto multiple save paths + Phase 1b states (2026-10-06) | `dotnet test tests/SaveLocker.Agent.Tests` **247** (`main`'s 228 + `RetroArchTests` 17 + `RetroArchSyncTests` 2 — two machines against a real server; an unscoped states folder fails it) · `run-multipath-tests` **39** · `run-delta-upload-tests` **33** |
 | Emulator saves Phase 1 (2026-10-04) | `dotnet test tests/SaveLocker.Agent.Tests` **203** (+22: `IncludeGlobTests` 9 — the three scoped-restore checks mutation-checked — and `RetroArchTests` 13) · `run-delta-upload-tests` **33** · `run-hardening-tests` **33** · `run-health-tests` **33** · full solution build at the 1-warning baseline |
 | Archive UTC write times (2026-09-28) | `dotnet test tests/SaveLocker.Agent.Tests` **114** (+9: `SaveArchiveTimestampTests` — fail before the fix off UTC) · `run-delta-upload-tests` **33** (+4: section 10, newest change through full and delta pushes; mutation-checked — dropping the server copy fails 1, the old agent stamp fails 3) · `run-hardening-tests` **33** · `run-health-tests` **22** |
 

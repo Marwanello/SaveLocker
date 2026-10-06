@@ -281,6 +281,12 @@ session can judge an edge case, not to reopen the choice.
   from the archive). Restore is scoped too: only matching files are written or deleted. Set once at
   creation; an existing game's scope is never changed by a later create. This amends the emulator plan's
   original "no server changes" line, which was written about `Game.Platform`, not this.
+  <br>**Since 2026-10-06 the scope is per save folder** (*Multiple save paths*, `SaveRoot.IncludeGlobs`): the
+  primary folder's is still `Game.IncludeGlobs`, each extra folder's is on its `GameSavePath` row.
+- **RetroArch save states sync always, as the game's second folder `states`** (2026-10-04 decided,
+  2026-10-06 built; maintainer's choice). Scoped to `<rom>.state*` (slots, `.state.auto`, thumbnails). Not
+  opt-in: the maintainer accepts that a state may not load under another core build. Declared even before
+  the folder exists, so every machine defines the game with the same folders.
 - **Emulator games are named from the save file, with the emulator as a suffix** (2026-10-04,
   maintainer's choice): `Chrono Trigger (USA).srm` → `Chrono Trigger (RetroArch)`. Deterministic on every
   machine (no playlist one machine has and another lacks), and the suffix keeps an SNES save from

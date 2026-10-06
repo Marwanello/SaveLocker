@@ -23,8 +23,8 @@ continue past a phase's own stopping point unless explicitly instructed to.
 
 | Phase | Status |
 |-------|--------|
-| 1 — `SaveArchive` include-globs + RetroArch | 🚧 In progress — code + tests done 2026-10-04 (branch `emulator-saves`), verified on a scratch two-machine rig and through `testenv` (Windows + fixture). **Waiting on the real-hardware pass** (EmuDeck on the Deck + EmuDeck for Windows). Deviations below under *Phase 1 — as built*. **Branch paused** (maintainer, 2026-10-04): *Multiple save paths* is built and merged first, then this branch is rebased and continues with 1b. |
-| 1b — RetroArch save states | ⏳ Not started — **blocked on [Multiple save paths](../multiple-save-paths/summary.md)**. Decided 2026-10-04, below under *Save states — decided*. |
+| 1 — `SaveArchive` include-globs + RetroArch | 🚧 In progress — code + tests done 2026-10-04 (branch `emulator-saves`); **merged with *Multiple save paths* 2026-10-06**, whose per-folder include scopes replaced this phase's own server column and archive code (below, *Merged onto multiple save paths*). Verified through `testenv` (Windows + WSL fixtures). **Waiting on the real-hardware pass** (EmuDeck on the Deck + EmuDeck for Windows). |
+| 1b — RetroArch save states | 🚧 In progress — built 2026-10-06: each RetroArch game declares a second folder, key `states`, scoped to `<rom>.state*`; `RetroArchSyncTests` (two machines, real server) + 4 new `RetroArchTests`, unit 247; testenv Windows ↔ WSL. Same hardware pass as Phase 1 still to do. |
 | 2 — PCSX2 / Dolphin / DuckStation + shared-card warning | ⏳ Not started |
 | 3 — `gamelist.xml` names | ⏳ Not started — **revisit**: Phase 1 made the cleaned file name the game's identity, so a nicer display name can no longer change the name |
 | 4 — PrimeHack | ⏳ Not started |
@@ -83,6 +83,38 @@ root. It matters because EmuDeck's docs call `Emulation\saves\retroarch\saves` a
 Known limits: two saves that clean to one name on the same machine (two regions, two cores) keep only the
 newest; two machines with different dumps of a game (`(USA)` vs `(USA) (Rev 1)`) get the same name but different
 scopes, so the second machine's enrollment is skipped (logged) rather than syncing the wrong file.
+
+### Merged onto multiple save paths (2026-10-06), and Phase 1b — as built
+
+*Multiple save paths* (Groups A and B, on `main`) ported this branch's include primitive into its own
+per-folder model, so the merge **kept `main`'s version of every shared file** and dropped this branch's copies:
+the migration `AddGameIncludeGlobs` (`main`'s `AddMultipleSavePaths` adds the same `Games.IncludeGlobs`
+column), its `GameDto`/`CreateGameRequest.IncludeGlobs`, its server validation and its `SaveArchive`
+include code (now `SaveRoot.IncludeGlobs`, one scope per folder, restored per folder). An emulator game is
+now simply a game with two scoped folders: `main` (the save) and `states`. What this branch still adds on
+top of `main`:
+- the readers (`EmuDeckRoots`, `RetroArchConfig`, `RetroArchSaves`, `RomNames`), `ScanSource.Emulator` and
+  the `EmulatorName`/`EmulatorSystem`/`EmulatorCore` candidate fields (+ `CandidateDto`);
+- `SaveDirSanity.Inspect`/`Measure` take the folder's scope — `main` measured the whole shared folder, so
+  doctor and the folder check would have reported every ROM's saves as this game's (callers in the agent
+  API, `add-path` and doctor pass each folder's own scope);
+- enrolling a game this machine tracks with **no folder** (adopted from the server) fills it in rather than
+  skipping it (`Enroller` + `AgentConfig.SetTracked`). `main`'s `Enroller` compares the candidate's folders
+  and scopes with the server's game (`SameFolders`) — that replaces this branch's `SameScope`.
+
+**Phase 1b.** `RetroArchConfig.Folders()` returns each setup's (saves, states) pair: EmuDeck's
+`saves/retroarch/{saves,states}`, or a standalone `retroarch.cfg`'s `savefile_directory` /
+`savestate_directory` (default `<root>/saves`, `<root>/states`). Each candidate declares
+`ExtraSaveDirs: [("states", <dir>, ["<rom>.state*"])]`, adopted without asking (multi-path plan §8). The
+states folder is declared **even when it does not exist yet**, so every machine defines the game with the
+same folders — a machine without one gets it from its first pull. "Sort save states by core" is independent of
+sorting saves, so `StatesDirFor` picks the folder that already holds the ROM's states, then the save's core
+folder, then the states root.
+
+Known limits: games enrolled by Phase 1 before this merge have no `states` folder on the server, so the
+scanner's two-folder candidate no longer matches them and enrollment is skipped (logged) — Phase 1 never
+shipped, so only test servers have such games; delete and re-add them. A state written by one core build may
+not load in another (accepted, *Save states — decided*).
 
 ---
 
