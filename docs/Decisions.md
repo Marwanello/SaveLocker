@@ -287,10 +287,16 @@ session can judge an edge case, not to reopen the choice.
   2026-10-06 built; maintainer's choice). Scoped to `<rom>.state*` (slots, `.state.auto`, thumbnails). Not
   opt-in: the maintainer accepts that a state may not load under another core build. Declared even before
   the folder exists, so every machine defines the game with the same folders.
-- **Emulator games are named from the save file, with the emulator as a suffix** (2026-10-04,
-  maintainer's choice): `Chrono Trigger (USA).srm` → `Chrono Trigger (RetroArch)`. Deterministic on every
-  machine (no playlist one machine has and another lacks), and the suffix keeps an SNES save from
-  merging with a PC release of the same title. Only ROMs with a save file are candidates.
+- **Emulator games are named from the save file, title alone** (2026-10-04, maintainer's choice; the
+  ` (RetroArch)` suffix dropped 2026-10-07 at the maintainer's request): `Chrono Trigger (USA).srm` →
+  `Chrono Trigger`. Deterministic on every machine (no playlist one machine has and another lacks). Only
+  ROMs with a save file are candidates. When a PC game on the same machine has the same name, the emulated
+  one gets its console appended (`Chrono Trigger (SNES)`) so the two never merge; where the emulator is
+  shown now is the game's source, below.
+- **A game's source is per machine and display only** (2026-10-07, maintainer's choice): how each machine
+  found the game, as kind › detail + tags ("Emulator › RetroArch", SNES, Flatpak), because two machines rarely
+  find a game the same way. The agent writes the words once (`GameSources`), the server stores one row per
+  machine and game, and the three UIs only draw them. Nothing syncs differently because of it.
 - **"Latest" = `Game.HeadVersionId`.** UI label "Latest"; admin action "Set as Latest".
 - **Artwork:** SteamGridDB images are downloaded/cached server-side, not stored as bare URLs
   (offline-safe, survives upstream changes).

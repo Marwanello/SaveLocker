@@ -1757,7 +1757,16 @@ DTO fields, server validation and `SaveArchive` code (`tasks/emulator-saves/plan
 paths*). A RetroArch game is now two scoped folders: `main` (`<rom>.srm`/`.rtc`) and `states` (`<rom>.state*`),
 the states folder declared even before it exists. `testenv emu-fixture` now writes a second tree for the WSL
 daemon, so the Windows ↔ WSL round trip runs on the rig. Unit **247**, multipath **39**, delta **33**.
-<br>**Next action for this item:** the EmuDeck hardware pass (Deck + Windows) for Phases 1 and 1b, then a PR.
+<br>**2026-10-07: game sources and plain names.** Each machine records how it found a game ("Emulator ›
+RetroArch" + SNES/Flatpak/EmuDeck tags, "Steam › Installed game", …) — new `MachineGameSources` table, agent
+`PUT /api/agent/source/{id}`, admin `GET /api/games/{id}/sources` — shown on the game page of the console
+(chip, "N sources" + per-machine popover), agent UI (chip + tags) and Game Mode (pill). RetroArch games drop the
+"(RetroArch)" suffix; a clash with a PC game on the same machine appends the console. Agent UI Add games gained an
+*Emulators* chip with an *Emulator* row (one chip per emulator — add each new one). `tasks/emulator-saves/plan.md`
+→ *Game sources and names*. Unit **280**.
+<br>**Next action for this item:** a testenv pass of the source chips (agent UI + Game Mode; the console was
+checked in the browser) — `testenv clean` first, the old "(RetroArch)" games no longer match — then the EmuDeck
+hardware pass (Deck + Windows) for Phases 1 and 1b, then a PR.
 
 ---
 
