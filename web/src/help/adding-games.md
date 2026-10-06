@@ -131,6 +131,7 @@ Some games keep saves in two places — say `Documents\My Games\…` and `AppDat
 - **Add games** lists them under the game, **ticked**. Untick any you don't want before adding the game.
 - On a **game's page** in the agent, each one has **Add** and **Don't sync**.
 - When the agent starts and a game you already track has folders nobody has decided about, it asks once — the same one-game-at-a-time window as a sync conflict, with every folder ticked. **Skip for now** leaves them on the game's page for later; nothing is added unless you leave it ticked.
+- On a **Steam Deck in Game Mode**, the SaveLocker app does the same: **Add a game** lists them ticked under each game, a game's page has **Add** / **Don't sync**, and opening the app asks once (**More save folders found**) about games you already track.
 
 The database cannot tell a second save folder from a settings folder or another store's copy of the game, which is why SaveLocker always asks instead of adding them on its own. A folder an emulator reader *knows* belongs to the game is added without asking.
 

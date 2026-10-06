@@ -23,7 +23,7 @@ namespace SaveLocker.Agent.Linux.Ui;
 /// </summary>
 sealed partial class UiApp
 {
-    private enum Screen { Status, Games, Game, AddGame, SetFolder, LaunchSetup, Conflicts, Activity, Settings, Gallery, FakeGame }
+    private enum Screen { Status, Games, Game, AddGame, SetFolder, LaunchSetup, Conflicts, Activity, Settings, Gallery, FakeGame, Folders }
 
     private readonly AgentConfig _config;
     private readonly LinuxGameScanner _scanner;
@@ -336,6 +336,7 @@ sealed partial class UiApp
                 else { app._screen = Screen.Game; app._game = pick; app.LoadGame(pick); }
             }
             else app._screen = target;
+            app._folderPromptAllowed = target == Screen.Folders;
         }
         app._autoScan = autoScan;
         foreach (var key in ParseNavScript(navScript)) app._navScript.Enqueue(key);
@@ -359,6 +360,7 @@ sealed partial class UiApp
         "conflicts" or "conflict" => Screen.Conflicts,
         "settings" or "config" => Screen.Settings,
         "gallery" => Screen.Gallery,
+        "folders" => Screen.Folders,
         // Test-only, launched as `savelocker ui --screen fakegame` (Program.cs's own "fake-game"
         // command). Never something a user has any reason to pass either.
         "fakegame" or "fake-game" or "conflict-game" => Screen.FakeGame,
@@ -573,6 +575,7 @@ sealed partial class UiApp
         PollDiskState();
         // The game screens' background work (art decode, a game's state) lands on the render thread here.
         PollGameScreens();
+        PollFolderPrompt();
         // Before any draw, so the header (on every screen) and the Overview read the same outcome.
         CollectSyncNow();
         // Before Update, which is what calls NewFrame: a queued mouse position must be in the queue
@@ -659,6 +662,7 @@ sealed partial class UiApp
                    || _syncNowTask is { IsCompleted: false } || _resolveTask is { IsCompleted: false }
                    || _gameStateTask is not null || _gameVersionsTask is not null || _gameSyncTask is not null
                    || _folderTask is not null || _sizeTasks.Count > 0 || _artInFlight > 0
+                   || _folderPromptFetch is not null || _promptTask is not null
                    || _pendingFolderScreen || _screenFade < 1f || _navScript.Count > 0;
         _settleFrames = busy ? 0 : _settleFrames + 1;
 
@@ -790,6 +794,7 @@ sealed partial class UiApp
         Screen.SetFolder => _folderGame is not null ? Screen.Games : Screen.AddGame,
         Screen.Game => Screen.Games,
         Screen.LaunchSetup => Screen.Settings,
+        Screen.Folders => Screen.Status,
         _ => screen,
     };
 
@@ -1189,6 +1194,7 @@ sealed partial class UiApp
             case Screen.LaunchSetup: DrawLaunchSetup(); break;
             case Screen.Conflicts: DrawConflicts(); break;
             case Screen.Settings: _settings.Draw(); break;
+            case Screen.Folders: DrawFolderPrompt(); break;
         }
 
         var best = Widgets.EndFocusScan();
@@ -1629,6 +1635,7 @@ sealed partial class UiApp
             _candidates.Clear();
             _candidates.AddRange(done.Result);
             _selected.Clear();
+            _alsoOff.Clear();
             _addStatus = $"Found {_candidates.Count} game(s).";
             _scanTask = null;
 
@@ -1806,7 +1813,8 @@ sealed partial class UiApp
         if (Widgets.PillButton(label, Widgets.ButtonKind.Primary, Icons.Check, enabled: !blocked))
         {
             _enrollError = "";
-            _enrollTask = Enroller.EnrollAsync(_config, new List<ScanCandidate>(_candidates), _selected.ToArray());
+            _enrollTask = Enroller.EnrollAsync(_config, new List<ScanCandidate>(_candidates), _selected.ToArray(),
+                alsoSync: AlsoSyncChoices());
         }
 
         if (missing.Count > 0)
@@ -1858,6 +1866,7 @@ sealed partial class UiApp
             if (Widgets.PillButton(hasFolder ? "Change folder" : "Set save folder",
                     hasFolder ? Widgets.ButtonKind.Ghost : Widgets.ButtonKind.Secondary, Icons.Folder))
                 EnterSetFolder(i);
+            DrawCandidateAlsoFound(i, c);
         }
         ImGui.EndGroup();
         ImGui.EndGroup();
