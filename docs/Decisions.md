@@ -712,6 +712,17 @@ session can judge an edge case, not to reopen the choice.
   main folder until they update). The console compares against **0.6.1**, not 0.7.0: the agent half reached `main`
   after v0.6.0, so every build since reports 0.6.1 until the release bump, and the testenv rig's agents — which have
   the feature — came up flagged. Every release without it is 0.6.0 or older, so the released fleet sees the same flags.
+- **One folder, one key: the server refuses a second extra folder with a template the game already has**
+  (2026-10-06, PR #58 review). Two machines answering the same "Also found" question within one poll used to define
+  the folder twice (`config`, then `config-2` with the same template), putting two save folders on one directory on
+  every machine that expands it. The server answers **409** `template_taken` with the existing folder and the agent
+  **joins** it (`SavePathChange.Joined`) — the fleet's key, label and scope win, and since the fleet has a copy, mapping
+  it here asks which to keep. Allowed only when both folders have include patterns, as the folder rules allow two
+  scoped folders on one directory. Key refusals (`key_taken`, `key_retired`) are 409 codes too, so the free-key retry
+  no longer reads the sentence. The agent UI's **Add save folder** never moves an existing folder (`mustBeNew`): a
+  name matching one is refused, and moving a folder stays **Change**. Enrollment joins an "Also found" folder on the
+  same template, or on the same key only when a template is missing on either side; two templates under one key are
+  two folders.
 
 ## Environment facts (user-provided)
 - Games are standalone builds, not bought on Steam/Epic → manifest-based detection + manual
