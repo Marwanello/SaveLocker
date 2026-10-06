@@ -849,6 +849,10 @@ public static class AgentCli
             Console.Error.WriteLine("Pass --force-path to use it anyway.");
             return 1;
         }
+        // A joined folder has the key another machine gave it, not the one asked for.
+        key = result.Key ?? key;
+        if (result.Joined)
+            Console.WriteLine($"'{game.Name}' already syncs that folder as '{key}' (another machine added it); joined it.");
         if (result.Added)
             Console.WriteLine(result.Template is null
                 ? $"Added save folder '{key}' to '{game.Name}'. No template describes {result.Directory}, so other " +
@@ -857,7 +861,7 @@ public static class AgentCli
         if (!result.Ok)
         {
             Console.Error.WriteLine(result.NeedsChoice
-                ? result.Error + "\nRe-run with --keep local or --keep cloud."
+                ? result.Error + $"\nRe-run with --key {key} --keep local or --keep cloud."
                 : result.Directory is null ? result.Error : $"Could not map '{key}': {result.Error}");
             return 1;
         }

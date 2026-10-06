@@ -345,12 +345,28 @@ public sealed class MultiPathAgentTests : IDisposable
         var files = SaveArchive.ListSaveFiles(roots, null);
 
         using (new FileStream(Path.Combine(b, "s.state"), FileMode.Open, FileAccess.Read, FileShare.Read))
-            Assert.Null(FileLockProbe.FirstWriter(roots, files).LockedFile);
+            Assert.Null(QuietProbe(roots, files));
 
         using (new FileStream(Path.Combine(b, "s.state"), FileMode.Open, FileAccess.Write, FileShare.Read))
             Assert.Equal("s.state", FileLockProbe.FirstWriter(roots, files).LockedFile);
 
-        Assert.Null(FileLockProbe.FirstWriter(roots, files).LockedFile);
+        Assert.Null(QuietProbe(roots, files));
+    }
+
+    /// <summary>
+    /// The real probe, asked until it reports no writer or 5 s pass. A CI runner's scanner or indexer can hold a
+    /// just-written file without sharing reads, which reads exactly like a writer (Gotchas → settle gate) — but
+    /// only for a moment, while a writer this test holds would be reported for the whole wait.
+    /// </summary>
+    private static string? QuietProbe(IReadOnlyList<SaveRoot> roots, IReadOnlyList<SaveArchive.SaveFile> files)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (true)
+        {
+            var locked = FileLockProbe.FirstWriter(roots, files).LockedFile;
+            if (locked is null || clock.Elapsed > TimeSpan.FromSeconds(5)) return locked;
+            Thread.Sleep(100);
+        }
     }
 
     [Fact]

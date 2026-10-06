@@ -655,6 +655,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavePathRefusalDto"
+                }
+              }
+            }
           }
         }
       }
@@ -1268,6 +1278,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SavePathDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavePathRefusalDto"
                 }
               }
             }
@@ -5044,6 +5064,31 @@
             "type": [
               "null",
               "string"
+            ]
+          }
+        }
+      },
+      "SavePathRefusalDto": {
+        "required": [
+          "error",
+          "code"
+        ],
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "existing": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SavePathDto"
+              }
             ]
           }
         }

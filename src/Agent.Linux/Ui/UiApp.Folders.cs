@@ -106,9 +106,9 @@ sealed partial class UiApp
         Widgets.Gap(Theme.Space.Md);
 
         Widgets.SectionHeader(game.GameName);
-        Widgets.TextWrapped($"SaveLocker syncs one folder for {game.GameName} today, but the save database lists more " +
-                            "that exist on this Deck. It cannot tell saves from settings, so check them: ticked folders " +
-                            "sync on every device.", Theme.Dim, Theme.Caption);
+        Widgets.TextWrapped($"The save database lists more folders for {game.GameName} that exist on this Deck, and " +
+                            "SaveLocker doesn't sync them yet. It cannot tell saves from settings, so check them: ticked " +
+                            "folders sync on every device.", Theme.Dim, Theme.Caption);
         Widgets.Gap(Theme.Space.Sm);
 
         foreach (var s in game.Items)

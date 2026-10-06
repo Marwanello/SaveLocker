@@ -64,12 +64,14 @@ export function SaveFoldersCard({ game, machines, paths: allPaths, candidates, p
   const extraPaths = game.extraPaths ?? [];
   const [folders, setFolders] = useState<VersionFolder[]>([]);
   const headId = head?.id ?? null;
+  // Only a game with extra folders shows what each holds, so only it pays for opening the archive.
+  const hasExtras = extraPaths.length > 0;
   useEffect(() => {
-    if (!headId) { setFolders([]); return; }
+    if (!headId || !hasExtras) { setFolders([]); return; }
     let live = true;
     api.versionFolders(game.id, headId).then(f => { if (live) setFolders(f); }).catch(() => { if (live) setFolders([]); });
     return () => { live = false; };
-  }, [game.id, headId]);
+  }, [game.id, headId, hasExtras]);
   const folderOf = (key: string) => folders.find(f => f.key === key);
   const agentOf = (m: Machine) => health.find(h => h.machineId === m.id)?.agentVersion;
   const [editing, setEditing] = useState<string | null>(null);

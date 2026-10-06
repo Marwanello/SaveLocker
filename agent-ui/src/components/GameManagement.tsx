@@ -26,14 +26,21 @@ type FolderAction =
   | { kind: 'change'; key: string; path: string }
   | { kind: 'add'; path: string; key?: string; freeKey?: boolean; include?: string[] }
 
-/** A suggested folder key from a folder's name, as the agent would make it — the user can change it. */
-function keyFrom(path: string): string {
-  const name = path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? ''
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32).replace(/-+$/, '')
-  return slug || 'extra'
-}
-
 const MAIN_KEY = 'main'
+
+/** A suggested folder key from a folder's name, as the agent would make it (FolderSuggestions.KeyFor):
+ *  never `main` or a key the game has, so "Add" names a new folder rather than one already there. The
+ *  user can change it. */
+function keyFrom(path: string, taken: ReadonlySet<string>): string {
+  const name = path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? ''
+  const stem = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32).replace(/-+$/, '') || 'extra'
+  let key = stem
+  for (let n = 2; key === MAIN_KEY || taken.has(key); n++) {
+    const suffix = `-${n}`
+    key = stem.slice(0, 32 - suffix.length).replace(/-+$/, '') + suffix
+  }
+  return key
+}
 
 /**
  * What used to live only in Settings' tracked-games list, on the page of the game it is about: its save
@@ -65,7 +72,7 @@ export function GameManagement({ game, platform, onChanged, onRemoved }: Props) 
   const extras = folders.filter(f => f.key !== MAIN_KEY)
 
   const loadSuggestions = useCallback(() => {
-    api.folderSuggestions()
+    api.folderSuggestions(game.id)
       .then(all => setSuggestions(all.filter(s => s.gameId === game.id)))
       .catch(() => setSuggestions([]))
   }, [game.id])
@@ -77,6 +84,7 @@ export function GameManagement({ game, platform, onChanged, onRemoved }: Props) 
   }
 
   async function run(action: FolderAction, confirm = false, keep?: 'local' | 'cloud') {
+    let joined = false
     try {
       if (action.kind === 'main') await api.setGameFolder(game.id, action.path, confirm)
       else if (action.kind === 'change') await api.setGameFolder(game.id, action.path, confirm, action.key, keep)
@@ -86,11 +94,14 @@ export function GameManagement({ game, platform, onChanged, onRemoved }: Props) 
           freeKey: action.freeKey,
         })
         action = { ...action, key: added.key }
+        joined = added.joined === true
       }
       clearPrompts()
       setAdding(null)
       setNote({
         text: action.kind === 'main' ? `Save folder set to ${action.path}.`
+          : action.kind === 'add' && joined
+            ? `Another device had already added this folder as “${action.key}”. This device now syncs ${action.path} with it.`
           : action.kind === 'add' ? `Now syncing ${action.path} as “${action.key}”, on every device.`
           : `“${action.key}” is now ${action.path} on this device.`,
       })
@@ -107,7 +118,13 @@ export function GameManagement({ game, platform, onChanged, onRemoved }: Props) 
       }
       if (!keep && e instanceof ApiError && e.needsChoice) {
         setFlagged(null)
-        setChoice({ ask: message, action })
+        // An added folder exists for the fleet by now (or was joined, under another key): the answer maps
+        // that folder here, so it goes to /folder for its key. Re-sending the add would refuse the key.
+        setChoice({
+          ask: message,
+          action: action.kind === 'add' ? { kind: 'change', key: e.key ?? action.key ?? '', path: action.path } : action,
+        })
+        if (action.kind === 'add') { setAdding(null); onChanged() }
         return
       }
       setNote({ text: `Could not set the save folder: ${message}`, failed: true })
@@ -132,7 +149,7 @@ export function GameManagement({ game, platform, onChanged, onRemoved }: Props) 
     f.path || null)
 
   const addFolder = () => pickFor(async next => {
-    setAdding({ path: next, key: keyFrom(next), include: '' })
+    setAdding({ path: next, key: keyFrom(next, new Set(folders.map(f => f.key))), include: '' })
   }, null)
 
   async function removeFolder(key: string) {

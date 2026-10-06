@@ -125,8 +125,9 @@ export function FolderSuggestionsModal({ suggestions, onChanged, onDone }: Props
         <Card title={game.gameName}>
           <div className="sl-stack">
             <span style={{ fontSize: 12.5, color: 'var(--color-dim)', lineHeight: 1.5 }}>
-              SaveLocker syncs one folder for {game.gameName} today, but the save database lists more that exist on
-              this device. It cannot tell saves from settings, so check them: ticked folders sync on every device.
+              The save database lists more folders for {game.gameName} that exist on this device, and SaveLocker
+              doesn't sync them yet. It cannot tell saves from settings, so check them: ticked folders sync on every
+              device.
             </span>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {game.items.map(s => (

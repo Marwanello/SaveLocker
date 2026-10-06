@@ -59,6 +59,24 @@ public record SavePathDto(
 /// <summary>A new extra save folder for a game. The key is a short slug and is never renamed.</summary>
 public record AddSavePathRequest(string Key, string? Label, string? Template, string[]? IncludeGlobs);
 
+/// <summary>
+/// Why the server would not add an extra save folder, when a caller can act on the reason (HTTP 409):
+/// <see cref="SavePathRefusalCodes"/>. <paramref name="Existing"/> is the folder already holding the key,
+/// or — for <see cref="SavePathRefusalCodes.TemplateTaken"/> — the folder that is this very one.
+/// </summary>
+public record SavePathRefusalDto(string Error, string Code, SavePathDto? Existing = null);
+
+public static class SavePathRefusalCodes
+{
+    /// <summary>The game has a folder with this key: pick another.</summary>
+    public const string KeyTaken = "key_taken";
+    /// <summary>The game had a folder with this key once; a key is never reused.</summary>
+    public const string KeyRetired = "key_retired";
+    /// <summary>The game already has a folder with this template — another machine added the same folder.
+    /// Join it rather than define it twice.</summary>
+    public const string TemplateTaken = "template_taken";
+}
+
 /// <summary>A specific machine's stored save path for one of a game's save folders
 /// (<see cref="PathKey"/> is <c>main</c> for the primary folder).</summary>
 public record MachineSavePathDto(Guid MachineId, string MachineName, string SavePath, string PathKey = SaveRoot.PrimaryKey);

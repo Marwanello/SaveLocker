@@ -893,7 +893,9 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    gameId?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -2720,6 +2722,8 @@ export interface components {
             key: string;
             path: string;
             template: null | string;
+            /** @default false */
+            joined: boolean;
         };
         AgentAppearanceDto: {
             follow: boolean;
@@ -2928,6 +2932,7 @@ export interface components {
             needsConfirm: boolean;
             /** @default false */
             needsChoice: boolean;
+            key?: null | string;
         };
         FolderRequest: {
             path: null | string;

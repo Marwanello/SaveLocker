@@ -315,7 +315,7 @@ sealed partial class UiApp
         var id = g.GameId;
         _gameStateTask = DaemonGet<GameStateDto>($"api/games/{id}/state");
         _gameVersionsTask = DaemonGet<List<SaveVersionDto>>($"api/games/{id}/versions");
-        _suggestionsTask = DaemonGet<List<FolderSuggestionDto>>("api/folder-suggestions");
+        _suggestionsTask = DaemonGet<List<FolderSuggestionDto>>($"api/folder-suggestions?gameId={id}");
     }
 
     private void DrawGame()
@@ -509,7 +509,9 @@ sealed partial class UiApp
         using var response = await DaemonClient().PostAsJsonAsync($"api/games/{s.GameId}/paths",
             new AddFolderRequest(s.Path, s.Key, FreeKey: true));
         if (response.IsSuccessStatusCode)
-            return $"Now syncing {s.Path} on every device.";
+            return await response.Content.ReadFromJsonAsync<AddFolderResponse>() is { Joined: true } joined
+                ? $"Another device had already added {s.Path} as \"{joined.Key}\". This Deck now syncs it too."
+                : $"Now syncing {s.Path} on every device.";
         var err = await response.Content.ReadFromJsonAsync<ErrorResponse>();
         // A flagged folder or files on both sides are asked in the folder browser: the folder exists for the
         // game by then, so its own "Choose" button on this page takes it from here.

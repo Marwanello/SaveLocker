@@ -707,11 +707,16 @@ public sealed class AgentApiServer : IDisposable
         }).Produces<OkResponse>();
 
         // "Also found" (tasks/multiple-save-paths plan §8): the manifest's other locations of every
-        // tracked game that exist here. Nothing is added until the user says so.
-        app.MapGet("/api/folder-suggestions", async (CancellationToken ct) =>
-            (await _suggestions.AllAsync(ct))
-                .Select(s => new FolderSuggestionDto(s.GameId, s.GameName, s.Key, s.Directory, s.Deferred))
-                .ToArray()).Produces<FolderSuggestionDto[]>();
+        // tracked game that exist here — or of one, for its page. Nothing is added until the user says so.
+        app.MapGet("/api/folder-suggestions", async (Guid? gameId, CancellationToken ct) =>
+        {
+            IReadOnlyList<FolderSuggestion> found = gameId is { } id
+                ? _config.Games.FirstOrDefault(g => g.GameId == id) is { } game
+                    ? await _suggestions.ForGameAsync(game, ct)
+                    : Array.Empty<FolderSuggestion>()
+                : await _suggestions.AllAsync(ct);
+            return found.Select(s => new FolderSuggestionDto(s.GameId, s.GameName, s.Key, s.Directory, s.Deferred)).ToArray();
+        }).Produces<FolderSuggestionDto[]>();
 
         app.MapPost("/api/folder-suggestions/answer", Results<Ok<OkResponse>, NotFound, BadRequest<ErrorResponse>>
             (FolderSuggestionAnswerRequest body) =>
@@ -724,9 +729,11 @@ public sealed class AgentApiServer : IDisposable
             return TypedResults.Ok(new OkResponse());
         }).Produces<OkResponse>();
 
-        // Another save folder for a tracked game, for every machine — what `add-path` does. A refusal a
-        // heuristic made is confirmable (NeedsConfirm); different files on both sides ask for a side
-        // (NeedsChoice) — the folder exists for the fleet by then, so re-sending maps it.
+        // Another save folder for a tracked game, for every machine — what `add-path` does, except that a
+        // key the game already has is refused rather than moved here (mustBeNew): this route adds, and
+        // moving a folder is /folder's. A refusal a heuristic made is confirmable (NeedsConfirm); different
+        // files on both sides ask for a side (NeedsChoice, the folder's Key with it) — the folder exists for
+        // the fleet by then, so the answer goes to /folder with that key.
         app.MapPost("/api/games/{id:guid}/paths",
             async Task<Results<Ok<AddFolderResponse>, NotFound, BadRequest<ErrorResponse>>> (Guid id, AddFolderRequest body) =>
         {
@@ -758,7 +765,7 @@ public sealed class AgentApiServer : IDisposable
             try
             {
                 result = await SavePathEditor.AddAsync(_config, ApiClient.For(_config), _mapFolder, game, key, body.Path,
-                    body.IncludeGlobs, body.Label, keep, body.Confirm, pickFreeKey: !named || body.FreeKey);
+                    body.IncludeGlobs, body.Label, keep, body.Confirm, pickFreeKey: !named || body.FreeKey, mustBeNew: true);
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
             {
@@ -769,8 +776,9 @@ public sealed class AgentApiServer : IDisposable
             if (!result.Ok)
                 return TypedResults.BadRequest(new ErrorResponse(
                     result.NeedsConfirm ? result.Error + ErrorResponse.ConfirmHint : result.Error ?? "Could not add the folder.",
-                    NeedsConfirm: result.NeedsConfirm, NeedsChoice: result.NeedsChoice));
-            return TypedResults.Ok(new AddFolderResponse(result.Key!, result.Directory!, result.Template));
+                    NeedsConfirm: result.NeedsConfirm, NeedsChoice: result.NeedsChoice,
+                    Key: result.NeedsChoice ? result.Key : null));
+            return TypedResults.Ok(new AddFolderResponse(result.Key!, result.Directory!, result.Template, result.Joined));
         }).Produces<AddFolderResponse>();
 
         // Stop syncing one of a game's extra folders, on every machine — what `remove-path` does. The
@@ -1966,7 +1974,9 @@ public sealed record FolderSuggestionAnswerRequest(Guid GameId, string[]? Ignore
 /// had it, take the next free one instead of refusing.</param>
 public sealed record AddFolderRequest(string? Path, string? Key = null, string? Label = null,
     string[]? IncludeGlobs = null, string? Keep = null, bool Confirm = false, bool FreeKey = false);
-public sealed record AddFolderResponse(string Key, string Path, string? Template);
+/// <param name="Joined">The fleet already had this folder (another device added it first, as
+/// <paramref name="Key"/>): this device joined it rather than adding it twice.</param>
+public sealed record AddFolderResponse(string Key, string Path, string? Template, bool Joined = false);
 /// <param name="IdentityCleared">
 /// True when the server URL moved to a different origin, so this machine's key, id and TLS pin were
 /// dropped and it must register or enroll again. See <see cref="ServerOrigin"/>.
@@ -2000,7 +2010,9 @@ public sealed record OkResponse(bool Ok = true);
 /// this field alone, never from the wording of <paramref name="Error"/> — a hard refusal never sets it.</param>
 /// <param name="NeedsChoice">Mapping a save folder met different files on both sides; re-send with
 /// <c>keep</c> (<c>local</c> or <c>cloud</c>) to say which wins. Nothing changed.</param>
-public sealed record ErrorResponse(string Error, bool NeedsConfirm = false, bool NeedsChoice = false)
+/// <param name="Key">With <paramref name="NeedsChoice"/> from adding a folder: the key the folder has now, which
+/// the answer (keep local or cloud) is sent for.</param>
+public sealed record ErrorResponse(string Error, bool NeedsConfirm = false, bool NeedsChoice = false, string? Key = null)
 {
     /// <summary>The sentence a confirmable refusal ends with. Kept in the message for clients that
     /// predate <see cref="NeedsConfirm"/>; newer ones drop it and ask the question in their own words.</summary>

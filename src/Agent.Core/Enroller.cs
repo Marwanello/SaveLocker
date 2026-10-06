@@ -119,8 +119,8 @@ public static class Enroller
                 }
 
                 // The "Also found" folders the user ticked. Unlike the declared ones they never decide
-                // whether the game is joined: one the fleet's game lacks is added to it, one it has (by key)
-                // is the poller's to map, like any other folder of a game this machine joins.
+                // whether the game is joined: one the fleet's game lacks is added to it, one it has
+                // (FleetHasFolder) is the poller's to map, like any other folder of a game this machine joins.
                 var chosen = alsoSync is not null && alsoSync.TryGetValue(id, out var picked) ? picked : null;
                 if (chosen is { Length: > 0 })
                 {
@@ -214,28 +214,29 @@ public static class Enroller
             var template = TemplateFor(c, also.Dir);
             // Another machine found the same folder first: the fleet's game has it, and the poller maps
             // this machine's copy onto it like any other folder of a game it joins.
-            if (server.Any(p => p.Key == also.Key || (template is not null && p.Template == template))) continue;
-            var key = also.Key;
-            var tried = new HashSet<string>(serverKeys, StringComparer.Ordinal);
+            if (FleetHasFolder(server, also.Key, template)) continue;
+            var tried = new HashSet<string>(serverKeys.Concat(extras.Select(e => e.Key)), StringComparer.Ordinal);
+            var key = FolderSuggestions.KeyFor(also.Key, tried);
             for (var attempt = 0; attempt < 8; attempt++)
             {
-                SavePathDto? path;
-                string? refused;
-                try { (path, refused) = await api.AddSavePathAsync(game.Id, new AddSavePathRequest(key, null, template, null)); }
-                catch (HttpRequestException ex)
+                SavePathAddResult result;
+                try { result = await api.AddSavePathAsync(game.Id, new AddSavePathRequest(key, null, template, null)); }
+                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
                 {
                     AgentLogger.Log($"Enrollment of '{c.Name}': could not add the folder {also.Dir} ({ex.Message}).");
                     break;
                 }
-                if (path is not null)
+                if (result.Path is { } path)
                 {
                     added.Add(new DeclaredSavePath(path.Key, also.Dir, null, path.Template));
                     break;
                 }
+                // Added by another machine since this game was read: it is the poller's to map, as above.
+                if (result.Refusal?.Code == SavePathRefusalCodes.TemplateTaken) break;
                 // Taken by a folder another machine added, or retired before: the next free key.
-                if (refused is null || !refused.Contains($"'{key}'"))
+                if (result.Refusal?.Code is not (SavePathRefusalCodes.KeyTaken or SavePathRefusalCodes.KeyRetired))
                 {
-                    AgentLogger.Log($"Enrollment of '{c.Name}': the server refused the folder {also.Dir}: {refused}");
+                    AgentLogger.Log($"Enrollment of '{c.Name}': the server refused the folder {also.Dir}: {result.Error}");
                     break;
                 }
                 tried.Add(key);
@@ -244,6 +245,16 @@ public static class Enroller
         }
         return added;
     }
+
+    /// <summary>
+    /// Whether the fleet's game already has the "Also found" folder <paramref name="key"/>/<paramref name="template"/>,
+    /// so this machine joins it rather than adding it: the same template is the same folder. A key match is too
+    /// only when a template is missing on either side and there is nothing to tell them apart by — the key comes
+    /// from the same manifest template on every machine. Two different templates under one key are two folders.
+    /// </summary>
+    internal static bool FleetHasFolder(IReadOnlyList<SavePathDto> server, string key, string? template) =>
+        server.Any(p => template is not null && string.Equals(p.Template, template, StringComparison.OrdinalIgnoreCase))
+        || server.Any(p => p.Key == key && (p.Template is null || template is null));
 
     /// <summary>
     /// The candidate's declared extra folders, canonical and each described as a template where one

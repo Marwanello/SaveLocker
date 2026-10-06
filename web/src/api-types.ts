@@ -801,6 +801,15 @@ export interface paths {
                         "application/json": components["schemas"]["SavePathDto"];
                     };
                 };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SavePathRefusalDto"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -1510,6 +1519,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["SavePathDto"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SavePathRefusalDto"];
                     };
                 };
             };
@@ -4185,6 +4203,11 @@ export interface components {
             template: null | string;
             includeGlobs: null | string[];
             machinePath?: null | string;
+        };
+        SavePathRefusalDto: {
+            error: string;
+            code: string;
+            existing?: null | components["schemas"]["SavePathDto"];
         };
         SaveVersionDto: {
             /** Format: uuid */

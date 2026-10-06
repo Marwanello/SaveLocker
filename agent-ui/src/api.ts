@@ -19,11 +19,14 @@ export class ApiError extends Error {
   readonly needsConfirm: boolean
   /** Mapping a save folder met different files here and in the cloud's copy: re-send with a side to keep. */
   readonly needsChoice: boolean
-  constructor(message: string, needsConfirm = false, needsChoice = false) {
+  /** With `needsChoice` from adding a folder: the key it has now, which the answer is sent for. */
+  readonly key: string | null
+  constructor(message: string, needsConfirm = false, needsChoice = false, key: string | null = null) {
     super(message)
     this.name = 'ApiError'
     this.needsConfirm = needsConfirm
     this.needsChoice = needsChoice
+    this.key = key
   }
 }
 
@@ -34,8 +37,8 @@ export const CONFIRM_HINT = ' Re-send with confirm to use it anyway.'
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(path, { ...options, headers: authHeaders(options?.headers) })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string; needsConfirm?: boolean; needsChoice?: boolean }
-    throw new ApiError(err.error ?? res.statusText, err.needsConfirm === true, err.needsChoice === true)
+    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string; needsConfirm?: boolean; needsChoice?: boolean; key?: string | null }
+    throw new ApiError(err.error ?? res.statusText, err.needsConfirm === true, err.needsChoice === true, err.key ?? null)
   }
   return res.json() as Promise<T>
 }
@@ -96,8 +99,10 @@ export const api = {
   // Stop syncing an extra folder on every device; its files stay where they are.
   removeGameFolder: (id: string, key: string) =>
     req(`/api/games/${id}/paths/${encodeURIComponent(key)}`, { method: 'DELETE' }),
-  // "Also found": folders the manifest knows for tracked games that exist here and are not synced.
-  folderSuggestions: () => req<FolderSuggestion[]>('/api/folder-suggestions'),
+  // "Also found": folders the manifest knows for tracked games that exist here and are not synced — every
+  // game's, or one game's (its page asks for its own only: each game costs a manifest lookup and disk reads).
+  folderSuggestions: (gameId?: string) =>
+    req<FolderSuggestion[]>(gameId ? `/api/folder-suggestions?gameId=${encodeURIComponent(gameId)}` : '/api/folder-suggestions'),
   // ignore = never suggest again; defer = "Skip for now" (stays on the game's page, not asked at start-up).
   answerFolderSuggestions: (gameId: string, answer: { ignore?: string[]; defer?: string[] }) =>
     post('/api/folder-suggestions/answer', { gameId, ...answer }),
