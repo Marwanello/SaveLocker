@@ -11,8 +11,8 @@ using SaveLocker.Server.Data;
 namespace SaveLocker.Server.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261004132216_AddGameIncludeGlobs")]
-    partial class AddGameIncludeGlobs
+    [Migration("20261004191934_AddMultipleSavePaths")]
+    partial class AddMultipleSavePaths
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -374,6 +374,34 @@ namespace SaveLocker.Server.Migrations
                     b.ToTable("Games");
                 });
 
+            modelBuilder.Entity("SaveLocker.Server.Data.GameSavePath", b =>
+                {
+                    b.Property<Guid>("GameId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Key")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IncludeGlobs")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Label")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("RetiredAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Template")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("GameId", "Key");
+
+                    b.ToTable("GameSavePaths");
+                });
+
             modelBuilder.Entity("SaveLocker.Server.Data.Lease", b =>
                 {
                     b.Property<Guid>("Id")
@@ -438,11 +466,18 @@ namespace SaveLocker.Server.Migrations
                     b.Property<Guid>("GameId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("PathKey")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("main");
+
                     b.Property<string>("SavePath")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.HasKey("MachineId", "GameId");
+                    b.HasKey("MachineId", "GameId", "PathKey");
+
+                    b.HasIndex("GameId");
 
                     b.ToTable("MachineSavePaths");
                 });
@@ -585,6 +620,15 @@ namespace SaveLocker.Server.Migrations
                     b.Navigation("Game");
                 });
 
+            modelBuilder.Entity("SaveLocker.Server.Data.GameSavePath", b =>
+                {
+                    b.HasOne("SaveLocker.Server.Data.Game", null)
+                        .WithMany()
+                        .HasForeignKey("GameId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("SaveLocker.Server.Data.Lease", b =>
                 {
                     b.HasOne("SaveLocker.Server.Data.Game", "Game")
@@ -602,6 +646,21 @@ namespace SaveLocker.Server.Migrations
                     b.Navigation("Game");
 
                     b.Navigation("Machine");
+                });
+
+            modelBuilder.Entity("SaveLocker.Server.Data.MachineSavePath", b =>
+                {
+                    b.HasOne("SaveLocker.Server.Data.Game", null)
+                        .WithMany()
+                        .HasForeignKey("GameId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SaveLocker.Server.Data.Machine", null)
+                        .WithMany()
+                        .HasForeignKey("MachineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SaveLocker.Server.Data.MachineScanCandidate", b =>

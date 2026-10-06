@@ -4,7 +4,9 @@
 > branch off `main`; the `emulator-saves` branch (Phase 1, RetroArch) waits and is rebased onto it.
 > See *What emulator saves needs from this* at the end.
 
-Seeded 2026-09-08 from `docs/Backlog.md` during the vault reorg (`chore/vault-docs-reorg`). No plan file exists yet — this is the backlog entry verbatim, kept as the starting point for a future `plan.md`.
+Seeded 2026-09-08 from `docs/Backlog.md` during the vault reorg (`chore/vault-docs-reorg`). **The plan
+now exists: [`plan.md`](plan.md) (2026-10-04).** This file is kept as the research it was built from;
+where the two disagree, `plan.md` wins. For example, the "proposed phased shape" below is superseded.
 
 ---
 

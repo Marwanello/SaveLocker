@@ -108,6 +108,15 @@ public sealed record ScanCandidate(
     /// Null for every other source.
     /// </summary>
     string? MoonDeckAppId = null,
+    /// <summary>The primary folder's include scope, when the scanner knows the game owns only some of
+    /// its files — one ROM's save in a folder every ROM shares. Null: the whole folder.</summary>
+    IReadOnlyList<string>? IncludeGlobs = null,
+    /// <summary>
+    /// More save folders the scanner KNOWS belong to this game (tasks/multiple-save-paths plan §8): an
+    /// emulator's save states beside its saves. Adopted at enrollment without asking — unlike a
+    /// manifest's extra locations, which may just as well be alternatives as companions.
+    /// </summary>
+    IReadOnlyList<DeclaredSavePath>? ExtraSaveDirs = null,
     /// <summary>"RetroArch", "PCSX2", … — free text, not an enum: which emulators exist changes
     /// faster than this codebase does. Null for every non-emulator source.</summary>
     string? EmulatorName = null,
@@ -116,10 +125,12 @@ public sealed record ScanCandidate(
     string? EmulatorSystem = null,
     /// <summary>The libretro core whose per-core saves folder the file sits in (RetroArch's "Sort
     /// saves by core"), else null. Diagnostic only — not part of the game's identity.</summary>
-    string? EmulatorCore = null,
-    /// <summary>
-    /// When <see cref="SuggestedSaveDir"/> is shared with other games, the files in it that are THIS
-    /// game's. Sent to the server when the game is created and applied by every machine from then on
-    /// (<see cref="SaveLocker.Shared.GameDto.IncludeGlobs"/>). Null means the whole folder.
-    /// </summary>
-    IReadOnlyList<string>? IncludeGlobs = null);
+    string? EmulatorCore = null);
+
+/// <summary>
+/// One extra save folder a scanner declares for a candidate. <see cref="Key"/> names the folder on
+/// every machine; <see cref="Template"/> is how other machines find theirs, when the scanner can say
+/// (otherwise enrollment tries to describe <see cref="Dir"/> itself).
+/// </summary>
+public sealed record DeclaredSavePath(
+    string Key, string Dir, IReadOnlyList<string>? IncludeGlobs = null, string? Template = null);

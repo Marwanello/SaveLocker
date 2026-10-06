@@ -11,7 +11,7 @@ Not-yet-done work only. Each line is the task's title, linked to its plan or sum
 - [Heroic store sub-chips: check on real data](tasks/unverified-ui-surfaces/summary.md)
 - [Emulator saves](tasks/emulator-saves/plan.md)
 - [Native Linux save support](tasks/native-linux-saves/summary.md)
-- [Multiple save paths per game](tasks/multiple-save-paths/summary.md)
+- [Multiple save paths per game](tasks/multiple-save-paths/plan.md)
 - [Registry-based saves](tasks/registry-saves/summary.md)
 - [File-level saves](tasks/file-level-saves/summary.md)
 

@@ -12,7 +12,9 @@ SaveLocker/
 │   │   ├── Contracts.cs                 # Wire DTOs — shared by server + agent
 │   │   ├── AgentEventCodes.cs           # The fixed vocabulary of agent event codes (dedupe keys)
 │   │   ├── SaveArchive.cs               # Content hashing + atomic zip restore + per-file manifest
-│   │   │                               #   (`ComputeManifest`) for delta uploads
+│   │   │                               #   (`ComputeManifest`) for delta uploads. Several save folders per
+│   │   │                               #   game: primary at the zip root, extras under `.savelocker/`
+│   │   ├── SaveRoot.cs                  # One save folder of a game: key (`main` or an extra), dir, include scope
 │   │   ├── ManifestLoader.cs            # Ludusavi manifest downloader + cloud/tag parsing
 │   │   ├── Appearance.cs                # The look (theme/accent/mark) as three closed id lists + the DTOs,
 │   │   │                               #   and `Appearances.Normalize` — every reader normalises, none rejects
@@ -27,7 +29,8 @@ SaveLocker/
 │   │   │   ├── AppDbContext.cs          # EF Core context
 │   │   │   └── Entities.cs             # Machine, Game, SaveVersion, SaveVersionFile (per-version
 │   │   │                               #   per-file delta-upload baseline), Lease, ConflictFlag,
-│   │   │                               #   AuditLog, AgentCommand, AppSetting, MachineSavePath
+│   │   │                               #   AuditLog, AgentCommand, AppSetting, MachineSavePath (per
+│   │   │                               #   machine per save folder key), GameSavePath (extra folders)
 │   │   ├── Migrations/                  # EF migrations (InitialSchema + incremental)
 │   │   ├── Services/
 │   │   │   ├── SyncService.cs           # Core: lease, upload, conflict, prune, resolve
@@ -359,6 +362,9 @@ SaveLocker/
 │   │                                   #   reconstruction across a full+full+delta chain, deletion,
 │   │                                   #   the size/count floor, a diverged push staying full, and a
 │   │                                   #   hostile delta payload refused. Own server on :5185.
+│   ├── run-multipath-tests.ps1         # Several save folders per game, two machines through the real
+│   │                                   #   CLI: shadows, no ping-pong across sync cycles, add/remove-path,
+│   │                                   #   --keep, a deleted folder's one corrective round. Own server on :5199.
 │   ├── run-hardening-tests.ps1         # SECURITY. A symlink must not leak its target into the
 │   │                                   #   archive, and the restore's delete pass must not reach
 │   │                                   #   THROUGH one and delete files OUTSIDE the save folder.

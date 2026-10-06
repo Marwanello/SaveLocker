@@ -702,6 +702,14 @@ session can judge an edge case, not to reopen the choice.
   The price: a backup restored onto a *different* server reads the key as unset (re-enter it). Not done: the
   agent's own `config.json` still holds its API key in plain text on the client (0600 / ACL-locked, [[Gotchas]]) —
   DPAPI on Windows would fit, Linux has no keystore to lean on; a separate decision.
+- **An extra save folder an agent defines is the fleet's at once; the CLI removes one fleet-wide** (2026-10-05,
+  maintainer's call, multiple-save-paths Group B). No console confirmation step before other machines adopt a folder
+  `add-path` or a scanner declared: adoption is cheap and safe, because a machine maps it only where its template
+  names a folder that already exists, and otherwise keeps a shadow (`tasks/multiple-save-paths/plan.md` §3). A folder
+  that exists but holds different files is never mapped automatically — the user picks `--keep local|cloud`.
+  `remove-path` retires the key for every machine (agent route `DELETE /api/agent/games/{id}/save-paths/{key}`),
+  mirroring `add-path`. A folder no token describes is added with **no template**, never refused: other machines
+  shadow it until their own folder is set, which the server already allowed (agents may not send literal templates).
 
 ## Environment facts (user-provided)
 - Games are standalone builds, not bought on Steam/Epic → manifest-based detection + manual

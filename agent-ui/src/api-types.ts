@@ -2597,6 +2597,7 @@ export interface components {
             prefixPath: null | string;
             processName: null | string;
             store: string;
+            extraFolders?: null | components["schemas"]["SaveFolderDto"][];
             emulatorName?: null | string;
             emulatorSystem?: null | string;
         };
@@ -2701,11 +2702,15 @@ export interface components {
             error: string;
             /** @default false */
             needsConfirm: boolean;
+            /** @default false */
+            needsChoice: boolean;
         };
         FolderRequest: {
             path: null | string;
             /** @default false */
             confirm: boolean;
+            key?: null | string;
+            keep?: null | string;
         };
         FolderResponse: {
             path: null | string;
@@ -2730,6 +2735,7 @@ export interface components {
             /** Format: uuid */
             preferredMachineId?: null | string;
             includeGlobs?: null | string[];
+            extraPaths?: null | components["schemas"]["SavePathDto"][];
         };
         GameStateDto: {
             game: components["schemas"]["GameDto"];
@@ -2864,6 +2870,20 @@ export interface components {
             desired: string;
             changed: boolean;
         };
+        SaveFolderDto: {
+            key: string;
+            label: null | string;
+            path: string;
+            mapped: boolean;
+            includeGlobs: string[];
+        };
+        SavePathDto: {
+            key: string;
+            label: null | string;
+            template: null | string;
+            includeGlobs: null | string[];
+            machinePath?: null | string;
+        };
         SaveVersionDto: {
             /** Format: uuid */
             id: string;
@@ -2956,6 +2976,7 @@ export interface components {
             lastPushBytes?: null | number;
             /** Format: date-time */
             lastPushAt?: null | string;
+            paths?: null | components["schemas"]["SaveFolderDto"][];
         };
         VersionStatsDto: {
             /** Format: int32 */

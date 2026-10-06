@@ -1,74 +1,96 @@
-# Session summary — 2026-09-30 / 10-01 — PR #54 follow-ups: Steam art, the Deck test rig, the Game Mode shortcut plan
+# Session summary — 2026-10-05 — Multiple save paths Group B
 
-Follow-up work on branch `group-10-ui-redesign` (PR #54 on the fork, `origin` = `Marwanello/SaveLocker`, still open),
-plus a docs-only task PR in the plugin repo (Marwanello/SaveLocker-Decky#4). Standalone: the facts below do not need the
-rest of the vault. The Group 8 write-up this file used to hold is in `progress.md` and in PR #52's history.
+Standalone: the facts below do not need the rest of the vault.
 
-## What was asked
+Branch `multiple-save-paths-group-b`, PR Marwanello/SaveLocker#57 (open). Plan: `docs/tasks/multiple-save-paths/plan.md`.
 
-1. Stop putting the generated art into the Steam shortcut; instead replace the art the installer bundles
-   (`~/.local/share/SaveLocker/artwork/`) whenever the agent sees an accent or mark change. The folder must be created
-   automatically, test installs included.
-2. Explain why `testenv.ps1 art` failed ("Unknown command dev-steam-art-fixture": the WSL build predated the command,
-   fixed by `sync` then `build`), and give a detailed Deck test checklist.
-3. Have `testenv` create a "SaveLocker Test" Steam shortcut for the test Deck UI, with art, like "Conflict Game", and
-   remove it on `clean`.
-4. Investigate why the Deck is slow, on the real Deck; then skip reinstalling the Decky test plugin when the Deck already
-   has the identical build.
-5. Fix: the test shortcut opened the real install; the hero should be background only (no logo, wordmark or tagline).
-6. Make the test shortcut's art follow a look change; investigate creating the Game Mode shortcut automatically at
-   install time and for people who only update.
-7. Put that investigation as a task on a new branch and PR in the plugin repo; the hero still showed the logo, fix it.
-8. Add a Desktop Mode menu entry for the test build to `testenv`.
+## What was built, in plain terms
 
-## What shipped (all pushed to PR #54)
+Group B makes the agents actually sync several save folders per game. Group A only made the save package and the server
+able to hold them.
 
-| Commit | What |
-|---|---|
-| `fc69670` | Steam art repaints the bundled artwork folder, never the Steam shortcut |
-| `58ffc06` | The artwork folder is created when missing, so every install gets the art |
-| `88a6a25` | Deck rig: `up` adds "SaveLocker Test" (`savelocker ui`) to Steam with art; `clean` removes it |
-| `476240c` | Deck rig: `up` compares a SHA-256 manifest of the staged Decky plugin with `~/homebrew/plugins/SaveLocker-Test` and skips the reinstall and the Decky restart when identical |
-| `12c8ab7` | Hero is background only (`web/scripts/export-art.mjs`, regenerated `hero.png`/`hero.svg`/layers); the test shortcut runs with `XDG_DATA_HOME="<test state>"` and `--port 5177` so it opens the test agent |
-| `4b8a507` | The test shortcut's grid art follows the look. `dev-shortcut-add --kind ui` leaves `test-shortcut-art.json` (grid dir + appId) in the test agent's state; only a daemon that finds it repaints Steam art. A real install never has it |
-| `fd1bfa1` | Each piece is rendered and compared byte-for-byte with the file. The old stamp marker skipped a piece whose look was unchanged, so a hero painted by an older build kept the logo; the marker is gone and deleted where it exists |
-| `34b5d22` | Deck rig: `up` writes `~/.local/share/applications/savelocker-test.desktop` ("SaveLocker Test", `env XDG_DATA_HOME=<test state> <prefix>/savelocker open --port 5177`); `clean` removes it. The agent only writes its own `savelocker.desktop` for the real install (`DesktopEntry.OfferForInstalledAgent`) |
-| `15a236f`, `b9b56a8` | Review pass from a separate session: the two test shortcuts share one backup, marker and grid folder; `DevSteamShortcut` unit tests; `Crc32.cs` |
+- **Any folders, anywhere.** A game keeps its main folder (`main`) and can have any number of extra folders. Each extra
+  folder has a **key**: 1–32 lower-case letters, digits or `-` (for example `settings`, `appdata`, `profile`).
+  - The key is only how machines recognise the same folder. Each machine has its own path for it, just as the main
+    folder already did.
+  - The demo used `states`, but nothing is emulator-specific.
+  - All of a game's folders sync together as one version.
+- **Hidden copies ("shadows").** A machine with no path for a folder keeps a hidden copy in its own data folder, under
+  `shadow/<game>/<key>/`. It receives that folder's files and sends them back on every push.
+  - Without it, that machine would push versions missing the folder, and others would push it back, forever.
+  - Example: Windows describes a folder as `<winLocalAppData>/…`. Plain WSL has no Proton prefix to resolve that in, so
+    WSL holds a hidden copy until it is given a folder.
+- **CLI (Phase 4).**
+  - `add-path <game> --key <k> --dir <folder>` adds a folder for every machine, or maps one this machine only holds as
+    a shadow. An empty target gets the shadow's files moved in; identical files map as-is.
+  - If the folder already holds different files, it refuses until you pass `--keep local` or `--keep cloud`.
+  - `remove-path <game> --key <k>` stops syncing that folder on every machine, within about 20 seconds. Files stay on disk.
+  - `status`, `list` and `doctor` show every folder; `doctor` gives the shadow's size.
+- **Other machines (Phase 4).** A newly added folder is adopted on every machine at once. A machine uses a folder when the
+  template points at one that exists there; otherwise it keeps a shadow.
+- **Scanners (Phase 5).** A game scanner can now declare extra folders, and they are adopted at enrollment. The
+  `emulator-saves` branch needs this next.
 
-## Findings
+## Technical notes
 
-- **Deck slowness (measured on the real Deck, read-only):** not SaveLocker — the installed `savelocker.service` idles at
-  ~0% CPU. The Deck had ~45 Decky plugins (36 after the maintainer removed EmuDeck and some plugins); every Decky restart
-  reloads all of them, which is the heavy moment `testenv up` now avoids when the plugin is unchanged. EmuSync.Agent had a
-  157 CPU-second start burst (since removed). Decky's log is at DEBUG and records Steam store cookies (maintainer told).
-- **Steam keeps its own copy** of custom artwork, so repainting a file on disk reaches the library only when the picture
-  is set again. That is why the real install repaints only its own artwork folder.
-- **Game Mode shortcut:** inside Steam's JS context the plugin can call `SteamClient.Apps.AddShortcut(name, exe,
-  startDir, launchOptions)` (returns the appId, shows at once) and `SetCustomArtworkForApp(appId, base64, 'png', type)`
-  (0 grid, 1 hero, 2 logo, 3 wide grid; live). NonSteamLaunchers and decky-steamgriddb on the test Deck already use both.
-  Writing `shortcuts.vdf` from install.sh is safe only while Steam is closed. Plan: plugin creates the shortcut once
-  (never recreating one the person deleted, adopting a hand-made one), sets and repaints the art from agent endpoints,
-  and updaters get it on the new plugin's first load; install.sh is the fallback without Decky →
-  SaveLocker-Decky `docs/tasks/steam-shortcut-and-art/plan.md` (branch `steam-shortcut-and-art`, PR #4).
-- **Linux tray:** the Linux agent has no notification-area icon by design (headless daemon); Desktop Mode gets
-  `notify-send` pop-ups. A Desktop Mode tray would need its own small session process. Offered, not decided.
+- `TrackedGame` gains `IncludeGlobs`, `ExtraPaths` (`TrackedSavePath`) and `RemovedPathKeys`. `Roots()` and `LocalHash()`
+  cover every folder, using the shadow for an unmapped key.
+- Every sync path covers all folders: push, pull, hash, settle, the open-file probe, the folder watchers, safety checks,
+  `hash`, `resolve-conflict` and the Deck's keep-local. A pull that meets an unknown key adopts it as a shadow.
+- `SyncEngine.MapSavePathAsync` holds the push semaphore and the game lock. Config writes keep any mapping already on
+  disk, so a daemon can't undo one the launch wrapper just made.
+- New route `DELETE /api/agent/games/{id}/save-paths/{key}`, audited under the machine. Local API: `TrackedGameDto.paths`,
+  plus `key`/`keep` on `/folder`. Event `savedir.needs_choice`. `openapi.json` and both `api-types.ts` changed by
+  additions only; the Decky contract (`id`/`path`) is unchanged.
+- Decisions (in `Decisions.md`): an agent-added folder is adopted fleet-wide at once; `remove-path` is fleet-wide; a
+  folder no template describes is added without a template.
+- **Review fixes** (commit `5970ff2`):
+  - Mapping onto files when this machine never received the folder now asks first, instead of ending in a conflict.
+  - `ExtraPaths` is swapped, never edited in place, across threads; removal runs under the game lock.
+  - An unanswered keep-local/cloud choice is not re-hashed every poll.
+  - A local mapping the server has not heard of is re-reported, not reverted.
 
-## Deck rig commands
+## Ludusavi manifest
 
-`.\tests\testenv.ps1 sync`, then `build -Only deck`, then `up -Only deck`; `clean -Only deck` removes everything. Deck
-`deck@192.168.1.16`; prefix `~/savelocker-test`, state `~/savelocker-test-state`, port 5177. SSH from Windows works only
-with Windows OpenSSH (`C:\Windows\System32\OpenSSH\ssh.exe`), not Git Bash's `ssh`.
+The manifest does not feed this yet. The scanner still uses the first of a game's manifest locations that exists, so
+other locations need `add-path` by hand.
+- **Phase 6 (Group C)** will offer them: "Also found: … — add as a save folder", for new and tracked games. Nothing is
+  added until the user confirms.
+- **Not covered by this design:**
+  - single-file entries: an `--include` filter on the file's folder approximates them;
+  - registry saves: `tasks/registry-saves`;
+  - a location nested inside another location.
 
-## Verification
+## UI
 
-- Art tests 19/19 (`SteamArtTests`, `SteamArtRendererTests`); appearance consistency 46/46.
-- WSL: the test shortcut's art is not rewritten for an unchanged look and is repainted (with the log line) after
-  switching to Coolant + Cartridge through the agent API; removing the shortcut clears the record.
-- **Not verified on the real Deck:** the art repaint, the background-only hero replacing an old one, and the test menu
-  entry (checked with `bash -n` only).
+None. The screens are Phase 7 (Group C).
+
+## Verified
+
+- **Tests:**
+
+  | Suite | Result |
+  |---|---|
+  | Unit | 228/228 (+21: `MultiPathAgentTests` 18, `EnrollDeclaredFoldersTests` 3 against a real server) |
+  | New `run-multipath-tests` (two machines, real CLI) | 39/39 |
+  | Agent | 47 |
+  | Delta upload | 33 |
+  | Concurrency | 26 |
+  | Hardening | 33 |
+  | Local API | 113 |
+  | Linux regression | 15 |
+  | Linux (WSL) | 201 pass / 2 fail, identical to `main` (the known WSLg pair) |
+  | `web` + `agent-ui` build | clean |
+
+- **Mutation check:** with shadows disabled, `run-multipath-tests` fails 14 checks and two sync cycles create 3 extra
+  versions.
+- **testenv rig:** steps are in the PR description. The demo folders are deleted (`C:\SLDemo`, `%LOCALAPPDATA%\SLDemo`,
+  WSL `~/sldemo`). `%LOCALAPPDATA%\SaveLocker-test` remains; run `.\tests\testenv.ps1 clean` to reset it.
+- **Not verified:** a full testenv pass by the maintainer, and anything on the real Deck.
 
 ## Open
 
-- Fonts in the Decky plugin use Steam's fonts; the fix (bundling Archivo and JetBrains Mono) is in SaveLocker-Decky —
-  waiting on which screen the maintainer meant.
-- PR #54 review and merge; SaveLocker-Decky#4 implementation.
+- Rename the demo key `states` to something neutral (for example `settings`) in the PR steps and test script: offered,
+  not decided.
+- Phase 6 confirm-before-adding versus automatic adoption: recommended confirm, not decided.
+- Next: testenv pass → merge #57 → rebase `emulator-saves` → Group C.

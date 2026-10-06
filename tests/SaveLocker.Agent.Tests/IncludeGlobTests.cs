@@ -5,7 +5,8 @@ using Xunit;
 namespace SaveLocker.Agent.Tests;
 
 /// <summary>
-/// One game scoped to its own files inside a folder other games share (tasks/emulator-saves Phase 1).
+/// One game scoped to its own files inside a folder other games share (tasks/emulator-saves Phase 1,
+/// ported with the include primitive by tasks/multiple-save-paths Phase 1).
 /// The restore tests are the ones that matter: a restore deletes every local file that is not in the
 /// archive, so an unscoped pull into a RetroArch saves folder deletes every other ROM's save.
 /// </summary>

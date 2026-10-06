@@ -100,4 +100,12 @@ public static class AgentEventCodes
     /// else will tell the player why "Play" appeared to do nothing.
     /// </summary>
     public const string LaunchBlocked = "launch.blocked_conflict";
+
+    /// <summary>
+    /// One of a game's extra save folders resolved to a folder on this machine that already holds
+    /// different files from the copy the fleet syncs, so it was NOT mapped: which side to keep is the
+    /// user's call (<c>add-path --keep local|cloud</c>). Until then the folder keeps syncing through
+    /// its shadow, so nothing is lost — but nothing in that folder is synced either.
+    /// </summary>
+    public const string SaveFolderNeedsChoice = "savedir.needs_choice";
 }

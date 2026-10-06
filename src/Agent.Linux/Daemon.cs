@@ -78,7 +78,8 @@ public sealed class Daemon : IAsyncDisposable
     /// </summary>
     private SyncEngine BuildEngine() =>
         new(_config, ApiClient.For(_config),
-            log: Log, notices: _notices, offlineQueue: _offlineQueue, health: _health, activity: _activity);
+            log: Log, notices: _notices, offlineQueue: _offlineQueue, health: _health, activity: _activity,
+            onFoldersChanged: StartFolderWatchers);
 
     // The engine's routine-progress sink: the file log exactly as before, plus the agent UI's
     // Overview activity feed. One delegate so nothing else has to know the feed exists.
@@ -177,6 +178,7 @@ public sealed class Daemon : IAsyncDisposable
             prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct),
             postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
             syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct),
+            mapFolder: (game, key, dir, keep) => _engine.MapSavePathAsync(game, key, dir, keep),
             openFile: DesktopEnvironment.TryOpenFile);
         _apiServer.Start();
 
@@ -361,14 +363,19 @@ public sealed class Daemon : IAsyncDisposable
     /// </summary>
     private void StartFolderWatchers()
     {
-        foreach (var w in _folderWatchers) w.Dispose();
-        _folderWatchers.Clear();
-
-        foreach (var g in _config.Games.Where(g => Directory.Exists(g.SaveDirectory)))
+        // The poller, enrollment and the engine (a pull that created a folder) all call this, each
+        // from its own thread.
+        lock (_folderWatchers)
         {
-            var game = g;
-            _folderWatchers.Add(new FolderWatcher(game.SaveDirectory, () =>
-                _ = PushQuietlyAsync(game)));
+            foreach (var w in _folderWatchers) w.Dispose();
+            _folderWatchers.Clear();
+
+            foreach (var g in _config.Games.Where(g => Directory.Exists(g.SaveDirectory)))
+            {
+                var game = g;
+                _folderWatchers.Add(new FolderWatcher(
+                    game.RealRoots(_config.StateDir).Select(r => r.Directory), () => _ = PushQuietlyAsync(game)));
+            }
         }
     }
 

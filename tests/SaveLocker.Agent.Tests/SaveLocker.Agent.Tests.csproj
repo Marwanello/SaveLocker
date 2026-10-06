@@ -24,6 +24,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Agent\SaveLocker.Agent.csproj" />
+    <!-- Build order only: ServerProcess starts the server's own build output as a real process. -->
+    <ProjectReference Include="..\..\src\Server\SaveLocker.Server.csproj"
+                      ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
   <!-- SvgPath is pure (no ImGui), so its source is linked in rather than referencing the Linux agent

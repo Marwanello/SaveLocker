@@ -146,6 +146,7 @@ internal sealed class TrayContext : ApplicationContext
             // Playnite plugin's OnGameStopped equivalent to this route's own OnGameStarting caller.
             postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
             syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct),
+            mapFolder: (game, key, dir, keep) => _engine.MapSavePathAsync(game, key, dir, keep),
             openView: view => _ui.Post(() => OpenWindow(view)),
             // Explorer: a file is selected in its folder (a bare open would hand a large log to
             // whatever editor owns .log), a folder is simply opened.
@@ -303,7 +304,8 @@ internal sealed class TrayContext : ApplicationContext
         {
             replaced = _engine;
             _engine = new SyncEngine(_config, api, log: Log, notices: _notices,
-                offlineQueue: _offlineQueue, health: _health, activity: _activity);
+                offlineQueue: _offlineQueue, health: _health, activity: _activity,
+                onFoldersChanged: () => _ui.Post(StartFolderWatchers));
         }
 
         // Retire the engine we just replaced, or its lease timers keep renewing against the old
@@ -391,7 +393,7 @@ internal sealed class TrayContext : ApplicationContext
         foreach (var g in _config.Games.Where(g => Directory.Exists(g.SaveDirectory)))
         {
             var game = g;
-            _folderWatchers.Add(new FolderWatcher(game.SaveDirectory, () =>
+            _folderWatchers.Add(new FolderWatcher(game.RealRoots(_config.StateDir).Select(r => r.Directory), () =>
             {
                 if (!IsRunning(game)) FireAndForget(() => _engine.PushAsync(game, settle: true));
             }));
