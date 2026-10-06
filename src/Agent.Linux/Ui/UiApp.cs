@@ -236,8 +236,9 @@ sealed partial class UiApp
     /// <summary>Add game's "Hide enrolled" switch. While it is off the Path row also offers Enrolled.</summary>
     private bool _hideEnrolled = true;
 
-    /// <summary>Tracked by name, which is what <see cref="Enroller"/> skips on.</summary>
-    private bool IsTracked(ScanCandidate c) => _config.FindGame(c.Name) is not null;
+    /// <summary>Tracked here with a folder, which is what <see cref="Enroller"/> skips on. A game adopted
+    /// from the server with no folder on this machine is not: enrolling it is how it gets one.</summary>
+    private bool IsTracked(ScanCandidate c) => _config.FindGame(c.Name) is { IsEnrolledHere: true };
 
     private bool Listed(ScanCandidate c) => !_hideEnrolled || !IsTracked(c);
 

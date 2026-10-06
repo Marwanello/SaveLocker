@@ -1644,7 +1644,7 @@ public sealed class AgentApiServer : IDisposable
             candidate.AlternateSaveDirs is { Count: > 0 } also
                 ? also.Select(a => new SaveFolderDto(a.Key, null, a.Dir, false, Array.Empty<string>())).ToArray()
                 : null,
-            _config.FindGame(candidate.Name) is not null,
+            _config.FindGame(candidate.Name) is { IsEnrolledHere: true },
             candidate.EmulatorName,
             candidate.EmulatorSystem)).ToArray();
 
@@ -1739,7 +1739,8 @@ public sealed record CandidateDto(
     /// <summary>The manifest's other locations for this game that exist here ("Also found"): added only
     /// when the enroll request names them in <see cref="EnrollRequest.AlsoSync"/>. Null when there are none.</summary>
     SaveFolderDto[]? AlsoFound = null,
-    /// <summary>Already tracked here by name, so enrolling it again is skipped (<see cref="Enroller"/>).</summary>
+    /// <summary>Already tracked here with a folder, so enrolling it again is skipped (<see cref="Enroller"/>).
+    /// A game adopted from the server with no folder on this machine is not enrolled: adding it maps it.</summary>
     bool Enrolled = false,
     // Which emulator and console, for an emulator save (null otherwise) — the Add games filter's keys.
     string? EmulatorName = null, string? EmulatorSystem = null);
