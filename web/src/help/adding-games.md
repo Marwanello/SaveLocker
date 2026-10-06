@@ -26,6 +26,8 @@ After a game is added to the server, each machine needs to map its local save di
 
 Alternatively, use the **game scanning** feature: the agent can auto-detect save paths from Steam and Ludusavi's game manifests. Check the **Add Games** tab in the agent for detected candidates.
 
+Each game in that list has a small icon before its name: a **magnifier with a tick** means its save folder was found, a **yellow warning** means you need to set one, and a **green tick** means it is already added on this machine. Games already added are hidden; turn off **Hide enrolled** (top right, beside the filters) to show them, faded green, with an **Enrolled** filter of their own. The Steam Deck's Game Mode app works the same way.
+
 ## Add the game to Steam first (this is what makes detection work)
 
 **If a game is not in Steam, the agent cannot find it.** This is the single most common reason a game

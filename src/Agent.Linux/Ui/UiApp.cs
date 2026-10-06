@@ -230,13 +230,23 @@ sealed partial class UiApp
     /// combining with them: there was no way to land on "Heroic games still missing a path". Mirrors
     /// the browser agent UI's "Path:" row (AddGamesView.tsx) for the same reason it exists there.
     /// </summary>
-    private enum PathMode { All, Has, Missing }
+    private enum PathMode { All, Has, Missing, Enrolled }
     private PathMode _pathMode = PathMode.All;
 
-    private static bool MatchesPath(ScanCandidate c, PathMode m) => m switch
+    /// <summary>Add game's "Hide enrolled" switch. While it is off the Path row also offers Enrolled.</summary>
+    private bool _hideEnrolled = true;
+
+    /// <summary>Tracked by name, which is what <see cref="Enroller"/> skips on.</summary>
+    private bool IsTracked(ScanCandidate c) => _config.FindGame(c.Name) is not null;
+
+    private bool Listed(ScanCandidate c) => !_hideEnrolled || !IsTracked(c);
+
+    // Detected / Not detected leave enrolled games out, so each game is under exactly one of the three.
+    private bool MatchesPath(ScanCandidate c, PathMode m) => m switch
     {
-        PathMode.Has => !string.IsNullOrEmpty(c.SuggestedSaveDir),
-        PathMode.Missing => string.IsNullOrEmpty(c.SuggestedSaveDir),
+        PathMode.Has => !IsTracked(c) && !string.IsNullOrEmpty(c.SuggestedSaveDir),
+        PathMode.Missing => !IsTracked(c) && string.IsNullOrEmpty(c.SuggestedSaveDir),
+        PathMode.Enrolled => IsTracked(c),
         _ => true,
     };
 
@@ -244,6 +254,7 @@ sealed partial class UiApp
     {
         PathMode.Has => "Detected",
         PathMode.Missing => "Not detected",
+        PathMode.Enrolled => "Enrolled",
         _ => "All",
     };
 
@@ -1691,7 +1702,7 @@ sealed partial class UiApp
         // no Heroic install is one more thing to nav past that can never do anything. Suggested and
         // All always render, so the row never disappears.
         var filters = Enum.GetValues<AddFilter>()
-            .Select(f => (Filter: f, Count: _candidates.Count(c => MatchesFilter(c, f))))
+            .Select(f => (Filter: f, Count: _candidates.Count(c => Listed(c) && MatchesFilter(c, f))))
             .Where(x => x.Count > 0 || x.Filter is AddFilter.Suggested or AddFilter.All)
             .ToList();
 
@@ -1704,29 +1715,40 @@ sealed partial class UiApp
                 if (Widgets.PillButton($"{FilterLabel(f)}  {count}", kind))
                     _addFilter = f;
             }
+
+            // Right-aligned on the filter row, like agent-ui's switch beside its chips.
+            const string hideLabel = "Hide enrolled";
+            var toggleW = (ImGui.GetTextLineHeight() + 6f) * 1.9f + Theme.Space.Md + ImGui.CalcTextSize(hideLabel).X;
+            ImGui.SameLine(0, Theme.Space.Md);
+            var spare = ImGui.GetContentRegionAvail().X - toggleW - Theme.Layout.FocusClearance;
+            if (spare > 0) ImGui.SetCursorPosX(ImGui.GetCursorPosX() + spare);
+            if (Widgets.Toggle(hideLabel, ref _hideEnrolled) && _hideEnrolled && _pathMode == PathMode.Enrolled)
+                _pathMode = PathMode.All;
             Widgets.Gap(Theme.Space.Sm);
 
             // Path detection, a second row: always shown (unlike the source row, it is not specific
             // to one source), and counted against the source-filtered set so "Detected"/"Not
             // detected" describe what the row above is already narrowed to.
             var sourceFiltered = Enumerable.Range(0, _candidates.Count)
-                .Where(i => MatchesFilter(_candidates[i], _addFilter))
+                .Where(i => Listed(_candidates[i]) && MatchesFilter(_candidates[i], _addFilter))
                 .ToList();
             Widgets.Text("Path", Theme.Dim, Theme.Caption);
             foreach (var m in Enum.GetValues<PathMode>())
             {
+                if (m == PathMode.Enrolled && _hideEnrolled) continue;
                 ImGui.SameLine(0, Theme.Space.Sm);
                 var pillLabel = m == PathMode.All
                     ? PathModeLabel(m)
                     : $"{PathModeLabel(m)}  {sourceFiltered.Count(i => MatchesPath(_candidates[i], m))}";
                 var kind = _pathMode == m ? Widgets.ButtonKind.Primary : Widgets.ButtonKind.Ghost;
-                if (Widgets.PillButton(pillLabel, kind)) _pathMode = m;
+                if (Widgets.PillButton(pillLabel, kind, m == PathMode.Enrolled ? Icons.Check : null)) _pathMode = m;
             }
             Widgets.Gap(Theme.Space.Sm);
         }
 
         var shown = Enumerable.Range(0, _candidates.Count)
-            .Where(i => MatchesFilter(_candidates[i], _addFilter) && MatchesPath(_candidates[i], _pathMode))
+            .Where(i => Listed(_candidates[i]) && MatchesFilter(_candidates[i], _addFilter)
+                        && MatchesPath(_candidates[i], _pathMode))
             .ToList();
 
         // The section header is drawn BEFORE the list height is measured: measuring first and then
@@ -1829,37 +1851,47 @@ sealed partial class UiApp
     private void DrawCandidateRow(int i)
     {
         var c = _candidates[i];
-        bool alreadyTracked = _config.FindGame(c.Name) is not null;
+        bool alreadyTracked = IsTracked(c);
         bool hasFolder = !string.IsNullOrEmpty(c.SuggestedSaveDir);
 
         ImGui.PushID(i);
-        bool ticked = _selected.Contains(i);
+        bool ticked = alreadyTracked || _selected.Contains(i);
+
+        // An enrolled row gets a faint green ground, painted under its content: split the draw list so the
+        // rectangle (channel 0) can be sized after the row (channel 1) is laid out.
+        var dl = ImGui.GetWindowDrawList();
+        var rowTop = ImGui.GetCursorScreenPos();
+        if (alreadyTracked) { dl.ChannelsSplit(2); dl.ChannelsSetCurrent(1); }
 
         ImGui.BeginGroup();
-        if (Widgets.CheckRow("sel", ref ticked, enabled: !alreadyTracked))
+        if (Widgets.CheckRow("sel", ref ticked, enabled: !alreadyTracked) && !alreadyTracked)
         {
             if (ticked) _selected.Add(i); else _selected.Remove(i);
         }
         ImGui.SameLine(0, Theme.Space.Md);
 
         ImGui.BeginGroup();
-        Widgets.Text(c.Name, alreadyTracked ? Theme.Dim : Theme.Fg, Theme.BodyStrong);
+        Theme.PushFont(Theme.BodyStrong);
+        var nameH = ImGui.GetTextLineHeight();
+        Theme.PopFont(Theme.BodyStrong);
+        var tile = MathF.Round(nameH * 1.5f);
+        var tileY = ImGui.GetCursorPosY();
+        if (alreadyTracked) Widgets.StatusTile(Icons.Check, Theme.Safe, tile);
+        else if (hasFolder) Widgets.StatusTile(Icons.SearchCheck, Theme.Fg, tile, Theme.Tile);
+        else Widgets.StatusTile(Icons.AlertTriangle, Theme.Watch, tile);
+        ImGui.SameLine(0, Theme.Space.Sm);
+        ImGui.SetCursorPosY(tileY + (tile - nameH) / 2f);
+        Widgets.Text(c.Name, alreadyTracked ? Theme.Alpha(Theme.Safe, 0.85f) : Theme.Fg, Theme.BodyStrong);
         ImGui.SameLine(0, Theme.Space.Sm);
         ImGui.AlignTextToFramePadding();
         Widgets.Text($"[{c.Source}]", Theme.Dim, Theme.Caption);
 
         if (alreadyTracked)
         {
-            ImGui.SameLine(0, Theme.Space.Sm);
-            Widgets.Badge("already tracked", Theme.Safe, Icons.Check);
+            if (hasFolder) Widgets.Text(c.SuggestedSaveDir!, Theme.Faint, Theme.Caption);
+            Widgets.Text("Already added on this Deck", Theme.Safe, Theme.Caption);
         }
-        else if (!hasFolder)
-        {
-            ImGui.SameLine(0, Theme.Space.Sm);
-            Widgets.Badge("no save folder", Theme.Watch, Icons.AlertTriangle);
-        }
-
-        if (!alreadyTracked)
+        else
         {
             Widgets.Text(hasFolder ? c.SuggestedSaveDir! : "Pick where this game keeps its saves.",
                 hasFolder ? Theme.Dim : Theme.WatchInk, Theme.Caption);
@@ -1871,8 +1903,17 @@ sealed partial class UiApp
         ImGui.EndGroup();
         ImGui.EndGroup();
 
+        if (alreadyTracked)
+        {
+            var pad = Theme.Space.Xs;
+            dl.ChannelsSetCurrent(0);
+            dl.AddRectFilled(rowTop - new Vector2(pad, pad),
+                new Vector2(rowTop.X + ImGui.GetContentRegionAvail().X + pad, ImGui.GetItemRectMax().Y + pad),
+                Widgets.U32(Theme.Alpha(Theme.Safe, 0.07f)), Theme.Rounding.Button);
+            dl.ChannelsMerge();
+        }
+
         Widgets.Gap(Theme.Space.Sm);
-        var dl = ImGui.GetWindowDrawList();
         var p = ImGui.GetCursorScreenPos();
         dl.AddLine(p, p + new Vector2(ImGui.GetContentRegionAvail().X, 0),
             ImGui.ColorConvertFloat4ToU32(Theme.Row), 1f);

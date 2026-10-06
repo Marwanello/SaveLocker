@@ -1618,7 +1618,7 @@ public sealed class AgentApiServer : IDisposable
             Appearances.Normalize(config.LocalAppearance ?? effective));
     }
 
-    private static CandidateDto[] ToCandidateDtos(IReadOnlyList<ScanCandidate> candidates) =>
+    private CandidateDto[] ToCandidateDtos(IReadOnlyList<ScanCandidate> candidates) =>
         candidates.Select((candidate, id) => new CandidateDto(
             id,
             candidate.Name,
@@ -1634,7 +1634,8 @@ public sealed class AgentApiServer : IDisposable
                 : null,
             candidate.AlternateSaveDirs is { Count: > 0 } also
                 ? also.Select(a => new SaveFolderDto(a.Key, null, a.Dir, false, Array.Empty<string>())).ToArray()
-                : null)).ToArray();
+                : null,
+            _config.FindGame(candidate.Name) is not null)).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -1726,7 +1727,9 @@ public sealed record CandidateDto(
     SaveFolderDto[]? ExtraFolders = null,
     /// <summary>The manifest's other locations for this game that exist here ("Also found"): added only
     /// when the enroll request names them in <see cref="EnrollRequest.AlsoSync"/>. Null when there are none.</summary>
-    SaveFolderDto[]? AlsoFound = null);
+    SaveFolderDto[]? AlsoFound = null,
+    /// <summary>Already tracked here by name, so enrolling it again is skipped (<see cref="Enroller"/>).</summary>
+    bool Enrolled = false);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the
