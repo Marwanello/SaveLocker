@@ -31,7 +31,7 @@ continue past a phase's own stopping point unless explicitly instructed to.
 | 5 — RPCS3 / Xenia | ⏳ Not started |
 | 6 — Switch (Eden) | ⏳ Not started |
 | 7 — UI filter | ✅ Shipped 2026-10-07 (same PR), filter by emulator — agent UI *Emulators* chip with an *Emulator* row under it (one chip per emulator, RetroArch today), Deck *Emulators* pill. A per-console sub-breakdown was not built — it comes back with Phase 2, when more than one console has saves. |
-| 7b — Game source per machine, names without "(RetroArch)" | ✅ Shipped 2026-10-07 (same PR) — built 2026-10-07 (maintainer asked; picked variation B of a clickable mockup on all three screens). Unit 280. Console checked in the browser against a seeded dev server; agent UI and Deck need the testenv pass. |
+| 7b — Game source per machine, names without "(RetroArch)" | ✅ Shipped 2026-10-07 (same PR) — built 2026-10-07 (maintainer asked; picked variation B of a clickable mockup on all three screens). Unit 280. Console checked in the browser against a seeded dev server; agent UI and Deck need the testenv pass. **Review fixes 2026-10-07** (same PR): server-decided names, the scope-join refusal, source re-send guard, EmuDeck tag, server bounds — unit 291, see `progress.md`. |
 
 ### Phase 1 — as built (2026-10-04), and where it departs from the plan below
 
@@ -140,13 +140,16 @@ name in the agent UI, a pill beside the sync status in Game Mode.
 - **Games enrolled before this** get a source from the next scan that finds them **at the same folder**
   (`GameSources.Backfill`, agent API rescan and Game Mode's scan). `AgentConfig.Save` keeps a source
   another process wrote (`??=`, mutation-checked).
-- **Names:** the title alone ("Chrono Trigger"). Scans merge candidates by normalised name and the server
-  matches games by name, so an emulated game whose name a PC candidate on the same machine also has gets
-  its console appended — "Chrono Trigger (SNES)", or the emulator's name when the console is unknown
-  (`GameSources.AvoidNameClashes`, before the merge). A clash only another machine sees still meets
-  `Enroller`'s `SameFolders` check (the RetroArch game declares `states`, a PC game does not), which skips
-  rather than mixing saves. Test servers holding "… (RetroArch)" games from earlier builds: delete and
-  re-add them.
+- **Names:** the title alone ("Chrono Trigger") when the server has no other game by that name. **Revised
+  2026-10-07 after review of PR #60** — the first version appended the console when *this machine's scan*
+  had a same-named game (`GameSources.AvoidNameClashes`, now removed), so a Deck with Steam ROM Manager
+  shortcuts and a PC without them named one ROM two ways. Now the names come from the save file alone
+  (`Enroller.NamesFor`: title, "title (RetroArch)", "save-file name (RetroArch)") and the enroller takes the
+  one whose server game already keeps this ROM's files, else the first free one (`ServerNameFor`). Scans keep
+  an emulator save out of the name-merge (`ScanCandidate.DedupeKey`); two ROMs that clean to one title are
+  two rows, the save file's name shown as a chip. A PC candidate that would join an emulator game with none
+  of its files in scope is refused with the reason shown (Decisions → *A game never joins…*). Test servers
+  holding games from earlier builds: delete and re-add them.
 - **The Emulator filter (Phase 7, partly).** Agent UI: an *Emulators* chip in the source row; while it is on,
   an *Emulator* row (All / RetroArch) sits between it and the *Save folder* row. One chip per supported
   emulator, listed in `EMULATORS` — every new emulator adds itself there. Game Mode: an *Emulators* pill,

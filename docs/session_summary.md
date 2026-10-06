@@ -1,85 +1,92 @@
-# Session summary — 2026-10-06/07 — Emulator saves: RetroArch states, game sources, plain names
+# Session summary — 2026-10-07 — Review of PR #60 (emulator saves), all findings fixed
 
 Standalone: the facts below do not need the rest of the vault.
 
-**Branch:** `emulator-saves-phase-1` (renamed from `emulator-saves`). PR on the fork `Marwanello/SaveLocker`.
-Worktree: `.claude/worktrees/emulator-saves`.
+**PR:** #60 on the fork `Marwanello/SaveLocker`, *Emulator saves: RetroArch saves and states, game source per machine,
+Emulators filter*. Head branch `emulator-saves-phase-1`, base `main`.
+**Where the fixes were made:** local branch `emulator-saves-review-fixes` in `.claude/worktrees/multiple-save-paths-group-c-5cda33`.
+It tracks `origin/emulator-saves-phase-1` and was pushed there. The PR branch's own worktree,
+`.claude/worktrees/emulator-saves`, is still at the pre-fix commit: `git pull` there before working in it.
 
-### Request sequence
+## What was asked
 
-1. Merge *Multiple save paths* (then on `main`) into the emulator branch, implement what was left (Phase 1b, save
-   states), and revise the include-glob implementation if multiple save paths covers it. Create a worktree if
-   missing, and give detailed testenv verification steps.
-   - The branch still existed; a worktree was created for it.
-   - Multiple save paths' per-folder scope (`SaveRoot.IncludeGlobs`) replaced the branch's own server column,
-     DTO fields, validation and `SaveArchive` include code. The merge kept `main`'s version of every shared file.
-2. Reported that the WSL agent UI's Add games was empty. Cause: the WSL clone `~/SaveLocker` was still on another
-   branch; `testenv.ps1 sync` fixed it.
-3. Asked whether the Add games status icons and Hide enrolled were in the previous PR. Yes: PR #58
-   (SkorcherX/SaveLocker), squash-merged as `567d686`.
-4. Merge `main` again (Group C) and sync WSL. Done (`3b88d4a`). Also fixed `9fd5f96`: a game adopted from the
-   server with no folder here was shown as "enrolled" and hidden by Hide enrolled.
-5. Drop "(RetroArch)" from names, and show each game's source per device on the game page of the console and the
-   agent, in two levels (an emulator game: "Emulator", then which emulator). Mockup first, with variations of
-   placement. Published a clickable mockup: https://claude.ai/artifact/7sEYQmakCTqd59xUJjxY9b
-6. Picked **variation B on all three screens**, and asked for an Emulators chip in the agent's Add games with a new
-   chip row of emulators between the source row and the Save folder row, extended as emulators are added.
-7. Mark multiple save paths done in the Backlog and everything implemented in emulator saves as done, append the
-   summary to `progress.md`, save this file, rename the branch and open a PR on the fork.
+1. Review PR #60 thoroughly. Verdict: **request changes**, with 2 blocking, 2 important and 5 minor findings. CI was green.
+2. Fix all of them, push to the PR, append a summary to `docs/progress.md`, and write this file.
 
-### What was built
+## The two problems that mattered
 
-**Phase 1b — RetroArch save states** (`9ed512b`, `7200484`):
-- `RetroArchConfig.Folders()` returns each setup's (saves, states) pair: EmuDeck's `saves/retroarch/{saves,states}`,
-  or a `retroarch.cfg`'s `savefile_directory` / `savestate_directory` (defaults `<root>/saves`, `<root>/states`).
-- Each RetroArch game declares a second folder, key `states`, scoped to `<rom>.state*` (slots, `.state.auto`,
-  thumbnails). It is declared even when the folder does not exist yet, so every machine defines the game alike.
-- `StatesDirFor` picks the folder that already holds the ROM's states, then the save's core folder, then the root.
-- `SaveDirSanity.Inspect`/`Measure` take the folder's scope, so doctor and the folder check measure only this
-  ROM's files.
-- `testenv.ps1 emu-fixture` writes a second tree for the WSL daemon (`Emulation-wsl`), and `Invoke-Wsl` points the
-  daemon at it, so the Windows ↔ WSL round trip runs on the rig.
+**One ROM could become two server games.** The server identifies a game by its name. The first version named an
+emulator save by its cleaned title and added the console ("Chrono Trigger (SNES)") only when *that machine's own
+scan* had another game with that name. On a Deck, Steam ROM Manager (part of EmuDeck) adds a Steam shortcut for
+every ROM, and every shortcut is a scan candidate. So the Deck said "Chrono Trigger (SNES)" while a PC without those
+shortcuts said "Chrono Trigger", and the two never synced.
 
-**Game sources and plain names** (`e54a22a`):
-- **Server:** table `MachineGameSources` (migration `AddMachineGameSources`, one row per machine and game).
-  `PUT /api/agent/source/{gameId}` (agent), `GET /api/games/{id}/sources` (admin), and `GameDto.MachineSource` on
-  the agent's game list so the poller re-sends a source the server lacks. Display only.
-- **Agent:** `GameSources` (Agent.Core) writes the words once — "Emulator › RetroArch" with SNES / Flatpak /
-  EmuDeck tags, "Steam › Installed game" with AppID / Proton, "Heroic › Epic Games", "Playnite › …",
-  "Save-folder scan › Saved Games", "Added by hand › Folder picked in the agent" or "› savelocker add-game".
-  `TrackedGame.Source` is set at enrollment, backfilled by a scan that finds an older game at the same folder, and
-  kept across a stale host's `Save` (`??=`).
-- **Console:** a chip under the game name; "N sources" when machines differ; a popover lists each machine.
-- **Agent UI:** a chip with tags under the game name.
-- **Game Mode:** a pill beside the sync status, "Emulator · RetroArch · SNES" (its font is Latin-1 only).
-- **Names:** the title alone. An emulated game whose name a PC candidate on the same machine also has gets its
-  console appended ("Chrono Trigger (SNES)"), before the scan merges candidates by name.
-- **Emulator filter:** agent UI *Emulators* chip; while on, an *Emulator* row (All / RetroArch) between the source
-  row and the Save folder row, one chip per emulator in `EMULATORS`. Game Mode: an *Emulators* pill.
+**A PC game could join an emulator game and never be backed up.** This was proven before fixing, with a two-machine
+test against a real server:
+- Machine A added the RetroArch save "Chrono Trigger".
+- Machine B then added the Steam game "Chrono Trigger".
+- B joined A's game and inherited its include patterns (`Chrono Trigger (USA).srm`, `.rtc`).
+- The files that would sync from B's save folder: none. Every screen showed B as in sync.
 
-### Verification
+## The naming decision (the maintainer's choice)
 
-- `dotnet test tests/SaveLocker.Agent.Tests`: **280** passed. New: `GameSourcesTests` 5 (the stale-host check
-  mutation-checked), `RetroArchSyncTests` (two machines against a real server, now also asserting both machines'
-  sources), `RetroArchTests` 17.
-- Full solution build clean; `web` and `agent-ui` lint and build clean.
-- `openapi.json` and `web/src/api-types.ts` regenerated, additions only. `agent-ui/src/api-types.ts` edited by hand.
-- Console source chip and popover checked in the browser against a dev server seeded with three machines.
-- testenv Windows ↔ WSL round trip for Phases 1 and 1b, with the fixtures.
+Asked with three options; the maintainer picked **"plain names, the server decides"**.
+- An emulator save may take, in order:
+  1. its title (`Chrono Trigger`);
+  2. the title plus the emulator (`Chrono Trigger (RetroArch)`);
+  3. the save file's own name plus the emulator (`Chrono Trigger (Japan) (RetroArch)`).
+- All three come from the save file alone. At enrollment it takes the one whose server game already holds exactly
+  this ROM's files, otherwise the first name no game has.
+- Every machine sees the same server, so the same ROM ends up in the same game whichever machine adds it first.
+- Accepted gap: if an emulator save takes the plain title first, a PC game with that title added later is refused,
+  with the reason shown. It is never mixed into the emulator game.
 
-### Not done / left open
+The rejected options were always adding "(RetroArch)" (fully deterministic, but brings back the suffix the
+maintainer had removed) and always adding the console (not deterministic when one machine lacks the ROM folder).
 
-- The agent UI and Game Mode source chips have not been looked at on the rig. Run `testenv clean` first: games
-  added earlier as "… (RetroArch)" no longer match.
-- The real EmuDeck hardware pass (Deck + Windows) for Phases 1 and 1b.
-- Emulator saves Phases 2–6 (PCSX2/Dolphin/DuckStation, `gamelist.xml` names, PrimeHack, RPCS3/Xenia, Switch) stay
-  in the Backlog; the per-console filter breakdown comes back with Phase 2.
+## Everything that changed
 
-### Vault changes
+- **Names** — `Enroller.NamesFor` and `Enroller.ServerNameFor`. The game list is read from the server once per batch
+  and updated as games are created.
+  - `GameSources.AvoidNameClashes` is deleted.
+  - `ScanCandidate.DedupeKey` stops the scanners merging an emulator save with any other candidate.
+  - `Enroller.TrackedFor` (same name *and* same include patterns) answers "is this already set up here?" in the
+    Enroller, Add games, Game Mode and the source backfill.
+- **Joining** — a candidate with no include patterns is refused when its folder has files and none of them match the
+  server game's patterns.
+  - It still joins when its folder is empty, or when some of its files match (patterns an admin set in the console
+    for that PC game). That case has its own test, so the fix doesn't break it.
+- **Refusal reasons are shown** — `EnrollResponse.notes`. Add games prints "Not added: …" instead of counting
+  everything as "already tracked"; Game Mode adds the reasons to its status line.
+- **Sending the source** — `GameSources.ReportAsync` now says whether the server answered. The poller sends each
+  game's source once per value, instead of every 20 seconds for every game against a console that predates the
+  route. `GameSourceDto.SameAs` compares values the way the server stores them (trimmed).
+- **Two ROMs with one title** (two regions, or one game on two consoles) are now two Add games rows, each showing its
+  save file's name. Only one ROM's save found in two core folders collapses to the newer one.
+- **The "EmuDeck" tag** comes from the scanner (`RetroArchFolders.EmuDeck` → `ScanCandidate.ViaEmuDeck`). The folder
+  is stored by its real path, and EmuDeck's saves folder links into the RetroArch Flatpak's, so reading the path
+  never showed "EmuDeck" on real hardware.
+- **"Added by hand"** is no longer stamped on a game that was already set up here when its folder is moved, so the
+  backfill can still record the real source.
+- **Server limits** — `PUT /api/agent/source` accepts a kind up to 32 characters, a detail up to 200, and at most 16
+  tags of 64; each must be one line. The agent trims to the same limits.
+- **Smaller fixes**
+  - A failed source report has its own log line.
+  - `retroarch.cfg`'s configured saves folder replaces the default one instead of adding to it.
 
-- *Multiple save paths per game* marked done: removed from `Backlog.md`, folder moved to
-  `logs/2026-10-06_multiple-save-paths/`, indexed in `logs/shipped-2026-10.md`, links updated.
-- `tasks/emulator-saves/plan.md`: Phases 1, 1b, 7 and 7b marked shipped; section *Game sources and names — as
-  built*. The Backlog line now reads "Emulator saves: the other emulators (RetroArch is done)".
-- `Decisions.md` (names without the suffix; source per machine), `API Reference.md`, `Build and Run.md`,
-  `CONTEXT.md`.
+## Verification
+
+- `dotnet test tests/SaveLocker.Agent.Tests`: **291/291** (was 280).
+  - New: `EnrollNamingTests`, 6 tests against a real server.
+  - Mutation-checked: disabling the join refusal, and forcing the plain name, each make the intended tests fail.
+- The full solution builds clean with `--no-incremental`; `agent-ui` lint and build pass.
+- `agent-ui/src/api-types.ts` was regenerated from a dev tray on port 5190 with scratch state, stopped afterwards
+  with no registry leftovers. The only diff is `emulatorRom` and `notes`.
+- No server route or data shape changed, so `openapi.json` and `web/` were not touched.
+- **Not done:** no testenv pass and no real-hardware pass.
+
+## Next
+
+`testenv clean`, because games added by earlier builds won't match. Then check the agent UI and Game Mode source
+chips, try a same-titled PC game plus emulator save to see the refusal reason, and do the EmuDeck hardware pass on the
+Deck and on Windows. After that PR #60 can merge.

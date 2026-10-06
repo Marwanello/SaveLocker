@@ -290,9 +290,22 @@ session can judge an edge case, not to reopen the choice.
 - **Emulator games are named from the save file, title alone** (2026-10-04, maintainer's choice; the
   ` (RetroArch)` suffix dropped 2026-10-07 at the maintainer's request): `Chrono Trigger (USA).srm` →
   `Chrono Trigger`. Deterministic on every machine (no playlist one machine has and another lacks). Only
-  ROMs with a save file are candidates. When a PC game on the same machine has the same name, the emulated
-  one gets its console appended (`Chrono Trigger (SNES)`) so the two never merge; where the emulator is
-  shown now is the game's source, below.
+  ROMs with a save file are candidates. Where the emulator is shown now is the game's source, below.
+  <br>**When the title is taken, the server decides — never the machine** (2026-10-07, review of PR #60,
+  maintainer's choice). An emulator save may hold, in order, `Chrono Trigger`, `Chrono Trigger (RetroArch)`,
+  `Chrono Trigger (Japan) (RetroArch)` (the save file's own name) — all from the file alone. The enroller
+  takes the name whose server game already keeps exactly this ROM's files, else the first one free
+  (`Enroller.NamesFor` / `ServerNameFor`). Every machine sees the same server, so one ROM is one game whoever
+  enrolls first. The first version appended the console when *this machine's scan* had a same-named game,
+  which split one ROM into two games across a Deck (Steam ROM Manager adds a shortcut per ROM) and a PC (none).
+  Scans never merge an emulator save with another candidate (`ScanCandidate.DedupeKey`), and two ROMs with one
+  title stay two rows. **Known gap, accepted:** an emulator save that takes the plain title first leaves a
+  later same-titled PC game unable to join it — refused with the reason shown, never mixed (next bullet).
+- **A game never joins a server game whose include patterns keep none of its files** (2026-10-07, review of
+  PR #60). A candidate with no scope of its own joining a scoped game inherits that scope; when nothing in its
+  folder matches — a Steam "Chrono Trigger" joining the SNES save of that name — nothing on that machine would
+  ever be backed up while every screen said "in sync". Refused, with the reason in Add games. A folder with no
+  files yet, or with some files in scope (patterns set in the console for that PC game), still joins.
 - **A game's source is per machine and display only** (2026-10-07, maintainer's choice): how each machine
   found the game, as kind › detail + tags ("Emulator › RetroArch", SNES, Flatpak), because two machines rarely
   find a game the same way. The agent writes the words once (`GameSources`), the server stores one row per

@@ -1761,9 +1761,19 @@ daemon, so the Windows ↔ WSL round trip runs on the rig. Unit **247**, multipa
 RetroArch" + SNES/Flatpak/EmuDeck tags, "Steam › Installed game", …) — new `MachineGameSources` table, agent
 `PUT /api/agent/source/{id}`, admin `GET /api/games/{id}/sources` — shown on the game page of the console
 (chip, "N sources" + per-machine popover), agent UI (chip + tags) and Game Mode (pill). RetroArch games drop the
-"(RetroArch)" suffix; a clash with a PC game on the same machine appends the console. Agent UI Add games gained an
+"(RetroArch)" suffix. Agent UI Add games gained an
 *Emulators* chip with an *Emulator* row (one chip per emulator — add each new one). `tasks/emulator-saves/plan.md`
 → *Game sources and names*. Unit **280**.
+<br>**2026-10-07: review of PR #60, every finding fixed on the PR.** The first naming rule (append the console
+when *this machine's scan* had a same-named game) split one ROM into two server games across a Deck with Steam ROM
+Manager shortcuts and a PC without them; and a Steam game with an emulator game's title joined it and inherited
+its `.srm` scope, so none of the PC's saves were ever backed up (proven with a two-machine test before fixing).
+Now: names come from the save file alone and **the server decides** which one an emulator save takes
+(`Enroller.NamesFor`/`ServerNameFor`); a game never joins one whose patterns keep none of its files, and Add games
+says why it refused (`EnrollResponse.notes`). Also: the poller sends a source once per value, not every 20 s
+against a console without the route; "EmuDeck" tag from the scanner, not the (real) path; server bounds
+sources. Decisions → *Emulator games are named…* and *A game never joins…*. Unit **291**; both main fixes
+mutation-checked.
 <br>**Next action for this item:** a testenv pass of the source chips (agent UI + Game Mode; the console was
 checked in the browser) — `testenv clean` first, the old "(RetroArch)" games no longer match — then the EmuDeck
 hardware pass (Deck + Windows) for Phases 1 and 1b, then a PR.

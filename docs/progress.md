@@ -3598,3 +3598,84 @@ Worktree: `.claude/worktrees/emulator-saves`.
   built*. The Backlog line now reads "Emulator saves: the other emulators (RetroArch is done)".
 - `Decisions.md` (names without the suffix; source per machine), `API Reference.md`, `Build and Run.md`,
   `CONTEXT.md`.
+
+## 2026-10-07 — Review of PR #60 (emulator saves) and every finding fixed
+
+**Branch:** fixes committed on `emulator-saves-review-fixes` in `.claude/worktrees/multiple-save-paths-group-c-5cda33`,
+pushed to the PR's branch `emulator-saves-phase-1` on the fork `Marwanello/SaveLocker` (PR #60). The
+`.claude/worktrees/emulator-saves` worktree still has that branch checked out at the pre-fix commit: `git pull` there.
+
+### Request sequence
+
+1. `/code-review-skill` PR #60, thoroughly. Verdict: request changes, 2 blocking + 2 important + 5 nits. CI was green.
+   Finding 2 was proven before reporting, with a throwaway two-machine test against a real server.
+2. "Fix all, push to the PR, append the summary to `progress.md`, save a standalone `session_summary.md`."
+   Finding 1 needed a naming choice; asked, and the maintainer picked **plain names, the server decides**.
+
+### Findings, and what changed
+
+- 🔴 **One ROM became two server games across machines.** `GameSources.AvoidNameClashes` appended the console
+  when *this machine's own scan* had a same-named game. On Linux every `shortcuts.vdf` entry is a candidate, and
+  EmuDeck's Steam ROM Manager adds one per ROM, so a Deck said "Chrono Trigger (SNES)" where a PC said "Chrono
+  Trigger". **Fix:** removed. `Enroller.NamesFor` lists names from the save file alone (title, "title
+  (RetroArch)", "save-file name (RetroArch)"); `ServerNameFor` takes the one whose server game already keeps
+  this ROM's files, else the first free. The game list is read once per batch and kept current, so two regions
+  in one batch get two names. `ScanCandidate.DedupeKey` keeps emulator saves out of the scanners' name-merge.
+  `Enroller.TrackedFor` (name + same scope) replaces the bare `FindGame(c.Name)` in the Enroller, Add games'
+  `Enrolled` flag, Game Mode's `IsTracked` and `GameSources.Backfill`.
+- 🔴 **A Steam game with an emulator game's title joined it, and none of its saves were backed up.** The
+  probe: B's Steam "Chrono Trigger" enrolled into A's RetroArch game, inherited `Chrono Trigger (USA).srm,
+  .rtc`, and the files in scope from its folder were none. The `SameFolders` check only ran when the
+  *candidate* had a scope. This PR made it reachable: plain titles, and an adopted folder-less entry is no
+  longer skipped. **Fix:** an unscoped candidate is refused when its folder has files and none match the
+  game's patterns. A folder with no files yet, or with matching files (patterns set in the console for that PC
+  game), still joins; that case has its own test.
+- 🟡 **Refusals were reported as "already tracked".** `EnrollProgress.Notes` → `EnrollResponse.notes`. Add
+  games prints "Not added: …"; Game Mode appends it to its status line.
+- 🟡 **The poller re-sent the source every 20 s for every game against a console without the route** (404
+  forever, plus a log line each time). `GameSources.ReportAsync` now returns whether the server answered; the
+  poller remembers per game what was settled and sends again only when the source changes. `GameSourceDto.SameAs`
+  compares as the server stores (trimmed, empty tags dropped), so a server-side trim can't cause a loop.
+- 🟡 **Two ROMs that clean to one title collapsed to one candidate,** the older one gone without a word. Now
+  only one ROM's save under two cores collapses (keep newest). Different ROMs stay separate rows, with the save
+  file's name shown as a chip (`CandidateDto.emulatorRom`).
+- 🟢 The **EmuDeck tag** came from reading the folder path, which is resolved to its real path (EmuDeck's saves
+  folder links into the Flatpak's), so it never showed on real hardware. Now `RetroArchFolders.EmuDeck` →
+  `ScanCandidate.ViaEmuDeck`.
+- 🟢 **Re-pointing an older game's folder labelled it "Added by hand"** and blocked the backfill. Now that label
+  is only set when the game had no folder here.
+- 🟢 `PUT /api/agent/source` is **bounded**: kind 32, detail 200, 16 tags of 64, one line each (400
+  otherwise). The agent clips to the same limits (`GameSourceDto.Max*`).
+- 🟢 A failed source report logged as `Enroller.SetMachinePath`; it now has its own try/catch.
+- 🟢 `RetroArchConfig.Folders` scanned `<config>/saves` even when `retroarch.cfg` named another folder.
+
+### Verification
+
+- `dotnet test tests/SaveLocker.Agent.Tests`: **291/291** (was 280). New `EnrollNamingTests` (6, real server).
+  Mutation-checked:
+  - disabling the scope refusal fails `A_pc_game_never_joins_…`;
+  - making `serverName` the plain title fails `One_rom_lands_in_one_game_…` and `Two_regions_…`.
+- Full solution `--no-incremental` build clean. `agent-ui` lint and build clean.
+- `agent-ui/src/api-types.ts` regenerated with `npx openapi-typescript` from a dev tray on :5190 (scratch state
+  root, own run-key subpath, stopped afterwards, nothing left in the registry). Diff: exactly
+  `emulatorRom` + `notes`.
+- No server route or DTO shape changed, so `openapi.json` and `web/` are untouched.
+- **Not done:** a testenv or hardware pass. The plan's next action stands: `testenv clean`, then the agent UI and
+  Game Mode source chips, then EmuDeck on the Deck and on Windows.
+
+### Process notes
+
+- A hook blocks writing into another session's worktree. Script edits had already landed in
+  `.claude/worktrees/emulator-saves` before it fired; they were reverted there (`git checkout --` of exactly those
+  files, clean afterwards) and redone here.
+- An inline Python heredoc wrote literal NUL bytes into `ScanCandidate.cs` (`"\0"` in C#). Caught by grep's
+  "binary file" warning and fixed before the build.
+
+### Files
+
+`src/Agent.Core/{Enroller,GameSources,ScanCandidate,RetroArchConfig,RetroArchSaves,CommandPoller,AgentApiServer}.cs`,
+`src/Agent/GameScanner.cs`, `src/Agent.Linux/{LinuxGameScanner,Ui/UiApp}.cs`, `src/Shared/Contracts.cs`,
+`src/Server/{Program,Services/SyncService}.cs`, `agent-ui/src/{api,api-types}.ts`,
+`agent-ui/src/components/AddGamesView.tsx`, tests (`EnrollNamingTests` new; `GameSourcesTests`, `RetroArchTests`).
+Vault: `Decisions.md` (naming rule rewritten, and a new *A game never joins…*), `tasks/emulator-saves/plan.md`,
+`CONTEXT.md`, `Build and Run.md`, this entry, `session_summary.md`.
