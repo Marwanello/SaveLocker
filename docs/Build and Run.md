@@ -272,7 +272,14 @@ handoff section in [[CONTEXT]]), every SSH/`scp` call has a short connect timeou
 .\tests\testenv.ps1 up -Only console; .\tests\testenv.ps1 up -Only windows; .\tests\testenv.ps1 up -Only linux
 ```
 The Windows test tray then scans **only** `Emulation` and the WSL daemon **only** `Emulation-wsl`
-(`SAVELOCKER_EMUDECK_PATH`), never a real EmuDeck or RetroArch on the box. Windows has Chrono Trigger's save,
+(`SAVELOCKER_EMUDECK_PATH`), never a real EmuDeck or RetroArch on the box. Emulators kept outside `Emulation`
+(Supermodel, ScummVM) are read from a fixture home instead of the real one — `<StateRoot>\emu-home` for the tray
+(EmuDeck for Windows' `AppData\Roaming\EmuDeck\Emulators\Supermodel`, `AppData\Roaming\ScummVM\scummvm.ini`) and
+`emu-home-wsl` for the daemon (`~/.supermodel`, `~/.config/scummvm/scummvm.ini`) — through `SAVELOCKER_EMULATOR_HOME`.
+Group B adds, on both machines: melonDS *Pokemon - Platinum Version* (Windows has a state slot, WSL an older save),
+Model 2 *Daytona USA* (Windows only), Supermodel *Scud Race* (Windows has a state; *lemans24* beside it must survive
+every Scud pull) and ScummVM *Monkey Island 2* (*monkey.s00* beside it must survive). WSL's ScummVM config names
+Monkey Island 2 differently, so the two machines joining one game is D1 at work. Windows has Chrono Trigger's save,
 a state slot and its thumbnail; WSL has an older Chrono save and no states; both have their own Zelda save
 and state, which no Chrono sync may touch. Add games lists `Chrono Trigger` etc. with *Emulator* and *RetroArch* chips;
 the *Emulators* source chip narrows to them and opens an *Emulator* row (All / RetroArch). After adding one,
@@ -348,6 +355,7 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 | Review fixes for PR #60: server-decided emulator names, scope-join refusal (2026-10-07) | `dotnet test tests/SaveLocker.Agent.Tests` **291** (+6 `EnrollNamingTests` — two/three machines against a real server; the refusal and the server-decided name each mutation-checked; +4 `GameSourcesTests`, +2 `RetroArchTests`, `AvoidNameClashes`'s test removed with it) · full solution build clean · `agent-ui` lint and build clean · `agent-ui/src/api-types.ts` regenerated from a dev tray on :5190 (`EnrollResponse.notes`, `CandidateDto.emulatorRom` — the only diff) · server `openapi.json` not regenerated: no server route or DTO shape changed (only constants and a static helper on `GameSourceDto`) |
 | Emulator saves: game sources per machine, names without "(RetroArch)" (2026-10-07) | `dotnet test tests/SaveLocker.Agent.Tests` **280** (+5 `GameSourcesTests` — the stale-host save check mutation-checked; `RetroArchSyncTests` also asserts both machines' sources on the server and on the agent's game list) · full solution build clean · `web` + `agent-ui` lint and build clean · `openapi.json` and `web/src/api-types.ts` regenerated, additions only (`agent-ui/src/api-types.ts` edited by hand: `GameSourceDto`, `TrackedGameDto.source`, `GameDto.machineSource`) · console source chip + popover checked in the browser against a seeded dev server |
 | Emulator saves merged onto multiple save paths + Phase 1b states (2026-10-06) | `dotnet test tests/SaveLocker.Agent.Tests` **247** (`main`'s 228 + `RetroArchTests` 17 + `RetroArchSyncTests` 2 — two machines against a real server; an unscoped states folder fails it) · `run-multipath-tests` **39** · `run-delta-upload-tests` **33** |
+| Emulator saves Group B (2026-10-07, `emulator-saves-group-b`) | `dotnet test tests/SaveLocker.Agent.Tests` **318** (+27: `IdentityByFoldersTests` 4 — D1, both halves mutation-checked; `GamelistXmlTests` 4; `MelonDsTests` 7; `ArcadeSavesTests` 8 — the Supermodel seed filter mutation-checked; `ScummVmTests` 3; `GroupBSyncTests` 2, two machines against a real server) · `agent-ui` build + lint clean · `Agent.Linux` builds |
 | Emulator saves Phase 1 (2026-10-04) | `dotnet test tests/SaveLocker.Agent.Tests` **203** (+22: `IncludeGlobTests` 9 — the three scoped-restore checks mutation-checked — and `RetroArchTests` 13) · `run-delta-upload-tests` **33** · `run-hardening-tests` **33** · `run-health-tests` **33** · full solution build at the 1-warning baseline |
 | Archive UTC write times (2026-09-28) | `dotnet test tests/SaveLocker.Agent.Tests` **114** (+9: `SaveArchiveTimestampTests` — fail before the fix off UTC) · `run-delta-upload-tests` **33** (+4: section 10, newest change through full and delta pushes; mutation-checked — dropping the server copy fails 1, the old agent stamp fails 3) · `run-hardening-tests` **33** · `run-health-tests` **22** |
 

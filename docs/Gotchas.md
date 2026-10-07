@@ -185,6 +185,11 @@ behave in ways that look like bugs.
   which point at the real agent on :5178. Run it with every Playnite closed. It moves whatever the
   portable folder already had into `pre-import-<stamp>` rather than overwriting it, and `clean`
   does not undo it.
+- **Reach the Deck with Windows' own OpenSSH, not Git Bash's** (2026-10-07). The key lives in the Windows
+  ssh-agent, so `ssh` from Git Bash gets `Permission denied (publickey)` while
+  `& "$env:WINDIR\System32\OpenSSH\ssh.exe"` works. To send it a script, pipe it on stdin to `bash -s` rather than
+  passing it as an argument — Windows PowerShell 5.1 strips embedded double quotes from native arguments — and start
+  the script with a blank line: the pipe prepends a UTF-8 BOM, which otherwise glues itself to the first command.
 - **The Deck is only awake when the maintainer wakes it** (CONTEXT.md). Every SSH/`scp` call the
   rig makes carries `-o ConnectTimeout=5` and every caller wraps it in try/catch, reporting
   "unreachable" rather than hanging on the OS default TCP timeout or aborting `up`/`down`/`status`

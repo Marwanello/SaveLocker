@@ -142,6 +142,14 @@ SaveLocker/
 │   │   │                               #   RealPath (links at ANY component). SAVELOCKER_EMUDECK_PATH = exclusive
 │   │   ├── RetroArchConfig.cs           # RetroArch (saves, states) folder pairs: EmuDeck's saves/retroarch/*, else retroarch.cfg
 │   │   ├── RetroArchSaves.cs            # One Emulator candidate per .srm: main = <rom>.srm/.rtc, extra folder "states" = <rom>.state*
+│   │   ├── RomSaves.cs                  # THE "save named after the ROM" reader (D4 shape 1): RomSaveRules (extension, scope,
+│   │   │                               #   states, fixed system, seed filter, set titles) + RomSaveFolders. RetroArch, melonDS,
+│   │   │                               #   Supermodel and Model 2 are rows of it. IsUntouchedSeed: EmuDeck's preinstalled NVRAM
+│   │   ├── MelonDsSaves.cs · SupermodelSaves.cs · Model2Saves.cs   # Its rows (folders per OS, config readers, seed hashes)
+│   │   ├── ScummVmSaves.cs              # scummvm.ini targets → <target>.* in their savepath (own reader: not ROM-named)
+│   │   ├── EmulatorSaves.cs             # The table of emulator sources both scanners loop — a new emulator is one row
+│   │   ├── EmulatorPaths.cs             # Home/AppData for standalone emulator lookups; SAVELOCKER_EMULATOR_HOME = fixture home
+│   │   ├── GamelistXml.cs               # ES-DE gamelist.xml titles, arcade systems only (safe because of D1)
 │   │   ├── RomNames.cs                  # "Chrono Trigger (USA) [!]" → "Chrono Trigger" — the emulator game identity
 │   │   └── Platform.cs                  # IAutoStart, IGameScanner — impls injected by the host
 │   │

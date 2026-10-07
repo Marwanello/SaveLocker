@@ -35,9 +35,9 @@ point unless explicitly instructed to.
 | 6 — Switch: Yuzu, Citron, Eden, Ryujinx | ⏳ Not started — Group F. **Widened 2026-10-07** from Eden only, at the maintainer's request; needs the server title key (D2) |
 | 7 — UI filter | ✅ Shipped 2026-10-07 (same PR), filter by emulator — agent UI *Emulators* chip with an *Emulator* row under it (one chip per emulator, RetroArch today), Deck *Emulators* pill. A per-console sub-breakdown was not built — it comes back with Phase 2, when more than one console has saves. |
 | 7b — Game source per machine, names without "(RetroArch)" | ✅ Shipped 2026-10-07 (same PR) — built 2026-10-07 (maintainer asked; picked variation B of a clickable mockup on all three screens). Unit 280. Console checked in the browser against a seeded dev server; agent UI and Deck need the testenv pass. **Review fixes 2026-10-07** (same PR): server-decided names, the scope-join refusal, source re-send guard, EmuDeck tag, server bounds — unit 291, see `progress.md`. |
-| 8 — melonDS (bonus) | 🚧 Built 2026-10-07 (branch `emulator-saves-group-b`) — `RetroArchSaves` generalised into `RomSaves` (D4 shape 1: `RomSaveRules` + `RomSaveFolders`); `MelonDsSaves`: EmuDeck `saves/melonds/{saves,states}`, else `melonDS.toml` `[Instance0] SaveFilePath` (1.0, read first — `Config::Load`), else `melonDS.ini`, else beside the ROM (`LastROMFolder`). Scope `<rom>.sav`, states `<rom>.ml*`. Both scanners now loop `EmulatorSaves.Sources`. **Capture on the Deck:** which file EmuDeck's Flatpak melonDS actually reads (it writes both) |
-| 9 — Model 2 + Supermodel (Supermodel bonus) | 🚧 Built 2026-10-07 (branch `emulator-saves-group-b`) — `SupermodelSaves`: `NVRAM/<set>.nv` + states `Saves/<set>.st*`, `~/.supermodel` / XDG data / Flatpak data on Linux, EmuDeck for Windows' `Emulators\Supermodel`; title from its `Config/Games.xml`, then the arcade gamelist. `Model2Saves`: `NVDATA/<set>.DAT` (`Emulation/roms/model2`, `Emulators\m2emulator`), **EmuDeck's 39 seeded files hidden by SHA-256** (maintainer's choice; one version in both EmuDeck repos), titles from a bundled table, no states. **Capture on the Deck:** whether Model 2 rewrites `.DAT` on every exit and where (if anywhere) it writes states |
-| 10 — ScummVM (bonus) | 🚧 Built 2026-10-07 (branch `emulator-saves-group-b`) — `ScummVmSaves`: targets from `scummvm.ini` (Windows `%APPDATA%\ScummVM`, XDG, `~/.scummvmrc`, Flatpak), `savepath` per target → `[scummvm]` → default; scope `<target>.*`, or the engine's own prefix for the four fixed-name engines (`SKY-VM`, `sword1`, `queen`, `lure` — read from each `metaengine.cpp`); name from `description=`, cleaned. `GroupBSyncTests` (two machines, real server) for Supermodel and ScummVM. Unit **318**. **Capture on the Deck:** a real EmuDeck `scummvm.ini` |
+| 8 — melonDS (bonus) | 🚧 Built 2026-10-07 (branch `emulator-saves-group-b`) — `RetroArchSaves` generalised into `RomSaves` (D4 shape 1: `RomSaveRules` + `RomSaveFolders`); `MelonDsSaves`: EmuDeck `saves/melonds/{saves,states}`, else `melonDS.toml` `[Instance0] SaveFilePath` (1.0, read first — `Config::Load`), else `melonDS.ini`, else beside the ROM (`LastROMFolder`). Scope `<rom>.sav`, states `<rom>.ml*`. Both scanners now loop `EmulatorSaves.Sources`. **Captured on the Deck 2026-10-07:** Flatpak melonDS 1.1 has only `melonDS.ini` (absolute SD-card paths), no TOML |
+| 9 — Model 2 + Supermodel (Supermodel bonus) | 🚧 Built 2026-10-07 (branch `emulator-saves-group-b`) — `SupermodelSaves`: `NVRAM/<set>.nv` + states `Saves/<set>.st*`, `~/.supermodel` / XDG data / Flatpak data on Linux, EmuDeck for Windows' `Emulators\Supermodel`; title from its `Config/Games.xml`, then the arcade gamelist; **EmuDeck's 29 seeded `~/.supermodel/NVRAM` files hidden by SHA-256 too — found on the real Deck 2026-10-07**, not in the plan (`Supermodel_init` rsyncs `configs/supermodel` whole). `Model2Saves`: `NVDATA/<set>.DAT` (`Emulation/roms/model2`, `Emulators\m2emulator`), **EmuDeck's 39 seeded files hidden by SHA-256** (maintainer's choice; one version in both EmuDeck repos), titles from a bundled table, no states. **Captured on the Deck 2026-10-07:** the 39 Model 2 seeds and the 29 Supermodel seeds match the bundled hashes exactly; no Model 2 states folder. **Still to see:** a Model 2 / Supermodel save written by play (nothing has been played on this Deck) |
+| 10 — ScummVM (bonus) | 🚧 Built 2026-10-07 (branch `emulator-saves-group-b`) — `ScummVmSaves`: targets from `scummvm.ini` (Windows `%APPDATA%\ScummVM`, XDG, `~/.scummvmrc`, Flatpak), `savepath` per target → `[scummvm]` → default; scope `<target>.*`, or the engine's own prefix for the four fixed-name engines (`SKY-VM`, `sword1`, `queen`, `lure` — read from each `metaengine.cpp`); name from `description=`, cleaned. `GroupBSyncTests` (two machines, real server) for Supermodel and ScummVM. Unit **318**. **Captured on the Deck 2026-10-07:** the Flatpak's `scummvm.ini` sets the global `savepath` to `Emulation/saves/scummvm/saves`; no targets added yet, so no engine's real file names seen |
 | 11 — PPSSPP | ⏳ Not started — Group D (added 2026-10-07) |
 | 12 — Vita3K (bonus) | ⏳ Not started — Group D (added 2026-10-07) |
 | 13 — shadPS4 (bonus) | ⏳ Not started — Group D (added 2026-10-07) |
@@ -165,6 +165,30 @@ name in the agent UI, a pill beside the sync status in Game Mode.
   an *Emulator* row (All / RetroArch) sits between it and the *Save folder* row. One chip per supported
   emulator, listed in `EMULATORS` — every new emulator adds itself there. Game Mode: an *Emulators* pill,
   no second row (each pill costs a d-pad press there, same reason Game Mode has no Store row).
+
+### Linking by hand — researched 2026-10-07, not built
+
+Asked for with D1's yes: let the user choose, at enrollment, which server game an emulator save links to. A
+clickable mockup with three variants is at <https://claude.ai/artifact/XNQue1U2VQGY31xU1FBK9a> (A: a
+*Server game* picker inline on each Add-games row; B: *Link…* opens a search of the server's games with a
+side-by-side "what will sync" and a "which save wins the first time" choice; C: add first, then the game page
+suggests "Same game on another machine?" and links the two, keeping the other's versions as history).
+
+What it would take, by case:
+- **Same files, different name** (what D1 now does by itself): a manual choice only adds *Keep it as its own
+  game* — which is the split D1 exists to prevent, so it would need a warning, not just a radio button.
+- **Different file names for one game** — two dumps (`Chrono Trigger (USA).srm` here, `(USA) (Rev 1).srm`
+  there) or two emulators (melonDS `.sav`, RetroArch's melonDS core `.srm`). This is the case worth building,
+  and the expensive one: the archive stores the server's file name, so each machine needs its **own** name for
+  the file — a per-machine rename map (server: a column on `MachineSavePath`; `SaveArchive` maps on push and
+  pull; the scope stays the server's). Without it, a pull writes `Chrono Trigger (USA).srm` beside the Rev 1
+  save and the emulator never reads it.
+- **Refusals stay:** a PC game, or another console's save (sizes and formats differ) — B shows why inline.
+- **Linking two existing server games** (C) is a merge: one history kept, the other's versions kept read-only.
+  There is no merge on the server today ([[Backlog]] → *One game, several real sources* has the same gap).
+
+Recommendation: B for the enrollment case (it is the only one with room to show the file-name mapping), C later
+together with the server merge. Decide after the mockup; nothing here blocks Groups C–F.
 
 ### The other emulators — researched 2026-10-07
 

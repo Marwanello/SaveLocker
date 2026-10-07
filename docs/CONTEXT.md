@@ -1781,9 +1781,21 @@ are in five groups by save shape, one PR each: B saves named after the ROM, C me
 E title-ID folders, F Switch. Two design points need the maintainer's yes first: D1, an emulator game found by its
 folders rather than its name (B), and D2, a server title key so Ryujinx's numbered folders sync with the Yuzu forks
 (F). Details: `tasks/emulator-saves/plan.md` → *The other emulators* and `implementation-grouping.md`.
-<br>**Next action for this item:** a testenv pass of the source chips (agent UI + Game Mode; the console was
-checked in the browser) — `testenv clean` first, the old "(RetroArch)" games no longer match — then the EmuDeck
-hardware pass (Deck + Windows) for Phases 1 and 1b, then a PR.
+<br>**Group A merged as PR #60.** Its testenv pass of the source chips and the EmuDeck hardware pass are still open.
+<br>**2026-10-07: Group B built (branch `emulator-saves-group-b`, one commit per phase, no PR yet).** D1 confirmed by
+the maintainer and built first: an emulator save joins the server game that keeps exactly its files, whatever it is
+called (`Enroller.ServerNameFor`/`TrackedFor`, mutation-checked) — so titles from machine-local sources are safe.
+`GamelistXml` (ES-DE titles, arcade systems only — maintainer's choice). `RetroArchSaves` became a row of the new
+`RomSaves` reader (D4 shape 1), with melonDS, Supermodel and Model 2 as further rows; ScummVM has its own reader
+(`scummvm.ini` targets). Both scanners loop `EmulatorSaves.Sources`. **Captured on the real Deck (read-only SSH)**:
+paths all as researched, and one trap the plan missed — EmuDeck rsyncs 29 Supermodel NVRAM files into
+`~/.supermodel/NVRAM` at install, exactly like Model 2's 39 `NVDATA` files; both are now hidden by SHA-256 until the
+game rewrites them (maintainer's choice for Model 2). testenv `emu-fixture` gained all four plus a fixture home per
+machine (`SAVELOCKER_EMULATOR_HOME`). Unit **318**. The maintainer also asked for a manual "link to this server game"
+option: researched and mocked up (three variants), not built — `tasks/emulator-saves/plan.md` → *Linking by hand*.
+<br>**Next action for this item:** the testenv pass (`testenv clean` first — the rig still maps nine real save
+folders from earlier sessions), then a PR for Group B; the maintainer to pick a *Linking by hand* variant. A played
+Supermodel/Model 2 save on the Deck is the one thing no capture could show.
 
 ---
 
