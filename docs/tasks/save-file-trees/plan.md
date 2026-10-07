@@ -24,9 +24,9 @@ One PR, one commit per phase. Not started; nothing depends on it.
 
 | Phase | Status |
 |-------|--------|
-| 1 — Server: a fingerprint per file, and what changed per version | ⏳ Not started |
+| 1 — Server: a fingerprint per file, and what changed per version | ✅ Shipped 2026-10-07 — changes cached in memory (no table), CRC-32 + size; head hashes read from the archive |
 | 2 — Console: Versions rows open on their changes (variant B) | ⏳ Not started |
-| 3 — Agent: route for this PC's save files compared with the server | ⏳ Not started |
+| 3 — Agent: route for this PC's save files compared with the server | 🚧 In progress |
 | 4 — Agent UI: *Save files on this PC* tree on the game page (variant A) | ⏳ Not started |
 
 ## What already exists (don't re-derive)

@@ -68,9 +68,10 @@ public static class SaveArchive
     }
 
     /// <summary>One save folder's files inside an archive, as the console lists them.</summary>
-    /// <param name="Files">Relative to the folder, Ordinal order, at most the cap the caller asked for.</param>
+    /// <param name="Files">Relative to the folder, Ordinal order, at most the cap the caller asked for.
+    /// <c>Crc32</c> is the entry's own, read from the zip's directory like the rest.</param>
     public sealed record ArchiveFolder(string Key, int FileCount, long TotalBytes,
-        IReadOnlyList<(string Path, long Size, DateTime? ModifiedUtc)> Files);
+        IReadOnlyList<(string Path, long Size, DateTime? ModifiedUtc, uint Crc32)> Files);
 
     /// <summary>
     /// The archive's files grouped by save folder (tasks/multiple-save-paths plan §1): the primary
@@ -81,7 +82,7 @@ public static class SaveArchive
     public static IReadOnlyList<ArchiveFolder> ListArchiveFolders(string zipPath, int maxFilesPerFolder = 500)
     {
         using var zip = ZipFile.OpenRead(zipPath);
-        var folders = new SortedDictionary<string, List<(string, long, DateTime?)>>(StringComparer.Ordinal)
+        var folders = new SortedDictionary<string, List<(string, long, DateTime?, uint)>>(StringComparer.Ordinal)
         {
             [SaveRoot.PrimaryKey] = new(),
         };
@@ -97,7 +98,7 @@ public static class SaveArchive
             }
             var (key, rel) = TrySplitExtra(name, out var k, out var r) ? (k, r) : (SaveRoot.PrimaryKey, name);
             if (!folders.TryGetValue(key, out var files)) folders[key] = files = new();
-            files.Add((rel, entry.Length, EntryWriteTimeUtc(entry)));
+            files.Add((rel, entry.Length, EntryWriteTimeUtc(entry), entry.Crc32));
         }
 
         // The primary folder first, then the extra ones by key.
@@ -105,6 +106,73 @@ public static class SaveArchive
             .OrderBy(f => f.Key == SaveRoot.PrimaryKey ? 0 : 1).ThenBy(f => f.Key, StringComparer.Ordinal)
             .Select(f => new ArchiveFolder(f.Key, f.Value.Count, f.Value.Sum(x => x.Item2),
                 f.Value.OrderBy(x => x.Item1, StringComparer.Ordinal).Take(maxFilesPerFolder).ToList()))
+            .ToList();
+    }
+
+    /// <summary>What one version changed against another, file by file — see <see cref="DiffArchiveFolders"/>.</summary>
+    /// <param name="Files">The changed files only, primary folder first, at most the cap the caller asked for.</param>
+    public sealed record ArchiveDiff(int Added, int Changed, int Removed, int Unchanged,
+        IReadOnlyList<(string Key, string Path, FileChange Change, long Size)> Files);
+
+    /// <summary>
+    /// Which files <paramref name="current"/> added, changed or removed against <paramref name="parent"/>,
+    /// matched by save folder key and path, compared by size and CRC-32 (tasks/save-file-trees Phase 1).
+    /// Both listings must be uncapped (<see cref="ListArchiveFolders"/> with <see cref="int.MaxValue"/>), or
+    /// a file past the cap reads as added or removed. No parent: every file is added. A file that moved to
+    /// another folder is removed from one and added to the other — a pull deletes and writes it that way.
+    /// </summary>
+    public static ArchiveDiff DiffArchiveFolders(IReadOnlyList<ArchiveFolder>? parent,
+        IReadOnlyList<ArchiveFolder> current, int maxFiles = 1000)
+    {
+        static Dictionary<(string, string), (long Size, uint Crc)> Index(IReadOnlyList<ArchiveFolder>? folders) =>
+            (folders ?? Array.Empty<ArchiveFolder>())
+                .SelectMany(f => f.Files.Select(x => (Key: (f.Key, x.Path), Value: (x.Size, x.Crc32))))
+                .ToDictionary(e => e.Key, e => e.Value);
+
+        var before = Index(parent);
+        var after = Index(current);
+        var changes = new List<(string Key, string Path, FileChange Change, long Size)>();
+        int added = 0, changed = 0, removed = 0, unchanged = 0;
+
+        foreach (var ((key, path), now) in after)
+        {
+            if (!before.TryGetValue((key, path), out var was)) { added++; changes.Add((key, path, FileChange.Added, now.Size)); }
+            else if (was != now) { changed++; changes.Add((key, path, FileChange.Changed, now.Size)); }
+            else unchanged++;
+        }
+        foreach (var ((key, path), was) in before)
+            if (!after.ContainsKey((key, path))) { removed++; changes.Add((key, path, FileChange.Removed, was.Size)); }
+
+        var listed = changes
+            .OrderBy(c => c.Key == SaveRoot.PrimaryKey ? 0 : 1).ThenBy(c => c.Key, StringComparer.Ordinal)
+            .ThenBy(c => c.Path, StringComparer.Ordinal)
+            .Take(maxFiles)
+            .ToList();
+        return new ArchiveDiff(added, changed, removed, unchanged, listed);
+    }
+
+    /// <summary>
+    /// Every file of an archive with its SHA-256, grouped by save folder like <see cref="ListArchiveFolders"/>
+    /// (tasks/save-file-trees Phase 1). Reads every byte, so a caller caches the answer per version.
+    /// </summary>
+    public static IReadOnlyList<(string Key, IReadOnlyList<(string Path, long Size, string Sha256)> Files)> HashArchiveFiles(string zipPath)
+    {
+        using var zip = ZipFile.OpenRead(zipPath);
+        var folders = new SortedDictionary<string, List<(string, long, string)>>(StringComparer.Ordinal);
+        foreach (var entry in zip.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name)) continue;
+            var name = entry.FullName.Replace('\\', '/');
+            if (IsMarker(name)) continue;
+            var (key, rel) = TrySplitExtra(name, out var k, out var r) ? (k, r) : (SaveRoot.PrimaryKey, name);
+            using var stream = entry.Open();
+            var hash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+            if (!folders.TryGetValue(key, out var files)) folders[key] = files = new();
+            files.Add((rel, entry.Length, hash));
+        }
+        return folders
+            .OrderBy(f => f.Key == SaveRoot.PrimaryKey ? 0 : 1).ThenBy(f => f.Key, StringComparer.Ordinal)
+            .Select(f => (f.Key, (IReadOnlyList<(string, long, string)>)f.Value.OrderBy(x => x.Item1, StringComparer.Ordinal).ToList()))
             .ToList();
     }
 
