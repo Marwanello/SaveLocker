@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { RefreshCw, FolderSearch, Check, SearchCheck, TriangleAlert } from 'lucide-react'
+import { RefreshCw, FolderSearch, Check, SearchCheck, TriangleAlert, Ban } from 'lucide-react'
 import type { Candidate, EnrollProgress, LinkOption } from '../types'
 import { api } from '../api'
 import { useFolderPicker } from '../useFolderPicker'
@@ -45,6 +45,9 @@ const EMULATORS: { id: string; label: string }[] = [
   { id: 'Supermodel', label: 'Supermodel' },
   { id: 'Model 2', label: 'Model 2' },
   { id: 'ScummVM', label: 'ScummVM' },
+  { id: 'PCSX2', label: 'PCSX2' },
+  { id: 'DuckStation', label: 'DuckStation' },
+  { id: 'Dolphin', label: 'Dolphin' },
 ]
 
 /**
@@ -74,10 +77,11 @@ const STATUS = {
   enrolled: { Icon: Check, label: 'Enrolled on this machine', tone: 'ok' },
   has: { Icon: SearchCheck, label: 'Save folder detected', tone: 'has' },
   missing: { Icon: TriangleAlert, label: 'Save folder not detected', tone: 'warn' },
+  blocked: { Icon: Ban, label: 'Can’t be synced as it is', tone: 'warn' },
 } as const
 
 function StatusMark({ c }: { c: Candidate }) {
-  const s = STATUS[c.enrolled ? 'enrolled' : c.path ? 'has' : 'missing']
+  const s = STATUS[c.enrolled ? 'enrolled' : c.notSyncable ? 'blocked' : c.path ? 'has' : 'missing']
   return (
     <span className={`sl-status sl-status--${s.tone}`} role="img" aria-label={s.label} title={s.label}>
       <s.Icon size={13} strokeWidth={2.3} aria-hidden="true" />
@@ -465,10 +469,10 @@ export function AddGamesView({ onEnrolled }: Props) {
             {scanning ? 'Scanning…' : listed.length === 0 ? 'No games found yet. Rescan once a game has been installed.' : 'Nothing matches that filter.'}
           </div>
         ) : visible.map(c => (
-          <label key={c.id} className={c.enrolled ? 'sl-check-row sl-check-row--enrolled' : 'sl-check-row'}>
+          <label key={c.id} className={c.enrolled ? 'sl-check-row sl-check-row--enrolled' : c.notSyncable ? 'sl-check-row sl-check-row--blocked' : 'sl-check-row'}>
             {/* Enrolling a tracked game again is skipped, so its box is shown ticked and locked. */}
             {/* Named on its own: the row holds buttons too, and their text must not become the box's name. */}
-            <input type="checkbox" aria-label={`Add ${c.name}`} checked={!!c.enrolled || checked.has(c.id)} disabled={!!c.enrolled} onChange={() => toggle(c.id)} />
+            <input type="checkbox" aria-label={`Add ${c.name}`} checked={!!c.enrolled || checked.has(c.id)} disabled={!!c.enrolled || !!c.notSyncable} onChange={() => toggle(c.id)} />
             <div className="sl-check-row__main">
               <div className="sl-check-row__name">
                 <StatusMark c={c} />
@@ -487,6 +491,13 @@ export function AddGamesView({ onEnrolled }: Props) {
                 <div className="sl-inline" style={{ marginTop: 4 }}>
                   {c.path && <span className="sl-path">{c.path}</span>}
                   <span className="sl-check-row__note">Already added on this machine</span>
+                </div>
+              ) : c.notSyncable ? (
+                // A memory card every game of a console shares: never a game, so no folder to change — the row
+                // is here to say why those saves are not offered, and what to switch in the emulator.
+                <div style={{ marginTop: 4 }}>
+                  {c.path && <span className="sl-path">{c.path}</span>}
+                  <span className="sl-check-row__why">{c.notSyncable}</span>
                 </div>
               ) : c.path ? (
                 // A detected folder can be the wrong one (a launcher's, another profile's), and it has
@@ -521,7 +532,7 @@ export function AddGamesView({ onEnrolled }: Props) {
                   EmuDeck’s preinstalled save, never played here. Adding it takes the server’s save in its place.
                 </span>
               )}
-              {!c.enrolled && c.source === 'Emulator' && !linksReachable && (
+              {!c.enrolled && c.source === 'Emulator' && !c.notSyncable && !linksReachable && (
                 <span className="sl-check-row__note" style={{ display: 'block', marginTop: 4 }}>
                   The server can’t be reached, so which server game this joins is decided when you add it.
                 </span>

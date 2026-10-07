@@ -426,3 +426,7 @@ button:disabled { cursor: default; }
   .sl-meter > i.sl-meter__sweep { animation: none; width: 100%; opacity: .45; }
   * { transition-duration: 0.001ms !important; }
 }
+/* Add games: a row that can never be added — a memory card every game of a console shares. Greyed, with the fix. */
+.sl-check-row--blocked .sl-check-row__title { color: var(--color-dim); }
+.sl-check-row--blocked input { cursor: not-allowed; }
+.sl-check-row__why { display: block; margin-top: 4px; font-size: 11.5px; line-height: 1.45; color: var(--color-watch-ink); }

@@ -2862,6 +2862,7 @@ export interface components {
             emulatorRom?: null | string;
             /** @default false */
             untouchedSeed: boolean;
+            notSyncable?: null | string;
         };
         CandidateLinksDto: {
             /** Format: int32 */

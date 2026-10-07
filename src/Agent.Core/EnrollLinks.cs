@@ -19,7 +19,7 @@ public static class EnrollLinks
     /// <summary>The options for one emulator candidate, the automatic one first. Empty for any other candidate.</summary>
     public static IReadOnlyList<LinkOption> For(IReadOnlyList<GameDto> server, ScanCandidate c)
     {
-        if (c.Source != ScanSource.Emulator || c.IncludeGlobs is not { Count: > 0 }) return [];
+        if (c.Source != ScanSource.Emulator || c.IncludeGlobs is not { Count: > 0 } || c.NotSyncable is not null) return [];
         var extras = c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>();
         var options = new List<LinkOption>();
         var auto = Enroller.ServerNameFor(server, c, extras);

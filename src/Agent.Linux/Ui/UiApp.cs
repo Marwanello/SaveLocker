@@ -1900,6 +1900,8 @@ sealed partial class UiApp
         var c = _candidates[i];
         bool alreadyTracked = IsTracked(c);
         bool hasFolder = !string.IsNullOrEmpty(c.SuggestedSaveDir);
+        // A memory card every game of a console shares: listed so the Deck says why, never tickable.
+        bool blocked = c.NotSyncable is not null;
 
         ImGui.PushID(i);
         bool ticked = alreadyTracked || _selected.Contains(i);
@@ -1911,7 +1913,7 @@ sealed partial class UiApp
         if (alreadyTracked) { dl.ChannelsSplit(2); dl.ChannelsSetCurrent(1); }
 
         ImGui.BeginGroup();
-        if (Widgets.CheckRow("sel", ref ticked, enabled: !alreadyTracked) && !alreadyTracked)
+        if (Widgets.CheckRow("sel", ref ticked, enabled: !alreadyTracked && !blocked) && !alreadyTracked && !blocked)
         {
             if (ticked) _selected.Add(i); else _selected.Remove(i);
         }
@@ -1924,6 +1926,7 @@ sealed partial class UiApp
         var tile = MathF.Round(nameH * 1.5f);
         var tileY = ImGui.GetCursorPosY();
         if (alreadyTracked) Widgets.StatusTile(Icons.Check, Theme.Safe, tile);
+        else if (blocked) Widgets.StatusTile(Icons.AlertTriangle, Theme.Watch, tile);
         else if (hasFolder) Widgets.StatusTile(Icons.SearchCheck, Theme.Fg, tile, Theme.Tile);
         else Widgets.StatusTile(Icons.AlertTriangle, Theme.Watch, tile);
         ImGui.SameLine(0, Theme.Space.Sm);
@@ -1937,6 +1940,11 @@ sealed partial class UiApp
         {
             if (hasFolder) Widgets.Text(c.SuggestedSaveDir!, Theme.Faint, Theme.Caption);
             Widgets.Text("Already added on this Deck", Theme.Safe, Theme.Caption);
+        }
+        else if (blocked)
+        {
+            if (hasFolder) Widgets.Text(c.SuggestedSaveDir!, Theme.Faint, Theme.Caption);
+            Widgets.TextWrapped(c.NotSyncable!, Theme.WatchInk, Theme.Caption);
         }
         else
         {

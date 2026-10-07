@@ -99,7 +99,9 @@
 #                                 first, never overwritten. `clean` does not undo it.
 #   .\tests\testenv.ps1 emu-fixture [-EmuDeckPath <dir>]
 #                                 write a fake EmuDeck "Emulation" folder (three RetroArch saves, two ROMs'
-#                                 save states, one ROM) for the emulator-saves feature, plus a second one at
+#                                 save states, one ROM; melonDS, Model 2, ScummVM; PCSX2 folder + file cards,
+#                                 DuckStation per-game + shared cards, Dolphin GameCube + Wii) for the
+#                                 emulator-saves feature, plus a second one at
 #                                 "<StateRoot>\Emulation-wsl" that the WSL test agent scans (an old Chrono save,
 #                                 no Chrono states). Default location is "<StateRoot>\Emulation",
 #                                 which the Windows test agent then scans INSTEAD of any real EmuDeck/RetroArch
@@ -375,6 +377,61 @@ function Write-FixtureFile {
     Set-Content -NoNewline -Encoding ascii -LiteralPath $Path $Content
 }
 $script:SupermodelGamesXml = '<games><game name="scud"><identity><title>Scud Race</title></identity></game><game name="lemans24"><identity><title>Le Mans 24</title></identity></game></games>'
+function Write-FixtureBytes {
+    param([string]$Path, [byte[]]$Bytes)
+    New-Item -ItemType Directory -Force (Split-Path $Path -Parent) | Out-Null
+    [IO.File]::WriteAllBytes($Path, $Bytes)
+}
+function Set-FixtureAscii {
+    param([byte[]]$Bytes, [int]$At, [string]$Text)
+    $raw = [Text.Encoding]::ASCII.GetBytes($Text)
+    [Array]::Copy($raw, 0, $Bytes, $At, $raw.Length)
+}
+# Console save files for Group C (tasks/emulator-saves Phase 2), laid out as the readers document them - the same
+# bytes tests/SaveLocker.Agent.Tests/ConsoleSaveFixtures.cs writes.
+function New-Ps2FileCard {
+    $b = New-Object byte[] 65536
+    Set-FixtureAscii $b 0 'Sony PS2 Memory Card Format 1.2.0.0'
+    return ,$b
+}
+function New-IconSys {
+    param([string]$Title)
+    $b = New-Object byte[] 964
+    Set-FixtureAscii $b 0 'PS2D'
+    [BitConverter]::GetBytes([uint16]$Title.Length).CopyTo($b, 6)
+    Set-FixtureAscii $b 0xC0 $Title
+    return ,$b
+}
+function New-Ps1Card {
+    param([string[]]$Saves)
+    $b = New-Object byte[] 131072
+    Set-FixtureAscii $b 0 'MC'
+    for ($i = 0; $i -lt 15; $i++) {
+        $at = ($i + 1) * 0x80
+        $used = $i -lt $Saves.Count
+        [BitConverter]::GetBytes([uint32]$(if ($used) { 0x51 } else { 0xA0 })).CopyTo($b, $at)
+        if ($used) { Set-FixtureAscii $b ($at + 0x0A) $Saves[$i] }
+    }
+    return ,$b
+}
+function New-Gci {
+    param([string]$Code, [string]$Maker, [string]$Title)
+    $b = New-Object byte[] (0x40 + 0x2000)
+    Set-FixtureAscii $b 0 $Code
+    Set-FixtureAscii $b 4 $Maker
+    $b[0x39] = 1
+    $b[0x3E] = 1    # comment at 0x100 into the save data (big-endian)
+    Set-FixtureAscii $b 0x140 $Title
+    return ,$b
+}
+function New-WiiBanner {
+    param([string]$Title)
+    $b = New-Object byte[] 0x2A0
+    Set-FixtureAscii $b 0 'WIBN'
+    $t = [Text.Encoding]::BigEndianUnicode.GetBytes($Title)
+    [Array]::Copy($t, 0, $b, 0x20, $t.Length)
+    return ,$b
+}
 function Get-EmuDeckPath {
     if ($EmuDeckPath) { return $EmuDeckPath }
     $fixture = Get-EmuDeckFixturePath
@@ -410,6 +467,30 @@ function New-EmuDeckFixture {
     # slot 'm1' - it must survive every Daytona pull.
     Write-FixtureFile (Join-Path $target 'roms\model2\STATES\daytona0.sta') "daytona slot 0 $(Get-Date -Format o)"
     Write-FixtureFile (Join-Path $target 'roms\model2\STATES\daytonam1.sta') 'daytona maxx slot 1 - must survive every Daytona pull'
+    # PCSX2 (Phase 2): a folder card with two games and a file card listed as shared (greyed out, never addable).
+    $ps2 = Join-Path $target 'saves\pcsx2'
+    Write-FixtureFile (Join-Path $ps2 'saves\Mcd001.ps2\_pcsx2_superblock') 'windows card superblock - never synced'
+    Write-FixtureBytes (Join-Path $ps2 'saves\Mcd001.ps2\BASLUS-21050SYS\icon.sys') (New-IconSys 'Kingdom Hearts II')
+    Write-FixtureFile (Join-Path $ps2 'saves\Mcd001.ps2\BASLUS-21050SYS\kh2save') "kingdom hearts ii save $(Get-Date -Format o)"
+    Write-FixtureBytes (Join-Path $ps2 'saves\Mcd001.ps2\BESLES-50330GTA3\icon.sys') (New-IconSys 'Grand Theft Auto III')
+    Write-FixtureFile (Join-Path $ps2 'saves\Mcd001.ps2\BESLES-50330GTA3\gta3save') 'gta3 - must survive every Kingdom Hearts pull'
+    Write-FixtureBytes (Join-Path $ps2 'saves\Mcd002.ps2') (New-Ps2FileCard)
+    Write-FixtureFile (Join-Path $ps2 'states\SLUS-21050 (F266B00B).01.p2s') "kingdom hearts ii slot 1 $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $ps2 'states\SLUS-21050 (F266B00B).01.p2s.backup') 'backup copy - never synced'
+    # DuckStation (Phase 2): a card per game, one shared card.
+    $ds = Join-Path $target 'saves\duckstation'
+    Write-FixtureBytes (Join-Path $ds 'saves\Crash Bandicoot (USA)_1.mcd') (New-Ps1Card @('BASCUS-94900CRASH'))
+    Write-FixtureBytes (Join-Path $ds 'saves\Spyro the Dragon (USA)_1.mcd') (New-Ps1Card @('BASCUS-94228SPYRO'))
+    Write-FixtureBytes (Join-Path $ds 'saves\shared_card_1.mcd') (New-Ps1Card @('BASCUS-94163FF7S01', 'BASLUS-00067CVSOTN'))
+    Write-FixtureFile (Join-Path $ds 'states\SCUS-94900_1.sav') "crash slot 1 $(Get-Date -Format o)"
+    # Dolphin (Phase 2): GameCube GCI saves, a Wii title folder, states under EmuDeck for Windows' "states" name.
+    $dol = Join-Path $target 'saves\dolphin'
+    Write-FixtureBytes (Join-Path $dol 'GC\USA\Card A\01-GM8E-MetroidPrime A.gci') (New-Gci 'GM8E' '01' 'Metroid Prime')
+    Write-FixtureBytes (Join-Path $dol 'GC\USA\Card A\8P-GALE-SuperSmashBros0110290334.gci') (New-Gci 'GALE' '8P' 'Super Smash Bros. Melee')
+    Write-FixtureBytes (Join-Path $dol 'Wii\title\00010000\52334f45\data\banner.bin') (New-WiiBanner 'Metroid: Other M')
+    Write-FixtureFile (Join-Path $dol 'Wii\title\00010000\52334f45\data\share\save0.dat') "other m save $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $dol 'states\R3OE01.s01') "other m slot 1 $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $dol 'states\GALE01.s01') 'melee state - must survive every Other M pull'
     Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
     Say "EmuDeck fixture at $target"
     # Supermodel (Phase 9) is kept outside Emulation: EmuDeck for Windows' own folder, under a fixture home.
@@ -464,6 +545,22 @@ function New-EmuDeckFixture {
             "[monkey]`ngameid=monkey`nengineid=scumm`n")
         Write-FixtureFile (Join-Path $wSvm 'monkey2.s01') 'old monkey2 slot on the WSL machine'
         Write-FixtureFile (Join-Path $wSvm 'monkey.s00') 'wsl monkey 1 - must survive every Monkey Island 2 pull'
+        # Group C on SteamOS: the same card holding an older Kingdom Hearts II and its own other game, no states yet.
+        $wPs2 = Join-Path $wsl 'saves\pcsx2'
+        Write-FixtureFile (Join-Path $wPs2 'saves\Mcd001.ps2\_pcsx2_superblock') 'wsl card superblock - never synced'
+        Write-FixtureBytes (Join-Path $wPs2 'saves\Mcd001.ps2\BASLUS-21050SYS\icon.sys') (New-IconSys 'Kingdom Hearts II')
+        Write-FixtureFile (Join-Path $wPs2 'saves\Mcd001.ps2\BASLUS-21050SYS\kh2save') 'old kingdom hearts ii save on the WSL machine'
+        Write-FixtureFile (Join-Path $wPs2 'saves\Mcd001.ps2\BASLUS-20000OKAMI\okamisave') 'wsl okami - must survive every Kingdom Hearts pull'
+        New-Item -ItemType Directory -Force (Join-Path $wPs2 'states') | Out-Null
+        $wDs = Join-Path $wsl 'saves\duckstation'
+        Write-FixtureBytes (Join-Path $wDs 'saves\Crash Bandicoot (USA)_1.mcd') (New-Ps1Card @('BASCUS-94900OLD'))
+        Write-FixtureBytes (Join-Path $wDs 'saves\Tekken 3 (USA)_1.mcd') (New-Ps1Card @('BASLUS-00402TEKKEN'))
+        New-Item -ItemType Directory -Force (Join-Path $wDs 'states') | Out-Null
+        # Dolphin on SteamOS: StateSaves, not states; an older Other M save.
+        $wDol = Join-Path $wsl 'saves\dolphin'
+        Write-FixtureBytes (Join-Path $wDol 'Wii\title\00010000\52334f45\data\banner.bin') (New-WiiBanner 'Metroid: Other M')
+        Write-FixtureFile (Join-Path $wDol 'Wii\title\00010000\52334f45\data\share\save0.dat') 'old other m save on the WSL machine'
+        New-Item -ItemType Directory -Force (Join-Path $wDol 'GC\USA\Card A'), (Join-Path $wDol 'StateSaves') | Out-Null
         Set-Content -NoNewline -Encoding ascii $wslMarker 'written by tests/testenv.ps1 emu-fixture'
         Say "WSL EmuDeck fixture at $wsl"
     }

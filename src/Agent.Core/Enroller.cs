@@ -71,6 +71,12 @@ public static class Enroller
                 var c = candidates[id];
                 index++;
                 Step(c.Name, "Checking the save folder");
+                // A memory card every game shares: listed so the user learns how to split it, never a game.
+                if (c.NotSyncable is { } why)
+                {
+                    Refuse(c.Name, why);
+                    continue;
+                }
                 // A game already set up here is skipped. One that is tracked but has no folder on this
                 // machine (adopted from the server, its template unresolvable here — an emulator game
                 // enrolled on the Deck, seen from Windows) is mapped by enrolling it: the server hands
