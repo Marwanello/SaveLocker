@@ -123,6 +123,7 @@ SaveLocker/
 │   │   ├── AgentCli.cs                  # Shared one-shot commands (register/push/pull/status/…)
 │   │   ├── CliArgs.cs                   # Minimal command-line parser
 │   │   ├── Enroller.cs                  # Candidate → server game + tracked game; publishes its progress
+│   │   ├── EnrollLinks.cs               # Add games' Change: which server game an emulator save joins, and the other choices
 │   │   │                               #   (GET /api/enroll/progress) for the Add games bar
 │   │   ├── FolderSuggestions.cs         # "Also found": a manifest game's other locations that exist here —
 │   │   │                               #   keys from templates, what is still to suggest per tracked game
@@ -320,6 +321,7 @@ SaveLocker/
 │           │                           #   prompt for "Also found" folders (Add ticked / Skip for now)
 │           ├── OverviewView.tsx · RecentCard.tsx   # Quick info only; "Recent" expands to the full log
 │           ├── AddGamesView.tsx · SettingsView.tsx
+│           ├── ServerGameLink.tsx       # Add games row: "Joins …" + Change (emulator saves linked by hand)
 │           ├── LaunchSetupCard.tsx      # The Steam launch-options command + Copy. Renders nothing
 │           │                           #   on Windows. Target of logs/2026-08-15_decky-plugin.md
 │           ├── DeckyPluginCard.tsx      # The optional Decky plugin: what it adds, and whether it

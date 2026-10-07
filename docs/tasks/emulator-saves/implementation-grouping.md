@@ -12,11 +12,12 @@ ships.
 | Group | Contents | Status |
 |---|---|---|
 | A — RetroArch | Phases 1, 1b, 7, 7b | ✅ Shipped 2026-10-07 — PR #60 (`emulator-saves-phase-1`). The testenv pass of the source chips and the EmuDeck hardware pass are still to do |
-| B — Saves named after the ROM | Phases 3 (identity by folders, D1), 8 melonDS\*, 9 Model 2 + Supermodel\*, 10 ScummVM\* | 🚧 Built 2026-10-07 — branch `emulator-saves-group-b`, one commit per phase, PR not opened yet. D1 confirmed; Model 2 kept (seeds hidden by hash, maintainer's choice); captured on the real Deck (found EmuDeck's 29 seeded Supermodel NVRAM files). The testenv pass and a played-save hardware pass are still to do |
+| B — Saves named after the ROM | Phases 3 (identity by folders, D1), 8 melonDS\*, 9 Model 2 + Supermodel\*, 10 ScummVM\*, 16 linking by hand (same files) | 🚧 Built 2026-10-07 — branch `emulator-saves-group-b`, one commit per phase, PR not opened yet. D1 confirmed; Model 2 kept (seeds hidden by hash, maintainer's choice); captured on the real Deck (found EmuDeck's 29 seeded Supermodel NVRAM files). The testenv pass and a played-save hardware pass are still to do |
 | C — Memory cards | Phases 2 (PCSX2, Dolphin, DuckStation + the shared-card warning), 4 PrimeHack, the per-console row | ⏳ Not started |
 | D — Sony (`PARAM.SFO`) | Phases 11 PPSSPP, 5a RPCS3, 12 Vita3K\*, 13 shadPS4\* | ⏳ Not started |
 | E — Title-ID folders | Phases 14 Cemu, 15 Azahar, 5b Xenia | ⏳ Not started |
 | F — Switch | Phase 6 (Yuzu, Citron, Eden, Ryujinx) + the server title key (D2) | ⏳ Not started |
+| G — Each machine's own file names | Phase 17 (link a save to a server game whose files are named differently: another dump, another emulator) | ⏳ Not started — added 2026-10-07; open questions in plan.md → *Phase 17* |
 
 \* Bonus. If a group grows too big, a bonus emulator is the first thing to move to a later PR.
 
@@ -63,6 +64,12 @@ folders.
 Ryujinx's index, must be captured from real installs first. It comes last so it can reuse D's and E's helpers and
 build on the most settled design. It is also what makes Switch saves sync between emulators, from Eden on the Deck
 to Ryujinx on Windows.
+
+**G — Each machine's own file names.** Added 2026-10-07 when Phase 16 (linking by hand, same files) shipped with
+Group B. It is the only group that changes what every push, pull and hash does, so it gets its own PR and its own
+two-machine tests per emulator family, with renamed states, a conflict and a restore. Its open questions (across
+emulators or not, where the map lives, the console's display, merging two existing games) are in plan.md →
+*Phase 17* and are settled with the maintainer before it starts. It does not block C–F.
 
 **Every group's checks:**
 - fixtures and unit tests per reader;

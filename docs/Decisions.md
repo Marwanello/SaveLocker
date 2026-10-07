@@ -771,6 +771,10 @@ session can judge an edge case, not to reopen the choice.
   name matching one is refused, and moving a folder stays **Change**. Enrollment joins an "Also found" folder on the
   same template, or on the same key only when a template is missing on either side; two templates under one key are
   two folders.
+- **Linking an emulator save by hand ships in two steps** (2026-10-07, maintainer). Phase 16: a per-row
+  **Change** on Add games picks between games keeping the *same* files (or keeps the save as its own game) — no
+  server or sync change. Phase 17 (Group G): saves whose files are named differently on each machine, which needs a
+  per-machine name map on every push, pull and hash; its open questions are settled before it starts.
 - **EmuDeck is the layout every emulator reader is designed around; a standalone install is a bonus**
   (2026-10-07, maintainer). EmuDeck on SteamOS/Linux and EmuDeck for Windows put every emulator, ROM and save in a
   standard, predictable place, so each reader starts from EmuDeck's folders and EmuDeck's own scripts (`*_init`,

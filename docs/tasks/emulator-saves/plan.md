@@ -43,6 +43,8 @@ point unless explicitly instructed to.
 | 13 — shadPS4 (bonus) | ⏳ Not started — Group D (added 2026-10-07) |
 | 14 — Cemu | ⏳ Not started — Group E (added 2026-10-07) |
 | 15 — Azahar | ⏳ Not started — Group E (added 2026-10-07) |
+| 16 — Linking by hand, same files (mockup version 2) | 🚧 Built 2026-10-07 (branch `emulator-saves-group-b`, with Group B) — each emulator row on Add games says which server game the save joins, with a **Change** button for that row only: automatic, *Keep it as its own game*, or another server game keeping the same files; a same-titled game with other file names is listed greyed out with the reason. `EnrollLinks` + `GET /api/candidates/links` + `EnrollRequest.Links`; `LinkByHandTests` 5, two of them mutation-checked; checked in the browser against a scratch server |
+| 17 — Each machine's own file names (linking saves with different names) | ⏳ Not started — Group G (added 2026-10-07, maintainer: "keep option 2 in another phase"); open questions below |
 
 ### Phase 1 — as built (2026-10-04), and where it departs from the plan below
 
@@ -166,7 +168,7 @@ name in the agent UI, a pill beside the sync status in Game Mode.
   emulator, listed in `EMULATORS` — every new emulator adds itself there. Game Mode: an *Emulators* pill,
   no second row (each pill costs a d-pad press there, same reason Game Mode has no Store row).
 
-### Linking by hand — researched 2026-10-07, not built
+### Linking by hand — researched 2026-10-07; same-files case built as Phase 16, the rest is Phase 17
 
 Asked for with D1's yes: let the user choose, at enrollment, which server game an emulator save links to. A
 clickable mockup with three variants is at <https://claude.ai/artifact/XNQue1U2VQGY31xU1FBK9a> (A: a
@@ -189,6 +191,71 @@ What it would take, by case:
 
 Recommendation: B for the enrollment case (it is the only one with room to show the file-name mapping), C later
 together with the server merge. Decide after the mockup; nothing here blocks Groups C–F.
+
+**Decided 2026-10-07 (maintainer):** variant A's picker, hidden behind a per-row **Change** button (a second mockup,
+<https://claude.ai/artifact/RgXaZgoZsLoGRvaCuHwQyk>, version 2). Built in two steps: the same-files case now
+(Phase 16, option 1 of three offered), the different-file-names case later in its own group (Phase 17, Group G).
+
+### Phase 16 — as built (2026-10-07)
+
+- **Agent:** `EnrollLinks.For(serverGames, candidate)` lists one emulator row's options, the automatic one first
+  (`Enroller.ServerNameFor`'s answer: join, or a new game under the first free name). Then *Keep it as its own game*
+  (only when the automatic choice joins; it takes the first free name of `Enroller.NamesFor`), then any other server
+  game with exactly the same folders and scopes (one older than D1). Last, greyed out with a reason, every server game
+  of the same title (the name, or the name followed by a bracket) that keeps **other** files, badged *Different file
+  names*, or *Whole folder* for a PC game. `GET /api/candidates/links` reads the server's games once per call; an
+  unreachable server answers `reachable: false` and every row stays automatic. `POST /api/enroll` takes
+  `links: [{ id, choice: "separate" | "game", gameId }]`; the enroller resolves the pick again against the server as
+  it is then (`EnrollLinks.Resolve`): a game gone since, or one keeping other files, is refused with a note.
+- **One fix it needed:** `Enroller.TrackedFor` now prefers the game set up **here** over one only known from the
+  server. A save kept as its own game has the same files as the fleet's game, which this machine may also track,
+  unmapped, under a name `NamesFor` lists first — and Add games then showed the row as not added.
+- **UI:** `ServerGameLink` under each emulator row: a dot, the result ("Joins “Daytona USA”", "New game “Chrono
+  Trigger (RetroArch)” on the server"), and on the right a 30px **Change** button that becomes **Close** while the
+  choices are open, plus **Back to automatic** after a hand-made pick ("· chosen by you"). Picks are dropped on a
+  rescan (the ids change). Game Mode on the Deck links automatically, as before.
+- **Not in it:** a search of every server game ("Pick another server game…" in the first mockup) — with only
+  same-files games pickable there is nothing more to search; Phase 17 brings it back.
+
+### Phase 17 — each machine's own file names (Group G, not started)
+
+Lets a save join a server game whose files are named differently on another machine: two dumps of one ROM
+(`Chrono Trigger (USA).srm` ↔ `Chrono Trigger (USA) (Rev 1).srm`), or two emulators
+(melonDS `Pokemon … (USA).sav` ↔ RetroArch's `Pokemon … (USA).srm`). Phase 16 already shows these, greyed out.
+
+What has to change, all of it on the path every sync takes:
+1. **Server:** a per-machine name map for a game (a column on `MachineSavePath`, or a table beside it), set at
+   enrollment and shown in the console; migration, API change, `openapi.json` and both `api-types.ts`.
+2. **Push:** files are renamed into the server's names on the way into the archive.
+3. **Pull / restore:** renamed back to this machine's names on the way out.
+4. **The in-sync hash and the manifest** use the server's names, or two linked machines never agree they are in
+   sync.
+5. **Every file list** (conflict screen, version history, "what will sync", dry run, restore preview) shows one
+   side's names consistently.
+6. **States:** RetroArch, Model 2 and Supermodel name states `<rom><suffix>`, so the rule is "swap the ROM-name
+   prefix" in every folder of the game. ScummVM is excluded (not ROM-named).
+7. **The first sync** asks which machine's save wins (the two have different progress), as in the first mockup's B.
+8. **Unlinking** puts this machine's own names back.
+
+**Open questions (decide before building):**
+- **Across emulators, or the same emulator only?** melonDS `.sav` and RetroArch's melonDS core `.srm` are the same
+  raw bytes for most DS games, but not every pair of emulators is (some add footers or RTC blocks). Same emulator
+  only is the safe first step; a list of known-compatible pairs could follow.
+- **States across emulators:** never synced (a melonDS state does not load in RetroArch) — confirm, and say so in
+  the picker ("syncs the save file only").
+- **Where the map lives:** per machine and folder key (`MachineSavePath`), or per machine for the whole game
+  (one prefix swap)? A prefix swap covers every ROM-named emulator; an explicit file-by-file map would also cover
+  odd cases but is more to show and edit.
+- **Who can change it:** only at enrollment from the agent, or also from the console's game page (*Same game on
+  another machine?*, mockup variant C)?
+- **Merging two existing server games** (variant C) needs a server merge, which does not exist (also blocks
+  [[Backlog]] → *One game, several real sources*). In Phase 17, or later?
+- **Name collisions:** a pull that would write a file this machine already has under another game (two ROMs mapped
+  onto one name) — refuse the link, or refuse the pull?
+- **Console display:** which names the console shows for a game linked under two names (server's only, or both with
+  the machine).
+- **Testing:** a two-machine test per emulator family with different names on each side, including states, a
+  conflict, and a restore of an old version on the renamed side — the riskiest paths, mutation-checked.
 
 ### The other emulators — researched 2026-10-07
 

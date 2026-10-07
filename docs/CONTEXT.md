@@ -1799,6 +1799,12 @@ Supermodel/Model 2 save on the Deck is the one thing no capture could show.
 <br>**2026-10-07, later:** Model 2 save states added (`STATES/<set><0-9>.sta`, read from the Deck's `EMULATOR.EXE`);
 unit **320**. The maintainer set the rule for every emulator reader: **EmuDeck (SteamOS/Linux and Windows) is the
 design target, standalone installs a bonus** (Decisions.md).
+<br>**2026-10-07, later still:** **Phase 16, linking by hand** built on the same branch (mockup version 2: each
+emulator row says which server game it joins, with a **Change** button — automatic, keep it as its own game, or another
+game with the same files; different file names shown greyed out). The different-file-names case is **Phase 17,
+Group G**, not started, open questions in its plan section. Unit **325**. A save-tree mockup (console version history with
+each save collapsed + the agent's current save tree, three variants) is at
+<https://claude.ai/artifact/2Nq9PbykqDDici67dWCGP2>, for the maintainer to pick from; not built.
 
 ---
 
