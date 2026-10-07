@@ -1688,7 +1688,8 @@ public sealed class AgentApiServer : IDisposable
             candidate.EmulatorSystem,
             candidate.EmulatorRom,
             candidate.UntouchedSeed,
-            candidate.NotSyncable)).ToArray();
+            candidate.NotSyncable,
+            GameSources.SystemLabel(candidate.EmulatorSystem))).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -1793,7 +1794,10 @@ public sealed record CandidateDto(
     bool UntouchedSeed = false,
     /// <summary>Why this row can never be added and how to fix that (<see cref="ScanCandidate.NotSyncable"/>): a memory
     /// card every game of a console shares. Shown greyed out with this text; null for every addable row.</summary>
-    string? NotSyncable = null);
+    string? NotSyncable = null,
+    /// <summary>The console as people say it ("PS2", "GameCube"), from <see cref="EmulatorSystem"/> by
+    /// <see cref="GameSources.SystemLabel"/> — the Add games Console row's chip label. Null when there is no system.</summary>
+    string? EmulatorConsole = null);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the

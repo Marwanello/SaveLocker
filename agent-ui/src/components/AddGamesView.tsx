@@ -51,6 +51,19 @@ const EMULATORS: { id: string; label: string }[] = [
   { id: 'PrimeHack', label: 'PrimeHack' },
 ]
 
+/** The Console row's chips: one per EmuDeck system among `found` ("ps2"), labelled as the agent says it ("PS2"),
+ * in label order. Rows with no system (an arcade set with no ROM folder) are under All only. */
+function consoleChips(found: Candidate[]): { id: string; label: string; count: number }[] {
+  const bySystem = new Map<string, { id: string; label: string; count: number }>()
+  for (const c of found) {
+    if (!c.emulatorSystem) continue
+    const chip = bySystem.get(c.emulatorSystem) ?? { id: c.emulatorSystem, label: c.emulatorConsole ?? c.emulatorSystem, count: 0 }
+    chip.count++
+    bySystem.set(c.emulatorSystem, chip)
+  }
+  return [...bySystem.values()].sort((a, b) => a.label.localeCompare(b.label))
+}
+
 /**
  * Path-detection state as its own axis, not a source filter — it used to be a `nopath` entry in
  * FILTERS ("Needs path"), which meant it competed with Steam/Heroic/etc. instead of combining with
@@ -140,7 +153,11 @@ export function AddGamesView({ onEnrolled }: Props) {
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [filter, setFilter] = useState<FilterId>('suggested')
   const [store, setStore] = useState<string | null>(null)
-  const [emulator, setEmulator] = useState<string | null>(null)
+  const [emulator, setEmulatorState] = useState<string | null>(null)
+  // The console (an EmuDeck system folder name, "ps2"), a third axis under the emulator. Picking another
+  // emulator clears it: the console picked may have no games under the new one.
+  const [consoleId, setConsoleId] = useState<string | null>(null)
+  const setEmulator = (id: string | null) => { setEmulatorState(id); setConsoleId(null) }
   const [pathMode, setPathMode] = useState<PathMode>('all')
   const [hideEnrolled, setHideEnrolledState] = useState(readHideEnrolled)
   const setHideEnrolled = (hide: boolean) => {
@@ -337,6 +354,13 @@ export function AddGamesView({ onEnrolled }: Props) {
     return EMULATORS.map(e => ({ ...e, count: emulated.filter(c => c.emulatorName === e.id).length }))
   }, [pool, filter])
 
+  // Which console, under the emulator picked: built from what was found (any EmuDeck system can turn up
+  // under RetroArch), labelled by the agent ("ps2" → "PS2"), and only offered when there is a choice.
+  const consoles = useMemo(() => {
+    if (filter !== 'emulator') return []
+    return consoleChips(pool.filter(c => c.source === 'Emulator' && (!emulator || c.emulatorName === emulator)))
+  }, [pool, filter, emulator])
+
   const active = FILTERS.find(f => f.id === filter) ?? FILTERS[0]
   // Filtered by source (+ store) but not yet by path — the base the path row's own counts are
   // drawn against, so "Detected" and "Not detected" describe the set the user is already looking at.
@@ -344,6 +368,7 @@ export function AddGamesView({ onEnrolled }: Props) {
     .filter(active.match)
     .filter(c => !((filter === 'heroic' || filter === 'playnite') && store) || c.store === store)
     .filter(c => !(filter === 'emulator' && emulator) || c.emulatorName === emulator)
+    .filter(c => !(filter === 'emulator' && consoleId) || c.emulatorSystem === consoleId)
   const activePathMode = PATH_MODES.find(p => p.id === pathMode) ?? PATH_MODES[0]
   const needle = query.trim().toLowerCase()
   const visible = sourceFiltered
@@ -444,6 +469,19 @@ export function AddGamesView({ onEnrolled }: Props) {
             {emulators.map(e => (
               <button key={e.id} type="button" className="sl-fchip" aria-pressed={emulator === e.id} onClick={() => setEmulator(e.id)}>
                 {e.label} <b>{e.count}</b>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Which console — under the emulator, once the games found span more than one. */}
+        {consoles.length > 1 && (
+          <div className="sl-filters">
+            <span className="sl-filters__label">Console</span>
+            <button type="button" className="sl-fchip" aria-pressed={consoleId === null} onClick={() => setConsoleId(null)}>All</button>
+            {consoles.map(s => (
+              <button key={s.id} type="button" className="sl-fchip" aria-pressed={consoleId === s.id} onClick={() => setConsoleId(s.id)}>
+                {s.label} <b>{s.count}</b>
               </button>
             ))}
           </div>

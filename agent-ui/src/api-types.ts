@@ -2863,6 +2863,7 @@ export interface components {
             /** @default false */
             untouchedSeed: boolean;
             notSyncable?: null | string;
+            emulatorConsole?: null | string;
         };
         CandidateLinksDto: {
             /** Format: int32 */
