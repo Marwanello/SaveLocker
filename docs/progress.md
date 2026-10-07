@@ -3679,3 +3679,38 @@ pushed to the PR's branch `emulator-saves-phase-1` on the fork `Marwanello/SaveL
 `agent-ui/src/components/AddGamesView.tsx`, tests (`EnrollNamingTests` new; `GameSourcesTests`, `RetroArchTests`).
 Vault: `Decisions.md` (naming rule rewritten, and a new *A game never joins…*), `tasks/emulator-saves/plan.md`,
 `CONTEXT.md`, `Build and Run.md`, this entry, `session_summary.md`.
+
+## 2026-10-07 — Emulator saves Group H: real-game checks (no code)
+
+Asked by the maintainer: a last group with no implementation, only testing with real games, for every emulator
+that shipped untested. They have no games for melonDS, ScummVM, Supermodel or Model 2 yet, and will keep adding
+each phase's emulator they couldn't test, so it sits at the end. Pushed to PR #61 (`emulator-saves-group-b`) as
+`f4af2d8`, docs only.
+
+**Where it is:**
+- **`tasks/emulator-saves/implementation-grouping.md`:** a new Group H row in the status table and a short
+  write-up. Group H always stays last so new emulators can keep joining it. A rule was added to "Every group's
+  checks": an emulator with no real game goes into Group H when its group ships, instead of holding that group
+  back.
+- **`tasks/emulator-saves/plan.md`:** a status row for **Phase 18** and a Phase 18 section at the end of the
+  groups. It covers:
+  - backing up the save folders first;
+  - the rig for each machine: the Deck test daemon scans the real EmuDeck install, while the Windows test tray
+    uses a copy of the folders;
+  - five steps for every emulator: save on the Deck, join on Windows ("Joins “…”"), play on and sync back, check
+    the neighbouring saves are untouched, and record the results;
+  - a checklist table with one row each for **melonDS, ScummVM, Supermodel and Model 2**.
+
+Each row covers how to make a save and a state, where the files are on the Deck and on Windows, what to watch for,
+and separate ⏳ boxes for the Deck and Windows. The things to watch for are the points the code had to guess:
+- **melonDS:** which file the Flatpak actually writes.
+- **ScummVM:** the real file names for each engine; only four are confirmed.
+- **Supermodel:** that a set never played stays hidden.
+- **Model 2:** which key saves a state, and whether `.DAT` changes on every exit.
+
+A row is ticked only when both machines pass. Any problem found becomes a fix in that emulator's own group, in a
+follow-up PR. `CONTEXT.md` mentions Group H too.
+
+### Files
+
+`docs/tasks/emulator-saves/{plan,implementation-grouping}.md`, `docs/CONTEXT.md`, this entry, `session_summary.md`.
