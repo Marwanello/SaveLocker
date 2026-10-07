@@ -1,4 +1,4 @@
-import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, TestConnection, TrackedGame, VersionStats } from './types'
+import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -173,6 +173,8 @@ export const api = {
   gameState: (id: string) => req<GameState>(`/api/games/${id}/state`),
   // Hashes the whole save folder. Only ever on an explicit "Check now", never on a timer or a list.
   syncStatus: (id: string) => req<SyncStatus>(`/api/games/${id}/sync-status`),
+  /** Every save file of the game here, each compared with the server's latest. Hashes the save — on demand only. */
+  gameFiles: (id: string) => req<GameFiles>(`/api/games/${id}/files`),
   // Cover or icon as a Blob: an <img src> cannot carry the local token, so the UI fetches it here.
   // Aborting `signal` reaches the agent, which stops asking the server for it.
   art: async (id: string, kind: 'grid' | 'icon', w: number, signal?: AbortSignal): Promise<Blob | null> => {

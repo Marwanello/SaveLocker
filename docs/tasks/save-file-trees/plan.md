@@ -26,8 +26,8 @@ One PR, one commit per phase. Not started; nothing depends on it.
 |-------|--------|
 | 1 — Server: a fingerprint per file, and what changed per version | ✅ Shipped 2026-10-07 — changes cached in memory (no table), CRC-32 + size; head hashes read from the archive |
 | 2 — Console: Versions rows open on their changes (variant B) | ✅ Shipped 2026-10-07 — change chips sit beside the state chip (no extra column) |
-| 3 — Agent: route for this PC's save files compared with the server | 🚧 In progress |
-| 4 — Agent UI: *Save files on this PC* tree on the game page (variant A) | ⏳ Not started |
+| 3 — Agent: route for this PC's save files compared with the server | ✅ Shipped 2026-10-07 — a differing file is `server` only when the head moved and nothing changed here |
+| 4 — Agent UI: *Save files on this PC* tree on the game page (variant A) | 🚧 In progress — built, lint/build clean; not yet checked in the browser or testenv |
 
 ## What already exists (don't re-derive)
 

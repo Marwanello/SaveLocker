@@ -153,6 +153,8 @@ button:disabled { cursor: default; }
 .sl-dot--ok   { background: var(--color-safe); }
 .sl-dot--warn { background: var(--color-watch); }
 .sl-dot--crit { background: var(--color-accent); }
+/* "Only on the server": not here, so hollow — the palette has no fourth hue to spend on it. */
+.sl-dot--ring { background: transparent; box-shadow: inset 0 0 0 1.5px var(--color-dim); }
 
 /* ---- Cards, stats, banners ------------------------------------------------------------------ */
 .sl-card { background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 14px; overflow: hidden; }
@@ -420,6 +422,36 @@ button:disabled { cursor: default; }
 .sl-group__head { display: flex; align-items: baseline; gap: 10px; margin-top: 6px; }
 .sl-group__head h3 { margin: 0; font-size: 13px; font-weight: 700; }
 .sl-group__head span { font-size: 12px; color: var(--color-dim); }
+
+/* ---- Save files on this PC (SaveFilesCard) ---------------------------------------------------- */
+.sl-files__head { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+.sl-files__legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--color-dim); }
+.sl-files__legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sl-files { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+.sl-files__note { font-size: 12px; color: var(--color-dim); padding: 0 6px; list-style: none; }
+.sl-files__root { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 6px 4px; color: var(--color-faint); }
+.sl-files__root b { font-size: 12.5px; font-weight: 600; color: var(--color-fg); }
+.sl-files__root .sl-mono { color: var(--color-faint); overflow-wrap: anywhere; min-width: 0; }
+.sl-tree { list-style: none; margin: 0; padding: 0; font-size: 12.5px; }
+.sl-tree--sub { padding-left: 18px; margin-left: 13px; border-left: 1px solid var(--color-line); }
+.sl-tree__node { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; min-width: 0; }
+.sl-tree__node:hover { background: var(--color-hover); }
+.sl-tree__twist { width: 14px; flex: none; display: inline-flex; justify-content: center; color: var(--color-faint);
+  background: none; border: 0; padding: 0; }
+button.sl-tree__twist { cursor: pointer; border-radius: 4px; }
+button.sl-tree__twist:hover { color: var(--color-fg); }
+button.sl-tree__twist:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.sl-tree__chev { transition: transform 120ms var(--ease); }
+.sl-tree__chev--open { transform: rotate(90deg); }
+.sl-tree__icon { flex: none; color: var(--color-faint); }
+.sl-tree__name { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--color-fg); }
+.sl-tree__node--dir .sl-tree__name { font-weight: 600; }
+.sl-tree__node--missing .sl-tree__name { color: var(--color-dim); font-style: italic; }
+.sl-tree__state { font-size: 11px; color: var(--color-dim); white-space: nowrap; }
+.sl-tree__size { font-family: var(--font-mono); font-size: 11px; color: var(--color-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sl-tree--other .sl-tree__name, .sl-tree--other .sl-tree__size { color: var(--color-faint); }
+@media (max-width: 640px) { .sl-tree__state { display: none; } }
+@media (prefers-reduced-motion: reduce) { .sl-tree__chev { transition: none; } }
 
 @media (prefers-reduced-motion: reduce) {
   .sl-page > *, .sl-toast, .sl-spin { animation: none; }
