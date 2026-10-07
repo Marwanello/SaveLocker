@@ -97,6 +97,15 @@
 #                                 `up` starts clean (pointed at :5177, not the real agent). Anything
 #                                 already there is moved into "<PlaynitePath>\pre-import-<stamp>"
 #                                 first, never overwritten. `clean` does not undo it.
+#   .\tests\testenv.ps1 emu-fixture [-EmuDeckPath <dir>]
+#                                 write a fake EmuDeck "Emulation" folder (three RetroArch saves, two ROMs'
+#                                 save states, one ROM) for the emulator-saves feature, plus a second one at
+#                                 "<StateRoot>\Emulation-wsl" that the WSL test agent scans (an old Chrono save,
+#                                 no Chrono states). Default location is "<StateRoot>\Emulation",
+#                                 which the Windows test agent then scans INSTEAD of any real EmuDeck/RetroArch
+#                                 install (restart it with `up -Only windows`); `clean` deletes it with the rest
+#                                 of the state. -EmuDeckPath (or $env:SAVELOCKER_EMUDECK_PATH) points the agent
+#                                 at any other folder, a copy of a real one included.
 #   .\tests\testenv.ps1 deck-config -DeckHost deck@<ip> [-DeckServerUrl http://<lan-ip>:5080]
 #                                 write/update tests/testenv.local.ps1 (below) instead of hand-
 #                                 editing it; no args just prints what's currently saved
@@ -148,7 +157,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'conflict', 'art', 'clean', 'deck-config', 'playnite-import')]
+    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'conflict', 'art', 'clean', 'deck-config', 'playnite-import', 'emu-fixture')]
     [string]$Command = 'status',
 
     # Never a released version number. A test build stamped with one compares equal to the real
@@ -205,6 +214,11 @@ param(
     # as DeckHost: unlike the Windows/WSL targets there's no safe "this machine" guess, so an unset
     # path means "don't touch Playnite" rather than assuming your real, everyday install.
     [string]$PlaynitePath = $env:SAVELOCKER_PLAYNITE_PATH,
+    # The EmuDeck "Emulation" folder the Windows test agent scans for emulator saves - and the ONLY one:
+    # with it set, the agent ignores any real EmuDeck or standalone RetroArch on this machine. Unset, a
+    # fixture written by `emu-fixture` under -StateRoot is used when present; otherwise the agent scans
+    # this machine's real installs (candidates only - nothing syncs until a game is added).
+    [string]$EmuDeckPath = $env:SAVELOCKER_EMUDECK_PATH,
     # SaveLocker-Playnite is its own repo, not a subdirectory of this one (same reasoning as
     # DeckyPluginRepo above — Playnite's plugin database requires a plugin's own folder to BE the
     # plugin). Defaults to the sibling checkout every contributor already has next to this one.
@@ -278,6 +292,9 @@ if (Test-Path $localConfig) {
     if (-not $PSBoundParameters.ContainsKey('PlaynitePath') -and $env:SAVELOCKER_PLAYNITE_PATH) {
         $PlaynitePath = $env:SAVELOCKER_PLAYNITE_PATH
     }
+    if (-not $PSBoundParameters.ContainsKey('EmuDeckPath') -and $env:SAVELOCKER_EMUDECK_PATH) {
+        $EmuDeckPath = $env:SAVELOCKER_EMUDECK_PATH
+    }
     if (-not $PSBoundParameters.ContainsKey('PlaynitePluginRepo') -and $env:SAVELOCKER_PLAYNITE_PLUGIN_REPO) {
         $PlaynitePluginRepo = $env:SAVELOCKER_PLAYNITE_PLUGIN_REPO
     }
@@ -325,11 +342,64 @@ function Use-TestEnvVars {
     # Playnite's library/Extensions live beside its own exe, not %AppData%, so without this the agent
     # can't discover it at all) or, worse, a real personal Playnite install on the same machine.
     if ($PlaynitePath) { $env:SAVELOCKER_PLAYNITE_PATH = $PlaynitePath }
+    if (Get-EmuDeckPath) { $env:SAVELOCKER_EMUDECK_PATH = Get-EmuDeckPath }
+}
+# The fixture lives under the rig's own state, so finding it there is never a real install.
+function Get-EmuDeckFixturePath { return (Join-Path $StateRoot 'Emulation') }
+function Get-EmuDeckWslFixturePath { return (Join-Path $StateRoot 'Emulation-wsl') }
+function Get-EmuDeckPath {
+    if ($EmuDeckPath) { return $EmuDeckPath }
+    $fixture = Get-EmuDeckFixturePath
+    if (Test-Path (Join-Path $fixture '.savelocker-emu-fixture')) { return $fixture }
+    return $null
+}
+function New-EmuDeckFixture {
+    $target = if ($EmuDeckPath) { $EmuDeckPath } else { Get-EmuDeckFixturePath }
+    $marker = Join-Path $target '.savelocker-emu-fixture'
+    # It writes saves, so only ever into an empty folder or one this command made.
+    if ((Test-Path $target) -and -not (Test-Path $marker) -and (Get-ChildItem $target -Force | Select-Object -First 1)) {
+        throw "refusing to write a fixture into '$target' - it exists, is not empty and was not made by emu-fixture"
+    }
+    $saves = Join-Path $target 'saves\retroarch\saves'
+    $states = Join-Path $target 'saves\retroarch\states'
+    New-Item -ItemType Directory -Force (Join-Path $saves 'Snes9x'), $states, (Join-Path $target 'roms\snes') | Out-Null
+    Set-Content -NoNewline -Encoding ascii (Join-Path $saves 'Chrono Trigger (USA).srm') "chrono $(Get-Date -Format o)"
+    Set-Content -NoNewline -Encoding ascii (Join-Path $states 'Chrono Trigger (USA).state1') "chrono slot 1 $(Get-Date -Format o)"
+    Set-Content -NoNewline -Encoding ascii (Join-Path $states 'Chrono Trigger (USA).state1.png') 'thumbnail'
+    Set-Content -NoNewline -Encoding ascii (Join-Path $saves 'Zelda (USA).srm') 'zelda - must survive every Chrono pull'
+    Set-Content -NoNewline -Encoding ascii (Join-Path $states 'Zelda (USA).state') 'zelda state - must survive every Chrono pull'
+    Set-Content -NoNewline -Encoding ascii -LiteralPath (Join-Path $saves 'Snes9x\Super Metroid (USA) [!].srm') 'metroid'
+    Set-Content -NoNewline -Encoding ascii (Join-Path $target 'roms\snes\Chrono Trigger (USA).sfc') ''
+    Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
+    Say "EmuDeck fixture at $target"
+    Write-Host "  saves:  $saves"
+    Write-Host "  states: $states"
+
+    # The second machine: the WSL test agent's own Emulation folder, unless -EmuDeckPath picked one.
+    # An old Chrono save and no Chrono states (what a pull must bring), and its own Zelda (what a pull
+    # must leave alone).
+    if (-not $EmuDeckPath) {
+        $wsl = Get-EmuDeckWslFixturePath
+        $wslMarker = Join-Path $wsl '.savelocker-emu-fixture'
+        if ((Test-Path $wsl) -and -not (Test-Path $wslMarker) -and (Get-ChildItem $wsl -Force | Select-Object -First 1)) {
+            throw "refusing to write a fixture into '$wsl' - it exists, is not empty and was not made by emu-fixture"
+        }
+        $wSaves = Join-Path $wsl 'saves\retroarch\saves'
+        $wStates = Join-Path $wsl 'saves\retroarch\states'
+        New-Item -ItemType Directory -Force $wSaves, $wStates | Out-Null
+        Get-ChildItem $wStates -Filter 'Chrono Trigger (USA).state*' -ErrorAction SilentlyContinue | Remove-Item -Force
+        Set-Content -NoNewline -Encoding ascii (Join-Path $wSaves 'Chrono Trigger (USA).srm') 'old chrono save on the WSL machine'
+        Set-Content -NoNewline -Encoding ascii (Join-Path $wSaves 'Zelda (USA).srm') 'wsl zelda - must survive every Chrono pull'
+        Set-Content -NoNewline -Encoding ascii (Join-Path $wStates 'Zelda (USA).state') 'wsl zelda state - must survive every Chrono pull'
+        Set-Content -NoNewline -Encoding ascii $wslMarker 'written by tests/testenv.ps1 emu-fixture'
+        Say "WSL EmuDeck fixture at $wsl"
+    }
+    Write-Host "  restart the test agents to scan them: .\tests\testenv.ps1 up -Only windows, then up -Only linux"
 }
 function Clear-TestEnvVars {
     # Leaving any of these set makes later runs in this shell behave in ways that look like bugs.
     Remove-Item Env:\SAVELOCKER_STATE_ROOT, Env:\SAVELOCKER_TRAY_PORT, Env:\SAVELOCKER_RUNKEY_SUBPATH, `
-        Env:\SAVELOCKER_PLAYNITE_PATH -ErrorAction SilentlyContinue
+        Env:\SAVELOCKER_PLAYNITE_PATH, Env:\SAVELOCKER_EMUDECK_PATH -ErrorAction SilentlyContinue
 }
 
 # Not `wslpath`: wsl.exe strips the backslashes out of a Windows path argument before the Linux side
@@ -355,6 +425,11 @@ function Invoke-Wsl {
         "SAVELOCKER_TEST_VERSION='$Version'",
         "SAVELOCKER_WIN_REPO='$(ConvertTo-WslPath $root)'"
     )
+    # emu-fixture's second machine: the Linux daemon scans it instead of any EmuDeck/RetroArch in WSL.
+    $wslEmu = Get-EmuDeckWslFixturePath
+    if (Test-Path (Join-Path $wslEmu '.savelocker-emu-fixture')) {
+        $vars += "SAVELOCKER_EMUDECK_PATH='$(ConvertTo-WslPath $wslEmu)'"
+    }
     if ($Sub -eq 'sync') {
         # The COMMON git dir, not this worktree: a worktree's .git is a file pointing at a Windows
         # path that WSL cannot follow, while branches live in the shared object store.
@@ -1659,6 +1734,8 @@ switch ($Command) {
     }
 
     'playnite-import' { Import-PlayniteData }
+
+    'emu-fixture' { New-EmuDeckFixture }
 
     'deck-config' {
         # $DeckHost/$DeckServerUrl already reflect explicit flag > saved file > env var by this

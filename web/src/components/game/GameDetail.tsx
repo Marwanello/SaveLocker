@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, errorText } from '../../api';
 import type {
-  AgentHealth, Command, Conflict, GameIntent, GameSummary, Machine, MachineSavePath, MachineScanCandidate, Version,
+  AgentHealth, Command, Conflict, GameIntent, GameSummary, Machine, MachineGameSource, MachineSavePath, MachineScanCandidate, Version,
 } from '../../types';
 import { toast, toastError } from '../../toast';
 import { problemGameIds, standing } from './gameState';
 import { ArtPicker } from '../ArtPicker';
 import { GameHead } from './GameHead';
+import { SourceChip } from './SourceChip';
 import { ConflictPanel } from './ConflictPanel';
 import { GameStats } from './GameStats';
 import { VersionsCard } from './VersionsCard';
@@ -37,6 +38,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
   const [loadingVersions, setLoadingVersions] = useState(true);
   const [paths, setPaths] = useState<MachineSavePath[]>([]);
   const [candidates, setCandidates] = useState<MachineScanCandidate[]>([]);
+  const [sources, setSources] = useState<MachineGameSource[]>([]);
   const [pathsLoaded, setPathsLoaded] = useState(false);
   const [artOpen, setArtOpen] = useState(false);
   const penRef = useRef<HTMLButtonElement>(null);
@@ -47,6 +49,8 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
       .finally(() => setLoadingVersions(false));
     api.getGamePaths(game.id).then(setPaths).catch(() => {}).finally(() => setPathsLoaded(true));
     api.getGamePathCandidates(game.id).then(setCandidates).catch(() => {});
+    setSources([]);
+    api.getGameSources(game.id).then(setSources).catch(() => {});
   }, [game.id]);
 
   async function reloadVersions() { setVersions(await api.versions(game.id)); }
@@ -68,6 +72,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
     // A stored path retires its candidate server-side, so refresh both together or the row keeps
     // offering a guess for a machine that is now mapped.
     setCandidates(await api.getGamePathCandidates(game.id).catch(() => []));
+    setSources(await api.getGameSources(game.id).catch(() => []));
   }
 
   const headId = head?.id ?? null;
@@ -108,6 +113,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
         standing={standing(summary, problemGameIds(health))}
         versionCount={versions.length}
         machines={withGame.length > 0 ? withGame : machines}
+        source={sources.length > 0 ? <SourceChip sources={sources} machines={withGame} paths={paths} /> : undefined}
         allMachines={machines}
         health={health}
         artOpen={artOpen}

@@ -1,57 +1,92 @@
-# Session summary — 2026-10-06 — Add games status icons and Hide enrolled
+# Session summary — 2026-10-07 — Review of PR #60 (emulator saves), all findings fixed
 
 Standalone: the facts below do not need the rest of the vault.
 
-**Branch:** `multiple-save-paths-group-c`. PR: https://github.com/Marwanello/SaveLocker/pull/58.
-Commits: `25c6135` icons and switch, `f9440da` api-types fix, `9cc5189` console-suite fix.
+**PR:** #60 on the fork `Marwanello/SaveLocker`, *Emulator saves: RetroArch saves and states, game source per machine,
+Emulators filter*. Head branch `emulator-saves-phase-1`, base `main`.
+**Where the fixes were made:** local branch `emulator-saves-review-fixes` in `.claude/worktrees/multiple-save-paths-group-c-5cda33`.
+It tracks `origin/emulator-saves-phase-1` and was pushed there. The PR branch's own worktree,
+`.claude/worktrees/emulator-saves`, is still at the pre-fix commit: `git pull` there before working in it.
 
-### Request sequence
+## What was asked
 
-1. Asked whether any game detected on the Steam Deck has more than one save folder. A scan of this branch, run from a
-   temporary copy in the Deck's `/tmp` (since removed), found two:
-   - **Sifu**: one extra folder, `development`.
-   - **Slay the Spire**: three extra folders, `preferences`, `runs` and `saves`.
-   - Both are Steam Cloud games, so they show under **All**, not Suggested.
-   - Problem found: Slay the Spire's main folder is picked as `betaPreferences`, because it is the first location the
-     save database lists. The real saves are in `saves`. This is how detection worked before this branch; not fixed.
-2. Asked for clickable mockups (2–3 variations) of status icons before each game's name and a Hide enrolled toggle in
-   Add games, for both the agent UI and the Deck UI. Published three variations:
-   https://claude.ai/artifact/2dU4aBBa8XvTK3kDXNyJNK
-3. Chose variation C's icons with variation A's switch, and asked that it work in light mode too. Built in `25c6135`:
-   - **Icons:** a small tinted tile before each name. A green tick means enrolled, lucide's search-check means a save
-     folder was found, and a yellow warning means there is none. They replace the Detected / Not detected chip (agent
-     UI) and the "already tracked" / "no save folder" badges (Deck).
-   - **Hide enrolled switch:** on by default, at the right of the source filters. When off, enrolled games show faded
-     green with a locked tick, and the save-folder row (Path on the Deck) gains an **Enrolled** chip. Detected and Not
-     detected leave enrolled games out.
-   - The agent UI remembers the switch in `localStorage`. The Deck app starts with it on every time.
-   - `CandidateDto` gained `Enrolled`, meaning the game is tracked by name, which is what `Enroller` skips on.
-   - The new Deck pieces are `Icons.SearchCheck` and `Widgets.StatusTile`. The KB article `adding-games` gained a
-     paragraph about the icons and the switch.
-4. Auto-fix reported three CI failures on PR #58:
-   - **`package-linux`:** my hand edit of `api-types.ts` didn't match the generator. A C# bool with a default comes
-     out as required with `/** @default false */`. Fixed in `f9440da`.
-   - **`console-security-tests`:** two SP-01 checks still expected 400. The review-fix commit `fbd7193` had made key
-     refusals 409 `key_taken` / `key_retired`. Fixed in `9cc5189`.
-   - **`unit-tests`:** `The_settle_gate_waits_on_every_real_folder` failed with "still writing after 10s" on
-     `9cc5189`, a change to the PowerShell console suite only. The unchanged code passed on `8d22413` and on the seven
-     runs before it, and the test passed 15 times in a row locally. Treated as a flake; the failed job was re-run.
-     - The cause is not known. The test pins the lock probe quiet and stops writing after about 0.6 s, so only the
-       files' size and last-write time could have kept the gate waiting.
-     - Suggested next step, as a separate change: make the failure message say which file kept changing.
+1. Review PR #60 thoroughly. Verdict: **request changes**, with 2 blocking, 2 important and 5 minor findings. CI was green.
+2. Fix all of them, push to the PR, append a summary to `docs/progress.md`, and write this file.
 
-### Verification
+## The two problems that mattered
 
-- The agent UI type-checks, lints and builds, and the Linux agent builds.
-- testenv's Windows agent: checked the switch, the Enrolled chip, and turning the switch back on (the filter returns
-  to All and the page says "8 enrolled games are hidden"), in dark and light mode. Enrolling Calico there to get an
-  enrolled row made several of the rig's already-tracked games show as enrolled.
-- Deck UI: captured at 1280x800 against a stub daemon and a throwaway fake Steam library (it needs a `userdata/`
-  folder to count as a Steam root). The first captures showed the icon tiles too small; they were enlarged and the
-  name centred beside them.
-- Not verified on the real Deck, which was asleep.
+**One ROM could become two server games.** The server identifies a game by its name. The first version named an
+emulator save by its cleaned title and added the console ("Chrono Trigger (SNES)") only when *that machine's own
+scan* had another game with that name. On a Deck, Steam ROM Manager (part of EmuDeck) adds a Steam shortcut for
+every ROM, and every shortcut is a scan candidate. So the Deck said "Chrono Trigger (SNES)" while a PC without those
+shortcuts said "Chrono Trigger", and the two never synced.
 
-### State left
+**A PC game could join an emulator game and never be backed up.** This was proven before fixing, with a two-machine
+test against a real server:
+- Machine A added the RetroArch save "Chrono Trigger".
+- Machine B then added the Steam game "Chrono Trigger".
+- B joined A's game and inherited its include patterns (`Chrono Trigger (USA).srm`, `.rtc`).
+- The files that would sync from B's save folder: none. Every screen showed B as in sync.
 
-- testenv's Windows agent was stopped (`down -Only windows`) to run the test locally.
-- Scratch copies and the fake Steam library were removed.
+## The naming decision (the maintainer's choice)
+
+Asked with three options; the maintainer picked **"plain names, the server decides"**.
+- An emulator save may take, in order:
+  1. its title (`Chrono Trigger`);
+  2. the title plus the emulator (`Chrono Trigger (RetroArch)`);
+  3. the save file's own name plus the emulator (`Chrono Trigger (Japan) (RetroArch)`).
+- All three come from the save file alone. At enrollment it takes the one whose server game already holds exactly
+  this ROM's files, otherwise the first name no game has.
+- Every machine sees the same server, so the same ROM ends up in the same game whichever machine adds it first.
+- Accepted gap: if an emulator save takes the plain title first, a PC game with that title added later is refused,
+  with the reason shown. It is never mixed into the emulator game.
+
+The rejected options were always adding "(RetroArch)" (fully deterministic, but brings back the suffix the
+maintainer had removed) and always adding the console (not deterministic when one machine lacks the ROM folder).
+
+## Everything that changed
+
+- **Names** — `Enroller.NamesFor` and `Enroller.ServerNameFor`. The game list is read from the server once per batch
+  and updated as games are created.
+  - `GameSources.AvoidNameClashes` is deleted.
+  - `ScanCandidate.DedupeKey` stops the scanners merging an emulator save with any other candidate.
+  - `Enroller.TrackedFor` (same name *and* same include patterns) answers "is this already set up here?" in the
+    Enroller, Add games, Game Mode and the source backfill.
+- **Joining** — a candidate with no include patterns is refused when its folder has files and none of them match the
+  server game's patterns.
+  - It still joins when its folder is empty, or when some of its files match (patterns an admin set in the console
+    for that PC game). That case has its own test, so the fix doesn't break it.
+- **Refusal reasons are shown** — `EnrollResponse.notes`. Add games prints "Not added: …" instead of counting
+  everything as "already tracked"; Game Mode adds the reasons to its status line.
+- **Sending the source** — `GameSources.ReportAsync` now says whether the server answered. The poller sends each
+  game's source once per value, instead of every 20 seconds for every game against a console that predates the
+  route. `GameSourceDto.SameAs` compares values the way the server stores them (trimmed).
+- **Two ROMs with one title** (two regions, or one game on two consoles) are now two Add games rows, each showing its
+  save file's name. Only one ROM's save found in two core folders collapses to the newer one.
+- **The "EmuDeck" tag** comes from the scanner (`RetroArchFolders.EmuDeck` → `ScanCandidate.ViaEmuDeck`). The folder
+  is stored by its real path, and EmuDeck's saves folder links into the RetroArch Flatpak's, so reading the path
+  never showed "EmuDeck" on real hardware.
+- **"Added by hand"** is no longer stamped on a game that was already set up here when its folder is moved, so the
+  backfill can still record the real source.
+- **Server limits** — `PUT /api/agent/source` accepts a kind up to 32 characters, a detail up to 200, and at most 16
+  tags of 64; each must be one line. The agent trims to the same limits.
+- **Smaller fixes**
+  - A failed source report has its own log line.
+  - `retroarch.cfg`'s configured saves folder replaces the default one instead of adding to it.
+
+## Verification
+
+- `dotnet test tests/SaveLocker.Agent.Tests`: **291/291** (was 280).
+  - New: `EnrollNamingTests`, 6 tests against a real server.
+  - Mutation-checked: disabling the join refusal, and forcing the plain name, each make the intended tests fail.
+- The full solution builds clean with `--no-incremental`; `agent-ui` lint and build pass.
+- `agent-ui/src/api-types.ts` was regenerated from a dev tray on port 5190 with scratch state, stopped afterwards
+  with no registry leftovers. The only diff is `emulatorRom` and `notes`.
+- No server route or data shape changed, so `openapi.json` and `web/` were not touched.
+- **Not done:** no testenv pass and no real-hardware pass.
+
+## Next
+
+`testenv clean`, because games added by earlier builds won't match. Then check the agent UI and Game Mode source
+chips, try a same-titled PC game plus emulator save to see the refusal reason, and do the EmuDeck hardware pass on the
+Deck and on Windows. After that PR #60 can merge.

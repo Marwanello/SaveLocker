@@ -138,6 +138,11 @@ SaveLocker/
 │   │   ├── SteamShortcuts.cs            # shortcuts.vdf reader + the signed→unsigned AppID trap
 │   │   ├── Watchers.cs                  # Debounced FileSystemWatcher + ProcessWatcher
 │   │   ├── ScanCandidate.cs             # Discovery DTO (scanning itself is platform-specific)
+│   │   ├── EmuDeckRoots.cs              # EmuDeck's `Emulation` folder (settings script, else defaults) +
+│   │   │                               #   RealPath (links at ANY component). SAVELOCKER_EMUDECK_PATH = exclusive
+│   │   ├── RetroArchConfig.cs           # RetroArch (saves, states) folder pairs: EmuDeck's saves/retroarch/*, else retroarch.cfg
+│   │   ├── RetroArchSaves.cs            # One Emulator candidate per .srm: main = <rom>.srm/.rtc, extra folder "states" = <rom>.state*
+│   │   ├── RomNames.cs                  # "Chrono Trigger (USA) [!]" → "Chrono Trigger" — the emulator game identity
 │   │   └── Platform.cs                  # IAutoStart, IGameScanner — impls injected by the host
 │   │
 │   ├── Agent/                           # SaveLocker.Agent.csproj (net10.0-windows10.0.19041.0, WinForms — the

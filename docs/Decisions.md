@@ -272,6 +272,44 @@ session can judge an edge case, not to reopen the choice.
   trade this decision accepts.
 - **Enrollment model:** a game is defined once on the server; each agent maps its own local save
   dir. The server game is the single definition; scanners only suggest candidates.
+- **A game can own part of a save folder: its include scope lives on the server** (2026-10-04, emulator
+  saves Phase 1, maintainer's choice). RetroArch writes every ROM's `.srm` into one folder, so one game
+  is `SaveDirectory` + `Game.IncludeGlobs`. It is server data, not agent-local, because the agent that
+  adds the game is not the only one that maps it — the poller adopts it everywhere and fills the
+  folder from a path template — and a machine mapping the shared folder without the scope would upload
+  every ROM's save as one game and, on pull, **delete the others** (a restore removes local files absent
+  from the archive). Restore is scoped too: only matching files are written or deleted. Set once at
+  creation; an existing game's scope is never changed by a later create. This amends the emulator plan's
+  original "no server changes" line, which was written about `Game.Platform`, not this.
+  <br>**Since 2026-10-06 the scope is per save folder** (*Multiple save paths*, `SaveRoot.IncludeGlobs`): the
+  primary folder's is still `Game.IncludeGlobs`, each extra folder's is on its `GameSavePath` row.
+- **RetroArch save states sync always, as the game's second folder `states`** (2026-10-04 decided,
+  2026-10-06 built; maintainer's choice). Scoped to `<rom>.state*` (slots, `.state.auto`, thumbnails). Not
+  opt-in: the maintainer accepts that a state may not load under another core build. Declared even before
+  the folder exists, so every machine defines the game with the same folders.
+- **Emulator games are named from the save file, title alone** (2026-10-04, maintainer's choice; the
+  ` (RetroArch)` suffix dropped 2026-10-07 at the maintainer's request): `Chrono Trigger (USA).srm` →
+  `Chrono Trigger`. Deterministic on every machine (no playlist one machine has and another lacks). Only
+  ROMs with a save file are candidates. Where the emulator is shown now is the game's source, below.
+  <br>**When the title is taken, the server decides — never the machine** (2026-10-07, review of PR #60,
+  maintainer's choice). An emulator save may hold, in order, `Chrono Trigger`, `Chrono Trigger (RetroArch)`,
+  `Chrono Trigger (Japan) (RetroArch)` (the save file's own name) — all from the file alone. The enroller
+  takes the name whose server game already keeps exactly this ROM's files, else the first one free
+  (`Enroller.NamesFor` / `ServerNameFor`). Every machine sees the same server, so one ROM is one game whoever
+  enrolls first. The first version appended the console when *this machine's scan* had a same-named game,
+  which split one ROM into two games across a Deck (Steam ROM Manager adds a shortcut per ROM) and a PC (none).
+  Scans never merge an emulator save with another candidate (`ScanCandidate.DedupeKey`), and two ROMs with one
+  title stay two rows. **Known gap, accepted:** an emulator save that takes the plain title first leaves a
+  later same-titled PC game unable to join it — refused with the reason shown, never mixed (next bullet).
+- **A game never joins a server game whose include patterns keep none of its files** (2026-10-07, review of
+  PR #60). A candidate with no scope of its own joining a scoped game inherits that scope; when nothing in its
+  folder matches — a Steam "Chrono Trigger" joining the SNES save of that name — nothing on that machine would
+  ever be backed up while every screen said "in sync". Refused, with the reason in Add games. A folder with no
+  files yet, or with some files in scope (patterns set in the console for that PC game), still joins.
+- **A game's source is per machine and display only** (2026-10-07, maintainer's choice): how each machine
+  found the game, as kind › detail + tags ("Emulator › RetroArch", SNES, Flatpak), because two machines rarely
+  find a game the same way. The agent writes the words once (`GameSources`), the server stores one row per
+  machine and game, and the three UIs only draw them. Nothing syncs differently because of it.
 - **"Latest" = `Game.HeadVersionId`.** UI label "Latest"; admin action "Set as Latest".
 - **Artwork:** SteamGridDB images are downloaded/cached server-side, not stored as bare URLs
   (offline-safe, survives upstream changes).
@@ -692,7 +730,7 @@ session can judge an edge case, not to reopen the choice.
 - **An extra save folder an agent defines is the fleet's at once; the CLI removes one fleet-wide** (2026-10-05,
   maintainer's call, multiple-save-paths Group B). No console confirmation step before other machines adopt a folder
   `add-path` or a scanner declared: adoption is cheap and safe, because a machine maps it only where its template
-  names a folder that already exists, and otherwise keeps a shadow (`tasks/multiple-save-paths/plan.md` §3). A folder
+  names a folder that already exists, and otherwise keeps a shadow (`logs/2026-10-06_multiple-save-paths/plan.md` §3). A folder
   that exists but holds different files is never mapped automatically — the user picks `--keep local|cloud`.
   `remove-path` retires the key for every machine (agent route `DELETE /api/agent/games/{id}/save-paths/{key}`),
   mirroring `add-path`. A folder no token describes is added with **no template**, never refused: other machines

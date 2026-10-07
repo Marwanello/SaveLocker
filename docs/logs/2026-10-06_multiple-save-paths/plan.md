@@ -6,7 +6,7 @@ Planned 2026-10-04. Lets one game sync several save folders, for **any** game:
 - a folder a user adds by hand,
 - an emulator's saves and save states.
 
-It blocks [emulator saves](../emulator-saves/plan.md): RetroArch save states are a second folder of the
+It blocks [emulator saves](../../tasks/emulator-saves/plan.md): RetroArch save states are a second folder of the
 same game, and PCSX2, Dolphin and DuckStation need two folders each. That branch (`emulator-saves`) waits
 until Group B here is merged, then gets rebased (see *Rebase notes*).
 
@@ -358,6 +358,8 @@ local API's `Paths` and keyed `/folder`, and doctor.
   might recover some of those 702 manifest entries. Measure first.
 
 ## Rebase notes for `emulator-saves`
+*Done 2026-10-06* — merged rather than rebased (`main` into `emulator-saves`); see
+`../emulator-saves/plan.md` → *Merged onto multiple save paths*.
 - Drop its migration `AddGameIncludeGlobs` and its `Game.IncludeGlobs`/`GameDto.IncludeGlobs`/
   `CreateGameRequest.IncludeGlobs` changes. This feature adds the same column and fields.
 - Drop its `SaveArchive` include changes, which are ported here; keep its readers.

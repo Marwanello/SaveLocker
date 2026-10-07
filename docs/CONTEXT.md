@@ -1696,7 +1696,7 @@ agent UI and Deck Game Mode, all captured from the `testenv` rig seeded with a s
 Social preview (an upload only the maintainer can make). The old tray and installer screenshots were dropped as
 pre-redesign; there is no headless way to capture either.
 **Next action:** merge `release-0.6.0`, tag `v0.6.0`, upload `docs/brand/social-preview.png` as the repo's social preview.
-<br>**Multiple save paths planned (2026-10-04, docs only).** `tasks/multiple-save-paths/plan.md` covers any game, not
+<br>**Multiple save paths planned (2026-10-04, docs only).** `logs/2026-10-06_multiple-save-paths/plan.md` covers any game, not
 just emulators, in 7 phases and 3 groups (`implementation-grouping.md`):
 - The primary path stays at the archive root. Extra paths go under `.savelocker/paths/<key>/`, each with a marker entry.
 - A machine that can't map a path keeps a **shadow** copy, so every push carries every path. Without it, two machines
@@ -1720,8 +1720,8 @@ just emulators, in 7 phases and 3 groups (`implementation-grouping.md`):
   `GET …/versions/{v}/folders`) and agents < 0.7.0 flagged, Deck per-folder browser. The maintainer's three calls are in
   [[Decisions]]. Counts in [[Build and Run]] → Suite baseline. **testenv pass done on Windows + WSL + console** (the PR has
   the steps and screenshots; it caught two bugs, fixed in `7bbca5c`). **The Deck target has not run.**
-- **Next:** `-Only deck` for Group C, the Group B testenv pass if it is still wanted separately, then merge both; `emulator-saves` rebases after that (`plan.md` → *Rebase notes*). The task folder stays in `tasks/`
-  until then — `emulator-saves/plan.md` links into it.
+- **Done (2026-10-07):** merged as PRs #56–#58 and released in v0.7.0; moved to `logs/2026-10-06_multiple-save-paths/`
+  and indexed in `logs/shipped-2026-10.md`. The Deck testenv target never ran.
 <br>**Settle-gate test flake fixed (2026-10-05, on `multiple-save-paths-group-c` / PR #58).**
 `MultiPathAgentTests.The_settle_gate_waits_on_every_real_folder` failed once on windows-latest (PR #58): the gate
 never went quiet in 10 s. The Windows lock probe opens with `FileShare.Read`, so a reader that shares reads does
@@ -1730,6 +1730,60 @@ opening exclusively, raises the same sharing violation as a writer and holds the
 because a game writing with `FileShare.None` looks identical. The test now pins the probe quiet through an internal
 `SaveSettler` overload and still proves the second folder restarts the quiet period. Reproduced off Windows with an
 always-locked probe (same `false` at maxWait). Recorded in [[Gotchas]] → *Testing*.
+
+**Emulator saves Phase 1 built (2026-10-04, branch `emulator-saves`) — RetroArch, both OSes; waiting on the
+real-hardware pass.** One Add-games candidate per RetroArch `.srm` (EmuDeck's `Emulation/saves/retroarch/saves`,
+else a standalone `retroarch.cfg`), named `<cleaned file name> (RetroArch)` and scoped to that ROM's files by a
+new **server-side** `Game.IncludeGlobs` (migration `AddGameIncludeGlobs`; `openapi.json` and both `api-types.ts`
+regenerated, additions only). `SaveArchive` hashes/archives/lists **and restores** within the scope — a restore
+deletes local files absent from the archive, so an unscoped pull into a shared saves folder would delete every
+other ROM's save (a test proves it, and the three scoped-restore tests fail with the scope disabled). Decisions
+taken with the maintainer and every deviation from the plan: `tasks/emulator-saves/plan.md` → *Status* /
+*Phase 1 — as built*; [[Decisions]] → *A game can own part of a save folder*. **Verified:** xunit 202 (+21),
+delta 33, hardening 33, health 33; a scratch two-machine round trip (Linux daemon + Windows CLI, each pull
+leaving the other ROMs' saves intact); and through `testenv` — `emu-fixture` (new) → the Windows test tray's
+Add games listed the fixture's saves, adding Chrono Trigger and Sync all uploaded a one-file archive. **Not
+verified:** a real EmuDeck install on the Deck or on Windows (`Build and Run` → *Testing emulator saves*).
+<br>**Same day, follow-up: save states decided, and the branch is PAUSED.** RetroArch states will sync, always
+(not opt-in), as a second save path of the same game — so they wait for *Multiple save paths*, which the
+maintainer chose to build first in its own session/branch off `main`; `emulator-saves` is then rebased and
+continues with Phase 1b (states). What that feature must provide for emulators is appended to
+`logs/2026-10-06_multiple-save-paths/summary.md`; the states research is in `tasks/emulator-saves/plan.md` → *Save states
+— decided*. Also fixed: EmuDeck for Windows' RetroArch lives at
+`%USERPROFILE%\emudeck\EmulationStation-DE\Emulators\RetroArch` (Phase 1 had guessed an `%APPDATA%` path).
+<br>**Resumed 2026-10-06: `main` (multiple save paths Groups A+B) merged in, Phase 1b (save states) built.** The
+merge kept `main`'s version of every shared file — its per-folder include scopes replace this branch's migration,
+DTO fields, server validation and `SaveArchive` code (`tasks/emulator-saves/plan.md` → *Merged onto multiple save
+paths*). A RetroArch game is now two scoped folders: `main` (`<rom>.srm`/`.rtc`) and `states` (`<rom>.state*`),
+the states folder declared even before it exists. `testenv emu-fixture` now writes a second tree for the WSL
+daemon, so the Windows ↔ WSL round trip runs on the rig. Unit **247**, multipath **39**, delta **33**.
+<br>**2026-10-07: game sources and plain names.** Each machine records how it found a game ("Emulator ›
+RetroArch" + SNES/Flatpak/EmuDeck tags, "Steam › Installed game", …) — new `MachineGameSources` table, agent
+`PUT /api/agent/source/{id}`, admin `GET /api/games/{id}/sources` — shown on the game page of the console
+(chip, "N sources" + per-machine popover), agent UI (chip + tags) and Game Mode (pill). RetroArch games drop the
+"(RetroArch)" suffix. Agent UI Add games gained an
+*Emulators* chip with an *Emulator* row (one chip per emulator — add each new one). `tasks/emulator-saves/plan.md`
+→ *Game sources and names*. Unit **280**.
+<br>**2026-10-07: review of PR #60, every finding fixed on the PR.** The first naming rule (append the console
+when *this machine's scan* had a same-named game) split one ROM into two server games across a Deck with Steam ROM
+Manager shortcuts and a PC without them; and a Steam game with an emulator game's title joined it and inherited
+its `.srm` scope, so none of the PC's saves were ever backed up (proven with a two-machine test before fixing).
+Now: names come from the save file alone and **the server decides** which one an emulator save takes
+(`Enroller.NamesFor`/`ServerNameFor`); a game never joins one whose patterns keep none of its files, and Add games
+says why it refused (`EnrollResponse.notes`). Also: the poller sends a source once per value, not every 20 s
+against a console without the route; "EmuDeck" tag from the scanner, not the (real) path; server bounds
+sources. Decisions → *Emulator games are named…* and *A game never joins…*. Unit **291**; both main fixes
+mutation-checked.
+<br>**2026-10-07: the rest of the task planned.** The maintainer added Cemu, Azahar, Model 2, PPSSPP and the Switch
+family (Yuzu, Citron, Eden, Ryujinx), plus bonus Supermodel, melonDS, ScummVM, shadPS4 and Vita3K. Every save
+folder was researched from EmuDeck's own setup scripts (both OSes) and the emulators' source. The remaining phases
+are in five groups by save shape, one PR each: B saves named after the ROM, C memory cards, D Sony (`PARAM.SFO`),
+E title-ID folders, F Switch. Two design points need the maintainer's yes first: D1, an emulator game found by its
+folders rather than its name (B), and D2, a server title key so Ryujinx's numbered folders sync with the Yuzu forks
+(F). Details: `tasks/emulator-saves/plan.md` → *The other emulators* and `implementation-grouping.md`.
+<br>**Next action for this item:** a testenv pass of the source chips (agent UI + Game Mode; the console was
+checked in the browser) — `testenv clean` first, the old "(RetroArch)" games no longer match — then the EmuDeck
+hardware pass (Deck + Windows) for Phases 1 and 1b, then a PR.
 
 ---
 

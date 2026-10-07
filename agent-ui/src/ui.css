@@ -253,6 +253,23 @@ button:disabled { cursor: default; }
 .sl-gamehead__main { min-width: 0; flex: 1; }
 .sl-gamehead__title { font-size: 22px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; overflow-wrap: anywhere; }
 .sl-gamehead__chips { display: flex; gap: 7px; margin-top: 8px; flex-wrap: wrap; }
+.sl-gamehead__source { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+
+/* How this device found a game: "Emulator › RetroArch", then its tags. */
+.sl-source {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px; line-height: 1.3; white-space: nowrap;
+  padding: 4px 11px 4px 9px; border-radius: 99px; border: 1px solid var(--color-line);
+  background: var(--color-raise); color: var(--color-fg);
+}
+.sl-source svg { color: var(--color-dim); flex: none; }
+.sl-source__kind { color: var(--color-dim); }
+.sl-source__sep { color: var(--color-faint); }
+.sl-source__detail { font-weight: 600; }
+.sl-source--none .sl-source__kind { color: var(--color-faint); font-style: italic; }
+.sl-tag {
+  font-size: 11px; line-height: 1.3; color: var(--color-dim); white-space: nowrap;
+  border: 1px solid var(--color-line); border-radius: 6px; padding: 2px 7px;
+}
 .sl-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .sl-back { align-self: flex-start; }
 

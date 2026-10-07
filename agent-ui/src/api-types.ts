@@ -2822,6 +2822,9 @@ export interface components {
             alsoFound?: null | components["schemas"]["SaveFolderDto"][];
             /** @default false */
             enrolled: boolean;
+            emulatorName?: null | string;
+            emulatorSystem?: null | string;
+            emulatorRom?: null | string;
         };
         CandidateLookupRequest: {
             name: string;
@@ -2925,6 +2928,7 @@ export interface components {
             enrolled: number;
             /** Format: int32 */
             skipped: number;
+            notes?: null | string[];
         };
         ErrorResponse: {
             error: string;
@@ -2979,6 +2983,12 @@ export interface components {
             preferredMachineId?: null | string;
             includeGlobs?: null | string[];
             extraPaths?: null | components["schemas"]["SavePathDto"][];
+            machineSource?: null | components["schemas"]["GameSourceDto"];
+        };
+        GameSourceDto: {
+            kind: string;
+            detail: string;
+            tags?: null | string[];
         };
         GameStateDto: {
             game: components["schemas"]["GameDto"];
@@ -3220,6 +3230,7 @@ export interface components {
             /** Format: date-time */
             lastPushAt?: null | string;
             paths?: null | components["schemas"]["SaveFolderDto"][];
+            source?: null | components["schemas"]["GameSourceDto"];
         };
         VersionStatsDto: {
             /** Format: int32 */

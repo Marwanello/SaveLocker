@@ -24,7 +24,7 @@ interface Props {
  * the part the Linux agent was missing entirely: it filtered Cloud games out with no control to
  * bring them back, so an installed Steam game could not be reached at all.
  */
-type FilterId = 'suggested' | 'all' | 'steam' | 'shortcut' | 'heroic' | 'playnite'
+type FilterId = 'suggested' | 'all' | 'steam' | 'shortcut' | 'heroic' | 'playnite' | 'emulator'
 
 const FILTERS: { id: FilterId; label: string; hint: string; match: (c: Candidate) => boolean }[] = [
   { id: 'suggested', label: 'Suggested', hint: 'Everything except games Steam Cloud already backs up', match: c => !c.hasSteamCloud },
@@ -33,6 +33,13 @@ const FILTERS: { id: FilterId; label: string; hint: string; match: (c: Candidate
   { id: 'shortcut', label: 'Added to Steam', hint: 'Non-Steam games you added to your Steam library', match: c => c.source === 'SteamShortcut' },
   { id: 'heroic', label: 'Heroic', hint: 'Games installed through Heroic Games Launcher', match: c => c.source === 'Heroic' },
   { id: 'playnite', label: 'Playnite', hint: 'Games in your Playnite library', match: c => c.source === 'Playnite' },
+  { id: 'emulator', label: 'Emulators', hint: 'Games found by their save files in an emulator’s saves folder', match: c => c.source === 'Emulator' },
+]
+
+/** The emulators SaveLocker reads saves from, as a second axis under the Emulators filter — one chip
+ * each, so adding an emulator means adding it here too. `id` is the agent's `emulatorName`. */
+const EMULATORS: { id: string; label: string }[] = [
+  { id: 'RetroArch', label: 'RetroArch' },
 ]
 
 /**
@@ -123,6 +130,7 @@ export function AddGamesView({ onEnrolled }: Props) {
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [filter, setFilter] = useState<FilterId>('suggested')
   const [store, setStore] = useState<string | null>(null)
+  const [emulator, setEmulator] = useState<string | null>(null)
   const [pathMode, setPathMode] = useState<PathMode>('all')
   const [hideEnrolled, setHideEnrolledState] = useState(readHideEnrolled)
   const setHideEnrolled = (hide: boolean) => {
@@ -228,7 +236,8 @@ export function AddGamesView({ onEnrolled }: Props) {
       const result = await api.enroll([...checked], alsoSync)
       setStatus(
         `Added ${result.enrolled} game${result.enrolled === 1 ? '' : 's'}.` +
-        (result.skipped > 0 ? ` Skipped ${result.skipped} already tracked.` : '')
+        (result.skipped > (result.notes?.length ?? 0) ? ` Skipped ${result.skipped - (result.notes?.length ?? 0)} already tracked.` : '') +
+        (result.notes?.length ? ` Not added: ${result.notes.join(' ')}` : '')
       )
       if (result.enrolled > 0) setEnrolled(true)
       setChecked(new Set())
@@ -271,12 +280,19 @@ export function AddGamesView({ onEnrolled }: Props) {
       .filter(s => s.count > 0)
   }, [pool, filter])
 
+  const emulators = useMemo(() => {
+    if (filter !== 'emulator') return []
+    const emulated = pool.filter(c => c.source === 'Emulator')
+    return EMULATORS.map(e => ({ ...e, count: emulated.filter(c => c.emulatorName === e.id).length }))
+  }, [pool, filter])
+
   const active = FILTERS.find(f => f.id === filter) ?? FILTERS[0]
   // Filtered by source (+ store) but not yet by path — the base the path row's own counts are
   // drawn against, so "Detected" and "Not detected" describe the set the user is already looking at.
   const sourceFiltered = pool
     .filter(active.match)
     .filter(c => !((filter === 'heroic' || filter === 'playnite') && store) || c.store === store)
+    .filter(c => !(filter === 'emulator' && emulator) || c.emulatorName === emulator)
   const activePathMode = PATH_MODES.find(p => p.id === pathMode) ?? PATH_MODES[0]
   const needle = query.trim().toLowerCase()
   const visible = sourceFiltered
@@ -344,7 +360,7 @@ export function AddGamesView({ onEnrolled }: Props) {
               className="sl-fchip"
               aria-pressed={filter === f.id}
               title={f.hint}
-              onClick={() => { setFilter(f.id); setStore(null) }}
+              onClick={() => { setFilter(f.id); setStore(null); setEmulator(null) }}
             >
               {f.label} <b>{f.count}</b>
             </button>
@@ -363,6 +379,20 @@ export function AddGamesView({ onEnrolled }: Props) {
             {stores.map(s => (
               <button key={s.id} type="button" className="sl-fchip" aria-pressed={store === s.id} onClick={() => setStore(s.id)}>
                 {s.label} <b>{s.count}</b>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Which emulator — a second axis like Store, shown while the Emulators filter is on. Shown even
+            with one emulator: it says which ones SaveLocker reads saves from. */}
+        {emulators.length > 0 && (
+          <div className="sl-filters">
+            <span className="sl-filters__label">Emulator</span>
+            <button type="button" className="sl-fchip" aria-pressed={emulator === null} onClick={() => setEmulator(null)}>All</button>
+            {emulators.map(e => (
+              <button key={e.id} type="button" className="sl-fchip" aria-pressed={emulator === e.id} onClick={() => setEmulator(e.id)}>
+                {e.label} <b>{e.count}</b>
               </button>
             ))}
           </div>
@@ -397,6 +427,9 @@ export function AddGamesView({ onEnrolled }: Props) {
                 <StatusMark c={c} />
                 <span className="sl-check-row__title">{c.name}</span>
                 <Chip>{c.source}</Chip>
+                {c.emulatorName && <Chip>{c.emulatorName}</Chip>}
+                {/* The save file's own name: two ROMs (two regions, two consoles) can share a title. */}
+                {c.emulatorRom && c.emulatorRom !== c.name && <Chip>{c.emulatorRom}</Chip>}
                 {/* Only when it adds something the source does not already say. */}
                 {c.store && c.store !== 'Unknown' && c.store !== 'Steam' && (
                   <Chip>{STORES.find(s => s.id === c.store)?.label ?? c.store}</Chip>

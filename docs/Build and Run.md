@@ -264,6 +264,23 @@ an error instead of a silent no-op. Because the Deck is only awake when woken (s
 handoff section in [[CONTEXT]]), every SSH/`scp` call has a short connect timeout and reports
 "unreachable" rather than hanging or aborting the rest of the rig.
 
+### Testing emulator saves (a fake EmuDeck folder)
+
+```powershell
+.\tests\testenv.ps1 build -Only console; .\tests\testenv.ps1 build -Only windows; .\tests\testenv.ps1 build -Only linux
+.\tests\testenv.ps1 emu-fixture          # <StateRoot>\Emulation (Windows) + <StateRoot>\Emulation-wsl (WSL)
+.\tests\testenv.ps1 up -Only console; .\tests\testenv.ps1 up -Only windows; .\tests\testenv.ps1 up -Only linux
+```
+The Windows test tray then scans **only** `Emulation` and the WSL daemon **only** `Emulation-wsl`
+(`SAVELOCKER_EMUDECK_PATH`), never a real EmuDeck or RetroArch on the box. Windows has Chrono Trigger's save,
+a state slot and its thumbnail; WSL has an older Chrono save and no states; both have their own Zelda save
+and state, which no Chrono sync may touch. Add games lists `Chrono Trigger` etc. with *Emulator* and *RetroArch* chips;
+the *Emulators* source chip narrows to them and opens an *Emulator* row (All / RetroArch). After adding one,
+its game page shows *Emulator › RetroArch* with *SNES* and *EmuDeck* tags under the name, and the console's
+game page shows one chip, or "2 sources" when the machines found it differently. `-EmuDeckPath <dir>` points it at any other folder — a **copy** of a real
+`Emulation` folder is the safe way to try real saves. The Deck needs no override: its test daemon scans
+the Deck's real EmuDeck install, so add only a game whose save you have backed up.
+
 ### Testing artwork (a stub SteamGridDB)
 
 The test console has no SteamGridDB key, and a real one would put real traffic on a third party — so
@@ -328,6 +345,10 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 | Multiple save paths Group C (2026-10-05) | `dotnet test tests/SaveLocker.Agent.Tests` **247** (+19: `FolderSuggestionsTests` 11, `SavePathEditorTests` 4 against a real server, 3 "Also found" enrollment cases, 1 archive folder listing) · `run-local-api-tests` **119** (+6: the save-folder routes need the token; mutation-checked — with them carved out of the guard, the 4 token checks fail) · `run-multipath-tests` 39 (the CLI now goes through `SavePathEditor`) · `run-appearance-consistency-tests` 46 · detection sweep `--sample 300 --seed 1` **286/299 (95.7%)**, identical to `main` · `web` + `agent-ui` lint, typecheck and build clean · `openapi.json` and both `api-types.ts`: additions only · testenv (Windows + WSL + console) by hand, steps in the PR |
 | Multiple save paths Group C, PR #58 review fixes (2026-10-06) | `dotnet test tests/SaveLocker.Agent.Tests` **256** (+9: `SavePathEditorTests` 2 — an existing key refused by Add, a folder another machine added first joined not defined twice; 6 enrollment join-rule cases; the lock probe test now waits out a scanner's brief hold) · `run-multipath-tests` 39 · `run-local-api-tests` **116/116** with `SL_LOCALAPI_PORT=5191` — the rig's trays held :5188 and :5187, and §10's server switch hardcodes :5187, so its 3 checks did not run here · `web` + `agent-ui` lint and build clean · `openapi.json` and both `api-types.ts`: additions only |
 | Group 9 + PR #53 review fixes (2026-09-29) | `run-console-security-tests` **308** on Windows (BK-01 **84**: zip backups, download ticket, delete, restore + undo + the start's own setup, temp-file cleanup, the kept undo point, encryption at rest, before-upgrade; CFG-01 **17**; each new check mutation-checked) · `web` `npm run build` + `npm run lint` clean |
+| Review fixes for PR #60: server-decided emulator names, scope-join refusal (2026-10-07) | `dotnet test tests/SaveLocker.Agent.Tests` **291** (+6 `EnrollNamingTests` — two/three machines against a real server; the refusal and the server-decided name each mutation-checked; +4 `GameSourcesTests`, +2 `RetroArchTests`, `AvoidNameClashes`'s test removed with it) · full solution build clean · `agent-ui` lint and build clean · `agent-ui/src/api-types.ts` regenerated from a dev tray on :5190 (`EnrollResponse.notes`, `CandidateDto.emulatorRom` — the only diff) · server `openapi.json` not regenerated: no server route or DTO shape changed (only constants and a static helper on `GameSourceDto`) |
+| Emulator saves: game sources per machine, names without "(RetroArch)" (2026-10-07) | `dotnet test tests/SaveLocker.Agent.Tests` **280** (+5 `GameSourcesTests` — the stale-host save check mutation-checked; `RetroArchSyncTests` also asserts both machines' sources on the server and on the agent's game list) · full solution build clean · `web` + `agent-ui` lint and build clean · `openapi.json` and `web/src/api-types.ts` regenerated, additions only (`agent-ui/src/api-types.ts` edited by hand: `GameSourceDto`, `TrackedGameDto.source`, `GameDto.machineSource`) · console source chip + popover checked in the browser against a seeded dev server |
+| Emulator saves merged onto multiple save paths + Phase 1b states (2026-10-06) | `dotnet test tests/SaveLocker.Agent.Tests` **247** (`main`'s 228 + `RetroArchTests` 17 + `RetroArchSyncTests` 2 — two machines against a real server; an unscoped states folder fails it) · `run-multipath-tests` **39** · `run-delta-upload-tests` **33** |
+| Emulator saves Phase 1 (2026-10-04) | `dotnet test tests/SaveLocker.Agent.Tests` **203** (+22: `IncludeGlobTests` 9 — the three scoped-restore checks mutation-checked — and `RetroArchTests` 13) · `run-delta-upload-tests` **33** · `run-hardening-tests` **33** · `run-health-tests` **33** · full solution build at the 1-warning baseline |
 | Archive UTC write times (2026-09-28) | `dotnet test tests/SaveLocker.Agent.Tests` **114** (+9: `SaveArchiveTimestampTests` — fail before the fix off UTC) · `run-delta-upload-tests` **33** (+4: section 10, newest change through full and delta pushes; mutation-checked — dropping the server copy fails 1, the old agent stamp fails 3) · `run-hardening-tests` **33** · `run-health-tests` **22** |
 
 The two platforms differ by design — each suite skips the other's cases. The detection drop from

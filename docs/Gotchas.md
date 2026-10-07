@@ -560,6 +560,15 @@ documentation that was found. Read before touching the presenter.
 
 ## Testing
 
+- **A mutation check run through `dotnet test` leaves the mutated build in OTHER projects' `bin`.** The test
+  project references `SaveLocker.Agent`, so building it copies the mutated `SaveLocker.Shared.dll` into
+  `src/Agent/bin` too. Restoring the source does not restore those copies. Found 2026-10-04: a two-machine
+  check right after mutating `RestoreArchive`'s scope ran the broken copy and deleted the other ROMs' saves.
+  After any mutation, rebuild the solution (`--no-incremental`) before running anything by hand.
+- **`SAVELOCKER_EMUDECK_PATH` is an exclusive override.** Set, the agent scans that one `Emulation` folder
+  and ignores every real EmuDeck and standalone RetroArch install. `testenv emu-fixture` writes a fixture
+  under `-StateRoot` that the Windows test tray picks up on its next `up` (`tests/testenv.ps1` → `Get-EmuDeckPath`).
+
 - **`Check "name" (expr).prop -eq 1` cannot fail.** PowerShell parses a command's arguments, not an
   expression: `Check` receives the bare property as its condition and `-eq`, `1` as stray arguments, so the
   check passes for any non-zero value. Wrap the whole comparison: `Check "name" ((expr).prop -eq 1)`. Two
