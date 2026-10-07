@@ -40,7 +40,7 @@ public sealed class GamelistXml
         {
             roots.Add(Path.Combine(EmulatorPaths.Home, "ES-DE", "gamelists"));
             roots.Add(Path.Combine(EmulatorPaths.Home, ".emulationstation", "gamelists"));
-            if (EmulatorPaths.WindowsLayouts)
+            if (OperatingSystem.IsWindows())
             {
                 roots.Add(Path.Combine(EmulatorPaths.AppData, "EmuDeck", "EmulationStation-DE", "ES-DE", "gamelists"));
                 roots.Add(Path.Combine(EmulatorPaths.Home, "emudeck", "EmulationStation-DE", "ES-DE", "gamelists"));

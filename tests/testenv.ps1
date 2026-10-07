@@ -370,6 +370,11 @@ function New-EmuDeckFixture {
     Set-Content -NoNewline -Encoding ascii (Join-Path $states 'Zelda (USA).state') 'zelda state - must survive every Chrono pull'
     Set-Content -NoNewline -Encoding ascii -LiteralPath (Join-Path $saves 'Snes9x\Super Metroid (USA) [!].srm') 'metroid'
     Set-Content -NoNewline -Encoding ascii (Join-Path $target 'roms\snes\Chrono Trigger (USA).sfc') ''
+    # melonDS (Phase 8): EmuDeck's own saves/states folders, a save and a slot.
+    $melon = Join-Path $target 'saves\melonds'
+    New-Item -ItemType Directory -Force (Join-Path $melon 'saves'), (Join-Path $melon 'states') | Out-Null
+    Set-Content -NoNewline -Encoding ascii (Join-Path $melon 'saves\Pokemon - Platinum Version (USA).sav') "platinum $(Get-Date -Format o)"
+    Set-Content -NoNewline -Encoding ascii (Join-Path $melon 'states\Pokemon - Platinum Version (USA).ml1') 'platinum slot 1'
     Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
     Say "EmuDeck fixture at $target"
     Write-Host "  saves:  $saves"
@@ -391,6 +396,9 @@ function New-EmuDeckFixture {
         Set-Content -NoNewline -Encoding ascii (Join-Path $wSaves 'Chrono Trigger (USA).srm') 'old chrono save on the WSL machine'
         Set-Content -NoNewline -Encoding ascii (Join-Path $wSaves 'Zelda (USA).srm') 'wsl zelda - must survive every Chrono pull'
         Set-Content -NoNewline -Encoding ascii (Join-Path $wStates 'Zelda (USA).state') 'wsl zelda state - must survive every Chrono pull'
+        $wMelon = Join-Path $wsl 'saves\melonds'
+        New-Item -ItemType Directory -Force (Join-Path $wMelon 'saves'), (Join-Path $wMelon 'states') | Out-Null
+        Set-Content -NoNewline -Encoding ascii (Join-Path $wMelon 'saves\Pokemon - Platinum Version (USA).sav') 'old platinum on the WSL machine'
         Set-Content -NoNewline -Encoding ascii $wslMarker 'written by tests/testenv.ps1 emu-fixture'
         Say "WSL EmuDeck fixture at $wsl"
     }

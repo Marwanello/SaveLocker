@@ -40,6 +40,7 @@ const FILTERS: { id: FilterId; label: string; hint: string; match: (c: Candidate
  * each, so adding an emulator means adding it here too. `id` is the agent's `emulatorName`. */
 const EMULATORS: { id: string; label: string }[] = [
   { id: 'RetroArch', label: 'RetroArch' },
+  { id: 'melonDS', label: 'melonDS' },
 ]
 
 /**

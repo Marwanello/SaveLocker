@@ -19,7 +19,7 @@ public static class EmulatorPaths
 
     public static string Home => HomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
-    /// <summary>Roaming AppData on Windows; under a fixture home, <c>&lt;home&gt;/AppData/Roaming</c> on any OS.</summary>
+    /// <summary>Roaming AppData; under a fixture home, <c>&lt;home&gt;/AppData/Roaming</c>.</summary>
     public static string AppData => HomeOverride is { } h
         ? Path.Combine(h, "AppData", "Roaming")
         : Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
@@ -28,10 +28,4 @@ public static class EmulatorPaths
     public static string LocalAppData => HomeOverride is { } h
         ? Path.Combine(h, "AppData", "Local")
         : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-
-    /// <summary>Windows layouts are read on Windows, and on any OS under a fixture home (so one fixture serves both).</summary>
-    public static bool WindowsLayouts => OperatingSystem.IsWindows() || HomeOverride is not null;
-
-    /// <summary>Linux layouts likewise.</summary>
-    public static bool LinuxLayouts => !OperatingSystem.IsWindows() || HomeOverride is not null;
 }
