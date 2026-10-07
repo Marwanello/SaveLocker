@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-
 namespace SaveLocker.Agent;
 
 /// <summary>
@@ -40,22 +38,13 @@ public static class Model2Saves
     private static string WindowsEmuDeckDir() => Path.Combine(EmulatorPaths.AppData, "EmuDeck", "Emulators", "m2emulator");
 
     /// <summary>Is <paramref name="file"/> one of EmuDeck's preinstalled NVRAM files, untouched?</summary>
-    public static bool IsSeed(FileInfo file, IReadOnlySet<string> seeds)
-    {
-        // Every seed is under 4 KB; a bigger file is not one, and is never read just to find out.
-        if (file.Length > 64 * 1024) return false;
-        try
-        {
-            using var stream = file.OpenRead();
-            return seeds.Contains(Convert.ToHexStringLower(SHA256.HashData(stream)));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
-    }
+    public static bool IsSeed(FileInfo file, IReadOnlySet<string> seeds) => RomSaves.IsUntouchedSeed(file, seeds);
 
     /// <summary>
     /// SHA-256 of each file in EmuDeck's <c>configs/model2/NVDATA</c> — identical in <c>dragoonDorise/EmuDeck</c>
     /// (SteamOS, one version since <c>f3ab8acb99</c>, 2024-01-26) and <c>EmuDeck/emudeck-we</c> (Windows,
-    /// <c>d6a240f5c3</c>, 2025-02-03), read 2026-10-07. A new EmuDeck seed shows up as a candidate until added here.
+    /// <c>d6a240f5c3</c>, 2025-02-03), read 2026-10-07, and the same 39 files found untouched on a real EmuDeck Deck
+    /// the same day. A new EmuDeck seed shows up as a candidate until added here.
     /// </summary>
     public static readonly IReadOnlySet<string> EmuDeckSeeds = new HashSet<string>(StringComparer.Ordinal)
     {

@@ -117,6 +117,24 @@ public static class RomSaves
         return map;
     }
 
+    /// <summary>
+    /// Is <paramref name="file"/> a copy EmuDeck put there at install, untouched since — byte-identical to one of
+    /// <paramref name="seeds"/> (SHA-256, lower-case hex)? EmuDeck seeds some emulators' NVRAM folders with a file per
+    /// common game (Model 2's <c>NVDATA</c>, Supermodel's <c>NVRAM</c>), so such a file does not mean the game was
+    /// played; once the game writes its own it differs and becomes a candidate.
+    /// </summary>
+    public static bool IsUntouchedSeed(FileInfo file, IReadOnlySet<string> seeds)
+    {
+        // Every seed is under 256 KB; a bigger file is not one, and is never read just to find out.
+        if (seeds.Count == 0 || file.Length > 1024 * 1024) return false;
+        try
+        {
+            using var stream = file.OpenRead();
+            return seeds.Contains(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(stream)));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+    }
+
     /// <summary>The folder's subfolders, or none when it is missing or unreadable.</summary>
     public static string[] SafeSubdirs(string dir)
     {

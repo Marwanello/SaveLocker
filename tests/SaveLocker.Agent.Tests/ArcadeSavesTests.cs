@@ -66,6 +66,19 @@ public sealed class ArcadeSavesTests : IDisposable
     }
 
     [Fact]
+    public void Supermodel_never_lists_the_nvram_files_emudeck_installed_until_played()
+    {
+        Touch(".supermodel/NVRAM/vf3.nv", "emudeck-seed-vf3");
+        Touch(".supermodel/NVRAM/scud.nv", "emudeck-seed-scud");
+        var seeds = new HashSet<string> { Sha("emudeck-seed-vf3"), Sha("emudeck-seed-scud") };
+        Assert.Empty(SupermodelSaves.Scan(new[] { (P(".supermodel"), true) }, Array.Empty<string>(), seeds));
+
+        Touch(".supermodel/NVRAM/scud.nv", "emudeck-seed-scud, then a lap record");
+        Assert.Equal("scud", Assert.Single(SupermodelSaves.Scan(new[] { (P(".supermodel"), true) }, Array.Empty<string>(), seeds)).EmulatorRom);
+        Assert.Equal(29, SupermodelSaves.EmuDeckSeeds.Count);
+    }
+
+    [Fact]
     public void A_set_games_xml_does_not_name_falls_back_to_the_gamelist()
     {
         Touch("data/NVRAM/lemans24.nv");
@@ -134,7 +147,10 @@ public sealed class ArcadeSavesTests : IDisposable
     [Fact]
     public void A_large_file_is_never_hashed_as_a_seed()
     {
-        var big = Touch("big.DAT", new string('x', 70 * 1024));
-        Assert.False(Model2Saves.IsSeed(new FileInfo(big), new HashSet<string> { Sha(new string('x', 70 * 1024)) }));
+        var big = Touch("big.DAT", new string('x', 1100 * 1024));
+        Assert.False(Model2Saves.IsSeed(new FileInfo(big), new HashSet<string> { Sha(new string('x', 1100 * 1024)) }));
+        // A Supermodel NVRAM file is ~128 KB: well inside the limit.
+        var nv = Touch("x.nv", new string('n', 131406));
+        Assert.True(RomSaves.IsUntouchedSeed(new FileInfo(nv), new HashSet<string> { Sha(new string('n', 131406)) }));
     }
 }
