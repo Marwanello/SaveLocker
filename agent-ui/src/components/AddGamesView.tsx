@@ -43,6 +43,7 @@ const EMULATORS: { id: string; label: string }[] = [
   { id: 'melonDS', label: 'melonDS' },
   { id: 'Supermodel', label: 'Supermodel' },
   { id: 'Model 2', label: 'Model 2' },
+  { id: 'ScummVM', label: 'ScummVM' },
 ]
 
 /**

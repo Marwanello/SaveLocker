@@ -12,5 +12,6 @@ public static class EmulatorSaves
         ("melonDS saves", MelonDsSaves.Scan),
         ("Supermodel saves", SupermodelSaves.Scan),
         ("Model 2 saves", Model2Saves.Scan),
+        ("ScummVM saves", ScummVmSaves.Scan),
     };
 }

@@ -409,6 +409,13 @@ function New-EmuDeckFixture {
         Write-FixtureFile (Join-Path $sm 'NVRAM\scud.nv') "scud nvram $(Get-Date -Format o)"
         Write-FixtureFile (Join-Path $sm 'Saves\scud.st0') 'scud state slot 0'
         Write-FixtureFile (Join-Path $sm 'NVRAM\lemans24.nv') 'lemans - must survive every Scud pull'
+        # ScummVM (Phase 10): its targets are in scummvm.ini; EmuDeck points savepath into Emulation.
+        $svmSaves = Join-Path $target 'saves\scummvm\saves'
+        Write-FixtureFile (Join-Path $emuHome 'AppData\Roaming\ScummVM\scummvm.ini') ("[scummvm]`nsavepath=$svmSaves`n`n" +
+            "[monkey2]`ngameid=monkey2`nengineid=scumm`ndescription=Monkey Island 2: LeChuck's Revenge (DOS/English)`n`n" +
+            "[monkey]`ngameid=monkey`nengineid=scumm`ndescription=The Secret of Monkey Island (CD/DOS/English)`n")
+        Write-FixtureFile (Join-Path $svmSaves 'monkey2.s01') "monkey2 slot 1 $(Get-Date -Format o)"
+        Write-FixtureFile (Join-Path $svmSaves 'monkey.s00') 'monkey 1 - must survive every Monkey Island 2 pull'
         Say "emulator home fixture at $emuHome"
     }
     Write-Host "  saves:  $saves"
@@ -439,6 +446,12 @@ function New-EmuDeckFixture {
         Write-FixtureFile (Join-Path $wHome '.supermodel\Config\Games.xml') $script:SupermodelGamesXml
         Write-FixtureFile (Join-Path $wHome '.supermodel\NVRAM\scud.nv') 'old scud nvram on the WSL machine'
         Write-FixtureFile (Join-Path $wHome '.supermodel\NVRAM\lemans24.nv') 'wsl lemans - must survive every Scud pull'
+        $wSvm = Join-Path $wsl 'saves\scummvm\saves'
+        Write-FixtureFile (Join-Path $wHome '.config\scummvm\scummvm.ini') ("[scummvm]`nsavepath=$(ConvertTo-WslPath $wSvm)`n`n" +
+            "[monkey2]`ngameid=monkey2`nengineid=scumm`ndescription=Monkey Island 2 (DOS/English)`n`n" +
+            "[monkey]`ngameid=monkey`nengineid=scumm`n")
+        Write-FixtureFile (Join-Path $wSvm 'monkey2.s01') 'old monkey2 slot on the WSL machine'
+        Write-FixtureFile (Join-Path $wSvm 'monkey.s00') 'wsl monkey 1 - must survive every Monkey Island 2 pull'
         Set-Content -NoNewline -Encoding ascii $wslMarker 'written by tests/testenv.ps1 emu-fixture'
         Say "WSL EmuDeck fixture at $wsl"
     }

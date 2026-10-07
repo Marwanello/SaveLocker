@@ -89,7 +89,7 @@ public static class RomSaves
                 EmulatorCore: core,
                 EmulatorRom: romBase,
                 ViaEmuDeck: setup.EmuDeck,
-                // The file's own extension, not the rule's: a scope matches case-sensitively off Windows.
+                // The file's own extension, so the scope reads as the file it keeps (matching ignores case anyway).
                 IncludeGlobs: rules.SaveGlobs(romBase, file.Extension),
                 ExtraSaveDirs: extras), file.LastWriteTimeUtc);
         }
