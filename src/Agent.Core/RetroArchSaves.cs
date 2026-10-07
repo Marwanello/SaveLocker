@@ -25,21 +25,27 @@ public static class RetroArchSaves
     public const string StatesKey = "states";
 
     /// <summary>The candidates on this machine. Never throws for a missing or unreadable folder.</summary>
-    public static IReadOnlyList<ScanCandidate> Scan() =>
-        Scan(RetroArchConfig.Folders(), EmuDeckRoots.Find());
+    public static IReadOnlyList<ScanCandidate> Scan()
+    {
+        var roots = EmuDeckRoots.Find();
+        return Scan(RetroArchConfig.Folders(), roots, GamelistXml.Find(roots));
+    }
 
-    /// <summary>The same, from explicit folders — what the tests drive.</summary>
-    public static IReadOnlyList<ScanCandidate> Scan(IEnumerable<RetroArchFolders> folders, IEnumerable<string> emuDeckRoots)
+    /// <summary>The same, from explicit folders — what the tests drive. <paramref name="gamelists"/> names
+    /// arcade ROMs (none when omitted).</summary>
+    public static IReadOnlyList<ScanCandidate> Scan(IEnumerable<RetroArchFolders> folders, IEnumerable<string> emuDeckRoots,
+        GamelistXml? gamelists = null)
     {
         var systems = RomSystems(emuDeckRoots);
+        gamelists ??= GamelistXml.None;
         var found = new List<(ScanCandidate Candidate, DateTime WrittenUtc)>();
 
         foreach (var f in folders)
         {
             // The folder itself (sorting off), then one level of per-core folders (sorting on).
-            found.AddRange(SavesIn(f.Saves, core: null, f.States, f.EmuDeck, systems));
+            found.AddRange(SavesIn(f.Saves, core: null, f.States, f.EmuDeck, systems, gamelists));
             foreach (var sub in SafeSubdirs(f.Saves))
-                found.AddRange(SavesIn(sub, core: Path.GetFileName(sub), f.States, f.EmuDeck, systems));
+                found.AddRange(SavesIn(sub, core: Path.GetFileName(sub), f.States, f.EmuDeck, systems, gamelists));
         }
 
         // The same ROM's save under two cores is one game: the most recently written copy is the one being
@@ -94,7 +100,8 @@ public static class RetroArchSaves
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     private static IEnumerable<(ScanCandidate, DateTime)> SavesIn(
-        string dir, string? core, string statesRoot, bool viaEmuDeck, IReadOnlyDictionary<string, string> systems)
+        string dir, string? core, string statesRoot, bool viaEmuDeck, IReadOnlyDictionary<string, string> systems,
+        GamelistXml gamelists)
     {
         FileInfo[] files;
         try { files = new DirectoryInfo(dir).GetFiles("*.srm"); }
@@ -111,13 +118,14 @@ public static class RetroArchSaves
             // the whole enrollment batch, not just this game.
             if (romBase.Length == 0 || romBase.Contains('*') || romBase.Contains(':')) continue;
 
+            var system = systems.GetValueOrDefault(romBase);
             yield return (new ScanCandidate(
-                Name: RomNames.CleanTitle(romBase),
+                Name: RomNames.TitleFor(romBase, system, gamelists),
                 SuggestedSaveDir: realDir,
                 Source: ScanSource.Emulator,
                 HasSteamCloud: false,
                 EmulatorName: EmulatorName,
-                EmulatorSystem: systems.GetValueOrDefault(romBase),
+                EmulatorSystem: system,
                 EmulatorCore: core,
                 EmulatorRom: romBase,
                 ViaEmuDeck: viaEmuDeck,

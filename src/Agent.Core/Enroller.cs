@@ -376,27 +376,46 @@ public static class Enroller
     /// <summary>
     /// The game this machine tracks for <paramref name="c"/>, if any: one under any of its names
     /// (<see cref="NamesFor"/>) that keeps the same files. A same-named game with other include patterns is
-    /// a different game — "Chrono Trigger" from Steam is not the SNES save of the same name.
+    /// a different game — "Chrono Trigger" from Steam is not the SNES save of the same name. A candidate that
+    /// names its files (an emulator save) is also found by them under any name (D1, <see cref="ServerNameFor"/>):
+    /// a game adopted from the server may be called something this machine's scan would never say.
     /// </summary>
     public static TrackedGame? TrackedFor(AgentConfig config, ScanCandidate c)
     {
         foreach (var name in NamesFor(c))
             if (config.FindGame(name) is { } g && SameScope(g.IncludeGlobs, c.IncludeGlobs)) return g;
-        return null;
+        if (c.IncludeGlobs is not { Count: > 0 }) return null;
+        var declared = c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>();
+        return config.Games
+            .Where(g => SameScope(g.IncludeGlobs, c.IncludeGlobs) && g.ExtraPaths.Count == declared.Count &&
+                        declared.All(e => g.ExtraPaths.FirstOrDefault(p => p.Key == e.Key) is { } p &&
+                                          SameScope(p.IncludeGlobs, e.IncludeGlobs)))
+            .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
     }
 
     /// <summary>
-    /// Which of <see cref="NamesFor"/> an emulator save takes on the server: the one whose game already
-    /// keeps exactly these files, else the first no game has. Null when every name belongs to a different
-    /// game. Order-independent across machines: whoever enrolls a ROM first, the next machine finds it by
-    /// its files, not by being first to a name.
+    /// Which name an emulator save takes on the server. First (D1) the name of the server game that already
+    /// keeps exactly these files — the same folder keys and include patterns, whatever it is called: a scope
+    /// names the save file, so no two games share one, and a title taken from something only one machine has
+    /// (an ES-DE <c>gamelist.xml</c>, Supermodel's <c>Games.xml</c>, a ScummVM description) can never split one
+    /// game in two. Else the first of <see cref="NamesFor"/> no game has. Null when every name belongs to a
+    /// different game. Order-independent across machines: whoever enrolls a ROM first, the next machine finds
+    /// it by its files, not by being first to a name.
     /// </summary>
     internal static string? ServerNameFor(IReadOnlyList<GameDto> server, ScanCandidate c, IReadOnlyList<DeclaredSavePath> extras)
     {
         var names = NamesFor(c);
-        GameDto? Named(string n) => server.FirstOrDefault(g => string.Equals(g.Name, n, StringComparison.OrdinalIgnoreCase));
-        return names.FirstOrDefault(n => Named(n) is { } g && SameFolders(g, c, extras))
-               ?? names.FirstOrDefault(n => Named(n) is null);
+        bool Is(GameDto g, string n) => string.Equals(g.Name, n, StringComparison.OrdinalIgnoreCase);
+        // Only a scoped candidate: an unscoped one (a PC game's whole folder) names no files of its own.
+        if (c.IncludeGlobs is { Count: > 0 })
+        {
+            var same = server.Where(g => SameFolders(g, c, extras)).ToList();
+            // Two such games exist only on a server that predates this rule; prefer one under our own names.
+            if (names.FirstOrDefault(n => same.Any(g => Is(g, n))) is { } own) return own;
+            if (same.OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase).FirstOrDefault() is { } other) return other.Name;
+        }
+        return names.FirstOrDefault(n => !server.Any(g => Is(g, n)));
     }
 
     /// <summary>The folder has files, and none of them is in <paramref name="scope"/>.</summary>

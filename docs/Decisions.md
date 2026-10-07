@@ -301,6 +301,16 @@ session can judge an edge case, not to reopen the choice.
   Scans never merge an emulator save with another candidate (`ScanCandidate.DedupeKey`), and two ROMs with one
   title stay two rows. **Known gap, accepted:** an emulator save that takes the plain title first leaves a
   later same-titled PC game unable to join it — refused with the reason shown, never mixed (next bullet).
+  <br>**An emulator game is found by its files, not its name — D1** (2026-10-07, maintainer's yes at the start of
+  emulator-saves Group B). Before any name, a scoped candidate joins the server game whose folder keys and include
+  patterns are exactly its own, whatever that game is called (`Enroller.ServerNameFor`; `TrackedFor` does the same
+  against games adopted from the server). A scope names the save file, so no two games share one. That makes a
+  title from something only one machine has safe — ES-DE's `gamelist.xml` (arcade systems only, the maintainer's
+  choice: everywhere else the file name already reads well), Supermodel's `Games.xml`, a ScummVM description —
+  and the name list above only matters to the machine that enrolls first. Unscoped (PC) candidates still match by
+  name only. Mutation-checked both halves (`IdentityByFoldersTests`). Follow-up asked for, not built: a manual
+  "link to this server game" choice at enrollment — mockup with three variants, `tasks/emulator-saves/plan.md` →
+  *Linking by hand*.
 - **A game never joins a server game whose include patterns keep none of its files** (2026-10-07, review of
   PR #60). A candidate with no scope of its own joining a scoped game inherits that scope; when nothing in its
   folder matches — a Steam "Chrono Trigger" joining the SNES save of that name — nothing on that machine would
