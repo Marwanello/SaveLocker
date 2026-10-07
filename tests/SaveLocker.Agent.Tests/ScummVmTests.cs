@@ -88,6 +88,21 @@ public sealed class ScummVmTests : IDisposable
     }
 
     [Fact]
+    public void An_old_config_with_only_a_game_id_still_finds_a_fixed_name_engine()
+    {
+        // Configs from before ScummVM wrote engineid: Broken Sword 1's Mac release is gameid sword1mac.
+        Touch("config/scummvm.ini", "[bs1]\ngameid=sword1mac\n\n[sky-cd]\ngameid=sky\n\n[sword1x]\ngameid=sword1x\n");
+        Touch("default/sword1.001");
+        Touch("default/SKY-VM.001");
+        Touch("default/sword1x.001");
+
+        var found = ScummVmSaves.Scan(new[] { new ScummVmConfig(P("config/scummvm.ini"), P("default")) }, Array.Empty<string>());
+        Assert.Equal(new[] { "SKY-VM.*", "sword1.*", "sword1x.*" }, found.Select(c => c.IncludeGlobs![0]).Order(StringComparer.Ordinal));
+        Assert.Equal("sword1", ScummVmSaves.FixedPrefix(new Dictionary<string, string> { ["engineid"] = "sword1", ["gameid"] = "sword1psxdemo" }));
+        Assert.Null(ScummVmSaves.FixedPrefix(new Dictionary<string, string> { ["engineid"] = "scumm", ["gameid"] = "queen" }));
+    }
+
+    [Fact]
     public void With_no_savepath_the_default_folder_is_used()
     {
         Touch("config/scummvm.ini", "[tentacle]\ngameid=tentacle\n");

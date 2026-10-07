@@ -1686,7 +1686,8 @@ public sealed class AgentApiServer : IDisposable
             Enroller.TrackedFor(_config, candidate) is { IsEnrolledHere: true },
             candidate.EmulatorName,
             candidate.EmulatorSystem,
-            candidate.EmulatorRom)).ToArray();
+            candidate.EmulatorRom,
+            candidate.UntouchedSeed)).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -1785,7 +1786,10 @@ public sealed record CandidateDto(
     // Which emulator and console, for an emulator save (null otherwise) — the Add games filter's keys.
     string? EmulatorName = null, string? EmulatorSystem = null,
     // The save file's own name ("Chrono Trigger (Japan)"): two ROMs can share a title.
-    string? EmulatorRom = null);
+    string? EmulatorRom = null,
+    /// <summary>EmuDeck's preinstalled save, never played here (<see cref="ScanCandidate.UntouchedSeed"/>): list it
+    /// only when <c>GET /api/candidates/links</c> says it joins a server game.</summary>
+    bool UntouchedSeed = false);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the

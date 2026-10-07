@@ -39,11 +39,11 @@ public static class RomSaves
         }
 
         // The same ROM's save in two places (two cores, two setups) is one game: the most recently written copy
-        // is the one being played. Two DIFFERENT ROMs that clean to one title stay two candidates — the enroller
-        // gives the second a name of its own (Enroller.NamesFor).
+        // is the one being played, and a played one always beats EmuDeck's untouched seed. Two DIFFERENT ROMs that
+        // clean to one title stay two candidates — the enroller gives the second a name of its own (Enroller.NamesFor).
         return found
             .GroupBy(f => f.Candidate.EmulatorRom, StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.OrderByDescending(f => f.WrittenUtc).First().Candidate)
+            .Select(g => g.OrderBy(f => f.Candidate.UntouchedSeed).ThenByDescending(f => f.WrittenUtc).First().Candidate)
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(c => c.EmulatorRom, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -69,7 +69,9 @@ public static class RomSaves
             // and the server refuses ':' in an include (it reads as a Windows drive) — which would fail
             // the whole enrollment batch, not just this game.
             if (romBase.Length == 0 || romBase.Contains('*') || romBase.Contains(':')) continue;
-            if (rules.IsCandidate is { } keep && !keep(file)) continue;
+            // A folder of ROMs (saves beside the ROM) holds other emulators' saves too: only this one's ROMs count.
+            if (setup.RomExtensions is { Count: > 0 } romExts && !romExts.Any(e => File.Exists(Path.Combine(dir, romBase + e))))
+                continue;
 
             var system = rules.System ?? systems!.GetValueOrDefault(romBase);
             DeclaredSavePath[]? extras = null;
@@ -91,7 +93,8 @@ public static class RomSaves
                 ViaEmuDeck: setup.EmuDeck,
                 // The file's own extension, so the scope reads as the file it keeps (matching ignores case anyway).
                 IncludeGlobs: rules.SaveGlobs(romBase, file.Extension),
-                ExtraSaveDirs: extras), file.LastWriteTimeUtc);
+                ExtraSaveDirs: extras,
+                UntouchedSeed: rules.IsSeed?.Invoke(file) ?? false), file.LastWriteTimeUtc);
         }
     }
 
@@ -168,7 +171,7 @@ public static class RomSaves
 /// (<c>.srm</c>); <paramref name="SaveGlobs"/> scopes one game's files from its ROM name and the save's own
 /// extension; <paramref name="StateGlobs"/>, when the emulator has states, its state files.
 /// <paramref name="System"/> is fixed for a one-console emulator, else read from <c>Emulation/roms</c>.
-/// <paramref name="IsCandidate"/> drops a save file that is not the user's (Model 2's preinstalled ones);
+/// <paramref name="IsSeed"/> marks a save file the user never made (EmuDeck's preinstalled NVRAM, <see cref="ScanCandidate.UntouchedSeed"/>);
 /// <paramref name="KnownTitle"/> names an arcade set from the emulator's own table.
 /// </summary>
 public sealed record RomSaveRules(
@@ -178,9 +181,11 @@ public sealed record RomSaveRules(
     Func<string, IReadOnlyList<string>>? StateGlobs = null,
     string? System = null,
     bool PerCoreFolders = false,
-    Func<FileInfo, bool>? IsCandidate = null,
+    Func<FileInfo, bool>? IsSeed = null,
     Func<string, string?>? KnownTitle = null);
 
 /// <summary>One emulator setup's folders: where it writes saves and where it writes states (which may not
-/// exist yet, or be null for an emulator without any). <paramref name="EmuDeck"/>: found through EmuDeck.</summary>
-public sealed record RomSaveFolders(string Saves, string? States, bool EmuDeck = false);
+/// exist yet, or be null for an emulator without any). <paramref name="EmuDeck"/>: found through EmuDeck.
+/// <paramref name="RomExtensions"/>: the saves folder is a ROM folder (saves kept beside the ROM), so a save is
+/// this emulator's only when a ROM of that name and one of these extensions sits beside it.</summary>
+public sealed record RomSaveFolders(string Saves, string? States, bool EmuDeck = false, IReadOnlyList<string>? RomExtensions = null);

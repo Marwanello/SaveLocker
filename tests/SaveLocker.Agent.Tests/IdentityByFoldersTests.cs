@@ -114,10 +114,12 @@ public sealed class IdentityByFoldersTests : IClassFixture<ServerProcess>, IDisp
         });
         Assert.Equal("Whatever the Deck called it", Enroller.TrackedFor(config, c)?.Name);
 
-        // Another ROM's game is not it, and neither is one with the same save but other folders.
+        // Another ROM's game is not it. The same save with other folders is: the save file decides, not which
+        // other folders an agent version declares.
         var other = c with { IncludeGlobs = new[] { "other.srm", "other.rtc" } };
         Assert.Null(Enroller.TrackedFor(config, other));
-        Assert.Null(Enroller.TrackedFor(config, c with { ExtraSaveDirs = Array.Empty<DeclaredSavePath>() }));
+        Assert.Equal("Whatever the Deck called it",
+            Enroller.TrackedFor(config, c with { ExtraSaveDirs = Array.Empty<DeclaredSavePath>() })?.Name);
     }
 
     [Fact]
@@ -132,6 +134,11 @@ public sealed class IdentityByFoldersTests : IClassFixture<ServerProcess>, IDisp
         // Same files under another name: that name.
         Assert.Equal("Named elsewhere", Enroller.ServerNameFor(
             new[] { Game(c.Name, new[] { "x.srm" }), Game("Named elsewhere", c.IncludeGlobs!.ToArray(), states) }, c, extras));
+        // The same save with fewer folders (an older agent's game) is still it; of two such games, the one with
+        // exactly these folders wins.
+        var scope = c.IncludeGlobs!.Select(g => g.ToUpperInvariant()).ToArray();
+        Assert.Equal("Old agent's", Enroller.ServerNameFor(new[] { Game("Old agent's", scope) }, c, extras));
+        Assert.Equal("Exact", Enroller.ServerNameFor(new[] { Game("A first by name", scope), Game("Exact", scope, states) }, c, extras));
         // A PC game holding the plain name: the next free one.
         Assert.Equal($"{c.Name} (RetroArch)", Enroller.ServerNameFor(new[] { Game(c.Name, null) }, c, extras));
         // An unscoped candidate is never matched by files (it names none).

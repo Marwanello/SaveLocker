@@ -16,8 +16,9 @@ namespace SaveLocker.Agent;
 /// <para>
 /// <b>The trap:</b> <c>Model2_init</c> copies EmuDeck's own <c>configs/model2/NVDATA</c> into that folder — 39
 /// files, one per common set — so a <c>.DAT</c> there does not mean the game was played. A file still
-/// byte-identical to EmuDeck's copy (<see cref="EmuDeckSeeds"/>) is not a candidate; once the game writes its
-/// own NVRAM it differs and shows up — or as soon as it has a state, even if its NVRAM is still the seed.
+/// byte-identical to EmuDeck's copy (<see cref="EmuDeckSeeds"/>) is an untouched seed
+/// (<see cref="ScanCandidate.UntouchedSeed"/>): listed only to join a server game that keeps it. Once the game
+/// writes its own NVRAM it differs and is a candidate like any other — or as soon as it has a state.
 /// </para>
 /// </summary>
 public static class Model2Saves
@@ -35,7 +36,7 @@ public static class Model2Saves
     {
         var roots = emuDeckRoots.ToList();
         var rules = new RomSaveRules(EmulatorName, ".DAT", (set, ext) => new[] { set + ext }, StateGlobs,
-            System: "model2", IsCandidate: f => !IsSeed(f, seeds) || HasState(f), KnownTitle: set => Titles.GetValueOrDefault(set));
+            System: "model2", IsSeed: f => IsSeed(f, seeds) && !HasState(f), KnownTitle: set => Titles.GetValueOrDefault(set));
         var folders = roots.Select(r => Path.Combine(r, "roms", "model2"))
             .Concat(emulatorDirs)
             .Select(d => new RomSaveFolders(Path.Combine(d, "NVDATA"), Path.Combine(d, StatesFolder), EmuDeck: true));

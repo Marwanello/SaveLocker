@@ -2860,6 +2860,8 @@ export interface components {
             emulatorName?: null | string;
             emulatorSystem?: null | string;
             emulatorRom?: null | string;
+            /** @default false */
+            untouchedSeed: boolean;
         };
         CandidateLinksDto: {
             /** Format: int32 */

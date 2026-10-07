@@ -344,7 +344,15 @@ function Use-TestEnvVars {
     if ($PlaynitePath) { $env:SAVELOCKER_PLAYNITE_PATH = $PlaynitePath }
     if (Get-EmuDeckPath) { $env:SAVELOCKER_EMUDECK_PATH = Get-EmuDeckPath }
     # emu-fixture's home for emulators kept outside Emulation (Supermodel, ScummVM): never the developer's own.
-    if (Test-Path (Join-Path (Get-EmuHomeFixturePath) '.savelocker-emu-fixture')) { $env:SAVELOCKER_EMULATOR_HOME = Get-EmuHomeFixturePath }
+    # One set by hand (a copy of real emulator folders, Build and Run -> Testing emulator saves) wins, and is
+    # left set afterwards: only the rig's own value is the rig's to clear.
+    $script:EmuHomeSetByRig = $false
+    if ($env:SAVELOCKER_EMULATOR_HOME) {
+        Write-Host "  emulator home: $($env:SAVELOCKER_EMULATOR_HOME) (set in this shell)"
+    } elseif (Test-Path (Join-Path (Get-EmuHomeFixturePath) '.savelocker-emu-fixture')) {
+        $env:SAVELOCKER_EMULATOR_HOME = Get-EmuHomeFixturePath
+        $script:EmuHomeSetByRig = $true
+    }
 }
 # The fixture lives under the rig's own state, so finding it there is never a real install.
 function Get-EmuDeckFixturePath { return (Join-Path $StateRoot 'Emulation') }
@@ -464,7 +472,8 @@ function New-EmuDeckFixture {
 function Clear-TestEnvVars {
     # Leaving any of these set makes later runs in this shell behave in ways that look like bugs.
     Remove-Item Env:\SAVELOCKER_STATE_ROOT, Env:\SAVELOCKER_TRAY_PORT, Env:\SAVELOCKER_RUNKEY_SUBPATH, `
-        Env:\SAVELOCKER_PLAYNITE_PATH, Env:\SAVELOCKER_EMUDECK_PATH, Env:\SAVELOCKER_EMULATOR_HOME -ErrorAction SilentlyContinue
+        Env:\SAVELOCKER_PLAYNITE_PATH, Env:\SAVELOCKER_EMUDECK_PATH -ErrorAction SilentlyContinue
+    if ($script:EmuHomeSetByRig) { Remove-Item Env:\SAVELOCKER_EMULATOR_HOME -ErrorAction SilentlyContinue }
 }
 
 # Not `wslpath`: wsl.exe strips the backslashes out of a Windows path argument before the Linux side

@@ -90,6 +90,92 @@ public sealed class LinkByHandTests : IClassFixture<ServerProcess>, IDisposable
         Assert.Equal($"{_rom} (RetroArch)", Enroller.TrackedFor(config, save)!.Name);
     }
 
+    private sealed class NoScan : IGameScanner
+    {
+        public Task<IReadOnlyList<ScanCandidate>> ScanAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<ScanCandidate>>(Array.Empty<ScanCandidate>());
+    }
+
+    /// <summary>One reconcile of <paramref name="config"/>'s game list against the server, as the poller's tick does.</summary>
+    private static async Task Reconcile(AgentConfig config)
+    {
+        // An empty manifest of the test's own: a game adopted with no folder falls back to manifest detection,
+        // which must neither download the real one nor touch this machine's cache.
+        config.ManifestCachePath = Path.Combine(Path.GetDirectoryName(config.ConfigPath)!, "manifest.yaml");
+        if (!File.Exists(config.ManifestCachePath)) File.WriteAllText(config.ManifestCachePath, "{}\n");
+        await using var engine = new SyncEngine(config, ApiClient.For(config));
+        var poller = new CommandPoller(config, () => ApiClient.For(config), () => engine, new Detection(config), new NoScan(),
+            _ => { }, () => { });
+        await poller.ReconcileGamesAsync();
+    }
+
+    [Fact]
+    public async Task Kept_as_its_own_game_opts_this_machine_out_of_the_fleets_game()
+    {
+        var deck = await Machine("deck");
+        Assert.Equal((1, 0), await Enroller.EnrollAsync(deck, new[] { Scan("deck", _rom) }, new[] { 0 }));
+        var fleetGame = Assert.Single(AgentConfig.Load(deck.ConfigPath).Games);
+
+        var pc = await Machine("pc");
+        await Reconcile(pc);   // the poller adopts the fleet's game first, with no folder here
+        Assert.Contains(AgentConfig.Load(pc.ConfigPath).Games, g => g.GameId == fleetGame.GameId && !g.IsEnrolledHere);
+        pc = AgentConfig.Load(pc.ConfigPath);
+
+        Assert.Equal((1, 0), await Enroller.EnrollAsync(pc, new[] { Scan("pc", _rom) }, new[] { 0 }, links: Pick(EnrollLinks.Separate)));
+        await Reconcile(pc);
+        var config = AgentConfig.Load(pc.ConfigPath);
+        Assert.True(config.IsUntracked(fleetGame.GameId));
+        Assert.DoesNotContain(config.Games, g => g.GameId == fleetGame.GameId);
+    }
+
+    [Fact]
+    public async Task The_fleets_game_is_never_mapped_onto_files_another_game_syncs_here()
+    {
+        var deck = await Machine("deck");
+        Assert.Equal((1, 0), await Enroller.EnrollAsync(deck, new[] { Scan("deck", _rom) }, new[] { 0 }));
+        var fleetGame = Assert.Single(AgentConfig.Load(deck.ConfigPath).Games);
+        var pc = await Machine("pc");
+        var save = Scan("pc", _rom);
+        Assert.Equal((1, 0), await Enroller.EnrollAsync(pc, new[] { save }, new[] { 0 }, links: Pick(EnrollLinks.Separate)));
+
+        // Tracked again anyway, and the server names this machine's folder for it (the console, or a template
+        // another machine reported): the poller must not map the same save into a second game.
+        var config = AgentConfig.Load(pc.ConfigPath);
+        config.SetTracked(fleetGame.GameId, tracked: true, entry: new TrackedGame
+        {
+            GameId = fleetGame.GameId, Name = fleetGame.Name, SaveDirectory = "", IncludeGlobs = save.IncludeGlobs!.ToList(),
+        });
+        await ApiClient.For(pc).SetMachinePathAsync(fleetGame.GameId, save.SuggestedSaveDir!);
+        await Reconcile(config);
+
+        Assert.False(AgentConfig.Load(pc.ConfigPath).Games.Single(g => g.GameId == fleetGame.GameId).IsEnrolledHere);
+    }
+
+    [Fact]
+    public async Task A_game_whose_other_folders_differ_is_still_found_by_its_save_file()
+    {
+        // An agent from before states were declared enrolled the ROM with its save folder only, and with the
+        // extension in capitals; a newer one finds that game by the save file and adds the states folder to it.
+        var deck = await Machine("deck");
+        var old = Scan("deck", _rom);
+        old = old with { ExtraSaveDirs = null, IncludeGlobs = old.IncludeGlobs!.Select(g => g.ToUpperInvariant()).ToList() };
+        Assert.Equal((1, 0), await Enroller.EnrollAsync(deck, new[] { old }, new[] { 0 }));
+        var fleetGame = Assert.Single(AgentConfig.Load(deck.ConfigPath).Games);
+
+        var pc = await Machine("pc");
+        var save = Scan("pc", _rom);
+        Assert.Equal((EnrollLinks.Auto, LinkKind.Join),
+            (EnrollLinks.For(await ApiClient.For(pc).ListGamesAsync(), save)[0].Choice, EnrollLinks.For(await ApiClient.For(pc).ListGamesAsync(), save)[0].Kind));
+        Assert.Equal((1, 0), await Enroller.EnrollAsync(pc, new[] { save }, new[] { 0 }));
+
+        var joined = Enroller.TrackedFor(AgentConfig.Load(pc.ConfigPath), save)!;
+        Assert.Equal(fleetGame.GameId, joined.GameId);
+        Assert.Equal(RetroArchSaves.StatesKey, Assert.Single(joined.ExtraPaths).Key);
+        var server = (await ApiClient.For(pc).ListGamesAsync()).Single(g => g.Id == fleetGame.GameId);
+        Assert.Equal(save.ExtraSaveDirs![0].IncludeGlobs, Assert.Single(server.ExtraPaths!).IncludeGlobs);
+        Assert.DoesNotContain(await ApiClient.For(pc).ListGamesAsync(), g => g.Name == $"{_rom} (RetroArch)");
+    }
+
     [Fact]
     public async Task A_picked_game_is_joined_and_one_with_other_files_is_refused()
     {

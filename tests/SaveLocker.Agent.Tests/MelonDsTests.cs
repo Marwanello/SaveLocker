@@ -99,6 +99,29 @@ public sealed class MelonDsTests : IDisposable
     }
 
     [Fact]
+    public void Beside_the_rom_only_a_ds_roms_save_is_melonds()
+    {
+        // A shared ROM folder: mGBA writes .sav beside its ROMs too, and an orphan save has no ROM at all.
+        Touch($"roms/{Platinum}.zip", "rom");
+        Touch($"roms/{Platinum}.sav");
+        Touch("roms/Golden Sun (USA).gba", "rom");
+        Touch("roms/Golden Sun (USA).sav");
+        Touch("roms/Orphan.sav");
+        Touch("config/melonDS.ini", $"LastROMFolder={P("roms")}\nSaveFilePath=\n");
+
+        Assert.Equal(Platinum, Assert.Single(MelonDsSaves.Scan(Array.Empty<string>(), new[] { P("config") })).EmulatorRom);
+    }
+
+    [Fact]
+    public void A_save_folder_of_its_own_needs_no_rom_beside_it()
+    {
+        Touch($"mysaves/{Platinum}.sav");
+        Touch("config/melonDS.ini", $"SaveFilePath={P("mysaves")}\n");
+
+        Assert.Single(MelonDsSaves.Scan(Array.Empty<string>(), new[] { P("config") }));
+    }
+
+    [Fact]
     public void One_folder_named_by_emudeck_and_by_the_config_is_one_setup_kept_as_emudeck()
     {
         Touch($"Emulation/saves/melonds/saves/{Platinum}.sav");

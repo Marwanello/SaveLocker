@@ -28,6 +28,25 @@ public static class ScummVmSaves
         ["sky"] = "SKY-VM", ["sword1"] = "sword1", ["queen"] = "queen", ["lure"] = "lure",
     };
 
+    /// <summary>
+    /// The fixed file prefix of a target's engine, or null. <c>engineid</c> names the engine; a config written
+    /// before ScummVM recorded it has only <c>gameid</c>, which for these engines is the engine's name or that
+    /// name plus a variant (<c>sword1mac</c>, <c>sword1psxdemo</c>).
+    /// </summary>
+    public static string? FixedPrefix(IReadOnlyDictionary<string, string> keys)
+    {
+        if (keys.GetValueOrDefault("engineid") is { Length: > 0 } engine) return FixedPrefixes.GetValueOrDefault(engine);
+        if (keys.GetValueOrDefault("gameid") is not { Length: > 0 } game) return null;
+        return FixedPrefixes.GetValueOrDefault(game) ??
+               FixedPrefixes.Where(p => game.StartsWith(p.Key, StringComparison.OrdinalIgnoreCase) && game.Length > p.Key.Length &&
+                                        VariantSuffixes.Any(v => game[p.Key.Length..].StartsWith(v, StringComparison.OrdinalIgnoreCase)))
+                   .Select(p => p.Value).FirstOrDefault();
+    }
+
+    /// <summary>What ScummVM appends to these engines' game ids for another release (Broken Sword 1: <c>sword1mac</c>,
+    /// <c>sword1psx</c>, <c>sword1demo</c>, <c>sword1macdemo</c>, <c>sword1psxdemo</c>).</summary>
+    private static readonly string[] VariantSuffixes = ["demo", "mac", "psx"];
+
     public static IReadOnlyList<ScanCandidate> Scan() =>
         Scan(EmulatorPaths.Standalone ? Configs() : Array.Empty<ScummVmConfig>(), EmuDeckRoots.Find());
 
@@ -45,8 +64,7 @@ public static class ScummVmSaves
                 // A game's section names its game; [scummvm], [keymapper], [cloud]… do not.
                 if (!keys.ContainsKey("gameid") && !keys.ContainsKey("engineid")) continue;
                 var dir = Dir(keys.GetValueOrDefault("savepath")) ?? Dir(global?.GetValueOrDefault("savepath")) ?? config.DefaultSaves;
-                var engine = keys.GetValueOrDefault("engineid") ?? keys.GetValueOrDefault("gameid") ?? "";
-                var prefix = FixedPrefixes.GetValueOrDefault(engine) ?? target;
+                var prefix = FixedPrefix(keys) ?? target;
                 if (prefix.Length == 0 || prefix.Contains('*') || prefix.Contains(':')) continue;
                 if (!HasSaves(dir, prefix)) continue;
                 var real = EmuDeckRoots.RealPath(dir);

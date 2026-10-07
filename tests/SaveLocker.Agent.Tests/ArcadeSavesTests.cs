@@ -66,15 +66,16 @@ public sealed class ArcadeSavesTests : IDisposable
     }
 
     [Fact]
-    public void Supermodel_never_lists_the_nvram_files_emudeck_installed_until_played()
+    public void Supermodel_marks_the_nvram_files_emudeck_installed_as_untouched_seeds_until_played()
     {
         Touch(".supermodel/NVRAM/vf3.nv", "emudeck-seed-vf3");
         Touch(".supermodel/NVRAM/scud.nv", "emudeck-seed-scud");
         var seeds = new HashSet<string> { Sha("emudeck-seed-vf3"), Sha("emudeck-seed-scud") };
-        Assert.Empty(SupermodelSaves.Scan(new[] { (P(".supermodel"), true) }, Array.Empty<string>(), seeds));
+        Assert.All(SupermodelSaves.Scan(new[] { (P(".supermodel"), true) }, Array.Empty<string>(), seeds), c => Assert.True(c.UntouchedSeed));
 
         Touch(".supermodel/NVRAM/scud.nv", "emudeck-seed-scud, then a lap record");
-        Assert.Equal("scud", Assert.Single(SupermodelSaves.Scan(new[] { (P(".supermodel"), true) }, Array.Empty<string>(), seeds)).EmulatorRom);
+        Assert.Equal("scud", Assert.Single(SupermodelSaves.Scan(new[] { (P(".supermodel"), true) }, Array.Empty<string>(), seeds),
+            c => !c.UntouchedSeed).EmulatorRom);
         Assert.Equal(29, SupermodelSaves.EmuDeckSeeds.Count);
     }
 
@@ -103,7 +104,7 @@ public sealed class ArcadeSavesTests : IDisposable
     private static string Sha(string content) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
 
     [Fact]
-    public void Model2_lists_played_sets_and_never_emudecks_untouched_seed_files()
+    public void Model2_lists_played_sets_and_marks_emudecks_untouched_seed_files()
     {
         // EmuDeck's install copied both in; only daytona has been played since.
         Touch("Emulation/roms/model2/NVDATA/vf2.DAT", "emudeck-seed-vf2");
@@ -113,7 +114,8 @@ public sealed class ArcadeSavesTests : IDisposable
 
         var found = Model2Saves.Scan(new[] { P("Emulation") }, Array.Empty<string>(), seeds);
 
-        var daytona = Assert.Single(found);
+        Assert.Equal("vf2", Assert.Single(found, c => c.UntouchedSeed).EmulatorRom);
+        var daytona = Assert.Single(found, c => !c.UntouchedSeed);
         Assert.Equal("Daytona USA", daytona.Name);
         Assert.Equal(("Model 2", "model2", "daytona"), (daytona.EmulatorName, daytona.EmulatorSystem, daytona.EmulatorRom));
         Assert.Equal(P("Emulation/roms/model2/NVDATA"), daytona.SuggestedSaveDir);
@@ -125,8 +127,9 @@ public sealed class ArcadeSavesTests : IDisposable
 
         // Once vf2 is played its file differs from the seed and it is a game too.
         Touch("Emulation/roms/model2/NVDATA/vf2.DAT", "emudeck-seed-vf2 + a high score");
-        Assert.Equal(new[] { "Daytona USA", "Virtua Fighter 2" },
-            Model2Saves.Scan(new[] { P("Emulation") }, Array.Empty<string>(), seeds).Select(c => c.Name));
+        var played = Model2Saves.Scan(new[] { P("Emulation") }, Array.Empty<string>(), seeds);
+        Assert.Equal(new[] { "Daytona USA", "Virtua Fighter 2" }, played.Select(c => c.Name));
+        Assert.DoesNotContain(played, c => c.UntouchedSeed);
     }
 
     [Fact]
@@ -143,6 +146,7 @@ public sealed class ArcadeSavesTests : IDisposable
         var found = Model2Saves.Scan(new[] { P("Emulation") }, Array.Empty<string>(), seeds);
 
         Assert.Equal(new[] { "Virtua Cop", "Virtua Cop 2" }, found.Select(c => c.Name));
+        Assert.DoesNotContain(found, c => c.UntouchedSeed);
         var vcop = found[0].ExtraSaveDirs!.Single().IncludeGlobs!;
         Assert.Contains("vcop3.sta", vcop);
         Assert.DoesNotContain("vcop20.sta", vcop);

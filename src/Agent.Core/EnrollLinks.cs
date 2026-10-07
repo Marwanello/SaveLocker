@@ -23,10 +23,12 @@ public static class EnrollLinks
         var extras = c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>();
         var options = new List<LinkOption>();
         var auto = Enroller.ServerNameFor(server, c, extras);
-        var joined = auto is null ? null : server.FirstOrDefault(g => Is(g, auto) && Enroller.SameFolders(g, c, extras));
+        var joined = auto is null ? null : server.FirstOrDefault(g => Is(g, auto) && Enroller.SameFiles(g, c));
         var file = c.IncludeGlobs[0];
 
-        if (auto is null)
+        if (c.UntouchedSeed && joined is null)
+            options.Add(new LinkOption(Auto, LinkKind.Blocked, c.Name, null, SeedDetail, "Not played"));
+        else if (auto is null)
             options.Add(new LinkOption(Auto, LinkKind.Blocked, c.Name, null,
                 "Every name this save could take on the server is already another game’s.", "Not available"));
         else if (joined is not null)
@@ -36,18 +38,18 @@ public static class EnrollLinks
             options.Add(new LinkOption(Auto, LinkKind.New, auto, null,
                 $"No server game keeps {file} yet.", "New"));
 
-        if (joined is not null && SeparateName(server, c) is { } own)
+        if (joined is not null && !c.UntouchedSeed && SeparateName(server, c) is { } own)
             options.Add(new LinkOption(Separate, LinkKind.New, own, null,
                 $"Creates “{own}”. It never syncs with “{joined.Name}”.", "New"));
 
-        foreach (var g in server.Where(g => g.Id != joined?.Id && Enroller.SameFolders(g, c, extras))
+        foreach (var g in server.Where(g => g.Id != joined?.Id && Enroller.SameFiles(g, c))
                      .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase))
             options.Add(new LinkOption(Game, LinkKind.Join, g.Name, g.Id,
                 $"Also keeps {Files(g)}: the same save files.", "Same save files"));
 
         // Same title, other files: shown so the user sees why it is not linked, never pickable here.
         var names = Enroller.NamesFor(c);
-        foreach (var g in server.Where(g => !Enroller.SameFolders(g, c, extras) && SameTitle(g, c, names))
+        foreach (var g in server.Where(g => !Enroller.SameFiles(g, c) && SameTitle(g, c, names))
                      .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase))
             options.Add(new LinkOption(Game, LinkKind.Blocked, g.Name, g.Id,
                 g.IncludeGlobs is { Length: > 0 }
@@ -65,13 +67,16 @@ public static class EnrollLinks
     /// <summary>
     /// The server name a candidate takes under the user's <paramref name="choice"/>, or the reason it cannot
     /// be added. A pick is checked again here, against the server as it is now: the list the user chose from
-    /// may be minutes old.
+    /// may be minutes old. EmuDeck's untouched preinstalled file (<see cref="ScanCandidate.UntouchedSeed"/>) only
+    /// ever joins a game that keeps it: as a game of its own it would publish a save nobody made.
     /// </summary>
     public static (string? Name, string? Refusal) Resolve(IReadOnlyList<GameDto> server, ScanCandidate c,
         IReadOnlyList<DeclaredSavePath> extras, LinkChoice? choice)
     {
         switch (choice?.Choice)
         {
+            case Separate when c.UntouchedSeed:
+                return (null, SeedRefusal);
             case Separate:
                 return SeparateName(server, c) is { } own
                     ? (own, null)
@@ -79,15 +84,22 @@ public static class EnrollLinks
             case Game:
                 if (server.FirstOrDefault(g => g.Id == choice.GameId) is not { } picked)
                     return (null, "the server game you picked is no longer on the server.");
-                return Enroller.SameFolders(picked, c, extras)
+                return Enroller.SameFiles(picked, c)
                     ? (picked.Name, null)
                     : (null, $"the server’s '{picked.Name}' keeps different save files, so it cannot be linked yet.");
             default:
-                return Enroller.ServerNameFor(server, c, extras) is { } named
+                if (Enroller.ServerNameFor(server, c, extras) is not { } named)
+                    return (null, "every name it could take on the server is already another game's.");
+                return !c.UntouchedSeed || server.Any(g => Is(g, named) && Enroller.SameFiles(g, c))
                     ? (named, null)
-                    : (null, "every name it could take on the server is already another game's.");
+                    : (null, SeedRefusal);
         }
     }
+
+    private const string SeedDetail =
+        "EmuDeck’s preinstalled file, never played here. It can only join a server game that keeps it.";
+    private const string SeedRefusal =
+        "it is EmuDeck's preinstalled file, never played here: it can only join a server game that keeps it.";
 
     private static bool Is(GameDto g, string name) => string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase);
 

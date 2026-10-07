@@ -18,7 +18,8 @@ namespace SaveLocker.Agent;
 /// <b>The trap, found on a real EmuDeck Deck:</b> <c>Supermodel_init</c> rsyncs EmuDeck's whole
 /// <c>configs/supermodel</c> into <c>~/.supermodel</c>, NVRAM included — 29 <c>.nv</c> files, one per common set — so a
 /// file there does not mean the game was played. A file still byte-identical to EmuDeck's (<see cref="EmuDeckSeeds"/>)
-/// is not a candidate. EmuDeck for Windows seeds none.
+/// is an untouched seed (<see cref="ScanCandidate.UntouchedSeed"/>), listed only to join a server game that keeps
+/// it. EmuDeck for Windows seeds none.
 /// </para>
 /// <para>
 /// Name: Supermodel's own <c>Config/Games.xml</c> (<c>&lt;game name="scud"&gt;&lt;identity&gt;&lt;title&gt;</c>), which it
@@ -49,7 +50,7 @@ public static class SupermodelSaves
                     titles.TryAdd(set, title);
 
         var rules = new RomSaveRules(EmulatorName, ".nv", (set, ext) => new[] { set + ext }, set => new[] { set + ".st*" },
-            System: "model3", IsCandidate: f => !RomSaves.IsUntouchedSeed(f, seeds),
+            System: "model3", IsSeed: f => RomSaves.IsUntouchedSeed(f, seeds),
             KnownTitle: set => titles.GetValueOrDefault(set));
         var folders = roots.Select(r => new RomSaveFolders(Path.Combine(r.Dir, "NVRAM"), Path.Combine(r.Dir, "Saves"), r.EmuDeck));
         var emu = emuDeckRoots.ToList();

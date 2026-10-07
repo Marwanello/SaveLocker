@@ -41,15 +41,22 @@ public static class MelonDsSaves
         {
             if (ReadConfig(dir) is not { } cfg) continue;
             // An empty path means beside the ROM: the last ROM folder the user opened is the one we can know.
-            var saves = Absolute(cfg.SaveFilePath, dir) ?? Absolute(cfg.LastRomFolder, dir);
+            // Other emulators (mGBA, …) write .sav beside their ROMs too, so there only a DS ROM's save counts.
+            var saves = Absolute(cfg.SaveFilePath, dir);
+            var besideRom = saves is null;
+            saves ??= Absolute(cfg.LastRomFolder, dir);
             if (saves is null) continue;
             var states = Absolute(cfg.SavestatePath, dir) ?? Absolute(cfg.LastRomFolder, dir) ?? saves;
-            candidates.Add(new RomSaveFolders(saves, states));
+            candidates.Add(new RomSaveFolders(saves, states, RomExtensions: besideRom ? RomExtensions : null));
         }
         return RomSaves.Existing(candidates);
     }
 
-    /// <summary>Folders a standalone melonDS keeps its config in, per platform.</summary>
+    /// <summary>What a DS ROM beside its save is called (melonDS opens these, and archives holding one).</summary>
+    public static readonly IReadOnlyList<string> RomExtensions = [".nds", ".dsi", ".srl", ".ids", ".zip", ".7z", ".rar"];
+
+    /// <summary>Folders a standalone melonDS keeps its config in, per platform: Qt's config folder
+    /// (<c>$XDG_CONFIG_HOME</c>, else <c>~/.config</c>) + <c>melonDS</c>.</summary>
     public static IReadOnlyList<string> ConfigRoots()
     {
         var home = EmulatorPaths.Home;
@@ -61,9 +68,11 @@ public static class MelonDsSaves
                 Path.Combine(EmulatorPaths.LocalAppData, "melonDS"),
                 Path.Combine(EmulatorPaths.AppData, "melonDS"),
             };
+        var xdgConfig = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") is { Length: > 0 } x && EmulatorPaths.HomeOverride is null
+            ? x : Path.Combine(home, ".config");
         return new[]
         {
-            Path.Combine(home, ".config", "melonDS"),
+            Path.Combine(xdgConfig, "melonDS"),
             Path.Combine(home, ".var", "app", "net.kuribo64.melonDS", "config", "melonDS"),
         };
     }

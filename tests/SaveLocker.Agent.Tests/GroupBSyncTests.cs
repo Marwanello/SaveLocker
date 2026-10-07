@@ -92,6 +92,43 @@ public sealed class GroupBSyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.Equal("win-lemans", Read("win", "sm/NVRAM/lemans24.nv"));
     }
 
+    private static string Sha(string content) =>
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(content)));
+
+    [Fact]
+    public async Task An_untouched_emudeck_seed_joins_the_fleets_game_and_takes_its_save()
+    {
+        var set = "scud" + _id;
+        var seeds = new HashSet<string> { Sha("emudeck-seed") };
+        Write("win", $"sm/NVRAM/{set}.nv", "win-played");
+        Write("deck", $".supermodel/NVRAM/{set}.nv", "emudeck-seed");
+        var deckScan = () => SupermodelSaves.Scan(new[] { (P("deck", ".supermodel"), true) }, Array.Empty<string>(), seeds);
+        Assert.True(Assert.Single(deckScan()).UntouchedSeed);
+
+        // Nothing on the server keeps it yet: never a game of its own, and the row says why.
+        var deck = await Machine("deck");
+        var options = EnrollLinks.For(await ApiClient.For(deck).ListGamesAsync(), deckScan()[0]);
+        Assert.Equal((LinkKind.Blocked, "Not played"), (Assert.Single(options).Kind, options[0].Badge));
+        Assert.Equal((0, 1), await Enroller.EnrollAsync(deck, deckScan(), new[] { 0 }));
+        Assert.Contains("preinstalled", EnrollLinks.Resolve(await ApiClient.For(deck).ListGamesAsync(), deckScan()[0],
+            deckScan()[0].ExtraSaveDirs!, null).Refusal);
+        Assert.Contains("preinstalled", EnrollLinks.Resolve(await ApiClient.For(deck).ListGamesAsync(), deckScan()[0],
+            deckScan()[0].ExtraSaveDirs!, new LinkChoice(EnrollLinks.Separate)).Refusal);
+
+        var win = await Machine("win");
+        var winGame = await Enroll(win, SupermodelSaves.Scan(new[] { (P("win", "sm"), true) }, Array.Empty<string>(), seeds), set);
+        await using var engineWin = new SyncEngine(win, ApiClient.For(win));
+        Assert.NotNull(await engineWin.PushAsync(winGame));
+
+        // Now it joins, and the first pull replaces the seed without force: there was nothing of the user's to keep.
+        Assert.Equal(LinkKind.Join, EnrollLinks.For(await ApiClient.For(deck).ListGamesAsync(), deckScan()[0])[0].Kind);
+        var deckGame = await Enroll(deck, deckScan(), set);
+        Assert.Equal(winGame.GameId, deckGame.GameId);
+        await using var engineDeck = new SyncEngine(deck, ApiClient.For(deck));
+        Assert.Equal(PullOutcome.Restored, await engineDeck.PullAsync(deckGame));
+        Assert.Equal("win-played", Read("deck", $".supermodel/NVRAM/{set}.nv"));
+    }
+
     [Fact]
     public async Task A_scummvm_target_syncs_and_a_same_prefixed_sequel_stays_put()
     {

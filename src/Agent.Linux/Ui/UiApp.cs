@@ -255,7 +255,26 @@ sealed partial class UiApp
     /// from the server with no folder on this machine is not: enrolling it is how it gets one.</summary>
     private bool IsTracked(ScanCandidate c) => Enroller.TrackedFor(_config, c) is { IsEnrolledHere: true };
 
-    private bool Listed(ScanCandidate c) => !_hideEnrolled || !IsTracked(c);
+    private bool Listed(ScanCandidate c) => Discovered(c) && (!_hideEnrolled || !IsTracked(c));
+
+    // EmuDeck's untouched preinstalled saves (ScanCandidate.UntouchedSeed) are listed only once the server is known
+    // to keep one, so a fresh Deck can take the fleet's save over it; the rest are not the user's games at all.
+    private bool Discovered(ScanCandidate c) => !c.UntouchedSeed || _seedJoins.Contains(c);
+    private HashSet<ScanCandidate> _seedJoins = new(ReferenceEqualityComparer.Instance);
+    private Task<HashSet<ScanCandidate>>? _seedJoinTask;
+
+    private async Task<HashSet<ScanCandidate>> SeedJoinsAsync(IReadOnlyList<ScanCandidate> found)
+    {
+        var joins = new HashSet<ScanCandidate>(ReferenceEqualityComparer.Instance);
+        try
+        {
+            var server = await Api().ListGamesAsync();
+            foreach (var c in found.Where(c => c.UntouchedSeed))
+                if (EnrollLinks.For(server, c) is [{ Kind: LinkKind.Join }, ..]) joins.Add(c);
+        }
+        catch (Exception ex) { AgentLogger.LogException("UiApp.SeedJoins", ex); }
+        return joins;
+    }
 
     // Detected / Not detected leave enrolled games out, so each game is under exactly one of the three.
     private bool MatchesPath(ScanCandidate c, PathMode m) => m switch
@@ -1656,6 +1675,12 @@ sealed partial class UiApp
             _scanTask = _scanner.ScanAsync();
         }
 
+        if (_seedJoinTask is { IsCompleted: true } seeds)
+        {
+            if (seeds.IsCompletedSuccessfully) _seedJoins = seeds.Result;
+            _seedJoinTask = null;
+        }
+
         // Fold a finished scan into the mutable candidate list.
         if (_scanTask is { IsCompletedSuccessfully: true } done)
         {
@@ -1663,7 +1688,10 @@ sealed partial class UiApp
             _candidates.AddRange(done.Result);
             _selected.Clear();
             _alsoOff.Clear();
-            _addStatus = $"Found {_candidates.Count} game(s).";
+            _seedJoins = new(ReferenceEqualityComparer.Instance);
+            _seedJoinTask = done.Result.Any(c => c.UntouchedSeed) && !string.IsNullOrEmpty(_config.ApiKey)
+                ? SeedJoinsAsync(done.Result) : null;
+            _addStatus = $"Found {done.Result.Count(c => !c.UntouchedSeed)} game(s).";
             _scanTask = null;
             BackfillSources(done.Result);
 
@@ -1774,7 +1802,7 @@ sealed partial class UiApp
         // adding a header underflows the child by exactly the header's height, which clipped the
         // action bar off the bottom of the screen.
         Widgets.SectionHeader(_candidates.Count > 0
-            ? $"Discovered games ({shown.Count} of {_candidates.Count})"
+            ? $"Discovered games ({shown.Count} of {_candidates.Count(Discovered)})"
             : "Discovered games");
 
         // The action bar is pinned to the bottom so it never scrolls out of reach on a long list —
