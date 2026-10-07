@@ -41,6 +41,8 @@ const FILTERS: { id: FilterId; label: string; hint: string; match: (c: Candidate
 const EMULATORS: { id: string; label: string }[] = [
   { id: 'RetroArch', label: 'RetroArch' },
   { id: 'melonDS', label: 'melonDS' },
+  { id: 'Supermodel', label: 'Supermodel' },
+  { id: 'Model 2', label: 'Model 2' },
 ]
 
 /**
