@@ -311,6 +311,15 @@ session can judge an edge case, not to reopen the choice.
   name only. Mutation-checked both halves (`IdentityByFoldersTests`). Follow-up asked for, not built: a manual
   "link to this server game" choice at enrollment — mockup with three variants, `tasks/emulator-saves/plan.md` →
   *Linking by hand*.
+  <br>**Amended by the PR #61 review (2026-10-07):** only the **primary folder's** include patterns decide, compared
+  ignoring case (`Enroller.SameFiles`). Requiring every folder to match made a game enrolled by an older agent (no
+  `states` folder yet) or changed by `add-path` look like another game, and the next machine created a second game
+  of the same save under the next free name. A folder only one side has is now added to the game (or left to the
+  poller); the same key with other patterns is still refused, with a note. Two server games may now keep the same
+  files (*Keep it as its own game*): the machine that kept one apart opts out of the others, and the poller never maps
+  a second game onto files another game syncs here (`SaveFolderClaims`). **EmuDeck's untouched preinstalled NVRAM**
+  (Model 2, Supermodel) is listed only when a server game keeps the same file, joins only, and is recorded as in
+  step so the first pull replaces it — a fresh Deck can take the fleet's save without playing first.
 - **A game never joins a server game whose include patterns keep none of its files** (2026-10-07, review of
   PR #60). A candidate with no scope of its own joining a scoped game inherits that scope; when nothing in its
   folder matches — a Steam "Chrono Trigger" joining the SNES save of that name — nothing on that machine would

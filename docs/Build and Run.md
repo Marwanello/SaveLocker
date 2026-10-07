@@ -276,6 +276,7 @@ The Windows test tray then scans **only** `Emulation` and the WSL daemon **only*
 (Supermodel, ScummVM) are read from a fixture home instead of the real one — `<StateRoot>\emu-home` for the tray
 (EmuDeck for Windows' `AppData\Roaming\EmuDeck\Emulators\Supermodel`, `AppData\Roaming\ScummVM\scummvm.ini`) and
 `emu-home-wsl` for the daemon (`~/.supermodel`, `~/.config/scummvm/scummvm.ini`) — through `SAVELOCKER_EMULATOR_HOME`.
+One already set in the shell (a copy of real emulator folders) wins over the fixture home, and the rig leaves it set.
 Group B adds, on both machines: melonDS *Pokemon - Platinum Version* (Windows has a state slot, WSL an older save),
 Model 2 *Daytona USA* (Windows only; a state in slot 0, and *daytonam1.sta* — Daytona To The MAXX's slot 1 — must survive every Daytona pull), Supermodel *Scud Race* (Windows has a state; *lemans24* beside it must survive
 every Scud pull) and ScummVM *Monkey Island 2* (*monkey.s00* beside it must survive). WSL's ScummVM config names

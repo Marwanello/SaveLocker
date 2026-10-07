@@ -97,6 +97,8 @@ SaveLocker/
 │   │   │                               #   ID_LIKE / VARIANT_ID / PRETTY_NAME, a Valve board's name, WSL;
 │   │   │                               #   the Windows 10/11 build split. The console maps it to a logo
 │   │   ├── SaveDirSanity.cs             # "That's a Wine PREFIX, not a save folder" + size backstop
+│   │   ├── SaveFolderClaims.cs          # Which tracked game already syncs a folder's files here: the poller never maps
+│   │   │                               #   a second game onto them (a save kept as its own game by hand)
 │   │   ├── SavePathGuard.cs             # The hard floor: paths that can NEVER be a save folder,
 │   │   │                               #   however they arrived
 │   │   ├── Notifications.cs             # OS notifications, platform-neutral: WHAT fires (`NoticeCatalog`), how often
