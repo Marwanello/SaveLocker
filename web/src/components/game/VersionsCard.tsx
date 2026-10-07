@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, errorText } from '../../api';
-import type { Conflict, Game, Version } from '../../types';
+import type { Conflict, Game, Version, VersionChanges } from '../../types';
 import { ago, fmtSize, plural, shortId, toMs, when } from '../../format';
 import { toast, toastError } from '../../toast';
 import { Card } from '../ui/Card';
@@ -10,6 +10,8 @@ import { Button } from '../ui/Button';
 import { DataTable } from '../ui/DataTable';
 import { EmptyState } from '../ui/EmptyState';
 import { InlineConfirm } from '../ui/InlineConfirm';
+import { Icon } from '../ui/Icon';
+import { ChangeChips, VersionFiles } from './VersionFiles';
 
 interface Props {
   game: Game;
@@ -30,9 +32,29 @@ type View = 'main' | 'backups';
  * that is not an ancestor of the current head, almost always the losing side of a past conflict —
  * behind a Seg. No new endpoint: the same list, split by walking parentVersionId back from the head
  * (tasks/conflict-resolution-ui/plan.md).
+ *
+ * Every row starts collapsed and already says what it changed; its chevron opens the changed files
+ * (tasks/save-file-trees Phase 2, variant B). One request covers the whole list.
  */
 export function VersionsCard({ game, headId, versions, conflicts, loading, reloadVersions, onSetLatest, onRefresh }: Props) {
   const [view, setView] = useState<View>('main');
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [changes, setChanges] = useState<Map<string, VersionChanges>>(new Map());
+
+  // Re-read whenever the list itself changes: a new push brings a version nobody has diffed yet.
+  const listKey = versions.map(v => v.id).join(',');
+  useEffect(() => {
+    if (!listKey) return;
+    let live = true;
+    api.versionChanges(game.id)
+      .then(list => { if (live) setChanges(new Map(list.map(c => [c.versionId, c]))); })
+      .catch(() => { /* rows stay without chips; opening one says it is still loading */ });
+    return () => { live = false; };
+  }, [game.id, listKey]);
+
+  function toggle(id: string) {
+    setOpen(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
 
   const mainIds = new Set<string>();
   {
@@ -103,6 +125,7 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
         <Seg size="sm" value={view} onChange={setView} aria-label="Which versions"
           options={[{ value: 'main', label: `History ${main.length}` }, { value: 'backups', label: `Backups ${backups.length}` }]} />
         <Chip>{versions.length} kept</Chip>
+        <Button size="sm" variant="quiet" disabled={open.size === 0} onClick={() => setOpen(new Set())}>Collapse all</Button>
         {prunable === null
           ? <InlineConfirm
               label="Apply retention"
@@ -133,15 +156,33 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
             caption={view === 'main' ? 'Versions' : 'Backups'}
             rows={shown}
             rowKey={v => v.id}
+            expanded={v => open.has(v.id)
+              ? <VersionFiles id={`version-files-${v.id}`} game={game} version={v} changes={changes.get(v.id)} />
+              : null}
             empty={view === 'main'
               ? <EmptyState title="No versions yet">The first push from any machine shows up here.</EmptyState>
               : <EmptyState title="No backups">A save that loses a conflict, or is ridden over by a forced push, is kept here.</EmptyState>}
             columns={[
-              { head: 'Version', kind: ['k', 'm'], cell: v => shortId(v.id) },
+              {
+                head: 'Version', kind: ['k', 'm'],
+                cell: v => (
+                  <button type="button" onClick={() => toggle(v.id)}
+                    aria-expanded={open.has(v.id)} aria-controls={`version-files-${v.id}`}
+                    aria-label={`${open.has(v.id) ? 'Hide' : 'Show'} the files of version ${shortId(v.id)}`}
+                    className="inline-flex items-center gap-1.5 cursor-pointer rounded hover:text-accent-ink">
+                    <Icon name="chevron-right" size={13}
+                      className={`text-faint transition-transform ${open.has(v.id) ? 'rotate-90 text-accent-ink' : ''}`} />
+                    {shortId(v.id)}
+                  </button>
+                ),
+              },
               { head: 'When', kind: 'n', cell: v => <span title={when(v.createdAt)}>{ago(v.createdAt)}</span> },
               { head: 'Machine', cell: v => v.machineName },
               { head: 'Size', kind: 'n', cell: v => fmtSize(v.size) },
-              { head: 'State', cell: state },
+              {
+                head: 'State', kind: 'wrap',
+                cell: v => <span className="flex gap-1 items-center flex-wrap min-w-[10.5rem]">{state(v)}<ChangeChips changes={changes.get(v.id)} /></span>,
+              },
               {
                 head: '', label: 'Actions', end: true,
                 cell: v => (
