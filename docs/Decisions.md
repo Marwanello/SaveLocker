@@ -771,6 +771,12 @@ session can judge an edge case, not to reopen the choice.
   name matching one is refused, and moving a folder stays **Change**. Enrollment joins an "Also found" folder on the
   same template, or on the same key only when a template is missing on either side; two templates under one key are
   two folders.
+- **EmuDeck is the layout every emulator reader is designed around; a standalone install is a bonus**
+  (2026-10-07, maintainer). EmuDeck on SteamOS/Linux and EmuDeck for Windows put every emulator, ROM and save in a
+  standard, predictable place, so each reader starts from EmuDeck's folders and EmuDeck's own scripts (`*_init`,
+  `*_setupSaves`, launchers) are the source of truth for where things are. Standalone installs are looked for only where
+  that is cheap and safe (a fixed default folder); one that could be anywhere — Supermodel or Model 2 unpacked on
+  Windows — is not hunted for. Applies to Groups C–F too.
 
 ## Environment facts (user-provided)
 - Games are standalone builds, not bought on Steam/Epic → manifest-based detection + manual

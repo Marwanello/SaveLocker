@@ -277,7 +277,7 @@ The Windows test tray then scans **only** `Emulation` and the WSL daemon **only*
 (EmuDeck for Windows' `AppData\Roaming\EmuDeck\Emulators\Supermodel`, `AppData\Roaming\ScummVM\scummvm.ini`) and
 `emu-home-wsl` for the daemon (`~/.supermodel`, `~/.config/scummvm/scummvm.ini`) — through `SAVELOCKER_EMULATOR_HOME`.
 Group B adds, on both machines: melonDS *Pokemon - Platinum Version* (Windows has a state slot, WSL an older save),
-Model 2 *Daytona USA* (Windows only), Supermodel *Scud Race* (Windows has a state; *lemans24* beside it must survive
+Model 2 *Daytona USA* (Windows only; a state in slot 0, and *daytonam1.sta* — Daytona To The MAXX's slot 1 — must survive every Daytona pull), Supermodel *Scud Race* (Windows has a state; *lemans24* beside it must survive
 every Scud pull) and ScummVM *Monkey Island 2* (*monkey.s00* beside it must survive). WSL's ScummVM config names
 Monkey Island 2 differently, so the two machines joining one game is D1 at work. Windows has Chrono Trigger's save,
 a state slot and its thumbnail; WSL has an older Chrono save and no states; both have their own Zelda save

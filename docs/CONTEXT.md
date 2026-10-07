@@ -1796,6 +1796,9 @@ option: researched and mocked up (three variants), not built — `tasks/emulator
 <br>**Next action for this item:** the testenv pass (`testenv clean` first — the rig still maps nine real save
 folders from earlier sessions), then a PR for Group B; the maintainer to pick a *Linking by hand* variant. A played
 Supermodel/Model 2 save on the Deck is the one thing no capture could show.
+<br>**2026-10-07, later:** Model 2 save states added (`STATES/<set><0-9>.sta`, read from the Deck's `EMULATOR.EXE`);
+unit **320**. The maintainer set the rule for every emulator reader: **EmuDeck (SteamOS/Linux and Windows) is the
+design target, standalone installs a bonus** (Decisions.md).
 
 ---
 
