@@ -1791,7 +1791,7 @@ called (`Enroller.ServerNameFor`/`TrackedFor`, mutation-checked) — so titles f
 paths all as researched, and one trap the plan missed — EmuDeck rsyncs 29 Supermodel NVRAM files into
 `~/.supermodel/NVRAM` at install, exactly like Model 2's 39 `NVDATA` files; both are now hidden by SHA-256 until the
 game rewrites them (maintainer's choice for Model 2). testenv `emu-fixture` gained all four plus a fixture home per
-machine (`SAVELOCKER_EMULATOR_HOME`). Unit **318**. The maintainer also asked for a manual "link to this server game"
+machine (`SAVELOCKER_EMULATOR_HOME`). Unit **319**. The maintainer also asked for a manual "link to this server game"
 option: researched and mocked up (three variants), not built — `tasks/emulator-saves/plan.md` → *Linking by hand*.
 <br>**Next action for this item:** the testenv pass (`testenv clean` first — the rig still maps nine real save
 folders from earlier sessions), then a PR for Group B; the maintainer to pick a *Linking by hand* variant. A played
