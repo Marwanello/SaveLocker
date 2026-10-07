@@ -1804,7 +1804,8 @@ emulator row says which server game it joins, with a **Change** button — autom
 game with the same files; different file names shown greyed out). The different-file-names case is **Phase 17,
 Group G**, not started, open questions in its plan section. Unit **325**. A save-tree mockup (console version history with
 each save collapsed + the agent's current save tree, three variants) is at
-<https://claude.ai/artifact/2Nq9PbykqDDici67dWCGP2>, for the maintainer to pick from; not built.
+<https://claude.ai/artifact/2Nq9PbykqDDici67dWCGP2>, picked: **B in the console, A in the agent**, now its own task
+(`tasks/save-file-trees/plan.md`, a separate PR, not started).
 
 ---
 
