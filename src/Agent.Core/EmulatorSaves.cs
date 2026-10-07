@@ -15,6 +15,6 @@ public static class EmulatorSaves
         ("ScummVM saves", ScummVmSaves.Scan),
         ("PCSX2 saves", Pcsx2Saves.Scan),
         ("DuckStation saves", DuckStationSaves.Scan),
-        ("Dolphin saves", DolphinSaves.Scan),
+        ("Dolphin and PrimeHack saves", DolphinSaves.Scan),
     };
 }

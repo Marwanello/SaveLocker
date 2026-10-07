@@ -4838,6 +4838,15 @@
                 "$ref": "#/components/schemas/GameSourceDto"
               }
             ]
+          },
+          "emulators": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

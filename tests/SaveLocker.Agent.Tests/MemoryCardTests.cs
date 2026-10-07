@@ -264,6 +264,40 @@ public sealed class MemoryCardTests : IDisposable
         Assert.True(setup.EmuDeck);
     }
 
+    [Fact]
+    public void Primehack_is_found_through_emudeck_under_its_own_name()
+    {
+        // EmuDeck on SteamOS links primehack/StateSaves; on Windows the same folder is primehack/states.
+        Bytes("Emulation/saves/primehack/Wii/title/00010000/52334d45/data/banner.bin", F.Banner("Metroid Prime Trilogy"));
+        Directory.CreateDirectory(P("Emulation/saves/primehack/StateSaves"));
+        Bytes("Emulation/saves/dolphin/Wii/title/00010000/52334d45/data/banner.bin", F.Banner("Metroid Prime Trilogy"));
+
+        var found = DolphinSaves.Scan(DolphinSaves.Folders(new[] { P("Emulation") }, Array.Empty<(string, string)>()));
+
+        // Two rows, one per emulator: the scan never merges another emulator's save into this one.
+        Assert.Equal(new[] { "Dolphin", "PrimeHack" }, found.Select(c => c.EmulatorName).Order());
+        var prime = found.Single(c => c.EmulatorName == "PrimeHack");
+        Assert.Equal(P("Emulation/saves/primehack/StateSaves"), Assert.Single(prime.ExtraSaveDirs!).Dir);
+        Assert.NotEqual(ScanCandidate.DedupeKey(found[0]), ScanCandidate.DedupeKey(found[1]));
+        Assert.Equal(GameSourceKinds.Emulator + "/PrimeHack", $"{GameSources.From(prime).Kind}/{GameSources.From(prime).Detail}");
+    }
+
+    [Fact]
+    public void A_same_files_server_game_from_another_emulator_is_not_the_same_game()
+    {
+        Bytes("p/Wii/title/00010000/52334d45/data/banner.bin", F.Banner("Metroid Prime Trilogy"));
+        var prime = Assert.Single(DolphinSaves.Scan(new[] { new DolphinFolders("PrimeHack", null, P("p/Wii"), null) }));
+        GameDto Game(string name, params string[]? emulators) =>
+            new(Guid.NewGuid(), name, null, null, true, IncludeGlobs: prime.IncludeGlobs!.ToArray(), Emulators: emulators);
+
+        Assert.False(Enroller.SameFiles(Game("Metroid Prime Trilogy", "Dolphin"), prime));
+        Assert.True(Enroller.SameFiles(Game("Metroid Prime Trilogy", "Dolphin", "PrimeHack"), prime));
+        // Made before sources were recorded, or by hand: open to any emulator, as before.
+        Assert.True(Enroller.SameFiles(Game("Metroid Prime Trilogy"), prime));
+        Assert.Equal("Metroid Prime Trilogy (PrimeHack)",
+            Enroller.ServerNameFor([Game("Metroid Prime Trilogy", "Dolphin")], prime, prime.ExtraSaveDirs ?? []));
+    }
+
     // ---- The shared-card warning (SaveDirSanity) ----
 
     [Fact]

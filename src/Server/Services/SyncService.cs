@@ -397,6 +397,18 @@ public sealed class SyncService
         (await _db.MachineGameSources.Where(s => s.MachineId == machineId).ToListAsync())
         .ToDictionary(s => s.GameId, ToDto);
 
+    /// <summary>
+    /// Every game's emulators, as the machines that found it through one reported them: game ID → emulator names,
+    /// distinct, sorted. An emulator save never joins a game another emulator's save made (tasks/emulator-saves
+    /// Phase 4, maintainer's choice): the agent reads this to tell "the same files" from "the same game".
+    /// </summary>
+    public async Task<Dictionary<Guid, string[]>> GetEmulatorMapAsync() =>
+        (await _db.MachineGameSources.Where(s => s.Kind == GameSourceKinds.Emulator)
+            .Select(s => new { s.GameId, s.Detail }).ToListAsync())
+        .GroupBy(s => s.GameId)
+        .ToDictionary(g => g.Key, g => g.Select(s => s.Detail).Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase).ToArray());
+
     /// <summary>Upsert how a machine found a game. False, storing nothing, for a game that does not exist.</summary>
     public async Task<bool> SetMachineSourceAsync(Guid machineId, Guid gameId, GameSourceDto source)
     {

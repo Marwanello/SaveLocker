@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using SaveLocker.Shared;
 
 namespace SaveLocker.Agent;
 
@@ -35,6 +36,11 @@ namespace SaveLocker.Agent;
 public static class DolphinSaves
 {
     public const string EmulatorName = "Dolphin";
+
+    /// <summary>PrimeHack (Phase 4), the Dolphin fork for Metroid Prime Trilogy: the same saves, folders and states as
+    /// Dolphin under its own user folder — and its own games: a save never joins one another emulator made
+    /// (<see cref="Enroller.SameEmulator(GameDto, ScanCandidate)"/>).</summary>
+    public const string PrimeHackName = "PrimeHack";
 
     /// <summary>The Wii title types a game's save is under: discs, WiiWare/channels, disc channels.</summary>
     public static readonly IReadOnlyList<string> WiiGameTypes = ["00010000", "00010001", "00010004"];
@@ -223,7 +229,7 @@ public static class DolphinSaves
     }
 
     /// <summary>EmuDeck's <c>Emulation/saves/&lt;folder&gt;</c> per emulator.</summary>
-    private static readonly (string Emulator, string Folder)[] EmuDeckFolders = [(EmulatorName, "dolphin")];
+    private static readonly (string Emulator, string Folder)[] EmuDeckFolders = [(EmulatorName, "dolphin"), (PrimeHackName, "primehack")];
 
     /// <summary>The user folders a standalone install keeps <c>GC</c>, <c>Wii</c> and <c>StateSaves</c> in.</summary>
     public static IReadOnlyList<(string Emulator, string UserDir)> UserDirs() => OperatingSystem.IsWindows()
@@ -232,12 +238,14 @@ public static class DolphinSaves
             (EmulatorName, Path.Combine(EmulatorPaths.AppData, "EmuDeck", "Emulators", "Dolphin-x64", "User")),
             (EmulatorName, Path.Combine(EmulatorPaths.Documents, "Dolphin Emulator")),
             (EmulatorName, Path.Combine(EmulatorPaths.AppData, "Dolphin Emulator")),
+            (PrimeHackName, Path.Combine(EmulatorPaths.AppData, "EmuDeck", "Emulators", "primehack", "User")),
         ]
         :
         [
             (EmulatorName, Path.Combine(EmulatorPaths.XdgData, "dolphin-emu")),
             (EmulatorName, Path.Combine(EmulatorPaths.Home, ".dolphin-emu")),
             (EmulatorName, Path.Combine(EmulatorPaths.Flatpak("org.DolphinEmu.dolphin-emu"), "data", "dolphin-emu")),
+            (PrimeHackName, Path.Combine(EmulatorPaths.Flatpak("io.github.shiiion.primehack"), "data", "dolphin-emu")),
         ];
 
     private static string? Existing(string? dir)

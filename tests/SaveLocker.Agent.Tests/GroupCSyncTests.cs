@@ -163,4 +163,85 @@ public sealed class GroupCSyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.Equal("deck-state", Read("win", $"Dolphin-x64/User/StateSaves/{id}01.s01"));
         Assert.True(File.Exists(P("win", "Dolphin-x64/User/Wii/title/00010000/52334f45/data/banner.bin")));
     }
+
+    // ---- Phase 4: PrimeHack, and saves from different emulators kept apart ----
+
+    /// <summary>One Wii title saved under a Dolphin-family user folder: banner, save and a state.</summary>
+    private (string Id, string Hex) WiiSave(string machine, string user, string save, string title)
+    {
+        var id = "P" + _id[..3];
+        var hex = Convert.ToHexStringLower(System.Text.Encoding.ASCII.GetBytes(id));
+        F.Write(P(machine, $"{user}/Wii/title/00010000/{hex}/data/banner.bin"), F.Banner(title));
+        Write(machine, $"{user}/Wii/title/00010000/{hex}/data/save.bin", save);
+        Write(machine, $"{user}/StateSaves/{id}01.s01", save + "-state");
+        return (id, hex);
+    }
+
+    private IReadOnlyList<ScanCandidate> ScanDolphins(string machine, params (string Emulator, string User)[] users) =>
+        DolphinSaves.Scan(DolphinSaves.Folders([], users.Select(u => (u.Emulator, P(machine, u.User)))));
+
+    [Fact]
+    public async Task A_primehack_save_and_a_dolphin_save_of_one_game_are_two_games_and_never_cross()
+    {
+        const string prime = ".var/app/io.github.shiiion.primehack/data/dolphin-emu";
+        const string dolphin = "Documents/Dolphin Emulator";
+        var title = $"Trilogy {_id}";
+        var (id, hex) = WiiSave("deck", prime, "deck-primehack", title);
+        WiiSave("pc", dolphin, "pc-dolphin", title);
+        WiiSave("laptop", prime, "laptop-primehack-old", title);
+
+        var deck = await Machine("deck");
+        var pc = await Machine("pc");
+        var laptop = await Machine("laptop");
+        var deckGame = await Enroll(deck, ScanDolphins("deck", (DolphinSaves.PrimeHackName, prime)), id);
+
+        // The PC's Dolphin save keeps the same files, but another emulator made the server's game: the row shows
+        // it greyed out, and adding it makes a game of its own.
+        var pcScan = ScanDolphins("pc", (DolphinSaves.EmulatorName, dolphin));
+        var options = EnrollLinks.For(await ApiClient.For(pc).ListGamesAsync(), pcScan[0]);
+        Assert.Equal((LinkKind.New, $"{title} (Dolphin)"), (options[0].Kind, options[0].Name));
+        Assert.Contains(options, o => o.Kind == LinkKind.Blocked && o.GameId == deckGame.GameId && o.Badge == "Another emulator");
+        Assert.Contains("another emulator", EnrollLinks.Resolve(await ApiClient.For(pc).ListGamesAsync(), pcScan[0],
+            pcScan[0].ExtraSaveDirs!, new LinkChoice(EnrollLinks.Game, deckGame.GameId)).Refusal);
+        var pcGame = await Enroll(pc, pcScan, id);
+        Assert.NotEqual(deckGame.GameId, pcGame.GameId);
+        Assert.Equal($"{title} (Dolphin)", pcGame.Name);
+
+        // Another PrimeHack machine joins the Deck's game, as before.
+        var laptopGame = await Enroll(laptop, ScanDolphins("laptop", (DolphinSaves.PrimeHackName, prime)), id);
+        Assert.Equal(deckGame.GameId, laptopGame.GameId);
+
+        await using var engineDeck = new SyncEngine(deck, ApiClient.For(deck));
+        await using var enginePc = new SyncEngine(pc, ApiClient.For(pc));
+        await using var engineLaptop = new SyncEngine(laptop, ApiClient.For(laptop));
+        Assert.NotNull(await engineDeck.PushAsync(deckGame, force: true));
+        Assert.NotNull(await enginePc.PushAsync(pcGame, force: true));
+        await engineLaptop.PullAsync(laptopGame, force: true);
+        await enginePc.PullAsync(pcGame);
+
+        Assert.Equal("deck-primehack", Read("laptop", $"{prime}/Wii/title/00010000/{hex}/data/save.bin"));
+        Assert.Equal("deck-primehack-state", Read("laptop", $"{prime}/StateSaves/{id}01.s01"));
+        Assert.Equal("pc-dolphin", Read("pc", $"{dolphin}/Wii/title/00010000/{hex}/data/save.bin"));
+    }
+
+    [Fact]
+    public async Task One_batch_with_both_emulators_makes_two_games_on_one_machine()
+    {
+        // The maintainer's Deck: Metroid Prime Trilogy saved in Dolphin AND in PrimeHack, both added at once.
+        const string prime = ".var/app/io.github.shiiion.primehack/data/dolphin-emu";
+        const string dolphin = ".var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu";
+        var (id, _) = WiiSave("deck", prime, "primehack-save", $"Both {_id}");
+        WiiSave("deck", dolphin, "dolphin-save", $"Both {_id}");
+        var deck = await Machine("deck");
+        var found = ScanDolphins("deck", (DolphinSaves.EmulatorName, dolphin), (DolphinSaves.PrimeHackName, prime));
+        Assert.Equal(new[] { "Dolphin", "PrimeHack" }, found.Select(c => c.EmulatorName).Order());
+
+        Assert.Equal((2, 0), await Enroller.EnrollAsync(deck, found, [0, 1]));
+
+        var config = AgentConfig.Load(deck.ConfigPath);
+        var games = found.Select(c => Enroller.TrackedFor(config, c)!).ToList();
+        Assert.NotEqual(games[0].GameId, games[1].GameId);
+        Assert.All(games, g => Assert.True(g.IsEnrolledHere));
+        Assert.Equal(found.Select(c => c.SuggestedSaveDir), games.Select(g => g.SaveDirectory));
+    }
 }

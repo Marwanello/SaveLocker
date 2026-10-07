@@ -491,6 +491,14 @@ function New-EmuDeckFixture {
     Write-FixtureFile (Join-Path $dol 'Wii\title\00010000\52334f45\data\share\save0.dat') "other m save $(Get-Date -Format o)"
     Write-FixtureFile (Join-Path $dol 'states\R3OE01.s01') "other m slot 1 $(Get-Date -Format o)"
     Write-FixtureFile (Join-Path $dol 'states\GALE01.s01') 'melee state - must survive every Other M pull'
+    # PrimeHack (Phase 4): Metroid Prime Trilogy saved in BOTH Dolphin and PrimeHack, as on the maintainer's Deck -
+    # two rows, two server games; saves from different emulators never sync with each other.
+    $ph = Join-Path $target 'saves\primehack'
+    Write-FixtureBytes (Join-Path $ph 'Wii\title\00010000\52334d45\data\banner.bin') (New-WiiBanner 'Metroid Prime Trilogy')
+    Write-FixtureFile (Join-Path $ph 'Wii\title\00010000\52334d45\data\save.bin') "primehack trilogy save $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $ph 'states\R3ME01.s01') "primehack trilogy slot 1 $(Get-Date -Format o)"
+    Write-FixtureBytes (Join-Path $dol 'Wii\title\00010000\52334d45\data\banner.bin') (New-WiiBanner 'Metroid Prime Trilogy')
+    Write-FixtureFile (Join-Path $dol 'Wii\title\00010000\52334d45\data\save.bin') 'dolphin trilogy save - never synced with PrimeHack'
     Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
     Say "EmuDeck fixture at $target"
     # Supermodel (Phase 9) is kept outside Emulation: EmuDeck for Windows' own folder, under a fixture home.
@@ -561,6 +569,11 @@ function New-EmuDeckFixture {
         Write-FixtureBytes (Join-Path $wDol 'Wii\title\00010000\52334f45\data\banner.bin') (New-WiiBanner 'Metroid: Other M')
         Write-FixtureFile (Join-Path $wDol 'Wii\title\00010000\52334f45\data\share\save0.dat') 'old other m save on the WSL machine'
         New-Item -ItemType Directory -Force (Join-Path $wDol 'GC\USA\Card A'), (Join-Path $wDol 'StateSaves') | Out-Null
+        # PrimeHack on SteamOS: an older Trilogy save, no states yet; it joins the Windows PrimeHack game only.
+        $wPh = Join-Path $wsl 'saves\primehack'
+        Write-FixtureBytes (Join-Path $wPh 'Wii\title\00010000\52334d45\data\banner.bin') (New-WiiBanner 'Metroid Prime Trilogy')
+        Write-FixtureFile (Join-Path $wPh 'Wii\title\00010000\52334d45\data\save.bin') 'old primehack trilogy save on the WSL machine'
+        New-Item -ItemType Directory -Force (Join-Path $wPh 'StateSaves') | Out-Null
         Set-Content -NoNewline -Encoding ascii $wslMarker 'written by tests/testenv.ps1 emu-fixture'
         Say "WSL EmuDeck fixture at $wsl"
     }

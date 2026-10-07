@@ -48,6 +48,7 @@ const EMULATORS: { id: string; label: string }[] = [
   { id: 'PCSX2', label: 'PCSX2' },
   { id: 'DuckStation', label: 'DuckStation' },
   { id: 'Dolphin', label: 'Dolphin' },
+  { id: 'PrimeHack', label: 'PrimeHack' },
 ]
 
 /**

@@ -3039,6 +3039,7 @@ export interface components {
             includeGlobs?: null | string[];
             extraPaths?: null | components["schemas"]["SavePathDto"][];
             machineSource?: null | components["schemas"]["GameSourceDto"];
+            emulators?: null | string[];
         };
         GameSourceDto: {
             kind: string;
