@@ -1825,6 +1825,23 @@ asked; melonDS's "beside the ROM" mode only takes a save with a DS ROM beside it
 ScummVM finds fixed-name engines from a `gameid` alone (`sword1mac`); testenv keeps a hand-set
 `SAVELOCKER_EMULATOR_HOME`; and the row checkbox has its own accessible name. Unit **332** (+7, the four main
 fixes mutation-checked); `agent-ui/src/api-types.ts` regenerated (one addition, `untouchedSeed`).
+<br>**2026-10-07: Group C built (branch `emulator-saves-group-c`, one commit per phase, no PR yet).**
+PCSX2, DuckStation, Dolphin (GameCube and Wii) and PrimeHack, plus the shared-memory-card warning and a Console row
+on Add games. The maintainer decided four things at the start:
+- a card every game shares is a greyed-out row with how to fix it, never a game;
+- states sync, but not PCSX2's `.p2s.backup` copies;
+- Wii is in this group;
+- **saves from different emulators are never one game**, even with the same files. The server now sends
+  `GameDto.Emulators`, an additive field.
+
+That last rule contradicts Group F's planned Eden ↔ Ryujinx sync, so confirm it when F starts. A read-only Deck
+capture found PCSX2 on **one 64 MB shared file card** (EmuDeck does not make it a folder card) and Metroid Prime
+Trilogy saved in both Dolphin and PrimeHack. The maintainer's PC turned out to have a real EmuDeck for Windows (link
+layout as researched), which broke a Group B test that read its ES-DE gamelists; that is fixed, see Gotchas. Unit
+**361**. Details: `tasks/emulator-saves/plan.md` → *Group C — as built*.
+<br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then the PR.
+On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another
+commit, so this session did not touch it: run `testenv clean` first.
 
 ---
 

@@ -14,12 +14,12 @@ ships.
 | A — RetroArch | Phases 1, 1b, 7, 7b | ✅ Shipped 2026-10-07 — PR #60 (`emulator-saves-phase-1`). The testenv pass of the source chips and the EmuDeck hardware pass are still to do |
 | B — Saves named after the ROM | Phases 3 (identity by folders, D1), 8 melonDS\*, 9 Model 2 + Supermodel\*, 10 ScummVM\*, 16 linking by hand (same files) | 🚧 Built 2026-10-07 — PR #61 (`emulator-saves-group-b`), one commit per phase; review fixes on the same PR (D1 on the
 save file only, *Keep it as its own game* kept apart, untouched seeds can join). D1 confirmed; Model 2 kept (seeds hidden by hash, maintainer's choice); captured on the real Deck (found EmuDeck's 29 seeded Supermodel NVRAM files). The testenv pass and a played-save hardware pass are still to do |
-| C — Memory cards | Phases 2 (PCSX2, Dolphin, DuckStation + the shared-card warning), 4 PrimeHack, the per-console row | ⏳ Not started |
+| C — Memory cards | Phases 2 (PCSX2, Dolphin, DuckStation + the shared-card warning), 4 PrimeHack, the per-console row | 🚧 Built 2026-10-07 (`emulator-saves-group-c`), one commit per phase. Maintainer's calls: shared cards are greyed-out rows with the fix, states without PCSX2's `.backup` copies, Wii in this group, and saves from different emulators never one game (`GameDto.Emulators`). Captured read-only on the Deck (a 64 MB shared PCSX2 card, Wii banners) and on EmuDeck for Windows (link layout). The testenv pass and the real-game checks (Group H) are still to do |
 | D — Sony (`PARAM.SFO`) | Phases 11 PPSSPP, 5a RPCS3, 12 Vita3K\*, 13 shadPS4\* | ⏳ Not started |
 | E — Title-ID folders | Phases 14 Cemu, 15 Azahar, 5b Xenia | ⏳ Not started |
 | F — Switch | Phase 6 (Yuzu, Citron, Eden, Ryujinx) + the server title key (D2) | ⏳ Not started |
 | G — Each machine's own file names | Phase 17 (link a save to a server game whose files are named differently: another dump, another emulator) | ⏳ Not started — added 2026-10-07; open questions in plan.md → *Phase 17* |
-| H — Real-game checks (no code) | Phase 18: every emulator that shipped without a test against a real game, on the Deck and on Windows. Now: melonDS, ScummVM, Supermodel, Model 2 | ⏳ Waiting for games — added 2026-10-07; the list grows as phases ship untested |
+| H — Real-game checks (no code) | Phase 18: every emulator that shipped without a test against a real game, on the Deck and on Windows. Now: melonDS, ScummVM, Supermodel, Model 2, PCSX2, DuckStation, Dolphin, PrimeHack | ⏳ Waiting for games — added 2026-10-07; the list grows as phases ship untested |
 
 \* Bonus. If a group grows too big, a bonus emulator is the first thing to move to a later PR.
 

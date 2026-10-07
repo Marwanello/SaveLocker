@@ -150,6 +150,11 @@ SaveLocker/
 │   │   │                               #   Supermodel and Model 2 are rows of it. IsUntouchedSeed: EmuDeck's preinstalled NVRAM
 │   │   ├── MelonDsSaves.cs · SupermodelSaves.cs · Model2Saves.cs   # Its rows (folders per OS, config readers, seed hashes)
 │   │   ├── ScummVmSaves.cs              # scummvm.ini targets → <target>.* in their savepath (own reader: not ROM-named)
+│   │   ├── MemoryCards.cs               # Is this card SHARED by every game? (PS2 file card, Dolphin raw, DuckStation shared,
+│   │   │                               #   a PS1 card of several games) → a greyed NotSyncable row; PS1 card directory;
+│   │   │                               #   ConsoleText (Shift-JIS/1252, full-width folded by hand — invariant globalization)
+│   │   ├── Pcsx2Saves.cs · DuckStationSaves.cs   # PS2 folder card per product code (icon.sys title); PS1 card per game
+│   │   ├── DolphinSaves.cs              # GameCube GCI per game ID + Wii title folders (banner.bin); PrimeHack is its 2nd emulator
 │   │   ├── EmulatorSaves.cs             # The table of emulator sources both scanners loop — a new emulator is one row
 │   │   ├── EmulatorPaths.cs             # Home/AppData for standalone emulator lookups; SAVELOCKER_EMULATOR_HOME = fixture home
 │   │   ├── GamelistXml.cs               # ES-DE gamelist.xml titles, arcade systems only (safe because of D1)

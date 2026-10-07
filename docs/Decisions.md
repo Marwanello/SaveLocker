@@ -329,6 +329,24 @@ session can judge an edge case, not to reopen the choice.
   found the game, as kind › detail + tags ("Emulator › RetroArch", SNES, Flatpak), because two machines rarely
   find a game the same way. The agent writes the words once (`GameSources`), the server stores one row per
   machine and game, and the three UIs only draw them. Nothing syncs differently because of it.
+  <br>**Amended 2026-10-07 (emulator-saves Group C):** one thing now reads it — which emulators a game was found
+  through (`GameDto.Emulators`, next bullet). The kind and detail are no longer display only.
+- **Saves from different emulators are never one game, even with the same files** (2026-10-07, maintainer's
+  choice at the start of emulator-saves Group C, over "one game, one emulator per machine"). Dolphin's and
+  PrimeHack's Metroid Prime Trilogy keep byte-identical saves under identical scopes, so D1 alone would make them
+  one game. The agent's game list now carries the emulators each game was found through (from the per-machine
+  sources), and `Enroller.SameFiles` also requires this candidate's emulator to be among them. A game no machine has
+  reported an emulator for (made before sources, or by hand) is open to any. Add games' *Change* lists such a game
+  greyed out as *Another emulator*. **Group F (Switch) planned the opposite** — Eden ↔ Ryujinx as one game through
+  a title key (D2) — so confirm with the maintainer when F starts.
+- **A memory card every game of a console shares is never a game of its own** (2026-10-07, maintainer's choice,
+  emulator-saves Group C). Restoring one game's version would restore every game on the card. Add games lists it
+  greyed out with how to switch the emulator to a card per game (`ScanCandidate.NotSyncable`), the enroller refuses
+  it, and `SaveDirSanity` warns — never refuses — when one is mapped by hand. Judged by the file on disk (the PS2
+  card's header, Dolphin's and DuckStation's names, a PS1 card holding several games' saves), never by an emulator
+  setting: EmuDeck sets PCSX2's folder auto-manage on, yet PCSX2 still creates a shared file card.
+- **PCSX2's `.p2s.backup` state copies are not synced** (2026-10-07, maintainer's choice): D3's "states always" stands,
+  but a backup of every slot would double a PS2 game's states against the upload cap.
 - **"Latest" = `Game.HeadVersionId`.** UI label "Latest"; admin action "Set as Latest".
 - **Artwork:** SteamGridDB images are downloaded/cached server-side, not stored as bare URLs
   (offline-safe, survives upstream changes).

@@ -285,7 +285,19 @@ a state slot and its thumbnail; WSL has an older Chrono save and no states; both
 and state, which no Chrono sync may touch. Add games lists `Chrono Trigger` etc. with *Emulator* and *RetroArch* chips;
 the *Emulators* source chip narrows to them and opens an *Emulator* row (All / RetroArch). After adding one,
 its game page shows *Emulator › RetroArch* with *SNES* and *EmuDeck* tags under the name, and the console's
-game page shows one chip, or "2 sources" when the machines found it differently. `-EmuDeckPath <dir>` points it at any other folder — a **copy** of a real
+game page shows one chip, or "2 sources" when the machines found it differently.
+Group C adds, under `Emulation\saves` on both machines:
+- **PCSX2:** a folder card `Mcd001.ps2` with *Kingdom Hearts II* (Windows has a state, plus a `.p2s.backup` that
+  must never travel). Its neighbour must survive every Kingdom Hearts pull: *GTA3* on Windows, *Okami* on WSL. So
+  must each card's own `_pcsx2_superblock`. Windows also has a file card `Mcd002.ps2`, listed greyed out with the fix.
+- **DuckStation:** *Crash Bandicoot*, with a state on Windows. *Spyro* and *Tekken 3* stay put. A
+  `shared_card_1.mcd` on Windows is greyed out.
+- **Dolphin:** GameCube *Metroid Prime* and *Melee* (Windows), and Wii *Metroid: Other M* on both. Windows keeps it
+  under `states`, WSL under `StateSaves`.
+- **Metroid Prime Trilogy in Dolphin AND PrimeHack** on Windows: two rows, two server games. WSL's PrimeHack copy
+  joins only the PrimeHack one.
+
+The Emulators chip then opens an Emulator row with nine chips, and a Console row (PS1, PS2, GameCube, Wii, …). `-EmuDeckPath <dir>` points it at any other folder — a **copy** of a real
 `Emulation` folder is the safe way to try real saves. The Deck needs no override: its test daemon scans
 the Deck's real EmuDeck install, so add only a game whose save you have backed up.
 
@@ -357,6 +369,7 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 | Emulator saves: game sources per machine, names without "(RetroArch)" (2026-10-07) | `dotnet test tests/SaveLocker.Agent.Tests` **280** (+5 `GameSourcesTests` — the stale-host save check mutation-checked; `RetroArchSyncTests` also asserts both machines' sources on the server and on the agent's game list) · full solution build clean · `web` + `agent-ui` lint and build clean · `openapi.json` and `web/src/api-types.ts` regenerated, additions only (`agent-ui/src/api-types.ts` edited by hand: `GameSourceDto`, `TrackedGameDto.source`, `GameDto.machineSource`) · console source chip + popover checked in the browser against a seeded dev server |
 | Emulator saves merged onto multiple save paths + Phase 1b states (2026-10-06) | `dotnet test tests/SaveLocker.Agent.Tests` **247** (`main`'s 228 + `RetroArchTests` 17 + `RetroArchSyncTests` 2 — two machines against a real server; an unscoped states folder fails it) · `run-multipath-tests` **39** · `run-delta-upload-tests` **33** |
 | Emulator saves Phase 16, linking by hand + Model 2 states (2026-10-07, `emulator-saves-group-b`) | `dotnet test tests/SaveLocker.Agent.Tests` **325** (+5 `LinkByHandTests` — two machines against a real server; the re-check of a pick and the here-first `TrackedFor` each mutation-checked; +1 `ArcadeSavesTests` for Model 2 states, slot names mutation-checked) · Windows agent and `Agent.Linux` build · `agent-ui` lint + build clean · `agent-ui/src/api-types.ts` regenerated from a scratch tray on :5190, additions only · Add games checked in the browser against a scratch server seeded as a Deck (join, keep as its own game, greyed-out different files) |
+| Emulator saves Group C (2026-10-07, `emulator-saves-group-c`) | `dotnet test tests/SaveLocker.Agent.Tests` **361** (+29: `MemoryCardTests` 17 — the shared-card detection and the PCSX2 per-game scope each mutation-checked; `GroupCSyncTests` 5, two or three machines against a real server — PS2 folder card, PS1 card, Wii, and Dolphin vs PrimeHack kept apart, the emulator rule and the in-batch emulator each mutation-checked; `EmulatorChipTests` 7 — a missing chip fails it) · Windows agent, `Agent.Linux` and server build · `web` + `agent-ui` lint and build clean · `openapi.json`, `web/src/api-types.ts` and `agent-ui/src/api-types.ts`: additions only (`GameDto.emulators`; `CandidateDto.notSyncable`/`emulatorConsole`), the agent's regenerated from a scratch tray on :5193 · `testenv emu-fixture` written to a scratch folder and scanned with the dev CLI; Add games checked in the browser against a sandboxed tray (the live rig was in use, see CONTEXT) |
 | Emulator saves Group B (2026-10-07, `emulator-saves-group-b`) | `dotnet test tests/SaveLocker.Agent.Tests` **319** (+28: `IdentityByFoldersTests` 4 — D1, both halves mutation-checked; `GamelistXmlTests` 4; `MelonDsTests` 7; `ArcadeSavesTests` 9 — the Supermodel seed filter mutation-checked; `ScummVmTests` 3; `GroupBSyncTests` 2, two machines against a real server) · `agent-ui` build + lint clean · `Agent.Linux` builds |
 | Emulator saves Phase 1 (2026-10-04) | `dotnet test tests/SaveLocker.Agent.Tests` **203** (+22: `IncludeGlobTests` 9 — the three scoped-restore checks mutation-checked — and `RetroArchTests` 13) · `run-delta-upload-tests` **33** · `run-hardening-tests` **33** · `run-health-tests` **33** · full solution build at the 1-warning baseline |
 | Archive UTC write times (2026-09-28) | `dotnet test tests/SaveLocker.Agent.Tests` **114** (+9: `SaveArchiveTimestampTests` — fail before the fix off UTC) · `run-delta-upload-tests` **33** (+4: section 10, newest change through full and delta pushes; mutation-checked — dropping the server copy fails 1, the old agent stamp fails 3) · `run-hardening-tests` **33** · `run-health-tests` **22** |
