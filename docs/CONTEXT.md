@@ -1774,6 +1774,13 @@ says why it refused (`EnrollResponse.notes`). Also: the poller sends a source on
 against a console without the route; "EmuDeck" tag from the scanner, not the (real) path; server bounds
 sources. Decisions → *Emulator games are named…* and *A game never joins…*. Unit **291**; both main fixes
 mutation-checked.
+<br>**2026-10-07: the rest of the task planned.** The maintainer added Cemu, Azahar, Model 2, PPSSPP and the Switch
+family (Yuzu, Citron, Eden, Ryujinx), plus bonus Supermodel, melonDS, ScummVM, shadPS4 and Vita3K. Every save
+folder was researched from EmuDeck's own setup scripts (both OSes) and the emulators' source. The remaining phases
+are in five groups by save shape, one PR each: B saves named after the ROM, C memory cards, D Sony (`PARAM.SFO`),
+E title-ID folders, F Switch. Two design points need the maintainer's yes first: D1, an emulator game found by its
+folders rather than its name (B), and D2, a server title key so Ryujinx's numbered folders sync with the Yuzu forks
+(F). Details: `tasks/emulator-saves/plan.md` → *The other emulators* and `implementation-grouping.md`.
 <br>**Next action for this item:** a testenv pass of the source chips (agent UI + Game Mode; the console was
 checked in the browser) — `testenv clean` first, the old "(RetroArch)" games no longer match — then the EmuDeck
 hardware pass (Deck + Windows) for Phases 1 and 1b, then a PR.
