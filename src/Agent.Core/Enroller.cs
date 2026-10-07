@@ -29,12 +29,15 @@ public static class Enroller
     /// <param name="alsoSync">Per candidate id, which of its "Also found" folders
     /// (<see cref="ScanCandidate.AlternateSaveDirs"/>) the user ticked. Only those are added; a candidate
     /// missing from it adds none.</param>
+    /// <param name="links">Per candidate id, which server game an emulator save joins when the user chose by
+    /// hand (<see cref="EnrollLinks"/>). A candidate missing from it is linked automatically.</param>
     public static async Task<(int enrolled, int skipped)> EnrollAsync(
         AgentConfig config,
         IReadOnlyList<ScanCandidate> candidates,
         int[] ids,
         CancellationToken ct = default,
-        IReadOnlyDictionary<int, string[]>? alsoSync = null)
+        IReadOnlyDictionary<int, string[]>? alsoSync = null,
+        IReadOnlyDictionary<int, LinkChoice>? links = null)
     {
         if (string.IsNullOrEmpty(config.ApiKey))
             throw new InvalidOperationException("Not registered yet. Open Settings and click Register first.");
@@ -105,9 +108,11 @@ public static class Enroller
                 if (c.Source == ScanSource.Emulator)
                 {
                     serverGames ??= await api.ListGamesAsync();
-                    if (ServerNameFor(serverGames, c, extras) is not { } named)
+                    var (named, refusal) = EnrollLinks.Resolve(serverGames, c, extras,
+                        links is not null && links.TryGetValue(id, out var link) ? link : null);
+                    if (named is null)
                     {
-                        Refuse(c.Name, "every name it could take on the server is already another game's.");
+                        Refuse(c.Name, refusal!);
                         continue;
                     }
                     serverName = named;
@@ -380,18 +385,30 @@ public static class Enroller
     /// names its files (an emulator save) is also found by them under any name (D1, <see cref="ServerNameFor"/>):
     /// a game adopted from the server may be called something this machine's scan would never say.
     /// </summary>
+    /// <para>
+    /// One set up HERE wins over one only known from the server: a save kept as its own game by hand
+    /// ("Daytona USA (Model 2)") has the same files as the fleet's "Daytona USA", which this machine may
+    /// also track, unmapped.
+    /// </para>
     public static TrackedGame? TrackedFor(AgentConfig config, ScanCandidate c)
     {
-        foreach (var name in NamesFor(c))
-            if (config.FindGame(name) is { } g && SameScope(g.IncludeGlobs, c.IncludeGlobs)) return g;
-        if (c.IncludeGlobs is not { Count: > 0 }) return null;
+        var byName = NamesFor(c)
+            .Select(config.FindGame)
+            .Where(g => g is not null && SameScope(g.IncludeGlobs, c.IncludeGlobs))
+            .Select(g => g!);
+        var matches = byName.Concat(ByFiles(config, c)).ToList();
+        return matches.FirstOrDefault(g => g.IsEnrolledHere) ?? matches.FirstOrDefault();
+    }
+
+    private static IEnumerable<TrackedGame> ByFiles(AgentConfig config, ScanCandidate c)
+    {
+        if (c.IncludeGlobs is not { Count: > 0 }) return [];
         var declared = c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>();
         return config.Games
             .Where(g => SameScope(g.IncludeGlobs, c.IncludeGlobs) && g.ExtraPaths.Count == declared.Count &&
                         declared.All(e => g.ExtraPaths.FirstOrDefault(p => p.Key == e.Key) is { } p &&
                                           SameScope(p.IncludeGlobs, e.IncludeGlobs)))
-            .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault();
+            .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>

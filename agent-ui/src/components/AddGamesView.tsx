@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { RefreshCw, FolderSearch, Check, SearchCheck, TriangleAlert } from 'lucide-react'
-import type { Candidate, EnrollProgress } from '../types'
+import type { Candidate, EnrollProgress, LinkOption } from '../types'
 import { api } from '../api'
 import { useFolderPicker } from '../useFolderPicker'
 import { PathBrowserModal } from './PathBrowserModal'
+import { ServerGameLink, type LinkPick } from './ServerGameLink'
 import { LaunchSetupCard } from './LaunchSetupCard'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
@@ -173,6 +174,31 @@ export function AddGamesView({ onEnrolled }: Props) {
 
   useEffect(() => { void scan(false) }, [scan])
 
+  // Which server game each emulator save joins, asked once per list. A fresh scan renumbers the
+  // candidates, so every hand-made choice is dropped with it.
+  const [links, setLinks] = useState<Map<number, LinkOption[]>>(new Map())
+  const [linkPicks, setLinkPicks] = useState<Map<number, LinkPick>>(new Map())
+  const [linkOpen, setLinkOpen] = useState<number | null>(null)
+  useEffect(() => {
+    setLinkPicks(new Map())
+    setLinkOpen(null)
+    if (!candidates.some(c => c.source === 'Emulator' && !c.enrolled)) { setLinks(new Map()); return }
+    let live = true
+    api.candidateLinks()
+      .then(r => { if (live) setLinks(new Map(r.links.map(l => [l.id, l.options]))) })
+      .catch(() => { if (live) setLinks(new Map()) })
+    return () => { live = false }
+  }, [candidates])
+  const pickLink = (id: number, pick: LinkPick | undefined) => {
+    setLinkPicks(prev => {
+      const next = new Map(prev)
+      if (pick) next.set(id, pick)
+      else next.delete(id)
+      return next
+    })
+    setLinkOpen(null)
+  }
+
   const toggle = (id: number) => {
     setChecked(prev => {
       const next = new Set(prev)
@@ -237,7 +263,11 @@ export function AddGamesView({ onEnrolled }: Props) {
         const paths = (c?.alsoFound ?? []).map(f => f.path).filter(p => c && !alsoOff.has(alsoId(c, p)))
         return c && paths.length > 0 ? [{ id, paths }] : []
       })
-      const result = await api.enroll([...checked], alsoSync)
+      const linked = [...checked].flatMap(id => {
+        const pick = linkPicks.get(id)
+        return pick ? [{ id, choice: pick.choice, gameId: pick.gameId ?? null }] : []
+      })
+      const result = await api.enroll([...checked], alsoSync, linked)
       setStatus(
         `Added ${result.enrolled} game${result.enrolled === 1 ? '' : 's'}.` +
         (result.skipped > (result.notes?.length ?? 0) ? ` Skipped ${result.skipped - (result.notes?.length ?? 0)} already tracked.` : '') +
@@ -472,6 +502,16 @@ export function AddGamesView({ onEnrolled }: Props) {
                     Set save folder
                   </Button>
                 </div>
+              )}
+              {!c.enrolled && (links.get(c.id)?.length ?? 0) > 0 && (
+                <ServerGameLink
+                  title={c.name}
+                  options={links.get(c.id)!}
+                  pick={linkPicks.get(c.id)}
+                  open={linkOpen === c.id}
+                  onToggle={() => setLinkOpen(linkOpen === c.id ? null : c.id)}
+                  onPick={pick => pickLink(c.id, pick)}
+                />
               )}
               {!c.enrolled && c.path && (c.alsoFound ?? []).length > 0 && (
                 // Other folders the manifest names for this game that exist here. Ticked by default; the
