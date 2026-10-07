@@ -865,6 +865,46 @@ public static class SaveArchive
             .ToList();
     }
 
+    /// <summary>A file in one of a game's save folders that a push does not archive.</summary>
+    /// <param name="Excluded">True when the folder's include scope takes it but an exclude pattern drops
+    /// it; false when it is outside the folder's scope — another game's save in a shared folder.</param>
+    public readonly record struct UnsyncedFile(string Key, string Path, string FullPath, bool Excluded);
+
+    /// <summary>
+    /// The files in a game's save folders that <see cref="ListSaveFiles"/> leaves out (tasks/save-file-trees
+    /// Phase 3): what the agent's file tree folds into "other files in this folder". Each file is listed
+    /// once, under the first folder that holds it; SaveLocker's own reserved names are never listed.
+    /// </summary>
+    public static IReadOnlyList<UnsyncedFile> ListUnsyncedFiles(IReadOnlyList<SaveRoot> roots, IEnumerable<string>? excludeGlobs = null)
+    {
+        var seen = ListSaveFiles(roots, excludeGlobs).Select(f => f.FullPath).ToHashSet(PathComparer);
+        var result = new List<UnsyncedFile>();
+        foreach (var root in roots)
+        {
+            if (!Directory.Exists(root.Directory)) continue;
+            var rootFull = Path.GetFullPath(root.Directory);
+            var rels = EnumerateFilesNoFollow(rootFull)
+                .Select(f => Path.GetRelativePath(rootFull, f).Replace('\\', '/'))
+                .Where(r => !(root.IsPrimary && IsSliceName(r)))
+                .ToList();
+            var inScope = FilterIncluded(rels, root.IncludeGlobs).ToHashSet(StringComparer.Ordinal);
+            foreach (var rel in rels.Order(StringComparer.Ordinal))
+            {
+                var full = Path.Combine(rootFull, rel.Replace('/', Path.DirectorySeparatorChar));
+                if (seen.Add(full)) result.Add(new UnsyncedFile(root.Key, rel, full, inScope.Contains(rel)));
+            }
+        }
+        return result;
+    }
+
+    /// <summary>The save folder an archive name belongs to and its path inside it — <c>main</c> for the
+    /// archive root. Null for a folder marker or any other name SaveLocker reserves.</summary>
+    public static (string Key, string Path)? SplitArchiveName(string name)
+    {
+        if (TrySplitExtra(name, out var key, out var rel)) return (key, rel);
+        return IsSliceName(name) ? null : (SaveRoot.PrimaryKey, name);
+    }
+
     /// <summary>
     /// Raised (best-effort) when a symlink or junction is skipped, so the agent can say so rather
     /// than silently omitting a file the user expected to be synced.

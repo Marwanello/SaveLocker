@@ -2506,6 +2506,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GameFilesDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games/{id}/pre-launch-sync": {
         parameters: {
             query?: never;
@@ -3039,6 +3092,27 @@ export interface components {
             extraPaths?: null | components["schemas"]["SavePathDto"][];
             machineSource?: null | components["schemas"]["GameSourceDto"];
         };
+        GameFilesDto: {
+            folders: components["schemas"]["GameFolderFilesDto"][];
+            head: null | components["schemas"]["GameFilesHeadDto"];
+            reachable: boolean;
+        };
+        GameFilesHeadDto: {
+            /** Format: uuid */
+            versionId: string;
+            /** Format: date-time */
+            when: string;
+            machine: string;
+        };
+        GameFolderFilesDto: {
+            key: string;
+            label: string;
+            path: string;
+            files: components["schemas"]["LocalFileDto"][];
+            other: components["schemas"]["OtherFileDto"][];
+            /** Format: int32 */
+            otherCount: number;
+        };
         GameSourceDto: {
             kind: string;
             detail: string;
@@ -3117,6 +3191,16 @@ export interface components {
             detail: string;
             badge: string;
         };
+        LocalFileDto: {
+            path: string;
+            /** Format: int64 */
+            size: number;
+            /** Format: date-time */
+            modifiedUtc: null | string;
+            state: null | string;
+            /** @default false */
+            missing: boolean;
+        };
         LocalResolveRequest: {
             /** Format: uuid */
             winningVersionId: string;
@@ -3148,6 +3232,12 @@ export interface components {
         OpenLogResponse: {
             opened: boolean;
             path: string;
+        };
+        OtherFileDto: {
+            path: string;
+            /** Format: int64 */
+            size: number;
+            why: string;
         };
         PlaynitePluginCardStatusDto: {
             applicable: boolean;

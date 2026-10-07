@@ -1345,6 +1345,22 @@ public sealed class AgentApiServer : IDisposable
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         });
 
+        // The game page's "Save files on this PC": every file of every folder here, each compared with
+        // the server's head by SHA-256 (tasks/save-file-trees Phase 3). Hashes the whole save like
+        // sync-status, off the request thread; asked for when the page opens or on Refresh, never polled.
+        // An unreachable server is an answer (no states), not an error.
+        app.MapGet("/api/games/{id:guid}/files",
+            async Task<Results<Ok<GameFilesDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id, CancellationToken ct) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.NotFound();
+            try { return TypedResults.Ok(await SaveFileTree.BuildAsync(_config, game, ApiClient.For(_config), ct)); }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                return TypedResults.InternalServerError(new ErrorResponse(ex.Message));
+            }
+        }).Produces<GameFilesDto>();
+
         // The Decky/Playnite launch gate (tasks/conflict-resolution-ui/plan.md, Phase 11). Neither
         // can call SyncEngine.PrepareLaunchAsync in-process the way the Linux wrapper (Phase 4,
         // ProtonRun.cs) does, so this wraps it for a caller that can only reach the agent over HTTP.

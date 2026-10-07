@@ -8,7 +8,7 @@ namespace SaveLocker.Agent.Tests;
 
 /// <summary>
 /// tasks/save-file-trees Phases 1 and 3 without a server: the CRC-32 the console's diff compares, the
-/// diff itself.
+/// diff itself, and which files of a save folder a push leaves out.
 /// </summary>
 public sealed class SaveFileTreeArchiveTests : IDisposable
 {
@@ -109,15 +109,43 @@ public sealed class SaveFileTreeArchiveTests : IDisposable
         Assert.Equal(SaveArchive.HashFile(Path.Combine(states, "q.state")), Assert.Single(hashed[1].Files).Sha256);
     }
 
+    [Fact]
+    public void Unsynced_files_are_split_into_other_games_and_excluded_ones()
+    {
+        var shared = Dir("shared", ("Chrono.srm", "c"), ("Chrono.rtc", "r"), ("Zelda.srm", "z"), ("deep/Mana.srm", "m"));
+        var roots = new[] { SaveRoot.Primary(shared, new[] { "Chrono.srm", "Chrono.rtc" }) };
+
+        var unsynced = SaveArchive.ListUnsyncedFiles(roots, new[] { "*.rtc" });
+
+        Assert.Equal(new[] { ("Chrono.rtc", true), ("Zelda.srm", false), ("deep/Mana.srm", false) },
+            unsynced.Select(u => (u.Path, u.Excluded)).OrderBy(u => u.Path, StringComparer.Ordinal));
+        Assert.All(unsynced, u => Assert.Equal("main", u.Key));
+
+        // Two scoped folders of one game in one directory: a file neither takes is listed once.
+        var both = new[] { SaveRoot.Primary(shared, new[] { "Chrono.srm" }), new SaveRoot("clock", shared, new[] { "Chrono.rtc" }) };
+        var once = SaveArchive.ListUnsyncedFiles(both);
+        Assert.Equal(2, once.Count);
+        Assert.DoesNotContain(once, u => u.Path is "Chrono.srm" or "Chrono.rtc");
+    }
+
+    [Fact]
+    public void Archive_names_split_into_folder_and_path()
+    {
+        Assert.Equal(("main", "sub/a.sav"), SaveArchive.SplitArchiveName("sub/a.sav"));
+        Assert.Equal(("states", "x/q.state"), SaveArchive.SplitArchiveName(".savelocker/paths/states/x/q.state"));
+        Assert.Null(SaveArchive.SplitArchiveName(SaveArchive.MarkerName("states")));
+    }
 }
 
 /// <summary>
-/// tasks/save-file-trees against a real server: the console's per-version changes (Phase 1) and the head's
-/// file hashes an agent compares with, for a RetroArch game whose save and states folders other ROMs share.
+/// tasks/save-file-trees against a real server: the console's per-version changes (Phase 1), the head's
+/// file hashes an agent compares with, and the agent's own file tree (Phase 3) for a RetroArch game whose
+/// save and states folders other ROMs share.
 /// </summary>
 public sealed class SaveFileTreeServerTests : IClassFixture<ServerProcess>, IDisposable
 {
     private const string Chrono = "Chrono Trigger (USA)";
+    private const string Zelda = "Zelda (USA)";
     private const string AdminPassword = "file-tree-admin-pw";
 
     private readonly ServerProcess _server;
@@ -183,6 +211,9 @@ public sealed class SaveFileTreeServerTests : IClassFixture<ServerProcess>, IDis
 
     private static TrackedGame Reload(AgentConfig config, string title = "Chrono Trigger") =>
         AgentConfig.Load(config.ConfigPath).FindGame(title)!;
+
+    private static Dictionary<(string Key, string Path), LocalFileDto> Files(GameFilesDto tree) =>
+        tree.Folders.SelectMany(f => f.Files.Select(x => (f.Key, x))).ToDictionary(x => (x.Key, x.x.Path), x => x.x);
 
     [Fact]
     public async Task Each_version_lists_what_it_changed_and_only_the_console_may_ask()
@@ -256,5 +287,92 @@ public sealed class SaveFileTreeServerTests : IClassFixture<ServerProcess>, IDis
         Assert.Equal(HttpStatusCode.Unauthorized,
             (await anonymous.GetAsync($"/api/agent/games/{game.GameId}/head/files")).StatusCode);
         Assert.Null(await ApiClient.For(h).GetHeadFilesAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task The_file_tree_marks_each_file_against_the_head_and_folds_the_neighbours()
+    {
+        Write(Saves("a"), Chrono + ".srm", "a-sram");
+        Write(States("a"), Chrono + ".state1", "a-slot1");
+        Write(Saves("a"), Zelda + ".srm", "zelda-sram");
+        Write(States("a"), Zelda + ".state", "zelda-state");
+        Write(Saves("b"), Chrono + ".srm", "b-old");
+
+        var a = await Machine("a");
+        var b = await Machine("b");
+        var gameA = await Enroll(a, "a");
+        var gameB = await Enroll(b, "b");
+        await using var engineA = new SyncEngine(a, ApiClient.For(a));
+        await using var engineB = new SyncEngine(b, ApiClient.For(b));
+        Assert.NotNull(await engineA.PushAsync(gameA, force: true));
+        await engineB.PullAsync(gameB, force: true);
+
+        async Task<GameFilesDto> Tree(AgentConfig config, Action<TrackedGame>? tweak = null)
+        {
+            var game = Reload(config);
+            tweak?.Invoke(game);
+            return await SaveFileTree.BuildAsync(config, game, ApiClient.For(config));
+        }
+
+        // Just pushed: every file of the game in sync; the other ROM's files folded under each folder.
+        var tree = await Tree(a);
+        Assert.True(tree.Reachable);
+        Assert.Equal(new[] { "main", "states" }, tree.Folders.Select(f => f.Key));
+        Assert.Equal(Saves("a"), tree.Folders[0].Path);
+        Assert.All(Files(tree).Values, f => Assert.Equal(SaveFileTree.Same, f.State));
+        Assert.Equal(new[] { (Zelda + ".srm", SaveFileTree.OtherGame) }, tree.Folders[0].Other.Select(o => (o.Path, o.Why)));
+        Assert.Equal(new[] { (Zelda + ".state", SaveFileTree.OtherGame) }, tree.Folders[1].Other.Select(o => (o.Path, o.Why)));
+
+        // A changes its save: that file, and only it, is a push.
+        Write(Saves("a"), Chrono + ".srm", "a-sram-edited");
+        tree = await Tree(a);
+        Assert.Equal(SaveFileTree.Here, Files(tree)[("main", Chrono + ".srm")].State);
+        Assert.Equal(SaveFileTree.Same, Files(tree)[("states", Chrono + ".state1")].State);
+
+        // Back as it was; B then changes the save and adds a slot. A's untouched copy is the server's to update.
+        Write(Saves("a"), Chrono + ".srm", "a-sram");
+        Write(Saves("b"), Chrono + ".srm", "b-sram");
+        Write(States("b"), Chrono + ".state2", "b-slot2");
+        Assert.NotNull(await engineB.PushAsync(Reload(b)));
+        tree = await Tree(a);
+        Assert.Equal(SaveFileTree.Server, Files(tree)[("main", Chrono + ".srm")].State);
+        var slot2 = Files(tree)[("states", Chrono + ".state2")];
+        Assert.Equal((SaveFileTree.Server, true), (slot2.State, slot2.Missing));
+        Assert.Equal(SaveFileTree.Same, Files(tree)[("states", Chrono + ".state1")].State);
+
+        // A edits too: its own change is what a sync carries, never mistaken for the server's.
+        Write(Saves("a"), Chrono + ".srm", "a-sram-again");
+        Assert.Equal(SaveFileTree.Here, Files(await Tree(a))[("main", Chrono + ".srm")].State);
+
+        // A pull makes everything agree again.
+        Write(Saves("a"), Chrono + ".srm", "a-sram");
+        await engineA.PullAsync(Reload(a));
+        Assert.All(Files(await Tree(a)).Values, f => Assert.Equal(SaveFileTree.Same, f.State));
+
+        // An exclude pattern turns a file of the game into an excluded one; a wider scope takes in a neighbour.
+        Write(Saves("a"), Chrono + ".rtc", "clock");
+        tree = await Tree(a, g => g.ExcludeGlobs = new() { "*.rtc" });
+        Assert.Contains(tree.Folders[0].Other, o => o.Path == Chrono + ".rtc" && o.Why == SaveFileTree.Excluded);
+        Assert.DoesNotContain(Files(tree).Keys, k => k.Path == Chrono + ".rtc");
+        tree = await Tree(a, g => g.IncludeGlobs.Add(Zelda + ".srm"));
+        Assert.Equal(SaveFileTree.Here, Files(tree)[("main", Zelda + ".srm")].State);
+        Assert.DoesNotContain(tree.Folders[0].Other, o => o.Path == Zelda + ".srm");
+    }
+
+    [Fact]
+    public async Task An_unreachable_server_still_lists_the_files_with_no_state()
+    {
+        const string Metroid = "Super Metroid (USA)";
+        Write(Saves("u"), Metroid + ".srm", "u-sram");
+        var u = await Machine("u");
+        var game = await Enroll(u, "u", "Super Metroid");
+        u.ServerUrl = "http://127.0.0.1:1";
+
+        var tree = await SaveFileTree.BuildAsync(u, game, ApiClient.For(u));
+
+        Assert.False(tree.Reachable);
+        Assert.Null(tree.Head);
+        var file = Assert.Single(Files(tree).Values);
+        Assert.Equal((Metroid + ".srm", (string?)null), (file.Path, file.State));
     }
 }
