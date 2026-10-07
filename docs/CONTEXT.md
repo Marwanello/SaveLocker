@@ -1806,6 +1806,9 @@ Group G**, not started, open questions in its plan section. Unit **325**. A save
 each save collapsed + the agent's current save tree, three variants) is at
 <https://claude.ai/artifact/2Nq9PbykqDDici67dWCGP2>, picked: **B in the console, A in the agent**, now its own task
 (`tasks/save-file-trees/plan.md`, a separate PR, not started).
+<br>**Group H, real-game checks** (no code, always the last group): melonDS, ScummVM, Supermodel and Model 2 are
+waiting for real games (maintainer has none yet). Any later emulator shipped without a real-game test is added there
+(`tasks/emulator-saves/plan.md` → *Phase 18*).
 <br>**2026-10-07: PR #61 (Group B) reviewed, every finding fixed on the PR.** The one that mattered: *Keep it as its own
 game* could still end up syncing with the fleet's game. The machine that kept a save apart also tracked the fleet's
 same-files game (adopted, no folder), and the poller mapped it the moment a folder resolved here: another Windows

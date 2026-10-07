@@ -45,6 +45,7 @@ point unless explicitly instructed to.
 | 15 — Azahar | ⏳ Not started — Group E (added 2026-10-07) |
 | 16 — Linking by hand, same files (mockup version 2) | 🚧 Built 2026-10-07 (branch `emulator-saves-group-b`, with Group B) — each emulator row on Add games says which server game the save joins, with a **Change** button for that row only: automatic, *Keep it as its own game*, or another server game keeping the same files; a same-titled game with other file names is listed greyed out with the reason. `EnrollLinks` + `GET /api/candidates/links` + `EnrollRequest.Links`; `LinkByHandTests` 5, two of them mutation-checked; checked in the browser against a scratch server **Review fixes (PR #61):** *Keep it as its own game* opts this machine out of the fleet's same-files game, and the poller never maps a second game onto files another syncs here (`SaveFolderClaims`); Add games says when the server could not be asked. |
 | 17 — Each machine's own file names (linking saves with different names) | ⏳ Not started — Group G (added 2026-10-07, maintainer: "keep option 2 in another phase"); open questions below |
+| 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07). Rows are added as later phases ship untested; see *Phase 18* |
 
 ### Phase 1 — as built (2026-10-04), and where it departs from the plan below
 
@@ -805,6 +806,45 @@ the Eden layout and one on the Ryujinx layout against a real server; hardware: t
 Citron) ↔ Windows (Ryujinx). Do not wire a fork's fast path before its layout is captured.
 
 ---
+
+### Group H — Real-game checks (no code)
+
+### Phase 18 — real-game checks for emulators shipped without one
+
+Added 2026-10-07 by the maintainer: no implementation, only testing with real games. Every emulator below shipped
+with fixtures, unit tests and a testenv pass, but nobody has played a real game in it with SaveLocker watching, so
+what the emulator actually writes, and when, is still unconfirmed. **When a later phase ships without a real-game
+test, add its emulator here.** Tick a row only when both machines pass; a failure becomes a fix in that emulator's
+own group, in a follow-up PR.
+
+**Before testing: back up the save folders listed.** A test agent that adds a game pushes and pulls real files.
+
+**Rig.**
+- **Deck:** run `.\tests\testenv.ps1 build -Only deck`, then `.\tests\testenv.ps1 up -Only deck`. The test
+  daemon scans the Deck's real EmuDeck install. Open its UI through the tunnel `up` prints.
+- **Windows:** point the test tray at a **copy** of the real folders, not the originals. Copy `Emulation`, plus
+  `%APPDATA%\EmuDeck\Emulators\{Supermodel,m2emulator}` and `%APPDATA%\ScummVM\scummvm.ini` into a copy home, then:
+  ```powershell
+  $env:SAVELOCKER_EMULATOR_HOME = '<copy>\home'
+  .\tests\testenv.ps1 up -Only windows -EmuDeckPath <copy>\Emulation
+  ```
+  Edit `savepath` in the copied `scummvm.ini` so it points into the copy. The full commands are in PR #61.
+
+**For every emulator:**
+1. Play and save on the **Deck**. Add the game in the Deck agent's UI and sync.
+2. Add it on **Windows**. Expect "Joins “…”" on its row, then sync. The save (and a state, where the emulator has
+   them) arrives, and the emulator on Windows loads it.
+3. Play further on Windows, sync, and check that the Deck loads the newer save.
+4. Check the neighbours: other games' saves in the same folder are untouched on both machines.
+5. Record in the table: the date, whether each step passed, and anything the emulator did that the plan didn't
+   expect (when it writes, which file names, extra files).
+
+| Emulator | Make a save | Make a state | Files (Deck · Windows) | Also check | Deck | Windows |
+|---|---|---|---|---|---|---|
+| **melonDS** | Save in-game. melonDS writes `<rom>.sav` shortly after | System → Save state → slot 1 (`<rom>.ml1`) | `Emulation/saves/melonds/{saves,states}` on both | Which file the Flatpak actually writes (ini vs toml paths); a save written beside the ROM | ⏳ | ⏳ |
+| **ScummVM** | The game's own save menu, or Ctrl+F5 → Save | None (saves are the slots, `<target>.s00`…) | `Emulation/saves/scummvm/saves` (EmuDeck's `savepath`) on both | The real file names per engine (only four fixed-name engines are confirmed); two machines with different target names | ⏳ | ⏳ |
+| **Supermodel** | Play, then exit: `NVRAM/<set>.nv` is written on exit | F5 save, F6 next slot, F7 load (`Saves/<set>.st0`…) | `~/.supermodel/{NVRAM,Saves}` · `%APPDATA%\EmuDeck\Emulators\Supermodel\{NVRAM,Saves}` | An unplayed set stays hidden (EmuDeck's preinstalled NVRAM); the title comes from `Games.xml` | ⏳ | ⏳ |
+| **Model 2** | Play, then exit: `NVDATA/<set>.DAT` is written on exit | Number keys 1–9, 0 pick the slot, then the emulator's Save State key (keyboard needed) (`STATES/<set><slot>.sta`) | `Emulation/roms/model2/{NVDATA,STATES}` · `%APPDATA%\EmuDeck\Emulators\m2emulator\{NVDATA,STATES}` | Whether `.DAT` changes on every exit; which key saves a state; an unplayed set stays hidden; `STATES` is created on the first save | ⏳ | ⏳ |
 
 ## Deferred, not built in this task
 
