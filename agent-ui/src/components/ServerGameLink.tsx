@@ -28,41 +28,39 @@ function outcome(o: LinkOption) {
 
 /**
  * Which server game an emulator save joins (tasks/emulator-saves Phase 16, version 2 of the mockup): one
- * line saying what will happen, and a Change button that opens the choices for this row only. Picking
- * anything but the automatic choice marks the row "chosen by you", with Back to automatic beside it.
+ * line saying what will happen, and a Change button on every row that opens the choices for that row only.
+ * Picking anything but the automatic choice marks the row "chosen by you", with Back to automatic beside it.
  */
 export function ServerGameLink({ title, options, pick, open, onToggle, onPick }: Props) {
   const current = options.find(o => isPicked(o, pick)) ?? options[0]
   const o = outcome(current)
   const mine = !!pick
-  // Only the automatic choice: the line alone says it all.
-  const changeable = options.length > 1
+  // Nothing but the automatic choice: Change still opens, and says why there is nothing else.
+  const alone = options.length === 1
   return (
     <div className="sl-link">
       <div className="sl-link__line">
         <span className={`sl-link__dot sl-link__dot--${mine ? 'mine' : o.tone}`} aria-hidden="true" />
         <span>{o.text}</span>
         {mine && <span className="sl-link__mine">· chosen by you</span>}
-        {changeable && (
-          <span className="sl-link__acts">
-            {mine && !open && (
-              <button type="button" className="sl-link__btn sl-link__btn--undo" onClick={own(() => onPick(undefined))}>
-                <Undo2 size={14} strokeWidth={1.9} aria-hidden="true" />
-                Back to automatic
-              </button>
-            )}
-            <button
-              type="button"
-              className="sl-link__btn"
-              aria-expanded={open}
-              aria-label={`${open ? 'Close' : 'Change'} the server game for ${title}`}
-              onClick={own(onToggle)}
-            >
-              {open ? 'Close' : 'Change'}
-              <ChevronDown size={14} strokeWidth={1.9} className="sl-link__chev" aria-hidden="true" />
+        <span className="sl-link__acts">
+          {mine && !open && (
+            <button type="button" className="sl-link__btn sl-link__btn--undo" onClick={own(() => onPick(undefined))}>
+              <Undo2 size={14} strokeWidth={1.9} aria-hidden="true" />
+              Back to automatic
             </button>
-          </span>
-        )}
+          )}
+          <button
+            type="button"
+            className="sl-link__btn"
+            aria-expanded={open}
+            aria-label={`${open ? 'Close' : 'Change'} the server game for ${title}`}
+            onClick={own(onToggle)}
+          >
+            {open ? 'Close' : 'Change'}
+            <ChevronDown size={14} strokeWidth={1.9} className="sl-link__chev" aria-hidden="true" />
+          </button>
+        </span>
       </div>
       {open && (
         <div className="sl-link__picker" role="radiogroup" aria-label={`Server game for ${title}`}>
@@ -91,6 +89,11 @@ export function ServerGameLink({ title, options, pick, open, onToggle, onPick }:
               </button>
             )
           })}
+          {alone && (
+            <span className="sl-link__none">
+              No other server game has this title or keeps these files, so there’s nothing else to link it to.
+            </span>
+          )}
         </div>
       )}
     </div>
