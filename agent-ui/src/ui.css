@@ -368,6 +368,44 @@ button:disabled { cursor: default; }
 .sl-status--warn { background: var(--color-watch-soft); color: var(--color-watch-ink); }
 .sl-filters__toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--color-fg); cursor: pointer; }
 .sl-fchip__ok { color: var(--color-safe); }
+/* Add games: which server game an emulator save joins (ServerGameLink), version 2 of the linking mockup. */
+.sl-link { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+.sl-link__line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--color-dim); min-height: 30px; }
+.sl-link__dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--color-faint); }
+.sl-link__dot--join { background: var(--color-safe); }
+.sl-link__dot--mine { background: var(--color-accent); }
+.sl-link__dot--blocked { background: var(--color-watch); }
+.sl-link__mine { font-size: 11.5px; color: var(--color-accent-ink); }
+.sl-link__acts { margin-left: auto; display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.sl-link__btn {
+  display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12.5px; cursor: pointer; min-height: 30px;
+  padding: 4px 10px 4px 8px; border-radius: 7px; border: 1px solid var(--color-line); background: var(--color-raise); color: var(--color-fg);
+  transition: background-color .12s var(--ease), border-color .12s var(--ease);
+}
+.sl-link__btn svg { color: var(--color-dim); flex: none; transition: transform .12s var(--ease); }
+.sl-link__btn:hover { background: var(--color-hover); border-color: var(--color-accent-line); }
+.sl-link__btn:hover svg { color: var(--color-accent-ink); }
+.sl-link__btn:focus-visible, .sl-link__opt:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.sl-link__btn[aria-expanded="true"] { background: var(--color-accent-soft); border-color: var(--color-accent-line); }
+.sl-link__btn[aria-expanded="true"] .sl-link__chev { transform: rotate(180deg); color: var(--color-accent-ink); }
+.sl-link__btn--undo { background: transparent; color: var(--color-accent-ink); }
+.sl-link__picker { background: var(--color-raise); border: 1px solid var(--color-line); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.sl-link__opt { display: flex; flex-direction: column; gap: 3px; text-align: left; font: inherit; font-size: 12.5px; color: var(--color-fg); background: transparent; border: 0; border-radius: 7px; padding: 9px 10px; cursor: pointer; }
+.sl-link__opt:hover, .sl-link__opt[aria-checked="true"] { background: var(--color-hover); }
+.sl-link__opt[aria-disabled="true"] { cursor: not-allowed; color: var(--color-dim); }
+.sl-link__opt[aria-disabled="true"]:hover { background: transparent; }
+.sl-link__opt-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sl-link__opt b { font-weight: 600; }
+.sl-link__radio { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--color-faint); flex: none; }
+.sl-link__opt[aria-checked="true"] .sl-link__radio { border-color: var(--color-accent); background: var(--color-accent); }
+.sl-link__opt[aria-disabled="true"] .sl-link__radio { border-style: dashed; }
+.sl-link__none { color: var(--color-dim); font-size: 11.5px; padding: 6px 10px 6px 28px; }
+.sl-link__detail { color: var(--color-dim); font-size: 11.5px; padding-left: 18px; }
+.sl-link__badge { font-size: 10.5px; padding: 1px 6px; border-radius: 5px; }
+.sl-link__badge--same { background: var(--color-safe-soft); color: var(--color-safe-ink); }
+.sl-link__badge--new { background: var(--color-hover); color: var(--color-dim); }
+.sl-link__badge--blocked { background: var(--color-watch-soft); color: var(--color-watch-ink); }
+@media (prefers-reduced-motion: reduce) { .sl-link__btn, .sl-link__btn svg { transition: none; } }
 .sl-check-row__name { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 13px; font-weight: 600; }
 .sl-footbar {
   position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;

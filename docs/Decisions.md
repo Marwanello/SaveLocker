@@ -301,6 +301,25 @@ session can judge an edge case, not to reopen the choice.
   Scans never merge an emulator save with another candidate (`ScanCandidate.DedupeKey`), and two ROMs with one
   title stay two rows. **Known gap, accepted:** an emulator save that takes the plain title first leaves a
   later same-titled PC game unable to join it — refused with the reason shown, never mixed (next bullet).
+  <br>**An emulator game is found by its files, not its name — D1** (2026-10-07, maintainer's yes at the start of
+  emulator-saves Group B). Before any name, a scoped candidate joins the server game whose folder keys and include
+  patterns are exactly its own, whatever that game is called (`Enroller.ServerNameFor`; `TrackedFor` does the same
+  against games adopted from the server). A scope names the save file, so no two games share one. That makes a
+  title from something only one machine has safe — ES-DE's `gamelist.xml` (arcade systems only, the maintainer's
+  choice: everywhere else the file name already reads well), Supermodel's `Games.xml`, a ScummVM description —
+  and the name list above only matters to the machine that enrolls first. Unscoped (PC) candidates still match by
+  name only. Mutation-checked both halves (`IdentityByFoldersTests`). Follow-up asked for, not built: a manual
+  "link to this server game" choice at enrollment — mockup with three variants, `tasks/emulator-saves/plan.md` →
+  *Linking by hand*.
+  <br>**Amended by the PR #61 review (2026-10-07):** only the **primary folder's** include patterns decide, compared
+  ignoring case (`Enroller.SameFiles`). Requiring every folder to match made a game enrolled by an older agent (no
+  `states` folder yet) or changed by `add-path` look like another game, and the next machine created a second game
+  of the same save under the next free name. A folder only one side has is now added to the game (or left to the
+  poller); the same key with other patterns is still refused, with a note. Two server games may now keep the same
+  files (*Keep it as its own game*): the machine that kept one apart opts out of the others, and the poller never maps
+  a second game onto files another game syncs here (`SaveFolderClaims`). **EmuDeck's untouched preinstalled NVRAM**
+  (Model 2, Supermodel) is listed only when a server game keeps the same file, joins only, and is recorded as in
+  step so the first pull replaces it — a fresh Deck can take the fleet's save without playing first.
 - **A game never joins a server game whose include patterns keep none of its files** (2026-10-07, review of
   PR #60). A candidate with no scope of its own joining a scoped game inherits that scope; when nothing in its
   folder matches — a Steam "Chrono Trigger" joining the SNES save of that name — nothing on that machine would
@@ -761,6 +780,16 @@ session can judge an edge case, not to reopen the choice.
   name matching one is refused, and moving a folder stays **Change**. Enrollment joins an "Also found" folder on the
   same template, or on the same key only when a template is missing on either side; two templates under one key are
   two folders.
+- **Linking an emulator save by hand ships in two steps** (2026-10-07, maintainer). Phase 16: a per-row
+  **Change** on Add games picks between games keeping the *same* files (or keeps the save as its own game) — no
+  server or sync change. Phase 17 (Group G): saves whose files are named differently on each machine, which needs a
+  per-machine name map on every push, pull and hash; its open questions are settled before it starts.
+- **EmuDeck is the layout every emulator reader is designed around; a standalone install is a bonus**
+  (2026-10-07, maintainer). EmuDeck on SteamOS/Linux and EmuDeck for Windows put every emulator, ROM and save in a
+  standard, predictable place, so each reader starts from EmuDeck's folders and EmuDeck's own scripts (`*_init`,
+  `*_setupSaves`, launchers) are the source of truth for where things are. Standalone installs are looked for only where
+  that is cheap and safe (a fixed default folder); one that could be anywhere — Supermodel or Model 2 unpacked on
+  Windows — is not hunted for. Applies to Groups C–F too.
 
 ## Environment facts (user-provided)
 - Games are standalone builds, not bought on Steam/Epic → manifest-based detection + manual

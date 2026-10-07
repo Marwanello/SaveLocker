@@ -343,10 +343,38 @@ function Use-TestEnvVars {
     # can't discover it at all) or, worse, a real personal Playnite install on the same machine.
     if ($PlaynitePath) { $env:SAVELOCKER_PLAYNITE_PATH = $PlaynitePath }
     if (Get-EmuDeckPath) { $env:SAVELOCKER_EMUDECK_PATH = Get-EmuDeckPath }
+    # emu-fixture's home for emulators kept outside Emulation (Supermodel, ScummVM): never the developer's own.
+    # One set by hand (a copy of real emulator folders, Build and Run -> Testing emulator saves) wins, and is
+    # left set afterwards: only the rig's own value is the rig's to clear.
+    $script:EmuHomeSetByRig = $false
+    if ($env:SAVELOCKER_EMULATOR_HOME) {
+        Write-Host "  emulator home: $($env:SAVELOCKER_EMULATOR_HOME) (set in this shell)"
+    } elseif (Test-Path (Join-Path (Get-EmuHomeFixturePath) '.savelocker-emu-fixture')) {
+        $env:SAVELOCKER_EMULATOR_HOME = Get-EmuHomeFixturePath
+        $script:EmuHomeSetByRig = $true
+    }
 }
 # The fixture lives under the rig's own state, so finding it there is never a real install.
 function Get-EmuDeckFixturePath { return (Join-Path $StateRoot 'Emulation') }
 function Get-EmuDeckWslFixturePath { return (Join-Path $StateRoot 'Emulation-wsl') }
+function Get-EmuHomeFixturePath { return (Join-Path $StateRoot 'emu-home') }
+function Get-EmuHomeWslFixturePath { return (Join-Path $StateRoot 'emu-home-wsl') }
+function New-FixtureFolder {
+    param([string]$Path)
+    $marker = Join-Path $Path '.savelocker-emu-fixture'
+    # It writes saves, so only ever into an empty folder or one this command made.
+    if ((Test-Path $Path) -and -not (Test-Path $marker) -and (Get-ChildItem $Path -Force | Select-Object -First 1)) {
+        throw "refusing to write a fixture into '$Path' - it exists, is not empty and was not made by emu-fixture"
+    }
+    New-Item -ItemType Directory -Force $Path | Out-Null
+    Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
+}
+function Write-FixtureFile {
+    param([string]$Path, [string]$Content)
+    New-Item -ItemType Directory -Force (Split-Path $Path -Parent) | Out-Null
+    Set-Content -NoNewline -Encoding ascii -LiteralPath $Path $Content
+}
+$script:SupermodelGamesXml = '<games><game name="scud"><identity><title>Scud Race</title></identity></game><game name="lemans24"><identity><title>Le Mans 24</title></identity></game></games>'
 function Get-EmuDeckPath {
     if ($EmuDeckPath) { return $EmuDeckPath }
     $fixture = Get-EmuDeckFixturePath
@@ -370,8 +398,38 @@ function New-EmuDeckFixture {
     Set-Content -NoNewline -Encoding ascii (Join-Path $states 'Zelda (USA).state') 'zelda state - must survive every Chrono pull'
     Set-Content -NoNewline -Encoding ascii -LiteralPath (Join-Path $saves 'Snes9x\Super Metroid (USA) [!].srm') 'metroid'
     Set-Content -NoNewline -Encoding ascii (Join-Path $target 'roms\snes\Chrono Trigger (USA).sfc') ''
+    # melonDS (Phase 8): EmuDeck's own saves/states folders, a save and a slot.
+    $melon = Join-Path $target 'saves\melonds'
+    New-Item -ItemType Directory -Force (Join-Path $melon 'saves'), (Join-Path $melon 'states') | Out-Null
+    Set-Content -NoNewline -Encoding ascii (Join-Path $melon 'saves\Pokemon - Platinum Version (USA).sav') "platinum $(Get-Date -Format o)"
+    Set-Content -NoNewline -Encoding ascii (Join-Path $melon 'states\Pokemon - Platinum Version (USA).ml1') 'platinum slot 1'
+    # Model 2 (Phase 9): NVDATA beside the emulator, inside Emulation on SteamOS. A real EmuDeck also seeds 39
+    # untouched .DAT files there; those are hidden by hash, which only the hardware pass can show.
+    Write-FixtureFile (Join-Path $target 'roms\model2\NVDATA\daytona.DAT') "daytona lap records $(Get-Date -Format o)"
+    # States: STATES\<set><slot>.sta beside NVDATA. daytonam1.sta is Daytona To The MAXX's slot 1, not Daytona's
+    # slot 'm1' - it must survive every Daytona pull.
+    Write-FixtureFile (Join-Path $target 'roms\model2\STATES\daytona0.sta') "daytona slot 0 $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $target 'roms\model2\STATES\daytonam1.sta') 'daytona maxx slot 1 - must survive every Daytona pull'
     Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
     Say "EmuDeck fixture at $target"
+    # Supermodel (Phase 9) is kept outside Emulation: EmuDeck for Windows' own folder, under a fixture home.
+    if (-not $EmuDeckPath) {
+        $emuHome = Get-EmuHomeFixturePath
+        New-FixtureFolder $emuHome
+        $sm = Join-Path $emuHome 'AppData\Roaming\EmuDeck\Emulators\Supermodel'
+        Write-FixtureFile (Join-Path $sm 'Config\Games.xml') $script:SupermodelGamesXml
+        Write-FixtureFile (Join-Path $sm 'NVRAM\scud.nv') "scud nvram $(Get-Date -Format o)"
+        Write-FixtureFile (Join-Path $sm 'Saves\scud.st0') 'scud state slot 0'
+        Write-FixtureFile (Join-Path $sm 'NVRAM\lemans24.nv') 'lemans - must survive every Scud pull'
+        # ScummVM (Phase 10): its targets are in scummvm.ini; EmuDeck points savepath into Emulation.
+        $svmSaves = Join-Path $target 'saves\scummvm\saves'
+        Write-FixtureFile (Join-Path $emuHome 'AppData\Roaming\ScummVM\scummvm.ini') ("[scummvm]`nsavepath=$svmSaves`n`n" +
+            "[monkey2]`ngameid=monkey2`nengineid=scumm`ndescription=Monkey Island 2: LeChuck's Revenge (DOS/English)`n`n" +
+            "[monkey]`ngameid=monkey`nengineid=scumm`ndescription=The Secret of Monkey Island (CD/DOS/English)`n")
+        Write-FixtureFile (Join-Path $svmSaves 'monkey2.s01') "monkey2 slot 1 $(Get-Date -Format o)"
+        Write-FixtureFile (Join-Path $svmSaves 'monkey.s00') 'monkey 1 - must survive every Monkey Island 2 pull'
+        Say "emulator home fixture at $emuHome"
+    }
     Write-Host "  saves:  $saves"
     Write-Host "  states: $states"
 
@@ -391,6 +449,21 @@ function New-EmuDeckFixture {
         Set-Content -NoNewline -Encoding ascii (Join-Path $wSaves 'Chrono Trigger (USA).srm') 'old chrono save on the WSL machine'
         Set-Content -NoNewline -Encoding ascii (Join-Path $wSaves 'Zelda (USA).srm') 'wsl zelda - must survive every Chrono pull'
         Set-Content -NoNewline -Encoding ascii (Join-Path $wStates 'Zelda (USA).state') 'wsl zelda state - must survive every Chrono pull'
+        $wMelon = Join-Path $wsl 'saves\melonds'
+        New-Item -ItemType Directory -Force (Join-Path $wMelon 'saves'), (Join-Path $wMelon 'states') | Out-Null
+        Set-Content -NoNewline -Encoding ascii (Join-Path $wMelon 'saves\Pokemon - Platinum Version (USA).sav') 'old platinum on the WSL machine'
+        $wHome = Get-EmuHomeWslFixturePath
+        New-FixtureFolder $wHome
+        # EmuDeck on SteamOS: ~/.supermodel, no states yet (what a pull must bring).
+        Write-FixtureFile (Join-Path $wHome '.supermodel\Config\Games.xml') $script:SupermodelGamesXml
+        Write-FixtureFile (Join-Path $wHome '.supermodel\NVRAM\scud.nv') 'old scud nvram on the WSL machine'
+        Write-FixtureFile (Join-Path $wHome '.supermodel\NVRAM\lemans24.nv') 'wsl lemans - must survive every Scud pull'
+        $wSvm = Join-Path $wsl 'saves\scummvm\saves'
+        Write-FixtureFile (Join-Path $wHome '.config\scummvm\scummvm.ini') ("[scummvm]`nsavepath=$(ConvertTo-WslPath $wSvm)`n`n" +
+            "[monkey2]`ngameid=monkey2`nengineid=scumm`ndescription=Monkey Island 2 (DOS/English)`n`n" +
+            "[monkey]`ngameid=monkey`nengineid=scumm`n")
+        Write-FixtureFile (Join-Path $wSvm 'monkey2.s01') 'old monkey2 slot on the WSL machine'
+        Write-FixtureFile (Join-Path $wSvm 'monkey.s00') 'wsl monkey 1 - must survive every Monkey Island 2 pull'
         Set-Content -NoNewline -Encoding ascii $wslMarker 'written by tests/testenv.ps1 emu-fixture'
         Say "WSL EmuDeck fixture at $wsl"
     }
@@ -400,6 +473,7 @@ function Clear-TestEnvVars {
     # Leaving any of these set makes later runs in this shell behave in ways that look like bugs.
     Remove-Item Env:\SAVELOCKER_STATE_ROOT, Env:\SAVELOCKER_TRAY_PORT, Env:\SAVELOCKER_RUNKEY_SUBPATH, `
         Env:\SAVELOCKER_PLAYNITE_PATH, Env:\SAVELOCKER_EMUDECK_PATH -ErrorAction SilentlyContinue
+    if ($script:EmuHomeSetByRig) { Remove-Item Env:\SAVELOCKER_EMULATOR_HOME -ErrorAction SilentlyContinue }
 }
 
 # Not `wslpath`: wsl.exe strips the backslashes out of a Windows path argument before the Linux side
@@ -429,6 +503,10 @@ function Invoke-Wsl {
     $wslEmu = Get-EmuDeckWslFixturePath
     if (Test-Path (Join-Path $wslEmu '.savelocker-emu-fixture')) {
         $vars += "SAVELOCKER_EMUDECK_PATH='$(ConvertTo-WslPath $wslEmu)'"
+    }
+    $wslHome = Get-EmuHomeWslFixturePath
+    if (Test-Path (Join-Path $wslHome '.savelocker-emu-fixture')) {
+        $vars += "SAVELOCKER_EMULATOR_HOME='$(ConvertTo-WslPath $wslHome)'"
     }
     if ($Sub -eq 'sync') {
         # The COMMON git dir, not this worktree: a worktree's .git is a file pointing at a Windows

@@ -1,92 +1,54 @@
-# Session summary — 2026-10-07 — Review of PR #60 (emulator saves), all findings fixed
+# Session summary — 2026-10-07 — Emulator saves Group H: real-game checks (no code)
 
 Standalone: the facts below do not need the rest of the vault.
 
-**PR:** #60 on the fork `Marwanello/SaveLocker`, *Emulator saves: RetroArch saves and states, game source per machine,
-Emulators filter*. Head branch `emulator-saves-phase-1`, base `main`.
-**Where the fixes were made:** local branch `emulator-saves-review-fixes` in `.claude/worktrees/multiple-save-paths-group-c-5cda33`.
-It tracks `origin/emulator-saves-phase-1` and was pushed there. The PR branch's own worktree,
-`.claude/worktrees/emulator-saves`, is still at the pre-fix commit: `git pull` there before working in it.
+**PR:** #61 on `Marwanello/SaveLocker`, *Emulator saves Group B: melonDS, Supermodel, Model 2, ScummVM, identity by
+folders, linking by hand*. Head branch `emulator-saves-group-b`, base `main`. This change is docs only, commit `f4af2d8`.
 
 ## What was asked
 
-1. Review PR #60 thoroughly. Verdict: **request changes**, with 2 blocking, 2 important and 5 minor findings. CI was green.
-2. Fix all of them, push to the PR, append a summary to `docs/progress.md`, and write this file.
+Add a group at the end of the emulator-saves task with **no implementation, only tests with real games**, for
+every emulator that shipped without one. The maintainer has no games for **melonDS, ScummVM, Supermodel or Model 2**
+yet, and will keep adding each phase's emulator they couldn't test, so the group stays last.
 
-## The two problems that mattered
+## What was done
 
-**One ROM could become two server games.** The server identifies a game by its name. The first version named an
-emulator save by its cleaned title and added the console ("Chrono Trigger (SNES)") only when *that machine's own
-scan* had another game with that name. On a Deck, Steam ROM Manager (part of EmuDeck) adds a Steam shortcut for
-every ROM, and every shortcut is a scan candidate. So the Deck said "Chrono Trigger (SNES)" while a PC without those
-shortcuts said "Chrono Trigger", and the two never synced.
+- **`docs/tasks/emulator-saves/implementation-grouping.md`:**
+  - **Status table:** a new row, *H — Real-game checks (no code)*: ⏳ waiting for games.
+  - **Write-up:** Group H is always the last group, so new emulators can keep joining it.
+  - **New rule** under "Every group's checks": an emulator the maintainer has no real game for is added to Group H
+    when its group ships, instead of holding that group back.
+- **`docs/tasks/emulator-saves/plan.md`:**
+  - **Status table:** a new row for **Phase 18**.
+  - **New Phase 18 section** at the end of the groups, covering:
+    - **Back up first:** every save folder listed, because a test agent that adds a game pushes and pulls real files.
+    - **Rig:**
+      - Deck: `.\tests\testenv.ps1 build -Only deck`, then `up -Only deck`. The test daemon scans the Deck's real
+        EmuDeck install.
+      - Windows: point the test tray at a **copy** of `Emulation`, plus `%APPDATA%\EmuDeck\Emulators\{Supermodel,m2emulator}`
+        and `scummvm.ini`. Use `SAVELOCKER_EMULATOR_HOME` and `up -Only windows -EmuDeckPath <copy>`. Edit `savepath` in
+        the copied `scummvm.ini` so it points into the copy.
+    - **Five steps for every emulator:**
+      1. Save on the Deck, add the game there and sync.
+      2. Add it on Windows; the row should read "Joins “…”". Sync, and check the emulator loads the save.
+      3. Play further on Windows, sync, and check the Deck loads the newer save.
+      4. Check the neighbouring saves are untouched on both machines.
+      5. Record the results.
+    - **Checklist table:** one row per emulator, each with how to make a save and a state, where the files are on
+      the Deck and on Windows, what to watch for, and separate ⏳ boxes for the Deck and Windows.
+- **`docs/CONTEXT.md`:** mentions Group H and that later untested emulators are added there.
 
-**A PC game could join an emulator game and never be backed up.** This was proven before fixing, with a two-machine
-test against a real server:
-- Machine A added the RetroArch save "Chrono Trigger".
-- Machine B then added the Steam game "Chrono Trigger".
-- B joined A's game and inherited its include patterns (`Chrono Trigger (USA).srm`, `.rtc`).
-- The files that would sync from B's save folder: none. Every screen showed B as in sync.
+## The four rows and what each must confirm
 
-## The naming decision (the maintainer's choice)
+| Emulator | What the code had to guess, to confirm with a real game |
+|---|---|
+| melonDS | Which file the Flatpak actually writes (`melonDS.ini` vs `.toml` paths); a save written beside the ROM |
+| ScummVM | The real save file names for each engine (only four fixed-name engines are confirmed); two machines with different target names |
+| Supermodel | That a set never played stays hidden (EmuDeck preinstalls 29 NVRAM files); the title from `Games.xml` |
+| Model 2 | Which key saves a state (slots are the number keys 0–9); whether `NVDATA/<set>.DAT` changes on every exit; `STATES` created on the first save |
 
-Asked with three options; the maintainer picked **"plain names, the server decides"**.
-- An emulator save may take, in order:
-  1. its title (`Chrono Trigger`);
-  2. the title plus the emulator (`Chrono Trigger (RetroArch)`);
-  3. the save file's own name plus the emulator (`Chrono Trigger (Japan) (RetroArch)`).
-- All three come from the save file alone. At enrollment it takes the one whose server game already holds exactly
-  this ROM's files, otherwise the first name no game has.
-- Every machine sees the same server, so the same ROM ends up in the same game whichever machine adds it first.
-- Accepted gap: if an emulator save takes the plain title first, a PC game with that title added later is refused,
-  with the reason shown. It is never mixed into the emulator game.
+## How it's used
 
-The rejected options were always adding "(RetroArch)" (fully deterministic, but brings back the suffix the
-maintainer had removed) and always adding the console (not deterministic when one machine lacks the ROM folder).
-
-## Everything that changed
-
-- **Names** — `Enroller.NamesFor` and `Enroller.ServerNameFor`. The game list is read from the server once per batch
-  and updated as games are created.
-  - `GameSources.AvoidNameClashes` is deleted.
-  - `ScanCandidate.DedupeKey` stops the scanners merging an emulator save with any other candidate.
-  - `Enroller.TrackedFor` (same name *and* same include patterns) answers "is this already set up here?" in the
-    Enroller, Add games, Game Mode and the source backfill.
-- **Joining** — a candidate with no include patterns is refused when its folder has files and none of them match the
-  server game's patterns.
-  - It still joins when its folder is empty, or when some of its files match (patterns an admin set in the console
-    for that PC game). That case has its own test, so the fix doesn't break it.
-- **Refusal reasons are shown** — `EnrollResponse.notes`. Add games prints "Not added: …" instead of counting
-  everything as "already tracked"; Game Mode adds the reasons to its status line.
-- **Sending the source** — `GameSources.ReportAsync` now says whether the server answered. The poller sends each
-  game's source once per value, instead of every 20 seconds for every game against a console that predates the
-  route. `GameSourceDto.SameAs` compares values the way the server stores them (trimmed).
-- **Two ROMs with one title** (two regions, or one game on two consoles) are now two Add games rows, each showing its
-  save file's name. Only one ROM's save found in two core folders collapses to the newer one.
-- **The "EmuDeck" tag** comes from the scanner (`RetroArchFolders.EmuDeck` → `ScanCandidate.ViaEmuDeck`). The folder
-  is stored by its real path, and EmuDeck's saves folder links into the RetroArch Flatpak's, so reading the path
-  never showed "EmuDeck" on real hardware.
-- **"Added by hand"** is no longer stamped on a game that was already set up here when its folder is moved, so the
-  backfill can still record the real source.
-- **Server limits** — `PUT /api/agent/source` accepts a kind up to 32 characters, a detail up to 200, and at most 16
-  tags of 64; each must be one line. The agent trims to the same limits.
-- **Smaller fixes**
-  - A failed source report has its own log line.
-  - `retroarch.cfg`'s configured saves folder replaces the default one instead of adding to it.
-
-## Verification
-
-- `dotnet test tests/SaveLocker.Agent.Tests`: **291/291** (was 280).
-  - New: `EnrollNamingTests`, 6 tests against a real server.
-  - Mutation-checked: disabling the join refusal, and forcing the plain name, each make the intended tests fail.
-- The full solution builds clean with `--no-incremental`; `agent-ui` lint and build pass.
-- `agent-ui/src/api-types.ts` was regenerated from a dev tray on port 5190 with scratch state, stopped afterwards
-  with no registry leftovers. The only diff is `emulatorRom` and `notes`.
-- No server route or data shape changed, so `openapi.json` and `web/` were not touched.
-- **Not done:** no testenv pass and no real-hardware pass.
-
-## Next
-
-`testenv clean`, because games added by earlier builds won't match. Then check the agent UI and Game Mode source
-chips, try a same-titled PC game plus emulator save to see the refusal reason, and do the EmuDeck hardware pass on the
-Deck and on Windows. After that PR #60 can merge.
+When the maintainer gets a game, they test it on both machines and tick its row. A row is ticked only when both
+pass. When a later phase ships an emulator they couldn't test, a row is added to the Phase 18 table. Any problem
+found becomes a fix in that emulator's own group, in a follow-up PR.

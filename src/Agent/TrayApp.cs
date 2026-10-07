@@ -438,9 +438,10 @@ internal sealed class TrayContext : ApplicationContext
     // ─── Enrollment (called by AgentApiServer) ──────────────────────────────────
 
     private async Task<(int enrolled, int skipped)> EnrollAsync(
-        IReadOnlyList<ScanCandidate> candidates, int[] ids, IReadOnlyDictionary<int, string[]>? alsoSync)
+        IReadOnlyList<ScanCandidate> candidates, int[] ids, IReadOnlyDictionary<int, string[]>? alsoSync,
+        IReadOnlyDictionary<int, LinkChoice>? links)
     {
-        var result = await Enroller.EnrollAsync(_config, candidates, ids, alsoSync: alsoSync);
+        var result = await Enroller.EnrollAsync(_config, candidates, ids, alsoSync: alsoSync, links: links);
         if (result.enrolled > 0)
             _ui.Post(() => { RebuildMenu(); StartFolderWatchers(); });
         return result;

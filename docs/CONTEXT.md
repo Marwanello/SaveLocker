@@ -1781,9 +1781,50 @@ are in five groups by save shape, one PR each: B saves named after the ROM, C me
 E title-ID folders, F Switch. Two design points need the maintainer's yes first: D1, an emulator game found by its
 folders rather than its name (B), and D2, a server title key so Ryujinx's numbered folders sync with the Yuzu forks
 (F). Details: `tasks/emulator-saves/plan.md` → *The other emulators* and `implementation-grouping.md`.
-<br>**Next action for this item:** a testenv pass of the source chips (agent UI + Game Mode; the console was
-checked in the browser) — `testenv clean` first, the old "(RetroArch)" games no longer match — then the EmuDeck
-hardware pass (Deck + Windows) for Phases 1 and 1b, then a PR.
+<br>**Group A merged as PR #60.** Its testenv pass of the source chips and the EmuDeck hardware pass are still open.
+<br>**2026-10-07: Group B built (branch `emulator-saves-group-b`, one commit per phase, no PR yet).** D1 confirmed by
+the maintainer and built first: an emulator save joins the server game that keeps exactly its files, whatever it is
+called (`Enroller.ServerNameFor`/`TrackedFor`, mutation-checked) — so titles from machine-local sources are safe.
+`GamelistXml` (ES-DE titles, arcade systems only — maintainer's choice). `RetroArchSaves` became a row of the new
+`RomSaves` reader (D4 shape 1), with melonDS, Supermodel and Model 2 as further rows; ScummVM has its own reader
+(`scummvm.ini` targets). Both scanners loop `EmulatorSaves.Sources`. **Captured on the real Deck (read-only SSH)**:
+paths all as researched, and one trap the plan missed — EmuDeck rsyncs 29 Supermodel NVRAM files into
+`~/.supermodel/NVRAM` at install, exactly like Model 2's 39 `NVDATA` files; both are now hidden by SHA-256 until the
+game rewrites them (maintainer's choice for Model 2). testenv `emu-fixture` gained all four plus a fixture home per
+machine (`SAVELOCKER_EMULATOR_HOME`). Unit **319**. The maintainer also asked for a manual "link to this server game"
+option: researched and mocked up (three variants), not built — `tasks/emulator-saves/plan.md` → *Linking by hand*.
+<br>**Next action for this item:** the testenv pass (`testenv clean` first — the rig still maps nine real save
+folders from earlier sessions), then merge PR #61 (Group B, opened since; *Linking by hand* was picked and built). A played
+Supermodel/Model 2 save on the Deck is the one thing no capture could show.
+<br>**2026-10-07, later:** Model 2 save states added (`STATES/<set><0-9>.sta`, read from the Deck's `EMULATOR.EXE`);
+unit **320**. The maintainer set the rule for every emulator reader: **EmuDeck (SteamOS/Linux and Windows) is the
+design target, standalone installs a bonus** (Decisions.md).
+<br>**2026-10-07, later still:** **Phase 16, linking by hand** built on the same branch (mockup version 2: each
+emulator row says which server game it joins, with a **Change** button — automatic, keep it as its own game, or another
+game with the same files; different file names shown greyed out). The different-file-names case is **Phase 17,
+Group G**, not started, open questions in its plan section. Unit **325**. A save-tree mockup (console version history with
+each save collapsed + the agent's current save tree, three variants) is at
+<https://claude.ai/artifact/2Nq9PbykqDDici67dWCGP2>, picked: **B in the console, A in the agent**, now its own task
+(`tasks/save-file-trees/plan.md`, a separate PR, not started).
+<br>**Group H, real-game checks** (no code, always the last group): melonDS, ScummVM, Supermodel and Model 2 are
+waiting for real games (maintainer has none yet). Any later emulator shipped without a real-game test is added there
+(`tasks/emulator-saves/plan.md` → *Phase 18*).
+<br>**2026-10-07: PR #61 (Group B) reviewed, every finding fixed on the PR.** The one that mattered: *Keep it as its own
+game* could still end up syncing with the fleet's game. The machine that kept a save apart also tracked the fleet's
+same-files game (adopted, no folder), and the poller mapped it the moment a folder resolved here: another Windows
+machine's `<winAppData>` template (always one for Model 2 and Supermodel) or the console. After that, two games pushed
+and pulled one save. Now that choice opts this machine out of the other game (`Enroller.KeepApart`), and the poller
+never maps a second game onto files another game syncs here (`SaveFolderClaims`, reported as `savedir.unsafe`). D1
+now looks at the **primary folder only**, ignoring case. An exact match on every folder made an older agent's game
+(no `states` yet) or one changed by `add-path` look like a different game, and the next machine split it under
+"… (RetroArch)". The missing folder is now added to the game instead. **EmuDeck's untouched NVRAM seeds** are no
+longer dropped: they are listed (agent UI, Game Mode) only when a server game keeps the same file, they may only join,
+and they are recorded as in step so the first pull replaces the seed. Before, a fresh Deck could not get the fleet's
+Scud Race save without playing first and causing a conflict. Smaller: Add games says when the server could not be
+asked; melonDS's "beside the ROM" mode only takes a save with a DS ROM beside it, and honours `XDG_CONFIG_HOME`;
+ScummVM finds fixed-name engines from a `gameid` alone (`sword1mac`); testenv keeps a hand-set
+`SAVELOCKER_EMULATOR_HOME`; and the row checkbox has its own accessible name. Unit **332** (+7, the four main
+fixes mutation-checked); `agent-ui/src/api-types.ts` regenerated (one addition, `untouchedSeed`).
 
 ---
 

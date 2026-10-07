@@ -1,4 +1,4 @@
-import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, Conflict, DeckyStatus, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, TestConnection, TrackedGame, VersionStats } from './types'
+import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, TestConnection, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -65,8 +65,12 @@ export const api = {
   candidates: () => req<Candidate[]>('/api/candidates'),
   rescan: () => post<Candidate[]>('/api/candidates/rescan'),
   // `alsoSync` names, per candidate, the "Also found" folders to add with it; a candidate left out adds none.
-  enroll: (ids: number[], alsoSync?: { id: number; paths: string[] }[]) =>
-    post<{ enrolled: number; skipped: number; notes?: string[] | null }>('/api/enroll', { ids, alsoSync }),
+  // `links` names the emulator saves linked by hand (Change); any other is linked automatically.
+  enroll: (ids: number[], alsoSync?: { id: number; paths: string[] }[],
+    links?: { id: number; choice: string; gameId?: string | null }[]) =>
+    post<{ enrolled: number; skipped: number; notes?: string[] | null }>('/api/enroll', { ids, alsoSync, links }),
+  // Which server game each emulator save would join, and what else it could. One server read per call.
+  candidateLinks: () => req<CandidateLinks>('/api/candidates/links'),
   // Asked while enroll() is still open: which game and which step the agent is on.
   enrollProgress: () => req<EnrollProgress>('/api/enroll/progress'),
   // identityCleared is true when the server URL moved to a different origin: the machine key, id

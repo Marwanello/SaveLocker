@@ -97,6 +97,8 @@ SaveLocker/
 │   │   │                               #   ID_LIKE / VARIANT_ID / PRETTY_NAME, a Valve board's name, WSL;
 │   │   │                               #   the Windows 10/11 build split. The console maps it to a logo
 │   │   ├── SaveDirSanity.cs             # "That's a Wine PREFIX, not a save folder" + size backstop
+│   │   ├── SaveFolderClaims.cs          # Which tracked game already syncs a folder's files here: the poller never maps
+│   │   │                               #   a second game onto them (a save kept as its own game by hand)
 │   │   ├── SavePathGuard.cs             # The hard floor: paths that can NEVER be a save folder,
 │   │   │                               #   however they arrived
 │   │   ├── Notifications.cs             # OS notifications, platform-neutral: WHAT fires (`NoticeCatalog`), how often
@@ -123,6 +125,7 @@ SaveLocker/
 │   │   ├── AgentCli.cs                  # Shared one-shot commands (register/push/pull/status/…)
 │   │   ├── CliArgs.cs                   # Minimal command-line parser
 │   │   ├── Enroller.cs                  # Candidate → server game + tracked game; publishes its progress
+│   │   ├── EnrollLinks.cs               # Add games' Change: which server game an emulator save joins, and the other choices
 │   │   │                               #   (GET /api/enroll/progress) for the Add games bar
 │   │   ├── FolderSuggestions.cs         # "Also found": a manifest game's other locations that exist here —
 │   │   │                               #   keys from templates, what is still to suggest per tracked game
@@ -142,6 +145,14 @@ SaveLocker/
 │   │   │                               #   RealPath (links at ANY component). SAVELOCKER_EMUDECK_PATH = exclusive
 │   │   ├── RetroArchConfig.cs           # RetroArch (saves, states) folder pairs: EmuDeck's saves/retroarch/*, else retroarch.cfg
 │   │   ├── RetroArchSaves.cs            # One Emulator candidate per .srm: main = <rom>.srm/.rtc, extra folder "states" = <rom>.state*
+│   │   ├── RomSaves.cs                  # THE "save named after the ROM" reader (D4 shape 1): RomSaveRules (extension, scope,
+│   │   │                               #   states, fixed system, seed filter, set titles) + RomSaveFolders. RetroArch, melonDS,
+│   │   │                               #   Supermodel and Model 2 are rows of it. IsUntouchedSeed: EmuDeck's preinstalled NVRAM
+│   │   ├── MelonDsSaves.cs · SupermodelSaves.cs · Model2Saves.cs   # Its rows (folders per OS, config readers, seed hashes)
+│   │   ├── ScummVmSaves.cs              # scummvm.ini targets → <target>.* in their savepath (own reader: not ROM-named)
+│   │   ├── EmulatorSaves.cs             # The table of emulator sources both scanners loop — a new emulator is one row
+│   │   ├── EmulatorPaths.cs             # Home/AppData for standalone emulator lookups; SAVELOCKER_EMULATOR_HOME = fixture home
+│   │   ├── GamelistXml.cs               # ES-DE gamelist.xml titles, arcade systems only (safe because of D1)
 │   │   ├── RomNames.cs                  # "Chrono Trigger (USA) [!]" → "Chrono Trigger" — the emulator game identity
 │   │   └── Platform.cs                  # IAutoStart, IGameScanner — impls injected by the host
 │   │
@@ -312,6 +323,7 @@ SaveLocker/
 │           │                           #   prompt for "Also found" folders (Add ticked / Skip for now)
 │           ├── OverviewView.tsx · RecentCard.tsx   # Quick info only; "Recent" expands to the full log
 │           ├── AddGamesView.tsx · SettingsView.tsx
+│           ├── ServerGameLink.tsx       # Add games row: "Joins …" + Change (emulator saves linked by hand)
 │           ├── LaunchSetupCard.tsx      # The Steam launch-options command + Copy. Renders nothing
 │           │                           #   on Windows. Target of logs/2026-08-15_decky-plugin.md
 │           ├── DeckyPluginCard.tsx      # The optional Decky plugin: what it adds, and whether it
