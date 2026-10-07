@@ -5,13 +5,19 @@ namespace SaveLocker.Agent;
 /// <see cref="RomSaves"/> (tasks/emulator-saves Phase 9). Each game's NVRAM is <c>NVDATA/&lt;set&gt;.DAT</c>
 /// beside the emulator's exe: <c>Emulation/roms/model2</c> under EmuDeck on SteamOS (<c>Model2_emuPath</c>),
 /// <c>%APPDATA%\EmuDeck\Emulators\m2emulator</c> under EmuDeck for Windows. Neither EmuDeck links it into
-/// <c>Emulation/saves</c> (<c>Model2_setupSaves</c> is "NYI"). No save states are synced: where the emulator
-/// writes any is still to be captured from a real install.
+/// <c>Emulation/saves</c> (<c>Model2_setupSaves</c> is "NYI").
+/// <para>
+/// States are <c>STATES\&lt;set&gt;&lt;slot&gt;.sta</c>, slots 0–9 picked with the number keys — read from the
+/// <c>EMULATOR.EXE</c> EmuDeck installs (closed source: the format string <c>.\STATES\%s%d.sta</c>, and the slot
+/// select maps DirectInput keys 1–9, 0 to slots 1–9, 0). The path is relative to the working folder, which both
+/// EmuDeck launchers set to the emulator's own (SteamOS: <c>cd $romsPath/model2</c>), so states sit beside
+/// <c>NVDATA</c>. Each slot is named exactly: <c>vcop*.sta</c> would also take Virtua Cop 2's <c>vcop20.sta</c>.
+/// </para>
 /// <para>
 /// <b>The trap:</b> <c>Model2_init</c> copies EmuDeck's own <c>configs/model2/NVDATA</c> into that folder — 39
 /// files, one per common set — so a <c>.DAT</c> there does not mean the game was played. A file still
 /// byte-identical to EmuDeck's copy (<see cref="EmuDeckSeeds"/>) is not a candidate; once the game writes its
-/// own NVRAM it differs and shows up.
+/// own NVRAM it differs and shows up — or as soon as it has a state, even if its NVRAM is still the seed.
 /// </para>
 /// </summary>
 public static class Model2Saves
@@ -28,11 +34,28 @@ public static class Model2Saves
         IReadOnlySet<string> seeds)
     {
         var roots = emuDeckRoots.ToList();
-        var rules = new RomSaveRules(EmulatorName, ".DAT", (set, ext) => new[] { set + ext }, StateGlobs: null,
-            System: "model2", IsCandidate: f => !IsSeed(f, seeds), KnownTitle: set => Titles.GetValueOrDefault(set));
-        var folders = roots.Select(r => new RomSaveFolders(Path.Combine(r, "roms", "model2", "NVDATA"), null, EmuDeck: true))
-            .Concat(emulatorDirs.Select(d => new RomSaveFolders(Path.Combine(d, "NVDATA"), null, EmuDeck: true)));
+        var rules = new RomSaveRules(EmulatorName, ".DAT", (set, ext) => new[] { set + ext }, StateGlobs,
+            System: "model2", IsCandidate: f => !IsSeed(f, seeds) || HasState(f), KnownTitle: set => Titles.GetValueOrDefault(set));
+        var folders = roots.Select(r => Path.Combine(r, "roms", "model2"))
+            .Concat(emulatorDirs)
+            .Select(d => new RomSaveFolders(Path.Combine(d, "NVDATA"), Path.Combine(d, StatesFolder), EmuDeck: true));
         return RomSaves.Scan(rules, RomSaves.Existing(folders), roots, GamelistXml.Find(roots));
+    }
+
+    public const string StatesFolder = "STATES";
+
+    /// <summary>One name per slot: the emulator writes <c>&lt;set&gt;&lt;0-9&gt;.sta</c> and nothing else there.</summary>
+    public static IReadOnlyList<string> StateGlobs(string set) =>
+        Enumerable.Range(0, 10).Select(slot => $"{set}{slot}.sta").ToArray();
+
+    /// <summary>Has the set of <paramref name="nvram"/> any state in the <c>STATES</c> folder beside its
+    /// <c>NVDATA</c>?</summary>
+    private static bool HasState(FileInfo nvram)
+    {
+        if (nvram.Directory?.Parent is not { } emulatorDir) return false;
+        var states = Path.Combine(emulatorDir.FullName, StatesFolder);
+        try { return StateGlobs(Path.GetFileNameWithoutExtension(nvram.Name)).Any(n => File.Exists(Path.Combine(states, n))); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
     }
 
     private static string WindowsEmuDeckDir() => Path.Combine(EmulatorPaths.AppData, "EmuDeck", "Emulators", "m2emulator");

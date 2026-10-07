@@ -398,6 +398,10 @@ function New-EmuDeckFixture {
     # Model 2 (Phase 9): NVDATA beside the emulator, inside Emulation on SteamOS. A real EmuDeck also seeds 39
     # untouched .DAT files there; those are hidden by hash, which only the hardware pass can show.
     Write-FixtureFile (Join-Path $target 'roms\model2\NVDATA\daytona.DAT') "daytona lap records $(Get-Date -Format o)"
+    # States: STATES\<set><slot>.sta beside NVDATA. daytonam1.sta is Daytona To The MAXX's slot 1, not Daytona's
+    # slot 'm1' - it must survive every Daytona pull.
+    Write-FixtureFile (Join-Path $target 'roms\model2\STATES\daytona0.sta') "daytona slot 0 $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $target 'roms\model2\STATES\daytonam1.sta') 'daytona maxx slot 1 - must survive every Daytona pull'
     Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
     Say "EmuDeck fixture at $target"
     # Supermodel (Phase 9) is kept outside Emulation: EmuDeck for Windows' own folder, under a fixture home.

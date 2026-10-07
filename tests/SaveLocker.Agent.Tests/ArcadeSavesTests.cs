@@ -118,7 +118,9 @@ public sealed class ArcadeSavesTests : IDisposable
         Assert.Equal(("Model 2", "model2", "daytona"), (daytona.EmulatorName, daytona.EmulatorSystem, daytona.EmulatorRom));
         Assert.Equal(P("Emulation/roms/model2/NVDATA"), daytona.SuggestedSaveDir);
         Assert.Equal(new[] { "daytona.DAT" }, daytona.IncludeGlobs);
-        Assert.Null(daytona.ExtraSaveDirs);
+        var states = Assert.Single(daytona.ExtraSaveDirs!);
+        Assert.Equal((RomSaves.StatesKey, P("Emulation/roms/model2/STATES")), (states.Key, states.Dir));
+        Assert.Equal(Enumerable.Range(0, 10).Select(n => $"daytona{n}.sta"), states.IncludeGlobs);
         Assert.True(daytona.ViaEmuDeck);
 
         // Once vf2 is played its file differs from the seed and it is a game too.
@@ -128,12 +130,33 @@ public sealed class ArcadeSavesTests : IDisposable
     }
 
     [Fact]
+    public void Model2_states_are_scoped_slot_by_slot_and_count_as_play()
+    {
+        // vcop's NVRAM is still EmuDeck's, but it has a state: it was played. Virtua Cop 2's slot 0 is
+        // vcop20.sta, which a vcop* pattern would take for Virtua Cop's.
+        Touch("Emulation/roms/model2/NVDATA/vcop.DAT", "emudeck-seed-vcop");
+        Touch("Emulation/roms/model2/NVDATA/vcop2.DAT", "emudeck-seed-vcop2");
+        Touch("Emulation/roms/model2/STATES/vcop3.sta", "vcop slot 3");
+        Touch("Emulation/roms/model2/STATES/vcop20.sta", "vcop2 slot 0");
+        var seeds = new HashSet<string> { Sha("emudeck-seed-vcop"), Sha("emudeck-seed-vcop2") };
+
+        var found = Model2Saves.Scan(new[] { P("Emulation") }, Array.Empty<string>(), seeds);
+
+        Assert.Equal(new[] { "Virtua Cop", "Virtua Cop 2" }, found.Select(c => c.Name));
+        var vcop = found[0].ExtraSaveDirs!.Single().IncludeGlobs!;
+        Assert.Contains("vcop3.sta", vcop);
+        Assert.DoesNotContain("vcop20.sta", vcop);
+        Assert.Contains("vcop20.sta", found[1].ExtraSaveDirs!.Single().IncludeGlobs!);
+    }
+
+    [Fact]
     public void Model2_reads_emudeck_for_windows_install_folder_too()
     {
         Touch("EmuDeck/Emulators/m2emulator/NVDATA/srallyc.DAT", "played");
         var c = Assert.Single(Model2Saves.Scan(Array.Empty<string>(), new[] { P("EmuDeck/Emulators/m2emulator") },
             new HashSet<string>()));
         Assert.Equal("Sega Rally Championship", c.Name);
+        Assert.Equal(P("EmuDeck/Emulators/m2emulator/STATES"), c.ExtraSaveDirs!.Single().Dir);
     }
 
     [Fact]
