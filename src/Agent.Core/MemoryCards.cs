@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.RegularExpressions;
+using SaveLocker.Shared;
 
 namespace SaveLocker.Agent;
 
@@ -53,7 +54,10 @@ public static partial class MemoryCards
             {
                 if (DuckStationSharedCard().IsMatch(name))
                     return new SharedCard(name, emulator ?? "DuckStation", "PS1", DuckStationFix);
-                if (Ps1Directory(file.FullName) is { Codes.Count: > 1 })
+                // A card named after a game on it is that game's own, whatever else it holds: a multi-disc game's
+                // later discs, or an earlier game's save copied in for the sequel to import (Suikoden II).
+                if (Ps1Directory(file.FullName) is { Codes.Count: > 1 } card &&
+                    (Ps1CardTitle(name) is not { } title || OwnCodes(title, card.Codes).Count == 0))
                     return new SharedCard(name, emulator ?? "DuckStation", "PS1", DuckStationFix);
             }
         }
@@ -124,6 +128,25 @@ public static partial class MemoryCards
 
     public const int Ps1CardSize = 128 * 1024;
 
+    /// <summary>The game a per-game PS1 card is named after: <c>Suikoden II_1.mcd</c> → <c>Suikoden II</c>; null for a
+    /// name with no slot.</summary>
+    public static string? Ps1CardTitle(string fileName) =>
+        Ps1PerGameCard().Match(fileName) is { Success: true } m ? m.Groups["title"].Value : null;
+
+    /// <summary>
+    /// Which of a card's product codes are the game the card is named after (<paramref name="cardTitle"/>): the code
+    /// itself (a card per serial), or one whose disc title is that name, ignoring region, disc and punctuation. Every
+    /// disc of a multi-disc game; not a save of another game copied onto the card. Empty when none is.
+    /// </summary>
+    public static IReadOnlyList<string> OwnCodes(string cardTitle, IReadOnlyList<string> codes)
+    {
+        var key = TitleKey(cardTitle);
+        return codes.Where(code => string.Equals(code, cardTitle, StringComparison.OrdinalIgnoreCase) ||
+                                   ConsoleTitles.For("psx", code) is { } t && TitleKey(t) == key).ToList();
+    }
+
+    private static string TitleKey(string title) => ManifestLoader.NormalizeName(RomNames.CleanTitle(title));
+
     /// <summary><c>BASLUS-00067SAVE</c> > <c>SLUS-00067</c>; null when the name carries no product code.</summary>
     public static string? Ps1ProductCode(string saveName) =>
         ConsoleSaveName().Match(saveName) is { Success: true } m ? $"{m.Groups["prefix"].Value}-{m.Groups["number"].Value}" : null;
@@ -139,6 +162,10 @@ public static partial class MemoryCards
 
     [GeneratedRegex(@"^shared_card_\d+\.mcd$", RegexOptions.IgnoreCase)]
     private static partial Regex DuckStationSharedCard();
+
+    // DuckStation's per-game card, <title>_<slot>.mcd: two card slots (System::GetGameMemoryCardPath).
+    [GeneratedRegex(@"^(?<title>.+)_[12]\.(?:mcd|mcr)$", RegexOptions.IgnoreCase)]
+    private static partial Regex Ps1PerGameCard();
 }
 
 /// <summary>

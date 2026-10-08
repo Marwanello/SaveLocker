@@ -229,6 +229,33 @@ public sealed class MemoryCardTests : IDisposable
     }
 
     [Fact]
+    public void A_duckstation_card_named_after_its_game_is_that_games_with_every_disc_and_not_an_imported_save()
+    {
+        // Metal Gear Solid's discs each save under their own code, onto the one card DuckStation keeps per title.
+        Bytes("ds/saves/Metal Gear Solid_1.mcd", F.Ps1Card("BASLUS-00594MGS01", "BASLUS-00776MGS02"));
+        // Suikoden II reads a Suikoden save copied onto its own card.
+        Bytes("ds/saves/Suikoden II_1.mcd", F.Ps1Card("BASLUS-00292SUIKO", "BASLUS-00958SUIKO2"));
+        Directory.CreateDirectory(P("ds/states"));
+
+        var found = DuckStationSaves.Scan(new[] { new RomSaveFolders(P("ds/saves"), P("ds/states")) });
+
+        Assert.Equal(new[] { "Metal Gear Solid (USA)", "Suikoden II (USA)" }, found.Select(c => c.Name));
+        Assert.All(found, c => Assert.Null(c.NotSyncable));
+        Assert.Equal(new[] { "SLUS-00594_*.sav", "SLUS-00776_*.sav" }, Assert.Single(found[0].ExtraSaveDirs!).IncludeGlobs);
+        // The imported game's states are its own game's, never also this one's.
+        Assert.Equal(new[] { "SLUS-00958_*.sav" }, Assert.Single(found[1].ExtraSaveDirs!).IncludeGlobs);
+        Assert.Empty(SaveDirSanity.Inspect(P("ds/saves"), includeGlobs: DuckStationSaves.SaveGlobsFor("Suikoden II")));
+    }
+
+    [Fact]
+    public void A_duckstation_card_in_a_slot_its_scope_never_takes_is_no_game()
+    {
+        Bytes("ds/Crash_3.mcd", F.Ps1Card("BASCUS-94900CRASH"));
+
+        Assert.Empty(DuckStationSaves.Scan(new[] { new RomSaveFolders(P("ds"), null) }));
+    }
+
+    [Fact]
     public void Duckstation_settings_name_the_card_and_states_folders()
     {
         Text("data/settings.ini", $"[MemoryCards]\nCard1Type = PerGameTitle\nDirectory = {P("cards")}\n\n[Folders]\nSaveStates = st\n");
@@ -354,6 +381,27 @@ public sealed class MemoryCardTests : IDisposable
             Enroller.ServerNameFor([Game(prime.Name, "Dolphin")], prime, prime.ExtraSaveDirs ?? []));
     }
 
+    [Fact]
+    public void The_poller_suggests_a_folder_only_from_the_same_save()
+    {
+        Bytes("p/Wii/title/00010000/52334d45/data/banner.bin", F.Banner("Metroid Prime Trilogy"));
+        Bytes("ps2/PS2MC-1.ps2", F.Ps2FileCard());
+        var prime = Assert.Single(DolphinSaves.Scan(new[] { new DolphinFolders("PrimeHack", null, P("p/Wii"), null) }));
+        var card = Assert.Single(Pcsx2Saves.Scan(new[] { new RomSaveFolders(P("ps2"), null) }));
+        TrackedGame Tracked(string name, IEnumerable<string>? scope = null) =>
+            new() { GameId = Guid.NewGuid(), Name = name, IncludeGlobs = (scope ?? prime.IncludeGlobs!).ToList() };
+        GameDto Server(TrackedGame g, params string[] emulators) =>
+            new(g.GameId, g.Name, null, null, true, IncludeGlobs: g.IncludeGlobs.ToArray(), Emulators: emulators);
+
+        var dolphins = Tracked(prime.Name);
+        Assert.Null(CommandPoller.PathCandidateFor(dolphins, Server(dolphins, "Dolphin"), [prime]));
+        Assert.Same(prime, CommandPoller.PathCandidateFor(dolphins, Server(dolphins, "PrimeHack"), [prime]));
+        // The same title with no scope (a PC release of it) is not this save either.
+        var pc = Tracked(prime.Name, []);
+        Assert.Null(CommandPoller.PathCandidateFor(pc, Server(pc), [prime]));
+        Assert.Null(CommandPoller.PathCandidateFor(Tracked(card.Name, []), null, [card]));
+    }
+
     // ---- The shared-card warning (SaveDirSanity) ----
 
     [Fact]
@@ -370,6 +418,10 @@ public sealed class MemoryCardTests : IDisposable
         Assert.Contains(SaveDirSanity.Inspect(P("folder")), p => p.Contains("whole PCSX2 folder memory card"));
         Assert.Contains(SaveDirSanity.Inspect(P("ds")), p => p.Contains("SHARED PS1 memory card"));
         Assert.Contains(SaveDirSanity.Inspect(P("gc")), p => p.Contains("2 GameCube games"));
+        Bytes("ds2/Crash_1.mcd", F.Ps1Card("BASCUS-94900CRASH"));
+        Bytes("ds2/Crash_2.mcd", F.Ps1Card("BASCUS-94900CRASH"));
+        Bytes("ds2/Spyro_1.mcd", F.Ps1Card("BASCUS-94228SPYRO"));
+        Assert.Contains(SaveDirSanity.Inspect(P("ds2")), p => p.Contains("2 PS1 games"));
 
         // What Add games maps: one game's own files, which say nothing.
         Assert.Empty(SaveDirSanity.Inspect(P("folder"), includeGlobs: ["Mcd001.ps2/BASLUS-21050*/**"]));

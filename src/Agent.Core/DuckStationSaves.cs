@@ -59,10 +59,13 @@ public static partial class DuckStationSaves
                 // A card DuckStation formatted when the game started but nothing was saved to: nothing to sync.
                 if (MemoryCards.Ps1Directory(file.FullName) is not { Saves: > 0 } directory) continue;
 
-                // A card per serial (Card1Type = PerGame) is named by the very code its states are.
+                // A card per serial (Card1Type = PerGame) is named by the very code its states are. A title card's
+                // are the codes of the game it is named after — every disc's, not a save copied in from another
+                // game (that game's states are its own) — or, when no disc title says, every code on it.
                 List<string> codes = BareSerial().IsMatch(title)
                     ? [title.ToUpperInvariant()]
-                    : directory.Codes.Order(StringComparer.Ordinal).ToList();
+                    : (MemoryCards.OwnCodes(title, directory.Codes) is { Count: > 0 } own ? own : directory.Codes)
+                        .Order(StringComparer.Ordinal).ToList();
                 DeclaredSavePath[]? states = setup.States is { } s && codes.Count > 0
                     ? [new DeclaredSavePath(RomSaves.StatesKey, EmuDeckRoots.RealPath(s), StateGlobsFor(codes))]
                     : null;
@@ -127,7 +130,8 @@ public static partial class DuckStationSaves
         ]
         : [Path.Combine(EmulatorPaths.XdgData, "duckstation"), Path.Combine(EmulatorPaths.Flatpak("org.duckstation.DuckStation"), "data", "duckstation")];
 
-    [GeneratedRegex(@"^(?<title>.+)_(?<slot>[1-8])\.mcd$", RegexOptions.IgnoreCase)]
+    // Two card slots, as the scope (SaveGlobsFor) names: a card it would not take is no game of its own.
+    [GeneratedRegex(@"^(?<title>.+)_(?<slot>[12])\.mcd$", RegexOptions.IgnoreCase)]
     private static partial Regex PerGameCard();
 
     [GeneratedRegex(@"^[A-Z]{4}-\d{5}$", RegexOptions.IgnoreCase)]

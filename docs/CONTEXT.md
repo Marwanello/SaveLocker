@@ -1843,6 +1843,17 @@ layout as researched), which broke a Group B test that read its ES-DE gamelists;
 of Persia" (`icon.sys` says only the series). PS1/PS2/GameCube/Wii saves are now named by their serial from a
 bundled Redump table (`ConsoleTitles`, CC BY-SA 4.0 via libretro-database, PS3 included for later), region kept —
 each region's disc reads only its own saves. Fallback: the title inside the save. Unit **363** (+2).
+<br>**2026-10-09: PR #63 (Group C) reviewed, every finding fixed on the PR.** The one that mattered: a DuckStation card
+per game holding more than one product code was called *shared* and could never be added — a multi-disc game whose
+later discs save under their own code (DuckStation keeps one card per title), or Suikoden II with a Suikoden save copied
+in to import. Now a card named after one of its games is that game's (`MemoryCards.OwnCodes`, Decisions amended), and its
+states are only that game's codes, so an imported game's states are never claimed twice. Also: the poller's "found
+at…" folder guess for an unmapped game took any same-named row — another emulator's save (PrimeHack's Trilogy for
+Dolphin's), another ROM, a shared card, or a scoped emulator folder for a PC game; it now needs the same save
+(`CommandPoller.PathCandidateFor`). DuckStation only takes slots 1–2, which its scope names; `ReadGci` reads the
+header and comment, not the whole save; `SaveDirSanity` also warns about a whole folder of DuckStation per-game cards;
+an emulator source with no name no longer makes a game no emulator's; and Add games' Console filter only applies
+while its chip is on screen. Unit **366** (+3; the card and poller fixes mutation-checked).
 <br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then merge PR #63.
 On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another
 commit, so this session did not touch it: run `testenv clean` first.

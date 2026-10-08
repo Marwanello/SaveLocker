@@ -183,16 +183,21 @@ public static class DolphinSaves
     {
         try
         {
-            var bytes = File.ReadAllBytes(path);
-            if (bytes.Length < 0x40 + 0x2000) return null;
-            var code = Encoding.ASCII.GetString(bytes, 0, 4);
-            var maker = Encoding.ASCII.GetString(bytes, 4, 2);
+            // The header and the comment only: a save can be thousands of 8 KB blocks, and a scan reads every one.
+            using var stream = File.OpenRead(path);
+            if (stream.Length < 0x40 + 0x2000) return null;
+            var entry = new byte[0x40];
+            stream.ReadExactly(entry);
+            var code = Encoding.ASCII.GetString(entry, 0, 4);
+            var maker = Encoding.ASCII.GetString(entry, 4, 2);
             if (!code.All(char.IsAsciiLetterOrDigit) || !maker.All(char.IsAsciiLetterOrDigit)) return null;
             string? title = null;
-            var comments = BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(0x3C));
-            if (comments != uint.MaxValue && 0x40L + comments + 32 <= bytes.Length)
+            var comments = BinaryPrimitives.ReadUInt32BigEndian(entry.AsSpan(0x3C));
+            if (comments != uint.MaxValue && 0x40L + comments + 32 <= stream.Length)
             {
-                var raw = bytes.AsSpan(0x40 + (int)comments, 32);
+                var raw = new byte[32];
+                stream.Position = 0x40L + comments;
+                stream.ReadExactly(raw);
                 var text = code[3] == 'J' ? ConsoleText.ShiftJis(raw) : ConsoleText.Latin(raw);
                 title = text.Length == 0 ? null : text;
             }

@@ -344,7 +344,11 @@ session can judge an edge case, not to reopen the choice.
   greyed out with how to switch the emulator to a card per game (`ScanCandidate.NotSyncable`), the enroller refuses
   it, and `SaveDirSanity` warns — never refuses — when one is mapped by hand. Judged by the file on disk (the PS2
   card's header, Dolphin's and DuckStation's names, a PS1 card holding several games' saves), never by an emulator
-  setting: EmuDeck sets PCSX2's folder auto-manage on, yet PCSX2 still creates a shared file card.
+  setting: EmuDeck sets PCSX2's folder auto-manage on, yet PCSX2 still creates a shared file card. **Amended
+  2026-10-09 (PR #63 review):** a PS1 card *named after* one of the games on it (`<title>_<slot>.mcd`, matched against
+  each product code's disc title ignoring region, disc and punctuation) is that game's own card, whatever else it
+  holds — a multi-disc game's later discs save under their own codes onto DuckStation's one card per title, and
+  Suikoden II imports a Suikoden save copied onto its card. Its states are the named game's codes only.
 - **PCSX2's `.p2s.backup` state copies are not synced** (2026-10-07, maintainer's choice): D3's "states always" stands,
   but a backup of every slot would double a PS2 game's states against the upload cap.
 - **A disc console's save is named by its serial, region included** (2026-10-08, maintainer's choice, emulator-saves

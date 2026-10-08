@@ -360,6 +360,9 @@ export function AddGamesView({ onEnrolled }: Props) {
     if (filter !== 'emulator') return []
     return consoleChips(pool.filter(c => c.source === 'Emulator' && (!emulator || c.emulatorName === emulator)))
   }, [pool, filter, emulator])
+  // The pick applies only while its chip is on screen: after a rescan that leaves one console (the row hides) or
+  // none of the picked one, a filter nobody can see or clear would hide rows.
+  const activeConsole = consoles.length > 1 && consoles.some(s => s.id === consoleId) ? consoleId : null
 
   const active = FILTERS.find(f => f.id === filter) ?? FILTERS[0]
   // Filtered by source (+ store) but not yet by path — the base the path row's own counts are
@@ -368,7 +371,7 @@ export function AddGamesView({ onEnrolled }: Props) {
     .filter(active.match)
     .filter(c => !((filter === 'heroic' || filter === 'playnite') && store) || c.store === store)
     .filter(c => !(filter === 'emulator' && emulator) || c.emulatorName === emulator)
-    .filter(c => !(filter === 'emulator' && consoleId) || c.emulatorSystem === consoleId)
+    .filter(c => !(filter === 'emulator' && activeConsole) || c.emulatorSystem === activeConsole)
   const activePathMode = PATH_MODES.find(p => p.id === pathMode) ?? PATH_MODES[0]
   const needle = query.trim().toLowerCase()
   const visible = sourceFiltered
@@ -478,9 +481,9 @@ export function AddGamesView({ onEnrolled }: Props) {
         {consoles.length > 1 && (
           <div className="sl-filters">
             <span className="sl-filters__label">Console</span>
-            <button type="button" className="sl-fchip" aria-pressed={consoleId === null} onClick={() => setConsoleId(null)}>All</button>
+            <button type="button" className="sl-fchip" aria-pressed={activeConsole === null} onClick={() => setConsoleId(null)}>All</button>
             {consoles.map(s => (
-              <button key={s.id} type="button" className="sl-fchip" aria-pressed={consoleId === s.id} onClick={() => setConsoleId(s.id)}>
+              <button key={s.id} type="button" className="sl-fchip" aria-pressed={activeConsole === s.id} onClick={() => setConsoleId(s.id)}>
                 {s.label} <b>{s.count}</b>
               </button>
             ))}
