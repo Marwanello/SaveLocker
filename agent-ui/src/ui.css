@@ -153,8 +153,7 @@ button:disabled { cursor: default; }
 .sl-dot--ok   { background: var(--color-safe); }
 .sl-dot--warn { background: var(--color-watch); }
 .sl-dot--crit { background: var(--color-accent); }
-/* "Only on the server": not here, so hollow — the palette has no fourth hue to spend on it. */
-.sl-dot--ring { background: transparent; box-shadow: inset 0 0 0 1.5px var(--color-dim); }
+.sl-dot--info { background: var(--color-info); }
 
 /* ---- Cards, stats, banners ------------------------------------------------------------------ */
 .sl-card { background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 14px; overflow: hidden; }

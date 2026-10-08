@@ -14,8 +14,8 @@ interface Props {
 
 type Look = { dot: string; text: string }
 
-/** A file's state as its dot and the words for it. "Only on the server" is a ring, not a colour: the
- *  palette has no blue, and a ring reads as "not here" without one. */
+/** A file's state as its dot and the words for it: green in sync, amber this machine's change, blue the
+ *  server's. */
 function look(f: LocalFile): Look {
   switch (f.state) {
     case 'same': return { dot: 'sl-dot sl-dot--ok', text: 'In sync' }
@@ -23,8 +23,8 @@ function look(f: LocalFile): Look {
       ? { dot: 'sl-dot sl-dot--warn', text: 'Deleted here · will push' }
       : { dot: 'sl-dot sl-dot--warn', text: 'Changed here · will push' }
     case 'server': return f.missing
-      ? { dot: 'sl-dot sl-dot--ring', text: 'Only on the server · will pull' }
-      : { dot: 'sl-dot sl-dot--ring', text: 'Changed on the server · will pull' }
+      ? { dot: 'sl-dot sl-dot--info', text: 'Only on the server · will pull' }
+      : { dot: 'sl-dot sl-dot--info', text: 'Changed on the server · will pull' }
     default: return { dot: 'sl-dot', text: 'Not compared' }
   }
 }
@@ -62,7 +62,7 @@ export function SaveFilesCard({ gameId, refreshKey }: Props) {
           <div className="sl-files__legend" aria-hidden="true">
             <span><i className="sl-dot sl-dot--ok" />In sync</span>
             <span><i className="sl-dot sl-dot--warn" />Changed here · will push</span>
-            <span><i className="sl-dot sl-dot--ring" />Only on the server · will pull</span>
+            <span><i className="sl-dot sl-dot--info" />Only on the server · will pull</span>
           </div>
           <Button size="sm" variant="quiet" disabled={loading} onClick={reload}>
             <RefreshCw size={13} aria-hidden="true" className={loading ? 'sl-spin' : undefined} />
