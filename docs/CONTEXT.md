@@ -1805,7 +1805,7 @@ game with the same files; different file names shown greyed out). The different-
 Group G**, not started, open questions in its plan section. Unit **325**. A save-tree mockup (console version history with
 each save collapsed + the agent's current save tree, three variants) is at
 <https://claude.ai/artifact/2Nq9PbykqDDici67dWCGP2>, picked: **B in the console, A in the agent**, now its own task
-(`tasks/save-file-trees/plan.md`, a separate PR, not started).
+(`tasks/save-file-trees/plan.md`, a separate PR — built 2026-10-08, see below).
 <br>**Group H, real-game checks** (no code, always the last group): melonDS, ScummVM, Supermodel and Model 2 are
 waiting for real games (maintainer has none yet). Any later emulator shipped without a real-game test is added there
 (`tasks/emulator-saves/plan.md` → *Phase 18*).
@@ -1825,6 +1825,8 @@ asked; melonDS's "beside the ROM" mode only takes a save with a DS ROM beside it
 ScummVM finds fixed-name engines from a `gameid` alone (`sword1mac`); testenv keeps a hand-set
 `SAVELOCKER_EMULATOR_HOME`; and the row checkbox has its own accessible name. Unit **332** (+7, the four main
 fixes mutation-checked); `agent-ui/src/api-types.ts` regenerated (one addition, `untouchedSeed`).
+<br>**2026-10-08: Save file trees built — PR #62 (`save-file-trees`), not merged.** The console's Versions rows now start collapsed with change chips and open on the changed files (variant B); the agent's game page has *Save files on this PC* (variant A). New routes: `versions/changes` (admin), `agent/games/{id}/head/files` (machine key, SHA-256 from the stored archive) and the local `games/{id}/files`. The palette gained a fifteenth token, **`--color-info` (blue)** — three copies as always (Decisions.md). A file that differs from the server counts as the server's only when the head moved past this machine's last sync and nothing changed here. Detail: `logs/2026-10-08_save-file-trees/plan.md`.
+<br>**Next action for this item:** the by-hand testenv pass in the plan (step 3 needs `testenv up`, and another worktree's tray was holding :5188 on 2026-10-08), then merge #62. Separately, `ArcadeSavesTests`' Supermodel naming test fails on a PC with a real EmuDeck install (it reads the real ES-DE gamelists) — offered as its own task.
 
 ---
 

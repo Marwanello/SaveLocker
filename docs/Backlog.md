@@ -17,7 +17,6 @@ Not-yet-done work only. Each line is the task's title, linked to its plan or sum
 ## Medium priority
 
 - [Notifications: buttons that act, and a check on real installs (left by Group 7)](tasks/notification-follow-ups/summary.md)
-- [Save file trees: what's inside a save, in the console and on this PC](tasks/save-file-trees/plan.md)
 - [Checkpoint UI Group 9: run the testenv checklist](tasks/checkpoint-ui-group-9-check/summary.md)
 - [Console: list and revoke individual signed-in browsers](tasks/console-session-list/summary.md)
 - [Console: per-game detail when a Sync all machine fails](tasks/sync-all-failure-detail/summary.md)
