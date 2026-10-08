@@ -716,6 +716,11 @@ session can judge an edge case, not to reopen the choice.
   migration, a backfill for every existing version, and a change to the upload path that the delta-upload review
   hardened. CRC-32 over SHA-256 for the console because it is free from the zip directory; the agent's per-file
   comparison uses SHA-256, hashed by the server from the stored archive.
+- **The agent keeps game art on disk, keyed by the server's URL** (2026-10-08, `ArtCache`). Every surface reaches art
+  through the agent's own `/api/games/{id}/art` proxy, so the cache sits there, once, for the agent UI and Game Mode
+  alike. Freshness needs no new server API: the server already stamps each stored image `?v=<write time>`, so "the URL
+  changed" is "the image changed". The poller warms it (bounded per tick) rather than waiting for a window to ask —
+  the reported failure was art that only appeared after something else had fetched it.
 
 - **OS notifications: a few events, said once, and a button is a link — never a callback** (2026-09-24, checkpoint-ui
   Phase 7). *What fires* is the plan's list and no more — conflict opened, lease held elsewhere, push rejected, pull

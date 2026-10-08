@@ -132,6 +132,8 @@ SaveLocker/
 │   │   ├── SavePathEditor.cs            # Add/remove an extra save folder — one implementation for add-path,
 │   │   │                               #   remove-path, the local API and the start-up prompt
 │   │   ├── FolderSize.cs                # Bytes under a save folder by plain enumeration (no hashing)
+│   │   ├── ArtCache.cs                  # Covers/icons on disk (<state>/art-cache/<game>/<kind>-<w>.<url hash>.<ext>): served
+│   │   │                               #   offline, re-fetched when the server's ?v= URL changes, warmed by the poller
 │   │   ├── SaveFileTree.cs              # "Save files on this PC": every file here vs the head by SHA-256 (same / here /
 │   │   │                               #   server), plus the folder's other files (other game / excluded). GET /api/games/{id}/files
 │   │   ├── FileLockProbe.cs             # "Is anyone still writing?" — FileShare (Win) / /proc (Linux)
