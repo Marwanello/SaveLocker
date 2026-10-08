@@ -705,6 +705,22 @@ session can judge an edge case, not to reopen the choice.
   safe — [[Gotchas]] → *Web console*); `tests/run-appearance-consistency-tests.ps1` keeps it that way by failing on a
   `#hex` in any `.tsx`. An accent is the one token the look rewrites, and is written **inline for the palette in
   force** — an accent has a dark and a light value — so it is re-derived when the OS flips while the theme is System.
+- **A fifteenth palette token, `--color-info` (blue), for "the server has it, a pull brings it"** (2026-10-08,
+  tasks/save-file-trees). Fixed like `--color-safe`/`--color-watch`, never derived from the accent: `#7b9fd0` dark,
+  `#3d6aa8` light, with `-soft`/`-line`/`-ink` mixes. Same three hand-kept copies as every token (`web/src/index.css`,
+  `agent-ui/src/tokens.css`, the Deck's `Theme.cs`), held together by `run-appearance-consistency-tests`. Chosen by
+  the maintainer over a hollow ring: the agent's file tree needs three states, and green/amber were taken.
+- **Per-version "what changed" is computed, not stored** (2026-10-08, tasks/save-file-trees). The console's change
+  chips diff each version's zip directory against its parent's (path + size + CRC-32) and cache the answer in memory
+  per version id — an archive never changes. A table filled at push time was considered and declined: it needs a
+  migration, a backfill for every existing version, and a change to the upload path that the delta-upload review
+  hardened. CRC-32 over SHA-256 for the console because it is free from the zip directory; the agent's per-file
+  comparison uses SHA-256, hashed by the server from the stored archive.
+- **The agent keeps game art on disk, keyed by the server's URL** (2026-10-08, `ArtCache`). Every surface reaches art
+  through the agent's own `/api/games/{id}/art` proxy, so the cache sits there, once, for the agent UI and Game Mode
+  alike. Freshness needs no new server API: the server already stamps each stored image `?v=<write time>`, so "the URL
+  changed" is "the image changed". The poller warms it (bounded per tick) rather than waiting for a window to ask —
+  the reported failure was art that only appeared after something else had fetched it.
 
 - **OS notifications: a few events, said once, and a button is a link — never a callback** (2026-09-24, checkpoint-ui
   Phase 7). *What fires* is the plan's list and no more — conflict opened, lease held elsewhere, push rejected, pull

@@ -132,6 +132,10 @@ SaveLocker/
 │   │   ├── SavePathEditor.cs            # Add/remove an extra save folder — one implementation for add-path,
 │   │   │                               #   remove-path, the local API and the start-up prompt
 │   │   ├── FolderSize.cs                # Bytes under a save folder by plain enumeration (no hashing)
+│   │   ├── ArtCache.cs                  # Covers/icons on disk (<state>/art-cache/<game>/<kind>-<w>.<url hash>.<ext>): served
+│   │   │                               #   offline, re-fetched when the server's ?v= URL changes, warmed by the poller
+│   │   ├── SaveFileTree.cs              # "Save files on this PC": every file here vs the head by SHA-256 (same / here /
+│   │   │                               #   server), plus the folder's other files (other game / excluded). GET /api/games/{id}/files
 │   │   ├── FileLockProbe.cs             # "Is anyone still writing?" — FileShare (Win) / /proc (Linux)
 │   │   ├── SteamLayout.cs               # The parts of Steam's on-disk layout that are identical on
 │   │   │                               #   every platform. FINDING Steam is not here — that is a
@@ -271,7 +275,8 @@ SaveLocker/
 │   │       ├── GamesView.tsx            # Sidebar + game page, or the full-width grid
 │   │       ├── game/                    # The game page, one file per card: GameDetail (owns versions and
 │   │       │                           #   paths), GameHead, ConflictPanel (the agent's conflict card with
-│   │       │                           #   OS logos), GameStats, VersionsCard, SaveFoldersCard (+ SaveFolderParts:
+│   │       │                           #   OS logos), GameStats, VersionsCard (+ VersionFiles: each row opens on what it
+│   │       │                           #   changed, the full tree on request — versions/changes), SaveFoldersCard (+ SaveFolderParts:
 │   │       │                           #   one section per extra folder, include patterns, Latest's files),
 │   │       │                           #   RulesCard, ExcludePatternsCard, RemoteCommandsCard, MachineSelect
 │   │       ├── ArtPicker.tsx            # Inline cover/icon chooser under the game card (the pen over the
@@ -317,6 +322,8 @@ SaveLocker/
 │           ├── StatusHeader.tsx         # The strip on EVERY page: status + Sync all (N of M, Cancel) + the last
 │           │                           #   run's summary — green only when every game synced
 │           ├── ActivityView.tsx         # The full feed, the offline queue, Open agent.log
+│           ├── SaveFilesCard.tsx        # The game page's "Save files on this PC": nested tree, a dot per file (in sync /
+│           │                           #   will push / will pull), other games' files folded. Loaded on demand, never polled
 │           ├── VersionsCard.tsx · GameManagement.tsx   # The game page's server versions; its folder / process /
 │           │                           #   stop-tracking controls (a confirm is the agent's `needsConfirm`, never a sentence)
 │           ├── FolderSuggestionsModal.tsx # "More save folders found": the start-up, one-game-at-a-time

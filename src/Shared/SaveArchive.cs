@@ -68,9 +68,10 @@ public static class SaveArchive
     }
 
     /// <summary>One save folder's files inside an archive, as the console lists them.</summary>
-    /// <param name="Files">Relative to the folder, Ordinal order, at most the cap the caller asked for.</param>
+    /// <param name="Files">Relative to the folder, Ordinal order, at most the cap the caller asked for.
+    /// <c>Crc32</c> is the entry's own, read from the zip's directory like the rest.</param>
     public sealed record ArchiveFolder(string Key, int FileCount, long TotalBytes,
-        IReadOnlyList<(string Path, long Size, DateTime? ModifiedUtc)> Files);
+        IReadOnlyList<(string Path, long Size, DateTime? ModifiedUtc, uint Crc32)> Files);
 
     /// <summary>
     /// The archive's files grouped by save folder (tasks/multiple-save-paths plan §1): the primary
@@ -81,7 +82,7 @@ public static class SaveArchive
     public static IReadOnlyList<ArchiveFolder> ListArchiveFolders(string zipPath, int maxFilesPerFolder = 500)
     {
         using var zip = ZipFile.OpenRead(zipPath);
-        var folders = new SortedDictionary<string, List<(string, long, DateTime?)>>(StringComparer.Ordinal)
+        var folders = new SortedDictionary<string, List<(string, long, DateTime?, uint)>>(StringComparer.Ordinal)
         {
             [SaveRoot.PrimaryKey] = new(),
         };
@@ -97,7 +98,7 @@ public static class SaveArchive
             }
             var (key, rel) = TrySplitExtra(name, out var k, out var r) ? (k, r) : (SaveRoot.PrimaryKey, name);
             if (!folders.TryGetValue(key, out var files)) folders[key] = files = new();
-            files.Add((rel, entry.Length, EntryWriteTimeUtc(entry)));
+            files.Add((rel, entry.Length, EntryWriteTimeUtc(entry), entry.Crc32));
         }
 
         // The primary folder first, then the extra ones by key.
@@ -105,6 +106,97 @@ public static class SaveArchive
             .OrderBy(f => f.Key == SaveRoot.PrimaryKey ? 0 : 1).ThenBy(f => f.Key, StringComparer.Ordinal)
             .Select(f => new ArchiveFolder(f.Key, f.Value.Count, f.Value.Sum(x => x.Item2),
                 f.Value.OrderBy(x => x.Item1, StringComparer.Ordinal).Take(maxFilesPerFolder).ToList()))
+            .ToList();
+    }
+
+    /// <summary>What one version changed against another, file by file — see <see cref="DiffArchiveFolders"/>.</summary>
+    /// <param name="Files">The changed files only, primary folder first, at most the cap the caller asked for.</param>
+    public sealed record ArchiveDiff(int Added, int Changed, int Removed, int Unchanged,
+        IReadOnlyList<(string Key, string Path, FileChange Change, long Size)> Files);
+
+    /// <summary>
+    /// Which files <paramref name="current"/> added, changed or removed against <paramref name="parent"/>,
+    /// matched by save folder key and path, compared by size and CRC-32 (tasks/save-file-trees Phase 1).
+    /// Both listings must be uncapped (<see cref="ListArchiveFolders"/> with <see cref="int.MaxValue"/>), or
+    /// a file past the cap reads as added or removed. No parent: every file is added. A file that moved to
+    /// another folder is removed from one and added to the other — a pull deletes and writes it that way.
+    /// </summary>
+    public static ArchiveDiff DiffArchiveFolders(IReadOnlyList<ArchiveFolder>? parent,
+        IReadOnlyList<ArchiveFolder> current, int maxFiles = 1000)
+    {
+        // A zip can hold one name twice (or `a\b` beside `a/b`, which read back as one): the later entry
+        // wins, as it does on extract, rather than one odd archive failing the whole Versions list.
+        static Dictionary<(string, string), (long Size, uint Crc)> Index(IReadOnlyList<ArchiveFolder>? folders)
+        {
+            var index = new Dictionary<(string, string), (long Size, uint Crc)>();
+            foreach (var f in folders ?? Array.Empty<ArchiveFolder>())
+            foreach (var x in f.Files)
+                index[(f.Key, x.Path)] = (x.Size, x.Crc32);
+            return index;
+        }
+
+        var before = Index(parent);
+        var after = Index(current);
+        var changes = new List<(string Key, string Path, FileChange Change, long Size)>();
+        int added = 0, changed = 0, removed = 0, unchanged = 0;
+
+        foreach (var ((key, path), now) in after)
+        {
+            if (!before.TryGetValue((key, path), out var was)) { added++; changes.Add((key, path, FileChange.Added, now.Size)); }
+            else if (was != now) { changed++; changes.Add((key, path, FileChange.Changed, now.Size)); }
+            else unchanged++;
+        }
+        foreach (var ((key, path), was) in before)
+            if (!after.ContainsKey((key, path))) { removed++; changes.Add((key, path, FileChange.Removed, was.Size)); }
+
+        var listed = changes
+            .OrderBy(c => c.Key == SaveRoot.PrimaryKey ? 0 : 1).ThenBy(c => c.Key, StringComparer.Ordinal)
+            .ThenBy(c => c.Path, StringComparer.Ordinal)
+            .Take(maxFiles)
+            .ToList();
+        return new ArchiveDiff(added, changed, removed, unchanged, listed);
+    }
+
+    /// <summary>
+    /// Every file of an archive with its SHA-256, grouped by save folder like <see cref="ListArchiveFolders"/>
+    /// (tasks/save-file-trees Phase 1). Reads every byte, so a caller caches the answer per version — and
+    /// stops at the restore path's size cap: the archive came from an agent, and one that expands without
+    /// end would otherwise hold a server thread for as long as it keeps expanding. A name held twice keeps
+    /// its later entry, as an extract would.
+    /// </summary>
+    public static IReadOnlyList<(string Key, IReadOnlyList<(string Path, long Size, string Sha256)> Files)> HashArchiveFiles(string zipPath)
+    {
+        var maxBytes = MaxRestoreBytes;
+        long read = 0;
+        var buffer = new byte[81920];
+        using var zip = ZipFile.OpenRead(zipPath);
+        var folders = new SortedDictionary<string, Dictionary<string, (long Size, string Sha256)>>(StringComparer.Ordinal);
+        foreach (var entry in zip.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name)) continue;
+            var name = entry.FullName.Replace('\\', '/');
+            if (IsMarker(name)) continue;
+            var (key, rel) = TrySplitExtra(name, out var k, out var r) ? (k, r) : (SaveRoot.PrimaryKey, name);
+            using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            using (var stream = entry.Open())
+            {
+                int n;
+                while ((n = stream.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    if ((read += n) > maxBytes)
+                        throw new InvalidDataException($"Archive expands past the {Mb(maxBytes)} limit; not hashing it.");
+                    sha.AppendData(buffer, 0, n);
+                }
+            }
+            if (!folders.TryGetValue(key, out var files)) folders[key] = files = new(StringComparer.Ordinal);
+            files[rel] = (entry.Length, Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant());
+        }
+        return folders
+            .OrderBy(f => f.Key == SaveRoot.PrimaryKey ? 0 : 1).ThenBy(f => f.Key, StringComparer.Ordinal)
+            .Select(f => (f.Key, (IReadOnlyList<(string, long, string)>)f.Value
+                .OrderBy(x => x.Key, StringComparer.Ordinal)
+                .Select(x => (x.Key, x.Value.Size, x.Value.Sha256))
+                .ToList()))
             .ToList();
     }
 
@@ -795,6 +887,46 @@ public static class SaveArchive
             .Where(i => i.FullPath is not null)
             .Select(i => new SaveFile(i.Name, i.FullPath!))
             .ToList();
+    }
+
+    /// <summary>A file in one of a game's save folders that a push does not archive.</summary>
+    /// <param name="Excluded">True when the folder's include scope takes it but an exclude pattern drops
+    /// it; false when it is outside the folder's scope — another game's save in a shared folder.</param>
+    public readonly record struct UnsyncedFile(string Key, string Path, string FullPath, bool Excluded);
+
+    /// <summary>
+    /// The files in a game's save folders that <see cref="ListSaveFiles"/> leaves out (tasks/save-file-trees
+    /// Phase 3): what the agent's file tree folds into "other files in this folder". Each file is listed
+    /// once, under the first folder that holds it; SaveLocker's own reserved names are never listed.
+    /// </summary>
+    public static IReadOnlyList<UnsyncedFile> ListUnsyncedFiles(IReadOnlyList<SaveRoot> roots, IEnumerable<string>? excludeGlobs = null)
+    {
+        var seen = ListSaveFiles(roots, excludeGlobs).Select(f => f.FullPath).ToHashSet(PathComparer);
+        var result = new List<UnsyncedFile>();
+        foreach (var root in roots)
+        {
+            if (!Directory.Exists(root.Directory)) continue;
+            var rootFull = Path.GetFullPath(root.Directory);
+            var rels = EnumerateFilesNoFollow(rootFull)
+                .Select(f => Path.GetRelativePath(rootFull, f).Replace('\\', '/'))
+                .Where(r => !(root.IsPrimary && IsSliceName(r)))
+                .ToList();
+            var inScope = FilterIncluded(rels, root.IncludeGlobs).ToHashSet(StringComparer.Ordinal);
+            foreach (var rel in rels.Order(StringComparer.Ordinal))
+            {
+                var full = Path.Combine(rootFull, rel.Replace('/', Path.DirectorySeparatorChar));
+                if (seen.Add(full)) result.Add(new UnsyncedFile(root.Key, rel, full, inScope.Contains(rel)));
+            }
+        }
+        return result;
+    }
+
+    /// <summary>The save folder an archive name belongs to and its path inside it — <c>main</c> for the
+    /// archive root. Null for a folder marker or any other name SaveLocker reserves.</summary>
+    public static (string Key, string Path)? SplitArchiveName(string name)
+    {
+        if (TrySplitExtra(name, out var key, out var rel)) return (key, rel);
+        return IsSliceName(name) ? null : (SaveRoot.PrimaryKey, name);
     }
 
     /// <summary>

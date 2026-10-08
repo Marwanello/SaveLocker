@@ -40,6 +40,9 @@ static class Theme
     public static readonly Vector4 Safe  = Rgb(0x7fa96a);
     /// <summary>Something failed but will retry, or needs attention. Fixed, same reason as <see cref="Safe"/>.</summary>
     public static readonly Vector4 Watch = Rgb(0xd9a63f);
+    /// <summary>Not here yet, the server has it: a pull brings it (the save-file tree's "only on the server").
+    /// Fixed, same reason as <see cref="Safe"/>.</summary>
+    public static readonly Vector4 Info  = Rgb(0x7b9fd0);
 
     /// <summary>A decision is waiting. The one token this machine's Appearance setting rewrites —
     /// see <see cref="SetAccent"/>. Ember (the default accent) is the initial value.</summary>

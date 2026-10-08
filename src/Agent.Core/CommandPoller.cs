@@ -96,6 +96,9 @@ public sealed class CommandPoller : IDisposable
                 await Task.WhenAll(RunCommandsAsync(), CheckConflictsAsync());
             else
                 await RunCommandsAsync();
+            // After the commands: a first pass over a large library is up to MaxFetchesPerWarm downloads,
+            // and a dashboard command must not wait behind cover art.
+            await WarmArtAsync();
         }
         catch (Exception ex)
         {
@@ -117,9 +120,26 @@ public sealed class CommandPoller : IDisposable
 
     // ----- game-list reconciliation (server → agent propagation) -----
 
+    /// <summary>The server's game list from this tick's reconcile — what the art cache is warmed from.</summary>
+    private List<GameDto>? _lastServerGames;
+
+    /// <summary>
+    /// Keep the covers and icons of the games tracked here on disk (<see cref="ArtCache"/>), so every
+    /// surface has them offline and none has to be opened first for them to be fetched. Costs nothing once
+    /// the cache is current: a file is fetched only when the server names a new image.
+    /// </summary>
+    private async Task WarmArtAsync()
+    {
+        if (_lastServerGames is not { } games) return;
+        var tracked = _config.Games.Select(g => g.GameId).ToHashSet();
+        try { await ArtCache.For(_config.StateDir).WarmAsync(games.Where(g => tracked.Contains(g.Id)).ToList(), _api()); }
+        catch (Exception ex) { AgentLogger.LogException("CommandPoller.WarmArtAsync", ex); }
+    }
+
     internal async Task ReconcileGamesAsync()
     {
         var serverGames = await _api().ListGamesAsync();
+        _lastServerGames = serverGames;
         var serverById = serverGames.ToDictionary(g => g.Id);
         var changed = false;
 

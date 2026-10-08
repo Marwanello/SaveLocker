@@ -5,6 +5,7 @@ import { formatAgo, formatBytes, formatDateTime } from '../format'
 import { refreshActivity, useActivityBusy } from '../useActivity'
 import { GameArt } from './GameArt'
 import { GameManagement } from './GameManagement'
+import { SaveFilesCard } from './SaveFilesCard'
 import { SourceChip } from './SourceChip'
 import { VersionsCard } from './VersionsCard'
 import { Banner } from './ui/Banner'
@@ -41,7 +42,8 @@ const POLICY: Record<string, string> = {
 /**
  * One tracked game: what the server holds, what this machine watches, and Sync / Push now / Pull
  * latest. The server's side is one small request (`/state`) made when the page opens. The save
- * folder is only hashed on "Check now" — `sync-status` walks every file, so it is never automatic.
+ * folder is hashed on "Check now" and by the Save files card (on open, after a sync, on Refresh) —
+ * both walk every file, so neither runs on a timer.
  */
 export function GameDetailView({ game, conflicts, machineName, platform, onBack, onNavigate, onSynced, onChanged, onRemoved }: Props) {
   const busy = useActivityBusy()
@@ -232,6 +234,8 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
         <VersionsCard gameId={game.id} headId={state?.head?.id ?? null} refreshKey={syncCount} onLoaded={setVersions} />
         <GameManagement game={game} platform={platform} onChanged={onChanged} onRemoved={onRemoved} />
       </div>
+
+      {enrolled && <SaveFilesCard gameId={game.id} refreshKey={syncCount} />}
 
       {toast && (
         <Toast tone={toast.failed ? 'warn' : 'default'} onDismiss={() => setToast(null)}>{toast.text}</Toast>

@@ -602,6 +602,12 @@ agent.MapGet("/agent/games/{id:guid}/versions", async (Guid id, SyncService sync
     Results.Ok((await sync.ListVersionsAsync(id)).Select(v => v.ToDto())))
     .Produces<List<SaveVersionDto>>();
 
+// The head version's files with their SHA-256, so an agent can say file by file whether its own save
+// matches the server's (tasks/save-file-trees Phase 3). Hashed from the stored archive, cached per version.
+agent.MapGet("/agent/games/{id:guid}/head/files", async (Guid id, SyncService sync, CancellationToken ct) =>
+    await sync.GetHeadFilesAsync(id, ct) is { } files ? Results.Ok(files) : Results.NotFound())
+    .Produces<HeadFilesDto>();
+
 agent.MapGet("/agent/conflicts/{id:guid}", async (Guid id, SyncService sync) =>
     await sync.GetConflictAsync(id) is { } c ? Results.Ok(c) : Results.NotFound())
     .Produces<ConflictDto>();
@@ -1013,6 +1019,12 @@ admin.MapGet("/games/{id:guid}/versions/{versionId:guid}/folders", async (
     Guid id, Guid versionId, SyncService sync) =>
     await sync.GetVersionFoldersAsync(id, versionId) is { } folders ? Results.Ok(folders) : Results.NotFound())
     .Produces<VersionFolderDto[]>();
+
+// What every version changed against the one before it — the console's Versions rows open on this. One
+// call for the whole list, not one per row (tasks/save-file-trees Phase 1).
+admin.MapGet("/games/{id:guid}/versions/changes", async (Guid id, SyncService sync) =>
+    await sync.ListVersionChangesAsync(id) is { } changes ? Results.Ok(changes) : Results.NotFound())
+    .Produces<VersionChangesDto[]>();
 
 // Apply retention immediately, instead of only as a side effect of the next upload.
 admin.MapPost("/games/{id:guid}/prune", async (Guid id, SyncService sync) =>
