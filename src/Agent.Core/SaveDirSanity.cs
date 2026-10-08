@@ -84,9 +84,10 @@ public static class SaveDirSanity
 
     /// <summary>
     /// What would be archived here holds a memory card every game of a console shares (tasks/emulator-saves Phase 2):
-    /// a card file (<see cref="MemoryCards.Shared"/>), or a whole PCSX2 folder card or Dolphin GCI folder — every
-    /// game's saves at once, where the Add games rows scope each game to its own. Judged by the files, not by any
-    /// emulator setting. A warning, never a refusal: someone may want the whole card backed up as one, knowing.
+    /// a card file (<see cref="MemoryCards.Shared"/>), or a whole PCSX2 folder card, Dolphin GCI folder or folder of
+    /// DuckStation per-game cards — every game's saves at once, where the Add games rows scope each game to its own.
+    /// Judged by the files, not by any emulator setting. A warning, never a refusal: someone may want the whole card
+    /// backed up as one, knowing.
     /// </summary>
     private static string? SharedCard(string dir, IEnumerable<string>? excludeGlobs, IEnumerable<string>? includeGlobs)
     {
@@ -118,6 +119,15 @@ public static class SaveDirSanity
             return $"this is a whole Dolphin memory card folder: saves of {gciGames} GameCube games at once. Pulling an " +
                    "older version here would restore EVERY one of them. Add each game from Add games instead, where " +
                    "each keeps only its own .gci files.";
+
+        var ps1Games = files.Select(f => MemoryCards.Ps1CardTitle(Path.GetFileName(f)))
+            .Where(t => t is not null)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+        if (ps1Games > 1)
+            return $"this is a whole DuckStation memory card folder: the cards of {ps1Games} PS1 games at once. Pulling an " +
+                   "older version here would restore EVERY one of them. Add each game from Add games instead, where " +
+                   "each keeps only its own cards.";
         return null;
     }
 

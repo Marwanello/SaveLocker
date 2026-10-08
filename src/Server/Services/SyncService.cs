@@ -403,7 +403,8 @@ public sealed class SyncService
     /// Phase 4, maintainer's choice): the agent reads this to tell "the same files" from "the same game".
     /// </summary>
     public async Task<Dictionary<Guid, string[]>> GetEmulatorMapAsync() =>
-        (await _db.MachineGameSources.Where(s => s.Kind == GameSourceKinds.Emulator)
+        // A source with no emulator named would make the game no emulator's at all.
+        (await _db.MachineGameSources.Where(s => s.Kind == GameSourceKinds.Emulator && s.Detail != "")
             .Select(s => new { s.GameId, s.Detail }).ToListAsync())
         .GroupBy(s => s.GameId)
         .ToDictionary(g => g.Key, g => g.Select(s => s.Detail).Distinct(StringComparer.OrdinalIgnoreCase)
