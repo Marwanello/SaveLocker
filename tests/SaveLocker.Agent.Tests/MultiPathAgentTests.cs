@@ -9,6 +9,7 @@ namespace SaveLocker.Agent.Tests;
 /// tracked game hashes, the shadow an unmapped folder syncs through, and what mapping a folder does
 /// with the copy it was syncing until then. None of this needs a server.
 /// </summary>
+[Collection(WallClockTests.Name)]
 public sealed class MultiPathAgentTests : IDisposable
 {
     private readonly string _dir =
