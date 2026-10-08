@@ -2915,6 +2915,8 @@ export interface components {
             emulatorRom?: null | string;
             /** @default false */
             untouchedSeed: boolean;
+            notSyncable?: null | string;
+            emulatorConsole?: null | string;
         };
         CandidateLinksDto: {
             /** Format: int32 */
@@ -3091,6 +3093,7 @@ export interface components {
             includeGlobs?: null | string[];
             extraPaths?: null | components["schemas"]["SavePathDto"][];
             machineSource?: null | components["schemas"]["GameSourceDto"];
+            emulators?: null | string[];
         };
         GameFilesDto: {
             folders: components["schemas"]["GameFolderFilesDto"][];

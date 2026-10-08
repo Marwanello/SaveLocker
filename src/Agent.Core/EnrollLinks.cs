@@ -19,7 +19,7 @@ public static class EnrollLinks
     /// <summary>The options for one emulator candidate, the automatic one first. Empty for any other candidate.</summary>
     public static IReadOnlyList<LinkOption> For(IReadOnlyList<GameDto> server, ScanCandidate c)
     {
-        if (c.Source != ScanSource.Emulator || c.IncludeGlobs is not { Count: > 0 }) return [];
+        if (c.Source != ScanSource.Emulator || c.IncludeGlobs is not { Count: > 0 } || c.NotSyncable is not null) return [];
         var extras = c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>();
         var options = new List<LinkOption>();
         var auto = Enroller.ServerNameFor(server, c, extras);
@@ -49,13 +49,17 @@ public static class EnrollLinks
 
         // Same title, other files: shown so the user sees why it is not linked, never pickable here.
         var names = Enroller.NamesFor(c);
-        foreach (var g in server.Where(g => !Enroller.SameFiles(g, c) && SameTitle(g, c, names))
+        foreach (var g in server.Where(g => !Enroller.SameFiles(g, c) && (SameTitle(g, c, names) || OtherEmulator(g, c)))
                      .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase))
-            options.Add(new LinkOption(Game, LinkKind.Blocked, g.Name, g.Id,
-                g.IncludeGlobs is { Length: > 0 }
-                    ? $"Keeps {Files(g)}, not {file}. Linking saves with different file names comes in a later update."
-                    : "A game that keeps a whole save folder, like a PC game. Only another save of this game can be linked.",
-                g.IncludeGlobs is { Length: > 0 } ? "Different file names" : "Whole folder"));
+            options.Add(OtherEmulator(g, c)
+                ? new LinkOption(Game, LinkKind.Blocked, g.Name, g.Id,
+                    $"Keeps the same files, saved with {string.Join(", ", g.Emulators!)}. Saves from different emulators are kept as separate games.",
+                    "Another emulator")
+                : new LinkOption(Game, LinkKind.Blocked, g.Name, g.Id,
+                    g.IncludeGlobs is { Length: > 0 }
+                        ? $"Keeps {Files(g)}, not {file}. Linking saves with different file names comes in a later update."
+                        : "A game that keeps a whole save folder, like a PC game. Only another save of this game can be linked.",
+                    g.IncludeGlobs is { Length: > 0 } ? "Different file names" : "Whole folder"));
         return options;
     }
 
@@ -84,8 +88,8 @@ public static class EnrollLinks
             case Game:
                 if (server.FirstOrDefault(g => g.Id == choice.GameId) is not { } picked)
                     return (null, "the server game you picked is no longer on the server.");
-                return Enroller.SameFiles(picked, c)
-                    ? (picked.Name, null)
+                return Enroller.SameFiles(picked, c) ? (picked.Name, null)
+                    : OtherEmulator(picked, c) ? (null, $"the server's '{picked.Name}' holds another emulator's saves; saves from different emulators are kept as separate games.")
                     : (null, $"the server’s '{picked.Name}' keeps different save files, so it cannot be linked yet.");
             default:
                 if (Enroller.ServerNameFor(server, c, extras) is not { } named)
@@ -102,6 +106,10 @@ public static class EnrollLinks
         "it is EmuDeck's preinstalled file, never played here: it can only join a server game that keeps it.";
 
     private static bool Is(GameDto g, string name) => string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The same files, but another emulator's save made the game (<see cref="Enroller.SameEmulator"/>).</summary>
+    private static bool OtherEmulator(GameDto g, ScanCandidate c) =>
+        c.IncludeGlobs is { Count: > 0 } && Enroller.SameScope(g.IncludeGlobs, c.IncludeGlobs) && !Enroller.SameEmulator(g, c);
 
     /// <summary>"Chrono Trigger" is the same title as "Chrono Trigger", "Chrono Trigger (RetroArch)" or
     /// "Chrono Trigger (Japan) (melonDS)": the name, or the name followed by a bracket.</summary>

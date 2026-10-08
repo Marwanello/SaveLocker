@@ -44,7 +44,10 @@ public record GameDto(
     // working on it unchanged.
     SavePathDto[]? ExtraPaths = null,
     // How the calling machine found this game (agent routes only); null when it has not said.
-    GameSourceDto? MachineSource = null);
+    GameSourceDto? MachineSource = null,
+    // The emulators any machine found this game through (agent routes only), null when none has said: an
+    // emulator save never joins a game another emulator's save made, even with the same files.
+    string[]? Emulators = null);
 
 /// <summary>
 /// How a machine found a game, in two levels: <see cref="Kind"/> (one of <see cref="GameSourceKinds"/>:

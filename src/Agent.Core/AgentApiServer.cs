@@ -1693,7 +1693,9 @@ public sealed class AgentApiServer : IDisposable
             candidate.EmulatorName,
             candidate.EmulatorSystem,
             candidate.EmulatorRom,
-            candidate.UntouchedSeed)).ToArray();
+            candidate.UntouchedSeed,
+            candidate.NotSyncable,
+            GameSources.SystemLabel(candidate.EmulatorSystem))).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -1795,7 +1797,13 @@ public sealed record CandidateDto(
     string? EmulatorRom = null,
     /// <summary>EmuDeck's preinstalled save, never played here (<see cref="ScanCandidate.UntouchedSeed"/>): list it
     /// only when <c>GET /api/candidates/links</c> says it joins a server game.</summary>
-    bool UntouchedSeed = false);
+    bool UntouchedSeed = false,
+    /// <summary>Why this row can never be added and how to fix that (<see cref="ScanCandidate.NotSyncable"/>): a memory
+    /// card every game of a console shares. Shown greyed out with this text; null for every addable row.</summary>
+    string? NotSyncable = null,
+    /// <summary>The console as people say it ("PS2", "GameCube"), from <see cref="EmulatorSystem"/> by
+    /// <see cref="GameSources.SystemLabel"/> — the Add games Console row's chip label. Null when there is no system.</summary>
+    string? EmulatorConsole = null);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the

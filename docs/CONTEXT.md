@@ -1825,6 +1825,38 @@ asked; melonDS's "beside the ROM" mode only takes a save with a DS ROM beside it
 ScummVM finds fixed-name engines from a `gameid` alone (`sword1mac`); testenv keeps a hand-set
 `SAVELOCKER_EMULATOR_HOME`; and the row checkbox has its own accessible name. Unit **332** (+7, the four main
 fixes mutation-checked); `agent-ui/src/api-types.ts` regenerated (one addition, `untouchedSeed`).
+<br>**2026-10-07: Group C built (branch `emulator-saves-group-c`, one commit per phase, no PR yet).**
+PCSX2, DuckStation, Dolphin (GameCube and Wii) and PrimeHack, plus the shared-memory-card warning and a Console row
+on Add games. The maintainer decided four things at the start:
+- a card every game shares is a greyed-out row with how to fix it, never a game;
+- states sync, but not PCSX2's `.p2s.backup` copies;
+- Wii is in this group;
+- **saves from different emulators are never one game**, even with the same files. The server now sends
+  `GameDto.Emulators`, an additive field.
+
+That last rule contradicts Group F's planned Eden ↔ Ryujinx sync, so confirm it when F starts. A read-only Deck
+capture found PCSX2 on **one 64 MB shared file card** (EmuDeck does not make it a folder card) and Metroid Prime
+Trilogy saved in both Dolphin and PrimeHack. The maintainer's PC turned out to have a real EmuDeck for Windows (link
+layout as researched), which broke a Group B test that read its ES-DE gamelists; that is fixed, see Gotchas. Unit
+**361**. Details: `tasks/emulator-saves/plan.md` → *Group C — as built*.
+<br>**2026-10-08: names by serial.** The maintainer's Deck showed Warrior Within and The Two Thrones both as "Prince
+of Persia" (`icon.sys` says only the series). PS1/PS2/GameCube/Wii saves are now named by their serial from a
+bundled Redump table (`ConsoleTitles`, CC BY-SA 4.0 via libretro-database, PS3 included for later), region kept —
+each region's disc reads only its own saves. Fallback: the title inside the save. Unit **363** (+2).
+<br>**2026-10-09: PR #63 (Group C) reviewed, every finding fixed on the PR.** The one that mattered: a DuckStation card
+per game holding more than one product code was called *shared* and could never be added — a multi-disc game whose
+later discs save under their own code (DuckStation keeps one card per title), or Suikoden II with a Suikoden save copied
+in to import. Now a card named after one of its games is that game's (`MemoryCards.OwnCodes`, Decisions amended), and its
+states are only that game's codes, so an imported game's states are never claimed twice. Also: the poller's "found
+at…" folder guess for an unmapped game took any same-named row — another emulator's save (PrimeHack's Trilogy for
+Dolphin's), another ROM, a shared card, or a scoped emulator folder for a PC game; it now needs the same save
+(`CommandPoller.PathCandidateFor`). DuckStation only takes slots 1–2, which its scope names; `ReadGci` reads the
+header and comment, not the whole save; `SaveDirSanity` also warns about a whole folder of DuckStation per-game cards;
+an emulator source with no name no longer makes a game no emulator's; and Add games' Console filter only applies
+while its chip is on screen. Unit **366** (+3; the card and poller fixes mutation-checked).
+<br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then merge PR #63.
+On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another
+commit, so this session did not touch it: run `testenv clean` first.
 <br>**2026-10-08: Save file trees built — PR #62 (`save-file-trees`), not merged.** The console's Versions rows now start collapsed with change chips and open on the changed files (variant B); the agent's game page has *Save files on this PC* (variant A). New routes: `versions/changes` (admin), `agent/games/{id}/head/files` (machine key, SHA-256 from the stored archive) and the local `games/{id}/files`. The palette gained a fifteenth token, **`--color-info` (blue)** — three copies as always (Decisions.md). A file that differs from the server counts as the server's only when the head moved past this machine's last sync and nothing changed here. Detail: `logs/2026-10-08_save-file-trees/plan.md`.
 <br>**Next action for this item:** the by-hand testenv pass in the plan (step 3 needs `testenv up`, and another worktree's tray was holding :5188 on 2026-10-08), then merge #62. Separately, `ArcadeSavesTests`' Supermodel naming test fails on a PC with a real EmuDeck install (it reads the real ES-DE gamelists) — offered as its own task.
 <br>**2026-10-08, same PR: the agent keeps covers and icons on disk** (`ArtCache`, `<state>/art-cache/`). The maintainer reported art in the agent only appearing once the console had been opened. Not reproduced here — a fresh server with art already stored relays it with no console open — but the proxy held nothing on disk, so art existed only while the server answered and only after something asked. Now the poller warms every tracked game's art at the sizes the agent draws, the proxy serves the cache offline, and a re-picked cover (a new `?v=` URL) replaces the cached one within a poll. Checked end to end with the stub SteamGridDB: cached with no window open, a changed cover replaced, both covers shown with the server stopped. **If art still only appears after opening the console on the maintainer's server, the cause is server-side and still open** — ask which surface and how the server is reached.

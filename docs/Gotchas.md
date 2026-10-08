@@ -565,6 +565,14 @@ documentation that was found. Read before touching the presenter.
 
 ## Testing
 
+- **The maintainer's PC has a real EmuDeck for Windows** (`%APPDATA%\EmuDeck`, `Emulation` on `D:\`, ES-DE gamelists
+  under `%APPDATA%\EmuDeck\EmulationStation-DE\ES-DE\gamelists`). An emulator reader a test drives must never fall
+  back to the machine's own folders. `ArcadeSavesTests` started failing on 2026-10-07, the moment ES-DE wrote a
+  `model3` gamelist naming `lemans24` "Le Mans 24". The overloads that take explicit folders now read gamelists only
+  from the `Emulation` folders they were given (`GamelistXml.In`); only the no-argument `Scan()` calls
+  `GamelistXml.Find`. A dev-CLI `scan` with no `SAVELOCKER_EMUDECK_PATH` reads that real install, which is useful
+  as a read-only check.
+
 - **A mutation check run through `dotnet test` leaves the mutated build in OTHER projects' `bin`.** The test
   project references `SaveLocker.Agent`, so building it copies the mutated `SaveLocker.Shared.dll` into
   `src/Agent/bin` too. Restoring the source does not restore those copies. Found 2026-10-04: a two-machine

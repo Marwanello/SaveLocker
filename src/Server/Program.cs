@@ -359,10 +359,16 @@ agent.MapGet("/games", async (HttpContext http, SyncService sync, SettingsServic
     var pathMap = await sync.GetMachinePathMapAsync(machine.Id);
     var extras = await sync.GetExtraSavePathsAsync();
     var sources = await sync.GetMachineSourceMapAsync(machine.Id);
+    var emulators = await sync.GetEmulatorMapAsync();
     var (defaults, _) = await settings.GetDefaultExcludesAsync();
     // Agents receive the effective exclude set (global defaults ∪ per-game) to apply.
     return Results.Ok(games.Select(g => g.ToDtoWithPaths(pathMap.GetValueOrDefault(g.Id), extras[g.Id])
-        with { ExcludeGlobs = GlobConfig.Effective(defaults, g.ExcludeGlobs), MachineSource = sources.GetValueOrDefault(g.Id) }));
+        with
+        {
+            ExcludeGlobs = GlobConfig.Effective(defaults, g.ExcludeGlobs),
+            MachineSource = sources.GetValueOrDefault(g.Id),
+            Emulators = emulators.GetValueOrDefault(g.Id),
+        }));
 }).Produces<List<GameDto>>();
 
 // ---- Leases (agent) ----

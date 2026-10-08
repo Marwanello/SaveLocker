@@ -71,6 +71,12 @@ public static class Enroller
                 var c = candidates[id];
                 index++;
                 Step(c.Name, "Checking the save folder");
+                // A memory card every game shares: listed so the user learns how to split it, never a game.
+                if (c.NotSyncable is { } why)
+                {
+                    Refuse(c.Name, why);
+                    continue;
+                }
                 // A game already set up here is skipped. One that is tracked but has no folder on this
                 // machine (adopted from the server, its template unresolvable here — an emulator game
                 // enrolled on the Deck, seen from Windows) is mapped by enrolling it: the server hands
@@ -146,7 +152,14 @@ public static class Enroller
                 // only one side has is not a difference in files: the server's other folders are the
                 // poller's to map, and one this scan declares that the game lacks (a folder an older
                 // agent did not know, or one removed on another machine) is added to it.
-                if (serverGames is not null && serverGames.All(g => g.Id != game.Id)) serverGames.Add(game);
+                if (serverGames is not null)
+                {
+                    // Its source reaches the server only once it is set up here: until then this batch must
+                    // know which emulator's game it is, or another emulator's save of the same files joins it.
+                    var known = serverGames.FindIndex(g => g.Id == game.Id);
+                    if (known < 0) serverGames.Add(WithEmulator(game, c));
+                    else serverGames[known] = WithEmulator(serverGames[known], c);
+                }
                 if ((c.IncludeGlobs is { Count: > 0 } || extras.Count > 0) && FolderMismatch(game, c, extras) is { } mismatch)
                 {
                     Refuse(c.Name, mismatch);
@@ -156,7 +169,7 @@ public static class Enroller
                 {
                     Step(c.Name, "Adding its other save folders");
                     (game, extras) = await AddDeclaredAsync(api, c, game, extras);
-                    if (serverGames?.FindIndex(g => g.Id == game.Id) is { } at and >= 0) serverGames[at] = game;
+                    if (serverGames?.FindIndex(g => g.Id == game.Id) is { } at and >= 0) serverGames[at] = WithEmulator(game, c);
                 }
                 // The other direction: a candidate with no scope of its own joining a game that has one. The
                 // game's patterns would apply here too, and when none of this folder's files match them —
@@ -473,7 +486,7 @@ public static class Enroller
     {
         var byName = NamesFor(c)
             .Select(config.FindGame)
-            .Where(g => g is not null && SameScope(g.IncludeGlobs, c.IncludeGlobs))
+            .Where(g => g is not null && SameScope(g.IncludeGlobs, c.IncludeGlobs) && SameEmulator(g, c))
             .Select(g => g!);
         var matches = byName.Concat(ByFiles(config, c)).ToList();
         return matches.FirstOrDefault(g => g.IsEnrolledHere) ?? matches.FirstOrDefault();
@@ -482,7 +495,8 @@ public static class Enroller
     private static IEnumerable<TrackedGame> ByFiles(AgentConfig config, ScanCandidate c) =>
         c.IncludeGlobs is not { Count: > 0 }
             ? []
-            : config.Games.Where(g => SameScope(g.IncludeGlobs, c.IncludeGlobs)).OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
+            : config.Games.Where(g => SameScope(g.IncludeGlobs, c.IncludeGlobs) && SameEmulator(g, c))
+                .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Which name an emulator save takes on the server. First (D1) the name of the server game that already
@@ -528,9 +542,36 @@ public static class Enroller
         (a ?? Array.Empty<string>()).SequenceEqual(b ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Does the server's game keep the save files this scoped candidate names — the same primary
-    /// include patterns (D1)? Never true for an unscoped candidate, which names no files of its own.</summary>
+    /// include patterns (D1) — written by the same emulator (<see cref="SameEmulator(GameDto, ScanCandidate)"/>)?
+    /// Never true for an unscoped candidate, which names no files of its own.</summary>
     internal static bool SameFiles(GameDto game, ScanCandidate c) =>
-        c.IncludeGlobs is { Count: > 0 } && SameScope(game.IncludeGlobs, c.IncludeGlobs);
+        c.IncludeGlobs is { Count: > 0 } && SameScope(game.IncludeGlobs, c.IncludeGlobs) && SameEmulator(game, c);
+
+    /// <summary>
+    /// An emulator save never joins a server game another emulator's save made, even with the same files
+    /// (tasks/emulator-saves Phase 4, maintainer's choice 2026-10-07): PrimeHack's Metroid Prime Trilogy and
+    /// Dolphin's are two games. The server says which emulators each game was found through
+    /// (<see cref="GameDto.Emulators"/>); a game none has reported yet (made before sources, or by hand) is open
+    /// to any.
+    /// </summary>
+    internal static bool SameEmulator(GameDto game, ScanCandidate c) =>
+        c.Source != ScanSource.Emulator || c.EmulatorName is null || game.Emulators is not { Length: > 0 } ||
+        game.Emulators.Contains(c.EmulatorName, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The same for a game this machine tracks, by how it found it: one set up here from another
+    /// emulator's save is not this candidate's game.</summary>
+    private static bool SameEmulator(TrackedGame game, ScanCandidate c) =>
+        c.Source != ScanSource.Emulator || c.EmulatorName is null ||
+        game.Source is not { Kind: GameSourceKinds.Emulator } source ||
+        string.Equals(source.Detail, c.EmulatorName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The emulators a game created or joined by <paramref name="c"/> is known by from now on, for the rest
+    /// of a batch that read the server's games before it existed.</summary>
+    private static GameDto WithEmulator(GameDto game, ScanCandidate c) =>
+        c.Source != ScanSource.Emulator || c.EmulatorName is not { } emulator ||
+        (game.Emulators ?? []).Contains(emulator, StringComparer.OrdinalIgnoreCase)
+            ? game
+            : game with { Emulators = [.. game.Emulators ?? [], emulator] };
 
     /// <summary>
     /// Why this candidate cannot join <paramref name="game"/>, or null when it can: the primary folder, and

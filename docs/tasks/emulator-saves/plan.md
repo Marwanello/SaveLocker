@@ -27,9 +27,9 @@ point unless explicitly instructed to.
 |-------|--------|
 | 1 — `SaveArchive` include-globs + RetroArch | ✅ Shipped 2026-10-07 (PR from `emulator-saves-phase-1`) — code + tests done 2026-10-04 (branch `emulator-saves`); **merged with *Multiple save paths* 2026-10-06**, whose per-folder include scopes replaced this phase's own server column and archive code (below, *Merged onto multiple save paths*). Verified through `testenv` (Windows + WSL fixtures). **Waiting on the real-hardware pass** (EmuDeck on the Deck + EmuDeck for Windows). |
 | 1b — RetroArch save states | ✅ Shipped 2026-10-07 (same PR) — built 2026-10-06: each RetroArch game declares a second folder, key `states`, scoped to `<rom>.state*`; `RetroArchSyncTests` (two machines, real server) + 4 new `RetroArchTests`, unit 247; testenv Windows ↔ WSL. Same hardware pass as Phase 1 still to do. |
-| 2 — PCSX2 / Dolphin / DuckStation + shared-card warning | ⏳ Not started — Group C |
+| 2 — PCSX2 / Dolphin / DuckStation + shared-card warning | 🚧 Built 2026-10-07 (branch `emulator-saves-group-c`) — `Pcsx2Saves` (folder card: one game per product code, `<card>/BASLUS-21005*/**`; states `<serial> (*.p2s`, `.p2s.backup` left out), `DuckStationSaves` (`<title>_<slot>.mcd`, states by the card's own product codes), `DolphinSaves` (GCI `<maker>-<code>-*.gci` per game ID, Wii `Wii/title` scoped to `<type>/<id>/data/**`, named by serial from a bundled Redump table, `ConsoleTitles`, else from the save's `icon.sys` / comment / `banner.bin`). A shared card is a greyed-out row with how to switch (`ScanCandidate.NotSyncable`, maintainer's choice) and `SaveDirSanity` warns when one is mapped by hand. `GroupCSyncTests` (two machines, real server). **Captured 2026-10-07:** the Deck has one 64 MB PCSX2 file card `PS2MC-1.ps2` (shared), Dolphin's GCI folder default, Wii saves for Trilogy and Other M (banner layout as read); EmuDeck for Windows on the maintainer's PC links `PCSX2-Qt\memcards`, `duckstation\memcards` and `Dolphin-x64\User\{GC,Wii,StateSaves}` into `D:\Emulation\saves` exactly as researched (no saves yet). See *Group C — as built* |
 | 3 — Identity by folders, then `gamelist.xml` names | 🚧 Built 2026-10-07 (branch `emulator-saves-group-b`) — D1 confirmed by the maintainer: `Enroller.ServerNameFor`/`TrackedFor` match a scoped candidate by its folders first (mutation-checked, `IdentityByFoldersTests`, two machines against a real server). `GamelistXml` names **arcade systems only** (maintainer's choice), from `Emulation/storage/es-de/gamelists` (EmuDeck for Windows' link) and `~/ES-DE/gamelists`. Group B — **Revised 2026-10-07:** Phase 1 made the save file's name the game's identity, so a name from a machine-local source could split one game in two; matching a server game by its folders first (D1) makes such a name safe **Review fixes (PR #61):** only the primary folder's patterns decide, ignoring case — a game whose other folders differ (an older agent's, an `add-path`) is joined and the missing folder added, never split into a second game. |
-| 4 — PrimeHack | ⏳ Not started — Group C |
+| 4 — PrimeHack | 🚧 Built 2026-10-07 (branch `emulator-saves-group-c`) — the Dolphin reader against PrimeHack's folders (EmuDeck `saves/primehack`, Flatpak `io.github.shiiion.primehack`, EmuDeck for Windows `Emulators\primehack\User`). **Maintainer's choice:** saves from different emulators are never one game, even with the same files — `GameDto.Emulators` (server, from the sources) + `Enroller.SameEmulator`, mutation-checked. EmuDeck for Windows had created `Emulators\PrimeHack` but never run it (no `User` yet), so where a non-portable PrimeHack keeps its user folder is still to see (Group H) |
 | 5a — RPCS3 | ⏳ Not started — Group D (split from Phase 5 2026-10-07) |
 | 5b — Xenia | ⏳ Not started — Group E (split from Phase 5 2026-10-07) |
 | 6 — Switch: Yuzu, Citron, Eden, Ryujinx | ⏳ Not started — Group F. **Widened 2026-10-07** from Eden only, at the maintainer's request; needs the server title key (D2) |
@@ -45,7 +45,7 @@ point unless explicitly instructed to.
 | 15 — Azahar | ⏳ Not started — Group E (added 2026-10-07) |
 | 16 — Linking by hand, same files (mockup version 2) | 🚧 Built 2026-10-07 (branch `emulator-saves-group-b`, with Group B) — each emulator row on Add games says which server game the save joins, with a **Change** button for that row only: automatic, *Keep it as its own game*, or another server game keeping the same files; a same-titled game with other file names is listed greyed out with the reason. `EnrollLinks` + `GET /api/candidates/links` + `EnrollRequest.Links`; `LinkByHandTests` 5, two of them mutation-checked; checked in the browser against a scratch server **Review fixes (PR #61):** *Keep it as its own game* opts this machine out of the fleet's same-files game, and the poller never maps a second game onto files another syncs here (`SaveFolderClaims`); Add games says when the server could not be asked. |
 | 17 — Each machine's own file names (linking saves with different names) | ⏳ Not started — Group G (added 2026-10-07, maintainer: "keep option 2 in another phase"); open questions below |
-| 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07). Rows are added as later phases ship untested; see *Phase 18* |
+| 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07); Group C added PCSX2, DuckStation, Dolphin and PrimeHack (the Deck already has Trilogy and Other M saves to try). Rows are added as later phases ship untested; see *Phase 18* |
 
 ### Phase 1 — as built (2026-10-04), and where it departs from the plan below
 
@@ -257,6 +257,71 @@ What has to change, all of it on the path every sync takes:
   the machine).
 - **Testing:** a two-machine test per emulator family with different names on each side, including states, a
   conflict, and a restore of an old version on the renamed side — the riskiest paths, mutation-checked.
+
+### Group C — as built (2026-10-07, branch `emulator-saves-group-c`)
+
+Decided with the maintainer at the start of the group:
+- **A shared memory card is a greyed-out row, never a game** (option A of three: the others were "the whole card
+  as one game, with a warning" and "hide it"). `ScanCandidate.NotSyncable` carries why and how to switch the
+  emulator to a card per game. The enroller refuses it, `EnrollLinks` offers nothing, and Game Mode shows it too.
+  Each fix was checked in the emulator's own source. **PCSX2:** Convert → Folder makes a new card, then Use for
+  Slot 1. **Dolphin:** Slot A → GCI Folder copies the old card's saves in by itself (`MigrateFromMemcardFile`).
+  **DuckStation:** the per-game cards start empty, and Memory Card Editor copies saves across.
+- **States sync, without PCSX2's `.p2s.backup` copies**: D3 stands, but a backup per slot would double a PS2
+  game's states against the upload cap.
+- **Wii is in this group** (it was D4 shape 2, planned for Group D): without it PrimeHack finds nothing, and
+  neither did the Deck.
+- **Saves from different emulators are never one game, even with the same files.** This is the reverse of what
+  D1 alone gives: Metroid Prime Trilogy saved in Dolphin and in PrimeHack on the Deck stays two games. The server
+  now says which emulators each game was found through (`GameDto.Emulators`, from `MachineGameSources`, additive).
+  `Enroller.SameFiles` also requires the same emulator, and a game no emulator reported yet stays open to any.
+  **Group F's plan (a Switch save syncing Eden ↔ Ryujinx) contradicts this: confirm with the maintainer when F starts.**
+
+What the plan below got wrong:
+- **PCSX2 under EmuDeck is NOT per game.** EmuDeck's `PCSX2.ini` sets `McdFolderAutoManage = true`, but that only
+  affects a *folder* card, and PCSX2 creates a *file* card. The Deck has one 64 MB `PS2MC-1.ps2`. The card's type is
+  read from the disk (a folder holding `_pcsx2_superblock`), not from any setting.
+- **DuckStation and Dolphin ARE per game by default**, upstream and in EmuDeck: `Card1Type = PerGameTitle`, and
+  `MAIN_SLOT_A = MemoryCardFolder`.
+- No ROM-folder walk (step 4): as with every reader since Phase 1, discovery starts from the save.
+- **Names come from the serial, not from inside the save** (changed 2026-10-08, maintainer's report from the Deck:
+  *Prince of Persia: Warrior Within* and *The Two Thrones* both showed as "Prince of Persia" — the first line of
+  `icon.sys` is often only the series). `ConsoleTitles` looks the save's serial up in a table built from Redump's
+  dats as libretro-database ships them (CC BY-SA 4.0, `src/Agent.Core/ConsoleTitles/NOTICE.md`; 32,182 serials
+  across PS1, PS2, PS3, GameCube and Wii, ~400 KB embedded): *Prince of Persia - The Two Thrones (USA)*. The
+  **region stays in the name**: each region's disc has its own serial and reads only its own saves (verified — a
+  save moved across regions has to be renamed with a save tool, and even that fails where the save checksums its
+  own name), so a USA and a European save are two games, which the scope already made them. Only a serial Redump
+  has no disc of — homebrew, WiiWare, channels — falls back to inside the save: PS2 `icon.sys` (Shift-JIS,
+  full-width folded by hand, because the Linux agent runs with invariant globalization), the GameCube comment, Wii
+  `banner.bin` (UTF-16BE, layout read on the Deck), DuckStation's card name. PCSX2's `GameIndex.yaml` (GPL-3.0)
+  and DuckStation's `gamedb.yaml` (CC BY-NC-ND) were ruled out by their licenses. PS4 has no Redump set; its saves
+  carry their own title (`sce_sys/param.sfo`). Games already on a server keep their names (D1).
+
+The readers (`MemoryCards`, `Pcsx2Saves`, `DuckStationSaves`, `DolphinSaves` with PrimeHack as its second
+emulator):
+
+| Emulator | A game is | Scope | States |
+|---|---|---|---|
+| PCSX2 | a product code's save folders on one folder card | `<card>/BASLUS-21005*/**` (each save's `_pcsx2_index` included; the card's superblock never) | `<serial> (*.p2s` |
+| DuckStation | a per-game card | `<title>_1.mcd`, `<title>_2.mcd` (never `<title>_*`: `Crash_*` takes `Crash_Team_1.mcd`) | `<code>_*.sav` per product code of the game the card is named after (every disc; not a save imported from another game), else every code on the card |
+| Dolphin / PrimeHack, GameCube | a game ID's GCI files in one card folder | `<maker>-<code>-*.gci` | `<game id>.s*` |
+| Dolphin / PrimeHack, Wii | a title folder holding `banner.bin` (types 00010000/1/4) | `Wii/title` + `<type>/<id>/data/**` | `<id>*.s*` (the folder names only 4 of the ID's 6 letters) |
+
+Also in the group:
+- **The `SaveDirSanity` check**: a shared card file, a whole PCSX2 folder card or a GCI folder of several games,
+  judged by what would be archived. It is a warning, never a refusal.
+- **The Console row** on Add games, labelled by the agent (`CandidateDto.emulatorConsole`).
+- **`EmulatorChipTests`**: every reader's emulator has its chip.
+- **A test-isolation fix found on the way**: the Supermodel and Model 2 scans the tests drive read the developer's
+  real ES-DE gamelists. That failed on the maintainer's PC once EmuDeck for Windows wrote a `model3` gamelist.
+
+Known limits:
+- A PS2 game saved on `Mcd001` on one machine and `Mcd002` on another is two games.
+- A multi-disc PS1 game's states on a later disc's code are in scope only once that disc has saved to the card
+  (the card's codes say which discs there are).
+- A custom GCI or NAND folder set in `Dolphin.ini` is not read.
+- A save made before the PCSX2 card was converted is in the new card only once converted.
 
 ### The other emulators — researched 2026-10-07
 
@@ -845,6 +910,10 @@ own group, in a follow-up PR.
 | **ScummVM** | The game's own save menu, or Ctrl+F5 → Save | None (saves are the slots, `<target>.s00`…) | `Emulation/saves/scummvm/saves` (EmuDeck's `savepath`) on both | The real file names per engine (only four fixed-name engines are confirmed); two machines with different target names | ⏳ | ⏳ |
 | **Supermodel** | Play, then exit: `NVRAM/<set>.nv` is written on exit | F5 save, F6 next slot, F7 load (`Saves/<set>.st0`…) | `~/.supermodel/{NVRAM,Saves}` · `%APPDATA%\EmuDeck\Emulators\Supermodel\{NVRAM,Saves}` | An unplayed set stays hidden (EmuDeck's preinstalled NVRAM); the title comes from `Games.xml` | ⏳ | ⏳ |
 | **Model 2** | Play, then exit: `NVDATA/<set>.DAT` is written on exit | Number keys 1–9, 0 pick the slot, then the emulator's Save State key (keyboard needed) (`STATES/<set><slot>.sta`) | `Emulation/roms/model2/{NVDATA,STATES}` · `%APPDATA%\EmuDeck\Emulators\m2emulator\{NVDATA,STATES}` | Whether `.DAT` changes on every exit; which key saves a state; an unplayed set stays hidden; `STATES` is created on the first save | ⏳ | ⏳ |
+| **PCSX2** | Convert the card to a folder first (Settings > Memory Cards > Convert > Folder, then Use for Slot 1 — the Deck's `PS2MC-1.ps2` is a file card), then save in-game | Save state slot 1 (`<serial> (<crc>).01.p2s`) | `Emulation/saves/pcsx2/{saves,states}` on both | The game's save folder names on the card (one product code, or several?); the `.backup` copies stay local; a pull into a running card is never needed (PCSX2 closed); the shared file card row disappears once converted | ⏳ | ⏳ |
+| **DuckStation** | Save in-game (Card 1 is per game by default) | Save state slot 1 (`<serial>_1.sav`), and the resume state on exit | `Emulation/saves/duckstation/{saves,states}` on both | The card's real name (game database title, or the playlist's for a multi-disc game); a multi-disc game's states on disc 2 | ⏳ | ⏳ |
+| **Dolphin** | Save in-game, GameCube and Wii (Metroid: Other M is on the Deck already) | Save state slot 1 (`<id>.s01`) | `Emulation/saves/dolphin/{GC,Wii}` + `StateSaves` (Deck) · `states` (Windows) | A GameCube save's real `.gci` name; a WiiWare title (`00010001`) | ⏳ | ⏳ |
+| **PrimeHack** | Save in Metroid Prime Trilogy (on the Deck already) | Save state slot 1 (`R3ME01.s01`) | `Emulation/saves/primehack/{GC,Wii}` + `StateSaves` (Deck) · `states` (Windows) | It stays its own game beside Dolphin's Trilogy; where a non-portable Windows PrimeHack keeps its user folder (the PC's EmuDeck install has never run it) | ⏳ | ⏳ |
 
 ## Deferred, not built in this task
 

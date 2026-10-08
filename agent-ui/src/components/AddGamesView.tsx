@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { RefreshCw, FolderSearch, Check, SearchCheck, TriangleAlert } from 'lucide-react'
+import { RefreshCw, FolderSearch, Check, SearchCheck, TriangleAlert, Ban } from 'lucide-react'
 import type { Candidate, EnrollProgress, LinkOption } from '../types'
 import { api } from '../api'
 import { useFolderPicker } from '../useFolderPicker'
@@ -45,7 +45,24 @@ const EMULATORS: { id: string; label: string }[] = [
   { id: 'Supermodel', label: 'Supermodel' },
   { id: 'Model 2', label: 'Model 2' },
   { id: 'ScummVM', label: 'ScummVM' },
+  { id: 'PCSX2', label: 'PCSX2' },
+  { id: 'DuckStation', label: 'DuckStation' },
+  { id: 'Dolphin', label: 'Dolphin' },
+  { id: 'PrimeHack', label: 'PrimeHack' },
 ]
+
+/** The Console row's chips: one per EmuDeck system among `found` ("ps2"), labelled as the agent says it ("PS2"),
+ * in label order. Rows with no system (an arcade set with no ROM folder) are under All only. */
+function consoleChips(found: Candidate[]): { id: string; label: string; count: number }[] {
+  const bySystem = new Map<string, { id: string; label: string; count: number }>()
+  for (const c of found) {
+    if (!c.emulatorSystem) continue
+    const chip = bySystem.get(c.emulatorSystem) ?? { id: c.emulatorSystem, label: c.emulatorConsole ?? c.emulatorSystem, count: 0 }
+    chip.count++
+    bySystem.set(c.emulatorSystem, chip)
+  }
+  return [...bySystem.values()].sort((a, b) => a.label.localeCompare(b.label))
+}
 
 /**
  * Path-detection state as its own axis, not a source filter — it used to be a `nopath` entry in
@@ -74,10 +91,11 @@ const STATUS = {
   enrolled: { Icon: Check, label: 'Enrolled on this machine', tone: 'ok' },
   has: { Icon: SearchCheck, label: 'Save folder detected', tone: 'has' },
   missing: { Icon: TriangleAlert, label: 'Save folder not detected', tone: 'warn' },
+  blocked: { Icon: Ban, label: 'Can’t be synced as it is', tone: 'warn' },
 } as const
 
 function StatusMark({ c }: { c: Candidate }) {
-  const s = STATUS[c.enrolled ? 'enrolled' : c.path ? 'has' : 'missing']
+  const s = STATUS[c.enrolled ? 'enrolled' : c.notSyncable ? 'blocked' : c.path ? 'has' : 'missing']
   return (
     <span className={`sl-status sl-status--${s.tone}`} role="img" aria-label={s.label} title={s.label}>
       <s.Icon size={13} strokeWidth={2.3} aria-hidden="true" />
@@ -135,7 +153,11 @@ export function AddGamesView({ onEnrolled }: Props) {
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [filter, setFilter] = useState<FilterId>('suggested')
   const [store, setStore] = useState<string | null>(null)
-  const [emulator, setEmulator] = useState<string | null>(null)
+  const [emulator, setEmulatorState] = useState<string | null>(null)
+  // The console (an EmuDeck system folder name, "ps2"), a third axis under the emulator. Picking another
+  // emulator clears it: the console picked may have no games under the new one.
+  const [consoleId, setConsoleId] = useState<string | null>(null)
+  const setEmulator = (id: string | null) => { setEmulatorState(id); setConsoleId(null) }
   const [pathMode, setPathMode] = useState<PathMode>('all')
   const [hideEnrolled, setHideEnrolledState] = useState(readHideEnrolled)
   const setHideEnrolled = (hide: boolean) => {
@@ -332,6 +354,16 @@ export function AddGamesView({ onEnrolled }: Props) {
     return EMULATORS.map(e => ({ ...e, count: emulated.filter(c => c.emulatorName === e.id).length }))
   }, [pool, filter])
 
+  // Which console, under the emulator picked: built from what was found (any EmuDeck system can turn up
+  // under RetroArch), labelled by the agent ("ps2" → "PS2"), and only offered when there is a choice.
+  const consoles = useMemo(() => {
+    if (filter !== 'emulator') return []
+    return consoleChips(pool.filter(c => c.source === 'Emulator' && (!emulator || c.emulatorName === emulator)))
+  }, [pool, filter, emulator])
+  // The pick applies only while its chip is on screen: after a rescan that leaves one console (the row hides) or
+  // none of the picked one, a filter nobody can see or clear would hide rows.
+  const activeConsole = consoles.length > 1 && consoles.some(s => s.id === consoleId) ? consoleId : null
+
   const active = FILTERS.find(f => f.id === filter) ?? FILTERS[0]
   // Filtered by source (+ store) but not yet by path — the base the path row's own counts are
   // drawn against, so "Detected" and "Not detected" describe the set the user is already looking at.
@@ -339,6 +371,7 @@ export function AddGamesView({ onEnrolled }: Props) {
     .filter(active.match)
     .filter(c => !((filter === 'heroic' || filter === 'playnite') && store) || c.store === store)
     .filter(c => !(filter === 'emulator' && emulator) || c.emulatorName === emulator)
+    .filter(c => !(filter === 'emulator' && activeConsole) || c.emulatorSystem === activeConsole)
   const activePathMode = PATH_MODES.find(p => p.id === pathMode) ?? PATH_MODES[0]
   const needle = query.trim().toLowerCase()
   const visible = sourceFiltered
@@ -444,6 +477,19 @@ export function AddGamesView({ onEnrolled }: Props) {
           </div>
         )}
 
+        {/* Which console — under the emulator, once the games found span more than one. */}
+        {consoles.length > 1 && (
+          <div className="sl-filters">
+            <span className="sl-filters__label">Console</span>
+            <button type="button" className="sl-fchip" aria-pressed={activeConsole === null} onClick={() => setConsoleId(null)}>All</button>
+            {consoles.map(s => (
+              <button key={s.id} type="button" className="sl-fchip" aria-pressed={activeConsole === s.id} onClick={() => setConsoleId(s.id)}>
+                {s.label} <b>{s.count}</b>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Save-path detection — a second axis like Store, so it stacks with the source filter
             instead of replacing it. Always visible: unlike Store it isn't specific to one source. */}
         <div className="sl-filters">
@@ -465,10 +511,10 @@ export function AddGamesView({ onEnrolled }: Props) {
             {scanning ? 'Scanning…' : listed.length === 0 ? 'No games found yet. Rescan once a game has been installed.' : 'Nothing matches that filter.'}
           </div>
         ) : visible.map(c => (
-          <label key={c.id} className={c.enrolled ? 'sl-check-row sl-check-row--enrolled' : 'sl-check-row'}>
+          <label key={c.id} className={c.enrolled ? 'sl-check-row sl-check-row--enrolled' : c.notSyncable ? 'sl-check-row sl-check-row--blocked' : 'sl-check-row'}>
             {/* Enrolling a tracked game again is skipped, so its box is shown ticked and locked. */}
             {/* Named on its own: the row holds buttons too, and their text must not become the box's name. */}
-            <input type="checkbox" aria-label={`Add ${c.name}`} checked={!!c.enrolled || checked.has(c.id)} disabled={!!c.enrolled} onChange={() => toggle(c.id)} />
+            <input type="checkbox" aria-label={`Add ${c.name}`} checked={!!c.enrolled || checked.has(c.id)} disabled={!!c.enrolled || !!c.notSyncable} onChange={() => toggle(c.id)} />
             <div className="sl-check-row__main">
               <div className="sl-check-row__name">
                 <StatusMark c={c} />
@@ -487,6 +533,13 @@ export function AddGamesView({ onEnrolled }: Props) {
                 <div className="sl-inline" style={{ marginTop: 4 }}>
                   {c.path && <span className="sl-path">{c.path}</span>}
                   <span className="sl-check-row__note">Already added on this machine</span>
+                </div>
+              ) : c.notSyncable ? (
+                // A memory card every game of a console shares: never a game, so no folder to change — the row
+                // is here to say why those saves are not offered, and what to switch in the emulator.
+                <div style={{ marginTop: 4 }}>
+                  {c.path && <span className="sl-path">{c.path}</span>}
+                  <span className="sl-check-row__why">{c.notSyncable}</span>
                 </div>
               ) : c.path ? (
                 // A detected folder can be the wrong one (a launcher's, another profile's), and it has
@@ -521,7 +574,7 @@ export function AddGamesView({ onEnrolled }: Props) {
                   EmuDeck’s preinstalled save, never played here. Adding it takes the server’s save in its place.
                 </span>
               )}
-              {!c.enrolled && c.source === 'Emulator' && !linksReachable && (
+              {!c.enrolled && c.source === 'Emulator' && !c.notSyncable && !linksReachable && (
                 <span className="sl-check-row__note" style={{ display: 'block', marginTop: 4 }}>
                   The server can’t be reached, so which server game this joins is decided when you add it.
                 </span>
