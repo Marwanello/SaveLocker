@@ -748,6 +748,7 @@ public sealed class CommandPoller : IDisposable
         var engine = _engine();
         var running = new List<string>();
         var unreachable = new List<string>();
+        var conflicted = new List<string>();
         foreach (var g in targets)
         {
             // A dashboard force-pull is the most dangerous surface there is: the person clicking it
@@ -764,12 +765,17 @@ public sealed class CommandPoller : IDisposable
                         unreachable.Add(g.Name);
                     break;
                 case AgentCommandType.Push:
-                    await engine.PushAsync(g, cmd.Force);
+                    if (await engine.PushAsync(g, cmd.Force) is { Status: UploadStatus.Conflict })
+                        conflicted.Add(g.Name);
                     break;
                 case AgentCommandType.Sync:
                     if (!active && await engine.PullAsync(g, cmd.Force) is PullOutcome.Unreachable)
                         unreachable.Add(g.Name);
-                    await engine.PushAsync(g, cmd.Force);
+                    // A push answered with a conflict uploaded nothing; without this the command
+                    // would report Done with a "pushed — latest save …" line, which is the opposite
+                    // of what happened to the person who clicked it.
+                    if (await engine.PushAsync(g, cmd.Force) is { Status: UploadStatus.Conflict })
+                        conflicted.Add(g.Name);
                     break;
             }
         }
@@ -781,6 +787,14 @@ public sealed class CommandPoller : IDisposable
         if (unreachable.Count > 0)
             throw new HttpRequestException(
                 $"the server did not answer — nothing was pulled for {string.Join(", ", unreachable)}.");
+
+        // A conflict is a refusal, not a push. Reported as the reason so the dashboard's command row
+        // says Failed with the one thing the person needs to know, instead of "pushed" over a save
+        // that never left the machine.
+        if (conflicted.Count > 0)
+            throw new InvalidOperationException(
+                $"the save diverged from the server — nothing was uploaded for {string.Join(", ", conflicted)}. " +
+                "Resolve the conflict, then push again.");
 
         if (running.Count > 0 && cmd.Type == AgentCommandType.Pull)
             return $"REFUSED — still running: {string.Join(", ", running)}. " +

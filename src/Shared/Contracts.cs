@@ -318,6 +318,21 @@ public record CreateSessionRequest(string? Password);
 /// </summary>
 public record SessionResponse(string? Token, DateTime? ExpiresAt);
 
+/// <summary>One signed-in console browser, listed under Configuration → Admin password so a stolen
+/// session is findable and can be ended on its own instead of signing every browser out.</summary>
+public record AdminSessionDto(
+    Guid Id,
+    DateTime CreatedAt,
+    DateTime LastUsedAt,
+    DateTime ExpiresAt,
+    string? ClientAddress,
+    bool IsCurrent);
+
+/// <summary>A client currently refused after too many wrong admin passwords, for the console's
+/// notifications. In-memory (<see cref="SaveLocker.Server.Services.AuthThrottle"/>), so a restart
+/// forgives everyone — the right failure mode for a lockout that must never strand the owner.</summary>
+public record LockoutDto(string Client, int RetryAfterSeconds);
+
 // ----- Leases -----
 
 public record LeaseDto(

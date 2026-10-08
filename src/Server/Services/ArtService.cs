@@ -605,6 +605,21 @@ public sealed class ArtService
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException) { return null; }
     }
 
+    /// <summary>
+    /// Remove everything cached for a game that is being deleted — cover, icon and every thumbnail.
+    /// Best-effort: a directory that cannot be removed is an orphan, never a reason to fail the
+    /// delete, and nothing else will ever revisit it.
+    /// </summary>
+    public void DeleteGameArt(Guid gameId)
+    {
+        try
+        {
+            var dir = Path.Combine(_artRoot, gameId.ToString("N"));
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
     /// <summary>Write downloaded bytes as the game's <paramref name="kind"/> image and return its served URL, or null if they are not a recognised image.</summary>
     private async Task<string?> StoreAsync(Guid gameId, string kind, byte[] bytes, CancellationToken ct)
     {

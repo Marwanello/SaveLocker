@@ -61,6 +61,9 @@ public sealed class AgentApiServer : IDisposable
     // .OnGameExitAsync, resolved the same way _prepareLaunch is: against whichever engine a settings
     // change may have rebuilt since the host wired this up.
     private readonly Func<TrackedGame, CancellationToken, Task> _postExitSync;
+    // SyncEngine.ReleaseLaunchLeaseAsync — the exit bookkeeping that still has to run when
+    // _syncGate is held and post-exit-sync can only answer 409 (see that route).
+    private readonly Func<TrackedGame, CancellationToken, Task> _releaseLease;
     // POST /api/games/{id}/sync — SyncEngine.SyncGameAsync, resolved the same way as the two above.
     private readonly Func<TrackedGame, GameSyncMode, CancellationToken, Task<string>> _syncGame;
 
@@ -125,6 +128,7 @@ public sealed class AgentApiServer : IDisposable
         Func<Task<string>>? syncAll = null,
         Func<TrackedGame, CancellationToken, Task<LaunchGateResult>>? prepareLaunch = null,
         Func<TrackedGame, CancellationToken, Task>? postExitSync = null,
+        Func<TrackedGame, CancellationToken, Task>? releaseLease = null,
         Func<Task<PlaynitePluginStatusDto>>? playnitePluginStatus = null,
         Func<Task<PlaynitePluginCardStatusDto>>? playnitePluginCardStatus = null,
         Func<Task<PlaynitePluginStatusDto>>? playnitePluginInstall = null,
@@ -166,6 +170,7 @@ public sealed class AgentApiServer : IDisposable
         _syncAll = syncAll ?? (() => Task.FromResult("Not available."));
         _prepareLaunch = prepareLaunch ?? ((_, _) => Task.FromResult(new LaunchGateResult(LaunchDecision.Proceed)));
         _postExitSync = postExitSync ?? ((_, _) => Task.CompletedTask);
+        _releaseLease = releaseLease ?? ((_, _) => Task.CompletedTask);
         _syncGame = syncGame ?? ((_, _, _) => Task.FromResult("Not available."));
         _openView = openView;
         _detection = detection;
@@ -1420,7 +1425,15 @@ public sealed class AgentApiServer : IDisposable
             if (game is null) return TypedResults.NotFound();
 
             if (!await _syncGate.WaitAsync(0))
+            {
+                // The running sync pushes this game, so skipping the push here is right — but it
+                // never ends this game's checkout, and the lease renewer keeps it alive on this
+                // machine, locking the rest of the fleet out of a game nobody is playing. The
+                // release runs even though the push does not. CancellationToken.None on purpose:
+                // a caller that gave up on the request must not also cancel the release.
+                await _releaseLease(game, CancellationToken.None);
                 return TypedResults.Conflict(new OkResponse());
+            }
 
             try
             {

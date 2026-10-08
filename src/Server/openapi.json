@@ -2023,6 +2023,71 @@
             "description": "OK"
           }
         }
+      },
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminSessionDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/sessions/{id}": {
+      "delete": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/admin/lockouts": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LockoutDto"
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/games/{id}/art/refresh": {
@@ -3199,6 +3264,44 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "AdminSessionDto": {
+        "required": [
+          "id",
+          "createdAt",
+          "lastUsedAt",
+          "expiresAt",
+          "clientAddress",
+          "isCurrent"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastUsedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "clientAddress": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isCurrent": {
+            "type": "boolean"
           }
         }
       },
@@ -5131,6 +5234,22 @@
               "string"
             ],
             "format": "date-time"
+          }
+        }
+      },
+      "LockoutDto": {
+        "required": [
+          "client",
+          "retryAfterSeconds"
+        ],
+        "type": "object",
+        "properties": {
+          "client": {
+            "type": "string"
+          },
+          "retryAfterSeconds": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },

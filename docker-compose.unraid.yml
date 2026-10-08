@@ -14,8 +14,10 @@ services:
       # on first start. On unRAID, nobody:users keeps new files owned like the rest of the share:
       # - SAVELOCKER_UID=99
       # - SAVELOCKER_GID=100
-      # Optional hardening — see docs/Build and Run.md, "Securing the server":
-      # - Security__RequireAdminPasswordToRegister=true   # a machine key can read/write EVERY game
+      # Registering a new machine now requires the admin password once one is set (a machine key can
+      # read/write EVERY game). Only disable that on a network where everyone who can reach the port
+      # is trusted — see docs/Build and Run.md, "Securing the server":
+      # - Security__RequireAdminPasswordToRegister=false
       # Only if a reverse proxy / tunnel sits in front (otherwise every client looks like the proxy):
       # - Security__TrustedProxies=172.18.0.0/16          # the proxy's address(es) / CIDR range(s)
       # - Security__ClientIpHeader=CF-Connecting-IP       # header carrying the real client address
