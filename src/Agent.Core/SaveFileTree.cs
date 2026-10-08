@@ -37,22 +37,18 @@ public static class SaveFileTree
             return (files, hash, paths, SaveArchive.ListUnsyncedFiles(real, game.ExcludeGlobs));
         }, ct);
 
+        // A 404 is a server older than this route (or one that no longer has the game): nothing to compare
+        // with, which is not the same as an empty head — that would call every file here a push.
         HeadFilesDto? head = null;
-        var reachable = true;
         try { head = await api.GetHeadFilesAsync(game.GameId, ct); }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
-        {
-            reachable = false;
-        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested) { }
 
-        return Compare(game, real, manifest, contentHash, onDisk, unsynced, reachable ? head ?? Empty : null);
+        return Compare(game, real, manifest, contentHash, onDisk, unsynced, head);
     }
-
-    private static readonly HeadFilesDto Empty = new(null, Array.Empty<HeadFolderDto>());
 
     /// <summary>
     /// The comparison itself, apart from the disk and the network. <paramref name="head"/> null: the server
-    /// did not answer, so no file has a state. A file that differs from the head is the server's to give
+    /// did not answer (or has no such route), so no file has a state. A file that differs from the head is the server's to give
     /// only when the head moved past what this machine last synced AND nothing changed here since —
     /// otherwise it is this machine's change, which a sync pushes (or, if both moved, takes to a conflict).
     /// </summary>
@@ -66,9 +62,11 @@ public static class SaveFileTree
         var differs = headMoved && untouchedHere ? Server : Here;
         var gone = headMoved || game.LastKnownVersionId is null ? Server : Here;
 
-        var remote = (head?.Folders ?? Array.Empty<HeadFolderDto>())
-            .SelectMany(f => f.Files.Select(x => (f.Key, x.Path, x.Size, x.Sha256)))
-            .ToDictionary(x => (x.Key, x.Path), x => (x.Size, x.Sha256));
+        // Last one wins, like the server's own listing of an archive that holds a name twice.
+        var remote = new Dictionary<(string Key, string Path), (long Size, string Sha256)>();
+        foreach (var f in head?.Folders ?? Array.Empty<HeadFolderDto>())
+        foreach (var x in f.Files)
+            remote[(f.Key, x.Path)] = (x.Size, x.Sha256);
 
         var folders = new List<GameFolderFilesDto>();
         foreach (var root in realRoots)
@@ -79,13 +77,13 @@ public static class SaveFileTree
             {
                 if (SaveArchive.SplitArchiveName(entry.Path) is not { } split || split.Key != root.Key) continue;
                 mine.Add(split.Path);
-                DateTime? modified = onDisk.TryGetValue(entry.Path, out var full) ? File.GetLastWriteTimeUtc(full) : null;
+                DateTime? modified = onDisk.TryGetValue(entry.Path, out var full) ? WriteTime(full) : null;
+                var inHead = remote.TryGetValue((root.Key, split.Path), out var r);
                 string? state = head is null ? null
-                    : remote.TryGetValue((root.Key, split.Path), out var r) &&
-                      string.Equals(r.Sha256, entry.Sha256, StringComparison.OrdinalIgnoreCase) ? Same
-                    // Not in the head at all reads the same way: a new file here, or one the head removed.
+                    : inHead && string.Equals(r.Sha256, entry.Sha256, StringComparison.OrdinalIgnoreCase) ? Same
+                    // Not in the head at all goes the same way: a new file here, or one the head removed.
                     : differs;
-                files.Add(new LocalFileDto(split.Path, entry.Size, modified, state));
+                files.Add(new LocalFileDto(split.Path, entry.Size, modified, state, NotInHead: head is not null && !inHead));
             }
             foreach (var ((key, path), r) in remote)
                 if (key == root.Key && !mine.Contains(path))
@@ -110,6 +108,13 @@ public static class SaveFileTree
             ? "Save folder"
             : game.ExtraPaths.FirstOrDefault(p => p.Key == key) is { Label: { Length: > 0 } label } ? label : key;
 
+    /// <summary>Null for a file gone since it was listed — not the 1601 a missing file reports.</summary>
+    private static DateTime? WriteTime(string path)
+    {
+        try { return File.Exists(path) ? File.GetLastWriteTimeUtc(path) : null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
     private static long Size(string path)
     {
         try { return new FileInfo(path).Length; }
@@ -119,7 +124,8 @@ public static class SaveFileTree
 
 /// <param name="Folders">One per save folder that is a real folder on this machine, the primary first.</param>
 /// <param name="Head">The server's latest version, or null when it has none or did not answer.</param>
-/// <param name="Reachable">False: the server did not answer, and no file carries a state.</param>
+/// <param name="Reachable">False: the server did not answer (or is older than this route), and no file
+/// carries a state.</param>
 public sealed record GameFilesDto(GameFolderFilesDto[] Folders, GameFilesHeadDto? Head, bool Reachable);
 
 public sealed record GameFilesHeadDto(Guid VersionId, DateTime When, string Machine);
@@ -136,7 +142,10 @@ public sealed record GameFolderFilesDto(string Key, string Label, string Path, L
 /// <param name="State"><c>same</c>, <c>here</c> or <c>server</c>; null when the server did not answer.</param>
 /// <param name="Missing">Not on this machine: the head has it. <c>server</c> — a pull writes it; <c>here</c>
 /// — it was deleted here, and a push removes it.</param>
-public sealed record LocalFileDto(string Path, long Size, DateTime? ModifiedUtc, string? State, bool Missing = false);
+/// <param name="NotInHead">On this machine but not in the head: with <c>here</c> a new file a push adds, with
+/// <c>server</c> one the head removed, which a pull deletes.</param>
+public sealed record LocalFileDto(string Path, long Size, DateTime? ModifiedUtc, string? State, bool Missing = false,
+    bool NotInHead = false);
 
 /// <param name="Why"><c>otherGame</c>: outside the folder's include scope. <c>excluded</c>: an exclude pattern drops it.</param>
 public sealed record OtherFileDto(string Path, long Size, string Why);

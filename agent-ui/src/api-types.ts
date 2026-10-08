@@ -3200,6 +3200,8 @@ export interface components {
             state: null | string;
             /** @default false */
             missing: boolean;
+            /** @default false */
+            notInHead: boolean;
         };
         LocalResolveRequest: {
             /** Format: uuid */

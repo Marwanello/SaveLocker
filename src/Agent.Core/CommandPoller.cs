@@ -89,7 +89,6 @@ public sealed class CommandPoller : IDisposable
             _notices?.ObserveServer(true);
             await AnnounceFolderSuggestionsAsync();
             await UpdatePathCandidatesAsync();
-            await WarmArtAsync();
             // Independent of each other — RunCommandsAsync executes dashboard commands,
             // CheckConflictsAsync only reads _config.Games and hits its own endpoint — so run them
             // concurrently rather than paying their two round-trips back to back.
@@ -97,6 +96,9 @@ public sealed class CommandPoller : IDisposable
                 await Task.WhenAll(RunCommandsAsync(), CheckConflictsAsync());
             else
                 await RunCommandsAsync();
+            // After the commands: a first pass over a large library is up to MaxFetchesPerWarm downloads,
+            // and a dashboard command must not wait behind cover art.
+            await WarmArtAsync();
         }
         catch (Exception ex)
         {

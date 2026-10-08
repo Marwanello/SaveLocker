@@ -1652,7 +1652,7 @@ public sealed class SyncService
             if (paths.TryGetValue(id, out var rel) && _store.Exists(rel))
             {
                 try { read = SaveArchive.ListArchiveFolders(_store.FullPath(rel), int.MaxValue); }
-                catch (Exception ex) when (ex is InvalidDataException or IOException) { }
+                catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException) { }
             }
             return listings[id] = read;
         }

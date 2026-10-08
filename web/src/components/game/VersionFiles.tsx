@@ -9,6 +9,8 @@ import { MAIN_KEY } from './SaveFolderParts';
 
 type Change = 'Added' | 'Changed' | 'Removed';
 
+export type ChangesStatus = 'loading' | 'loaded' | 'failed';
+
 interface FileRow { path: string; size: number; change?: Change }
 
 const BADGE: Record<Change, { label: string; tone: 'ok' | 'warn' | 'crit' }> = {
@@ -37,8 +39,8 @@ export function ChangeChips({ changes }: { changes: VersionChanges | undefined }
  * since the version before, as a tree per save folder, and the whole version one click away. The full
  * listing comes from `versions/{id}/folders`, read only when asked for.
  */
-export function VersionFiles({ id, game, version, changes }: {
-  id: string; game: Game; version: Version; changes: VersionChanges | undefined;
+export function VersionFiles({ id, game, version, changes, status }: {
+  id: string; game: Game; version: Version; changes: VersionChanges | undefined; status: ChangesStatus;
 }) {
   const [all, setAll] = useState(false);
   const [folders, setFolders] = useState<VersionFolder[] | null>(null);
@@ -67,7 +69,11 @@ export function VersionFiles({ id, game, version, changes }: {
       files: listed.filter(f => f.key === key).map(f => ({ path: f.path, size: f.size, change: f.change as Change })),
     }));
   } else {
-    blocks = (folders ?? []).map(f => ({
+    // A folder this version no longer has at all is still where its removed files were.
+    const gone = [...new Set(listed.filter(c => c.change === 'Removed').map(c => c.key))]
+      .filter(key => folders && !folders.some(f => f.key === key))
+      .map(key => ({ key, fileCount: 0, files: [] }));
+    blocks = [...(folders ?? []), ...gone].map(f => ({
       key: f.key,
       files: [
         ...f.files.map(x => ({ path: x.path, size: x.size, change: changeOf.get(`${f.key}\n${x.path}`) })),
@@ -79,7 +85,7 @@ export function VersionFiles({ id, game, version, changes }: {
 
   let lead: string;
   if (all) lead = 'Every file in this version';
-  else if (!changes) lead = 'Loading what changed…';
+  else if (!changes) lead = status === 'loading' ? 'Loading what changed…' : 'Could not read what this version changed';
   else if (changes.baseMissing) lead = 'The version this was pushed on top of is gone, so every file shows as added';
   else if (!version.parentVersionId) lead = 'The first version: every file is new';
   else if (total === 0) lead = 'No file changed since the version before';
@@ -89,9 +95,9 @@ export function VersionFiles({ id, game, version, changes }: {
     <div id={id} className="sticky left-0 w-[100cqw] px-4 pt-1 pb-3.5 sm:pl-12 flex flex-col gap-2.5">
       <div className="flex items-center justify-between gap-2 flex-wrap text-[12px] text-dim">
         <span>{lead}</span>
-        {changes && (all || changes.unchanged > 0) && (
+        {(changes ? all || changes.unchanged > 0 : status !== 'loading') && (
           <Button size="sm" onClick={() => setAll(a => !a)}>
-            {all ? 'Show changes only' : `Show all files (${changes.unchanged} unchanged)`}
+            {all ? 'Show changes only' : changes ? `Show all files (${changes.unchanged} unchanged)` : 'Show all files'}
           </Button>
         )}
       </div>

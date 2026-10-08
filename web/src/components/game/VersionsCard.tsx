@@ -11,7 +11,7 @@ import { DataTable } from '../ui/DataTable';
 import { EmptyState } from '../ui/EmptyState';
 import { InlineConfirm } from '../ui/InlineConfirm';
 import { Icon } from '../ui/Icon';
-import { ChangeChips, VersionFiles } from './VersionFiles';
+import { ChangeChips, VersionFiles, type ChangesStatus } from './VersionFiles';
 
 interface Props {
   game: Game;
@@ -40,15 +40,22 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
   const [view, setView] = useState<View>('main');
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [changes, setChanges] = useState<Map<string, VersionChanges>>(new Map());
+  // Which list the last answer was for, and whether it failed. Once the current list's answer is in, a
+  // version missing from the map is one whose archive the server could not read: no row may go on
+  // saying it is still loading.
+  const [answered, setAnswered] = useState<{ listKey: string; failed: boolean } | null>(null);
 
   // Re-read whenever the list itself changes: a new push brings a version nobody has diffed yet.
   const listKey = versions.map(v => v.id).join(',');
+  const changesStatus: ChangesStatus = answered?.listKey !== listKey ? 'loading' : answered.failed ? 'failed' : 'loaded';
   useEffect(() => {
     if (!listKey) return;
     let live = true;
     api.versionChanges(game.id)
-      .then(list => { if (live) setChanges(new Map(list.map(c => [c.versionId, c]))); })
-      .catch(() => { /* rows stay without chips; opening one says it is still loading */ });
+      .then(list => {
+        if (live) { setChanges(new Map(list.map(c => [c.versionId, c]))); setAnswered({ listKey, failed: false }); }
+      })
+      .catch(() => { if (live) setAnswered({ listKey, failed: true }); });
     return () => { live = false; };
   }, [game.id, listKey]);
 
@@ -157,7 +164,7 @@ export function VersionsCard({ game, headId, versions, conflicts, loading, reloa
             rows={shown}
             rowKey={v => v.id}
             expanded={v => open.has(v.id)
-              ? <VersionFiles id={`version-files-${v.id}`} game={game} version={v} changes={changes.get(v.id)} />
+              ? <VersionFiles id={`version-files-${v.id}`} game={game} version={v} changes={changes.get(v.id)} status={changesStatus} />
               : null}
             empty={view === 'main'
               ? <EmptyState title="No versions yet">The first push from any machine shows up here.</EmptyState>

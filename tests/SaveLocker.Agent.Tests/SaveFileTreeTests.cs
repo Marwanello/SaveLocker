@@ -129,6 +129,59 @@ public sealed class SaveFileTreeArchiveTests : IDisposable
     }
 
     [Fact]
+    public void A_name_held_twice_keeps_its_later_entry_in_the_diff_and_the_hashes()
+    {
+        var zip = P("dup.zip");
+        using (var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create))
+        {
+            foreach (var (name, content) in new[] { ("a.sav", "first"), ("a.sav", "second!"), ("sub\\b.sav", "b1"), ("sub/b.sav", "b2") })
+            {
+                using var w = new StreamWriter(archive.CreateEntry(name).Open());
+                w.Write(content);
+            }
+        }
+
+        var diff = SaveArchive.DiffArchiveFolders(null, SaveArchive.ListArchiveFolders(zip, int.MaxValue));
+        Assert.Equal((2, 0, 0, 0), (diff.Added, diff.Changed, diff.Removed, diff.Unchanged));
+        Assert.Equal(7L, diff.Files.Single(f => f.Path == "a.sav").Size);
+
+        var hashed = Assert.Single(SaveArchive.HashArchiveFiles(zip)).Files;
+        Assert.Equal(new[] { "a.sav", "sub/b.sav" }, hashed.Select(f => f.Path));
+        Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData("second!"u8)).ToLowerInvariant(),
+            hashed[0].Sha256);
+    }
+
+    [Fact]
+    public void A_file_the_head_lacks_says_so_and_no_head_compares_nothing()
+    {
+        var dir = Dir("cmp", ("kept.sav", "k"), ("dropped.sav", "d"));
+        var roots = new[] { SaveRoot.Primary(dir) };
+        var (manifest, hash) = SaveArchive.ComputeManifest(roots);
+        var onDisk = SaveArchive.ListSaveFiles(roots).ToDictionary(f => f.ArchiveName, f => f.FullPath);
+        var kept = manifest.Single(f => f.Path == "kept.sav");
+        var game = new TrackedGame { GameId = Guid.NewGuid(), SaveDirectory = dir, LastKnownVersionId = Guid.NewGuid(), LastSyncedHash = hash };
+        HeadFilesDto Head(Guid id) => new(
+            new SaveVersionDto(id, game.GameId, null, "other", DateTime.UtcNow, "h", 1, null),
+            new[] { new HeadFolderDto("main", new[] { new HeadFileDto("kept.sav", kept.Size, kept.Sha256) }) });
+
+        // The head moved on without dropped.sav, and nothing changed here: a pull deletes it.
+        var moved = SaveFileTree.Compare(game, roots, manifest, hash, onDisk, [], Head(Guid.NewGuid()));
+        var dropped = moved.Folders[0].Files.Single(f => f.Path == "dropped.sav");
+        Assert.Equal((SaveFileTree.Server, true), (dropped.State, dropped.NotInHead));
+        Assert.False(moved.Folders[0].Files.Single(f => f.Path == "kept.sav").NotInHead);
+
+        // The head is where this machine left it: the same file is new here, a push adds it.
+        dropped = SaveFileTree.Compare(game, roots, manifest, hash, onDisk, [], Head(game.LastKnownVersionId!.Value))
+            .Folders[0].Files.Single(f => f.Path == "dropped.sav");
+        Assert.Equal((SaveFileTree.Here, true), (dropped.State, dropped.NotInHead));
+
+        // No head to compare with (an older server's 404): no state, and nothing claimed missing from it.
+        var none = SaveFileTree.Compare(game, roots, manifest, hash, onDisk, [], null);
+        Assert.False(none.Reachable);
+        Assert.All(none.Folders[0].Files, f => Assert.Equal((null, false), (f.State, f.NotInHead)));
+    }
+
+    [Fact]
     public void Archive_names_split_into_folder_and_path()
     {
         Assert.Equal(("main", "sub/a.sav"), SaveArchive.SplitArchiveName("sub/a.sav"));

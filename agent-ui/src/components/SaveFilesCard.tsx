@@ -19,12 +19,16 @@ type Look = { dot: string; text: string }
 function look(f: LocalFile): Look {
   switch (f.state) {
     case 'same': return { dot: 'sl-dot sl-dot--ok', text: 'In sync' }
-    case 'here': return f.missing
-      ? { dot: 'sl-dot sl-dot--warn', text: 'Deleted here · will push' }
-      : { dot: 'sl-dot sl-dot--warn', text: 'Changed here · will push' }
-    case 'server': return f.missing
-      ? { dot: 'sl-dot sl-dot--info', text: 'Only on the server · will pull' }
-      : { dot: 'sl-dot sl-dot--info', text: 'Changed on the server · will pull' }
+    case 'here': return {
+      dot: 'sl-dot sl-dot--warn',
+      text: f.missing ? 'Deleted here · will push' : f.notInHead ? 'New here · will push' : 'Changed here · will push',
+    }
+    case 'server': return {
+      dot: 'sl-dot sl-dot--info',
+      text: f.missing ? 'Only on the server · will pull'
+        : f.notInHead ? 'Removed on the server · will pull'
+        : 'Changed on the server · will pull',
+    }
     default: return { dot: 'sl-dot', text: 'Not compared' }
   }
 }
@@ -83,7 +87,7 @@ export function SaveFilesCard({ gameId, refreshKey }: Props) {
                   Compared with the latest on the server: {formatAgo(files.head.when)} from {files.head.machine}.
                 </p>
               )
-            : <p className="sl-files__note">The server did not answer, so nothing is compared. These are the files here.</p>}
+            : <p className="sl-files__note">The server did not answer (or is older than this agent), so nothing is compared. These are the files here.</p>}
           {files.reachable && !files.head && (
             <p className="sl-files__note">Nothing is on the server yet: the next sync pushes every file below.</p>
           )}
@@ -102,9 +106,9 @@ function FolderBlock({ folder }: { folder: GameFolderFiles }) {
         <b>{folder.label}</b>
         <span className="sl-mono">{folder.path}</span>
       </div>
-      {folder.files.length === 0 && folder.otherCount === 0
-        ? <p className="sl-files__note">Nothing in this folder yet.</p>
-        : <Tree files={folder.files} />}
+      {folder.files.length > 0
+        ? <Tree files={folder.files} />
+        : folder.otherCount === 0 && <p className="sl-files__note">Nothing in this folder yet.</p>}
       <Others folder={folder} />
     </section>
   )

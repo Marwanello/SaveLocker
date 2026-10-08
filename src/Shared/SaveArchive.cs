@@ -124,10 +124,16 @@ public static class SaveArchive
     public static ArchiveDiff DiffArchiveFolders(IReadOnlyList<ArchiveFolder>? parent,
         IReadOnlyList<ArchiveFolder> current, int maxFiles = 1000)
     {
-        static Dictionary<(string, string), (long Size, uint Crc)> Index(IReadOnlyList<ArchiveFolder>? folders) =>
-            (folders ?? Array.Empty<ArchiveFolder>())
-                .SelectMany(f => f.Files.Select(x => (Key: (f.Key, x.Path), Value: (x.Size, x.Crc32))))
-                .ToDictionary(e => e.Key, e => e.Value);
+        // A zip can hold one name twice (or `a\b` beside `a/b`, which read back as one): the later entry
+        // wins, as it does on extract, rather than one odd archive failing the whole Versions list.
+        static Dictionary<(string, string), (long Size, uint Crc)> Index(IReadOnlyList<ArchiveFolder>? folders)
+        {
+            var index = new Dictionary<(string, string), (long Size, uint Crc)>();
+            foreach (var f in folders ?? Array.Empty<ArchiveFolder>())
+            foreach (var x in f.Files)
+                index[(f.Key, x.Path)] = (x.Size, x.Crc32);
+            return index;
+        }
 
         var before = Index(parent);
         var after = Index(current);
@@ -153,26 +159,44 @@ public static class SaveArchive
 
     /// <summary>
     /// Every file of an archive with its SHA-256, grouped by save folder like <see cref="ListArchiveFolders"/>
-    /// (tasks/save-file-trees Phase 1). Reads every byte, so a caller caches the answer per version.
+    /// (tasks/save-file-trees Phase 1). Reads every byte, so a caller caches the answer per version — and
+    /// stops at the restore path's size cap: the archive came from an agent, and one that expands without
+    /// end would otherwise hold a server thread for as long as it keeps expanding. A name held twice keeps
+    /// its later entry, as an extract would.
     /// </summary>
     public static IReadOnlyList<(string Key, IReadOnlyList<(string Path, long Size, string Sha256)> Files)> HashArchiveFiles(string zipPath)
     {
+        var maxBytes = MaxRestoreBytes;
+        long read = 0;
+        var buffer = new byte[81920];
         using var zip = ZipFile.OpenRead(zipPath);
-        var folders = new SortedDictionary<string, List<(string, long, string)>>(StringComparer.Ordinal);
+        var folders = new SortedDictionary<string, Dictionary<string, (long Size, string Sha256)>>(StringComparer.Ordinal);
         foreach (var entry in zip.Entries)
         {
             if (string.IsNullOrEmpty(entry.Name)) continue;
             var name = entry.FullName.Replace('\\', '/');
             if (IsMarker(name)) continue;
             var (key, rel) = TrySplitExtra(name, out var k, out var r) ? (k, r) : (SaveRoot.PrimaryKey, name);
-            using var stream = entry.Open();
-            var hash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
-            if (!folders.TryGetValue(key, out var files)) folders[key] = files = new();
-            files.Add((rel, entry.Length, hash));
+            using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            using (var stream = entry.Open())
+            {
+                int n;
+                while ((n = stream.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    if ((read += n) > maxBytes)
+                        throw new InvalidDataException($"Archive expands past the {Mb(maxBytes)} limit; not hashing it.");
+                    sha.AppendData(buffer, 0, n);
+                }
+            }
+            if (!folders.TryGetValue(key, out var files)) folders[key] = files = new(StringComparer.Ordinal);
+            files[rel] = (entry.Length, Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant());
         }
         return folders
             .OrderBy(f => f.Key == SaveRoot.PrimaryKey ? 0 : 1).ThenBy(f => f.Key, StringComparer.Ordinal)
-            .Select(f => (f.Key, (IReadOnlyList<(string, long, string)>)f.Value.OrderBy(x => x.Item1, StringComparer.Ordinal).ToList()))
+            .Select(f => (f.Key, (IReadOnlyList<(string, long, string)>)f.Value
+                .OrderBy(x => x.Key, StringComparer.Ordinal)
+                .Select(x => (x.Key, x.Value.Size, x.Value.Sha256))
+                .ToList()))
             .ToList();
     }
 
