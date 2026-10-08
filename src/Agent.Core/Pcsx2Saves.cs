@@ -10,8 +10,10 @@ namespace SaveLocker.Agent;
 /// convert it (<see cref="MemoryCards.Pcsx2Fix"/>).
 /// <para>
 /// A game is every save folder on one card carrying its product code (scope <c>&lt;card&gt;/BASLUS-21050*/**</c>,
-/// the save's <c>_pcsx2_index</c> included), named by the title the game wrote into the first one's
-/// <c>icon.sys</c> — inside the save, so the same on every machine. PCSX2's own per-game filter matches the same
+/// the save's <c>_pcsx2_index</c> included), named by its serial (<see cref="ConsoleTitles"/>) — region included, as a
+/// game reads only its own serial's saves — else by the title the game wrote into the first one's <c>icon.sys</c>,
+/// which can be just the series (both Prince of Persia sequels say "Prince of Persia"). Either is the same on
+/// every machine. PCSX2's own per-game filter matches the same
 /// code (<c>FolderMemoryCard::AddFolder</c>), and it indexes a save folder copied in from outside, so a pull is
 /// all it takes. States are <c>SLUS-21050 (CRC).NN.p2s</c> (<c>VMManager::GetSaveStateFileName</c>); the
 /// <c>.p2s.backup</c> copy PCSX2 keeps of each slot is left out (maintainer's choice, 2026-10-07: a game's
@@ -86,7 +88,7 @@ public static class Pcsx2Saves
                 ? [new DeclaredSavePath(RomSaves.StatesKey, EmuDeckRoots.RealPath(s), StateGlobsFor(serial))]
                 : null;
             yield return (new ScanCandidate(
-                Name: title ?? serial,
+                Name: ConsoleTitles.For(System, serial) ?? title ?? serial,
                 SuggestedSaveDir: realDir,
                 Source: ScanSource.Emulator,
                 HasSteamCloud: false,

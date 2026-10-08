@@ -10,7 +10,8 @@ namespace SaveLocker.Agent;
 /// <b>GameCube.</b> Dolphin's default Slot A is a GCI folder (<c>MAIN_SLOT_A</c> = <c>MemoryCardFolder</c>;
 /// <c>GC/USA/Card A</c> on the maintainer's Deck): one <c>.gci</c> file per save, named
 /// <c>&lt;maker&gt;-&lt;gamecode&gt;-&lt;file&gt;.gci</c> (<c>GCMemcardDirectory</c>). A game is its game ID's files in one
-/// card folder (scope <c>01-GM8E-*.gci</c>), named by the comment the game wrote into the save. The raw card
+/// card folder (scope <c>01-GM8E-*.gci</c>), named by its game code (<see cref="ConsoleTitles"/>, region included:
+/// GALE is Melee's USA disc, GALP the European), else by the comment the game wrote into the save. The raw card
 /// (<c>GC/MemoryCardA.USA.raw</c>, Slot A = Memory Card) holds every game: listed as shared
 /// (<see cref="MemoryCards.DolphinFix"/>).
 /// </para>
@@ -18,7 +19,8 @@ namespace SaveLocker.Agent;
 /// <b>Wii.</b> Dolphin keeps the Wii's NAND as folders, a save in <c>Wii/title/&lt;type&gt;/&lt;id&gt;/data</c> — per game
 /// already (D4 shape 2). The primary folder is <c>Wii/title</c>, scoped to <c>00010000/52334d45/data/**</c>; only a
 /// title whose <c>data</c> holds the <c>banner.bin</c> every Wii save carries is a game (system titles and channels
-/// have none), named by the title in it — read on the Deck 2026-10-07: "Metroid Prime Trilogy", "Metroid: Other M".
+/// have none). A disc's is named by its game ID (<see cref="ConsoleTitles"/>), else — a WiiWare title, a channel —
+/// by the title in the banner (read on the Deck 2026-10-07: "Metroid Prime Trilogy", "Metroid: Other M").
 /// </para>
 /// <para>
 /// States are <c>StateSaves/&lt;game ID&gt;.s01</c>…<c>.s10</c> (<c>R3OE01.s01</c>, 64 MB, on the Deck); the global
@@ -90,7 +92,7 @@ public static class DolphinSaves
         {
             var first = game.OrderBy(x => x.File.Name, StringComparer.Ordinal).First().Header!;
             var title = game.OrderBy(x => x.File.Name, StringComparer.Ordinal).Select(x => x.Header!.Title).FirstOrDefault(t => t is not null);
-            yield return (Candidate(setup, title ?? first.GameId, first.GameId, "gc", realDir,
+            yield return (Candidate(setup, ConsoleTitles.For("gc", first.GameCode) ?? title ?? first.GameId, first.GameId, "gc", realDir,
                 [$"{first.Maker}-{first.GameCode}-*.gci"], first.GameId), game.Max(x => x.File.LastWriteTimeUtc));
         }
     }
@@ -108,7 +110,8 @@ public static class DolphinSaves
                 var banner = Path.Combine(data, "banner.bin");
                 if (hex.Length != 8 || !File.Exists(banner)) continue;
                 var id = WiiGameId(hex);
-                yield return (Candidate(setup, BannerTitle(banner) ?? id ?? hex, id ?? hex, "wii", realDir,
+                var disc = type == "00010000" ? ConsoleTitles.For("wii", id) : null;
+                yield return (Candidate(setup, disc ?? BannerTitle(banner) ?? id ?? hex, id ?? hex, "wii", realDir,
                     [$"{type}/{hex}/data/**"], id), LastWrite(data));
             }
         }

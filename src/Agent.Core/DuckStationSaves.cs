@@ -6,7 +6,9 @@ namespace SaveLocker.Agent;
 /// DuckStation (PS1), tasks/emulator-saves Phase 2. Its default — upstream's and EmuDeck's, and the maintainer's Deck
 /// (<c>Card1Type = PerGameTitle</c>) — is a card per game, <c>&lt;title&gt;_&lt;slot&gt;.mcd</c>, named after the game
 /// database's title (<c>System::GetGameMemoryCardPath</c>), or <c>&lt;serial&gt;_&lt;slot&gt;.mcd</c> per serial. Each is
-/// a game of its own, a file named after the game in a folder every game shares (D4 shape 1). The shared card
+/// a game of its own, a file named after the game in a folder every game shares (D4 shape 1), and called by the
+/// serial its saves carry (<see cref="ConsoleTitles"/>) — region included, which a card named by serial lacks and a
+/// title card's cleaned name would lose — else by the card's own name. The shared card
 /// <c>shared_card_&lt;slot&gt;.mcd</c>, or any card holding more than one game's saves, is listed as shared, with how to
 /// switch (<see cref="MemoryCards.DuckStationFix"/>).
 /// <para>
@@ -65,7 +67,8 @@ public static partial class DuckStationSaves
                     ? [new DeclaredSavePath(RomSaves.StatesKey, EmuDeckRoots.RealPath(s), StateGlobsFor(codes))]
                     : null;
                 found.Add((new ScanCandidate(
-                    Name: RomNames.CleanTitle(title),
+                    Name: codes.Select(code => ConsoleTitles.For(System, code)).FirstOrDefault(t => t is not null) ??
+                          RomNames.CleanTitle(title),
                     SuggestedSaveDir: realDir,
                     Source: ScanSource.Emulator,
                     HasSteamCloud: false,

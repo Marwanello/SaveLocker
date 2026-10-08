@@ -467,16 +467,21 @@ function New-EmuDeckFixture {
     # slot 'm1' - it must survive every Daytona pull.
     Write-FixtureFile (Join-Path $target 'roms\model2\STATES\daytona0.sta') "daytona slot 0 $(Get-Date -Format o)"
     Write-FixtureFile (Join-Path $target 'roms\model2\STATES\daytonam1.sta') 'daytona maxx slot 1 - must survive every Daytona pull'
-    # PCSX2 (Phase 2): a folder card with two games and a file card listed as shared (greyed out, never addable).
+    # PCSX2 (Phase 2): a folder card with four games and a file card listed as shared (greyed out, never addable).
     $ps2 = Join-Path $target 'saves\pcsx2'
     Write-FixtureFile (Join-Path $ps2 'saves\Mcd001.ps2\_pcsx2_superblock') 'windows card superblock - never synced'
-    Write-FixtureBytes (Join-Path $ps2 'saves\Mcd001.ps2\BASLUS-21050SYS\icon.sys') (New-IconSys 'Kingdom Hearts II')
-    Write-FixtureFile (Join-Path $ps2 'saves\Mcd001.ps2\BASLUS-21050SYS\kh2save') "kingdom hearts ii save $(Get-Date -Format o)"
+    Write-FixtureBytes (Join-Path $ps2 'saves\Mcd001.ps2\BASLUS-21005SYS\icon.sys') (New-IconSys 'Kingdom Hearts II')
+    Write-FixtureFile (Join-Path $ps2 'saves\Mcd001.ps2\BASLUS-21005SYS\kh2save') "kingdom hearts ii save $(Get-Date -Format o)"
     Write-FixtureBytes (Join-Path $ps2 'saves\Mcd001.ps2\BESLES-50330GTA3\icon.sys') (New-IconSys 'Grand Theft Auto III')
     Write-FixtureFile (Join-Path $ps2 'saves\Mcd001.ps2\BESLES-50330GTA3\gta3save') 'gta3 - must survive every Kingdom Hearts pull'
+    # Two sequels whose saves both say only 'Prince of Persia': named by their serials, not that.
+    Write-FixtureBytes (Join-Path $ps2 'saves\Mcd001.ps2\BASLUS-21022WW\icon.sys') (New-IconSys 'Prince of Persia')
+    Write-FixtureFile (Join-Path $ps2 'saves\Mcd001.ps2\BASLUS-21022WW\save') 'warrior within save'
+    Write-FixtureBytes (Join-Path $ps2 'saves\Mcd001.ps2\BASLUS-21287TT\icon.sys') (New-IconSys 'Prince of Persia')
+    Write-FixtureFile (Join-Path $ps2 'saves\Mcd001.ps2\BASLUS-21287TT\save') 'two thrones save'
     Write-FixtureBytes (Join-Path $ps2 'saves\Mcd002.ps2') (New-Ps2FileCard)
-    Write-FixtureFile (Join-Path $ps2 'states\SLUS-21050 (F266B00B).01.p2s') "kingdom hearts ii slot 1 $(Get-Date -Format o)"
-    Write-FixtureFile (Join-Path $ps2 'states\SLUS-21050 (F266B00B).01.p2s.backup') 'backup copy - never synced'
+    Write-FixtureFile (Join-Path $ps2 'states\SLUS-21005 (F266B00B).01.p2s') "kingdom hearts ii slot 1 $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $ps2 'states\SLUS-21005 (F266B00B).01.p2s.backup') 'backup copy - never synced'
     # DuckStation (Phase 2): a card per game, one shared card.
     $ds = Join-Path $target 'saves\duckstation'
     Write-FixtureBytes (Join-Path $ds 'saves\Crash Bandicoot (USA)_1.mcd') (New-Ps1Card @('BASCUS-94900CRASH'))
@@ -556,9 +561,9 @@ function New-EmuDeckFixture {
         # Group C on SteamOS: the same card holding an older Kingdom Hearts II and its own other game, no states yet.
         $wPs2 = Join-Path $wsl 'saves\pcsx2'
         Write-FixtureFile (Join-Path $wPs2 'saves\Mcd001.ps2\_pcsx2_superblock') 'wsl card superblock - never synced'
-        Write-FixtureBytes (Join-Path $wPs2 'saves\Mcd001.ps2\BASLUS-21050SYS\icon.sys') (New-IconSys 'Kingdom Hearts II')
-        Write-FixtureFile (Join-Path $wPs2 'saves\Mcd001.ps2\BASLUS-21050SYS\kh2save') 'old kingdom hearts ii save on the WSL machine'
-        Write-FixtureFile (Join-Path $wPs2 'saves\Mcd001.ps2\BASLUS-20000OKAMI\okamisave') 'wsl okami - must survive every Kingdom Hearts pull'
+        Write-FixtureBytes (Join-Path $wPs2 'saves\Mcd001.ps2\BASLUS-21005SYS\icon.sys') (New-IconSys 'Kingdom Hearts II')
+        Write-FixtureFile (Join-Path $wPs2 'saves\Mcd001.ps2\BASLUS-21005SYS\kh2save') 'old kingdom hearts ii save on the WSL machine'
+        Write-FixtureFile (Join-Path $wPs2 'saves\Mcd001.ps2\BASLUS-21115OKAMI\okamisave') 'wsl okami - must survive every Kingdom Hearts pull'
         New-Item -ItemType Directory -Force (Join-Path $wPs2 'states') | Out-Null
         $wDs = Join-Path $wsl 'saves\duckstation'
         Write-FixtureBytes (Join-Path $wDs 'saves\Crash Bandicoot (USA)_1.mcd') (New-Ps1Card @('BASCUS-94900OLD'))
