@@ -304,7 +304,7 @@ emulator):
 | Emulator | A game is | Scope | States |
 |---|---|---|---|
 | PCSX2 | a product code's save folders on one folder card | `<card>/BASLUS-21005*/**` (each save's `_pcsx2_index` included; the card's superblock never) | `<serial> (*.p2s` |
-| DuckStation | a per-game card | `<title>_1.mcd`, `<title>_2.mcd` (never `<title>_*`: `Crash_*` takes `Crash_Team_1.mcd`) | `<code>_*.sav` per product code on the card |
+| DuckStation | a per-game card | `<title>_1.mcd`, `<title>_2.mcd` (never `<title>_*`: `Crash_*` takes `Crash_Team_1.mcd`) | `<code>_*.sav` per product code of the game the card is named after (every disc; not a save imported from another game), else every code on the card |
 | Dolphin / PrimeHack, GameCube | a game ID's GCI files in one card folder | `<maker>-<code>-*.gci` | `<game id>.s*` |
 | Dolphin / PrimeHack, Wii | a title folder holding `banner.bin` (types 00010000/1/4) | `Wii/title` + `<type>/<id>/data/**` | `<id>*.s*` (the folder names only 4 of the ID's 6 letters) |
 
@@ -318,7 +318,8 @@ Also in the group:
 
 Known limits:
 - A PS2 game saved on `Mcd001` on one machine and `Mcd002` on another is two games.
-- A multi-disc PS1 game's states on a later disc's code are not in scope.
+- A multi-disc PS1 game's states on a later disc's code are in scope only once that disc has saved to the card
+  (the card's codes say which discs there are).
 - A custom GCI or NAND folder set in `Dolphin.ini` is not read.
 - A save made before the PCSX2 card was converted is in the new card only once converted.
 
