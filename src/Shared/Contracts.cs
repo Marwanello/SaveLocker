@@ -359,7 +359,41 @@ public record VersionStatsDto(int FileCount, DateTime? NewestFileWriteUtc);
 public record VersionFolderDto(string Key, int FileCount, long TotalBytes, VersionFileDto[] Files);
 
 /// <param name="Path">Relative to its save folder, with forward slashes.</param>
-public record VersionFileDto(string Path, long Size, DateTime? ModifiedUtc);
+/// <param name="Crc32">The zip entry's own CRC-32 — free from the archive's directory, and with the size
+/// enough to tell a changed file from an unchanged one between two versions of a game.</param>
+public record VersionFileDto(string Path, long Size, DateTime? ModifiedUtc, uint? Crc32 = null);
+
+[JsonConverter(typeof(JsonStringEnumConverter<FileChange>))]
+public enum FileChange { Added, Changed, Removed }
+
+/// <summary>
+/// What one version changed against the version it was pushed on top of (tasks/save-file-trees Phase 1),
+/// by path, size and CRC-32 per save folder. A file moved between folders is a removal and an addition.
+/// <paramref name="Files"/> lists the changed files only, at most the first 1000; the counts are exact.
+/// </summary>
+/// <param name="BaseMissing">The version names a parent whose archive is gone (pruned or deleted), so
+/// there is nothing to compare with: every file counts as added.</param>
+public record VersionChangesDto(
+    Guid VersionId, int Added, int Changed, int Removed, int Unchanged,
+    VersionFileChangeDto[] Files, bool BaseMissing = false);
+
+/// <param name="Key">The save folder: <c>main</c>, or an extra folder's key.</param>
+/// <param name="Path">Relative to that folder, with forward slashes.</param>
+/// <param name="Size">The file's size in this version, or for a removed file in the one before.</param>
+public record VersionFileChangeDto(string Key, string Path, FileChange Change, long Size);
+
+/// <summary>
+/// The head version's files with their SHA-256, for an agent to compare its own save files with exactly
+/// (tasks/save-file-trees Phase 3). Hashed from the stored archive itself, not from what the uploader
+/// declared. <paramref name="Head"/> is null for a game nothing has been pushed to yet.
+/// </summary>
+public record HeadFilesDto(SaveVersionDto? Head, HeadFolderDto[] Folders);
+
+/// <param name="Key">The save folder: <c>main</c>, or an extra folder's key.</param>
+public record HeadFolderDto(string Key, HeadFileDto[] Files);
+
+/// <param name="Path">Relative to its save folder, with forward slashes.</param>
+public record HeadFileDto(string Path, long Size, string Sha256);
 
 /// <summary>How many files already tracked in a game's head version would stop being uploaded
 /// under a draft (not-yet-saved) set of exclude patterns — a dry run for the console's exclude

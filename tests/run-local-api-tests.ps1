@@ -786,6 +786,7 @@ try {
         @("GET",  "/api/offline-queue"), @("POST", "/api/sync/cancel"), @("POST", "/api/open-log"),
         @("GET",  "/api/conflicts/resolved"), @("GET", "/api/games/$goodId/versions"),
         @("GET",  "/api/games/$goodId/local-size"), @("POST", "/api/games/$goodId/open-folder"),
+        @("GET",  "/api/games/$goodId/files"),
         @("POST", "/api/test-connection"), @("GET", "/api/candidates/cached"))) {
         Check "$($route[0]) $($route[1] -replace $goodId, '{id}') needs the local token" ((ArtCall $route[0] $route[1] $null $null).Status -eq 401)
     }
@@ -820,6 +821,7 @@ try {
     $sz = ArtCall "GET" "/api/games/$goodId/local-size" $artToken $null
     Check "local-size reads the save folder without hashing it" ($sz.Status -eq 200 -and ($sz.Body | ConvertFrom-Json).bytes -gt 0)
     Check "local-size for an unknown game is a 404" ((ArtCall "GET" "/api/games/$([guid]::NewGuid())/local-size" $artToken $null).Status -eq 404)
+    Check "files for an unknown game is a 404" ((ArtCall "GET" "/api/games/$([guid]::NewGuid())/files" $artToken $null).Status -eq 404)
     Check "versions for an unknown game is a 404, not a server call" ((ArtCall "GET" "/api/games/$([guid]::NewGuid())/versions" $artToken $null).Status -eq 404)
     Check "versions for a tracked game answers (an older server's 404 reads as an empty list)" `
         ((ArtCall "GET" "/api/games/$goodId/versions" $artToken $null).Status -eq 200)

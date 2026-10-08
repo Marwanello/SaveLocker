@@ -88,11 +88,6 @@ public sealed class AgentApiServer : IDisposable
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> _gameSyncGates = new();
     // A queued game's folder size, measured at most once a minute — see /api/offline-queue.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, (long Bytes, long MeasuredAt)> _queuedSizes = new();
-    // A game's art URLs change only when someone re-picks a cover, so a grid of covers does not need
-    // one state request per image. Entries expire ArtUrlTtl after they were FETCHED — a hit must not
-    // refresh them, or a cover viewed more often than that would never be looked up again.
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, (DateTime At, GameDto Game)> _artUrls = new();
-    private static readonly TimeSpan ArtUrlTtl = TimeSpan.FromMinutes(5);
     // The most one art request may hold a browser connection: the UI asks for a grid of them at once,
     // and a browser gives one origin only a handful of connections.
     private static readonly TimeSpan ArtBudget = TimeSpan.FromSeconds(20);
@@ -1131,10 +1126,11 @@ public sealed class AgentApiServer : IDisposable
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         }).Produces<GameStateDto>();
 
-        // Cover/icon art, relayed from the server. The agent UI cannot rely on reaching the server
-        // itself (it may be on another network from the browser), and an <img src> could not carry the
-        // local token anyway — the UI fetches this with it and shows a blob. `w` is one of the server's
-        // thumbnail widths; anything else is dropped there, so the full-size original comes back.
+        // Cover/icon art, relayed from the server through the on-disk ArtCache, so it is there with the
+        // server out of reach and changes when the server's does. The agent UI cannot rely on reaching
+        // the server itself (it may be on another network from the browser), and an <img src> could not
+        // carry the local token anyway — the UI fetches this with it and shows a blob. `w` is one of the
+        // server's thumbnail widths; anything else is dropped there, so the full-size original comes back.
         app.MapGet("/api/games/{id:guid}/art",
             async Task<IResult> (Guid id, string? kind, int? w, CancellationToken ct) =>
         {
@@ -1147,15 +1143,9 @@ public sealed class AgentApiServer : IDisposable
             try
             {
                 var api = ApiClient.For(_config);
-                var fresh = _artUrls.TryGetValue(id, out var hit) && hit.At > DateTime.UtcNow - ArtUrlTtl;
-                var url = fresh ? hit.Game : (await api.GetStateAsync(id, budget.Token))?.Game;
-                if (url is null) return TypedResults.NotFound();
-                if (!fresh) _artUrls[id] = (DateTime.UtcNow, url);
-                var path = kind == "grid" ? url.GridUrl : url.IconUrl;
-                if (string.IsNullOrEmpty(path)) return TypedResults.NotFound();
-                var art = await api.GetArtAsync(path, w, budget.Token);
-                if (art is null) return TypedResults.NotFound();
-                return TypedResults.Bytes(art.Value.Bytes, art.Value.ContentType);
+                var art = await ArtCache.For(_config.StateDir).GetAsync(id, kind, w, api,
+                    async c => (await api.GetStateAsync(id, c))?.Game, budget.Token);
+                return art is null ? TypedResults.NotFound() : TypedResults.Bytes(art.Bytes, art.ContentType);
             }
             // The page went away (a navigation, an aborted fetch): nobody is left to answer.
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { return TypedResults.Empty; }
@@ -1344,6 +1334,22 @@ public sealed class AgentApiServer : IDisposable
             }
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         });
+
+        // The game page's "Save files on this PC": every file of every folder here, each compared with
+        // the server's head by SHA-256 (tasks/save-file-trees Phase 3). Hashes the whole save like
+        // sync-status, off the request thread; asked for when the page opens or on Refresh, never polled.
+        // An unreachable server is an answer (no states), not an error.
+        app.MapGet("/api/games/{id:guid}/files",
+            async Task<Results<Ok<GameFilesDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id, CancellationToken ct) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.NotFound();
+            try { return TypedResults.Ok(await SaveFileTree.BuildAsync(_config, game, ApiClient.For(_config), ct)); }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                return TypedResults.InternalServerError(new ErrorResponse(ex.Message));
+            }
+        }).Produces<GameFilesDto>();
 
         // The Decky/Playnite launch gate (tasks/conflict-resolution-ui/plan.md, Phase 11). Neither
         // can call SyncEngine.PrepareLaunchAsync in-process the way the Linux wrapper (Phase 4,

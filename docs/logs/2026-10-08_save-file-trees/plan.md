@@ -18,16 +18,18 @@ maintainer picked **B for the console and A for the agent** on 2026-10-07. Today
 lists only the latest version's files, and the Versions card shows only id, time, machine, size and state; the agent
 says "in sync" or not for the whole game, never which file.
 
-One PR, one commit per phase. Not started; nothing depends on it.
+One PR, one commit per phase: PR #62 (`save-file-trees`), 2026-10-07/08. Open questions settled with the maintainer
+(answers at the end of this file).
 
 ## Status
 
 | Phase | Status |
 |-------|--------|
-| 1 — Server: a fingerprint per file, and what changed per version | ⏳ Not started |
-| 2 — Console: Versions rows open on their changes (variant B) | ⏳ Not started |
-| 3 — Agent: route for this PC's save files compared with the server | ⏳ Not started |
-| 4 — Agent UI: *Save files on this PC* tree on the game page (variant A) | ⏳ Not started |
+| 1 — Server: a fingerprint per file, and what changed per version | ✅ Shipped 2026-10-07 — changes cached in memory (no table), CRC-32 + size; head hashes read from the archive |
+| 2 — Console: Versions rows open on their changes (variant B) | ✅ Shipped 2026-10-07 — change chips sit beside the state chip (no extra column) |
+| 3 — Agent: route for this PC's save files compared with the server | ✅ Shipped 2026-10-07 — a differing file is `server` only when the head moved and nothing changed here |
+| 4 — Agent UI: *Save files on this PC* tree on the game page (variant A) | ✅ Shipped 2026-10-08 — full-width card under Versions; "only on the server" is the new `--color-info` blue |
+| testenv pass (below) | ⏳ Not run — the maintainer's by-hand check; every state was seen in a scratch tray against a two-machine seeded server |
 
 ## What already exists (don't re-derive)
 
@@ -142,3 +144,8 @@ Verify: `agent-ui` lint + build; the testenv pass below; screenshots light and d
   get back by restoring it)? Recommend its parent, with the restore difference left to the existing conflict view.
 - **Agent page placement:** a card of its own, or inside the existing save folders card?
 - **Game Mode on the Deck:** a read-only list there too, later?
+
+**Answers (2026-10-07):** the change cache lives **in memory** (no table — no migration, no push-path change);
+**CRC-32 + size** in the console, SHA-256 for the agent; Backups rows diff against **their own parent**; the agent card
+is **its own full-width card at the bottom** of the game page. Game Mode stays out of scope. Found while building:
+the palette had no blue, so a fifteenth token `--color-info` was added (Decisions.md) at the maintainer's request.

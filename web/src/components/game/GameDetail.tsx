@@ -145,6 +145,7 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] gap-3 items-start">
         <VersionsCard
+          key={game.id}
           game={game}
           headId={headId}
           versions={versions}

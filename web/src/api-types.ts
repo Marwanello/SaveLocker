@@ -1187,6 +1187,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/games/{id}/head/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HeadFilesDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/conflicts/{id}": {
         parameters: {
             query?: never;
@@ -2702,6 +2739,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/versions/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VersionChangesDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games/{id}/prune": {
         parameters: {
             query?: never;
@@ -4185,6 +4259,8 @@ export interface components {
             /** Format: int32 */
             wouldExclude: number;
         };
+        /** @enum {unknown} */
+        FileChange: "Added" | "Changed" | "Removed";
         FileManifestEntry: {
             path: string;
             sha256: string;
@@ -4230,6 +4306,20 @@ export interface components {
              * @default 0
              */
             totalStorageBytes: number;
+        };
+        HeadFileDto: {
+            path: string;
+            /** Format: int64 */
+            size: number;
+            sha256: string;
+        };
+        HeadFilesDto: {
+            head: null | components["schemas"]["SaveVersionDto"];
+            folders: components["schemas"]["HeadFolderDto"][];
+        };
+        HeadFolderDto: {
+            key: string;
+            files: components["schemas"]["HeadFileDto"][];
         };
         InstallerHashVerification: {
             platform: string;
@@ -4434,12 +4524,36 @@ export interface components {
         };
         /** @enum {unknown} */
         UploadStatus: "Created" | "NoChange" | "Conflict" | "RetryFull";
+        VersionChangesDto: {
+            /** Format: uuid */
+            versionId: string;
+            /** Format: int32 */
+            added: number;
+            /** Format: int32 */
+            changed: number;
+            /** Format: int32 */
+            removed: number;
+            /** Format: int32 */
+            unchanged: number;
+            files: components["schemas"]["VersionFileChangeDto"][];
+            /** @default false */
+            baseMissing: boolean;
+        };
+        VersionFileChangeDto: {
+            key: string;
+            path: string;
+            change: components["schemas"]["FileChange"];
+            /** Format: int64 */
+            size: number;
+        };
         VersionFileDto: {
             path: string;
             /** Format: int64 */
             size: number;
             /** Format: date-time */
             modifiedUtc: null | string;
+            /** Format: uint32 */
+            crc32?: null | number;
         };
         VersionFolderDto: {
             key: string;

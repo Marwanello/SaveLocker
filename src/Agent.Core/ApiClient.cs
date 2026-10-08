@@ -243,6 +243,16 @@ public sealed class ApiClient
         return await resp.Content.ReadFromJsonAsync<GameStateDto>(ct);
     }
 
+    /// <summary>The head version's files with their SHA-256 (tasks/save-file-trees); null for a game the
+    /// server does not know.</summary>
+    public async Task<HeadFilesDto?> GetHeadFilesAsync(Guid gameId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/head/files", ct);
+        if (resp.StatusCode == HttpStatusCode.NotFound) return null;
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<HeadFilesDto>(ct);
+    }
+
     /// <summary>
     /// A cover or icon the server stores, at one of its thumbnail widths. <paramref name="relativeUrl"/>
     /// comes from the server's own game record, so a hostile server chooses it — and this machine's

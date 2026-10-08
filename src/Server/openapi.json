@@ -991,6 +991,36 @@
         }
       }
     },
+    "/api/agent/games/{id}/head/files": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadFilesDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agent/conflicts/{id}": {
       "get": {
         "tags": [
@@ -2303,6 +2333,39 @@
                   "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/VersionFolderDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/games/{id}/versions/changes": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VersionChangesDto"
                   }
                 }
               }
@@ -4697,6 +4760,13 @@
           }
         }
       },
+      "FileChange": {
+        "enum": [
+          "Added",
+          "Changed",
+          "Removed"
+        ]
+      },
       "FileManifestEntry": {
         "required": [
           "path",
@@ -4913,6 +4983,69 @@
             "type": "integer",
             "format": "int64",
             "default": 0
+          }
+        }
+      },
+      "HeadFileDto": {
+        "required": [
+          "path",
+          "size",
+          "sha256"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        }
+      },
+      "HeadFilesDto": {
+        "required": [
+          "head",
+          "folders"
+        ],
+        "type": "object",
+        "properties": {
+          "head": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SaveVersionDto"
+              }
+            ]
+          },
+          "folders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HeadFolderDto"
+            }
+          }
+        }
+      },
+      "HeadFolderDto": {
+        "required": [
+          "key",
+          "files"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HeadFileDto"
+            }
           }
         }
       },
@@ -5665,6 +5798,73 @@
           "RetryFull"
         ]
       },
+      "VersionChangesDto": {
+        "required": [
+          "versionId",
+          "added",
+          "changed",
+          "removed",
+          "unchanged",
+          "files"
+        ],
+        "type": "object",
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "added": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "changed": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "removed": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unchanged": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VersionFileChangeDto"
+            }
+          },
+          "baseMissing": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "VersionFileChangeDto": {
+        "required": [
+          "key",
+          "path",
+          "change",
+          "size"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "change": {
+            "$ref": "#/components/schemas/FileChange"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "VersionFileDto": {
         "required": [
           "path",
@@ -5686,6 +5886,13 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "crc32": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "uint32"
           }
         }
       },
