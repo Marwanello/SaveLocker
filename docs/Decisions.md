@@ -347,6 +347,13 @@ session can judge an edge case, not to reopen the choice.
   setting: EmuDeck sets PCSX2's folder auto-manage on, yet PCSX2 still creates a shared file card.
 - **PCSX2's `.p2s.backup` state copies are not synced** (2026-10-07, maintainer's choice): D3's "states always" stands,
   but a backup of every slot would double a PS2 game's states against the upload cap.
+- **A disc console's save is named by its serial, region included** (2026-10-08, maintainer's choice, emulator-saves
+  Group C): `ConsoleTitles`, a serial → title table built from Redump's dats via libretro-database and bundled with
+  the agent (offline). Its data is **CC BY-SA 4.0** — credited in `src/Agent.Core/ConsoleTitles/NOTICE.md` and shared
+  under that license as a data file; SaveLocker's code keeps its own. PCSX2's and DuckStation's databases were
+  ruled out by license (GPL-3.0; CC BY-NC-ND). What a game writes into its save is only the fallback: PS2
+  `icon.sys` can say just the series ("Prince of Persia" for two sequels). The region stays because each region's
+  disc reads only its own serial's saves.
 - **"Latest" = `Game.HeadVersionId`.** UI label "Latest"; admin action "Set as Latest".
 - **Artwork:** SteamGridDB images are downloaded/cached server-side, not stored as bare URLs
   (offline-safe, survives upstream changes).

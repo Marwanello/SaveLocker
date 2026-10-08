@@ -1839,6 +1839,10 @@ capture found PCSX2 on **one 64 MB shared file card** (EmuDeck does not make it 
 Trilogy saved in both Dolphin and PrimeHack. The maintainer's PC turned out to have a real EmuDeck for Windows (link
 layout as researched), which broke a Group B test that read its ES-DE gamelists; that is fixed, see Gotchas. Unit
 **361**. Details: `tasks/emulator-saves/plan.md` → *Group C — as built*.
+<br>**2026-10-08: names by serial.** The maintainer's Deck showed Warrior Within and The Two Thrones both as "Prince
+of Persia" (`icon.sys` says only the series). PS1/PS2/GameCube/Wii saves are now named by their serial from a
+bundled Redump table (`ConsoleTitles`, CC BY-SA 4.0 via libretro-database, PS3 included for later), region kept —
+each region's disc reads only its own saves. Fallback: the title inside the save. Unit **363** (+2).
 <br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then the PR.
 On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another
 commit, so this session did not touch it: run `testenv clean` first.

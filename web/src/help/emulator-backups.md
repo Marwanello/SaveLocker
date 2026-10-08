@@ -14,6 +14,8 @@ Add games lists one game per save for RetroArch, melonDS, Supermodel, Model 2, S
 - **Dolphin:** Options > Configuration > GameCube, set Slot A to GCI Folder. Dolphin copies the old card's saves into the folder by itself.
 - **DuckStation:** Settings > Memory Cards, set Card 1 to Separate Card Per Game (Title). The new cards start empty; copy the saves over with Tools > Memory Card Editor.
 
+**PlayStation, GameCube and Wii games are named by their disc's serial, region included** — *Prince of Persia - The Two Thrones (USA)*. Each region's disc has its own serial and reads only its own saves, so a USA save and a European save of the same game are two games. Titles come from [Redump](http://redump.org/) via [libretro-database](https://github.com/libretro/libretro-database) (CC BY-SA 4.0); a game Redump doesn't list is named by the title inside its save.
+
 **A save from one emulator never joins another emulator's game**, even for the same title: Metroid Prime Trilogy saved in Dolphin and in PrimeHack are two games, and never sync with each other.
 
 ## Prefer in-game saves

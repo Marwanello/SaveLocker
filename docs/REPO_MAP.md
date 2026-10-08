@@ -153,8 +153,11 @@ SaveLocker/
 │   │   ├── MemoryCards.cs               # Is this card SHARED by every game? (PS2 file card, Dolphin raw, DuckStation shared,
 │   │   │                               #   a PS1 card of several games) → a greyed NotSyncable row; PS1 card directory;
 │   │   │                               #   ConsoleText (Shift-JIS/1252, full-width folded by hand — invariant globalization)
-│   │   ├── Pcsx2Saves.cs · DuckStationSaves.cs   # PS2 folder card per product code (icon.sys title); PS1 card per game
-│   │   ├── DolphinSaves.cs              # GameCube GCI per game ID + Wii title folders (banner.bin); PrimeHack is its 2nd emulator
+│   │   ├── Pcsx2Saves.cs · DuckStationSaves.cs   # PS2 folder card per product code; PS1 card per game
+│   │   ├── ConsoleTitles.cs             # Serial → title, region included (PS1/PS2/PS3/GC/Wii), from the embedded
+│   │   │                               #   ConsoleTitles/console-titles.tsv.gz — Redump via libretro-database, CC BY-SA 4.0
+│   │   │                               #   (NOTICE.md); Update-ConsoleTitles.ps1 rebuilds it
+│   │   ├── DolphinSaves.cs              # GameCube GCI per game ID + Wii title folders; PrimeHack is its 2nd emulator
 │   │   ├── EmulatorSaves.cs             # The table of emulator sources both scanners loop — a new emulator is one row
 │   │   ├── EmulatorPaths.cs             # Home/AppData for standalone emulator lookups; SAVELOCKER_EMULATOR_HOME = fixture home
 │   │   ├── GamelistXml.cs               # ES-DE gamelist.xml titles, arcade systems only (safe because of D1)
