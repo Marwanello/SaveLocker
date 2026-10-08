@@ -89,6 +89,7 @@ public sealed class CommandPoller : IDisposable
             _notices?.ObserveServer(true);
             await AnnounceFolderSuggestionsAsync();
             await UpdatePathCandidatesAsync();
+            await WarmArtAsync();
             // Independent of each other — RunCommandsAsync executes dashboard commands,
             // CheckConflictsAsync only reads _config.Games and hits its own endpoint — so run them
             // concurrently rather than paying their two round-trips back to back.
@@ -117,9 +118,26 @@ public sealed class CommandPoller : IDisposable
 
     // ----- game-list reconciliation (server → agent propagation) -----
 
+    /// <summary>The server's game list from this tick's reconcile — what the art cache is warmed from.</summary>
+    private List<GameDto>? _lastServerGames;
+
+    /// <summary>
+    /// Keep the covers and icons of the games tracked here on disk (<see cref="ArtCache"/>), so every
+    /// surface has them offline and none has to be opened first for them to be fetched. Costs nothing once
+    /// the cache is current: a file is fetched only when the server names a new image.
+    /// </summary>
+    private async Task WarmArtAsync()
+    {
+        if (_lastServerGames is not { } games) return;
+        var tracked = _config.Games.Select(g => g.GameId).ToHashSet();
+        try { await ArtCache.For(_config.StateDir).WarmAsync(games.Where(g => tracked.Contains(g.Id)).ToList(), _api()); }
+        catch (Exception ex) { AgentLogger.LogException("CommandPoller.WarmArtAsync", ex); }
+    }
+
     internal async Task ReconcileGamesAsync()
     {
         var serverGames = await _api().ListGamesAsync();
+        _lastServerGames = serverGames;
         var serverById = serverGames.ToDictionary(g => g.Id);
         var changed = false;
 
