@@ -1870,6 +1870,19 @@ console (DeckTest) still have the old scope:** remove them and re-add from the D
 `build -Only deck` + `up -Only deck`. Also found on the Deck that day: its PCSX2 states folder is empty (the only
 `.p2s` files are in `~/ludusavi-backup`, Sept 2025), and its `PCSX2.ini` names no slot-1 card, so which card PCSX2
 writes to is unconfirmed.
+<br>**2026-10-11, same branch: keeping the cloud's save in a conflict now takes effect.** Maintainer's report from the rig: the
+PC's first sync of Warrior Within conflicted, *Cloud* closed the pop-up with no word, and the conflict came back. Resolving only
+told the server; the guarded pull it queued is refused on the loser whenever its save was never synced (it differs from the last
+synced hash), so the next sync pushed again — three rounds, then uploads paused behind a conflict the server no longer had (the
+header still said "1 conflict"; no pop-up). Now `SyncEngine.ResolveOwnConflictAsync` (agent UI, CLI `resolve-conflict`, and the
+Deck's Game Mode screen through the daemon) pulls straight after: forced when the save here is still the rejected version (its hash
+read before resolving — an unprotected loser is pruned by the resolve) or with Keep both; a save changed since keeps the guard and
+says so. Server-queued pulls stay guarded. A push paused behind a conflict the server no longer has open lifts the pause and asks
+again. The local `POST /api/conflicts/{id}/resolve` answers `{ message }`, shown as a toast. Unit **392** (+4, against a real server;
+the forced pull and the pause lift each mutation-checked). On the rig the pop-up came back after *Sync all*; the choice was left to
+the maintainer (Cloud overwrites the real `D:\Emulation` card's Warrior Within save). **Not fixed:** the conflict card says "the
+other is never deleted, just set aside", but without *Also keep the other one as a backup* the loser is ordinary history and was
+pruned within seconds on the rig.
 <br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then merge PR #63.
 On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another
 commit, so this session did not touch it: run `testenv clean` first.
