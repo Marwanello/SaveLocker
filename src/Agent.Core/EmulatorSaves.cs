@@ -19,5 +19,6 @@ public static class EmulatorSaves
         ("PPSSPP saves", PpssppSaves.Scan),
         ("RPCS3 saves", Rpcs3Saves.Scan),
         ("Vita3K saves", Vita3KSaves.Scan),
+        ("shadPS4 saves", ShadPs4Saves.Scan),
     };
 }

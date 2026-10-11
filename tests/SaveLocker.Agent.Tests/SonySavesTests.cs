@@ -222,4 +222,46 @@ public sealed class SonySavesTests : IDisposable
         Assert.Equal(2, folders.Count);
         Assert.Equal(new[] { "PCSE00001", "Uncharted: Golden Abyss" }, Vita3KSaves.Scan(folders).Select(c => c.Name));
     }
+
+    // ---- shadPS4 ----
+
+    [Fact]
+    public void Shadps4_reads_both_layouts_and_names_a_game_by_its_saves_maintitle()
+    {
+        // The old layout under EmuDeck's link (savedata/<user>/<CUSA>/<save>), the new one in the user folder
+        // (home/<user>/savedata/<CUSA>/<save>).
+        Sfo("Emulation/saves/shadps4/saves/1/CUSA00900/SPRJ0005/sce_sys/param.sfo", ("MAINTITLE", "Bloodborne"), ("SUBTITLE", "Hunter"));
+        Text("Emulation/saves/shadps4/saves/1/CUSA00900/SPRJ0005/userdata0000", "bb");
+        Text("Emulation/saves/shadps4/saves/1/CUSA01234/SAVE0/data.bin", "no sfo");
+        Sfo("user/home/1000/savedata/CUSA07408/SAVEDATA00/sce_sys/param.sfo", ("MAINTITLE", "Persona 5"));
+        Text("user/home/1000/savedata/CUSA07408/SAVEDATA00/data.bin", "p5");
+
+        var folders = ShadPs4Saves.Folders([P("Emulation")], [P("user")]);
+        var found = ShadPs4Saves.Scan(folders);
+
+        Assert.Equal(new[] { "Bloodborne", "CUSA01234", "Persona 5" }, found.Select(c => c.Name));
+        var bb = found[0];
+        Assert.Equal(P("Emulation/saves/shadps4/saves/1"), bb.SuggestedSaveDir);
+        Assert.Equal(("shadPS4", "ps4", "CUSA00900", true), (bb.EmulatorName, bb.EmulatorSystem, bb.EmulatorRom, bb.ViaEmuDeck));
+        Assert.Equal(("PlayStation 4", null), (bb.Release!.Console, bb.Release.Region));
+        Assert.Equal(new[] { "CUSA00900/SPRJ0005/sce_sys/param.sfo", "CUSA00900/SPRJ0005/userdata0000" },
+            SaveArchive.ListFiles(bb.SuggestedSaveDir!, null, bb.IncludeGlobs).Order(StringComparer.Ordinal));
+        Assert.Equal(P("user/home/1000/savedata"), found[2].SuggestedSaveDir);
+        Assert.Equal(new[] { "CUSA07408/**" }, found[2].IncludeGlobs);
+    }
+
+    [Fact]
+    public void A_shadps4_game_in_both_layouts_is_the_copy_written_last()
+    {
+        Sfo("user/savedata/1/CUSA00900/SPRJ0005/sce_sys/param.sfo", ("MAINTITLE", "Bloodborne"));
+        Text("user/savedata/1/CUSA00900/SPRJ0005/userdata0000", "old");
+        foreach (var f in Directory.GetFiles(P("user/savedata/1"), "*", SearchOption.AllDirectories))
+            File.SetLastWriteTimeUtc(f, DateTime.UtcNow.AddDays(-30));
+        Sfo("user/home/1/savedata/CUSA00900/SPRJ0005/sce_sys/param.sfo", ("MAINTITLE", "Bloodborne"));
+        Text("user/home/1/savedata/CUSA00900/SPRJ0005/userdata0000", "new");
+
+        var game = Assert.Single(ShadPs4Saves.Scan(ShadPs4Saves.Folders([], [P("user")])));
+
+        Assert.Equal(P("user/home/1/savedata"), game.SuggestedSaveDir);
+    }
 }
