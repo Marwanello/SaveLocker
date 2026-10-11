@@ -1891,6 +1891,17 @@ the forced pull and the pause lift each mutation-checked). On the rig the pop-up
 the maintainer (Cloud overwrites the real `D:\Emulation` card's Warrior Within save). **Not fixed:** the conflict card says "the
 other is never deleted, just set aside", but without *Also keep the other one as a backup* the loser is ordinary history and was
 pruned within seconds on the rig.
+<br>**2026-10-11: Group D built (branch `emulator-saves-group-d`, one commit per phase, no PR yet).** PPSSPP (PSP), RPCS3
+(PS3), and the bonus Vita3K (PS Vita) and shadPS4 (PS4), on a new `PARAM.SFO` reader and D4's shape-2 helper
+`TitleFolders` (a folder per game ID in a shared folder, which Group E reuses). The maintainer decided three things:
+build from the research; name PSP/PS3 games by Redump, then `PARAM.SFO` (Redump's PSP set added to the bundled table at
+the same pinned commit); ship both bonus emulators. A PSN or Vita game's region comes from its ID's prefix; a PS4 game
+has none. Captured read-only: the Deck's real RPCS3 save (*Heavenly Sword*, whose SFO says "Heavenly Sword™"), its
+`vfs.yml` and Vita3K `pref-path` on the SD card, PPSSPP as a Flatpak, shadPS4 on the old layout; on the PC, EmuDeck for
+Windows' junctions point from the emulators' folders into `Emulation\saves`. No PSP, Vita or PS4 save on either, so all
+four are in Group H. Unit **419** (+25; the per-game scope in the two-machine PPSSPP test mutation-checked). No API
+change. Details: `tasks/emulator-saves/plan.md` → *Group D — as built*.
+<br>**Next action for this item:** the testenv pass of Group D (`Build and Run` → *Testing emulator saves*), then open its PR.
 <br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then merge PR #63.
 On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another
 commit, so this session did not touch it: run `testenv clean` first.
