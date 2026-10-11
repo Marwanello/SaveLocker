@@ -774,7 +774,10 @@ public record AgentHeartbeat(
     AgentOsInfo? Os = null,
     // An update downloaded and verified but not yet applied (the Linux agent swaps it in at its next
     // start). Null when none is staged — and from any agent that predates the field.
-    string? StagedVersion = null);
+    string? StagedVersion = null,
+    // Whether this machine adopts the look the console pushes (its own Settings → Follow the console).
+    // Null from an agent that predates the field: the console then cannot say, rather than guessing.
+    bool? FollowsConsoleAppearance = null);
 
 /// <summary>
 /// Which operating system an agent runs on, so the console can put the right logo beside a machine.
@@ -854,7 +857,8 @@ public record AgentHealthDto(
     AgentEventDto[] OpenEvents,
     // Null until the machine's agent reports it (an older agent never does).
     AgentOsInfo? Os = null,
-    string? StagedVersion = null);
+    string? StagedVersion = null,
+    bool? FollowsConsoleAppearance = null);
 
 // ----- Agent update channel -----
 

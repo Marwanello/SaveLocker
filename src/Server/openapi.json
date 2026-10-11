@@ -3499,6 +3499,12 @@
               "null",
               "string"
             ]
+          },
+          "followsConsoleAppearance": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         }
       },
@@ -3579,6 +3585,12 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "followsConsoleAppearance": {
+            "type": [
+              "null",
+              "boolean"
             ]
           }
         }

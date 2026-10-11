@@ -340,6 +340,9 @@ public class AgentHealth
     /// <summary>An update the agent has staged but not applied. Null when none (or an older agent).</summary>
     public string? StagedVersion { get; set; }
 
+    /// <summary>Whether the agent adopts the console's pushed look. Null from an agent that predates the field.</summary>
+    public bool? FollowsConsoleAppearance { get; set; }
+
     /// <summary>The agent's own last successful sync — not the server's view of it.</summary>
     public DateTime? LastSyncTime { get; set; }
 

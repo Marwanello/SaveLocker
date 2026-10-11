@@ -3921,6 +3921,7 @@ export interface components {
             openEvents: components["schemas"]["AgentEventDto"][];
             os?: null | components["schemas"]["AgentOsInfo"];
             stagedVersion?: null | string;
+            followsConsoleAppearance?: null | boolean;
         };
         AgentHeartbeat: {
             agentVersion: string;
@@ -3947,6 +3948,7 @@ export interface components {
             pathCandidates?: null | components["schemas"]["ScanPathCandidate"][];
             os?: null | components["schemas"]["AgentOsInfo"];
             stagedVersion?: null | string;
+            followsConsoleAppearance?: null | boolean;
         };
         AgentHeartbeatResponse: {
             escalatedConflicts: components["schemas"]["ConflictEscalationDto"][];

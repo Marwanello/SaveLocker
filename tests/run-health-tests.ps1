@@ -138,6 +138,15 @@ Check "heartbeat: reports tracked game count"    ($h.trackedGames -ge 2)
 Check "heartbeat: reports its last sync time"    ($null -ne $h.lastSyncTime)
 Check "a healthy machine has no open problems"   (@($h.openEvents).Length -eq 0)
 
+# The Appearance card's "N machines following" reads this. Flipped in the config file itself: the
+# setting is the agent UI's, and this CLI has no command for it.
+Check "heartbeat: follows the console's look by default" ($h.followsConsoleAppearance -eq $true)
+$pcJson = Get-Content $pcCfg -Raw
+($pcJson -replace '"FollowConsoleAppearance":\s*true', '"FollowConsoleAppearance": false') | Set-Content $pcCfg -Encoding utf8 -NoNewline
+Agent push $gameName --config $pcCfg | Out-Null
+Check "heartbeat: reports a machine that keeps its own look" ((Health $pcName).followsConsoleAppearance -eq $false)
+$pcJson | Set-Content $pcCfg -Encoding utf8 -NoNewline
+
 # =====================================================================================
 # 2. A real conflict raises a real event, tied to the machine that is STUCK
 # =====================================================================================

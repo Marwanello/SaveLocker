@@ -53,6 +53,8 @@ public sealed class HealthService
         health.UnmappedGames = beat.UnmappedGames;
         health.OfflineQueueDepth = beat.OfflineQueueDepth;
         health.StagedVersion = Clean(beat.StagedVersion, 64);
+        // Taken as sent, null included: unlike the OS, a downgrade to an agent that cannot follow does change it.
+        health.FollowsConsoleAppearance = beat.FollowsConsoleAppearance;
 
         // An agent that predates the field sends none: keep what a newer one reported rather than
         // blanking it, since a downgrade does not change the OS underneath.
@@ -229,7 +231,8 @@ public sealed class HealthService
                 Os: h?.OsId is { } osId
                     ? new AgentOsInfo(osId, h.OsName ?? osId, h.OsIdLike, h.OsVariantId, h.OsDevice)
                     : null,
-                StagedVersion: h?.StagedVersion);
+                StagedVersion: h?.StagedVersion,
+                FollowsConsoleAppearance: h?.FollowsConsoleAppearance);
         }).ToList();
     }
 

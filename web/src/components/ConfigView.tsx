@@ -451,7 +451,7 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
           </div>
         </Card>
 
-        <AppearanceCard settings={settings} onSaved={onRefresh} />
+        <AppearanceCard settings={settings} health={health} onSaved={onRefresh} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2 items-start">
