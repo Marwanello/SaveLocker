@@ -100,7 +100,8 @@
 #   .\tests\testenv.ps1 emu-fixture [-EmuDeckPath <dir>]
 #                                 write a fake EmuDeck "Emulation" folder (three RetroArch saves, two ROMs'
 #                                 save states, one ROM; melonDS, Model 2, ScummVM; PCSX2 folder + file cards,
-#                                 DuckStation per-game + shared cards, Dolphin GameCube + Wii) for the
+#                                 DuckStation per-game + shared cards, Dolphin GameCube + Wii; PPSSPP, RPCS3,
+#                                 Vita3K, shadPS4 with PARAM.SFO files) for the
 #                                 emulator-saves feature, plus a second one at
 #                                 "<StateRoot>\Emulation-wsl" that the WSL test agent scans (an old Chrono save,
 #                                 no Chrono states). Default location is "<StateRoot>\Emulation",
@@ -432,6 +433,35 @@ function New-WiiBanner {
     [Array]::Copy($t, 0, $b, 0x20, $t.Length)
     return ,$b
 }
+# A PARAM.SFO holding text entries (UTF-8, 0x0204), laid out like ParamSfo.cs reads it: header, index, keys, data.
+function New-ParamSfo {
+    param([System.Collections.Specialized.OrderedDictionary]$Entries)
+    $keys = New-Object System.Collections.Generic.List[byte]
+    $data = New-Object System.Collections.Generic.List[byte]
+    $index = New-Object System.Collections.Generic.List[byte]
+    foreach ($key in $Entries.Keys) {
+        $value = [Text.Encoding]::UTF8.GetBytes([string]$Entries[$key] + [char]0)
+        $max = [int]([Math]::Ceiling($value.Length / 4) * 4)
+        $index.AddRange([BitConverter]::GetBytes([uint16]$keys.Count))
+        $index.AddRange([BitConverter]::GetBytes([uint16]0x0204))
+        $index.AddRange([BitConverter]::GetBytes([uint32]$value.Length))
+        $index.AddRange([BitConverter]::GetBytes([uint32]$max))
+        $index.AddRange([BitConverter]::GetBytes([uint32]$data.Count))
+        $keys.AddRange([Text.Encoding]::ASCII.GetBytes($key + [char]0))
+        $data.AddRange($value)
+        $data.AddRange((New-Object byte[] ($max - $value.Length)))
+    }
+    while ($keys.Count % 4 -ne 0) { $keys.Add(0) }
+    $keyTable = 20 + $index.Count
+    $b = New-Object System.Collections.Generic.List[byte]
+    $b.AddRange([byte[]](0, 0x50, 0x53, 0x46))
+    $b.AddRange([BitConverter]::GetBytes([uint32]0x101))
+    $b.AddRange([BitConverter]::GetBytes([uint32]$keyTable))
+    $b.AddRange([BitConverter]::GetBytes([uint32]($keyTable + $keys.Count)))
+    $b.AddRange([BitConverter]::GetBytes([uint32]$Entries.Count))
+    $b.AddRange($index); $b.AddRange($keys); $b.AddRange($data)
+    return ,$b.ToArray()
+}
 function Get-EmuDeckPath {
     if ($EmuDeckPath) { return $EmuDeckPath }
     $fixture = Get-EmuDeckFixturePath
@@ -504,6 +534,32 @@ function New-EmuDeckFixture {
     Write-FixtureFile (Join-Path $ph 'states\R3ME01.s01') "primehack trilogy slot 1 $(Get-Date -Format o)"
     Write-FixtureBytes (Join-Path $dol 'Wii\title\00010000\52334d45\data\banner.bin') (New-WiiBanner 'Metroid Prime Trilogy')
     Write-FixtureFile (Join-Path $dol 'Wii\title\00010000\52334d45\data\save.bin') 'dolphin trilogy save - never synced with PrimeHack'
+    # Group D (PARAM.SFO). PPSSPP: a game with two save folders and a state, a PSN game named by its own SFO.
+    $psp = Join-Path $target 'saves\ppsspp'
+    Write-FixtureBytes (Join-Path $psp 'saves\ULUS10041DATA00\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = 'GTA LCS'; SAVEDATA_TITLE = 'Slot 1' }))
+    Write-FixtureFile (Join-Path $psp 'saves\ULUS10041DATA00\DATA.BIN') "liberty city stories slot $(Get-Date -Format o)"
+    Write-FixtureBytes (Join-Path $psp 'saves\ULUS10041SYSTEM\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = 'GTA LCS' }))
+    Write-FixtureFile (Join-Path $psp 'saves\ULUS10041SYSTEM\SYSTEM.BIN') 'liberty city stories settings'
+    Write-FixtureBytes (Join-Path $psp 'saves\NPUH99999SAVE\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = 'Homebrew Hero' }))
+    Write-FixtureFile (Join-Path $psp 'saves\NPUH99999SAVE\SAVE.DAT') 'psn game - must survive every Liberty City pull'
+    Write-FixtureFile (Join-Path $psp 'states\ULUS10041_1.00_0.ppst') "liberty city slot 0 $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $psp 'states\ULUS10041_1.00_0.jpg') 'thumbnail'
+    # RPCS3: the Deck's real save's layout (BCUS98132, Redump names it), and another game.
+    $ps3 = Join-Path $target 'saves\rpcs3\saves'
+    Write-FixtureBytes (Join-Path $ps3 'BCUS98132-GAMEAUTOSAVE\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = "Heavenly Sword$([char]0x2122)"; SUB_TITLE = 'Save Game' }))
+    Write-FixtureFile (Join-Path $ps3 'BCUS98132-GAMEAUTOSAVE\USERDATA.DAT') "heavenly sword autosave $(Get-Date -Format o)"
+    Write-FixtureBytes (Join-Path $ps3 'BLUS30443-AUTOSAVE\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = "Demon's Souls" }))
+    Write-FixtureFile (Join-Path $ps3 'BLUS30443-AUTOSAVE\USER.DAT') "demon's souls - must survive every Heavenly Sword pull"
+    # Vita3K: one save named by its own param.sfo, one only by the installed game's.
+    $vita = Join-Path $target 'saves\Vita3K\saves'
+    Write-FixtureBytes (Join-Path $vita 'PCSE00120\sce_sys\param.sfo') (New-ParamSfo ([ordered]@{ TITLE = 'Persona 4 Golden' }))
+    Write-FixtureFile (Join-Path $vita 'PCSE00120\data0000.bin') "persona 4 golden save $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $vita 'PCSB00245\SAVEDATA.BIN') 'tearaway - must survive every Persona pull'
+    Write-FixtureBytes (Join-Path $target 'storage\Vita3K\ux0\app\PCSB00245\sce_sys\param.sfo') (New-ParamSfo ([ordered]@{ TITLE = 'Tearaway'; STITLE = 'Tearaway' }))
+    # shadPS4: the old layout EmuDeck links (savedata/<user>/<CUSA>/<save>).
+    $ps4 = Join-Path $target 'saves\shadps4\saves\1'
+    Write-FixtureBytes (Join-Path $ps4 'CUSA00900\SPRJ0005\sce_sys\param.sfo') (New-ParamSfo ([ordered]@{ MAINTITLE = 'Bloodborne'; SUBTITLE = 'Hunter' }))
+    Write-FixtureFile (Join-Path $ps4 'CUSA00900\SPRJ0005\userdata0000') "bloodborne save $(Get-Date -Format o)"
     Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
     Say "EmuDeck fixture at $target"
     # Supermodel (Phase 9) is kept outside Emulation: EmuDeck for Windows' own folder, under a fixture home.
@@ -579,6 +635,23 @@ function New-EmuDeckFixture {
         Write-FixtureBytes (Join-Path $wPh 'Wii\title\00010000\52334d45\data\banner.bin') (New-WiiBanner 'Metroid Prime Trilogy')
         Write-FixtureFile (Join-Path $wPh 'Wii\title\00010000\52334d45\data\save.bin') 'old primehack trilogy save on the WSL machine'
         New-Item -ItemType Directory -Force (Join-Path $wPh 'StateSaves') | Out-Null
+        # Group D on SteamOS: older saves of the same games, their own neighbours, no states yet.
+        $wPsp = Join-Path $wsl 'saves\ppsspp'
+        Write-FixtureBytes (Join-Path $wPsp 'saves\ULUS10041DATA00\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = 'GTA LCS' }))
+        Write-FixtureFile (Join-Path $wPsp 'saves\ULUS10041DATA00\DATA.BIN') 'old liberty city stories slot on the WSL machine'
+        Write-FixtureBytes (Join-Path $wPsp 'saves\ULUS10042DATA\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = 'SSX on Tour' }))
+        Write-FixtureFile (Join-Path $wPsp 'saves\ULUS10042DATA\DATA.BIN') 'wsl ssx - must survive every Liberty City pull'
+        New-Item -ItemType Directory -Force (Join-Path $wPsp 'states') | Out-Null
+        $wPs3 = Join-Path $wsl 'saves\rpcs3\saves'
+        Write-FixtureBytes (Join-Path $wPs3 'BCUS98132-GAMEAUTOSAVE\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = "Heavenly Sword$([char]0x2122)" }))
+        Write-FixtureFile (Join-Path $wPs3 'BCUS98132-GAMEAUTOSAVE\USERDATA.DAT') 'old heavenly sword autosave on the WSL machine'
+        $wVita = Join-Path $wsl 'saves\Vita3K\saves'
+        Write-FixtureBytes (Join-Path $wVita 'PCSE00120\sce_sys\param.sfo') (New-ParamSfo ([ordered]@{ TITLE = 'Persona 4 Golden' }))
+        Write-FixtureFile (Join-Path $wVita 'PCSE00120\data0000.bin') 'old persona 4 golden save on the WSL machine'
+        # shadPS4's NEW layout in the fixture home (home/<user>/savedata): it still joins Windows' old-layout game.
+        $wPs4 = Join-Path $wHome '.local\share\shadPS4\home\1000\savedata'
+        Write-FixtureBytes (Join-Path $wPs4 'CUSA00900\SPRJ0005\sce_sys\param.sfo') (New-ParamSfo ([ordered]@{ MAINTITLE = 'Bloodborne' }))
+        Write-FixtureFile (Join-Path $wPs4 'CUSA00900\SPRJ0005\userdata0000') 'old bloodborne save on the WSL machine'
         Set-Content -NoNewline -Encoding ascii $wslMarker 'written by tests/testenv.ps1 emu-fixture'
         Say "WSL EmuDeck fixture at $wsl"
     }
