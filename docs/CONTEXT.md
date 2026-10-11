@@ -1867,13 +1867,15 @@ fixes mutation-checked); `agent-ui/src/api-types.ts` regenerated (one addition, 
 Verified: `run-console-security-tests` **364/364** (was 308; the +56 are this batch's checks,
 including a stale `run-local-api-tests` candidate-folder check whose expectation predated
 `SavePathGuard` — it now asserts the user-profile refusal plus a real folder accepted);
-`run-local-api-tests` **125/125**; `run-agent-tests` 47/47; `run-delta-upload-tests` 33/33;
-`run-health-tests` 33/33; xunit **335 total with ONE pre-existing failure**
-(`ArcadeSavesTests.Supermodel_nvram_is_a_game_named_from_games_xml_with_its_states` expects lower-case
-`lemans24` but gets `Le Mans 24` — confirmed to fail identically with this branch's changes stashed,
-so it is `main`'s, not this batch's); `openapi.json` + `web/src/api-types.ts` regenerated (additions
-only); `web` build + lint clean; full solution builds. **Not yet run on real hardware** — the testenv
-walkthrough is in this session's report.
+`run-local-api-tests` **124/124** (`SL_LOCALAPI_PORT=5191` — another worktree's tray held :5188);
+`run-agent-tests` 47/47; `run-delta-upload-tests` 33/33; `run-health-tests` 33/33; xunit **352** (351
+pass — rebased onto PR #62, whose `SaveFileTreeServerTests` registers against a shared server one test
+locks, so its registration now carries the admin password the flipped default requires; the remaining
+failure, `ArcadeSavesTests.Supermodel_nvram_is_a_game_named_from_games_xml_with_its_states` expects
+lower-case `lemans24` but gets `Le Mans 24` — confirmed to fail identically with this branch's changes
+stashed, so it is `main`'s, not this batch's); `openapi.json` + `web/src/api-types.ts` regenerated
+(additions only); `web` build + lint clean; full solution builds. **Not yet run on real hardware** —
+the testenv walkthrough is in this session's report.
 
 ---
 
