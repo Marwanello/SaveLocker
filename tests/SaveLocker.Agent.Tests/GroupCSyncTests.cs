@@ -63,15 +63,15 @@ public sealed class GroupCSyncTests : IClassFixture<ServerProcess>, IDisposable
     {
         var serial = $"SLUS-{_id}";
         var save = $"BA{serial}";
-        // Windows: the game's two save folders, another game, and a state with its backup copy.
-        Write("win", "pcsx2/memcards/Mcd001.ps2/_pcsx2_superblock", "win-superblock");
-        F.Write(P("win", $"pcsx2/memcards/Mcd001.ps2/{save}SYS/icon.sys"), F.IconSys($"Game {_id}"));
-        Write("win", $"pcsx2/memcards/Mcd001.ps2/{save}SYS/_pcsx2_index", "win-index");
-        Write("win", $"pcsx2/memcards/Mcd001.ps2/{save}S01/data", "win-slot1");
-        Write("win", "pcsx2/memcards/Mcd001.ps2/BESLES-50330GTA3/save", "win-gta");
+        // Windows (EmuDeck's card name there): the game's two save folders, another game, and a state with its backup copy.
+        Write("win", "pcsx2/memcards/MC1.ps2/_pcsx2_superblock", "win-superblock");
+        F.Write(P("win", $"pcsx2/memcards/MC1.ps2/{save}SYS/icon.sys"), F.IconSys($"Game {_id}"));
+        Write("win", $"pcsx2/memcards/MC1.ps2/{save}SYS/_pcsx2_index", "win-index");
+        Write("win", $"pcsx2/memcards/MC1.ps2/{save}S01/data", "win-slot1");
+        Write("win", "pcsx2/memcards/MC1.ps2/BESLES-50330GTA3/save", "win-gta");
         Write("win", $"pcsx2/sstates/{serial} (ABCD1234).01.p2s", "win-state");
         Write("win", $"pcsx2/sstates/{serial} (ABCD1234).01.p2s.backup", "win-backup");
-        // Deck: an older save of the same game, its own card superblock and another game.
+        // Deck: an older save of the same game on a card named otherwise, its own card superblock and another game.
         Write("deck", "Emulation/saves/pcsx2/saves/Mcd001.ps2/_pcsx2_superblock", "deck-superblock");
         F.Write(P("deck", $"Emulation/saves/pcsx2/saves/Mcd001.ps2/{save}SYS/icon.sys"), F.IconSys($"Game {_id}"));
         Write("deck", $"Emulation/saves/pcsx2/saves/Mcd001.ps2/{save}SYS/_pcsx2_index", "deck-old");

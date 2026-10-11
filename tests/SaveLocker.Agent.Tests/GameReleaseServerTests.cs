@@ -27,11 +27,11 @@ public sealed class GameReleaseServerTests(ServerProcess server) : IClassFixture
         var europe = usa with { Region = "Europe, Australia", GameIds = ["SLES-52822"] };
 
         var a = await deck.CreateGameAsync(new CreateGameRequest(WarriorWithin, null, null,
-            IncludeGlobs: ["Mcd001.ps2/BASLUS-21022*/**"], Release: usa));
+            IncludeGlobs: ["BASLUS-21022*/**"], Release: usa));
         var b = await pc.CreateGameAsync(new CreateGameRequest(WarriorWithin, null, null,
-            IncludeGlobs: ["Mcd001.ps2/BESLES-52822*/**"], Release: europe));
+            IncludeGlobs: ["BESLES-52822*/**"], Release: europe));
         var again = await pc.CreateGameAsync(new CreateGameRequest(WarriorWithin, null, null,
-            IncludeGlobs: ["Mcd001.ps2/BASLUS-21022*/**"], Release: usa));
+            IncludeGlobs: ["BASLUS-21022*/**"], Release: usa));
 
         Assert.NotEqual(a.Id, b.Id);
         Assert.Equal(a.Id, again.Id);

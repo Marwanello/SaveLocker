@@ -68,7 +68,9 @@ public sealed class MemoryCardTests : IDisposable
         Assert.Equal(new GameReleaseDto("PlayStation 2"), found[1].Release! with { GameIds = null });
         Assert.Equal(new[] { "SLUS-99999" }, found[1].Release!.GameIds);
         Assert.Equal(("PCSX2", "ps2", "BASLUS-21005"), (kh.EmulatorName, kh.EmulatorSystem, kh.EmulatorRom));
-        Assert.Equal(new[] { "Mcd001.ps2/BASLUS-21005*/**" }, kh.IncludeGlobs);
+        // The card is the folder, so what is kept is named the same whatever each machine calls its card.
+        Assert.Equal(P("saves/pcsx2/saves/Mcd001.ps2"), kh.SuggestedSaveDir);
+        Assert.Equal(new[] { "BASLUS-21005*/**" }, kh.IncludeGlobs);
         Assert.Null(kh.NotSyncable);
         Assert.True(kh.ViaEmuDeck);
         var states = Assert.Single(kh.ExtraSaveDirs!);
@@ -79,8 +81,8 @@ public sealed class MemoryCardTests : IDisposable
         Assert.Equal(
             new[]
             {
-                "Mcd001.ps2/BASLUS-21005S01/data", "Mcd001.ps2/BASLUS-21005SYS/_pcsx2_index",
-                "Mcd001.ps2/BASLUS-21005SYS/icon.sys", "Mcd001.ps2/BASLUS-21005SYS/kh2.ico",
+                "BASLUS-21005S01/data", "BASLUS-21005SYS/_pcsx2_index",
+                "BASLUS-21005SYS/icon.sys", "BASLUS-21005SYS/kh2.ico",
             },
             SaveArchive.ListFiles(kh.SuggestedSaveDir!, null, kh.IncludeGlobs).Order(StringComparer.Ordinal));
     }
@@ -104,9 +106,9 @@ public sealed class MemoryCardTests : IDisposable
         Assert.Equal(
             new (string, string?, string)[]
             {
-                ("Prince of Persia - The Two Thrones", "USA", "Mcd001.ps2/BASLUS-21287*/**"),
-                ("Prince of Persia - Warrior Within", "USA", "Mcd001.ps2/BASLUS-21022*/**"),
-                ("Prince of Persia - Warrior Within", "Europe, Australia", "Mcd001.ps2/BESLES-52822*/**"),
+                ("Prince of Persia - The Two Thrones", "USA", "BASLUS-21287*/**"),
+                ("Prince of Persia - Warrior Within", "USA", "BASLUS-21022*/**"),
+                ("Prince of Persia - Warrior Within", "Europe, Australia", "BESLES-52822*/**"),
             },
             found.Select(c => (c.Name, c.Release?.Region, Assert.Single(c.IncludeGlobs!))));
         Assert.Equal(new[] { "En", "Fr", "Es" }, found[1].Release!.Languages);
@@ -411,6 +413,27 @@ public sealed class MemoryCardTests : IDisposable
     }
 
     [Fact]
+    public void One_release_on_two_differently_named_cards_is_one_game()
+    {
+        // The maintainer's Deck and Windows PC: one European Warrior Within, each on its own machine's card.
+        Bytes("deck/PS2MC-1_converted.ps2/BESLES-52822WW/icon.sys", F.IconSys("Prince of Persia", "Warrior Within"));
+        Text("deck/PS2MC-1_converted.ps2/BESLES-52822WW/save");
+        Text("deck/PS2MC-1_converted.ps2/_pcsx2_superblock");
+        Bytes("pc/MC1.ps2/BESLES-52822WW/icon.sys", F.IconSys("Prince of Persia", "Warrior Within"));
+        Text("pc/MC1.ps2/BESLES-52822WW/save");
+        Text("pc/MC1.ps2/_pcsx2_superblock");
+        var onDeck = Assert.Single(Pcsx2Saves.Scan(new[] { new RomSaveFolders(P("deck"), null) }));
+        var onPc = Assert.Single(Pcsx2Saves.Scan(new[] { new RomSaveFolders(P("pc"), null) }));
+        var server = new GameDto(Guid.NewGuid(), onDeck.Name, null, null, true, IncludeGlobs: onDeck.IncludeGlobs!.ToArray(),
+            Emulators: ["PCSX2"], Release: onDeck.Release);
+
+        Assert.Equal(P("pc/MC1.ps2"), onPc.SuggestedSaveDir);
+        Assert.True(Enroller.SameFiles(server, onPc));
+        Assert.Equal("Prince of Persia - Warrior Within", Enroller.ServerNameFor([server], onPc, []));
+        Assert.Equal((LinkKind.Join, server.Id), EnrollLinks.For([server], onPc)[0] is var o ? (o.Kind, o.GameId) : default);
+    }
+
+    [Fact]
     public void A_same_files_server_game_from_another_emulator_is_not_the_same_game()
     {
         Bytes("p/Wii/title/00010000/52334d45/data/banner.bin", F.Banner("Metroid Prime Trilogy"));
@@ -461,6 +484,7 @@ public sealed class MemoryCardTests : IDisposable
 
         Assert.Contains(SaveDirSanity.Inspect(P("pcsx2")), p => p.Contains("SHARED PS2 memory card"));
         Assert.Contains(SaveDirSanity.Inspect(P("folder")), p => p.Contains("whole PCSX2 folder memory card"));
+        Assert.Contains(SaveDirSanity.Inspect(P("folder/Mcd001.ps2")), p => p.Contains("whole PCSX2 folder memory card"));
         Assert.Contains(SaveDirSanity.Inspect(P("ds")), p => p.Contains("SHARED PS1 memory card"));
         Assert.Contains(SaveDirSanity.Inspect(P("gc")), p => p.Contains("2 GameCube games"));
         Bytes("ds2/Crash_1.mcd", F.Ps1Card("BASCUS-94900CRASH"));
@@ -469,7 +493,7 @@ public sealed class MemoryCardTests : IDisposable
         Assert.Contains(SaveDirSanity.Inspect(P("ds2")), p => p.Contains("2 PS1 games"));
 
         // What Add games maps: one game's own files, which say nothing.
-        Assert.Empty(SaveDirSanity.Inspect(P("folder"), includeGlobs: ["Mcd001.ps2/BASLUS-21050*/**"]));
+        Assert.Empty(SaveDirSanity.Inspect(P("folder/Mcd001.ps2"), includeGlobs: ["BASLUS-21050*/**"]));
         Assert.Empty(SaveDirSanity.Inspect(P("ds"), includeGlobs: DuckStationSaves.SaveGlobsFor("Crash")));
         Assert.Empty(SaveDirSanity.Inspect(P("gc"), includeGlobs: ["01-GM8E-*.gci"]));
     }

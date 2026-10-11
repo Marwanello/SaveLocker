@@ -9,8 +9,10 @@ namespace SaveLocker.Agent;
 /// <c>BASLUS-21050…</c>. Only a folder card can be split per game; a file card is listed as shared, with how to
 /// convert it (<see cref="MemoryCards.Pcsx2Fix"/>).
 /// <para>
-/// A game is every save folder on one card carrying its product code (scope <c>&lt;card&gt;/BASLUS-21050*/**</c>,
-/// the save's <c>_pcsx2_index</c> included), named by its serial (<see cref="ConsoleTitles"/>), with its region beside
+/// A game is every save folder on one card carrying its product code (scope <c>BASLUS-21050*/**</c>, the save's
+/// <c>_pcsx2_index</c> included). Its folder is the card itself, never the folder of cards: the card's name is each
+/// machine's own (<c>PS2MC-1.ps2</c> on a Deck, <c>MC1.ps2</c> in EmuDeck for Windows), so in the scope it kept one
+/// game's saves on two machines apart. Named by its serial (<see cref="ConsoleTitles"/>), with its region beside
 /// the name (<see cref="ScanCandidate.Release"/>), as a game reads only its own serial's saves — else by the title the game wrote into the first one's <c>icon.sys</c>,
 /// which can be just the series (both Prince of Persia sequels say "Prince of Persia"). Either is the same on
 /// every machine. PCSX2's own per-game filter matches the same
@@ -76,7 +78,7 @@ public static class Pcsx2Saves
             // System data (BADATA-SYSTEM, BWNETCNF) carries no product code and belongs to no one game.
             .Where(x => x.Match.Success)
             .GroupBy(x => x.Match.Value, StringComparer.OrdinalIgnoreCase);
-        var realDir = EmuDeckRoots.RealPath(setup.Saves);
+        var realDir = Path.Combine(EmuDeckRoots.RealPath(setup.Saves), card.Name);
         foreach (var game in games)
         {
             var dirs = game.Select(x => x.Save).OrderBy(s => s.Name, StringComparer.Ordinal).ToList();
@@ -96,7 +98,7 @@ public static class Pcsx2Saves
                 EmulatorSystem: System,
                 EmulatorRom: prefix,
                 ViaEmuDeck: setup.EmuDeck,
-                IncludeGlobs: [$"{card.Name}/{prefix}*/**"],
+                IncludeGlobs: [$"{prefix}*/**"],
                 ExtraSaveDirs: states,
                 Release: ConsoleTitles.Release(System, [serial])), dirs.Max(LastWrite));
         }
