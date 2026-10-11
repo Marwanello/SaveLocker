@@ -54,6 +54,12 @@
     <MinVerTagPrefix>v</MinVerTagPrefix>
   </PropertyGroup>
 
+  <!-- The XAML-free core of the toast (XML, activation arguments, the pending-action file) is
+       asserted by tests/SaveLocker.Agent.Tests, which references this project. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="SaveLocker.Agent.Tests" />
+  </ItemGroup>
+
   <!-- Build the React agent UI before compiling C# -->
   <Target Name="BuildAgentUi" BeforeTargets="Build" Condition="Exists('$(MSBuildThisFileDirectory)..\..\agent-ui\package.json')">
     <Message Text="Building SaveLocker agent UI…" Importance="high" />

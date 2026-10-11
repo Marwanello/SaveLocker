@@ -1828,6 +1828,39 @@ fixes mutation-checked); `agent-ui/src/api-types.ts` regenerated (one addition, 
 
 ---
 
+**Notification follow-ups shipped (2026-10-11, branch `notification-follow-ups`, not merged — the last
+Group 7 leftovers, `tasks/notification-follow-ups/`).** Toast buttons that **act**: **Retry now** on a
+failed push and **Install now** on an available update, delivered through a per-user **COM activator**
+(`src/Agent/ToastActivation.cs`) — `HKCU` CLSID with `LocalServer32`, plus `CustomActivator` under the
+identity key (the Community Toolkit's shape; the shortcut's `ToastActivatorCLSID` is *not* what activates,
+measured). While the tray runs the click lands in it; when it is closed DCOM starts the exe with
+`-ToastActivated`, which leaves the click in `toast-action.json` and starts the tray. A rig gets its own
+per-port CLSID, its own Start-menu shortcut (`SaveLocker Test <port>`, written by `up`, removed by
+`clean`) and registry keys; `clean` now **verifies** the state root is actually gone instead of printing
+"removed" over the elevated-state leftovers, and `Get-TestTray` also sees an apphost-started tray.
+**Verified live through `testenv`**, not just built: a real mouse click on a real toast's **Retry now**
+retried a 413-rejected push (`pushed new version.`); **Install now** downloaded, SHA-verified and ran a
+stand-in package with `/SILENT /FORCECLOSEAPPLICATIONS /NORESTART` and the tray exited as designed; with
+the tray closed, DCOM's host started it and the retried push succeeded. Two bugs were found only by
+running it (both fixed, both in [[Gotchas]] → Windows notifications): a rig's `LocalServer32` first
+omitted `--config`, so a click with the tray closed loaded the **installed** config and started the
+installed agent once — it was stopped immediately, the one log it wrote lives in
+`%PROGRAMDATA%\SaveLocker\agent.log`, and the `LastUpdateCheck` it refreshed was reset; and that host
+logged to the installed agent's log for the same reason. Unit tests: the 67 notification ones pass
+(new: action-argument parsing incl. hostile shapes, the toast XML's acting action, the pending-action
+file, the identity/CLSID split); the full suite still carries one **pre-existing, machine-specific**
+failure worth its own fix: `ArcadeSavesTests.Supermodel_nvram…` reads the *real* machine's EmuDeck
+gamelist (`GamelistXml.Find`'s `Standalone` branch adds `%APPDATA%\EmuDeck\…\model3\gamelist.xml`), which
+names `lemans24` and beats the test's expectation — CI passes; this box does not. **The `CsWinRTIncludes`
+size idea was measured and changed nothing** (173.1 MB publish, `Microsoft.Windows.SDK.NET.dll` 23.73 MB
+with and without it; the property is for projection authoring, and `Microsoft.Windows.UI.Xaml.dll` is not
+in this toolchain's output at all). **Next action for this item:** merge, then the one manual check that
+is not testenv's — run the installer once and look at a real toast's header (steps:
+`tasks/notification-follow-ups/verification.md`). Release notes must cover: toast buttons that act
+(Retry now / Install now).
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

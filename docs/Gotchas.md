@@ -307,14 +307,39 @@ documentation that was found. Read before touching the presenter.
   key from an older `api-token`, still opens the screen, just in the browser. The raise must come from the
   page, after it loads: raised while `/open` is still answering, the window lands first and the browser tab
   covers it. `AgentWindow.RaiseToFront` needs the Alt-key trick + TopMost toggle because the browser is already
-  in front and Windows refuses a background process a plain Activate(). A richer button needs a COM activator + a shortcut carrying
-  `ToastActivatorCLSID` ([[Backlog]]). Don't rebuild the scheme.
+  in front and Windows refuses a background process a plain Activate(). A button that **acts** no longer needs
+  the link route at all — see the COM-activator bullet below. Don't rebuild the scheme.
+- **A button that acts is a COM activator, and it does not need the shortcut** (built and measured on
+  2026-10-11, tasks/notification-follow-ups; `src/Agent/ToastActivation.cs`). The Community Toolkit's
+  `DesktopNotificationManagerCompat` shape is what works on unpackaged desktop apps: a per-user
+  `HKCU\Software\Classes\AppUserModelId\<aumid>` value **`CustomActivator` = `{clsid}`** naming a
+  `HKCU\Software\Classes\CLSID\<clsid>` whose **`LocalServer32` default value is `"<exe>" -ToastActivated`**.
+  The toast action is an `<action>` with **no `activationType`** ("foreground"); while the tray runs it
+  receives the click through a class object registered with `CoRegisterClassObject(CLSCTX_LOCAL_SERVER,
+  REGCLS_MULTIPLEUSE)` (register it on a dedicated **MTA** thread — an STA registration would need a
+  message pump the activation host does not have); when the tray is closed, DCOM starts `LocalServer32`
+  with `-ToastActivated` and the exe's host mode serves the click, leaves it in `<state>\toast-action.json`
+  and starts the tray. A rig gets its **own deterministic CLSID per port** (the port in the CLSID's first
+  two bytes), so it can never overwrite the installed agent's registration. The shortcut's
+  `ToastActivatorCLSID` is what the *installer* stamps; it is not what makes a rig's activation work.
+  The [`IPropertyStore` route to write it on a `.lnk`](https://learn.microsoft.com/en-us/windows/win32/properties/props-system-appusermodel-toastactivatorclsid)
+  needs `SHGetPropertyStoreFromParsingName` + `SetValue` (`VT_LPWSTR` for the AUMID, `VT_CLSID` for this) —
+  `WScript.Shell` cannot set AppUserModel properties; `testenv.ps1` carries the shim.
+- **A DCOM-launched host inherits no environment — everything it needs must be on its command line.**
+  `LocalServer32` for a non-default identity must carry `--config <path>`, or the host loads
+  `%PROGRAMDATA%`'s config and starts the **installed** agent when a rig's toast is clicked (measured the
+  hard way: compare against the *env-free* default, never against `AgentConfig.DefaultConfigPath` inside a
+  process that already has `SAVELOCKER_STATE_ROOT` set). `AgentLogger.LogPath` is a `static readonly` from
+  `DefaultDir` at first use, so the host sets `SAVELOCKER_STATE_ROOT` from its `--config` argument before
+  its first log line. And a host-started tray is the **apphost exe**, not `dotnet <dll>` — anything that
+  finds test trays by process command line must match both shapes (`testenv.ps1`'s `Get-TestTray` does).
 - **The header's name and icon come from a Start-menu shortcut that carries the toast's AUMID.** With one, the
   header read the shortcut's name and the exe's icon; without, the raw AUMID string and no icon. An HKCU
   `AppUserModelId\<id>` key with `DisplayName`/`IconUri` and `SetCurrentProcessExplicitAppUserModelID` were
   both tried and changed *nothing*. So the AUMID string is chosen to be readable (`SaveLocker`,
   `SaveLocker.Test.<port>`), and `installer/SaveLocker.iss` stamps `AppUserModelID` on the shortcut
-  (`run-appearance-consistency-tests` ties the two). A rig has no shortcut, so it shows the AUMID.
+  (`run-appearance-consistency-tests` ties the two). `testenv.ps1 up` now writes a `SaveLocker Test <port>`
+  shortcut for the rig (removed by `clean`), so a rig's toast header reads like an installed one's.
 - **A toast's logo file must be in `%TEMP%`.** The toast is drawn by an AppContainer process, which reads
   only where *ALL APPLICATION PACKAGES* has access. The agent's state dir is ACL-locked on purpose (WA-03) and
   a plain folder under `%LOCALAPPDATA%` is not readable either — in both the file existed, right size and
