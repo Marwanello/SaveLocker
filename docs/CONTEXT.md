@@ -1933,16 +1933,16 @@ commit, so this session did not touch it: run `testenv clean` first.
 - **Console Sync all names every failing machine and its reason**, not the first plus "(+N more)".
 - `unverified-ui-surfaces` (Heroic store sub-chips) retired as verified; all eight task folders moved
   to `docs/tasks/_done/`, and [[Backlog]] no longer lists any of them.
-Verified: `run-console-security-tests` **364/364** (was 308; the +56 are this batch's checks,
-including a stale `run-local-api-tests` candidate-folder check whose expectation predated
-`SavePathGuard` — it now asserts the user-profile refusal plus a real folder accepted);
-`run-local-api-tests` **124/124** (`SL_LOCALAPI_PORT=5191` — another worktree's tray held :5188);
-`run-agent-tests` 47/47; `run-delta-upload-tests` 33/33; `run-health-tests` 33/33; xunit **352** (351
-pass — rebased onto PR #62, whose `SaveFileTreeServerTests` registers against a shared server one test
-locks, so its registration now carries the admin password the flipped default requires; the remaining
-failure, `ArcadeSavesTests.Supermodel_nvram_is_a_game_named_from_games_xml_with_its_states` expects
-lower-case `lemans24` but gets `Le Mans 24` — confirmed to fail identically with this branch's changes
-stashed, so it is `main`'s, not this batch's); `openapi.json` + `web/src/api-types.ts` regenerated
+Verified on the final tree (PRs #62 and #63 merged in; `Backlog.md`'s only conflict resolved by
+keeping this batch's removals plus #63's emulator-progress line):
+`run-console-security-tests` **364/364** (was 308; the +56 are this batch's checks, including a stale
+`run-local-api-tests` candidate-folder check whose expectation predated `SavePathGuard` — it now
+asserts the user-profile refusal plus a real folder accepted); `run-local-api-tests` **127/127**
+(`SL_LOCALAPI_PORT` moves it off :5188 when another worktree's rig holds that);
+`run-agent-tests` 47/47; `run-delta-upload-tests` 33/33; `run-health-tests` 33/33; xunit
+**397/397** — all green, including #62's `SaveFileTreeServerTests`, whose shared-server registration
+now carries the admin password the flipped default requires, and the `ArcadeSavesTests.Supermodel_…`
+casing failure #61 had carried (fixed by #63); `openapi.json` + `web/src/api-types.ts` regenerated
 (additions only); `web` build + lint clean; full solution builds. **Not yet run on real hardware** —
 the testenv walkthrough is in this session's report.
 
