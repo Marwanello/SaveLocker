@@ -1398,7 +1398,7 @@ static string PathKeyOf(string? path) =>
 // refuses the request instead of creating a half-defined game. An agent's extra folders must be templates
 // (SyncService.AgentTemplateError): it is defining them for every machine.
 static string? ValidateNewGameFolders(CreateGameRequest req, bool fromAgent = false) =>
-    GlobConfig.ValidateIncludes(req.IncludeGlobs) ?? GlobConfig.ValidateExtraPaths(req.ExtraPaths) ??
+    GameReleaseDto.Validate(req.Release) ?? GlobConfig.ValidateIncludes(req.IncludeGlobs) ?? GlobConfig.ValidateExtraPaths(req.ExtraPaths) ??
     (fromAgent ? req.ExtraPaths?.Select(SyncService.AgentTemplateError).FirstOrDefault(e => e is not null) : null);
 
 // A refusal the caller can act on (a key taken or retired, the same folder already there) is a 409 with a

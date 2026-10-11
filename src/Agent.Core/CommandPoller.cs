@@ -167,6 +167,13 @@ public sealed class CommandPoller : IDisposable
                     changed = true;
                 }
 
+                // Which release it is — region, game IDs — as the server keeps it, for the Games pages.
+                if (!GameReleaseDto.Same(local.Release, sg.Release))
+                {
+                    local.Release = sg.Release;
+                    changed = true;
+                }
+
                 // Server now has a stored path for this machine → apply it (highest authority).
                 // "Highest authority" is not "unconditionally trusted": this is the one path source
                 // with no local confirmation step at all, so a mistaken or hostile console value
@@ -252,6 +259,7 @@ public sealed class CommandPoller : IDisposable
                 GameId = sg.Id,
                 Name = sg.Name,
                 ManifestKey = sg.ManifestKey,
+                Release = sg.Release,
                 SaveDirectory = dir ?? "",
                 ExcludeGlobs = (sg.ExcludeGlobs ?? Array.Empty<string>()).ToList()
             };

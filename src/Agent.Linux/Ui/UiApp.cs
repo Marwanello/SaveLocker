@@ -1389,12 +1389,13 @@ sealed partial class UiApp
                         // missing a folder (e.g. untracked then re-adopted while its conflict stayed
                         // open) — the trailing badge names both so the folder problem stays visible
                         // instead of disappearing behind the conflict.
-                        var pressed = Widgets.ListRow($"g{g.Name}", g.Name,
+                        // By id: two releases of one game share its name, told apart by the region beside it.
+                        var pressed = Widgets.ListRow($"g{g.GameId}", g.Name,
                             conflicted ? "Save conflict - pick which one to keep"
                                 : missing ? "No save folder set" : g.SaveDirectory,
                             conflicted || missing ? Icons.AlertTriangle : Icons.Folder,
                             trailing: conflicted && missing ? "conflict + needs setup"
-                                : conflicted ? "conflict" : missing ? "needs setup" : null,
+                                : conflicted ? "conflict" : missing ? "needs setup" : g.Release?.Region,
                             trailingColour: (conflicted || missing) ? Theme.Watch : null,
                             chevron: true);
                         // A conflict is the decision to make; otherwise a row opens the game's own page.
@@ -1934,7 +1935,7 @@ sealed partial class UiApp
         Widgets.Text(c.Name, alreadyTracked ? Theme.Alpha(Theme.Safe, 0.85f) : Theme.Fg, Theme.BodyStrong);
         ImGui.SameLine(0, Theme.Space.Sm);
         ImGui.AlignTextToFramePadding();
-        Widgets.Text($"[{c.Source}]", Theme.Dim, Theme.Caption);
+        Widgets.Text(c.Release?.Region is { } region ? $"[{c.Source}] {region}" : $"[{c.Source}]", Theme.Dim, Theme.Caption);
 
         if (alreadyTracked)
         {

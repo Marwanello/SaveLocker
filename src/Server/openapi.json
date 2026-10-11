@@ -4549,6 +4549,16 @@
             "items": {
               "$ref": "#/components/schemas/SavePathDto"
             }
+          },
+          "release": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/GameReleaseDto"
+              }
+            ]
           }
         }
       },
@@ -4917,6 +4927,57 @@
             "items": {
               "type": "string"
             }
+          },
+          "release": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/GameReleaseDto"
+              }
+            ]
+          }
+        }
+      },
+      "GameReleaseDto": {
+        "required": [
+          "console"
+        ],
+        "type": "object",
+        "properties": {
+          "console": {
+            "type": "string"
+          },
+          "region": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "gameIds": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "languages": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "namedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

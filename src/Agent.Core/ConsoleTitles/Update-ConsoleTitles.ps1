@@ -3,10 +3,12 @@
   Rebuilds console-titles.tsv.gz — game serial -> title, from libretro-database's Redump dats (CC BY-SA 4.0).
 
 .DESCRIPTION
-  One line per serial: "<system>`t<serial>`t<title>", the title being Redump's name without its language list,
-  revision, disc number or EDC tag — the region stays: a USA save and a European one are different saves
-  (a PS2 game reads only the save folder of its own serial). A demo, beta or prototype only names a serial no
-  retail disc has. Run it from anywhere; it writes next to itself and updates NOTICE.md's source commit.
+  One line per serial: "<system>`t<serial>`t<title>`t<region>`t<languages>". The title is Redump's name without
+  its region, language list, revision, disc number or EDC tag; the region ("USA", "Europe, Australia") and the
+  languages ("En,Fr,De", empty when Redump lists none) are their own columns — a game's name says which game,
+  the region which release, and a USA save and a European one are different saves (a PS2 game reads only the
+  save folder of its own serial). A demo, beta or prototype only names a serial no retail disc has. Run it from
+  anywhere; it writes next to itself and updates NOTICE.md's source commit.
 
 .PARAMETER Commit
   The libretro-database commit to read (default: master, resolved to its SHA so NOTICE.md pins it).
@@ -35,7 +37,14 @@ function Get-Keys([string]$system, [string]$serials) {
     }
 }
 
-$dropTags = '\s*\((?:[A-Z][a-z](?:-[A-Za-z]+)?(?:,[A-Z][a-z](?:-[A-Za-z]+)?)*|Rev [^)]*|v\d[^)]*|Disc \d+|EDC|Track \d+)\)'
+$languages = '\s*\(([A-Z][a-z](?:-[A-Za-z]+)?(?:,[A-Z][a-z](?:-[A-Za-z]+)?)*)\)'
+$dropTags = '\s*\((?:Rev [^)]*|v\d[^)]*|Disc \d+|EDC|Track \d+)\)'
+# Redump's region names: the first parenthesised group made only of these is the release's region.
+$regionNames = 'USA|Europe|Japan|World|Asia|Australia|Brazil|Canada|China|France|Germany|Hong Kong|Italy|Korea|' +
+    'Netherlands|Spain|Sweden|Taiwan|UK|Russia|Scandinavia|Latin America|Portugal|Poland|Greece|Austria|' +
+    'Switzerland|Belgium|Denmark|Finland|Norway|India|Ireland|Mexico|New Zealand|South Africa|Croatia|Turkey|' +
+    'Israel|Argentina|United Arab Emirates|Czech|Hungary|Ukraine|Singapore|Thailand|Indonesia|Malaysia|Philippines|Unknown'
+$region = "\s*\(((?:$regionNames)(?:, (?:$regionNames))*)\)"
 $notRetail = '\((?:Demo|Beta|Proto|Kiosk|Sample|Trial|Taikenban|Preview|Promo|Debug|Not for Resale)[^)]*\)'
 
 $lines = New-Object System.Collections.Generic.List[string]
@@ -49,17 +58,23 @@ foreach ($set in $sets) {
         $serial = [regex]::Match($body, '(?m)^\s*serial "(.*)"\s*$').Groups[1].Value
         if (-not $name -or -not $serial) { continue }
         $rank = if ($name -match $notRetail) { 1 } else { 0 }
-        $title = ([regex]::Replace($name, $dropTags, '') -replace '\s+', ' ').Trim()
+        $where = [regex]::Match($name, $region)
+        $langs = [regex]::Match($name, $languages)
+        $title = $name
+        if ($where.Success) { $title = $title.Remove($where.Index, $where.Length) }
+        $title = [regex]::Replace([regex]::Replace($title, $languages, ''), $dropTags, '')
+        $title = ($title -replace '\s+', ' ').Trim()
+        $row = "$title`t$(if ($where.Success) { $where.Groups[1].Value })`t$(if ($langs.Success) { $langs.Groups[1].Value })"
         foreach ($key in (Get-Keys $set.System $serial | Select-Object -Unique)) {
             $old = $best[$key]
             if ($null -eq $old -or $rank -lt $old.Rank -or
-                ($rank -eq $old.Rank -and ($title.Length -lt $old.Title.Length -or
-                    ($title.Length -eq $old.Title.Length -and [string]::CompareOrdinal($title, $old.Title) -lt 0)))) {
-                $best[$key] = @{ Rank = $rank; Title = $title }
+                ($rank -eq $old.Rank -and ($name.Length -lt $old.Name.Length -or
+                    ($name.Length -eq $old.Name.Length -and [string]::CompareOrdinal($name, $old.Name) -lt 0)))) {
+                $best[$key] = @{ Rank = $rank; Name = $name; Row = $row }
             }
         }
     }
-    foreach ($key in ($best.Keys | Sort-Object -CaseSensitive)) { $lines.Add("$($set.System)`t$key`t$($best[$key].Title)") }
+    foreach ($key in ($best.Keys | Sort-Object -CaseSensitive)) { $lines.Add("$($set.System)`t$key`t$($best[$key].Row)") }
     Write-Host ("{0,-4} {1,6} serials" -f $set.System, $best.Count)
 }
 

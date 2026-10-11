@@ -149,7 +149,10 @@ public sealed record ScanCandidate(
     /// (<see cref="MemoryCards.Shared"/>), where restoring one game's version restores them all. Listed so the user
     /// learns why their PS2 saves are not offered; never enrolled. Null for everything that can be added.
     /// </summary>
-    string? NotSyncable = null)
+    string? NotSyncable = null,
+    /// <summary>Which release of a console game the save is (<see cref="ConsoleTitles.Release"/>): its region and
+    /// game IDs, kept out of <see cref="Name"/>. Null for anything but a disc console's save.</summary>
+    GameReleaseDto? Release = null)
 {
     /// <summary>
     /// What a scanner merges duplicates on: the normalised name, so one game found by two sources is one

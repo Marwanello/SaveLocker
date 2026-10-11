@@ -58,8 +58,15 @@ public sealed class MemoryCardTests : IDisposable
         var found = Pcsx2Saves.Scan(new[] { new RomSaveFolders(P("saves/pcsx2/saves"), P("saves/pcsx2/states"), EmuDeck: true) });
 
         // A serial Redump has no disc of is named by the title the game wrote into its icon.sys.
-        Assert.Equal(new[] { "Grand Theft Auto III (Europe)", "Homebrew", "Kingdom Hearts II (USA)" }, found.Select(c => c.Name));
+        // The region is the release's, beside the name.
+        Assert.Equal(new[] { "Grand Theft Auto III", "Homebrew", "Kingdom Hearts II" }, found.Select(c => c.Name));
+        Assert.Equal(new[] { "Europe", null, "USA" }, found.Select(c => c.Release?.Region));
         var kh = found[2];
+        Assert.Equal(("PlayStation 2", "Redump"), (kh.Release!.Console, kh.Release.NamedBy));
+        Assert.Equal(new[] { "SLUS-21005" }, kh.Release.GameIds);
+        // Homebrew: the console and its game ID, nothing Redump would know.
+        Assert.Equal(new GameReleaseDto("PlayStation 2"), found[1].Release! with { GameIds = null });
+        Assert.Equal(new[] { "SLUS-99999" }, found[1].Release!.GameIds);
         Assert.Equal(("PCSX2", "ps2", "BASLUS-21005"), (kh.EmulatorName, kh.EmulatorSystem, kh.EmulatorRom));
         Assert.Equal(new[] { "Mcd001.ps2/BASLUS-21005*/**" }, kh.IncludeGlobs);
         Assert.Null(kh.NotSyncable);
@@ -93,27 +100,32 @@ public sealed class MemoryCardTests : IDisposable
 
         var found = Pcsx2Saves.Scan(new[] { new RomSaveFolders(P("mc"), null) });
 
+        // One name for both Warrior Withins: the region tells them apart.
         Assert.Equal(
-            new[]
+            new (string, string?, string)[]
             {
-                ("Prince of Persia - The Two Thrones (USA)", "Mcd001.ps2/BASLUS-21287*/**"),
-                ("Prince of Persia - Warrior Within (Europe, Australia)", "Mcd001.ps2/BESLES-52822*/**"),
-                ("Prince of Persia - Warrior Within (USA)", "Mcd001.ps2/BASLUS-21022*/**"),
+                ("Prince of Persia - The Two Thrones", "USA", "Mcd001.ps2/BASLUS-21287*/**"),
+                ("Prince of Persia - Warrior Within", "USA", "Mcd001.ps2/BASLUS-21022*/**"),
+                ("Prince of Persia - Warrior Within", "Europe, Australia", "Mcd001.ps2/BESLES-52822*/**"),
             },
-            found.Select(c => (c.Name, Assert.Single(c.IncludeGlobs!))));
+            found.Select(c => (c.Name, c.Release?.Region, Assert.Single(c.IncludeGlobs!))));
+        Assert.Equal(new[] { "En", "Fr", "Es" }, found[1].Release!.Languages);
     }
 
     [Fact]
     public void Console_titles_take_every_spelling_of_a_serial_and_know_nothing_of_another_console()
     {
-        Assert.Equal("Prince of Persia - The Two Thrones (USA)", ConsoleTitles.For("ps2", "SLUS-21287"));
-        Assert.Equal("Prince of Persia - The Two Thrones (USA)", ConsoleTitles.For("ps2", "slus21287"));
-        Assert.Equal("Prince of Persia - The Two Thrones (USA)", ConsoleTitles.For("ps2", "SLUS_212.87"));
-        Assert.Equal("Final Fantasy VII (USA)", ConsoleTitles.For("psx", "SCUS-94163"));
-        Assert.Equal("Super Smash Bros. Melee (USA)", ConsoleTitles.For("gc", "GALE01"));
-        Assert.Equal("Super Smash Bros. Melee (Europe, Australia)", ConsoleTitles.For("gc", "GALP"));
-        Assert.Equal("Metroid Prime Trilogy (USA)", ConsoleTitles.For("wii", "R3ME"));
-        Assert.Equal("Ridge Racer 7 (USA)", ConsoleTitles.For("ps3", "BLUS-30001"));
+        static (string, string?)? Of(string system, string serial) =>
+            ConsoleTitles.For(system, serial) is { } t ? (t.Title, t.Region) : null;
+        Assert.Equal(("Prince of Persia - The Two Thrones", "USA"), Of("ps2", "SLUS-21287"));
+        Assert.Equal(("Prince of Persia - The Two Thrones", "USA"), Of("ps2", "slus21287"));
+        Assert.Equal(("Prince of Persia - The Two Thrones", "USA"), Of("ps2", "SLUS_212.87"));
+        Assert.Equal(("Final Fantasy VII", "USA"), Of("psx", "SCUS-94163"));
+        Assert.Equal(("Super Smash Bros. Melee", "USA"), Of("gc", "GALE01"));
+        Assert.Equal(("Super Smash Bros. Melee", "Europe, Australia"), Of("gc", "GALP"));
+        Assert.Equal(("Metroid Prime Trilogy", "USA"), Of("wii", "R3ME"));
+        Assert.Equal(("Ridge Racer 7", "USA"), Of("ps3", "BLUS-30001"));
+        Assert.Equal(new[] { "En", "Fr", "De", "Es", "It", "Nl" }, ConsoleTitles.For("ps2", "SLES-52822")!.Languages);
         Assert.Null(ConsoleTitles.For("psx", "SLUS-21287"));
         Assert.Null(ConsoleTitles.For("ps2", "SLUS-99999"));
         Assert.Null(ConsoleTitles.For("ps2", "BADATA"));
@@ -190,11 +202,13 @@ public sealed class MemoryCardTests : IDisposable
 
         var found = DuckStationSaves.Scan(new[] { new RomSaveFolders(P("ds/saves"), P("ds/states"), EmuDeck: true) });
 
-        // Named by the serial its saves carry, region and all; one Redump has no disc of by the card's own name.
+        // Named by the serial its saves carry, the region beside it; one Redump has no disc of by the card's own name.
         Assert.Equal(
-            new[] { "Castlevania - Symphony of the Night (USA)", "Crash Bandicoot (USA)", "Final Fantasy VII (USA)", "Homebrew" },
+            new[] { "Castlevania - Symphony of the Night", "Crash Bandicoot", "Final Fantasy VII", "Homebrew" },
             found.Select(c => c.Name));
+        Assert.Equal(new[] { "USA", "USA", "USA", null }, found.Select(c => c.Release?.Region));
         var ff7 = found[2];
+        Assert.Equal(new[] { "SCUS-94163" }, ff7.Release!.GameIds);
         Assert.Equal(("DuckStation", "psx", "Final Fantasy VII (USA)"), (ff7.EmulatorName, ff7.EmulatorSystem, ff7.EmulatorRom));
         Assert.Equal(new[] { "Final Fantasy VII (USA)_1.mcd", "Final Fantasy VII (USA)_2.mcd" }, ff7.IncludeGlobs);
         Assert.Equal(new[] { "SCUS-94163_*.sav" }, Assert.Single(ff7.ExtraSaveDirs!).IncludeGlobs);
@@ -239,7 +253,7 @@ public sealed class MemoryCardTests : IDisposable
 
         var found = DuckStationSaves.Scan(new[] { new RomSaveFolders(P("ds/saves"), P("ds/states")) });
 
-        Assert.Equal(new[] { "Metal Gear Solid (USA)", "Suikoden II (USA)" }, found.Select(c => c.Name));
+        Assert.Equal(new[] { "Metal Gear Solid", "Suikoden II" }, found.Select(c => c.Name));
         Assert.All(found, c => Assert.Null(c.NotSyncable));
         Assert.Equal(new[] { "SLUS-00594_*.sav", "SLUS-00776_*.sav" }, Assert.Single(found[0].ExtraSaveDirs!).IncludeGlobs);
         // The imported game's states are its own game's, never also this one's.
@@ -285,8 +299,10 @@ public sealed class MemoryCardTests : IDisposable
 
         // One Redump has no disc of is named by the comment the game wrote into its save.
         Assert.Equal(
-            new[] { "Homebrew", "Metroid Prime (USA)", "Super Smash Bros. Melee (USA)", "Zelda no Densetsu - Kaze no Takt (Japan)" },
+            new[] { "Homebrew", "Metroid Prime", "Super Smash Bros. Melee", "Zelda no Densetsu - Kaze no Takt" },
             found.Select(c => c.Name));
+        Assert.Equal(new[] { null, "USA", "USA", "Japan" }, found.Select(c => c.Release?.Region));
+        Assert.Equal(("GameCube", "GM8E01"), (found[1].Release!.Console, Assert.Single(found[1].Release!.GameIds!)));
         var prime = found[1];
         Assert.Equal(("Dolphin", "gc", "GM8E01"), (prime.EmulatorName, prime.EmulatorSystem, prime.EmulatorRom));
         Assert.Equal(new[] { "01-GM8E-*.gci" }, prime.IncludeGlobs);
@@ -311,7 +327,11 @@ public sealed class MemoryCardTests : IDisposable
 
         var found = DolphinSaves.Scan(new[] { DolphinSetup("d") });
 
-        Assert.Equal(new[] { "A WiiWare Game", "Metroid - Other M (USA)", "Metroid Prime Trilogy (USA)" }, found.Select(c => c.Name));
+        Assert.Equal(new[] { "A WiiWare Game", "Metroid - Other M", "Metroid Prime Trilogy" }, found.Select(c => c.Name));
+        // WiiWare is no disc Redump lists: no region, its game ID all the same.
+        Assert.Equal(new[] { null, "USA", "USA" }, found.Select(c => c.Release?.Region));
+        Assert.Equal(new GameReleaseDto("Wii"), found[0].Release! with { GameIds = null });
+        Assert.Equal("WABE", Assert.Single(found[0].Release!.GameIds!));
         var trilogy = found[2];
         Assert.Equal(("wii", "R3ME"), (trilogy.EmulatorSystem, trilogy.EmulatorRom));
         Assert.Equal(P("d/Wii/title"), trilogy.SuggestedSaveDir);
@@ -366,6 +386,31 @@ public sealed class MemoryCardTests : IDisposable
     }
 
     [Fact]
+    public void Another_regions_release_takes_the_same_name_and_never_joins()
+    {
+        Bytes("mc/Mcd001.ps2/BASLUS-21022WW/icon.sys", F.IconSys("Prince of Persia", "Warrior Within"));
+        Text("mc/Mcd001.ps2/BASLUS-21022WW/save");
+        Bytes("mc/Mcd001.ps2/BESLES-52822WW/icon.sys", F.IconSys("Prince of Persia", "Warrior Within"));
+        Text("mc/Mcd001.ps2/BESLES-52822WW/save");
+        Text("mc/Mcd001.ps2/_pcsx2_superblock");
+        var found = Pcsx2Saves.Scan(new[] { new RomSaveFolders(P("mc"), null) });
+        var (usa, europe) = (found[0], found[1]);
+        var deck = new GameDto(Guid.NewGuid(), usa.Name, null, null, true, IncludeGlobs: usa.IncludeGlobs!.ToArray(),
+            Emulators: ["PCSX2"], Release: usa.Release);
+
+        // Another machine's USA save keeps the Deck's files: it joins the Deck's game.
+        Assert.True(Enroller.SameFiles(deck, usa));
+        Assert.Equal("Prince of Persia - Warrior Within", Enroller.ServerNameFor([deck], usa, []));
+        // The European disc's save takes the same name; the server keeps it apart by its region.
+        Assert.Equal("Prince of Persia - Warrior Within", Enroller.ServerNameFor([deck], europe, []));
+        var option = Assert.Single(EnrollLinks.For([deck], europe), o => o.GameId == deck.Id);
+        Assert.Equal((LinkKind.Blocked, "Another region"), (option.Kind, option.Badge));
+        // A game of the name with no region recorded (made before releases were) holds the name.
+        Assert.Equal("Prince of Persia - Warrior Within (PCSX2)",
+            Enroller.ServerNameFor([deck with { Release = null }], europe, []));
+    }
+
+    [Fact]
     public void A_same_files_server_game_from_another_emulator_is_not_the_same_game()
     {
         Bytes("p/Wii/title/00010000/52334d45/data/banner.bin", F.Banner("Metroid Prime Trilogy"));
@@ -377,7 +422,7 @@ public sealed class MemoryCardTests : IDisposable
         Assert.True(Enroller.SameFiles(Game(prime.Name, "Dolphin", "PrimeHack"), prime));
         // Made before sources were recorded, or by hand: open to any emulator, as before.
         Assert.True(Enroller.SameFiles(Game(prime.Name), prime));
-        Assert.Equal("Metroid Prime Trilogy (USA) (PrimeHack)",
+        Assert.Equal("Metroid Prime Trilogy (PrimeHack)",
             Enroller.ServerNameFor([Game(prime.Name, "Dolphin")], prime, prime.ExtraSaveDirs ?? []));
     }
 

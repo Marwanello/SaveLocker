@@ -10,8 +10,8 @@ namespace SaveLocker.Agent;
 /// <b>GameCube.</b> Dolphin's default Slot A is a GCI folder (<c>MAIN_SLOT_A</c> = <c>MemoryCardFolder</c>;
 /// <c>GC/USA/Card A</c> on the maintainer's Deck): one <c>.gci</c> file per save, named
 /// <c>&lt;maker&gt;-&lt;gamecode&gt;-&lt;file&gt;.gci</c> (<c>GCMemcardDirectory</c>). A game is its game ID's files in one
-/// card folder (scope <c>01-GM8E-*.gci</c>), named by its game code (<see cref="ConsoleTitles"/>, region included:
-/// GALE is Melee's USA disc, GALP the European), else by the comment the game wrote into the save. The raw card
+/// card folder (scope <c>01-GM8E-*.gci</c>), named by its game code (<see cref="ConsoleTitles"/>, its region beside
+/// the name: GALE is Melee's USA disc, GALP the European), else by the comment the game wrote into the save. The raw card
 /// (<c>GC/MemoryCardA.USA.raw</c>, Slot A = Memory Card) holds every game: listed as shared
 /// (<see cref="MemoryCards.DolphinFix"/>).
 /// </para>
@@ -92,8 +92,9 @@ public static class DolphinSaves
         {
             var first = game.OrderBy(x => x.File.Name, StringComparer.Ordinal).First().Header!;
             var title = game.OrderBy(x => x.File.Name, StringComparer.Ordinal).Select(x => x.Header!.Title).FirstOrDefault(t => t is not null);
-            yield return (Candidate(setup, ConsoleTitles.For("gc", first.GameCode) ?? title ?? first.GameId, first.GameId, "gc", realDir,
-                [$"{first.Maker}-{first.GameCode}-*.gci"], first.GameId), game.Max(x => x.File.LastWriteTimeUtc));
+            yield return (Candidate(setup, ConsoleTitles.For("gc", first.GameCode)?.Title ?? title ?? first.GameId, first.GameId, "gc", realDir,
+                [$"{first.Maker}-{first.GameCode}-*.gci"], first.GameId, ConsoleTitles.Release("gc", [first.GameId])),
+                game.Max(x => x.File.LastWriteTimeUtc));
         }
     }
 
@@ -111,15 +112,18 @@ public static class DolphinSaves
                 if (hex.Length != 8 || !File.Exists(banner)) continue;
                 var id = WiiGameId(hex);
                 var disc = type == "00010000" ? ConsoleTitles.For("wii", id) : null;
-                yield return (Candidate(setup, disc ?? BannerTitle(banner) ?? id ?? hex, id ?? hex, "wii", realDir,
-                    [$"{type}/{hex}/data/**"], id), LastWrite(data));
+                var release = ConsoleTitles.Release("wii", [id]);
+                yield return (Candidate(setup, disc?.Title ?? BannerTitle(banner) ?? id ?? hex, id ?? hex, "wii", realDir,
+                    [$"{type}/{hex}/data/**"], id, disc is null ? release! with { Region = null, Languages = null, NamedBy = null } : release),
+                    LastWrite(data));
             }
         }
     }
 
     private static ScanCandidate Candidate(DolphinFolders setup, string name, string rom, string system, string dir,
-        IReadOnlyList<string> scope, string? stateId) =>
+        IReadOnlyList<string> scope, string? stateId, GameReleaseDto? release) =>
         new(name, dir, ScanSource.Emulator, HasSteamCloud: false,
+            Release: release,
             EmulatorName: setup.Emulator,
             EmulatorSystem: system,
             EmulatorRom: rom,

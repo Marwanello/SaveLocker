@@ -562,7 +562,7 @@ public sealed class AgentApiServer : IDisposable
                 g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray(), g.Alias,
                 SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()), g.PullBeforeLaunchEnabled,
                 g.HasSteamCloud, g.PushAfterExitEnabled, g.InstallDir, g.LastPushBytes, g.LastPushAt,
-                SaveFolderDto.Of(g), g.IsEnrolledHere ? g.Source : null))
+                SaveFolderDto.Of(g), g.IsEnrolledHere ? g.Source : null, g.Release, g.IncludeGlobs.FirstOrDefault()))
             .ToArray()).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
@@ -1695,7 +1695,8 @@ public sealed class AgentApiServer : IDisposable
             candidate.EmulatorRom,
             candidate.UntouchedSeed,
             candidate.NotSyncable,
-            GameSources.SystemLabel(candidate.EmulatorSystem))).ToArray();
+            GameSources.SystemLabel(candidate.EmulatorSystem),
+            candidate.Release?.Region)).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -1803,7 +1804,10 @@ public sealed record CandidateDto(
     string? NotSyncable = null,
     /// <summary>The console as people say it ("PS2", "GameCube"), from <see cref="EmulatorSystem"/> by
     /// <see cref="GameSources.SystemLabel"/> — the Add games Console row's chip label. Null when there is no system.</summary>
-    string? EmulatorConsole = null);
+    string? EmulatorConsole = null,
+    /// <summary>Which region's release a console game's save is ("USA", "Europe, Australia"), kept out of
+    /// <see cref="Name"/>; null when it is no disc console's save or Redump does not know its game ID.</summary>
+    string? Region = null);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the
@@ -1864,7 +1868,12 @@ public sealed record TrackedGameDto(
     SaveFolderDto[]? Paths = null,
     /// <summary>How this machine found the game; null when it was enrolled before sources were recorded,
     /// or is not set up here.</summary>
-    GameSourceDto? Source = null);
+    GameSourceDto? Source = null,
+    /// <summary>Which release of a console game it is (region, game IDs); null for any other game.</summary>
+    GameReleaseDto? Release = null,
+    /// <summary>The first of the primary folder's include patterns — the save's own files, in the details the
+    /// release chip opens; null for a game that keeps its whole folder.</summary>
+    string? SaveFiles = null);
 
 /// <summary>One save folder of a tracked game on this machine.</summary>
 /// <param name="Path">This machine's folder, or <c>""</c> when it is not mapped here — an unmapped

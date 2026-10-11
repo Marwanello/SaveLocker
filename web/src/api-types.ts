@@ -4204,6 +4204,7 @@ export interface components {
             suggestedSaveDir?: null | string;
             includeGlobs?: null | string[];
             extraPaths?: null | components["schemas"]["SavePathDto"][];
+            release?: null | components["schemas"]["GameReleaseDto"];
         };
         CreateSessionRequest: {
             password: null | string;
@@ -4290,6 +4291,14 @@ export interface components {
             extraPaths?: null | components["schemas"]["SavePathDto"][];
             machineSource?: null | components["schemas"]["GameSourceDto"];
             emulators?: null | string[];
+            release?: null | components["schemas"]["GameReleaseDto"];
+        };
+        GameReleaseDto: {
+            console: string;
+            region?: null | string;
+            gameIds?: null | string[];
+            languages?: null | string[];
+            namedBy?: null | string;
         };
         GameSourceDto: {
             kind: string;

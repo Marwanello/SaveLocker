@@ -132,7 +132,8 @@ public static class Enroller
                         IncludeGlobs: Scope(c.IncludeGlobs),
                         ExtraPaths: extras.Count == 0
                             ? null
-                            : extras.Select(e => new SavePathDto(e.Key, null, e.Template, Scope(e.IncludeGlobs))).ToArray()));
+                            : extras.Select(e => new SavePathDto(e.Key, null, e.Template, Scope(e.IncludeGlobs))).ToArray(),
+                        Release: c.Release));
                 }
                 catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
@@ -212,6 +213,7 @@ public static class Enroller
                         HasSteamCloud = c.HasSteamCloud,
                         InstallDir = c.InstallDir,
                         Source = GameSources.From(c),
+                        Release = game.Release ?? c.Release,
                         // Without this the Windows ProcessWatcher excludes the game outright, so lease,
                         // exit-push and the running-game pull refusal never run for anything enrolled
                         // through the UI. Only the CLI's --proc used to populate it. WA-08.
@@ -505,8 +507,8 @@ public static class Enroller
     /// <c>Games.xml</c>, a ScummVM description) can never split one game in two. Only the primary folder's
     /// scope decides: which OTHER folders a game has can differ between agent versions or after an add-path,
     /// and that must not make a second game of the same save. Else the first of <see cref="NamesFor"/> no game
-    /// has. Null when every name belongs to a different game. Order-independent across machines: whoever
-    /// enrolls a ROM first, the next machine finds it by its files, not by being first to a name.
+    /// has (<see cref="NameTaken"/>). Null when every name belongs to a different game. Order-independent across
+    /// machines: whoever enrolls a ROM first, the next machine finds it by its files, not by being first to a name.
     /// </summary>
     internal static string? ServerNameFor(IReadOnlyList<GameDto> server, ScanCandidate c, IReadOnlyList<DeclaredSavePath> extras)
     {
@@ -522,8 +524,23 @@ public static class Enroller
             if (same.OrderBy(g => SameFolders(g, c, extras) ? 0 : 1).ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
                     .FirstOrDefault() is { } other) return other.Name;
         }
-        return names.FirstOrDefault(n => !server.Any(g => Is(g, n)));
+        return names.FirstOrDefault(n => !NameTaken(server, n, c));
     }
+
+    /// <summary>
+    /// Does a server game hold <paramref name="name"/> against <paramref name="c"/>? Every game of the name does,
+    /// except another region's release of a console game (<see cref="OtherRegion"/>): the European Warrior Within
+    /// is "Prince of Persia - Warrior Within" as much as the USA one, and the server tells the two apart by region.
+    /// </summary>
+    internal static bool NameTaken(IEnumerable<GameDto> server, string name, ScanCandidate c) =>
+        server.Any(g => string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase) && !OtherRegion(g, c));
+
+    /// <summary>Both say which region's release they are, and they differ: a disc reads only its own region's
+    /// saves (its own game ID), so the two never join.</summary>
+    internal static bool OtherRegion(GameDto game, ScanCandidate c) =>
+        GameReleaseDto.RegionKey(game.Release?.Region) is { Length: > 0 } theirs &&
+        GameReleaseDto.RegionKey(c.Release?.Region) is { Length: > 0 } ours &&
+        !string.Equals(theirs, ours, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The folder has files, and none of them is in <paramref name="scope"/>.</summary>
     internal static bool NothingInScope(string dir, IEnumerable<string>? excludeGlobs, IReadOnlyList<string> scope)

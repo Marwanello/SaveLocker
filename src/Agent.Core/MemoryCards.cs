@@ -142,7 +142,7 @@ public static partial class MemoryCards
     {
         var key = TitleKey(cardTitle);
         return codes.Where(code => string.Equals(code, cardTitle, StringComparison.OrdinalIgnoreCase) ||
-                                   ConsoleTitles.For("psx", code) is { } t && TitleKey(t) == key).ToList();
+                                   ConsoleTitles.For("psx", code) is { } t && TitleKey(t.Title) == key).ToList();
     }
 
     private static string TitleKey(string title) => ManifestLoader.NormalizeName(RomNames.CleanTitle(title));

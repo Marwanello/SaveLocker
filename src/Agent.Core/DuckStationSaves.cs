@@ -7,8 +7,8 @@ namespace SaveLocker.Agent;
 /// (<c>Card1Type = PerGameTitle</c>) — is a card per game, <c>&lt;title&gt;_&lt;slot&gt;.mcd</c>, named after the game
 /// database's title (<c>System::GetGameMemoryCardPath</c>), or <c>&lt;serial&gt;_&lt;slot&gt;.mcd</c> per serial. Each is
 /// a game of its own, a file named after the game in a folder every game shares (D4 shape 1), and called by the
-/// serial its saves carry (<see cref="ConsoleTitles"/>) — region included, which a card named by serial lacks and a
-/// title card's cleaned name would lose — else by the card's own name. The shared card
+/// serial its saves carry (<see cref="ConsoleTitles"/>), its region beside the name (<see cref="ScanCandidate.Release"/>),
+/// else by the card's own name. The shared card
 /// <c>shared_card_&lt;slot&gt;.mcd</c>, or any card holding more than one game's saves, is listed as shared, with how to
 /// switch (<see cref="MemoryCards.DuckStationFix"/>).
 /// <para>
@@ -70,7 +70,7 @@ public static partial class DuckStationSaves
                     ? [new DeclaredSavePath(RomSaves.StatesKey, EmuDeckRoots.RealPath(s), StateGlobsFor(codes))]
                     : null;
                 found.Add((new ScanCandidate(
-                    Name: codes.Select(code => ConsoleTitles.For(System, code)).FirstOrDefault(t => t is not null) ??
+                    Name: codes.Select(code => ConsoleTitles.For(System, code)?.Title).FirstOrDefault(t => t is not null) ??
                           RomNames.CleanTitle(title),
                     SuggestedSaveDir: realDir,
                     Source: ScanSource.Emulator,
@@ -80,7 +80,8 @@ public static partial class DuckStationSaves
                     EmulatorRom: title,
                     ViaEmuDeck: setup.EmuDeck,
                     IncludeGlobs: SaveGlobsFor(title),
-                    ExtraSaveDirs: states), file.LastWriteTimeUtc));
+                    ExtraSaveDirs: states,
+                    Release: ConsoleTitles.Release(System, codes)), file.LastWriteTimeUtc));
             }
         }
 

@@ -55,6 +55,10 @@ public static class EnrollLinks
                 ? new LinkOption(Game, LinkKind.Blocked, g.Name, g.Id,
                     $"Keeps the same files, saved with {string.Join(", ", g.Emulators!)}. Saves from different emulators are kept as separate games.",
                     "Another emulator")
+                : Enroller.OtherRegion(g, c)
+                ? new LinkOption(Game, LinkKind.Blocked, g.Name, g.Id,
+                    $"The {g.Release!.Region} release. A disc reads only its own region’s saves, so each region is its own game.",
+                    "Another region")
                 : new LinkOption(Game, LinkKind.Blocked, g.Name, g.Id,
                     g.IncludeGlobs is { Length: > 0 }
                         ? $"Keeps {Files(g)}, not {file}. Linking saves with different file names comes in a later update."
@@ -66,7 +70,7 @@ public static class EnrollLinks
     /// <summary>The name a save kept as its own game takes: the first of <see cref="Enroller.NamesFor"/> no
     /// server game has. Null when every one is taken.</summary>
     public static string? SeparateName(IReadOnlyList<GameDto> server, ScanCandidate c) =>
-        Enroller.NamesFor(c).FirstOrDefault(n => !server.Any(g => Is(g, n)));
+        Enroller.NamesFor(c).FirstOrDefault(n => !Enroller.NameTaken(server, n, c));
 
     /// <summary>
     /// The server name a candidate takes under the user's <paramref name="choice"/>, or the reason it cannot

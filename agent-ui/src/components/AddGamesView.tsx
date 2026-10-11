@@ -521,6 +521,8 @@ export function AddGamesView({ onEnrolled }: Props) {
                 <span className="sl-check-row__title">{c.name}</span>
                 <Chip>{c.source}</Chip>
                 {c.emulatorName && <Chip>{c.emulatorName}</Chip>}
+                {/* A console release's region, kept out of the name: two regions' saves are two games of one name. */}
+                {c.region && <Chip>{c.region}</Chip>}
                 {/* The save file's own name: two ROMs (two regions, two consoles) can share a title. */}
                 {c.emulatorRom && c.emulatorRom !== c.name && <Chip>{c.emulatorRom}</Chip>}
                 {/* Only when it adds something the source does not already say. */}

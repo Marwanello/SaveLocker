@@ -2917,6 +2917,7 @@ export interface components {
             untouchedSeed: boolean;
             notSyncable?: null | string;
             emulatorConsole?: null | string;
+            region?: null | string;
         };
         CandidateLinksDto: {
             /** Format: int32 */
@@ -3094,6 +3095,7 @@ export interface components {
             extraPaths?: null | components["schemas"]["SavePathDto"][];
             machineSource?: null | components["schemas"]["GameSourceDto"];
             emulators?: null | string[];
+            release?: null | components["schemas"]["GameReleaseDto"];
         };
         GameFilesDto: {
             folders: components["schemas"]["GameFolderFilesDto"][];
@@ -3115,6 +3117,13 @@ export interface components {
             other: components["schemas"]["OtherFileDto"][];
             /** Format: int32 */
             otherCount: number;
+        };
+        GameReleaseDto: {
+            console: string;
+            region?: null | string;
+            gameIds?: null | string[];
+            languages?: null | string[];
+            namedBy?: null | string;
         };
         GameSourceDto: {
             kind: string;
@@ -3389,6 +3398,8 @@ export interface components {
             lastPushAt?: null | string;
             paths?: null | components["schemas"]["SaveFolderDto"][];
             source?: null | components["schemas"]["GameSourceDto"];
+            release?: null | components["schemas"]["GameReleaseDto"];
+            saveFiles?: null | string;
         };
         VersionStatsDto: {
             /** Format: int32 */
