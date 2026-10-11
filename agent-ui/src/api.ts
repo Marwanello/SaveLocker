@@ -159,8 +159,9 @@ export const api = {
   // server this machine's key can see, not only this machine's own. Resolution itself already lives
   // in Agent.Core (Phase 0/1); this just gives it a UI both hosts can reach.
   conflicts: () => req<Conflict[]>('/api/conflicts'),
+  // Answers once the save here follows the choice, with one sentence saying what became of it.
   resolveConflict: (id: string, winningVersionId: string, keepBoth: boolean) =>
-    post(`/api/conflicts/${id}/resolve`, { winningVersionId, keepBoth }),
+    post<{ message: string }>(`/api/conflicts/${id}/resolve`, { winningVersionId, keepBoth }),
   // Machine name, timestamp and size for one side of a conflict — a conflict only carries version
   // ids. Cached by the caller: an archive's stats never change once uploaded.
   version: (id: string) => req<SaveVersion>(`/api/versions/${id}`),

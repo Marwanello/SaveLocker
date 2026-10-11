@@ -2141,7 +2141,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["OkResponse"];
+                        "application/json": components["schemas"]["ResolveConflictResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -3280,6 +3280,9 @@ export interface components {
         };
         RegisterResponse: {
             machineName: string;
+        };
+        ResolveConflictResponse: {
+            message: string;
         };
         ResolveLaunchOptionsRequest: {
             games: null | components["schemas"]["LaunchOptionCurrentDto"][];

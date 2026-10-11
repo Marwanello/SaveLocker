@@ -75,6 +75,9 @@ public sealed class AgentApiServer : IDisposable
     // SyncEngine.ForgetSavePathAsync: dropping an extra folder deletes its shadow, so it runs under the
     // game's lock in whichever engine is current.
     private readonly Func<TrackedGame, string, Task<bool>> _forgetFolder;
+    // POST /api/conflicts/{id}/resolve — SyncEngine.ResolveOwnConflictAsync in whichever engine is current.
+    // Null on a host with no engine, where the route only tells the server.
+    private readonly Func<ConflictDto, Guid, bool, CancellationToken, Task<(bool Ok, string Message)>>? _resolveConflict;
     // "Also found" for tracked games (tasks/multiple-save-paths plan §8). Reads the manifest and a few
     // folders per game, so it is computed on request, never on a timer.
     private readonly FolderSuggestions _suggestions;
@@ -133,8 +136,10 @@ public sealed class AgentApiServer : IDisposable
         Func<string, bool>? openFile = null,
         Func<TrackedGame, string, string, KeepSide?, Task<MapFolderResult>>? mapFolder = null,
         Func<TrackedGame, string, Task<bool>>? forgetFolder = null,
-        Func<string, string?>? prefixForAppId = null)
+        Func<string, string?>? prefixForAppId = null,
+        Func<ConflictDto, Guid, bool, CancellationToken, Task<(bool Ok, string Message)>>? resolveConflict = null)
     {
+        _resolveConflict = resolveConflict;
         _forgetFolder = forgetFolder ?? ((_, _) => Task.FromResult(false));
         _suggestions = new FolderSuggestions(config, detection, prefixForAppId);
         _openFile = openFile;
@@ -1211,17 +1216,28 @@ public sealed class AgentApiServer : IDisposable
 
         // The caller names the winning version — it knows which side is its own local save (the
         // conflict's VersionB, this machine's push) and which is the cloud's (VersionA, the head it
-        // diverged from). keepBoth also protects the loser as a downloadable backup.
+        // diverged from). keepBoth also protects the loser as a downloadable backup. The save here
+        // follows the choice before this answers (SyncEngine.ResolveOwnConflictAsync), and the answer
+        // says what happened to it.
         app.MapPost("/api/conflicts/{id:guid}/resolve",
-            async Task<Results<Ok<OkResponse>, BadRequest<ErrorResponse>>> (Guid id, LocalResolveRequest body) =>
+            async Task<Results<Ok<ResolveConflictResponse>, BadRequest<ErrorResponse>>> (Guid id, LocalResolveRequest body) =>
         {
             try
             {
-                var (ok, error) = await ApiClient.For(_config)
-                    .ResolveConflictAsync(id, body.WinningVersionId, body.KeepBoth);
+                var api = ApiClient.For(_config);
+                if (_resolveConflict is null)
+                {
+                    var (done, why) = await api.ResolveConflictAsync(id, body.WinningVersionId, body.KeepBoth);
+                    return done
+                        ? TypedResults.Ok(new ResolveConflictResponse("Resolved."))
+                        : TypedResults.BadRequest(new ErrorResponse(why ?? "Could not resolve the conflict."));
+                }
+                if (await api.GetConflictAsync(id) is not { } conflict)
+                    return TypedResults.BadRequest(new ErrorResponse("The server no longer has this conflict."));
+                var (ok, message) = await _resolveConflict(conflict, body.WinningVersionId, body.KeepBoth, CancellationToken.None);
                 return ok
-                    ? TypedResults.Ok(new OkResponse())
-                    : TypedResults.BadRequest(new ErrorResponse(error ?? "Could not resolve the conflict."));
+                    ? TypedResults.Ok(new ResolveConflictResponse(message))
+                    : TypedResults.BadRequest(new ErrorResponse(message));
             }
             catch (Exception ex) { return TypedResults.BadRequest(new ErrorResponse(ex.Message)); }
         });
@@ -2090,6 +2106,8 @@ public sealed record DismissWarningRequest(string? GameName);
 /// <param name="KeepBoth">Also protect the losing version as a downloadable backup.</param>
 public sealed record LocalResolveRequest(Guid WinningVersionId, bool KeepBoth = false);
 public sealed record OkResponse(bool Ok = true);
+/// <param name="Message">What became of the save on this machine, as one sentence to show.</param>
+public sealed record ResolveConflictResponse(string Message);
 /// <param name="NeedsConfirm">The request was refused by a heuristic that has false positives, and
 /// re-sending it with <c>confirm</c> will be accepted. A client decides "may this be clicked past?" from
 /// this field alone, never from the wording of <paramref name="Error"/> — a hard refusal never sets it.</param>

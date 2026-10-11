@@ -148,6 +148,7 @@ internal sealed class TrayContext : ApplicationContext
             syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct),
             mapFolder: (game, key, dir, keep) => _engine.MapSavePathAsync(game, key, dir, keep),
             forgetFolder: (game, key) => _engine.ForgetSavePathAsync(game, key),
+            resolveConflict: (conflict, winner, keepBoth, ct) => _engine.ResolveOwnConflictAsync(conflict, winner, keepBoth, ct),
             openView: view => _ui.Post(() => OpenWindow(view)),
             // Explorer: a file is selected in its folder (a bare open would hand a large log to
             // whatever editor owns .log), a folder is simply opened.

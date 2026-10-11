@@ -13,6 +13,7 @@ import { FolderSuggestionsModal } from './components/FolderSuggestionsModal'
 import { SettingsView } from './components/SettingsView'
 import { ActivityView } from './components/ActivityView'
 import { Chip } from './components/ui/Chip'
+import { Toast } from './components/ui/Toast'
 import { Mark } from './components/ui/Mark'
 import { unseenWarnings } from './activitySeen'
 import { inAppWindow } from './appWindow'
@@ -39,6 +40,8 @@ export default function App() {
   // Deliberately separate from `conflicts`: the passive 15s poll below must never open this on its
   // own — only an explicit Sync all does, so nothing interrupts the user unprompted.
   const [syncQueue, setSyncQueue] = useState<Conflict[] | null>(null)
+  // What became of the save here after a conflict choice: the pop-up closes on it, so it is said here.
+  const [resolveNote, setResolveNote] = useState<string | null>(null)
   // "More save folders found": folders the manifest names for tracked games that nobody has answered
   // for yet. Asked once when the window opens (and when a notification links here), never by a poll.
   const [folderQueue, setFolderQueue] = useState<FolderSuggestion[] | null>(null)
@@ -249,6 +252,7 @@ export default function App() {
                 games={games}
                 machineName={state?.machineName ?? ''}
                 onRefresh={refreshConflicts}
+                onResolvedNote={setResolveNote}
               />
             )}
             {view === 'activity' && <ActivityView />}
@@ -272,10 +276,12 @@ export default function App() {
             games={games}
             machineName={state?.machineName ?? ''}
             onResolved={refreshConflicts}
+            onResolvedNote={setResolveNote}
             onAllDone={() => setSyncQueue(null)}
             onLater={() => { setSyncQueue(null); setView('conflicts') }}
           />
         )}
+        {resolveNote && <Toast dwellMs={8000} onDismiss={() => setResolveNote(null)}>{resolveNote}</Toast>}
         {folderQueue && !syncQueue && (
           <FolderSuggestionsModal
             suggestions={folderQueue}
