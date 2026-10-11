@@ -708,9 +708,12 @@ function Invoke-Deck {
         "SAVELOCKER_CONFLICT_FILES=$Files",
         "SAVELOCKER_CONFLICT_ADD_COMMAND=$(if ($AddCommand) { '1' } else { '0' })"
     )
+    # Every ssh here passes -n: run from an interactive console, Windows' ssh.exe whose output is piped or
+    # captured (the Decky hash check below) never exits after the remote command does while it still holds the
+    # console as stdin — `up` sat forever after the Deck's last line (2026-10-11). Nothing here reads stdin.
     $cmd = "sed 's/\r`$//' /tmp/.savelocker-testenv-deck.raw > /tmp/.savelocker-testenv-deck.sh; " +
            ($vars -join ' ') + " bash /tmp/.savelocker-testenv-deck.sh $Sub"
-    & ssh -o ConnectTimeout=5 $DeckHost $cmd
+    & ssh -n -o ConnectTimeout=5 $DeckHost $cmd
     if ($LASTEXITCODE -ne 0) { throw "deck '$Sub' failed (exit $LASTEXITCODE)" }
 }
 
@@ -963,7 +966,7 @@ function Install-DeckyPluginOnDeck {
         $rel = $_.FullName.Substring($deckyStagePath.Length).TrimStart('\').Replace('\', '/')
         "$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant())  $rel"
     } | Sort-Object -CaseSensitive)
-    $remote = @(& ssh -o ConnectTimeout=5 $DeckHost "cd $remoteTarget 2>/dev/null && find . -type f -print0 | xargs -0 -r sha256sum | sed 's|  \./|  |'" |
+    $remote = @(& ssh -n -o ConnectTimeout=5 $DeckHost "cd $remoteTarget 2>/dev/null && find . -type f -print0 | xargs -0 -r sha256sum | sed 's|  \./|  |'" |
         Sort-Object -CaseSensitive)
     if ($LASTEXITCODE -eq 0 -and $remote.Count -gt 0 -and
         (Compare-Object $local $remote -CaseSensitive -SyncWindow 0).Count -eq 0) {
@@ -973,7 +976,7 @@ function Install-DeckyPluginOnDeck {
 
     Say "installing '$deckyTestPluginName' to $DeckHost (separate from any real SaveLocker plugin)"
     $remoteStage = '~/.savelocker-testenv-decky-stage'
-    & ssh -o ConnectTimeout=5 $DeckHost "rm -rf $remoteStage"
+    & ssh -n -o ConnectTimeout=5 $DeckHost "rm -rf $remoteStage"
     if ($LASTEXITCODE -ne 0) { throw "cannot reach $DeckHost (asleep?)" }
     & scp -o ConnectTimeout=5 -q -r $deckyStagePath "${DeckHost}:$remoteStage"
     if ($LASTEXITCODE -ne 0) { throw "scp to $DeckHost failed" }
@@ -993,7 +996,7 @@ function Install-DeckyPluginOnDeck {
     # the difference between the plugin loading at all and Decky silently never starting it: a
     # root-owned SaveLocker-Test directory produced NO running process whatsoever, confirmed via
     # `ps -eo user,pid,cmd | grep -i savelocker` showing only the real, untouched SaveLocker.
-    & ssh -o ConnectTimeout=5 $DeckHost "sudo rm -rf $remoteTarget && sudo cp -r $remoteStage $remoteTarget && sudo chown -R deck:deck $remoteTarget && sudo systemctl restart plugin_loader"
+    & ssh -n -o ConnectTimeout=5 $DeckHost "sudo rm -rf $remoteTarget && sudo cp -r $remoteStage $remoteTarget && sudo chown -R deck:deck $remoteTarget && sudo systemctl restart plugin_loader"
     if ($LASTEXITCODE -ne 0) {
         throw "install on $DeckHost failed - if sudo asked for a password, see this file's header " +
               "comment for the NOPASSWD sudoers rule this step needs"
@@ -1003,7 +1006,7 @@ function Install-DeckyPluginOnDeck {
 
 function Remove-DeckyPluginFromDeck {
     $remoteTarget = "~/homebrew/plugins/$deckyTestPluginName"
-    & ssh -o ConnectTimeout=5 $DeckHost "sudo rm -rf $remoteTarget && sudo systemctl restart plugin_loader"
+    & ssh -n -o ConnectTimeout=5 $DeckHost "sudo rm -rf $remoteTarget && sudo systemctl restart plugin_loader"
     if ($LASTEXITCODE -ne 0) {
         throw "removing '$deckyTestPluginName' from $DeckHost failed - if sudo asked for a password, " +
               "see this file's header comment for the NOPASSWD sudoers rule this step needs"
@@ -1644,7 +1647,7 @@ switch ($Command) {
             try {
                 Invoke-Deck 'status'
                 Write-Host "deck UI      $(Get-DeckUiHint)"
-                $installed = & ssh -o ConnectTimeout=5 $DeckHost `
+                $installed = & ssh -n -o ConnectTimeout=5 $DeckHost `
                     "test -d ~/homebrew/plugins/$deckyTestPluginName && echo yes || echo no"
                 Write-Host "decky plugin '$deckyTestPluginName' installed: $installed"
             } catch { Warn "deck: $($_.Exception.Message)" }
