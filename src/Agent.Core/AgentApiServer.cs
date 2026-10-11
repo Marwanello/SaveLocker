@@ -75,6 +75,9 @@ public sealed class AgentApiServer : IDisposable
     // SyncEngine.ForgetSavePathAsync: dropping an extra folder deletes its shadow, so it runs under the
     // game's lock in whichever engine is current.
     private readonly Func<TrackedGame, string, Task<bool>> _forgetFolder;
+    // POST /api/conflicts/{id}/resolve — SyncEngine.ResolveOwnConflictAsync in whichever engine is current.
+    // Null on a host with no engine, where the route only tells the server.
+    private readonly Func<ConflictDto, Guid, bool, CancellationToken, Task<(bool Ok, string Message)>>? _resolveConflict;
     // "Also found" for tracked games (tasks/multiple-save-paths plan §8). Reads the manifest and a few
     // folders per game, so it is computed on request, never on a timer.
     private readonly FolderSuggestions _suggestions;
@@ -133,8 +136,10 @@ public sealed class AgentApiServer : IDisposable
         Func<string, bool>? openFile = null,
         Func<TrackedGame, string, string, KeepSide?, Task<MapFolderResult>>? mapFolder = null,
         Func<TrackedGame, string, Task<bool>>? forgetFolder = null,
-        Func<string, string?>? prefixForAppId = null)
+        Func<string, string?>? prefixForAppId = null,
+        Func<ConflictDto, Guid, bool, CancellationToken, Task<(bool Ok, string Message)>>? resolveConflict = null)
     {
+        _resolveConflict = resolveConflict;
         _forgetFolder = forgetFolder ?? ((_, _) => Task.FromResult(false));
         _suggestions = new FolderSuggestions(config, detection, prefixForAppId);
         _openFile = openFile;
@@ -562,7 +567,7 @@ public sealed class AgentApiServer : IDisposable
                 g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray(), g.Alias,
                 SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()), g.PullBeforeLaunchEnabled,
                 g.HasSteamCloud, g.PushAfterExitEnabled, g.InstallDir, g.LastPushBytes, g.LastPushAt,
-                SaveFolderDto.Of(g), g.IsEnrolledHere ? g.Source : null))
+                SaveFolderDto.Of(g), g.IsEnrolledHere ? g.Source : null, g.Release, g.IncludeGlobs.FirstOrDefault()))
             .ToArray()).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
@@ -1211,17 +1216,28 @@ public sealed class AgentApiServer : IDisposable
 
         // The caller names the winning version — it knows which side is its own local save (the
         // conflict's VersionB, this machine's push) and which is the cloud's (VersionA, the head it
-        // diverged from). keepBoth also protects the loser as a downloadable backup.
+        // diverged from). keepBoth also protects the loser as a downloadable backup. The save here
+        // follows the choice before this answers (SyncEngine.ResolveOwnConflictAsync), and the answer
+        // says what happened to it.
         app.MapPost("/api/conflicts/{id:guid}/resolve",
-            async Task<Results<Ok<OkResponse>, BadRequest<ErrorResponse>>> (Guid id, LocalResolveRequest body) =>
+            async Task<Results<Ok<ResolveConflictResponse>, BadRequest<ErrorResponse>>> (Guid id, LocalResolveRequest body) =>
         {
             try
             {
-                var (ok, error) = await ApiClient.For(_config)
-                    .ResolveConflictAsync(id, body.WinningVersionId, body.KeepBoth);
+                var api = ApiClient.For(_config);
+                if (_resolveConflict is null)
+                {
+                    var (done, why) = await api.ResolveConflictAsync(id, body.WinningVersionId, body.KeepBoth);
+                    return done
+                        ? TypedResults.Ok(new ResolveConflictResponse("Resolved."))
+                        : TypedResults.BadRequest(new ErrorResponse(why ?? "Could not resolve the conflict."));
+                }
+                if (await api.GetConflictAsync(id) is not { } conflict)
+                    return TypedResults.BadRequest(new ErrorResponse("The server no longer has this conflict."));
+                var (ok, message) = await _resolveConflict(conflict, body.WinningVersionId, body.KeepBoth, CancellationToken.None);
                 return ok
-                    ? TypedResults.Ok(new OkResponse())
-                    : TypedResults.BadRequest(new ErrorResponse(error ?? "Could not resolve the conflict."));
+                    ? TypedResults.Ok(new ResolveConflictResponse(message))
+                    : TypedResults.BadRequest(new ErrorResponse(message));
             }
             catch (Exception ex) { return TypedResults.BadRequest(new ErrorResponse(ex.Message)); }
         });
@@ -1693,7 +1709,10 @@ public sealed class AgentApiServer : IDisposable
             candidate.EmulatorName,
             candidate.EmulatorSystem,
             candidate.EmulatorRom,
-            candidate.UntouchedSeed)).ToArray();
+            candidate.UntouchedSeed,
+            candidate.NotSyncable,
+            GameSources.SystemLabel(candidate.EmulatorSystem),
+            candidate.Release?.Region)).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -1795,7 +1814,16 @@ public sealed record CandidateDto(
     string? EmulatorRom = null,
     /// <summary>EmuDeck's preinstalled save, never played here (<see cref="ScanCandidate.UntouchedSeed"/>): list it
     /// only when <c>GET /api/candidates/links</c> says it joins a server game.</summary>
-    bool UntouchedSeed = false);
+    bool UntouchedSeed = false,
+    /// <summary>Why this row can never be added and how to fix that (<see cref="ScanCandidate.NotSyncable"/>): a memory
+    /// card every game of a console shares. Shown greyed out with this text; null for every addable row.</summary>
+    string? NotSyncable = null,
+    /// <summary>The console as people say it ("PS2", "GameCube"), from <see cref="EmulatorSystem"/> by
+    /// <see cref="GameSources.SystemLabel"/> — the Add games Console row's chip label. Null when there is no system.</summary>
+    string? EmulatorConsole = null,
+    /// <summary>Which region's release a console game's save is ("USA", "Europe, Australia"), kept out of
+    /// <see cref="Name"/>; null when it is no disc console's save or Redump does not know its game ID.</summary>
+    string? Region = null);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the
@@ -1856,7 +1884,12 @@ public sealed record TrackedGameDto(
     SaveFolderDto[]? Paths = null,
     /// <summary>How this machine found the game; null when it was enrolled before sources were recorded,
     /// or is not set up here.</summary>
-    GameSourceDto? Source = null);
+    GameSourceDto? Source = null,
+    /// <summary>Which release of a console game it is (region, game IDs); null for any other game.</summary>
+    GameReleaseDto? Release = null,
+    /// <summary>The first of the primary folder's include patterns — the save's own files, in the details the
+    /// release chip opens; null for a game that keeps its whole folder.</summary>
+    string? SaveFiles = null);
 
 /// <summary>One save folder of a tracked game on this machine.</summary>
 /// <param name="Path">This machine's folder, or <c>""</c> when it is not mapped here — an unmapped
@@ -2073,6 +2106,8 @@ public sealed record DismissWarningRequest(string? GameName);
 /// <param name="KeepBoth">Also protect the losing version as a downloadable backup.</param>
 public sealed record LocalResolveRequest(Guid WinningVersionId, bool KeepBoth = false);
 public sealed record OkResponse(bool Ok = true);
+/// <param name="Message">What became of the save on this machine, as one sentence to show.</param>
+public sealed record ResolveConflictResponse(string Message);
 /// <param name="NeedsConfirm">The request was refused by a heuristic that has false positives, and
 /// re-sending it with <c>confirm</c> will be accepted. A client decides "may this be clicked past?" from
 /// this field alone, never from the wording of <paramref name="Error"/> — a hard refusal never sets it.</param>

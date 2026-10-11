@@ -3,6 +3,7 @@ import { ago, fmtSize } from '../format';
 import { Chip } from './ui/Chip';
 import { Dot } from './ui/Dot';
 import { GameCover } from './game/GameCover';
+import { regionLabel } from './game/gameState';
 import { standing } from './game/gameState';
 
 interface Props {
@@ -43,6 +44,7 @@ export function GamesGrid({ games, onOpen, problems }: Props) {
                 <span className="text-[13.5px] font-semibold tracking-[-0.02em] truncate">{game.name}</span>
                 <span className="flex items-center gap-[7px] text-[10.5px] text-dim truncate tabular-nums">
                   <Dot tone={st.tone} label={st.label} />
+                  {game.release && regionLabel(game.release) && <>{regionLabel(game.release)}<span aria-hidden>·</span></>}
                   {head ? ago(head.createdAt) : 'no saves yet'}
                   <span aria-hidden>·</span>
                   {fmtSize(totalStorageBytes)}

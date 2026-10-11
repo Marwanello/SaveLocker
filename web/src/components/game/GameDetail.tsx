@@ -8,6 +8,7 @@ import { problemGameIds, standing } from './gameState';
 import { ArtPicker } from '../ArtPicker';
 import { GameHead } from './GameHead';
 import { SourceChip } from './SourceChip';
+import { ReleaseChip } from './ReleaseChip';
 import { ConflictPanel } from './ConflictPanel';
 import { GameStats } from './GameStats';
 import { VersionsCard } from './VersionsCard';
@@ -113,7 +114,12 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
         standing={standing(summary, problemGameIds(health))}
         versionCount={versions.length}
         machines={withGame.length > 0 ? withGame : machines}
-        source={sources.length > 0 ? <SourceChip sources={sources} machines={withGame} paths={paths} /> : undefined}
+        source={sources.length > 0 || game.release
+          ? <span className="flex flex-wrap items-center gap-1.5">
+              {sources.length > 0 && <SourceChip sources={sources} machines={withGame} paths={paths} />}
+              <ReleaseChip game={game} sources={sources} />
+            </span>
+          : undefined}
         allMachines={machines}
         health={health}
         artOpen={artOpen}

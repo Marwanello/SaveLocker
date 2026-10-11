@@ -37,3 +37,9 @@ export const formatDateTime = (t: string) => new Date(asUtc(t)).toLocaleString()
 export function formatTime(iso: string): string {
   return new Date(asUtc(iso)).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
+
+/** "Europe, Australia" → "Europe": a console release's first region, for a chip or a list row; its details name
+ *  them all. Null when it has none. */
+export function regionLabel(release: { region?: string | null }): string | null {
+  return release.region?.split(',')[0].trim() || null
+}

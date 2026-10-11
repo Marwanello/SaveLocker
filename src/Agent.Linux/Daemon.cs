@@ -186,6 +186,7 @@ public sealed class Daemon : IAsyncDisposable
             syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct),
             mapFolder: (game, key, dir, keep) => _engine.MapSavePathAsync(game, key, dir, keep),
             forgetFolder: (game, key) => _engine.ForgetSavePathAsync(game, key),
+            resolveConflict: (conflict, winner, keepBoth, ct) => _engine.ResolveOwnConflictAsync(conflict, winner, keepBoth, ct),
             prefixForAppId: PrefixForAppId,
             openFile: DesktopEnvironment.TryOpenFile);
         _apiServer.Start();

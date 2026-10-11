@@ -1,4 +1,4 @@
-import type { AgentHealth, Command, GameSummary } from '../../types';
+import type { AgentHealth, Command, GameRelease, GameSummary } from '../../types';
 import type { DotTone } from '../ui/Dot';
 import { withdrawable } from '../../syncAll';
 
@@ -53,3 +53,6 @@ export const POLICY_LABEL: Record<string, string> = {
   NewestWins: 'Newest wins',
   PreferMachine: 'Prefer machine',
 };
+
+/** "Europe, Australia" → "Europe": a release's first region, for a chip or a list row; the details name them all. */
+export const regionLabel = (r: GameRelease) => r.region?.split(',')[0].trim() || null;

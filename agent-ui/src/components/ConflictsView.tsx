@@ -14,6 +14,8 @@ interface Props {
   games: TrackedGame[]
   machineName: string
   onRefresh: () => void
+  /** What became of the save here after a choice, for the app's toast. */
+  onResolvedNote: (message: string) => void
 }
 
 const when = (v: SaveVersion | undefined) => (v ? `${formatAgo(v.createdAt)} (${formatDateTime(v.createdAt)})` : 'a moment earlier')
@@ -26,7 +28,7 @@ const when = (v: SaveVersion | undefined) => (v ? `${formatAgo(v.createdAt)} (${
  * framing and is unchanged; this view is the page around it: the head, a "why" per conflict, and
  * what was recently resolved.
  */
-export function ConflictsView({ conflicts, games, machineName, onRefresh }: Props) {
+export function ConflictsView({ conflicts, games, machineName, onRefresh, onResolvedNote }: Props) {
   const { versions, stats } = useConflictVersions(conflicts)
   const [resolvingId, setResolvingId] = useState<string | null>(null)
   const [resolved, setResolved] = useState<Conflict[] | null>(null)
@@ -40,7 +42,7 @@ export function ConflictsView({ conflicts, games, machineName, onRefresh }: Prop
 
   async function resolve(conflictId: string, versionId: string, keepBoth: boolean) {
     setResolvingId(conflictId)
-    try { await api.resolveConflict(conflictId, versionId, keepBoth); onRefresh() }
+    try { onResolvedNote((await api.resolveConflict(conflictId, versionId, keepBoth)).message); onRefresh() }
     catch (e) { alert('Could not resolve the conflict: ' + (e as Error).message) }
     finally { setResolvingId(null) }
   }
