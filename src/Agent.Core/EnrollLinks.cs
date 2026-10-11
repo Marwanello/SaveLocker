@@ -94,6 +94,7 @@ public static class EnrollLinks
                     return (null, "the server game you picked is no longer on the server.");
                 return Enroller.SameFiles(picked, c) ? (picked.Name, null)
                     : OtherEmulator(picked, c) ? (null, $"the server's '{picked.Name}' holds another emulator's saves; saves from different emulators are kept as separate games.")
+                    : Enroller.OtherRegion(picked, c) ? (null, $"the server's '{picked.Name}' is the {picked.Release!.Region} release; each region is its own game.")
                     : (null, $"the server’s '{picked.Name}' keeps different save files, so it cannot be linked yet.");
             default:
                 if (Enroller.ServerNameFor(server, c, extras) is not { } named)
