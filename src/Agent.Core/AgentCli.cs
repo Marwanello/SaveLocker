@@ -172,6 +172,7 @@ public static class AgentCli
                         var appid = c.SteamAppId is null ? "" : $" appid={c.SteamAppId}";
                         Console.WriteLine($"  {c.Name}  <{c.Source}>{cloud}{appid}");
                         Console.WriteLine($"      save: {save}");
+                        if (c.NotSyncable is { } why) Console.WriteLine($"      cannot be added: {why}");
                         foreach (var also in c.AlternateSaveDirs ?? Array.Empty<DeclaredSavePath>())
                             Console.WriteLine($"      also found: {also.Dir}  (once enrolled: add-path \"{c.Name}\" --key {also.Key} --dir \"{also.Dir}\")");
                     }
@@ -404,28 +405,13 @@ public static class AgentCli
                             $"No open conflict for '{game.Name}' on this machine.");
 
                     var winningVersionId = keep == "local" ? conflict.VersionBId : conflict.VersionAId;
-                    var (ok, error) = await Api().ResolveConflictAsync(conflict.Id, winningVersionId, keepBoth);
+                    var (ok, message) = await Engine().ResolveOwnConflictAsync(conflict, winningVersionId, keepBoth);
                     if (!ok)
                     {
-                        Console.Error.WriteLine($"Could not resolve: {error}");
+                        Console.Error.WriteLine($"Could not resolve: {message}");
                         return 1;
                     }
-
-                    // Keeping local makes this machine the winner, which excludes it from the
-                    // server's post-resolve pull fan-out (SyncService.ResolveConflictAsync) on the
-                    // assumption it already advanced its own parent pointer — true for the agent's
-                    // own auto-policy resolve, not for this CLI path unless it does the same here.
-                    if (keep == "local")
-                    {
-                        game.LastKnownVersionId = winningVersionId;
-                        game.LastSyncedHash = game.LocalHash(config.StateDir);
-                        config.SaveGameSyncState(game);
-                    }
-
-                    Console.WriteLine($"Resolved '{game.Name}': kept the {keep} save" +
-                        (keepBoth ? " (the other side is kept as a downloadable backup)." : "."));
-                    if (keep == "cloud")
-                        Console.WriteLine("Pull now to bring this machine's local save in line with it.");
+                    Console.WriteLine(message + (keepBoth ? " The other side is kept as a downloadable backup." : ""));
                     break;
                 }
 

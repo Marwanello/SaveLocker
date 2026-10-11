@@ -26,6 +26,7 @@ export type SetAppearanceRequest = Schemas['SetAppearanceRequest'];
 export type MachineSavePath = Schemas['MachineSavePathDto'];
 export type MachineGameSource = Schemas['MachineGameSourceDto'];
 export type GameSource = Schemas['GameSourceDto'];
+export type GameRelease = Schemas['GameReleaseDto'];
 export type SavePath = Schemas['SavePathDto'];
 export type VersionFolder = Schemas['VersionFolderDto'];
 export type VersionChanges = Schemas['VersionChangesDto'];

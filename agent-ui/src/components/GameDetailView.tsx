@@ -6,6 +6,7 @@ import { refreshActivity, useActivityBusy } from '../useActivity'
 import { GameArt } from './GameArt'
 import { GameManagement } from './GameManagement'
 import { SaveFilesCard } from './SaveFilesCard'
+import { ReleaseChip } from './ReleaseChip'
 import { SourceChip } from './SourceChip'
 import { VersionsCard } from './VersionsCard'
 import { Banner } from './ui/Banner'
@@ -119,7 +120,12 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
         <div className="sl-gamehead__cover"><GameArt id={game.id} name={game.name} kind="grid" w={192} /></div>
         <div className="sl-gamehead__main">
           <h2 className="sl-gamehead__title">{game.name}</h2>
-          {enrolled && <div className="sl-gamehead__source"><SourceChip source={game.source} /></div>}
+          {(enrolled || game.release) && (
+            <div className="sl-gamehead__source">
+              {enrolled && <SourceChip source={game.source} />}
+              <ReleaseChip game={game} />
+            </div>
+          )}
           <div className="sl-gamehead__chips">
             {!enrolled && <Chip tone="warn">Not set up on this device</Chip>}
             {inConflict && <Chip tone="crit">Conflict</Chip>}

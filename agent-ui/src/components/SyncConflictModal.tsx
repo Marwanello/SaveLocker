@@ -10,6 +10,8 @@ interface Props {
   games: TrackedGame[]
   machineName: string
   onResolved: () => void
+  /** What became of the save here after a choice, for the app's toast. */
+  onResolvedNote: (message: string) => void
   onAllDone: () => void
   onLater: () => void
 }
@@ -32,7 +34,7 @@ type Kind = 'cloud' | 'local'
  * declining ("Review each") falls back to the ordinary one-at-a-time flow for the rest with no
  * further prompting.
  */
-export function SyncConflictModal({ queue, games, machineName, onResolved, onAllDone, onLater }: Props) {
+export function SyncConflictModal({ queue, games, machineName, onResolved, onResolvedNote, onAllDone, onLater }: Props) {
   const [index, setIndex] = useState(0)
   const [resolving, setResolving] = useState(false)
   const [asked, setAsked] = useState(false)
@@ -51,7 +53,7 @@ export function SyncConflictModal({ queue, games, machineName, onResolved, onAll
   async function handleResolve(winningVersionId: string, keepBoth: boolean) {
     setResolving(true)
     try {
-      await api.resolveConflict(conflict.id, winningVersionId, keepBoth)
+      onResolvedNote((await api.resolveConflict(conflict.id, winningVersionId, keepBoth)).message)
       onResolved()
       const remaining = queue.length - index - 1
       if (!asked && remaining > 0) {
@@ -71,10 +73,12 @@ export function SyncConflictModal({ queue, games, machineName, onResolved, onAll
     if (!applyPrompt) return
     setResolving(true)
     try {
+      const notes: string[] = []
       for (let i = index + 1; i < queue.length; i++) {
         const c = queue[i]
-        await api.resolveConflict(c.id, applyPrompt.kind === 'cloud' ? c.versionAId : c.versionBId, applyPrompt.keepBoth)
+        notes.push((await api.resolveConflict(c.id, applyPrompt.kind === 'cloud' ? c.versionAId : c.versionBId, applyPrompt.keepBoth)).message)
       }
+      onResolvedNote(notes.join(' '))
       onResolved()
       onAllDone()
     } catch (e) {

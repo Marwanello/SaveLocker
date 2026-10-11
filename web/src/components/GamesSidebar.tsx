@@ -6,6 +6,7 @@ import { Chip } from './ui/Chip';
 import { Dot } from './ui/Dot';
 import { Icon } from './ui/Icon';
 import { GameCover } from './game/GameCover';
+import { regionLabel } from './game/gameState';
 import { LAYOUT_OPTIONS, liveCommand, standing } from './game/gameState';
 import type { Layout } from './game/gameState';
 
@@ -37,6 +38,8 @@ export function GamesSidebar({ games, selectedId, onSelect, onAddGame, layout, o
           const current = game.id === selectedId;
           const st = standing(s, problems);
           const live = liveCommand(game.id, commands);
+          // Two releases of one game share its name; the region tells them apart.
+          const region = game.release ? regionLabel(game.release) : null;
           return (
             <button
               key={game.id}
@@ -54,7 +57,7 @@ export function GamesSidebar({ games, selectedId, onSelect, onAddGame, layout, o
               <span className="row-span-2 self-center"><GameCover game={game} size="s" /></span>
               <span className="col-start-2 row-start-1 self-end text-[13px] font-semibold tracking-[-0.015em] truncate">{game.name}</span>
               <span className="col-start-2 row-start-2 self-start text-[10.5px] text-dim truncate tabular-nums">
-                {head ? ago(head.createdAt) : 'no saves yet'} · {fmtSize(totalStorageBytes)}
+                {region ? `${region} · ` : ''}{head ? ago(head.createdAt) : 'no saves yet'} · {fmtSize(totalStorageBytes)}
               </span>
               <span className="col-start-3 row-start-1 row-span-2 self-center flex items-center">
                 {live

@@ -19,6 +19,7 @@ export type Candidate = Omit<components['schemas']['CandidateDto'], 'id'> & { id
 export type LinkOption = components['schemas']['LinkOption']
 export type CandidateLinks = components['schemas']['CandidateLinksResponse']
 export type TrackedGame = components['schemas']['TrackedGameDto']
+export type GameRelease = components['schemas']['GameReleaseDto']
 export type SaveFolder = components['schemas']['SaveFolderDto']
 export type FolderSuggestion = components['schemas']['FolderSuggestionDto']
 export type AddFolderResult = components['schemas']['AddFolderResponse']
