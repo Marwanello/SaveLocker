@@ -361,7 +361,9 @@ session can judge an edge case, not to reopen the choice.
   game's *release* (`GameReleaseDto`, `Game.Region` + `ReleaseJson`), shown as a chip that opens them (console game
   page, agent game page; plain text in lists and Add games). Server games are unique by **(name, region)**, not by
   name; a create that names a region joins only that region's game (or a region-less one, which takes it), and the
-  agent counts a name as taken unless the game holding it is another region's (`Enroller.NameTaken`).
+  agent counts a name as taken unless the game holding it is another region's (`Enroller.NameTaken`). The same
+  files never make another region's game the same game either (`Enroller.SameFiles`, PR #63 review): a DuckStation
+  card per game is named by its title, which both regions' discs share.
 - **"Latest" = `Game.HeadVersionId`.** UI label "Latest"; admin action "Set as Latest".
 - **Artwork:** SteamGridDB images are downloaded/cached server-side, not stored as bare URLs
   (offline-safe, survives upstream changes).

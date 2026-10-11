@@ -1870,6 +1870,14 @@ console (DeckTest) still have the old scope:** remove them and re-add from the D
 `build -Only deck` + `up -Only deck`. Also found on the Deck that day: its PCSX2 states folder is empty (the only
 `.p2s` files are in `~/ludusavi-backup`, Sept 2025), and its `PCSX2.ini` names no slot-1 card, so which card PCSX2
 writes to is unconfirmed.
+<br>**2026-10-11: those three commits reviewed, both findings fixed on the PR.** The tray watched game processes in a
+map keyed by **name**, so two tracked releases of one game, each with a process name, threw on every poll. The timer
+swallows the exception, so no game's launch or exit was seen again. It is keyed by id now (`ProcessWatcher.ByGameId`).
+And the "same files" rule (D1, `Enroller.SameFiles`/`TrackedFor`) ignored the region: DuckStation names a card per game
+by its title, which both regions' discs share. So Add games offered the USA *Crash Bandicoot* as the one a European
+card joins, while the server made a separate game. Now same files means the same region too, and the other region's
+game is listed as *Another region*. The testenv change (`ssh -n`) and the PCSX2 card-as-folder change had no findings.
+Unit **390** (+2, both mutation-checked).
 <br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then merge PR #63.
 On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another
 commit, so this session did not touch it: run `testenv clean` first.
