@@ -288,10 +288,17 @@ What the plan below got wrong:
   *Prince of Persia: Warrior Within* and *The Two Thrones* both showed as "Prince of Persia" — the first line of
   `icon.sys` is often only the series). `ConsoleTitles` looks the save's serial up in a table built from Redump's
   dats as libretro-database ships them (CC BY-SA 4.0, `src/Agent.Core/ConsoleTitles/NOTICE.md`; 32,182 serials
-  across PS1, PS2, PS3, GameCube and Wii, ~400 KB embedded): *Prince of Persia - The Two Thrones (USA)*. The
-  **region stays in the name**: each region's disc has its own serial and reads only its own saves (verified — a
-  save moved across regions has to be renamed with a save tool, and even that fails where the save checksums its
-  own name), so a USA and a European save are two games, which the scope already made them. Only a serial Redump
+  across PS1, PS2, PS3, GameCube and Wii, ~400 KB embedded): *Prince of Persia - The Two Thrones*. Each region's
+  disc has its own serial and reads only its own saves (verified — a save moved across regions has to be renamed with
+  a save tool, and even that fails where the save checksums its own name), so a USA and a European save are two
+  games, which the scope already made them. **The region is not in the name** (changed 2026-10-11, maintainer's
+  choice from a clickable mockup): the table keeps title, region and languages apart, the candidate carries a
+  `GameReleaseDto` (console, region, game IDs, languages), and the server keeps it on the game and lets two regions
+  share a name — unique by (name, region), migration `AddGameRelease`. A save joins a game of its name only in its
+  own region; another region's same-named game is listed in *Linking by hand* as "Another region", never pickable.
+  The console's game page and the agent's game page show the region as a chip that opens the release's details
+  (hover, click or tap; Esc closes); the console sidebar and grid, the agent's Games list and Add games show the
+  region as text. Only a serial Redump
   has no disc of — homebrew, WiiWare, channels — falls back to inside the save: PS2 `icon.sys` (Shift-JIS,
   full-width folded by hand, because the Linux agent runs with invariant globalization), the GameCube comment, Wii
   `banner.bin` (UTF-16BE, layout read on the Deck), DuckStation's card name. PCSX2's `GameIndex.yaml` (GPL-3.0)

@@ -351,13 +351,17 @@ session can judge an edge case, not to reopen the choice.
   Suikoden II imports a Suikoden save copied onto its card. Its states are the named game's codes only.
 - **PCSX2's `.p2s.backup` state copies are not synced** (2026-10-07, maintainer's choice): D3's "states always" stands,
   but a backup of every slot would double a PS2 game's states against the upload cap.
-- **A disc console's save is named by its serial, region included** (2026-10-08, maintainer's choice, emulator-saves
-  Group C): `ConsoleTitles`, a serial → title table built from Redump's dats via libretro-database and bundled with
-  the agent (offline). Its data is **CC BY-SA 4.0** — credited in `src/Agent.Core/ConsoleTitles/NOTICE.md` and shared
+- **A disc console's save is named by its serial; the region is beside the name, not in it** (2026-10-08, amended
+  2026-10-11, maintainer's choice, emulator-saves Group C): `ConsoleTitles`, a serial → title table built from Redump's
+  dats via libretro-database and bundled with the agent (offline). Its data is **CC BY-SA 4.0** — credited in `src/Agent.Core/ConsoleTitles/NOTICE.md` and shared
   under that license as a data file; SaveLocker's code keeps its own. PCSX2's and DuckStation's databases were
   ruled out by license (GPL-3.0; CC BY-NC-ND). What a game writes into its save is only the fallback: PS2
-  `icon.sys` can say just the series ("Prince of Persia" for two sequels). The region stays because each region's
-  disc reads only its own serial's saves.
+  `icon.sys` can say just the series ("Prince of Persia" for two sequels). Each region's disc reads only its own
+  serial's saves, so two regions are two games — **of one name**: the region, game IDs, console and languages are the
+  game's *release* (`GameReleaseDto`, `Game.Region` + `ReleaseJson`), shown as a chip that opens them (console game
+  page, agent game page; plain text in lists and Add games). Server games are unique by **(name, region)**, not by
+  name; a create that names a region joins only that region's game (or a region-less one, which takes it), and the
+  agent counts a name as taken unless the game holding it is another region's (`Enroller.NameTaken`).
 - **"Latest" = `Game.HeadVersionId`.** UI label "Latest"; admin action "Set as Latest".
 - **Artwork:** SteamGridDB images are downloaded/cached server-side, not stored as bare URLs
   (offline-safe, survives upstream changes).

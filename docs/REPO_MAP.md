@@ -158,7 +158,8 @@ SaveLocker/
 │   │   │                               #   a PS1 card of several games) → a greyed NotSyncable row; PS1 card directory;
 │   │   │                               #   ConsoleText (Shift-JIS/1252, full-width folded by hand — invariant globalization)
 │   │   ├── Pcsx2Saves.cs · DuckStationSaves.cs   # PS2 folder card per product code; PS1 card per game
-│   │   ├── ConsoleTitles.cs             # Serial → title, region included (PS1/PS2/PS3/GC/Wii), from the embedded
+│   │   ├── ConsoleTitles.cs             # Serial → title + region + languages (PS1/PS2/PS3/GC/Wii) and the save's
+│   │   │                               #   GameReleaseDto (region kept out of the name), from the embedded
 │   │   │                               #   ConsoleTitles/console-titles.tsv.gz — Redump via libretro-database, CC BY-SA 4.0
 │   │   │                               #   (NOTICE.md); Update-ConsoleTitles.ps1 rebuilds it
 │   │   ├── DolphinSaves.cs              # GameCube GCI per game ID + Wii title folders; PrimeHack is its 2nd emulator
@@ -282,7 +283,8 @@ SaveLocker/
 │   │       ├── GamesSidebar.tsx         # 250 px left sidebar: cover art, name, status dot, live chip
 │   │       ├── GamesView.tsx            # Sidebar + game page, or the full-width grid
 │   │       ├── game/                    # The game page, one file per card: GameDetail (owns versions and
-│   │       │                           #   paths), GameHead, ConflictPanel (the agent's conflict card with
+│   │       │                           #   paths), GameHead (+ SourceChip, ReleaseChip: the region chip that
+│   │       │                           #   opens a console game's release details), ConflictPanel (the agent's conflict card with
 │   │       │                           #   OS logos), GameStats, VersionsCard (+ VersionFiles: each row opens on what it
 │   │       │                           #   changed, the full tree on request — versions/changes), SaveFoldersCard (+ SaveFolderParts:
 │   │       │                           #   one section per extra folder, include patterns, Latest's files),
@@ -324,6 +326,7 @@ SaveLocker/
 │           ├── ui/                      # Button · Card · Chip · Stat · Banner · Toast — counterparts
 │           │                           #   of web/src/components/ui/ (Row · Seg)
 │           ├── Sidebar.tsx              # Nav + footer (machine, server host, agent build label)
+│           ├── ReleaseChip.tsx          # A console game's region chip on its page; opens the release's details
 │           ├── GamesView.tsx · GameDetailView.tsx · GameArt.tsx   # The Games tab: list/grid + search,
 │           │                           #   the per-game page (Sync/Push/Pull, "Check now"), art tile. Art comes
 │           │                           #   through `useArt.ts` (fetch with the token → blob URL), never `<img src>`

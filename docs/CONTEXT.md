@@ -1854,6 +1854,13 @@ Dolphin's), another ROM, a shared card, or a scoped emulator folder for a PC gam
 header and comment, not the whole save; `SaveDirSanity` also warns about a whole folder of DuckStation per-game cards;
 an emulator source with no name no longer makes a game no emulator's; and Add games' Console filter only applies
 while its chip is on screen. Unit **366** (+3; the card and poller fixes mutation-checked).
+<br>**2026-10-11: the region left the name** (maintainer's choice, from a clickable mockup). *Prince of Persia - Warrior
+Within*, not *… (USA)*: the region, game IDs, console and languages are the game's release (`GameReleaseDto`), kept on
+the server (`Game.Region` + `ReleaseJson`, migration `20261011085942_AddGameRelease`) — **games are now unique by
+(name, region)**, so both Warrior Withins share a name. A save joins a same-named game only in its own region. The
+console and agent game pages show a region chip that opens the details; lists show the region as text; the Deck's
+Game Mode list shows it as the row's trailing text (and its rows are now keyed by game id, not name). Unit **387**
+(+4 agent, +3 against a real server; the server's region match mutation-checked).
 <br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then merge PR #63.
 On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another
 commit, so this session did not touch it: run `testenv clean` first.
