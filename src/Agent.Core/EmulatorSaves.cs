@@ -18,5 +18,6 @@ public static class EmulatorSaves
         ("Dolphin and PrimeHack saves", DolphinSaves.Scan),
         ("PPSSPP saves", PpssppSaves.Scan),
         ("RPCS3 saves", Rpcs3Saves.Scan),
+        ("Vita3K saves", Vita3KSaves.Scan),
     };
 }

@@ -51,6 +51,7 @@ const EMULATORS: { id: string; label: string }[] = [
   { id: 'PrimeHack', label: 'PrimeHack' },
   { id: 'PPSSPP', label: 'PPSSPP' },
   { id: 'RPCS3', label: 'RPCS3' },
+  { id: 'Vita3K', label: 'Vita3K' },
 ]
 
 /** The Console row's chips: one per EmuDeck system among `found` ("ps2"), labelled as the agent says it ("PS2"),

@@ -178,4 +178,48 @@ public sealed class SonySavesTests : IDisposable
         Assert.Equal(3, folders.Count);
         Assert.Equal(new[] { "BLES00932", "BLUS30443", "NPUB30010" }, Rpcs3Saves.Scan(folders).Select(c => c.EmulatorRom).Order(StringComparer.Ordinal));
     }
+
+    // ---- Vita3K ----
+
+    [Fact]
+    public void Vita3k_saves_are_one_folder_per_title_named_from_the_save_then_the_installed_game()
+    {
+        // EmuDeck for Windows' layout: the savedata link points into saves/Vita3K/saves, the games under storage.
+        Sfo("Emulation/saves/Vita3K/saves/PCSE00120/sce_sys/param.sfo", ("TITLE", "Persona 4 Golden"));
+        Text("Emulation/saves/Vita3K/saves/PCSE00120/data0000.bin", "p4g");
+        Text("Emulation/saves/Vita3K/saves/PCSB00245/SAVEDATA.BIN", "tearaway");
+        Sfo("Emulation/storage/Vita3K/ux0/app/PCSB00245/sce_sys/param.sfo", ("TITLE", "Tearaway"), ("STITLE", "Tearaway"));
+        Text("Emulation/saves/Vita3K/saves/PCSG00001/save.bin", "unknown");
+        Text("Emulation/saves/Vita3K/saves/PCSE00120_backup/save.bin", "not a title folder");
+
+        var found = Vita3KSaves.Scan(Vita3KSaves.Folders([P("Emulation")], []));
+
+        Assert.Equal(new[] { "PCSG00001", "Persona 4 Golden", "Tearaway" }, found.Select(c => c.Name));
+        var p4 = found[1];
+        Assert.Equal(("Vita3K", "psvita", "PCSE00120"), (p4.EmulatorName, p4.EmulatorSystem, p4.EmulatorRom));
+        Assert.Equal(("PlayStation Vita", "USA"), (p4.Release!.Console, p4.Release.Region));
+        Assert.Equal(new[] { "PCSE00120/**" }, p4.IncludeGlobs);
+        Assert.Equal(new[] { "PCSE00120/data0000.bin", "PCSE00120/sce_sys/param.sfo" },
+            SaveArchive.ListFiles(p4.SuggestedSaveDir!, null, p4.IncludeGlobs).Order(StringComparer.Ordinal));
+        Assert.Equal("Europe", found[2].Release!.Region);
+    }
+
+    [Fact]
+    public void Vita3k_config_yml_pref_path_is_read_and_the_installed_games_beside_it_name_the_saves()
+    {
+        // The Deck's ~/.config/Vita3K/config.yml (2026-10-11): pref-path on the SD card.
+        Text("deck/.config/Vita3K/config.yml", $"---\ninitial-setup: false\npref-path: {P("sd/storage/Vita3K").Replace('\\', '/')}/\n");
+        Text("sd/storage/Vita3K/ux0/user/00/savedata/PCSA00081/save.bin", "uncharted");
+        Sfo("sd/storage/Vita3K/ux0/app/PCSA00081/sce_sys/param.sfo", ("TITLE", "Uncharted: Golden Abyss"));
+        // No config.yml: SDL's own folder.
+        Text("home/.local/share/Vita3K/Vita3K/ux0/user/00/savedata/PCSE00001/save.bin", "default");
+
+        var folders = Vita3KSaves.Folders([], [
+            (P("deck/.config/Vita3K/config.yml"), P("unused")),
+            (P("home/.config/Vita3K/config.yml"), P("home/.local/share/Vita3K/Vita3K")),
+        ]);
+
+        Assert.Equal(2, folders.Count);
+        Assert.Equal(new[] { "PCSE00001", "Uncharted: Golden Abyss" }, Vita3KSaves.Scan(folders).Select(c => c.Name));
+    }
 }
