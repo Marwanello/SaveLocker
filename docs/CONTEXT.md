@@ -1870,6 +1870,14 @@ console (DeckTest) still have the old scope:** remove them and re-add from the D
 `build -Only deck` + `up -Only deck`. Also found on the Deck that day: its PCSX2 states folder is empty (the only
 `.p2s` files are in `~/ludusavi-backup`, Sept 2025), and its `PCSX2.ini` names no slot-1 card, so which card PCSX2
 writes to is unconfirmed.
+<br>**2026-10-11: those three commits reviewed, both findings fixed on the PR.** The tray watched game processes in a
+map keyed by **name**, so two tracked releases of one game, each with a process name, threw on every poll. The timer
+swallows the exception, so no game's launch or exit was seen again. It is keyed by id now (`ProcessWatcher.ByGameId`).
+And the "same files" rule (D1, `Enroller.SameFiles`/`TrackedFor`) ignored the region: DuckStation names a card per game
+by its title, which both regions' discs share. So Add games offered the USA *Crash Bandicoot* as the one a European
+card joins, while the server made a separate game. Now same files means the same region too, and the other region's
+game is listed as *Another region*. The testenv change (`ssh -n`) and the PCSX2 card-as-folder change had no findings.
+Unit **390** (+2, both mutation-checked).
 <br>**2026-10-11, same branch: keeping the cloud's save in a conflict now takes effect.** Maintainer's report from the rig: the
 PC's first sync of Warrior Within conflicted, *Cloud* closed the pop-up with no word, and the conflict came back. Resolving only
 told the server; the guarded pull it queued is refused on the loser whenever its save was never synced (it differs from the last
@@ -1878,7 +1886,7 @@ header still said "1 conflict"; no pop-up). Now `SyncEngine.ResolveOwnConflictAs
 Deck's Game Mode screen through the daemon) pulls straight after: forced when the save here is still the rejected version (its hash
 read before resolving — an unprotected loser is pruned by the resolve) or with Keep both; a save changed since keeps the guard and
 says so. Server-queued pulls stay guarded. A push paused behind a conflict the server no longer has open lifts the pause and asks
-again. The local `POST /api/conflicts/{id}/resolve` answers `{ message }`, shown as a toast. Unit **392** (+4, against a real server;
+again. The local `POST /api/conflicts/{id}/resolve` answers `{ message }`, shown as a toast. Unit **394** with the review fixes merged (+4, against a real server;
 the forced pull and the pause lift each mutation-checked). On the rig the pop-up came back after *Sync all*; the choice was left to
 the maintainer (Cloud overwrites the real `D:\Emulation` card's Warrior Within save). **Not fixed:** the conflict card says "the
 other is never deleted, just set aside", but without *Also keep the other one as a backup* the loser is ordinary history and was

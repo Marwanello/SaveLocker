@@ -413,6 +413,46 @@ public sealed class MemoryCardTests : IDisposable
     }
 
     [Fact]
+    public void Two_regions_cards_of_one_title_keep_the_same_files_and_still_never_join()
+    {
+        // DuckStation names a card per game by its title, which the USA and the European disc share.
+        Bytes("usa/Crash Bandicoot_1.mcd", F.Ps1Card("BASCUS-94900CRASH"));
+        Bytes("eu/Crash Bandicoot_1.mcd", F.Ps1Card("BESCES-00344CRASH"));
+        var usa = Assert.Single(DuckStationSaves.Scan(new[] { new RomSaveFolders(P("usa"), null) }));
+        var europe = Assert.Single(DuckStationSaves.Scan(new[] { new RomSaveFolders(P("eu"), null) }));
+        var server = new GameDto(Guid.NewGuid(), usa.Name, null, null, true, IncludeGlobs: usa.IncludeGlobs!.ToArray(),
+            Emulators: ["DuckStation"], Release: usa.Release);
+        Assert.Equal(usa.IncludeGlobs, europe.IncludeGlobs);
+
+        Assert.False(Enroller.SameFiles(server, europe));
+        var option = Assert.Single(EnrollLinks.For([server], europe), o => o.GameId == server.Id);
+        Assert.Equal((LinkKind.Blocked, "Another region"), (option.Kind, option.Badge));
+        Assert.Contains("USA release", EnrollLinks.Resolve([server], europe, [], new LinkChoice(EnrollLinks.Game, server.Id)).Refusal);
+        // Nor does this machine take a tracked game of the other region for it.
+        var config = AgentConfig.Load(P("state/config.json"));
+        config.Games.Add(new TrackedGame
+        {
+            GameId = server.Id, Name = server.Name, SaveDirectory = P("eu"), IncludeGlobs = usa.IncludeGlobs!.ToList(),
+            Release = usa.Release,
+        });
+        Assert.Null(Enroller.TrackedFor(config, europe));
+        Assert.NotNull(Enroller.TrackedFor(config, usa));
+    }
+
+    [Fact]
+    public void Two_releases_of_one_name_are_both_watched_for_their_process()
+    {
+        TrackedGame Release(string proc) => new() { GameId = Guid.NewGuid(), Name = "Prince of Persia - Warrior Within", ProcessNames = [proc] };
+        var (usa, europe) = (Release("pcsx2-qt"), Release("pcsx2-qtx64"));
+
+        var watched = ProcessWatcher.ByGameId([usa, europe, new TrackedGame { GameId = Guid.NewGuid(), Name = "No process" }]);
+
+        Assert.Equal(new[] { "pcsx2-qt" }, watched[usa.GameId.ToString()]);
+        Assert.Equal(new[] { "pcsx2-qtx64" }, watched[europe.GameId.ToString()]);
+        Assert.Equal(2, watched.Count);
+    }
+
+    [Fact]
     public void One_release_on_two_differently_named_cards_is_one_game()
     {
         // The maintainer's Deck and Windows PC: one European Warrior Within, each on its own machine's card.

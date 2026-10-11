@@ -488,7 +488,7 @@ public static class Enroller
     {
         var byName = NamesFor(c)
             .Select(config.FindGame)
-            .Where(g => g is not null && SameScope(g.IncludeGlobs, c.IncludeGlobs) && SameEmulator(g, c))
+            .Where(g => g is not null && SameScope(g.IncludeGlobs, c.IncludeGlobs) && SameEmulator(g, c) && !OtherRegion(g.Release, c))
             .Select(g => g!);
         var matches = byName.Concat(ByFiles(config, c)).ToList();
         return matches.FirstOrDefault(g => g.IsEnrolledHere) ?? matches.FirstOrDefault();
@@ -497,7 +497,7 @@ public static class Enroller
     private static IEnumerable<TrackedGame> ByFiles(AgentConfig config, ScanCandidate c) =>
         c.IncludeGlobs is not { Count: > 0 }
             ? []
-            : config.Games.Where(g => SameScope(g.IncludeGlobs, c.IncludeGlobs) && SameEmulator(g, c))
+            : config.Games.Where(g => SameScope(g.IncludeGlobs, c.IncludeGlobs) && SameEmulator(g, c) && !OtherRegion(g.Release, c))
                 .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
@@ -529,7 +529,7 @@ public static class Enroller
 
     /// <summary>
     /// Does a server game hold <paramref name="name"/> against <paramref name="c"/>? Every game of the name does,
-    /// except another region's release of a console game (<see cref="OtherRegion"/>): the European Warrior Within
+    /// except another region's release of a console game (<see cref="OtherRegion(GameDto, ScanCandidate)"/>): the European Warrior Within
     /// is "Prince of Persia - Warrior Within" as much as the USA one, and the server tells the two apart by region.
     /// </summary>
     internal static bool NameTaken(IEnumerable<GameDto> server, string name, ScanCandidate c) =>
@@ -537,8 +537,12 @@ public static class Enroller
 
     /// <summary>Both say which region's release they are, and they differ: a disc reads only its own region's
     /// saves (its own game ID), so the two never join.</summary>
-    internal static bool OtherRegion(GameDto game, ScanCandidate c) =>
-        GameReleaseDto.RegionKey(game.Release?.Region) is { Length: > 0 } theirs &&
+    internal static bool OtherRegion(GameDto game, ScanCandidate c) => OtherRegion(game.Release, c);
+
+    // The same for a game this machine tracks: files with the same name can be two regions' saves — DuckStation
+    // names a card per game by its title, which both regions' discs share.
+    private static bool OtherRegion(GameReleaseDto? release, ScanCandidate c) =>
+        GameReleaseDto.RegionKey(release?.Region) is { Length: > 0 } theirs &&
         GameReleaseDto.RegionKey(c.Release?.Region) is { Length: > 0 } ours &&
         !string.Equals(theirs, ours, StringComparison.OrdinalIgnoreCase);
 
@@ -559,10 +563,12 @@ public static class Enroller
         (a ?? Array.Empty<string>()).SequenceEqual(b ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Does the server's game keep the save files this scoped candidate names — the same primary
-    /// include patterns (D1) — written by the same emulator (<see cref="SameEmulator(GameDto, ScanCandidate)"/>)?
-    /// Never true for an unscoped candidate, which names no files of its own.</summary>
+    /// include patterns (D1) — written by the same emulator (<see cref="SameEmulator(GameDto, ScanCandidate)"/>), in the
+    /// same region's release (<see cref="OtherRegion(GameDto, ScanCandidate)"/>)? Never true for an unscoped candidate,
+    /// which names no files of its own.</summary>
     internal static bool SameFiles(GameDto game, ScanCandidate c) =>
-        c.IncludeGlobs is { Count: > 0 } && SameScope(game.IncludeGlobs, c.IncludeGlobs) && SameEmulator(game, c);
+        c.IncludeGlobs is { Count: > 0 } && SameScope(game.IncludeGlobs, c.IncludeGlobs) && SameEmulator(game, c) &&
+        !OtherRegion(game.Release, c);
 
     /// <summary>
     /// An emulator save never joins a server game another emulator's save made, even with the same files
