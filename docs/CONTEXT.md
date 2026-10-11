@@ -1861,6 +1861,15 @@ the server (`Game.Region` + `ReleaseJson`, migration `20261011085942_AddGameRele
 console and agent game pages show a region chip that opens the details; lists show the region as text; the Deck's
 Game Mode list shows it as the row's trailing text (and its rows are now keyed by game id, not name). Unit **387**
 (+4 agent, +3 against a real server; the server's region match mutation-checked).
+<br>**2026-10-11, same branch: one PS2 game across differently named cards.** The PC's European Warrior Within
+(card `MC1.ps2`) became *… (PCSX2)* instead of joining the Deck's (card `PS2MC-1_converted.ps2`): the card's name was
+in the scope. A PCSX2 game's folder is now the card itself and its scope only the product code (`BESLES-52822*/**`),
+so the scope is the same on every machine — no server or API change. Unit **388** (+1; the cross-card case and the
+two-machine sync test, now on two card names, fail with the old scope). **The rig's two Prince of Persia games on the
+console (DeckTest) still have the old scope:** remove them and re-add from the Deck and the PC, after `sync` +
+`build -Only deck` + `up -Only deck`. Also found on the Deck that day: its PCSX2 states folder is empty (the only
+`.p2s` files are in `~/ludusavi-backup`, Sept 2025), and its `PCSX2.ini` names no slot-1 card, so which card PCSX2
+writes to is unconfirmed.
 <br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then merge PR #63.
 On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another
 commit, so this session did not touch it: run `testenv clean` first.
