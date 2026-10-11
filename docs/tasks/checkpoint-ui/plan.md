@@ -17,7 +17,7 @@ Brand kit: `brand-kit.html`, beside this file (also mirrored at
 
 ## Status (updated 2026-10-04 — ✅ done)
 
-**Closed as done 2026-10-04**, merging with PR #54. What was left has its own task: the Group 9 `testenv` checklist (`tasks/checkpoint-ui-group-9-check/`), the appearance follow-up (b) (`tasks/appearance-follow-ups/`) and the notification buttons (`tasks/notification-follow-ups/`).
+**Closed as done 2026-10-04**, merging with PR #54. What was left has its own task: the Group 9 `testenv` checklist (`tasks/checkpoint-ui-group-9-check/`), the appearance follow-up (b) (`logs/2026-10-11_appearance-follow-ups/`, shipped 2026-10-11) and the notification buttons (`tasks/notification-follow-ups/`).
 
 | Phase | Status |
 |---|---|
