@@ -13,6 +13,7 @@ import { ConflictPanel } from './ConflictPanel';
 import { GameStats } from './GameStats';
 import { VersionsCard } from './VersionsCard';
 import { SaveFoldersCard } from './SaveFoldersCard';
+import { DlcCheckCard } from './DlcCheckCard';
 import { RulesCard } from './RulesCard';
 import { ExcludePatternsCard } from './ExcludePatternsCard';
 import { RemoteCommandsCard } from './RemoteCommandsCard';
@@ -114,10 +115,18 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
         standing={standing(summary, problemGameIds(health))}
         versionCount={versions.length}
         machines={withGame.length > 0 ? withGame : machines}
-        source={sources.length > 0 || game.release
+        source={sources.length > 0 || game.release || game.emulatorProfile
           ? <span className="flex flex-wrap items-center gap-1.5">
               {sources.length > 0 && <SourceChip sources={sources} machines={withGame} paths={paths} />}
               <ReleaseChip game={game} sources={sources} />
+              {game.emulatorProfile?.startsWith('xenia:') && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border border-line bg-raise px-2 py-0.5 text-[11px] text-dim"
+                  title="The Xbox 360 profile this game's saves are under. Every machine syncs it there, and Xenia is set to this profile when the game starts."
+                >
+                  Xbox 360 profile <span className="font-mono">{game.emulatorProfile.slice(6)}</span>
+                </span>
+              )}
             </span>
           : undefined}
         allMachines={machines}
@@ -179,6 +188,8 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
           <ExcludePatternsCard game={game} onRefresh={onRefresh} />
         </div>
       </div>
+
+      <DlcCheckCard gameId={game.id} refreshKey={versions.length} />
 
       <RemoteCommandsCard commands={gameCmds} />
     </>
