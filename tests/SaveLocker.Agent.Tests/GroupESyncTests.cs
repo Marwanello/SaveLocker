@@ -210,4 +210,39 @@ public sealed class GroupESyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.Equal(450, XeniaProfile.GetInt(dashboard, XeniaProfile.GamerscoreSetting));
         Assert.Equal(29, XeniaProfile.GetInt(dashboard, XeniaProfile.AchievementsSetting));
     }
+
+    [Fact]
+    public async Task A_machine_without_the_xbox_360_profile_gets_it_with_the_first_game_it_pulls()
+    {
+        // Phase 5c step 6: the PC has the profile; the Deck has only the game's save folder. The pull unpacks the profile -
+        // Account and a dashboard with this game's row - so Xenia there can sign in to it and load the game's GPD.
+        var title = "6C" + _id.ToUpperInvariant();
+        var tid = Convert.ToUInt32(title, 16);
+        const string xuid = "E030000033894516";
+        const string deckContent = "SDCard/Emulation/roms/xbox360/content";
+        const string pcContent = "Xenia Manager/Emulators/Xenia Canary/content";
+        var profile = $"{xuid}/FFFE07D1/00010000/{xuid}";
+        Write("pc", $"{pcContent}/{xuid}/{title}/00000001/Profile/save.dat", "pc-save");
+        Write("pc", $"{pcContent}/{profile}/{title}.gpd", "pc-achievements");
+        F.Write(P("pc", $"{pcContent}/{profile}/Account"), XeniaFormatsTests.AccountFor("Driver"));
+        F.Write(P("pc", $"{pcContent}/{profile}/FFFE07D1.gpd"), XeniaFormatsTests.Dashboard(
+            XeniaFormatsTests.Row(tid, 18, 260, "Group E Racer"), XeniaFormatsTests.Row(0x4D5307E6, 11, 190, "Halo 3")));
+        Write("deck", $"{deckContent}/{xuid}/{title}/00000001/Profile/save.dat", "deck-old-save");
+
+        var pc = await Machine("pc");
+        var deck = await Machine("deck");
+        var pcGame = await Enroll(pc, XeniaSaves.Scan([new XeniaFolders(P("pc", pcContent))]), title);
+        var deckGame = await Enroll(deck, XeniaSaves.Scan([new XeniaFolders(P("deck", deckContent), EmuDeck: true)]), title);
+
+        await using var enginePc = new SyncEngine(pc, ApiClient.For(pc));
+        await using var engineDeck = new SyncEngine(deck, ApiClient.For(deck));
+        Assert.NotNull(await enginePc.PushAsync(pcGame, force: true));
+        Assert.Equal(PullOutcome.Restored, await engineDeck.PullAsync(deckGame, force: true));
+
+        Assert.Equal("Driver", XeniaProfile.Gamertag(P("deck", deckContent), xuid));
+        Assert.Equal("pc-achievements", Read("deck", $"{deckContent}/{profile}/{title}.gpd"));
+        var dashboard = Xdbf.Parse(File.ReadAllBytes(P("deck", $"{deckContent}/{profile}/FFFE07D1.gpd")));
+        Assert.Equal([tid], dashboard.Entries.Where(e => e.Namespace == Xdbf.Title).Select(e => (uint)e.Id));
+        Assert.Equal(260, XeniaProfile.GetInt(dashboard, XeniaProfile.GamerscoreSetting));
+    }
 }

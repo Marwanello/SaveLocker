@@ -84,6 +84,71 @@ public sealed class XeniaProfileSliceTests : IDisposable
         Assert.False(File.Exists(Dashboard));
     }
 
+    private string CoreFile => Path.Combine(_profile, "SaveLocker-4D5309C9.core");
+    private string Account => Path.Combine(_profile, "Account");
+
+    private static byte[] WithSetting(byte[] dashboard, ulong id, int value)
+    {
+        var x = Xdbf.Parse(dashboard);
+        var d = new byte[24];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(d, (uint)id);
+        d[8] = 1;
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(d.AsSpan(16), value);
+        x.Set(Xdbf.Setting, id, d);
+        return x.Serialize();
+    }
+
+    [Fact]
+    public void The_core_holds_Account_and_the_profiles_settings_but_no_game_row_or_total()
+    {
+        const ulong motto = 0x402C0011; // a profile setting that is not a total
+        File.WriteAllBytes(Dashboard, WithSetting(XeniaFormatsTests.Dashboard(XeniaFormatsTests.Row(Forza, 18, 260, "Forza Horizon")), motto, 7));
+        File.WriteAllBytes(Account, XeniaFormatsTests.AccountFor("Driver"));
+
+        XeniaProfileSlice.Export(Game(), _log.Add);
+
+        var core = Xdbf.Parse(File.ReadAllBytes(CoreFile));
+        Assert.DoesNotContain(core.Entries, e => e.Namespace == Xdbf.Title);
+        Assert.Null(XeniaProfile.GetInt(core, XeniaProfile.GamerscoreSetting));
+        Assert.Equal(7, XeniaProfile.GetInt(core, motto));
+        Assert.Equal(File.ReadAllBytes(Account), core.Get(0xFFFF, 0));
+    }
+
+    [Fact]
+    public void A_machine_without_the_profile_gets_it_unpacked_with_this_games_row()
+    {
+        const ulong motto = 0x402C0011;
+        var source = WithSetting(XeniaFormatsTests.Dashboard(XeniaFormatsTests.Row(Forza, 18, 260, "Forza Horizon"),
+            XeniaFormatsTests.Row(Halo, 11, 190, "Halo 3")), motto, 7);
+        var account = XeniaFormatsTests.AccountFor("Driver");
+        File.WriteAllBytes(CoreFile, XeniaProfileSlice.Core(source, account));
+        File.WriteAllBytes(RowFile, XeniaFormatsTests.Row(Forza, 18, 260, "Forza Horizon"));
+
+        XeniaProfileSlice.AfterPull(Game(), _log.Add, () => false);
+
+        Assert.Equal(account, File.ReadAllBytes(Account));
+        Assert.Equal("Driver", XeniaProfile.Gamertag(_content, Xuid));
+        var x = Xdbf.Parse(File.ReadAllBytes(Dashboard));
+        Assert.Equal([Forza], x.Entries.Where(e => e.Namespace == Xdbf.Title).Select(e => (uint)e.Id)); // never Halo's row
+        Assert.Equal(260, XeniaProfile.GetInt(x, XeniaProfile.GamerscoreSetting));
+        Assert.Equal(7, XeniaProfile.GetInt(x, motto));
+    }
+
+    [Fact]
+    public void A_profile_already_here_is_never_replaced_by_the_core()
+    {
+        var mine = XeniaFormatsTests.Dashboard(XeniaFormatsTests.Row(Halo, 11, 190, "Halo 3"));
+        var myAccount = XeniaFormatsTests.AccountFor("Driver");
+        File.WriteAllBytes(Dashboard, mine);
+        File.WriteAllBytes(Account, myAccount);
+        File.WriteAllBytes(CoreFile, XeniaProfileSlice.Core(XeniaFormatsTests.Dashboard(), XeniaFormatsTests.AccountFor("Someone Else")));
+
+        Assert.False(XeniaProfileSlice.Seed(Game(), _log.Add, () => false));
+
+        Assert.Equal(myAccount, File.ReadAllBytes(Account));
+        Assert.Equal(mine, File.ReadAllBytes(Dashboard));
+    }
+
     [Fact]
     public void A_game_under_a_profile_declares_its_part_of_it_and_older_layouts_do_not()
     {
@@ -97,7 +162,8 @@ public sealed class XeniaProfileSliceTests : IDisposable
         var forza = found.Single(c => c.EmulatorRom == "4D5309C9").ExtraSaveDirs!;
         var slice = forza.Single(e => e.Key == XeniaProfileSlice.Key);
         Assert.Equal(Path.Combine(_content, Xuid), slice.Dir); // the main folder, scoped: never one inside the other
-        Assert.Equal(["FFFE07D1/00010000/*/4D5309C9.gpd", "FFFE07D1/00010000/*/SaveLocker-4D5309C9.row"], slice.IncludeGlobs);
+        Assert.Equal(["FFFE07D1/00010000/*/4D5309C9.gpd", "FFFE07D1/00010000/*/SaveLocker-4D5309C9.row",
+            "FFFE07D1/00010000/*/SaveLocker-4D5309C9.core"], slice.IncludeGlobs);
         Assert.DoesNotContain(found.Single(c => c.EmulatorRom == "4D530AA4").ExtraSaveDirs!, e => e.Key == XeniaProfileSlice.Key);
     }
 }

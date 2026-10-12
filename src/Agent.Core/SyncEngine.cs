@@ -781,7 +781,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                 if (restored.SkippedKeys.Count > 0)
                     _log($"[{game.Name}] the server's save holds folder(s) this game no longer has " +
                          $"({string.Join(", ", restored.SkippedKeys)}); left out.");
-                XeniaProfileSlice.Merge(game, _log);
+                XeniaProfileSlice.AfterPull(game, _log);
             }
             catch (SaveArchive.UnsafeArchiveException ex)
             {
