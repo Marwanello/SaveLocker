@@ -5159,6 +5159,25 @@
             "type": "integer",
             "format": "int64",
             "default": 0
+          },
+          "machineIds": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "sources": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/GameSourceDto"
+            }
           }
         }
       },
