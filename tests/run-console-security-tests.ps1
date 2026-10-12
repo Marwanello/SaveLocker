@@ -1487,9 +1487,24 @@ if (-not $canBind) {
         Start-Phase "art3" $artEnv3          # no key: the games are created with nothing to fetch art with
         Http POST "/api/games" @{ name = "SEC Boot Good" } | Out-Null
         Http POST "/api/games" @{ name = "SEC Boot Keep Good" } | Out-Null
+        Http POST "/api/games" @{ name = "SEC Pin Good" } | Out-Null
         $bootKeep0 = GameNamed "SEC Boot Keep Good"
         $bootGrid = "" + (Http PUT "/api/games/$($bootKeep0.id)/art/grid" @{ url = "http://127.0.0.1:$StubPort/img/good.png?n=77" }).Json.gridUrl
         Stop-Phase
+
+        # The pinned source through the SAME pass: a key present but the startup pass still off, so the
+        # art-less game can be pointed at a chosen SteamGridDB entry BEFORE any backfill runs. The
+        # restart below is what then has to honor the pin: its automatic name match ("...Good") is id 1,
+        # so only the pin can explain a request for id 21's art.
+        $pinEnv = $artEnv3.Clone(); $pinEnv.SteamGridDb__ApiKey = "test-key"
+        Start-Phase "art3" $pinEnv
+        $pinGame = GameNamed "SEC Pin Good"
+        $pinPut = Http PUT "/api/games/$($pinGame.id)/art/source" @{ sgdbId = 21 }
+        Check "backfill: a source is pinned for a game with no art (setup)" `
+            ($pinPut.Status -eq 200 -and $pinPut.Json.sgdbId -eq 21 -and -not $pinGame.gridUrl)
+        Stop-Phase
+        $pinBefore = StubCount "GET 127.0.0.1 /api/v2/grids/game/21"
+
         $bootEnv = $artEnv3.Clone()
         $bootEnv.SteamGridDb__ApiKey = "test-key"; $bootEnv.Art__BackfillOnStartup = "true"; $bootEnv.Art__BackfillStartupDelaySeconds = "0"
         Start-Phase "art3" $bootEnv          # the same database, restarted with a key and the startup pass on
@@ -1500,6 +1515,12 @@ if (-not $canBind) {
         $bootKept = GameNamed "SEC Boot Keep Good"
         Check "startup: ... a game that lacked only its icon gets the icon ..." ($bootKept.iconUrl -like "/art/*/icon.png*")
         Check "startup: ... and its hand-picked cover is left exactly as it was" ($bootKept.gridUrl -eq $bootGrid)
+
+        $pinFilled = $null
+        foreach ($i in 1..60) { Start-Sleep -Milliseconds 500; $pinFilled = GameNamed "SEC Pin Good"; if ($pinFilled.gridUrl -and $pinFilled.iconUrl) { break } }
+        Check "startup: a game with a PINNED source is filled from that entry, not the automatic name match" `
+            ($pinFilled.gridUrl -like "/art/*/grid.png*" -and $pinFilled.iconUrl -like "/art/*/icon.png*" -and
+             (StubCount "GET 127.0.0.1 /api/v2/grids/game/21") -gt $pinBefore)
         Stop-Phase
     }
 }

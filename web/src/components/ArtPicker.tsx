@@ -109,6 +109,7 @@ interface SourceProps {
 function SourceBar({ game, source, onChanged }: SourceProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [searched, setSearched] = useState('');
   const [results, setResults] = useState<SgdbGame[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,6 +121,7 @@ function SourceBar({ game, source, onChanged }: SourceProps) {
     setBusy(true);
     setError(null);
     setResults(null);
+    setSearched(q);
     try {
       setResults(await api.artSearch(game.id, q));
     } catch (err) {
@@ -194,7 +196,7 @@ function SourceBar({ game, source, onChanged }: SourceProps) {
           {error && <p role="alert" className="text-xs text-dim m-0">{error}</p>}
 
           {results && results.length === 0 && (
-            <p className="text-xs text-dim m-0">No SteamGridDB games match “{query.trim()}”.</p>
+            <p className="text-xs text-dim m-0">No SteamGridDB games match “{searched}”.</p>
           )}
 
           {results && results.length > 0 && (

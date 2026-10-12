@@ -299,10 +299,11 @@ public sealed class ArtService
 
         try
         {
-            var hit = await FindGameAsync(game.Name, ct);
+            var hit = await FindGameCachedAsync(game.Name, ct);
             return (new ArtSourceDto(hit?.Id, hit?.Name, true), null);
         }
-        catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException) && !ct.IsCancellationRequested)
+        catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException or JsonException) &&
+                                   !ct.IsCancellationRequested)
         {
             // No match to name right now; the options listing reports the reachability problem itself.
             return (new ArtSourceDto(null, null, true), null);
@@ -346,7 +347,8 @@ public sealed class ArtService
             await _db.SaveChangesAsync(ct);
             return (new ArtSourceDto(picked.Id, picked.Name, false), null);
         }
-        catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException) && !ct.IsCancellationRequested)
+        catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException or JsonException) &&
+                                   !ct.IsCancellationRequested)
         {
             return (null, "Could not reach SteamGridDB: " + ex.Message);
         }
@@ -386,7 +388,8 @@ public sealed class ArtService
                 }
             return (games, null);
         }
-        catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException) && !ct.IsCancellationRequested)
+        catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException or JsonException) &&
+                                   !ct.IsCancellationRequested)
         {
             return (null, "Could not reach SteamGridDB: " + ex.Message);
         }
@@ -633,12 +636,7 @@ public sealed class ArtService
         // A game chosen by hand wins over the name search everywhere — the picker, Refresh art, the
         // backfill — and needs no lookup: the id is already validated and stored.
         if (game.SteamGridDbId is { } chosen) return chosen;
-
-        var key = "sgdb-id:" + game.Name.ToLowerInvariant();
-        if (_cache.TryGetValue(key, out int cached)) return cached;
-        var id = (await FindGameAsync(game.Name, ct))?.Id;
-        if (id is { } found) _cache.Set(key, found, TimeSpan.FromMinutes(30));
-        return id;
+        return (await FindGameCachedAsync(game.Name, ct))?.Id;
     }
 
     // ----- SteamGridDB calls -----
@@ -647,11 +645,30 @@ public sealed class ArtService
     private async Task<SgdbGameDto?> FindGameAsync(string name, CancellationToken ct)
     {
         using var doc = await GetJsonAsync($"search/autocomplete/{Uri.EscapeDataString(name)}", ct);
-        if (doc is null) return null;
-        var data = doc.RootElement.GetProperty("data");
-        if (data.GetArrayLength() == 0) return null;
-        var first = data[0];
-        return new SgdbGameDto(first.GetProperty("id").GetInt32(), NameOf(first), YearOf(first));
+        if (doc is null || !doc.RootElement.TryGetProperty("data", out var data) ||
+            data.ValueKind != JsonValueKind.Array)
+            return null;
+        foreach (var e in data.EnumerateArray())
+        {
+            if (!e.TryGetProperty("id", out var idEl) || !idEl.TryGetInt32(out var id)) continue;
+            return new SgdbGameDto(id, NameOf(e), YearOf(e));
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// <see cref="FindGameAsync"/> remembered per name for 30 minutes — one answer is shared by the
+    /// options listing, Refresh art, the backfill and <see cref="GetSourceAsync"/>, so opening the
+    /// picker does not ask SteamGridDB again for a lookup it just made. A miss is not cached, so a
+    /// transient failure is retried on the next call.
+    /// </summary>
+    private async Task<SgdbGameDto?> FindGameCachedAsync(string name, CancellationToken ct)
+    {
+        var key = "sgdb-game:" + name.ToLowerInvariant();
+        if (_cache.TryGetValue(key, out SgdbGameDto? cached) && cached is not null) return cached;
+        var hit = await FindGameAsync(name, ct);
+        if (hit is not null) _cache.Set(key, hit, TimeSpan.FromMinutes(30));
+        return hit;
     }
 
     /// <summary>One SteamGridDB game by id, for validating a hand-picked source.</summary>
