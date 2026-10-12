@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using SaveLocker.Server.Data;
+using SaveLocker.Shared;
 
 namespace SaveLocker.Server.Services;
 
@@ -172,6 +173,34 @@ public sealed class AdminAuth
         var hash = Tokens.Hash(token);
         if (await _db.AdminSessions.Where(s => s.TokenHash == hash).ExecuteDeleteAsync() > 0)
             await AuditAsync("admin.logout", "signed out");
+    }
+
+    /// <summary>Every live session, most recently used first. <paramref name="currentToken"/> marks
+    /// the caller's own — a table that cannot tell you which row is you invites revoking the browser
+    /// you are holding.</summary>
+    public async Task<List<AdminSessionDto>> ListSessionsAsync(string? currentToken)
+    {
+        var now = DateTime.UtcNow;
+        var currentHash = currentToken is { Length: > 0 } ? Tokens.Hash(currentToken) : null;
+        var sessions = await _db.AdminSessions.AsNoTracking()
+            .Where(s => s.ExpiresAt > now)
+            .OrderByDescending(s => s.LastUsedAt)
+            .ToListAsync();
+        return sessions.Select(s => new AdminSessionDto(
+            s.Id, s.CreatedAt, s.LastUsedAt, s.ExpiresAt, s.ClientAddress,
+            currentHash is not null && s.TokenHash == currentHash)).ToList();
+    }
+
+    /// <summary>End one session by id — the "a stolen one, not all of them" control. Returns false
+    /// for an id that is not (or no longer) a live session.</summary>
+    public async Task<bool> RevokeSessionByIdAsync(Guid id)
+    {
+        var session = await _db.AdminSessions.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id);
+        if (session is null) return false;
+        await _db.AdminSessions.Where(s => s.Id == id).ExecuteDeleteAsync();
+        await AuditAsync("admin.session_revoked",
+            $"a session from {session.ClientAddress ?? "an unknown address"} was ended");
+        return true;
     }
 
     /// <summary>Sign every browser out. Returns how many sessions were ended.</summary>

@@ -65,11 +65,12 @@ function outcomeText(r: SyncAllOutcome): { text: string; ms: number } {
   if (ran === 0) return { text: 'Sync all cancelled before any machine started.', ms: 4000 };
   const cancelled = r.cancelled > 0 ? ` ${r.cancelled} cancelled before starting.` : '';
   if (r.failures.length > 0) {
-    const first = r.failures[0];
+    // Every failing machine by name and reason, not just the first plus a count — a fleet batch is
+    // usually small, and the person reading this has to know WHICH machines to go and look at.
+    const detail = r.failures.map(f => `${f.machine}: ${shorten(f.reason, 90)}`).join(' · ');
     return {
-      text: `Synced ${r.succeeded} of ${plural(ran, 'machine')} — ${first.machine} failed: ${shorten(first.reason)}` +
-        (r.failures.length > 1 ? ` (+${r.failures.length - 1} more)` : '') + '.' + cancelled,
-      ms: 9000,
+      text: `Synced ${r.succeeded} of ${plural(ran, 'machine')} — ${detail}.${cancelled}`,
+      ms: Math.min(14000, 7000 + r.failures.length * 2000),
     };
   }
   return { text: `Synced ${plural(r.succeeded, 'machine')}.${cancelled}`, ms: r.cancelled > 0 ? 4500 : 3200 };

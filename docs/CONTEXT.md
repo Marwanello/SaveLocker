@@ -1901,6 +1901,53 @@ commit, so this session did not touch it: run `testenv clean` first.
 
 ---
 
+**Quick-wins batch: seven backlog items closed, one verification item retired (2026-10-09, branch
+`fix/backlog-quick-wins`, no PR yet).** One pass, each with the verification the item named:
+- **Registration default flipped** — `Security:RequireAdminPasswordToRegister` now defaults to `true`:
+  once an admin password is set, a **new** machine name must present it. A machine key is
+  fleet-scoped, so the open door meant the password guarded the dashboard but not the saves. No
+  password set is unchanged (first-run stays open); `savelocker register --admin-password` and
+  enrollment tokens are the two ways in; setting the switch to `false` deliberately remains for
+  trusted networks. Docs updated ([[Build and Run]], [[API Reference]], [[Decisions]], compose, CLI
+  reference, troubleshooting). `run-console-security-tests` proves both the default-ON half and the
+  OFF switch.
+- **The conflict upload latch no longer outlives the conflict** (`SyncEngine.PushCoreAsync`): at the
+  pause threshold it asks the server whether the game still has an open conflict before holding the
+  save back, so a resolve that landed while the agent was down clears the latch and the push runs.
+  Server unreachable keeps the pause. New `ConflictLatchTests` (3, stub server; the stale-latch
+  clear is mutation-checked). **Related, same area:** a dashboard **Push** command answered with a
+  conflict now reports Failed with the reason instead of "pushed — latest save …" (`CommandPoller`
+  had ignored the engine's result).
+- **`post-exit-sync` releases the lease even while Sync all holds the agent-wide gate**: the route
+  still answers 409 (the running sync pushes the game) but now stops that game's renewer and releases
+  its checkout through a new `SyncEngine.ReleaseLaunchLeaseAsync`, so the fleet is not locked out of
+  a game nobody is playing. `run-local-api-tests` holds a real Sync all open and asserts the release.
+- **Signed-in browsers are listable and revocable one by one** (Configuration → Admin password):
+  `GET /api/admin/sessions` (current session marked), `DELETE /api/admin/sessions/{id}` (404 when not
+  live, audited as `admin.session_revoked`); "Sign out everywhere" stays.
+- **A deleted game's cached art is deleted with it** (`ArtService.DeleteGameArt`, called by the delete
+  route — cover, icon and thumbnails).
+- **Sign-in lockouts surface as a bell notice**: `GET /api/admin/lockouts` (the in-memory throttle's
+  own view, so a restart forgives) is merged into the notifications menu as a Warning that clears
+  itself when the window ends; it is not dismissible (there is no record to dismiss).
+- **Console Sync all names every failing machine and its reason**, not the first plus "(+N more)".
+- `unverified-ui-surfaces` (Heroic store sub-chips) retired as verified; all eight task folders moved
+  to `docs/tasks/_done/`, and [[Backlog]] no longer lists any of them.
+Verified on the final tree (PRs #62 and #63 merged in; `Backlog.md`'s only conflict resolved by
+keeping this batch's removals plus #63's emulator-progress line):
+`run-console-security-tests` **364/364** (was 308; the +56 are this batch's checks, including a stale
+`run-local-api-tests` candidate-folder check whose expectation predated `SavePathGuard` — it now
+asserts the user-profile refusal plus a real folder accepted); `run-local-api-tests` **127/127**
+(`SL_LOCALAPI_PORT` moves it off :5188 when another worktree's rig holds that);
+`run-agent-tests` 47/47; `run-delta-upload-tests` 33/33; `run-health-tests` 33/33; xunit
+**397/397** — all green, including #62's `SaveFileTreeServerTests`, whose shared-server registration
+now carries the admin password the flipped default requires, and the `ArcadeSavesTests.Supermodel_…`
+casing failure #61 had carried (fixed by #63); `openapi.json` + `web/src/api-types.ts` regenerated
+(additions only); `web` build + lint clean; full solution builds. **Not yet run on real hardware** —
+the testenv walkthrough is in this session's report.
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

@@ -1,4 +1,4 @@
-import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineGameSource, MachineScanCandidate, SavePath, VersionFolder, VersionChanges, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
+import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineGameSource, MachineScanCandidate, SavePath, VersionFolder, VersionChanges, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AdminSession, Lockout, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
 
 // The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
 // itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
@@ -293,6 +293,15 @@ export const api = {
 
   /** "Sign out everywhere": ends every session on the server, this browser's included. */
   signOutEverywhere: () => request<{ ended: number }>('/admin/sessions', { method: 'DELETE' }),
+
+  /** Every live console session, most recently used first — the table under Admin password. */
+  sessions: () => request<AdminSession[]>('/admin/sessions'),
+
+  /** End one signed-in browser by id, without disturbing the others (or this one). */
+  revokeSession: (id: string) => request<void>(`/admin/sessions/${id}`, { method: 'DELETE' }),
+
+  /** Who is currently locked out after wrong admin passwords (in-memory; a restart forgives). */
+  lockouts: () => request<Lockout[]>('/admin/lockouts'),
 
   deleteMachine: (machineId: string) =>
     fetch(`/api/machines/${machineId}`, { method: 'DELETE', headers: headers() })

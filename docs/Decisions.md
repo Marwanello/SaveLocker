@@ -572,17 +572,19 @@ session can judge an edge case, not to reopen the choice.
   password change is never overwritten. A hash supplied through configuration cannot be written back
   and simply stays as it is. A verified-password cache (5 min, HMAC-keyed, only successes) stops
   script callers paying 600k iterations on every request.
-- **A machine key is fleet-scoped, by design — and open registration is what makes that matter**
-  (2026-09-20). Any registered machine can read and write every game, force-overwrite a head, resolve
-  any conflict and change any conflict policy; there are no per-machine ACLs, because the hub model
-  lets any machine adopt any server-defined game. There is no game or version delete route in the
-  agent group. Scoping keys to games a machine tracks was considered and NOT built: it is a product
-  change (adoption, "pull to a new machine"), not a hardening tweak. What follows from it: first-time
-  registration is open, so on a reachable server anyone can mint a key — and the admin password then
-  guards the dashboard but not the saves. `Security:RequireAdminPasswordToRegister=true` closes that
-  (agents already accept `--admin-password`). It stays **off by default** — the LAN-convenience
-  default is a maintainer decision this session did not override — but anything reachable beyond the
-  household should turn it on, or use enrollment tokens.
+- **A machine key is fleet-scoped, by design — and registration now needs the admin password**
+  (2026-09-20; default flipped 2026-10-09). Any registered machine can read and write every game,
+  force-overwrite a head, resolve any conflict and change any conflict policy; there are no
+  per-machine ACLs, because the hub model lets any machine adopt any server-defined game. There is no
+  game or version delete route in the agent group. Scoping keys to games a machine tracks was
+  considered and NOT built: it is a product change (adoption, "pull to a new machine"), not a
+  hardening tweak. What follows from it: minting a key is the real door into the save data, so
+  first-time registration is **closed by default** — `Security:RequireAdminPasswordToRegister`
+  defaults to `true`, and once an admin password is set a new machine name must present it (agents
+  already accept `--admin-password`; enrollment tokens are unaffected). No password set means no
+  check, so first-run is unchanged. The switch can be deliberately set to `false` on a network where
+  everyone able to reach the port is trusted — that was the old default and is no longer the safe
+  one.
 - **Artwork URLs are untrusted input** (2026-09-20). `ArtService` used to fetch whatever URL
   SteamGridDB's response named with a default client and store the bytes under `/art`, which is served
   from the same origin as the admin console; the extension came from the URL, so a path ending

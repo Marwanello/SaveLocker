@@ -145,6 +145,7 @@ internal sealed class TrayContext : ApplicationContext
             // POST /api/games/{id}/post-exit-sync (tasks/playnite-plugin/plan.md, Phase 5) — the
             // Playnite plugin's OnGameStopped equivalent to this route's own OnGameStarting caller.
             postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
+            releaseLease: (game, _) => _engine.ReleaseLaunchLeaseAsync(game),
             syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct),
             mapFolder: (game, key, dir, keep) => _engine.MapSavePathAsync(game, key, dir, keep),
             forgetFolder: (game, key) => _engine.ForgetSavePathAsync(game, key),
