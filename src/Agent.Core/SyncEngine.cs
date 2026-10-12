@@ -347,14 +347,36 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             return new UploadResult(UploadStatus.NoChange, null, null);
         }
 
-        if (!force && game.ConsecutiveConflicts >= ConflictUploadLimit)
+        if (!force && game.ConsecutiveConflicts >= ConflictUploadLimit && !await ConflictClosedAsync(game, ct))
         {
-            ReportOnly(
-                $"[{game.Name}] CONFLICT still unresolved — upload paused after " +
-                $"{game.ConsecutiveConflicts} rejected attempts; no archive was sent. " +
-                "Resolve it in the dashboard or force-push explicitly.",
-                AgentEventCodes.Conflict, AgentEventSeverity.Error, game.GameId);
-            return new UploadResult(UploadStatus.Conflict, null, null);
+            // The counter alone cannot tell "the server still refuses this save" from "someone
+            // resolved the conflict while this agent was down or between runs" — nothing pushes that
+            // news down to an agent, and a plain pull will not clear it either (this machine still
+            // has un-pushed local changes, so WA-02 refuses the pull). Without this check the latch
+            // outlives the conflict and locks the save out of uploading until a force-push.
+            bool? stillOpen = null;
+            try { stillOpen = (await _api.GetStateAsync(game.GameId, ct))?.HasOpenConflict; }
+            // Could not ask (unreachable, or an old server): keep the pause rather than gamble on a
+            // full upload the server has already rejected three times.
+            catch (Exception) when (!ct.IsCancellationRequested) { }
+
+            if (stillOpen is not false)
+            {
+                ReportOnly(
+                    $"[{game.Name}] CONFLICT still unresolved — upload paused after " +
+                    $"{game.ConsecutiveConflicts} rejected attempts; no archive was sent. " +
+                    (stillOpen is null ? "The server could not be asked whether it still is. " : "") +
+                    "Resolve it in the dashboard or force-push explicitly.",
+                    AgentEventCodes.Conflict, AgentEventSeverity.Error, game.GameId);
+                return new UploadResult(UploadStatus.Conflict, null, null);
+            }
+
+            // No open conflict server-side: the count is stale. Clear it and let the ordinary push
+            // run — if the content really still diverges, the server records a fresh conflict and
+            // the latch simply starts again from one.
+            game.ConsecutiveConflicts = 0;
+            _config.SaveGameSyncState(game);
+            _log($"[{game.Name}] conflict latch cleared — the server has no open conflict; pushing again.");
         }
 
         try
@@ -572,6 +594,26 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     private static void TryDeleteTemp(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); } catch { /* best-effort cleanup */ }
+    }
+
+    /// <summary>
+    /// Uploads paused behind a conflict the server no longer has open (resolved in the console, or here
+    /// while the pull it queued was refused) would stay paused for good: no push reaches the server, so
+    /// no new conflict opens to ask again, and the agent goes on counting one nobody can see. True, with
+    /// the pause lifted, when the server has no open conflict of this machine's for the game; false
+    /// when it does or cannot be asked.
+    /// </summary>
+    private async Task<bool> ConflictClosedAsync(TrackedGame game, CancellationToken ct)
+    {
+        try
+        {
+            if ((await _api.GetOpenConflictsForMachineAsync(_config.MachineId, ct)).Any(c => c.GameId == game.GameId))
+                return false;
+        }
+        catch (Exception) when (!ct.IsCancellationRequested) { return false; }
+        _log($"[{game.Name}] its conflict was resolved; uploads resume.");
+        game.ConsecutiveConflicts = 0;
+        return true;
     }
 
     /// <summary>
@@ -873,6 +915,62 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                     pushed += " The server is unreachable, so nothing was pulled.";
                 return pullSkipped ? $"{pushed} Not pulled: the game is running." : pushed;
         }
+    }
+
+    /// <summary>
+    /// A person at this machine settles its own conflict (<paramref name="conflict"/>: VersionA is the
+    /// cloud's, VersionB this machine's rejected push), and the save here follows the choice at once.
+    /// <para>
+    /// Keeping the cloud's used to only tell the server, which queues every machine an unforced pull,
+    /// and on the loser that pull can never pass: its save is the rejected version, which differs from
+    /// the last one it synced, so the guard against overwriting unpushed work refused it, the next
+    /// sync pushed it again, and a new conflict opened (the maintainer's PC, 2026-10-11, its first sync
+    /// of a game the Deck had). Overwriting is what the person just chose, so the pull is forced when
+    /// the save here is still the version they turned down (its hash is read before resolving: an
+    /// unprotected loser can be pruned by the resolve itself) or when Keep both keeps a copy on the
+    /// server. A save changed since is new work nobody has seen, and keeps the guard.
+    /// </para>
+    /// </summary>
+    public async Task<(bool Ok, string Message)> ResolveOwnConflictAsync(
+        ConflictDto conflict, Guid winningVersionId, bool keepBoth, CancellationToken ct = default)
+    {
+        var game = _config.Games.FirstOrDefault(g => g.GameId == conflict.GameId);
+        var keepCloud = winningVersionId == conflict.VersionAId;
+        var here = game is { IsEnrolledHere: true } && conflict.MachineId == _config.MachineId;
+        string? rejectedHash = null;
+        if (here && keepCloud && !keepBoth)
+        {
+            try { rejectedHash = (await _api.GetVersionAsync(conflict.VersionBId, ct))?.ContentHash; }
+            catch (Exception ex) when (!ct.IsCancellationRequested) { _log($"[{game!.Name}] could not read the rejected version: {ex.Message}"); }
+        }
+
+        var (ok, error) = await _api.ResolveConflictAsync(conflict.Id, winningVersionId, keepBoth, ct);
+        if (!ok) return (false, error ?? "Could not resolve the conflict.");
+        if (!here) return (true, "Resolved.");
+
+        if (!keepCloud)
+        {
+            // The winner is left out of the server's pull fan-out: its pointer moves here, or its next
+            // push would present a stale parent.
+            game!.LastKnownVersionId = winningVersionId;
+            game.LastSyncedHash = game.LocalHash(_config.StateDir);
+            game.ConsecutiveConflicts = 0;
+            _config.SaveGameSyncState(game);
+            return (true, $"Kept this device's save of {game.Name}. It is the latest everywhere now.");
+        }
+
+        if (GameActivity.IsActive(game!))
+            return (true, $"Kept the cloud's save of {game!.Name}. The game is running, so the save here was not replaced: pull it once the game is closed.");
+        var unchanged = rejectedHash is not null && game!.LocalHash(_config.StateDir) == rejectedHash;
+        return await PullAsync(game!, force: keepBoth || unchanged, ct) switch
+        {
+            PullOutcome.Restored => (true, $"Kept the cloud's save of {game!.Name}. It was restored on this device."),
+            PullOutcome.UpToDate => (true, $"Kept the cloud's save of {game!.Name}. This device already had it."),
+            PullOutcome.Refused when !keepBoth && !unchanged =>
+                (true, $"Kept the cloud's save of {game!.Name}, but the save on this device changed after the conflict, " +
+                       "so it was not replaced. Push it to keep it, or pull the cloud's to discard it."),
+            var outcome => (true, $"Kept the cloud's save of {game!.Name}. {DescribePull(game!, outcome)}"),
+        };
     }
 
     /// <summary>What a pull did, as one sentence — shared by every surface that answers a person.</summary>
@@ -1325,14 +1423,27 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             // after the push, so any failure there — an unreachable server, an unparseable response,
             // a cancelled upload — left the game checked out to this machine until the lease
             // expired, locking the rest of the fleet out of a game nobody was playing.
-            //
-            // Released through the SAME client that acquired it. _api is bound to the origin this
-            // engine was built for, so even if the user changed servers mid-session the release
-            // lands where the lease actually lives; releasing against the new server would free
-            // nothing and leave the old one held.
-            try { await _api.ReleaseLeaseAsync(game.GameId); }
-            catch (Exception ex) { _log($"[{game.Name}] lease release on {_origin} failed: {ex.Message}"); }
+            await ReleaseLaunchLeaseAsync(game);
         }
+    }
+
+    /// <summary>
+    /// Stop this game's lease renewer and release its checkout, without pushing. For an exit that
+    /// lands while a wider sync already holds the agent-wide gate: that run will push the game, but
+    /// nothing inside it ends THIS machine's checkout — the renewer keeps the lease alive and the
+    /// rest of the fleet stays locked out of the game.
+    /// <para>
+    /// Released through the SAME client that acquired it. _api is bound to the origin this engine
+    /// was built for, so even if the user changed servers mid-session the release lands where the
+    /// lease actually lives; releasing against the new server would free nothing and leave the old
+    /// one held.
+    /// </para>
+    /// </summary>
+    public async Task ReleaseLaunchLeaseAsync(TrackedGame game)
+    {
+        StopLeaseRenewer(game.GameId);
+        try { await _api.ReleaseLeaseAsync(game.GameId); }
+        catch (Exception ex) { _log($"[{game.Name}] lease release on {_origin} failed: {ex.Message}"); }
     }
 
     private void StartLeaseRenewer(TrackedGame game)

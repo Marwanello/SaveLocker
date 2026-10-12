@@ -60,8 +60,9 @@
 #   SEC-04  global backstop       a distributed guess is bounded.
 #   SEC-05  trusted proxy         with Security:TrustedProxies declared, the forwarded address is what is
 #                                 throttled — one client's lockout does not become everyone's.
-#   SEC-06  registration          Security:RequireAdminPasswordToRegister closes the open first-time
-#                                 registration; the default is unchanged.
+#   SEC-06  registration          Security:RequireAdminPasswordToRegister is ON by default: once an
+#                                 admin password is set, a NEW machine name needs it (a machine key is
+#                                 fleet-scoped); the off switch stays available and is proved too.
 #   SEC-07  response headers      CSP / nosniff / frame protection, and Swagger left working.
 #   SEC-08  artwork fetch         a hostile image URL (foreign host, redirect off-list, credentials in
 #                                 the URL, oversized, not-an-image, ".html" path) never puts anything
@@ -482,6 +483,22 @@ Check "Lock: DELETE /admin/session ends this session (204)" ((Http DELETE "/api/
 Check "Lock: the ended token no longer works" ((Http GET "/api/overview" $null (Session $tok)).Status -eq 401)
 Check "Lock: another browser's session is unaffected" ((Http GET "/api/overview" $null (Session $tokKeep)).Status -eq 200)
 
+# A stolen session must be findable and receivable on its own — "sign out everywhere" was the only
+# control, and it punishes every browser the owner is actually using.
+$tokOther = (Login $pw1).Json.token
+$sess = Http GET "/api/admin/sessions" $null (Session $tokKeep)
+$sessList = @($sess.Json)
+Check "sessions: listing needs the admin credential (401 without)" ((Http GET "/api/admin/sessions").Status -eq 401)
+Check "sessions: every live browser is listed with an address and timestamps" `
+    ($sess.Status -eq 200 -and $sessList.Count -eq 2 -and "" -ne $sessList[0].clientAddress -and $null -ne $sessList[0].createdAt -and $null -ne $sessList[0].lastUsedAt)
+Check "sessions: exactly the caller's own browser is marked as current" (@($sessList | Where-Object { $_.isCurrent }).Count -eq 1)
+$other = @($sessList | Where-Object { -not $_.isCurrent })[0]
+Check "sessions: revoking one by id ends just that browser" `
+    ((Http DELETE "/api/admin/sessions/$($other.id)" $null (Session $tokKeep)).Status -eq 204 -and
+     (Http GET "/api/overview" $null (Session $tokOther)).Status -eq 401 -and
+     (Http GET "/api/overview" $null (Session $tokKeep)).Status -eq 200)
+Check "sessions: revoking an unknown id -> 404" ((Http DELETE "/api/admin/sessions/$([guid]::NewGuid())" $null (Session $tokKeep)).Status -eq 404)
+
 $tok2 = (Login $pw1).Json.token
 $all = Http DELETE "/api/admin/sessions" $null (Session $tok2)
 Check "sign out everywhere: reports how many were ended (>= 2)" ($all.Status -eq 200 -and $all.Json.ended -ge 2)
@@ -498,10 +515,13 @@ $script:auth = Session $tokA
 $acts = Actions
 Check "audit: sign-ins, sign-outs and 'everywhere' are recorded" (($acts -contains "admin.login") -and ($acts -contains "admin.logout") -and ($acts -contains "admin.logout_all"))
 
-# ------------------------------------------------------------------ SEC-06 (default half): registration unchanged
+# ------------------------------------------------------------------ SEC-06 (default half): registration closed by default
 Write-Host ""; Write-Host "-- SEC-06: registration (default configuration)"
 $newDefault = Http POST "/api/machines/register" @{ name = "SEC-NewDefault" }
-Check "default: a NEW machine may still register without the password (LAN convenience unchanged)" ($newDefault.Status -eq 200)
+Check "default: a NEW machine without the password is refused (401)" ($newDefault.Status -eq 401)
+Check "default: ... and was not created" ((@((Http GET "/api/machines" $null (PwHeader $pw2)).Json | Where-Object { $_.name -eq "SEC-NewDefault" })).Count -eq 0)
+Check "default: the same NEW machine WITH the password registers (200, gets a key)" `
+    ((Http POST "/api/machines/register" @{ name = "SEC-NewDefault" } (PwHeader $pw2)).Status -eq 200)
 Check "default: re-registering an EXISTING machine still needs the password (401)" ((Http POST "/api/machines/register" @{ name = "SEC-M1" }).Status -eq 401)
 Check "default: ... and works with it" ((Http POST "/api/machines/register" @{ name = "SEC-M1" } (PwHeader $pw2)).Status -eq 200)
 
@@ -552,12 +572,17 @@ $ra = 0; [void][int]::TryParse("" + $locked.Headers["Retry-After"], [ref]$ra)
 Check "the RIGHT password is now refused: 429" ($locked.Status -eq 429)
 Check "the refusal carries a usable Retry-After (1..5 s)" ($ra -ge 1 -and $ra -le 5)
 Check "a live session is unaffected by the lockout" ((Http GET "/api/overview" $null (Session $keep)).Status -eq 200)
+Check "lockouts: listing needs the admin credential (401 without)" ((Http GET "/api/admin/lockouts").Status -eq 401)
+$lo = Http GET "/api/admin/lockouts" $null (Session $keep)
+Check "lockouts: the locked-out client is listed with time remaining" `
+    ($lo.Status -eq 200 -and @($lo.Json).Count -ge 1 -and @($lo.Json)[0].retryAfterSeconds -ge 1)
 Check "the legacy header is throttled too (right password, 429)" ((Http GET "/api/overview" $null (PwHeader $pw)).Status -eq 429)
 Check "re-registering an existing machine is throttled too (right password, 429)" ((Http POST "/api/machines/register" @{ name = "SEC-T1" } (PwHeader $pw)).Status -eq 429)
 $spoof = Login $pw @{ "X-Forwarded-For" = "198.51.100.77" }
 Check "spoofing X-Forwarded-For does NOT escape the lockout (headers are ignored by default)" ($spoof.Status -eq 429)
 Start-Sleep -Seconds 6
 Check "the lockout lifts by itself" ((Login $pw).Status -eq 200)
+Check "lockouts: the list is empty again once the window lifts" (@((Http GET "/api/admin/lockouts" $null (Session $keep)).Json).Count -eq 0)
 $junk = 1..12 | ForEach-Object { (Http GET "/api/overview" $null (Session "stale-$_")).Status }
 Check "stale SESSION tokens are 401, never 429 (they are not guesses)" (@($junk | Where-Object { $_ -ne 401 }).Count -eq 0)
 Check "... and do not stop the owner signing in afterwards" ((Login $pw).Status -eq 200)
@@ -590,16 +615,15 @@ Check "client B (a different forwarded address) is NOT locked by A's misses" ((L
 Stop-Phase
 
 # =====================================================================================
-Write-Host ""; Write-Host "==== Phase 5: SEC-06 require the password to register ===="
-Start-Phase "register" @{ Security__RequireAdminPasswordToRegister = "true"; Security__MaxFailedAttempts = "1000" }
+Write-Host ""; Write-Host "==== Phase 5: SEC-06 the registration switch (default is ON; this phase proves the off switch) ===="
+Start-Phase "register" @{ Security__RequireAdminPasswordToRegister = "false"; Security__MaxFailedAttempts = "1000" }
 Check "no admin password set yet: registering is still open (nothing to require)" ((Http POST "/api/machines/register" @{ name = "SEC-R0" }).Status -eq 200)
 Http POST "/api/admin/password" @{ password = $pw } | Out-Null
-$noPw = Http POST "/api/machines/register" @{ name = "SEC-R1" }
-Check "a NEW machine without the password is refused (401) ..." ($noPw.Status -eq 401 -and $noPw.Content -match "requires the admin password")
-Check "... and was not created" ((@((Http GET "/api/machines" $null (PwHeader $pw)).Json | Where-Object { $_.name -eq "SEC-R1" })).Count -eq 0)
-Check "a NEW machine with a wrong password is refused (401)" ((Http POST "/api/machines/register" @{ name = "SEC-R1" } (PwHeader "nope")).Status -eq 401)
-$withPw = Http POST "/api/machines/register" @{ name = "SEC-R1" } (PwHeader $pw)
-Check "a NEW machine WITH the password registers (200, gets a key)" ($withPw.Status -eq 200 -and $withPw.Json.apiKey.Length -ge 40)
+$open = Http POST "/api/machines/register" @{ name = "SEC-R1" }
+Check "OFF: a NEW machine without the password registers (the deliberate LAN-convenience switch)" `
+    ($open.Status -eq 200 -and $open.Json.apiKey.Length -ge 40)
+Check "OFF: re-registering an EXISTING name still needs the password (401)" ((Http POST "/api/machines/register" @{ name = "SEC-R0" }).Status -eq 401)
+Check "OFF: ... and works with it" ((Http POST "/api/machines/register" @{ name = "SEC-R0" } (PwHeader $pw)).Status -eq 200)
 Stop-Phase
 
 # =====================================================================================
@@ -1217,6 +1241,15 @@ if (-not $canBind) {
         $served = Http GET ($good.gridUrl -replace '\?.*$', '')
         Check "art: served with nosniff and a sandboxing CSP" `
             ($served.Status -eq 200 -and ("" + $served.Headers["X-Content-Type-Options"]) -eq "nosniff" -and ("" + $served.Headers["Content-Security-Policy"]) -match "sandbox")
+
+        # A deleted game must take its cached art with it — the files live outside the database, so
+        # nothing else would ever remove them and the directory only grew.
+        $delG = Http POST "/api/games" @{ name = "SEC Art Delete" }
+        Http PUT "/api/games/$($delG.Json.id)/art/grid" @{ url = "http://127.0.0.1:$StubPort/img/good.png?n=21" } | Out-Null
+        $delDir = Join-Path $artRoot ([guid]$delG.Json.id).ToString("N")
+        Check "art cleanup: setup - the game's cached art is on disk" (Test-Path $delDir)
+        Check "art cleanup: deleting the game -> 204" ((Http DELETE "/api/games/$($delG.Json.id)").Status -eq 204)
+        Check "art cleanup: its cached art (cover, icon, thumbs) is gone with it" (-not (Test-Path $delDir))
         Stop-Phase
 
         # ------------------------------------------------------------------------------------

@@ -275,13 +275,22 @@ try {
 
     $cands = Send "/api/candidates" $token $null $null
     if ($cands.Status -eq 200 -and $cands.Body -match '"id"\s*:\s*0\b') {
-        $wanted = if ($onWindows) { $env:USERPROFILE } else { $env:HOME }
-        $setOne = SendPost "/api/candidates/0/folder" $token (@{ path = $wanted } | ConvertTo-Json -Compress)
+        # The user profile is the hard refusal SavePathGuard exists for (WA-02): the candidate route
+        # consults it too, so a scan that "found" saves everywhere cannot map the whole profile.
+        # (Not $home: that is a read-only automatic variable in PowerShell.)
+        $profilePath = if ($onWindows) { $env:USERPROFILE } else { $env:HOME }
+        $refused = SendPost "/api/candidates/0/folder" $token (@{ path = $profilePath } | ConvertTo-Json -Compress)
+        Check "a hard refusal (the user profile) is refused for a candidate too (400)" ($refused.Status -eq 400)
+
+        # A real folder is accepted and sticks on the candidate the cache serves.
+        $safeCand = Join-Path $scratch "candidate-save"
+        New-Item -ItemType Directory -Force $safeCand | Out-Null
+        $setOne = SendPost "/api/candidates/0/folder" $token (@{ path = $safeCand } | ConvertTo-Json -Compress)
         Check "a valid candidate folder set is accepted (200)" ($setOne.Status -eq 200)
         $after = Send "/api/candidates" $token $null $null
-        Check "the candidate folder set sticks in the cache" ($after.Body.Contains(($wanted -replace '\\','\\')))
+        Check "the candidate folder set sticks in the cache" ($after.Body.Contains(($safeCand -replace '\\','\\')))
     } else {
-        Write-Host "SKIP: a valid candidate folder set is accepted (no candidates scanned on this box)"
+        Write-Host "SKIP: candidate folder checks (no candidates scanned on this box)"
     }
 
     # =================================================================================
@@ -481,7 +490,8 @@ $artLog      = New-Object System.Collections.ArrayList
 $artKeyed    = New-Object System.Collections.ArrayList   # paths of stub requests that carried X-Api-Key
 $artOtherLog = New-Object System.Collections.ArrayList   # everything the "other host" was ever asked
 $artPending  = New-Object System.Collections.ArrayList
-$script:artHold = $true   # while true, the slow game's download is held open; released for Sync all below
+$script:artHold = $true   # while true, one game's download is held open; released for Sync all below
+$script:artHoldId = $artIds["slow"]   # which game that is; retargeted for the Sync-all gate checks
 $script:artLook = @{ theme = "dark"; accent = "cobalt"; mark = "memcard" }   # what the stub's heartbeat pushes (section 12)
 $script:artCtxTask   = $artListener.GetContextAsync()
 $script:artOtherTask = $artOtherListener.GetContextAsync()
@@ -513,7 +523,7 @@ function ArtHandle($ctx) {
     }
     elseif ($path -match '^/api/games/([0-9a-f-]{36})/download$') {
         # "No saves yet" is what a pull expects for a game with no head; the slow game answers it late.
-        if ($script:artHold -and $Matches[1] -eq $artIds["slow"]) { [void]$artPending.Add(@{ Ctx = $ctx; Due = (Get-Date).AddSeconds(12) }) }
+        if ($script:artHold -and $Matches[1] -eq $script:artHoldId) { [void]$artPending.Add(@{ Ctx = $ctx; Due = (Get-Date).AddSeconds(12) }) }
         else { ArtSend $ctx 404 $null $null }
     }
     elseif ($path -eq "/api/agent/health") {
@@ -691,6 +701,23 @@ try {
     $third = ArtCall "POST" "/api/games/$slow/sync" $artToken '{"mode":"pull"}'
     Check "the game is free again afterwards"       ($third.Status -ne 409 -and $third.Status -ne 0)
 
+    # -- Exit bookkeeping while the AGENT-WIDE gate is held. Sync all (or another launch-gate call)
+    #    owns _syncGate; post-exit-sync must still answer 409 for the push, but something has to end
+    #    the game's checkout or its lease renewer keeps the fleet locked out of a game nobody is
+    #    playing. Held open by the good game's download, retargeted so this is independent of slow.
+    $script:artHoldId = $artIds["good"]
+    $allTask = ArtStart "POST" "/api/sync" $artToken $null
+    $t0 = Get-Date
+    while (@($artPending).Count -eq 0 -and ((Get-Date) - $t0).TotalSeconds -lt 10) { ArtPump 50 }
+    $gateHeld = @($artPending).Count -eq 1
+    $exit2 = ArtCall "POST" "/api/games/$($artIds['slow'])/post-exit-sync" $artToken $null
+    Check "post-exit-sync while Sync all holds the gate is answered 409" ($gateHeld -and $exit2.Status -eq 409)
+    Check "post-exit-sync still released that game's lease (the fleet is not locked out)" `
+        (@($artLog | Where-Object { $_ -eq "DELETE /api/games/$($artIds['slow'])/lease" }).Count -ge 1)
+    $allDone = ArtFinish $allTask
+    Check "the Sync all that held the gate completes (200)" ($allDone.Status -eq 200)
+    $script:artHoldId = $artIds["slow"]
+
     # -- Sync all runs the same per-game step as the game page (SyncEngine.PullThenPushAsync); no other
     #    suite drives it, so a refactor of that step would otherwise go unnoticed --
     $script:artHold = $false
@@ -786,6 +813,7 @@ try {
         @("GET",  "/api/offline-queue"), @("POST", "/api/sync/cancel"), @("POST", "/api/open-log"),
         @("GET",  "/api/conflicts/resolved"), @("GET", "/api/games/$goodId/versions"),
         @("GET",  "/api/games/$goodId/local-size"), @("POST", "/api/games/$goodId/open-folder"),
+        @("GET",  "/api/games/$goodId/files"),
         @("POST", "/api/test-connection"), @("GET", "/api/candidates/cached"))) {
         Check "$($route[0]) $($route[1] -replace $goodId, '{id}') needs the local token" ((ArtCall $route[0] $route[1] $null $null).Status -eq 401)
     }
@@ -820,6 +848,7 @@ try {
     $sz = ArtCall "GET" "/api/games/$goodId/local-size" $artToken $null
     Check "local-size reads the save folder without hashing it" ($sz.Status -eq 200 -and ($sz.Body | ConvertFrom-Json).bytes -gt 0)
     Check "local-size for an unknown game is a 404" ((ArtCall "GET" "/api/games/$([guid]::NewGuid())/local-size" $artToken $null).Status -eq 404)
+    Check "files for an unknown game is a 404" ((ArtCall "GET" "/api/games/$([guid]::NewGuid())/files" $artToken $null).Status -eq 404)
     Check "versions for an unknown game is a 404, not a server call" ((ArtCall "GET" "/api/games/$([guid]::NewGuid())/versions" $artToken $null).Status -eq 404)
     Check "versions for a tracked game answers (an older server's 404 reads as an empty list)" `
         ((ArtCall "GET" "/api/games/$goodId/versions" $artToken $null).Status -eq 200)

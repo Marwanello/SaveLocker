@@ -26,8 +26,11 @@ export type SetAppearanceRequest = Schemas['SetAppearanceRequest'];
 export type MachineSavePath = Schemas['MachineSavePathDto'];
 export type MachineGameSource = Schemas['MachineGameSourceDto'];
 export type GameSource = Schemas['GameSourceDto'];
+export type GameRelease = Schemas['GameReleaseDto'];
 export type SavePath = Schemas['SavePathDto'];
 export type VersionFolder = Schemas['VersionFolderDto'];
+export type VersionChanges = Schemas['VersionChangesDto'];
+export type VersionFileChange = Schemas['VersionFileChangeDto'];
 export type MachineScanCandidate = Schemas['MachineScanCandidateDto'];
 export type AuditEntry = Schemas['AuditEntryDto'];
 export type AgentHealth = Schemas['AgentHealthDto'];
@@ -49,6 +52,8 @@ export type BackupRestoreResult = Schemas['BackupRestoreResult'];
 export type SetBackupSettingsRequest = Schemas['SetBackupSettingsRequest'];
 export type BackupDownloadTicket = Schemas['BackupDownloadTicket'];
 export type ArtOption = NonNullable<Schemas['ArtOptionDto']>;
+export type AdminSession = NonNullable<Schemas['AdminSessionDto']>;
+export type Lockout = NonNullable<Schemas['LockoutDto']>;
 
 /**
  * Where a link into one game should land — a notification's action or the top bar's conflict pill:

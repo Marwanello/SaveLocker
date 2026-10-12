@@ -268,11 +268,14 @@ app.MapGet("/health", () => Results.Ok(new { service = "SaveLocker", status = "o
 //
 // A machine key is FLEET-scoped (Decisions.md): it can read and write every game, so minting one is
 // the real door into the save data, and an open first-time registration means the admin password on
-// its own guards the dashboard but not the saves. Security:RequireAdminPasswordToRegister=true closes
+// its own guards the dashboard but not the saves. Security:RequireAdminPasswordToRegister closes
 // that door — once a password is set, EVERY registration needs it (agents already accept one:
-// `savelocker register --admin-password`). Off by default: the LAN-convenience default stands.
-// The password check itself is throttled like every other one (AuthThrottle) — this route used to
-// be an unmetered oracle for it.
+// `savelocker register --admin-password`). ON by default: with no password set the endpoint is
+// still open (first-run behaviour), so the convenience cost only begins once the owner has opted
+// into protecting the console — and at that point an open door beside it is the password guarding
+// nothing. Set it to false deliberately on a network where everyone who can reach the port is
+// trusted. The password check itself is throttled like every other one (AuthThrottle) — this route
+// used to be an unmetered oracle for it.
 app.MapPost("/api/machines/register", async (
     MachineRegisterRequest req, HttpContext http, SyncService sync, SettingsService settings,
     AdminAuth auth, IConfiguration cfg) =>
@@ -281,7 +284,7 @@ app.MapPost("/api/machines/register", async (
         return Results.BadRequest("Machine name is required.");
     var name = req.Name.Trim();
 
-    var requireForNew = cfg.GetValue<bool?>("Security:RequireAdminPasswordToRegister") ?? false;
+    var requireForNew = cfg.GetValue<bool?>("Security:RequireAdminPasswordToRegister") ?? true;
     var existing = await sync.MachineExistsAsync(name);
     if (existing || requireForNew)
     {
@@ -359,10 +362,16 @@ agent.MapGet("/games", async (HttpContext http, SyncService sync, SettingsServic
     var pathMap = await sync.GetMachinePathMapAsync(machine.Id);
     var extras = await sync.GetExtraSavePathsAsync();
     var sources = await sync.GetMachineSourceMapAsync(machine.Id);
+    var emulators = await sync.GetEmulatorMapAsync();
     var (defaults, _) = await settings.GetDefaultExcludesAsync();
     // Agents receive the effective exclude set (global defaults ∪ per-game) to apply.
     return Results.Ok(games.Select(g => g.ToDtoWithPaths(pathMap.GetValueOrDefault(g.Id), extras[g.Id])
-        with { ExcludeGlobs = GlobConfig.Effective(defaults, g.ExcludeGlobs), MachineSource = sources.GetValueOrDefault(g.Id) }));
+        with
+        {
+            ExcludeGlobs = GlobConfig.Effective(defaults, g.ExcludeGlobs),
+            MachineSource = sources.GetValueOrDefault(g.Id),
+            Emulators = emulators.GetValueOrDefault(g.Id),
+        }));
 }).Produces<List<GameDto>>();
 
 // ---- Leases (agent) ----
@@ -601,6 +610,12 @@ agent.MapGet("/agent/conflicts", async (SyncService sync, DateTime? resolvedSinc
 agent.MapGet("/agent/games/{id:guid}/versions", async (Guid id, SyncService sync) =>
     Results.Ok((await sync.ListVersionsAsync(id)).Select(v => v.ToDto())))
     .Produces<List<SaveVersionDto>>();
+
+// The head version's files with their SHA-256, so an agent can say file by file whether its own save
+// matches the server's (tasks/save-file-trees Phase 3). Hashed from the stored archive, cached per version.
+agent.MapGet("/agent/games/{id:guid}/head/files", async (Guid id, SyncService sync, CancellationToken ct) =>
+    await sync.GetHeadFilesAsync(id, ct) is { } files ? Results.Ok(files) : Results.NotFound())
+    .Produces<HeadFilesDto>();
 
 agent.MapGet("/agent/conflicts/{id:guid}", async (Guid id, SyncService sync) =>
     await sync.GetConflictAsync(id) is { } c ? Results.Ok(c) : Results.NotFound())
@@ -944,6 +959,25 @@ admin.MapDelete("/admin/session", async (HttpContext http, AdminAuth auth) =>
 admin.MapDelete("/admin/sessions", async (AdminAuth auth) =>
     Results.Ok(new { ended = await auth.RevokeAllSessionsAsync() }));
 
+// Every live session, for the table under Admin password: a stolen browser is findable, and it can
+// be ended on its own — "sign out everywhere" is the only other control and it punishes every
+// browser the owner is actually using.
+admin.MapGet("/admin/sessions", async (HttpContext http, AdminAuth auth) =>
+    Results.Ok(await auth.ListSessionsAsync(
+        http.Request.Headers[AdminPasswordFilter.SessionHeader].FirstOrDefault())))
+    .Produces<List<AdminSessionDto>>();
+
+admin.MapDelete("/admin/sessions/{id:guid}", async (Guid id, AdminAuth auth) =>
+    await auth.RevokeSessionByIdAsync(id) ? Results.NoContent() : Results.NotFound());
+
+// Who is currently locked out after wrong admin passwords. The audit log records the lockout, but
+// nobody staring at the console is reading the audit log — this is what lets the bell say it.
+admin.MapGet("/admin/lockouts", (AuthThrottle throttle) =>
+    Results.Ok(throttle.ActiveLockouts()
+        .Select(l => new LockoutDto(l.Client, (int)Math.Ceiling(l.Remaining.TotalSeconds)))
+        .ToArray()))
+    .Produces<LockoutDto[]>();
+
 admin.MapPost("/games", async (CreateGameRequest req, SyncService sync, ArtService art) =>
 {
     if (ValidateNewGameFolders(req) is { } folderError)
@@ -975,8 +1009,15 @@ admin.MapPut("/games/{id:guid}/art/{kind}", async (
     return ok ? Results.Ok(game!.ToDto(await sync.GetExtraSavePathsAsync(id))) : Results.BadRequest(new { message });
 }).Produces<GameDto>();
 
-admin.MapDelete("/games/{id:guid}", async (Guid id, SyncService sync) =>
-    await sync.DeleteGameAsync(id) ? Results.NoContent() : Results.NotFound());
+admin.MapDelete("/games/{id:guid}", async (Guid id, SyncService sync, ArtService art) =>
+{
+    if (!await sync.DeleteGameAsync(id)) return Results.NotFound();
+    // The game row is gone; its cached cover, icon and thumbnails are not part of any table, so
+    // nothing else would ever remove them. Best-effort inside the service — an orphaned directory
+    // is not a reason to fail the delete.
+    art.DeleteGameArt(id);
+    return Results.NoContent();
+});
 
 admin.MapGet("/games/{id:guid}/state", async (Guid id, SyncService sync) =>
     await sync.GetGameStateAsync(id) is { } state ? Results.Ok(state) : Results.NotFound())
@@ -1013,6 +1054,12 @@ admin.MapGet("/games/{id:guid}/versions/{versionId:guid}/folders", async (
     Guid id, Guid versionId, SyncService sync) =>
     await sync.GetVersionFoldersAsync(id, versionId) is { } folders ? Results.Ok(folders) : Results.NotFound())
     .Produces<VersionFolderDto[]>();
+
+// What every version changed against the one before it — the console's Versions rows open on this. One
+// call for the whole list, not one per row (tasks/save-file-trees Phase 1).
+admin.MapGet("/games/{id:guid}/versions/changes", async (Guid id, SyncService sync) =>
+    await sync.ListVersionChangesAsync(id) is { } changes ? Results.Ok(changes) : Results.NotFound())
+    .Produces<VersionChangesDto[]>();
 
 // Apply retention immediately, instead of only as a side effect of the next upload.
 admin.MapPost("/games/{id:guid}/prune", async (Guid id, SyncService sync) =>
@@ -1380,7 +1427,7 @@ static string PathKeyOf(string? path) =>
 // refuses the request instead of creating a half-defined game. An agent's extra folders must be templates
 // (SyncService.AgentTemplateError): it is defining them for every machine.
 static string? ValidateNewGameFolders(CreateGameRequest req, bool fromAgent = false) =>
-    GlobConfig.ValidateIncludes(req.IncludeGlobs) ?? GlobConfig.ValidateExtraPaths(req.ExtraPaths) ??
+    GameReleaseDto.Validate(req.Release) ?? GlobConfig.ValidateIncludes(req.IncludeGlobs) ?? GlobConfig.ValidateExtraPaths(req.ExtraPaths) ??
     (fromAgent ? req.ExtraPaths?.Select(SyncService.AgentTemplateError).FirstOrDefault(e => e is not null) : null);
 
 // A refusal the caller can act on (a key taken or retired, the same folder already there) is a 409 with a

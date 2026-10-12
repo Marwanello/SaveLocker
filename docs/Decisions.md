@@ -329,6 +329,41 @@ session can judge an edge case, not to reopen the choice.
   found the game, as kind › detail + tags ("Emulator › RetroArch", SNES, Flatpak), because two machines rarely
   find a game the same way. The agent writes the words once (`GameSources`), the server stores one row per
   machine and game, and the three UIs only draw them. Nothing syncs differently because of it.
+  <br>**Amended 2026-10-07 (emulator-saves Group C):** one thing now reads it — which emulators a game was found
+  through (`GameDto.Emulators`, next bullet). The kind and detail are no longer display only.
+- **Saves from different emulators are never one game, even with the same files** (2026-10-07, maintainer's
+  choice at the start of emulator-saves Group C, over "one game, one emulator per machine"). Dolphin's and
+  PrimeHack's Metroid Prime Trilogy keep byte-identical saves under identical scopes, so D1 alone would make them
+  one game. The agent's game list now carries the emulators each game was found through (from the per-machine
+  sources), and `Enroller.SameFiles` also requires this candidate's emulator to be among them. A game no machine has
+  reported an emulator for (made before sources, or by hand) is open to any. Add games' *Change* lists such a game
+  greyed out as *Another emulator*. **Group F (Switch) planned the opposite** — Eden ↔ Ryujinx as one game through
+  a title key (D2) — so confirm with the maintainer when F starts.
+- **A memory card every game of a console shares is never a game of its own** (2026-10-07, maintainer's choice,
+  emulator-saves Group C). Restoring one game's version would restore every game on the card. Add games lists it
+  greyed out with how to switch the emulator to a card per game (`ScanCandidate.NotSyncable`), the enroller refuses
+  it, and `SaveDirSanity` warns — never refuses — when one is mapped by hand. Judged by the file on disk (the PS2
+  card's header, Dolphin's and DuckStation's names, a PS1 card holding several games' saves), never by an emulator
+  setting: EmuDeck sets PCSX2's folder auto-manage on, yet PCSX2 still creates a shared file card. **Amended
+  2026-10-09 (PR #63 review):** a PS1 card *named after* one of the games on it (`<title>_<slot>.mcd`, matched against
+  each product code's disc title ignoring region, disc and punctuation) is that game's own card, whatever else it
+  holds — a multi-disc game's later discs save under their own codes onto DuckStation's one card per title, and
+  Suikoden II imports a Suikoden save copied onto its card. Its states are the named game's codes only.
+- **PCSX2's `.p2s.backup` state copies are not synced** (2026-10-07, maintainer's choice): D3's "states always" stands,
+  but a backup of every slot would double a PS2 game's states against the upload cap.
+- **A disc console's save is named by its serial; the region is beside the name, not in it** (2026-10-08, amended
+  2026-10-11, maintainer's choice, emulator-saves Group C): `ConsoleTitles`, a serial → title table built from Redump's
+  dats via libretro-database and bundled with the agent (offline). Its data is **CC BY-SA 4.0** — credited in `src/Agent.Core/ConsoleTitles/NOTICE.md` and shared
+  under that license as a data file; SaveLocker's code keeps its own. PCSX2's and DuckStation's databases were
+  ruled out by license (GPL-3.0; CC BY-NC-ND). What a game writes into its save is only the fallback: PS2
+  `icon.sys` can say just the series ("Prince of Persia" for two sequels). Each region's disc reads only its own
+  serial's saves, so two regions are two games — **of one name**: the region, game IDs, console and languages are the
+  game's *release* (`GameReleaseDto`, `Game.Region` + `ReleaseJson`), shown as a chip that opens them (console game
+  page, agent game page; plain text in lists and Add games). Server games are unique by **(name, region)**, not by
+  name; a create that names a region joins only that region's game (or a region-less one, which takes it), and the
+  agent counts a name as taken unless the game holding it is another region's (`Enroller.NameTaken`). The same
+  files never make another region's game the same game either (`Enroller.SameFiles`, PR #63 review): a DuckStation
+  card per game is named by its title, which both regions' discs share.
 - **"Latest" = `Game.HeadVersionId`.** UI label "Latest"; admin action "Set as Latest".
 - **Artwork:** SteamGridDB images are downloaded/cached server-side, not stored as bare URLs
   (offline-safe, survives upstream changes).
@@ -537,17 +572,19 @@ session can judge an edge case, not to reopen the choice.
   password change is never overwritten. A hash supplied through configuration cannot be written back
   and simply stays as it is. A verified-password cache (5 min, HMAC-keyed, only successes) stops
   script callers paying 600k iterations on every request.
-- **A machine key is fleet-scoped, by design — and open registration is what makes that matter**
-  (2026-09-20). Any registered machine can read and write every game, force-overwrite a head, resolve
-  any conflict and change any conflict policy; there are no per-machine ACLs, because the hub model
-  lets any machine adopt any server-defined game. There is no game or version delete route in the
-  agent group. Scoping keys to games a machine tracks was considered and NOT built: it is a product
-  change (adoption, "pull to a new machine"), not a hardening tweak. What follows from it: first-time
-  registration is open, so on a reachable server anyone can mint a key — and the admin password then
-  guards the dashboard but not the saves. `Security:RequireAdminPasswordToRegister=true` closes that
-  (agents already accept `--admin-password`). It stays **off by default** — the LAN-convenience
-  default is a maintainer decision this session did not override — but anything reachable beyond the
-  household should turn it on, or use enrollment tokens.
+- **A machine key is fleet-scoped, by design — and registration now needs the admin password**
+  (2026-09-20; default flipped 2026-10-09). Any registered machine can read and write every game,
+  force-overwrite a head, resolve any conflict and change any conflict policy; there are no
+  per-machine ACLs, because the hub model lets any machine adopt any server-defined game. There is no
+  game or version delete route in the agent group. Scoping keys to games a machine tracks was
+  considered and NOT built: it is a product change (adoption, "pull to a new machine"), not a
+  hardening tweak. What follows from it: minting a key is the real door into the save data, so
+  first-time registration is **closed by default** — `Security:RequireAdminPasswordToRegister`
+  defaults to `true`, and once an admin password is set a new machine name must present it (agents
+  already accept `--admin-password`; enrollment tokens are unaffected). No password set means no
+  check, so first-run is unchanged. The switch can be deliberately set to `false` on a network where
+  everyone able to reach the port is trusted — that was the old default and is no longer the safe
+  one.
 - **Artwork URLs are untrusted input** (2026-09-20). `ArtService` used to fetch whatever URL
   SteamGridDB's response named with a default client and store the bytes under `/art`, which is served
   from the same origin as the admin console; the extension came from the URL, so a path ending
@@ -705,6 +742,22 @@ session can judge an edge case, not to reopen the choice.
   safe — [[Gotchas]] → *Web console*); `tests/run-appearance-consistency-tests.ps1` keeps it that way by failing on a
   `#hex` in any `.tsx`. An accent is the one token the look rewrites, and is written **inline for the palette in
   force** — an accent has a dark and a light value — so it is re-derived when the OS flips while the theme is System.
+- **A fifteenth palette token, `--color-info` (blue), for "the server has it, a pull brings it"** (2026-10-08,
+  tasks/save-file-trees). Fixed like `--color-safe`/`--color-watch`, never derived from the accent: `#7b9fd0` dark,
+  `#3d6aa8` light, with `-soft`/`-line`/`-ink` mixes. Same three hand-kept copies as every token (`web/src/index.css`,
+  `agent-ui/src/tokens.css`, the Deck's `Theme.cs`), held together by `run-appearance-consistency-tests`. Chosen by
+  the maintainer over a hollow ring: the agent's file tree needs three states, and green/amber were taken.
+- **Per-version "what changed" is computed, not stored** (2026-10-08, tasks/save-file-trees). The console's change
+  chips diff each version's zip directory against its parent's (path + size + CRC-32) and cache the answer in memory
+  per version id — an archive never changes. A table filled at push time was considered and declined: it needs a
+  migration, a backfill for every existing version, and a change to the upload path that the delta-upload review
+  hardened. CRC-32 over SHA-256 for the console because it is free from the zip directory; the agent's per-file
+  comparison uses SHA-256, hashed by the server from the stored archive.
+- **The agent keeps game art on disk, keyed by the server's URL** (2026-10-08, `ArtCache`). Every surface reaches art
+  through the agent's own `/api/games/{id}/art` proxy, so the cache sits there, once, for the agent UI and Game Mode
+  alike. Freshness needs no new server API: the server already stamps each stored image `?v=<write time>`, so "the URL
+  changed" is "the image changed". The poller warms it (bounded per tick) rather than waiting for a window to ask —
+  the reported failure was art that only appeared after something else had fetched it.
 
 - **OS notifications: a few events, said once, and a button is a link — never a callback** (2026-09-24, checkpoint-ui
   Phase 7). *What fires* is the plan's list and no more — conflict opened, lease held elsewhere, push rejected, pull

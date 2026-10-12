@@ -1,6 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Text.Json;
 using SaveLocker.Server.Data;
 using SaveLocker.Shared;
 using Microsoft.EntityFrameworkCore;
@@ -23,8 +24,12 @@ public sealed class SyncService
     // it. Bounded by emptying when full, since nothing evicts a pruned version's entry.
     private static readonly ConcurrentDictionary<Guid, VersionStatsDto> _versionStatsCache = new();
     private static readonly ConcurrentDictionary<Guid, VersionFolderDto[]> _versionFoldersCache = new();
+    private static readonly ConcurrentDictionary<Guid, VersionChangesDto> _versionChangesCache = new();
+    private static readonly ConcurrentDictionary<Guid, HeadFolderDto[]> _versionHashesCache = new();
     private const int VersionStatsCacheMax = 4096;
     private const int VersionFoldersCacheMax = 256;
+    private const int VersionChangesCacheMax = 4096;
+    private const int VersionHashesCacheMax = 64;
     private readonly int _retainPerGame;
     /// <summary>
     /// How long a claimed command stays invisible to other claims. It has to outlast a real
@@ -397,6 +402,19 @@ public sealed class SyncService
         (await _db.MachineGameSources.Where(s => s.MachineId == machineId).ToListAsync())
         .ToDictionary(s => s.GameId, ToDto);
 
+    /// <summary>
+    /// Every game's emulators, as the machines that found it through one reported them: game ID → emulator names,
+    /// distinct, sorted. An emulator save never joins a game another emulator's save made (tasks/emulator-saves
+    /// Phase 4, maintainer's choice): the agent reads this to tell "the same files" from "the same game".
+    /// </summary>
+    public async Task<Dictionary<Guid, string[]>> GetEmulatorMapAsync() =>
+        // A source with no emulator named would make the game no emulator's at all.
+        (await _db.MachineGameSources.Where(s => s.Kind == GameSourceKinds.Emulator && s.Detail != "")
+            .Select(s => new { s.GameId, s.Detail }).ToListAsync())
+        .GroupBy(s => s.GameId)
+        .ToDictionary(g => g.Key, g => g.Select(s => s.Detail).Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase).ToArray());
+
     /// <summary>Upsert how a machine found a game. False, storing nothing, for a game that does not exist.</summary>
     public async Task<bool> SetMachineSourceAsync(Guid machineId, Guid gameId, GameSourceDto source)
     {
@@ -503,13 +521,32 @@ public sealed class SyncService
         // the SAME game even if they enroll with different casing/whitespace.
         var name = req.Name.Trim();
         var lowered = name.ToLower();
-        var existing = await _db.Games.FirstOrDefaultAsync(g => g.Name.ToLower() == lowered);
-        if (existing is not null) return existing;
+        var release = Clean(req.Release);
+        var region = GameReleaseDto.RegionKey(release?.Region);
+        // Two releases of one game share a name: a request that says its region joins only that region's game,
+        // or one no release was recorded for yet, which takes this one. One that says none joins any, as before.
+        var named = await _db.Games.Where(g => g.Name.ToLower() == lowered).ToListAsync();
+        var existing = region.Length == 0
+            ? named.OrderBy(g => g.Region.Length == 0 ? 0 : 1).FirstOrDefault()
+            : named.FirstOrDefault(g => string.Equals(g.Region, region, StringComparison.OrdinalIgnoreCase)) ??
+              named.FirstOrDefault(g => g.Region.Length == 0);
+        if (existing is not null)
+        {
+            if (release is not null && existing.ReleaseJson is null)
+            {
+                existing.Region = region;
+                existing.ReleaseJson = JsonSerializer.Serialize(release, JsonSerializerOptions.Web);
+                await _db.SaveChangesAsync();
+            }
+            return existing;
+        }
 
         var game = new Game
         {
             Id = Guid.NewGuid(),
             Name = name,
+            Region = region,
+            ReleaseJson = release is null ? null : JsonSerializer.Serialize(release, JsonSerializerOptions.Web),
             ManifestKey = req.ManifestKey,
             CustomPathsJson = req.CustomPathsJson,
             SuggestedSaveDir = string.IsNullOrWhiteSpace(req.SuggestedSaveDir) ? null : req.SuggestedSaveDir.Trim(),
@@ -523,6 +560,15 @@ public sealed class SyncService
         await Audit(null, game.Id, "game.create", req.Name);
         await _db.SaveChangesAsync();
         return game;
+    }
+
+    /// <summary>A release as stored: trimmed, empty strings and lists dropped.</summary>
+    private static GameReleaseDto? Clean(GameReleaseDto? r)
+    {
+        if (r is null || string.IsNullOrWhiteSpace(r.Console)) return null;
+        static string? Text(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+        static string[]? List(string[]? l) => l?.Select(s => s.Trim()).Where(s => s.Length > 0).ToArray() is { Length: > 0 } a ? a : null;
+        return new GameReleaseDto(r.Console.Trim(), Text(r.Region), List(r.GameIds), List(r.Languages), Text(r.NamedBy));
     }
 
     /// <summary>Admin: remove a game and all its versions, archives, leases, and conflicts.</summary>
@@ -1617,10 +1663,86 @@ public sealed class SyncService
 
         var dto = SaveArchive.ListArchiveFolders(_store.FullPath(version.ArchivePath))
             .Select(f => new VersionFolderDto(f.Key, f.FileCount, f.TotalBytes,
-                f.Files.Select(x => new VersionFileDto(x.Path, x.Size, x.ModifiedUtc)).ToArray()))
+                f.Files.Select(x => new VersionFileDto(x.Path, x.Size, x.ModifiedUtc, x.Crc32)).ToArray()))
             .ToArray();
         Remember(_versionFoldersCache, versionId, dto, VersionFoldersCacheMax);
         return dto;
+    }
+
+    /// <summary>
+    /// What every version of a game changed against its parent (tasks/save-file-trees Phase 1), for the
+    /// console's Versions card — one call for the whole list. Cached per version id like the folder
+    /// listing: both archives a diff reads never change once stored. A version whose own archive cannot
+    /// be read is left out; one whose parent's cannot is compared with nothing and says so
+    /// (<see cref="VersionChangesDto.BaseMissing"/>). Null for an unknown game.
+    /// </summary>
+    public async Task<VersionChangesDto[]?> ListVersionChangesAsync(Guid gameId)
+    {
+        if (!await _db.Games.AnyAsync(g => g.Id == gameId)) return null;
+        var versions = await _db.SaveVersions.Where(v => v.GameId == gameId)
+            .OrderByDescending(v => v.CreatedAt)
+            .Select(v => new { v.Id, v.ParentVersionId, v.ArchivePath })
+            .ToListAsync();
+        var paths = versions.ToDictionary(v => v.Id, v => v.ArchivePath);
+
+        // A version is read once per call, however many children compare with it.
+        var listings = new Dictionary<Guid, IReadOnlyList<SaveArchive.ArchiveFolder>?>();
+        IReadOnlyList<SaveArchive.ArchiveFolder>? Listing(Guid id)
+        {
+            if (listings.TryGetValue(id, out var known)) return known;
+            IReadOnlyList<SaveArchive.ArchiveFolder>? read = null;
+            if (paths.TryGetValue(id, out var rel) && _store.Exists(rel))
+            {
+                try { read = SaveArchive.ListArchiveFolders(_store.FullPath(rel), int.MaxValue); }
+                catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException) { }
+            }
+            return listings[id] = read;
+        }
+
+        var result = new List<VersionChangesDto>(versions.Count);
+        foreach (var v in versions)
+        {
+            if (_versionChangesCache.TryGetValue(v.Id, out var cached)) { result.Add(cached); continue; }
+            if (Listing(v.Id) is not { } current) continue;
+
+            var parent = v.ParentVersionId is { } p ? Listing(p) : null;
+            var baseMissing = v.ParentVersionId is not null && parent is null;
+            var diff = SaveArchive.DiffArchiveFolders(parent, current);
+            var dto = new VersionChangesDto(v.Id, diff.Added, diff.Changed, diff.Removed, diff.Unchanged,
+                diff.Files.Select(f => new VersionFileChangeDto(f.Key, f.Path, f.Change, f.Size)).ToArray(),
+                baseMissing);
+            // A parent row that is still there but unreadable may only be unreadable for now.
+            if (!baseMissing || !paths.ContainsKey(v.ParentVersionId!.Value))
+                Remember(_versionChangesCache, v.Id, dto, VersionChangesCacheMax);
+            result.Add(dto);
+        }
+        return result.ToArray();
+    }
+
+    /// <summary>
+    /// The head version's files with their SHA-256, for an agent comparing its own files with them
+    /// (tasks/save-file-trees Phase 3). Hashed from the stored archive — not taken from the uploader's
+    /// declared manifest — and cached per version id. Null for an unknown game; an empty list of folders
+    /// and no head when nothing has been pushed yet.
+    /// </summary>
+    public async Task<HeadFilesDto?> GetHeadFilesAsync(Guid gameId, CancellationToken ct = default)
+    {
+        var game = await _db.Games.FindAsync(new object?[] { gameId }, ct);
+        if (game is null) return null;
+        var head = game.HeadVersionId is { } headId
+            ? await _db.SaveVersions.Include(v => v.Machine).FirstOrDefaultAsync(v => v.Id == headId, ct)
+            : null;
+        if (head is null || !_store.Exists(head.ArchivePath)) return new HeadFilesDto(head?.ToDto(), Array.Empty<HeadFolderDto>());
+
+        if (!_versionHashesCache.TryGetValue(head.Id, out var folders))
+        {
+            var full = _store.FullPath(head.ArchivePath);
+            folders = (await Task.Run(() => SaveArchive.HashArchiveFiles(full), ct))
+                .Select(f => new HeadFolderDto(f.Key, f.Files.Select(x => new HeadFileDto(x.Path, x.Size, x.Sha256)).ToArray()))
+                .ToArray();
+            Remember(_versionHashesCache, head.Id, folders, VersionHashesCacheMax);
+        }
+        return new HeadFilesDto(head.ToDto(), folders);
     }
 
     private static void Remember<T>(ConcurrentDictionary<Guid, T> cache, Guid versionId, T value, int max)

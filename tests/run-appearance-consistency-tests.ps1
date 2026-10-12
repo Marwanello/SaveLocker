@@ -127,20 +127,20 @@ function Tokens($rel) {
 $webTok = Tokens "web/src/index.css"; $agentTok = Tokens "agent-ui/src/tokens.css"
 
 # The Deck's Theme.cs holds the dark half by hand (it is dark-only). Its Accent/OnAccent are the INITIAL values -
-# Ember, the default - which SetAccent replaces from AppearancePalette; the other twelve never change.
+# Ember, the default - which SetAccent replaces from AppearancePalette; the other thirteen never change.
 $themeCs = Read-Src "src/Agent.Linux/Ui/Theme.cs"
 $themeTok = @{}
 foreach ($m in [regex]::Matches($themeCs, 'public static (?:readonly )?Vector4 (\w+)\s*(?:=|\{ get; private set; \}\s*=)\s*Rgb\(0x([0-9A-Fa-f]{6})\)')) {
     $themeTok[$m.Groups[1].Value] = "#" + $m.Groups[2].Value.ToLower()
 }
 $themeToCss = [ordered]@{ Ink = "ink"; Panel = "panel"; Raise = "raise"; Tile = "tile"; Hover = "hover"; Fg = "fg"; Dim = "dim";
-                          Faint = "faint"; Line = "line"; Row = "row"; Safe = "safe"; Watch = "watch"; Accent = "accent"; OnAccent = "on-accent" }
+                          Faint = "faint"; Line = "line"; Row = "row"; Safe = "safe"; Watch = "watch"; Info = "info"; Accent = "accent"; OnAccent = "on-accent" }
 $themeWant = @($themeToCss.Keys | ForEach-Object { "--color-" + $themeToCss[$_] + " " + $themeTok[$_] })
-Check "tokens: src/Agent.Linux/Ui/Theme.cs (the Deck) carries the dark palette of web/src/index.css, all 14" ($webTok.Count -ge 14 -and (Same $themeWant $webTok[0..13]))
-Check "tokens: each file defines the palette three times (dark base, data-theme=light, the OS-light media query)" ($webTok.Count -eq 42 -and $agentTok.Count -eq 42)
+Check "tokens: src/Agent.Linux/Ui/Theme.cs (the Deck) carries the dark palette of web/src/index.css, all 15" ($webTok.Count -ge 15 -and (Same $themeWant $webTok[0..14]))
+Check "tokens: each file defines the palette three times (dark base, data-theme=light, the OS-light media query)" ($webTok.Count -eq 45 -and $agentTok.Count -eq 45)
 Check "tokens: web/src/index.css and agent-ui/src/tokens.css hold identical names and values" (Same $webTok $agentTok)
-Check "tokens: within web the two light blocks are identical" (Same $webTok[14..27] $webTok[28..41])
-Check "tokens: within agent-ui the two light blocks are identical" (Same $agentTok[14..27] $agentTok[28..41])
+Check "tokens: within web the two light blocks are identical" (Same $webTok[15..29] $webTok[30..44])
+Check "tokens: within agent-ui the two light blocks are identical" (Same $agentTok[15..29] $agentTok[30..44])
 foreach ($rel in @("web/src/index.css", "agent-ui/src/tokens.css")) {
     $t = Read-Src $rel
     Check "theme default: $rel follows the OS unless a theme is pinned (:root:not([data-theme]) inside prefers-color-scheme: light)" `

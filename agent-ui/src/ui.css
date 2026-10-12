@@ -153,6 +153,7 @@ button:disabled { cursor: default; }
 .sl-dot--ok   { background: var(--color-safe); }
 .sl-dot--warn { background: var(--color-watch); }
 .sl-dot--crit { background: var(--color-accent); }
+.sl-dot--info { background: var(--color-info); }
 
 /* ---- Cards, stats, banners ------------------------------------------------------------------ */
 .sl-card { background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 14px; overflow: hidden; }
@@ -421,8 +422,70 @@ button:disabled { cursor: default; }
 .sl-group__head h3 { margin: 0; font-size: 13px; font-weight: 700; }
 .sl-group__head span { font-size: 12px; color: var(--color-dim); }
 
+/* ---- Save files on this PC (SaveFilesCard) ---------------------------------------------------- */
+.sl-files__head { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+.sl-files__legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--color-dim); }
+.sl-files__legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sl-files { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+.sl-files__note { font-size: 12px; color: var(--color-dim); padding: 0 6px; list-style: none; }
+.sl-files__root { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 6px 4px; color: var(--color-faint); }
+.sl-files__root b { font-size: 12.5px; font-weight: 600; color: var(--color-fg); }
+.sl-files__root .sl-mono { color: var(--color-faint); overflow-wrap: anywhere; min-width: 0; }
+.sl-tree { list-style: none; margin: 0; padding: 0; font-size: 12.5px; }
+.sl-tree--sub { padding-left: 18px; margin-left: 13px; border-left: 1px solid var(--color-line); }
+.sl-tree__node { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; min-width: 0; }
+.sl-tree__node:hover { background: var(--color-hover); }
+.sl-tree__twist { width: 14px; flex: none; display: inline-flex; justify-content: center; color: var(--color-faint);
+  background: none; border: 0; padding: 0; }
+button.sl-tree__twist { cursor: pointer; border-radius: 4px; }
+button.sl-tree__twist:hover { color: var(--color-fg); }
+button.sl-tree__twist:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.sl-tree__chev { transition: transform 120ms var(--ease); }
+.sl-tree__chev--open { transform: rotate(90deg); }
+.sl-tree__icon { flex: none; color: var(--color-faint); }
+.sl-tree__name { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--color-fg); }
+.sl-tree__node--dir .sl-tree__name { font-weight: 600; }
+.sl-tree__node--missing .sl-tree__name { color: var(--color-dim); font-style: italic; }
+.sl-tree__state { font-size: 11px; color: var(--color-dim); white-space: nowrap; }
+.sl-tree__size { font-family: var(--font-mono); font-size: 11px; color: var(--color-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sl-tree--other .sl-tree__name, .sl-tree--other .sl-tree__size { color: var(--color-faint); }
+@media (max-width: 640px) { .sl-tree__state { display: none; } }
+@media (prefers-reduced-motion: reduce) { .sl-tree__chev { transition: none; } }
+
 @media (prefers-reduced-motion: reduce) {
   .sl-page > *, .sl-toast, .sl-spin { animation: none; }
   .sl-meter > i.sl-meter__sweep { animation: none; width: 100%; opacity: .45; }
   * { transition-duration: 0.001ms !important; }
 }
+/* Add games: a row that can never be added — a memory card every game of a console shares. Greyed, with the fix. */
+.sl-check-row--blocked .sl-check-row__title { color: var(--color-dim); }
+.sl-check-row--blocked input { cursor: not-allowed; }
+.sl-check-row__why { display: block; margin-top: 4px; font-size: 11.5px; line-height: 1.45; color: var(--color-watch-ink); }
+
+/* A console game's release (ReleaseChip): its region beside the source, opening the game's details. */
+.sl-release { position: relative; display: inline-flex; }
+/* The head's entry animation leaves it a stacking context, and the cards after it paint over anything it holds. */
+.sl-gamehead:has(.sl-release__pop) { position: relative; z-index: 5; }
+.sl-release__chip {
+  display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12px; line-height: 1.3; white-space: nowrap;
+  padding: 4px 11px; border-radius: 99px; border: 1px solid var(--color-line);
+  background: var(--color-raise); color: var(--color-fg); cursor: pointer; transition: background-color .15s var(--ease);
+}
+.sl-release__chip:hover, .sl-release__chip[aria-expanded="true"] { background: var(--color-tile); }
+.sl-release__chip:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.sl-release__dot { width: 4px; height: 4px; border-radius: 50%; background: var(--color-accent); }
+.sl-release__pop {
+  position: absolute; left: 0; top: calc(100% + 8px); z-index: 30; width: 330px; max-width: calc(100vw - 32px);
+  display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; font-size: 12.5px; white-space: normal;
+  background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 14px;
+  box-shadow: 0 18px 40px -16px rgba(0, 0, 0, .55); animation: sl-rise 180ms var(--ease) both;
+}
+.sl-release__title { font-size: 13px; font-weight: 600; text-wrap: balance; }
+.sl-release__pop dl { margin: 0; display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 5px 12px; }
+.sl-release__pop dl > div { display: contents; }
+.sl-release__pop dt { color: var(--color-faint); }
+.sl-release__pop dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.sl-release__mono { font-family: var(--font-mono, ui-monospace, Consolas, monospace); font-size: 11.5px; }
+.sl-release__note { color: var(--color-dim); font-size: 11.5px; border-top: 1px solid var(--color-line); padding-top: 8px; }
+.sl-release__from { color: var(--color-faint); font-size: 11px; }
+.sl-tile__sub { font-size: 11px; color: var(--color-dim); margin-top: -5px; }

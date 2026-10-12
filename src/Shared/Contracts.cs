@@ -44,7 +44,52 @@ public record GameDto(
     // working on it unchanged.
     SavePathDto[]? ExtraPaths = null,
     // How the calling machine found this game (agent routes only); null when it has not said.
-    GameSourceDto? MachineSource = null);
+    GameSourceDto? MachineSource = null,
+    // The emulators any machine found this game through (agent routes only), null when none has said: an
+    // emulator save never joins a game another emulator's save made, even with the same files.
+    string[]? Emulators = null,
+    // Which release of a console game it is — region, game IDs — when an emulator save said. Kept apart from
+    // the name: two games may share a name when their regions differ.
+    GameReleaseDto? Release = null);
+
+/// <summary>
+/// Which release of a console game an emulator save belongs to, read from the game ID the save is filed under
+/// (<c>BASLUS-21022…</c> → SLUS-21022): the <see cref="Console"/> ("PlayStation 2"), the <see cref="Region"/> as
+/// Redump names it ("USA", "Europe, Australia"), the disc's <see cref="GameIds"/> (every disc's, for a multi-disc
+/// game), its <see cref="Languages"/> ("En", "Fr"), and <see cref="NamedBy"/> — "Redump" when the name came from
+/// that table, null when it was read from inside the save. Display text the agent wrote, except
+/// <see cref="Region"/>, which also decides joins: a European disc reads none of a USA disc's saves, so two
+/// releases of one game are two games, told apart by region and not by name.
+/// </summary>
+public record GameReleaseDto(
+    string Console,
+    string? Region = null,
+    string[]? GameIds = null,
+    string[]? Languages = null,
+    string? NamedBy = null)
+{
+    /// <summary>Longest string the server stores, and most game IDs or languages.</summary>
+    public const int MaxLength = 64, MaxItems = 16;
+
+    /// <summary>The region as the server keys games by it: trimmed, <c>""</c> for none.</summary>
+    public static string RegionKey(string? region) => region?.Trim() ?? "";
+
+    /// <summary>Why the server refuses this release, or null: a string over <see cref="MaxLength"/>, or more
+    /// than <see cref="MaxItems"/> game IDs or languages.</summary>
+    public static string? Validate(GameReleaseDto? r) =>
+        r is null ? null
+        : new[] { r.Console, r.Region, r.NamedBy }.Concat(r.GameIds ?? []).Concat(r.Languages ?? [])
+            .Any(s => s is { Length: > MaxLength }) ? $"A release's text is at most {MaxLength} characters."
+        : (r.GameIds?.Length ?? 0) > MaxItems || (r.Languages?.Length ?? 0) > MaxItems ? $"A release lists at most {MaxItems} game IDs and languages."
+        : null;
+
+    /// <summary>Equal field by field, the lists in order: a record compares arrays by reference.</summary>
+    public static bool Same(GameReleaseDto? a, GameReleaseDto? b) =>
+        a is null || b is null
+            ? a is null && b is null
+            : a.Console == b.Console && a.Region == b.Region && a.NamedBy == b.NamedBy &&
+              (a.GameIds ?? []).SequenceEqual(b.GameIds ?? []) && (a.Languages ?? []).SequenceEqual(b.Languages ?? []);
+}
 
 /// <summary>
 /// How a machine found a game, in two levels: <see cref="Kind"/> (one of <see cref="GameSourceKinds"/>:
@@ -139,7 +184,10 @@ public record CreateGameRequest(
     // Both applied only when this request creates the game; an existing game keeps its own folders
     // and scopes, and the caller compares what comes back with what it asked for.
     string[]? IncludeGlobs = null,
-    SavePathDto[]? ExtraPaths = null);
+    SavePathDto[]? ExtraPaths = null,
+    // A console game's release. With a region, the request joins only a game of that region (or one with none
+    // yet, which takes it); without one, any game of the name, as before.
+    GameReleaseDto? Release = null);
 
 // ----- Server settings (dashboard-managed) -----
 
@@ -318,6 +366,21 @@ public record CreateSessionRequest(string? Password);
 /// </summary>
 public record SessionResponse(string? Token, DateTime? ExpiresAt);
 
+/// <summary>One signed-in console browser, listed under Configuration → Admin password so a stolen
+/// session is findable and can be ended on its own instead of signing every browser out.</summary>
+public record AdminSessionDto(
+    Guid Id,
+    DateTime CreatedAt,
+    DateTime LastUsedAt,
+    DateTime ExpiresAt,
+    string? ClientAddress,
+    bool IsCurrent);
+
+/// <summary>A client currently refused after too many wrong admin passwords, for the console's
+/// notifications. In-memory (<see cref="SaveLocker.Server.Services.AuthThrottle"/>), so a restart
+/// forgives everyone — the right failure mode for a lockout that must never strand the owner.</summary>
+public record LockoutDto(string Client, int RetryAfterSeconds);
+
 // ----- Leases -----
 
 public record LeaseDto(
@@ -356,7 +419,41 @@ public record VersionStatsDto(int FileCount, DateTime? NewestFileWriteUtc);
 public record VersionFolderDto(string Key, int FileCount, long TotalBytes, VersionFileDto[] Files);
 
 /// <param name="Path">Relative to its save folder, with forward slashes.</param>
-public record VersionFileDto(string Path, long Size, DateTime? ModifiedUtc);
+/// <param name="Crc32">The zip entry's own CRC-32 — free from the archive's directory, and with the size
+/// enough to tell a changed file from an unchanged one between two versions of a game.</param>
+public record VersionFileDto(string Path, long Size, DateTime? ModifiedUtc, uint? Crc32 = null);
+
+[JsonConverter(typeof(JsonStringEnumConverter<FileChange>))]
+public enum FileChange { Added, Changed, Removed }
+
+/// <summary>
+/// What one version changed against the version it was pushed on top of (tasks/save-file-trees Phase 1),
+/// by path, size and CRC-32 per save folder. A file moved between folders is a removal and an addition.
+/// <paramref name="Files"/> lists the changed files only, at most the first 1000; the counts are exact.
+/// </summary>
+/// <param name="BaseMissing">The version names a parent whose archive is gone (pruned or deleted), so
+/// there is nothing to compare with: every file counts as added.</param>
+public record VersionChangesDto(
+    Guid VersionId, int Added, int Changed, int Removed, int Unchanged,
+    VersionFileChangeDto[] Files, bool BaseMissing = false);
+
+/// <param name="Key">The save folder: <c>main</c>, or an extra folder's key.</param>
+/// <param name="Path">Relative to that folder, with forward slashes.</param>
+/// <param name="Size">The file's size in this version, or for a removed file in the one before.</param>
+public record VersionFileChangeDto(string Key, string Path, FileChange Change, long Size);
+
+/// <summary>
+/// The head version's files with their SHA-256, for an agent to compare its own save files with exactly
+/// (tasks/save-file-trees Phase 3). Hashed from the stored archive itself, not from what the uploader
+/// declared. <paramref name="Head"/> is null for a game nothing has been pushed to yet.
+/// </summary>
+public record HeadFilesDto(SaveVersionDto? Head, HeadFolderDto[] Folders);
+
+/// <param name="Key">The save folder: <c>main</c>, or an extra folder's key.</param>
+public record HeadFolderDto(string Key, HeadFileDto[] Files);
+
+/// <param name="Path">Relative to its save folder, with forward slashes.</param>
+public record HeadFileDto(string Path, long Size, string Sha256);
 
 /// <summary>How many files already tracked in a game's head version would stop being uploaded
 /// under a draft (not-yet-saved) set of exclude patterns — a dry run for the console's exclude

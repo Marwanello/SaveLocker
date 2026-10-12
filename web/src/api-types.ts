@@ -1187,6 +1187,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/games/{id}/head/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HeadFilesDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/conflicts/{id}": {
         parameters: {
             query?: never;
@@ -2338,7 +2375,26 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminSessionDto"][];
+                    };
+                };
+            };
+        };
         put?: never;
         post?: never;
         delete: {
@@ -2359,6 +2415,76 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/lockouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LockoutDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2690,6 +2816,43 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["VersionFolderDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/versions/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VersionChangesDto"][];
                     };
                 };
             };
@@ -3765,6 +3928,18 @@ export interface components {
             template: null | string;
             includeGlobs: null | string[];
         };
+        AdminSessionDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lastUsedAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            clientAddress: null | string;
+            isCurrent: boolean;
+        };
         AdminStatus: {
             passwordRequired: boolean;
             build: components["schemas"]["ServerBuildInfo"];
@@ -4130,6 +4305,7 @@ export interface components {
             suggestedSaveDir?: null | string;
             includeGlobs?: null | string[];
             extraPaths?: null | components["schemas"]["SavePathDto"][];
+            release?: null | components["schemas"]["GameReleaseDto"];
         };
         CreateSessionRequest: {
             password: null | string;
@@ -4185,6 +4361,8 @@ export interface components {
             /** Format: int32 */
             wouldExclude: number;
         };
+        /** @enum {unknown} */
+        FileChange: "Added" | "Changed" | "Removed";
         FileManifestEntry: {
             path: string;
             sha256: string;
@@ -4213,6 +4391,15 @@ export interface components {
             includeGlobs?: null | string[];
             extraPaths?: null | components["schemas"]["SavePathDto"][];
             machineSource?: null | components["schemas"]["GameSourceDto"];
+            emulators?: null | string[];
+            release?: null | components["schemas"]["GameReleaseDto"];
+        };
+        GameReleaseDto: {
+            console: string;
+            region?: null | string;
+            gameIds?: null | string[];
+            languages?: null | string[];
+            namedBy?: null | string;
         };
         GameSourceDto: {
             kind: string;
@@ -4229,6 +4416,20 @@ export interface components {
              * @default 0
              */
             totalStorageBytes: number;
+        };
+        HeadFileDto: {
+            path: string;
+            /** Format: int64 */
+            size: number;
+            sha256: string;
+        };
+        HeadFilesDto: {
+            head: null | components["schemas"]["SaveVersionDto"];
+            folders: components["schemas"]["HeadFolderDto"][];
+        };
+        HeadFolderDto: {
+            key: string;
+            files: components["schemas"]["HeadFileDto"][];
         };
         InstallerHashVerification: {
             platform: string;
@@ -4251,6 +4452,11 @@ export interface components {
             acquiredAt: null | string;
             /** Format: date-time */
             expiresAt: null | string;
+        };
+        LockoutDto: {
+            client: string;
+            /** Format: int32 */
+            retryAfterSeconds: number;
         };
         MachineDto: {
             /** Format: uuid */
@@ -4433,12 +4639,36 @@ export interface components {
         };
         /** @enum {unknown} */
         UploadStatus: "Created" | "NoChange" | "Conflict" | "RetryFull";
+        VersionChangesDto: {
+            /** Format: uuid */
+            versionId: string;
+            /** Format: int32 */
+            added: number;
+            /** Format: int32 */
+            changed: number;
+            /** Format: int32 */
+            removed: number;
+            /** Format: int32 */
+            unchanged: number;
+            files: components["schemas"]["VersionFileChangeDto"][];
+            /** @default false */
+            baseMissing: boolean;
+        };
+        VersionFileChangeDto: {
+            key: string;
+            path: string;
+            change: components["schemas"]["FileChange"];
+            /** Format: int64 */
+            size: number;
+        };
         VersionFileDto: {
             path: string;
             /** Format: int64 */
             size: number;
             /** Format: date-time */
             modifiedUtc: null | string;
+            /** Format: uint32 */
+            crc32?: null | number;
         };
         VersionFolderDto: {
             key: string;

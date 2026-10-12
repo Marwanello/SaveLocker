@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { Conflict, TrackedGame, View } from '../types'
+import { regionLabel } from '../format'
 import { GameArt } from './GameArt'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
@@ -30,6 +31,9 @@ interface GroupProps {
   onOpen: (id: string) => void
 }
 
+// Two releases of one game share its name; the region tells them apart. Its details are on the game's page.
+const region = (g: TrackedGame) => (g.release ? regionLabel(g.release) : null)
+
 function Group({ title, note, games, mode, conflicted, onOpen }: GroupProps) {
   return (
     <section className="sl-group" aria-label={title}>
@@ -46,7 +50,12 @@ function Group({ title, note, games, mode, conflicted, onOpen }: GroupProps) {
               cover={<GameArt id={g.id} name={g.name} kind="icon" w={96} />}
               title={g.name}
               subtext={g.path || 'No save folder on this machine'}
-              end={conflicted.has(g.id) ? <Chip tone="crit">Conflict</Chip> : undefined}
+              end={region(g) || conflicted.has(g.id)
+                ? <>
+                    {region(g) && <span className="sl-tag">{region(g)}</span>}
+                    {conflicted.has(g.id) && <Chip tone="crit">Conflict</Chip>}
+                  </>
+                : undefined}
             />
           ))}
         </div>
@@ -59,6 +68,7 @@ function Group({ title, note, games, mode, conflicted, onOpen }: GroupProps) {
                 {conflicted.has(g.id) && <span className="sl-tile__pin"><Chip tone="crit">Conflict</Chip></span>}
               </span>
               <span className="sl-tile__name">{g.name}</span>
+              {region(g) && <span className="sl-tile__sub">{region(g)}</span>}
             </button>
           ))}
         </div>
@@ -81,7 +91,8 @@ export function GamesView({ games, conflicts, onOpen, onNavigate }: Props) {
     const q = query.trim().toLowerCase()
     return [...games]
       .sort((a, b) => a.name.localeCompare(b.name))
-      .filter(g => !q || g.name.toLowerCase().includes(q) || g.path.toLowerCase().includes(q))
+      .filter(g => !q || g.name.toLowerCase().includes(q) || g.path.toLowerCase().includes(q) ||
+        (g.release?.region ?? '').toLowerCase().includes(q) || (g.release?.gameIds ?? []).some(id => id.toLowerCase().includes(q)))
   }, [games, query])
   // A game is this machine's own once it has a save folder here. Everything else was adopted from the
   // server and cannot sync until a folder is chosen, so it is listed apart rather than mixed in.

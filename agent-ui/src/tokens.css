@@ -27,6 +27,7 @@
   --color-row:        #1d1d20;
   --color-safe:       #7fa96a;
   --color-watch:      #d9a63f;
+  --color-info:       #7b9fd0;
   --color-accent:     #e0533c;
   --color-on-accent:  #160f0e;
 
@@ -39,6 +40,9 @@
   --color-watch-soft:  color-mix(in oklab, var(--color-watch) 14%, var(--color-panel));
   --color-watch-line:  color-mix(in oklab, var(--color-watch) 40%, var(--color-panel));
   --color-watch-ink:   color-mix(in oklab, var(--color-watch) 82%, var(--color-fg));
+  --color-info-soft:  color-mix(in oklab, var(--color-info) 16%, var(--color-panel));
+  --color-info-line:  color-mix(in oklab, var(--color-info) 40%, var(--color-panel));
+  --color-info-ink:   color-mix(in oklab, var(--color-info) 82%, var(--color-fg));
 
   --font-sans: 'Archivo', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
@@ -61,6 +65,7 @@
   --color-row:        #eeeae3;
   --color-safe:       #4c7b3e;
   --color-watch:      #8a6212;
+  --color-info:       #3d6aa8;
   --color-accent:     #c0432c;
   --color-on-accent:  #fff8f6;
 }
@@ -81,6 +86,7 @@
     --color-row:        #eeeae3;
     --color-safe:       #4c7b3e;
     --color-watch:      #8a6212;
+    --color-info:       #3d6aa8;
     --color-accent:     #c0432c;
     --color-on-accent:  #fff8f6;
   }

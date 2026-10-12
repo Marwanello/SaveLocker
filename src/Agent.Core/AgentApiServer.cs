@@ -61,6 +61,9 @@ public sealed class AgentApiServer : IDisposable
     // .OnGameExitAsync, resolved the same way _prepareLaunch is: against whichever engine a settings
     // change may have rebuilt since the host wired this up.
     private readonly Func<TrackedGame, CancellationToken, Task> _postExitSync;
+    // SyncEngine.ReleaseLaunchLeaseAsync — the exit bookkeeping that still has to run when
+    // _syncGate is held and post-exit-sync can only answer 409 (see that route).
+    private readonly Func<TrackedGame, CancellationToken, Task> _releaseLease;
     // POST /api/games/{id}/sync — SyncEngine.SyncGameAsync, resolved the same way as the two above.
     private readonly Func<TrackedGame, GameSyncMode, CancellationToken, Task<string>> _syncGame;
 
@@ -75,6 +78,9 @@ public sealed class AgentApiServer : IDisposable
     // SyncEngine.ForgetSavePathAsync: dropping an extra folder deletes its shadow, so it runs under the
     // game's lock in whichever engine is current.
     private readonly Func<TrackedGame, string, Task<bool>> _forgetFolder;
+    // POST /api/conflicts/{id}/resolve — SyncEngine.ResolveOwnConflictAsync in whichever engine is current.
+    // Null on a host with no engine, where the route only tells the server.
+    private readonly Func<ConflictDto, Guid, bool, CancellationToken, Task<(bool Ok, string Message)>>? _resolveConflict;
     // "Also found" for tracked games (tasks/multiple-save-paths plan §8). Reads the manifest and a few
     // folders per game, so it is computed on request, never on a timer.
     private readonly FolderSuggestions _suggestions;
@@ -88,11 +94,6 @@ public sealed class AgentApiServer : IDisposable
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> _gameSyncGates = new();
     // A queued game's folder size, measured at most once a minute — see /api/offline-queue.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, (long Bytes, long MeasuredAt)> _queuedSizes = new();
-    // A game's art URLs change only when someone re-picks a cover, so a grid of covers does not need
-    // one state request per image. Entries expire ArtUrlTtl after they were FETCHED — a hit must not
-    // refresh them, or a cover viewed more often than that would never be looked up again.
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, (DateTime At, GameDto Game)> _artUrls = new();
-    private static readonly TimeSpan ArtUrlTtl = TimeSpan.FromMinutes(5);
     // The most one art request may hold a browser connection: the UI asks for a grid of them at once,
     // and a browser gives one origin only a handful of connections.
     private static readonly TimeSpan ArtBudget = TimeSpan.FromSeconds(20);
@@ -130,6 +131,7 @@ public sealed class AgentApiServer : IDisposable
         Func<Task<string>>? syncAll = null,
         Func<TrackedGame, CancellationToken, Task<LaunchGateResult>>? prepareLaunch = null,
         Func<TrackedGame, CancellationToken, Task>? postExitSync = null,
+        Func<TrackedGame, CancellationToken, Task>? releaseLease = null,
         Func<Task<PlaynitePluginStatusDto>>? playnitePluginStatus = null,
         Func<Task<PlaynitePluginCardStatusDto>>? playnitePluginCardStatus = null,
         Func<Task<PlaynitePluginStatusDto>>? playnitePluginInstall = null,
@@ -138,8 +140,10 @@ public sealed class AgentApiServer : IDisposable
         Func<string, bool>? openFile = null,
         Func<TrackedGame, string, string, KeepSide?, Task<MapFolderResult>>? mapFolder = null,
         Func<TrackedGame, string, Task<bool>>? forgetFolder = null,
-        Func<string, string?>? prefixForAppId = null)
+        Func<string, string?>? prefixForAppId = null,
+        Func<ConflictDto, Guid, bool, CancellationToken, Task<(bool Ok, string Message)>>? resolveConflict = null)
     {
+        _resolveConflict = resolveConflict;
         _forgetFolder = forgetFolder ?? ((_, _) => Task.FromResult(false));
         _suggestions = new FolderSuggestions(config, detection, prefixForAppId);
         _openFile = openFile;
@@ -171,6 +175,7 @@ public sealed class AgentApiServer : IDisposable
         _syncAll = syncAll ?? (() => Task.FromResult("Not available."));
         _prepareLaunch = prepareLaunch ?? ((_, _) => Task.FromResult(new LaunchGateResult(LaunchDecision.Proceed)));
         _postExitSync = postExitSync ?? ((_, _) => Task.CompletedTask);
+        _releaseLease = releaseLease ?? ((_, _) => Task.CompletedTask);
         _syncGame = syncGame ?? ((_, _, _) => Task.FromResult("Not available."));
         _openView = openView;
         _detection = detection;
@@ -567,7 +572,7 @@ public sealed class AgentApiServer : IDisposable
                 g.GameId, g.Name, g.SaveDirectory, g.ProcessNames.ToArray(), g.Alias,
                 SteamShortcuts.UnsignedAppId(g.ResolveSteamAppId()), g.PullBeforeLaunchEnabled,
                 g.HasSteamCloud, g.PushAfterExitEnabled, g.InstallDir, g.LastPushBytes, g.LastPushAt,
-                SaveFolderDto.Of(g), g.IsEnrolledHere ? g.Source : null))
+                SaveFolderDto.Of(g), g.IsEnrolledHere ? g.Source : null, g.Release, g.IncludeGlobs.FirstOrDefault()))
             .ToArray()).Produces<TrackedGameDto[]>();
 
         // Editing the process names is the other half of WA-08: discovery can only know them for a
@@ -1131,10 +1136,11 @@ public sealed class AgentApiServer : IDisposable
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         }).Produces<GameStateDto>();
 
-        // Cover/icon art, relayed from the server. The agent UI cannot rely on reaching the server
-        // itself (it may be on another network from the browser), and an <img src> could not carry the
-        // local token anyway — the UI fetches this with it and shows a blob. `w` is one of the server's
-        // thumbnail widths; anything else is dropped there, so the full-size original comes back.
+        // Cover/icon art, relayed from the server through the on-disk ArtCache, so it is there with the
+        // server out of reach and changes when the server's does. The agent UI cannot rely on reaching
+        // the server itself (it may be on another network from the browser), and an <img src> could not
+        // carry the local token anyway — the UI fetches this with it and shows a blob. `w` is one of the
+        // server's thumbnail widths; anything else is dropped there, so the full-size original comes back.
         app.MapGet("/api/games/{id:guid}/art",
             async Task<IResult> (Guid id, string? kind, int? w, CancellationToken ct) =>
         {
@@ -1147,15 +1153,9 @@ public sealed class AgentApiServer : IDisposable
             try
             {
                 var api = ApiClient.For(_config);
-                var fresh = _artUrls.TryGetValue(id, out var hit) && hit.At > DateTime.UtcNow - ArtUrlTtl;
-                var url = fresh ? hit.Game : (await api.GetStateAsync(id, budget.Token))?.Game;
-                if (url is null) return TypedResults.NotFound();
-                if (!fresh) _artUrls[id] = (DateTime.UtcNow, url);
-                var path = kind == "grid" ? url.GridUrl : url.IconUrl;
-                if (string.IsNullOrEmpty(path)) return TypedResults.NotFound();
-                var art = await api.GetArtAsync(path, w, budget.Token);
-                if (art is null) return TypedResults.NotFound();
-                return TypedResults.Bytes(art.Value.Bytes, art.Value.ContentType);
+                var art = await ArtCache.For(_config.StateDir).GetAsync(id, kind, w, api,
+                    async c => (await api.GetStateAsync(id, c))?.Game, budget.Token);
+                return art is null ? TypedResults.NotFound() : TypedResults.Bytes(art.Bytes, art.ContentType);
             }
             // The page went away (a navigation, an aborted fetch): nobody is left to answer.
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { return TypedResults.Empty; }
@@ -1221,17 +1221,28 @@ public sealed class AgentApiServer : IDisposable
 
         // The caller names the winning version — it knows which side is its own local save (the
         // conflict's VersionB, this machine's push) and which is the cloud's (VersionA, the head it
-        // diverged from). keepBoth also protects the loser as a downloadable backup.
+        // diverged from). keepBoth also protects the loser as a downloadable backup. The save here
+        // follows the choice before this answers (SyncEngine.ResolveOwnConflictAsync), and the answer
+        // says what happened to it.
         app.MapPost("/api/conflicts/{id:guid}/resolve",
-            async Task<Results<Ok<OkResponse>, BadRequest<ErrorResponse>>> (Guid id, LocalResolveRequest body) =>
+            async Task<Results<Ok<ResolveConflictResponse>, BadRequest<ErrorResponse>>> (Guid id, LocalResolveRequest body) =>
         {
             try
             {
-                var (ok, error) = await ApiClient.For(_config)
-                    .ResolveConflictAsync(id, body.WinningVersionId, body.KeepBoth);
+                var api = ApiClient.For(_config);
+                if (_resolveConflict is null)
+                {
+                    var (done, why) = await api.ResolveConflictAsync(id, body.WinningVersionId, body.KeepBoth);
+                    return done
+                        ? TypedResults.Ok(new ResolveConflictResponse("Resolved."))
+                        : TypedResults.BadRequest(new ErrorResponse(why ?? "Could not resolve the conflict."));
+                }
+                if (await api.GetConflictAsync(id) is not { } conflict)
+                    return TypedResults.BadRequest(new ErrorResponse("The server no longer has this conflict."));
+                var (ok, message) = await _resolveConflict(conflict, body.WinningVersionId, body.KeepBoth, CancellationToken.None);
                 return ok
-                    ? TypedResults.Ok(new OkResponse())
-                    : TypedResults.BadRequest(new ErrorResponse(error ?? "Could not resolve the conflict."));
+                    ? TypedResults.Ok(new ResolveConflictResponse(message))
+                    : TypedResults.BadRequest(new ErrorResponse(message));
             }
             catch (Exception ex) { return TypedResults.BadRequest(new ErrorResponse(ex.Message)); }
         });
@@ -1345,6 +1356,22 @@ public sealed class AgentApiServer : IDisposable
             catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
         });
 
+        // The game page's "Save files on this PC": every file of every folder here, each compared with
+        // the server's head by SHA-256 (tasks/save-file-trees Phase 3). Hashes the whole save like
+        // sync-status, off the request thread; asked for when the page opens or on Refresh, never polled.
+        // An unreachable server is an answer (no states), not an error.
+        app.MapGet("/api/games/{id:guid}/files",
+            async Task<Results<Ok<GameFilesDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id, CancellationToken ct) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.NotFound();
+            try { return TypedResults.Ok(await SaveFileTree.BuildAsync(_config, game, ApiClient.For(_config), ct)); }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                return TypedResults.InternalServerError(new ErrorResponse(ex.Message));
+            }
+        }).Produces<GameFilesDto>();
+
         // The Decky/Playnite launch gate (tasks/conflict-resolution-ui/plan.md, Phase 11). Neither
         // can call SyncEngine.PrepareLaunchAsync in-process the way the Linux wrapper (Phase 4,
         // ProtonRun.cs) does, so this wraps it for a caller that can only reach the agent over HTTP.
@@ -1414,7 +1441,15 @@ public sealed class AgentApiServer : IDisposable
             if (game is null) return TypedResults.NotFound();
 
             if (!await _syncGate.WaitAsync(0))
+            {
+                // The running sync pushes this game, so skipping the push here is right — but it
+                // never ends this game's checkout, and the lease renewer keeps it alive on this
+                // machine, locking the rest of the fleet out of a game nobody is playing. The
+                // release runs even though the push does not. CancellationToken.None on purpose:
+                // a caller that gave up on the request must not also cancel the release.
+                await _releaseLease(game, CancellationToken.None);
                 return TypedResults.Conflict(new OkResponse());
+            }
 
             try
             {
@@ -1687,7 +1722,10 @@ public sealed class AgentApiServer : IDisposable
             candidate.EmulatorName,
             candidate.EmulatorSystem,
             candidate.EmulatorRom,
-            candidate.UntouchedSeed)).ToArray();
+            candidate.UntouchedSeed,
+            candidate.NotSyncable,
+            GameSources.SystemLabel(candidate.EmulatorSystem),
+            candidate.Release?.Region)).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -1789,7 +1827,16 @@ public sealed record CandidateDto(
     string? EmulatorRom = null,
     /// <summary>EmuDeck's preinstalled save, never played here (<see cref="ScanCandidate.UntouchedSeed"/>): list it
     /// only when <c>GET /api/candidates/links</c> says it joins a server game.</summary>
-    bool UntouchedSeed = false);
+    bool UntouchedSeed = false,
+    /// <summary>Why this row can never be added and how to fix that (<see cref="ScanCandidate.NotSyncable"/>): a memory
+    /// card every game of a console shares. Shown greyed out with this text; null for every addable row.</summary>
+    string? NotSyncable = null,
+    /// <summary>The console as people say it ("PS2", "GameCube"), from <see cref="EmulatorSystem"/> by
+    /// <see cref="GameSources.SystemLabel"/> — the Add games Console row's chip label. Null when there is no system.</summary>
+    string? EmulatorConsole = null,
+    /// <summary>Which region's release a console game's save is ("USA", "Europe, Australia"), kept out of
+    /// <see cref="Name"/>; null when it is no disc console's save or Redump does not know its game ID.</summary>
+    string? Region = null);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the
@@ -1850,7 +1897,12 @@ public sealed record TrackedGameDto(
     SaveFolderDto[]? Paths = null,
     /// <summary>How this machine found the game; null when it was enrolled before sources were recorded,
     /// or is not set up here.</summary>
-    GameSourceDto? Source = null);
+    GameSourceDto? Source = null,
+    /// <summary>Which release of a console game it is (region, game IDs); null for any other game.</summary>
+    GameReleaseDto? Release = null,
+    /// <summary>The first of the primary folder's include patterns — the save's own files, in the details the
+    /// release chip opens; null for a game that keeps its whole folder.</summary>
+    string? SaveFiles = null);
 
 /// <summary>One save folder of a tracked game on this machine.</summary>
 /// <param name="Path">This machine's folder, or <c>""</c> when it is not mapped here — an unmapped
@@ -2067,6 +2119,8 @@ public sealed record DismissWarningRequest(string? GameName);
 /// <param name="KeepBoth">Also protect the losing version as a downloadable backup.</param>
 public sealed record LocalResolveRequest(Guid WinningVersionId, bool KeepBoth = false);
 public sealed record OkResponse(bool Ok = true);
+/// <param name="Message">What became of the save on this machine, as one sentence to show.</param>
+public sealed record ResolveConflictResponse(string Message);
 /// <param name="NeedsConfirm">The request was refused by a heuristic that has false positives, and
 /// re-sending it with <c>confirm</c> will be accepted. A client decides "may this be clicked past?" from
 /// this field alone, never from the wording of <paramref name="Error"/> — a hard refusal never sets it.</param>

@@ -132,6 +132,10 @@ SaveLocker/
 │   │   ├── SavePathEditor.cs            # Add/remove an extra save folder — one implementation for add-path,
 │   │   │                               #   remove-path, the local API and the start-up prompt
 │   │   ├── FolderSize.cs                # Bytes under a save folder by plain enumeration (no hashing)
+│   │   ├── ArtCache.cs                  # Covers/icons on disk (<state>/art-cache/<game>/<kind>-<w>.<url hash>.<ext>): served
+│   │   │                               #   offline, re-fetched when the server's ?v= URL changes, warmed by the poller
+│   │   ├── SaveFileTree.cs              # "Save files on this PC": every file here vs the head by SHA-256 (same / here /
+│   │   │                               #   server), plus the folder's other files (other game / excluded). GET /api/games/{id}/files
 │   │   ├── FileLockProbe.cs             # "Is anyone still writing?" — FileShare (Win) / /proc (Linux)
 │   │   ├── SteamLayout.cs               # The parts of Steam's on-disk layout that are identical on
 │   │   │                               #   every platform. FINDING Steam is not here — that is a
@@ -150,6 +154,15 @@ SaveLocker/
 │   │   │                               #   Supermodel and Model 2 are rows of it. IsUntouchedSeed: EmuDeck's preinstalled NVRAM
 │   │   ├── MelonDsSaves.cs · SupermodelSaves.cs · Model2Saves.cs   # Its rows (folders per OS, config readers, seed hashes)
 │   │   ├── ScummVmSaves.cs              # scummvm.ini targets → <target>.* in their savepath (own reader: not ROM-named)
+│   │   ├── MemoryCards.cs               # Is this card SHARED by every game? (PS2 file card, Dolphin raw, DuckStation shared,
+│   │   │                               #   a PS1 card of several games) → a greyed NotSyncable row; PS1 card directory;
+│   │   │                               #   ConsoleText (Shift-JIS/1252, full-width folded by hand — invariant globalization)
+│   │   ├── Pcsx2Saves.cs · DuckStationSaves.cs   # PS2 folder card per product code; PS1 card per game
+│   │   ├── ConsoleTitles.cs             # Serial → title + region + languages (PS1/PS2/PS3/GC/Wii) and the save's
+│   │   │                               #   GameReleaseDto (region kept out of the name), from the embedded
+│   │   │                               #   ConsoleTitles/console-titles.tsv.gz — Redump via libretro-database, CC BY-SA 4.0
+│   │   │                               #   (NOTICE.md); Update-ConsoleTitles.ps1 rebuilds it
+│   │   ├── DolphinSaves.cs              # GameCube GCI per game ID + Wii title folders; PrimeHack is its 2nd emulator
 │   │   ├── EmulatorSaves.cs             # The table of emulator sources both scanners loop — a new emulator is one row
 │   │   ├── EmulatorPaths.cs             # Home/AppData for standalone emulator lookups; SAVELOCKER_EMULATOR_HOME = fixture home
 │   │   ├── GamelistXml.cs               # ES-DE gamelist.xml titles, arcade systems only (safe because of D1)
@@ -270,8 +283,10 @@ SaveLocker/
 │   │       ├── GamesSidebar.tsx         # 250 px left sidebar: cover art, name, status dot, live chip
 │   │       ├── GamesView.tsx            # Sidebar + game page, or the full-width grid
 │   │       ├── game/                    # The game page, one file per card: GameDetail (owns versions and
-│   │       │                           #   paths), GameHead, ConflictPanel (the agent's conflict card with
-│   │       │                           #   OS logos), GameStats, VersionsCard, SaveFoldersCard (+ SaveFolderParts:
+│   │       │                           #   paths), GameHead (+ SourceChip, ReleaseChip: the region chip that
+│   │       │                           #   opens a console game's release details), ConflictPanel (the agent's conflict card with
+│   │       │                           #   OS logos), GameStats, VersionsCard (+ VersionFiles: each row opens on what it
+│   │       │                           #   changed, the full tree on request — versions/changes), SaveFoldersCard (+ SaveFolderParts:
 │   │       │                           #   one section per extra folder, include patterns, Latest's files),
 │   │       │                           #   RulesCard, ExcludePatternsCard, RemoteCommandsCard, MachineSelect
 │   │       ├── ArtPicker.tsx            # Inline cover/icon chooser under the game card (the pen over the
@@ -311,12 +326,15 @@ SaveLocker/
 │           ├── ui/                      # Button · Card · Chip · Stat · Banner · Toast — counterparts
 │           │                           #   of web/src/components/ui/ (Row · Seg)
 │           ├── Sidebar.tsx              # Nav + footer (machine, server host, agent build label)
+│           ├── ReleaseChip.tsx          # A console game's region chip on its page; opens the release's details
 │           ├── GamesView.tsx · GameDetailView.tsx · GameArt.tsx   # The Games tab: list/grid + search,
 │           │                           #   the per-game page (Sync/Push/Pull, "Check now"), art tile. Art comes
 │           │                           #   through `useArt.ts` (fetch with the token → blob URL), never `<img src>`
 │           ├── StatusHeader.tsx         # The strip on EVERY page: status + Sync all (N of M, Cancel) + the last
 │           │                           #   run's summary — green only when every game synced
 │           ├── ActivityView.tsx         # The full feed, the offline queue, Open agent.log
+│           ├── SaveFilesCard.tsx        # The game page's "Save files on this PC": nested tree, a dot per file (in sync /
+│           │                           #   will push / will pull), other games' files folded. Loaded on demand, never polled
 │           ├── VersionsCard.tsx · GameManagement.tsx   # The game page's server versions; its folder / process /
 │           │                           #   stop-tracking controls (a confirm is the agent's `needsConfirm`, never a sentence)
 │           ├── FolderSuggestionsModal.tsx # "More save folders found": the start-up, one-game-at-a-time

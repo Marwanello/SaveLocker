@@ -63,11 +63,10 @@ sealed partial class UiApp
     private long _syncNowFinishedAt;
     private const long SyncNowHeaderMs = 10000;
 
-    // Conflicts (tasks/conflict-resolution-ui/plan.md, Phase 8). Unlike the "Sync now" call above,
-    // resolving a conflict never touches the daemon's live SyncEngine/lease state — it is the same
-    // stateless, mechanical server call AgentCli.cs's `conflicts`/`resolve-conflict` commands already
-    // make — so this talks to the remote server directly through Agent.Core's own ApiClient,
-    // in-process, rather than adding a second HTTP hop through the daemon's local API.
+    // Conflicts (tasks/conflict-resolution-ui/plan.md, Phase 8). Listing them and reading their versions
+    // are stateless server reads, so they go to the remote server directly through Agent.Core's own
+    // ApiClient, in-process. Resolving does not: keeping the cloud's save replaces the one here, so it
+    // goes through the daemon like "Sync now" (ResolveViaDaemonAsync).
     //
     // Built fresh per call, not cached: every other ApiClient.For(_config) call site (AgentCli.cs's
     // Api(), AgentApiServer.cs's route handlers) does the same, so a config identity change made
@@ -1389,12 +1388,13 @@ sealed partial class UiApp
                         // missing a folder (e.g. untracked then re-adopted while its conflict stayed
                         // open) — the trailing badge names both so the folder problem stays visible
                         // instead of disappearing behind the conflict.
-                        var pressed = Widgets.ListRow($"g{g.Name}", g.Name,
+                        // By id: two releases of one game share its name, told apart by the region beside it.
+                        var pressed = Widgets.ListRow($"g{g.GameId}", g.Name,
                             conflicted ? "Save conflict - pick which one to keep"
                                 : missing ? "No save folder set" : g.SaveDirectory,
                             conflicted || missing ? Icons.AlertTriangle : Icons.Folder,
                             trailing: conflicted && missing ? "conflict + needs setup"
-                                : conflicted ? "conflict" : missing ? "needs setup" : null,
+                                : conflicted ? "conflict" : missing ? "needs setup" : g.Release?.Region,
                             trailingColour: (conflicted || missing) ? Theme.Watch : null,
                             chevron: true);
                         // A conflict is the decision to make; otherwise a row opens the game's own page.
@@ -1900,6 +1900,8 @@ sealed partial class UiApp
         var c = _candidates[i];
         bool alreadyTracked = IsTracked(c);
         bool hasFolder = !string.IsNullOrEmpty(c.SuggestedSaveDir);
+        // A memory card every game of a console shares: listed so the Deck says why, never tickable.
+        bool blocked = c.NotSyncable is not null;
 
         ImGui.PushID(i);
         bool ticked = alreadyTracked || _selected.Contains(i);
@@ -1911,7 +1913,7 @@ sealed partial class UiApp
         if (alreadyTracked) { dl.ChannelsSplit(2); dl.ChannelsSetCurrent(1); }
 
         ImGui.BeginGroup();
-        if (Widgets.CheckRow("sel", ref ticked, enabled: !alreadyTracked) && !alreadyTracked)
+        if (Widgets.CheckRow("sel", ref ticked, enabled: !alreadyTracked && !blocked) && !alreadyTracked && !blocked)
         {
             if (ticked) _selected.Add(i); else _selected.Remove(i);
         }
@@ -1924,6 +1926,7 @@ sealed partial class UiApp
         var tile = MathF.Round(nameH * 1.5f);
         var tileY = ImGui.GetCursorPosY();
         if (alreadyTracked) Widgets.StatusTile(Icons.Check, Theme.Safe, tile);
+        else if (blocked) Widgets.StatusTile(Icons.AlertTriangle, Theme.Watch, tile);
         else if (hasFolder) Widgets.StatusTile(Icons.SearchCheck, Theme.Fg, tile, Theme.Tile);
         else Widgets.StatusTile(Icons.AlertTriangle, Theme.Watch, tile);
         ImGui.SameLine(0, Theme.Space.Sm);
@@ -1931,12 +1934,17 @@ sealed partial class UiApp
         Widgets.Text(c.Name, alreadyTracked ? Theme.Alpha(Theme.Safe, 0.85f) : Theme.Fg, Theme.BodyStrong);
         ImGui.SameLine(0, Theme.Space.Sm);
         ImGui.AlignTextToFramePadding();
-        Widgets.Text($"[{c.Source}]", Theme.Dim, Theme.Caption);
+        Widgets.Text(c.Release?.Region is { } region ? $"[{c.Source}] {region}" : $"[{c.Source}]", Theme.Dim, Theme.Caption);
 
         if (alreadyTracked)
         {
             if (hasFolder) Widgets.Text(c.SuggestedSaveDir!, Theme.Faint, Theme.Caption);
             Widgets.Text("Already added on this Deck", Theme.Safe, Theme.Caption);
+        }
+        else if (blocked)
+        {
+            if (hasFolder) Widgets.Text(c.SuggestedSaveDir!, Theme.Faint, Theme.Caption);
+            Widgets.TextWrapped(c.NotSyncable!, Theme.WatchInk, Theme.Caption);
         }
         else
         {
@@ -2233,21 +2241,10 @@ sealed partial class UiApp
                 if (ok)
                 {
                     _conflictKeepBoth.Remove(_resolvingConflictId!.Value);
-                    // Keeping local makes this machine the winner, which excludes it from the
-                    // server's post-resolve pull fan-out (SyncService.ResolveConflictAsync) on the
-                    // assumption it already advanced its own parent pointer — mirrors AgentCli.cs's
-                    // resolve-conflict --keep local. Without this, the next sync cycle pushes with a
-                    // stale ParentVersionId; it self-heals to NoChange, but wastes a round trip.
-                    if (_resolvingWinningVersionId == _resolvingConflict!.VersionBId)
-                    {
-                        var game = _config.Games.FirstOrDefault(g => g.GameId == _resolvingConflict.GameId);
-                        if (game is not null)
-                        {
-                            game.LastKnownVersionId = _resolvingWinningVersionId;
-                            game.LastSyncedHash = game.LocalHash(_config.StateDir);
-                            _config.SaveGameSyncState(game);
-                        }
-                    }
+                    // The daemon made the save here follow the choice; what it did shows in the header.
+                    _syncNowFailed = false;
+                    _syncNowMessage = error;
+                    _syncNowFinishedAt = Environment.TickCount64;
                     _conflictsReadAt = 0;   // re-poll now so the resolved conflict drops off at once
                 }
                 else _resolveError = error ?? "Could not resolve the conflict.";
@@ -2322,7 +2319,28 @@ sealed partial class UiApp
         _resolvingWinningVersionId = winningVersionId;
         _resolveError = null;
         var keepBoth = _conflictKeepBoth.GetValueOrDefault(conflict.Id);
-        _resolveTask = Api().ResolveConflictAsync(conflict.Id, winningVersionId, keepBoth);
+        _resolveTask = ResolveViaDaemonAsync(conflict.Id, winningVersionId, keepBoth);
+    }
+
+    /// <summary>
+    /// Resolves through the daemon's own <c>/api/conflicts/{id}/resolve</c>, like <see cref="SyncNowAsync"/>:
+    /// keeping the cloud's save has to replace the one here, which only the daemon's engine may do
+    /// (SyncEngine.ResolveOwnConflictAsync). (true, what happened) or (false, why not).
+    /// </summary>
+    private async Task<(bool ok, string? error)> ResolveViaDaemonAsync(Guid conflictId, Guid winningVersionId, bool keepBoth)
+    {
+        using var http = new HttpClient
+        {
+            BaseAddress = new Uri($"http://localhost:{_apiPort}/"),
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        http.DefaultRequestHeaders.Add(LocalAuth.HeaderName, _localAuth.Token);
+        using var response = await http.PostAsJsonAsync($"api/conflicts/{conflictId}/resolve",
+            new LocalResolveRequest(winningVersionId, keepBoth));
+        if (response.IsSuccessStatusCode)
+            return (true, (await response.Content.ReadFromJsonAsync<ResolveConflictResponse>())?.Message ?? "Resolved.");
+        var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        return (false, error?.Error ?? $"The agent answered {(int)response.StatusCode}.");
     }
 
     /// <summary>

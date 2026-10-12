@@ -2141,7 +2141,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["OkResponse"];
+                        "application/json": components["schemas"]["ResolveConflictResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -2478,6 +2478,59 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["SyncStatusDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GameFilesDto"];
                     };
                 };
                 /** @description Not Found */
@@ -2862,6 +2915,9 @@ export interface components {
             emulatorRom?: null | string;
             /** @default false */
             untouchedSeed: boolean;
+            notSyncable?: null | string;
+            emulatorConsole?: null | string;
+            region?: null | string;
         };
         CandidateLinksDto: {
             /** Format: int32 */
@@ -3038,6 +3094,36 @@ export interface components {
             includeGlobs?: null | string[];
             extraPaths?: null | components["schemas"]["SavePathDto"][];
             machineSource?: null | components["schemas"]["GameSourceDto"];
+            emulators?: null | string[];
+            release?: null | components["schemas"]["GameReleaseDto"];
+        };
+        GameFilesDto: {
+            folders: components["schemas"]["GameFolderFilesDto"][];
+            head: null | components["schemas"]["GameFilesHeadDto"];
+            reachable: boolean;
+        };
+        GameFilesHeadDto: {
+            /** Format: uuid */
+            versionId: string;
+            /** Format: date-time */
+            when: string;
+            machine: string;
+        };
+        GameFolderFilesDto: {
+            key: string;
+            label: string;
+            path: string;
+            files: components["schemas"]["LocalFileDto"][];
+            other: components["schemas"]["OtherFileDto"][];
+            /** Format: int32 */
+            otherCount: number;
+        };
+        GameReleaseDto: {
+            console: string;
+            region?: null | string;
+            gameIds?: null | string[];
+            languages?: null | string[];
+            namedBy?: null | string;
         };
         GameSourceDto: {
             kind: string;
@@ -3117,6 +3203,18 @@ export interface components {
             detail: string;
             badge: string;
         };
+        LocalFileDto: {
+            path: string;
+            /** Format: int64 */
+            size: number;
+            /** Format: date-time */
+            modifiedUtc: null | string;
+            state: null | string;
+            /** @default false */
+            missing: boolean;
+            /** @default false */
+            notInHead: boolean;
+        };
         LocalResolveRequest: {
             /** Format: uuid */
             winningVersionId: string;
@@ -3149,6 +3247,12 @@ export interface components {
             opened: boolean;
             path: string;
         };
+        OtherFileDto: {
+            path: string;
+            /** Format: int64 */
+            size: number;
+            why: string;
+        };
         PlaynitePluginCardStatusDto: {
             applicable: boolean;
             pluginInstalled: boolean;
@@ -3176,6 +3280,9 @@ export interface components {
         };
         RegisterResponse: {
             machineName: string;
+        };
+        ResolveConflictResponse: {
+            message: string;
         };
         ResolveLaunchOptionsRequest: {
             games: null | components["schemas"]["LaunchOptionCurrentDto"][];
@@ -3294,6 +3401,8 @@ export interface components {
             lastPushAt?: null | string;
             paths?: null | components["schemas"]["SaveFolderDto"][];
             source?: null | components["schemas"]["GameSourceDto"];
+            release?: null | components["schemas"]["GameReleaseDto"];
+            saveFiles?: null | string;
         };
         VersionStatsDto: {
             /** Format: int32 */

@@ -80,8 +80,9 @@ public sealed class ApiClient
         {
             Content = JsonContent.Create(new MachineRegisterRequest(name))
         };
-        // Re-registering an existing machine name requires the admin password when the
-        // server has one set. First-time registration ignores this header.
+        // Both halves need it once the server has a password set: re-registering an existing name,
+        // and (since Security:RequireAdminPasswordToRegister defaults to true) a NEW one. With no
+        // password configured the header is ignored.
         if (!string.IsNullOrEmpty(adminPassword))
             msg.Headers.Add("X-Admin-Password", adminPassword);
 
@@ -241,6 +242,16 @@ public sealed class ApiClient
         if (resp.StatusCode == HttpStatusCode.NotFound) return null;
         resp.EnsureSuccessStatusCode();
         return await resp.Content.ReadFromJsonAsync<GameStateDto>(ct);
+    }
+
+    /// <summary>The head version's files with their SHA-256 (tasks/save-file-trees); null for a game the
+    /// server does not know.</summary>
+    public async Task<HeadFilesDto?> GetHeadFilesAsync(Guid gameId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/agent/games/{gameId}/head/files", ct);
+        if (resp.StatusCode == HttpStatusCode.NotFound) return null;
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<HeadFilesDto>(ct);
     }
 
     /// <summary>
