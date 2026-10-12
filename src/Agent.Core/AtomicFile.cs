@@ -14,11 +14,6 @@ namespace SaveLocker.Agent;
 /// </summary>
 public static class AtomicFile
 {
-    // Protecting the directory is a full ACL read on Windows, and these writers run constantly
-    // (every config save, every health report). The directory only needs it once per process —
-    // StateDirSecurity is idempotent, this just avoids asking the filesystem to prove it each time.
-    private static readonly HashSet<string> ProtectedDirs = new(StringComparer.OrdinalIgnoreCase);
-
     // One temp-name shape for every writer here: PID separates two processes racing on the same
     // file, Guid separates two writes from the same process. Same idiom as SyncEngine.TempArchive.
     private static string NewTempPath(string dir, string path) =>
@@ -46,19 +41,14 @@ public static class AtomicFile
         ArgumentException.ThrowIfNullOrEmpty(dir, nameof(path));
         Directory.CreateDirectory(dir);
 
-        // Every caller that asks for restricted permissions is writing agent state, and on Windows
-        // the protection that matters is on the DIRECTORY: %PROGRAMDATA% grants all authenticated
-        // users read access, it inherits, and config.json holds the machine's server API key. Doing
-        // it here rather than at each call site means a state file cannot be added later that
-        // quietly misses it. WA-03.
-        if (restrictPermissions && OperatingSystem.IsWindows())
-        {
-            lock (ProtectedDirs)
-            {
-                if (ProtectedDirs.Add(Path.GetFullPath(dir)))
-                    StateDirSecurity.Protect(dir);
-            }
-        }
+        // Every caller that asks for restricted permissions is writing agent state. On Windows the
+        // protection that matters is on the DIRECTORY: %PROGRAMDATA% grants all authenticated users
+        // read access, it inherits, and config.json holds the machine's server API key. On Unix the
+        // same call enforces 0700 on the directory and 0600 on the state files this build knows are
+        // private, so privacy no longer depends on the launching shell's umask. Doing it here rather
+        // than at each call site means a state file cannot be added later that quietly misses it.
+        // WA-03.
+        if (restrictPermissions) StateDirSecurity.Protect(dir);
 
         // The temp name carries the PID: two processes racing to rewrite the same file must not
         // collide on the intermediate, or one truncates the other's half-written temp and renames
