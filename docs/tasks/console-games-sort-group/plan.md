@@ -22,7 +22,7 @@ Decisions taken with the maintainer before building:
 - **No "Date added" in v1** — `Game` has no created column; adding one is a migration. Sorting offers
   Name / Recently synced / Size; grouping offers Date **synced**, not added. The column is the obvious
   follow-up (mockup's Shared notes carry the shape).
-- **Rolling date buckets** — Today / Yesterday / Earlier this week (≤7 d) / This month (≤30 d) / Earlier.
+- **Rolling date buckets** — Today / Yesterday / Earlier this week (2–6 d) / This month (7–30 d) / Earlier.
 - **Both layouts** — sidebar list (sticky headings) and grid wall (band headings).
 
 ### Server (additive; `openapi.json` + `web/src/api-types.ts` regenerated)
@@ -47,15 +47,34 @@ answers the same fields without the overview's bulk load.
 - `web/src/components/game/gameState.ts` — `standingKey()` extracted so the Status grouping and the
   row's own dot can never disagree.
 - `GamesSidebar` / `GamesGrid` — sticky, collapsible group headers (grid: full-width bands); with
-  "None" the screen is exactly what it was before.
+  "None" the rows and tiles are exactly what they were, in the mockup's locale-aware name order
+  (the server's old binary collation could order mixed-case titles differently).
 - `GamesView` — the arrangement persists in `localStorage` (`sl_games_organize`, validated value by
   value, unknown shape falls back to None/Name); collapsed headings are per-visit only (group ids die
   with the arrangement, a persisted set would silently apply to different headings).
 
 Verified: server `dotnet build` clean (baseline warnings only); `web` `tsc -b && vite build` + `oxlint`
 clean; `run-console-security-tests.ps1` **364/364** (run on :5225/:5226 — :5216 is a Windows reservation
-on this box); `organize()` driven in Node against 9 fixtures (device overlap, GameCube → Dolphin +
-PrimeHack sub-headings, source kinds, date buckets, null-last sorting) — all pass.
+on this box); the new `tests/run-organize-tests.ps1` **13/13** (device overlap, GameCube → Dolphin +
+PrimeHack sub-headings, source kinds, date buckets, null-last sorting — Size included) — all pass.
+
+## Review fixes (2026-10-12, on the same PR)
+
+Findings from the PR review, all fixed:
+
+1. **Size sort, "Smallest first": a game with no saves now stays last there too.** `sortValueOf` returned
+   `totalStorageBytes ?? 0` — a plain number, so the null-last rule only ever fired for Date synced, and
+   "Smallest first" floated every never-synced game to the top, against the mockup's "last under date and
+   size, whichever direction is chosen". It keys off `head` now; a committed fixture pins it (and catches
+   the old code).
+2. **The arrange menus take the keyboard.** ArrowDown/ArrowUp on a closed trigger opens it; opening
+   focuses the checked item (else the first); ArrowDown/ArrowUp/Home/End move through the items; picking
+   one returns focus to that trigger (Escape already did).
+3. **No more "exactly the old screen"** — the name sort is the mockup's locale-aware comparator, so
+   mixed-case titles order differently than the server's old binary collation (see *Web* above).
+4. `OrganizeControls.tsx`'s header comment had a mojibake em dash; fixed.
+5. The fixture run is committed, not scratch: `tests/run-organize-tests.ps1` + `tests/organize-fixtures.cjs`,
+   wired into CI's `build-web` job beside the appearance-consistency check.
 
 ## Manual verification through `testenv` (nothing is verified in a real browser yet)
 
