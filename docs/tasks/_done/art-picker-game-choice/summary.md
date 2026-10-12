@@ -26,4 +26,6 @@ Options come from the first name match, so a game whose name matches the wrong e
   source changes.
 - `tests/sgdb-stub.py` returns three candidates per query so the manual stub shows the switch;
   `run-console-security-tests.ps1` grew 12 checks (its stub now serves `games/id` and per-id art for
-  the chosen entry) — 376/376, mutation-relevant asserts included.
+  the chosen entry) — 376/376, mutation-relevant asserts included. The PR review then added two more
+  (the startup backfill filling from a pinned source) — 378/378, and cached the picker's source
+  lookup, since it had been asking SteamGridDB again on every open.

@@ -2037,6 +2037,16 @@ changes; [[Backlog]] now lists it as its own item.
 agent `stat` on the state dir) is the maintainer's manual check — steps were given in this session's
 report. Release notes for the next tag must cover both: artwork can be pointed at the right
 SteamGridDB entry, and the Linux agent's state files are owner-only now.
+<br>**Reviewed 2026-10-12; five findings, all fixed on the branch.** `StateDirSecurity.Protect` caches
+the *outcome* per directory, so a failed first attempt is no longer reported as "already handled" to
+later callers; `ArtService`'s name lookup is remembered once for every reader (including the picker's
+source row, which had been asking every time) and parses defensively (a malformed search body is "no
+match", not a 500); the picker's empty-result message names the query that was actually searched;
+`AgentLogger`'s comment records the Windows consequence of its first-write protection; and the
+missing-art backfill gained a test proving it fills from a **pinned** source, not the automatic name
+match. Re-verified after the fixes: `run-console-security-tests` **378/378** (+2), `dotnet test`
+450/450, `run-agent-tests` 47/47, both agent builds at baseline, `web` build + lint clean, the WSL
+permission checks re-run by hand.
 
 ---
 
