@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 5c · DLC check journey</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0f0f10;--panel:#141416;--raise:#191a1c;--tile:#1b1c1f;--hover:#202124;--fg:#f0eee9;--dim:#a09d97;--faint:#817e78;--line:#242427;--safe:#7fa96a;--watch:#d9a63f;--info:#7b9fd0;--accent:#e0533c;--on-accent:#160f0e;
+--accent-soft:color-mix(in oklab,var(--accent) 14%,var(--panel));--accent-line:color-mix(in oklab,var(--accent) 42%,var(--panel));--accent-ink:color-mix(in oklab,var(--accent) 80%,var(--fg));
+--safe-soft:color-mix(in oklab,var(--safe) 14%,var(--panel));--safe-line:color-mix(in oklab,var(--safe) 40%,var(--panel));--safe-ink:color-mix(in oklab,var(--safe) 82%,var(--fg));
+--watch-soft:color-mix(in oklab,var(--watch) 14%,var(--panel));--watch-line:color-mix(in oklab,var(--watch) 40%,var(--panel));--watch-ink:color-mix(in oklab,var(--watch) 82%,var(--fg));
+--info-soft:color-mix(in oklab,var(--info) 16%,var(--panel));--info-line:color-mix(in oklab,var(--info) 40%,var(--panel));--info-ink:color-mix(in oklab,var(--info) 82%,var(--fg));color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--ink);color:var(--fg);font-family:'Archivo',system-ui,sans-serif;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+h1,h2,h3,p,dl,dd,ul{margin:0}
+button{font-family:inherit}
+a{color:#e8735f}
+.mono{font-family:'JetBrains Mono',monospace;font-size:11px}
+.eyebrow{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:500}
+
+/* page chrome */
+.top{position:sticky;top:0;z-index:20;background:color-mix(in oklab,var(--ink) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.top-in{max-width:1320px;margin:0 auto;padding:14px 16px;display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center}
+.top h1{font-size:16px;font-weight:700;letter-spacing:-.02em}
+.top h1 span{color:var(--dim);font-weight:500}
+.picker{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}
+.group{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.group>span{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-right:4px}
+.opt-tab{border:1px solid var(--line);background:var(--panel);color:var(--dim);padding:6px 11px;border-radius:99px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap}
+.opt-tab:hover{color:var(--fg)}
+.opt-tab[aria-selected=true]{background:var(--accent-soft);border-color:var(--accent-line);color:var(--fg)}
+.opt-tab .rec{color:var(--safe-ink);margin-left:4px}
+.gt{display:flex;align-items:center;gap:8px;margin-left:auto;font-size:12px;color:var(--dim)}
+.gt input{background:var(--raise);border:1px solid var(--line);border-radius:9px;color:var(--fg);padding:6px 10px;font:500 12.5px 'Archivo',sans-serif;width:150px}
+.wrap{max-width:1320px;margin:0 auto;padding:16px 16px 40px;display:flex;flex-direction:column;gap:14px}
+.brief{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:12px}
+@media (max-width:900px){.brief{grid-template-columns:1fr}}
+.brief>div{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.brief h2{font-size:17px;font-weight:700;letter-spacing:-.02em;margin-top:4px}
+.brief p{font-size:12.5px;color:var(--dim);line-height:1.55;margin-top:6px}
+.brief ul{padding-left:16px;font-size:12.5px;line-height:1.55;color:var(--dim);margin-top:6px}
+.brief li b{color:var(--fg);font-weight:600}
+.frame{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--ink);box-shadow:0 20px 50px rgba(0,0,0,.35)}
+.framebar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:9px 14px;background:var(--raise);border-bottom:1px solid var(--line)}
+.lights{display:flex;gap:6px}.lights i{width:10px;height:10px;border-radius:50%;background:var(--tile);border:1px solid var(--line)}
+.framebar .where{font-size:12px;color:var(--dim)}
+.framebar .seg{margin-left:auto}
+
+/* SaveLocker primitives */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:var(--raise);color:var(--fg);font:500 12.5px 'Archivo',sans-serif;cursor:pointer;white-space:nowrap;transition:background-color .15s}
+.btn:hover{background:var(--hover)}
+.btn-p{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn-p:hover{background:color-mix(in oklab,var(--accent) 86%,white)}
+.btn-q{background:transparent;border-color:transparent;color:var(--dim)}
+.btn-sm{padding:5px 11px;font-size:12px}
+.btn:disabled{opacity:.55;cursor:default}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;border:1px solid var(--line);background:var(--raise);font-size:11px;color:var(--dim);white-space:nowrap;font-family:'Archivo',sans-serif}
+button.chip{cursor:pointer}
+button.chip:hover{border-color:var(--info-line);color:var(--info-ink)}
+.chip-ok{color:var(--safe-ink);border-color:var(--safe-line);background:var(--safe-soft)}
+.chip-warn{color:var(--watch-ink);border-color:var(--watch-line);background:var(--watch-soft)}
+.chip-crit{color:var(--accent-ink);border-color:var(--accent-line);background:var(--accent-soft)}
+.chip-info{color:var(--info-ink);border-color:var(--info-line);background:var(--info-soft)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;min-width:0}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.card-h h3{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:500}
+.card-h small{font-size:11px;color:var(--dim)}
+.card-b{padding:14px 18px;display:flex;flex-direction:column;gap:10px}
+.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:auto auto;column-gap:12px;row-gap:2px;align-items:center;width:100%;text-align:left;padding:9px 12px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font-family:'Archivo',sans-serif;transition:background-color .15s,transform .15s}
+button.row{cursor:pointer}
+button.row:hover{background:var(--raise);transform:translateX(2px)}
+.row.on{background:var(--accent-soft);border-color:var(--accent-line)}
+.row.flat{border-color:transparent;background:transparent}
+button.row.flat:hover{background:var(--raise)}
+.cov{grid-row:span 2;width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12.5px;background:var(--tile);color:var(--dim)}
+.cov.s{width:34px;height:34px}
+.cov-p{background:var(--info-soft);color:var(--info-ink);border:1px solid var(--info-line);border-radius:50%}
+.rt{grid-column:2;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;align-self:end}
+.rs{grid-column:2;font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;align-self:start}
+.re{grid-column:3;grid-row:1/span 2;display:flex;gap:8px;align-items:center}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none;background:var(--faint)}
+.dot-ok{background:var(--safe)}.dot-warn{background:var(--watch)}.dot-info{background:var(--info)}.dot-crit{background:var(--accent)}.dot-none{background:transparent;border:1.5px solid var(--faint)}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px 16px;font-size:12.5px}
+.kv dt{color:var(--dim)}
+.seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:3px;gap:2px;flex-wrap:wrap}
+.seg-b{border:0;background:transparent;color:var(--dim);padding:5px 12px;border-radius:99px;font:500 12px 'Archivo',sans-serif;cursor:pointer}
+.seg-b:hover{color:var(--fg)}
+.seg-b.on{background:var(--tile);color:var(--fg);box-shadow:inset 0 0 0 1px var(--line)}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;min-width:0}
+.stat b{display:block;font-size:20px;font-weight:700;letter-spacing:-.03em;margin-top:6px}
+.stat span{display:block;font-size:11px;color:var(--dim);margin-top:3px}
+.grid-s{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;align-items:start}
+.banner{display:flex;gap:14px;align-items:center;padding:13px 16px;border-radius:12px;border:1px solid;flex-wrap:wrap}
+.banner>div{flex:1 1 300px;min-width:0}
+.banner-warn{background:var(--watch-soft);border-color:var(--watch-line)}
+.banner-ok{background:var(--safe-soft);border-color:var(--safe-line)}
+.banner-info{background:var(--info-soft);border-color:var(--info-line)}
+.banner b{display:block;font-size:13px;font-weight:600}
+.banner span.d{display:block;font-size:12px;color:var(--dim);margin-top:2px;line-height:1.45}
+.back{border:0;background:transparent;color:var(--dim);font:500 12px 'Archivo',sans-serif;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:5px}
+.back:hover{color:var(--fg)}
+.crumbs{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--dim)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.meter{height:6px;border-radius:99px;background:var(--tile);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--info);transition:width .3s}
+.gh{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.gh-cover{width:64px;aspect-ratio:2/3;border-radius:10px;background:var(--tile);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--dim);flex:none}
+.gh-avatar{width:72px;height:72px;border-radius:50%;background:var(--info-soft);border:1px solid var(--info-line);color:var(--info-ink);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;flex:none}
+.gh h2{font-size:22px;font-weight:700;letter-spacing:-.03em}
+.chips{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.ghead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.ghead h3{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:500}
+.ghead span{font-size:11.5px;color:var(--dim)}
+.list{display:flex;flex-direction:column;gap:6px}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:500;text-align:left;padding:8px 18px;border-bottom:1px solid var(--line)}
+.tbl td{padding:9px 18px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.scroll{overflow-x:auto}
+.ok{color:var(--safe-ink);font-size:12px}
+.no{color:var(--watch-ink);font-size:12px;font-weight:600}
+.lost{color:var(--accent-ink);font-weight:600}
+input[type=checkbox]{accent-color:#e0533c;width:14px;height:14px;cursor:pointer;flex:none}
+.file{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12px;padding:4px 0}
+.fold{border-top:1px solid var(--line);padding:12px 18px;display:flex;flex-direction:column;gap:6px}
+.fold:first-of-type{border-top:0}
+.fold-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px}
+.fold-h b{font-weight:600}
+.f{display:grid;grid-template-columns:14px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12px;padding:3px 0 3px 22px}
+.f small{font-size:11px;color:var(--dim)}
+
+/* agent + console chrome */
+.app{min-height:720px;display:flex;flex-direction:column;position:relative}
+.bar{display:flex;align-items:center;gap:11px;padding:11px 18px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+.mark{width:28px;height:28px;border-radius:8px;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:none}
+.brand b{display:block;font-size:15px;letter-spacing:-.03em}
+.brand span{display:block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.body{flex:1;display:flex;flex-wrap:wrap}
+.aside{flex:1 1 180px;max-width:220px;padding:14px 10px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;gap:3px}
+.nav{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:8px 11px;border-radius:10px;border:1px solid transparent;background:transparent;color:var(--dim);font:500 13px 'Archivo',sans-serif;cursor:pointer;text-align:left;width:100%}
+.nav:hover{background:var(--raise);color:var(--fg)}
+.nav.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--fg)}
+.nav .new{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--info-ink);border:1px solid var(--info-line);border-radius:99px;padding:1px 6px}
+.aside-foot{margin-top:auto;padding:12px 11px 0;font-size:11px;color:var(--dim);line-height:1.6}
+.aside-foot b{color:var(--fg);display:block}
+.main{flex:999 1 560px;min-width:0;padding:22px 24px 28px;display:flex;flex-direction:column;gap:14px}
+.tabs{display:flex;gap:2px;flex-wrap:wrap}
+.tab{border:0;background:transparent;color:var(--dim);padding:6px 11px;border-radius:9px;font:500 13px 'Archivo',sans-serif;cursor:pointer}
+.tab.on{background:var(--raise);color:var(--fg)}
+.side{flex:1 1 250px;max-width:290px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
+.side-h{padding:12px 14px;border-bottom:1px solid var(--line)}
+.side-l{padding:6px;display:flex;flex-direction:column;gap:2px}
+
+/* option-specific */
+.mx td .cell{display:flex;flex-direction:column;gap:5px;align-items:flex-start}
+.mx td .cell small{font-size:11px;color:var(--dim)}
+.overlay{position:absolute;inset:0;background:rgba(8,8,9,.72);display:flex;align-items:flex-start;justify-content:center;padding:70px 16px 16px;z-index:5}
+.dialog{width:100%;max-width:580px;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.dialog-h{padding:16px 20px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.dialog-h h3{font-size:16px;font-weight:700;margin-top:3px;line-height:1.3}
+.dialog-h p{font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.5}
+.step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:12px;padding:14px 20px;border-bottom:1px solid var(--line)}
+.step:last-child{border-bottom:0}
+.step b{font-size:13px}
+.step .d{font-size:12px;color:var(--dim);line-height:1.45}
+.num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border:1px solid var(--line);background:var(--raise);color:var(--dim)}
+.num.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.num.done{background:var(--safe-soft);border-color:var(--safe-line);color:var(--safe-ink)}
+.check{display:flex;align-items:center;gap:10px;font-size:12.5px;padding:5px 0;cursor:pointer}
+.choice{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:start;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--raise);text-align:left;color:var(--fg);cursor:pointer;width:100%}
+.choice:hover{border-color:var(--faint)}
+.choice b{font-size:13px;font-weight:600;display:block}
+.choice span.d{font-size:12px;color:var(--dim);display:block;margin-top:3px;line-height:1.45}
+.ico{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--tile);color:var(--dim)}
+.ico.info{background:var(--info-soft);color:var(--info-ink)}
+.addrow{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.sub{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--dim);margin-top:6px}
+.kid{display:grid;grid-template-columns:22px auto minmax(0,1fr) auto;column-gap:10px;align-items:center;width:calc(100% - 26px);margin-left:26px;text-align:left;padding:7px 12px 7px 4px;border-radius:10px;border:1px dashed var(--line);background:transparent;color:var(--fg);cursor:pointer}
+.kid:hover{background:var(--raise)}
+.kid.on{background:var(--accent-soft);border-color:var(--accent-line);border-style:solid}
+.kid.quiet{color:var(--dim)}
+.elbow{width:14px;height:16px;border-left:1.5px solid var(--line);border-bottom:1.5px solid var(--line);border-bottom-left-radius:6px;margin:-12px 0 0 6px}
+.pkg{width:26px;height:26px;border-radius:7px;background:var(--info-soft);border:1px solid var(--info-line);color:var(--info-ink);display:flex;align-items:center;justify-content:center;flex:none}
+.pkg.off{background:var(--tile);border-color:var(--line);color:var(--faint)}
+.kid-t{display:flex;flex-direction:column;min-width:0}
+.kid-t b{font-size:12.5px;font-weight:600}
+.kid-t span{font-size:11px;color:var(--dim)}
+.pl{display:grid;grid-template-columns:auto minmax(0,1fr) 70px 54px 54px;gap:12px;align-items:center;padding:8px 18px;border-top:1px solid var(--line);font-size:12.5px}
+.pl.head{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);border-top:0}
+label.pl{cursor:pointer}label.pl:hover{background:var(--raise)}
+.pr{display:grid;grid-template-columns:minmax(0,1fr) 64px 110px auto;gap:12px;align-items:center;padding:8px 18px;border-top:1px solid var(--line);font-size:12.5px}
+.pr.head{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);border-top:0}
+.mini{display:inline-flex;background:var(--raise);border:1px solid var(--line);border-radius:8px;padding:2px;gap:2px}
+.mini button{border:0;background:transparent;color:var(--dim);padding:3px 9px;border-radius:6px;font:500 11px 'Archivo',sans-serif;cursor:pointer}
+.mini button.on{background:var(--tile);color:var(--fg);box-shadow:inset 0 0 0 1px var(--line)}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 0;border-top:1px solid var(--line);font-size:12.5px}
+.sw:first-child{border-top:0}
+.sw small{display:block;font-size:11.5px;color:var(--dim);margin-top:2px;line-height:1.4}
+.tog{width:34px;height:20px;border-radius:99px;border:1px solid var(--line);background:var(--tile);position:relative;cursor:pointer;flex:none;padding:0}
+.tog i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--dim);transition:left .2s}
+.tog.on{background:var(--accent);border-color:var(--accent)}
+.tog.on i{left:16px;background:var(--on-accent)}
+.stack{display:flex;height:10px;border-radius:99px;overflow:hidden;background:var(--tile)}
+.key{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--dim)}
+.key i{width:9px;height:9px;border-radius:3px;display:inline-block}
+.search{flex:0 1 300px;background:var(--raise);border:1px solid var(--line);border-radius:10px;padding:8px 12px;color:var(--fg);font:12.5px 'Archivo',sans-serif}
+
+/* ---- added for the second round: profile D/E/F and the DLC check journey ---- */
+.brief.two{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
+@media (max-width:900px){.brief.two{grid-template-columns:1fr}}
+.how{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.how div{display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;font-size:12px;line-height:1.5}
+.how dt,.how b.k{color:var(--faint);font-weight:500;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;padding-top:2px}
+.how span{color:var(--dim)}
+.select{background:var(--raise);border:1px solid var(--line);border-radius:9px;color:var(--fg);padding:6px 10px;font:500 12.5px 'Archivo',sans-serif}
+.progress-list{display:flex;flex-direction:column;gap:6px;font-size:12.5px}
+.progress-list div{display:flex;gap:9px;align-items:center}
+.card-gamer{display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:18px;border-radius:16px;border:1px solid var(--info-line);background:linear-gradient(135deg,var(--info-soft),var(--panel) 70%)}
+.gs{font-size:28px;font-weight:700;letter-spacing:-.03em}
+.gs small{font-size:13px;color:var(--dim);font-weight:500;margin-left:4px}
+.ach{display:grid;grid-template-columns:30px minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:9px 18px;border-top:1px solid var(--line);font-size:12.5px}
+.ach .medal{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--tile);color:var(--faint);font-size:11px;font-weight:700}
+.ach.got .medal{background:var(--safe-soft);color:var(--safe-ink);border:1px solid var(--safe-line)}
+.ach.new{background:color-mix(in oklab,var(--info) 7%,var(--panel))}
+.ach small{display:block;font-size:11px;color:var(--dim)}
+.tv{background:#000;min-height:720px;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.tv-bg{position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,#2a3346,#0b0d12 70%)}
+.tv-top{position:relative;display:flex;justify-content:space-between;padding:14px 22px;font-size:13px;color:#cfd6e4}
+.tv-hero{position:relative;padding:40px 48px 0;display:flex;gap:26px;align-items:flex-end;flex-wrap:wrap}
+.tv-cover{width:150px;aspect-ratio:2/3;border-radius:10px;background:#1c2230;border:1px solid #2c3446;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:700;color:#8a96ad}
+.tv-hero h2{font-size:30px;color:#fff;letter-spacing:-.02em}
+.tv-play{margin-top:14px;display:inline-flex;align-items:center;gap:10px;background:#1a9fff;color:#fff;border:0;border-radius:6px;padding:12px 30px;font:700 15px 'Archivo',sans-serif;cursor:pointer}
+.sheet{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,calc(100% - 32px));background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 30px 80px rgba(0,0,0,.6);overflow:hidden;z-index:3}
+.sheet-h{padding:18px 22px 12px}
+.sheet-h h3{font-size:18px;font-weight:700;margin-top:4px;line-height:1.3}
+.sheet-h p{font-size:13px;color:var(--dim);margin-top:6px;line-height:1.5}
+.sheet-b{padding:4px 22px 20px;display:flex;flex-direction:column;gap:8px}
+.big{padding:14px 16px;font-size:14px;justify-content:flex-start}
+.toast{position:absolute;right:16px;bottom:16px;width:min(360px,calc(100% - 32px));background:#202226;border:1px solid #33353a;border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.5);padding:12px 14px;z-index:6;display:flex;flex-direction:column;gap:6px}
+.toast-h{display:flex;gap:8px;align-items:center;font-size:11px;color:var(--dim)}
+.toast b{font-size:13px}
+.toast p{font-size:12px;color:var(--dim);line-height:1.45}
+.toast .actions{margin-top:4px}
+/* journey */
+.journey{display:grid;grid-template-columns:300px minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:1000px){.journey{grid-template-columns:1fr}}
+.steps{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:2px;position:sticky;top:76px;max-height:calc(100vh - 92px);overflow-y:auto}
+.stage{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding:10px 8px 4px}
+.stp{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;text-align:left;border:1px solid transparent;background:transparent;color:var(--dim);padding:7px 8px;border-radius:10px;cursor:pointer;font:500 12.5px 'Archivo',sans-serif;width:100%}
+.stp:hover{background:var(--raise);color:var(--fg)}
+.stp[aria-current=step]{background:var(--accent-soft);border-color:var(--accent-line);color:var(--fg)}
+.stp .n{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--faint)}
+.stp.seen .n{background:var(--safe-soft);border-color:var(--safe-line);color:var(--safe-ink)}
+.stp[aria-current=step] .n{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.stp small{display:block;font-size:10.5px;color:var(--faint);margin-top:1px}
+.stp.branch{padding-left:20px}
+.narr{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 18px;align-items:start}
+.narr h2{font-size:17px;font-weight:700;letter-spacing:-.02em;margin-top:3px}
+.narr p{font-size:12.5px;color:var(--dim);line-height:1.55;margin-top:6px;max-width:760px}
+.narr .built{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11.5px;color:var(--dim);border-top:1px solid var(--line);padding-top:9px}
+.nav-btns{display:flex;gap:6px}
+.timeline{display:flex;flex-direction:column;gap:0;padding:6px 18px 12px}
+.tl{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:start;padding:7px 0;font-size:12.5px;position:relative}
+.tl::before{content:'';position:absolute;left:8px;top:22px;bottom:-8px;width:1.5px;background:var(--line)}
+.tl:last-child::before{display:none}
+.tl i{width:12px;height:12px;border-radius:50%;margin:2px 0 0 2px;background:var(--tile);border:1.5px solid var(--faint);position:relative;z-index:1}
+.tl.done i{background:var(--safe);border-color:var(--safe)}
+.tl.now i{background:var(--info);border-color:var(--info);box-shadow:0 0 0 4px var(--info-soft)}
+.tl small{display:block;font-size:11px;color:var(--dim)}
+.tl em{font-style:normal;font-size:11px;color:var(--dim)}
+.plan{display:flex;flex-direction:column;gap:0}
+.plan-row{display:grid;grid-template-columns:34px minmax(0,1fr);gap:12px;padding:12px 18px;border-top:1px solid var(--line)}
+.plan-row:first-child{border-top:0}
+.plan-row .n{width:28px;height:28px;border-radius:8px;background:var(--tile);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--dim)}
+.plan-row b{font-size:13px}
+.plan-row p{font-size:12px;color:var(--dim);line-height:1.5;margin-top:4px}
+.plan-row ul{margin:6px 0 0;padding-left:16px;font-size:12px;color:var(--dim);line-height:1.55}
+.plan-row code,.narr code{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <h1>DLC check <span>· every step, agent and console</span></h1>
+    <div class="picker" role="tablist" aria-label="View">
+      <div class="group">
+        <button type="button" class="opt-tab" role="tab" data-view="journey">Journey</button>
+        <button type="button" class="opt-tab" role="tab" data-view="plan">Build plan</button>
+      </div>
+    </div>
+    <a href="phase-5c-profile-mockups.html" style="font-size:12px;margin-left:auto">← Profile options</a>
+  </div>
+</header>
+<div class="wrap" id="root"></div>
+
+<script>
+'use strict';
+const XUID = 'E030000033894516';
+const SIZES = [312, 188, 96, 84, 76, 72, 64, 58, 44, 30];
+const MISSING = new Set([1, 3, 6]);
+const pkgName = n => 'DLC pack ' + String(n).padStart(2, '0');
+const pkgFile = n => (0x5A3C0000 + n * 7919).toString(16).toUpperCase();
+
+const svg = (d, size = 13, sw = 2.2) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const IC = {
+  pkg: s => svg('<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>', s || 12, 2),
+  relay: () => svg('<path d="M4 12h12"/><path d="M12 6l6 6-6 6"/><path d="M20 4v16"/>', 15, 2),
+  down: () => svg('<path d="M12 4v12"/><path d="M6 12l6 6 6-6"/>', 15, 2),
+  wait: () => svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', 15, 2),
+  back: () => svg('<path d="M15 18l-6-6 6-6"/>'),
+  next: () => svg('<path d="M9 6l6 6-6 6"/>'),
+  play: () => svg('<path d="M7 4l13 8-13 8z"/>', 14, 2.4)
+};
+const go = id => `data-go="${id}"`;
+const pct = (a, b) => Math.round(a / b * 100);
+
+// ---------- shells ----------
+function agentShell(machine, navCur, body, overlay = '') {
+  const nav = ['Overview', 'Games', 'Add Games', 'Conflicts', 'Activity', 'Settings'].map(l => `<button type="button" class="nav${l === navCur ? ' on' : ''}"><span>${l}</span>${l === 'Overview' && machine === 'Steam Deck' && navCur !== 'Overview' && S.flags.deckBadge ? '<span class="chip chip-warn" style="padding:1px 7px">1</span>' : ''}</button>`).join('');
+  return `<div class="app"><div class="bar"><span class="mark">S</span><div class="brand"><b>SaveLocker</b><span>Agent · ${machine}</span></div></div>
+  <div class="body"><nav class="aside" aria-label="Sections">${nav}<div class="aside-foot"><b>${machine}</b>agent v0.9.0</div></nav><main class="main">${body}</main></div>${overlay}</div>`;
+}
+function webShell(cur, body) {
+  return `<div class="app"><div class="bar"><span class="mark" style="width:26px;height:26px;font-size:12px">S</span><b style="font-size:15px;letter-spacing:-.03em">SaveLocker</b>
+  <nav class="tabs" aria-label="Console">${['Games', 'Backups', 'Audit', 'Config', 'Help'].map(t => `<button type="button" class="tab${t === cur ? ' on' : ''}">${t}</button>`).join('')}</nav></div><div class="body">${body}</div></div>`;
+}
+const sideGames = (fhEnd) => `<aside class="side" aria-label="Games"><div class="side-h eyebrow">Games · 3</div><div class="side-l">
+  <div class="row on"><span class="cov s">FH</span><span class="rt">Forza Horizon</span><span class="rs">2 h ago · 21 MB</span><span class="re">${fhEnd}</span></div>
+  <div class="row flat"><span class="cov s">F2</span><span class="rt">Forza Horizon 2</span><span class="rs">yesterday · 14 MB</span><span class="re"><span class="dot dot-ok"></span></span></div>
+  <div class="row flat"><span class="cov s">H3</span><span class="rt">Halo 3</span><span class="rs">3 days ago · 1.1 MB</span><span class="re"><span class="dot dot-ok"></span></span></div></div></aside>`;
+const toast = (title, text, actions = '') => `<div class="toast" role="status"><div class="toast-h"><span class="mark" style="width:16px;height:16px;font-size:9px;border-radius:4px">S</span>SaveLocker · notification</div><b>${title}</b><p>${text}</p>${actions ? `<div class="actions">${actions}</div>` : ''}</div>`;
+const fhHead = chips => `<div class="gh"><div class="gh-cover">FH</div><div style="flex:1;min-width:0"><h2>Forza Horizon</h2><div class="chips"><span class="chip">Xenia</span><span class="chip">Xbox 360</span>${chips}</div></div></div>`;
+
+// The DLC card on a game page: what the head version was made with vs what this machine has.
+function dlcCard(deckState, opts = {}) {
+  const deck = n => {
+    if (!MISSING.has(n)) return ['ok', 'Has it'];
+    if (deckState === 'done' || deckState === 'arrived') return ['ok', deckState === 'arrived' ? 'Installed by you' : 'Handed over'];
+    if (deckState === 'receiving') return ['no', n === 1 ? 'Receiving…' : 'Queued'];
+    return ['no', 'Missing'];
+  };
+  const pcOnly = opts.pcOnly;
+  const rows = SIZES.map((s, i) => { const n = i + 1, [c, t] = deck(n); return `<tr><td>${pkgName(n)} <span class="mono" style="color:var(--faint)">${pkgFile(n)}…</span></td><td style="color:var(--dim)">${s} MB</td><td><span class="ok">Has it</span></td>${pcOnly ? '' : `<td><span class="${c}">${t}</span></td>`}</tr>`; }).join('');
+  const tu = `<tr><td>Title update 2 <span class="chip" style="margin-left:6px">update</span></td><td style="color:var(--dim)">52 MB</td><td><span class="ok">Has it</span></td>${pcOnly ? '' : `<td><span class="${opts.tuOld ? 'no' : 'ok'}">${opts.tuOld ? 'Has update 1' : 'Has it'}</span></td>`}</tr>`;
+  return `<div class="card"><div class="card-h"><h3>DLC this save was made with</h3><small>${opts.note || 'from PC’s push 2 h ago · names, IDs and sizes only, about 2 KB'}</small></div>
+    <div class="scroll"><table class="tbl"><thead><tr><th scope="col">Package</th><th scope="col">Size</th><th scope="col">PC</th>${pcOnly ? '' : '<th scope="col">Steam Deck</th>'}</tr></thead><tbody>${rows}${tu}</tbody></table></div></div>`;
+}
+
+// ---------- screens ----------
+const SCREENS = {
+  consoleSettings: () => webShell('Config', `<main class="main" style="max-width:1100px">
+    <div><span class="eyebrow">Configuration</span><h2 style="font-size:20px;font-weight:700;letter-spacing:-.03em;margin-top:3px">DLC check</h2></div>
+    <div class="card"><div class="card-h"><h3>Before a pull</h3><span class="chip chip-ok">On</span></div><div class="card-b" style="gap:0">
+      <div class="sw"><div><b style="font-weight:600">Check a save's DLC before pulling it</b><small>Each push records which DLC packs and title update the save was made with. Nothing is uploaded.</small></div><button type="button" class="tog on" aria-pressed="true" aria-label="Check DLC"><i></i></button></div>
+      <div class="sw"><div><b style="font-weight:600">When a machine lacks some</b><small>Machines follow this unless they set their own. Automatic pulls (before launch, from the console) never ask: “Ask” holds them and notifies.</small></div><div class="seg" role="group"><button type="button" class="seg-b on">Ask</button><button type="button" class="seg-b">Pull anyway</button><button type="button" class="seg-b">Hold</button></div></div>
+    </div></div>
+    <div class="card"><div class="card-h"><h3>Hand-over between machines</h3><span class="chip chip-ok">Allowed</span></div><div class="card-b" style="gap:0">
+      <div class="sw"><div><b style="font-weight:600">Largest hand-over</b><small>Packs pass through the server only until the asking machine has them, then they are deleted.</small></div><select class="select" aria-label="Largest hand-over"><option>2 GB</option><option>5 GB</option><option>500 MB</option></select></div>
+      <div class="sw"><div><b style="font-weight:600">A request expires after</b><small>If the machine with the packs never comes online, the request ends and its parts are deleted.</small></div><select class="select" aria-label="Expiry"><option>7 days</option><option>1 day</option><option>30 days</option></select></div>
+      <div class="sw"><div><b style="font-weight:600">In transit now</b><small>Nothing is waiting on the server.</small></div><span class="mono" style="color:var(--dim)">0 B of 2 GB</span></div>
+    </div></div></main>`),
+
+  pcSettings: () => agentShell('PC', 'Settings', `<h2 style="font-size:20px;font-weight:700;letter-spacing:-.03em">Settings</h2>
+    <div class="card"><div class="card-h"><h3>DLC</h3><small>this machine</small></div><div class="card-b" style="gap:0">
+      <div class="sw"><div><b style="font-weight:600">Before pulling a save made with DLC this PC lacks</b><small>The console says “Ask”.</small></div><div class="seg" role="group"><button type="button" class="seg-b on">Use the console's</button><button type="button" class="seg-b">Ask</button><button type="button" class="seg-b">Pull anyway</button><button type="button" class="seg-b">Hold</button></div></div>
+      <div class="sw"><div><b style="font-weight:600">When another machine asks for DLC this PC has</b><small>Sending reads the packs from Xenia’s content folder and never changes them.</small></div><div class="seg" role="group"><button type="button" class="seg-b on">Ask me</button><button type="button" class="seg-b">Send automatically</button><button type="button" class="seg-b">Never</button></div></div>
+      <div class="sw"><div><b style="font-weight:600">Send only while plugged in</b><small>For laptops and the Deck.</small></div><button type="button" class="tog" aria-pressed="false" aria-label="Only while plugged in"><i></i></button></div>
+    </div></div>`),
+
+  pcAdd: () => agentShell('PC', 'Add Games', `<h2 style="font-size:20px;font-weight:700;letter-spacing:-.03em">Add games</h2>
+    <div class="addrow"><input type="checkbox" checked aria-label="Add Forza Horizon"><div style="min-width:0">
+      <div class="chips" style="margin-top:0"><b style="font-size:13.5px">Forza Horizon</b><span class="chip">Emulator</span><span class="chip">Xenia</span><span class="chip">USA</span><span class="chip mono">4D5309C9</span></div>
+      <div class="mono" style="color:var(--dim);margin-top:5px">D:\\Emulation\\saves\\xenia\\content\\${XUID}\\4D5309C9</div>
+      <div class="sub" style="color:var(--info-ink)">${IC.pkg(13)}<span>10 DLC packs and title update 2 here · <b style="color:var(--fg)">their list</b> goes with each push, the packs stay on this PC</span></div>
+    </div></div>
+    <div class="addrow"><input type="checkbox" checked aria-label="Add Halo 3"><div style="min-width:0">
+      <div class="chips" style="margin-top:0"><b style="font-size:13.5px">Halo 3</b><span class="chip">Emulator</span><span class="chip">Xenia</span><span class="chip mono">4D5307E6</span></div>
+      <div class="sub">No DLC or updates here</div></div></div>
+    <div class="actions"><button type="button" class="btn btn-p" ${go('pcPushed')}>Add 2 games</button></div>`),
+
+  pcPushed: () => agentShell('PC', 'Games', `${fhHead('<span class="chip chip-ok">Matches the cloud</span><span class="chip chip-ok">' + IC.pkg(11) + '10 DLC packs + update 2 listed</span>')}
+    <div class="grid-s"><div class="stat"><span class="eyebrow">Sent last push</span><b>4.1 MB</b><span>the save only</span></div><div class="stat"><span class="eyebrow">DLC listed</span><b>11 items</b><span>1.05 GB here · 0 B uploaded</span></div></div>
+    ${dlcCard('', { pcOnly: true, note: 'recorded with the push just now' })}
+    <div class="card"><div class="card-h"><h3>Activity</h3></div><div class="timeline"><div class="tl done"><i></i><div><b>Pushed Forza Horizon</b><small>4.1 MB · listed 10 DLC packs and title update 2</small></div><em>just now</em></div></div></div>`),
+
+  consoleGame: () => webShell('Games', sideGames('<span class="chip chip-warn">Needs DLC on 1</span>') + `<main class="main"><h2 style="font-size:22px;font-weight:700;letter-spacing:-.03em">Forza Horizon</h2>
+    <div class="card"><div class="card-h"><h3>DLC check</h3><small>0 B of DLC stored · the latest save was made with 10 packs and update 2</small></div>
+      <div class="scroll"><table class="tbl"><thead><tr><th>Machine</th><th>DLC</th><th>Title update</th><th>Can pull the latest save</th></tr></thead><tbody>
+        <tr><td><b>PC</b></td><td><span class="ok">All 10 · 1.0 GB</span></td><td><span class="ok">2</span></td><td><span class="chip chip-ok">Yes</span></td></tr>
+        <tr><td><b>Steam Deck</b></td><td><span class="no">7 of 10 · missing 01, 03, 06</span></td><td><span class="ok">2</span></td><td><span class="chip chip-warn">Needs 3 packs · 480 MB</span></td></tr>
+      </tbody></table></div>
+      <div style="padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--dim)">From here: <button type="button" class="btn btn-sm">Ask PC to hand them to Steam Deck</button><button type="button" class="btn btn-q btn-sm">Pull on Steam Deck anyway</button></div></div>
+    <p style="font-size:12px;color:var(--dim)">Machines report what they have on every scan, so this stays current without hashing a single pack.</p></main>`),
+
+  deckOverview: () => agentShell('Steam Deck', 'Overview', `<div class="banner banner-warn"><div><b>Forza Horizon has a newer save that needs 3 DLC packs</b><span class="d">PC saved 2 h ago with DLC pack 01, 03 and 06 (480 MB). This Deck’s save is kept until you choose.</span></div><button type="button" class="btn btn-p" ${go('deckGame')}>Choose</button></div>
+    <div class="grid-s"><div class="stat"><span class="eyebrow">Games</span><b>3</b><span>2 in sync</span></div><div class="stat"><span class="eyebrow">Waiting on you</span><b>1</b><span>DLC check</span></div><div class="stat"><span class="eyebrow">Last sync</span><b>2 min ago</b><span>all reachable</span></div></div>`,
+    toast('Forza Horizon needs 3 DLC packs', 'The newer save from PC was made with DLC this Deck doesn’t have.', `<button type="button" class="btn btn-sm btn-p" ${go('deckGame')}>Choose</button><button type="button" class="btn btn-q btn-sm">Later</button>`)),
+
+  deckGame: () => agentShell('Steam Deck', 'Games', `${fhHead('<span class="chip chip-warn">Differs from the cloud</span><span class="chip chip-warn">' + IC.pkg(11) + 'Needs 3 DLC packs</span>')}
+    <div class="actions"><button type="button" class="btn btn-p" ${go('deckDialog')}>Pull latest</button><button type="button" class="btn">Push now</button></div>
+    ${dlcCard('missing')}`),
+
+  deckDialog: () => agentShell('Steam Deck', 'Games', `${fhHead('<span class="chip chip-warn">Differs from the cloud</span>')}${dlcCard('missing')}`,
+    `<div class="overlay"><div class="dialog" role="dialog" aria-modal="true" aria-label="This save uses DLC that is not here">
+      <div class="dialog-h"><div><span class="eyebrow">Before pulling Forza Horizon</span><h3>PC made this save with 3 DLC packs this Steam Deck doesn't have</h3><p>DLC pack 01, 03 and 06 · 480 MB. A game may refuse to load such a save, or leave out what came from those packs.</p></div></div>
+      <div style="padding:14px 20px 18px;display:flex;flex-direction:column;gap:8px">
+        <button type="button" class="choice" ${go('deckWaiting')}><span class="ico info">${IC.relay()}</span><span><b>Hand them over from PC, then pull</b><span class="d">PC sends the 3 packs the next time it's on. The server deletes them as soon as this Deck has them.</span></span></button>
+        <button type="button" class="choice" ${go('deckAnyway')}><span class="ico">${IC.down()}</span><span><b>Pull the save anyway</b><span class="d">Only the save, 4.1 MB. This Deck’s save becomes a backup first, as always.</span></span></button>
+        <button type="button" class="choice" ${go('deckHold')}><span class="ico">${IC.wait()}</span><span><b>Not now, I'll install them myself</b><span class="d">The pull waits and goes ahead by itself once the packs appear in Xenia's content folder.</span></span></button>
+      </div></div></div>`),
+
+  deckWaiting: () => agentShell('Steam Deck', 'Games', `${fhHead('<span class="chip chip-info">' + IC.pkg(11) + 'Asked PC for 3 packs</span>')}
+    <div class="banner banner-info"><div><b>Waiting for PC to send 3 packs · 480 MB</b><span class="d">PC was last seen 3 min ago, so it should start shortly. The request ends in 7 days. This Deck’s save stays as it is until the packs arrive.</span></div><button type="button" class="btn btn-q btn-sm">Cancel request</button></div>
+    ${dlcCard('missing')}`),
+
+  pcAsked: () => agentShell('PC', 'Overview', `<div class="banner banner-info"><div><b>Steam Deck asked for 3 DLC packs for Forza Horizon</b><span class="d">DLC pack 01, 03 and 06 · 480 MB. They are read from <span class="mono">content\\0000000000000000\\4D5309C9\\00000002</span>, sent through your server, and deleted there once Steam Deck has them.</span></div><div class="actions"><button type="button" class="btn btn-p" ${go('pcSending')}>Send</button><button type="button" class="btn" ${go('deckDeclined')}>Decline</button></div></div>
+    <div class="grid-s"><div class="stat"><span class="eyebrow">Games</span><b>3</b><span>all in sync</span></div><div class="stat"><span class="eyebrow">Server space for hand-overs</span><b>2 GB</b><span>0 B in use</span></div></div>`,
+    toast('Steam Deck asked for Forza Horizon’s DLC', '3 packs · 480 MB. Send them through your server?', `<button type="button" class="btn btn-sm btn-p" ${go('pcSending')}>Send</button><button type="button" class="btn btn-q btn-sm" ${go('deckDeclined')}>Decline</button>`)),
+
+  pcSending: () => {
+    const p = S.flags.sendPct;
+    return agentShell('PC', 'Overview', `<div class="card"><div class="card-h"><h3>Sending to Steam Deck</h3><small>8 MB pieces · resumes where it stopped</small></div><div class="card-b">
+      ${[[1, 312], [3, 96], [6, 72]].map(([n, s], i) => { const start = i === 0 ? 0 : i === 1 ? 65 : 85, end = i === 0 ? 65 : i === 1 ? 85 : 100; const v = Math.max(0, Math.min(100, (p - start) / (end - start) * 100)); return `<div style="display:grid;grid-template-columns:120px minmax(0,1fr) 110px;gap:12px;align-items:center;font-size:12.5px"><b style="font-weight:600">${pkgName(n)}</b><div class="meter"><i style="width:${v}%"></i></div><span style="color:var(--dim);text-align:right">${v >= 100 ? 'Sent' : Math.round(s * v / 100) + ' of ' + s + ' MB'}</span></div>`; }).join('')}
+      <p style="font-size:12px;color:var(--dim)">Steam Deck starts downloading each pack as soon as it is up.</p>
+      <div class="actions"><button type="button" class="btn btn-q btn-sm">Pause</button><button type="button" class="btn btn-q btn-sm">Cancel</button></div></div></div>`);
+  },
+
+  consoleHandover: () => webShell('Games', sideGames('<span class="chip chip-info">Hand-over</span>') + `<main class="main"><h2 style="font-size:22px;font-weight:700;letter-spacing:-.03em">Forza Horizon</h2>
+    <div class="card"><div class="card-h"><h3>Hand-over · PC → Steam Deck</h3><small>3 packs · 480 MB</small></div>
+      <div class="timeline">
+        <div class="tl done"><i></i><div><b>Asked by Steam Deck</b><small>while pulling the latest save</small></div><em>4 min ago</em></div>
+        <div class="tl done"><i></i><div><b>Approved on PC</b><small>“Ask me” is PC’s setting</small></div><em>2 min ago</em></div>
+        <div class="tl now"><i></i><div><b>Uploading from PC · 2 of 3 packs up</b><small>Steam Deck has downloaded DLC pack 01</small></div><em>now</em></div>
+        <div class="tl"><i></i><div><b>Delivered to Steam Deck</b><small>then the save is pulled</small></div><em></em></div>
+        <div class="tl"><i></i><div><b>Deleted from the server</b><small>at once, or in 7 days if never delivered</small></div><em></em></div>
+      </div></div>
+    <div class="card"><div class="card-h"><h3>Server space for hand-overs</h3><small>408 MB of 2 GB</small></div><div class="card-b"><div class="meter"><i style="width:20%"></i></div><p style="font-size:12px;color:var(--dim)">Audit records who asked, who approved and when the parts were deleted.</p></div></div></main>`),
+
+  deckReceiving: () => {
+    const p = S.flags.recvPct;
+    return agentShell('Steam Deck', 'Games', `${fhHead('<span class="chip chip-info">' + IC.pkg(11) + 'Receiving DLC</span>')}
+      <div class="banner banner-info"><div><b>${p < 100 ? 'Receiving 3 packs from PC · ' + Math.round(480 * p / 100) + ' of 480 MB' : 'Installing and pulling the save…'}</b><span class="d">Into <span class="mono">Emulation/saves/xenia/content/0000000000000000/4D5309C9/00000002</span>. Each pack is checked against PC’s list before it goes in. The save is pulled right after.</span><div class="meter" style="margin-top:8px;max-width:460px"><i style="width:${p}%"></i></div></div></div>
+      ${dlcCard('receiving')}`);
+  },
+
+  deckDone: () => agentShell('Steam Deck', 'Games', `${fhHead('<span class="chip chip-ok">Matches the cloud</span><span class="chip chip-ok">' + IC.pkg(11) + 'All its DLC is here</span>')}
+    <div class="banner banner-ok"><div><b>Packs handed over and the save pulled</b><span class="d">The server deleted its copy straight away: 0 B of DLC stored. This Deck’s previous save is a backup under Versions.</span></div></div>
+    ${dlcCard('done')}
+    <div class="card"><div class="card-h"><h3>Activity</h3></div><div class="timeline">
+      <div class="tl done"><i></i><div><b>Pulled Forza Horizon</b><small>4.1 MB from PC’s push 2 h ago</small></div><em>just now</em></div>
+      <div class="tl done"><i></i><div><b>Received 3 DLC packs from PC</b><small>480 MB · checked and installed</small></div><em>just now</em></div>
+      <div class="tl done"><i></i><div><b>Asked PC for 3 DLC packs</b></div><em>6 min ago</em></div></div></div>`),
+
+  deckAnyway: () => agentShell('Steam Deck', 'Games', `${fhHead('<span class="chip chip-ok">Matches the cloud</span><span class="chip chip-warn">' + IC.pkg(11) + 'Pulled without 3 packs</span>')}
+    <div class="banner banner-warn"><div><b>Save pulled without DLC pack 01, 03 and 06</b><span class="d">If Forza Horizon won’t load it, restore the backup under Versions, or get the packs now.</span></div><div class="actions"><button type="button" class="btn" ${go('deckWaiting')}>Ask PC for them</button><button type="button" class="btn btn-q">Open Versions</button></div></div>
+    ${dlcCard('missing', { note: 'the save here now expects these' })}`),
+
+  deckHold: () => agentShell('Steam Deck', 'Games', `${fhHead('<span class="chip chip-info">Pull on hold</span>')}
+    <div class="banner banner-info"><div><b>Pull on hold until the 3 packs are here</b><span class="d">SaveLocker watches <span class="mono">content/0000000000000000/4D5309C9/00000002</span>. Copy or install them however you like; the pull goes ahead by itself. Your current save keeps syncing as before.</span></div><div class="actions"><button type="button" class="btn" ${go('deckArrived')}>Demo: copy the packs in</button><button type="button" class="btn btn-q" ${go('deckDialog')}>Change</button></div></div>
+    ${dlcCard('missing')}`),
+
+  deckArrived: () => agentShell('Steam Deck', 'Games', `${fhHead('<span class="chip chip-ok">Matches the cloud</span><span class="chip chip-ok">' + IC.pkg(11) + 'All its DLC is here</span>')}
+    <div class="banner banner-ok"><div><b>The packs appeared, so the held pull ran</b><span class="d">They match PC’s list (name, ID and size). This Deck’s previous save is a backup under Versions.</span></div></div>${dlcCard('arrived')}`,
+    toast('Forza Horizon is up to date', 'The 3 DLC packs you added were found, and the newer save was pulled.')),
+
+  deckLaunch: () => `<div class="tv"><div class="tv-bg"></div><div class="tv-top"><span>Steam Deck · Game Mode</span><span>9:41</span></div>
+    <div class="tv-hero"><div class="tv-cover">FH</div><div><span style="font-size:12px;color:#8a96ad;letter-spacing:.12em;text-transform:uppercase">Non-Steam · Xenia</span><h2>Forza Horizon</h2><button type="button" class="tv-play" disabled>${IC.play()}Playing</button>
+      <p style="color:#8a96ad;font-size:12.5px;margin-top:10px;max-width:420px">Launched through SaveLocker's launch command. The pull before launch found the DLC gap and held, so the game started with this Deck's own save.</p></div></div>
+    ${toast('Started with this Deck’s save', 'The newer save from PC needs 3 DLC packs. Choose what to do after you play: open SaveLocker or the Decky panel.', '<button type="button" class="btn btn-sm">Remind me after</button>')}</div>`,
+
+  deckDeclined: () => agentShell('Steam Deck', 'Games', `${fhHead('<span class="chip chip-warn">' + IC.pkg(11) + 'Needs 3 DLC packs</span>')}
+    <div class="banner banner-warn"><div><b>PC declined to send the packs</b><span class="d">Nothing was uploaded. The same happens if a request is not answered within 7 days. This Deck’s save is unchanged.</span></div><div class="actions"><button type="button" class="btn" ${go('deckDialog')}>Choose again</button><button type="button" class="btn btn-q" ${go('deckHold')}>Hold until I install them</button></div></div>
+    ${dlcCard('missing')}`),
+
+  deckTu: () => agentShell('Steam Deck', 'Games', `${fhHead('<span class="chip chip-warn">Needs title update 2</span>')}
+    <div class="banner banner-warn"><div><b>PC made this save on title update 2; this Deck has update 1</b><span class="d">Many games won’t load a save from a newer update. The same three choices apply; a hand-over sends the update (52 MB) into <span class="mono">000B0000</span>.</span></div><button type="button" class="btn btn-p" ${go('deckDialog')}>Choose</button></div>
+    ${dlcCard('done', { tuOld: true })}`)
+};
+
+// ---------- the journey ----------
+const STEPS = [
+  { stage: 'Set up' },
+  { id: 'consoleSettings', who: 'Console', title: 'Turn the check on (on by default)', narr: 'One card in Configuration. The check needs nothing uploaded, so it is on for everyone; the hand-over has its own size cap and expiry, separate from the 500 MB save cap.', built: [5, 6], next: 'pcSettings' },
+  { id: 'pcSettings', who: 'Agent · PC', title: 'Each machine’s own answers', narr: 'A machine can override the console’s choice, and decides whether it sends DLC when asked: ask first, send automatically, or never.', built: [5, 7], next: 'pcAdd' },
+  { stage: 'Recording, on PC' },
+  { id: 'pcAdd', who: 'Agent · PC', title: 'Add games says what DLC is there', narr: 'The scan reads each package’s header in Xenia’s content folder (the DLC and title-update folders under XUID 0). Only the list travels; the packs never leave the PC unless another machine asks.', built: [1], next: 'pcPushed' },
+  { id: 'pcPushed', who: 'Agent · PC', title: 'Every push carries the list', narr: 'The push sends the save as before plus about 2 KB: each pack’s name, package ID, type and size, and the title update. The server keeps it with that version.', built: [2], next: 'consoleGame' },
+  { id: 'consoleGame', who: 'Console', title: 'The console sees the gap first', narr: 'Machines report what they have on every scan, so the game page shows who can pull the latest save safely — before anyone tries. The console can start a hand-over from here too.', built: [3, 5], next: 'deckOverview' },
+  { stage: 'Steam Deck finds the gap' },
+  { id: 'deckOverview', who: 'Agent · Steam Deck', title: 'Told before anything is overwritten', narr: 'A notification and the Overview banner. Nothing has been pulled: the check runs before the restore, so the Deck’s save is untouched.', built: [4, 8], next: 'deckGame' },
+  { id: 'deckGame', who: 'Agent · Steam Deck', title: 'The game page shows exactly what is missing', narr: 'Pack by pack, with sizes, against what PC used. Press Pull latest to get the choice.', built: [4], next: 'deckDialog' },
+  { id: 'deckDialog', who: 'Agent · Steam Deck', title: 'Three choices', narr: 'Pick one in the dialog to follow that path. “Ask” is the default policy; “Pull anyway” and “Hold” can be made the default in Settings so this never appears.', built: [4], next: 'deckWaiting', branch: true },
+  { stage: 'Path 1 · hand over from PC', branch: true },
+  { id: 'deckWaiting', who: 'Agent · Steam Deck', title: 'The request is sent', narr: 'The Deck asks the server; the server tells PC on its next poll (every 20 s). Shown: when PC was last seen and when the request ends.', built: [6, 7], next: 'pcAsked', branch: true },
+  { id: 'pcAsked', who: 'Agent · PC', title: 'PC is asked', narr: 'With “Ask me”, a notification and a banner. With “Send automatically” this step is skipped. Decline ends it at once.', built: [7, 8], next: 'pcSending', branch: true },
+  { id: 'pcSending', who: 'Agent · PC', title: 'PC sends, piece by piece', narr: 'The same chunked upload saves use, so a slow link or a sleeping laptop resumes instead of restarting. Each pack is its own part, so the Deck can start on the first one early.', built: [6, 7], next: 'consoleHandover', branch: true, anim: 'send' },
+  { id: 'consoleHandover', who: 'Console', title: 'The console follows it', narr: 'A timeline on the game page, the space it uses, and an audit trail. The admin can cancel it here.', built: [6], next: 'deckReceiving', branch: true },
+  { id: 'deckReceiving', who: 'Agent · Steam Deck', title: 'The Deck receives and installs', narr: 'Each pack is checked against PC’s list, written to a temporary folder, then moved into place, so Xenia never sees half a pack. Then the save is pulled.', built: [7], next: 'deckDone', branch: true, anim: 'recv' },
+  { id: 'deckDone', who: 'Agent · Steam Deck', title: 'Done, and nothing stays stored', narr: 'The server deletes the packs as soon as the Deck confirms. Next time, only the save travels.', built: [6, 7], next: 'deckAnyway', branch: true },
+  { stage: 'Path 2 · pull anyway', branch: true },
+  { id: 'deckAnyway', who: 'Agent · Steam Deck', title: 'Pulled, with a way back', narr: 'The save is pulled, the old one is a backup (as every pull does), and the page keeps saying which packs it expects, with a button to ask for them later.', built: [4], next: 'deckHold', branch: true },
+  { stage: 'Path 3 · hold', branch: true },
+  { id: 'deckHold', who: 'Agent · Steam Deck', title: 'The pull waits', narr: 'SaveLocker watches the DLC folder. The Deck keeps syncing its own save in the meantime; a push from it would be a normal conflict, never a silent overwrite.', built: [8], next: 'deckArrived', branch: true },
+  { id: 'deckArrived', who: 'Agent · Steam Deck', title: 'Packs appear, the pull runs', narr: 'However they got there — copied by hand, a USB stick — once the list matches, the held pull goes ahead and says so.', built: [8], next: 'deckLaunch', branch: true },
+  { stage: 'Edge cases' },
+  { id: 'deckLaunch', who: 'Steam Deck · Game Mode', title: 'Pull before launch hits the gap', narr: 'No dialog can show before a game starts in Game Mode, so “Ask” holds the pull, the game starts with the Deck’s own save, and the choice waits for later.', built: [8], next: 'deckDeclined' },
+  { id: 'deckDeclined', who: 'Agent · Steam Deck', title: 'Declined, or never answered', narr: 'Both end the same way: nothing uploaded, nothing changed, choose again.', built: [6, 7], next: 'deckTu' },
+  { id: 'deckTu', who: 'Agent · Steam Deck', title: 'An older title update', narr: 'The same check covers title updates, which often matter more than DLC: a save from a newer update may not load at all.', built: [1, 4], next: null }
+];
+const PLAN = [
+  ['Read DLC and title updates from disk', 'A content inventory per emulator, Xenia first. Each package under <code>content/0000000000000000/&lt;TID&gt;/00000002</code> (DLC) and <code>000B0000</code> (title updates): folder name, display name and type from its header in <code>Headers/</code>, total size. No hashing of package data; identity = package ID + size.', ['<code>Agent.Core/ContentInventory.cs</code> (+ <code>XeniaContent</code>)', 'Unit tests with fixture packages; the header layout checked against the PC’s real Forza Horizon packages first', 'Add games shows the line']],
+  ['Send the list with every push', '<code>BeginUploadRequest</code> gains an optional <code>Content</code> list; the server stores it per version (<code>SaveVersionContent</code> table, migration). Version detail returns it. Old agents send nothing and nothing changes for them.', ['<code>Contracts.cs</code>, <code>Entities.cs</code>, <code>SyncService</code>, migration', '<code>openapi.json</code> + <code>api-types.ts</code> regenerated', 'Server tests: stored, returned, absent for old agents']],
+  ['Machines report what they have', '<code>POST /agent/games/{id}/content</code> after every scan, kept per machine per game (<code>MachineGameContent</code>). Lets the console show the gap before a pull.', ['Cheap: the inventory is already in memory after a scan', 'Server tests']],
+  ['Check before a pull', 'In <code>SyncEngine</code>’s pull, after the head is known and before the restore: compare its list with the inventory here. Policy = machine setting, else the console’s (Ask by default). Ask in the UI → the dialog; ask in an automatic pull (launch, command, poller) → hold and notify.', ['<code>DlcCheck.Decide(head, here, policy, interactive)</code>, pure and unit-tested', 'Agent API: <code>GET /api/games/{id}/dlc</code>, <code>POST …/dlc/choice</code>', 'Agent UI: game-page card, dialog, Overview banner']],
+  ['Console card and settings', 'Game page DLC check card (machines × packs), the Configuration card (policy, hand-over cap, expiry) as server settings, agents learn them on poll.', ['<code>web/</code> components', 'Settings via <code>SettingsService</code>']],
+  ['Hand-over on the server', 'A <code>ContentTransfer</code> (game, packs, from, to, status, expiry) and its parts in a temporary store beside the archives. Requested → Approved → Uploading → Ready → Delivered → Deleted, or Declined / Expired / Cancelled. Only the asking machine may download; parts are deleted on delivery or expiry by the sweeper.', ['Endpoints: create, list mine (to send / to fetch), approve/decline, chunked upload per part (reusing the save upload’s begin/chunk/complete), ranged download, confirm', 'Cap: <code>Storage:MaxHandoverMb</code> (2 GB), separate from <code>MaxUploadMb</code>', 'Audit entries; server tests for every transition and for authorization']],
+  ['Hand-over on the agents', 'The 20 s poller asks for transfers: to send (approve per the machine setting, then upload) and to fetch (download into a temp folder, verify against the list, move into place, then run the held pull).', ['Resumable both ways', 'Never writes inside a game that is running (<code>GameActivity</code>)', 'Two-machine test: request, send, receive, pull, deleted on the server']],
+  ['Hold, notifications and launch', 'A held pull is durable (on disk, like the lease warnings) and re-checked on every scan and when the DLC folder changes. Notifications through <code>NoticeCatalog</code> with buttons that open the game screen. The launch wrapper never waits on DLC.', ['Notices: needs DLC, asked for DLC, received, declined, expired', 'Decky panel line for a held pull']],
+  ['Help, testenv, real games', 'Help article, CLI (<code>dlc status</code>, <code>dlc ask</code>), testenv fixtures (fake packages on Windows, missing on WSL), and a Group H check with the real Forza Horizon DLC between PC and Deck.', ['Then Cemu (<code>0005000c</code>), Azahar (<code>0004008c</code>) and RPCS3 DLC as further inventories']]
+];
+
+const S = { view: 'journey', step: 'consoleSettings', seen: new Set(['consoleSettings']), flags: { sendPct: 0, recvPct: 0, deckBadge: true } };
+let timer;
+function startAnim(kind) {
+  clearInterval(timer);
+  if (kind === 'send') { S.flags.sendPct = 0; timer = setInterval(() => { S.flags.sendPct = Math.min(100, S.flags.sendPct + 4); render(); if (S.flags.sendPct >= 100) clearInterval(timer); }, 120); }
+  if (kind === 'recv') { S.flags.recvPct = 0; timer = setInterval(() => { S.flags.recvPct = Math.min(100, S.flags.recvPct + 5); render(); if (S.flags.recvPct >= 100) { clearInterval(timer); setTimeout(() => { if (S.step === 'deckReceiving') goTo('deckDone'); }, 900); } }, 130); }
+}
+function goTo(id) {
+  if (!SCREENS[id]) return;
+  S.step = id; S.seen.add(id); S.view = 'journey';
+  const st = STEPS.find(s => s.id === id);
+  clearInterval(timer);
+  if (st && st.anim) startAnim(st.anim);
+  render();
+  document.getElementById('screen')?.scrollIntoView({ block: 'nearest' });
+}
+const NUMBERED = STEPS.filter(s => s.id);
+function renderJourney() {
+  const st = STEPS.find(s => s.id === S.step);
+  const i = NUMBERED.indexOf(st);
+  const prev = NUMBERED[i - 1], next = st.next;
+  const list = STEPS.map(s => s.id
+    ? `<button type="button" class="stp ${s.branch ? 'branch' : ''} ${S.seen.has(s.id) ? 'seen' : ''}" ${s.id === S.step ? 'aria-current="step"' : ''} ${go(s.id)}><span class="n">${NUMBERED.indexOf(s) + 1}</span><span>${s.title}<small>${s.who}</small></span></button>`
+    : `<div class="stage">${s.stage}</div>`).join('');
+  const built = st.built.map(n => `<button type="button" class="chip" data-plan="${n}">Step ${n} · ${PLAN[n - 1][0]}</button>`).join('');
+  return `<div class="journey">
+    <nav class="steps" aria-label="Journey">${list}</nav>
+    <div style="display:flex;flex-direction:column;gap:12px;min-width:0" id="screen">
+      <div class="narr"><div><span class="eyebrow">${i + 1} of ${NUMBERED.length} · ${st.who}</span><h2>${st.title}</h2><p>${st.narr}</p></div>
+        <div class="nav-btns"><button type="button" class="btn btn-sm" ${prev ? go(prev.id) : 'disabled'}>${IC.back()}Back</button><button type="button" class="btn btn-sm btn-p" ${next ? go(next) : 'disabled'}>Next${IC.next()}</button></div>
+        <div class="built">Built in: ${built}</div></div>
+      <section class="frame"><div class="framebar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span class="where">${st.who}</span><span style="margin-left:auto;font-size:11.5px;color:var(--faint)">Buttons that move the story are live</span></div>${SCREENS[S.step]()}</section>
+    </div></div>`;
+}
+function renderPlan() {
+  return `<div class="brief two"><div><span class="eyebrow">Build plan</span><h2>Nine steps, one commit each</h2><p>Steps 1–5 give the whole check with no DLC ever stored; 6–7 add the hand-over; 8 makes it automatic; 9 proves it on real hardware. Each step ships on its own and leaves older agents working.</p></div>
+    <div><span class="eyebrow">Decided by this design</span><div class="how">
+      <div><b class="k">Stored</b><span>Lists only (~2 KB per version). Packs only in transit, deleted on delivery or after 7 days</span></div>
+      <div><b class="k">Default</b><span>Ask; automatic pulls hold and notify instead</span></div>
+      <div><b class="k">Caps</b><span>Hand-over 2 GB, separate from the 500 MB save cap</span></div>
+      <div><b class="k">Covers</b><span>DLC and title updates; Xenia first, other emulators later</span></div></div></div></div>
+    <div class="card"><div class="plan">${PLAN.map(([t, d, bullets], i) => `<div class="plan-row" id="plan-${i + 1}"><span class="n">${i + 1}</span><div><b>${t}</b><p>${d}</p><ul>${bullets.map(b => `<li>${b}</li>`).join('')}</ul>
+      <div class="chips">${NUMBERED.filter(s => s.built.includes(i + 1)).map(s => `<button type="button" class="chip" ${go(s.id)}>${s.title}</button>`).join('')}</div></div></div>`).join('')}</div></div>`;
+}
+function render() {
+  document.querySelectorAll('[data-view]').forEach(t => t.setAttribute('aria-selected', String(t.dataset.view === S.view)));
+  document.getElementById('root').innerHTML = S.view === 'journey' ? renderJourney() : renderPlan();
+}
+document.addEventListener('click', e => {
+  const v = e.target.closest('[data-view]');
+  if (v) { S.view = v.dataset.view; clearInterval(timer); render(); return; }
+  const p = e.target.closest('[data-plan]');
+  if (p) { S.view = 'plan'; render(); document.getElementById('plan-' + p.dataset.plan)?.scrollIntoView({ block: 'center' }); return; }
+  const g = e.target.closest('[data-go]');
+  if (g && !g.disabled) goTo(g.dataset.go);
+});
+render();
+</script>
+</body>
+</html>

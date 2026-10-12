@@ -32,7 +32,7 @@ point unless explicitly instructed to.
 | 4 — PrimeHack | 🚧 Built 2026-10-07 (branch `emulator-saves-group-c`) — the Dolphin reader against PrimeHack's folders (EmuDeck `saves/primehack`, Flatpak `io.github.shiiion.primehack`, EmuDeck for Windows `Emulators\primehack\User`). **Maintainer's choice:** saves from different emulators are never one game, even with the same files — `GameDto.Emulators` (server, from the sources) + `Enroller.SameEmulator`, mutation-checked. EmuDeck for Windows had created `Emulators\PrimeHack` but never run it (no `User` yet), so where a non-portable PrimeHack keeps its user folder is still to see (Group H) |
 | 5a — RPCS3 | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `Rpcs3Saves`: `dev_hdd0/home/<user>/savedata`, scope `<ID>*/**`, named by Redump's PS3 set, else the save's `PARAM.SFO` `TITLE`; EmuDeck's link, else `vfs.yml`. **Captured 2026-10-11:** the Deck's real save `BCUS98132-GAMEAUTOSAVE` (*Heavenly Sword*) and `vfs.yml` (dev_hdd0 on the SD card); the PC's `RPCS3\config\vfs.yml`. See *Group D — as built* |
 | 5b — Xenia | 🚧 Built 2026-10-12 (branch `emulator-saves-group-e`; follow-up the same day: device saves as a second folder, the named-profile layout) — `XeniaSaves`: a game is its `<TID>/00000001` saved games and their `Headers/00000001`, in a profile's `content/<XUID>` (Canary) or `content` itself (older builds); DLC, title updates, XUID 0 and the dashboard's `FFFE07D1` never synced (scope mutation-checked). Named by title ID from the bundled table (Redump disc serials → title IDs, No-Intro Arcade titles), else `Xbox 360 <TID>`. **Captured 2026-10-12:** the PC's real *Forza Horizon* / *Forza Horizon 2* saves (profile layout); the Deck's Proton Canary with both layouts side by side. See *Group E — as built* |
-| 5c — Xenia profile and DLC | ⏳ Designed 2026-10-12 — the profile and DLC as folders of each game, a 2 GB DLC cap, the gamertag decrypted (maintainer's calls); two consequences (a pull overwriting other games' profile changes, ~1 GB per DLC version) to confirm before building. See *Phase 5c* |
+| 5c — Xenia profile and DLC | ⏳ Designed 2026-10-12 — **DLC: the DLC check chosen** (lists only, hand-over through the server, 9-step build plan); **profile: three new options (D/E/F) awaiting a pick**. Mockups in this folder. See *Phase 5c* |
 | 6 — Switch: Yuzu, Citron, Eden, Ryujinx | ⏳ Not started — Group F. **Widened 2026-10-07** from Eden only, at the maintainer's request; needs the server title key (D2) |
 | 7 — UI filter | ✅ Shipped 2026-10-07 (same PR), filter by emulator — agent UI *Emulators* chip with an *Emulator* row under it (one chip per emulator, RetroArch today), Deck *Emulators* pill. A per-console sub-breakdown was not built — it comes back with Phase 2, when more than one console has saves. |
 | 7b — Game source per machine, names without "(RetroArch)" | ✅ Shipped 2026-10-07 (same PR) — built 2026-10-07 (maintainer asked; picked variation B of a clickable mockup on all three screens). Unit 280. Console checked in the browser against a seeded dev server; agent UI and Deck need the testenv pass. **Review fixes 2026-10-07** (same PR): server-decided names, the scope-join refusal, source re-send guard, EmuDeck tag, server bounds — unit 291, see `progress.md`. |
@@ -500,11 +500,63 @@ here and confirmed with the maintainer before any code:
 - **A separate cap for archives with DLC, 2 GB** (`Storage:MaxDlcUploadMb`, server; the agent's size backstop learns it too).
 - **The gamertag is decrypted from `Account`** with the retail key Xenia ships, to name the profile folder in the UI.
 
-**Mockups (2026-10-12):** [`phase-5c-mockups.html`](phase-5c-mockups.html), three ways to show the profile and three for
-DLC, each in the agent (PC, Steam Deck) and the console. Found in Xenia Canary's source while drawing them: a game's `<TID>.gpd`
-is loaded only when `FFFE07D1.gpd` lists the title (`UserProfile::LoadProfileGpds`); otherwise the first launch makes an empty
-one and overwrites it (`UserTracker::AddTitleToPlayedList`). So a profile split by game must carry the game's row of
-`FFFE07D1.gpd` too, merged per row — option C, recommended — and an achievements file alone never works.
+**Mockups, round 1 (2026-10-12):** three ways to show the profile (its own row, a Profiles section, split by owner) and three
+for DLC (a sub-entry, a check with nothing uploaded, a library). Found in Xenia Canary's source while drawing them: a game's
+`<TID>.gpd` is loaded only when `FFFE07D1.gpd` lists the title (`UserProfile::LoadProfileGpds`); otherwise the first launch makes
+an empty one and overwrites it (`UserTracker::AddTitleToPlayedList`). So a profile split by game must carry the game's row of
+`FFFE07D1.gpd` too, merged per row, and an achievements file alone never works.
+
+**Round 2 (same day): the maintainer liked none of the profile options and chose the DLC check.**
+
+*Profile, three new options* — [`phase-5c-profile-mockups.html`](phase-5c-profile-mockups.html), agent (PC, Deck) and console:
+- **D · One setting, every machine.** No entry anywhere: Settings → Emulators → Xenia, “One Xbox profile on every machine”.
+  Turning it on copies the profile, sets Xenia to sign in with it, and each game then carries its own achievements and its
+  row of `FFFE07D1.gpd`; the account once.
+- **E · Gamer card, merged.** The profile shown as an Xbox gamer card (gamerscore, every game's achievements and where each was
+  unlocked). Synced whole but **merged entry by entry**: achievements are unioned (each GPD achievement entry has an unlocked
+  flag and an unlock time — `GpdInfoTitle`), gamerscore recounted, settings newest-wins, so the profile never conflicts.
+- **F · Checked at launch.** Nothing shown until Play: if Xenia would sign in as another profile than the game's saves are
+  under, a sheet asks and SaveLocker switches it. Xenia Canary reads the start-up profile from its config,
+  `logged_profile_slot_0_xuid` under `[Profiles]` (`profile_manager.cc`), so the switch is a config write before launch.
+  Profile files sync per game as in D.
+
+*DLC: the DLC check* — chosen. The whole journey, every screen on PC, Deck and console, is in
+[`phase-5c-dlc-check-mockups.html`](phase-5c-dlc-check-mockups.html) (Journey and Build plan tabs). Decided by the design:
+- **Stored:** a list per save version only (each package's ID, display name, type, size; about 2 KB). Packs are never stored;
+  a **hand-over** passes them through the server from a machine that has them and deletes them on delivery, or after 7 days.
+- **Policy before a pull** when packs are missing: **Ask** (default) / Pull anyway / Hold; console-wide, a machine may override.
+  An automatic pull (before launch, from the console, the poller) never asks: “Ask” holds it and notifies.
+- **Sending:** per machine, Ask me (default) / Send automatically / Never.
+- **Caps:** hand-over `Storage:MaxHandoverMb`, 2 GB, separate from the 500 MB save cap. This replaces the DLC-as-folder and
+  `MaxDlcUploadMb` calls above.
+- **Covers title updates** (`000B0000`) as well as DLC (`00000002`): a save from a newer update may not load at all.
+
+*Build plan, one commit per step:*
+1. **Inventory:** `ContentInventory` per emulator, Xenia first — each package folder under `content/0000000000000000/<TID>/`
+   `00000002` and `000B0000`, display name and type from its file in `Headers/`, total size; identity = package ID + size, no
+   hashing of package data. Check the header layout against the PC's real Forza Horizon packages before writing the reader.
+   Add games shows the line.
+2. **List with every push:** optional `Content` on `BeginUploadRequest`, stored per version (`SaveVersionContent`, migration),
+   returned with the version. Old agents send nothing. Regenerate `openapi.json` and `api-types.ts`.
+3. **What each machine has:** `POST /agent/games/{id}/content` after every scan, kept per machine per game
+   (`MachineGameContent`), so the console shows the gap before anyone pulls.
+4. **Check before a pull:** in `SyncEngine`'s pull, after the head is known and before the restore; `DlcCheck.Decide(head, here,
+   policy, interactive)` is pure and unit-tested. Agent API `GET /api/games/{id}/dlc`, `POST …/dlc/choice`; agent UI card,
+   dialog, Overview banner.
+5. **Console:** the game page's DLC check card and the Configuration card (policy, hand-over cap, expiry) as server settings that
+   agents learn on poll.
+6. **Hand-over, server:** `ContentTransfer` (game, packs, from, to, status, expiry) and its parts in a temporary store beside
+   the archives: Requested → Approved → Uploading → Ready → Delivered → Deleted, or Declined / Expired / Cancelled. Parts
+   upload through the save upload's begin/chunk/complete pattern and download ranged; only the asking machine may fetch;
+   the lease sweeper deletes expired ones. Audit entries.
+7. **Hand-over, agents:** the 20 s poller lists transfers to send (approve per the setting, upload) and to fetch (download to a
+   temp folder, check against the list, move into place, run the held pull). Never writes into a running game
+   (`GameActivity`). Two-machine test end to end.
+8. **Hold, notifications, launch:** a held pull is durable on disk and re-checked on every scan and when the DLC folder changes;
+   notices through `NoticeCatalog` (needs DLC, asked, received, declined, expired) open the game screen; the launch wrapper
+   never waits on DLC; a Decky line for a held pull.
+9. **Help, CLI, testenv, Group H:** a help article, `dlc status` / `dlc ask`, testenv packages on Windows and missing on WSL,
+   and the real Forza Horizon DLC between PC and Deck. Then further inventories: Cemu (`0005000c`), Azahar (`0004008c`), RPCS3.
 
 **Verify (when built):** a profile pulled to a machine without it signs in and loads a game's save there; a machine with its own
 profile keeps it; a DLC entry pushed once and pulled; a save game's push never carries DLC; the two-machine tests per entry.

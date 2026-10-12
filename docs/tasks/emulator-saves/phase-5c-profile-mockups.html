@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 5c · Xenia profile mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0f0f10;--panel:#141416;--raise:#191a1c;--tile:#1b1c1f;--hover:#202124;--fg:#f0eee9;--dim:#a09d97;--faint:#817e78;--line:#242427;--safe:#7fa96a;--watch:#d9a63f;--info:#7b9fd0;--accent:#e0533c;--on-accent:#160f0e;
+--accent-soft:color-mix(in oklab,var(--accent) 14%,var(--panel));--accent-line:color-mix(in oklab,var(--accent) 42%,var(--panel));--accent-ink:color-mix(in oklab,var(--accent) 80%,var(--fg));
+--safe-soft:color-mix(in oklab,var(--safe) 14%,var(--panel));--safe-line:color-mix(in oklab,var(--safe) 40%,var(--panel));--safe-ink:color-mix(in oklab,var(--safe) 82%,var(--fg));
+--watch-soft:color-mix(in oklab,var(--watch) 14%,var(--panel));--watch-line:color-mix(in oklab,var(--watch) 40%,var(--panel));--watch-ink:color-mix(in oklab,var(--watch) 82%,var(--fg));
+--info-soft:color-mix(in oklab,var(--info) 16%,var(--panel));--info-line:color-mix(in oklab,var(--info) 40%,var(--panel));--info-ink:color-mix(in oklab,var(--info) 82%,var(--fg));color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--ink);color:var(--fg);font-family:'Archivo',system-ui,sans-serif;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+h1,h2,h3,p,dl,dd,ul{margin:0}
+button{font-family:inherit}
+a{color:#e8735f}
+.mono{font-family:'JetBrains Mono',monospace;font-size:11px}
+.eyebrow{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:500}
+
+/* page chrome */
+.top{position:sticky;top:0;z-index:20;background:color-mix(in oklab,var(--ink) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.top-in{max-width:1320px;margin:0 auto;padding:14px 16px;display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center}
+.top h1{font-size:16px;font-weight:700;letter-spacing:-.02em}
+.top h1 span{color:var(--dim);font-weight:500}
+.picker{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}
+.group{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.group>span{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-right:4px}
+.opt-tab{border:1px solid var(--line);background:var(--panel);color:var(--dim);padding:6px 11px;border-radius:99px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap}
+.opt-tab:hover{color:var(--fg)}
+.opt-tab[aria-selected=true]{background:var(--accent-soft);border-color:var(--accent-line);color:var(--fg)}
+.opt-tab .rec{color:var(--safe-ink);margin-left:4px}
+.gt{display:flex;align-items:center;gap:8px;margin-left:auto;font-size:12px;color:var(--dim)}
+.gt input{background:var(--raise);border:1px solid var(--line);border-radius:9px;color:var(--fg);padding:6px 10px;font:500 12.5px 'Archivo',sans-serif;width:150px}
+.wrap{max-width:1320px;margin:0 auto;padding:16px 16px 40px;display:flex;flex-direction:column;gap:14px}
+.brief{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:12px}
+@media (max-width:900px){.brief{grid-template-columns:1fr}}
+.brief>div{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.brief h2{font-size:17px;font-weight:700;letter-spacing:-.02em;margin-top:4px}
+.brief p{font-size:12.5px;color:var(--dim);line-height:1.55;margin-top:6px}
+.brief ul{padding-left:16px;font-size:12.5px;line-height:1.55;color:var(--dim);margin-top:6px}
+.brief li b{color:var(--fg);font-weight:600}
+.frame{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--ink);box-shadow:0 20px 50px rgba(0,0,0,.35)}
+.framebar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:9px 14px;background:var(--raise);border-bottom:1px solid var(--line)}
+.lights{display:flex;gap:6px}.lights i{width:10px;height:10px;border-radius:50%;background:var(--tile);border:1px solid var(--line)}
+.framebar .where{font-size:12px;color:var(--dim)}
+.framebar .seg{margin-left:auto}
+
+/* SaveLocker primitives */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:var(--raise);color:var(--fg);font:500 12.5px 'Archivo',sans-serif;cursor:pointer;white-space:nowrap;transition:background-color .15s}
+.btn:hover{background:var(--hover)}
+.btn-p{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn-p:hover{background:color-mix(in oklab,var(--accent) 86%,white)}
+.btn-q{background:transparent;border-color:transparent;color:var(--dim)}
+.btn-sm{padding:5px 11px;font-size:12px}
+.btn:disabled{opacity:.55;cursor:default}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;border:1px solid var(--line);background:var(--raise);font-size:11px;color:var(--dim);white-space:nowrap;font-family:'Archivo',sans-serif}
+button.chip{cursor:pointer}
+button.chip:hover{border-color:var(--info-line);color:var(--info-ink)}
+.chip-ok{color:var(--safe-ink);border-color:var(--safe-line);background:var(--safe-soft)}
+.chip-warn{color:var(--watch-ink);border-color:var(--watch-line);background:var(--watch-soft)}
+.chip-crit{color:var(--accent-ink);border-color:var(--accent-line);background:var(--accent-soft)}
+.chip-info{color:var(--info-ink);border-color:var(--info-line);background:var(--info-soft)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;min-width:0}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.card-h h3{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:500}
+.card-h small{font-size:11px;color:var(--dim)}
+.card-b{padding:14px 18px;display:flex;flex-direction:column;gap:10px}
+.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:auto auto;column-gap:12px;row-gap:2px;align-items:center;width:100%;text-align:left;padding:9px 12px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font-family:'Archivo',sans-serif;transition:background-color .15s,transform .15s}
+button.row{cursor:pointer}
+button.row:hover{background:var(--raise);transform:translateX(2px)}
+.row.on{background:var(--accent-soft);border-color:var(--accent-line)}
+.row.flat{border-color:transparent;background:transparent}
+button.row.flat:hover{background:var(--raise)}
+.cov{grid-row:span 2;width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12.5px;background:var(--tile);color:var(--dim)}
+.cov.s{width:34px;height:34px}
+.cov-p{background:var(--info-soft);color:var(--info-ink);border:1px solid var(--info-line);border-radius:50%}
+.rt{grid-column:2;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;align-self:end}
+.rs{grid-column:2;font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;align-self:start}
+.re{grid-column:3;grid-row:1/span 2;display:flex;gap:8px;align-items:center}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none;background:var(--faint)}
+.dot-ok{background:var(--safe)}.dot-warn{background:var(--watch)}.dot-info{background:var(--info)}.dot-crit{background:var(--accent)}.dot-none{background:transparent;border:1.5px solid var(--faint)}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px 16px;font-size:12.5px}
+.kv dt{color:var(--dim)}
+.seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:3px;gap:2px;flex-wrap:wrap}
+.seg-b{border:0;background:transparent;color:var(--dim);padding:5px 12px;border-radius:99px;font:500 12px 'Archivo',sans-serif;cursor:pointer}
+.seg-b:hover{color:var(--fg)}
+.seg-b.on{background:var(--tile);color:var(--fg);box-shadow:inset 0 0 0 1px var(--line)}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;min-width:0}
+.stat b{display:block;font-size:20px;font-weight:700;letter-spacing:-.03em;margin-top:6px}
+.stat span{display:block;font-size:11px;color:var(--dim);margin-top:3px}
+.grid-s{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;align-items:start}
+.banner{display:flex;gap:14px;align-items:center;padding:13px 16px;border-radius:12px;border:1px solid;flex-wrap:wrap}
+.banner>div{flex:1 1 300px;min-width:0}
+.banner-warn{background:var(--watch-soft);border-color:var(--watch-line)}
+.banner-ok{background:var(--safe-soft);border-color:var(--safe-line)}
+.banner-info{background:var(--info-soft);border-color:var(--info-line)}
+.banner b{display:block;font-size:13px;font-weight:600}
+.banner span.d{display:block;font-size:12px;color:var(--dim);margin-top:2px;line-height:1.45}
+.back{border:0;background:transparent;color:var(--dim);font:500 12px 'Archivo',sans-serif;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:5px}
+.back:hover{color:var(--fg)}
+.crumbs{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--dim)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.meter{height:6px;border-radius:99px;background:var(--tile);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--info);transition:width .3s}
+.gh{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.gh-cover{width:64px;aspect-ratio:2/3;border-radius:10px;background:var(--tile);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--dim);flex:none}
+.gh-avatar{width:72px;height:72px;border-radius:50%;background:var(--info-soft);border:1px solid var(--info-line);color:var(--info-ink);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;flex:none}
+.gh h2{font-size:22px;font-weight:700;letter-spacing:-.03em}
+.chips{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.ghead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.ghead h3{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:500}
+.ghead span{font-size:11.5px;color:var(--dim)}
+.list{display:flex;flex-direction:column;gap:6px}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:500;text-align:left;padding:8px 18px;border-bottom:1px solid var(--line)}
+.tbl td{padding:9px 18px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.scroll{overflow-x:auto}
+.ok{color:var(--safe-ink);font-size:12px}
+.no{color:var(--watch-ink);font-size:12px;font-weight:600}
+.lost{color:var(--accent-ink);font-weight:600}
+input[type=checkbox]{accent-color:#e0533c;width:14px;height:14px;cursor:pointer;flex:none}
+.file{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12px;padding:4px 0}
+.fold{border-top:1px solid var(--line);padding:12px 18px;display:flex;flex-direction:column;gap:6px}
+.fold:first-of-type{border-top:0}
+.fold-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px}
+.fold-h b{font-weight:600}
+.f{display:grid;grid-template-columns:14px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12px;padding:3px 0 3px 22px}
+.f small{font-size:11px;color:var(--dim)}
+
+/* agent + console chrome */
+.app{min-height:720px;display:flex;flex-direction:column;position:relative}
+.bar{display:flex;align-items:center;gap:11px;padding:11px 18px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+.mark{width:28px;height:28px;border-radius:8px;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:none}
+.brand b{display:block;font-size:15px;letter-spacing:-.03em}
+.brand span{display:block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.body{flex:1;display:flex;flex-wrap:wrap}
+.aside{flex:1 1 180px;max-width:220px;padding:14px 10px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;gap:3px}
+.nav{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:8px 11px;border-radius:10px;border:1px solid transparent;background:transparent;color:var(--dim);font:500 13px 'Archivo',sans-serif;cursor:pointer;text-align:left;width:100%}
+.nav:hover{background:var(--raise);color:var(--fg)}
+.nav.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--fg)}
+.nav .new{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--info-ink);border:1px solid var(--info-line);border-radius:99px;padding:1px 6px}
+.aside-foot{margin-top:auto;padding:12px 11px 0;font-size:11px;color:var(--dim);line-height:1.6}
+.aside-foot b{color:var(--fg);display:block}
+.main{flex:999 1 560px;min-width:0;padding:22px 24px 28px;display:flex;flex-direction:column;gap:14px}
+.tabs{display:flex;gap:2px;flex-wrap:wrap}
+.tab{border:0;background:transparent;color:var(--dim);padding:6px 11px;border-radius:9px;font:500 13px 'Archivo',sans-serif;cursor:pointer}
+.tab.on{background:var(--raise);color:var(--fg)}
+.side{flex:1 1 250px;max-width:290px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
+.side-h{padding:12px 14px;border-bottom:1px solid var(--line)}
+.side-l{padding:6px;display:flex;flex-direction:column;gap:2px}
+
+/* option-specific */
+.mx td .cell{display:flex;flex-direction:column;gap:5px;align-items:flex-start}
+.mx td .cell small{font-size:11px;color:var(--dim)}
+.overlay{position:absolute;inset:0;background:rgba(8,8,9,.72);display:flex;align-items:flex-start;justify-content:center;padding:70px 16px 16px;z-index:5}
+.dialog{width:100%;max-width:580px;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.dialog-h{padding:16px 20px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.dialog-h h3{font-size:16px;font-weight:700;margin-top:3px;line-height:1.3}
+.dialog-h p{font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.5}
+.step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:12px;padding:14px 20px;border-bottom:1px solid var(--line)}
+.step:last-child{border-bottom:0}
+.step b{font-size:13px}
+.step .d{font-size:12px;color:var(--dim);line-height:1.45}
+.num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border:1px solid var(--line);background:var(--raise);color:var(--dim)}
+.num.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.num.done{background:var(--safe-soft);border-color:var(--safe-line);color:var(--safe-ink)}
+.check{display:flex;align-items:center;gap:10px;font-size:12.5px;padding:5px 0;cursor:pointer}
+.choice{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:start;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--raise);text-align:left;color:var(--fg);cursor:pointer;width:100%}
+.choice:hover{border-color:var(--faint)}
+.choice b{font-size:13px;font-weight:600;display:block}
+.choice span.d{font-size:12px;color:var(--dim);display:block;margin-top:3px;line-height:1.45}
+.ico{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--tile);color:var(--dim)}
+.ico.info{background:var(--info-soft);color:var(--info-ink)}
+.addrow{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.sub{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--dim);margin-top:6px}
+.kid{display:grid;grid-template-columns:22px auto minmax(0,1fr) auto;column-gap:10px;align-items:center;width:calc(100% - 26px);margin-left:26px;text-align:left;padding:7px 12px 7px 4px;border-radius:10px;border:1px dashed var(--line);background:transparent;color:var(--fg);cursor:pointer}
+.kid:hover{background:var(--raise)}
+.kid.on{background:var(--accent-soft);border-color:var(--accent-line);border-style:solid}
+.kid.quiet{color:var(--dim)}
+.elbow{width:14px;height:16px;border-left:1.5px solid var(--line);border-bottom:1.5px solid var(--line);border-bottom-left-radius:6px;margin:-12px 0 0 6px}
+.pkg{width:26px;height:26px;border-radius:7px;background:var(--info-soft);border:1px solid var(--info-line);color:var(--info-ink);display:flex;align-items:center;justify-content:center;flex:none}
+.pkg.off{background:var(--tile);border-color:var(--line);color:var(--faint)}
+.kid-t{display:flex;flex-direction:column;min-width:0}
+.kid-t b{font-size:12.5px;font-weight:600}
+.kid-t span{font-size:11px;color:var(--dim)}
+.pl{display:grid;grid-template-columns:auto minmax(0,1fr) 70px 54px 54px;gap:12px;align-items:center;padding:8px 18px;border-top:1px solid var(--line);font-size:12.5px}
+.pl.head{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);border-top:0}
+label.pl{cursor:pointer}label.pl:hover{background:var(--raise)}
+.pr{display:grid;grid-template-columns:minmax(0,1fr) 64px 110px auto;gap:12px;align-items:center;padding:8px 18px;border-top:1px solid var(--line);font-size:12.5px}
+.pr.head{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);border-top:0}
+.mini{display:inline-flex;background:var(--raise);border:1px solid var(--line);border-radius:8px;padding:2px;gap:2px}
+.mini button{border:0;background:transparent;color:var(--dim);padding:3px 9px;border-radius:6px;font:500 11px 'Archivo',sans-serif;cursor:pointer}
+.mini button.on{background:var(--tile);color:var(--fg);box-shadow:inset 0 0 0 1px var(--line)}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 0;border-top:1px solid var(--line);font-size:12.5px}
+.sw:first-child{border-top:0}
+.sw small{display:block;font-size:11.5px;color:var(--dim);margin-top:2px;line-height:1.4}
+.tog{width:34px;height:20px;border-radius:99px;border:1px solid var(--line);background:var(--tile);position:relative;cursor:pointer;flex:none;padding:0}
+.tog i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--dim);transition:left .2s}
+.tog.on{background:var(--accent);border-color:var(--accent)}
+.tog.on i{left:16px;background:var(--on-accent)}
+.stack{display:flex;height:10px;border-radius:99px;overflow:hidden;background:var(--tile)}
+.key{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--dim)}
+.key i{width:9px;height:9px;border-radius:3px;display:inline-block}
+.search{flex:0 1 300px;background:var(--raise);border:1px solid var(--line);border-radius:10px;padding:8px 12px;color:var(--fg);font:12.5px 'Archivo',sans-serif}
+
+/* ---- added for the second round: profile D/E/F and the DLC check journey ---- */
+.brief.two{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
+@media (max-width:900px){.brief.two{grid-template-columns:1fr}}
+.how{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.how div{display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;font-size:12px;line-height:1.5}
+.how dt,.how b.k{color:var(--faint);font-weight:500;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;padding-top:2px}
+.how span{color:var(--dim)}
+.select{background:var(--raise);border:1px solid var(--line);border-radius:9px;color:var(--fg);padding:6px 10px;font:500 12.5px 'Archivo',sans-serif}
+.progress-list{display:flex;flex-direction:column;gap:6px;font-size:12.5px}
+.progress-list div{display:flex;gap:9px;align-items:center}
+.card-gamer{display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:18px;border-radius:16px;border:1px solid var(--info-line);background:linear-gradient(135deg,var(--info-soft),var(--panel) 70%)}
+.gs{font-size:28px;font-weight:700;letter-spacing:-.03em}
+.gs small{font-size:13px;color:var(--dim);font-weight:500;margin-left:4px}
+.ach{display:grid;grid-template-columns:30px minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:9px 18px;border-top:1px solid var(--line);font-size:12.5px}
+.ach .medal{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--tile);color:var(--faint);font-size:11px;font-weight:700}
+.ach.got .medal{background:var(--safe-soft);color:var(--safe-ink);border:1px solid var(--safe-line)}
+.ach.new{background:color-mix(in oklab,var(--info) 7%,var(--panel))}
+.ach small{display:block;font-size:11px;color:var(--dim)}
+.tv{background:#000;min-height:720px;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.tv-bg{position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,#2a3346,#0b0d12 70%)}
+.tv-top{position:relative;display:flex;justify-content:space-between;padding:14px 22px;font-size:13px;color:#cfd6e4}
+.tv-hero{position:relative;padding:40px 48px 0;display:flex;gap:26px;align-items:flex-end;flex-wrap:wrap}
+.tv-cover{width:150px;aspect-ratio:2/3;border-radius:10px;background:#1c2230;border:1px solid #2c3446;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:700;color:#8a96ad}
+.tv-hero h2{font-size:30px;color:#fff;letter-spacing:-.02em}
+.tv-play{margin-top:14px;display:inline-flex;align-items:center;gap:10px;background:#1a9fff;color:#fff;border:0;border-radius:6px;padding:12px 30px;font:700 15px 'Archivo',sans-serif;cursor:pointer}
+.sheet{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,calc(100% - 32px));background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 30px 80px rgba(0,0,0,.6);overflow:hidden;z-index:3}
+.sheet-h{padding:18px 22px 12px}
+.sheet-h h3{font-size:18px;font-weight:700;margin-top:4px;line-height:1.3}
+.sheet-h p{font-size:13px;color:var(--dim);margin-top:6px;line-height:1.5}
+.sheet-b{padding:4px 22px 20px;display:flex;flex-direction:column;gap:8px}
+.big{padding:14px 16px;font-size:14px;justify-content:flex-start}
+.toast{position:absolute;right:16px;bottom:16px;width:min(360px,calc(100% - 32px));background:#202226;border:1px solid #33353a;border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.5);padding:12px 14px;z-index:6;display:flex;flex-direction:column;gap:6px}
+.toast-h{display:flex;gap:8px;align-items:center;font-size:11px;color:var(--dim)}
+.toast b{font-size:13px}
+.toast p{font-size:12px;color:var(--dim);line-height:1.45}
+.toast .actions{margin-top:4px}
+/* journey */
+.journey{display:grid;grid-template-columns:300px minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:1000px){.journey{grid-template-columns:1fr}}
+.steps{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:2px;position:sticky;top:76px;max-height:calc(100vh - 92px);overflow-y:auto}
+.stage{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding:10px 8px 4px}
+.stp{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;text-align:left;border:1px solid transparent;background:transparent;color:var(--dim);padding:7px 8px;border-radius:10px;cursor:pointer;font:500 12.5px 'Archivo',sans-serif;width:100%}
+.stp:hover{background:var(--raise);color:var(--fg)}
+.stp[aria-current=step]{background:var(--accent-soft);border-color:var(--accent-line);color:var(--fg)}
+.stp .n{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--faint)}
+.stp.seen .n{background:var(--safe-soft);border-color:var(--safe-line);color:var(--safe-ink)}
+.stp[aria-current=step] .n{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.stp small{display:block;font-size:10.5px;color:var(--faint);margin-top:1px}
+.stp.branch{padding-left:20px}
+.narr{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 18px;align-items:start}
+.narr h2{font-size:17px;font-weight:700;letter-spacing:-.02em;margin-top:3px}
+.narr p{font-size:12.5px;color:var(--dim);line-height:1.55;margin-top:6px;max-width:760px}
+.narr .built{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11.5px;color:var(--dim);border-top:1px solid var(--line);padding-top:9px}
+.nav-btns{display:flex;gap:6px}
+.timeline{display:flex;flex-direction:column;gap:0;padding:6px 18px 12px}
+.tl{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:start;padding:7px 0;font-size:12.5px;position:relative}
+.tl::before{content:'';position:absolute;left:8px;top:22px;bottom:-8px;width:1.5px;background:var(--line)}
+.tl:last-child::before{display:none}
+.tl i{width:12px;height:12px;border-radius:50%;margin:2px 0 0 2px;background:var(--tile);border:1.5px solid var(--faint);position:relative;z-index:1}
+.tl.done i{background:var(--safe);border-color:var(--safe)}
+.tl.now i{background:var(--info);border-color:var(--info);box-shadow:0 0 0 4px var(--info-soft)}
+.tl small{display:block;font-size:11px;color:var(--dim)}
+.tl em{font-style:normal;font-size:11px;color:var(--dim)}
+.plan{display:flex;flex-direction:column;gap:0}
+.plan-row{display:grid;grid-template-columns:34px minmax(0,1fr);gap:12px;padding:12px 18px;border-top:1px solid var(--line)}
+.plan-row:first-child{border-top:0}
+.plan-row .n{width:28px;height:28px;border-radius:8px;background:var(--tile);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--dim)}
+.plan-row b{font-size:13px}
+.plan-row p{font-size:12px;color:var(--dim);line-height:1.5;margin-top:4px}
+.plan-row ul{margin:6px 0 0;padding-left:16px;font-size:12px;color:var(--dim);line-height:1.55}
+.plan-row code,.narr code{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <h1>Xenia profile <span>· three more ways</span></h1>
+    <div class="picker" role="tablist" aria-label="Option">
+      <div class="group">
+        <button type="button" class="opt-tab" role="tab" data-tab="D">D · One setting, every machine</button>
+        <button type="button" class="opt-tab" role="tab" data-tab="E">E · Gamer card, merged</button>
+        <button type="button" class="opt-tab" role="tab" data-tab="F">F · Checked at launch</button>
+      </div>
+    </div>
+    <a href="phase-5c-dlc-check-mockups.html" style="font-size:12px">DLC check journey →</a>
+    <label class="gt">Gamertag <input id="gamertag" value="[Gamertag]" autocomplete="off"></label>
+  </div>
+</header>
+<div class="wrap">
+  <section class="brief" id="brief" aria-live="polite"></section>
+  <section class="frame">
+    <div class="framebar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span class="where" id="where"></span><span id="surfaces"></span></div>
+    <div id="app"></div>
+  </section>
+</div>
+
+<script>
+'use strict';
+const XUID = 'E030000033894516';
+const GAMES = [
+  { id: 'fh', name: 'Forza Horizon', tid: '4D5309C9', init: 'FH', got: 18, of: 50, gs: 260 },
+  { id: 'fh2', name: 'Forza Horizon 2', tid: '4D530AA4', init: 'F2', got: 6, of: 50, gs: 90 },
+  { id: 'h3', name: 'Halo 3', tid: '4D5307E6', init: 'H3', got: 9, of: 49, gs: 150 }
+];
+const DECK_ROOT = '/run/media/mmcblk0p1/Emulation/saves/xenia';
+
+const S = {
+  tab: 'D', gamertag: '[Gamertag]',
+  D: { surface: 'deck', screen: 'settings', on: false, phase: 0, profile: XUID },
+  E: { surface: 'deck', screen: 'card', synced: false, game: 'fh' },
+  F: { surface: 'tv', phase: 'idle', always: false }
+};
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const gt = () => esc(S.gamertag || '[Gamertag]');
+const initial = () => esc(((S.gamertag || '').replace(/[^A-Za-z0-9]/g, '')[0] || 'G').toUpperCase());
+const svg = (d, size = 13, sw = 2.2) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const IC = {
+  user: s => svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>', s || 11),
+  check: s => svg('<path d="M5 12l5 5L20 7"/>', s || 12, 2.6),
+  trophy: s => svg('<path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3"/><path d="M7 5H4v2a3 3 0 0 0 3 3"/>', s || 13, 2),
+  play: () => svg('<path d="M7 4l13 8-13 8z"/>', 14, 2.4)
+};
+const act = (a, v, k) => `data-a="${a}"${v !== undefined ? ` data-v="${esc(v)}"` : ''}${k ? ` data-k="${k}"` : ''}`;
+const set = (k, v) => act('set', v, k);
+const segBtns = (items, cur, k) => `<div class="seg" role="group">${items.map(([id, l]) => `<button type="button" class="seg-b${id === cur ? ' on' : ''}" ${set(k, id)}>${l}</button>`).join('')}</div>`;
+const navList = (items, cur) => items.map(([label, id]) => `<button type="button" class="nav${id && id === cur ? ' on' : ''}" ${id ? set('screen', id) : ''}><span>${label}</span></button>`).join('');
+function agentShell(machine, nav, body, overlay = '') {
+  return `<div class="app"><div class="bar"><span class="mark">S</span><div class="brand"><b>SaveLocker</b><span>Agent · ${machine}</span></div></div>
+  <div class="body"><nav class="aside" aria-label="Sections">${nav}<div class="aside-foot"><b>${machine}</b>agent v0.9.0</div></nav><main class="main">${body}</main></div>${overlay}</div>`;
+}
+function webShell(tabs, cur, body) {
+  return `<div class="app"><div class="bar"><span class="mark" style="width:26px;height:26px;font-size:12px">S</span><b style="font-size:15px;letter-spacing:-.03em">SaveLocker</b>
+  <nav class="tabs" aria-label="Console">${tabs.map(t => `<button type="button" class="tab${t === cur ? ' on' : ''}">${t}</button>`).join('')}</nav></div><div class="body">${body}</div></div>`;
+}
+const gameHead = (g, chips) => `<div class="gh"><div class="gh-cover">${g.init}</div><div style="flex:1;min-width:0"><h2>${g.name}</h2><div class="chips">${chips}</div></div></div>`;
+const sw = (on, a, label) => `<button type="button" class="tog ${on ? 'on' : ''}" ${a} aria-pressed="${on}" aria-label="${label}"><i></i></button>`;
+
+// ---------- D · One setting, every machine ----------
+function optD(st) {
+  const isDeck = st.surface === 'deck';
+  const machine = isDeck ? 'Steam Deck' : 'PC';
+  const ready = isDeck ? st.on && st.phase >= 3 : true;
+  if (st.surface === 'web') {
+    const rows = [['PC', 'Signed in as ' + gt() + ' · set here first', 'chip-ok', 'In use'], ['Steam Deck', st.on && st.phase >= 3 ? 'Copied, Xenia starts as ' + gt() : 'Not turned on there yet', st.on && st.phase >= 3 ? 'chip-ok' : 'chip-warn', st.on && st.phase >= 3 ? 'In use' : 'Off'], ['Laptop', 'No Xenia found', '', 'Not needed']];
+    const body = `<main class="main" style="max-width:1100px">
+      <div><span class="eyebrow">Configuration</span><h2 style="font-size:20px;font-weight:700;letter-spacing:-.03em;margin-top:3px">Emulators · Xenia</h2></div>
+      <div class="card"><div class="card-h"><h3>One Xbox profile on every machine</h3>${sw(true, '', 'One Xbox profile on every machine')}</div>
+        <div class="card-b">
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="cov cov-p s" style="grid-row:auto">${initial()}</span><div><b>${gt()}</b><div class="mono" style="color:var(--dim)">${XUID} · chosen on PC</div></div><button type="button" class="btn btn-sm" style="margin-left:auto">Use another profile…</button></div>
+          <div class="scroll"><table class="tbl"><thead><tr><th>Machine</th><th>Status</th><th></th></tr></thead><tbody>
+          ${rows.map(([m, d, c, l]) => `<tr><td><b>${m}</b></td><td style="color:var(--dim)">${d}</td><td><span class="chip ${c}">${l}</span></td></tr>`).join('')}
+          </tbody></table></div>
+          <p style="font-size:12px;color:var(--dim);line-height:1.5">Games never show the profile. Each Xenia game syncs its own achievements; the account and settings follow this setting.</p>
+        </div></div></main>`;
+    return webShell(['Games', 'Backups', 'Config', 'Help'], 'Config', body);
+  }
+  const nav = navList([['Overview'], ['Games', 'game'], ['Add Games'], ['Conflicts'], ['Activity'], ['Settings', 'settings']], st.screen);
+  let body;
+  if (st.screen === 'settings') {
+    const steps = [['Copy ' + gt() + ' to this machine', '210 KB'], ['Set Xenia to sign in as ' + gt() + ' on start', 'xenia-canary.config.toml'], ['Sync each Xenia game’s achievements with it', '3 games']];
+    const progress = isDeck && st.on ? `<div class="progress-list" style="border-top:1px solid var(--line);padding-top:10px">${steps.map(([t, s], i) => `<div><span class="dot ${st.phase > i ? 'dot-ok' : st.phase === i ? 'dot-info' : ''}"></span><span style="flex:1;${st.phase > i ? '' : 'color:var(--dim)'}">${t}</span><span class="mono" style="color:var(--faint)">${s}</span></div>`).join('')}</div>` : '';
+    body = `<div><h2 style="font-size:20px;font-weight:700;letter-spacing:-.03em">Settings</h2></div>
+      <div class="card"><div class="card-h"><h3>Emulators · Xenia</h3><small>Xbox 360</small></div>
+        <div class="card-b">
+          <div class="sw"><div><b style="font-weight:600">One Xbox profile on every machine</b><small>Xenia signs in with the same profile on each machine, so every game's saves show up everywhere. ${isDeck ? 'Turned on from PC; switch it on here too.' : 'This machine chose it.'}</small></div>${sw(isDeck ? st.on : true, isDeck ? act('turnOnD') : '', 'One Xbox profile on every machine')}</div>
+          ${isDeck && !st.on ? '' : `<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="cov cov-p s" style="grid-row:auto">${initial()}</span><div><b>${gt()}</b><div class="mono" style="color:var(--dim)">${XUID}</div></div>
+            <select class="select" style="margin-left:auto" aria-label="Profile"><option>${gt()} · on the server</option>${isDeck ? '<option>Player1 · this Deck’s own</option>' : ''}</select></div>`}
+          ${progress}
+          ${ready && (isDeck ? st.phase >= 3 : true) ? `<div class="banner banner-ok"><div><b>Xenia starts as ${gt()} here</b><span class="d">${isDeck ? 'Player1, this Deck’s own profile, is kept. Choose it in Xenia any time; SaveLocker sets it back on the next sync.' : 'Every machine that turns this on uses the same profile.'}</span></div></div>` : ''}
+        </div></div>
+      <div class="card"><div class="card-h"><h3>What syncs</h3></div><div class="card-b"><dl class="kv">
+        <dt>Per game</dt><dd>Its achievements and its row in the profile: a game page lists them as its <span class="mono">profile</span> folder</dd>
+        <dt>Once</dt><dd>The account and profile settings, about 100 KB, again only when they change</dd>
+        <dt>Never</dt><dd>Another profile on this machine</dd></dl></div></div>`;
+  } else {
+    const g = GAMES[0];
+    body = `${gameHead(g, `<span class="chip">Xenia</span><span class="chip">Xbox 360</span><span class="chip chip-ok">Matches the cloud</span>`)}
+      <div class="card"><div class="card-h"><h3>On this device</h3></div><div class="card-b"><dl class="kv">
+        <dt>Save folder</dt><dd class="mono">${DECK_ROOT}/content/${XUID}/4D5309C9</dd>
+        <dt>device</dt><dd class="mono">${DECK_ROOT}/content/0000000000000000/4D5309C9</dd>
+        <dt>profile</dt><dd>${ready ? `${g.got} of ${g.of} achievements · <span style="color:var(--dim)">${gt()}, set in</span> <button type="button" class="chip" ${set('screen', 'settings')}>Settings</button>` : `<span style="color:var(--watch-ink)">Waiting for “One Xbox profile on every machine”</span> <button type="button" class="chip chip-warn" ${set('screen', 'settings')}>Turn on</button>`}</dd>
+      </dl></div></div>`;
+  }
+  return agentShell(machine, nav, body);
+}
+
+// ---------- E · Gamer card, merged ----------
+const ACH = [
+  { id: 1, name: 'Welcome to Horizon', pc: true, deck: true, when: '3 weeks ago' },
+  { id: 2, name: 'Wristband: Orange', pc: true, deck: true, when: '2 weeks ago' },
+  { id: 3, name: 'Road Trip', pc: true, deck: false, when: '2 h ago · PC', newOn: 'pc' },
+  { id: 4, name: 'Barn Find', pc: false, deck: true, when: '40 min ago · Steam Deck', newOn: 'deck' },
+  { id: 5, name: 'Speed Trap Hunter', pc: false, deck: true, when: '35 min ago · Steam Deck', newOn: 'deck' },
+  { id: 6, name: 'Showcase: Mustang vs Plane', pc: false, deck: false },
+  { id: 7, name: 'Festival Fanatic', pc: false, deck: false }
+];
+function optE(st) {
+  const synced = st.synced;
+  const total = synced ? 563 : 528;
+  if (st.surface === 'web') {
+    const body = `<main class="main" style="max-width:1100px">
+      <div class="card-gamer"><div class="gh-avatar">${initial()}</div><div style="flex:1;min-width:0"><span class="eyebrow">Xbox 360 · Xenia</span><h2 style="font-size:22px;font-weight:700;letter-spacing:-.03em">${gt()}</h2><div class="chips"><span class="chip mono">${XUID}</span><span class="chip">PC · Steam Deck</span></div></div><div style="text-align:right"><div class="gs">${total}<small>G</small></div><span style="font-size:11.5px;color:var(--dim)">${synced ? 36 : 33} achievements · 3 games</span></div></div>
+      <div class="card"><div class="card-h"><h3>Unlocked lately</h3><small>merged from every machine</small></div>
+        <div class="timeline">${[['Speed Trap Hunter', 'Forza Horizon · Steam Deck', '35 min ago', synced], ['Barn Find', 'Forza Horizon · Steam Deck', '40 min ago', synced], ['Road Trip', 'Forza Horizon · PC', '2 h ago', true], ['Finish the Fight', 'Halo 3 · PC', 'yesterday', true]].map(([n, w, t, d]) => `<div class="tl ${d ? 'done' : ''}"><i></i><div><b>${n}</b><small>${w}${d ? '' : ' · reaches the server on the Deck’s next sync'}</small></div><em>${t}</em></div>`).join('')}</div></div>
+      <div class="card"><div class="card-h"><h3>How two machines combine</h3></div><div class="card-b"><dl class="kv">
+        <dt>Achievements</dt><dd>Added together. Unlocked on either machine stays unlocked; the earlier unlock time wins</dd>
+        <dt>Gamerscore</dt><dd>Recounted from the achievements, never copied</dd>
+        <dt>Settings</dt><dd>The newest change wins, one setting at a time</dd>
+        <dt>Conflicts</dt><dd>None for the profile: nothing in it can be lost by combining</dd></dl></div></div>
+    </main>`;
+    return webShell(['Games', 'Profiles', 'Backups', 'Config', 'Help'], 'Profiles', body);
+  }
+  const isDeck = st.surface === 'deck';
+  const nav = navList([['Overview', 'card'], ['Games', 'game'], ['Add Games'], ['Conflicts'], ['Activity'], ['Settings']], st.screen);
+  const g = GAMES.find(x => x.id === st.game);
+  const here = a => isDeck ? a.deck : a.pc;
+  const shown = ACH.map(a => ({ ...a, has: synced ? a.pc || a.deck : here(a), arrived: synced && !here(a) && (a.pc || a.deck) }));
+  const got = shown.filter(a => a.has).length;
+  let body;
+  if (st.screen === 'card') {
+    body = `<div class="card-gamer"><div class="gh-avatar">${initial()}</div><div style="flex:1;min-width:0"><span class="eyebrow">Your Xbox 360 profile</span><h2 style="font-size:22px;font-weight:700;letter-spacing:-.03em">${gt()}</h2>
+        <div class="chips"><span class="chip chip-info">${IC.trophy(11)}${synced ? 'Combined with PC just now' : 'PC has 1 new, this Deck has 2'}</span></div></div>
+        <div style="text-align:right"><div class="gs">${total}<small>G</small></div><span style="font-size:11.5px;color:var(--dim)">${synced ? 36 : 33} achievements</span></div></div>
+      ${synced ? `<div class="banner banner-ok"><div><b>Both machines' achievements are here</b><span class="d">Road Trip came from PC; Barn Find and Speed Trap Hunter went to PC. Nothing was replaced.</span></div><button type="button" class="btn btn-q btn-sm" ${set('synced', false)}>Reset demo</button></div>`
+        : `<div class="banner banner-info"><div><b>Played on both machines since the last sync</b><span class="d">Achievements only ever add up, so this is never a conflict. Syncing combines them.</span></div><button type="button" class="btn btn-p" ${set('synced', true)}>Sync now</button></div>`}
+      <div class="ghead"><h3>Games · 3</h3><span>open one for its achievements</span></div>
+      <div class="list">${GAMES.map(x => `<button type="button" class="row" ${act('openE', x.id)}><span class="cov">${x.init}</span><span class="rt">${x.name}</span><span class="rs">${x.id === 'fh' ? (synced ? 20 : 18) : x.got} of ${x.of} · ${x.id === 'fh' && synced ? x.gs + 35 : x.gs} G</span><span class="re"><div class="meter" style="width:120px"><i style="width:${Math.round(((x.id === 'fh' ? (synced ? 20 : 18) : x.got) / x.of) * 100)}%"></i></div></span></button>`).join('')}</div>`;
+  } else {
+    body = `<button type="button" class="back" ${set('screen', 'card')}>${svg('<path d="M15 18l-6-6 6-6"/>')}Overview</button>
+      ${gameHead(g, `<span class="chip">Xenia</span><span class="chip chip-info">${IC.trophy(11)}${got} of 7 shown · ${gt()}</span>`)}
+      <div class="card"><div class="card-h"><h3>Achievements</h3>${synced ? '<small>combined with PC</small>' : `<button type="button" class="btn btn-sm btn-p" ${set('synced', true)}>Sync now</button>`}</div>
+        ${shown.map(a => `<div class="ach ${a.has ? 'got' : ''} ${a.arrived ? 'new' : ''}"><span class="medal">${a.has ? IC.check() : a.id}</span><div><b style="font-weight:${a.has ? 600 : 500};${a.has ? '' : 'color:var(--dim)'}">${a.name}</b><small>${a.has ? (a.when || '') : 'Locked'}</small></div><span>${a.arrived ? '<span class="chip chip-info">from ' + (a.newOn === 'pc' ? 'PC' : 'Steam Deck') + '</span>' : !synced && a.has && a.newOn ? '<span class="chip chip-warn">only here</span>' : ''}</span><span></span></div>`).join('')}
+      </div>`;
+  }
+  return agentShell(isDeck ? 'Steam Deck' : 'PC', nav, body);
+}
+
+// ---------- F · Checked at launch ----------
+function optF(st) {
+  if (st.surface === 'agent') {
+    const g = GAMES[0];
+    const nav = navList([['Overview'], ['Games', 'g'], ['Add Games'], ['Conflicts'], ['Activity'], ['Settings']], 'g');
+    const body = `${gameHead(g, `<span class="chip">Xenia</span><span class="chip">Xbox 360</span><span class="chip chip-info">${IC.user()}Saves under ${gt()}</span>`)}
+      <div class="card"><div class="card-h"><h3>Launch</h3></div><div class="card-b"><dl class="kv">
+        <dt>Signs in as</dt><dd>${gt()} <span style="color:var(--dim)">· the profile its saves are under</span></dd>
+        <dt>If Xenia is set to another</dt><dd>${segBtns([['ask', 'Ask'], ['switch', 'Switch silently'], ['leave', 'Leave it']], st.always ? 'switch' : 'ask', 'always_')}</dd>
+        <dt>How</dt><dd style="color:var(--dim)">SaveLocker writes <span class="mono">logged_profile_slot_0_xuid</span> in Xenia’s config before the game starts; Xenia reads it at boot</dd>
+        <dt>Profile files</dt><dd style="color:var(--dim)">Synced with the game: its achievements and its row of the profile; the account once</dd>
+      </dl></div></div>
+      <div class="card"><div class="card-h"><h3>Recent launches</h3></div><div class="timeline">
+        ${[['Started as ' + gt(), 'Switched from Player1 · pulled the save first', 'just now', st.phase === 'done'], ['Started as ' + gt(), 'Already set', 'yesterday', true], ['Copied ' + gt() + ' here', 'First launch on this Deck · 210 KB', '3 days ago', true]].filter(r => r[3]).map(([n, d, t]) => `<div class="tl done"><i></i><div><b>${n}</b><small>${d}</small></div><em>${t}</em></div>`).join('')}
+      </div></div>`;
+    return agentShell('Steam Deck', nav, body);
+  }
+  if (st.surface === 'web') {
+    const body = `<main class="main" style="max-width:1100px"><h2 style="font-size:20px;font-weight:700;letter-spacing:-.03em">Forza Horizon</h2>
+      <div class="card"><div class="card-h"><h3>Profile at launch</h3><small>every machine signs in as the profile the saves are under</small></div>
+        <div class="scroll"><table class="tbl"><thead><tr><th>Machine</th><th>Last launch</th><th>Signed in as</th><th></th></tr></thead><tbody>
+          <tr><td><b>PC</b></td><td style="color:var(--dim)">2 h ago</td><td>${gt()}</td><td><span class="chip chip-ok">Right profile</span></td></tr>
+          <tr><td><b>Steam Deck</b></td><td style="color:var(--dim)">${st.phase === 'done' ? 'just now' : 'yesterday'}</td><td>${st.phase === 'wrong' ? 'Player1' : gt()}</td><td>${st.phase === 'wrong' ? '<span class="chip chip-warn">Other profile · its saves won’t show</span>' : st.phase === 'done' ? '<span class="chip chip-ok">Switched from Player1</span>' : '<span class="chip chip-ok">Right profile</span>'}</td></tr>
+        </tbody></table></div></div></main>`;
+    return webShell(['Games', 'Backups', 'Config', 'Help'], 'Games', body);
+  }
+  const ph = st.phase;
+  const sheet = ph === 'ask' ? `<div class="sheet" role="dialog" aria-modal="true" aria-label="Choose the profile">
+      <div class="sheet-h"><span class="eyebrow">SaveLocker · before Forza Horizon starts</span><h3>Xenia would start as Player1</h3><p>Forza Horizon's saves, 18 achievements and progress are under <b style="color:var(--fg)">${gt()}</b>. As Player1 the game starts fresh.</p></div>
+      <div class="sheet-b">
+        <button type="button" class="btn btn-p big" ${act('launchF', 'switch')}>${IC.user(15)}Start as ${gt()}</button>
+        <button type="button" class="btn big" ${act('launchF', 'wrong')}>Start as Player1</button>
+        <label class="check" style="font-size:13px;color:var(--dim)"><input type="checkbox" ${st.always ? 'checked' : ''} data-a="toggleF"> Always start Xenia games as the profile their saves are under</label>
+      </div></div>` : ph === 'starting' ? `<div class="sheet"><div class="sheet-h"><span class="eyebrow">SaveLocker</span><h3>Getting Forza Horizon ready</h3></div><div class="sheet-b"><div class="progress-list">
+        <div><span class="dot dot-ok"></span>Pulled the latest save · 4.1 MB</div><div><span class="dot dot-ok"></span>Xenia set to sign in as ${gt()}</div><div><span class="dot dot-info"></span>Starting Xenia…</div></div></div></div>` : '';
+  const toast = ph === 'done' ? `<div class="toast"><div class="toast-h"><span class="mark" style="width:16px;height:16px;font-size:9px;border-radius:4px">S</span>SaveLocker</div><b>Forza Horizon started as ${gt()}</b><p>Xenia is set back to it on every launch. Player1 is still on this Deck.</p><div class="actions"><button type="button" class="btn btn-q btn-sm" ${act('resetF')}>Reset demo</button></div></div>`
+    : ph === 'wrong' ? `<div class="toast"><div class="toast-h"><span class="mark" style="width:16px;height:16px;font-size:9px;border-radius:4px">S</span>SaveLocker</div><b>Started as Player1</b><p>Forza Horizon's saves under ${gt()} are untouched, and nothing Player1 saves is pushed over them.</p><div class="actions"><button type="button" class="btn btn-q btn-sm" ${act('resetF')}>Reset demo</button></div></div>` : '';
+  return `<div class="tv"><div class="tv-bg"></div>
+    <div class="tv-top"><span>Steam Deck · Game Mode</span><span>9:41</span></div>
+    <div class="tv-hero"><div class="tv-cover">FH</div><div><span style="font-size:12px;color:#8a96ad;letter-spacing:.12em;text-transform:uppercase">Non-Steam · Xenia</span><h2>Forza Horizon</h2>
+      <button type="button" class="tv-play" ${ph === 'idle' ? act('playF') : 'disabled'}>${IC.play()}${ph === 'done' || ph === 'wrong' ? 'Playing' : 'Play'}</button>
+      <p style="color:#8a96ad;font-size:12.5px;margin-top:10px">${st.always ? 'Set to always start as the save’s profile' : 'Xenia’s config: signs in as Player1'}</p></div></div>
+    ${sheet}${toast}</div>`;
+}
+
+// ---------- briefs ----------
+const BRIEFS = {
+  D: { title: 'D · One setting, every machine', what: 'The profile is not an entry and never appears in a list. It is one switch per machine in Settings → Emulators → Xenia: “One Xbox profile on every machine”. Turning it on copies the profile, makes Xenia sign in with it on its own, and from then on each Xenia game quietly carries its own achievements.',
+    how: [['Shown as', 'A setting with a profile picker; a machine table in the console'], ['Syncs', 'Each game: its achievements and its row of the profile. The account: once'], ['Sign-in', 'Automatic: SaveLocker sets Xenia’s start-up profile'], ['Best for', 'Set it once and never think about profiles again']] },
+  E: { title: 'E · Gamer card, merged', what: 'The profile is shown the way an Xbox shows it: a gamer card with your gamerscore, and every game’s achievements with where each was unlocked. Two machines never conflict over it, because SaveLocker combines achievements one by one instead of copying files over each other.',
+    how: [['Shown as', 'A gamer card on the agent’s Overview and a Profiles page in the console'], ['Syncs', 'The whole profile, merged entry by entry: achievements added together, settings newest-wins'], ['Sign-in', 'You pick the profile in Xenia once'], ['Best for', 'Seeing achievements, and playing on two machines without syncing in between']] },
+  F: { title: 'F · Checked at launch', what: 'Nothing about profiles shows until it matters: when you press Play. If Xenia is about to sign in as a different profile than the one the game’s saves are under, SaveLocker stops and asks, then switches Xenia’s profile for you. Built for Game Mode on the Deck, where Xenia’s own menus are awkward.',
+    how: [['Shown as', 'A sheet before the game starts; a Launch card on the game page; a per-machine table in the console'], ['Syncs', 'With each game, as in D'], ['Sign-in', 'Fixed at every launch, with a “don’t ask again” switch'], ['Best for', 'The Deck, and machines that keep a second profile']] }
+};
+const SURF = { D: [['pc', 'Agent · PC'], ['deck', 'Agent · Steam Deck'], ['web', 'Console']], E: [['pc', 'Agent · PC'], ['deck', 'Agent · Steam Deck'], ['web', 'Console']], F: [['tv', 'Steam Deck · Game Mode'], ['agent', 'Agent · Steam Deck'], ['web', 'Console']] };
+const VIEWS = { D: optD, E: optE, F: optF };
+let timer;
+const ACTIONS = {
+  set(st, v, k) { if (k === 'always_') { st.always = v === 'switch'; return; } st[k] = v === 'true' ? true : v === 'false' ? false : v; },
+  turnOnD(st) {
+    if (st.on) { st.on = false; st.phase = 0; clearInterval(timer); return; }
+    st.on = true; st.phase = 0; clearInterval(timer);
+    timer = setInterval(() => { st.phase++; if (st.phase >= 3) clearInterval(timer); render(); }, 700);
+  },
+  openE(st, v) { st.game = v; st.screen = 'game'; },
+  playF(st) { if (st.always) { st.phase = 'starting'; setTimeout(() => { st.phase = 'done'; render(); }, 1400); } else st.phase = 'ask'; },
+  launchF(st, v) { if (v === 'wrong') { st.phase = 'wrong'; return; } st.phase = 'starting'; setTimeout(() => { st.phase = 'done'; render(); }, 1400); },
+  toggleF(st) { st.always = !st.always; },
+  resetF(st) { st.phase = 'idle'; }
+};
+const $ = id => document.getElementById(id);
+function render() {
+  const st = S[S.tab], b = BRIEFS[S.tab];
+  document.querySelectorAll('[data-tab]').forEach(t => t.setAttribute('aria-selected', String(t.dataset.tab === S.tab)));
+  $('brief').className = 'brief two';
+  $('brief').innerHTML = `<div><span class="eyebrow">Xenia profile</span><h2>${b.title}</h2><p>${b.what}</p></div>
+    <div><span class="eyebrow">At a glance</span><div class="how">${b.how.map(([k, v]) => `<div><b class="k">${k}</b><span>${v}</span></div>`).join('')}</div></div>`;
+  const label = SURF[S.tab].find(([id]) => id === st.surface)[1];
+  $('where').textContent = label;
+  $('surfaces').innerHTML = segBtns(SURF[S.tab], st.surface, 'surface');
+  $('app').innerHTML = VIEWS[S.tab](st);
+}
+document.addEventListener('click', e => {
+  const tab = e.target.closest('[data-tab]');
+  if (tab) { S.tab = tab.dataset.tab; render(); return; }
+  const el = e.target.closest('[data-a]');
+  if (!el || el.disabled || el.tagName === 'INPUT') return;
+  ACTIONS[el.dataset.a](S[S.tab], el.dataset.v, el.dataset.k); render();
+});
+document.addEventListener('change', e => { const el = e.target.closest('input[data-a]'); if (el) { ACTIONS[el.dataset.a](S[S.tab], el.dataset.v); render(); } });
+$('gamertag').addEventListener('input', e => { S.gamertag = e.target.value.slice(0, 15); render(); });
+render();
+</script>
+</body>
+</html>
