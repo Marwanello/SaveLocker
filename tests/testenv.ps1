@@ -1484,7 +1484,14 @@ function Stop-Windows {
     $procs = @(Get-TestTray)
     if ($procs.Length -eq 0) { Write-Host 'no test tray running' }
     else {
+        $ownTree = Join-Path $root 'src\Agentin'
         foreach ($p in $procs) {
+            # Get-TestTray matches every tree build, so this can be another worktree's tray — another
+            # session's rig, or someone's own debug run. Still stopped (the rig is shared, see
+            # Get-TestTray), but named, so a parallel session's tray never disappears silently.
+            if ($p.CommandLine -notlike "*$ownTree*") {
+                Warn "stopping a tray from ANOTHER tree (pid $($p.ProcessId)): $($p.CommandLine)"
+            }
             Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
             Write-Host "stopped test tray (pid $($p.ProcessId))"
         }
@@ -1609,10 +1616,12 @@ public static class SlToastShortcut
 
 function Get-TestToastClsid([int]$Port) {
     # The same deterministic derivation ToastActivation.ClsidForPort uses: the port in the CLSID's
-    # last two bytes, so a rig's registration can never collide with the installed agent's.
+    # first two bytes and the last byte's low bit flipped, so a rig's registration can never collide
+    # with the installed agent's, whatever the port.
     $b = ([guid]'02C97085-6FAE-4DF4-8C52-2E05604D3AB0').ToByteArray()
     $b[0] = [byte]($Port -band 0xFF)
     $b[1] = [byte](($Port -shr 8) -band 0xFF)
+    $b[15] = [byte]($b[15] -bxor 0x01)
     return New-Object Guid (,$b)
 }
 
