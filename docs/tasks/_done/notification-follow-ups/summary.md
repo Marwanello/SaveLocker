@@ -1,6 +1,7 @@
 # Notifications: buttons that act, and a check on real installs (left by Group 7)
 
-**Built 2026-10-11 (branch `notification-follow-ups`).** Steps to verify: [[verification]].
+**Built 2026-10-11 (branch `notification-follow-ups`); shipped as [PR #66](https://github.com/Marwanello/SaveLocker/pull/66) — open, base `main`.**
+Steps to verify: [[verification]].
 
 - (a) *"Retry now" / "Install now" on a Windows toast* — **done, verified live.** The supported route
   turned out to be the Community Toolkit's: a per-user COM activator (`HKCU` CLSID with
@@ -30,3 +31,13 @@
 - (f) *The installed service never gets the desktop session's environment* — unchanged and still
   documented ([[Gotchas]] → Linux agent); nothing here adds a daemon-launched desktop child, and
   the Windows side is unaffected.
+- **2026-10-12 — the rig fought back, and `testenv` got tougher.** The first live walk of
+  [[verification]] hit an endless 401 flood that survived `clean` and restarts: the tray holding
+  :5188 was another worktree's build, and `Get-TestTray` was scoped to the calling worktree's own
+  root, so this worktree's `clean`/`up` deleted the shared state *under* the foreign tray and left
+  it serving with its old key while the new tray could not take the port. Fixed on the branch
+  (`4ddb4d2`): any tree build matches by its `\src\Agent\bin\` path (the installed agent never
+  lives there). Recorded in [[Gotchas]] → `tests/testenv.ps1`. The same day [[verification]] gained
+  its "no toast appears" troubleshooting block — the toast exists only after §1's >1 MB write,
+  `connection refused` means the console is down, and `notification shown` with no banner means
+  Windows put it in the Action Center.

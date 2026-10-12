@@ -3789,3 +3789,59 @@ path, so it was fixed here.
 `docker-compose.unraid.yml`, tests (`ConflictLatchTests` new; `SaveFileTreeTests`; `run-console-security-tests`;
 `run-local-api-tests`; `testenv.ps1`). Vault: [[Backlog]], [[Build and Run]], [[API Reference]], [[Decisions]],
 [[CONTEXT]], this entry, `session_summary.md`.
+
+## 2026-10-11/12 - Notification follow-ups: toast buttons that act (PR #66)
+
+The last Group 7 leftovers (`tasks/notification-follow-ups/`, now `tasks/_done/`): "Retry now"/"Install now"
+on a Windows toast, the rig's own toast identity, a `clean` that refuses to lie, and a measured answer to
+the size question.
+
+**What shipped.** Toast actions with no `activationType` carry `retry:<gameId>` / `install:<version>` and
+are delivered through a per-user **COM activator** (`ToastActivation.cs`): `HKCU` CLSID with
+`LocalServer32 -ToastActivated`, plus `CustomActivator` under the identity key — the Community Toolkit's
+shape, measured; a shortcut's `ToastActivatorCLSID` is *not* what makes a click travel. The click lands
+in the running tray; with the tray closed, DCOM starts the host (`ToastActivationHost.cs`), which sets its
+state root from `--config` before any logging, leaves the click in `toast-action.json` and starts the
+tray. A rig gets a deterministic per-port CLSID, a `SaveLocker Test <port>` Start-menu shortcut (written
+by `up`, removed by `clean`) and its registry keys; the installer stamps the same activator entries
+(`uninsdelete*`). `clean` now verifies the state root is actually gone and throws naming leftovers instead
+of printing "removed" over them.
+
+**Two bugs only running found:** a rig's `LocalServer32` first omitted `--config`, so a tray-closed click
+loaded the **installed** config and briefly started the installed agent (its one log line lives in
+`%PROGRAMDATA%\SaveLocker\agent.log`; the `LastUpdateCheck` it refreshed was reset); and the host logged
+into the installed agent's log for the same reason. Both fixed and re-verified. (d) measured, not changed:
+`CsWinRTIncludes` shrinks nothing (173.1 MB publish with and without; the property is for projection
+authoring, and `Microsoft.Windows.UI.Xaml.dll` is not in this toolchain's output at all).
+
+**Verified live through `testenv`** (a real mouse click on a real toast): **Retry now** retried a
+413-rejected push; **Install now** downloaded, SHA-verified and ran a stand-in package with
+`/SILENT /FORCECLOSEAPPLICATIONS /NORESTART`, the tray exiting as designed; with the tray closed, DCOM's
+host started it and the retry succeeded. The full unit suite is **420/420** on the merged tree — #63
+fixed the `ArcadeSavesTests.Supermodel_nvram…` machine leak this branch had carried (it read this box's
+real EmuDeck gamelist), so the one caveat this entry used to have is gone.
+
+**PR #66 opened on the fork; `origin/main` was merged in with no conflicts** — the auto-merges of
+`docs/CONTEXT.md`, `docs/Gotchas.md`, `src/Agent/TrayApp.cs`, `testenv.ps1` and the consistency test were
+all clean, and the merged tree builds at the agent's 1-warning baseline.
+
+**The debugging session worth remembering (2026-10-12).** The first live walk of the checklist showed
+"no toast appears" twice, then an endless **401 flood** that survived `clean` and restarts. Root cause:
+the tray holding :5188 was another worktree's build (`fix-backlog-quick-wins`), and `Get-TestTray` was
+scoped to the calling worktree's own root — so `clean` printed "no test tray running" and deleted the
+shared state *under* the foreign tray; the next `up`'s tray could not take the port, and the stale one
+kept serving with its old machine key. Fixed on the branch (`4ddb4d2`): any tree build matches by its
+`\src\Agent\bin\` path; the installed agent never lives there. Also learned live: `up -Only windows`
+alone never toasts (the toast comes only from §1's >1 MB write hitting the capped console), and a fresh
+AUMID gains its `HKCU\…\Notifications\Settings\SaveLocker.Test.<port>` record only once Windows has
+accepted a toast — a handy "did it ever render" probe. All three are in [[Gotchas]] and the verification
+doc's troubleshooting block.
+
+### Files
+
+`src/Agent/{ToastActivation,ToastActivationHost,PendingToastAction,ToastPresenter,TrayApp,Program}.cs`,
+`src/Agent.Core/Notifications.cs`, `installer/SaveLocker.iss`, `tests/testenv.ps1`,
+`tests/run-appearance-consistency-tests.ps1`,
+`tests/SaveLocker.Agent.Tests/{ToastActivationTests,NotificationTests}.cs`,
+`docs/tasks/_done/notification-follow-ups/{summary,verification}.md`. Vault: [[Backlog]], [[CONTEXT]],
+[[Gotchas]], this entry, `session_summary.md`.

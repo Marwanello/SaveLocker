@@ -16,7 +16,6 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 
 ## Medium priority
 
-- [Notifications: buttons that act, and a check on real installs (left by Group 7)](tasks/notification-follow-ups/summary.md)
 - [Checkpoint UI Group 9: run the testenv checklist](tasks/checkpoint-ui-group-9-check/summary.md)
 - [Art picker: choose which SteamGridDB game to pull from](tasks/art-picker-game-choice/summary.md)
 - [Interactive setup guide](tasks/interactive-setup-guide/summary.md)
