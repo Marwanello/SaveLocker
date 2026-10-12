@@ -20,6 +20,7 @@ save file only, *Keep it as its own game* kept apart, untouched seeds can join).
 | F — Switch | Phase 6 (Yuzu, Citron, Eden, Ryujinx) + the server title key (D2) | ⏳ Not started |
 | G — Each machine's own file names | Phase 17 (link a save to a server game whose files are named differently: another dump, another emulator) | ⏳ Not started — added 2026-10-07; open questions in plan.md → *Phase 17* |
 | H — Real-game checks (no code) | Phase 18: every emulator that shipped without a test against a real game, on the Deck and on Windows. Now: melonDS, ScummVM, Supermodel, Model 2, PCSX2, DuckStation, Dolphin, PrimeHack, PPSSPP, RPCS3, Vita3K, shadPS4 | ⏳ Waiting for games — added 2026-10-07; the list grows as phases ship untested |
+| I — Games found by their save states alone | Phase 19 (RetroArch, melonDS, PCSX2, DuckStation, Dolphin, PrimeHack) | ⏳ Not started — added 2026-10-12; PPSSPP's shipped with Group D |
 
 \* Bonus. If a group grows too big, a bonus emulator is the first thing to move to a later PR.
 
@@ -78,6 +79,9 @@ testenv but **without a save written by playing a real game**, because the maint
 Each one is tested on the Deck (EmuDeck on SteamOS) and on Windows (EmuDeck for Windows) when a game is at hand, and
 ticked off in plan.md → *Phase 18*. A problem found there is fixed in its own group's code, in a follow-up PR. It
 stays the last group so new rows can keep joining it.
+
+**I — Games found by their save states alone.** Added 2026-10-12 when PPSSPP learnt it in Group D. It touches the
+readers of Groups A–C, so it is its own PR once those are merged; it needs no server change and does not block E–G.
 
 **Every group's checks:**
 - fixtures and unit tests per reader;

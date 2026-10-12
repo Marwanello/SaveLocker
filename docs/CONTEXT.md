@@ -1902,7 +1902,9 @@ Windows' junctions point from the emulators' folders into `Emulation\saves`. No 
 four are in Group H. Unit **420** (+26; the per-game scope in the two-machine PPSSPP test mutation-checked). No API
 change. 2026-10-12 follow-up: RPCS3, Vita3K and shadPS4 save per emulator user (folder only; no emulator checks a
 save's owner); Vita3K now reads every `ux0/user/*/savedata`, not only `00`, and the help article says how to move a
-game to another user's folder (**Change** on the game's folder). Details: `tasks/emulator-saves/plan.md` → *Group D — as built*.
+game to another user's folder (**Change** on the game's folder). A PSP game played from states only is now listed
+(*Save states only so far*); the other emulators' version is new Phase 19 / Group I. Merged `main` (PR #64) into the
+branch. Unit **427**. Details: `tasks/emulator-saves/plan.md` → *Group D — as built*.
 <br>**Next action for this item:** the testenv pass of Group D (`Build and Run` → *Testing emulator saves*), then merge PR #65.
 <br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then merge PR #63.
 On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another

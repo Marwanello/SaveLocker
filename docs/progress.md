@@ -3839,3 +3839,19 @@ passed on every rerun.
 `ConsoleTitles/*`, `agent-ui/src/components/AddGamesView.tsx`, `tests/SaveLocker.Agent.Tests/{SonySavesTests,GroupDSyncTests,ConsoleSaveFixtures,EmulatorChipTests}.cs`,
 `tests/testenv.ps1`, `web/src/help/emulator-backups.md`, `docs/{CONTEXT,REPO_MAP,Build and Run}.md`,
 `docs/tasks/emulator-saves/{plan,implementation-grouping}.md`, this entry, `session_summary.md`.
+
+### 2026-10-12 addendum — states-only PSP games, Phase 19, merge with `main`
+
+- **PPSSPP lists a game played from save states only** (`73bb612`): identity from the state's name
+  (`UCUS98653_1.00_0.ppst`), Redump name and region as usual, `SAVEDATA` scope declared so the first in-game save
+  joins; a save anywhere on the machine wins; empty states and `load_undo.ppst` skipped. Add games says *Save states
+  only so far* (`StatesOnly`, additive in the agent API; `agent-ui/src/api-types.ts` updated by hand to match). Tested:
+  unit (mutation-checked), a two-machine join where the first save follows, and a states-only push never emptying
+  another machine's never-synced save (that pull is refused). testenv: *Chains of Olympus* on Windows, state only.
+- **Phase 19 / Group I added** for the other emulators with states (RetroArch, melonDS, PCSX2, DuckStation, Dolphin,
+  PrimeHack), with each one's state naming and open points.
+- **"(Beta)" in a God of War name is right:** the PC's real save is `UCET00844`, Redump's *Chains of Olympus (Beta)*,
+  a pre-release build; the retail European disc is `UCES-00842`.
+- **Merged `main`** (PR #64) into the branch; conflicts only in `progress.md` (both entries kept) and
+  `session_summary.md` (this session's kept). Unit **427**, all passing (run from a scratch worktree because the
+  testenv agent was locking `src/Agent/bin`).

@@ -57,3 +57,12 @@ passed on every rerun.
 `ConsoleTitles/*`, `agent-ui/src/components/AddGamesView.tsx`, `tests/SaveLocker.Agent.Tests/{SonySavesTests,GroupDSyncTests,ConsoleSaveFixtures,EmulatorChipTests}.cs`,
 `tests/testenv.ps1`, `web/src/help/emulator-backups.md`, `docs/{CONTEXT,REPO_MAP,Build and Run}.md`,
 `docs/tasks/emulator-saves/{plan,implementation-grouping}.md`, `progress.md`, this file.
+
+## Addendum (2026-10-12): states-only PSP games, Phase 19, merge with `main`
+
+- PPSSPP now lists a game with a save state and no in-game save yet, marked *Save states only so far*; its first
+  in-game save joins the same game. A states-only push never empties another machine's real save (pull refused).
+- The same for RetroArch, melonDS, PCSX2, DuckStation, Dolphin and PrimeHack is new **Phase 19 / Group I** in
+  `docs/tasks/emulator-saves/plan.md`.
+- *God of War - Chains of Olympus (Beta)* is the correct name for the PC's real `UCET00844` save (a pre-release build).
+- `main` (PR #64) merged into the branch. Unit **427** passing.
