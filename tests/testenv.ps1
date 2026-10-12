@@ -1406,7 +1406,12 @@ function Start-Console {
     # host.docker.internal is built in on Docker Desktop and needs this on a plain Linux engine, so a
     # stub server on this PC is reachable by one name on both.
     $extra = @('--add-host', 'host.docker.internal:host-gateway')
-    foreach ($kv in $ConsoleEnv) {
+    # Each entry may itself be comma-separated (the documented KEY=VALUE[,...] form): one string
+    # used to land as a single -e, so "A=1,B=2" set A to the literal "1,B=2" and the server threw
+    # on every admin request. Both spellings now work; a blank piece between commas is ignored.
+    foreach ($entry in ($ConsoleEnv | ForEach-Object { $_ -split ',' })) {
+        $kv = $entry.Trim()
+        if (-not $kv) { continue }
         if ($kv -notmatch '^[A-Za-z_][A-Za-z0-9_]*=') { throw "-ConsoleEnv entries must be KEY=VALUE, got '$kv'" }
         $extra += @('-e', $kv)
     }

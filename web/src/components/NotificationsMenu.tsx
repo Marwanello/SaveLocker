@@ -12,6 +12,7 @@ const CODE = {
   conflict: 'sync.conflict',
   saveDirMissing: 'savedir.missing',
   pushFailed: 'push.failed',
+  adminLockout: 'admin.lockout',
 } as const;
 
 /** A short title per known code. The agent's own message becomes the line under it. */
@@ -19,6 +20,7 @@ function titleOf(p: AgentEvent): string {
   const game = p.gameName ?? 'A game';
   switch (p.code) {
     case 'sync.conflict': return `${game} — sync paused`;
+    case 'admin.lockout': return 'Someone is guessing the console password';
     case 'push.failed': return `${game} push failed`;
     case 'savedir.missing': return `${game} save folder is missing`;
     case 'savedir.unsafe': return `${game} save folder refused`;
@@ -79,8 +81,11 @@ export function NotificationsMenu({ problems, onOpenGame, onDismissProblems, onO
   // colour the badge or count toward it.
   const actionable = problems.filter(p => p.severity !== 'Info');
   const errorCount = actionable.filter(p => p.severity === 'Error').length;
-  // A conflict is never included: it does not clear on its own, see the row below.
-  const dismissableIds = problems.filter(p => p.code !== CODE.conflict).map(p => p.id);
+  // A conflict is never dismissible: it does not clear on its own, see the row below. A lockout
+  // is not either — it has no server-side record to dismiss, and it clears itself when the
+  // throttle's window ends.
+  const undismissable = (p: AgentEvent) => p.code === CODE.conflict || p.code === CODE.adminLockout;
+  const dismissableIds = problems.filter(p => !undismissable(p)).map(p => p.id);
 
   function go(gameId: string, intent?: GameIntent) {
     setOpen(false);
@@ -202,8 +207,9 @@ export function NotificationsMenu({ problems, onOpenGame, onDismissProblems, onO
                 <div className="flex flex-col items-end gap-[7px]">
                   {/* A conflict is NOT dismissible, and this is the difference that cost a real user a
                       day of play. Every other agent event self-heals — a machine that recovers closes
-                      it — so Dismiss is honest for them. A conflict sits until a human resolves it. */}
-                  {p.code !== CODE.conflict && onDismissProblems && (
+                      it — so Dismiss is honest for them. A conflict sits until a human resolves it;
+                      a lockout has no record to dismiss and clears when its window ends. */}
+                  {!undismissable(p) && onDismissProblems && (
                     <button
                       type="button"
                       onClick={() => void onDismissProblems([p.id])}

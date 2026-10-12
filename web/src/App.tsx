@@ -3,7 +3,7 @@ import {
   api, ApiError, clearSession, dropLegacyPassword, errorText, hasSession,
   migrateLegacyPassword, signIn, signOut,
 } from './api';
-import type { GameSummary, Machine, Command, Conflict, Settings, AgentHealth, ServerBuildInfo, GameIntent, GameRequest } from './types';
+import type { GameSummary, Machine, Command, Conflict, Settings, AgentHealth, AgentEvent, Lockout, ServerBuildInfo, GameIntent, GameRequest } from './types';
 import { NavBar } from './components/NavBar';
 import type { View } from './components/NavBar';
 import { GamesView } from './components/GamesView';
@@ -27,6 +27,7 @@ interface AppData {
   conflicts: Conflict[];
   settings: Settings;
   health: AgentHealth[];
+  lockouts: Lockout[];
 }
 
 /**
@@ -104,11 +105,11 @@ export default function App() {
     setLoading(true);
     setError('');
     try {
-      const [games, conflicts, machines, commands, settings, health] = await Promise.all([
-        api.overview(), api.conflicts(), api.machines(), api.commands(), api.settings(), api.health(),
+      const [games, conflicts, machines, commands, settings, health, lockouts] = await Promise.all([
+        api.overview(), api.conflicts(), api.machines(), api.commands(), api.settings(), api.health(), api.lockouts(),
       ]);
       if (epoch !== epochRef.current) return;
-      setData({ games, machines, commands, conflicts, settings, health });
+      setData({ games, machines, commands, conflicts, settings, health, lockouts });
       // Keep this in step with the server: an admin can set or remove the password from Configuration.
       setPasswordRequired(settings.adminPasswordSet);
       // The look is a server setting: adopt it here so a change made in another browser follows within a
@@ -252,8 +253,27 @@ export default function App() {
   }
 
   // Errors before warnings: an agent that is not syncing outranks one that synced with a caveat.
-  const problems = (data?.health ?? [])
-    .flatMap(h => h.openEvents)
+  // Sign-in lockouts are server-level, not agent events — synthesized into the same shape so the one
+  // notifications surface shows them. They clear themselves when the throttle's window ends, exactly
+  // where `admin.lockout` used to disappear into the audit log unread.
+  const lockoutNotices: AgentEvent[] = (data?.lockouts ?? []).map(l => {
+    const now = new Date().toISOString();
+    return {
+      id: `lockout:${l.client}`,
+      machineId: '00000000-0000-0000-0000-000000000000',
+      machineName: 'This server',
+      gameId: null,
+      gameName: null,
+      code: 'admin.lockout',
+      severity: 'Warning',
+      message: `Too many wrong admin passwords from ${l.client} — new sign-ins are refused for another ` +
+        `${Math.max(1, Math.ceil(l.retryAfterSeconds / 60))} min.`,
+      firstSeen: now,
+      lastSeen: now,
+      count: 1,
+    };
+  });
+  const problems = [...(data?.health ?? []).flatMap(h => h.openEvents), ...lockoutNotices]
     .sort((a, b) =>
       (a.severity === b.severity ? 0 : a.severity === 'Error' ? -1 : 1) ||
       (new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime()));
