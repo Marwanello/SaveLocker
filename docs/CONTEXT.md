@@ -1914,7 +1914,12 @@ keep only saves: Azahar `<low>/data/**` (never the installed `content/`), Xenia 
 both mutation-checked in two-machine tests. Captured read-only: the Deck's three 3DS saves and 11 ROM headers, its Cemu/Azahar
 AppImages, Xenia's two layouts; the PC's real Xenia *Forza Horizon* saves (per profile). Unit **471**. All three are in Group H.
 Details: `tasks/emulator-saves/plan.md` → *Group E — as built*.
-<br>**Next action for this item:** open Group E's PR, then its testenv pass (`Build and Run` → *Testing emulator saves*).
+<br>**Same day, PR #68 (Group E) follow-ups:** a user-binding review of every emulator (none checks a save's owner; Cemu, RPCS3,
+shadPS4, Vita3K and Xenia bind by folder only; Xenia XUIDs are random per profile). Built: Xenia device saves
+(`content/0000000000000000`, key `device`) and the 2023 named-profile layout; unit **474**. Designed, not built: **Phase 5c**,
+copying the whole Xenia profile to another machine and optional per-game DLC (Forza Horizon's is 1.0 GB, over the 500 MB cap) —
+four open questions in `tasks/emulator-saves/plan.md` → *Phase 5c*.
+<br>**Next action for this item:** the maintainer's calls on Phase 5c, then the Group E testenv pass (`Build and Run` → *Testing emulator saves*).
 <br>**Next action for this item:** merge PR #65; the testenv pass of Group D (`Build and Run` → *Testing emulator saves*) and its real-game checks (Group H: PPSSPP, RPCS3, Vita3K, shadPS4) are still to do.
 <br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then merge PR #63.
 On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another

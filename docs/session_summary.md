@@ -1,85 +1,58 @@
-# Session summary — 2026-10-11/12 — Notification follow-ups: toast buttons that act (PR #66)
+# Session summary — 2026-10-12 — Emulator saves Group E and the Xenia profile/DLC design (PR #68)
 
 Standalone: the facts below do not need the rest of the vault.
 
-**PR:** #66 on `Marwanello/SaveLocker`, *Notification follow-ups: acting toast buttons (COM activator), rig
-toast identity, installer wiring, clean guard*. Head branch `notification-follow-ups` (worktree
-`.claude/worktrees/notification-follow-ups`), base `main`. Commits `97041bc` (the feature), `4ddb4d2` (the
-same-day `testenv` fix), plus a clean merge of `origin/main`. Open at the time of writing.
+**PR:** #68 on `Marwanello/SaveLocker`, *Emulator saves Group E: Cemu, Azahar, Xenia, Xbox 360 and 3DS names, title-ID
+folders*. Branch `emulator-saves-group-e`, base `main`. Open at the time of writing.
 
 ## What was asked
 
-1. Work the Backlog item left by Group 7 (`tasks/notification-follow-ups/summary.md`): (a) toast buttons
-   that **act**, (b) a real-install check, (d) the `CsWinRTIncludes` size question, (e) a `clean` that
-   stops lying about state removal.
-2. "Tell me how to verify using testenv."
-3. Open a PR on the `Marwanello` fork.
-4. Mark the task done, append the summary to `progress.md`, save a standalone summary here.
+1. Implement the next emulator-saves group (Group D had merged as #65, so Group E: Cemu, Azahar, Xenia), with testenv
+   verification steps and a technical and plain explanation, on a PR to the fork.
+2. Research whether any emulator ties a save to a user.
+3. Explain the IDs shown as names (`3DS 00054000`, `Wii U 10145D00`, `3DS 0016E300`).
+4. Build the Xenia fixes; for the profile one, plan first: copy the whole profile (no other saves) and add a DLC option.
 
-## What was done
+## Decisions taken with the maintainer
 
-**Buttons that act (a).** Toast actions with no `activationType` carry `retry:<gameId>` / `install:<version>`
-and are delivered through a per-user **COM activator** (`src/Agent/ToastActivation.cs`): `HKCU` CLSID with
-`LocalServer32 -ToastActivated`, plus `CustomActivator` under the identity key — the Community Toolkit's
-shape, measured; the shortcut's `ToastActivatorCLSID` is *not* what makes a click travel. While the tray
-runs the click lands in it; with the tray closed, DCOM starts the host (`ToastActivationHost.cs`), which
-sets its state root from `--config` before any logging, leaves the click in `toast-action.json` and starts
-the tray. A rig gets a deterministic per-port CLSID, its own `SaveLocker Test <port>` Start-menu shortcut
-(written by `up`, removed by `clean`) and registry keys; `installer/SaveLocker.iss` stamps the same
-activator entries (`uninsdelete*`) so a fresh install's first toast works.
+- Group E, captured from the Deck (read-only SSH) and the PC, plus EmuDeck's scripts and the emulators' source.
+- A Citra save and an Azahar save of one game are **one game**.
+- A **bundled title table where licensed** (libretro-database, CC BY-SA 4.0): Xbox 360 by title ID, 3DS by ROM product code.
+  No Wii U source exists; the only 3DS title-ID list (3dsdb) has no licence.
+- Xenia: build device saves and the named-profile layout; design the whole-profile copy and DLC before building.
 
-**`clean` refuses to lie (e).** It verifies the state root is actually gone and throws naming the leftovers
-instead of printing "removed" over them; `Get-TestTray` gained the apphost shape the toast-activation host
-starts, and later (see below) any worktree's tray.
+## What was built
 
-**(d) measured, not changed.** `CsWinRTIncludes` shrinks nothing: 173.1 MB publish,
-`Microsoft.Windows.SDK.NET.dll` 23.73 MB, with and without it — the property is for projection *authoring*,
-and `Microsoft.Windows.UI.Xaml.dll` is not in this toolchain's output at all.
+| Emulator | A game is | Scope | Name |
+|---|---|---|---|
+| Cemu (Wii U) | `usr/save/00050000/<low>` | `<low>/**` | Cemu's title cache, `meta.xml`, else `Wii U <ID>` |
+| Azahar (3DS) | `sdmc/Nintendo 3DS/…/title/00040000/<low>/data` | `<low>/data/**` + states `<program ID>.*` | ROM product code via No-Intro, file name, else `3DS <ID>` |
+| Xenia (Xbox 360) | saved games in `content/<XUID>/<TID>`, `content/<name>/<TID>` or `content/<TID>`; device saves in `content/0000000000000000` (key `device`) | `<TID>/00000001/**` + headers | title ID via Redump/No-Intro, else `Xbox 360 <ID>` |
 
-**Two bugs only running found:** a rig's `LocalServer32` first omitted `--config`, so a tray-closed click
-loaded the **installed** config and briefly started the installed agent (its one log line lives in
-`%PROGRAMDATA%\SaveLocker\agent.log`; the `LastUpdateCheck` it refreshed was reset); and the host logged
-into the installed agent's log for the same reason. Both fixed and re-verified.
+Plus `Ncch` (3DS ROM header), the title table rows, Add games chips, help, testenv fixtures. Unit **474**; Azahar's and Xenia's
+scopes mutation-checked in two-machine tests (a wider scope deletes the installed game / DLC on pull).
 
-**Docs (this session's ask).** `docs/tasks/_done/notification-follow-ups/{summary,verification}.md` (the
-folder moved out of `Backlog.md`, which no longer lists it), a row in `logs/shipped-2026-10.md`, the
-`CONTEXT.md` entry, this file. `AGENTS.md`'s handoff step now says `docs/tasks/_done/`, matching what the
-Backlog states and what the last two sessions did.
+## What was found
 
-## Verification (final tree, after merging `main` through #65)
+- No emulator checks a save's owner on load. Cemu (`user/<account>`, first account `80000001`), RPCS3, shadPS4, Vita3K and
+  Xenia (`content/<XUID>`) bind by folder only. Xenia XUIDs are random per profile; some games may store the XUID inside the
+  save, so one profile copied to every machine is the safe setup.
+- Captures: the Deck's three real 3DS saves and 11 ROM headers (program IDs match the folders), Cemu/Azahar AppImages with
+  data on the SD card, Xenia's two layouts; the PC's real Xenia *Forza Horizon* saves. `00054000` is Super Mario 3D Land,
+  `10145D00` Mario Kart 8 (fixture), `0016E300` an unidentified Deck save with no ROM.
+- The Xenia profile is `content/<XUID>/FFFE07D1/00010000/<XUID>/` (encrypted `Account`, per-game `.gpd`) + header, ~210 KB.
+  DLC is always under XUID 0; Forza Horizon's is 1.0 GB, over the 500 MB upload cap.
 
-- `dotnet test` **450/450** — all green; main's #63 fixed the one machine-specific
-  `ArcadeSavesTests.Supermodel_nvram…` leak this branch had carried, and #65's Group D tests are in
-- `run-appearance-consistency-tests` **50/50** (incl. the new installer/agent CLSID + AUMID drift checks
-  and the notice-route↔`route.ts` contract)
-- Installer compiles under ISCC; full agent build at its 1-warning baseline; `origin/main` merged twice —
-  #62–#64 cleanly, #65 conflicting only in the two tail-of-file docs (`progress.md`,
-  `session_summary.md`), both resolved by keeping both sessions' entries
-- **Live through `testenv`** (a real mouse click on a real toast): **Retry now** retried a 413-rejected
-  push (`pushed new version.`); **Install now** downloaded, SHA-verified and ran a stand-in package with
-  `/SILENT /FORCECLOSEAPPLICATIONS /NORESTART`, the tray exiting as designed; with the tray closed, DCOM's
-  host started it and the retry succeeded
+## Phase 5c — designed, waiting on the maintainer
 
-## The debugging session worth remembering
+1. **Profile first:** each Xenia profile is its own Add games entry, scoped to its XUID (`FFFE07D1/00010000/<XUID>/**` + header).
+   A machine without it sees it *On the server* and pulls it; sign in once, and every game's saves then land in the same folder.
+2. **DLC per game, opt-in:** its own entry (`<TID>/00000002/**` under XUID 0), added from Add games or the game page later;
+   needs a larger server cap for DLC.
 
-The first live walks showed **"no toast appears"** twice, then an endless **401 flood** surviving `clean`
-and restarts. Three findings:
+Open questions: profile as its own entry or a folder of each game; DLC as its own entry and whether title updates come with it;
+the DLC cap and its default; the gamertag from the decrypted `Account` or the XUID only.
 
-- The rig only toasts when something fails — `up -Only windows` alone never pops anything. The first toast
-  is §1's >1 MB write hitting the capped console (413 → `notification shown: 'Retry Game: push failed'`).
-  A brand-new AUMID gains its `HKCU\…\Notifications\Settings\SaveLocker.Test.<port>` record only once
-  Windows has accepted a toast — a useful "did it ever render" probe.
-- The 401s came from a tray started by **another worktree** (`fix-backlog-quick-wins`) that survived this
-  worktree's `clean`/`up`: `Get-TestTray` was scoped to the calling worktree's own root, so `clean`
-  deleted the shared state *under* the foreign tray, the next `up`'s tray could not take :5188, and the
-  stale one kept serving with its old machine key. Fixed in `4ddb4d2`: any tree build matches by its
-  `\src\Agent\bin\` path (the installed agent never lives there). Recorded in `Gotchas`.
-- The verification doc gained a "no toast appears" troubleshooting block covering all of it.
+## Not verified
 
-## Not done / caveats
-
-- **The real installer run is still the one manual check** — `docs/tasks/_done/notification-follow-ups/verification.md`
-  §5 (with §0–§4 being the testenv walkthrough).
-- Two sessions driving the shared rig at once still stomp each other's state — the tray-stopping fix
-  removes the stranded-tray half, not the coordination half.
-- Release notes for the next tag must cover: toast buttons that act (Retry now / Install now).
+The Group E testenv pass, and the real-game checks (Group H: Cemu, Azahar, Xenia).
