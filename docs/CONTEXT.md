@@ -1926,8 +1926,11 @@ configs), `LaunchDecision.Ask` + `POST /api/games/{id}/launch-answer` (the defau
 disk 10 min so the Linux wrapper honours a Decky answer), the profile at launch. Plugin PRs: Marwanello/SaveLocker-Decky#5,
 Marwanello/SaveLocker-Playnite#8. Unit **495**. Real files captured from the PC (Xenia Manager) and the Deck (EmuDeck, Proton,
 legacy `content/<TID>` DLC and a title update) are in the session scratchpad only — they hold a real gamertag.
-<br>**Next action for this item:** the testenv pass for the profile at launch (`Build and Run` → *Testing emulator saves*, Phase 5c),
-then Phase 5c step 5 (the game's part of the profile). Group E's own testenv pass is still open.
+<br>**Later the same day:** Phase 5c steps 5–9 and 11 built (profile slice + core seed + alignment with `Game.EmulatorProfile`;
+DLC lists per version/machine, held pulls, the agent DLC card; console DLC card; the server hand-over `ContentTransfer`).
+Migrations `AddGameEmulatorProfile`, `AddDlcCheckContent`, `AddDlcHandover`. Unit **513**.
+<br>**Next action for this item:** Phase 5c step 12 (agents send and fetch hand-overs through the poller, the third choice in the
+DLC dialog), then 13 (hold re-check on scan / folder change, notices), 10's rest, 14. Group E's testenv pass is still open.
 <br>**Next action for this item:** merge PR #65; the testenv pass of Group D (`Build and Run` → *Testing emulator saves*) and its real-game checks (Group H: PPSSPP, RPCS3, Vita3K, shadPS4) are still to do.
 <br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then merge PR #63.
 On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another
