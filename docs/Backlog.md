@@ -8,7 +8,6 @@ Completed items live under `tasks/_done/` (folders moved there when their work s
 
 ## High priority
 
-- [Appearance follow-up: "N machines following" (left by Group 5)](tasks/appearance-follow-ups/summary.md)
 - [Emulator saves: the other emulators (Groups A, B and C are done)](tasks/emulator-saves/plan.md)
 - [Native Linux save support](tasks/native-linux-saves/summary.md)
 - [Registry-based saves](tasks/registry-saves/summary.md)

@@ -148,6 +148,9 @@ namespace SaveLocker.Server.Migrations
                     b.Property<string>("AgentVersion")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool?>("FollowsConsoleAppearance")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime>("LastHeartbeat")
                         .HasColumnType("TEXT");
 

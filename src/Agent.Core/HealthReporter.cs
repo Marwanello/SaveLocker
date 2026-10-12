@@ -186,7 +186,8 @@ public sealed class HealthReporter
             ResolvedGameIds: resolved,
             PathCandidates: pathCandidates.Length == 0 ? null : pathCandidates,
             Os: OsIdentity.This,
-            StagedVersion: StagedVersion?.Invoke(config));
+            StagedVersion: StagedVersion?.Invoke(config),
+            FollowsConsoleAppearance: config.FollowConsoleAppearance);
 
         AgentHeartbeatResponse response;
         try
