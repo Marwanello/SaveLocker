@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api';
+import { plural } from '../format';
 import { ACCENTS, MARKS, THEMES, isLight, saveLook, setLook, useLook } from '../appearance';
 import type { AccentId, Look, Theme } from '../appearance';
 import type { AgentHealth, Settings } from '../types';
@@ -132,7 +133,7 @@ export function AppearanceCard({ settings, health, onSaved }: Props) {
         {!pushing
           ? <Chip tone="warn">Not shared</Chip>
           : following.length > 0
-            ? <Chip tone="ok">{following.length} machine{following.length === 1 ? '' : 's'} following</Chip>
+            ? <Chip tone="ok">{plural(following.length, 'machine')} following</Chip>
             : <Chip>No machine following</Chip>}
         <span className="font-mono text-[10.5px] text-dim">
           {!pushing
