@@ -13,8 +13,9 @@ public sealed class GroupDSyncTests : IClassFixture<ServerProcess>, IDisposable
 {
     private readonly ServerProcess _server;
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "savelocker-groupd-" + Guid.NewGuid().ToString("N"));
-    // The class shares one server, so each test's game is its own.
-    private readonly string _id = Random.Shared.Next(10000, 99999).ToString();
+    // The class shares one server, so each test's game is its own. The serial must be one the Redump table
+    // does not know, or the game is named from the table and the PARAM.SFO fallback assertion fails.
+    private readonly string _id = F.UnknownSerial("psp", "NPUH");
 
     public GroupDSyncTests(ServerProcess server)
     {
