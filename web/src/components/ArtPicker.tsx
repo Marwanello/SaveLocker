@@ -185,7 +185,7 @@ function SourceBar({ game, source, onChanged }: SourceProps) {
         <div className="flex flex-col gap-2">
           <form onSubmit={search} className="flex items-center gap-2">
             <SearchField value={query} onChange={setQuery} aria-label="Search SteamGridDB games"
-              placeholder="Search by name" className="flex-1" />
+              placeholder="Search by name" className="flex-1" fill />
             <Button size="sm" type="submit" disabled={busy || !query.trim()}>
               {busy ? 'Searching…' : 'Search'}
             </Button>
