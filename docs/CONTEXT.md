@@ -1905,6 +1905,16 @@ save's owner); Vita3K now reads every `ux0/user/*/savedata`, not only `00`, and 
 game to another user's folder (**Change** on the game's folder). A PSP game played from states only is now listed
 (*Save states only so far*); the other emulators' version is new Phase 19 / Group I. Merged `main` (PR #64) into the
 branch. Unit **427**. Details: `tasks/emulator-saves/plan.md` → *Group D — as built*.
+<br>**2026-10-12: Group E built (branch `emulator-saves-group-e`, one commit per phase).** Cemu (Wii U), Azahar (3DS, Citra's
+folders as its rows — maintainer: one game) and Xenia (Xbox 360), on Group D's `TitleFolders`. The maintainer asked for a
+bundled title table where licensed: the table gained **Xbox 360 by title ID** (a Redump serial spells it: `MS-2505` →
+`4D5309C9`, *Forza Horizon*; No-Intro's Arcade titles) and **3DS by product code** (No-Intro, read from a ROM's NCCH header,
+new `Ncch`), same pinned commit, every old row unchanged. No Wii U table exists (Cemu's own cache or `meta.xml` names it). Scopes
+keep only saves: Azahar `<low>/data/**` (never the installed `content/`), Xenia `<TID>/00000001/**` + its headers (never DLC),
+both mutation-checked in two-machine tests. Captured read-only: the Deck's three 3DS saves and 11 ROM headers, its Cemu/Azahar
+AppImages, Xenia's two layouts; the PC's real Xenia *Forza Horizon* saves (per profile). Unit **471**. All three are in Group H.
+Details: `tasks/emulator-saves/plan.md` → *Group E — as built*.
+<br>**Next action for this item:** open Group E's PR, then its testenv pass (`Build and Run` → *Testing emulator saves*).
 <br>**Next action for this item:** merge PR #65; the testenv pass of Group D (`Build and Run` → *Testing emulator saves*) and its real-game checks (Group H: PPSSPP, RPCS3, Vita3K, shadPS4) are still to do.
 <br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then merge PR #63.
 On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another

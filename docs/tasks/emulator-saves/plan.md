@@ -31,7 +31,7 @@ point unless explicitly instructed to.
 | 3 — Identity by folders, then `gamelist.xml` names | ✅ Shipped 2026-10-07 (PR #61, branch `emulator-saves-group-b`) — D1 confirmed by the maintainer: `Enroller.ServerNameFor`/`TrackedFor` match a scoped candidate by its folders first (mutation-checked, `IdentityByFoldersTests`, two machines against a real server). `GamelistXml` names **arcade systems only** (maintainer's choice), from `Emulation/storage/es-de/gamelists` (EmuDeck for Windows' link) and `~/ES-DE/gamelists`. Group B — **Revised 2026-10-07:** Phase 1 made the save file's name the game's identity, so a name from a machine-local source could split one game in two; matching a server game by its folders first (D1) makes such a name safe **Review fixes (PR #61):** only the primary folder's patterns decide, ignoring case — a game whose other folders differ (an older agent's, an `add-path`) is joined and the missing folder added, never split into a second game. |
 | 4 — PrimeHack | 🚧 Built 2026-10-07 (branch `emulator-saves-group-c`) — the Dolphin reader against PrimeHack's folders (EmuDeck `saves/primehack`, Flatpak `io.github.shiiion.primehack`, EmuDeck for Windows `Emulators\primehack\User`). **Maintainer's choice:** saves from different emulators are never one game, even with the same files — `GameDto.Emulators` (server, from the sources) + `Enroller.SameEmulator`, mutation-checked. EmuDeck for Windows had created `Emulators\PrimeHack` but never run it (no `User` yet), so where a non-portable PrimeHack keeps its user folder is still to see (Group H) |
 | 5a — RPCS3 | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `Rpcs3Saves`: `dev_hdd0/home/<user>/savedata`, scope `<ID>*/**`, named by Redump's PS3 set, else the save's `PARAM.SFO` `TITLE`; EmuDeck's link, else `vfs.yml`. **Captured 2026-10-11:** the Deck's real save `BCUS98132-GAMEAUTOSAVE` (*Heavenly Sword*) and `vfs.yml` (dev_hdd0 on the SD card); the PC's `RPCS3\config\vfs.yml`. See *Group D — as built* |
-| 5b — Xenia | ⏳ Not started — Group E (split from Phase 5 2026-10-07) |
+| 5b — Xenia | 🚧 Built 2026-10-12 (branch `emulator-saves-group-e`) — `XeniaSaves`: a game is its `<TID>/00000001` saved games and their `Headers/00000001`, in a profile's `content/<XUID>` (Canary) or `content` itself (older builds); DLC, title updates, XUID 0 and the dashboard's `FFFE07D1` never synced (scope mutation-checked). Named by title ID from the bundled table (Redump disc serials → title IDs, No-Intro Arcade titles), else `Xbox 360 <TID>`. **Captured 2026-10-12:** the PC's real *Forza Horizon* / *Forza Horizon 2* saves (profile layout); the Deck's Proton Canary with both layouts side by side. See *Group E — as built* |
 | 6 — Switch: Yuzu, Citron, Eden, Ryujinx | ⏳ Not started — Group F. **Widened 2026-10-07** from Eden only, at the maintainer's request; needs the server title key (D2) |
 | 7 — UI filter | ✅ Shipped 2026-10-07 (same PR), filter by emulator — agent UI *Emulators* chip with an *Emulator* row under it (one chip per emulator, RetroArch today), Deck *Emulators* pill. A per-console sub-breakdown was not built — it comes back with Phase 2, when more than one console has saves. |
 | 7b — Game source per machine, names without "(RetroArch)" | ✅ Shipped 2026-10-07 (same PR) — built 2026-10-07 (maintainer asked; picked variation B of a clickable mockup on all three screens). Unit 280. Console checked in the browser against a seeded dev server; agent UI and Deck need the testenv pass. **Review fixes 2026-10-07** (same PR): server-decided names, the scope-join refusal, source re-send guard, EmuDeck tag, server bounds — unit 291, see `progress.md`. |
@@ -41,11 +41,11 @@ point unless explicitly instructed to.
 | 11 — PPSSPP | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `ParamSfo`, `TitleFolders` (D4 shape 2), `PpssppSaves`: `SAVEDATA/<ID>*`, states `PPSSPP_STATE/<ID>_*`, named by Redump's PSP set (added to the table) else the SFO; `GroupDSyncTests` (two machines, real server, mutation-checked). **Captured 2026-10-11:** Deck Flatpak 1.20.4 (EmuDeck links into `~/.var/app/org.ppsspp.PPSSPP/config/ppsspp/PSP`), PC `memstick\PSP` (the emulator's folders are the junctions); no save on either |
 | 12 — Vita3K (bonus) | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `Vita3KSaves`: `ux0/user/00/savedata/<ID>/**`, named by the save's own `sce_sys/param.sfo`, else the installed game's, region from the ID prefix. **Captured 2026-10-11:** `pref-path` on both machines (Deck: SD card), no save yet — whether a save has its own `param.sfo` is still to see (Group H) |
 | 13 — shadPS4 (bonus) | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `ShadPs4Saves`: both layouts, folder per user, scope `<CUSA>/**`, named by the save's `MAINTITLE`, no region. **Captured 2026-10-11:** Deck AppImage and PC `ShadPS4-qt` both on the old `savedata` layout EmuDeck links, no save yet |
-| 14 — Cemu | ⏳ Not started — Group E (added 2026-10-07) |
-| 15 — Azahar | ⏳ Not started — Group E (added 2026-10-07) |
+| 14 — Cemu | 🚧 Built 2026-10-12 (branch `emulator-saves-group-e`) — `CemuSaves`: `usr/save/00050000/<low>`, scope `<low>/**`; named by Cemu's `title_list_cache.xml`, else `meta.xml`, else `Wii U <low>` (no licensed Wii U table). **Captured 2026-10-12:** Deck AppImage with the MLC on the SD card (only system-app saves), PC portable `mlc01` with EmuDeck's junction; no game save on either |
+| 15 — Azahar | 🚧 Built 2026-10-12 (branch `emulator-saves-group-e`) — `AzaharSaves` + `Ncch`: `title/00040000/<low>/data`, scope `<low>/data/**` (mutation-checked), states `<program ID>.*`; named from a ROM's NCCH product code via No-Intro's 3DS sets (added to the table), else the ROM's file name, else `3DS <low>`. Citra folders are rows of it (maintainer: one game). **Captured 2026-10-12:** the Deck's three real saves, custom SD-card `sdmc`, 11 ROM headers (program IDs match the save folders); the PC's junctions |
 | 16 — Linking by hand, same files (mockup version 2) | ✅ Shipped 2026-10-07 (PR #61, branch `emulator-saves-group-b`, with Group B) — each emulator row on Add games says which server game the save joins, with a **Change** button for that row only: automatic, *Keep it as its own game*, or another server game keeping the same files; a same-titled game with other file names is listed greyed out with the reason. `EnrollLinks` + `GET /api/candidates/links` + `EnrollRequest.Links`; `LinkByHandTests` 5, two of them mutation-checked; checked in the browser against a scratch server **Review fixes (PR #61):** *Keep it as its own game* opts this machine out of the fleet's same-files game, and the poller never maps a second game onto files another syncs here (`SaveFolderClaims`); Add games says when the server could not be asked. |
 | 17 — Each machine's own file names (linking saves with different names) | ⏳ Not started — Group G (added 2026-10-07, maintainer: "keep option 2 in another phase"); open questions below |
-| 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07); Group C added PCSX2, DuckStation, Dolphin and PrimeHack (the Deck already has Trilogy and Other M saves to try); Group D added PPSSPP, RPCS3 (the Deck has a *Heavenly Sword* save), Vita3K and shadPS4. Rows are added as later phases ship untested; see *Phase 18* |
+| 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07); Group C added PCSX2, DuckStation, Dolphin and PrimeHack (the Deck already has Trilogy and Other M saves to try); Group D added PPSSPP, RPCS3 (the Deck has a *Heavenly Sword* save), Vita3K and shadPS4; Group E added Cemu, Azahar (the Deck has three 3DS saves) and Xenia (the PC and the Deck both have *Forza Horizon*). Rows are added as later phases ship untested; see *Phase 18* |
 | 19 — Games found by their save states alone (every emulator but PPSSPP) | ⏳ Not started — Group I (added 2026-10-12, maintainer: "PPSSPP now, others as a new phase"). PPSSPP's shipped with Group D; see *Phase 19* |
 
 ### Phase 1 — as built (2026-10-04), and where it departs from the plan below
@@ -385,6 +385,45 @@ Known limits:
 - Vita3K reads user `00` only; RPCS3 reads every user, and a game saved under two users there is the copy written last.
 - A PS4 game's EU and US releases have different `CUSA` IDs and the same name with no region: the second one to be
   added is called *… (shadPS4)*.
+
+### Group E — as built (2026-10-12, branch `emulator-saves-group-e`)
+
+Decided with the maintainer at the start of the group:
+- **Captures from both machines plus the research** (read-only SSH to the Deck, the PC's EmuDeck for Windows).
+- **A Citra save and an Azahar save of one game are one game**: Citra's folders are rows of the Azahar reader.
+- **Bundle a title table where the licence allows** (libretro-database, CC BY-SA 4.0, same pinned commit, every existing
+  row unchanged): **Xbox 360** by title ID — a Redump disc serial spells it out (`MS-2505` = `'M' 'S'` + 2505 =
+  `4D5309C9`, *Forza Horizon*, the folder Xenia saved it in on the PC), No-Intro gives Arcade titles' outright;
+  **3DS** by product code (`CTR-P-AREE`) from No-Intro's 3DS sets, read from a ROM's NCCH header. **No Wii U table**: no
+  bundlable source maps a Wii U title ID to a name, and the only 3DS title-ID list found (3dsdb) has no licence.
+
+What the captures showed that the research did not say:
+- **Xenia Canary saves per profile**: `content/<XUID>/<TID>/00000001/<package>/` with `Headers/00000001/<package>.header`;
+  `content/0000000000000000/` holds content no profile owns, and `FFFE07D1` is the dashboard's profile data. The Deck's
+  Proton Canary has the old `content/<TID>/` layout (DLC, updates) beside the profile one. A save's header names the save
+  ("MaroLFC Car Setup Files"), never the game, and Xenia leaves the STFS title-name field empty.
+- **The Deck's Cemu is an AppImage**, MLC on the SD card (`Emulation/roms/wiiu/mlc01`); its `usr/save` holds only system-app
+  saves (`00050010`) and Cemu's `system/` account data, both skipped.
+- **The Deck's Azahar is an AppImage** with `use_custom_storage=true` and `sdmc_directory` on the SD card; states in
+  `~/.local/share/azahar-emu/states` (empty). Its three saves are `title/00040000/{00054000,001bb200,0016e300}/data`; the
+  ROMs' NCSD headers put the first NCCH at 0x4000 and their program IDs match the folders (Super Mario 3D Land, Metroid:
+  Samus Returns; the third has no ROM left).
+
+The readers (`TitleFolders` from Group D, one per emulator):
+
+| Emulator | A game is | Scope | Name | States |
+|---|---|---|---|---|
+| Cemu | `usr/save/00050000/<low>` | `10145d00/**` | Cemu's title cache, else `meta.xml`, else `Wii U <low>` | none |
+| Azahar | `sdmc/Nintendo 3DS/<id0>/<id1>/title/00040000/<low>/data` | `00054000/data/**` | the ROM's product code (No-Intro), else its file name, else `3DS <low>` | `states/<program ID>.*` |
+| Xenia | `content/<XUID>/<TID>` (or `content/<TID>`) saved games | `<TID>/00000001/**`, `<TID>/Headers/00000001/**` | the title ID (Redump, No-Intro), else `Xbox 360 <TID>` | none |
+
+Known limits:
+- A Cemu save made under a different account on another machine is not remapped (*Deferred*); the help article says to use
+  the same account.
+- 3DS extdata is not synced (*Deferred*); a 3DS game played from states only is not listed yet (Group I).
+- Xenia: a game's device data under XUID 0 is not synced; a native Linux Xenia's storage root (`~/.local/share/Xenia`) is
+  from the source, not a capture.
+- Wii U and 3DS names are machine-local: the first machine to add a game picks its name; D1 joins the rest by folder.
 
 ### The other emulators — researched 2026-10-07
 
@@ -980,6 +1019,9 @@ own group, in a follow-up PR.
 | **RPCS3** (PS3) | Save in-game (the Deck has *Heavenly Sword*'s autosave already) | None | `Emulation/storage/rpcs3/dev_hdd0/home/00000001/savedata` on both | A game with several save folders; the trophy folder stays local | ⏳ | ⏳ |
 | **Vita3K** (PS Vita) | Save in-game | None | `Emulation/storage/Vita3K/ux0/user/<user>/savedata` on both (`00` is the first user, the one EmuDeck links) | **Whether the save has its own `sce_sys/param.sfo`** (else the name comes from the installed game only); a second Vita3K user's save is listed too | ⏳ | ⏳ |
 | **shadPS4** (PS4) | Save in-game | None | Old layout `~/.local/share/shadPS4/savedata/<user>` · `%APPDATA%\EmuDeck\Emulators\ShadPS4-qt\user\savedata\<user>`; new layout `…/home/<user>/savedata` (users `1000`–`1003`) | **Which layout the installed build writes** (both EmuDeck installs link the old one) and, after shadPS4 offers to move old saves to `home/1000`, that the game is still found; the user ID folder's name; `MAINTITLE` in the save; a save on one layout joining a save on the other | ⏳ | ⏳ |
+| **Cemu** (Wii U) | Save in-game (`usr/save/00050000/<low>/user/80000001/…`) | None | `Emulation/roms/wiiu/mlc01/usr/save` (Deck, SD card) · `%APPDATA%\EmuDeck\Emulators\cemu\mlc01\usr\save` | The name: Cemu's `title_list_cache.xml` on each machine (where the AppImage keeps it); both machines on account `80000001`; a disc-format game (`.wud`/`.wux`) with no `meta.xml` | ⏳ | ⏳ |
+| **Azahar** (3DS) | Save in-game (the Deck has Super Mario 3D Land, Samus Returns and one more) | Save state slot 1 (`<program ID>.01.cst`) | `Emulation/storage/azahar/sdmc` + `~/.local/share/azahar-emu/states` · `%APPDATA%\EmuDeck\Emulators\azahar\user\{sdmc,states}` | The name from the ROM on each machine; a CIA-installed game's `content/` never syncs; the third Deck save (`0016e300`, no ROM) | ⏳ | ⏳ |
+| **Xenia** (Xbox 360) | Save in-game (the PC and the Deck both have Forza Horizon) | None | `Emulation/roms/xbox360/content` (Deck, Proton) · `%APPDATA%\EmuDeck\Emulators\xenia\content` | Two profiles' XUIDs (the same one on both machines today); the Deck's old-layout folder; the DLC under `00000002` stays local; a pulled save loads in the other machine's profile | ⏳ | ⏳ |
 | **PrimeHack** | Save in Metroid Prime Trilogy (on the Deck already) | Save state slot 1 (`R3ME01.s01`) | `Emulation/saves/primehack/{GC,Wii}` + `StateSaves` (Deck) · `states` (Windows) | It stays its own game beside Dolphin's Trilogy; where a non-portable Windows PrimeHack keeps its user folder (the PC's EmuDeck install has never run it) | ⏳ | ⏳ |
 
 ### Group I — Games found by their save states alone
@@ -1003,8 +1045,9 @@ refused — one two-machine test per family).
 | PCSX2 | `<serial> (<CRC>).NN.p2s` | which folder card the game's saves would go to |
 | DuckStation | `<serial>_N.sav`, `<serial>_resume.sav` | the per-game card's file name (`<title>_1.mcd`) from a serial alone |
 | Dolphin / PrimeHack | `<game ID>.s01`…`.s10` | GameCube `.gci` vs Wii `title/` scope from the ID's first letter |
+| Azahar | `<program ID>.<NN>.cst` | the program ID gives the `title/00040000/<low>/data` scope directly; added 2026-10-12 with Group E |
 
-No states, so not in this phase: RPCS3, Vita3K, shadPS4, ScummVM, Supermodel, Model 2.
+No states, so not in this phase: RPCS3, Vita3K, shadPS4, ScummVM, Supermodel, Model 2, Cemu, Xenia.
 
 **Verify:** per emulator, a fixture with a state and no save (listed, `StatesOnly`, correct name and scope), a save
 elsewhere winning, and an empty state ignored; the two-machine test per family above; testenv fixture rows.
