@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 5c mockups · Xenia profile and DLC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0f0f10;--panel:#141416;--raise:#191a1c;--tile:#1b1c1f;--hover:#202124;--fg:#f0eee9;--dim:#a09d97;--faint:#817e78;--line:#242427;--safe:#7fa96a;--watch:#d9a63f;--info:#7b9fd0;--accent:#e0533c;--on-accent:#160f0e;
+--accent-soft:color-mix(in oklab,var(--accent) 14%,var(--panel));--accent-line:color-mix(in oklab,var(--accent) 42%,var(--panel));--accent-ink:color-mix(in oklab,var(--accent) 80%,var(--fg));
+--safe-soft:color-mix(in oklab,var(--safe) 14%,var(--panel));--safe-line:color-mix(in oklab,var(--safe) 40%,var(--panel));--safe-ink:color-mix(in oklab,var(--safe) 82%,var(--fg));
+--watch-soft:color-mix(in oklab,var(--watch) 14%,var(--panel));--watch-line:color-mix(in oklab,var(--watch) 40%,var(--panel));--watch-ink:color-mix(in oklab,var(--watch) 82%,var(--fg));
+--info-soft:color-mix(in oklab,var(--info) 16%,var(--panel));--info-line:color-mix(in oklab,var(--info) 40%,var(--panel));--info-ink:color-mix(in oklab,var(--info) 82%,var(--fg));color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--ink);color:var(--fg);font-family:'Archivo',system-ui,sans-serif;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+h1,h2,h3,p,dl,dd,ul{margin:0}
+button{font-family:inherit}
+a{color:#e8735f}
+.mono{font-family:'JetBrains Mono',monospace;font-size:11px}
+.eyebrow{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:500}
+
+/* page chrome */
+.top{position:sticky;top:0;z-index:20;background:color-mix(in oklab,var(--ink) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.top-in{max-width:1320px;margin:0 auto;padding:14px 16px;display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center}
+.top h1{font-size:16px;font-weight:700;letter-spacing:-.02em}
+.top h1 span{color:var(--dim);font-weight:500}
+.picker{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}
+.group{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.group>span{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-right:4px}
+.opt-tab{border:1px solid var(--line);background:var(--panel);color:var(--dim);padding:6px 11px;border-radius:99px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap}
+.opt-tab:hover{color:var(--fg)}
+.opt-tab[aria-selected=true]{background:var(--accent-soft);border-color:var(--accent-line);color:var(--fg)}
+.opt-tab .rec{color:var(--safe-ink);margin-left:4px}
+.gt{display:flex;align-items:center;gap:8px;margin-left:auto;font-size:12px;color:var(--dim)}
+.gt input{background:var(--raise);border:1px solid var(--line);border-radius:9px;color:var(--fg);padding:6px 10px;font:500 12.5px 'Archivo',sans-serif;width:150px}
+.wrap{max-width:1320px;margin:0 auto;padding:16px 16px 40px;display:flex;flex-direction:column;gap:14px}
+.brief{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:12px}
+@media (max-width:900px){.brief{grid-template-columns:1fr}}
+.brief>div{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.brief h2{font-size:17px;font-weight:700;letter-spacing:-.02em;margin-top:4px}
+.brief p{font-size:12.5px;color:var(--dim);line-height:1.55;margin-top:6px}
+.brief ul{padding-left:16px;font-size:12.5px;line-height:1.55;color:var(--dim);margin-top:6px}
+.brief li b{color:var(--fg);font-weight:600}
+.frame{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--ink);box-shadow:0 20px 50px rgba(0,0,0,.35)}
+.framebar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:9px 14px;background:var(--raise);border-bottom:1px solid var(--line)}
+.lights{display:flex;gap:6px}.lights i{width:10px;height:10px;border-radius:50%;background:var(--tile);border:1px solid var(--line)}
+.framebar .where{font-size:12px;color:var(--dim)}
+.framebar .seg{margin-left:auto}
+
+/* SaveLocker primitives */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:var(--raise);color:var(--fg);font:500 12.5px 'Archivo',sans-serif;cursor:pointer;white-space:nowrap;transition:background-color .15s}
+.btn:hover{background:var(--hover)}
+.btn-p{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn-p:hover{background:color-mix(in oklab,var(--accent) 86%,white)}
+.btn-q{background:transparent;border-color:transparent;color:var(--dim)}
+.btn-sm{padding:5px 11px;font-size:12px}
+.btn:disabled{opacity:.55;cursor:default}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;border:1px solid var(--line);background:var(--raise);font-size:11px;color:var(--dim);white-space:nowrap;font-family:'Archivo',sans-serif}
+button.chip{cursor:pointer}
+button.chip:hover{border-color:var(--info-line);color:var(--info-ink)}
+.chip-ok{color:var(--safe-ink);border-color:var(--safe-line);background:var(--safe-soft)}
+.chip-warn{color:var(--watch-ink);border-color:var(--watch-line);background:var(--watch-soft)}
+.chip-crit{color:var(--accent-ink);border-color:var(--accent-line);background:var(--accent-soft)}
+.chip-info{color:var(--info-ink);border-color:var(--info-line);background:var(--info-soft)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;min-width:0}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.card-h h3{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:500}
+.card-h small{font-size:11px;color:var(--dim)}
+.card-b{padding:14px 18px;display:flex;flex-direction:column;gap:10px}
+.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:auto auto;column-gap:12px;row-gap:2px;align-items:center;width:100%;text-align:left;padding:9px 12px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font-family:'Archivo',sans-serif;transition:background-color .15s,transform .15s}
+button.row{cursor:pointer}
+button.row:hover{background:var(--raise);transform:translateX(2px)}
+.row.on{background:var(--accent-soft);border-color:var(--accent-line)}
+.row.flat{border-color:transparent;background:transparent}
+button.row.flat:hover{background:var(--raise)}
+.cov{grid-row:span 2;width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12.5px;background:var(--tile);color:var(--dim)}
+.cov.s{width:34px;height:34px}
+.cov-p{background:var(--info-soft);color:var(--info-ink);border:1px solid var(--info-line);border-radius:50%}
+.rt{grid-column:2;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;align-self:end}
+.rs{grid-column:2;font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;align-self:start}
+.re{grid-column:3;grid-row:1/span 2;display:flex;gap:8px;align-items:center}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none;background:var(--faint)}
+.dot-ok{background:var(--safe)}.dot-warn{background:var(--watch)}.dot-info{background:var(--info)}.dot-crit{background:var(--accent)}.dot-none{background:transparent;border:1.5px solid var(--faint)}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px 16px;font-size:12.5px}
+.kv dt{color:var(--dim)}
+.seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:3px;gap:2px;flex-wrap:wrap}
+.seg-b{border:0;background:transparent;color:var(--dim);padding:5px 12px;border-radius:99px;font:500 12px 'Archivo',sans-serif;cursor:pointer}
+.seg-b:hover{color:var(--fg)}
+.seg-b.on{background:var(--tile);color:var(--fg);box-shadow:inset 0 0 0 1px var(--line)}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;min-width:0}
+.stat b{display:block;font-size:20px;font-weight:700;letter-spacing:-.03em;margin-top:6px}
+.stat span{display:block;font-size:11px;color:var(--dim);margin-top:3px}
+.grid-s{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;align-items:start}
+.banner{display:flex;gap:14px;align-items:center;padding:13px 16px;border-radius:12px;border:1px solid;flex-wrap:wrap}
+.banner>div{flex:1 1 300px;min-width:0}
+.banner-warn{background:var(--watch-soft);border-color:var(--watch-line)}
+.banner-ok{background:var(--safe-soft);border-color:var(--safe-line)}
+.banner-info{background:var(--info-soft);border-color:var(--info-line)}
+.banner b{display:block;font-size:13px;font-weight:600}
+.banner span.d{display:block;font-size:12px;color:var(--dim);margin-top:2px;line-height:1.45}
+.back{border:0;background:transparent;color:var(--dim);font:500 12px 'Archivo',sans-serif;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:5px}
+.back:hover{color:var(--fg)}
+.crumbs{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--dim)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.meter{height:6px;border-radius:99px;background:var(--tile);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--info);transition:width .3s}
+.gh{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.gh-cover{width:64px;aspect-ratio:2/3;border-radius:10px;background:var(--tile);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--dim);flex:none}
+.gh-avatar{width:72px;height:72px;border-radius:50%;background:var(--info-soft);border:1px solid var(--info-line);color:var(--info-ink);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;flex:none}
+.gh h2{font-size:22px;font-weight:700;letter-spacing:-.03em}
+.chips{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.ghead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.ghead h3{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:500}
+.ghead span{font-size:11.5px;color:var(--dim)}
+.list{display:flex;flex-direction:column;gap:6px}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:500;text-align:left;padding:8px 18px;border-bottom:1px solid var(--line)}
+.tbl td{padding:9px 18px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.scroll{overflow-x:auto}
+.ok{color:var(--safe-ink);font-size:12px}
+.no{color:var(--watch-ink);font-size:12px;font-weight:600}
+.lost{color:var(--accent-ink);font-weight:600}
+input[type=checkbox]{accent-color:#e0533c;width:14px;height:14px;cursor:pointer;flex:none}
+.file{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12px;padding:4px 0}
+.fold{border-top:1px solid var(--line);padding:12px 18px;display:flex;flex-direction:column;gap:6px}
+.fold:first-of-type{border-top:0}
+.fold-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px}
+.fold-h b{font-weight:600}
+.f{display:grid;grid-template-columns:14px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12px;padding:3px 0 3px 22px}
+.f small{font-size:11px;color:var(--dim)}
+
+/* agent + console chrome */
+.app{min-height:720px;display:flex;flex-direction:column;position:relative}
+.bar{display:flex;align-items:center;gap:11px;padding:11px 18px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+.mark{width:28px;height:28px;border-radius:8px;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:none}
+.brand b{display:block;font-size:15px;letter-spacing:-.03em}
+.brand span{display:block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.body{flex:1;display:flex;flex-wrap:wrap}
+.aside{flex:1 1 180px;max-width:220px;padding:14px 10px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;gap:3px}
+.nav{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:8px 11px;border-radius:10px;border:1px solid transparent;background:transparent;color:var(--dim);font:500 13px 'Archivo',sans-serif;cursor:pointer;text-align:left;width:100%}
+.nav:hover{background:var(--raise);color:var(--fg)}
+.nav.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--fg)}
+.nav .new{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--info-ink);border:1px solid var(--info-line);border-radius:99px;padding:1px 6px}
+.aside-foot{margin-top:auto;padding:12px 11px 0;font-size:11px;color:var(--dim);line-height:1.6}
+.aside-foot b{color:var(--fg);display:block}
+.main{flex:999 1 560px;min-width:0;padding:22px 24px 28px;display:flex;flex-direction:column;gap:14px}
+.tabs{display:flex;gap:2px;flex-wrap:wrap}
+.tab{border:0;background:transparent;color:var(--dim);padding:6px 11px;border-radius:9px;font:500 13px 'Archivo',sans-serif;cursor:pointer}
+.tab.on{background:var(--raise);color:var(--fg)}
+.side{flex:1 1 250px;max-width:290px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
+.side-h{padding:12px 14px;border-bottom:1px solid var(--line)}
+.side-l{padding:6px;display:flex;flex-direction:column;gap:2px}
+
+/* option-specific */
+.mx td .cell{display:flex;flex-direction:column;gap:5px;align-items:flex-start}
+.mx td .cell small{font-size:11px;color:var(--dim)}
+.overlay{position:absolute;inset:0;background:rgba(8,8,9,.72);display:flex;align-items:flex-start;justify-content:center;padding:70px 16px 16px;z-index:5}
+.dialog{width:100%;max-width:580px;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.dialog-h{padding:16px 20px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.dialog-h h3{font-size:16px;font-weight:700;margin-top:3px;line-height:1.3}
+.dialog-h p{font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.5}
+.step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:12px;padding:14px 20px;border-bottom:1px solid var(--line)}
+.step:last-child{border-bottom:0}
+.step b{font-size:13px}
+.step .d{font-size:12px;color:var(--dim);line-height:1.45}
+.num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border:1px solid var(--line);background:var(--raise);color:var(--dim)}
+.num.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.num.done{background:var(--safe-soft);border-color:var(--safe-line);color:var(--safe-ink)}
+.check{display:flex;align-items:center;gap:10px;font-size:12.5px;padding:5px 0;cursor:pointer}
+.choice{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:start;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--raise);text-align:left;color:var(--fg);cursor:pointer;width:100%}
+.choice:hover{border-color:var(--faint)}
+.choice b{font-size:13px;font-weight:600;display:block}
+.choice span.d{font-size:12px;color:var(--dim);display:block;margin-top:3px;line-height:1.45}
+.ico{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--tile);color:var(--dim)}
+.ico.info{background:var(--info-soft);color:var(--info-ink)}
+.addrow{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.sub{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--dim);margin-top:6px}
+.kid{display:grid;grid-template-columns:22px auto minmax(0,1fr) auto;column-gap:10px;align-items:center;width:calc(100% - 26px);margin-left:26px;text-align:left;padding:7px 12px 7px 4px;border-radius:10px;border:1px dashed var(--line);background:transparent;color:var(--fg);cursor:pointer}
+.kid:hover{background:var(--raise)}
+.kid.on{background:var(--accent-soft);border-color:var(--accent-line);border-style:solid}
+.kid.quiet{color:var(--dim)}
+.elbow{width:14px;height:16px;border-left:1.5px solid var(--line);border-bottom:1.5px solid var(--line);border-bottom-left-radius:6px;margin:-12px 0 0 6px}
+.pkg{width:26px;height:26px;border-radius:7px;background:var(--info-soft);border:1px solid var(--info-line);color:var(--info-ink);display:flex;align-items:center;justify-content:center;flex:none}
+.pkg.off{background:var(--tile);border-color:var(--line);color:var(--faint)}
+.kid-t{display:flex;flex-direction:column;min-width:0}
+.kid-t b{font-size:12.5px;font-weight:600}
+.kid-t span{font-size:11px;color:var(--dim)}
+.pl{display:grid;grid-template-columns:auto minmax(0,1fr) 70px 54px 54px;gap:12px;align-items:center;padding:8px 18px;border-top:1px solid var(--line);font-size:12.5px}
+.pl.head{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);border-top:0}
+label.pl{cursor:pointer}label.pl:hover{background:var(--raise)}
+.pr{display:grid;grid-template-columns:minmax(0,1fr) 64px 110px auto;gap:12px;align-items:center;padding:8px 18px;border-top:1px solid var(--line);font-size:12.5px}
+.pr.head{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);border-top:0}
+.mini{display:inline-flex;background:var(--raise);border:1px solid var(--line);border-radius:8px;padding:2px;gap:2px}
+.mini button{border:0;background:transparent;color:var(--dim);padding:3px 9px;border-radius:6px;font:500 11px 'Archivo',sans-serif;cursor:pointer}
+.mini button.on{background:var(--tile);color:var(--fg);box-shadow:inset 0 0 0 1px var(--line)}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 0;border-top:1px solid var(--line);font-size:12.5px}
+.sw:first-child{border-top:0}
+.sw small{display:block;font-size:11.5px;color:var(--dim);margin-top:2px;line-height:1.4}
+.tog{width:34px;height:20px;border-radius:99px;border:1px solid var(--line);background:var(--tile);position:relative;cursor:pointer;flex:none;padding:0}
+.tog i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--dim);transition:left .2s}
+.tog.on{background:var(--accent);border-color:var(--accent)}
+.tog.on i{left:16px;background:var(--on-accent)}
+.stack{display:flex;height:10px;border-radius:99px;overflow:hidden;background:var(--tile)}
+.key{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--dim)}
+.key i{width:9px;height:9px;border-radius:3px;display:inline-block}
+.search{flex:0 1 300px;background:var(--raise);border:1px solid var(--line);border-radius:10px;padding:8px 12px;color:var(--fg);font:12.5px 'Archivo',sans-serif}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <h1>Phase 5c mockups <span>· Xenia profile and DLC</span></h1>
+    <div class="picker" role="tablist" aria-label="Option">
+      <div class="group"><span>Profile</span>
+        <button type="button" class="opt-tab" role="tab" data-tab="pA">A · Own row</button>
+        <button type="button" class="opt-tab" role="tab" data-tab="pB">B · Profiles section</button>
+        <button type="button" class="opt-tab" role="tab" data-tab="pC">C · Split by owner<span class="rec">★</span></button>
+      </div>
+      <div class="group"><span>DLC</span>
+        <button type="button" class="opt-tab" role="tab" data-tab="dA">A · Sub-entry<span class="rec">★</span></button>
+        <button type="button" class="opt-tab" role="tab" data-tab="dB">B · DLC check<span class="rec">★</span></button>
+        <button type="button" class="opt-tab" role="tab" data-tab="dC">C · Library</button>
+      </div>
+    </div>
+    <label class="gt">Gamertag <input id="gamertag" value="[Gamertag]" autocomplete="off"></label>
+  </div>
+</header>
+<div class="wrap">
+  <section class="brief" id="brief" aria-live="polite"></section>
+  <section class="frame">
+    <div class="framebar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span class="where" id="where"></span><span id="surfaces"></span></div>
+    <div id="app"></div>
+  </section>
+</div>
+
+<script>
+'use strict';
+// ---------- data ----------
+const XUID = 'E030000033894516';
+const GAMES = [
+  { id: 'fh', name: 'Forza Horizon', tid: '4D5309C9', init: 'FH', ach: '18 of 50', played: '2 h ago', size: '4.1 MB', web: '21 MB' },
+  { id: 'fh2', name: 'Forza Horizon 2', tid: '4D530AA4', init: 'F2', ach: '6 of 50', played: 'yesterday', size: '2.7 MB', web: '14 MB' },
+  { id: 'h3', name: 'Halo 3', tid: '4D5307E6', init: 'H3', ach: '9 of 49', played: '3 days ago', size: '180 KB', web: '1.1 MB' }
+];
+const SIZES = [312, 188, 96, 84, 76, 72, 64, 58, 44, 30]; // MB, 1.0 GB in all
+const ON_DECK = new Set([2, 4, 5, 7, 8, 9, 10]);
+const pkgName = n => 'DLC pack ' + String(n).padStart(2, '0');
+const pkgFile = n => (0x5A3C0000 + n * 7919).toString(16).toUpperCase() + '…';
+const fmt = mb => mb >= 1000 ? (mb / 1024).toFixed(2) + ' GB' : mb + ' MB';
+const DECK_ROOT = '/run/media/mmcblk0p1/Emulation/saves/xenia';
+const PC_ROOT = 'D:\\Emulation\\saves\\xenia';
+
+const S = {
+  tab: 'pC', gamertag: '[Gamertag]',
+  pA: { surface: 'deck', screen: 'games', copied: false, webSel: 'profile' },
+  pB: { surface: 'deck', screen: 'profiles', step: 0, deckDone: false, deckQueued: false, laptop: 'ask', picked: { fh: true, fh2: true, h3: true } },
+  pC: { surface: 'deck', screen: 'game', mode: 'split', pulled: false, addAch: true },
+  dA: { surface: 'deck', screen: 'list', on: { 1: true, 2: true, 3: true, 4: true }, progress: 0, done: false },
+  dB: { surface: 'deck', phase: 'idle', progress: 0 },
+  dC: { surface: 'deck', here: new Set(ON_DECK), stored: new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), rules: { need: true, upload: true, sweep: true }, xfer: null }
+};
+
+// ---------- helpers ----------
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const gt = () => esc(S.gamertag || '[Gamertag]');
+const initial = () => esc(((S.gamertag || '').replace(/[^A-Za-z0-9]/g, '')[0] || 'G').toUpperCase());
+const svg = (d, size = 13, sw = 2.2) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const IC = {
+  user: s => svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>', s || 11),
+  back: () => svg('<path d="M15 18l-6-6 6-6"/>'),
+  chev: () => svg('<path d="M9 6l6 6-6 6"/>', 14, 2),
+  file: () => svg('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>', 13, 2),
+  pkg: s => svg('<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>', s || 14, 2),
+  relay: () => svg('<path d="M4 12h12"/><path d="M12 6l6 6-6 6"/><path d="M20 4v16"/>', 15, 2),
+  down: () => svg('<path d="M12 4v12"/><path d="M6 12l6 6 6-6"/>', 15, 2),
+  wait: () => svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', 15, 2)
+};
+const act = (a, v, k) => `data-a="${a}"${v !== undefined ? ` data-v="${esc(v)}"` : ''}${k ? ` data-k="${k}"` : ''}`;
+const set = (k, v) => act('set', v, k);
+const segBtns = (items, cur, k) => `<div class="seg" role="group">${items.map(([id, l]) => `<button type="button" class="seg-b${id === cur ? ' on' : ''}" ${set(k, id)}>${l}</button>`).join('')}</div>`;
+
+function agentShell(machine, nav, body, overlay = '') {
+  return `<div class="app">
+  <div class="bar"><span class="mark">S</span><div class="brand"><b>SaveLocker</b><span>Agent · ${machine}</span></div></div>
+  <div class="body">
+    <nav class="aside" aria-label="Sections">${nav}<div class="aside-foot"><b>${machine}</b>agent v0.9.0</div></nav>
+    <main class="main">${body}</main>
+  </div>${overlay}</div>`;
+}
+const navList = (items, cur) => items.map(([label, id, extra]) =>
+  `<button type="button" class="nav${id && id === cur ? ' on' : ''}" ${id ? set('screen', id) : ''}><span>${label}</span>${extra || ''}</button>`).join('');
+const STD_NAV = [['Overview'], ['Games', 'GAMES'], ['Add Games'], ['Conflicts'], ['Activity'], ['Settings']];
+
+function webShell(tabs, cur, body) {
+  return `<div class="app">
+  <div class="bar"><span class="mark" style="width:26px;height:26px;font-size:12px">S</span><b style="font-size:15px;letter-spacing:-.03em">SaveLocker</b>
+    <nav class="tabs" aria-label="Console">${tabs.map(t => `<button type="button" class="tab${t === cur ? ' on' : ''}">${t}</button>`).join('')}</nav></div>
+  <div class="body">${body}</div></div>`;
+}
+const gameHead = (g, chips, extra = '') => `<div class="gh"><div class="gh-cover">${g.init}</div><div style="flex:1;min-width:0"><h2>${g.name}</h2><div class="chips">${chips}</div>${extra}</div></div>`;
+const backBtn = (label, k, v) => `<button type="button" class="back" ${set(k, v)}>${IC.back()}${label}</button>`;
+
+// ---------- Profile A ----------
+function profileA(st) {
+  const isDeck = st.surface === 'deck', isPc = st.surface === 'pc';
+  const here = isPc || st.copied, needCopy = isDeck && !st.copied;
+  const status = isPc ? ['chip chip-ok', 'Signed in here'] : st.copied ? ['chip chip-ok', 'Copied · sign in once in Xenia'] : ['chip chip-warn', 'Not on this machine'];
+  const statusChip = `<span class="${status[0]}">${status[1]}</span>`;
+  const root = isDeck ? DECK_ROOT : PC_ROOT, sep = isDeck ? '/' : '\\';
+  const copyBanner = needCopy ? `<div class="banner banner-warn"><div><b>${gt()} isn't on this Steam Deck</b><span class="d">Copy it here (210 KB), then sign in to it once in Xenia. Every game saved under it on PC then lands in the same place here, achievements included.</span></div><button type="button" class="btn btn-p" ${act('copyA')}>Copy to this machine</button></div>` : '';
+  const copiedBanner = isDeck && st.copied ? `<div class="banner banner-ok"><div><b>Copied. Open Xenia and sign in to ${gt()} once</b><span class="d">Xenia picks it by itself when it is the only profile. A profile Steam Deck already had stays as it is.</span></div><button type="button" class="btn btn-q btn-sm" ${set('copied', false)}>Reset demo</button></div>` : '';
+  const profileChip = `<button type="button" class="chip chip-info" ${set('screen', 'profile')} title="Open the profile these saves are under">${IC.user()}${gt()}</button>`;
+
+  if (st.surface === 'web') {
+    const sel = st.webSel, g = GAMES.find(x => x.id === sel);
+    const side = `<aside class="side" aria-label="Games">
+      <div class="side-h eyebrow">Profiles · 1</div>
+      <div class="side-l"><button type="button" class="row ${sel === 'profile' ? 'on' : 'flat'}" ${set('webSel', 'profile')}><span class="cov cov-p s">${initial()}</span><span class="rt">${gt()}</span><span class="rs">Xenia · 3 games · 210 KB</span><span class="re"><span class="dot ${st.copied ? 'dot-ok' : 'dot-warn'}" title="${st.copied ? 'On every machine' : 'Missing on Steam Deck'}"></span></span></button></div>
+      <div class="side-h eyebrow" style="border-top:1px solid var(--line)">Games · 3</div>
+      <div class="side-l">${GAMES.map(x => `<button type="button" class="row ${sel === x.id ? 'on' : 'flat'}" ${set('webSel', x.id)}><span class="cov s">${x.init}</span><span class="rt">${x.name}</span><span class="rs">${x.played} · ${x.web}</span><span class="re"><span class="dot dot-ok"></span></span></button>`).join('')}</div>
+    </aside>`;
+    const main = sel === 'profile' ? `
+      <div class="gh"><div class="gh-avatar">${initial()}</div><div style="flex:1;min-width:0"><h2>${gt()}</h2><div class="chips"><span class="chip">Xbox 360 profile · Xenia</span><span class="chip mono">${XUID}</span><span class="chip">on ${st.copied ? 2 : 1} of 2 machines</span></div></div></div>
+      <div class="grid-2">
+        <div class="card"><div class="card-h"><h3>Machines</h3></div><div class="card-b" style="gap:14px">
+          <div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b style="font-size:13px">PC</b><span style="font-size:11px;color:var(--dim)">last upload 2 h ago</span></div><span class="mono" style="color:var(--dim)">${PC_ROOT}\\content\\${XUID}</span><div class="actions"><button type="button" class="btn btn-sm">Push</button><button type="button" class="btn btn-sm">Pull</button></div></div>
+          <div style="display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:12px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b style="font-size:13px">Steam Deck</b><span class="chip ${st.copied ? 'chip-ok' : 'chip-warn'}">${st.copied ? 'Copied · waiting for a sign-in' : 'Not on this machine'}</span></div>
+          <span class="mono" style="color:var(--dim)">${st.copied ? DECK_ROOT + '/content/' + XUID : 'Worked out from Steam Deck’s Xenia content folder when copied'}</span>
+          <div class="actions">${st.copied ? `<button type="button" class="btn btn-sm">Push</button><button type="button" class="btn btn-sm">Pull</button><button type="button" class="btn btn-q btn-sm" ${set('copied', false)}>Reset demo</button>` : `<button type="button" class="btn btn-p btn-sm" ${act('copyA')}>Copy to Steam Deck</button>`}</div></div>
+        </div></div>
+        <div class="card"><div class="card-h"><h3>Games under this profile</h3></div><div class="card-b" style="padding:8px">${GAMES.map(x => `<button type="button" class="row flat" ${set('webSel', x.id)}><span class="cov">${x.init}</span><span class="rt">${x.name}</span><span class="rs">${x.ach} achievements · ${x.web} stored</span><span class="re">${IC.chev()}</span></button>`).join('')}</div></div>
+      </div>` : `
+      ${gameHead(g, `<span class="chip">Xenia · Xbox 360</span><span class="chip mono">${g.tid}</span><button type="button" class="chip chip-info" ${set('webSel', 'profile')}>${IC.user()}Saved under ${gt()}</button>`)}
+      <div class="card"><div class="card-h"><h3>Save folders</h3></div><div class="card-b"><dl class="kv">
+        <dt>Main</dt><dd class="mono">content\\${XUID}\\${g.tid}</dd>
+        <dt>device</dt><dd class="mono">content\\0000000000000000\\${g.tid}</dd>
+        <dt>Profile</dt><dd style="color:var(--dim)">Not a folder of this game: <button type="button" class="chip chip-info" ${set('webSel', 'profile')}>${gt()}</button> syncs as its own entry</dd>
+      </dl></div></div>`;
+    return webShell(['Games', 'Backups', 'Audit', 'Config', 'Help'], 'Games', side + `<main class="main">${main}</main>`);
+  }
+
+  let body;
+  if (st.screen === 'games') {
+    body = `
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><input type="search" class="search" placeholder="Search by name or folder" aria-label="Search tracked games"><span style="font-size:12px;color:var(--dim)">1 profile · 3 games</span></div>
+      <section class="list" aria-label="Profiles"><div class="ghead"><h3>Xbox 360 profiles · 1</h3><span>Who the games below are saved under. Each machine needs it once.</span></div>
+        <button type="button" class="row" ${set('screen', 'profile')}><span class="cov cov-p">${initial()}</span><span class="rt">${gt()}</span><span class="rs">Xenia profile · 3 games saved under it · 210 KB · achievements and settings, never a save</span><span class="re">${statusChip}</span></button>
+      </section>
+      <section class="list" aria-label="Games"><div class="ghead"><h3>${needCopy ? 'On the server' : 'On this machine'} · 3</h3><span>${needCopy ? 'Copy the profile above first: these are saved under it.' : 'Save folder set here — these sync.'}</span></div>
+        ${GAMES.map(g => `<div class="row"><span class="cov">${g.init}</span><button type="button" class="rt" style="border:0;background:transparent;color:var(--fg);padding:0;text-align:left;cursor:pointer;font:600 13px 'Archivo',sans-serif" ${set('screen', 'game')}>${g.name}</button><span class="rs mono">${needCopy ? 'Needs ' + gt() + ' here first' : root + sep + 'content' + sep + XUID + sep + g.tid}</span><span class="re">${profileChip}</span></div>`).join('')}
+      </section>`;
+  } else if (st.screen === 'profile') {
+    body = `${backBtn('Games', 'screen', 'games')}
+      <div class="gh"><div class="gh-avatar">${initial()}</div><div style="flex:1;min-width:0"><h2>${gt()}</h2>
+        <div class="chips"><span class="chip">Xenia</span><span class="chip">Xbox 360 profile</span><span class="chip mono" title="Xenia makes this at random when a profile is created, so it is the profile's identity">XUID ${XUID}</span></div>
+        <div class="chips">${statusChip}</div></div></div>
+      ${copyBanner}${copiedBanner}
+      ${here ? `<div class="actions"><button type="button" class="btn btn-p">Sync this profile</button><button type="button" class="btn">Push now</button><button type="button" class="btn">Pull latest</button><button type="button" class="btn btn-q">Check now</button></div>` : ''}
+      <div class="grid-s">
+        <div class="stat"><span class="eyebrow">Games under it</span><b>3</b><span>each is its own entry</span></div>
+        <div class="stat"><span class="eyebrow">Achievements</span><b>33 of 149</b><span>across those games</span></div>
+        <div class="stat"><span class="eyebrow">Size</span><b>210 KB</b><span>the whole profile</span></div>
+        <div class="stat"><span class="eyebrow">Versions</span><b>4</b><span>keeps the newest 7</span></div>
+      </div>
+      <div class="grid-2">
+        <div class="card"><div class="card-h"><h3>Games under this profile</h3></div><div class="card-b" style="padding:8px">${GAMES.map(g => `<button type="button" class="row flat" ${set('screen', 'game')}><span class="cov">${g.init}</span><span class="rt">${g.name}</span><span class="rs">${g.ach} achievements · played ${g.played}</span><span class="re" style="color:var(--faint)">${IC.chev()}</span></button>`).join('')}</div></div>
+        <div class="card"><div class="card-h"><h3>On each machine</h3></div><div class="card-b">
+          <div style="display:flex;align-items:center;gap:10px"><span class="dot dot-ok"></span><b style="font-size:13px">PC</b><span style="font-size:12px;color:var(--dim)">Signed in · in sync · last push 2 h ago</span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span class="dot ${st.copied ? 'dot-ok' : 'dot-warn'}"></span><b style="font-size:13px">Steam Deck</b><span style="font-size:12px;color:var(--dim)">${st.copied ? 'Copied just now · sign in once in Xenia' : 'Not copied yet — its games wait for it'}</span></div>
+          <p style="font-size:11.5px;color:var(--dim);line-height:1.5;border-top:1px solid var(--line);padding-top:10px">Played on two machines between syncs? That is a conflict on the whole profile: you keep one side, the other becomes a backup.</p>
+        </div></div>
+      </div>
+      <div class="card"><div class="card-h"><h3>What syncs</h3><small>the profile only, never a game's save</small></div><div class="card-b" style="gap:2px">
+        <div class="mono" style="color:var(--dim);margin-bottom:6px">xenia${sep}content${sep}${XUID}${sep}FFFE07D1${sep}</div>
+        ${[['00010000/' + XUID + '/Account', 'who you are; encrypted, holds the gamertag', '404 B'], ['00010000/' + XUID + '/FFFE07D1.gpd', 'main profile file: settings, games played, gamerscore', '96 KB'], ['00010000/' + XUID + '/4D5309C9.gpd', 'Forza Horizon achievements', '41 KB'], ['00010000/' + XUID + '/4D530AA4.gpd', 'Forza Horizon 2 achievements', '38 KB'], ['00010000/' + XUID + '/4D5307E6.gpd', 'Halo 3 achievements', '33 KB'], ['Headers/00010000/' + XUID + '.header', 'package header', '1.7 KB']]
+          .map(([n, w, s]) => `<div class="file"><span style="color:var(--faint)">${IC.file()}</span><span><span class="mono">${n}</span> <span style="color:var(--dim)"> · ${w}</span></span><span style="font-size:11px;color:var(--dim)">${s}</span></div>`).join('')}
+      </div></div>`;
+  } else {
+    const g = GAMES[0];
+    body = `${backBtn('Games', 'screen', 'games')}
+      ${gameHead(g, `<span class="chip">Xenia</span><span class="chip">Xbox 360</span><span class="chip mono">${g.tid}</span><button type="button" class="chip chip-info" ${set('screen', 'profile')}>${IC.user()}Saved under ${gt()}</button>`)}
+      ${needCopy ? `<div class="banner banner-warn"><div><b>Its saves are under ${gt()}, which isn't on this machine yet</b><span class="d">Pulling the save alone works, but Xenia only shows it while that profile is signed in. Copy the profile first.</span></div><button type="button" class="btn btn-p" ${act('copyA')}>Copy the profile</button><button type="button" class="btn btn-q" ${set('screen', 'profile')}>What's in it?</button></div>` : ''}
+      <div class="card"><div class="card-h"><h3>On this device</h3></div><div class="card-b"><dl class="kv">
+        <dt>Save folder</dt><dd class="mono">${root}${sep}content${sep}${XUID}${sep}${g.tid}</dd>
+        <dt>device</dt><dd class="mono">${root}${sep}content${sep}0000000000000000${sep}${g.tid}</dd>
+        <dt>Profile</dt><dd><button type="button" class="chip chip-info" ${set('screen', 'profile')}>${gt()} · ${status[1]}</button></dd>
+      </dl></div></div>`;
+  }
+  return agentShell(isDeck ? 'Steam Deck' : 'PC', navList(STD_NAV.map(([l, id]) => [l, id ? 'games' : undefined]), st.screen === 'games' || st.screen === 'game' || st.screen === 'profile' ? 'games' : ''), body);
+}
+
+// ---------- Profile B ----------
+function profileB(st) {
+  const isDeck = st.surface === 'deck', isWeb = st.surface === 'web';
+  const deck = st.deckDone ? ['chip chip-ok', 'Signed in', '3 games added · in sync'] : st.deckQueued ? ['chip chip-info', 'Copy queued', 'Steam Deck copies it the next time it checks in'] : ['chip chip-warn', 'Not here', 'Its 3 games wait for it'];
+  const laptop = st.laptop === 'both' ? ['chip chip-ok', 'Both profiles', 'Player1 kept; ' + gt() + ' added beside it'] : st.laptop === 'keep' ? ['chip', 'Player1 only', 'Left as it is: these games don’t sync there'] : ['chip chip-warn', 'Has Player1 instead', 'Another Xenia profile, not this one'];
+  const deckNeeds = !st.deckDone && !st.deckQueued;
+  const OTHERS = [['Cemu', 'user/80000001', 'the first Wii U account is always this number'], ['RPCS3', 'home/00000001', 'saves are never checked against the account'], ['Vita3K', 'ux0/user/00', 'one user folder'], ['shadPS4', 'savedata/1', 'one user folder']];
+
+  if (isWeb) {
+    const body = `<main class="main" style="max-width:1180px">
+      <div class="gh"><div class="gh-avatar" style="width:60px;height:60px;font-size:24px">${initial()}</div><div style="flex:1;min-width:0"><h2>${gt()}</h2><div class="chips"><span class="chip">Xenia · Xbox 360 profile</span><span class="chip mono">${XUID}</span><span class="chip">4 versions · 840 KB stored</span></div></div></div>
+      <div class="grid-s" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
+        <div class="card"><div class="card-h"><h3>PC</h3><span class="chip chip-ok">Signed in</span></div><div class="card-b"><span class="mono" style="color:var(--dim)">${PC_ROOT}\\content\\${XUID}</span><div class="actions"><button type="button" class="btn btn-sm">Push</button><button type="button" class="btn btn-sm">Pull</button></div></div></div>
+        <div class="card"><div class="card-h"><h3>Steam Deck</h3><span class="${deck[0]}">${deck[1]}</span></div><div class="card-b"><span style="font-size:12px;color:var(--dim)">${deck[2]}</span><div class="actions">${deckNeeds ? `<button type="button" class="btn btn-p btn-sm" ${set('deckQueued', true)}>Copy to Steam Deck</button>` : st.deckQueued && !st.deckDone ? `<button type="button" class="btn btn-q btn-sm" ${set('deckQueued', false)}>Cancel</button>` : ''}</div></div></div>
+        <div class="card"><div class="card-h"><h3>Laptop</h3><span class="${laptop[0]}">${laptop[1]}</span></div><div class="card-b"><span style="font-size:12px;color:var(--dim)">${laptop[2]}</span></div></div>
+      </div>
+      <div class="card"><div class="card-h"><h3>Games saved under ${gt()}</h3></div><div class="scroll"><table class="tbl"><tbody>${GAMES.map(g => `<tr><td><b>${g.name}</b></td><td style="color:var(--dim)">${g.ach} achievements</td><td class="mono" style="color:var(--dim)">${g.tid}</td></tr>`).join('')}</tbody></table></div></div>
+    </main>`;
+    return webShell(['Games', 'Profiles', 'Backups', 'Config', 'Help'], 'Profiles', body);
+  }
+
+  const badge = isDeck && !st.deckDone ? '<span class="chip chip-warn" style="padding:1px 7px">1</span>' : '<span class="new">new</span>';
+  const nav = navList([['Overview'], ['Games', 'games'], ['Profiles', 'profiles', badge], ['Add Games'], ['Conflicts'], ['Activity'], ['Settings']], st.screen);
+  let body;
+  if (st.screen === 'profiles') {
+    body = `<div><h2 style="font-size:20px;font-weight:700;letter-spacing:-.03em">Profiles</h2><p style="font-size:12.5px;color:var(--dim);margin-top:4px;line-height:1.5;max-width:640px">Who your emulator games are saved under. Copy a profile to each machine once; the games under it then sync like any other.</p></div>
+      <div class="card"><div class="card-h"><h3>Xenia · Xbox 360</h3><small>Each new Xenia profile gets a random ID, so a game's saves only show under the profile that made them</small></div>
+        <div class="scroll"><table class="tbl mx"><thead><tr><th scope="col">Profile</th><th scope="col">PC</th><th scope="col">Steam Deck</th><th scope="col">Laptop</th></tr></thead><tbody><tr>
+          <td><div style="display:flex;gap:10px;align-items:center"><span class="cov cov-p s" style="grid-row:auto">${initial()}</span><div><b style="font-size:13px">${gt()}</b><div class="mono" style="color:var(--dim)">${XUID} · 210 KB</div><div style="font-size:11px;color:var(--dim);margin-top:2px">3 games · 33 achievements</div></div></div></td>
+          <td><div class="cell"><span class="chip chip-ok">Signed in</span><small>in sync · 2 h ago</small></div></td>
+          <td><div class="cell"><span class="${deck[0]}">${deck[1]}</span><small>${deck[2]}</small>${deckNeeds ? `<button type="button" class="btn btn-p btn-sm" ${isDeck ? set('step', 1) : set('deckQueued', true)}>${isDeck ? 'Set up on this Deck' : 'Copy to Steam Deck'}</button>` : ''}</div></td>
+          <td><div class="cell"><span class="${laptop[0]}">${laptop[1]}</span><small>${laptop[2]}</small>${st.laptop === 'ask' ? `<div class="actions"><button type="button" class="btn btn-sm" ${set('laptop', 'both')}>Add ${gt()} beside it</button><button type="button" class="btn btn-q btn-sm" ${set('laptop', 'keep')}>Leave it</button></div>` : `<button type="button" class="btn btn-q btn-sm" ${set('laptop', 'ask')}>Change</button>`}</div></td>
+        </tr></tbody></table></div></div>
+      <div class="card"><div class="card-h"><h3>Other emulators · nothing to copy</h3><small>their user folder has the same name on every machine</small></div>
+        <div class="card-b" style="gap:0">${OTHERS.map(([e, id, why]) => `<div style="display:grid;grid-template-columns:90px minmax(0,1fr) auto;gap:12px;align-items:center;padding:9px 0;border-top:1px solid var(--line)"><b style="font-size:12.5px">${e}</b><span style="font-size:12px;color:var(--dim)"><span class="mono" style="color:var(--fg)">${id}</span> · ${why}</span><span class="chip chip-ok">Same everywhere</span></div>`).join('')}</div></div>`;
+  } else {
+    const waiting = isDeck && !st.deckDone;
+    body = `<h2 style="font-size:20px;font-weight:700;letter-spacing:-.03em">Games</h2><div class="list">${GAMES.map(g => `<div class="row"><span class="cov">${g.init}</span><span class="rt">${g.name}</span><span class="rs mono">${waiting ? 'Waits for ' + gt() + ' on this machine' : 'content/' + XUID + '/' + g.tid}</span><span class="re"><button type="button" class="chip ${waiting ? 'chip-warn' : 'chip-info'}" ${set('screen', 'profiles')}>${IC.user()}${waiting ? 'Profile not here' : gt()}</button></span></div>`).join('')}</div>`;
+  }
+
+  let overlay = '';
+  if (st.step > 0 && isDeck) {
+    const n = i => st.step > i ? 'num done' : st.step === i ? 'num on' : 'num';
+    const picked = GAMES.filter(g => st.picked[g.id]).length;
+    overlay = `<div class="overlay"><div class="dialog" role="dialog" aria-modal="true" aria-label="Set up the profile on this machine">
+      <div class="dialog-h"><div><span class="eyebrow">Steam Deck</span><h3>Set up ${gt()} here</h3></div><button type="button" class="btn btn-q btn-sm" ${set('step', 0)}>Close</button></div>
+      <div class="step"><span class="${n(1)}">1</span><div style="display:flex;flex-direction:column;gap:8px"><b>Copy the profile · 210 KB</b><span class="d">Into <span class="mono">Emulation/saves/xenia/content/${XUID}</span>, found from this machine's Xenia. Nothing of Steam Deck's own is touched.</span>${st.step === 1 ? `<div><button type="button" class="btn btn-p btn-sm" ${set('step', 2)}>Copy now</button></div>` : '<div class="meter"><i style="width:100%;background:var(--safe)"></i></div>'}</div></div>
+      <div class="step"><span class="${n(2)}">2</span><div style="display:flex;flex-direction:column;gap:8px"><b>Sign in to it once in Xenia</b><span class="d">Steam Deck has no profile of its own, so Xenia picks ${gt()} by itself on its next start. With several, choose it under Profiles.</span>${st.step === 2 ? `<div class="actions"><button type="button" class="btn btn-p btn-sm" ${set('step', 3)}>Done, next</button><button type="button" class="btn btn-q btn-sm" ${set('step', 3)}>I'll do it later</button></div>` : ''}</div></div>
+      <div class="step"><span class="${n(3)}">3</span><div style="display:flex;flex-direction:column;gap:4px"><b>Add the games saved under it</b>${st.step === 3 ? GAMES.map(g => `<label class="check"><input type="checkbox" ${st.picked[g.id] ? 'checked' : ''} data-a="pickB" data-v="${g.id}"><span style="flex:1">${g.name}</span><span style="font-size:11px;color:var(--dim)">${g.size}</span></label>`).join('') + `<div><button type="button" class="btn btn-p btn-sm" ${act('finishB')}>${picked ? 'Add ' + picked + (picked === 1 ? ' game' : ' games') : 'Finish without games'}</button></div>` : ''}</div></div>
+    </div></div>`;
+  }
+  const reset = st.deckDone || st.deckQueued || st.laptop !== 'ask' ? `<div><button type="button" class="btn btn-q btn-sm" ${act('resetB')}>Reset demo</button></div>` : '';
+  return agentShell(isDeck ? 'Steam Deck' : 'PC', nav, body + reset, overlay);
+}
+
+// ---------- Profile C ----------
+function profileC(st) {
+  const split = st.mode === 'split', p = st.pulled;
+  if (st.surface === 'web') {
+    const body = `<main class="main" style="max-width:1180px">
+      ${gameHead(GAMES[0], `<span class="chip">Xenia · Xbox 360</span><span class="chip chip-ok">In sync</span><span class="chip chip-info">18 of 50 achievements</span>`)}
+      <div class="grid-2">
+        <div class="card"><div class="card-h"><h3>Save folders</h3></div><div class="card-b"><dl class="kv">
+          <dt>Main</dt><dd class="mono">content\\${XUID}\\4D5309C9</dd>
+          <dt>device</dt><dd class="mono">content\\0000000000000000\\4D5309C9</dd>
+          <dt>profile</dt><dd><span class="mono">content\\${XUID}\\FFFE07D1\\…\\4D5309C9.gpd</span><br><span style="font-size:11.5px;color:var(--dim)">plus its row of FFFE07D1.gpd, merged</span></dd>
+        </dl></div></div>
+        <div class="card"><div class="card-h"><h3>Achievements · latest version</h3><small>read from the save</small></div><div class="card-b">
+          <div class="meter"><i style="width:36%"></i></div>
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--dim)"><span>18 of 50 unlocked</span><span>last unlocked 2 h ago on PC</span></div>
+          <div style="font-size:12px;color:var(--dim);border-top:1px solid var(--line);padding-top:10px">${gt()}'s core (account and settings): on PC and Steam Deck · about 100 KB</div>
+        </div></div>
+      </div></main>`;
+    return webShell(['Games', 'Backups', 'Config', 'Help'], 'Games', body);
+  }
+  const nav = navList([['Overview'], ['Games', 'game'], ['Add Games', 'add'], ['Conflicts'], ['Activity'], ['Settings']], st.screen);
+  let body;
+  if (st.screen === 'game') {
+    const keep = n => ['chip', n];
+    const rows = [
+      ['Forza Horizon achievements', '4D5309C9.gpd', '12 of 50', '18 of 50', ['chip chip-info', p ? 'Updated from PC' : 'Comes from PC']],
+      ['Forza Horizon row', 'FFFE07D1.gpd · 4D5309C9', '12 · 180 G', '18 · 260 G', ['chip chip-info', p ? 'Updated from PC' : 'Comes from PC']],
+      ['Halo 3 achievements', '4D5307E6.gpd', '9 of 49', split ? '9 of 49' : '7 of 49', split ? keep('Not touched') : ['chip chip-crit', 'Rolled back · 2 lost'], !split],
+      ['Halo 3 row', 'FFFE07D1.gpd · 4D5307E6', '9 · 150 G', split ? '9 · 150 G' : '7 · 110 G', split ? keep('Kept') : ['chip chip-crit', 'Rolled back'], !split],
+      ['Gamerscore', 'FFFE07D1.gpd · total', '480 G', split ? '560 G' : '480 G', split ? ['chip chip-ok', 'Recounted from the rows'] : ['chip chip-warn', 'PC’s total, Halo 3 missing']],
+      ['Account and settings', 'Account · FFFE07D1.gpd settings', 'as on PC', 'as on PC', keep('Core, not this game’s')]
+    ];
+    const head = p ? (split ? ['chip chip-ok', 'Matches the cloud'] : ['chip chip-crit', 'Halo 3 lost 2 achievements']) : ['chip chip-warn', 'Differs from the cloud'];
+    const dot = p ? 'dot-ok' : 'dot-info';
+    body = `${gameHead(GAMES[0], `<span class="chip">Xenia</span><span class="chip">Xbox 360</span><span class="chip mono">4D5309C9</span><span class="chip chip-info">${IC.user()}Achievements sync with it · ${gt()}</span>`, `<div class="chips"><span class="${head[0]}">${head[1]}</span></div>`)}
+      <div class="actions"><button type="button" class="btn btn-p" ${set('pulled', true)} ${p ? 'disabled' : ''}>${p ? 'Pulled' : 'Pull latest'}</button><button type="button" class="btn">Push now</button><button type="button" class="btn btn-q" ${set('pulled', false)}>Reset demo</button></div>
+      <div class="card"><div class="card-h"><h3>${p ? 'What the pull changed' : 'What “Pull latest” will change'}</h3>${segBtns([['split', 'This option'], ['whole', 'Whole profile in every game']], st.mode, 'mode')}</div>
+        <p style="padding:10px 18px 0;font-size:12px;color:var(--dim);line-height:1.5">PC pushed Forza Horizon 2 h ago. Since then this Steam Deck played Halo 3 and unlocked 2 achievements it hasn't pushed yet.</p>
+        <div class="scroll" style="padding:4px 0 6px"><table class="tbl"><thead><tr><th scope="col">In ${gt()}'s profile here</th><th scope="col">Now</th><th scope="col">${p ? 'After the pull' : 'After a pull'}</th><th scope="col"></th></tr></thead><tbody>
+        ${rows.map(([w, f, now, after, c, bad]) => `<tr><td><div style="display:flex;flex-direction:column;gap:2px"><span>${w}</span><span class="mono" style="color:var(--dim)">${f}</span></div></td><td>${now}</td><td style="font-weight:600" class="${bad ? 'lost' : ''}">${after}</td><td><span class="${c[0]}">${c[1]}</span></td></tr>`).join('')}
+        </tbody></table></div></div>
+      <div class="card"><div class="card-h"><h3>Save files on this machine</h3><small>three folders, one game</small></div>
+        <div class="fold"><div class="fold-h"><span class="dot dot-ok"></span><b>Save</b><span class="mono" style="color:var(--dim)">xenia/content/${XUID}/4D5309C9</span></div><div class="f"><span class="dot dot-ok"></span><span class="mono">00000001/ForzaHorizonSave</span><small>2.9 MB</small></div></div>
+        <div class="fold"><div class="fold-h"><span class="dot dot-ok"></span><b>device</b><span class="mono" style="color:var(--dim)">xenia/content/0000000000000000/4D5309C9</span></div><div class="f"><span class="dot"></span><span style="color:var(--dim)">Nothing in this folder yet.</span><small></small></div></div>
+        <div class="fold"><div class="fold-h"><span class="dot ${dot}"></span><b>profile</b><span style="font-size:12px;color:var(--dim)">only Forza Horizon's part of ${gt()}</span></div>
+          <div class="f"><span class="dot ${dot}"></span><span><span class="mono">4D5309C9.gpd</span> <span style="color:var(--dim)">· its achievements and in-game settings</span></span><small>${p ? 'in sync' : 'changed on the server · will pull'}</small></div>
+          <div class="f"><span class="dot ${dot}"></span><span><span class="mono">FFFE07D1.gpd</span> <span style="color:var(--dim)">· only its row: unlocked, gamerscore, last played</span></span><small>merged, other rows kept</small></div></div>
+        <div class="fold" style="background:var(--raise)"><div class="fold-h"><span style="color:var(--info)">${IC.user(13)}</span><b>${gt()}'s core</b><span style="font-size:12px;color:var(--dim)">account and profile settings · copied once, then only when they change · shared by every game</span><span class="chip chip-ok" style="margin-left:auto">On this machine</span></div></div>
+      </div>`;
+  } else {
+    body = `<h2 style="font-size:20px;font-weight:700;letter-spacing:-.03em">Add games</h2>
+      <div class="addrow"><input type="checkbox" checked aria-label="Add Forza Horizon"><div style="min-width:0">
+        <div class="chips" style="margin-top:0"><b style="font-size:13.5px">Forza Horizon</b><span class="chip">Emulator</span><span class="chip">Xenia</span><span class="chip mono">4D5309C9</span></div>
+        <div class="mono" style="color:var(--dim);margin-top:5px">${DECK_ROOT}/content/${XUID}/4D5309C9</div>
+        <label class="sub"><input type="checkbox" ${st.addAch ? 'checked' : ''} data-a="toggleC"><span>Also sync its achievements <span style="color:var(--faint)">· 41 KB, profile ${gt()}</span></span></label>
+        ${st.addAch ? `<div class="sub" style="color:var(--info-ink)"><span class="dot dot-info"></span>${gt()}'s core (about 100 KB) is copied here first, once.</div>` : ''}
+      </div></div>
+      <div class="addrow"><input type="checkbox" checked aria-label="Add Halo 3"><div style="min-width:0">
+        <div class="chips" style="margin-top:0"><b style="font-size:13.5px">Halo 3</b><span class="chip">Emulator</span><span class="chip">Xenia</span><span class="chip mono">4D5307E6</span></div>
+        <label class="sub"><input type="checkbox" checked><span>Also sync its achievements <span style="color:var(--faint)">· 33 KB, profile ${gt()}</span></span></label>
+      </div></div>
+      <div class="banner banner-info"><div><b>Games added before this</b><span class="d">Their page shows “More save folders found: profile”. Adding it later works the same way.</span></div></div>`;
+  }
+  return agentShell('Steam Deck', nav, body);
+}
+
+// ---------- DLC A ----------
+function dlcA(st) {
+  const isDeck = st.surface === 'deck';
+  const pkgs = SIZES.map((size, i) => { const n = i + 1, on = !!st.on[n]; return { n, size, on, here: ON_DECK.has(n) || (on && st.done) }; });
+  const picked = pkgs.filter(p => p.on), total = picked.reduce((a, p) => a + p.size, 0);
+  const missing = picked.filter(p => !ON_DECK.has(p.n)), missSize = missing.reduce((a, p) => a + p.size, 0);
+  const needDl = isDeck && missing.length > 0 && !st.done;
+  const kidChip = needDl ? `<span class="chip chip-info">Download ${fmt(missSize)}</span>` : '<span class="chip chip-ok">In sync</span>';
+  const kidLine = isDeck ? (needDl ? missing.length + ' not on this Deck yet' : 'all here') : 'picked here';
+  const pkgIcon = (cls = '', s) => `<span class="pkg ${cls}">${IC.pkg(s)}</span>`;
+
+  if (st.surface === 'web') {
+    const on = pkgs.filter(p => p.on);
+    const side = `<aside class="side" aria-label="Games"><div class="side-h eyebrow">Games · 3</div><div class="side-l">
+      <div class="row flat"><span class="cov s">FH</span><span class="rt">Forza Horizon</span><span class="rs">2 h ago · 21 MB</span><span class="re"><span class="dot dot-ok"></span></span></div>
+      <button type="button" class="kid on" style="width:calc(100% - 18px);margin-left:18px"><span class="elbow"></span>${pkgIcon('', 12)}<span class="kid-t"><b>DLC</b><span>${picked.length} packages · ${fmt(total)}</span></span><span></span></button>
+      <div class="row flat"><span class="cov s">F2</span><span class="rt">Forza Horizon 2</span><span class="rs">yesterday · 14 MB</span><span class="re"><span class="dot dot-ok"></span></span></div>
+      <div class="row flat"><span class="cov s">H3</span><span class="rt">Halo 3</span><span class="rs">3 days ago · 1.1 MB</span><span class="re"><span class="dot dot-ok"></span></span></div>
+    </div></aside>`;
+    const main = `<main class="main"><div class="crumbs"><span>Forza Horizon</span><span>/</span><span style="color:var(--fg)">DLC</span></div>
+      <div class="grid-s">
+        <div class="stat"><span class="eyebrow">Stored</span><b>${fmt(total)}</b><span>one copy · no versions</span></div>
+        <div class="stat"><span class="eyebrow">Packages</span><b>${picked.length} of 10</b><span>picked on PC</span></div>
+        <div class="stat"><span class="eyebrow">Machines</span><b>2</b><span>${needDl || (missing.length && !st.done) ? 'Steam Deck is missing ' + missing.length : 'both have every package'}</span></div>
+        <div class="stat"><span class="eyebrow">DLC cap</span><b>2 GB</b><span>separate from the 500 MB save cap</span></div>
+      </div>
+      <div class="card"><div class="card-h"><h3>Packages on the server</h3><button type="button" class="btn btn-q btn-sm">Delete from the server</button></div>
+        <div class="pl head" style="grid-template-columns:minmax(0,1fr) 70px 54px 54px"><span>Package</span><span style="text-align:right">Size</span><span>PC</span><span>Deck</span></div>
+        ${on.map(p => `<div class="pl" style="grid-template-columns:minmax(0,1fr) 70px 54px 54px"><span>${pkgName(p.n)}</span><span style="text-align:right;color:var(--dim)">${p.size} MB</span><span class="dot dot-ok"></span><span class="dot ${p.here ? 'dot-ok' : 'dot-none'}"></span></div>`).join('')}
+      </div></main>`;
+    return webShell(['Games', 'Backups', 'Config', 'Help'], 'Games', side + main);
+  }
+
+  let body;
+  if (st.screen === 'list') {
+    body = `<div class="ghead"><h3>On this machine · 3</h3><span>Save folder set here — these sync. DLC sits under its game.</span></div>
+      <div class="list">
+        <button type="button" class="row" ${set('screen', 'game')}><span class="cov">FH</span><span class="rt">Forza Horizon</span><span class="rs mono">content/${XUID}/4D5309C9</span><span class="re"><span class="chip">USA</span></span></button>
+        <button type="button" class="kid" ${set('screen', 'dlc')}><span class="elbow"></span>${pkgIcon()}<span class="kid-t"><b>DLC · ${picked.length} of 10 packages synced</b><span>${fmt(total)} · one copy on the server · ${kidLine}</span></span>${kidChip}</button>
+      </div>
+      <div class="list">
+        <button type="button" class="row"><span class="cov">F2</span><span class="rt">Forza Horizon 2</span><span class="rs mono">content/${XUID}/4D530AA4</span><span class="re"></span></button>
+        <button type="button" class="kid quiet"><span class="elbow"></span>${pkgIcon('off')}<span class="kid-t"><b style="font-weight:500">DLC · 6 packages here, not synced</b><span>412 MB · off until you pick some</span></span><span class="chip">Choose…</span></button>
+      </div>
+      <div class="list"><button type="button" class="row"><span class="cov">H3</span><span class="rt">Halo 3</span><span class="rs mono">content/${XUID}/4D5307E6</span><span class="re"></span></button></div>`;
+  } else if (st.screen === 'game') {
+    body = `${backBtn('Games', 'screen', 'list')}
+      ${gameHead(GAMES[0], '<span class="chip">Xenia</span><span class="chip">Xbox 360</span><span class="chip chip-ok">Matches the cloud</span>')}
+      <div class="actions"><button type="button" class="btn btn-p">Sync this game</button><button type="button" class="btn">Push now</button><button type="button" class="btn">Pull latest</button></div>
+      <div class="grid-s">
+        <div class="stat"><span class="eyebrow">Save here</span><b>4.1 MB</b><span>in the save folder now</span></div>
+        <div class="stat"><span class="eyebrow">Versions</span><b>7</b><span>saves only · keeps the newest 7</span></div>
+        <div class="stat"><span class="eyebrow">DLC</span><b>${picked.length} of 10</b><span>${fmt(total)} · 1 copy, no versions</span></div>
+      </div>
+      <button type="button" class="kid on" style="margin-left:0;width:100%" ${set('screen', 'dlc')}><span></span>${pkgIcon()}<span class="kid-t"><b>DLC · ${picked.length} of 10 packages synced · ${fmt(total)}</b><span>Synced on its own: a save push never carries DLC</span></span>${kidChip}</button>`;
+  } else {
+    body = `<div class="crumbs"><button type="button" class="back" ${set('screen', 'list')}>Games</button><span>/</span><button type="button" class="back" ${set('screen', 'game')}>Forza Horizon</button><span>/</span><span style="color:var(--fg)">DLC</span></div>
+      <div class="gh"><span class="pkg" style="width:48px;height:48px;border-radius:12px">${IC.pkg(24)}</span><div style="flex:1;min-width:0"><h2 style="font-size:20px">Forza Horizon · DLC</h2><div class="chips"><span class="chip">Never conflicts: packages don't change</span><span class="chip">One copy, no versions</span><span class="chip">Off by default</span></div></div></div>
+      ${needDl ? `<div class="banner banner-info"><div><b>${missing.length} synced ${missing.length === 1 ? 'package isn’t' : 'packages aren’t'} on this Steam Deck · ${fmt(missSize)}</b><span class="d">${st.progress > 0 ? 'Downloading in 8 MB chunks · resumes where it stopped if the Deck sleeps · ' + Math.round(missSize * st.progress / 100) + ' of ' + missSize + ' MB' : 'Downloaded once, then kept. Not part of any save version, so pulling the save stays small.'}</span><div class="meter" style="margin-top:8px;max-width:420px"><i style="width:${st.progress}%"></i></div></div><button type="button" class="btn btn-p" ${act('downloadA')} ${st.progress > 0 ? 'disabled' : ''}>${st.progress > 0 ? 'Downloading…' : 'Download ' + fmt(missSize)}</button></div>` : ''}
+      ${isDeck && st.done ? `<div class="banner banner-ok"><div><b>Every synced package is on this Steam Deck</b><span class="d">Downloaded once. Pulls of the save stay 4.1 MB.</span></div><button type="button" class="btn btn-q btn-sm" ${act('resetA')}>Reset demo</button></div>` : ''}
+      <div class="card"><div class="card-h"><h3>Packages</h3><small>names read from each package</small></div>
+        <div class="pl head"><span></span><span>Package</span><span style="text-align:right">Size</span><span>PC</span><span>Deck</span></div>
+        ${pkgs.map(p => `<label class="pl"><input type="checkbox" ${p.on ? 'checked' : ''} data-a="pickA" data-v="${p.n}" aria-label="Sync ${pkgName(p.n)}"><span style="display:flex;flex-direction:column;min-width:0"><span>${pkgName(p.n)}</span><span class="mono" style="color:var(--faint)">00000002/${pkgFile(p.n)}</span></span><span style="text-align:right;color:var(--dim)">${p.size} MB</span><span class="dot ${p.on ? 'dot-ok' : ''}" title="On PC${p.on ? ', synced' : ', not synced'}"></span><span class="dot ${p.here ? 'dot-ok' : p.on ? 'dot-none' : ''}" title="${p.here ? 'On Steam Deck' : 'Not on Steam Deck'}"></span></label>`).join('')}
+        <div style="padding:12px 18px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px;background:var(--raise)">
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px"><span><b>${picked.length} packages · ${fmt(total)}</b> <span style="color:var(--dim)">on the server, once</span></span><span style="color:${total > 2048 ? 'var(--accent-ink)' : 'var(--dim)'}">${total > 2048 ? 'Over the 2 GB DLC cap — untick some' : fmt(total) + ' of the 2 GB DLC cap'}</span></div>
+          <div class="meter"><i style="width:${Math.min(100, Math.round(total / 2048 * 100))}%"></i></div>
+        </div></div>`;
+  }
+  return agentShell(isDeck ? 'Steam Deck' : 'PC', navList(STD_NAV.map(([l, id]) => [l, id ? 'list' : undefined]), 'list'), body);
+}
+
+// ---------- DLC B ----------
+function dlcB(st) {
+  const miss = new Set([1, 3, 6]), got = st.phase === 'relayed', ph = st.phase;
+  if (st.surface === 'web') {
+    const side = `<aside class="side" aria-label="Games"><div class="side-h eyebrow">Games · 3</div><div class="side-l">
+      <div class="row on"><span class="cov s">FH</span><span class="rt">Forza Horizon</span><span class="rs">2 h ago · 21 MB</span><span class="re">${got ? '<span class="dot dot-ok"></span>' : '<span class="chip chip-warn">Needs DLC</span>'}</span></div>
+      <div class="row flat"><span class="cov s">F2</span><span class="rt">Forza Horizon 2</span><span class="rs">yesterday · 14 MB</span><span class="re"><span class="dot dot-ok"></span></span></div>
+      <div class="row flat"><span class="cov s">H3</span><span class="rt">Halo 3</span><span class="rs">3 days ago · 1.1 MB</span><span class="re"><span class="dot dot-ok"></span></span></div></div></aside>`;
+    const main = `<main class="main"><h2 style="font-size:22px;font-weight:700;letter-spacing:-.03em">Forza Horizon</h2>
+      <div class="card"><div class="card-h"><h3>DLC check</h3><small>0 bytes of DLC stored · names, IDs and sizes only</small></div>
+        <div class="scroll"><table class="tbl"><thead><tr><th scope="col">Machine</th><th scope="col">Packages</th><th scope="col">Last seen</th></tr></thead><tbody>
+          <tr><td><b>PC</b></td><td><span class="ok">All 10 · 1.0 GB</span></td><td style="color:var(--dim)">2 h ago</td></tr>
+          <tr><td><b>Steam Deck</b></td><td>${got ? '<span class="ok">All 10 · 1.0 GB</span>' : '<span class="no">7 of 10 · missing 01, 03, 06 (480 MB)</span>'}</td><td style="color:var(--dim)">5 min ago</td></tr>
+        </tbody></table></div>
+        <div style="padding:12px 18px;border-top:1px solid var(--line);font-size:12px;color:var(--dim);display:flex;gap:8px;flex-wrap:wrap;align-items:center">When a machine pulls a save made with packs it doesn't have: ${segBtns([['ask', 'Ask (default)'], ['anyway', 'Pull anyway'], ['hold', 'Hold the pull']], st.policy || 'ask', 'policy')}</div>
+      </div></main>`;
+    return webShell(['Games', 'Backups', 'Config', 'Help'], 'Games', side + main);
+  }
+  const head = got || ph === 'anyway' ? ['chip chip-ok', 'Matches the cloud'] : ['chip chip-warn', 'Differs from the cloud'];
+  const dlc = got ? ['chip chip-ok', 'All its DLC is here'] : ['chip chip-warn', 'Needs 3 DLC packs'];
+  const settled = { relayed: ['Packs handed over and the save pulled', 'The server already deleted its copy: 0 bytes of DLC stored.'], anyway: ['Save pulled without the 3 packs', 'Your previous save is a backup under Versions if the game complains.'], held: ['Pull on hold', 'It goes ahead by itself once DLC pack 01, 03 and 06 are in Xenia’s content folder.'] }[ph];
+  const body = `${gameHead(GAMES[0], `<span class="chip">Xenia</span><span class="chip">Xbox 360</span><span class="${head[0]}">${head[1]}</span><span class="${dlc[0]}">${IC.pkg(11)}${dlc[1]}</span>`)}
+    <div class="actions"><button type="button" class="btn btn-p" ${ph === 'idle' || ph === 'held' ? set('phase', 'ask') : 'disabled'}>${got || ph === 'anyway' ? 'Pulled' : ph === 'relaying' ? 'Waiting for DLC…' : 'Pull latest'}</button><button type="button" class="btn">Push now</button><button type="button" class="btn btn-q" ${act('resetB2')}>Reset demo</button></div>
+    ${ph === 'relaying' ? `<div class="banner banner-info"><div><b>${st.progress < 25 ? 'Waiting for PC to send 3 packs' : 'Receiving 3 packs from PC · ' + Math.round(480 * st.progress / 100) + ' of 480 MB'}</b><span class="d">Held on the server only until this Deck has them, then deleted. The save is pulled right after.</span><div class="meter" style="margin-top:8px;max-width:460px"><i style="width:${st.progress}%"></i></div></div></div>` : ''}
+    ${settled ? `<div class="banner ${ph === 'held' ? 'banner-info' : 'banner-ok'}"><div><b>${settled[0]}</b><span class="d">${settled[1]}</span></div></div>` : ''}
+    <div class="card"><div class="card-h"><h3>DLC this save was made with</h3><small>from PC's push 2 h ago · the server keeps names, IDs and sizes only (2 KB)</small></div>
+      <div class="scroll"><table class="tbl"><thead><tr><th scope="col">Package</th><th scope="col">Size</th><th scope="col">PC</th><th scope="col">Steam Deck</th></tr></thead><tbody>
+      ${SIZES.map((size, i) => { const n = i + 1, m = miss.has(n) && !got; return `<tr><td>${pkgName(n)} <span class="mono" style="color:var(--faint)">${pkgFile(n)}</span></td><td style="color:var(--dim)">${size} MB</td><td><span class="ok">Has it</span></td><td><span class="${m ? 'no' : 'ok'}">${m ? 'Missing' : got && miss.has(n) ? 'Handed over' : 'Has it'}</span></td></tr>`; }).join('')}
+      </tbody></table></div></div>`;
+  const overlay = ph === 'ask' ? `<div class="overlay"><div class="dialog" role="dialog" aria-modal="true" aria-label="This save uses DLC that is not here">
+    <div class="dialog-h"><div><span class="eyebrow">Before pulling Forza Horizon</span><h3>PC made this save with 3 DLC packs this Steam Deck doesn't have</h3><p>DLC pack 01, 03 and 06 · 480 MB. A game may refuse to load such a save, or leave out what came from those packs.</p></div></div>
+    <div style="padding:14px 20px 18px;display:flex;flex-direction:column;gap:8px">
+      <button type="button" class="choice" ${act('relayB')}><span class="ico info">${IC.relay()}</span><span><b>Hand them over from PC, then pull</b><span class="d">PC sends the 3 packs the next time it's on. The server deletes them as soon as this Deck has them, so nothing stays stored.</span></span></button>
+      <button type="button" class="choice" ${set('phase', 'anyway')}><span class="ico">${IC.down()}</span><span><b>Pull the save anyway</b><span class="d">Only the save, 4.1 MB. The current save becomes a backup first, as always.</span></span></button>
+      <button type="button" class="choice" ${set('phase', 'held')}><span class="ico">${IC.wait()}</span><span><b>Not now, I'll install them myself</b><span class="d">The pull waits. SaveLocker checks again when the packs appear in Xenia's content folder.</span></span></button>
+      <div style="display:flex;justify-content:flex-end"><button type="button" class="btn btn-q btn-sm" ${set('phase', 'idle')}>Cancel</button></div>
+    </div></div></div>` : '';
+  return agentShell('Steam Deck', navList(STD_NAV.map(([l, id]) => [l, id ? 'x' : undefined]), 'x'), body, overlay);
+}
+
+// ---------- DLC C ----------
+function dlcC(st) {
+  const pkgs = SIZES.map((size, i) => ({ n: i + 1, size }));
+  const storedMb = pkgs.filter(p => st.stored.has(p.n)).reduce((a, p) => a + p.size, 0);
+  const here = pkgs.filter(p => st.here.has(p.n));
+  if (st.surface === 'web') {
+    const body = `<main class="main" style="max-width:1180px"><h2 style="font-size:20px;font-weight:700;letter-spacing:-.03em">Storage</h2>
+      <div class="card"><div class="card-h"><h3>On the server</h3><small>${fmt(storedMb + 38)} in all</small></div><div class="card-b">
+        <div class="stack"><i style="width:2%;background:var(--safe)"></i><i style="width:${Math.round(storedMb / 2048 * 96)}%;background:var(--info)"></i></div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap"><span class="key"><i style="background:var(--safe)"></i>Saves · 7 versions each · 38 MB</span><span class="key"><i style="background:var(--info)"></i>DLC library · one copy each · ${fmt(storedMb)}</span><span class="key"><i style="background:var(--tile)"></i>Free under the 2 GB DLC cap</span></div>
+        <p style="font-size:12px;color:var(--dim);line-height:1.5;border-top:1px solid var(--line);padding-top:10px">Inside every save version, the same DLC would take <b style="color:var(--fg)">${fmt(storedMb * 7)}</b> for the 7 versions kept. The library keeps it once.</p>
+      </div></div>
+      <div class="card"><div class="card-h"><h3>DLC library</h3><button type="button" class="btn btn-q btn-sm">Remove packs nothing needed for 90 days</button></div>
+        <div class="pr head" style="grid-template-columns:minmax(0,1fr) 64px 120px 120px"><span>Pack</span><span style="text-align:right">Size</span><span>Needed by</span><span>Machines</span></div>
+        ${pkgs.map(p => `<div class="pr" style="grid-template-columns:minmax(0,1fr) 64px 120px 120px"><span>Forza Horizon · ${pkgName(p.n)}</span><span style="text-align:right;color:var(--dim)">${p.size} MB</span><span style="color:var(--dim)">the latest save</span><span style="color:var(--dim)">${st.here.has(p.n) ? 'PC, Steam Deck' : 'PC'}</span></div>`).join('')}
+      </div></main>`;
+    return webShell(['Games', 'Storage', 'Backups', 'Config', 'Help'], 'Storage', body);
+  }
+  const x = st.xfer;
+  const RULES = [['need', 'Download a pack when a pull needs it', 'A save made with a pack this Deck lacks brings that pack first. Nothing else is downloaded.'],
+    ['upload', 'Upload a pack only when a pushed save was made with it', 'Packs no save uses stay on their machine; the library only grows with what is played.'],
+    ['sweep', 'Remove packs nothing needed for 90 days', 'From the library, not from any machine. They come back the next time a save needs them.']];
+  const body = `<div><h2 style="font-size:20px;font-weight:700;letter-spacing:-.03em">DLC library</h2><p style="font-size:12.5px;color:var(--dim);margin-top:4px">Packs never change, so each is kept once, never versioned and never in conflict.</p></div>
+    <div class="grid-s">
+      <div class="stat"><span class="eyebrow">On this Deck</span><b>${fmt(here.reduce((a, p) => a + p.size, 0))}</b><span>${here.length} of 10 packs</span></div>
+      <div class="stat"><span class="eyebrow">In the library</span><b>${fmt(storedMb)}</b><span>${st.stored.size} packs, one copy each</span></div>
+      <div class="stat"><span class="eyebrow">Library cap</span><b>2 GB</b><span>separate from saves</span></div>
+    </div>
+    ${x ? `<div class="card"><div class="card-h"><h3>Transfers</h3><small>8 MB chunks · picks up where it stopped if the Deck sleeps</small></div><div class="card-b"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px"><span><b>${pkgName(x.n)}</b> <span style="color:var(--dim)">from the library</span></span><span style="color:var(--dim)">${x.done} of ${SIZES[x.n - 1]} MB</span></div><div class="meter"><i style="width:${Math.round(x.done / SIZES[x.n - 1] * 100)}%"></i></div></div></div>` : ''}
+    <div class="card"><div class="card-h"><h3>Forza Horizon · 10 packs</h3><small>the save on the server was made with all 10</small></div>
+      <div class="pr head"><span>Pack</span><span style="text-align:right">Size</span><span>Library</span><span>On this Deck</span></div>
+      ${pkgs.map(p => { const h = st.here.has(p.n) || (x && x.n === p.n); return `<div class="pr"><span style="display:flex;flex-direction:column;min-width:0"><span>${pkgName(p.n)}</span><span class="mono" style="color:var(--faint)">${pkgFile(p.n)}</span></span><span style="text-align:right;color:var(--dim)">${p.size} MB</span><span class="chip chip-ok" style="justify-self:start">Stored</span><span class="mini" role="group" aria-label="Keep ${pkgName(p.n)} on this Deck"><button type="button" class="${h ? 'on' : ''}" data-a="keepC" data-v="${p.n}">Here</button><button type="button" class="${h ? '' : 'on'}" data-a="dropC" data-v="${p.n}">Library only</button></span></div>`; }).join('')}
+      <div style="padding:11px 18px;border-top:1px solid var(--line);background:var(--raise);font-size:12px;color:var(--dim)">“Library only” removes the pack from this Deck's SD card and keeps it in the library; it comes back when a pull needs it.</div>
+    </div>
+    <div class="card"><div class="card-h"><h3>Rules</h3></div><div class="card-b" style="gap:0">
+      ${RULES.map(([id, t, d]) => `<div class="sw"><div><b style="font-weight:600">${t}</b><small>${d}</small></div><button type="button" class="tog ${st.rules[id] ? 'on' : ''}" data-a="ruleC" data-v="${id}" aria-pressed="${st.rules[id]}" aria-label="${t}"><i></i></button></div>`).join('')}
+    </div></div>`;
+  const nav = navList([['Overview'], ['Games'], ['DLC library', 'lib'], ['Add Games'], ['Conflicts'], ['Activity'], ['Settings']], 'lib');
+  return agentShell('Steam Deck', nav, body);
+}
+
+// ---------- briefs ----------
+const BRIEFS = {
+  pA: { title: 'Profile A · Its own row in Games', what: 'The profile is listed above the games with its own page: the games under it, which machines have it, and exactly which files sync. Every Xenia game links to it; on a machine without it, one button copies it.', good: ['<b>Simple model:</b> one entry, one folder, nothing new in the sync engine', 'Copy to a new machine in one click, from the agent or the console'], cost: ['<b>Whole-file conflicts:</b> playing two games on two machines between syncs is a conflict on the profile', 'A pull of the profile can roll back another machine’s newer achievements'] },
+  pB: { title: 'Profile B · A Profiles section', what: 'A new Profiles section shows every emulator identity against every machine, with a guided three-step setup (copy, sign in once, add the games). Cemu, RPCS3, Vita3K and shadPS4 show as “same everywhere, nothing to copy”.', good: ['<b>Best first-run experience</b> on a new Deck', 'Handles a machine that already has its own profile', 'One place to understand emulator accounts'], cost: ['Same whole-file conflicts as A', 'A new section in both the agent and the console'] },
+  pC: { title: 'Profile C · Split by owner (recommended)', what: 'Each game carries only its own part of the profile: its achievements file and its own row in the main profile file, written into that file without touching other rows. The account and settings are copied to each machine once.', good: ['<b>No game ever undoes another’s achievements</b> — press Pull latest, then compare', 'No shared files between games, so the one-game-per-file rule stays', 'Shows up where you already look: the game page and Add games'], cost: ['SaveLocker must read and write Xbox 360 profile files (XDBF) to merge one row', 'Xenia only loads a game’s achievements when that row exists — the row is not optional'] },
+  dA: { title: 'DLC A · Sub-entry under the game', what: 'DLC hangs under its game in every list. Pick packages one by one; the server keeps one copy, never versioned, so DLC never conflicts and never makes a save’s versions bigger. Missing packages download once, resumably.', good: ['<b>Your idea:</b> DLC stays with its game but syncs on its own', 'Per-package choice keeps the size down', 'Its own 2 GB cap'], cost: ['Stores the full size of every picked package on the server'] },
+  dB: { title: 'DLC B · DLC check, nothing uploaded', what: 'SaveLocker only remembers which packages a save was made with (about 2 KB). Before pulling on a machine that lacks some, it asks: hand them over from the PC, pull anyway, or wait until you install them.', good: ['<b>Zero DLC stored</b>; the hand-over deletes its copy once delivered', 'Catches the real problem — a save that needs DLC — before it happens'], cost: ['The hand-over needs the PC to be on', 'Pairs best with A: the check on every game, A for games you choose'] },
+  dC: { title: 'DLC C · DLC library, on demand', what: 'Each package is stored once and shared by every version. Packs upload only when a pushed save was made with them, download only when a pull needs them, and “Library only” frees space on the Deck’s SD card.', good: ['<b>Least space</b> on the server and on the Deck', 'Fully automatic once the rules are on'], cost: ['A new section in the agent and a Storage view in the console', 'Most new server work (a package store, a sweeper)'] }
+};
+
+// ---------- wiring ----------
+const VIEWS = { pA: profileA, pB: profileB, pC: profileC, dA: dlcA, dB: dlcB, dC: dlcC };
+const SURFACES = {
+  pA: [['pc', 'Agent · PC'], ['deck', 'Agent · Steam Deck'], ['web', 'Console']],
+  pB: [['pc', 'Agent · PC'], ['deck', 'Agent · Steam Deck'], ['web', 'Console']],
+  pC: [['deck', 'Agent · Steam Deck'], ['web', 'Console']],
+  dA: [['pc', 'Agent · PC'], ['deck', 'Agent · Steam Deck'], ['web', 'Console']],
+  dB: [['deck', 'Agent · Steam Deck'], ['web', 'Console']],
+  dC: [['deck', 'Agent · Steam Deck'], ['web', 'Console']]
+};
+const timers = {};
+function tick(key, step, ms, onDone) {
+  clearInterval(timers[key]);
+  timers[key] = setInterval(() => { if (step()) { clearInterval(timers[key]); onDone && onDone(); } render(); }, ms);
+}
+const ACTIONS = {
+  set(st, v, k) { st[k] = v === 'true' ? true : v === 'false' ? false : /^\d+$/.test(v) ? +v : v; },
+  copyA(st) { st.copied = true; },
+  pickB(st, v) { st.picked[v] = !st.picked[v]; },
+  finishB(st) { st.step = 0; st.deckDone = true; },
+  resetB(st) { Object.assign(st, { step: 0, deckDone: false, deckQueued: false, laptop: 'ask' }); },
+  toggleC(st) { st.addAch = !st.addAch; },
+  pickA(st, v) { st.on[v] = !st.on[v]; st.done = false; st.progress = 0; clearInterval(timers.dA); },
+  downloadA(st) { tick('dA', () => (st.progress = Math.min(100, st.progress + 9)) >= 100, 160, () => { st.done = true; }); },
+  resetA(st) { st.done = false; st.progress = 0; },
+  relayB(st) { st.phase = 'relaying'; st.progress = 0; tick('dB', () => (st.progress = Math.min(100, st.progress + 7)) >= 100, 170, () => { st.phase = 'relayed'; }); },
+  resetB2(st) { clearInterval(timers.dB); st.phase = 'idle'; st.progress = 0; },
+  keepC(st, v) {
+    const n = +v; if (st.here.has(n) || st.xfer) return;
+    st.xfer = { n, done: 0 };
+    tick('dC', () => { st.xfer.done = Math.min(SIZES[n - 1], st.xfer.done + Math.max(8, Math.round(SIZES[n - 1] / 12))); return st.xfer.done >= SIZES[n - 1]; }, 150, () => { st.here.add(n); st.xfer = null; });
+  },
+  dropC(st, v) { const n = +v; if (st.xfer && st.xfer.n === n) { clearInterval(timers.dC); st.xfer = null; } else st.here.delete(n); },
+  ruleC(st, v) { st.rules[v] = !st.rules[v]; }
+};
+
+const $ = id => document.getElementById(id);
+function render() {
+  const st = S[S.tab], b = BRIEFS[S.tab];
+  document.querySelectorAll('[data-tab]').forEach(t => t.setAttribute('aria-selected', String(t.dataset.tab === S.tab)));
+  $('brief').innerHTML = `<div><span class="eyebrow">${S.tab[0] === 'p' ? 'Xenia profile' : 'DLC'}</span><h2>${b.title}</h2><p>${b.what}</p></div>
+    <div><span class="eyebrow">Good</span><ul>${b.good.map(x => `<li>${x}</li>`).join('')}</ul></div>
+    <div><span class="eyebrow">Costs</span><ul>${b.cost.map(x => `<li>${x}</li>`).join('')}</ul></div>`;
+  const cur = SURFACES[S.tab].find(([id]) => id === st.surface);
+  $('where').textContent = st.surface === 'web' ? 'SaveLocker console · in a browser' : 'SaveLocker agent · ' + (st.surface === 'deck' ? 'Steam Deck' : 'PC');
+  $('surfaces').innerHTML = segBtns(SURFACES[S.tab], cur ? cur[0] : SURFACES[S.tab][0][0], 'surface');
+  $('app').innerHTML = VIEWS[S.tab](st);
+}
+function dispatch(el) {
+  const st = S[S.tab];
+  ACTIONS[el.dataset.a](st, el.dataset.v, el.dataset.k);
+  render();
+}
+document.addEventListener('click', e => {
+  const tab = e.target.closest('[data-tab]');
+  if (tab) { S.tab = tab.dataset.tab; try { localStorage.setItem('p5c.tab', S.tab); } catch (_) {} render(); return; }
+  const el = e.target.closest('[data-a]');
+  if (!el || el.disabled) return;
+  if (el.tagName === 'INPUT') return;
+  if (el.closest('label') && el.tagName !== 'BUTTON') return;
+  dispatch(el);
+});
+document.addEventListener('change', e => { const el = e.target.closest('input[data-a]'); if (el) dispatch(el); });
+$('gamertag').addEventListener('input', e => { S.gamertag = e.target.value.slice(0, 15); render(); });
+try { const t = localStorage.getItem('p5c.tab'); if (t && VIEWS[t]) S.tab = t; } catch (_) {}
+render();
+</script>
+</body>
+</html>

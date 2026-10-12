@@ -500,6 +500,12 @@ here and confirmed with the maintainer before any code:
 - **A separate cap for archives with DLC, 2 GB** (`Storage:MaxDlcUploadMb`, server; the agent's size backstop learns it too).
 - **The gamertag is decrypted from `Account`** with the retail key Xenia ships, to name the profile folder in the UI.
 
+**Mockups (2026-10-12):** [`phase-5c-mockups.html`](phase-5c-mockups.html), three ways to show the profile and three for
+DLC, each in the agent (PC, Steam Deck) and the console. Found in Xenia Canary's source while drawing them: a game's `<TID>.gpd`
+is loaded only when `FFFE07D1.gpd` lists the title (`UserProfile::LoadProfileGpds`); otherwise the first launch makes an empty
+one and overwrites it (`UserTracker::AddTitleToPlayedList`). So a profile split by game must carry the game's row of
+`FFFE07D1.gpd` too, merged per row — option C, recommended — and an achievements file alone never works.
+
 **Verify (when built):** a profile pulled to a machine without it signs in and loads a game's save there; a machine with its own
 profile keeps it; a DLC entry pushed once and pulled; a save game's push never carries DLC; the two-machine tests per entry.
 
