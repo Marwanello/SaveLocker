@@ -165,4 +165,49 @@ public sealed class GroupESyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.Equal("deck-calibration", Read("win", $"{winContent}/0000000000000000/{title}/00000001/globaloptions/options"));
         Assert.Equal("win-dlc", Read("win", $"{winContent}/0000000000000000/{title}/00000002/SONGPACK/song.bin"));
     }
+
+    [Fact]
+    public async Task A_xbox_360_games_part_of_the_profile_moves_with_it_and_other_games_rows_stay()
+    {
+        // Phase 5c step 5: both machines are on one profile. The PC played Forza Horizon (18 unlocked); the Deck played
+        // Halo 3 since its last sync (11 unlocked) and still has an older Forza Horizon row. Pulling Forza Horizon onto
+        // the Deck must bring its achievements file and row, and leave Halo 3's file and row alone.
+        var title = "5C" + _id.ToUpperInvariant();
+        var tid = Convert.ToUInt32(title, 16);
+        const uint halo = 0x4D5307E6;
+        const string xuid = "E030000033894516";
+        const string deckContent = "SDCard/Emulation/roms/xbox360/content";
+        const string pcContent = "Xenia Manager/Emulators/Xenia Canary/content";
+        var profile = $"{xuid}/FFFE07D1/00010000/{xuid}";
+        Write("pc", $"{pcContent}/{xuid}/{title}/00000001/Profile/save.dat", "pc-save");
+        Write("pc", $"{pcContent}/{profile}/{title}.gpd", "pc-achievements");
+        F.Write(P("pc", $"{pcContent}/{profile}/FFFE07D1.gpd"), XeniaFormatsTests.Dashboard(XeniaFormatsTests.Row(tid, 18, 260, "Group E Racer")));
+        Write("deck", $"{deckContent}/{xuid}/{title}/00000001/Profile/save.dat", "deck-old-save");
+        Write("deck", $"{deckContent}/{profile}/{title}.gpd", "deck-old-achievements");
+        Write("deck", $"{deckContent}/{profile}/4D5307E6.gpd", "deck-halo-achievements");
+        var haloRow = XeniaFormatsTests.Row(halo, 11, 190, "Halo 3");
+        F.Write(P("deck", $"{deckContent}/{profile}/FFFE07D1.gpd"),
+            XeniaFormatsTests.Dashboard(XeniaFormatsTests.Row(tid, 12, 180, "Group E Racer"), haloRow));
+
+        var pc = await Machine("pc");
+        var deck = await Machine("deck");
+        var pcGame = await Enroll(pc, XeniaSaves.Scan([new XeniaFolders(P("pc", pcContent))]), title);
+        var deckGame = await Enroll(deck, XeniaSaves.Scan([new XeniaFolders(P("deck", deckContent), EmuDeck: true)]), title);
+        Assert.Equal(pcGame.GameId, deckGame.GameId);
+        Assert.Contains(pcGame.ExtraPaths, p => p.Key == XeniaProfileSlice.Key);
+
+        await using var enginePc = new SyncEngine(pc, ApiClient.For(pc));
+        await using var engineDeck = new SyncEngine(deck, ApiClient.For(deck));
+        Assert.NotNull(await enginePc.PushAsync(pcGame, force: true));
+        Assert.Equal(PullOutcome.Restored, await engineDeck.PullAsync(deckGame, force: true));
+
+        Assert.Equal("pc-save", Read("deck", $"{deckContent}/{xuid}/{title}/00000001/Profile/save.dat"));
+        Assert.Equal("pc-achievements", Read("deck", $"{deckContent}/{profile}/{title}.gpd"));
+        Assert.Equal("deck-halo-achievements", Read("deck", $"{deckContent}/{profile}/4D5307E6.gpd"));
+        var dashboard = Xdbf.Parse(File.ReadAllBytes(P("deck", $"{deckContent}/{profile}/FFFE07D1.gpd")));
+        Assert.Equal(haloRow, dashboard.Get(Xdbf.Title, halo));
+        Assert.Equal(18, System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(dashboard.Get(Xdbf.Title, tid).AsSpan(8)));
+        Assert.Equal(450, XeniaProfile.GetInt(dashboard, XeniaProfile.GamerscoreSetting));
+        Assert.Equal(29, XeniaProfile.GetInt(dashboard, XeniaProfile.AchievementsSetting));
+    }
 }

@@ -88,8 +88,15 @@ public static class XeniaSaves
         ViaEmuDeck: setup.EmuDeck,
         IncludeGlobs: ScopeFor(id),
         // Every Xenia game declares the device's folder, even before it exists, so every machine's game has the same
-        // folders and a device save made on one reaches the others.
-        ExtraSaveDirs: [new DeclaredSavePath(DeviceKey, Path.Combine(setup.Content, NoProfile), ScopeFor(id))],
+        // folders and a device save made on one reaches the others. A game under a profile also declares its part of
+        // that profile (XeniaProfileSlice): its achievements file and its row of the dashboard.
+        ExtraSaveDirs: Xuid(Path.GetFileName(dir)) is not null
+            ?
+            [
+                new DeclaredSavePath(DeviceKey, Path.Combine(setup.Content, NoProfile), ScopeFor(id)),
+                new DeclaredSavePath(XeniaProfileSlice.Key, EmuDeckRoots.RealPath(dir), XeniaProfileSlice.ScopeFor(id)),
+            ]
+            : [new DeclaredSavePath(DeviceKey, Path.Combine(setup.Content, NoProfile), ScopeFor(id))],
         Release: ConsoleTitles.Release(System, [id]));
 
     // The title IDs with a saved game in a folder of title folders, and when each was last written.

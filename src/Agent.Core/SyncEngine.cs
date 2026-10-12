@@ -331,6 +331,9 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         // ever set Settling in the first place when it was going to run at all.
         _activity?.SetPhase(SyncPhase.Pushing);
 
+        // A Xenia game's row of its profile is copied out of the shared dashboard first, so the push carries it.
+        XeniaProfileSlice.Export(game, _log);
+
         // One pass over the save folder answers both questions a push asks of it: the aggregate
         // content hash (has anything changed at all?) and the per-file manifest a delta negotiates
         // with. Hashing the directory and then building a manifest read every byte twice.
@@ -778,6 +781,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                 if (restored.SkippedKeys.Count > 0)
                     _log($"[{game.Name}] the server's save holds folder(s) this game no longer has " +
                          $"({string.Join(", ", restored.SkippedKeys)}); left out.");
+                XeniaProfileSlice.Merge(game, _log);
             }
             catch (SaveArchive.UnsafeArchiveException ex)
             {

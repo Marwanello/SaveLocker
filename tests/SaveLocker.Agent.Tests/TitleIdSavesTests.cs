@@ -315,12 +315,12 @@ public sealed class TitleIdSavesTests : IDisposable
         var rb3 = found.Single(c => c.EmulatorRom == "45410914");
         // Its profile folder is this machine's profile, declared so a later profile save joins it.
         Assert.Equal(P($"{content}/{Xuid}"), rb3.SuggestedSaveDir);
-        var device = Assert.Single(rb3.ExtraSaveDirs!);
+        var device = rb3.ExtraSaveDirs!.Single(e => e.Key == XeniaSaves.DeviceKey);
         Assert.Equal(XeniaSaves.DeviceKey, device.Key);
         Assert.Equal(P($"{content}/0000000000000000"), device.Dir);
         Assert.Equal(["45410914/00000001/**", "45410914/Headers/00000001/**"], device.IncludeGlobs);
-        // Every game declares it, saves there or not.
-        Assert.Equal(XeniaSaves.DeviceKey, Assert.Single(found.Single(c => c.EmulatorRom == "4D5309C9").ExtraSaveDirs!).Key);
+        // Every game declares it, saves there or not; a game under a profile also declares its part of that profile.
+        Assert.Equal([XeniaSaves.DeviceKey, XeniaProfileSlice.Key], found.Single(c => c.EmulatorRom == "4D5309C9").ExtraSaveDirs!.Select(e => e.Key));
     }
 
     [Fact]
