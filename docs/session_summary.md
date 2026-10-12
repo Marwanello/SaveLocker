@@ -1,54 +1,47 @@
-# Session summary — 2026-10-07 — Emulator saves Group H: real-game checks (no code)
+# Session summary — 2026-10-11 — Appearance follow-up (b): "N machines following"
 
 Standalone: the facts below do not need the rest of the vault.
 
-**PR:** #61 on `Marwanello/SaveLocker`, *Emulator saves Group B: melonDS, Supermodel, Model 2, ScummVM, identity by
-folders, linking by hand*. Head branch `emulator-saves-group-b`, base `main`. This change is docs only, commit `f4af2d8`.
+**PR:** [#67 on `Marwanello/SaveLocker`](https://github.com/Marwanello/SaveLocker/pull/67), *Appearance: "N machines following" on the console (last Group 5 follow-up)*. Head branch `appearance-follow-ups`, base `main`. Commits `6959a72` (code), `f5edb6e` and the closing docs commit.
 
 ## What was asked
 
-Add a group at the end of the emulator-saves task with **no implementation, only tests with real games**, for
-every emulator that shipped without one. The maintainer has no games for **melonDS, ScummVM, Supermodel or Model 2**
-yet, and will keep adding each phase's emulator they couldn't test, so the group stays last.
+Implement the last Appearance follow-up left by Group 5, item (b) "N machines following", and explain how to verify it with testenv. Then push it: PR #65 was named, but on origin that is *Emulator saves Group D*, so at the maintainer's choice it got its own PR, and the task was marked done.
 
-## What was done
+## What was done (plain terms)
 
-- **`docs/tasks/emulator-saves/implementation-grouping.md`:**
-  - **Status table:** a new row, *H — Real-game checks (no code)*: ⏳ waiting for games.
-  - **Write-up:** Group H is always the last group, so new emulators can keep joining it.
-  - **New rule** under "Every group's checks": an emulator the maintainer has no real game for is added to Group H
-    when its group ships, instead of holding that group back.
-- **`docs/tasks/emulator-saves/plan.md`:**
-  - **Status table:** a new row for **Phase 18**.
-  - **New Phase 18 section** at the end of the groups, covering:
-    - **Back up first:** every save folder listed, because a test agent that adds a game pushes and pulls real files.
-    - **Rig:**
-      - Deck: `.\tests\testenv.ps1 build -Only deck`, then `up -Only deck`. The test daemon scans the Deck's real
-        EmuDeck install.
-      - Windows: point the test tray at a **copy** of `Emulation`, plus `%APPDATA%\EmuDeck\Emulators\{Supermodel,m2emulator}`
-        and `scummvm.ini`. Use `SAVELOCKER_EMULATOR_HOME` and `up -Only windows -EmuDeckPath <copy>`. Edit `savepath` in
-        the copied `scummvm.ini` so it points into the copy.
-    - **Five steps for every emulator:**
-      1. Save on the Deck, add the game there and sync.
-      2. Add it on Windows; the row should read "Joins “…”". Sync, and check the emulator loads the save.
-      3. Play further on Windows, sync, and check the Deck loads the newer save.
-      4. Check the neighbouring saves are untouched on both machines.
-      5. Record the results.
-    - **Checklist table:** one row per emulator, each with how to make a save and a state, where the files are on
-      the Deck and on Windows, what to watch for, and separate ⏳ boxes for the Deck and Windows.
-- **`docs/CONTEXT.md`:** mentions Group H and that later untested emulators are added there.
+The console's Configuration → Appearance card now says which machines use the console's look and which keep their own:
+- *N machines following* with their names; offline machines are marked *(offline)*.
+- *own look: …* for machines that opted out.
+- *No machine following* when none do.
+- *Not shared · each machine keeps its own* when pushing is off.
 
-## The four rows and what each must confirm
+A machine on an older agent can't report this, so it's in neither list. The prototype's "applied 2m ago" wasn't built, because the server can't know when an agent applied a look.
 
-| Emulator | What the code had to guess, to confirm with a real game |
-|---|---|
-| melonDS | Which file the Flatpak actually writes (`melonDS.ini` vs `.toml` paths); a save written beside the ROM |
-| ScummVM | The real save file names for each engine (only four fixed-name engines are confirmed); two machines with different target names |
-| Supermodel | That a set never played stays hidden (EmuDeck preinstalls 29 NVRAM files); the title from `Games.xml` |
-| Model 2 | Which key saves a state (slots are the number keys 0–9); whether `NVDATA/<set>.DAT` changes on every exit; `STATES` created on the first save |
+## Technical changes
 
-## How it's used
+- `AgentHeartbeat.FollowsConsoleAppearance` (optional `bool?`), sent by `HealthReporter` from `config.FollowConsoleAppearance`.
+- `AgentHealth.FollowsConsoleAppearance` column (migration `AddAgentFollowsConsoleAppearance`). The server stores what the agent sends, including null; it's returned on `AgentHealthDto`.
+- `AppearanceCard.tsx` gets `health` from `ConfigView`. The chip moved from beside the switch to a line below it.
+- `openapi.json` and `web/src/api-types.ts`: additions only.
 
-When the maintainer gets a game, they test it on both machines and tick its row. A row is ticked only when both
-pass. When a later phase ships an emulator they couldn't test, a row is added to the Phase 18 table. Any problem
-found becomes a fix in that emulator's own group, in a follow-up PR.
+## Verification
+
+- `run-health-tests` **35/35**, including 2 new checks. Both fail when the server doesn't store the value.
+- `run-appearance-consistency-tests` 46/46.
+- Solution builds; `web` typecheck, lint and build are clean.
+- The migration applies on a fresh database.
+- **Not run:** the by-hand testenv check. The task was closed as done at the maintainer's call; the steps are in `docs/logs/2026-10-11_appearance-follow-ups/summary.md`:
+  1. `sync`, then `build` and `up` for console, Windows and Linux.
+  2. The card shows *2 machines following*.
+  3. Turn off *Follow the console* in the Windows agent's Settings → the card shows *1 machine following* and *own look: …*.
+  4. Turn off *Push appearance to agents* → *Not shared*.
+  5. `down -Only linux` → that machine shows *(offline)* after about 5 minutes.
+
+## Process notes
+
+- A PowerShell 5.1 `Get-Content`/`Set-Content` round trip, used during the mutation check, mangled `HealthService.cs`'s UTF-8. It was restored from git and the edits reapplied.
+
+## Files
+
+`src/Shared/Contracts.cs`, `src/Server/Data/Entities.cs`, `src/Server/Services/HealthService.cs`, `src/Server/Migrations/*AddAgentFollowsConsoleAppearance*`, `src/Server/openapi.json`, `src/Agent.Core/HealthReporter.cs`, `web/src/components/{AppearanceCard,ConfigView}.tsx`, `web/src/api-types.ts`, `tests/run-health-tests.ps1`, `docs/{Backlog,CONTEXT,API Reference,Build and Run}.md`, `docs/logs/shipped-2026-10.md`, `docs/logs/2026-10-11_appearance-follow-ups/` (moved from `docs/tasks/`), `docs/tasks/checkpoint-ui/{plan,implementation,implementation-grouping}.md` (links), this entry, `session_summary.md`.
