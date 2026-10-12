@@ -49,6 +49,10 @@ const EMULATORS: { id: string; label: string }[] = [
   { id: 'DuckStation', label: 'DuckStation' },
   { id: 'Dolphin', label: 'Dolphin' },
   { id: 'PrimeHack', label: 'PrimeHack' },
+  { id: 'PPSSPP', label: 'PPSSPP' },
+  { id: 'RPCS3', label: 'RPCS3' },
+  { id: 'Vita3K', label: 'Vita3K' },
+  { id: 'shadPS4', label: 'shadPS4' },
 ]
 
 /** The Console row's chips: one per EmuDeck system among `found` ("ps2"), labelled as the agent says it ("PS2"),
@@ -570,6 +574,11 @@ export function AddGamesView({ onEnrolled }: Props) {
                     Set save folder
                   </Button>
                 </div>
+              )}
+              {!c.enrolled && c.statesOnly && (
+                <span className="sl-check-row__note" style={{ display: 'block', marginTop: 4 }}>
+                  Save states only so far. Its in-game saves sync too once the game makes one.
+                </span>
               )}
               {!c.enrolled && c.untouchedSeed && (
                 <span className="sl-check-row__note" style={{ display: 'block', marginTop: 4 }}>
