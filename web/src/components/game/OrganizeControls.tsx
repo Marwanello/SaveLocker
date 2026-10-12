@@ -113,7 +113,7 @@ export function OrganizeControls({ value, onChange, stretch = true }: Props) {
             <button type="button" role="menuitem"
               className={ITEM}
               onClick={() => onChange({ ...value, dir: value.dir === 1 ? -1 : 1 })}>
-              <span className="w-3.5 shrink-0 text-faint tabular-nums">{value.dir === 1 ? 'â†‘' : 'â†“'}</span>
+              <span className="w-3.5 shrink-0 text-faint"><Icon name="arrow-up-down" size={13} strokeWidth={2.2} /></span>
               {dirLabel(value.sortBy, value.dir)}
             </button>
           </div>
