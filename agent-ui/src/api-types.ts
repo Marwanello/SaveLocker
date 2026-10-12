@@ -2621,6 +2621,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/launch-answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LaunchAnswerRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LaunchGateResult"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games/{id}/post-exit-sync": {
         parameters: {
             query?: never;
@@ -3151,13 +3199,36 @@ export interface components {
             note: null | string;
         };
         /** @enum {unknown} */
-        LaunchDecision: "Proceed" | "ProceedSyncPaused" | "Blocked";
+        LaunchAnswerRequest: {
+            questionId: string;
+            choice: string;
+            remember?: boolean;
+        };
+        LaunchChoice: {
+            id: string;
+            label: string;
+            primary?: boolean;
+        };
+        /** @enum {unknown} */
+        LaunchDecision: "Proceed" | "ProceedSyncPaused" | "Blocked" | "Ask";
         LaunchGateResult: {
             decision: components["schemas"]["LaunchDecision"];
             reason?: null | string;
             /** Format: uuid */
             conflictId?: null | string;
             holderMachineName?: null | string;
+            question?: null | components["schemas"]["LaunchQuestion"];
+        };
+        LaunchQuestion: {
+            id: string;
+            kind: string;
+            title: string;
+            text: string;
+            choices: components["schemas"]["LaunchChoice"][];
+            defaultChoice: string;
+            /** Format: int32 */
+            timeoutSeconds: number;
+            canRemember: boolean;
         };
         LaunchOptionCurrentDto: {
             /** Format: uint32 */

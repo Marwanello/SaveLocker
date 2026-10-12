@@ -57,6 +57,8 @@ public sealed class AgentApiServer : IDisposable
     // The Decky/Playnite launch gate (Phase 11) — SyncEngine.PrepareLaunchAsync, resolved against
     // whichever engine is current at the moment it's called, same reasoning as _syncAll above.
     private readonly Func<TrackedGame, CancellationToken, Task<LaunchGateResult>> _prepareLaunch;
+    // POST /api/games/{id}/launch-answer (tasks/emulator-saves Phase 5c) — SyncEngine.AnswerLaunchQuestion.
+    private readonly Func<TrackedGame, LaunchAnswerRequest, bool> _answerLaunch;
     // POST /api/games/{id}/post-exit-sync (tasks/playnite-plugin/plan.md, Phase 5) — SyncEngine
     // .OnGameExitAsync, resolved the same way _prepareLaunch is: against whichever engine a settings
     // change may have rebuilt since the host wired this up.
@@ -130,6 +132,7 @@ public sealed class AgentApiServer : IDisposable
         SyncActivityTracker? activity = null,
         Func<Task<string>>? syncAll = null,
         Func<TrackedGame, CancellationToken, Task<LaunchGateResult>>? prepareLaunch = null,
+        Func<TrackedGame, LaunchAnswerRequest, bool>? answerLaunch = null,
         Func<TrackedGame, CancellationToken, Task>? postExitSync = null,
         Func<TrackedGame, CancellationToken, Task>? releaseLease = null,
         Func<Task<PlaynitePluginStatusDto>>? playnitePluginStatus = null,
@@ -174,6 +177,7 @@ public sealed class AgentApiServer : IDisposable
         _activity = activity ?? new SyncActivityTracker();
         _syncAll = syncAll ?? (() => Task.FromResult("Not available."));
         _prepareLaunch = prepareLaunch ?? ((_, _) => Task.FromResult(new LaunchGateResult(LaunchDecision.Proceed)));
+        _answerLaunch = answerLaunch ?? ((_, _) => false);
         _postExitSync = postExitSync ?? ((_, _) => Task.CompletedTask);
         _releaseLease = releaseLease ?? ((_, _) => Task.CompletedTask);
         _syncGame = syncGame ?? ((_, _, _) => Task.FromResult("Not available."));
@@ -1426,6 +1430,17 @@ public sealed class AgentApiServer : IDisposable
             }
             finally { _syncGate.Release(); }
         }).Produces<LaunchGateResult>().Produces<LaunchGateResult>(StatusCodes.Status409Conflict);
+
+        // The other half of a LaunchDecision.Ask (tasks/emulator-saves Phase 5c): the gate already applied the default, so
+        // a client posts here only to choose something else, then launches. 404 when the question is unknown, expired,
+        // already answered or another game's — the client launches anyway, on the default already in place.
+        app.MapPost("/api/games/{id:guid}/launch-answer",
+            Results<Ok<LaunchGateResult>, NotFound> (Guid id, LaunchAnswerRequest answer) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null || !_answerLaunch(game, answer)) return TypedResults.NotFound();
+            return TypedResults.Ok(new LaunchGateResult(LaunchDecision.Proceed));
+        }).Produces<LaunchGateResult>();
 
         // Mirrors pre-launch-sync above almost exactly (tasks/playnite-plugin/plan.md, Phase 5) —
         // same single-flight gate, same "game removed mid-flight" re-check, same fail-open-on-

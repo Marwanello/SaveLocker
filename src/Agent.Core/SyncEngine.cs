@@ -15,7 +15,11 @@ public enum LaunchDecision
     ProceedSyncPaused,
     /// <summary>A genuinely confirmed, open conflict exists for this game. The caller must not start
     /// the child process — <see cref="ConflictId"/> is what a resolve UI needs to act on it.</summary>
-    Blocked
+    Blocked,
+    /// <summary>Launching is fine, and the default answer to <see cref="LaunchGateResult.Question"/> is already applied; a
+    /// client that can show the question offers the other choices (tasks/emulator-saves Phase 5c). A client that does not
+    /// know this value launches as for <see cref="Proceed"/>, which is still right. Appended last so stored values keep.</summary>
+    Ask
 }
 
 /// <summary>Which direction(s) a manual, per-game sync runs — see <see cref="SyncEngine.SyncGameAsync"/>.</summary>
@@ -69,7 +73,8 @@ public record LaunchGateResult(
     LaunchDecision Decision,
     string? Reason = null,
     Guid? ConflictId = null,
-    string? HolderMachineName = null);
+    string? HolderMachineName = null,
+    LaunchQuestion? Question = null);
 
 /// <summary>
 /// Coordinates a tracked game's saves with the server: archive + hash + upload
@@ -1304,7 +1309,9 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     /// Phase 1) rather than the reactive <see cref="OnGameLaunchAsync"/> its own doc comment warns
     /// against trusting for this.
     /// </summary>
-    public async Task<LaunchGateResult> PrepareLaunchAsync(TrackedGame game, CancellationToken ct = default)
+    /// <param name="canAsk">True for a caller that can show <see cref="LaunchGateResult.Question"/> (Decky and Playnite,
+    /// through the local API); the Linux wrapper cannot, and gets the default applied without a question.</param>
+    public async Task<LaunchGateResult> PrepareLaunchAsync(TrackedGame game, CancellationToken ct = default, bool canAsk = false)
     {
         if (RefuseIfRetired(game, "launch handling"))
             return new LaunchGateResult(LaunchDecision.Proceed);
@@ -1324,6 +1331,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             Alert($"[{game.Name}] WARNING: saves are checked out by '{holder}'. " +
                  "Launched without pulling — a conflict may occur on exit.",
                 AgentEventCodes.LeaseHeldElsewhere, AgentEventSeverity.Warning, game.GameId);
+            CheckXeniaProfile(game, canAsk: false);
             return new LaunchGateResult(LaunchDecision.ProceedSyncPaused,
                 $"saves are checked out by '{holder}' — launching without pulling.",
                 HolderMachineName: holder);
@@ -1358,7 +1366,30 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         // fetching newer data, it must never also skip the safety check for a genuinely diverged save.
         if (EffectivePullBeforeLaunch(game))
             await PullAsync(game, force: false, ct);
-        return new LaunchGateResult(LaunchDecision.Proceed);
+        return CheckXeniaProfile(game, canAsk) ?? new LaunchGateResult(LaunchDecision.Proceed);
+    }
+
+    /// <summary>The profile checked at launch (tasks/emulator-saves Phase 5c) — after the pull, so the save it signs in to
+    /// is the newest. Fails open like every other pre-launch check: a config it cannot read or write never stops a launch.</summary>
+    private LaunchGateResult? CheckXeniaProfile(TrackedGame game, bool canAsk)
+    {
+        try { return XeniaLaunchProfile.Check(_config, game, LaunchQuestionStore.For(_config), canAsk, _log); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or ArgumentException)
+        {
+            _log($"[{game.Name}] could not check Xenia's profile before launch: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>A client's answer to a launch question; false when it does not match an open question of this game.</summary>
+    public bool AnswerLaunchQuestion(TrackedGame game, LaunchAnswerRequest answer)
+    {
+        try { return XeniaLaunchProfile.Answer(_config, game, LaunchQuestionStore.For(_config), answer, _log); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            _log($"[{game.Name}] could not apply the launch answer: {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>

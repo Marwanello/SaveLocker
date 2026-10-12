@@ -91,6 +91,9 @@ public sealed class AgentConfig
     /// but ignored, so turning it back on shows the console's current look at once.
     /// </summary>
     public bool FollowConsoleAppearance { get; set; } = true;
+    /// <summary>What to do before a Xenia game starts when Xenia is set to another profile than the one its saves are
+    /// under (tasks/emulator-saves Phase 5c). Null means <see cref="ProfileAtLaunch.Ask"/>; a game can override it.</summary>
+    public ProfileAtLaunch? XeniaProfileAtLaunch { get; set; }
     /// <summary>The look the console last pushed on a heartbeat; null until one carried a look.</summary>
     public AppearanceDto? ConsoleAppearance { get; set; }
     /// <summary>When <see cref="ConsoleAppearance"/> last <b>changed</b> (UTC) — not when a heartbeat
@@ -741,6 +744,10 @@ public sealed class AgentConfig
     /// requests, so a plain mutate-then-<see cref="Save"/> could lose a concurrent write instead of
     /// only ever adding information nothing else was going to touch.
     /// </summary>
+    /// <summary>Persist one game's profile-at-launch override — see <see cref="MutateGameUnderLock"/>.</summary>
+    public void SaveGameProfileAtLaunch(Guid gameId, ProfileAtLaunch? value) =>
+        MutateGameUnderLock(gameId, g => g.XeniaProfileAtLaunch = value);
+
     public void SaveGameSteamAppId(Guid gameId, string appId) =>
         MutateGameUnderLock(gameId, g => g.SteamAppId = appId);
 
@@ -831,6 +838,8 @@ public sealed class TrackedGame
     /// must run whether or not a push happened.
     /// </summary>
     public bool? PushAfterExitEnabled { get; set; }
+    /// <summary>This game's own answer to <see cref="AgentConfig.XeniaProfileAtLaunch"/> — set by “don’t ask again”.</summary>
+    public ProfileAtLaunch? XeniaProfileAtLaunch { get; set; }
     /// <summary>The local save directory to archive/restore.</summary>
     public string SaveDirectory { get; set; } = "";
     /// <summary>How this machine found the game ("Emulator › RetroArch"), set when it was enrolled here.
