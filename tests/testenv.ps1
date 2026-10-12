@@ -1092,16 +1092,19 @@ function Import-PlayniteData {
     Write-Host "  next: .\tests\testenv.ps1 build -Only playnite; .\tests\testenv.ps1 up -Only playnite"
 }
 
-# The installed release agent runs as SaveLocker.Agent.exe, so a dotnet.exe host with the agent DLL
-# on its command line can only ever be a build from this tree. Nothing here can reach the real one.
+# The installed release agent runs as SaveLocker.Agent.exe outside any src\Agent\bin, so a tree
+# build is identifiable by that path and nothing here can reach the real one.
 function Get-TestTray {
-    # Two shapes now: the dotnet-hosted Debug dll every command here starts, and the apphost exe the
+    # Three shapes: the dotnet-hosted Debug dll every command here starts, the apphost exe the
     # toast-activation host starts (ToastActivationHost.StartTray) — the latter was invisible to the
-    # old filter, so stop/clean walked past a live tray and Remove-Item failed under it (2026-10-11).
-    # Scoped by this worktree's own root, so the installed agent's exe can never match.
+    # old filter, so stop/clean walked past a live tray and Remove-Item failed under it (2026-10-11) —
+    # and either shape started by ANOTHER worktree's testenv. The rig is shared (one state root, one
+    # console, one :5188), so scoping to this worktree's `$root` walked past a foreign tray and left
+    # it holding the port with a stale key while clean/up reported success (2026-10-12). Tree builds
+    # live under `\src\Agent\bin\`; the installed agent never does.
     Get-CimInstance Win32_Process -Filter "Name = 'dotnet.exe' OR Name = 'SaveLocker.Agent.exe'" -ErrorAction SilentlyContinue |
         Where-Object {
-            $_.CommandLine -like "*$root*" -and
+            $_.CommandLine -like '*\src\Agent\bin\*' -and
             ($_.CommandLine -like '*SaveLocker.Agent.dll*' -or $_.Name -eq 'SaveLocker.Agent.exe')
         }
 }

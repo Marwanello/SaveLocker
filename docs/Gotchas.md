@@ -154,6 +154,15 @@ behave in ways that look like bugs.
   `down` prints "no test tray running" while the tray keeps serving :5188 and locking `src/Agent/bin/Debug`
   (every agent build then fails with MSB3027, and `Stop-Process` is "Access is denied"). Found 2026-09-28.
   Run `testenv.ps1` from the same kind of shell every time, or stop that tray from the elevated one.
+- **A test tray started by ANOTHER worktree used to be invisible to this one's `clean`/`up` — and outlive
+  them.** The rig is shared by every worktree (one state root, one console, one :5188) and `Get-TestTray`
+  was scoped to the calling worktree's own root, so `clean` printed "no test tray running" and deleted the
+  state out from under the foreign tray; the next `up` then started a tray that could not take the port
+  (or its mutex) and exited while the stale one kept serving :5188 with its old machine key — 401 on every
+  call, surviving any number of clean/restart cycles. Found 2026-10-12. Fixed the same day: `Get-TestTray`
+  matches any tree build by its `\src\Agent\bin\` path (the installed agent never lives there), so any
+  worktree's `clean`/`up`/`down` stops any worktree's tray. Two sessions driving the rig at once still
+  stomp each other's state — coordinate.
 - **`build` (any `-Only` target) never fetches or checks out anything itself — it builds whatever
   commit the WSL clone already has.** `sync` is a separate command that does the fetch+checkout (see
   *Sync the WSL clone from `git status`* below); running `build -Only deck` right after switching
