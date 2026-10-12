@@ -32,7 +32,7 @@ point unless explicitly instructed to.
 | 4 — PrimeHack | 🚧 Built 2026-10-07 (branch `emulator-saves-group-c`) — the Dolphin reader against PrimeHack's folders (EmuDeck `saves/primehack`, Flatpak `io.github.shiiion.primehack`, EmuDeck for Windows `Emulators\primehack\User`). **Maintainer's choice:** saves from different emulators are never one game, even with the same files — `GameDto.Emulators` (server, from the sources) + `Enroller.SameEmulator`, mutation-checked. EmuDeck for Windows had created `Emulators\PrimeHack` but never run it (no `User` yet), so where a non-portable PrimeHack keeps its user folder is still to see (Group H) |
 | 5a — RPCS3 | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `Rpcs3Saves`: `dev_hdd0/home/<user>/savedata`, scope `<ID>*/**`, named by Redump's PS3 set, else the save's `PARAM.SFO` `TITLE`; EmuDeck's link, else `vfs.yml`. **Captured 2026-10-11:** the Deck's real save `BCUS98132-GAMEAUTOSAVE` (*Heavenly Sword*) and `vfs.yml` (dev_hdd0 on the SD card); the PC's `RPCS3\config\vfs.yml`. See *Group D — as built* |
 | 5b — Xenia | 🚧 Built 2026-10-12 (branch `emulator-saves-group-e`; follow-up the same day: device saves as a second folder, the named-profile layout) — `XeniaSaves`: a game is its `<TID>/00000001` saved games and their `Headers/00000001`, in a profile's `content/<XUID>` (Canary) or `content` itself (older builds); DLC, title updates, XUID 0 and the dashboard's `FFFE07D1` never synced (scope mutation-checked). Named by title ID from the bundled table (Redump disc serials → title IDs, No-Intro Arcade titles), else `Xbox 360 <TID>`. **Captured 2026-10-12:** the PC's real *Forza Horizon* / *Forza Horizon 2* saves (profile layout); the Deck's Proton Canary with both layouts side by side. See *Group E — as built* |
-| 5c — Xenia profile and DLC | ⏳ Designed 2026-10-12 — **DLC: the DLC check chosen** (lists only, hand-over through the server, 9-step build plan); **profile: F (checked at launch) with the profile split by game chosen** (10-step build plan). Mockups in this folder. See *Phase 5c* |
+| 5c — Xenia profile and DLC | 🚧 In progress 2026-10-12 (final plan approved; see *Phase 5c — final plan*) — **DLC: the DLC check chosen** (lists only, hand-over through the server, 9-step build plan); **profile: F (checked at launch) with the profile split by game chosen** (10-step build plan). Mockups in this folder. See *Phase 5c* |
 | 6 — Switch: Yuzu, Citron, Eden, Ryujinx | ⏳ Not started — Group F. **Widened 2026-10-07** from Eden only, at the maintainer's request; needs the server title key (D2) |
 | 7 — UI filter | ✅ Shipped 2026-10-07 (same PR), filter by emulator — agent UI *Emulators* chip with an *Emulator* row under it (one chip per emulator, RetroArch today), Deck *Emulators* pill. A per-console sub-breakdown was not built — it comes back with Phase 2, when more than one console has saves. |
 | 7b — Game source per machine, names without "(RetroArch)" | ✅ Shipped 2026-10-07 (same PR) — built 2026-10-07 (maintainer asked; picked variation B of a clickable mockup on all three screens). Unit 280. Console checked in the browser against a seeded dev server; agent UI and Deck need the testenv pass. **Review fixes 2026-10-07** (same PR): server-decided names, the scope-join refusal, source re-send guard, EmuDeck tag, server bounds — unit 291, see `progress.md`. |
@@ -604,6 +604,54 @@ build step below:
    never waits on DLC; a Decky line for a held pull.
 9. **Help, CLI, testenv, Group H:** a help article, `dlc status` / `dlc ask`, testenv packages on Windows and missing on WSL,
    and the real Forza Horizon DLC between PC and Deck. Then further inventories: Cemu (`0005000c`), Azahar (`0004008c`), RPCS3.
+
+### Phase 5c — final plan (approved by the maintainer 2026-10-12)
+
+Both designs above are approved: **the profile checked at launch (F) with the profile split by game**, and **the DLC check**.
+This is the build order; each numbered step is one commit on this PR (`emulator-saves-group-e`, #68), and the plugin parts are
+their own PRs on `Marwanello/SaveLocker-Decky` and `Marwanello/SaveLocker-Playnite`.
+
+**Captured before building (2026-10-12, this PC; the Deck was offline):**
+- Xenia Canary under **Xenia Manager** (`D:\Game Sources\Emulators\Xenia Manager\Emulators\Xenia Canary`, portable). Its root
+  `xenia-canary.config.toml` has `[Profiles] logged_profile_slot_0_xuid = "E030000033894516"`, and Xenia Manager keeps **one config
+  per game** in `config/<game name>.config.toml`, which carry the same line. The launch check writes the root config and the
+  game's own config when there is one.
+- `FFFE07D1.gpd` is XDBF exactly as Free60 documents it: 24-byte header, 18-byte entries (namespace, id, offset, length), 8-byte
+  free entries, data after both tables; the last free entry is `(end, ~end)`. Title rows are namespace 4 keyed by title ID
+  (unlocked at +8, gamerscore earned at +16); settings are namespace 3, 24 bytes, an Int32 value at +16. The three totals —
+  `0x10040006` gamerscore, `0x10040012` games played, `0x10040013` achievements — equal the sums over the rows, so a merge
+  recounts them.
+- `Account` decrypts with Xenia's retail key `0x19` (HMAC-SHA1 of the first 16 bytes → RC4 key); the hash checks out and the
+  gamertag is UTF-16BE at +16 of the decrypted data.
+- A DLC header in `Headers/00000002/<package>.header` is 332 bytes: device, content type (2 = DLC), display name UTF-16BE
+  (`Pre-Order Car Pack`), the package file name, the title ID. Forza Horizon's ten packages are 48 MB–349 MB, 1.0 GB in all.
+
+**Launch questions (shared by the profile and the DLC check).** `LaunchDecision` gains `Ask`, and `LaunchGateResult` gains a
+`Question` (id, kind, title, text, choices, the default choice, a timeout). **The agent applies the default before it answers
+`Ask`,** so a client that does not know `Ask` (today's Decky and Playnite plugins fail open on anything but `Blocked`) still
+launches correctly. A client that shows the question posts a different choice to `POST /api/games/{id}/launch-answer`, which the
+agent applies before the launch continues. The in-process Linux wrapper cannot ask, so for it `Ask` is the default.
+
+**Steps**
+1. **Xenia file formats** — `Xdbf` (read, write, the row merge and recount), `XeniaAccount` (gamertag), `XeniaContentHeader`
+   (DLC and title-update headers), `XeniaConfig` (find the config(s), read and write `logged_profile_slot_0_xuid` line by line).
+   Unit tests on built fixtures; a local-only test reads the captured real files when `SAVELOCKER_XENIA_CAPTURE` points at them
+   (they hold a real gamertag, so they are not committed).
+2. **Launch questions** — the contract above in the agent; the answer route; a question store with expiry.
+3. **The profile at launch** — `XeniaLaunchProfile.Decide` in `PrepareLaunchAsync`: the game's profile is the XUID its save folder
+   is under; policy Ask (default) / Switch / Leave, a machine setting; pre-profile layouts skip it; never while Xenia runs.
+4. **Plugins** — Decky: a modal for `Ask` during a held launch, answer through `main.py`, timeout keeps the default. Playnite: a
+   real dialog in `OnGameStarting`. Both keep failing open.
+5. **The game's part of the profile** — the `profile` folder (`<TID>.gpd`) and its row exported/merged around push and pull.
+6. **The profile core, copied once** — restore-if-missing.
+7. **The game's profile on the server and aligning a machine** — `Game.EmulatorProfile`; Add games' “Use <profile> here”.
+8. **DLC: the list with every push** and **what each machine has** (server tables, migration, API).
+9. **DLC: the check before a pull** — agent UI card and dialog; `Ask` in a launch uses the launch question.
+10. **Console** — the DLC check card, the profile-at-launch table, the Configuration card.
+11. **DLC hand-over, server** — `ContentTransfer`, temporary parts, sweeper, cap, audit.
+12. **DLC hand-over, agents** — send and fetch through the poller.
+13. **Hold and notifications** — durable held pulls, the folder watch, notices.
+14. **Help, CLI, testenv, Group H** — Forza Horizon between PC (Xenia Manager, Playnite) and Deck (Game Mode).
 
 **Verify (when built):** a profile pulled to a machine without it signs in and loads a game's save there; a machine with its own
 profile keeps it; a DLC entry pushed once and pulled; a save game's push never carries DLC; the two-machine tests per entry.
