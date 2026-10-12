@@ -245,7 +245,7 @@ public sealed class ArtService
         var wanted = Assets.Where(a => !onlyMissing || string.IsNullOrEmpty(UrlFor(game, a.kind))).ToArray();
         if (wanted.Length == 0) return (true, "No art was missing.");
 
-        var sgdbId = await FindGameIdAsync(game.Name, ct);
+        var sgdbId = await ResolveSgdbIdAsync(game, ct);
         if (sgdbId is null) return (false, $"No SteamGridDB match for \"{game.Name}\".");
 
         var found = new List<string>();
@@ -279,6 +279,124 @@ public sealed class ArtService
     /// <summary>Whether a SteamGridDB key is configured, from the dashboard or from configuration.</summary>
     public async Task<bool> HasKeyAsync(CancellationToken ct = default) =>
         !string.IsNullOrWhiteSpace(await ResolveKeyAsync(ct));
+
+    /// <summary>
+    /// Which SteamGridDB game this game's artwork comes from — the hand-picked one, or the first match
+    /// for the game's own name. Answers without a key when a game was picked by hand (nothing needs
+    /// resolving); an automatic source with no name means there is no key or no match.
+    /// </summary>
+    public async Task<(ArtSourceDto? source, string? error)> GetSourceAsync(
+        Guid gameId, CancellationToken ct = default)
+    {
+        var game = await _db.Games.FindAsync(new object?[] { gameId }, ct);
+        if (game is null) return (null, "Unknown game.");
+
+        if (game.SteamGridDbId is { } chosen)
+            return (new ArtSourceDto(chosen, game.SteamGridDbName, false), null);
+
+        _apiKey = await ResolveKeyAsync(ct);
+        if (string.IsNullOrWhiteSpace(_apiKey)) return (new ArtSourceDto(null, null, true), null);
+
+        try
+        {
+            var hit = await FindGameAsync(game.Name, ct);
+            return (new ArtSourceDto(hit?.Id, hit?.Name, true), null);
+        }
+        catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException) && !ct.IsCancellationRequested)
+        {
+            // No match to name right now; the options listing reports the reachability problem itself.
+            return (new ArtSourceDto(null, null, true), null);
+        }
+    }
+
+    /// <summary>
+    /// Choose which SteamGridDB game this game's artwork comes from, or null to go back to the
+    /// automatic first-name-match. A non-null id is checked against SteamGridDB before it is stored
+    /// (the caller-supplied id could be anything), and the name it answers with is what gets stored —
+    /// never the caller's text.
+    /// </summary>
+    public async Task<(ArtSourceDto? source, string? error)> SetSourceAsync(
+        Guid gameId, int? sgdbId, CancellationToken ct = default)
+    {
+        var game = await _db.Games.FindAsync(new object?[] { gameId }, ct);
+        if (game is null) return (null, "Unknown game.");
+
+        if (sgdbId is null)
+        {
+            // Back to the automatic match. The next options page or refresh resolves it by name again.
+            game.SteamGridDbId = null;
+            game.SteamGridDbName = null;
+            await _db.SaveChangesAsync(ct);
+            return (new ArtSourceDto(null, null, true), null);
+        }
+
+        if (sgdbId <= 0) return (null, "That is not a valid SteamGridDB game id.");
+
+        _apiKey = await ResolveKeyAsync(ct);
+        if (string.IsNullOrWhiteSpace(_apiKey))
+            return (null, "SteamGridDB API key not configured — set it in the dashboard (Server settings).");
+
+        try
+        {
+            var picked = await GetGameByIdAsync(sgdbId.Value, ct);
+            if (picked is null) return (null, $"SteamGridDB has no game with id {sgdbId}.");
+
+            game.SteamGridDbId = picked.Id;
+            game.SteamGridDbName = picked.Name;
+            await _db.SaveChangesAsync(ct);
+            return (new ArtSourceDto(picked.Id, picked.Name, false), null);
+        }
+        catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException) && !ct.IsCancellationRequested)
+        {
+            return (null, "Could not reach SteamGridDB: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// SteamGridDB games matching what the user typed in the picker, best match first. The picker's
+    /// way out of a game whose name matches the wrong entry. An empty query is an empty list and never
+    /// reaches SteamGridDB.
+    /// </summary>
+    public async Task<(List<SgdbGameDto>? games, string? error)> SearchGamesAsync(
+        Guid gameId, string? query, CancellationToken ct = default)
+    {
+        var q = query?.Trim();
+        if (string.IsNullOrEmpty(q)) return (new List<SgdbGameDto>(), null);
+        if (q.Length > MaxSearchQueryLength) q = q[..MaxSearchQueryLength];
+
+        var game = await _db.Games.FindAsync(new object?[] { gameId }, ct);
+        if (game is null) return (null, "Unknown game.");
+
+        _apiKey = await ResolveKeyAsync(ct);
+        if (string.IsNullOrWhiteSpace(_apiKey))
+            return (null, "SteamGridDB API key not configured — set it in the dashboard (Server settings).");
+
+        try
+        {
+            using var doc = await GetJsonAsync($"search/autocomplete/{Uri.EscapeDataString(q)}", ct);
+            if (doc is null) return (null, "SteamGridDB did not answer the search — check the API key.");
+
+            var games = new List<SgdbGameDto>();
+            if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
+                foreach (var e in data.EnumerateArray())
+                {
+                    if (!e.TryGetProperty("id", out var idEl) || !idEl.TryGetInt32(out var id)) continue;
+                    games.Add(new SgdbGameDto(id, NameOf(e), YearOf(e)));
+                    if (games.Count >= MaxSearchResults) break;
+                }
+            return (games, null);
+        }
+        catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException) && !ct.IsCancellationRequested)
+        {
+            return (null, "Could not reach SteamGridDB: " + ex.Message);
+        }
+    }
+
+    /// <summary>Upper bound on the picker's search box, so one paste cannot build an absurd URL.</summary>
+    private const int MaxSearchQueryLength = 100;
+
+    /// <summary>How many search hits the picker is offered.</summary>
+    private const int MaxSearchResults = 20;
 
     /// <summary>
     /// Games with no cover or no icon — the two the console draws. Hero and logo are not counted: they
@@ -382,7 +500,7 @@ public sealed class ArtService
 
         try
         {
-            var sgdbId = await ResolveSgdbIdAsync(game.Name, ct);
+            var sgdbId = await ResolveSgdbIdAsync(game, ct);
             if (sgdbId is null) return (null, $"No SteamGridDB match for \"{game.Name}\".");
 
             var source = _cache.GetOrCreate($"sgdb-options:{sgdbId}:{kind}", e =>
@@ -510,23 +628,55 @@ public sealed class ArtService
         ".webp" => "image/webp", _ => "image/x-icon",
     };
 
-    private async Task<int?> ResolveSgdbIdAsync(string name, CancellationToken ct)
+    private async Task<int?> ResolveSgdbIdAsync(Game game, CancellationToken ct)
     {
-        var key = "sgdb-id:" + name.ToLowerInvariant();
+        // A game chosen by hand wins over the name search everywhere — the picker, Refresh art, the
+        // backfill — and needs no lookup: the id is already validated and stored.
+        if (game.SteamGridDbId is { } chosen) return chosen;
+
+        var key = "sgdb-id:" + game.Name.ToLowerInvariant();
         if (_cache.TryGetValue(key, out int cached)) return cached;
-        var id = await FindGameIdAsync(name, ct);
+        var id = (await FindGameAsync(game.Name, ct))?.Id;
         if (id is { } found) _cache.Set(key, found, TimeSpan.FromMinutes(30));
         return id;
     }
 
     // ----- SteamGridDB calls -----
 
-    private async Task<int?> FindGameIdAsync(string name, CancellationToken ct)
+    /// <summary>The first game SteamGridDB's autocomplete returns for a name, with its own name and year.</summary>
+    private async Task<SgdbGameDto?> FindGameAsync(string name, CancellationToken ct)
     {
         using var doc = await GetJsonAsync($"search/autocomplete/{Uri.EscapeDataString(name)}", ct);
         if (doc is null) return null;
         var data = doc.RootElement.GetProperty("data");
-        return data.GetArrayLength() > 0 ? data[0].GetProperty("id").GetInt32() : null;
+        if (data.GetArrayLength() == 0) return null;
+        var first = data[0];
+        return new SgdbGameDto(first.GetProperty("id").GetInt32(), NameOf(first), YearOf(first));
+    }
+
+    /// <summary>One SteamGridDB game by id, for validating a hand-picked source.</summary>
+    private async Task<SgdbGameDto?> GetGameByIdAsync(int id, CancellationToken ct)
+    {
+        using var doc = await GetJsonAsync($"games/id/{id}", ct);
+        if (doc is null || !doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+            return null;
+        if (!data.TryGetProperty("id", out var idEl) || !idEl.TryGetInt32(out var got)) return null;
+        return new SgdbGameDto(got, NameOf(data), YearOf(data));
+    }
+
+    private static string NameOf(JsonElement e) =>
+        e.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String && n.GetString() is { Length: > 0 } s
+            ? s
+            : "Unknown";
+
+    /// <summary>SteamGridDB's <c>release_date</c> (e.g. "2016-05-13"), reduced to a year when it is one.</summary>
+    private static string? YearOf(JsonElement e)
+    {
+        if (!e.TryGetProperty("release_date", out var d) || d.ValueKind != JsonValueKind.String ||
+            d.GetString() is not { Length: >= 4 } text)
+            return null;
+        var year = text[..4];
+        return year.All(char.IsAsciiDigit) ? year : null;
     }
 
     private async Task<string?> FirstAssetUrlAsync(string path, CancellationToken ct) =>

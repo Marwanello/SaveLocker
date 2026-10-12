@@ -74,6 +74,10 @@
 #                                 chosen image goes through the same hostile-URL rules; the default icon
 #                                 is the first OPAQUE one; ?w= thumbnails are right-sized, cached,
 #                                 allowlisted, never upscaled, and go stale when the cover is replaced.
+#                                 WHICH SteamGridDB game the art comes from can be named, searched for
+#                                 and chosen (`art/source` + `art/search`) — a checked id, stored with
+#                                 SteamGridDB's own name; options, Refresh art and the backfill follow it,
+#                                 and "automatic match" clears it again.
 #
 # Checks that read or edit the SQLite file go through python's sqlite3 module (there is no sqlite3 CLI on
 # the Windows box): a native Python 3 if there is one, else WSL's (as run-server-bugbounty-tests.ps1 does).
@@ -1135,8 +1139,25 @@ if (-not $canBind) {
             try {
                 if ($path -eq "/ping") { Send $ctx 200 ([Text.Encoding]::UTF8.GetBytes("pong")) "text/plain" }
                 elseif ($path -like "/api/v2/search/autocomplete/*") {
-                    $id = if ($path -like "*Good*") { 1 } elseif ($path -like "*Paged*") { 3 } elseif ($path -like "*Opaque*") { 4 } elseif ($path -like "*Bomb*") { 5 } elseif ($path -like "*Corrupt*") { 6 } else { 2 }
-                    Json $ctx @{ success = $true; data = @(@{ id = $id }) }
+                    # "SEC PickerChoice" (the game's own name, resolved automatically at creation) and "Right"
+                    # (what the picker's search box is typed with) are the same three candidates: the first is
+                    # deliberately the wrong game, 21 the one a person would choose.
+                    if ($path -like "*PickerChoice*" -or $path -like "*autocomplete/Right*") {
+                        Json $ctx @{ success = $true; data = @(
+                            @{ id = 9;  name = "Wrong Game";  release_date = "1999-01-01" },
+                            @{ id = 21; name = "Picked Game"; release_date = "2016-05-13" },
+                            @{ id = 23; name = "Third Game";  release_date = "2018-06-01" }) }
+                    } else {
+                        $id = if ($path -like "*Good*") { 1 } elseif ($path -like "*Paged*") { 3 } elseif ($path -like "*Opaque*") { 4 } elseif ($path -like "*Bomb*") { 5 } elseif ($path -like "*Corrupt*") { 6 } else { 2 }
+                        Json $ctx @{ success = $true; data = @(@{ id = $id }) }
+                    }
+                }
+                # The picker's "which SteamGridDB game" lookup: only id 21 exists, so an id it does not know
+                # is a refusal (the server must not store an unchecked id).
+                elseif ($path -match "^/api/v2/games/id/(\d+)$") {
+                    $gid = [int]$Matches[1]
+                    if ($gid -eq 21) { Json $ctx @{ success = $true; data = @{ id = 21; name = "Picked Game"; release_date = "2016-05-13" } } }
+                    else { Json $ctx @{ success = $false; errors = @("Not found") } }
                 }
                 # Picker fixtures. Game 3 has 12 covers spread over two API pages of 7 and 5 - deliberately not
                 # the console's five-per-page, so a slice that straddles the API boundary is exercised. Game 4
@@ -1157,6 +1178,19 @@ if (-not $canBind) {
                     elseif ($gid -eq 6 -and $kind -eq "icons") { $items = @(@{ id = 62; url = "$base/img/corrupt.png" }); $total = 1 }
                     elseif ($gid -eq 4 -and $kind -eq "icons") { $items = @(@{ id = 41; url = "$base/img/icon-clear.png" }, @{ id = 42; url = "$base/img/icon-solid.png" }); $total = 2 }
                     Json $ctx @{ success = $true; total = $total; data = $items }
+                }
+                # The hand-chosen SteamGridDB game's own art (id 21) and the automatic one it replaces (9):
+                # distinct URLs per id, so a test can tell whose assets the picker actually listed.
+                elseif ($path -match "^/api/v2/(grids|icons)/game/(9|21|23)$") {
+                    $kind = $Matches[1]; $gid = [int]$Matches[2]
+                    # Assigned through if/else STATEMENTS, not `$items = if (...)`: a single-element array
+                    # emitted by a statement is unrolled to a scalar, and the API's `data` must stay an array.
+                    if ($kind -eq "grids") {
+                        $items = @(@{ id = $gid * 10; url = "$base/img/good.png?n=$gid"; thumb = "$base/img/big.png"; width = 600; height = 900; author = @{ name = "picked" } })
+                    } else {
+                        $items = @(@{ id = $gid * 10 + 1; url = "$base/img/icon-solid.png" })
+                    }
+                    Json $ctx @{ success = $true; total = 1; data = $items }
                 }
                 elseif ($path -match "^/api/v2/(grids|heroes|logos|icons)/game/(\d+)") {
                     $kind = $Matches[1]; $gid = [int]$Matches[2]
@@ -1344,6 +1378,55 @@ if (-not $canBind) {
         Check "picker: only 'grid' and 'icon' can be chosen - not hero or logo" `
             ((Http PUT "/api/games/$($paged.id)/art/hero" @{ url = "http://127.0.0.1:$StubPort/img/good.png" }).Status -eq 400)
         Check "picker: the refused attempts changed nothing" ((GameNamed "SEC Paged").gridUrl -eq $applied.Json.gridUrl)
+
+        # ---- choosing WHICH SteamGridDB game to pull from (a name that matches the wrong entry)
+        Http POST "/api/games" @{ name = "SEC PickerChoice" } | Out-Null
+        $choice = GameNamed "SEC PickerChoice"
+        $src0 = Http GET "/api/games/$($choice.id)/art/source"
+        Check "source: a fresh game is on the automatic match, named by SteamGridDB" `
+            ($src0.Status -eq 200 -and $src0.Json.automatic -eq $true -and $src0.Json.sgdbId -eq 9 -and $src0.Json.name -eq "Wrong Game")
+
+        $autoBefore = @(Get-Content $stubLog | Where-Object { $_ -like "*search/autocomplete*" }).Count
+        $search = Http GET "/api/games/$($choice.id)/art/search?q=Right"
+        Check "source search: typed text lists SteamGridDB games with their release years" `
+            ($search.Status -eq 200 -and @($search.Json).Count -eq 3 -and @($search.Json)[1].id -eq 21 -and
+             @($search.Json)[1].name -eq "Picked Game" -and @($search.Json)[1].year -eq "2016")
+        $autoAfterSearch = @(Get-Content $stubLog | Where-Object { $_ -like "*search/autocomplete*" }).Count
+        $empty = Http GET "/api/games/$($choice.id)/art/search?q="
+        Check "source search: an empty query is an empty list and never reaches SteamGridDB" `
+            ($empty.Status -eq 200 -and @($empty.Json).Count -eq 0 -and
+             @(Get-Content $stubLog | Where-Object { $_ -like "*search/autocomplete*" }).Count -eq $autoAfterSearch)
+        Check "source search: ... the query itself did reach it" ($autoAfterSearch -gt $autoBefore)
+
+        $wrongBefore = StubCount "GET 127.0.0.1 /api/v2/grids/game/9"
+        $picked = Http PUT "/api/games/$($choice.id)/art/source" @{ sgdbId = 21 }
+        Check "source: choosing a game stores it with SteamGridDB's OWN name - the caller's text is never stored" `
+            ($picked.Status -eq 200 -and $picked.Json.automatic -eq $false -and $picked.Json.sgdbId -eq 21 -and $picked.Json.name -eq "Picked Game")
+        Check "source: ... and the picker shows it from then on" `
+            ((Http GET "/api/games/$($choice.id)/art/source").Json.sgdbId -eq 21)
+        $opt21 = Http GET "/api/games/$($choice.id)/art/options?kind=grid&page=0"
+        Check "source: the strips now list the CHOSEN game's art, not the first name match's" `
+            ($opt21.Status -eq 200 -and @($opt21.Json.options).Count -eq 1 -and @($opt21.Json.options)[0].url -like "*n=21*")
+        Check "source: ... fetched from the chosen id, and the wrong entry was never asked for art again" `
+            ((StubCount "GET 127.0.0.1 /api/v2/grids/game/21") -ge 1 -and
+             (StubCount "GET 127.0.0.1 /api/v2/grids/game/9") -eq $wrongBefore)
+
+        $refresh21 = StubCount "GET 127.0.0.1 /api/v2/grids/game/21"
+        $ref = Http POST "/api/games/$($choice.id)/art/refresh"
+        Check "source: Refresh art re-fetches from the chosen game too" `
+            ($ref.Status -eq 200 -and (StubCount "GET 127.0.0.1 /api/v2/grids/game/21") -gt $refresh21 -and
+             (GameNamed "SEC PickerChoice").gridUrl -like "/art/*/grid.png*")
+
+        $badId = Http PUT "/api/games/$($choice.id)/art/source" @{ sgdbId = 999 }
+        Check "source: an id SteamGridDB does not know is refused, and the choice is unchanged" `
+            ($badId.Status -eq 400 -and (Http GET "/api/games/$($choice.id)/art/source").Json.sgdbId -eq 21)
+        Check "source: an unknown game is refused" ((Http GET "/api/games/$([guid]::NewGuid())/art/source").Status -eq 400)
+
+        $reset = Http PUT "/api/games/$($choice.id)/art/source" @{ sgdbId = $null }
+        $srcAfter = Http GET "/api/games/$($choice.id)/art/source"
+        Check "source: 'automatic match' clears the choice, and the name resolves again on the next read" `
+            ($reset.Status -eq 200 -and $reset.Json.automatic -eq $true -and $null -eq $reset.Json.sgdbId -and
+             $srcAfter.Json.automatic -eq $true -and $srcAfter.Json.sgdbId -eq 9 -and $srcAfter.Json.name -eq "Wrong Game")
 
         # ---- an image that declares far more pixels than it has bytes (144 MP in a few KB) is refused everywhere
         Http POST "/api/games" @{ name = "SEC Bomb" } | Out-Null
