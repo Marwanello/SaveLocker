@@ -3,6 +3,9 @@ using System.Net.Sockets;
 
 namespace SaveLocker.Server.Services;
 
+/// <summary>One client currently refused after too many wrong passwords: who, and for how much longer.</summary>
+public readonly record struct AuthLockout(string Client, TimeSpan Remaining);
+
 /// <summary>
 /// Slows password guessing. Every place the server checks the ADMIN password — the console's
 /// sign-in, the legacy <c>X-Admin-Password</c> header, and re-registering an existing machine — asks
@@ -128,6 +131,24 @@ public sealed class AuthThrottle
                 startedLockout = true;
             }
             return startedLockout;
+        }
+    }
+
+    /// <summary>
+    /// Who is refused right now, for the console to show. A global lockout appears as the client
+    /// "(all clients)". Snapshots under the same gate as the recorders; bounded, since this paints a
+    /// notification, not an audit of the table.
+    /// </summary>
+    public IReadOnlyList<AuthLockout> ActiveLockouts()
+    {
+        var now = DateTime.UtcNow;
+        lock (_gate)
+        {
+            var result = new List<AuthLockout>();
+            if (_globalLockedUntil > now) result.Add(new AuthLockout("(all clients)", _globalLockedUntil - now));
+            foreach (var (client, c) in _clients)
+                if (c.LockedUntil > now) result.Add(new AuthLockout(client, c.LockedUntil - now));
+            return result.OrderByDescending(l => l.Remaining).Take(20).ToList();
         }
     }
 

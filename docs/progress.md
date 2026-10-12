@@ -3715,6 +3715,81 @@ follow-up PR. `CONTEXT.md` mentions Group H too.
 
 `docs/tasks/emulator-saves/{plan,implementation-grouping}.md`, `docs/CONTEXT.md`, this entry, `session_summary.md`.
 
+## 2026-10-09 — Quick wins: seven backlog items, one verification item retired (PR #64)
+
+Asked first to rank the backlog by "quick *and* highest impact", then: implement those, on a new kebab-named
+branch, show how to verify each with `testenv`, and mark them done. `unverified-ui-surfaces` was already verified
+and should be retired; completed task folders move to `docs/tasks/_done/`.
+
+Branch `fix/backlog-quick-wins` (worktree `.claude/worktrees/fix-backlog-quick-wins`), PR #64 on
+Marwanello/SaveLocker, base `main`. Commits: `56ec67b` (fixes + tests), `cafafa8` (vault docs), `e3901f4`
+(`SaveFileTreeTests` registration carries the admin password), `c7cbadb` (counts), `6f42871` (merge of `main`
+through #63), `9fa1012` (counts again), `e948683` (`testenv` `-ConsoleEnv` comma split).
+
+**The seven, and what each does:**
+
+- **Registration default** — `Security:RequireAdminPasswordToRegister` now defaults to `true`
+  (`src/Server/Program.cs`). A machine key is fleet-scoped, so with a password set an open first-time registration
+  meant the password guarded the dashboard but not the saves. No password set = first-run unchanged;
+  `savelocker register --admin-password` and enrollment tokens are the two ways in; `false` is the deliberate
+  opt-out for a trusted network. Docs updated ([[Build and Run]], [[API Reference]], [[Decisions]],
+  `docker-compose.unraid.yml`, `cli-reference.md`, `troubleshooting.md`).
+- **Conflict upload latch** (`SyncEngine.PushCoreAsync`) — at the pause threshold it now asks the server whether
+  the game still has an open conflict before holding the save back, so a resolve that landed while the agent was
+  down clears the latch and the push runs; unreachable keeps the pause. New `ConflictLatchTests` (3, stub server;
+  the stale-latch clear mutation-checked). Same area, `CommandPoller`: a dashboard **Push** answered with a conflict
+  now reports **Failed** with the reason instead of "pushed — latest save …".
+- **`post-exit-sync` while Sync all holds the gate** (`AgentApiServer`, wired in `TrayApp`/`Daemon`) — still
+  answers 409, but now runs a new `SyncEngine.ReleaseLaunchLeaseAsync` so that game's renewer stops and its
+  checkout is released. `run-local-api-tests` holds a real Sync all open and asserts both halves.
+- **Signed-in browsers** — `GET /api/admin/sessions` (current marked) and `DELETE /api/admin/sessions/{id}`
+  (404 when not live, audited `admin.session_revoked`), surfaced as a table under Configuration → Admin password.
+- **Art cleanup on delete** — `ArtService.DeleteGameArt` called by the delete route: cover, icon and thumbnails no
+  longer outlive the game.
+- **Lockout notice in the bell** — `GET /api/admin/lockouts` (the in-memory throttle's own view) merged into the
+  notifications menu as a Warning that clears itself and cannot be dismissed.
+- **Sync all failure detail** — the toast lists every failing machine and its reason, not the first plus "(+N
+  more)".
+
+`unverified-ui-surfaces` retired as verified; all eight task folders moved to `docs/tasks/_done/`, and
+[[Backlog]] no longer lists any of them.
+
+**Merges.** Rebased onto `main` after #62 (one conflict, an import line in `web/src/api.ts`; both sides' additions
+kept). Then `main` moved to #63, so it was merged in (one conflict, `docs/Backlog.md` — kept this batch's removals
+plus #63's emulator-progress line). Rebuilt and re-ran the suites after each.
+
+**Verified (final tree, after merging #62 and #63):** `dotnet test` **397/397** — all green, and the
+`ArcadeSavesTests.Supermodel_…` failure #61 carried is gone once #63 is in; `run-console-security-tests`
+**364/364** (was 308); `run-local-api-tests` **127/127** (`SL_LOCALAPI_PORT` when another worktree's rig holds
+:5188); `run-agent-tests` 47/47; `run-delta-upload-tests` 33/33; `run-health-tests` 33/33; full solution + `web`
+build/lint clean; `openapi.json` + `web/src/api-types.ts` regenerated (additions only).
+
+**Test-suite fixes that rode along:** `run-local-api-tests`' candidate-folder check expected the user profile to be
+*accepted*, which `SavePathGuard` (WA-02) refuses — it now asserts the refusal plus a real folder accepted (and the
+new variable is `$profilePath`, because `$home` is a read-only PowerShell automatic); `SaveFileTreeTests`
+(from #62) shares one server and one of its tests locks the console, so its registration now carries the admin
+password the flipped default requires.
+
+**Manual verification, and the bug it found.** Walking the `testenv` steps,
+`up -ConsoleEnv "Security__MaxFailedAttempts=3,Security__LockoutSeconds=120"` made every admin route answer 500.
+Root cause: `Start-Console` passed each `-ConsoleEnv` element as ONE `-e`, so the container got
+`Security__MaxFailedAttempts = "3,Security__LockoutSeconds=120"` and `AuthThrottle`'s constructor threw on the
+Int32 conversion. The script's own header advertises `KEY=VALUE[,...]`, so it now splits each entry on commas
+(`e948683`) — both spellings work. This was not the PR's server code; it sat directly in the manual-verification
+path, so it was fixed here.
+
+**Not yet run on real hardware** — the manual `testenv` walkthrough is in `session_summary.md` and the PR body.
+
+### Files
+
+`src/Server/{Program,Services/{AdminAuth,ArtService,AuthThrottle}}.cs`, `src/Shared/Contracts.cs`,
+`src/Agent.Core/{SyncEngine,AgentApiServer,CommandPoller,ApiClient}.cs`, `src/Agent/TrayApp.cs`,
+`src/Agent.Linux/Daemon.cs`, `web/src/{api,api-types,types}.ts`, `web/src/App.tsx`,
+`web/src/components/{ConfigView,NavBar,NotificationsMenu}.tsx`, `web/src/help/{cli-reference,troubleshooting}.md`,
+`docker-compose.unraid.yml`, tests (`ConflictLatchTests` new; `SaveFileTreeTests`; `run-console-security-tests`;
+`run-local-api-tests`; `testenv.ps1`). Vault: [[Backlog]], [[Build and Run]], [[API Reference]], [[Decisions]],
+[[CONTEXT]], this entry, `session_summary.md`.
+
 ## 2026-10-11 — Appearance follow-up (b): "N machines following"
 
 **PR:** [#67 on `Marwanello/SaveLocker`](https://github.com/Marwanello/SaveLocker/pull/67), *Appearance: "N machines following" on the console (last Group 5 follow-up)*. Head branch `appearance-follow-ups`, base `main`. Commits `6959a72` (code), `f5edb6e` and the closing docs commit.
@@ -3746,7 +3821,7 @@ A machine on an older agent can't report this, so it's in neither list. The prot
 - `run-appearance-consistency-tests` 46/46.
 - Solution builds; `web` typecheck, lint and build are clean.
 - The migration applies on a fresh database.
-- **Not run:** the by-hand testenv check. The task was closed as done at the maintainer's call; the steps are in `docs/logs/2026-10-11_appearance-follow-ups/summary.md`:
+- **Not run:** the by-hand testenv check. The task was closed as done at the maintainer's call; the steps are in `docs/tasks/_done/appearance-follow-ups/summary.md`:
   1. `sync`, then `build` and `up` for console, Windows and Linux.
   2. The card shows *2 machines following*.
   3. Turn off *Follow the console* in the Windows agent's Settings → the card shows *1 machine following* and *own look: …*.
@@ -3759,4 +3834,4 @@ A machine on an older agent can't report this, so it's in neither list. The prot
 
 ### Files
 
-`src/Shared/Contracts.cs`, `src/Server/Data/Entities.cs`, `src/Server/Services/HealthService.cs`, `src/Server/Migrations/*AddAgentFollowsConsoleAppearance*`, `src/Server/openapi.json`, `src/Agent.Core/HealthReporter.cs`, `web/src/components/{AppearanceCard,ConfigView}.tsx`, `web/src/api-types.ts`, `tests/run-health-tests.ps1`, `docs/{Backlog,CONTEXT,API Reference,Build and Run}.md`, `docs/logs/shipped-2026-10.md`, `docs/logs/2026-10-11_appearance-follow-ups/` (moved from `docs/tasks/`), `docs/tasks/checkpoint-ui/{plan,implementation,implementation-grouping}.md` (links), this entry, `session_summary.md`.
+`src/Shared/Contracts.cs`, `src/Server/Data/Entities.cs`, `src/Server/Services/HealthService.cs`, `src/Server/Migrations/*AddAgentFollowsConsoleAppearance*`, `src/Server/openapi.json`, `src/Agent.Core/HealthReporter.cs`, `web/src/components/{AppearanceCard,ConfigView}.tsx`, `web/src/api-types.ts`, `tests/run-health-tests.ps1`, `docs/{Backlog,CONTEXT,API Reference,Build and Run}.md`, `docs/logs/shipped-2026-10.md`, `docs/tasks/_done/appearance-follow-ups/` (moved from `docs/tasks/`), `docs/tasks/checkpoint-ui/{plan,implementation,implementation-grouping}.md` (links), this entry, `session_summary.md`.

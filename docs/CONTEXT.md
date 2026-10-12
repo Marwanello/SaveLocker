@@ -1898,7 +1898,54 @@ commit, so this session did not touch it: run `testenv clean` first.
 <br>**Next action for this item:** the by-hand testenv pass in the plan (step 3 needs `testenv up`, and another worktree's tray was holding :5188 on 2026-10-08), then merge #62. Separately, `ArcadeSavesTests`' Supermodel naming test fails on a PC with a real EmuDeck install (it reads the real ES-DE gamelists) — offered as its own task.
 <br>**2026-10-08, same PR: the agent keeps covers and icons on disk** (`ArtCache`, `<state>/art-cache/`). The maintainer reported art in the agent only appearing once the console had been opened. Not reproduced here — a fresh server with art already stored relays it with no console open — but the proxy held nothing on disk, so art existed only while the server answered and only after something asked. Now the poller warms every tracked game's art at the sizes the agent draws, the proxy serves the cache offline, and a re-picked cover (a new `?v=` URL) replaces the cached one within a poll. Checked end to end with the stub SteamGridDB: cached with no window open, a changed cover replaced, both covers shown with the server stopped. **If art still only appears after opening the console on the maintainer's server, the cause is server-side and still open** — ask which surface and how the server is reached.
 <br>**2026-10-09, same PR: review fixes.** A zip that holds one name twice (or `a\b` beside `a/b`) no longer 500s the whole `versions/changes` list or the agent's file tree — later entry wins, as on extract; the server's head-file hashing stops at `SAVELOCKER_MAX_RESTORE_MB` instead of hashing an endlessly expanding archive. A 404 from `head/files` (a server older than the agent) now means "not compared", not "nothing on the server, every file is a push". Files the head lacks carry `NotInHead`, so the agent says *New here* / *Removed on the server* instead of "Changed". The console no longer says "Loading what changed…" forever when the request fails or a version's archive is unreadable, and *Show all files* shows a folder this version removed entirely. Art warming runs after the poll's dashboard commands, not before.
-<br>**2026-10-11: "N machines following" built (Appearance follow-up (b), branch `claude/appearance-follow-ups-testenv-f17f77`).** The heartbeat carries `FollowsConsoleAppearance`, `AgentHealth` stores it (migration `AddAgentFollowsConsoleAppearance`), and Configuration → Appearance names the machines that follow and those keeping their own look. `run-health-tests` **35/35**. Closed as done (maintainer's call); the testenv check in `logs/2026-10-11_appearance-follow-ups/summary.md` has not been run.
+<br>**2026-10-11: "N machines following" built (Appearance follow-up (b), branch `claude/appearance-follow-ups-testenv-f17f77`).** The heartbeat carries `FollowsConsoleAppearance`, `AgentHealth` stores it (migration `AddAgentFollowsConsoleAppearance`), and Configuration → Appearance names the machines that follow and those keeping their own look. `run-health-tests` **35/35**. Closed as done (maintainer's call); the testenv check in `tasks/_done/appearance-follow-ups/summary.md` has not been run.
+
+---
+
+**Quick-wins batch: seven backlog items closed, one verification item retired (2026-10-09, branch
+`fix/backlog-quick-wins`, no PR yet).** One pass, each with the verification the item named:
+- **Registration default flipped** — `Security:RequireAdminPasswordToRegister` now defaults to `true`:
+  once an admin password is set, a **new** machine name must present it. A machine key is
+  fleet-scoped, so the open door meant the password guarded the dashboard but not the saves. No
+  password set is unchanged (first-run stays open); `savelocker register --admin-password` and
+  enrollment tokens are the two ways in; setting the switch to `false` deliberately remains for
+  trusted networks. Docs updated ([[Build and Run]], [[API Reference]], [[Decisions]], compose, CLI
+  reference, troubleshooting). `run-console-security-tests` proves both the default-ON half and the
+  OFF switch.
+- **The conflict upload latch no longer outlives the conflict** (`SyncEngine.PushCoreAsync`): at the
+  pause threshold it asks the server whether the game still has an open conflict before holding the
+  save back, so a resolve that landed while the agent was down clears the latch and the push runs.
+  Server unreachable keeps the pause. New `ConflictLatchTests` (3, stub server; the stale-latch
+  clear is mutation-checked). **Related, same area:** a dashboard **Push** command answered with a
+  conflict now reports Failed with the reason instead of "pushed — latest save …" (`CommandPoller`
+  had ignored the engine's result).
+- **`post-exit-sync` releases the lease even while Sync all holds the agent-wide gate**: the route
+  still answers 409 (the running sync pushes the game) but now stops that game's renewer and releases
+  its checkout through a new `SyncEngine.ReleaseLaunchLeaseAsync`, so the fleet is not locked out of
+  a game nobody is playing. `run-local-api-tests` holds a real Sync all open and asserts the release.
+- **Signed-in browsers are listable and revocable one by one** (Configuration → Admin password):
+  `GET /api/admin/sessions` (current session marked), `DELETE /api/admin/sessions/{id}` (404 when not
+  live, audited as `admin.session_revoked`); "Sign out everywhere" stays.
+- **A deleted game's cached art is deleted with it** (`ArtService.DeleteGameArt`, called by the delete
+  route — cover, icon and thumbnails).
+- **Sign-in lockouts surface as a bell notice**: `GET /api/admin/lockouts` (the in-memory throttle's
+  own view, so a restart forgives) is merged into the notifications menu as a Warning that clears
+  itself when the window ends; it is not dismissible (there is no record to dismiss).
+- **Console Sync all names every failing machine and its reason**, not the first plus "(+N more)".
+- `unverified-ui-surfaces` (Heroic store sub-chips) retired as verified; all eight task folders moved
+  to `docs/tasks/_done/`, and [[Backlog]] no longer lists any of them.
+Verified on the final tree (PRs #62 and #63 merged in; `Backlog.md`'s only conflict resolved by
+keeping this batch's removals plus #63's emulator-progress line):
+`run-console-security-tests` **364/364** (was 308; the +56 are this batch's checks, including a stale
+`run-local-api-tests` candidate-folder check whose expectation predated `SavePathGuard` — it now
+asserts the user-profile refusal plus a real folder accepted); `run-local-api-tests` **127/127**
+(`SL_LOCALAPI_PORT` moves it off :5188 when another worktree's rig holds that);
+`run-agent-tests` 47/47; `run-delta-upload-tests` 33/33; `run-health-tests` 33/33; xunit
+**397/397** — all green, including #62's `SaveFileTreeServerTests`, whose shared-server registration
+now carries the admin password the flipped default requires, and the `ArcadeSavesTests.Supermodel_…`
+casing failure #61 had carried (fixed by #63); `openapi.json` + `web/src/api-types.ts` regenerated
+(additions only); `web` build + lint clean; full solution builds. **Not yet run on real hardware** —
+the testenv walkthrough is in this session's report.
 
 ---
 

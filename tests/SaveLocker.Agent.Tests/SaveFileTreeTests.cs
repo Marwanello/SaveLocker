@@ -233,7 +233,11 @@ public sealed class SaveFileTreeServerTests : IClassFixture<ServerProcess>, IDis
     {
         var config = AgentConfig.Load(Path.Combine(_dir, name, "state", "config.json"));
         config.ServerUrl = _server.Url;
-        var reg = await new ApiClient(config.ServerUrl, null).RegisterAsync(name + Guid.NewGuid().ToString("N")[..6]);
+        // The class shares one server and one of the tests locks the console, so registration must
+        // carry the password: with the default RequireAdminPasswordToRegister, a NEW name is refused
+        // without it once a password is set (and the header is ignored while none is).
+        var reg = await new ApiClient(config.ServerUrl, null)
+            .RegisterAsync(name + Guid.NewGuid().ToString("N")[..6], AdminPassword);
         config.ApiKey = reg.ApiKey;
         config.MachineId = reg.MachineId;
         config.MachineName = name;

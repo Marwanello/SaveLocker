@@ -349,12 +349,34 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
 
         if (!force && game.ConsecutiveConflicts >= ConflictUploadLimit && !await ConflictClosedAsync(game, ct))
         {
-            ReportOnly(
-                $"[{game.Name}] CONFLICT still unresolved — upload paused after " +
-                $"{game.ConsecutiveConflicts} rejected attempts; no archive was sent. " +
-                "Resolve it in the dashboard or force-push explicitly.",
-                AgentEventCodes.Conflict, AgentEventSeverity.Error, game.GameId);
-            return new UploadResult(UploadStatus.Conflict, null, null);
+            // The counter alone cannot tell "the server still refuses this save" from "someone
+            // resolved the conflict while this agent was down or between runs" — nothing pushes that
+            // news down to an agent, and a plain pull will not clear it either (this machine still
+            // has un-pushed local changes, so WA-02 refuses the pull). Without this check the latch
+            // outlives the conflict and locks the save out of uploading until a force-push.
+            bool? stillOpen = null;
+            try { stillOpen = (await _api.GetStateAsync(game.GameId, ct))?.HasOpenConflict; }
+            // Could not ask (unreachable, or an old server): keep the pause rather than gamble on a
+            // full upload the server has already rejected three times.
+            catch (Exception) when (!ct.IsCancellationRequested) { }
+
+            if (stillOpen is not false)
+            {
+                ReportOnly(
+                    $"[{game.Name}] CONFLICT still unresolved — upload paused after " +
+                    $"{game.ConsecutiveConflicts} rejected attempts; no archive was sent. " +
+                    (stillOpen is null ? "The server could not be asked whether it still is. " : "") +
+                    "Resolve it in the dashboard or force-push explicitly.",
+                    AgentEventCodes.Conflict, AgentEventSeverity.Error, game.GameId);
+                return new UploadResult(UploadStatus.Conflict, null, null);
+            }
+
+            // No open conflict server-side: the count is stale. Clear it and let the ordinary push
+            // run — if the content really still diverges, the server records a fresh conflict and
+            // the latch simply starts again from one.
+            game.ConsecutiveConflicts = 0;
+            _config.SaveGameSyncState(game);
+            _log($"[{game.Name}] conflict latch cleared — the server has no open conflict; pushing again.");
         }
 
         try
@@ -1401,14 +1423,27 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             // after the push, so any failure there — an unreachable server, an unparseable response,
             // a cancelled upload — left the game checked out to this machine until the lease
             // expired, locking the rest of the fleet out of a game nobody was playing.
-            //
-            // Released through the SAME client that acquired it. _api is bound to the origin this
-            // engine was built for, so even if the user changed servers mid-session the release
-            // lands where the lease actually lives; releasing against the new server would free
-            // nothing and leave the old one held.
-            try { await _api.ReleaseLeaseAsync(game.GameId); }
-            catch (Exception ex) { _log($"[{game.Name}] lease release on {_origin} failed: {ex.Message}"); }
+            await ReleaseLaunchLeaseAsync(game);
         }
+    }
+
+    /// <summary>
+    /// Stop this game's lease renewer and release its checkout, without pushing. For an exit that
+    /// lands while a wider sync already holds the agent-wide gate: that run will push the game, but
+    /// nothing inside it ends THIS machine's checkout — the renewer keeps the lease alive and the
+    /// rest of the fleet stays locked out of the game.
+    /// <para>
+    /// Released through the SAME client that acquired it. _api is bound to the origin this engine
+    /// was built for, so even if the user changed servers mid-session the release lands where the
+    /// lease actually lives; releasing against the new server would free nothing and leave the old
+    /// one held.
+    /// </para>
+    /// </summary>
+    public async Task ReleaseLaunchLeaseAsync(TrackedGame game)
+    {
+        StopLeaseRenewer(game.GameId);
+        try { await _api.ReleaseLeaseAsync(game.GameId); }
+        catch (Exception ex) { _log($"[{game.Name}] lease release on {_origin} failed: {ex.Message}"); }
     }
 
     private void StartLeaseRenewer(TrackedGame game)

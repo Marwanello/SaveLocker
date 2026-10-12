@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { api, signIn, clearSession, errorText } from '../api';
-import type { GameSummary, Machine, Settings, Enrollment, EffectiveServerUrl, AgentHealth, ServerBuildInfo, BackupStatus } from '../types';
+import type { GameSummary, Machine, Settings, Enrollment, EffectiveServerUrl, AgentHealth, AdminSession, ServerBuildInfo, BackupStatus } from '../types';
 import { fleetSkew, isNewerThanConsole, isTestBuild, normalizeVersion } from '../versionSkew';
 import { ago, fmtSize, plural, toMs, when } from '../format';
 import { machineOs, osLine } from '../machineOs';
@@ -129,6 +129,27 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
       clearSession();
       onRefresh(); // the next request is refused, which sends this browser back to the sign-in screen
     } catch (e) { toastError('Could not sign out: ' + errorText(e)); }
+  }
+
+  // ── Signed-in browsers ──
+  // Sessions already existed; listing them is what turns "sign out everywhere" into "end the one
+  // that is not mine" when a token goes missing with a browser.
+  const [sessions, setSessions] = useState<AdminSession[] | null>(null);
+
+  const loadSessions = useCallback(async () => {
+    try { setSessions(await api.sessions()); } catch { /* the password controls still work without the table */ }
+  }, []);
+
+  useEffect(() => {
+    if (settings.adminPasswordSet) void loadSessions();
+  }, [settings.adminPasswordSet, loadSessions]);
+
+  async function handleRevokeSession(id: string) {
+    try {
+      await api.revokeSession(id);
+      toast('Ended that session.');
+      await loadSessions();
+    } catch (e) { toastError('Could not end the session: ' + errorText(e)); }
   }
 
   // ── Machines ──
@@ -580,6 +601,31 @@ export function ConfigView({ games, machines, settings, health, build, onRefresh
             Signing in gives a browser a session, not a copy of the password. Lock (in the header) or Sign out
             everywhere ends it, and changing the password ends every session.
           </p>
+
+          {settings.adminPasswordSet && sessions !== null && sessions.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-line">
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <span className="text-[10.5px] font-semibold text-dim uppercase tracking-[0.08em]">Signed-in browsers</span>
+                <span className="text-[11px] text-faint">{plural(sessions.length, 'session')}</span>
+              </div>
+              <ul className="flex flex-col gap-2">
+                {sessions.map(s => (
+                  <li key={s.id} className="flex items-center justify-between gap-2 text-[11.5px] min-w-0">
+                    <span className="min-w-0 truncate text-dim">
+                      <span className="font-mono text-faint">{s.clientAddress || 'unknown'}</span>
+                      {' · last used '}{ago(s.lastUsedAt)}
+                      {s.isCurrent && <span className="ml-2 align-middle"><Chip tone="ok">This browser</Chip></span>}
+                    </span>
+                    {!s.isCurrent && (
+                      <InlineConfirm label="Revoke"
+                        consequence={`Ends the session from ${s.clientAddress || 'an unknown address'}. That browser has to sign in again.`}
+                        confirmLabel="End that session" onConfirm={() => handleRevokeSession(s.id)} />
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </Card>
       </div>
     </Page>

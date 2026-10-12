@@ -80,8 +80,9 @@ public sealed class ApiClient
         {
             Content = JsonContent.Create(new MachineRegisterRequest(name))
         };
-        // Re-registering an existing machine name requires the admin password when the
-        // server has one set. First-time registration ignores this header.
+        // Both halves need it once the server has a password set: re-registering an existing name,
+        // and (since Security:RequireAdminPasswordToRegister defaults to true) a NEW one. With no
+        // password configured the header is ignored.
         if (!string.IsNullOrEmpty(adminPassword))
             msg.Headers.Add("X-Admin-Password", adminPassword);
 
