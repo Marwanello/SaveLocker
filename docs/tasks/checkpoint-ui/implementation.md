@@ -9,7 +9,7 @@ rather than by phase number, because several phases edit the same components.
 
 ## Status (updated 2026-10-04 — ✅ done)
 
-**Closed as done 2026-10-04**, merging with PR #54. What was left has its own task: the Group 9 `testenv` checklist (`tasks/checkpoint-ui-group-9-check/`), the appearance follow-up (b) (`tasks/appearance-follow-ups/`) and the notification buttons (`tasks/notification-follow-ups/`).
+**Closed as done 2026-10-04**, merging with PR #54. What was left has its own task: the Group 9 `testenv` checklist (`tasks/checkpoint-ui-group-9-check/`), the appearance follow-up (b) (`tasks/_done/appearance-follow-ups/`, shipped 2026-10-11) and the notification buttons (`tasks/notification-follow-ups/`).
 
 | Phase | Status |
 |---|---|

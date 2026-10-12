@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api } from '../api';
 import { ACCENTS, MARKS, THEMES, isLight, saveLook, setLook, useLook } from '../appearance';
 import type { AccentId, Look, Theme } from '../appearance';
-import type { Settings } from '../types';
+import type { AgentHealth, Settings } from '../types';
 import { Card } from './ui/Card';
 import { Chip } from './ui/Chip';
 import { Mark } from './ui/Mark';
@@ -11,6 +11,8 @@ import { Switch } from './ui/Switch';
 
 interface Props {
   settings: Settings;
+  /** Each machine's last heartbeat — it says whether that machine follows the console's look. */
+  health: AgentHealth[];
   /** Re-read settings after a save, so the pushed/not-pushed state shown here is the server's. */
   onSaved: () => void;
 }
@@ -21,7 +23,7 @@ interface Props {
  * to this page first and saved after: it is a preference, and the click should feel instant. If the save
  * fails the page goes back to what it was and says why.
  */
-export function AppearanceCard({ settings, onSaved }: Props) {
+export function AppearanceCard({ settings, health, onSaved }: Props) {
   const look = useLook();
   const pushing = settings.appearance?.pushToAgents ?? true;
   const [busy, setBusy] = useState(false);
@@ -44,6 +46,11 @@ export function AppearanceCard({ settings, onSaved }: Props) {
       setBusy(false);
     }
   }
+
+  // An agent that predates the heartbeat field reports neither, so it is in neither list.
+  const following = health.filter(h => h.followsConsoleAppearance === true);
+  const ownLook = health.filter(h => h.followsConsoleAppearance === false);
+  const names = (hs: AgentHealth[]) => hs.map(h => h.online ? h.machineName : `${h.machineName} (offline)`).join(', ');
 
   const light = isLight(look.theme);
   const mark = MARKS.find(m => m.id === look.mark);
@@ -113,15 +120,26 @@ export function AppearanceCard({ settings, onSaved }: Props) {
             A machine can opt out from its own Settings.
           </small>
         </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <Chip tone={pushing ? 'ok' : 'warn'}>{pushing ? 'Shared with agents' : 'Not shared'}</Chip>
-          <Switch
-            aria-label="Push appearance to agents"
-            checked={pushing}
-            disabled={busy}
-            onChange={v => void save({}, v)}
-          />
-        </div>
+        <Switch
+          aria-label="Push appearance to agents"
+          checked={pushing}
+          disabled={busy}
+          onChange={v => void save({}, v)}
+        />
+      </div>
+
+      <div className="mt-[10px] flex items-center gap-2 flex-wrap">
+        {!pushing
+          ? <Chip tone="warn">Not shared</Chip>
+          : following.length > 0
+            ? <Chip tone="ok">{following.length} machine{following.length === 1 ? '' : 's'} following</Chip>
+            : <Chip>No machine following</Chip>}
+        <span className="font-mono text-[10.5px] text-dim">
+          {!pushing
+            ? 'each machine keeps its own'
+            : [following.length > 0 && names(following), ownLook.length > 0 && `own look: ${names(ownLook)}`]
+                .filter(Boolean).join(' · ')}
+        </span>
       </div>
 
       {error && <div role="alert" className="mt-3 text-xs text-accent-ink">{error}</div>}
