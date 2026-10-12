@@ -223,6 +223,24 @@ public sealed class SonySavesTests : IDisposable
         Assert.Equal(new[] { "PCSE00001", "Uncharted: Golden Abyss" }, Vita3KSaves.Scan(folders).Select(c => c.Name));
     }
 
+    [Fact]
+    public void Vita3k_reads_every_users_savedata_not_only_user_00()
+    {
+        // EmuDeck links only user 00; a second Vita3K user (01) saves beside it under storage.
+        Text("Emulation/saves/Vita3K/saves/PCSE00120/data0000.bin", "p4g user 00");
+        Text("Emulation/storage/Vita3K/ux0/user/01/savedata/PCSA00081/save.bin", "uncharted user 01");
+        Sfo("Emulation/storage/Vita3K/ux0/app/PCSA00081/sce_sys/param.sfo", ("TITLE", "Uncharted: Golden Abyss"));
+        // Standalone: user 02 only.
+        Text("vita/ux0/user/02/savedata/PCSE00001/save.bin", "user 02");
+
+        var found = Vita3KSaves.Scan(Vita3KSaves.Folders([P("Emulation")], [(P("none/config.yml"), P("vita"))]));
+
+        Assert.Equal(new[] { "PCSE00001", "PCSE00120", "Uncharted: Golden Abyss" }, found.Select(c => c.Name));
+        Assert.Equal(P("Emulation/storage/Vita3K/ux0/user/01/savedata"), found[2].SuggestedSaveDir);
+        Assert.True(found[2].ViaEmuDeck);
+        Assert.Equal(P("vita/ux0/user/02/savedata"), found[0].SuggestedSaveDir);
+    }
+
     // ---- shadPS4 ----
 
     [Fact]

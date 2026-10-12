@@ -2,7 +2,7 @@ namespace SaveLocker.Agent;
 
 /// <summary>
 /// Vita3K (PS Vita), tasks/emulator-saves Phase 12 (bonus). A Vita game saves into one folder named by its title ID,
-/// <c>ux0/user/00/savedata/PCSE00120/</c> (D4 shape 2, <see cref="TitleFolders"/>, scope <c>PCSE00120/**</c>). Redump has
+/// <c>ux0/user/&lt;user&gt;/savedata/PCSE00120/</c> (D4 shape 2, <see cref="TitleFolders"/>, scope <c>PCSE00120/**</c>). Redump has
 /// no Vita set, so the name is the <c>TITLE</c> in the save's own <c>sce_sys/param.sfo</c> when it has one (the same on
 /// every machine), else in the installed game's <c>ux0/app/&lt;ID&gt;/sce_sys/param.sfo</c> (only where the game is
 /// installed — D1 joins the server's game by its folders whatever the name), else the ID. The region is the ID's
@@ -49,14 +49,17 @@ public static class Vita3KSaves
         return TitleFolders.Newest(found);
     }
 
-    /// <summary>Every Vita3K setup's <c>savedata</c> folder that exists (and its <c>app</c> folder), EmuDeck's first.
+    /// <summary>Every Vita3K user's <c>savedata</c> folder that exists (and its <c>app</c> folder), EmuDeck's first.
     /// <paramref name="configs"/>: (a <c>config.yml</c>, the <c>pref-path</c> to use when it names none).</summary>
     public static IReadOnlyList<Vita3KFolders> Folders(IEnumerable<string> emuDeckRoots, IEnumerable<(string ConfigYml, string DefaultPref)> configs)
     {
         var candidates = new List<Vita3KFolders>();
         foreach (var root in emuDeckRoots)
-            candidates.Add(new Vita3KFolders(Path.Combine(root, "saves", "Vita3K", "saves"),
-                Path.Combine(root, "storage", "Vita3K", "ux0", "app"), EmuDeck: true));
+        {
+            var ux0 = Path.Combine(root, "storage", "Vita3K", "ux0");
+            candidates.Add(new Vita3KFolders(Path.Combine(root, "saves", "Vita3K", "saves"), Path.Combine(ux0, "app"), EmuDeck: true));
+            candidates.AddRange(UsersIn(ux0, emuDeck: true));
+        }
         foreach (var (configYml, defaultPref) in configs)
         {
             string? pref = null;
@@ -67,7 +70,7 @@ public static class Vita3KSaves
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             var ux0 = Path.Combine(EmulatorPaths.IniFolder(pref, Path.GetDirectoryName(configYml)!) ?? defaultPref, "ux0");
-            candidates.Add(new Vita3KFolders(Path.Combine(ux0, "user", "00", "savedata"), Path.Combine(ux0, "app")));
+            candidates.AddRange(UsersIn(ux0, emuDeck: false));
         }
 
         var seen = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
@@ -85,7 +88,12 @@ public static class Vita3KSaves
         return found;
     }
 
-    /// <summary><c>ux0/app</c> for a <c>ux0/user/00/savedata</c> folder, else null.</summary>
+    // EmuDeck links only user 00's savedata; a user made later in Vita3K (01, 02…) saves beside it.
+    private static IEnumerable<Vita3KFolders> UsersIn(string ux0, bool emuDeck) =>
+        RomSaves.SafeSubdirs(Path.Combine(ux0, "user")).Order(StringComparer.Ordinal)
+            .Select(user => new Vita3KFolders(Path.Combine(user, "savedata"), Path.Combine(ux0, "app"), emuDeck));
+
+    /// <summary><c>ux0/app</c> for a <c>ux0/user/&lt;user&gt;/savedata</c> folder, else null.</summary>
     private static string? AppsBeside(string savedata)
     {
         var user = Path.GetDirectoryName(Path.GetDirectoryName(savedata));

@@ -18,6 +18,8 @@ Add games lists one game per save for RetroArch, melonDS, Supermodel, Model 2, S
 
 **A save from one emulator never joins another emulator's game**, even for the same title: Metroid Prime Trilogy saved in Dolphin and in PrimeHack are two games, and never sync with each other.
 
+**RPCS3, Vita3K and shadPS4 keep saves per emulator user.** The save itself belongs to no user, so a save made by one machine's user loads for any user on another machine. Each machine syncs the user folder the game was found in when you added it — usually the emulator's first user (`00000001` in RPCS3, `00` in Vita3K, `1` or `1000` in shadPS4). If you switch the emulator to another user later, SaveLocker keeps syncing the first user's saves; on that machine, open the game, click **Change** beside its save folder and pick the new user's `savedata` folder. When two users on one machine have saves for the same game, Add games offers the one written last.
+
 ## Prefer in-game saves
 
 Whenever possible, sync the files created by the game's own save system:
