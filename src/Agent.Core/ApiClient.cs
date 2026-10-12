@@ -154,6 +154,14 @@ public sealed class ApiClient
         resp.EnsureSuccessStatusCode();
     }
 
+    /// <summary>What this machine has for a game; with <paramref name="versionId"/>, what the version it just uploaded
+    /// was made with (tasks/emulator-saves Phase 5c, the DLC check).</summary>
+    public async Task ReportContentAsync(Guid gameId, ContentPackageDto[] packages, Guid? versionId, CancellationToken ct = default)
+    {
+        var resp = await _http.PutAsJsonAsync($"/api/agent/games/{gameId}/content", new ReportContentRequest(packages, versionId), ct);
+        resp.EnsureSuccessStatusCode();
+    }
+
     /// <summary>The primary folder is the absent key, which is what an older server understands.</summary>
     private static string PathQuery(string key) =>
         key == SaveRoot.PrimaryKey ? "" : $"&path={Uri.EscapeDataString(key)}";

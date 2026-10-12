@@ -851,6 +851,52 @@
         }
       }
     },
+    "/api/agent/games/{id}/content": {
+      "put": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportContentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/agent/games/{id}/state": {
       "get": {
         "tags": [
@@ -1719,6 +1765,36 @@
                   "items": {
                     "$ref": "#/components/schemas/MachineGameSourceDto"
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/games/{id}/content": {
+      "get": {
+        "tags": [
+          "SaveLocker.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameContentDto"
                 }
               }
             }
@@ -4554,6 +4630,30 @@
           "Resolved"
         ]
       },
+      "ContentPackageDto": {
+        "required": [
+          "kind",
+          "id",
+          "name",
+          "size"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "CreateEnrollmentRequest": {
         "type": "object",
         "properties": {
@@ -4915,6 +5015,45 @@
           "size": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "GameContentDto": {
+        "required": [
+          "headVersionId",
+          "headMachineName",
+          "headContent",
+          "machines"
+        ],
+        "type": "object",
+        "properties": {
+          "headVersionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "headMachineName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "headContent": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ContentPackageDto"
+            }
+          },
+          "machines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MachineContentDto"
+            }
           }
         }
       },
@@ -5347,6 +5486,34 @@
           }
         }
       },
+      "MachineContentDto": {
+        "required": [
+          "machineId",
+          "machineName",
+          "packages",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "machineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "machineName": {
+            "type": "string"
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContentPackageDto"
+            }
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "MachineDto": {
         "required": [
           "id",
@@ -5511,6 +5678,27 @@
           }
         }
       },
+      "ReportContentRequest": {
+        "required": [
+          "packages"
+        ],
+        "type": "object",
+        "properties": {
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContentPackageDto"
+            }
+          },
+          "versionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
       "SavePathDto": {
         "required": [
           "key",
@@ -5629,6 +5817,15 @@
           "protected": {
             "type": "boolean",
             "default": false
+          },
+          "content": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ContentPackageDto"
+            }
           }
         }
       },

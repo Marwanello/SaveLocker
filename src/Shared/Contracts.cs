@@ -430,7 +430,44 @@ public record SaveVersionDto(
     string ContentHash,
     long Size,
     Guid? ParentVersionId,
-    bool Protected = false);
+    bool Protected = false,
+    // The DLC and title updates the uploading machine had when it made this version (tasks/emulator-saves Phase 5c);
+    // null when it did not say.
+    ContentPackageDto[]? Content = null);
+
+/// <summary>
+/// One installed package of a game — DLC (<see cref="Dlc"/>) or a title update (<see cref="Update"/>) — as the DLC check
+/// knows it (tasks/emulator-saves Phase 5c): the package's own ID, its display name, its size. Never its data.
+/// </summary>
+public record ContentPackageDto(string Kind, string Id, string Name, long Size)
+{
+    public const string Dlc = "dlc", Update = "update";
+    public const int MaxPackages = 1000;
+
+    /// <summary>Null when a reported list can be stored, else why not.</summary>
+    public static string? Validate(ContentPackageDto[]? packages)
+    {
+        if (packages is null) return null;
+        if (packages.Length > MaxPackages) return $"At most {MaxPackages} packages.";
+        foreach (var p in packages)
+        {
+            if (p is null || p.Kind is not (Dlc or Update)) return "A package's kind is dlc or update.";
+            if (string.IsNullOrWhiteSpace(p.Id) || p.Id.Length > 128) return "A package needs an ID of at most 128 characters.";
+            if ((p.Name?.Length ?? 0) > 256) return "A package name is at most 256 characters.";
+            if (p.Size < 0) return "A package size cannot be negative.";
+        }
+        return null;
+    }
+}
+
+/// <summary>What a machine has for a game; <paramref name="VersionId"/>, when set, is a version this machine just
+/// uploaded, which takes the list as what it was made with.</summary>
+public record ReportContentRequest(ContentPackageDto[] Packages, Guid? VersionId = null);
+
+/// <summary>The console's DLC check for one game: what the latest save was made with, and what each machine has.</summary>
+public record GameContentDto(Guid? HeadVersionId, string? HeadMachineName, ContentPackageDto[]? HeadContent, MachineContentDto[] Machines);
+
+public record MachineContentDto(Guid MachineId, string MachineName, ContentPackageDto[] Packages, DateTime UpdatedAt);
 
 /// <summary>File count and newest per-file write time inside one version's archive — derived from
 /// the zip on demand (<see cref="SaveLocker.Shared.SaveArchive.GetArchiveStats"/>), not stored on

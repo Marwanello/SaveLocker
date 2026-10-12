@@ -265,7 +265,11 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             // started; the launch wrapper may have pushed since, and presenting the boot-time parent
             // is what makes the server record a conflict on a single-machine fleet.
             _config.RefreshGameSyncState(game);
-            return await PushCoreAsync(game, force, settle, ct);
+            var result = await PushCoreAsync(game, force, settle, ct);
+            // The version just made takes this machine's DLC list as what it was made with; the server ignores it for
+            // a version this machine did not upload, or one that already has a list.
+            if (result?.Version is { } version) await ReportContentAsync(game, version.Id);
+            return result;
         }
         catch (AgentStateLockException ex)
         {
@@ -275,6 +279,30 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             return null;
         }
         finally { gate.Release(); _activity?.End(); }
+    }
+
+    // The last package list each game reported, so a pull that changed nothing sends nothing.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, string> _reportedContent = new();
+
+    /// <summary>
+    /// Tells the server what DLC and title updates this machine has for the game (tasks/emulator-saves Phase 5c, the DLC
+    /// check), and with <paramref name="versionId"/> what that version was made with. Best effort: the check only warns,
+    /// so a report that fails must never fail the sync around it.
+    /// </summary>
+    private async Task ReportContentAsync(TrackedGame game, Guid? versionId)
+    {
+        try
+        {
+            if (ContentInventory.For(game) is not { } packages) return;
+            var key = System.Text.Json.JsonSerializer.Serialize(packages);
+            if (versionId is null && _reportedContent.TryGetValue(game.GameId, out var last) && last == key) return;
+            await _api.ReportContentAsync(game.GameId, packages, versionId);
+            _reportedContent[game.GameId] = key;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException or TaskCanceledException)
+        {
+            _log($"[{game.Name}] could not tell the server which DLC is here: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -739,6 +767,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                 _config.SaveGameSyncState(game);
                 _log($"[{game.Name}] already up to date.");
                 MarkSynced(game.GameId);
+                await ReportContentAsync(game, null);
                 return PullOutcome.UpToDate;
             }
 
@@ -799,6 +828,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             _config.SaveGameSyncState(game, touchSyncTime: true);
             _log($"[{game.Name}] restored latest save from server.");
             MarkSynced(game.GameId);
+            await ReportContentAsync(game, null);
             if (missingBefore.Any(Directory.Exists)) _onFoldersChanged?.Invoke();
             return PullOutcome.Restored;
         }

@@ -568,6 +568,16 @@ agent.MapPut("/agent/source/{gameId:guid}", async (Guid gameId, GameSourceDto so
 }).Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
   .Produces(StatusCodes.Status404NotFound);
 
+// The DLC check (tasks/emulator-saves Phase 5c): what this machine has for a game, and — with a version it just
+// uploaded — what that save was made with. Names, IDs and sizes only.
+agent.MapPut("/agent/games/{id:guid}/content", async (Guid id, HttpContext http, ReportContentRequest req, SyncService sync) =>
+{
+    if (req.Packages is null) return Results.BadRequest("packages is required");
+    if (ContentPackageDto.Validate(req.Packages) is { } why) return Results.BadRequest(why);
+    return await sync.ReportContentAsync(http.CurrentMachine().Id, id, req) ? Results.NoContent() : Results.NotFound();
+}).Produces(StatusCodes.Status204NoContent).Produces<string>(StatusCodes.Status400BadRequest)
+  .Produces(StatusCodes.Status404NotFound);
+
 // The same game state the console reads, but reachable with a MACHINE key.
 //
 // `savelocker status` used to call the admin-filtered /games/{id}/state with only X-Api-Key, so it
@@ -787,6 +797,10 @@ admin.MapGet("/games/{id:guid}/paths", async (Guid id, SyncService sync) =>
 admin.MapGet("/games/{id:guid}/sources", async (Guid id, SyncService sync) =>
     Results.Ok(await sync.GetGameSourcesAsync(id)))
     .Produces<List<MachineGameSourceDto>>();
+
+admin.MapGet("/games/{id:guid}/content", async (Guid id, SyncService sync) =>
+    await sync.GetGameContentAsync(id) is { } content ? Results.Ok(content) : Results.NotFound())
+    .Produces<GameContentDto>();
 
 admin.MapPost("/games/{id:guid}/paths/{machineId:guid}", async (Guid id, Guid machineId, string? value, string? path, SyncService sync) =>
 {

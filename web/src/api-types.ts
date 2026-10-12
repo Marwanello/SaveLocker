@@ -1037,6 +1037,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/games/{id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReportContentRequest"];
+                };
+            };
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/games/{id}/state": {
         parameters: {
             query?: never;
@@ -1999,6 +2054,43 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["MachineGameSourceDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GameContentDto"];
                     };
                 };
             };
@@ -4284,6 +4376,13 @@ export interface components {
         };
         /** @enum {unknown} */
         ConflictStatus: "Open" | "Resolved";
+        ContentPackageDto: {
+            kind: string;
+            id: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
+        };
         CreateEnrollmentRequest: {
             machineName?: null | string;
             /** Format: int32 */
@@ -4371,6 +4470,13 @@ export interface components {
             sha256: string;
             /** Format: int64 */
             size: number;
+        };
+        GameContentDto: {
+            /** Format: uuid */
+            headVersionId: null | string;
+            headMachineName: null | string;
+            headContent: null | components["schemas"]["ContentPackageDto"][];
+            machines: components["schemas"]["MachineContentDto"][];
         };
         GameDto: {
             /** Format: uuid */
@@ -4462,6 +4568,14 @@ export interface components {
             /** Format: int32 */
             retryAfterSeconds: number;
         };
+        MachineContentDto: {
+            /** Format: uuid */
+            machineId: string;
+            machineName: string;
+            packages: components["schemas"]["ContentPackageDto"][];
+            /** Format: date-time */
+            updatedAt: string;
+        };
         MachineDto: {
             /** Format: uuid */
             id: string;
@@ -4513,6 +4627,11 @@ export interface components {
             apiKey: string;
             machineName: string;
         };
+        ReportContentRequest: {
+            packages: components["schemas"]["ContentPackageDto"][];
+            /** Format: uuid */
+            versionId?: null | string;
+        };
         SavePathDto: {
             key: string;
             label: null | string;
@@ -4542,6 +4661,7 @@ export interface components {
             parentVersionId: null | string;
             /** @default false */
             protected: boolean;
+            content?: null | components["schemas"]["ContentPackageDto"][];
         };
         ScanPathCandidate: {
             /** Format: uuid */

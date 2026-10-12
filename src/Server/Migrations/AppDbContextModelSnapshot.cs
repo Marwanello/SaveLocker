@@ -468,6 +468,28 @@ namespace SaveLocker.Server.Migrations
                     b.ToTable("Machines");
                 });
 
+            modelBuilder.Entity("SaveLocker.Server.Data.MachineGameContent", b =>
+                {
+                    b.Property<Guid>("MachineId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("GameId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("MachineId", "GameId");
+
+                    b.HasIndex("GameId");
+
+                    b.ToTable("MachineGameContents");
+                });
+
             modelBuilder.Entity("SaveLocker.Server.Data.MachineGameSource", b =>
                 {
                     b.Property<Guid>("MachineId")
@@ -555,6 +577,9 @@ namespace SaveLocker.Server.Migrations
 
                     b.Property<string>("ContentHash")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContentJson")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAt")
@@ -685,6 +710,21 @@ namespace SaveLocker.Server.Migrations
                     b.Navigation("Game");
 
                     b.Navigation("Machine");
+                });
+
+            modelBuilder.Entity("SaveLocker.Server.Data.MachineGameContent", b =>
+                {
+                    b.HasOne("SaveLocker.Server.Data.Game", null)
+                        .WithMany()
+                        .HasForeignKey("GameId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SaveLocker.Server.Data.Machine", null)
+                        .WithMany()
+                        .HasForeignKey("MachineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SaveLocker.Server.Data.MachineGameSource", b =>

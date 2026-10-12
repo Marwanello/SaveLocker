@@ -442,6 +442,47 @@ public sealed class SyncService
     private static GameSourceDto ToDto(MachineGameSource s) =>
         new(s.Kind, s.Detail, s.Tags is null ? null : s.Tags.Split('\n'));
 
+    // ----- The DLC check (tasks/emulator-saves Phase 5c) -----
+
+    /// <summary>
+    /// Stores what a machine has for a game. With <see cref="ReportContentRequest.VersionId"/>, the list is also what that
+    /// version was made with — only for a version this machine uploaded, and only the first time, so a later report can
+    /// never rewrite what a save needed.
+    /// </summary>
+    public async Task<bool> ReportContentAsync(Guid machineId, Guid gameId, ReportContentRequest req)
+    {
+        if (!await _db.Games.AnyAsync(g => g.Id == gameId)) return false;
+        var json = JsonSerializer.Serialize(req.Packages, JsonSerializerOptions.Web);
+        var row = await _db.MachineGameContents.FindAsync(machineId, gameId);
+        if (row is null)
+        {
+            row = new MachineGameContent { MachineId = machineId, GameId = gameId };
+            _db.MachineGameContents.Add(row);
+        }
+        row.ContentJson = json;
+        row.UpdatedAt = DateTime.UtcNow;
+        if (req.VersionId is { } versionId &&
+            await _db.SaveVersions.FirstOrDefaultAsync(v => v.Id == versionId && v.GameId == gameId) is { } version &&
+            version.MachineId == machineId && version.ContentJson is null)
+            version.ContentJson = json;
+        await _db.SaveChangesAsync();
+        return true;
+    }
+
+    /// <summary>The console's DLC check for a game: the head's list and every machine's.</summary>
+    public async Task<GameContentDto?> GetGameContentAsync(Guid gameId)
+    {
+        var game = await _db.Games.FindAsync(gameId);
+        if (game is null) return null;
+        var head = await _db.SaveVersions.Include(v => v.Machine).Where(v => v.Id == game.HeadVersionId).FirstOrDefaultAsync();
+        var rows = await _db.MachineGameContents.Where(c => c.GameId == gameId).ToListAsync();
+        var names = await _db.Machines.Where(m => rows.Select(r => r.MachineId).Contains(m.Id))
+            .ToDictionaryAsync(m => m.Id, m => m.Name);
+        return new GameContentDto(head?.Id, head is null ? null : Mapping.UploaderName(head), Mapping.ReadContent(head?.ContentJson),
+            rows.Select(r => new MachineContentDto(r.MachineId, names.GetValueOrDefault(r.MachineId, ""),
+                Mapping.ReadContent(r.ContentJson) ?? [], r.UpdatedAt)).OrderBy(m => m.MachineName).ToArray());
+    }
+
     // ----- Games -----
 
     public async Task<List<Game>> ListGamesAsync() =>

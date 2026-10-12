@@ -107,6 +107,11 @@ public class SaveVersion
 
     /// <summary>Relative path of the stored archive within the archive store.</summary>
     public string ArchivePath { get; set; } = "";
+
+    /// <summary>The DLC and title updates the uploading machine had for the game when it made this version
+    /// (<see cref="ContentPackageDto"/>[] as JSON), or null when it did not say — tasks/emulator-saves Phase 5c, the DLC
+    /// check. Names, IDs and sizes only; never package data.</summary>
+    public string? ContentJson { get; set; }
 }
 
 /// <summary>
@@ -235,6 +240,19 @@ public class AgentCommand
 /// (MachineId, GameId); one row per machine that has mapped a local folder.
 /// Injected into the agent's game list for reconcile and surfaced in the dashboard.
 /// </summary>
+/// <summary>
+/// The DLC and title updates one machine has for one game (tasks/emulator-saves Phase 5c, the DLC check), as it last
+/// reported them: what lets the console show which machine can pull the latest save safely before anyone tries.
+/// </summary>
+public class MachineGameContent
+{
+    public Guid MachineId { get; set; }
+    public Guid GameId { get; set; }
+    /// <summary><see cref="ContentPackageDto"/>[] as JSON.</summary>
+    public string ContentJson { get; set; } = "[]";
+    public DateTime UpdatedAt { get; set; }
+}
+
 public class MachineSavePath
 {
     public Guid MachineId { get; set; }
