@@ -32,7 +32,7 @@ point unless explicitly instructed to.
 | 4 — PrimeHack | 🚧 Built 2026-10-07 (branch `emulator-saves-group-c`) — the Dolphin reader against PrimeHack's folders (EmuDeck `saves/primehack`, Flatpak `io.github.shiiion.primehack`, EmuDeck for Windows `Emulators\primehack\User`). **Maintainer's choice:** saves from different emulators are never one game, even with the same files — `GameDto.Emulators` (server, from the sources) + `Enroller.SameEmulator`, mutation-checked. EmuDeck for Windows had created `Emulators\PrimeHack` but never run it (no `User` yet), so where a non-portable PrimeHack keeps its user folder is still to see (Group H) |
 | 5a — RPCS3 | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `Rpcs3Saves`: `dev_hdd0/home/<user>/savedata`, scope `<ID>*/**`, named by Redump's PS3 set, else the save's `PARAM.SFO` `TITLE`; EmuDeck's link, else `vfs.yml`. **Captured 2026-10-11:** the Deck's real save `BCUS98132-GAMEAUTOSAVE` (*Heavenly Sword*) and `vfs.yml` (dev_hdd0 on the SD card); the PC's `RPCS3\config\vfs.yml`. See *Group D — as built* |
 | 5b — Xenia | 🚧 Built 2026-10-12 (branch `emulator-saves-group-e`; follow-up the same day: device saves as a second folder, the named-profile layout) — `XeniaSaves`: a game is its `<TID>/00000001` saved games and their `Headers/00000001`, in a profile's `content/<XUID>` (Canary) or `content` itself (older builds); DLC, title updates, XUID 0 and the dashboard's `FFFE07D1` never synced (scope mutation-checked). Named by title ID from the bundled table (Redump disc serials → title IDs, No-Intro Arcade titles), else `Xbox 360 <TID>`. **Captured 2026-10-12:** the PC's real *Forza Horizon* / *Forza Horizon 2* saves (profile layout); the Deck's Proton Canary with both layouts side by side. See *Group E — as built* |
-| 5c — Xenia profile and DLC | ⏳ Designed 2026-10-12 — copy the whole profile to another machine, optional DLC per game; waiting on four maintainer calls and a server cap for DLC. See *Phase 5c* |
+| 5c — Xenia profile and DLC | ⏳ Designed 2026-10-12 — the profile and DLC as folders of each game, a 2 GB DLC cap, the gamertag decrypted (maintainer's calls); two consequences (a pull overwriting other games' profile changes, ~1 GB per DLC version) to confirm before building. See *Phase 5c* |
 | 6 — Switch: Yuzu, Citron, Eden, Ryujinx | ⏳ Not started — Group F. **Widened 2026-10-07** from Eden only, at the maintainer's request; needs the server title key (D2) |
 | 7 — UI filter | ✅ Shipped 2026-10-07 (same PR), filter by emulator — agent UI *Emulators* chip with an *Emulator* row under it (one chip per emulator, RetroArch today), Deck *Emulators* pill. A per-console sub-breakdown was not built — it comes back with Phase 2, when more than one console has saves. |
 | 7b — Game source per machine, names without "(RetroArch)" | ✅ Shipped 2026-10-07 (same PR) — built 2026-10-07 (maintainer asked; picked variation B of a clickable mockup on all three screens). Unit 280. Console checked in the browser against a seeded dev server; agent UI and Deck need the testenv pass. **Review fixes 2026-10-07** (same PR): server-decided names, the scope-join refusal, source re-send guard, EmuDeck tag, server bounds — unit 291, see `progress.md`. |
@@ -482,6 +482,23 @@ there, and an **option to sync a game's DLC**, because some saves need it. Repla
 - DLC: its own entry (recommended) or a third folder of the game; title updates (`000B0000`) included with DLC?
 - The upload cap for DLC: a separate setting, and what default?
 - Gamertag from the decrypted `Account` (Xenia's public retail key), or show the XUID only?
+
+**Maintainer's answers (2026-10-12)** — not the recommended options on the first three, so two consequences are recorded
+here and confirmed with the maintainer before any code:
+- **The profile is a folder of every Xenia game**, key `profile`, folder `content/<XUID>`, scope
+  `FFFE07D1/00010000/<XUID>/**` and `FFFE07D1/Headers/00010000/<XUID>.header`, offered at enrollment and later (*More save
+  folders found*). Consequences:
+  1. Every game on the machine then syncs the *same* files. `SaveFolderClaims` refuses to map a second game onto files another
+     syncs (the Group B fix that stops two games ping-ponging one save), so it needs an exception for this folder.
+  2. **A pull of one game restores the profile as that game last pushed it.** Achievements or settings another game wrote since
+     are overwritten on that machine: play game B, then sync game A, and B's new achievements in the profile are gone (B's own
+     saves are safe). Avoiding it needs a merge of the profile's files — or the profile as its own entry.
+- **DLC is a third folder of the game**, key `dlc`, folder `content/0000000000000000`, scope `<TID>/00000002/**` and
+  `<TID>/Headers/00000002/**`, opt-in. Consequence: the server keeps every version as its own full zip (`ArchiveStore`, 7 kept
+  by default) and a pull downloads the whole archive, so Forza Horizon becomes ~1 GB per version — **~7 GB on the server, and
+  1 GB downloaded on every pull** — while pushes stay small (only changed files are sent).
+- **A separate cap for archives with DLC, 2 GB** (`Storage:MaxDlcUploadMb`, server; the agent's size backstop learns it too).
+- **The gamertag is decrypted from `Account`** with the retail key Xenia ships, to name the profile folder in the UI.
 
 **Verify (when built):** a profile pulled to a machine without it signs in and loads a game's save there; a machine with its own
 profile keeps it; a DLC entry pushed once and pulled; a save game's push never carries DLC; the two-machine tests per entry.

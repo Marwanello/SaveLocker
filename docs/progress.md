@@ -3959,3 +3959,8 @@ as its own entry, opt-in, which needs a larger server cap. Four open questions i
 ### Not verified
 
 The testenv pass of Group E, and the real-game checks (Group H: Cemu, Azahar, Xenia).
+
+**Phase 5c, maintainer's calls (same day):** the profile and DLC as folders of each game, a separate 2 GB cap for DLC, the
+gamertag decrypted. Two consequences recorded in the plan and raised before building: one game's pull restores the profile as
+that game last pushed it (other games' newer achievements/settings lost on that machine, and `SaveFolderClaims` needs an
+exception); DLC in every version makes Forza Horizon ~1 GB per version (~7 GB kept, 1 GB per pull).
