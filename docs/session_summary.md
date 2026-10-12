@@ -46,14 +46,15 @@ folder moved out of `Backlog.md`, which no longer lists it), a row in `logs/ship
 `CONTEXT.md` entry, this file. `AGENTS.md`'s handoff step now says `docs/tasks/_done/`, matching what the
 Backlog states and what the last two sessions did.
 
-## Verification (final tree, after merging `origin/main`)
+## Verification (final tree, after merging `main` through #65)
 
-- `dotnet test` **420/420** — all green; main's #63 fixed the one machine-specific
-  `ArcadeSavesTests.Supermodel_nvram…` leak this branch had carried
+- `dotnet test` **450/450** — all green; main's #63 fixed the one machine-specific
+  `ArcadeSavesTests.Supermodel_nvram…` leak this branch had carried, and #65's Group D tests are in
 - `run-appearance-consistency-tests` **50/50** (incl. the new installer/agent CLSID + AUMID drift checks
   and the notice-route↔`route.ts` contract)
-- Installer compiles under ISCC; full agent build at its 1-warning baseline; `origin/main` merged with
-  **no conflicts**
+- Installer compiles under ISCC; full agent build at its 1-warning baseline; `origin/main` merged twice —
+  #62–#64 cleanly, #65 conflicting only in the two tail-of-file docs (`progress.md`,
+  `session_summary.md`), both resolved by keeping both sessions' entries
 - **Live through `testenv`** (a real mouse click on a real toast): **Retry now** retried a 413-rejected
   push (`pushed new version.`); **Install now** downloaded, SHA-verified and ran a stand-in package with
   `/SILENT /FORCECLOSEAPPLICATIONS /NORESTART`, the tray exiting as designed; with the tray closed, DCOM's

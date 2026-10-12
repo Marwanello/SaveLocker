@@ -1984,9 +1984,9 @@ installed agent once — it was stopped immediately, the one log it wrote lives 
 `%PROGRAMDATA%\SaveLocker\agent.log`, and the `LastUpdateCheck` it refreshed was reset; and that host
 logged to the installed agent's log for the same reason. Unit tests: the notification ones pass
 (new: action-argument parsing incl. hostile shapes, the toast XML's acting action, the pending-action
-file, the identity/CLSID split); after merging `main`, the **full suite is 420/420** — including the
-`ArcadeSavesTests.Supermodel_nvram…` leak this entry previously carried as a machine-specific failure,
-which #63 fixed. **The `CsWinRTIncludes`
+file, the identity/CLSID split); after merging `main` through #65, the **full suite is 450/450** —
+including the `ArcadeSavesTests.Supermodel_nvram…` leak this entry previously carried as a
+machine-specific failure, which #63 fixed. **The `CsWinRTIncludes`
 size idea was measured and changed nothing** (173.1 MB publish, `Microsoft.Windows.SDK.NET.dll` 23.73 MB
 with and without it; the property is for projection authoring, and `Microsoft.Windows.UI.Xaml.dll` is not
 in this toolchain's output at all). **2026-10-12 — the rig fought back, and `testenv` got tougher.** The

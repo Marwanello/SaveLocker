@@ -3817,13 +3817,13 @@ authoring, and `Microsoft.Windows.UI.Xaml.dll` is not in this toolchain's output
 **Verified live through `testenv`** (a real mouse click on a real toast): **Retry now** retried a
 413-rejected push; **Install now** downloaded, SHA-verified and ran a stand-in package with
 `/SILENT /FORCECLOSEAPPLICATIONS /NORESTART`, the tray exiting as designed; with the tray closed, DCOM's
-host started it and the retry succeeded. The full unit suite is **420/420** on the merged tree — #63
+host started it and the retry succeeded. The full unit suite is **450/450** on the final tree — #63
 fixed the `ArcadeSavesTests.Supermodel_nvram…` machine leak this branch had carried (it read this box's
-real EmuDeck gamelist), so the one caveat this entry used to have is gone.
+real EmuDeck gamelist), and #65's Group D tests are in.
 
-**PR #66 opened on the fork; `origin/main` was merged in with no conflicts** — the auto-merges of
-`docs/CONTEXT.md`, `docs/Gotchas.md`, `src/Agent/TrayApp.cs`, `testenv.ps1` and the consistency test were
-all clean, and the merged tree builds at the agent's 1-warning baseline.
+**PR #66 opened on the fork; `origin/main` merged twice** — #62–#64 auto-merged cleanly; #65 (Emulator
+Group D) conflicted only in the two tail-of-file docs (`progress.md`, `session_summary.md`), both
+resolved by keeping both sessions' entries. The merged tree builds at the agent's 1-warning baseline.
 
 **The debugging session worth remembering (2026-10-12).** The first live walk of the checklist showed
 "no toast appears" twice, then an endless **401 flood** that survived `clean` and restarts. Root cause:
