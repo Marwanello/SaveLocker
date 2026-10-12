@@ -3089,6 +3089,7 @@ export interface components {
             /** Format: int32 */
             skipped: number;
             notes?: null | string[];
+            info?: null | string[];
         };
         ErrorResponse: {
             error: string;

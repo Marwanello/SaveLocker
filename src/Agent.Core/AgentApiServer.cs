@@ -397,7 +397,8 @@ public sealed class AgentApiServer : IDisposable
                 .ToDictionary(g => g.Key, g => new LinkChoice(g.Last().Choice, g.Last().GameId));
             var (enrolled, skipped) = await _enroll(candidates, body.Ids, alsoSync, links);
             return TypedResults.Ok(new EnrollResponse(enrolled, skipped,
-                Enroller.Progress.Notes is { Count: > 0 } notes ? notes.ToArray() : null));
+                Enroller.Progress.Notes is { Count: > 0 } notes ? notes.ToArray() : null,
+                Enroller.Progress.Info is { Count: > 0 } info ? info.ToArray() : null));
         });
 
         // Which server game each emulator save on Add games would join, and what else it could (EnrollLinks).
@@ -2155,7 +2156,7 @@ public sealed record ErrorResponse(string Error, bool NeedsConfirm = false, bool
 }
 /// <param name="Notes">Why each refused game was not added ("Chrono Trigger: the server's …"), one line each;
 /// null when every skip was a game already set up here.</param>
-public sealed record EnrollResponse(int Enrolled, int Skipped, string[]? Notes = null);
+public sealed record EnrollResponse(int Enrolled, int Skipped, string[]? Notes = null, string[]? Info = null);
 public sealed record EnrollProgressDto(bool Active, int Index, int Total, string? Game, string Step, int Enrolled, int Skipped);
 public sealed record RegisterResponse(string MachineName);
 public sealed record FolderResponse(string? Path);

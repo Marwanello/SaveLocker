@@ -312,7 +312,8 @@ export function AddGamesView({ onEnrolled }: Props) {
       setStatus(
         `Added ${result.enrolled} game${result.enrolled === 1 ? '' : 's'}.` +
         (result.skipped > (result.notes?.length ?? 0) ? ` Skipped ${result.skipped - (result.notes?.length ?? 0)} already tracked.` : '') +
-        (result.notes?.length ? ` Not added: ${result.notes.join(' ')}` : '')
+        (result.notes?.length ? ` Not added: ${result.notes.join(' ')}` : '') +
+        (result.info?.length ? ` ${result.info.join(' ')}` : '')
       )
       if (result.enrolled > 0) setEnrolled(true)
       setChecked(new Set())

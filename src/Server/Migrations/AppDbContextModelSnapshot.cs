@@ -326,6 +326,9 @@ namespace SaveLocker.Server.Migrations
                     b.Property<string>("CustomPathsJson")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("EmulatorProfile")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("Enabled")
                         .HasColumnType("INTEGER");
 

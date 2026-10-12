@@ -4674,6 +4674,12 @@
                 "$ref": "#/components/schemas/GameReleaseDto"
               }
             ]
+          },
+          "emulatorProfile": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -5051,6 +5057,12 @@
               {
                 "$ref": "#/components/schemas/GameReleaseDto"
               }
+            ]
+          },
+          "emulatorProfile": {
+            "type": [
+              "null",
+              "string"
             ]
           }
         }

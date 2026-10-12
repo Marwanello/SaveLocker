@@ -530,14 +530,24 @@ public sealed class SyncService
             ? named.OrderBy(g => g.Region.Length == 0 ? 0 : 1).FirstOrDefault()
             : named.FirstOrDefault(g => string.Equals(g.Region, region, StringComparison.OrdinalIgnoreCase)) ??
               named.FirstOrDefault(g => g.Region.Length == 0);
+        var profile = EmulatorProfiles.Clean(req.EmulatorProfile);
         if (existing is not null)
         {
+            var changed = false;
             if (release is not null && existing.ReleaseJson is null)
             {
                 existing.Region = region;
                 existing.ReleaseJson = JsonSerializer.Serialize(release, JsonSerializerOptions.Web);
-                await _db.SaveChangesAsync();
+                changed = true;
             }
+            // The first machine to say decides the game's profile; a later one joining under another is the agent's to
+            // align (tasks/emulator-saves Phase 5c), never a reason to change it.
+            if (profile is not null && existing.EmulatorProfile is null)
+            {
+                existing.EmulatorProfile = profile;
+                changed = true;
+            }
+            if (changed) await _db.SaveChangesAsync();
             return existing;
         }
 
@@ -547,6 +557,7 @@ public sealed class SyncService
             Name = name,
             Region = region,
             ReleaseJson = release is null ? null : JsonSerializer.Serialize(release, JsonSerializerOptions.Web),
+            EmulatorProfile = profile,
             ManifestKey = req.ManifestKey,
             CustomPathsJson = req.CustomPathsJson,
             SuggestedSaveDir = string.IsNullOrWhiteSpace(req.SuggestedSaveDir) ? null : req.SuggestedSaveDir.Trim(),

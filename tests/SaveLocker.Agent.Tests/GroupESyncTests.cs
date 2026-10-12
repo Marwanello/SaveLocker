@@ -133,9 +133,13 @@ public sealed class GroupESyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.NotNull(await engineDeck.PushAsync(deckGame, force: true));
         await engineWin.PullAsync(winGame, force: true);
 
-        // Into Windows' own profile, where its Xenia looks.
-        Assert.Equal("deck-save", Read("win", $"{winContent}/E0300000AAAAAAAA/{title}/00000001/Profile/save.dat"));
-        Assert.Equal("deck-header", Read("win", $"{winContent}/E0300000AAAAAAAA/{title}/Headers/00000001/Profile.header"));
+        // Phase 5c step 7: into the profile the game is under (the Deck's, the first to say), which Windows' Xenia is
+        // set to when the game starts. Windows' own profile and its old save, DLC and other game stay as they were.
+        Assert.Equal("xenia:E030000033894516", (await ApiClient.For(win).ListGamesAsync()).Single(g => g.Id == winGame.GameId).EmulatorProfile);
+        Assert.Equal(P("win", $"{winContent}/E030000033894516"), AgentConfig.Load(win.ConfigPath).Games.Single(g => g.GameId == winGame.GameId).SaveDirectory);
+        Assert.Equal("deck-save", Read("win", $"{winContent}/E030000033894516/{title}/00000001/Profile/save.dat"));
+        Assert.Equal("deck-header", Read("win", $"{winContent}/E030000033894516/{title}/Headers/00000001/Profile.header"));
+        Assert.Equal("win-old", Read("win", $"{winContent}/E0300000AAAAAAAA/{title}/00000001/Profile/save.dat"));
         Assert.Equal("win-dlc", Read("win", $"{winContent}/E0300000AAAAAAAA/{title}/00000002/DLCPACK/dlc.bin"));
         Assert.Equal("win-forza", Read("win", $"{winContent}/E0300000AAAAAAAA/4D5309C9/00000001/ForzaProfile/ForzaProfile"));
     }
@@ -161,7 +165,7 @@ public sealed class GroupESyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.NotNull(await engineDeck.PushAsync(deckGame, force: true));
         await engineWin.PullAsync(winGame, force: true);
 
-        Assert.Equal("deck-save", Read("win", $"{winContent}/E0300000AAAAAAAA/{title}/00000001/Profile/save.dat"));
+        Assert.Equal("deck-save", Read("win", $"{winContent}/E030000033894516/{title}/00000001/Profile/save.dat"));
         Assert.Equal("deck-calibration", Read("win", $"{winContent}/0000000000000000/{title}/00000001/globaloptions/options"));
         Assert.Equal("win-dlc", Read("win", $"{winContent}/0000000000000000/{title}/00000002/SONGPACK/song.bin"));
     }

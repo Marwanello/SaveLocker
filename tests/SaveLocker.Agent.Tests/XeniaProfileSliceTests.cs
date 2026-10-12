@@ -150,6 +150,45 @@ public sealed class XeniaProfileSliceTests : IDisposable
     }
 
     [Fact]
+    public void A_game_found_under_another_profile_is_put_under_the_games_and_says_so()
+    {
+        const string player1 = "E03000004A1C77B2";
+        var mine = Path.Combine(_content, player1);
+        Directory.CreateDirectory(XeniaProfile.Folder(_content, player1));
+        File.WriteAllBytes(Path.Combine(XeniaProfile.Folder(_content, player1), "Account"), XeniaFormatsTests.AccountFor("Player1"));
+        File.WriteAllBytes(Account, XeniaFormatsTests.AccountFor("Driver"));
+        var c = new ScanCandidate("Forza Horizon", mine, ScanSource.Emulator, false, EmulatorProfile: "xenia:" + player1);
+        IReadOnlyList<DeclaredSavePath> extras =
+        [
+            new(XeniaSaves.DeviceKey, Path.Combine(_content, XeniaSaves.NoProfile), XeniaSaves.ScopeFor("4D5309C9")),
+            new(XeniaProfileSlice.Key, mine, XeniaProfileSlice.ScopeFor("4D5309C9")),
+        ];
+
+        var aligned = XeniaSaves.AlignToGameProfile(c, "xenia:" + Xuid, mine, extras)!.Value;
+
+        Assert.Equal(Path.Combine(_content, Xuid), aligned.Dir);
+        Assert.Equal(Path.Combine(_content, Xuid), aligned.Extras.Single(e => e.Key == XeniaProfileSlice.Key).Dir);
+        Assert.Equal(Path.Combine(_content, XeniaSaves.NoProfile), aligned.Extras.Single(e => e.Key == XeniaSaves.DeviceKey).Dir);
+        Assert.Contains("added under Driver", aligned.Note);
+        Assert.Contains("Player1's own save here was left as it is", aligned.Note);
+
+        Assert.Null(XeniaSaves.AlignToGameProfile(c, "xenia:" + player1, mine, extras)); // already the game's
+        Assert.Null(XeniaSaves.AlignToGameProfile(c, null, mine, extras)); // the game has none yet
+        var legacy = c with { EmulatorProfile = null }; // content/<title ID>: an older Xenia reads it where it is
+        Assert.Null(XeniaSaves.AlignToGameProfile(legacy, "xenia:" + Xuid, _content, extras));
+    }
+
+    [Fact]
+    public void Only_a_xenia_profile_value_is_kept()
+    {
+        Assert.Equal("xenia:E030000033894516", SaveLocker.Shared.EmulatorProfiles.Clean(" xenia:e030000033894516 "));
+        Assert.Null(SaveLocker.Shared.EmulatorProfiles.Clean("xenia:0000000000000000"));
+        Assert.Null(SaveLocker.Shared.EmulatorProfiles.Clean("xenia:E03"));
+        Assert.Null(SaveLocker.Shared.EmulatorProfiles.Clean("cemu:80000001"));
+        Assert.Equal("E030000033894516", SaveLocker.Shared.EmulatorProfiles.XeniaXuid("xenia:E030000033894516"));
+    }
+
+    [Fact]
     public void A_game_under_a_profile_declares_its_part_of_it_and_older_layouts_do_not()
     {
         Directory.CreateDirectory(Path.Combine(_content, Xuid, "4D5309C9", "00000001", "Profile"));

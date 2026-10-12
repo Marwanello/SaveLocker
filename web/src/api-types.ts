@@ -4308,6 +4308,7 @@ export interface components {
             includeGlobs?: null | string[];
             extraPaths?: null | components["schemas"]["SavePathDto"][];
             release?: null | components["schemas"]["GameReleaseDto"];
+            emulatorProfile?: null | string;
         };
         CreateSessionRequest: {
             password: null | string;
@@ -4395,6 +4396,7 @@ export interface components {
             machineSource?: null | components["schemas"]["GameSourceDto"];
             emulators?: null | string[];
             release?: null | components["schemas"]["GameReleaseDto"];
+            emulatorProfile?: null | string;
         };
         GameReleaseDto: {
             console: string;

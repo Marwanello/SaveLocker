@@ -1,3 +1,5 @@
+using SaveLocker.Shared;
+
 namespace SaveLocker.Agent;
 
 /// <summary>
@@ -97,7 +99,32 @@ public static class XeniaSaves
                 new DeclaredSavePath(XeniaProfileSlice.Key, EmuDeckRoots.RealPath(dir), XeniaProfileSlice.ScopeFor(id)),
             ]
             : [new DeclaredSavePath(DeviceKey, Path.Combine(setup.Content, NoProfile), ScopeFor(id))],
-        Release: ConsoleTitles.Release(System, [id]));
+        Release: ConsoleTitles.Release(System, [id]),
+        EmulatorProfile: Xuid(Path.GetFileName(dir)) is { } profile ? EmulatorProfiles.XeniaPrefix + profile : null);
+
+    /// <summary>
+    /// Where a Xenia game goes on this machine when the server's game is under another profile than the one this
+    /// machine found it under (tasks/emulator-saves Phase 5c, step 7): that profile's folder beside this one, so the save
+    /// lands where Xenia looks once it signs in to it (the launch check sets that). This machine's own profile and its
+    /// save are left as they are. Null when nothing moves: no profile on either side, the same one, or a layout from
+    /// before profiles, which an older Xenia reads where it is.
+    /// </summary>
+    public static (string Dir, IReadOnlyList<DeclaredSavePath> Extras, string Note)? AlignToGameProfile(
+        ScanCandidate c, string? gameProfile, string dir, IReadOnlyList<DeclaredSavePath> extras)
+    {
+        var target = EmulatorProfiles.XeniaXuid(gameProfile);
+        var mine = EmulatorProfiles.XeniaXuid(c.EmulatorProfile);
+        if (target is null || mine is null || target == mine) return null;
+        var content = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(dir));
+        if (content is null) return null;
+        var moved = Path.Combine(content, target);
+        var aligned = extras.Select(e => e.Key == XeniaProfileSlice.Key ? e with { Dir = moved } : e).ToList();
+        var theirs = XeniaProfile.Gamertag(content, target) ?? target;
+        var ours = XeniaProfile.Gamertag(content, mine) ?? mine;
+        return (moved, aligned,
+            $"{c.Name}: added under {theirs}, the profile it is saved under on your other machines; Xenia starts as " +
+            $"{theirs} for it. {ours}'s own save here was left as it is.");
+    }
 
     // The title IDs with a saved game in a folder of title folders, and when each was last written.
     private static IEnumerable<(string Id, DateTime Written)> SavedTitles(string dir) =>

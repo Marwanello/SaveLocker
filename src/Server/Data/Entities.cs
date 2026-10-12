@@ -25,6 +25,12 @@ public class Game
     public string Region { get; set; } = "";
     /// <summary>The whole release (<see cref="GameReleaseDto"/>: console, game IDs, languages) as JSON, or null.</summary>
     public string? ReleaseJson { get; set; }
+    /// <summary>
+    /// The emulator profile the game's saves are under, <c>xenia:&lt;XUID&gt;</c> (tasks/emulator-saves Phase 5c), or null.
+    /// Set by the first machine that says, so another machine that finds the game under a different profile of its own
+    /// (Xenia makes every new profile's XUID at random) can put it under this one instead.
+    /// </summary>
+    public string? EmulatorProfile { get; set; }
     /// <summary>Key into the Ludusavi manifest, if matched.</summary>
     public string? ManifestKey { get; set; }
     /// <summary>JSON array of user-provided override paths.</summary>

@@ -68,7 +68,7 @@ export const api = {
   // `links` names the emulator saves linked by hand (Change); any other is linked automatically.
   enroll: (ids: number[], alsoSync?: { id: number; paths: string[] }[],
     links?: { id: number; choice: string; gameId?: string | null }[]) =>
-    post<{ enrolled: number; skipped: number; notes?: string[] | null }>('/api/enroll', { ids, alsoSync, links }),
+    post<{ enrolled: number; skipped: number; notes?: string[] | null; info?: string[] | null }>('/api/enroll', { ids, alsoSync, links }),
   // Which server game each emulator save would join, and what else it could. One server read per call.
   candidateLinks: () => req<CandidateLinks>('/api/candidates/links'),
   // Asked while enroll() is still open: which game and which step the agent is on.

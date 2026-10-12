@@ -27,7 +27,8 @@ public static class Mapping
             g.RetainVersions, GlobConfig.Parse(g.ExcludeGlobs), g.ConflictPolicy, g.PreferredMachineId,
             NullIfEmpty(GlobConfig.Parse(g.IncludeGlobs)),
             ToDtos(extraPaths, machinePaths),
-            Release: ReadRelease(g));
+            Release: ReadRelease(g),
+            EmulatorProfile: g.EmulatorProfile);
 
     /// <summary>The game's release, or null for none — or for JSON this build cannot read.</summary>
     public static GameReleaseDto? ReadRelease(Game g)

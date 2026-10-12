@@ -50,7 +50,9 @@ public record GameDto(
     string[]? Emulators = null,
     // Which release of a console game it is — region, game IDs — when an emulator save said. Kept apart from
     // the name: two games may share a name when their regions differ.
-    GameReleaseDto? Release = null);
+    GameReleaseDto? Release = null,
+    // The emulator profile the game's saves are under ("xenia:<XUID>"), set by the first machine that said.
+    string? EmulatorProfile = null);
 
 /// <summary>
 /// Which release of a console game an emulator save belongs to, read from the game ID the save is filed under
@@ -187,7 +189,30 @@ public record CreateGameRequest(
     SavePathDto[]? ExtraPaths = null,
     // A console game's release. With a region, the request joins only a game of that region (or one with none
     // yet, which takes it); without one, any game of the name, as before.
-    GameReleaseDto? Release = null);
+    GameReleaseDto? Release = null,
+    // The emulator profile the caller's save is under ("xenia:<XUID>"). Recorded only on a game that has none yet.
+    string? EmulatorProfile = null);
+
+/// <summary>The emulator profiles a game can be under (tasks/emulator-saves Phase 5c).</summary>
+public static class EmulatorProfiles
+{
+    public const string XeniaPrefix = "xenia:";
+
+    /// <summary>The value as stored — <c>xenia:</c> and 16 upper-case hex digits — or null for anything else.</summary>
+    public static string? Clean(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var v = value.Trim();
+        if (!v.StartsWith(XeniaPrefix, StringComparison.OrdinalIgnoreCase)) return null;
+        var xuid = v[XeniaPrefix.Length..];
+        return xuid.Length == 16 && xuid.All(Uri.IsHexDigit) && xuid.Any(c => c != '0')
+            ? XeniaPrefix + xuid.ToUpperInvariant()
+            : null;
+    }
+
+    /// <summary>The XUID of a Xenia profile value, or null.</summary>
+    public static string? XeniaXuid(string? value) => Clean(value) is { } v ? v[XeniaPrefix.Length..] : null;
+}
 
 // ----- Server settings (dashboard-managed) -----
 
