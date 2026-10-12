@@ -118,4 +118,26 @@ internal static class ConsoleSaveFixtures
         BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(16), (uint)entries.Length);
         return [.. header, .. index, .. keys, .. data];
     }
+    /// <summary>A 3DS cartridge image (<c>.3ds</c>/<c>.cci</c>) with just its headers: <c>NCSD</c>, the first partition at
+    /// 0x4000 (as on the Deck's ROMs), and that partition's <c>NCCH</c> with its program ID and product code.</summary>
+    public static byte[] Ncsd(ulong programId, string productCode)
+    {
+        var bytes = new byte[0x4000 + 0x200];
+        Encoding.ASCII.GetBytes("NCSD").CopyTo(bytes, 0x100);
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(0x108), programId);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0x120), 0x4000 / 0x200);
+        Ncch(programId, productCode).CopyTo(bytes, 0x4000);
+        return bytes;
+    }
+
+    /// <summary>An NCCH header (a <c>.cxi</c>, or an installed game's <c>content/*.app</c>).</summary>
+    public static byte[] Ncch(ulong programId, string productCode)
+    {
+        var bytes = new byte[0x200];
+        Encoding.ASCII.GetBytes("NCCH").CopyTo(bytes, 0x100);
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(0x108), programId);
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(0x118), programId);
+        Encoding.ASCII.GetBytes(productCode).CopyTo(bytes, 0x150);
+        return bytes;
+    }
 }

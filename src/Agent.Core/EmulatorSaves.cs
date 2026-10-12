@@ -21,5 +21,6 @@ public static class EmulatorSaves
         ("Vita3K saves", Vita3KSaves.Scan),
         ("shadPS4 saves", ShadPs4Saves.Scan),
         ("Cemu saves", CemuSaves.Scan),
+        ("Azahar saves", AzaharSaves.Scan),
     };
 }

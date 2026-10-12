@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Rebuilds console-titles.tsv.gz — game serial -> title, from libretro-database's Redump dats (CC BY-SA 4.0).
+  Rebuilds console-titles.tsv.gz — game serial -> title, from libretro-database's Redump and No-Intro dats (CC BY-SA 4.0).
 
 .DESCRIPTION
   One line per serial: "<system>`t<serial>`t<title>`t<region>`t<languages>". The title is Redump's name without
@@ -24,22 +24,27 @@ $sets = @(
     @{ System = 'ps3'; Dat = 'Sony - PlayStation 3' },
     @{ System = 'psp'; Dat = 'Sony - PlayStation Portable' },
     @{ System = 'gc';  Dat = 'Nintendo - GameCube' },
-    @{ System = 'wii'; Dat = 'Nintendo - Wii' }
+    @{ System = 'wii'; Dat = 'Nintendo - Wii' },
+    @{ System = 'n3ds'; Dat = 'Nintendo - Nintendo 3DS'; Dir = 'no-intro' },
+    @{ System = 'n3ds'; Dat = 'Nintendo - New Nintendo 3DS'; Dir = 'no-intro' },
+    @{ System = 'n3ds'; Dat = 'Nintendo - Nintendo 3DS (Digital)'; Dir = 'no-intro' }
 )
 
 $sha = (Invoke-RestMethod "https://api.github.com/repos/libretro/libretro-database/commits/$Commit" -Headers @{ 'User-Agent' = 'SaveLocker' }).sha
 
-# The key a save names its game by: SLUS-21287 (Sony), the four-letter game code (DL-DOL-GALE-USA, RVL-R3ME-USA).
+# The key a save names its game by: SLUS-21287 (Sony), the four-letter game code (DL-DOL-GALE-USA, RVL-R3ME-USA,
+# and a 3DS game's product code CTR-P-AREE, which its ROM's NCCH header carries).
 function Get-Keys([string]$system, [string]$serials) {
     foreach ($s in ($serials -split '[,\s]+' | Where-Object { $_ })) {
         if ($system -eq 'gc')      { if ($s -match '^DL-DOL-([A-Z0-9]{4})-') { $Matches[1] } }
         elseif ($system -eq 'wii') { if ($s -match '^RVL-([A-Z0-9]{4})-')    { $Matches[1] } }
+        elseif ($system -eq 'n3ds') { if ($s -match '^[A-Z]{3}-[A-Z]-([A-Z0-9]{4})$') { $Matches[1] } }
         elseif ($s -match '^([A-Z]{4})-?(\d{5})') { "$($Matches[1])-$($Matches[2])" }
     }
 }
 
 $languages = '\s*\(([A-Z][a-z](?:-[A-Za-z]+)?(?:,[A-Z][a-z](?:-[A-Za-z]+)?)*)\)'
-$dropTags = '\s*\((?:Rev [^)]*|v\d[^)]*|Disc \d+|EDC|Track \d+)\)'
+$dropTags = '\s*\((?:Rev [^)]*|v\d[^)]*|Disc \d+|EDC|Track \d+|eShop)\)'
 # Redump's region names: the first parenthesised group made only of these is the release's region.
 $regionNames = 'USA|Europe|Japan|World|Asia|Australia|Brazil|Canada|China|France|Germany|Hong Kong|Italy|Korea|' +
     'Netherlands|Spain|Sweden|Taiwan|UK|Russia|Scandinavia|Latin America|Portugal|Poland|Greece|Austria|' +
@@ -49,10 +54,13 @@ $region = "\s*\(((?:$regionNames)(?:, (?:$regionNames))*)\)"
 $notRetail = '\((?:Demo|Beta|Proto|Kiosk|Sample|Trial|Taikenban|Preview|Promo|Debug|Not for Resale)[^)]*\)'
 
 $lines = New-Object System.Collections.Generic.List[string]
+$best = @{}
 foreach ($set in $sets) {
-    $url = "https://raw.githubusercontent.com/libretro/libretro-database/$sha/metadat/redump/$([Uri]::EscapeDataString($set.Dat)).dat"
+    $dir = if ($set.Dir) { $set.Dir } else { 'redump' }
+    $url = "https://raw.githubusercontent.com/libretro/libretro-database/$sha/metadat/$dir/$([Uri]::EscapeDataString($set.Dat)).dat"
     $text = (Invoke-WebRequest $url -UseBasicParsing).Content
-    $best = @{}
+    if (-not $best.ContainsKey($set.System)) { $best[$set.System] = @{} }
+    $seen = $best[$set.System]
     foreach ($game in [regex]::Matches($text, '(?ms)^game \(\s*$(.*?)^\)')) {
         $body = $game.Groups[1].Value
         $name = [regex]::Match($body, '(?m)^\s*name "(.*)"\s*$').Groups[1].Value
@@ -67,16 +75,20 @@ foreach ($set in $sets) {
         $title = ($title -replace '\s+', ' ').Trim()
         $row = "$title`t$(if ($where.Success) { $where.Groups[1].Value })`t$(if ($langs.Success) { $langs.Groups[1].Value })"
         foreach ($key in (Get-Keys $set.System $serial | Select-Object -Unique)) {
-            $old = $best[$key]
+            $old = $seen[$key]
             if ($null -eq $old -or $rank -lt $old.Rank -or
                 ($rank -eq $old.Rank -and ($name.Length -lt $old.Name.Length -or
                     ($name.Length -eq $old.Name.Length -and [string]::CompareOrdinal($name, $old.Name) -lt 0)))) {
-                $best[$key] = @{ Rank = $rank; Name = $name; Row = $row }
+                $seen[$key] = @{ Rank = $rank; Name = $name; Row = $row }
             }
         }
     }
-    foreach ($key in ($best.Keys | Sort-Object -CaseSensitive)) { $lines.Add("$($set.System)`t$key`t$($best[$key].Row)") }
-    Write-Host ("{0,-4} {1,6} serials" -f $set.System, $best.Count)
+}
+# One system's dats (a 3DS game's cartridge and eShop lists) are merged before its rows are written.
+foreach ($set in ($sets | ForEach-Object { $_.System } | Select-Object -Unique)) {
+    $seen = $best[$set]
+    foreach ($key in ($seen.Keys | Sort-Object -CaseSensitive)) { $lines.Add("$set`t$key`t$($seen[$key].Row)") }
+    Write-Host ("{0,-4} {1,6} serials" -f $set, $seen.Count)
 }
 
 $out = Join-Path $PSScriptRoot 'console-titles.tsv.gz'

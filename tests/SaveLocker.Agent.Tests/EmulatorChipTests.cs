@@ -53,6 +53,7 @@ public sealed class EmulatorChipTests
     [InlineData(Vita3KSaves.System, "PS Vita")]
     [InlineData(ShadPs4Saves.System, "PS4")]
     [InlineData(CemuSaves.System, "Wii U")]
+    [InlineData(AzaharSaves.System, "3DS")]
     public void Each_emulator_console_has_its_label(string system, string label) =>
         Assert.Equal(label, GameSources.SystemLabel(system));
 }
