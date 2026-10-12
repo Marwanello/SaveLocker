@@ -32,7 +32,7 @@ point unless explicitly instructed to.
 | 4 — PrimeHack | 🚧 Built 2026-10-07 (branch `emulator-saves-group-c`) — the Dolphin reader against PrimeHack's folders (EmuDeck `saves/primehack`, Flatpak `io.github.shiiion.primehack`, EmuDeck for Windows `Emulators\primehack\User`). **Maintainer's choice:** saves from different emulators are never one game, even with the same files — `GameDto.Emulators` (server, from the sources) + `Enroller.SameEmulator`, mutation-checked. EmuDeck for Windows had created `Emulators\PrimeHack` but never run it (no `User` yet), so where a non-portable PrimeHack keeps its user folder is still to see (Group H) |
 | 5a — RPCS3 | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `Rpcs3Saves`: `dev_hdd0/home/<user>/savedata`, scope `<ID>*/**`, named by Redump's PS3 set, else the save's `PARAM.SFO` `TITLE`; EmuDeck's link, else `vfs.yml`. **Captured 2026-10-11:** the Deck's real save `BCUS98132-GAMEAUTOSAVE` (*Heavenly Sword*) and `vfs.yml` (dev_hdd0 on the SD card); the PC's `RPCS3\config\vfs.yml`. See *Group D — as built* |
 | 5b — Xenia | 🚧 Built 2026-10-12 (branch `emulator-saves-group-e`; follow-up the same day: device saves as a second folder, the named-profile layout) — `XeniaSaves`: a game is its `<TID>/00000001` saved games and their `Headers/00000001`, in a profile's `content/<XUID>` (Canary) or `content` itself (older builds); DLC, title updates, XUID 0 and the dashboard's `FFFE07D1` never synced (scope mutation-checked). Named by title ID from the bundled table (Redump disc serials → title IDs, No-Intro Arcade titles), else `Xbox 360 <TID>`. **Captured 2026-10-12:** the PC's real *Forza Horizon* / *Forza Horizon 2* saves (profile layout); the Deck's Proton Canary with both layouts side by side. See *Group E — as built* |
-| 5c — Xenia profile and DLC | ⏳ Designed 2026-10-12 — **DLC: the DLC check chosen** (lists only, hand-over through the server, 9-step build plan); **profile: three new options (D/E/F) awaiting a pick**. Mockups in this folder. See *Phase 5c* |
+| 5c — Xenia profile and DLC | ⏳ Designed 2026-10-12 — **DLC: the DLC check chosen** (lists only, hand-over through the server, 9-step build plan); **profile: F (checked at launch) with the profile split by game chosen** (10-step build plan). Mockups in this folder. See *Phase 5c* |
 | 6 — Switch: Yuzu, Citron, Eden, Ryujinx | ⏳ Not started — Group F. **Widened 2026-10-07** from Eden only, at the maintainer's request; needs the server title key (D2) |
 | 7 — UI filter | ✅ Shipped 2026-10-07 (same PR), filter by emulator — agent UI *Emulators* chip with an *Emulator* row under it (one chip per emulator, RetroArch today), Deck *Emulators* pill. A per-console sub-breakdown was not built — it comes back with Phase 2, when more than one console has saves. |
 | 7b — Game source per machine, names without "(RetroArch)" | ✅ Shipped 2026-10-07 (same PR) — built 2026-10-07 (maintainer asked; picked variation B of a clickable mockup on all three screens). Unit 280. Console checked in the browser against a seeded dev server; agent UI and Deck need the testenv pass. **Review fixes 2026-10-07** (same PR): server-decided names, the scope-join refusal, source re-send guard, EmuDeck tag, server bounds — unit 291, see `progress.md`. |
@@ -519,6 +519,53 @@ an empty one and overwrites it (`UserTracker::AddTitleToPlayedList`). So a profi
   under, a sheet asks and SaveLocker switches it. Xenia Canary reads the start-up profile from its config,
   `logged_profile_slot_0_xuid` under `[Profiles]` (`profile_manager.cc`), so the switch is a config write before launch.
   Profile files sync per game as in D.
+
+*Profile: F chosen, together with the split by game* — the full journey is in
+[`phase-5c-profile-launch-mockups.html`](phase-5c-profile-launch-mockups.html) (Journey and Build plan tabs). The two halves
+need each other: the split decides **what syncs** (each game's `<TID>.gpd` and its row of `FFFE07D1.gpd`; the account, header and
+settings once), F decides **who Xenia signs in as**, so it loads the profile those files belong to. Three conditions, each a
+build step below:
+- **The same XUID on every machine.** Xenia makes each new profile's XUID at random, so a Deck with the game under its own
+  profile is offered, once, to use the game's profile (copy the core, add the row, pull) or to keep its own as a separate game.
+- **A prompt only where SaveLocker is in the launch path:** the Linux launch command (shown by the Decky plugin over Game
+  Mode) and the Playnite plugin's pre-launch hook (Windows). Elsewhere “Ask” switches without asking, or, with Xenia started
+  directly, the profile is set ahead of time after each sync and a notice follows if Xenia ran as another profile.
+- **Never while Xenia runs:** the config line and the row merge are written only when the game's process is not running.
+
+*Build plan for the profile, one commit each:*
+1. **Capture and confirm, no code:** from PC and Deck, `FFFE07D1.gpd`, two title GPDs, `Account`, the profile header and
+   `xenia-canary.config.toml`. Confirm that `logged_profile_slot_0_xuid` (`[Profiles]`) signs in at boot, whether Xenia rewrites it
+   when signing in from its own menu or on exit, and where the config lives in each setup (EmuDeck Windows, Proton, portable,
+   Documents).
+2. **XDBF reader and writer** (`Agent.Core/Xdbf.cs`): header, entry and free-space tables; achievements (namespace 1),
+   settings (3), title rows (4). Unchanged entries are written back untouched; the captured files round-trip byte for byte.
+3. **The game's part of the profile:** a `profile` folder for every Xenia game under an XUID —
+   `content/<XUID>/FFFE07D1/00010000/<XUID>`, scope `<TID>.gpd`. Its row travels as a small file in a SaveLocker-owned folder
+   (`<state>/xenia/rows/<game>`, key `profile-row`): exported before a push, merged after a pull (insert or replace that one row,
+   recount the gamerscore and achievement totals). A per-emulator hook in `SyncEngine` (before push / after restore), guarded by
+   `GameActivity`. `SaveFolderClaims` is unchanged since no two games share a file. Two-machine test: Halo 3's newer row
+   survives a Forza Horizon pull, and a whole-file copy fails it.
+4. **The core, copied once:** account, header and the main file's settings exported to `<state>/xenia/core/<XUID>` (key
+   `profile-core`, ~100 KB) and restored **only where the profile is missing** — a new restore-if-missing folder mode. Settings
+   changed later are not synced in this phase (newest-wins per setting is a follow-up).
+5. **The game's profile on the server:** `Game.EmulatorProfile` (`xenia:<XUID>`), set by the first enrollment, shown and
+   changeable in the console. Migration; regenerate `openapi.json` and `api-types.ts`.
+6. **Aligning a machine:** Add games offers “Use <profile> here” (folder `content/<game XUID>/<TID>`, declared before it exists)
+   or “Keep <own> as a separate game”; then core → row → pull, in that order (the row before the save, because Xenia ignores a
+   title GPD the main file does not list). A folder under the game's XUID ranks above one under another XUID.
+7. **Xenia config and the decision:** `XeniaConfig` finds the config through the existing Xenia setups and edits
+   `logged_profile_slot_0_xuid` line by line (comments and order kept, `[Profiles]` added if missing, atomic, one backup).
+   `XeniaLaunchProfile.Decide(configured, gameProfile, policy, canPrompt)` → start / switch / ask / leave, pure and unit-tested.
+   Policy: game → machine → console default (Ask). Pre-profile layouts skip the check.
+8. **Into every launch path:** `PrepareLaunchAsync` (Linux launch command, the Playnite route, the agent API) gains a profile
+   step after the pull. Ask raises a pending prompt (`GET /api/launch/prompts`, `POST …/{id}/answer`) and waits up to 30 s,
+   then uses the game's profile. With nothing before the launch, the config is set after each sync while Xenia is closed, and a
+   notice follows an exit that ran as another profile. Activity entries and agent event codes for the console.
+9. **Prompts:** the Decky plugin (its own repo) shows a modal while a launch waits; the Playnite plugin a real dialog; the agent
+   UI too when open. Without Decky in Game Mode, Ask acts as Switch and says so afterwards.
+10. **Console, help, testenv, Group H:** the game's profile line and a “Profile at launch” table from heartbeats, the
+    Configuration default, a help article, testenv with two profiles and a config file, and Forza Horizon between PC (Playnite)
+    and Deck (Game Mode, with and without Decky). The DLC check then reuses the Decky prompt for its own “Ask” in Game Mode.
 
 *DLC: the DLC check* — chosen. The whole journey, every screen on PC, Deck and console, is in
 [`phase-5c-dlc-check-mockups.html`](phase-5c-dlc-check-mockups.html) (Journey and Build plan tabs). Decided by the design:
