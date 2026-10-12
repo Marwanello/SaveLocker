@@ -2006,6 +2006,40 @@ installer once and look at a real toast's header (steps:
 
 ---
 
+**Art picker source choice + Linux agent secret permissions shipped (2026-10-12, branch
+`art-picker-and-linux-agent-secrets`, worktree, PR to the fork pending — two backlog items, one
+branch; full write-up `logs/2026-10-12_art-picker-and-agent-secrets.md`).**
+<br>**Art picker: choose which SteamGridDB game a game pulls from** (`tasks/_done/art-picker-game-choice/`).
+The first autocomplete result used to be the only option, so a game whose name matches the wrong
+entry offered that entry's art with no way out short of renaming it. `Game.SteamGridDbId` +
+`SteamGridDbName` (migration `AddGameSteamGridDbSource`; null = automatic) are honored by the options
+listing, *Refresh art* and the missing-art backfill; new admin routes `GET/PUT /games/{id}/art/source`
+and `GET /games/{id}/art/search`; the picker gained a source row with **Change** (search) and **Use
+automatic match**. A pinned id is validated against `games/id/{id}` and the stored name is
+SteamGridDB's own. `run-console-security-tests` 364 → **376/376** (+12; its stub now serves
+`games/id` and per-id art, and three autocomplete candidates); `tests/sgdb-stub.py` too, for the
+by-hand root. `openapi.json`/`api-types.ts` regenerated (additions only); `web` build + lint clean.
+**Not verified against the real SteamGridDB** (no key — same standing caveat as the artwork work).
+<br>**Linux agent secret permissions** (`tasks/linux-agent-secrets/`). The state dir's mode came from
+the launching shell (0755/0644 under umask 022 — `config.json` holds the server key, `api-token`
+grants the local API); CLI-only runs never reached `LocalAuth`'s one-off chmod, and `agent.log` was
+never tightened. `StateDirSecurity.Protect` now runs on Unix too (0700 dir, 0600 on the known private
+files, retroactively), its once-per-process gate moved out of `AtomicFile` so the logger, atomic
+writes and `LocalAuth` share it, and `AgentLogger` creates its file 0600 and protects on first write.
+Windows untouched. `run-linux-tests` gained 9 checks (4 fail against the pre-change Agent.Core —
+mutation-checked); full WSL suite as root **280 pass / 2 fail** (the documented WSLg-session pair);
+`dotnet test` **450/450**; Windows agent builds clean. Verified in `unshare -n` because a foreign
+daemon from the shared testenv WSL clone held :5187 (both new Gotchas recorded). **The state-layout
+split half is planned, not built** — `tasks/linux-agent-secrets/plan-split.md` carries the upgrade
+migration, the rollback-across-the-split and Decky-plugin compatibility decisions, and the rig
+changes; [[Backlog]] now lists it as its own item.
+<br>**Next action:** merge the PR; the by-hand `testenv` pass (art picker against the stub; WSL
+agent `stat` on the state dir) is the maintainer's manual check — steps were given in this session's
+report. Release notes for the next tag must cover both: artwork can be pointed at the right
+SteamGridDB entry, and the Linux agent's state files are owner-only now.
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three
