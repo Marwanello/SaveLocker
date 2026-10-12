@@ -719,7 +719,9 @@ try {
     $allDone = ArtFinish $allTask
     Check "the Sync all that held the gate completes (200)" ($allDone.Status -eq 200)
     $t0 = Get-Date
-    while (@($artLog | Where-Object { $_ -eq $slowRelease }).Count -eq 0 -and ((Get-Date) - $t0).TotalSeconds -lt 10) { ArtPump 50 }
+    # The exit's push settles first (SettleQuietSeconds, 10 by default) wherever the save folder exists -
+    # it does on Linux CI - so the release can land well past 10 s after the gate frees.
+    while (@($artLog | Where-Object { $_ -eq $slowRelease }).Count -eq 0 -and ((Get-Date) - $t0).TotalSeconds -lt 40) { ArtPump 50 }
     Check "once the gate frees, the queued exit runs and releases the lease (the fleet is not locked out)" `
         (@($artLog | Where-Object { $_ -eq $slowRelease }).Count -ge 1)
     ArtPump 300   # the release is the exit's last step; let it hand the gate back before the next Sync all
