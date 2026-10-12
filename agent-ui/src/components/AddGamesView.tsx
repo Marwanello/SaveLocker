@@ -575,6 +575,11 @@ export function AddGamesView({ onEnrolled }: Props) {
                   </Button>
                 </div>
               )}
+              {!c.enrolled && c.statesOnly && (
+                <span className="sl-check-row__note" style={{ display: 'block', marginTop: 4 }}>
+                  Save states only so far. Its in-game saves sync too once the game makes one.
+                </span>
+              )}
               {!c.enrolled && c.untouchedSeed && (
                 <span className="sl-check-row__note" style={{ display: 'block', marginTop: 4 }}>
                   EmuDeck’s preinstalled save, never played here. Adding it takes the server’s save in its place.

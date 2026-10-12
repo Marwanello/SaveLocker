@@ -94,8 +94,9 @@ public sealed class SonySavesTests : IDisposable
 
         var found = PpssppSaves.Scan(PpssppSaves.Folders([P("Emulation")], []));
 
-        Assert.Equal(new[] { "Grand Theft Auto - Liberty City Stories", "Homebrew Hero" }, found.Select(c => c.Name));
+        Assert.Equal(new[] { "Grand Theft Auto - Liberty City Stories", "Homebrew Hero", "SSX on Tour" }, found.Select(c => c.Name));
         var lcs = found[0];
+        Assert.False(lcs.StatesOnly);
         Assert.Equal(("PPSSPP", "psp", "ULUS10041", true), (lcs.EmulatorName, lcs.EmulatorSystem, lcs.EmulatorRom, lcs.ViaEmuDeck));
         Assert.Equal(("PlayStation Portable", "USA", "Redump"), (lcs.Release!.Console, lcs.Release.Region, lcs.Release.NamedBy));
         Assert.Equal(new[] { "ULUS10041*/**" }, lcs.IncludeGlobs);
@@ -112,6 +113,42 @@ public sealed class SonySavesTests : IDisposable
         Assert.Equal(("USA", null), (psn.Release!.Region, psn.Release.NamedBy));
         Assert.Equal(new[] { "NPUH99999SAVE/PARAM.SFO", "NPUH99999SAVE/SAVE.DAT" },
             SaveArchive.ListFiles(psn.SuggestedSaveDir!, null, psn.IncludeGlobs).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void A_ppsspp_game_with_states_but_no_save_yet_is_a_game_with_its_save_folder_declared()
+    {
+        PpssppEmuDeck("Emulation");
+        Text("Emulation/saves/ppsspp/states/load_undo.ppst", "the last load's undo, no game's");
+        Text("Emulation/saves/ppsspp/states/ULES00151_1.00_0.ppst", "");
+        Text("Emulation/saves/ppsspp/states/ULES00151_1.00_0.jpg", "an empty state is no state");
+
+        var found = PpssppSaves.Scan(PpssppSaves.Folders([P("Emulation")], []));
+
+        // SSX on Tour has a state and no save folder; ULES00151 has an empty folder and an empty state only.
+        var ssx = Assert.Single(found, c => c.StatesOnly);
+        Assert.Equal(("SSX on Tour", "ULUS10042", "USA"), (ssx.Name, ssx.EmulatorRom, ssx.Release!.Region));
+        Assert.Equal(P("Emulation/saves/ppsspp/saves"), ssx.SuggestedSaveDir);
+        Assert.Equal(new[] { "ULUS10042*/**" }, ssx.IncludeGlobs);
+        Assert.Empty(SaveArchive.ListFiles(ssx.SuggestedSaveDir!, null, ssx.IncludeGlobs));
+        var states = Assert.Single(ssx.ExtraSaveDirs!);
+        Assert.Equal(new[] { "ULUS10042_1.00_0.ppst" }, SaveArchive.ListFiles(states.Dir, null, states.IncludeGlobs));
+        Assert.DoesNotContain(found, c => c.EmulatorRom == "ULES00151");
+    }
+
+    [Fact]
+    public void A_ppsspp_save_on_one_memory_stick_wins_over_the_same_games_states_alone_on_another()
+    {
+        Text("a/PSP/PPSSPP_STATE/ULUS10041_1.00_0.ppst", "newer state, no save");
+        Sfo("b/PSP/SAVEDATA/ULUS10041DATA00/PARAM.SFO", ("TITLE", "GTA LCS"));
+        Text("b/PSP/SAVEDATA/ULUS10041DATA00/DATA.BIN", "older save");
+        File.SetLastWriteTimeUtc(P("b/PSP/SAVEDATA/ULUS10041DATA00/DATA.BIN"), DateTime.UtcNow.AddDays(-3));
+        File.SetLastWriteTimeUtc(P("b/PSP/SAVEDATA/ULUS10041DATA00/PARAM.SFO"), DateTime.UtcNow.AddDays(-3));
+
+        var game = Assert.Single(PpssppSaves.Scan(PpssppSaves.Folders([], [P("a/PSP"), P("b/PSP")])));
+
+        Assert.False(game.StatesOnly);
+        Assert.Equal(P("b/PSP/SAVEDATA"), game.SuggestedSaveDir);
     }
 
     [Fact]

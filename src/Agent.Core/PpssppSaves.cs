@@ -9,7 +9,8 @@ namespace SaveLocker.Agent;
 /// save and so the same on every machine.
 /// <para>
 /// States are <c>PSP/PPSSPP_STATE/&lt;ID&gt;_&lt;version&gt;_&lt;slot&gt;.ppst</c>, a <c>.jpg</c> beside each, and the undo
-/// state, all named from the game ID (<c>SaveState::GenerateFullDiscId</c>) → states scope <c>ULUS10041_*</c>.
+/// state, all named from the game ID (<c>SaveState::GenerateFullDiscId</c>) → states scope <c>ULUS10041_*</c>. A game
+/// with states but no save yet is a game too (<see cref="ScanCandidate.StatesOnly"/>).
 /// </para>
 /// <para>
 /// Where: EmuDeck links <c>Emulation/saves/ppsspp/{saves,states}</c> with the emulator's <c>SAVEDATA</c> and
@@ -30,31 +31,59 @@ public static class PpssppSaves
 
     public static IReadOnlyList<ScanCandidate> Scan(IEnumerable<RomSaveFolders> folders)
     {
+        var setups = folders.ToList();
         var found = new List<(ScanCandidate, DateTime)>();
-        foreach (var setup in folders)
-        {
-            var realDir = EmuDeckRoots.RealPath(setup.Saves);
+        foreach (var setup in setups)
             foreach (var game in TitleFolders.Find(setup.Saves, TitleFolders.SonyId))
             {
                 var sfoTitle = game.Dirs.Select(d => ParamSfo.Title(Path.Combine(d.FullName, "PARAM.SFO"))).FirstOrDefault(t => t is not null);
-                DeclaredSavePath[]? states = setup.States is { } s
-                    ? [new DeclaredSavePath(RomSaves.StatesKey, EmuDeckRoots.RealPath(s), StateGlobsFor(game.Id))]
-                    : null;
-                found.Add((new ScanCandidate(
-                    Name: ConsoleTitles.For(System, game.Id)?.Title ?? sfoTitle ?? game.Id,
-                    SuggestedSaveDir: realDir,
-                    Source: ScanSource.Emulator,
-                    HasSteamCloud: false,
-                    EmulatorName: EmulatorName,
-                    EmulatorSystem: System,
-                    EmulatorRom: game.Id,
-                    ViaEmuDeck: setup.EmuDeck,
-                    IncludeGlobs: TitleFolders.Scope(game.Id, severalFolders: true),
-                    ExtraSaveDirs: states,
-                    Release: ConsoleTitles.Release(System, [game.Id])), game.WrittenUtc));
+                found.Add((Candidate(setup, game.Id, sfoTitle, statesOnly: false), game.WrittenUtc));
             }
-        }
+
+        // A game played only from states so far, before its first in-game save: listed too, so its states sync and
+        // its SAVEDATA folders join it once they exist. A save anywhere on this machine wins over its states.
+        var saved = found.Select(f => f.Item1.EmulatorRom!).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var setup in setups)
+            foreach (var (id, written) in StateOnlyGames(setup.States))
+                if (!saved.Contains(id))
+                    found.Add((Candidate(setup, id, sfoTitle: null, statesOnly: true), written));
         return TitleFolders.Newest(found);
+    }
+
+    private static ScanCandidate Candidate(RomSaveFolders setup, string id, string? sfoTitle, bool statesOnly)
+    {
+        DeclaredSavePath[]? states = setup.States is { } s
+            ? [new DeclaredSavePath(RomSaves.StatesKey, EmuDeckRoots.RealPath(s), StateGlobsFor(id))]
+            : null;
+        return new ScanCandidate(
+            Name: ConsoleTitles.For(System, id)?.Title ?? sfoTitle ?? id,
+            SuggestedSaveDir: EmuDeckRoots.RealPath(setup.Saves),
+            Source: ScanSource.Emulator,
+            HasSteamCloud: false,
+            EmulatorName: EmulatorName,
+            EmulatorSystem: System,
+            EmulatorRom: id,
+            ViaEmuDeck: setup.EmuDeck,
+            IncludeGlobs: TitleFolders.Scope(id, severalFolders: true),
+            ExtraSaveDirs: states,
+            Release: ConsoleTitles.Release(System, [id]),
+            StatesOnly: statesOnly);
+    }
+
+    /// <summary>The games with a non-empty state (<c>ULUS10041_1.00_0.ppst</c>) in a states folder, and when the newest
+    /// was written. <c>load_undo.ppst</c> and other files no game's ID starts are skipped.</summary>
+    public static IEnumerable<(string Id, DateTime WrittenUtc)> StateOnlyGames(string? statesDir)
+    {
+        FileInfo[] files;
+        try { files = statesDir is not null && Directory.Exists(statesDir) ? new DirectoryInfo(statesDir).GetFiles("*.ppst") : []; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return []; }
+        return files
+            .Where(f => f.Length > 0 && f.LinkTarget is null)
+            .Select(f => (File: f, Id: TitleFolders.SonyId(f.Name)))
+            .Where(x => x.Id is not null && x.File.Name.Length > x.Id.Length && x.File.Name[x.Id.Length] == '_')
+            .GroupBy(x => x.Id!, StringComparer.OrdinalIgnoreCase)
+            .Select(g => (g.Key, g.Max(x => x.File.LastWriteTimeUtc)))
+            .ToList();
     }
 
     /// <summary>One game's states: every slot, its thumbnail and the undo state.</summary>

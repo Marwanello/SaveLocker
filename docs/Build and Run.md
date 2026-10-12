@@ -303,7 +303,8 @@ Group C adds, under `Emulation\saves` on both machines:
 Group D adds, on both machines (each `PARAM.SFO` written byte-accurate by `New-ParamSfo`):
 - **PPSSPP:** *Grand Theft Auto - Liberty City Stories* (two save folders, `ULUS10041*`; a state and its `.jpg` on
   Windows, an older save on WSL). Its neighbours must survive every pull: *Homebrew Hero* (Windows, a PSN ID named by its
-  own SFO) and *SSX on Tour* (WSL).
+  own SFO) and *SSX on Tour* (WSL). *God of War - Chains of Olympus* (Windows, `UCUS98653`) has a state and no save
+  yet: it is listed with "Save states only so far", and adding it syncs the state.
 - **RPCS3:** *Heavenly Sword* (`BCUS98132-GAMEAUTOSAVE`, the Deck's real save's layout; the save says "Heavenly Sword™",
   Redump's name wins). *Demon's Souls* beside it on Windows stays put.
 - **Vita3K:** *Persona 4 Golden* (named by the save's own `sce_sys/param.sfo`) on both; *Tearaway* on Windows, named

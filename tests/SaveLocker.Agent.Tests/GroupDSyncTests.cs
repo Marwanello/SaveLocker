@@ -96,4 +96,63 @@ public sealed class GroupDSyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.Equal("win-lcs", Read("win", $"{winPsp}/SAVEDATA/ULUS10041DATA00/DATA.BIN"));
         Assert.Equal("win-lcs-state", Read("win", $"{winPsp}/PPSSPP_STATE/ULUS10041_1.00_0.ppst"));
     }
+
+    [Fact]
+    public async Task A_psp_game_with_only_states_joins_and_its_first_save_follows()
+    {
+        var game = $"NPUH{_id}";
+        const string deckPsp = ".var/app/org.ppsspp.PPSSPP/config/ppsspp/PSP";
+        const string winPsp = "AppData/Roaming/EmuDeck/Emulators/PPSSPP/memstick/PSP";
+        // The Deck has played from states only; Windows has neither yet, and a neighbour game of its own.
+        Write("deck", $"{deckPsp}/PPSSPP_STATE/{game}_1.00_0.ppst", "deck-state");
+        Directory.CreateDirectory(P("deck", $"{deckPsp}/SAVEDATA"));
+        Write("win", $"{winPsp}/SAVEDATA/ULUS10041DATA00/DATA.BIN", "win-lcs");
+        Write("win", $"{winPsp}/PPSSPP_STATE/{game}_1.00_0.ppst", "win-state");
+
+        var deck = await Machine("deck");
+        var win = await Machine("win");
+        var deckFound = PpssppSaves.Scan(PpssppSaves.Folders([], [P("deck", deckPsp)]));
+        Assert.True(Assert.Single(deckFound).StatesOnly);
+        var deckGame = await Enroll(deck, deckFound, game);
+        await using var engineDeck = new SyncEngine(deck, ApiClient.For(deck));
+        Assert.NotNull(await engineDeck.PushAsync(deckGame, force: true));
+
+        var winGame = await Enroll(win, PpssppSaves.Scan(PpssppSaves.Folders([], [P("win", winPsp)])), game);
+        Assert.Equal(deckGame.GameId, winGame.GameId);
+        await using var engineWin = new SyncEngine(win, ApiClient.For(win));
+        await engineWin.PullAsync(winGame, force: true);
+        Assert.Equal("deck-state", Read("win", $"{winPsp}/PPSSPP_STATE/{game}_1.00_0.ppst"));
+
+        // The game's first in-game save on the Deck reaches Windows; the neighbour stays.
+        Write("deck", $"{deckPsp}/SAVEDATA/{game}DATA00/DATA.BIN", "first-save");
+        Assert.NotNull(await engineDeck.PushAsync(deckGame, force: true));
+        await engineWin.PullAsync(winGame, force: true);
+        Assert.Equal("first-save", Read("win", $"{winPsp}/SAVEDATA/{game}DATA00/DATA.BIN"));
+        Assert.Equal("win-lcs", Read("win", $"{winPsp}/SAVEDATA/ULUS10041DATA00/DATA.BIN"));
+    }
+
+    [Fact]
+    public async Task A_states_only_push_never_empties_another_machines_real_save_of_the_game()
+    {
+        var game = $"NPUH{_id}";
+        const string deckPsp = ".var/app/org.ppsspp.PPSSPP/config/ppsspp/PSP";
+        const string winPsp = "AppData/Roaming/EmuDeck/Emulators/PPSSPP/memstick/PSP";
+        Write("deck", $"{deckPsp}/PPSSPP_STATE/{game}_1.00_0.ppst", "deck-state");
+        Directory.CreateDirectory(P("deck", $"{deckPsp}/SAVEDATA"));
+        Write("win", $"{winPsp}/SAVEDATA/{game}DATA00/DATA.BIN", "win-real-save");
+
+        var deck = await Machine("deck");
+        var win = await Machine("win");
+        var deckGame = await Enroll(deck, PpssppSaves.Scan(PpssppSaves.Folders([], [P("deck", deckPsp)])), game);
+        await using var engineDeck = new SyncEngine(deck, ApiClient.For(deck));
+        Assert.NotNull(await engineDeck.PushAsync(deckGame, force: true));
+
+        var winGame = await Enroll(win, PpssppSaves.Scan(PpssppSaves.Folders([], [P("win", winPsp)])), game);
+        Assert.Equal(deckGame.GameId, winGame.GameId);
+        await using var engineWin = new SyncEngine(win, ApiClient.For(win));
+
+        // The server's version has no save; Windows' save was never pushed, so the pull stops rather than empty it.
+        Assert.Equal(PullOutcome.Refused, await engineWin.PullAsync(winGame));
+        Assert.Equal("win-real-save", Read("win", $"{winPsp}/SAVEDATA/{game}DATA00/DATA.BIN"));
+    }
 }

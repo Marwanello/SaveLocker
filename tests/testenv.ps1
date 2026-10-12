@@ -544,6 +544,9 @@ function New-EmuDeckFixture {
     Write-FixtureFile (Join-Path $psp 'saves\NPUH99999SAVE\SAVE.DAT') 'psn game - must survive every Liberty City pull'
     Write-FixtureFile (Join-Path $psp 'states\ULUS10041_1.00_0.ppst') "liberty city slot 0 $(Get-Date -Format o)"
     Write-FixtureFile (Join-Path $psp 'states\ULUS10041_1.00_0.jpg') 'thumbnail'
+    # A game played from states only, before its first in-game save: listed as "Save states only".
+    Write-FixtureFile (Join-Path $psp 'states\UCUS98653_1.00_0.ppst') "chains of olympus state $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $psp 'states\UCUS98653_1.00_0.jpg') 'thumbnail'
     # RPCS3: the Deck's real save's layout (BCUS98132, Redump names it), and another game.
     $ps3 = Join-Path $target 'saves\rpcs3\saves'
     Write-FixtureBytes (Join-Path $ps3 'BCUS98132-GAMEAUTOSAVE\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = "Heavenly Sword$([char]0x2122)"; SUB_TITLE = 'Save Game' }))
