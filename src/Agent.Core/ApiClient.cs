@@ -162,6 +162,49 @@ public sealed class ApiClient
         resp.EnsureSuccessStatusCode();
     }
 
+    // ----- The DLC hand-over (tasks/emulator-saves Phase 5c, step 11) -----
+
+    private static async Task<T> Read<T>(HttpResponseMessage resp, CancellationToken ct)
+    {
+        if (!resp.IsSuccessStatusCode)
+            throw new HttpRequestException($"{(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync(ct)}", null, resp.StatusCode);
+        return (await resp.Content.ReadFromJsonAsync<T>(cancellationToken: ct))!;
+    }
+
+    public async Task<ContentTransferDto> CreateTransferAsync(CreateTransferRequest req, CancellationToken ct = default) =>
+        await Read<ContentTransferDto>(await _http.PostAsJsonAsync("/api/agent/transfers", req, ct), ct);
+
+    public async Task<ContentTransferDto[]> ListTransfersAsync(CancellationToken ct = default) =>
+        await Read<ContentTransferDto[]>(await _http.GetAsync("/api/agent/transfers", ct), ct);
+
+    public async Task<ContentTransferDto> AnswerTransferAsync(Guid id, bool approve, CancellationToken ct = default) =>
+        await Read<ContentTransferDto>(await _http.PostAsJsonAsync($"/api/agent/transfers/{id}/answer", new TransferAnswerRequest(approve), ct), ct);
+
+    public async Task<ContentTransferDto> UploadTransferPartAsync(Guid id, string packageId, long offset, long total, Stream chunk, CancellationToken ct = default)
+    {
+        using var content = new StreamContent(chunk);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        return await Read<ContentTransferDto>(await _http.PutAsync(
+            $"/api/agent/transfers/{id}/parts/{Uri.EscapeDataString(packageId)}?offset={offset}&total={total}", content, ct), ct);
+    }
+
+    /// <summary>Downloads a finished pack's zip, resuming after <paramref name="from"/> bytes already in <paramref name="target"/>.</summary>
+    public async Task DownloadTransferPartAsync(Guid id, string packageId, Stream target, long from, CancellationToken ct = default)
+    {
+        using var msg = new HttpRequestMessage(HttpMethod.Get, $"/api/agent/transfers/{id}/parts/{Uri.EscapeDataString(packageId)}");
+        if (from > 0) msg.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(from, null);
+        using var resp = await _http.SendAsync(msg, HttpCompletionOption.ResponseHeadersRead, ct);
+        resp.EnsureSuccessStatusCode();
+        await using var body = await resp.Content.ReadAsStreamAsync(ct);
+        await body.CopyToAsync(target, ct);
+    }
+
+    public async Task<ContentTransferDto> TransferDeliveredAsync(Guid id, CancellationToken ct = default) =>
+        await Read<ContentTransferDto>(await _http.PostAsync($"/api/agent/transfers/{id}/delivered", null, ct), ct);
+
+    public async Task CancelTransferAsync(Guid id, CancellationToken ct = default) =>
+        (await _http.PostAsync($"/api/agent/transfers/{id}/cancel", null, ct)).EnsureSuccessStatusCode();
+
     /// <summary>The primary folder is the absent key, which is what an older server understands.</summary>
     private static string PathQuery(string key) =>
         key == SaveRoot.PrimaryKey ? "" : $"&path={Uri.EscapeDataString(key)}";

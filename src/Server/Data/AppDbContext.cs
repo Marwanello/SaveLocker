@@ -17,6 +17,7 @@ public class AppDbContext : DbContext
     public DbSet<AppSetting> Settings => Set<AppSetting>();
     public DbSet<MachineSavePath> MachineSavePaths => Set<MachineSavePath>();
     public DbSet<MachineGameContent> MachineGameContents => Set<MachineGameContent>();
+    public DbSet<ContentTransfer> ContentTransfers => Set<ContentTransfer>();
     public DbSet<GameSavePath> GameSavePaths => Set<GameSavePath>();
     public DbSet<MachineScanCandidate> MachineScanCandidates => Set<MachineScanCandidate>();
     public DbSet<MachineGameSource> MachineGameSources => Set<MachineGameSource>();
@@ -69,6 +70,12 @@ public class AppDbContext : DbContext
         b.Entity<MachineSavePath>()
             .HasOne<Game>().WithMany()
             .HasForeignKey(p => p.GameId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        b.Entity<ContentTransfer>().HasIndex(t => new { t.GameId, t.ToMachineId });
+        b.Entity<ContentTransfer>()
+            .HasOne<Game>().WithMany()
+            .HasForeignKey(t => t.GameId)
             .OnDelete(DeleteBehavior.Cascade);
 
         b.Entity<MachineGameContent>().HasKey(c => new { c.MachineId, c.GameId });

@@ -253,6 +253,24 @@ public class MachineGameContent
     public DateTime UpdatedAt { get; set; }
 }
 
+/// <summary>
+/// A DLC hand-over between two machines (tasks/emulator-saves Phase 5c, step 11): packs pass through the server from the
+/// machine that has them to the one that asked, and are deleted on delivery or expiry. <see cref="PartsJson"/> holds each
+/// pack's progress; the files live under the archive root's <c>_handover</c> folder.
+/// </summary>
+public class ContentTransfer
+{
+    public Guid Id { get; set; }
+    public Guid GameId { get; set; }
+    public Guid FromMachineId { get; set; }
+    public Guid ToMachineId { get; set; }
+    public TransferStatus Status { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public string PartsJson { get; set; } = "[]";
+}
+
 public class MachineSavePath
 {
     public Guid MachineId { get; set; }

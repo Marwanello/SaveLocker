@@ -469,6 +469,22 @@ public record GameContentDto(Guid? HeadVersionId, string? HeadMachineName, Conte
 
 public record MachineContentDto(Guid MachineId, string MachineName, ContentPackageDto[] Packages, DateTime UpdatedAt);
 
+/// <summary>Where a DLC hand-over is (tasks/emulator-saves Phase 5c). Appended values only: stored as integers.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<TransferStatus>))]
+public enum TransferStatus { Requested, Approved, Ready, Delivered, Declined, Cancelled, Expired }
+
+/// <summary>A machine asks <paramref name="FromMachineId"/> — the one whose save needs them — for packs it lacks.</summary>
+public record CreateTransferRequest(Guid GameId, Guid FromMachineId, ContentPackageDto[] Packages);
+
+public record TransferAnswerRequest(bool Approve);
+
+/// <summary>One pack of a hand-over: its declared size, its zip's size once the sender said, and how much has arrived.</summary>
+public record TransferPartDto(string Kind, string PackageId, string Name, long Size, long? ZipSize, long Received, bool Complete);
+
+public record ContentTransferDto(
+    Guid Id, Guid GameId, string GameName, Guid FromMachineId, string FromMachineName, Guid ToMachineId, string ToMachineName,
+    TransferStatus Status, DateTime CreatedAt, DateTime ExpiresAt, TransferPartDto[] Parts);
+
 /// <summary>File count and newest per-file write time inside one version's archive — derived from
 /// the zip on demand (<see cref="SaveLocker.Shared.SaveArchive.GetArchiveStats"/>), not stored on
 /// <see cref="SaveVersionDto"/>, so fetching it costs nothing for the versions nobody is looking at.

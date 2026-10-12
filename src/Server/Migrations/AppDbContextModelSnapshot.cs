@@ -281,6 +281,44 @@ namespace SaveLocker.Server.Migrations
                     b.ToTable("Conflicts");
                 });
 
+            modelBuilder.Entity("SaveLocker.Server.Data.ContentTransfer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("FromMachineId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("GameId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PartsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("ToMachineId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GameId", "ToMachineId");
+
+                    b.ToTable("ContentTransfers");
+                });
+
             modelBuilder.Entity("SaveLocker.Server.Data.EnrollmentToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -682,6 +720,15 @@ namespace SaveLocker.Server.Migrations
                         .IsRequired();
 
                     b.Navigation("Game");
+                });
+
+            modelBuilder.Entity("SaveLocker.Server.Data.ContentTransfer", b =>
+                {
+                    b.HasOne("SaveLocker.Server.Data.Game", null)
+                        .WithMany()
+                        .HasForeignKey("GameId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SaveLocker.Server.Data.GameSavePath", b =>

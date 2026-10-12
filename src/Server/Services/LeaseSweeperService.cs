@@ -48,6 +48,10 @@ public sealed class LeaseSweeperService : BackgroundService
             if (removed > 0)
                 _log.LogInformation("Lease sweep: removed {Count} expired lease(s).", removed);
 
+            var expired = await scope.ServiceProvider.GetRequiredService<ContentTransferService>().SweepAsync();
+            if (expired > 0)
+                _log.LogInformation("Hand-over sweep: {Count} DLC hand-over(s) expired and deleted.", expired);
+
             var enrollment = scope.ServiceProvider.GetRequiredService<EnrollmentService>();
             var pruned = await enrollment.PruneExpiredAsync();
             if (pruned > 0)
