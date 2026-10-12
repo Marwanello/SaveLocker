@@ -22,14 +22,16 @@ public enum NoticeActionKind { None, OpenView }
 /// Windows toast button is a plain <c>http://localhost</c> link the shell hands to the default browser,
 /// whose page asks the tray to raise its own window at the route (<see cref="ToOpenUrl"/>).
 /// <para>
-/// A richer button ("Retry now", "Install now") needs a way back into the running agent, and on
-/// Windows every way tried failed or was not worth its surface. A custom URL scheme registered by the
-/// agent at runtime is not resolvable for a toast's button on Windows 11 25H2 — the shell's toast host
-/// launched the schemes installed apps had registered (Discord, Steam) and answered every new one,
-/// including an exact copy of Discord's key layout, with "Get an app to open this link" — and even if
-/// it worked, a registered scheme is a door any web page can knock on. A link to a page that already
-/// exists needs no registration, opens the screen the whole design says a click should open, and is
-/// what the Linux side has always done.
+/// A button that <b>acts</b> rather than opens is an <see cref="AgentCommand"/>: a host that can do
+/// the thing itself performs it; one that cannot falls back to this link. On Windows the command
+/// rides on a COM activator (tasks/notification-follow-ups — NOT the URL-scheme route the paragraph
+/// below measured and rejected): the toast action carries the command as its arguments, Windows
+/// CoCreates the CLSID the agent registered (<c>ToastActivation</c>), and the click lands in the
+/// running tray. A custom URL scheme registered by the agent at runtime is still not resolvable for a
+/// toast's button on Windows 11 25H2 — the shell's toast host launched the schemes installed apps had
+/// registered (Discord, Steam) and answered every new one, including an exact copy of Discord's key
+/// layout, with "Get an app to open this link" — and even if it worked, a registered scheme is a door
+/// any web page can knock on. Do not rebuild the scheme.
 /// </para>
 /// </summary>
 public readonly record struct NoticeAction(NoticeActionKind Kind, string? Route = null)
@@ -59,6 +61,66 @@ public readonly record struct NoticeAction(NoticeActionKind Kind, string? Route 
             : null;
 }
 
+/// <summary>Something a host can do to a notice's condition itself, rather than opening a screen.</summary>
+public enum AgentCommandKind { RetryPush, InstallUpdate }
+
+/// <summary>
+/// The button that acts: "Retry now", "Install now". The intent is platform-neutral; how a click gets
+/// back to a running agent is a host's business. Windows renders it as a COM-activated toast action
+/// whose <see cref="Arguments"/> come back through <c>INotificationActivationCallback</c>
+/// (<c>ToastActivation</c>); the Linux notifier has no callback and ignores it, leaving the notice's
+/// link as its one button — a label it cannot honestly carry must not be shown there.
+/// </summary>
+public readonly record struct AgentCommand(AgentCommandKind Kind, Guid? GameId = null, string? Version = null)
+{
+    public static AgentCommand Retry(Guid gameId) => new(AgentCommandKind.RetryPush, gameId);
+    public static AgentCommand Install(string version) => new(AgentCommandKind.InstallUpdate, Version: version);
+
+    /// <summary>The button's caption on the toast that carries it.</summary>
+    public string Label => Kind == AgentCommandKind.RetryPush ? "Retry now" : "Install now";
+
+    /// <summary>
+    /// What the clicked toast action hands to the activator. Plain ASCII with one <c>:</c> — the
+    /// grammar <see cref="TryParse"/> is the only reader of, so nothing here ever needs quoting.
+    /// </summary>
+    public string Arguments => Kind == AgentCommandKind.RetryPush
+        ? "retry:" + GameId!.Value.ToString("D")
+        : "install:" + Version;
+
+    /// <summary>
+    /// Parse an activation argument. Strict on purpose: the string arrives from a COM call any local
+    /// process can make, so only exactly these two shapes are accepted and a version is confined to
+    /// characters a server's version number can carry.
+    /// </summary>
+    public static bool TryParse(string? arguments, out AgentCommand command)
+    {
+        command = default;
+        if (string.IsNullOrEmpty(arguments)) return false;
+
+        const string retryPrefix = "retry:";
+        if (arguments.StartsWith(retryPrefix, StringComparison.Ordinal) &&
+            Guid.TryParseExact(arguments[retryPrefix.Length..], "D", out var gameId))
+        {
+            command = Retry(gameId);
+            return true;
+        }
+
+        const string installPrefix = "install:";
+        if (arguments.StartsWith(installPrefix, StringComparison.Ordinal))
+        {
+            var version = arguments[installPrefix.Length..];
+            if (version.Length is > 0 and <= 64 &&
+                version.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '+'))
+            {
+                command = Install(version);
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
 /// <summary>
 /// One thing worth interrupting someone for.
 /// </summary>
@@ -76,7 +138,8 @@ public sealed record AgentNotice(
     NoticeAction Primary,
     string PrimaryLabel = "",
     string SecondaryLabel = "Later",
-    bool ClearedBySync = true);
+    bool ClearedBySync = true,
+    AgentCommand? Command = null);
 
 /// <summary>Delivery, per host. Implementations must not block and must not throw.</summary>
 public interface INotificationPresenter
@@ -117,7 +180,8 @@ public static class NoticeCatalog
         {
             AgentEventCodes.PushFailed => new AgentNotice(
                 $"{code}:{gameId:D}", gameId, $"{gameName}: push failed", body,
-                AgentEventSeverity.Error, NoticeAction.Game(gameId), "Open game", "Dismiss"),
+                AgentEventSeverity.Error, NoticeAction.Game(gameId), "Open game", "Dismiss",
+                Command: AgentCommand.Retry(gameId)),
 
             AgentEventCodes.PullBlocked or AgentEventCodes.PullBlockedRunning => new AgentNotice(
                 $"{code}:{gameId:D}", gameId, $"{gameName}: pull refused", body,
@@ -181,8 +245,10 @@ public static class NoticeCatalog
 
     /// <summary>A newer agent is here. <paramref name="staged"/> is the Linux shape — already
     /// downloaded and verified, installing on the next start — against Windows, where it is on offer
-    /// and installing is the tray menu's "Update to …" item. There is no button for that: a toast
-    /// cannot reach into the tray (see <see cref="NoticeAction"/>), so it says where to go instead.</summary>
+    /// and installing is the tray menu's "Update to …" item. Windows' button is an
+    /// <see cref="AgentCommand.Install"/> the tray performs when clicked: download, verify, run the
+    /// installer, restart. The menu item is still named in the body for anyone who reaches the toast
+    /// after the tray moved on (a restart clears the cached offer — the click then just looks again).</summary>
     public static AgentNotice UpdateReady(string version, bool staged) => staged
         ? new AgentNotice(
             $"update:{version}", null, $"SaveLocker {version} is ready",
@@ -191,9 +257,9 @@ public static class NoticeCatalog
             ClearedBySync: false)
         : new AgentNotice(
             $"update:{version}", null, $"SaveLocker {version} is available",
-            $"Choose \"Update to v{version}\" in the tray menu to install it. The agent restarts when it finishes.",
-            AgentEventSeverity.Info, NoticeAction.None, "", "",
-            ClearedBySync: false);
+            $"Installing restarts the agent. You can also choose \"Update to v{version}\" in the tray menu.",
+            AgentEventSeverity.Info, NoticeAction.None, "", "Later",
+            ClearedBySync: false, Command: AgentCommand.Install(version));
 
     /// <summary>A plain, action-less notice — what a tray menu item answers with.</summary>
     public static AgentNotice Message(string body) => new(

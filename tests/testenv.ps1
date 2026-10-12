@@ -1286,11 +1286,21 @@ function Import-PlayniteData {
     Write-Host "  next: .\tests\testenv.ps1 build -Only playnite; .\tests\testenv.ps1 up -Only playnite"
 }
 
-# The installed release agent runs as SaveLocker.Agent.exe, so a dotnet.exe host with the agent DLL
-# on its command line can only ever be a build from this tree. Nothing here can reach the real one.
+# The installed release agent runs as SaveLocker.Agent.exe outside any src\Agent\bin, so a tree
+# build is identifiable by that path and nothing here can reach the real one.
 function Get-TestTray {
-    Get-CimInstance Win32_Process -Filter "Name = 'dotnet.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like '*SaveLocker.Agent.dll*' }
+    # Three shapes: the dotnet-hosted Debug dll every command here starts, the apphost exe the
+    # toast-activation host starts (ToastActivationHost.StartTray) — the latter was invisible to the
+    # old filter, so stop/clean walked past a live tray and Remove-Item failed under it (2026-10-11) —
+    # and either shape started by ANOTHER worktree's testenv. The rig is shared (one state root, one
+    # console, one :5188), so scoping to this worktree's `$root` walked past a foreign tray and left
+    # it holding the port with a stale key while clean/up reported success (2026-10-12). Tree builds
+    # live under `\src\Agent\bin\`; the installed agent never does.
+    Get-CimInstance Win32_Process -Filter "Name = 'dotnet.exe' OR Name = 'SaveLocker.Agent.exe'" -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -like '*\src\Agent\bin\*' -and
+            ($_.CommandLine -like '*SaveLocker.Agent.dll*' -or $_.Name -eq 'SaveLocker.Agent.exe')
+        }
 }
 
 function Test-ConsoleUp {
@@ -1449,6 +1459,7 @@ function Test-LiveKey {
 function Start-Windows {
     if (-not (Test-Path $agentDll)) { throw "not built — run: .\tests\testenv.ps1 build" }
     Stop-Windows | Out-Null
+    New-WindowsToastShortcut
     Use-TestEnvVars
     try {
         $cfg = Join-Path $winState 'config.json'
@@ -1495,6 +1506,161 @@ function Stop-Windows {
         # file handles even after Stop-Process returns, so give it a beat before anything tries to
         # delete the directory those handles are open under.
         Start-Sleep -Milliseconds 500
+    }
+}
+
+# C# 5 only (the compiler Windows PowerShell 5.1's Add-Type uses), and guarded so re-running the
+# script in one session does not recompile it.
+if (-not ('SlToastShortcut' -as [type])) {
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class SlToastShortcut
+{
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    internal struct PropertyKey
+    {
+        public Guid FormatId;
+        public uint PropertyId;
+    }
+
+    // The x64 PROPVARIANT layout: the union's pointer sits at offset 8. Everything this shim sets is
+    // pointer-valued (VT_LPWSTR or VT_CLSID), which is the only part the layout has to get right.
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct PropVariant
+    {
+        public ushort VariantType;
+        public ushort Reserved1;
+        public ushort Reserved2;
+        public ushort Reserved3;
+        public IntPtr Pointer;
+        public IntPtr Pointer2;
+    }
+
+    [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IPropertyStore
+    {
+        void GetCount(out uint propertyCount);
+        void GetAt(uint propertyIndex, out PropertyKey key);
+        void GetValue(ref PropertyKey key, out PropVariant value);
+        void SetValue(ref PropertyKey key, ref PropVariant value);
+        void Commit();
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+    private static extern void SHGetPropertyStoreFromParsingName(
+        string path, IntPtr bindContext, int flags, ref Guid iid,
+        [MarshalAs(UnmanagedType.Interface)] out IPropertyStore propertyStore);
+
+    private static readonly Guid IID_IPropertyStore = new Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99");
+    private static readonly Guid AppUserModelFormat = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
+    private const uint PKEY_AppUserModel_ID = 5;
+    private const uint PKEY_AppUserModel_ToastActivatorCLSID = 26;
+    private const int GPS_READWRITE = 2;
+    private const ushort VT_LPWSTR = 31;
+    private const ushort VT_CLSID = 72;
+
+    public static void SetAppUserModel(string shortcutPath, string aumid, Guid activatorClsid)
+    {
+        IPropertyStore store;
+        Guid iid = IID_IPropertyStore;   // a local: a static readonly field cannot be passed by ref
+        SHGetPropertyStoreFromParsingName(shortcutPath, IntPtr.Zero, GPS_READWRITE, ref iid, out store);
+        try
+        {
+            PropertyKey aumidKey = new PropertyKey();
+            aumidKey.FormatId = AppUserModelFormat;
+            aumidKey.PropertyId = PKEY_AppUserModel_ID;
+            PropVariant aumidValue = new PropVariant();
+            aumidValue.VariantType = VT_LPWSTR;
+            aumidValue.Pointer = Marshal.StringToCoTaskMemUni(aumid);
+            try { store.SetValue(ref aumidKey, ref aumidValue); }
+            finally { Marshal.FreeCoTaskMem(aumidValue.Pointer); }
+
+            PropertyKey clsidKey = new PropertyKey();
+            clsidKey.FormatId = AppUserModelFormat;
+            clsidKey.PropertyId = PKEY_AppUserModel_ToastActivatorCLSID;
+            PropVariant clsidValue = new PropVariant();
+            clsidValue.VariantType = VT_CLSID;
+            clsidValue.Pointer = Marshal.AllocCoTaskMem(16);
+            try
+            {
+                Marshal.Copy(activatorClsid.ToByteArray(), 0, clsidValue.Pointer, 16);
+                store.SetValue(ref clsidKey, ref clsidValue);
+            }
+            finally { Marshal.FreeCoTaskMem(clsidValue.Pointer); }
+
+            store.Commit();
+        }
+        finally { Marshal.ReleaseComObject(store); }
+    }
+}
+'@
+}
+
+# ─── The rig's toast identity shortcut (tasks/notification-follow-ups) ──────────────────────────
+# The installed agent gets a Start-menu shortcut from the installer carrying its AUMID and
+# ToastActivatorCLSID; a rig had none. Both matter now: the shortcut names the toast header, and the
+# ToastActivatorCLSID is the documented anchor for the COM activator a "Retry now" / "Install now"
+# click resolves through. The tray registers the activator itself (ToastActivation.cs), so a missing
+# shortcut is not fatal - but then the header falls back to the bare AUMID and nothing mimics the
+# installed layout. WScript.Shell cannot write the AppUserModel properties (they live in the shell
+# property store), hence the small IPropertyStore shim below.
+
+function Get-TestToastClsid([int]$Port) {
+    # The same deterministic derivation ToastActivation.ClsidForPort uses: the port in the CLSID's
+    # last two bytes, so a rig's registration can never collide with the installed agent's.
+    $b = ([guid]'02C97085-6FAE-4DF4-8C52-2E05604D3AB0').ToByteArray()
+    $b[0] = [byte]($Port -band 0xFF)
+    $b[1] = [byte](($Port -shr 8) -band 0xFF)
+    return New-Object Guid (,$b)
+}
+
+function New-WindowsToastShortcut {
+    if ($WinPort -eq 5178) { return }   # the installed agent's own identity; never ours to write
+    $exe = Join-Path (Split-Path $agentDll -Parent) 'SaveLocker.Agent.exe'
+    if (-not (Test-Path $exe)) { Warn "toast shortcut skipped - not built: $exe"; return }
+
+    $name = "SaveLocker Test $WinPort"
+    $lnk  = Join-Path ([Environment]::GetFolderPath('Programs')) "$name.lnk"
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        $sc = $shell.CreateShortcut($lnk)
+        $sc.TargetPath = $exe
+        $sc.IconLocation = "$exe,0"
+        $sc.Description = "SaveLocker test agent (rig on :$WinPort)"
+        $sc.Save()
+        [SlToastShortcut]::SetAppUserModel($lnk, "SaveLocker.Test.$WinPort", (Get-TestToastClsid $WinPort))
+        Write-Host "  toast shortcut: $lnk"
+    } catch {
+        # Not fatal: the tray's own CustomActivator registration still makes the buttons work; what is
+        # lost is the header name and whatever older builds anchor on the shortcut.
+        Warn "could not create the toast shortcut ($($_.Exception.Message)) - header will show the bare AUMID"
+    }
+}
+
+function Remove-WindowsToastShortcut {
+    if ($WinPort -eq 5178) { return }
+    $name = "SaveLocker Test $WinPort"
+    $lnk  = Join-Path ([Environment]::GetFolderPath('Programs')) "$name.lnk"
+    if (Test-Path -LiteralPath $lnk) { Remove-Item -LiteralPath $lnk -Force; Write-Host "  removed $lnk" }
+
+    # What the tray's runtime registration wrote for this identity (ToastActivation): the AUMID key
+    # naming a CLSID, and the CLSID itself. Removed by reading the CLSID back rather than re-deriving
+    # it here, so the two sides cannot drift.
+    $aumidKey = "HKCU:\Software\Classes\AppUserModelId\SaveLocker.Test.$WinPort"
+    if (Test-Path -LiteralPath $aumidKey) {
+        $clsid = $null
+        try { $clsid = (Get-ItemProperty -LiteralPath $aumidKey -Name CustomActivator -ErrorAction Stop).CustomActivator } catch { }
+        Remove-Item -LiteralPath $aumidKey -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "  removed $aumidKey"
+        if ($clsid) {
+            $clsidKey = "HKCU:\Software\Classes\CLSID\$clsid"
+            if (Test-Path -LiteralPath $clsidKey) {
+                Remove-Item -LiteralPath $clsidKey -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "  removed $clsidKey"
+            }
+        }
     }
 }
 
@@ -1963,6 +2129,19 @@ switch ($Command) {
                 catch { $lastError = $_; Start-Sleep -Milliseconds 500 }
             }
             if ($lastError) { throw $lastError }
+            # A removal that did not throw can still have left everything behind: a state dir created
+            # by an ELEVATED shell or tray lives in a security context this shell cannot enumerate or
+            # delete, and Remove-Item skips what it cannot touch without raising. Seen twice (2026-08-18
+            # and 2026-09-28) - and the next `conflict` then 401s against the stale API key it left.
+            # Never print "removed" over a directory that is still there.
+            if (Test-Path $StateRoot) {
+                $left = @(Get-ChildItem $StateRoot -Recurse -Force -ErrorAction SilentlyContinue |
+                          Select-Object -First 5 -ExpandProperty FullName)
+                throw ("clean could not remove $StateRoot - it is still there. " +
+                       "$($left.Count)+ item(s) remain (e.g. $($left -join '; ')). " +
+                       "If this state was created by an elevated shell or tray, delete it from an " +
+                       "elevated shell, then re-run clean.")
+            }
             Write-Host "  removed $StateRoot"
         }
         # The Windows half of `conflict`'s seeded save lives outside $StateRoot (it's the fake
@@ -1979,6 +2158,7 @@ switch ($Command) {
         # port exactly as the tray scopes its identity, and never for 5178: that identity ("SaveLocker")
         # is the INSTALLED agent's, and this rig must not touch it.
         if ($WinPort -ne 5178) {
+            Remove-WindowsToastShortcut
             $toastAumid = "SaveLocker.Test.$WinPort"
             try {
                 [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]

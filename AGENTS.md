@@ -34,7 +34,7 @@ When a `docs/tasks/` folder exists for the current work:
 
 Before closing, update the vault so the next session starts clean:
 1. Update `docs/CONTEXT.md` — current status, any new gotchas, next action.
-2. Move completed `docs/tasks/<name>/` folders to `docs/logs/` with a date prefix.
+2. Move completed `docs/tasks/<name>/` folders to `docs/tasks/_done/` (the convention `Backlog.md` states).
 3. Update `docs/Backlog.md` if priorities shifted.
 4. Commit the vault changes with a `Docs:` prefix commit message.
 

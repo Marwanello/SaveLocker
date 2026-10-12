@@ -13,14 +13,19 @@ namespace SaveLocker.Agent;
 /// Windows delivery for <see cref="NotificationCenter"/>: a real toast with a title, a body, the
 /// brand mark and up to two buttons, in place of the tray balloon.
 /// <para>
-/// <b>What a button does.</b> The primary one is a plain
+/// <b>What a button does.</b> A plain notice's primary button is a
 /// <c>http://localhost:&lt;port&gt;/open?view=route&amp;key=…</c> link (<see cref="NoticeAction.ToOpenUrl"/>):
 /// the shell hands it to the default browser, and the page it lands on asks the tray to raise its own
 /// window at that exact screen. The key (<see cref="LocalAuth.OpenLinkKey"/>) is what lets it raise the
 /// window; a web page, which cannot know it, gets only the screen in a tab. It works from the banner and
 /// from the Action Center, needs nothing registered, and cannot be aimed at anything but the agent's own
 /// page. The alternatives were tried on Windows 11 25H2 and rejected — see <see cref="NoticeAction"/>
-/// for the measurements. The second button is a system-level dismiss, which needs no process at all.
+/// for the measurements.
+/// <br>A notice carrying an <see cref="AgentCommand"/> gets one more button, first: <b>Retry now</b> or
+/// <b>Install now</b>, with no <c>activationType</c> so Windows routes the click to the COM activator
+/// (<see cref="ToastActivation"/>) — in-process while the tray runs, else the exe is started with
+/// <c>-ToastActivated</c>. That click does the thing itself; the link stays as the second button, and a
+/// system-level dismiss comes last.
 /// </para>
 /// <para>
 /// <b>What names the toast.</b> Its header takes an app name and icon from a Start-menu shortcut
@@ -41,8 +46,26 @@ internal sealed class ToastPresenter : INotificationPresenter
 
     private const string ToastGroup = "SaveLocker";
     private const int MaxTagLength = 64;
-    private const int DefaultPort = 5178;
+    internal const int DefaultPort = 5178;
     private const int LogoPixels = 96;
+
+    /// <summary>The toast identity a port runs under — the product's on :5178, a distinguishable test
+    /// rig's elsewhere. Also what <see cref="ToastActivation"/> registers per port, and what a click's
+    /// reported AUMID is read back with (<see cref="PortFromAumid"/>).</summary>
+    public static string AumidForPort(int port) =>
+        port == DefaultPort ? ProductAumid : $"{ProductAumid}.Test.{port}";
+
+    /// <summary>The port an AUMID belongs to; null for an AUMID this agent never issues. The product's
+    /// own identity has no port in its text, so the default is the answer for it.</summary>
+    public static int? PortFromAumid(string? aumid)
+    {
+        if (string.Equals(aumid, ProductAumid, StringComparison.Ordinal)) return DefaultPort;
+        const string prefix = ProductAumid + ".Test.";
+        if (aumid is not null && aumid.StartsWith(prefix, StringComparison.Ordinal) &&
+            int.TryParse(aumid[prefix.Length..], out var port) && port is > 0 and <= 65535)
+            return port;
+        return null;
+    }
 
     // True once the mark has been written, so a toast is never made to point at a file that is not there.
     private volatile bool _hasLogo;
@@ -66,7 +89,7 @@ internal sealed class ToastPresenter : INotificationPresenter
         _uiBaseUrl = $"http://localhost:{port}/";
         // A test rig's identity is tellable apart from the installed agent's on the very toast it
         // raises — see the class remarks for why this string is what a shortcut-less build displays.
-        _aumid = port == DefaultPort ? ProductAumid : $"{ProductAumid}.Test.{port}";
+        _aumid = AumidForPort(port);
         // In %TEMP%, and nowhere else that was tried. The shell draws a toast in an AppContainer
         // process, which can read only where "ALL APPLICATION PACKAGES" has been granted access — and
         // of the user's own folders that is %TEMP%. The agent's state directory is out (it is ACL-
@@ -84,6 +107,10 @@ internal sealed class ToastPresenter : INotificationPresenter
             "^" + Regex.Escape(Path.GetFileName(_logoBase)) + @"(-[0-9a-f]{10})?\.png$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
+
+    /// <summary>The identity this presenter's toasts carry. What <see cref="ToastActivation"/>
+    /// registers under, and the header a shortcut-less build shows.</summary>
+    internal string Aumid => _aumid;
 
     /// <summary>The key a button's link needs to raise the tray window — the API server's.</summary>
     public void UseOpenLinkKey(string key) => _openLinkKey = key;
@@ -188,10 +215,16 @@ internal sealed class ToastPresenter : INotificationPresenter
         xml.Append($"<text>{Esc(notice.Title)}</text><text>{Esc(notice.Body)}</text>")
            .Append("</binding></visual>");
 
-        if (link is not null)
+        if (link is not null || notice.Command is not null)
         {
-            xml.Append("<actions>")
-               .Append($"<action content=\"{Esc(notice.PrimaryLabel)}\" arguments=\"{Esc(link)}\" activationType=\"protocol\"/>");
+            xml.Append("<actions>");
+            // The button that acts, when there is one. No activationType: "foreground" is the COM
+            // activator (ToastActivation), which is what lands the click in the tray rather than a
+            // browser. The label and arguments are both ours, but escape them like everything else.
+            if (notice.Command is { } command)
+                xml.Append($"<action content=\"{Esc(command.Label)}\" arguments=\"{Esc(command.Arguments)}\"/>");
+            if (link is not null)
+                xml.Append($"<action content=\"{Esc(notice.PrimaryLabel)}\" arguments=\"{Esc(link)}\" activationType=\"protocol\"/>");
             if (notice.SecondaryLabel.Length > 0)
                 xml.Append($"<action content=\"{Esc(notice.SecondaryLabel)}\" arguments=\"dismiss\" activationType=\"system\"/>");
             xml.Append("</actions>");

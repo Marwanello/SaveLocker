@@ -155,6 +155,7 @@ public class NoticeCatalogTests
         Assert.Equal("Push rejected by the server (413): payload too large", n.Body);
         Assert.Equal(NoticeAction.Game(Id), n.Primary);
         Assert.Equal("Open game", n.PrimaryLabel);
+        Assert.Equal(AgentCommand.Retry(Id), n.Command);
         Assert.Equal(AgentEventSeverity.Error, n.Severity);
         Assert.True(n.ClearedBySync);
     }
@@ -271,11 +272,15 @@ public class NoticeCatalogTests
         var windows = NoticeCatalog.UpdateReady("0.5.11", staged: false);
         var linux = NoticeCatalog.UpdateReady("0.5.11", staged: true);
 
-        // Windows: a toast cannot reach into the tray, so it names the menu item instead of offering
-        // a button, and carries none.
+        // Windows: an Install now button the tray performs through the COM activator; the menu item
+        // stays named in the body for a toast whose click arrives after a restart cleared the offer.
         Assert.Equal(NoticeAction.None, windows.Primary);
+        Assert.Equal(AgentCommand.Install("0.5.11"), windows.Command);
         Assert.Contains("Update to v0.5.11", windows.Body);
+        // Linux: staged and installed at the next start — the button opens Settings, and the Linux
+        // notifier has no way to run a command, so none is attached for it to lie about.
         Assert.Equal(NoticeAction.View("settings"), linux.Primary);
+        Assert.Null(linux.Command);
         Assert.Contains("next time the agent restarts", linux.Body);
         Assert.Equal(windows.Key, linux.Key);   // one version, one condition, either platform
     }

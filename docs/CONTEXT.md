@@ -1963,6 +1963,48 @@ the testenv walkthrough is in this session's report.
 
 ---
 
+**Notification follow-ups shipped (2026-10-11, branch `notification-follow-ups`,
+[PR #66](https://github.com/Marwanello/SaveLocker/pull/66) open — the last Group 7 leftovers,
+`tasks/_done/notification-follow-ups/`).** Toast buttons that **act**: **Retry now** on a
+failed push and **Install now** on an available update, delivered through a per-user **COM activator**
+(`src/Agent/ToastActivation.cs`) — `HKCU` CLSID with `LocalServer32`, plus `CustomActivator` under the
+identity key (the Community Toolkit's shape; the shortcut's `ToastActivatorCLSID` is *not* what activates,
+measured). While the tray runs the click lands in it; when it is closed DCOM starts the exe with
+`-ToastActivated`, which leaves the click in `toast-action.json` and starts the tray. A rig gets its own
+per-port CLSID, its own Start-menu shortcut (`SaveLocker Test <port>`, written by `up`, removed by
+`clean`) and registry keys; `clean` now **verifies** the state root is actually gone instead of printing
+"removed" over the elevated-state leftovers, and `Get-TestTray` also sees an apphost-started tray.
+**Verified live through `testenv`**, not just built: a real mouse click on a real toast's **Retry now**
+retried a 413-rejected push (`pushed new version.`); **Install now** downloaded, SHA-verified and ran a
+stand-in package with `/SILENT /FORCECLOSEAPPLICATIONS /NORESTART` and the tray exited as designed; with
+the tray closed, DCOM's host started it and the retried push succeeded. Two bugs were found only by
+running it (both fixed, both in [[Gotchas]] → Windows notifications): a rig's `LocalServer32` first
+omitted `--config`, so a click with the tray closed loaded the **installed** config and started the
+installed agent once — it was stopped immediately, the one log it wrote lives in
+`%PROGRAMDATA%\SaveLocker\agent.log`, and the `LastUpdateCheck` it refreshed was reset; and that host
+logged to the installed agent's log for the same reason. Unit tests: the notification ones pass
+(new: action-argument parsing incl. hostile shapes, the toast XML's acting action, the pending-action
+file, the identity/CLSID split); after merging `main` through #65, the **full suite is 450/450** —
+including the `ArcadeSavesTests.Supermodel_nvram…` leak this entry previously carried as a
+machine-specific failure, which #63 fixed. **The `CsWinRTIncludes`
+size idea was measured and changed nothing** (173.1 MB publish, `Microsoft.Windows.SDK.NET.dll` 23.73 MB
+with and without it; the property is for projection authoring, and `Microsoft.Windows.UI.Xaml.dll` is not
+in this toolchain's output at all). **2026-10-12 — the rig fought back, and `testenv` got tougher.** The
+first live walk of the checklist hit an endless 401 flood that survived `clean` and restarts: the tray
+holding :5188 was another worktree's build (`fix-backlog-quick-wins`), and `Get-TestTray` was scoped to
+the calling worktree's own root, so this worktree's `clean`/`up` deleted the shared state *under* the
+foreign tray and left it serving with its old key while the new tray could not take the port. Fixed on
+the branch (`4ddb4d2`): any tree build now matches by its `\src\Agent\bin\` path (the installed agent
+never lives there); recorded in [[Gotchas]] → `tests/testenv.ps1`. The verification doc also gained its
+"no toast appears" troubleshooting block — the toast exists only after §1's >1 MB write, `connection
+refused` means the console is down, and `notification shown` with no banner means Windows put it in the
+Action Center. Task closed; moved to `tasks/_done/`. **The one manual check is not testenv's:** run the
+installer once and look at a real toast's header (steps:
+`tasks/_done/notification-follow-ups/verification.md`). Release notes must cover: toast buttons that act
+(Retry now / Install now).
+
+---
+
 ## Where things stand
 
 **Shipped in v0.5.8: "Install update now"** (`logs/2026-08-15_install-update-now.md`, all three

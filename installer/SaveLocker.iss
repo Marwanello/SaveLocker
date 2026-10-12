@@ -68,13 +68,30 @@ Source: "{#PublishDir}\agent-ui\*"; DestDir: "{app}\agent-ui"; Flags: recursesub
 ; identity string, with no icon, when there is none (verified on Windows 11 25H2). Must equal
 ; ToastPresenter.ProductAumid in src/Agent/ToastPresenter.cs — tests/run-appearance-consistency-tests
 ; fails if they drift.
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "SaveLocker"
+; ToastActivatorCLSID makes the shortcut's identity a COM-activatable one — the supported route for a
+; button that ACTS (tasks/notification-follow-ups). Must equal ToastActivation.ProductClsid, checked
+; by the same test. (The tray registers it at runtime too; the shortcut carries it so an install that
+; has never been run yet is still completable, and `{{` is Inno's literal `{`.)
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "SaveLocker"; \
+    AppUserModelToastActivatorCLSID: "02C97085-6FAE-4DF4-8C52-2E05604D3AB0"
 
 [Registry]
 ; Auto-start: written only if the user ticks the task; removed on uninstall. Same key
 ; and value the in-app toggle uses, so the two stay consistent.
 Root: HKCU; Subkey: "{#RunKey}"; ValueType: string; ValueName: "{#RunValue}"; \
     ValueData: """{app}\{#AppExe}"""; Tasks: autostart; Flags: uninsdeletevalue
+
+; The toast activator (ToastActivation.cs writes these itself on every start; here so the very first
+; toast after an install-for-all-users still has working buttons, and so the uninstaller takes them
+; back). CustomActivator is what the shell resolves a foreground toast action through; LocalServer32
+; is the process it starts when the tray is not running (see ToastActivationHost).
+Root: HKCU; Subkey: "Software\Classes\CLSID\{{02C97085-6FAE-4DF4-8C52-2E05604D3AB0}"; \
+    ValueType: string; ValueName: ""; ValueData: "SaveLocker toast activation"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\CLSID\{{02C97085-6FAE-4DF4-8C52-2E05604D3AB0}\LocalServer32"; \
+    ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" -ToastActivated"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\AppUserModelId\SaveLocker"; \
+    ValueType: string; ValueName: "CustomActivator"; ValueData: "{{02C97085-6FAE-4DF4-8C52-2E05604D3AB0}"; \
+    Flags: uninsdeletevalue
 
 [Run]
 ; runasoriginaluser: start the tray agent de-elevated as the real user, not in the

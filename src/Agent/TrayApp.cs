@@ -38,6 +38,8 @@ internal sealed class TrayContext : ApplicationContext
     // Windows delivery for notifications (the toast itself) and the rules that decide what reaches it.
     private readonly ToastPresenter _toasts;
     private readonly NotificationCenter _notices;
+    // The COM activator a toast's acting button resolves through (Retry now / Install now).
+    private readonly IDisposable _toastActivation;
     // The icon _icon currently shows, owned here so a swap can dispose the one it replaces.
     private Icon? _trayIcon;
     // The taskbar theme _trayIcon was drawn for. UI thread only.
@@ -171,6 +173,17 @@ internal sealed class TrayContext : ApplicationContext
         // A toast button's link needs this to raise the window rather than only open a browser tab.
         _toasts.UseOpenLinkKey(_apiServer.OpenLinkKey);
         _apiServer.Start();
+
+        // Toast buttons that act: register the COM activator a foreground click resolves through, and
+        // serve it while this process lives. The pending file is the other arrival path — a click that
+        // happened while no tray was running, left behind by ToastActivationHost.
+        _toastActivation = ToastActivation.Enable(
+            AgentApiPort, _toasts.Aumid, _config.ConfigPath, OnToastCommand);
+        _ui.Post(() =>
+        {
+            if (PendingToastAction.Consume(_config.StateDir, TimeSpan.FromMinutes(10)) is { } pending)
+                DispatchToastCommand(pending);
+        });
 
         _commandPoller = new CommandPoller(
             _config,
@@ -474,6 +487,71 @@ internal sealed class TrayContext : ApplicationContext
         catch (Exception ex) { AgentLogger.LogException("CheckConflictsAndRaise", ex); }
     }
 
+    /// <summary>
+    /// A toast action click, from COM. Only this machine's own identity is served; anything else — a
+    /// foreign AUMID, arguments any local process could synthesise — is dropped. Posted to the UI
+    /// thread before anything reads config or the window, like every other entry point (WA-09).
+    /// </summary>
+    private void OnToastCommand(string aumid, string invokedArgs)
+    {
+        if (ToastPresenter.PortFromAumid(aumid) is null) return;
+        if (AgentCommand.TryParse(invokedArgs, out var command))
+            _ui.Post(() => DispatchToastCommand(command));
+    }
+
+    /// <summary>
+    /// Carry out what a toast button promised. The work is the work the tray menu's own items do — a
+    /// push through the engine, an update through the same check/download/verify path — so nothing
+    /// behaves differently for having started from a toast.
+    /// </summary>
+    private void DispatchToastCommand(AgentCommand command)
+    {
+        switch (command.Kind)
+        {
+            case AgentCommandKind.RetryPush when command.GameId is { } id:
+                if (_config.Games.FirstOrDefault(g => g.GameId == id) is not { } game)
+                {
+                    AgentLogger.Log($"toast action: retry for unknown game {id:D} — ignoring.");
+                    return;
+                }
+                FireAndForget(async () =>
+                {
+                    var result = await _engine.PushAsync(game);
+                    Notify(result?.Status switch
+                    {
+                        UploadStatus.Created => $"{game.Name}: pushed the new save.",
+                        UploadStatus.NoChange => $"{game.Name}: the server already had this save.",
+                        UploadStatus.Conflict => $"{game.Name}: still diverged — choose a save in Conflicts.",
+                        _ => $"{game.Name}: the retry did not go through — see the Activity log.",
+                    });
+                    // A push can be what creates a conflict; the same follow-up Force Push gets.
+                    await CheckConflictsAndRaiseAsync();
+                });
+                break;
+
+            case AgentCommandKind.InstallUpdate:
+                FireAndForget(async () =>
+                {
+                    // The offer is cached per process and the toast can outlive a restart. Re-ask when
+                    // nothing is cached; StartUpdateAsync's own origin guard refuses a stale offer
+                    // from a server that is no longer configured.
+                    var available = LastUpdateResult as UpdateResult.Available;
+                    if (available is null)
+                    {
+                        await CheckForUpdateAsync(silent: false);
+                        available = LastUpdateResult as UpdateResult.Available;
+                    }
+                    if (available is null)
+                    {
+                        Notify("No update is available from this server right now.");
+                        return;
+                    }
+                    await StartUpdateAsync(available);
+                });
+                break;
+        }
+    }
+
     private void OpenDashboard()
     {
         try { Process.Start(new ProcessStartInfo(_config.ServerUrl) { UseShellExecute = true }); }
@@ -572,14 +650,23 @@ internal sealed class TrayContext : ApplicationContext
             return;
         }
 
+        await StartUpdateAsync(update);
+    }
+
+    /// <summary>
+    /// Download, verify and run the installer an available update names, then exit for it — what
+    /// "Update now" does once confirmed, and what a toast's "Install now" does directly. The server
+    /// origin is re-checked at the moment of use, not only when the offer was made: the user (or a
+    /// toast) can sit on it while the server changes underneath. WA-05.
+    /// </summary>
+    private async Task StartUpdateAsync(UpdateResult.Available update)
+    {
+        var version = update.Version;
         try
         {
             Notify($"Downloading SaveLocker v{version}…");
             _updateChecker ??= new UpdateChecker(_config);
 
-            // Re-checked at the moment of use, not only when the menu was built: the user can sit
-            // on this prompt while the server changes underneath them. The result is authorised by
-            // the server that answered, so it must not be launched against a different one. WA-05.
             if (!ServerOrigin.Same(_updateChecker.ServerUrl, _config.ServerUrl))
             {
                 LastUpdateResult = null;
@@ -603,7 +690,7 @@ internal sealed class TrayContext : ApplicationContext
         }
         catch (Exception ex)
         {
-            AgentLogger.LogException("PromptAndUpdateAsync", ex);
+            AgentLogger.LogException("StartUpdateAsync", ex);
             Notify("Update failed: " + ex.Message);
         }
     }
@@ -710,6 +797,7 @@ internal sealed class TrayContext : ApplicationContext
             SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
             _updateTimer.Dispose();
             _drainer.Dispose();
+            _toastActivation.Dispose();
             _apiServer.Dispose();
             _window?.Dispose();
             _icon.Visible = false;
