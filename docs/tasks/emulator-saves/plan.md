@@ -30,7 +30,7 @@ point unless explicitly instructed to.
 | 2 — PCSX2 / Dolphin / DuckStation + shared-card warning | 🚧 Built 2026-10-07 (branch `emulator-saves-group-c`) — `Pcsx2Saves` (folder card: one game per product code, the card as its folder and `BASLUS-21005*/**` as its scope; states `<serial> (*.p2s`, `.p2s.backup` left out), `DuckStationSaves` (`<title>_<slot>.mcd`, states by the card's own product codes), `DolphinSaves` (GCI `<maker>-<code>-*.gci` per game ID, Wii `Wii/title` scoped to `<type>/<id>/data/**`, named by serial from a bundled Redump table, `ConsoleTitles`, else from the save's `icon.sys` / comment / `banner.bin`). A shared card is a greyed-out row with how to switch (`ScanCandidate.NotSyncable`, maintainer's choice) and `SaveDirSanity` warns when one is mapped by hand. `GroupCSyncTests` (two machines, real server). **Captured 2026-10-07:** the Deck has one 64 MB PCSX2 file card `PS2MC-1.ps2` (shared), Dolphin's GCI folder default, Wii saves for Trilogy and Other M (banner layout as read); EmuDeck for Windows on the maintainer's PC links `PCSX2-Qt\memcards`, `duckstation\memcards` and `Dolphin-x64\User\{GC,Wii,StateSaves}` into `D:\Emulation\saves` exactly as researched (no saves yet). See *Group C — as built* |
 | 3 — Identity by folders, then `gamelist.xml` names | ✅ Shipped 2026-10-07 (PR #61, branch `emulator-saves-group-b`) — D1 confirmed by the maintainer: `Enroller.ServerNameFor`/`TrackedFor` match a scoped candidate by its folders first (mutation-checked, `IdentityByFoldersTests`, two machines against a real server). `GamelistXml` names **arcade systems only** (maintainer's choice), from `Emulation/storage/es-de/gamelists` (EmuDeck for Windows' link) and `~/ES-DE/gamelists`. Group B — **Revised 2026-10-07:** Phase 1 made the save file's name the game's identity, so a name from a machine-local source could split one game in two; matching a server game by its folders first (D1) makes such a name safe **Review fixes (PR #61):** only the primary folder's patterns decide, ignoring case — a game whose other folders differ (an older agent's, an `add-path`) is joined and the missing folder added, never split into a second game. |
 | 4 — PrimeHack | 🚧 Built 2026-10-07 (branch `emulator-saves-group-c`) — the Dolphin reader against PrimeHack's folders (EmuDeck `saves/primehack`, Flatpak `io.github.shiiion.primehack`, EmuDeck for Windows `Emulators\primehack\User`). **Maintainer's choice:** saves from different emulators are never one game, even with the same files — `GameDto.Emulators` (server, from the sources) + `Enroller.SameEmulator`, mutation-checked. EmuDeck for Windows had created `Emulators\PrimeHack` but never run it (no `User` yet), so where a non-portable PrimeHack keeps its user folder is still to see (Group H) |
-| 5a — RPCS3 | ⏳ Not started — Group D (split from Phase 5 2026-10-07) |
+| 5a — RPCS3 | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `Rpcs3Saves`: `dev_hdd0/home/<user>/savedata`, scope `<ID>*/**`, named by Redump's PS3 set, else the save's `PARAM.SFO` `TITLE`; EmuDeck's link, else `vfs.yml`. **Captured 2026-10-11:** the Deck's real save `BCUS98132-GAMEAUTOSAVE` (*Heavenly Sword*) and `vfs.yml` (dev_hdd0 on the SD card); the PC's `RPCS3\config\vfs.yml`. See *Group D — as built* |
 | 5b — Xenia | ⏳ Not started — Group E (split from Phase 5 2026-10-07) |
 | 6 — Switch: Yuzu, Citron, Eden, Ryujinx | ⏳ Not started — Group F. **Widened 2026-10-07** from Eden only, at the maintainer's request; needs the server title key (D2) |
 | 7 — UI filter | ✅ Shipped 2026-10-07 (same PR), filter by emulator — agent UI *Emulators* chip with an *Emulator* row under it (one chip per emulator, RetroArch today), Deck *Emulators* pill. A per-console sub-breakdown was not built — it comes back with Phase 2, when more than one console has saves. |
@@ -38,14 +38,15 @@ point unless explicitly instructed to.
 | 8 — melonDS (bonus) | ✅ Shipped 2026-10-07 (PR #61, branch `emulator-saves-group-b`) — `RetroArchSaves` generalised into `RomSaves` (D4 shape 1: `RomSaveRules` + `RomSaveFolders`); `MelonDsSaves`: EmuDeck `saves/melonds/{saves,states}`, else `melonDS.toml` `[Instance0] SaveFilePath` (1.0, read first — `Config::Load`), else `melonDS.ini`, else beside the ROM (`LastROMFolder`). Scope `<rom>.sav`, states `<rom>.ml*`. Both scanners now loop `EmulatorSaves.Sources`. **Captured on the Deck 2026-10-07:** Flatpak melonDS 1.1 has only `melonDS.ini` (absolute SD-card paths), no TOML |
 | 9 — Model 2 + Supermodel (Supermodel bonus) | ✅ Shipped 2026-10-07 (PR #61, branch `emulator-saves-group-b`) — `SupermodelSaves`: `NVRAM/<set>.nv` + states `Saves/<set>.st*`, `~/.supermodel` / XDG data / Flatpak data on Linux, EmuDeck for Windows' `Emulators\Supermodel`; title from its `Config/Games.xml`, then the arcade gamelist; **EmuDeck's 29 seeded `~/.supermodel/NVRAM` files hidden by SHA-256 too — found on the real Deck 2026-10-07**, not in the plan (`Supermodel_init` rsyncs `configs/supermodel` whole). `Model2Saves`: `NVDATA/<set>.DAT` (`Emulation/roms/model2`, `Emulators\m2emulator`), **EmuDeck's 39 seeded files hidden by SHA-256** (maintainer's choice; one version in both EmuDeck repos), titles from a bundled table; **states `STATES/<set><0-9>.sta` beside `NVDATA`** (added 2026-10-07, read from the `EMULATOR.EXE` on the Deck: format string `.\STATES\%s%d.sta`, number keys pick slots 0–9, both EmuDeck launchers start it in its own folder), scoped slot by slot — `vcop*.sta` would take Virtua Cop 2's `vcop20.sta` — and a state makes a seeded set a candidate. **Captured on the Deck 2026-10-07:** the 39 Model 2 seeds and the 29 Supermodel seeds match the bundled hashes exactly; no `STATES` folder yet (it is created on the first save). **Still to see:** a Model 2 / Supermodel save written by play (nothing has been played on this Deck) **Review fixes (PR #61):** untouched seeds are listed (`ScanCandidate.UntouchedSeed`) only when a server game keeps the same file, may only join, and the first pull replaces them. |
 | 10 — ScummVM (bonus) | ✅ Shipped 2026-10-07 (PR #61, branch `emulator-saves-group-b`) — `ScummVmSaves`: targets from `scummvm.ini` (Windows `%APPDATA%\ScummVM`, XDG, `~/.scummvmrc`, Flatpak), `savepath` per target → `[scummvm]` → default; scope `<target>.*`, or the engine's own prefix for the four fixed-name engines (`SKY-VM`, `sword1`, `queen`, `lure` — read from each `metaengine.cpp`); name from `description=`, cleaned. `GroupBSyncTests` (two machines, real server) for Supermodel and ScummVM. Unit **319**. **Captured on the Deck 2026-10-07:** the Flatpak's `scummvm.ini` sets the global `savepath` to `Emulation/saves/scummvm/saves`; no targets added yet, so no engine's real file names seen |
-| 11 — PPSSPP | ⏳ Not started — Group D (added 2026-10-07) |
-| 12 — Vita3K (bonus) | ⏳ Not started — Group D (added 2026-10-07) |
-| 13 — shadPS4 (bonus) | ⏳ Not started — Group D (added 2026-10-07) |
+| 11 — PPSSPP | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `ParamSfo`, `TitleFolders` (D4 shape 2), `PpssppSaves`: `SAVEDATA/<ID>*`, states `PPSSPP_STATE/<ID>_*`, named by Redump's PSP set (added to the table) else the SFO; `GroupDSyncTests` (two machines, real server, mutation-checked). **Captured 2026-10-11:** Deck Flatpak 1.20.4 (EmuDeck links into `~/.var/app/org.ppsspp.PPSSPP/config/ppsspp/PSP`), PC `memstick\PSP` (the emulator's folders are the junctions); no save on either |
+| 12 — Vita3K (bonus) | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `Vita3KSaves`: `ux0/user/00/savedata/<ID>/**`, named by the save's own `sce_sys/param.sfo`, else the installed game's, region from the ID prefix. **Captured 2026-10-11:** `pref-path` on both machines (Deck: SD card), no save yet — whether a save has its own `param.sfo` is still to see (Group H) |
+| 13 — shadPS4 (bonus) | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `ShadPs4Saves`: both layouts, folder per user, scope `<CUSA>/**`, named by the save's `MAINTITLE`, no region. **Captured 2026-10-11:** Deck AppImage and PC `ShadPS4-qt` both on the old `savedata` layout EmuDeck links, no save yet |
 | 14 — Cemu | ⏳ Not started — Group E (added 2026-10-07) |
 | 15 — Azahar | ⏳ Not started — Group E (added 2026-10-07) |
 | 16 — Linking by hand, same files (mockup version 2) | ✅ Shipped 2026-10-07 (PR #61, branch `emulator-saves-group-b`, with Group B) — each emulator row on Add games says which server game the save joins, with a **Change** button for that row only: automatic, *Keep it as its own game*, or another server game keeping the same files; a same-titled game with other file names is listed greyed out with the reason. `EnrollLinks` + `GET /api/candidates/links` + `EnrollRequest.Links`; `LinkByHandTests` 5, two of them mutation-checked; checked in the browser against a scratch server **Review fixes (PR #61):** *Keep it as its own game* opts this machine out of the fleet's same-files game, and the poller never maps a second game onto files another syncs here (`SaveFolderClaims`); Add games says when the server could not be asked. |
 | 17 — Each machine's own file names (linking saves with different names) | ⏳ Not started — Group G (added 2026-10-07, maintainer: "keep option 2 in another phase"); open questions below |
-| 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07); Group C added PCSX2, DuckStation, Dolphin and PrimeHack (the Deck already has Trilogy and Other M saves to try). Rows are added as later phases ship untested; see *Phase 18* |
+| 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07); Group C added PCSX2, DuckStation, Dolphin and PrimeHack (the Deck already has Trilogy and Other M saves to try); Group D added PPSSPP, RPCS3 (the Deck has a *Heavenly Sword* save), Vita3K and shadPS4. Rows are added as later phases ship untested; see *Phase 18* |
+| 19 — Games found by their save states alone (every emulator but PPSSPP) | ⏳ Not started — Group I (added 2026-10-12, maintainer: "PPSSPP now, others as a new phase"). PPSSPP's shipped with Group D; see *Phase 19* |
 
 ### Phase 1 — as built (2026-10-04), and where it departs from the plan below
 
@@ -336,6 +337,54 @@ Known limits:
   (the card's codes say which discs there are).
 - A custom GCI or NAND folder set in `Dolphin.ini` is not read.
 - A save made before the PCSX2 card was converted is in the new card only once converted.
+
+### Group D — as built (2026-10-11, branch `emulator-saves-group-d`)
+
+Decided with the maintainer at the start of the group:
+- **Build from the research, check on the machines that exist.** Neither machine had a PSP, Vita or PS4 save, so the
+  readers follow EmuDeck's scripts and the emulators' source, checked against what both machines do have (read-only
+  SSH to the Deck, the PC's EmuDeck for Windows). All four go to Group H.
+- **PSP and PS3 are named by Redump, then `PARAM.SFO`** — the same rule as PS1/PS2/GameCube/Wii. Redump's PSP set is
+  now in the bundled table (3,798 serials), rebuilt at the same pinned libretro-database commit so no other row moved.
+  A Vita or PS4 game has no Redump set and is named by its `PARAM.SFO`.
+- **Both bonus emulators ship** (Vita3K and shadPS4).
+
+Added after the PR opened (2026-10-12, maintainer's calls):
+- **Vita3K reads every user's `savedata`** (`ux0/user/*/savedata`), not only `00`; RPCS3 and shadPS4 already read every
+  user. No emulator ties a save to a user (RPCS3 and shadPS4 write `ACCOUNT_ID` as zeros and never check it), so
+  different users on two machines join one game; the help article says how to move a game to another user's folder.
+- **A PSP game played from states only is a game** (`ScanCandidate.StatesOnly`, *Save states only so far* on Add
+  games): its ID comes from the state's name, its `SAVEDATA` scope is declared so the first in-game save joins, and a
+  save anywhere on the machine wins. A machine that pushed only states never empties another's real save — that pull
+  is refused (`GroupDSyncTests`). The other emulators are Phase 19.
+
+What the research did not say:
+- **A region from the ID's prefix.** A PSN game (`NPUB…`, `NPUH…`) and every Vita game would otherwise have none, and
+  games are unique by (name, region). `ConsoleTitles.PrefixRegion`: the third letter of a PSP or PS3 ID, the fourth of a
+  Vita one (`PCSE` USA, `PCSB` Europe). A PS4 `CUSA` ID names no region, so none is given.
+- **The Deck's real PS3 save says "Heavenly Sword™".** `PARAM.SFO` titles carry trademark signs and line breaks; both
+  are dropped from a fallback name.
+- **On the Deck, `~/Emulation` holds the links and the SD card holds the storage.** Vita3K's installed games are read from
+  the `app` folder beside the real `savedata`, not under the EmuDeck root that was scanned.
+- **On the PC, the links go the other way:** `Emulation\saves\<emulator>\…` are real folders, and the emulators'
+  own folders are the junctions (`PPSSPP\memstick\PSP\SAVEDATA`, `rpcs3\dev_hdd0\home\00000001\savedata`, …).
+  Real paths are recorded, so this needs no special case.
+
+The readers (`ParamSfo`, `TitleFolders` — D4 shape 2, for Group E to reuse — and one per emulator):
+
+| Emulator | A game is | Scope | Name | States |
+|---|---|---|---|---|
+| PPSSPP | its ID's folders in `PSP/SAVEDATA` | `ULUS10041*/**` | Redump PSP, else the save's `TITLE` | `PPSSPP_STATE/<ID>_*` |
+| RPCS3 | its ID's folders in `dev_hdd0/home/<user>/savedata` | `BCUS98132*/**` | Redump PS3, else the save's `TITLE` | none |
+| Vita3K | its one folder in `ux0/user/00/savedata` | `PCSE00120/**` | the save's `sce_sys/param.sfo`, else the installed game's | none |
+| shadPS4 | its folder in a user's `savedata` (old `savedata/<user>`, new `home/<user>/savedata`) | `CUSA00900/**` | a save's `sce_sys/param.sfo` `MAINTITLE` | none |
+
+Known limits:
+- A portable PPSSPP or RPCS3 outside EmuDeck's folder (an exe anywhere) is not looked for.
+- RetroArch's PPSSPP core keeps PSP saves in its own folder: not read.
+- Vita3K reads user `00` only; RPCS3 reads every user, and a game saved under two users there is the copy written last.
+- A PS4 game's EU and US releases have different `CUSA` IDs and the same name with no region: the second one to be
+  added is called *… (shadPS4)*.
 
 ### The other emulators — researched 2026-10-07
 
@@ -927,7 +976,38 @@ own group, in a follow-up PR.
 | **PCSX2** | Convert the card to a folder first (Settings > Memory Cards > Convert > Folder, then Use for Slot 1 — the Deck's `PS2MC-1.ps2` is a file card), then save in-game | Save state slot 1 (`<serial> (<crc>).01.p2s`) | `Emulation/saves/pcsx2/{saves,states}` on both | The game's save folder names on the card (one product code, or several?); the `.backup` copies stay local; a pull into a running card is never needed (PCSX2 closed); the shared file card row disappears once converted | ⏳ | ⏳ |
 | **DuckStation** | Save in-game (Card 1 is per game by default) | Save state slot 1 (`<serial>_1.sav`), and the resume state on exit | `Emulation/saves/duckstation/{saves,states}` on both | The card's real name (game database title, or the playlist's for a multi-disc game); a multi-disc game's states on disc 2 | ⏳ | ⏳ |
 | **Dolphin** | Save in-game, GameCube and Wii (Metroid: Other M is on the Deck already) | Save state slot 1 (`<id>.s01`) | `Emulation/saves/dolphin/{GC,Wii}` + `StateSaves` (Deck) · `states` (Windows) | A GameCube save's real `.gci` name; a WiiWare title (`00010001`) | ⏳ | ⏳ |
+| **PPSSPP** (PSP) | Save in-game (`SAVEDATA/<ID>…`, usually several folders) | Save state slot 1 (`<ID>_<version>_0.ppst` + `.jpg`) | `~/.var/app/org.ppsspp.PPSSPP/config/ppsspp/PSP/{SAVEDATA,PPSSPP_STATE}` · `%APPDATA%\EmuDeck\Emulators\PPSSPP\memstick\PSP\…` | All of a game's folders share its 9-character ID; the undo state's real name; a PSN game is named by its own SFO | ⏳ | ⏳ |
+| **RPCS3** (PS3) | Save in-game (the Deck has *Heavenly Sword*'s autosave already) | None | `Emulation/storage/rpcs3/dev_hdd0/home/00000001/savedata` on both | A game with several save folders; the trophy folder stays local | ⏳ | ⏳ |
+| **Vita3K** (PS Vita) | Save in-game | None | `Emulation/storage/Vita3K/ux0/user/<user>/savedata` on both (`00` is the first user, the one EmuDeck links) | **Whether the save has its own `sce_sys/param.sfo`** (else the name comes from the installed game only); a second Vita3K user's save is listed too | ⏳ | ⏳ |
+| **shadPS4** (PS4) | Save in-game | None | Old layout `~/.local/share/shadPS4/savedata/<user>` · `%APPDATA%\EmuDeck\Emulators\ShadPS4-qt\user\savedata\<user>`; new layout `…/home/<user>/savedata` (users `1000`–`1003`) | **Which layout the installed build writes** (both EmuDeck installs link the old one) and, after shadPS4 offers to move old saves to `home/1000`, that the game is still found; the user ID folder's name; `MAINTITLE` in the save; a save on one layout joining a save on the other | ⏳ | ⏳ |
 | **PrimeHack** | Save in Metroid Prime Trilogy (on the Deck already) | Save state slot 1 (`R3ME01.s01`) | `Emulation/saves/primehack/{GC,Wii}` + `StateSaves` (Deck) · `states` (Windows) | It stays its own game beside Dolphin's Trilogy; where a non-portable Windows PrimeHack keeps its user folder (the PC's EmuDeck install has never run it) | ⏳ | ⏳ |
+
+### Group I — Games found by their save states alone
+
+### Phase 19 — a game with states but no in-game save yet, for every other emulator
+
+**Why.** Until 2026-10-12 every reader found a game by its in-game save only; states were the second folder of a game
+already found. A game played from states alone — common between a PSP game's save points, or with RetroArch's
+auto-state — was never offered. PPSSPP's shipped with Group D (*Group D — as built*); this phase does the rest.
+
+**The rule PPSSPP set, for each reader:** read the game's identity from the state's file name; list it marked
+`StatesOnly` (*Save states only so far*), named and scoped exactly as if it had a save, its save scope declared so the
+first in-game save joins; a save anywhere on the machine wins over states alone; skip empty files and states no game's
+name starts (PPSSPP's `load_undo.ppst`). A states-only push never empties another machine's never-synced save (pull
+refused — one two-machine test per family).
+
+| Emulator | State names → identity | To settle |
+|---|---|---|
+| RetroArch | `<rom>.state`, `.state1`…, `.state.auto`, per-core folders | the save's extension per core (`.srm`, `.sav`) to declare the save scope; per-core folder for saves vs states |
+| melonDS | `<rom>.ml1`…`.ml8` | the save's name beside the ROM's |
+| PCSX2 | `<serial> (<CRC>).NN.p2s` | which folder card the game's saves would go to |
+| DuckStation | `<serial>_N.sav`, `<serial>_resume.sav` | the per-game card's file name (`<title>_1.mcd`) from a serial alone |
+| Dolphin / PrimeHack | `<game ID>.s01`…`.s10` | GameCube `.gci` vs Wii `title/` scope from the ID's first letter |
+
+No states, so not in this phase: RPCS3, Vita3K, shadPS4, ScummVM, Supermodel, Model 2.
+
+**Verify:** per emulator, a fixture with a state and no save (listed, `StatesOnly`, correct name and scope), a save
+elsewhere winning, and an empty state ignored; the two-machine test per family above; testenv fixture rows.
 
 ## Deferred, not built in this task
 

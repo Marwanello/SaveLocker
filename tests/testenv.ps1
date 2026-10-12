@@ -100,7 +100,8 @@
 #   .\tests\testenv.ps1 emu-fixture [-EmuDeckPath <dir>]
 #                                 write a fake EmuDeck "Emulation" folder (three RetroArch saves, two ROMs'
 #                                 save states, one ROM; melonDS, Model 2, ScummVM; PCSX2 folder + file cards,
-#                                 DuckStation per-game + shared cards, Dolphin GameCube + Wii) for the
+#                                 DuckStation per-game + shared cards, Dolphin GameCube + Wii; PPSSPP, RPCS3,
+#                                 Vita3K, shadPS4 with PARAM.SFO files) for the
 #                                 emulator-saves feature, plus a second one at
 #                                 "<StateRoot>\Emulation-wsl" that the WSL test agent scans (an old Chrono save,
 #                                 no Chrono states). Default location is "<StateRoot>\Emulation",
@@ -432,6 +433,35 @@ function New-WiiBanner {
     [Array]::Copy($t, 0, $b, 0x20, $t.Length)
     return ,$b
 }
+# A PARAM.SFO holding text entries (UTF-8, 0x0204), laid out like ParamSfo.cs reads it: header, index, keys, data.
+function New-ParamSfo {
+    param([System.Collections.Specialized.OrderedDictionary]$Entries)
+    $keys = New-Object System.Collections.Generic.List[byte]
+    $data = New-Object System.Collections.Generic.List[byte]
+    $index = New-Object System.Collections.Generic.List[byte]
+    foreach ($key in $Entries.Keys) {
+        $value = [Text.Encoding]::UTF8.GetBytes([string]$Entries[$key] + [char]0)
+        $max = [int]([Math]::Ceiling($value.Length / 4) * 4)
+        $index.AddRange([BitConverter]::GetBytes([uint16]$keys.Count))
+        $index.AddRange([BitConverter]::GetBytes([uint16]0x0204))
+        $index.AddRange([BitConverter]::GetBytes([uint32]$value.Length))
+        $index.AddRange([BitConverter]::GetBytes([uint32]$max))
+        $index.AddRange([BitConverter]::GetBytes([uint32]$data.Count))
+        $keys.AddRange([Text.Encoding]::ASCII.GetBytes($key + [char]0))
+        $data.AddRange($value)
+        $data.AddRange((New-Object byte[] ($max - $value.Length)))
+    }
+    while ($keys.Count % 4 -ne 0) { $keys.Add(0) }
+    $keyTable = 20 + $index.Count
+    $b = New-Object System.Collections.Generic.List[byte]
+    $b.AddRange([byte[]](0, 0x50, 0x53, 0x46))
+    $b.AddRange([BitConverter]::GetBytes([uint32]0x101))
+    $b.AddRange([BitConverter]::GetBytes([uint32]$keyTable))
+    $b.AddRange([BitConverter]::GetBytes([uint32]($keyTable + $keys.Count)))
+    $b.AddRange([BitConverter]::GetBytes([uint32]$Entries.Count))
+    $b.AddRange($index); $b.AddRange($keys); $b.AddRange($data)
+    return ,$b.ToArray()
+}
 function Get-EmuDeckPath {
     if ($EmuDeckPath) { return $EmuDeckPath }
     $fixture = Get-EmuDeckFixturePath
@@ -504,6 +534,35 @@ function New-EmuDeckFixture {
     Write-FixtureFile (Join-Path $ph 'states\R3ME01.s01') "primehack trilogy slot 1 $(Get-Date -Format o)"
     Write-FixtureBytes (Join-Path $dol 'Wii\title\00010000\52334d45\data\banner.bin') (New-WiiBanner 'Metroid Prime Trilogy')
     Write-FixtureFile (Join-Path $dol 'Wii\title\00010000\52334d45\data\save.bin') 'dolphin trilogy save - never synced with PrimeHack'
+    # Group D (PARAM.SFO). PPSSPP: a game with two save folders and a state, a PSN game named by its own SFO.
+    $psp = Join-Path $target 'saves\ppsspp'
+    Write-FixtureBytes (Join-Path $psp 'saves\ULUS10041DATA00\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = 'GTA LCS'; SAVEDATA_TITLE = 'Slot 1' }))
+    Write-FixtureFile (Join-Path $psp 'saves\ULUS10041DATA00\DATA.BIN') "liberty city stories slot $(Get-Date -Format o)"
+    Write-FixtureBytes (Join-Path $psp 'saves\ULUS10041SYSTEM\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = 'GTA LCS' }))
+    Write-FixtureFile (Join-Path $psp 'saves\ULUS10041SYSTEM\SYSTEM.BIN') 'liberty city stories settings'
+    Write-FixtureBytes (Join-Path $psp 'saves\NPUH99999SAVE\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = 'Homebrew Hero' }))
+    Write-FixtureFile (Join-Path $psp 'saves\NPUH99999SAVE\SAVE.DAT') 'psn game - must survive every Liberty City pull'
+    Write-FixtureFile (Join-Path $psp 'states\ULUS10041_1.00_0.ppst') "liberty city slot 0 $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $psp 'states\ULUS10041_1.00_0.jpg') 'thumbnail'
+    # A game played from states only, before its first in-game save: listed as "Save states only".
+    Write-FixtureFile (Join-Path $psp 'states\UCUS98653_1.00_0.ppst') "chains of olympus state $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $psp 'states\UCUS98653_1.00_0.jpg') 'thumbnail'
+    # RPCS3: the Deck's real save's layout (BCUS98132, Redump names it), and another game.
+    $ps3 = Join-Path $target 'saves\rpcs3\saves'
+    Write-FixtureBytes (Join-Path $ps3 'BCUS98132-GAMEAUTOSAVE\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = "Heavenly Sword$([char]0x2122)"; SUB_TITLE = 'Save Game' }))
+    Write-FixtureFile (Join-Path $ps3 'BCUS98132-GAMEAUTOSAVE\USERDATA.DAT') "heavenly sword autosave $(Get-Date -Format o)"
+    Write-FixtureBytes (Join-Path $ps3 'BLUS30443-AUTOSAVE\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = "Demon's Souls" }))
+    Write-FixtureFile (Join-Path $ps3 'BLUS30443-AUTOSAVE\USER.DAT') "demon's souls - must survive every Heavenly Sword pull"
+    # Vita3K: one save named by its own param.sfo, one only by the installed game's.
+    $vita = Join-Path $target 'saves\Vita3K\saves'
+    Write-FixtureBytes (Join-Path $vita 'PCSE00120\sce_sys\param.sfo') (New-ParamSfo ([ordered]@{ TITLE = 'Persona 4 Golden' }))
+    Write-FixtureFile (Join-Path $vita 'PCSE00120\data0000.bin') "persona 4 golden save $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $vita 'PCSB00245\SAVEDATA.BIN') 'tearaway - must survive every Persona pull'
+    Write-FixtureBytes (Join-Path $target 'storage\Vita3K\ux0\app\PCSB00245\sce_sys\param.sfo') (New-ParamSfo ([ordered]@{ TITLE = 'Tearaway'; STITLE = 'Tearaway' }))
+    # shadPS4: the old layout EmuDeck links (savedata/<user>/<CUSA>/<save>).
+    $ps4 = Join-Path $target 'saves\shadps4\saves\1'
+    Write-FixtureBytes (Join-Path $ps4 'CUSA00900\SPRJ0005\sce_sys\param.sfo') (New-ParamSfo ([ordered]@{ MAINTITLE = 'Bloodborne'; SUBTITLE = 'Hunter' }))
+    Write-FixtureFile (Join-Path $ps4 'CUSA00900\SPRJ0005\userdata0000') "bloodborne save $(Get-Date -Format o)"
     Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
     Say "EmuDeck fixture at $target"
     # Supermodel (Phase 9) is kept outside Emulation: EmuDeck for Windows' own folder, under a fixture home.
@@ -579,6 +638,23 @@ function New-EmuDeckFixture {
         Write-FixtureBytes (Join-Path $wPh 'Wii\title\00010000\52334d45\data\banner.bin') (New-WiiBanner 'Metroid Prime Trilogy')
         Write-FixtureFile (Join-Path $wPh 'Wii\title\00010000\52334d45\data\save.bin') 'old primehack trilogy save on the WSL machine'
         New-Item -ItemType Directory -Force (Join-Path $wPh 'StateSaves') | Out-Null
+        # Group D on SteamOS: older saves of the same games, their own neighbours, no states yet.
+        $wPsp = Join-Path $wsl 'saves\ppsspp'
+        Write-FixtureBytes (Join-Path $wPsp 'saves\ULUS10041DATA00\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = 'GTA LCS' }))
+        Write-FixtureFile (Join-Path $wPsp 'saves\ULUS10041DATA00\DATA.BIN') 'old liberty city stories slot on the WSL machine'
+        Write-FixtureBytes (Join-Path $wPsp 'saves\ULUS10042DATA\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = 'SSX on Tour' }))
+        Write-FixtureFile (Join-Path $wPsp 'saves\ULUS10042DATA\DATA.BIN') 'wsl ssx - must survive every Liberty City pull'
+        New-Item -ItemType Directory -Force (Join-Path $wPsp 'states') | Out-Null
+        $wPs3 = Join-Path $wsl 'saves\rpcs3\saves'
+        Write-FixtureBytes (Join-Path $wPs3 'BCUS98132-GAMEAUTOSAVE\PARAM.SFO') (New-ParamSfo ([ordered]@{ TITLE = "Heavenly Sword$([char]0x2122)" }))
+        Write-FixtureFile (Join-Path $wPs3 'BCUS98132-GAMEAUTOSAVE\USERDATA.DAT') 'old heavenly sword autosave on the WSL machine'
+        $wVita = Join-Path $wsl 'saves\Vita3K\saves'
+        Write-FixtureBytes (Join-Path $wVita 'PCSE00120\sce_sys\param.sfo') (New-ParamSfo ([ordered]@{ TITLE = 'Persona 4 Golden' }))
+        Write-FixtureFile (Join-Path $wVita 'PCSE00120\data0000.bin') 'old persona 4 golden save on the WSL machine'
+        # shadPS4's NEW layout in the fixture home (home/<user>/savedata): it still joins Windows' old-layout game.
+        $wPs4 = Join-Path $wHome '.local\share\shadPS4\home\1000\savedata'
+        Write-FixtureBytes (Join-Path $wPs4 'CUSA00900\SPRJ0005\sce_sys\param.sfo') (New-ParamSfo ([ordered]@{ MAINTITLE = 'Bloodborne' }))
+        Write-FixtureFile (Join-Path $wPs4 'CUSA00900\SPRJ0005\userdata0000') 'old bloodborne save on the WSL machine'
         Set-Content -NoNewline -Encoding ascii $wslMarker 'written by tests/testenv.ps1 emu-fixture'
         Say "WSL EmuDeck fixture at $wsl"
     }
@@ -1210,11 +1286,21 @@ function Import-PlayniteData {
     Write-Host "  next: .\tests\testenv.ps1 build -Only playnite; .\tests\testenv.ps1 up -Only playnite"
 }
 
-# The installed release agent runs as SaveLocker.Agent.exe, so a dotnet.exe host with the agent DLL
-# on its command line can only ever be a build from this tree. Nothing here can reach the real one.
+# The installed release agent runs as SaveLocker.Agent.exe outside any src\Agent\bin, so a tree
+# build is identifiable by that path and nothing here can reach the real one.
 function Get-TestTray {
-    Get-CimInstance Win32_Process -Filter "Name = 'dotnet.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like '*SaveLocker.Agent.dll*' }
+    # Three shapes: the dotnet-hosted Debug dll every command here starts, the apphost exe the
+    # toast-activation host starts (ToastActivationHost.StartTray) — the latter was invisible to the
+    # old filter, so stop/clean walked past a live tray and Remove-Item failed under it (2026-10-11) —
+    # and either shape started by ANOTHER worktree's testenv. The rig is shared (one state root, one
+    # console, one :5188), so scoping to this worktree's `$root` walked past a foreign tray and left
+    # it holding the port with a stale key while clean/up reported success (2026-10-12). Tree builds
+    # live under `\src\Agent\bin\`; the installed agent never does.
+    Get-CimInstance Win32_Process -Filter "Name = 'dotnet.exe' OR Name = 'SaveLocker.Agent.exe'" -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -like '*\src\Agent\bin\*' -and
+            ($_.CommandLine -like '*SaveLocker.Agent.dll*' -or $_.Name -eq 'SaveLocker.Agent.exe')
+        }
 }
 
 function Test-ConsoleUp {
@@ -1373,6 +1459,7 @@ function Test-LiveKey {
 function Start-Windows {
     if (-not (Test-Path $agentDll)) { throw "not built — run: .\tests\testenv.ps1 build" }
     Stop-Windows | Out-Null
+    New-WindowsToastShortcut
     Use-TestEnvVars
     try {
         $cfg = Join-Path $winState 'config.json'
@@ -1419,6 +1506,161 @@ function Stop-Windows {
         # file handles even after Stop-Process returns, so give it a beat before anything tries to
         # delete the directory those handles are open under.
         Start-Sleep -Milliseconds 500
+    }
+}
+
+# C# 5 only (the compiler Windows PowerShell 5.1's Add-Type uses), and guarded so re-running the
+# script in one session does not recompile it.
+if (-not ('SlToastShortcut' -as [type])) {
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class SlToastShortcut
+{
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    internal struct PropertyKey
+    {
+        public Guid FormatId;
+        public uint PropertyId;
+    }
+
+    // The x64 PROPVARIANT layout: the union's pointer sits at offset 8. Everything this shim sets is
+    // pointer-valued (VT_LPWSTR or VT_CLSID), which is the only part the layout has to get right.
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct PropVariant
+    {
+        public ushort VariantType;
+        public ushort Reserved1;
+        public ushort Reserved2;
+        public ushort Reserved3;
+        public IntPtr Pointer;
+        public IntPtr Pointer2;
+    }
+
+    [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IPropertyStore
+    {
+        void GetCount(out uint propertyCount);
+        void GetAt(uint propertyIndex, out PropertyKey key);
+        void GetValue(ref PropertyKey key, out PropVariant value);
+        void SetValue(ref PropertyKey key, ref PropVariant value);
+        void Commit();
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+    private static extern void SHGetPropertyStoreFromParsingName(
+        string path, IntPtr bindContext, int flags, ref Guid iid,
+        [MarshalAs(UnmanagedType.Interface)] out IPropertyStore propertyStore);
+
+    private static readonly Guid IID_IPropertyStore = new Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99");
+    private static readonly Guid AppUserModelFormat = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
+    private const uint PKEY_AppUserModel_ID = 5;
+    private const uint PKEY_AppUserModel_ToastActivatorCLSID = 26;
+    private const int GPS_READWRITE = 2;
+    private const ushort VT_LPWSTR = 31;
+    private const ushort VT_CLSID = 72;
+
+    public static void SetAppUserModel(string shortcutPath, string aumid, Guid activatorClsid)
+    {
+        IPropertyStore store;
+        Guid iid = IID_IPropertyStore;   // a local: a static readonly field cannot be passed by ref
+        SHGetPropertyStoreFromParsingName(shortcutPath, IntPtr.Zero, GPS_READWRITE, ref iid, out store);
+        try
+        {
+            PropertyKey aumidKey = new PropertyKey();
+            aumidKey.FormatId = AppUserModelFormat;
+            aumidKey.PropertyId = PKEY_AppUserModel_ID;
+            PropVariant aumidValue = new PropVariant();
+            aumidValue.VariantType = VT_LPWSTR;
+            aumidValue.Pointer = Marshal.StringToCoTaskMemUni(aumid);
+            try { store.SetValue(ref aumidKey, ref aumidValue); }
+            finally { Marshal.FreeCoTaskMem(aumidValue.Pointer); }
+
+            PropertyKey clsidKey = new PropertyKey();
+            clsidKey.FormatId = AppUserModelFormat;
+            clsidKey.PropertyId = PKEY_AppUserModel_ToastActivatorCLSID;
+            PropVariant clsidValue = new PropVariant();
+            clsidValue.VariantType = VT_CLSID;
+            clsidValue.Pointer = Marshal.AllocCoTaskMem(16);
+            try
+            {
+                Marshal.Copy(activatorClsid.ToByteArray(), 0, clsidValue.Pointer, 16);
+                store.SetValue(ref clsidKey, ref clsidValue);
+            }
+            finally { Marshal.FreeCoTaskMem(clsidValue.Pointer); }
+
+            store.Commit();
+        }
+        finally { Marshal.ReleaseComObject(store); }
+    }
+}
+'@
+}
+
+# ─── The rig's toast identity shortcut (tasks/notification-follow-ups) ──────────────────────────
+# The installed agent gets a Start-menu shortcut from the installer carrying its AUMID and
+# ToastActivatorCLSID; a rig had none. Both matter now: the shortcut names the toast header, and the
+# ToastActivatorCLSID is the documented anchor for the COM activator a "Retry now" / "Install now"
+# click resolves through. The tray registers the activator itself (ToastActivation.cs), so a missing
+# shortcut is not fatal - but then the header falls back to the bare AUMID and nothing mimics the
+# installed layout. WScript.Shell cannot write the AppUserModel properties (they live in the shell
+# property store), hence the small IPropertyStore shim below.
+
+function Get-TestToastClsid([int]$Port) {
+    # The same deterministic derivation ToastActivation.ClsidForPort uses: the port in the CLSID's
+    # last two bytes, so a rig's registration can never collide with the installed agent's.
+    $b = ([guid]'02C97085-6FAE-4DF4-8C52-2E05604D3AB0').ToByteArray()
+    $b[0] = [byte]($Port -band 0xFF)
+    $b[1] = [byte](($Port -shr 8) -band 0xFF)
+    return New-Object Guid (,$b)
+}
+
+function New-WindowsToastShortcut {
+    if ($WinPort -eq 5178) { return }   # the installed agent's own identity; never ours to write
+    $exe = Join-Path (Split-Path $agentDll -Parent) 'SaveLocker.Agent.exe'
+    if (-not (Test-Path $exe)) { Warn "toast shortcut skipped - not built: $exe"; return }
+
+    $name = "SaveLocker Test $WinPort"
+    $lnk  = Join-Path ([Environment]::GetFolderPath('Programs')) "$name.lnk"
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        $sc = $shell.CreateShortcut($lnk)
+        $sc.TargetPath = $exe
+        $sc.IconLocation = "$exe,0"
+        $sc.Description = "SaveLocker test agent (rig on :$WinPort)"
+        $sc.Save()
+        [SlToastShortcut]::SetAppUserModel($lnk, "SaveLocker.Test.$WinPort", (Get-TestToastClsid $WinPort))
+        Write-Host "  toast shortcut: $lnk"
+    } catch {
+        # Not fatal: the tray's own CustomActivator registration still makes the buttons work; what is
+        # lost is the header name and whatever older builds anchor on the shortcut.
+        Warn "could not create the toast shortcut ($($_.Exception.Message)) - header will show the bare AUMID"
+    }
+}
+
+function Remove-WindowsToastShortcut {
+    if ($WinPort -eq 5178) { return }
+    $name = "SaveLocker Test $WinPort"
+    $lnk  = Join-Path ([Environment]::GetFolderPath('Programs')) "$name.lnk"
+    if (Test-Path -LiteralPath $lnk) { Remove-Item -LiteralPath $lnk -Force; Write-Host "  removed $lnk" }
+
+    # What the tray's runtime registration wrote for this identity (ToastActivation): the AUMID key
+    # naming a CLSID, and the CLSID itself. Removed by reading the CLSID back rather than re-deriving
+    # it here, so the two sides cannot drift.
+    $aumidKey = "HKCU:\Software\Classes\AppUserModelId\SaveLocker.Test.$WinPort"
+    if (Test-Path -LiteralPath $aumidKey) {
+        $clsid = $null
+        try { $clsid = (Get-ItemProperty -LiteralPath $aumidKey -Name CustomActivator -ErrorAction Stop).CustomActivator } catch { }
+        Remove-Item -LiteralPath $aumidKey -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "  removed $aumidKey"
+        if ($clsid) {
+            $clsidKey = "HKCU:\Software\Classes\CLSID\$clsid"
+            if (Test-Path -LiteralPath $clsidKey) {
+                Remove-Item -LiteralPath $clsidKey -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "  removed $clsidKey"
+            }
+        }
     }
 }
 
@@ -1887,6 +2129,19 @@ switch ($Command) {
                 catch { $lastError = $_; Start-Sleep -Milliseconds 500 }
             }
             if ($lastError) { throw $lastError }
+            # A removal that did not throw can still have left everything behind: a state dir created
+            # by an ELEVATED shell or tray lives in a security context this shell cannot enumerate or
+            # delete, and Remove-Item skips what it cannot touch without raising. Seen twice (2026-08-18
+            # and 2026-09-28) - and the next `conflict` then 401s against the stale API key it left.
+            # Never print "removed" over a directory that is still there.
+            if (Test-Path $StateRoot) {
+                $left = @(Get-ChildItem $StateRoot -Recurse -Force -ErrorAction SilentlyContinue |
+                          Select-Object -First 5 -ExpandProperty FullName)
+                throw ("clean could not remove $StateRoot - it is still there. " +
+                       "$($left.Count)+ item(s) remain (e.g. $($left -join '; ')). " +
+                       "If this state was created by an elevated shell or tray, delete it from an " +
+                       "elevated shell, then re-run clean.")
+            }
             Write-Host "  removed $StateRoot"
         }
         # The Windows half of `conflict`'s seeded save lives outside $StateRoot (it's the fake
@@ -1903,6 +2158,7 @@ switch ($Command) {
         # port exactly as the tray scopes its identity, and never for 5178: that identity ("SaveLocker")
         # is the INSTALLED agent's, and this rig must not touch it.
         if ($WinPort -ne 5178) {
+            Remove-WindowsToastShortcut
             $toastAumid = "SaveLocker.Test.$WinPort"
             try {
                 [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]

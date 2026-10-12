@@ -300,7 +300,19 @@ Group C adds, under `Emulation\saves` on both machines:
 - **Metroid Prime Trilogy in Dolphin AND PrimeHack** on Windows: two rows, two server games. WSL's PrimeHack copy
   joins only the PrimeHack one.
 
-The Emulators chip then opens an Emulator row with nine chips, and a Console row (PS1, PS2, GameCube, Wii, …). `-EmuDeckPath <dir>` points it at any other folder — a **copy** of a real
+Group D adds, on both machines (each `PARAM.SFO` written byte-accurate by `New-ParamSfo`):
+- **PPSSPP:** *Grand Theft Auto - Liberty City Stories* (two save folders, `ULUS10041*`; a state and its `.jpg` on
+  Windows, an older save on WSL). Its neighbours must survive every pull: *Homebrew Hero* (Windows, a PSN ID named by its
+  own SFO) and *SSX on Tour* (WSL). *God of War - Chains of Olympus* (Windows, `UCUS98653`) has a state and no save
+  yet: it is listed with "Save states only so far", and adding it syncs the state.
+- **RPCS3:** *Heavenly Sword* (`BCUS98132-GAMEAUTOSAVE`, the Deck's real save's layout; the save says "Heavenly Sword™",
+  Redump's name wins). *Demon's Souls* beside it on Windows stays put.
+- **Vita3K:** *Persona 4 Golden* (named by the save's own `sce_sys/param.sfo`) on both; *Tearaway* on Windows, named
+  only by the installed game under `storage\Vita3K\ux0\app`.
+- **shadPS4:** *Bloodborne* — the old layout (`saves\shadps4\saves\1\CUSA00900`) on Windows, the new one
+  (`~/.local/share/shadPS4/home/1000/savedata`, in `emu-home-wsl`) on WSL. Both must join one game.
+
+The Emulators chip then opens an Emulator row with thirteen chips, and a Console row (PS1, PS2, PS3, PS4, PS Vita, PSP, GameCube, Wii, …). `-EmuDeckPath <dir>` points it at any other folder — a **copy** of a real
 `Emulation` folder is the safe way to try real saves. The Deck needs no override: its test daemon scans
 the Deck's real EmuDeck install, so add only a game whose save you have backed up.
 
@@ -383,6 +395,7 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 | Emulator saves Group C, one game across card names (2026-10-11) | `dotnet test tests/SaveLocker.Agent.Tests` **388** (+1: one European Warrior Within on `PS2MC-1_converted.ps2` and on `MC1.ps2` is one game; `GroupCSyncTests`' PS2 case now uses two card names; with the card back in the scope both fail, and two scan tests) · no API change |
 | Emulator saves Group C, review of the 2026-10-11 commits | `dotnet test tests/SaveLocker.Agent.Tests` **390** (+2: two releases of one name both watched for their process — throws with the old name-keyed map; a European DuckStation card with the USA card's name never joins its game — joins with region left out of `SameFiles`; both mutation-checked) · solution build (`--no-incremental`) clean |
 | Conflict: keeping the cloud's save takes effect (2026-10-11) | `dotnet test tests/SaveLocker.Agent.Tests` **394** with the review fixes merged (+4 `ConflictResolveTests` against a real server: Cloud restores a never-synced loser and the next push has nothing to send; a save changed after the conflict is not replaced; keeping this device's needs no further conflict; a pause behind a conflict resolved elsewhere lifts — the forced pull and the pause lift each mutation-checked) · solution build (`--no-incremental`) · `agent-ui` lint, typecheck and build · `agent-ui/src/api-types.ts`: the local resolve route answers `ResolveConflictResponse` (additive), regenerated from the test tray on :5188 · rig: the pop-up returns after *Sync all* |
+| Emulator saves Group D (2026-10-11, `emulator-saves-group-d`) | `dotnet test tests/SaveLocker.Agent.Tests` **427** after merging `main` (Group D's share: `SonySavesTests` 25 — `PARAM.SFO`, prefix regions, PPSSPP (states-only games, mutation-checked), RPCS3, Vita3K (every user's `savedata`, mutation-checked), shadPS4 both layouts; `GroupDSyncTests` 3, PPSSPP Deck Flatpak ↔ Windows memstick with states against a real server, the per-game scope mutation-checked, a states-only game joining and its first save following, a states-only push never emptying another machine's save — a whole-folder scope fails it; `EmulatorChipTests` +4 console labels) · `ParamSfo` checked against the Deck's real RPCS3 save · `Agent.Linux` build (`--no-incremental`) · `agent-ui` build + lint · no API change · `testenv emu-fixture -EmuDeckPath <scratch>` scanned with the dev CLI: all seven Group D games listed |
 | Emulator saves Group B (2026-10-07, `emulator-saves-group-b`) | `dotnet test tests/SaveLocker.Agent.Tests` **319** (+28: `IdentityByFoldersTests` 4 — D1, both halves mutation-checked; `GamelistXmlTests` 4; `MelonDsTests` 7; `ArcadeSavesTests` 9 — the Supermodel seed filter mutation-checked; `ScummVmTests` 3; `GroupBSyncTests` 2, two machines against a real server) · `agent-ui` build + lint clean · `Agent.Linux` builds |
 | Emulator saves Phase 1 (2026-10-04) | `dotnet test tests/SaveLocker.Agent.Tests` **203** (+22: `IncludeGlobTests` 9 — the three scoped-restore checks mutation-checked — and `RetroArchTests` 13) · `run-delta-upload-tests` **33** · `run-hardening-tests` **33** · `run-health-tests` **33** · full solution build at the 1-warning baseline |
 | Archive UTC write times (2026-09-28) | `dotnet test tests/SaveLocker.Agent.Tests` **114** (+9: `SaveArchiveTimestampTests` — fail before the fix off UTC) · `run-delta-upload-tests` **33** (+4: section 10, newest change through full and delta pushes; mutation-checked — dropping the server copy fails 1, the old agent stamp fails 3) · `run-hardening-tests` **33** · `run-health-tests` **22** |

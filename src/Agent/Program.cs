@@ -11,6 +11,13 @@ static class Program
     [STAThread]
     static int Main(string[] args)
     {
+        // DCOM starts this exe with -ToastActivated when a toast button is clicked and no tray is
+        // running (ToastActivation's LocalServer32). Handled before any parsing: it is a short-lived
+        // process whose only job is to get the click to a tray, and -ToastActivated is not a command
+        // CliArgs would accept.
+        if (args.Contains("-ToastActivated", StringComparer.OrdinalIgnoreCase))
+            return ToastActivationHost.Run(args);
+
         var (command, opts, positionals) = CliArgs.Parse(args);
 
         // Test-only stand-in "game": tests/testenv.ps1's "Conflict Game" Playnite entry points here

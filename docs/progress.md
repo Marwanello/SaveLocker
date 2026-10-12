@@ -3790,6 +3790,128 @@ path, so it was fixed here.
 `run-local-api-tests`; `testenv.ps1`). Vault: [[Backlog]], [[Build and Run]], [[API Reference]], [[Decisions]],
 [[CONTEXT]], this entry, `session_summary.md`.
 
+## 2026-10-11/12 - Notification follow-ups: toast buttons that act (PR #66)
+
+The last Group 7 leftovers (`tasks/notification-follow-ups/`, now `tasks/_done/`): "Retry now"/"Install now"
+on a Windows toast, the rig's own toast identity, a `clean` that refuses to lie, and a measured answer to
+the size question.
+
+**What shipped.** Toast actions with no `activationType` carry `retry:<gameId>` / `install:<version>` and
+are delivered through a per-user **COM activator** (`ToastActivation.cs`): `HKCU` CLSID with
+`LocalServer32 -ToastActivated`, plus `CustomActivator` under the identity key — the Community Toolkit's
+shape, measured; a shortcut's `ToastActivatorCLSID` is *not* what makes a click travel. The click lands
+in the running tray; with the tray closed, DCOM starts the host (`ToastActivationHost.cs`), which sets its
+state root from `--config` before any logging, leaves the click in `toast-action.json` and starts the
+tray. A rig gets a deterministic per-port CLSID, a `SaveLocker Test <port>` Start-menu shortcut (written
+by `up`, removed by `clean`) and its registry keys; the installer stamps the same activator entries
+(`uninsdelete*`). `clean` now verifies the state root is actually gone and throws naming leftovers instead
+of printing "removed" over them.
+
+**Two bugs only running found:** a rig's `LocalServer32` first omitted `--config`, so a tray-closed click
+loaded the **installed** config and briefly started the installed agent (its one log line lives in
+`%PROGRAMDATA%\SaveLocker\agent.log`; the `LastUpdateCheck` it refreshed was reset); and the host logged
+into the installed agent's log for the same reason. Both fixed and re-verified. (d) measured, not changed:
+`CsWinRTIncludes` shrinks nothing (173.1 MB publish with and without; the property is for projection
+authoring, and `Microsoft.Windows.UI.Xaml.dll` is not in this toolchain's output at all).
+
+**Verified live through `testenv`** (a real mouse click on a real toast): **Retry now** retried a
+413-rejected push; **Install now** downloaded, SHA-verified and ran a stand-in package with
+`/SILENT /FORCECLOSEAPPLICATIONS /NORESTART`, the tray exiting as designed; with the tray closed, DCOM's
+host started it and the retry succeeded. The full unit suite is **450/450** on the final tree — #63
+fixed the `ArcadeSavesTests.Supermodel_nvram…` machine leak this branch had carried (it read this box's
+real EmuDeck gamelist), and #65's Group D tests are in.
+
+**PR #66 opened on the fork; `origin/main` merged twice** — #62–#64 auto-merged cleanly; #65 (Emulator
+Group D) conflicted only in the two tail-of-file docs (`progress.md`, `session_summary.md`), both
+resolved by keeping both sessions' entries. The merged tree builds at the agent's 1-warning baseline.
+
+**The debugging session worth remembering (2026-10-12).** The first live walk of the checklist showed
+"no toast appears" twice, then an endless **401 flood** that survived `clean` and restarts. Root cause:
+the tray holding :5188 was another worktree's build (`fix-backlog-quick-wins`), and `Get-TestTray` was
+scoped to the calling worktree's own root — so `clean` printed "no test tray running" and deleted the
+shared state *under* the foreign tray; the next `up`'s tray could not take the port, and the stale one
+kept serving with its old machine key. Fixed on the branch (`4ddb4d2`): any tree build matches by its
+`\src\Agent\bin\` path; the installed agent never lives there. Also learned live: `up -Only windows`
+alone never toasts (the toast comes only from §1's >1 MB write hitting the capped console), and a fresh
+AUMID gains its `HKCU\…\Notifications\Settings\SaveLocker.Test.<port>` record only once Windows has
+accepted a toast — a handy "did it ever render" probe. All three are in [[Gotchas]] and the verification
+doc's troubleshooting block.
+
+### Files
+
+`src/Agent/{ToastActivation,ToastActivationHost,PendingToastAction,ToastPresenter,TrayApp,Program}.cs`,
+`src/Agent.Core/Notifications.cs`, `installer/SaveLocker.iss`, `tests/testenv.ps1`,
+`tests/run-appearance-consistency-tests.ps1`,
+`tests/SaveLocker.Agent.Tests/{ToastActivationTests,NotificationTests}.cs`,
+`docs/tasks/_done/notification-follow-ups/{summary,verification}.md`. Vault: [[Backlog]], [[CONTEXT]],
+[[Gotchas]], this entry, `session_summary.md`.
+
+## 2026-10-11/12 — Emulator saves Group D: PPSSPP, RPCS3, Vita3K, shadPS4 (PR #65, awaiting verification)
+
+**Branch:** `emulator-saves-group-d`. PR: https://github.com/Marwanello/SaveLocker/pull/65 (base `main` on the fork).
+**Status:** built, awaiting verification — the testenv pass (`Build and Run` → *Testing emulator saves*) and the
+real-game checks (Group H) are still to do.
+
+**What shipped:**
+- **`ParamSfo`:** reads Sony's `PARAM.SFO` (UTF-8 and int32 entries, 64 KB cap). Checked against the Deck's real
+  RPCS3 save (*Heavenly Sword™*).
+- **`TitleFolders`:** D4's shape-2 helper, a folder per game ID in a shared folder, with a per-game scope:
+  `<ID>*/**` when a game owns several folders (PSP, PS3), `<ID>/**` when it owns one (Vita, PS4). Group E reuses it.
+- **Phase 11, PPSSPP:** `PSP/SAVEDATA` plus states (`PPSSPP_STATE`, scoped `<ID>_*`); EmuDeck, standalone Windows
+  and Linux, Flatpak.
+- **Phase 5a, RPCS3:** `dev_hdd0/home/*/savedata`, a custom `dev_hdd0` from `vfs.yml`; EmuDeck, standalone, Flatpak.
+- **Phase 12, Vita3K (bonus):** `ux0/user/<user>/savedata/<ID>` via `config.yml`'s `pref-path`; named from the
+  save's `param.sfo`, else the installed game's.
+- **Phase 13, shadPS4 (bonus):** the old layout (`savedata/<user>`) and the new one (`home/<user>/savedata`);
+  the scope has no user folder, so the two layouts join.
+- **Naming (maintainer's call):** PSP/PS3 by Redump (PSP set added, 3,798 rows, same pinned commit), then
+  `PARAM.SFO`; Vita/PS4 by the SFO title with ™/®/© removed. Region from the ID prefix; none for PS4's `CUSA`.
+- **Add games:** four emulator chips; PSP, PS Vita and PS4 in the Console row. **Help:** how Sony games are named.
+- **testenv `emu-fixture`:** Group D saves on Windows and WSL, including shadPS4 on both layouts and untouched
+  neighbour games.
+
+**Follow-up (2026-10-12), emulator users researched in each emulator's source:**
+- No emulator ties a save to a user: RPCS3 and shadPS4 write `ACCOUNT_ID` as zeros and never check it; Vita3K saves
+  are plain. PPSSPP has no users at all.
+- RPCS3, Vita3K and shadPS4 do keep saves in per-user folders. Each machine records its own user folder and only
+  `<ID>…` inside it syncs, so different users on two machines join one game.
+- **Fixed:** Vita3K read only user `00`; it now reads every `ux0/user/*/savedata` (EmuDeck storage and standalone).
+  New test, mutation-checked against the old reader.
+- **Help note:** saves sync from the user folder found when the game was added; after switching the emulator's user,
+  click **Change** on the game's folder and pick the new user's `savedata`. Two users with the same game: Add games
+  offers the one written last.
+- Not done: shadPS4's custom home folder setting isn't read (only the default place).
+
+**Tests:** `dotnet test tests/SaveLocker.Agent.Tests` **420** passed (`SonySavesTests` 23, `GroupDSyncTests` 1 —
+PPSSPP Deck Flatpak ↔ Windows memstick against a real server, the per-game scope mutation-checked). `Agent.Linux`
+builds, `agent-ui` lint/build clean, no API change. One Group C sync test failed once under full-suite load and
+passed on every rerun.
+
+**Next:** the testenv pass of Group D, then merge PR #65.
+
+### Files
+
+`src/Agent.Core/{ParamSfo,TitleFolders,PpssppSaves,Rpcs3Saves,Vita3KSaves,ShadPs4Saves,ConsoleTitles,EmulatorSaves,GameSources}.cs`,
+`ConsoleTitles/*`, `agent-ui/src/components/AddGamesView.tsx`, `tests/SaveLocker.Agent.Tests/{SonySavesTests,GroupDSyncTests,ConsoleSaveFixtures,EmulatorChipTests}.cs`,
+`tests/testenv.ps1`, `web/src/help/emulator-backups.md`, `docs/{CONTEXT,REPO_MAP,Build and Run}.md`,
+`docs/tasks/emulator-saves/{plan,implementation-grouping}.md`, this entry, `session_summary.md`.
+
+### 2026-10-12 addendum — states-only PSP games, Phase 19, merge with `main`
+
+- **PPSSPP lists a game played from save states only** (`73bb612`): identity from the state's name
+  (`UCUS98653_1.00_0.ppst`), Redump name and region as usual, `SAVEDATA` scope declared so the first in-game save
+  joins; a save anywhere on the machine wins; empty states and `load_undo.ppst` skipped. Add games says *Save states
+  only so far* (`StatesOnly`, additive in the agent API; `agent-ui/src/api-types.ts` updated by hand to match). Tested:
+  unit (mutation-checked), a two-machine join where the first save follows, and a states-only push never emptying
+  another machine's never-synced save (that pull is refused). testenv: *Chains of Olympus* on Windows, state only.
+- **Phase 19 / Group I added** for the other emulators with states (RetroArch, melonDS, PCSX2, DuckStation, Dolphin,
+  PrimeHack), with each one's state naming and open points.
+- **"(Beta)" in a God of War name is right:** the PC's real save is `UCET00844`, Redump's *Chains of Olympus (Beta)*,
+  a pre-release build; the retail European disc is `UCES-00842`.
+- **Merged `main`** (PR #64) into the branch; conflicts only in `progress.md` (both entries kept) and
+  `session_summary.md` (this session's kept). Unit **427**, all passing (run from a scratch worktree because the
+  testenv agent was locking `src/Agent/bin`).
+
 ## 2026-10-11 — Appearance follow-up (b): "N machines following"
 
 **PR:** [#67 on `Marwanello/SaveLocker`](https://github.com/Marwanello/SaveLocker/pull/67), *Appearance: "N machines following" on the console (last Group 5 follow-up)*. Head branch `appearance-follow-ups`, base `main`. Commits `6959a72` (code), `f5edb6e` and the closing docs commit.

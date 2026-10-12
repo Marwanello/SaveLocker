@@ -212,6 +212,20 @@ $csAumid  = if ($toast -match 'ProductAumid\s*=\s*"([^"]+)"') { $Matches[1] } el
 Check "notifications: the installer's shortcut carries an AppUserModelID" ($null -ne $issAumid)
 Check "notifications: the installer's AppUserModelID equals ToastPresenter.ProductAumid ('$issAumid' vs '$csAumid')" (($null -ne $issAumid) -and ($issAumid -ceq $csAumid))
 
+# A button that acts resolves through this CLSID (ToastActivation): the shortcut names it, the registry
+# registration it must match is also written by the installer, and the tray itself registers the same
+# one at runtime. A drift means the toast's foreground action activates nothing (or a dead CLSID).
+$toastActivation = Read-Src "src/Agent/ToastActivation.cs"
+$csClsid = if ($toastActivation -match 'ProductClsid\s*=\s*new\("([0-9A-Fa-f-]{36})"\)') { $Matches[1].ToUpperInvariant() } else { $null }
+# [Icons] takes the GUID bare — ISCC wraps it in braces itself, and rejects either {{-escaped or
+# already-braced forms ("is not a valid GUID value", measured 2026-10-11) — so strip any braces.
+$issClsidParam = if ($iss -match 'AppUserModelToastActivatorCLSID:\s*"([^"]+)"') { ($Matches[1] -replace '[{}]', '').ToUpperInvariant() } else { $null }
+$issClsidReg = @([regex]::Matches($iss, 'CLSID\\\{\{([0-9A-Fa-f-]{36})\}') | ForEach-Object { $_.Groups[1].Value.ToUpperInvariant() } | Sort-Object -Unique)
+Check "notifications: ToastActivation.ProductClsid is a GUID literal" ($null -ne $csClsid)
+Check "notifications: the installer's shortcut carries ToastActivatorCLSID ('$issClsidParam' vs '$csClsid')" (($null -ne $issClsidParam) -and ($issClsidParam -ceq $csClsid))
+Check "notifications: every CLSID the installer registers is the one the agent uses ($($issClsidReg -join ', ') vs $csClsid)" (($issClsidReg.Count -ge 1) -and (@($issClsidReg | Where-Object { $_ -cne $csClsid }).Count -eq 0))
+Check "notifications: the installer registers the AUMID's CustomActivator" (($iss -match 'AppUserModelId\\SaveLocker"') -and ($iss -match 'ValueName: "CustomActivator"'))
+
 # A notification's button is a link to a hash route of the agent UI (NoticeAction.View("...")). What the agent
 # UI does with that hash is route.ts's; a view renamed there would send every toast to the wrong screen.
 $notif = Read-Src "src/Agent.Core/Notifications.cs"

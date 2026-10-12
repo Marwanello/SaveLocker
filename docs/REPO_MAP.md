@@ -158,11 +158,15 @@ SaveLocker/
 │   │   │                               #   a PS1 card of several games) → a greyed NotSyncable row; PS1 card directory;
 │   │   │                               #   ConsoleText (Shift-JIS/1252, full-width folded by hand — invariant globalization)
 │   │   ├── Pcsx2Saves.cs · DuckStationSaves.cs   # PS2 folder card per product code; PS1 card per game
-│   │   ├── ConsoleTitles.cs             # Serial → title + region + languages (PS1/PS2/PS3/GC/Wii) and the save's
+│   │   ├── ConsoleTitles.cs             # Serial → title + region + languages (PS1/PS2/PS3/PSP/GC/Wii) and the save's
 │   │   │                               #   GameReleaseDto (region kept out of the name), from the embedded
 │   │   │                               #   ConsoleTitles/console-titles.tsv.gz — Redump via libretro-database, CC BY-SA 4.0
 │   │   │                               #   (NOTICE.md); Update-ConsoleTitles.ps1 rebuilds it
 │   │   ├── DolphinSaves.cs              # GameCube GCI per game ID + Wii title folders; PrimeHack is its 2nd emulator
+│   │   ├── ParamSfo.cs                  # PARAM.SFO (PSP/PS3/Vita/PS4 metadata): entries + the game's TITLE/MAINTITLE
+│   │   ├── TitleFolders.cs              # D4 shape 2: a folder per game ID in a shared folder → games, scopes, Sony IDs
+│   │   ├── PpssppSaves.cs · Rpcs3Saves.cs · Vita3KSaves.cs · ShadPs4Saves.cs   # Group D's readers on it (PSP, PS3,
+│   │   │                               #   Vita, PS4); RPCS3's vfs.yml, Vita3K's config.yml, shadPS4's two layouts
 │   │   ├── EmulatorSaves.cs             # The table of emulator sources both scanners loop — a new emulator is one row
 │   │   ├── EmulatorPaths.cs             # Home/AppData for standalone emulator lookups; SAVELOCKER_EMULATOR_HOME = fixture home
 │   │   ├── GamelistXml.cs               # ES-DE gamelist.xml titles, arcade systems only (safe because of D1)

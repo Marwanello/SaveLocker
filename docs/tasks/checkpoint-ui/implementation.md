@@ -358,9 +358,13 @@ The largest genuinely-new piece.
   the poller, the one place that hears every failed round trip). Never for a successful push. A standing
   warning announces once per condition and is withdrawn when the condition ends. Everything else the engine
   reports stays in the log and the console.
+- ✅ **A button that acts shipped as a follow-up** (2026-10-11, branch `notification-follow-ups`):
+  "Retry now" on a failed push and "Install now" on an available update, through a per-user COM activator
+  (`ToastActivation.cs`) rather than the measured-dead URL scheme; a rig gets its own shortcut, CLSID and
+  registry keys, and `testenv clean` removes them. Was: *needs a COM activator plus a shortcut carrying
+  `ToastActivatorCLSID`*. Steps: `tasks/notification-follow-ups/verification.md`; notes in [[Gotchas]].
 - ➡️ **Not done, on purpose:** the Deck's Game Mode Steam toast (the Decky plugin, its own repo — out of scope
-  in `plan.md`); a button that acts ("Retry now", "Install now") — needs a COM activator plus a shortcut
-  carrying `ToastActivatorCLSID`, see [[Backlog]].
+  in `plan.md`).
 
 ---
 

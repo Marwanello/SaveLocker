@@ -1891,6 +1891,21 @@ the forced pull and the pause lift each mutation-checked). On the rig the pop-up
 the maintainer (Cloud overwrites the real `D:\Emulation` card's Warrior Within save). **Not fixed:** the conflict card says "the
 other is never deleted, just set aside", but without *Also keep the other one as a backup* the loser is ordinary history and was
 pruned within seconds on the rig.
+<br>**2026-10-11/12: Group D shipped — PR #65 (`emulator-saves-group-d`).** PPSSPP (PSP), RPCS3
+(PS3), and the bonus Vita3K (PS Vita) and shadPS4 (PS4), on a new `PARAM.SFO` reader and D4's shape-2 helper
+`TitleFolders` (a folder per game ID in a shared folder, which Group E reuses). The maintainer decided three things:
+build from the research; name PSP/PS3 games by Redump, then `PARAM.SFO` (Redump's PSP set added to the bundled table at
+the same pinned commit); ship both bonus emulators. A PSN or Vita game's region comes from its ID's prefix; a PS4 game
+has none. Captured read-only: the Deck's real RPCS3 save (*Heavenly Sword*, whose SFO says "Heavenly Sword™"), its
+`vfs.yml` and Vita3K `pref-path` on the SD card, PPSSPP as a Flatpak, shadPS4 on the old layout; on the PC, EmuDeck for
+Windows' junctions point from the emulators' folders into `Emulation\saves`. No PSP, Vita or PS4 save on either, so all
+four are in Group H. Unit **420** (+26; the per-game scope in the two-machine PPSSPP test mutation-checked). No API
+change. 2026-10-12 follow-up: RPCS3, Vita3K and shadPS4 save per emulator user (folder only; no emulator checks a
+save's owner); Vita3K now reads every `ux0/user/*/savedata`, not only `00`, and the help article says how to move a
+game to another user's folder (**Change** on the game's folder). A PSP game played from states only is now listed
+(*Save states only so far*); the other emulators' version is new Phase 19 / Group I. Merged `main` (PR #64) into the
+branch. Unit **427**. Details: `tasks/emulator-saves/plan.md` → *Group D — as built*.
+<br>**Next action for this item:** merge PR #65; the testenv pass of Group D (`Build and Run` → *Testing emulator saves*) and its real-game checks (Group H: PPSSPP, RPCS3, Vita3K, shadPS4) are still to do.
 <br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then merge PR #63.
 On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another
 commit, so this session did not touch it: run `testenv clean` first.
@@ -1946,6 +1961,48 @@ now carries the admin password the flipped default requires, and the `ArcadeSave
 casing failure #61 had carried (fixed by #63); `openapi.json` + `web/src/api-types.ts` regenerated
 (additions only); `web` build + lint clean; full solution builds. **Not yet run on real hardware** —
 the testenv walkthrough is in this session's report.
+
+---
+
+**Notification follow-ups shipped (2026-10-11, branch `notification-follow-ups`,
+[PR #66](https://github.com/Marwanello/SaveLocker/pull/66) open — the last Group 7 leftovers,
+`tasks/_done/notification-follow-ups/`).** Toast buttons that **act**: **Retry now** on a
+failed push and **Install now** on an available update, delivered through a per-user **COM activator**
+(`src/Agent/ToastActivation.cs`) — `HKCU` CLSID with `LocalServer32`, plus `CustomActivator` under the
+identity key (the Community Toolkit's shape; the shortcut's `ToastActivatorCLSID` is *not* what activates,
+measured). While the tray runs the click lands in it; when it is closed DCOM starts the exe with
+`-ToastActivated`, which leaves the click in `toast-action.json` and starts the tray. A rig gets its own
+per-port CLSID, its own Start-menu shortcut (`SaveLocker Test <port>`, written by `up`, removed by
+`clean`) and registry keys; `clean` now **verifies** the state root is actually gone instead of printing
+"removed" over the elevated-state leftovers, and `Get-TestTray` also sees an apphost-started tray.
+**Verified live through `testenv`**, not just built: a real mouse click on a real toast's **Retry now**
+retried a 413-rejected push (`pushed new version.`); **Install now** downloaded, SHA-verified and ran a
+stand-in package with `/SILENT /FORCECLOSEAPPLICATIONS /NORESTART` and the tray exited as designed; with
+the tray closed, DCOM's host started it and the retried push succeeded. Two bugs were found only by
+running it (both fixed, both in [[Gotchas]] → Windows notifications): a rig's `LocalServer32` first
+omitted `--config`, so a click with the tray closed loaded the **installed** config and started the
+installed agent once — it was stopped immediately, the one log it wrote lives in
+`%PROGRAMDATA%\SaveLocker\agent.log`, and the `LastUpdateCheck` it refreshed was reset; and that host
+logged to the installed agent's log for the same reason. Unit tests: the notification ones pass
+(new: action-argument parsing incl. hostile shapes, the toast XML's acting action, the pending-action
+file, the identity/CLSID split); after merging `main` through #65, the **full suite is 450/450** —
+including the `ArcadeSavesTests.Supermodel_nvram…` leak this entry previously carried as a
+machine-specific failure, which #63 fixed. **The `CsWinRTIncludes`
+size idea was measured and changed nothing** (173.1 MB publish, `Microsoft.Windows.SDK.NET.dll` 23.73 MB
+with and without it; the property is for projection authoring, and `Microsoft.Windows.UI.Xaml.dll` is not
+in this toolchain's output at all). **2026-10-12 — the rig fought back, and `testenv` got tougher.** The
+first live walk of the checklist hit an endless 401 flood that survived `clean` and restarts: the tray
+holding :5188 was another worktree's build (`fix-backlog-quick-wins`), and `Get-TestTray` was scoped to
+the calling worktree's own root, so this worktree's `clean`/`up` deleted the shared state *under* the
+foreign tray and left it serving with its old key while the new tray could not take the port. Fixed on
+the branch (`4ddb4d2`): any tree build now matches by its `\src\Agent\bin\` path (the installed agent
+never lives there); recorded in [[Gotchas]] → `tests/testenv.ps1`. The verification doc also gained its
+"no toast appears" troubleshooting block — the toast exists only after §1's >1 MB write, `connection
+refused` means the console is down, and `notification shown` with no banner means Windows put it in the
+Action Center. Task closed; moved to `tasks/_done/`. **The one manual check is not testenv's:** run the
+installer once and look at a real toast's header (steps:
+`tasks/_done/notification-follow-ups/verification.md`). Release notes must cover: toast buttons that act
+(Retry now / Install now).
 
 ---
 
