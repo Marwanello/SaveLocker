@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using SaveLocker.Agent;
 using SaveLocker.Shared;
 using Xunit;
@@ -22,7 +23,8 @@ public sealed class ConflictLatchTests : IDisposable
     private readonly HttpListener _listener = new();
     private readonly List<string> _requests = new();
     private readonly Task _loop;
-    private volatile bool _openConflict;
+    // The open conflict the stub's /api/agent/conflicts lists: whose, and for which game. Null: none.
+    private volatile ConflictDto? _openConflict;
 
     public ConflictLatchTests()
     {
@@ -67,12 +69,14 @@ public sealed class ConflictLatchTests : IDisposable
         var path = ctx.Request.Url!.AbsolutePath;
         lock (_requests) _requests.Add($"{method} {path}");
 
-        if (method == "GET" && path.EndsWith("/state", StringComparison.Ordinal))
+        // What a real server answers the agent's open-conflict list with — the same route and DTO
+        // the latch asks, so a test that passes here passes against the real thing.
+        if (method == "GET" && path == "/api/agent/conflicts")
         {
-            var body = Encoding.UTF8.GetBytes(
-                "{\"game\":{\"id\":\"" + Guid.NewGuid() + "\",\"name\":\"Latch\",\"manifestKey\":null," +
-                "\"customPathsJson\":null,\"enabled\":true},\"head\":null,\"lease\":null," +
-                $"\"hasOpenConflict\":{(_openConflict ? "true" : "false")},\"totalStorageBytes\":0}}");
+            var open = _openConflict;
+            var body = JsonSerializer.SerializeToUtf8Bytes(
+                open is null ? Array.Empty<ConflictDto>() : new[] { open },
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
             ctx.Response.StatusCode = 200;
             ctx.Response.ContentType = "application/json";
             ctx.Response.OutputStream.Write(body);
@@ -114,27 +118,45 @@ public sealed class ConflictLatchTests : IDisposable
         return (new SyncEngine(config, ApiClient.For(config)), game, config);
     }
 
-    private bool SawStateCheck() { lock (_requests) return _requests.Any(r => r.EndsWith("/state")); }
+    private static ConflictDto Conflict(Guid gameId, Guid? machineId) => new(
+        Guid.NewGuid(), gameId, Guid.NewGuid(), Guid.NewGuid(), ConflictStatus.Open,
+        DateTime.UtcNow, null, null, null, machineId);
+
+    private bool SawConflictCheck() { lock (_requests) return _requests.Any(r => r == "GET /api/agent/conflicts"); }
     private bool SawUpload() { lock (_requests) return _requests.Any(r => r.Contains("/upload")); }
 
     [Fact]
     public async Task ResolvedWhileDown_TheStaleLatchIsCleared_AndThePushRuns()
     {
-        var (engine, game, _) = Rig($"http://127.0.0.1:{new Uri(_listener.Prefixes.First()).Port}");
-        _openConflict = false;
+        var (engine, game, config) = Rig($"http://127.0.0.1:{new Uri(_listener.Prefixes.First()).Port}");
+        _openConflict = null;
 
         await engine.PushAsync(game, force: false, settle: false);
 
-        Assert.True(SawStateCheck());
+        Assert.True(SawConflictCheck());
         Assert.True(SawUpload());                     // the latch did not refuse it locally
-        Assert.Equal(0, game.ConsecutiveConflicts);   // and the stale count is gone
+        Assert.Equal(0, game.ConsecutiveConflicts);   // and the stale count is gone…
+        Assert.Equal(0, AgentConfig.Load(config.ConfigPath).Games.Single().ConsecutiveConflicts); // …on disk too
+    }
+
+    [Fact]
+    public async Task OnlyAnotherMachinesConflictIsOpen_TheLatchClears()
+    {
+        // The latch is this machine's: a conflict another machine is party to does not hold it.
+        var (engine, game, _) = Rig($"http://127.0.0.1:{new Uri(_listener.Prefixes.First()).Port}");
+        _openConflict = Conflict(game.GameId, Guid.NewGuid());
+
+        await engine.PushAsync(game, force: false, settle: false);
+
+        Assert.True(SawUpload());
+        Assert.Equal(0, game.ConsecutiveConflicts);
     }
 
     [Fact]
     public async Task StillOpen_TheLatchHolds_AndNothingIsUploaded()
     {
-        var (engine, game, _) = Rig($"http://127.0.0.1:{new Uri(_listener.Prefixes.First()).Port}");
-        _openConflict = true;
+        var (engine, game, config) = Rig($"http://127.0.0.1:{new Uri(_listener.Prefixes.First()).Port}");
+        _openConflict = Conflict(game.GameId, config.MachineId);
 
         var result = await engine.PushAsync(game, force: false, settle: false);
 
