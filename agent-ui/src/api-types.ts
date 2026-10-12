@@ -3043,6 +3043,35 @@ export interface components {
         };
         /** @enum {unknown} */
         ConflictStatus: "Open" | "Resolved";
+        DlcCheckDto: {
+            headMachineName?: null | string;
+            headAt?: null | string;
+            packages?: null | components["schemas"]["DlcPackageDto"][];
+            /** Format: int32 */
+            missingCount: number;
+            /** Format: int64 */
+            missingSize: number;
+            held: boolean;
+        };
+        DlcHoldDto: {
+            /** Format: uuid */
+            gameId: string;
+            gameName: string;
+            /** Format: int32 */
+            missingCount: number;
+            /** Format: int64 */
+            missingSize: number;
+            summary: string;
+            heldAt: string;
+        };
+        DlcPackageDto: {
+            kind: string;
+            id: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
+            here: boolean;
+        };
         DeckyStatusDto: {
             applicable: boolean;
             deckyPresent: boolean;

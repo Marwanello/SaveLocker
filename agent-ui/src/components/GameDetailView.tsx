@@ -6,6 +6,7 @@ import { refreshActivity, useActivityBusy } from '../useActivity'
 import { GameArt } from './GameArt'
 import { GameManagement } from './GameManagement'
 import { SaveFilesCard } from './SaveFilesCard'
+import { DlcCheckCard } from './DlcCheckCard'
 import { ReleaseChip } from './ReleaseChip'
 import { SourceChip } from './SourceChip'
 import { VersionsCard } from './VersionsCard'
@@ -57,6 +58,8 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
   const [pending, setPending] = useState<GameSyncMode | 'check' | null>(null)
   const [check, setCheck] = useState<SyncStatus | null>(null)
   const [toast, setToast] = useState<{ text: string; failed: boolean } | null>(null)
+  // Bumped when a pull from this page was held by the DLC check, so the card opens its choice.
+  const [dlcAsk, setDlcAsk] = useState(0)
 
   const load = useCallback(() => {
     api.gameState(game.id)
@@ -86,6 +89,10 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
     try {
       const { message } = await api.syncGame(game.id, mode)
       setToast({ text: message, failed: false })
+      if (mode !== 'push') {
+        const dlc = await api.gameDlc(game.id).catch(() => null)
+        if (dlc?.held && dlc.missingCount > 0) setDlcAsk(n => n + 1)
+      }
     } catch (err) {
       setToast({ text: err instanceof Error ? err.message : 'Sync failed.', failed: true })
     } finally {
@@ -240,6 +247,9 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
         <VersionsCard gameId={game.id} headId={state?.head?.id ?? null} refreshKey={syncCount} onLoaded={setVersions} />
         <GameManagement game={game} platform={platform} onChanged={onChanged} onRemoved={onRemoved} />
       </div>
+
+      {enrolled && <DlcCheckCard gameId={game.id} gameName={game.name} refreshKey={syncCount} askSignal={dlcAsk}
+        onPulled={text => { setToast({ text, failed: false }); setSyncCount(n => n + 1); load(); onSynced() }} />}
 
       {enrolled && <SaveFilesCard gameId={game.id} refreshKey={syncCount} />}
 

@@ -115,6 +115,62 @@ public sealed class DlcCheckSyncTests : IClassFixture<ServerProcess>, IDisposabl
     }
 
     [Fact]
+    public async Task A_pull_of_a_save_made_with_dlc_missing_here_is_held_until_pulled_anyway()
+    {
+        // Phase 5c step 9: the PC's save was made with two packs; the Deck has one. An ordinary pull is held — the
+        // Deck's save stays — and says so; "pull anyway" restores it and lifts the hold.
+        var title = "9D" + _id;
+        const string pcContent = "Xenia Canary/content";
+        const string deckContent = "SDCard/Emulation/roms/xbox360/content";
+        Write("pc", $"{pcContent}/{Xuid}/{title}/00000001/Profile/save.dat", "pc-save");
+        Package("pc", pcContent, title, "00000002", "AAAA", "Pre-Order Car Pack", 300);
+        Package("pc", pcContent, title, "00000002", "BBBB", "Rally Expansion Pack", 900);
+        Write("deck", $"{deckContent}/{Xuid}/{title}/00000001/Profile/save.dat", "deck-old");
+        Package("deck", deckContent, title, "00000002", "AAAA", "Pre-Order Car Pack", 300);
+
+        var pc = await Machine("pc3");
+        var deck = await Machine("deck3");
+        var pcGame = await Enroll(pc, XeniaSaves.Scan([new XeniaFolders(P("pc", pcContent))]), title);
+        var deckGame = await Enroll(deck, XeniaSaves.Scan([new XeniaFolders(P("deck", deckContent), EmuDeck: true)]), title);
+        await using var enginePc = new SyncEngine(pc, ApiClient.For(pc));
+        await using var engineDeck = new SyncEngine(deck, ApiClient.For(deck));
+        Assert.NotNull(await enginePc.PushAsync(pcGame, force: true));
+        deckGame.LastSyncedHash = deckGame.LocalHash(deck.StateDir); // the Deck's save is in step, so a pull may replace it
+        deck.SaveGameSyncState(deckGame);
+
+        Assert.Equal(PullOutcome.HeldForDlc, await engineDeck.PullAsync(deckGame));
+        Assert.Equal("deck-old", File.ReadAllText(P("deck", $"{deckContent}/{Xuid}/{title}/00000001/Profile/save.dat")));
+        var hold = DlcHoldStore.For(deck).For(deckGame.GameId)!;
+        Assert.Equal(["BBBB"], hold.Missing.Select(p => p.Id));
+
+        Assert.Equal(PullOutcome.Restored, await engineDeck.PullAsync(deckGame, skipDlcCheck: true));
+        Assert.Equal("pc-save", File.ReadAllText(P("deck", $"{deckContent}/{Xuid}/{title}/00000001/Profile/save.dat")));
+        Assert.Null(DlcHoldStore.For(deck).For(deckGame.GameId));
+    }
+
+    [Fact]
+    public void The_check_matches_packages_by_kind_and_id_and_says_what_is_missing()
+    {
+        ContentPackageDto[] head =
+        [
+            new(ContentPackageDto.Dlc, "AAAA", "Pre-Order Car Pack", 52 * 1024 * 1024),
+            new(ContentPackageDto.Dlc, "BBBB", "Rally Expansion Pack", 1028L * 1024 * 1024),
+            new(ContentPackageDto.Update, "tu00000002_00000000", "Title Update 2", 15 * 1024 * 1024),
+        ];
+        ContentPackageDto[] here = [new(ContentPackageDto.Dlc, "aaaa", "Pre-Order Car Pack", 52 * 1024 * 1024), new(ContentPackageDto.Update, "BBBB", "x", 1)];
+
+        var missing = DlcCheck.Missing(head, here);
+
+        Assert.Equal(["BBBB", "tu00000002_00000000"], missing.Select(p => p.Id));
+        Assert.Equal("2 DLC packs (Rally Expansion Pack, Title Update 2, 1043 MB)", DlcCheck.Summary(missing));
+        Assert.Empty(DlcCheck.Missing(null, here));
+        var described = DlcCheck.Describe(new SaveVersionDto(Guid.NewGuid(), Guid.NewGuid(), null, "PC", DateTime.UtcNow, "h", 1, null, Content: head), here, held: true);
+        Assert.Equal(2, described.MissingCount);
+        Assert.Equal([true, false, false], described.Packages!.Select(p => p.Here));
+        Assert.Null(DlcCheck.Describe(new SaveVersionDto(Guid.NewGuid(), Guid.NewGuid(), null, "PC", DateTime.UtcNow, "h", 1, null), here, false).Packages);
+    }
+
+    [Fact]
     public async Task A_report_never_rewrites_what_a_save_was_made_with()
     {
         var title = "8E" + _id;

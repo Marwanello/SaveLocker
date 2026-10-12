@@ -59,6 +59,8 @@ public sealed class AgentApiServer : IDisposable
     private readonly Func<TrackedGame, CancellationToken, Task<LaunchGateResult>> _prepareLaunch;
     // POST /api/games/{id}/launch-answer (tasks/emulator-saves Phase 5c) — SyncEngine.AnswerLaunchQuestion.
     private readonly Func<TrackedGame, LaunchAnswerRequest, bool> _answerLaunch;
+    // POST /api/games/{id}/dlc/pull-anyway (tasks/emulator-saves Phase 5c) — SyncEngine.PullAsync past the DLC check.
+    private readonly Func<TrackedGame, CancellationToken, Task<string>> _pullAnyway;
     // POST /api/games/{id}/post-exit-sync (tasks/playnite-plugin/plan.md, Phase 5) — SyncEngine
     // .OnGameExitAsync, resolved the same way _prepareLaunch is: against whichever engine a settings
     // change may have rebuilt since the host wired this up.
@@ -133,6 +135,7 @@ public sealed class AgentApiServer : IDisposable
         Func<Task<string>>? syncAll = null,
         Func<TrackedGame, CancellationToken, Task<LaunchGateResult>>? prepareLaunch = null,
         Func<TrackedGame, LaunchAnswerRequest, bool>? answerLaunch = null,
+        Func<TrackedGame, CancellationToken, Task<string>>? pullAnyway = null,
         Func<TrackedGame, CancellationToken, Task>? postExitSync = null,
         Func<TrackedGame, CancellationToken, Task>? releaseLease = null,
         Func<Task<PlaynitePluginStatusDto>>? playnitePluginStatus = null,
@@ -178,6 +181,7 @@ public sealed class AgentApiServer : IDisposable
         _syncAll = syncAll ?? (() => Task.FromResult("Not available."));
         _prepareLaunch = prepareLaunch ?? ((_, _) => Task.FromResult(new LaunchGateResult(LaunchDecision.Proceed)));
         _answerLaunch = answerLaunch ?? ((_, _) => false);
+        _pullAnyway = pullAnyway ?? ((g, _) => Task.FromResult($"Nothing was pulled for {g.Name}."));
         _postExitSync = postExitSync ?? ((_, _) => Task.CompletedTask);
         _releaseLease = releaseLease ?? ((_, _) => Task.CompletedTask);
         _syncGame = syncGame ?? ((_, _, _) => Task.FromResult("Not available."));
@@ -1125,6 +1129,47 @@ public sealed class AgentApiServer : IDisposable
             }
             finally { gate.Release(); }
         }).Produces<SyncNowResponse>().Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+
+        // The DLC check (tasks/emulator-saves Phase 5c): what the latest save was made with against what is installed
+        // here, and whether a pull of it is on hold. One small request; reading the installed packages lists folders
+        // and their sizes, never package data.
+        app.MapGet("/api/games/{id:guid}/dlc",
+            async Task<Results<Ok<DlcCheckDto>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null) return TypedResults.NotFound();
+            try
+            {
+                var head = (await ApiClient.For(_config).GetStateAsync(id))?.Head;
+                return TypedResults.Ok(DlcCheck.Describe(head, ContentInventory.For(game), DlcHoldStore.For(_config).For(id) is not null));
+            }
+            catch (Exception ex) { return TypedResults.InternalServerError(new ErrorResponse(ex.Message)); }
+        }).Produces<DlcCheckDto>();
+
+        // "Pull anyway": the person chose to restore the latest save without the DLC it was made with. Gated with the
+        // game page's own sync, so it never races a Pull latest of the same game.
+        app.MapPost("/api/games/{id:guid}/dlc/pull-anyway",
+            async Task<Results<Ok<SyncNowResponse>, Conflict<ErrorResponse>, NotFound, InternalServerError<ErrorResponse>>> (Guid id) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null || !game.IsEnrolledHere) return TypedResults.NotFound();
+            var gate = _gameSyncGates.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+            if (!await gate.WaitAsync(0))
+                return TypedResults.Conflict(new ErrorResponse("A sync of this game is already running. Watch the activity feed."));
+            try { return TypedResults.Ok(new SyncNowResponse(await _pullAnyway(game, CancellationToken.None))); }
+            catch (Exception ex)
+            {
+                AgentLogger.LogException("AgentApiServer.dlc-pull-anyway", ex);
+                return TypedResults.InternalServerError(new ErrorResponse(ex.Message));
+            }
+            finally { gate.Release(); }
+        }).Produces<SyncNowResponse>().Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+
+        // Every pull the DLC check holds on this machine, for the Overview banner.
+        app.MapGet("/api/dlc/holds", () => TypedResults.Ok(DlcHoldStore.For(_config).Read()
+            .Select(h => new DlcHoldDto(h.GameId, _config.Games.FirstOrDefault(g => g.GameId == h.GameId)?.Name ?? "",
+                h.Missing.Count, h.Missing.Sum(p => p.Size), DlcCheck.Summary(h.Missing), h.HeldAt))
+            .Where(h => h.GameName.Length > 0).ToArray())).Produces<DlcHoldDto[]>();
 
         // What the server holds for one game: head version (machine, time, size), open conflict, lease.
         // One small request and no disk work, so the game page can load it on open — unlike
@@ -2156,6 +2201,9 @@ public sealed record ErrorResponse(string Error, bool NeedsConfirm = false, bool
 }
 /// <param name="Notes">Why each refused game was not added ("Chrono Trigger: the server's …"), one line each;
 /// null when every skip was a game already set up here.</param>
+/// <summary>A pull the DLC check holds (tasks/emulator-saves Phase 5c).</summary>
+public sealed record DlcHoldDto(Guid GameId, string GameName, int MissingCount, long MissingSize, string Summary, DateTimeOffset HeldAt);
+
 public sealed record EnrollResponse(int Enrolled, int Skipped, string[]? Notes = null, string[]? Info = null);
 public sealed record EnrollProgressDto(bool Active, int Index, int Total, string? Game, string Step, int Enrolled, int Skipped);
 public sealed record RegisterResponse(string MachineName);

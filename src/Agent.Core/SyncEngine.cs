@@ -50,7 +50,10 @@ public enum PullOutcome
     /// <summary>Another SaveLocker process is syncing this game; nothing was read or written.</summary>
     Busy,
     /// <summary>The server did not answer (or a gateway answered in its place); nothing was pulled.</summary>
-    Unreachable
+    Unreachable,
+    /// <summary>The latest save was made with DLC or a title update this machine lacks; nothing was pulled, and the
+    /// hold is recorded (tasks/emulator-saves Phase 5c, the DLC check). Appended last so stored values keep.</summary>
+    HeldForDlc
 }
 
 /// <summary>Which copy wins when a save folder is mapped onto a folder that already holds different
@@ -703,7 +706,9 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     }
 
     /// <summary>Download the server head and restore it locally if it differs.</summary>
-    public async Task<PullOutcome> PullAsync(TrackedGame game, bool force = false, CancellationToken ct = default)
+    /// <param name="skipDlcCheck">“Pull anyway” from the DLC check: restore even though the latest save was made with
+    /// DLC this machine lacks. A forced pull skips the check too.</param>
+    public async Task<PullOutcome> PullAsync(TrackedGame game, bool force = false, CancellationToken ct = default, bool skipDlcCheck = false)
     {
         if (RefuseIfRetired(game, "pull")) return PullOutcome.Refused;
         using var linked = LinkRetirement(ct);
@@ -748,6 +753,8 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
         _config.RefreshGameSyncState(game);
         try
         {
+            if (!force && !skipDlcCheck && await HoldForDlcAsync(game, ct)) return PullOutcome.HeldForDlc;
+
             var head = await _api.DownloadHeadAsync(game.GameId, archive, ct);
             if (head is null)
             {
@@ -828,6 +835,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             _config.SaveGameSyncState(game, touchSyncTime: true);
             _log($"[{game.Name}] restored latest save from server.");
             MarkSynced(game.GameId);
+            DlcHoldStore.For(_config).Clear(game.GameId);
             await ReportContentAsync(game, null);
             if (missingBefore.Any(Directory.Exists)) _onFoldersChanged?.Invoke();
             return PullOutcome.Restored;
@@ -1013,8 +1021,37 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
     }
 
     /// <summary>What a pull did, as one sentence — shared by every surface that answers a person.</summary>
+    /// <summary>
+    /// The DLC check before a pull (tasks/emulator-saves Phase 5c, step 9): true, with the hold recorded and reported, when
+    /// the latest save was made with packages this machine lacks. Only for a game whose emulator lists its DLC, and only
+    /// when the latest save said what it was made with; a check that cannot run never holds a pull.
+    /// </summary>
+    private async Task<bool> HoldForDlcAsync(TrackedGame game, CancellationToken ct)
+    {
+        var holds = DlcHoldStore.For(_config);
+        if (ContentInventory.For(game) is not { } here) return false;
+        SaveVersionDto? head;
+        try { head = (await _api.GetStateAsync(game.GameId, ct))?.Head; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return false; }
+        if (head?.Content is not { } content) return false;
+        var missing = DlcCheck.Missing(content, here);
+        if (missing.Count == 0)
+        {
+            holds.Clear(game.GameId);
+            return false;
+        }
+        var known = holds.For(game.GameId)?.VersionId == head.Id;
+        holds.Hold(game.GameId, head.Id, missing);
+        if (!known)
+            Alert($"[{game.Name}] held the pull: {head.MachineName}'s save was made with {DlcCheck.Summary(missing)} " +
+                  "this machine doesn't have. Open the game in SaveLocker to pull anyway, or install them and it goes ahead.",
+                AgentEventCodes.PullBlocked, AgentEventSeverity.Warning, game.GameId);
+        return true;
+    }
+
     public static string DescribePull(TrackedGame game, PullOutcome outcome) => outcome switch
     {
+        PullOutcome.HeldForDlc => $"Not pulled: the latest save of {game.Name} was made with DLC this machine doesn't have. Open the game to choose.",
         PullOutcome.Restored => $"Pulled the latest save of {game.Name}.",
         PullOutcome.UpToDate => $"{game.Name} is already up to date.",
         PullOutcome.NothingOnServer => $"The server has no save of {game.Name} yet.",

@@ -1,4 +1,4 @@
-import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
+import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, DlcCheck, DlcHold, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -172,6 +172,9 @@ export const api = {
   syncGame: (id: string, mode: GameSyncMode) => post<{ message: string }>(`/api/games/${id}/sync`, { mode }),
   // What the server holds for one game: head, lease, open conflict. Cheap; no disk work.
   gameState: (id: string) => req<GameState>(`/api/games/${id}/state`),
+  gameDlc: (id: string) => req<DlcCheck>(`/api/games/${id}/dlc`),
+  dlcPullAnyway: (id: string) => post<{ message: string }>(`/api/games/${id}/dlc/pull-anyway`, {}),
+  dlcHolds: () => req<DlcHold[]>('/api/dlc/holds'),
   // Hashes the whole save folder. Only ever on an explicit "Check now", never on a timer or a list.
   syncStatus: (id: string) => req<SyncStatus>(`/api/games/${id}/sync-status`),
   /** Every save file of the game here, each compared with the server's latest. Hashes the save — on demand only. */

@@ -183,6 +183,7 @@ public sealed class Daemon : IAsyncDisposable
             syncAll: () => _engine.SyncAllAsync(_config.Games),
             prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct, canAsk: true),
             answerLaunch: (game, answer) => _engine.AnswerLaunchQuestion(game, answer),
+            pullAnyway: async (game, ct) => SyncEngine.DescribePull(game, await _engine.PullAsync(game, ct: ct, skipDlcCheck: true)),
             postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
             releaseLease: (game, _) => _engine.ReleaseLaunchLeaseAsync(game),
             syncGame: (game, mode, ct) => _engine.SyncGameAsync(game, mode, ct),
