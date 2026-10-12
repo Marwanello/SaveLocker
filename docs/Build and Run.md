@@ -326,6 +326,39 @@ Group E adds (title-ID folders; the 3DS ROM headers written by `New-Ncsd`/`New-N
   its game page shows a second folder `device`, and its DLC beside it never syncs. WSL's *Halo 3* is in the 2023
   named-profile layout (`saves\xenia\saves\User\4D5307E6`) and is listed like any other.
 
+Phase 5c adds **the Xenia profile checked at launch** (Windows):
+- *Forza Horizon*'s saves are under `E030000033894516`, whose `Account` says **Driver**.
+- `saves\xenia\xenia-canary.config.toml`, and Xenia Manager's own `saves\xenia\config\Forza Horizon.config.toml`, sign
+  in as `E03000004A1C77B2` (**Player1**, with its own `Account`).
+- WSL's *Forza Horizon* is in the layout from before profiles, so it is never asked.
+
+Ask the gate the way Decky and Playnite do, against the Windows test agent (after adding *Forza Horizon* there):
+```powershell
+$t = (Get-Content "$env:LOCALAPPDATA\SaveLocker-test\SaveLocker\api-token" -Raw).Trim()
+$h = @{ 'X-SaveLocker-Token' = $t }
+$id = ((irm http://localhost:5188/api/games -Headers $h) | ? name -eq 'Forza Horizon').id
+$r = irm -Method Post http://localhost:5188/api/games/$id/pre-launch-sync -Headers $h -ContentType application/json -Body '{}'
+$r | ConvertTo-Json -Depth 5
+```
+1. `decision` is `Ask`. Its question is:
+   - the title "Xenia would start as Player1";
+   - the choices "Start as Driver" and "Start as Player1";
+   - the default `profile`.
+
+   Both config files now say `E030000033894516`.
+2. Answer "keep":
+   ```powershell
+   irm -Method Post http://localhost:5188/api/games/$id/launch-answer -Headers $h -ContentType application/json -Body (@{ questionId = $r.question.id; choice = 'keep' } | ConvertTo-Json)
+   ```
+   Both configs go back to `E03000004A1C77B2`. The same answer sent again gets a 404.
+3. Ask again, then answer `profile` with `remember = $true`. Both configs stay on Driver, and the next
+   `pre-launch-sync` answers `Proceed` with no question. The game's `xeniaProfileAtLaunch` in the test agent's
+   `config.json` is `Switch`.
+4. Stop the Windows agent (`.	ests	estenv.ps1 down -Only windows`). Set the game's `xeniaProfileAtLaunch` to `Leave`
+   in its `config.json`, and set either Xenia config back to Player1. Start the agent again (`up -Only windows`).
+   `pre-launch-sync` now answers `Proceed` and leaves the configs alone.
+5. On WSL, `pre-launch-sync` for *Forza Horizon* never asks: there, the saves are not under a profile.
+
 The Emulators chip then opens an Emulator row with sixteen chips, and a Console row (PS1, PS2, PS3, PS4, PS Vita, PSP, GameCube, Wii, Wii U, 3DS, Xbox 360, …). `-EmuDeckPath <dir>` points it at any other folder — a **copy** of a real
 `Emulation` folder is the safe way to try real saves. The Deck needs no override: its test daemon scans
 the Deck's real EmuDeck install, so add only a game whose save you have backed up.
@@ -400,6 +433,7 @@ Quote these as a pair with the date — a bare number means nothing on its own.
 | Emulator saves Phase 16, linking by hand + Model 2 states (2026-10-07, `emulator-saves-group-b`) | `dotnet test tests/SaveLocker.Agent.Tests` **325** (+5 `LinkByHandTests` — two machines against a real server; the re-check of a pick and the here-first `TrackedFor` each mutation-checked; +1 `ArcadeSavesTests` for Model 2 states, slot names mutation-checked) · Windows agent and `Agent.Linux` build · `agent-ui` lint + build clean · `agent-ui/src/api-types.ts` regenerated from a scratch tray on :5190, additions only · Add games checked in the browser against a scratch server seeded as a Deck (join, keep as its own game, greyed-out different files) |
 | Emulator saves Group C (2026-10-07, `emulator-saves-group-c`) | `dotnet test tests/SaveLocker.Agent.Tests` **361** (+29: `MemoryCardTests` 17 — the shared-card detection and the PCSX2 per-game scope each mutation-checked; `GroupCSyncTests` 5, two or three machines against a real server — PS2 folder card, PS1 card, Wii, and Dolphin vs PrimeHack kept apart, the emulator rule and the in-batch emulator each mutation-checked; `EmulatorChipTests` 7 — a missing chip fails it) · Windows agent, `Agent.Linux` and server build · `web` + `agent-ui` lint and build clean · `openapi.json`, `web/src/api-types.ts` and `agent-ui/src/api-types.ts`: additions only (`GameDto.emulators`; `CandidateDto.notSyncable`/`emulatorConsole`), the agent's regenerated from a scratch tray on :5193 · `testenv emu-fixture` written to a scratch folder and scanned with the dev CLI; Add games checked in the browser against a sandboxed tray (the live rig was in use, see CONTEXT) |
 | Emulator saves Group C, names by serial (2026-10-08) | `dotnet test tests/SaveLocker.Agent.Tests` **363** (+2: the Prince of Persia case — two sequels whose `icon.sys` says only the series, and one game from two regions — mutation-checked; `ConsoleTitles` spellings; the four console tests now assert serial names and a fallback each) · solution build · `testenv.ps1` parses |
+| Phase 5c steps 1–4: Xenia file formats, launch questions, the profile at launch (2026-10-12) | `dotnet test tests/SaveLocker.Agent.Tests` **495** (+21: `XeniaFormatsTests` 14 — XDBF layout and round trip, one row merged with the others kept and the totals recounted, Account with both keys, both header sizes, both DLC layouts, config edits that change only the value, Xenia Manager's per-game config; `XeniaLaunchProfileTests` 7 — ask with the default applied, keep puts it back and the wrapper's check after it honours that (mutation-checked), don't ask again, the wrapper switches silently, Leave / already right / Xenia running / pre-profile layout leave it, per-game config). With `SAVELOCKER_XENIA_CAPTURE` pointing at captured profile files, the real PC's and Deck's GPDs round-trip and their totals match · solution build clean · `agent-ui` typecheck clean, `agent-ui/src/api-types.ts` edited by hand (additions only: `Ask`, `LaunchQuestion`, `LaunchChoice`, `LaunchAnswerRequest`, `launch-answer`) · Decky PR #5 `tsc` + build clean · Playnite PR #8 **28** tests, Release build clean |
 | Emulator saves Group E, Xenia device saves + named profiles (2026-10-12) | `dotnet test tests/SaveLocker.Agent.Tests` **474** (+3: a device-only game, the named layout, a device save between two machines with its DLC left) |
 | Emulator saves Group E (2026-10-12, `emulator-saves-group-e`) | `dotnet test tests/SaveLocker.Agent.Tests` **471** (`main`'s 450 + 21: `TitleIdSavesTests` 16 — Cemu, Azahar with NCSD/NCCH headers, Xenia's two layouts, the title cache, `qt-config.ini` and `content_root`; `GroupESyncTests` 2 — Azahar with states and Xenia across two profiles, two machines against a real server, both scopes mutation-checked; 3 chip labels) |
 | Region beside the name, not in it (2026-10-11, `emulator-saves-group-c`) | `dotnet test tests/SaveLocker.Agent.Tests` **387** (+4: another region's release takes the same name and never joins, release fields per reader; +3 `GameReleaseServerTests` against a real server — two regions of one name are two games, a region-less game takes the first release, an oversized release refused; the server's region match mutation-checked) · solution build clean · `web` + `agent-ui` typecheck, lint and build clean · `openapi.json` and both `api-types.ts`: additions only (`GameReleaseDto`, `GameDto.release`, `CreateGameRequest.release`; agent's `TrackedGameDto.release`/`saveFiles`, `CandidateDto.region`), the agent's regenerated from a scratch daemon on :5298 · migration `AddGameRelease` applied on a fresh database · console and agent pages checked in the browser against a seeded scratch server and daemon (two Warrior Withins, Homebrew's *Details* chip, Esc closes) |

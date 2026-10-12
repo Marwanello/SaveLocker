@@ -487,6 +487,31 @@ function Get-EmuDeckPath {
     if (Test-Path (Join-Path $fixture '.savelocker-emu-fixture')) { return $fixture }
     return $null
 }
+# A Xenia profile's encrypted Account, as Xenia writes it (tasks/emulator-saves Phase 5c): the gamertag at +16 of the data,
+# HMAC-SHA1 with the retail XEKEY 0x19 as the hash, RC4 keyed by the hash. The launch check reads the gamertag from it.
+function New-XeniaAccount([string]$Gamertag) {
+    $key = [byte[]](0xE1,0xBC,0x15,0x9C,0x73,0xB1,0xEA,0xE9,0xAB,0x31,0x70,0xF3,0xAD,0x47,0xEB,0xF3)
+    $data = New-Object byte[] 388
+    $tag = [Text.Encoding]::BigEndianUnicode.GetBytes($Gamertag)
+    [Array]::Copy($tag, 0, $data, 16, $tag.Length)
+    $hmac = [Security.Cryptography.HMACSHA1]::new($key)
+    $hash = [byte[]]($hmac.ComputeHash($data)[0..15])
+    $rc4Key = [byte[]]($hmac.ComputeHash($hash)[0..15])
+    $s = [byte[]](0..255); $j = 0
+    for ($i = 0; $i -lt 256; $i++) { $j = ($j + $s[$i] + $rc4Key[$i % 16]) -band 255; $t = $s[$i]; $s[$i] = $s[$j]; $s[$j] = $t }
+    $out = New-Object byte[] $data.Length; $i = 0; $j = 0
+    for ($n = 0; $n -lt $data.Length; $n++) {
+        $i = ($i + 1) -band 255; $j = ($j + $s[$i]) -band 255; $t = $s[$i]; $s[$i] = $s[$j]; $s[$j] = $t
+        $out[$n] = $data[$n] -bxor $s[($s[$i] + $s[$j]) -band 255]
+    }
+    return [byte[]]($hash + $out)
+}
+
+function New-XeniaConfig([string]$Xuid) {
+    return "[Profiles]`nlogged_profile_slot_0_xuid = `"$Xuid`"   `t# XUID of the profile to load on boot in slot 0`n" +
+        "logged_profile_slot_1_xuid = `"`"                   `t# XUID of the profile to load on boot in slot 1`n`n[Storage]`ncontent_root = `"`"`n"
+}
+
 function New-EmuDeckFixture {
     $target = if ($EmuDeckPath) { $EmuDeckPath } else { Get-EmuDeckFixturePath }
     $marker = Join-Path $target '.savelocker-emu-fixture'
@@ -604,6 +629,15 @@ function New-EmuDeckFixture {
     Write-FixtureFile (Join-Path $x360 '4D5309C9\00000002\13E2064584A4BA7759BA105051C2199ABC5FA5554D\Media\dlc.bin') 'forza dlc - never synced'
     Write-FixtureFile (Join-Path $x360 '4D530AA4\00000001\ForzaProfile\PlayerDatabase') 'forza horizon 2 - must survive every Forza Horizon pull'
     # A device save no profile owns (Rock Band 3's calibration, xenia-canary#743), and its DLC that never syncs.
+    # The profile checked at launch (Phase 5c): Forza Horizon's saves are under E030000033894516 ("Driver"), but Xenia is
+    # set to sign in as another profile ("Player1") - in the install's config and in Xenia Manager's own for the game.
+    # Here the install is saves\xenia, the parent of the content folder, as on a portable install.
+    $x360Root = Join-Path $target 'saves\xenia'
+    Write-FixtureBytes (Join-Path $x360 'FFFE07D1\00010000\E030000033894516\Account') (New-XeniaAccount 'Driver')
+    Write-FixtureBytes (Join-Path $x360Root 'saves\E03000004A1C77B2\FFFE07D1\00010000\E03000004A1C77B2\Account') (New-XeniaAccount 'Player1')
+    Write-FixtureFile (Join-Path $x360Root 'xenia-canary.config.toml') (New-XeniaConfig 'E03000004A1C77B2')
+    Write-FixtureFile (Join-Path $x360Root 'config\Forza Horizon.config.toml') (New-XeniaConfig 'E03000004A1C77B2')
+    Write-FixtureFile (Join-Path $x360Root 'xenia_canary.exe') 'not a real xenia'
     $x360Device = Join-Path $target 'saves\xenia\saves\0000000000000000'
     Write-FixtureFile (Join-Path $x360Device '45410914\00000001\globaloptions\options') "rock band 3 calibration $(Get-Date -Format o)"
     Write-FixtureFile (Join-Path $x360Device '45410914\00000002\SONGPACK\song.bin') 'rock band dlc - never synced'

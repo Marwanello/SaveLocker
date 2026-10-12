@@ -1919,7 +1919,15 @@ shadPS4, Vita3K and Xenia bind by folder only; Xenia XUIDs are random per profil
 (`content/0000000000000000`, key `device`) and the 2023 named-profile layout; unit **474**. Designed, not built: **Phase 5c**,
 copying the whole Xenia profile to another machine and optional per-game DLC (Forza Horizon's is 1.0 GB, over the 500 MB cap) —
 four open questions in `tasks/emulator-saves/plan.md` → *Phase 5c*.
-<br>**Next action for this item:** the maintainer's calls on Phase 5c, then the Group E testenv pass (`Build and Run` → *Testing emulator saves*).
+<br>**Phase 5c approved and started (same day):** the Xenia profile checked at launch with the profile split by game, and the
+DLC check — final plan in `tasks/emulator-saves/plan.md` → *Phase 5c — final plan*, 14 steps. Steps 1–4 built on #68: Xenia
+file formats (XDBF, Account gamertag, DLC/update headers, the `logged_profile_slot_0_xuid` config incl. Xenia Manager's per-game
+configs), `LaunchDecision.Ask` + `POST /api/games/{id}/launch-answer` (the default is applied before asking; answers kept on
+disk 10 min so the Linux wrapper honours a Decky answer), the profile at launch. Plugin PRs: Marwanello/SaveLocker-Decky#5,
+Marwanello/SaveLocker-Playnite#8. Unit **495**. Real files captured from the PC (Xenia Manager) and the Deck (EmuDeck, Proton,
+legacy `content/<TID>` DLC and a title update) are in the session scratchpad only — they hold a real gamertag.
+<br>**Next action for this item:** the testenv pass for the profile at launch (`Build and Run` → *Testing emulator saves*, Phase 5c),
+then Phase 5c step 5 (the game's part of the profile). Group E's own testenv pass is still open.
 <br>**Next action for this item:** merge PR #65; the testenv pass of Group D (`Build and Run` → *Testing emulator saves*) and its real-game checks (Group H: PPSSPP, RPCS3, Vita3K, shadPS4) are still to do.
 <br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then merge PR #63.
 On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another
