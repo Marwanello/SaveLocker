@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { DEFAULT_DIR, GROUP_OPTIONS, SORT_OPTIONS, dirLabel, groupLabel, sortLabel } from './organize';
 import type { GroupBy, OrganizeState, SortBy } from './organize';
 import { Icon } from '../ui/Icon';
@@ -22,15 +23,21 @@ const ITEM = `flex w-full items-center gap-2 text-left text-[12.5px] px-2 py-[7p
 const MENU = 'animate-drop absolute left-0 top-[calc(100%+6px)] z-30 p-1.5 bg-panel border border-line rounded-xl shadow-2xl';
 
 /**
- * Option A of tasks/console-games-sort-group: the Group and Sort dropdowns, always visible â€” in the
+ * Option A of tasks/console-games-sort-group: the Group and Sort dropdowns, always visible — in the
  * sidebar header (list layout) or the page head (grid layout). Purely a view preference; the choice is
  * persisted by GamesView, and picking a group resets the collapsed headings there.
  */
 export function OrganizeControls({ value, onChange, stretch = true }: Props) {
   const [open, setOpen] = useState<'group' | 'sort' | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const groupRef = useRef<HTMLButtonElement>(null);
   const sortRef = useRef<HTMLButtonElement>(null);
+
+  function close(which: 'group' | 'sort') {
+    (which === 'group' ? groupRef : sortRef).current?.focus();
+    setOpen(null);
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -48,8 +55,29 @@ export function OrganizeControls({ value, onChange, stretch = true }: Props) {
     };
   }, [open]);
 
-  function pickGroup(groupBy: GroupBy) { onChange({ ...value, groupBy }); setOpen(null); }
-  function pickSort(sortBy: SortBy) { onChange({ ...value, sortBy, dir: DEFAULT_DIR[sortBy] }); setOpen(null); }
+  // A menu takes focus on open — the checked item, else the first — so the arrow keys below have
+  // somewhere to start and Escape reaches the document handler.
+  useEffect(() => {
+    if (!open) return;
+    const menu = menuRef.current;
+    (menu?.querySelector<HTMLButtonElement>('[aria-checked="true"]') ?? menu?.querySelector<HTMLButtonElement>('button'))?.focus();
+  }, [open]);
+
+  function onMenuKey(e: ReactKeyboardEvent<HTMLDivElement>) {
+    const items = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('button'));
+    if (items.length === 0) return;
+    if (e.key === 'Home') { e.preventDefault(); items[0].focus(); return; }
+    if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); return; }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const delta = e.key === 'ArrowDown' ? 1 : -1;
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    const from = at < 0 ? (delta === 1 ? -1 : 0) : at;
+    items[(from + delta + items.length) % items.length].focus();
+  }
+
+  function pickGroup(groupBy: GroupBy) { onChange({ ...value, groupBy }); close('group'); }
+  function pickSort(sortBy: SortBy) { onChange({ ...value, sortBy, dir: DEFAULT_DIR[sortBy] }); close('sort'); }
 
   return (
     <div ref={rootRef} className={stretch ? 'flex gap-[7px] mt-[9px]' : 'flex gap-2'}>
@@ -62,6 +90,7 @@ export function OrganizeControls({ value, onChange, stretch = true }: Props) {
           aria-expanded={open === 'group'}
           title="Group the games"
           onClick={() => setOpen(o => (o === 'group' ? null : 'group'))}
+          onKeyDown={e => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setOpen('group'); } }}
         >
           <span className="text-faint">Group</span>
           <span className="font-semibold truncate">{groupLabel(value.groupBy)}</span>
@@ -69,7 +98,7 @@ export function OrganizeControls({ value, onChange, stretch = true }: Props) {
             className={`ml-auto shrink-0 text-faint transition-transform duration-150 ${open === 'group' ? 'rotate-180' : ''}`} />
         </button>
         {open === 'group' && (
-          <div role="menu" aria-label="Group games by" className={`${MENU} w-[212px]`}>
+          <div ref={menuRef} role="menu" aria-label="Group games by" className={`${MENU} w-[212px]`} onKeyDown={onMenuKey}>
             {GROUP_OPTIONS.map(o => (
               <button key={o.value} type="button" role="menuitemradio" aria-checked={o.value === value.groupBy}
                 className={ITEM} onClick={() => pickGroup(o.value)}>
@@ -92,6 +121,7 @@ export function OrganizeControls({ value, onChange, stretch = true }: Props) {
           aria-expanded={open === 'sort'}
           title="Sort the games"
           onClick={() => setOpen(o => (o === 'sort' ? null : 'sort'))}
+          onKeyDown={e => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setOpen('sort'); } }}
         >
           <span className="text-faint">Sort</span>
           <span className="font-semibold truncate">{sortLabel(value.sortBy)}</span>
@@ -99,7 +129,7 @@ export function OrganizeControls({ value, onChange, stretch = true }: Props) {
             className={`ml-auto shrink-0 text-faint transition-transform duration-150 ${open === 'sort' ? 'rotate-180' : ''}`} />
         </button>
         {open === 'sort' && (
-          <div role="menu" aria-label="Sort games" className={`${MENU} w-[232px]`}>
+          <div ref={menuRef} role="menu" aria-label="Sort games" className={`${MENU} w-[232px]`} onKeyDown={onMenuKey}>
             {SORT_OPTIONS.map(o => (
               <button key={o.value} type="button" role="menuitemradio" aria-checked={o.value === value.sortBy}
                 className={ITEM} onClick={() => pickSort(o.value)}>

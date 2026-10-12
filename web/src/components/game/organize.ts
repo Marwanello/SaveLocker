@@ -78,7 +78,9 @@ function bucketOf(ms: number): string {
 function sortValueOf(s: GameSummary, sortBy: SortBy): string | number | null {
   if (sortBy === 'name') return s.game.name;
   if (sortBy === 'synced') return s.head ? toMs(s.head.createdAt) : null;
-  return s.totalStorageBytes ?? 0;
+  // `totalStorageBytes` is a plain number (0 without saves), so keying off `head` is what makes the
+  // no-saves-last rule above hold for Size too, in both directions.
+  return s.head ? s.totalStorageBytes : null;
 }
 
 /** Sorted by the chosen key; games with no saves always sort last, whichever direction is chosen. */
