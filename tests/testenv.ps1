@@ -101,7 +101,7 @@
 #                                 write a fake EmuDeck "Emulation" folder (three RetroArch saves, two ROMs'
 #                                 save states, one ROM; melonDS, Model 2, ScummVM; PCSX2 folder + file cards,
 #                                 DuckStation per-game + shared cards, Dolphin GameCube + Wii; PPSSPP, RPCS3,
-#                                 Vita3K, shadPS4 with PARAM.SFO files) for the
+#                                 Vita3K, shadPS4 with PARAM.SFO files; Cemu, Azahar with ROM headers, Xenia) for the
 #                                 emulator-saves feature, plus a second one at
 #                                 "<StateRoot>\Emulation-wsl" that the WSL test agent scans (an old Chrono save,
 #                                 no Chrono states). Default location is "<StateRoot>\Emulation",
@@ -462,6 +462,25 @@ function New-ParamSfo {
     $b.AddRange($index); $b.AddRange($keys); $b.AddRange($data)
     return ,$b.ToArray()
 }
+# A 3DS cartridge image's headers only (NCSD, first partition at 0x4000, its NCCH): what Ncch.cs reads, laid out like the
+# Deck's ROMs. The program ID is little-endian at NCCH 0x118, the product code at 0x150.
+function New-Ncsd {
+    param([UInt64]$ProgramId, [string]$ProductCode)
+    $b = New-Object byte[] (0x4000 + 0x200)
+    [Text.Encoding]::ASCII.GetBytes('NCSD').CopyTo($b, 0x100)
+    [BitConverter]::GetBytes([uint32](0x4000 / 0x200)).CopyTo($b, 0x120)
+    (New-Ncch $ProgramId $ProductCode).CopyTo($b, 0x4000)
+    return ,$b
+}
+# A 3DS game's installed NCCH (content/00000000.app): the same header from byte 0.
+function New-Ncch {
+    param([UInt64]$ProgramId, [string]$ProductCode)
+    $b = New-Object byte[] 0x200
+    [Text.Encoding]::ASCII.GetBytes('NCCH').CopyTo($b, 0x100)
+    [BitConverter]::GetBytes($ProgramId).CopyTo($b, 0x118)
+    [Text.Encoding]::ASCII.GetBytes($ProductCode).CopyTo($b, 0x150)
+    return ,$b
+}
 function Get-EmuDeckPath {
     if ($EmuDeckPath) { return $EmuDeckPath }
     $fixture = Get-EmuDeckFixturePath
@@ -563,6 +582,27 @@ function New-EmuDeckFixture {
     $ps4 = Join-Path $target 'saves\shadps4\saves\1'
     Write-FixtureBytes (Join-Path $ps4 'CUSA00900\SPRJ0005\sce_sys\param.sfo') (New-ParamSfo ([ordered]@{ MAINTITLE = 'Bloodborne'; SUBTITLE = 'Hunter' }))
     Write-FixtureFile (Join-Path $ps4 'CUSA00900\SPRJ0005\userdata0000') "bloodborne save $(Get-Date -Format o)"
+    # Group E (title-ID folders). Cemu: Mario Kart 8 (named by the fixture home's title cache below) and Breath of the
+    # Wild (in no cache: "Wii U 101C9500"), and a system app's save that is no game.
+    $wiiu = Join-Path $target 'saves\Cemu\saves\00050000'
+    Write-FixtureFile (Join-Path $wiiu '10145d00\user\80000001\save.dat') "mario kart 8 save $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $wiiu '10145d00\user\common\db.dat') 'mario kart 8 common'
+    Write-FixtureFile (Join-Path $wiiu '101c9500\user\80000001\game_data.sav') 'breath of the wild - must survive every Mario Kart pull'
+    Write-FixtureFile (Join-Path $target 'saves\Cemu\saves\00050010\1004a100\user\common\db\data') 'a system app - never a game'
+    # Azahar: Super Mario 3D Land with a state and its ROM; Samus Returns installed from a CIA (named from its content).
+    $n3ds = Join-Path $target 'saves\azahar\saves\Nintendo 3DS\00000000000000000000000000000000\00000000000000000000000000000000\title\00040000'
+    Write-FixtureFile (Join-Path $n3ds '00054000\data\00000001\GameData.bin') "super mario 3d land save $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $n3ds '00054000\data\00000001.metadata') 'metadata'
+    Write-FixtureFile (Join-Path $target 'saves\azahar\states\0004000000054000.01.cst') "super mario 3d land slot 1 $(Get-Date -Format o)"
+    Write-FixtureBytes (Join-Path $target 'roms\n3ds\Super Mario 3D Land (CTR-P-AREE) (U).cci') (New-Ncsd 0x0004000000054000 'CTR-P-AREE')
+    Write-FixtureFile (Join-Path $n3ds '001bb200\data\00000001\profile0\samus.bmssv') 'samus returns - must survive every Mario pull'
+    Write-FixtureBytes (Join-Path $n3ds '001bb200\content\00000000.app') (New-Ncch 0x00040000001BB200 'CTR-P-A9AE')
+    # Xenia: the PC's real profile layout - Forza Horizon with a DLC beside it, Forza Horizon 2 next door.
+    $x360 = Join-Path $target 'saves\xenia\saves\E030000033894516'
+    Write-FixtureFile (Join-Path $x360 '4D5309C9\00000001\ForzaProfile\ForzaProfile') "forza horizon profile $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $x360 '4D5309C9\Headers\00000001\ForzaProfile.header') 'header'
+    Write-FixtureFile (Join-Path $x360 '4D5309C9\00000002\13E2064584A4BA7759BA105051C2199ABC5FA5554D\Media\dlc.bin') 'forza dlc - never synced'
+    Write-FixtureFile (Join-Path $x360 '4D530AA4\00000001\ForzaProfile\PlayerDatabase') 'forza horizon 2 - must survive every Forza Horizon pull'
     Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
     Say "EmuDeck fixture at $target"
     # Supermodel (Phase 9) is kept outside Emulation: EmuDeck for Windows' own folder, under a fixture home.
@@ -581,6 +621,9 @@ function New-EmuDeckFixture {
             "[monkey]`ngameid=monkey`nengineid=scumm`ndescription=The Secret of Monkey Island (CD/DOS/English)`n")
         Write-FixtureFile (Join-Path $svmSaves 'monkey2.s01') "monkey2 slot 1 $(Get-Date -Format o)"
         Write-FixtureFile (Join-Path $svmSaves 'monkey.s00') 'monkey 1 - must survive every Monkey Island 2 pull'
+        # Cemu's title cache (EmuDeck for Windows' portable copy keeps it beside the exe): names Mario Kart 8 only.
+        Write-FixtureFile (Join-Path $emuHome 'AppData\Roaming\EmuDeck\Emulators\cemu\title_list_cache.xml') ('<?xml version="1.0" encoding="UTF-8"?>' +
+            "`n<title_list>`n <title titleId=`"0005000010145d00`" version=`"64`"><region>2</region><name>Mario Kart 8</name></title>`n</title_list>`n")
         Say "emulator home fixture at $emuHome"
     }
     Write-Host "  saves:  $saves"
@@ -655,6 +698,17 @@ function New-EmuDeckFixture {
         $wPs4 = Join-Path $wHome '.local\share\shadPS4\home\1000\savedata'
         Write-FixtureBytes (Join-Path $wPs4 'CUSA00900\SPRJ0005\sce_sys\param.sfo') (New-ParamSfo ([ordered]@{ MAINTITLE = 'Bloodborne' }))
         Write-FixtureFile (Join-Path $wPs4 'CUSA00900\SPRJ0005\userdata0000') 'old bloodborne save on the WSL machine'
+        # Group E on SteamOS: older saves, no title cache or ROM (so other names - they join Windows' games by folder), and
+        # Xenia on the old layout (content/<title ID>), which joins Windows' profile-layout game.
+        $wWiiu = Join-Path $wsl 'saves\Cemu\saves\00050000'
+        Write-FixtureFile (Join-Path $wWiiu '10145d00\user\80000001\save.dat') 'old mario kart 8 save on the WSL machine'
+        $wN3ds = Join-Path $wsl 'saves\azahar\saves\Nintendo 3DS\00000000000000000000000000000000\00000000000000000000000000000000\title\00040000'
+        Write-FixtureFile (Join-Path $wN3ds '00054000\data\00000001\GameData.bin') 'old super mario 3d land save on the WSL machine'
+        Write-FixtureFile (Join-Path $wN3ds '0016e300\data\00000001\profile1.sav') 'wsl 3ds game with no rom - must survive every Mario pull'
+        New-Item -ItemType Directory -Force (Join-Path $wsl 'saves\azahar\states') | Out-Null
+        $wX360 = Join-Path $wsl 'saves\xenia\saves'
+        Write-FixtureFile (Join-Path $wX360 '4D5309C9\00000001\ForzaProfile\ForzaProfile') 'old forza horizon profile on the WSL machine'
+        Write-FixtureFile (Join-Path $wX360 '584109FF\00000001\save.dat') 'wsl plants vs. zombies - must survive every Forza pull'
         Set-Content -NoNewline -Encoding ascii $wslMarker 'written by tests/testenv.ps1 emu-fixture'
         Say "WSL EmuDeck fixture at $wsl"
     }
