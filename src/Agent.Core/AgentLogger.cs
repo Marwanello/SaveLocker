@@ -26,7 +26,10 @@ public static class AgentLogger
                 Directory.CreateDirectory(AgentConfig.DefaultDir);
                 // The first write in this process also applies the state directory's protection, so
                 // the log is covered on entry paths that never write config.json, and a log an older
-                // build left world-readable is tightened in passing.
+                // build left world-readable is tightened in passing. On Windows that means a
+                // read-only command's first line can claim a never-protected state directory for the
+                // account running it — the same rule any restricted AtomicFile write already applies,
+                // and a no-op once the directory is protected.
                 if (!_protected)
                 {
                     _protected = true;

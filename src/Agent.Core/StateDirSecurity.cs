@@ -45,13 +45,15 @@ namespace SaveLocker.Agent;
 public static class StateDirSecurity
 {
     /// <summary>
-    /// Directories already handled in this process. Protecting one is a full ACL read on Windows;
-    /// the writers that ask run constantly (every config save, every log line), and the directory
-    /// only needs it once per process — <see cref="Protect"/> is idempotent, this just avoids asking
-    /// the filesystem to prove it each time. A failed attempt is not retried, matching the callers'
-    /// best-effort contract (a loud log line, never a fatal error).
+    /// The outcome of <see cref="Protect"/> per directory already handled in this process. Protecting
+    /// one is a full ACL read on Windows; the writers that ask run constantly (every config save,
+    /// every log line), and the directory only needs it once per process — <see cref="Protect"/> is
+    /// idempotent, this just avoids asking the filesystem to prove it each time. The <i>result</i> is
+    /// cached too, so a failed attempt is not retried and a later caller is told what actually
+    /// happened rather than "already handled" (the callers' contract is best-effort: a loud log
+    /// line, never a fatal error).
     /// </summary>
-    private static readonly HashSet<string> ProtectedDirs =
+    private static readonly Dictionary<string, bool> ProtectedDirs =
         new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
 
     private static readonly object ProtectGate = new();
@@ -64,15 +66,19 @@ public static class StateDirSecurity
     /// </summary>
     public static bool Protect(string stateDir)
     {
+        var key = Path.GetFullPath(stateDir);
         lock (ProtectGate)
         {
-            if (!ProtectedDirs.Add(Path.GetFullPath(stateDir))) return true;
+            if (ProtectedDirs.TryGetValue(key, out var known)) return known;
+            // Optimistic while the attempt runs, so a concurrent caller during it gets the old
+            // "already being handled" answer; the real outcome replaces it when the attempt ends.
+            ProtectedDirs[key] = true;
         }
 
+        bool applied;
         try
         {
-            if (OperatingSystem.IsWindows()) return ProtectWindows(stateDir);
-            return ProtectUnix(stateDir);
+            applied = OperatingSystem.IsWindows() ? ProtectWindows(stateDir) : ProtectUnix(stateDir);
         }
         catch (Exception ex)
         {
@@ -82,8 +88,11 @@ public static class StateDirSecurity
             AgentLogger.Log($"WARNING: could not restrict permissions on {stateDir}: {ex.Message}. " +
                             "Other local users may be able to read this machine's API key and local " +
                             "API token.");
-            return false;
+            applied = false;
         }
+
+        lock (ProtectGate) ProtectedDirs[key] = applied;
+        return applied;
     }
 
     /// <summary>
