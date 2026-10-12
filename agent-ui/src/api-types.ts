@@ -2918,6 +2918,8 @@ export interface components {
             notSyncable?: null | string;
             emulatorConsole?: null | string;
             region?: null | string;
+            /** @default false */
+            statesOnly: boolean;
         };
         CandidateLinksDto: {
             /** Format: int32 */

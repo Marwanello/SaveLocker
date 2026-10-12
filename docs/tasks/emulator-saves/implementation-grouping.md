@@ -15,11 +15,12 @@ ships.
 | B — Saves named after the ROM | Phases 3 (identity by folders, D1), 8 melonDS\*, 9 Model 2 + Supermodel\*, 10 ScummVM\*, 16 linking by hand (same files) | ✅ Shipped 2026-10-07 — PR #61 (`emulator-saves-group-b`, merged 2026-10-07), one commit per phase; review fixes on the same PR (D1 on the
 save file only, *Keep it as its own game* kept apart, untouched seeds can join). D1 confirmed; Model 2 kept (seeds hidden by hash, maintainer's choice); captured on the real Deck (found EmuDeck's 29 seeded Supermodel NVRAM files). The testenv pass and a played-save hardware pass are still to do |
 | C — Memory cards | Phases 2 (PCSX2, Dolphin, DuckStation + the shared-card warning), 4 PrimeHack, the per-console row | 🚧 Built 2026-10-07 (`emulator-saves-group-c`), one commit per phase. Maintainer's calls: shared cards are greyed-out rows with the fix, states without PCSX2's `.backup` copies, Wii in this group, and saves from different emulators never one game (`GameDto.Emulators`). Captured read-only on the Deck (a 64 MB shared PCSX2 card, Wii banners) and on EmuDeck for Windows (link layout). The testenv pass and the real-game checks (Group H) are still to do |
-| D — Sony (`PARAM.SFO`) | Phases 11 PPSSPP, 5a RPCS3, 12 Vita3K\*, 13 shadPS4\* | ⏳ Not started |
+| D — Sony (`PARAM.SFO`) | Phases 11 PPSSPP, 5a RPCS3, 12 Vita3K\*, 13 shadPS4\* | ✅ Shipped 2026-10-12 — PR #65 (`emulator-saves-group-d`), one commit per phase; follow-ups on the same PR: Vita3K reads every user's `savedata`, help on per-user saves, PSP games played from states only (the other emulators' version is Group I). Maintainer's calls: build from the research, PSP/PS3 named by Redump then `PARAM.SFO` (PSP set added to the table), both bonus emulators in. Captured read-only on the Deck (a real RPCS3 save, `vfs.yml`, Vita3K `pref-path`, PPSSPP Flatpak, shadPS4 on the old layout) and on EmuDeck for Windows (junction layout). `TitleFolders` is D4's shape-2 helper for E. The testenv pass and the real-game checks (Group H) are still to do |
 | E — Title-ID folders | Phases 14 Cemu, 15 Azahar, 5b Xenia | ⏳ Not started |
 | F — Switch | Phase 6 (Yuzu, Citron, Eden, Ryujinx) + the server title key (D2) | ⏳ Not started |
 | G — Each machine's own file names | Phase 17 (link a save to a server game whose files are named differently: another dump, another emulator) | ⏳ Not started — added 2026-10-07; open questions in plan.md → *Phase 17* |
-| H — Real-game checks (no code) | Phase 18: every emulator that shipped without a test against a real game, on the Deck and on Windows. Now: melonDS, ScummVM, Supermodel, Model 2, PCSX2, DuckStation, Dolphin, PrimeHack | ⏳ Waiting for games — added 2026-10-07; the list grows as phases ship untested |
+| H — Real-game checks (no code) | Phase 18: every emulator that shipped without a test against a real game, on the Deck and on Windows. Now: melonDS, ScummVM, Supermodel, Model 2, PCSX2, DuckStation, Dolphin, PrimeHack, PPSSPP (PSP), RPCS3 (PS3), Vita3K (PS Vita), shadPS4 (PS4) | ⏳ Waiting for games — added 2026-10-07; the list grows as phases ship untested |
+| I — Games found by their save states alone | Phase 19 (RetroArch, melonDS, PCSX2, DuckStation, Dolphin, PrimeHack) | ⏳ Not started — added 2026-10-12; PPSSPP's shipped with Group D |
 
 \* Bonus. If a group grows too big, a bonus emulator is the first thing to move to a later PR.
 
@@ -78,6 +79,9 @@ testenv but **without a save written by playing a real game**, because the maint
 Each one is tested on the Deck (EmuDeck on SteamOS) and on Windows (EmuDeck for Windows) when a game is at hand, and
 ticked off in plan.md → *Phase 18*. A problem found there is fixed in its own group's code, in a follow-up PR. It
 stays the last group so new rows can keep joining it.
+
+**I — Games found by their save states alone.** Added 2026-10-12 when PPSSPP learnt it in Group D. It touches the
+readers of Groups A–C, so it is its own PR once those are merged; it needs no server change and does not block E–G.
 
 **Every group's checks:**
 - fixtures and unit tests per reader;

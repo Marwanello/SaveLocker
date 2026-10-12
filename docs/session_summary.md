@@ -1,94 +1,88 @@
-# Session summary — 2026-10-09 — Quick wins: seven backlog items, one retired (PR #64)
+# Session summary — 2026-10-11/12 — Emulator saves Group D shipped (PR #65)
 
 Standalone: the facts below do not need the rest of the vault.
 
-**PR:** #64 on `Marwanello/SaveLocker`, *Quick wins: registration default, conflict latch, exit lease, sessions,
-art cleanup, lockout notice, Sync all detail*. Head branch `fix/backlog-quick-wins` (worktree
-`.claude/worktrees/fix-backlog-quick-wins`), base `main`. Open at the time of writing, mergeable, CI running.
+**PR:** #65 on `Marwanello/SaveLocker`, *Emulator saves Group D: PPSSPP, RPCS3, Vita3K, shadPS4, PARAM.SFO names,
+per-game ID folders*. Head branch `emulator-saves-group-d`, base `main`. `main` (PR #64) is merged in, and the PR merges
+cleanly.
 
-## What was asked
+**Status:** Group D is marked **✅ Shipped 2026-10-12** in `docs/tasks/emulator-saves/implementation-grouping.md`,
+and its phases 5a, 11, 12 and 13 are marked the same in `plan.md`. Two things are still to do: the testenv pass
+(`Build and Run` → *Testing emulator saves*), and the real-game checks of all four emulators in Group H, Phase 18.
 
-1. Rank the backlog by which items are quick to implement **and** highest impact.
-2. Implement those on a new kebab-named branch.
-3. Show, step by step, how to verify each with `testenv`.
-4. Mark them done; `unverified-ui-surfaces` was already verified, so retire it too.
-5. Move completed task folders under `docs/tasks/` into a new `docs/tasks/_done/`.
+## What shipped
 
-## What was done
+Group D syncs PSP, PS3, PS Vita and PS4 saves. In every one of these emulators, a game's saves are folders named by
+its game ID inside a save folder all games share, so each game syncs only its own folders.
 
-Seven fixes, one verification item retired, all in one branch. Nothing here breaks the wire format
-(`openapi.json` / `web/src/api-types.ts` regenerated, additions only).
+- **`ParamSfo`:** reads Sony's `PARAM.SFO` file.
+- **`TitleFolders`:** the shared helper for "a folder per game ID", which Group E reuses. It gives each game its own
+  scope: `<ID>*/**` when the game has several folders (PSP, PS3), `<ID>/**` when it has one (Vita, PS4).
+- **PPSSPP (PSP):**
+  - Saves are `PSP/SAVEDATA`. States are `PPSSPP_STATE`, scoped to `<ID>_*`.
+  - It reads EmuDeck on SteamOS and Windows, standalone installs and the Flatpak.
+- **RPCS3 (PS3):**
+  - Saves are under `dev_hdd0/home/*/savedata`, for every RPCS3 user.
+  - It follows a `dev_hdd0` moved elsewhere in `vfs.yml`.
+- **Vita3K (PS Vita, bonus):**
+  - Saves are under `ux0/user/*/savedata`, for every Vita3K user, found through `pref-path` in `config.yml`.
+  - The name comes from the save's own `param.sfo`, else from the installed game's.
+- **shadPS4 (PS4, bonus):**
+  - It reads both layouts: the old one (`savedata/<user>`, which EmuDeck still links) and the new one
+    (`home/<user>/savedata`).
+  - A save on one layout joins a save on the other.
+- **Names and regions:**
+  - PSP and PS3 games are named by Redump first, then by the save's `PARAM.SFO`. Redump's PSP set was added to the
+    bundled title table.
+  - Vita and PS4 games are named by the SFO title, with ™, ® and © removed.
+  - The region comes from the game ID's prefix. A PS4 game shows no region, because its ID has none.
+- **Add games:** four emulator chips, and PSP, PS Vita and PS4 in the Console row.
+- **Help article:** how Sony games are named.
 
-- **Registration now requires the admin password by default.** `Security:RequireAdminPasswordToRegister` flipped
-  to `true`. A machine key is fleet-scoped (it reads and writes every game), so with an admin password set an open
-  first-time registration meant the password guarded the dashboard but not the saves. With no password set the
-  endpoint is unchanged (first-run stays open); `savelocker register --admin-password …` and enrollment files are
-  the two ways in; setting the flag to `false` remains the deliberate opt-out for a trusted network.
-- **The conflict upload latch no longer outlives its conflict.** At the pause threshold (3 rejected uploads) the
-  agent asks the server whether the game still has an open conflict before holding the save back. A resolve that
-  happened while the agent was down used to leave the latch tripped permanently — a plain pull cannot clear it
-  because this machine still has un-pushed changes (WA-02 refuses). Server unreachable keeps the pause. New
-  `ConflictLatchTests` (3, against a stub server; the stale-latch clear is mutation-checked).
-- **A dashboard Push command answered with a conflict now reports Failed** with the reason, instead of Done with a
-  "pushed — latest save …" line over a save that never left the machine (`CommandPoller` ignored the engine's
-  result).
-- **`post-exit-sync` releases the lease even while Sync all holds the gate.** The route still answers 409 (the
-  running sync pushes the game), but now stops that game's renewer and releases the checkout via a new
-  `SyncEngine.ReleaseLaunchLeaseAsync`, so the fleet is not locked out of a game nobody is playing.
-  `run-local-api-tests` holds a real Sync all open and asserts both the 409 and the release.
-- **Signed-in browsers are listable and revocable one by one.** `GET /api/admin/sessions` (current session marked)
-  and `DELETE /api/admin/sessions/{id}` (404 when not live, audited as `admin.session_revoked`), shown as a table
-  under Configuration → Admin password. "Sign out everywhere" stays.
-- **A deleted game takes its cached art with it.** `ArtService.DeleteGameArt`, called by the delete route — cover,
-  icon and thumbnails under `/data/art/{gameId}/` used to outlive the game forever.
-- **Sign-in lockouts surface in the bell.** `GET /api/admin/lockouts` (the in-memory throttle's own view, so a
-  restart forgives) is merged into the notifications menu as a Warning that clears itself when the window ends and
-  cannot be dismissed (there is no record to dismiss).
-- **Console Sync all names every failing machine and its reason**, not the first plus "(+N more)".
+## Follow-ups on the same PR (2026-10-12)
 
-`unverified-ui-surfaces` (Heroic store sub-chips) retired as verified. All eight task folders moved to
-`docs/tasks/_done/`, and `Backlog.md` no longer lists any of them.
+- **Emulator users** (researched in each emulator's own source):
+  - No emulator ties a save to a user. RPCS3 and shadPS4 write `ACCOUNT_ID` as zeros and never check it.
+  - RPCS3, Vita3K and shadPS4 do keep saves in a folder per user. Only `<ID>…` inside that folder syncs, so different
+    users on two machines still join one game.
+  - **Fix:** Vita3K used to read only user `00`; it now reads every user.
+  - **Help note:** after switching the emulator's user, click **Change** on the game's folder and pick the new user's
+    `savedata` folder.
+- **PSP games played from save states only:**
+  - A PSP game with a state but no in-game save yet is now listed, marked *Save states only so far*.
+  - Its first in-game save joins the same game.
+  - A machine that pushed only states never empties another machine's real save, because that pull is refused.
+  - The same for RetroArch, melonDS, PCSX2, DuckStation, Dolphin and PrimeHack is new **Phase 19 / Group I**.
+- **"(Beta)" in a name is right:** the PC's real PPSSPP save is `UCET00844`, which Redump lists as *God of War - Chains
+  of Olympus (Beta)*, a pre-release build. The retail European disc is `UCES-00842`.
+- **Group H (Phase 18):**
+  - Every Sony row now names its console: PPSSPP (PSP), RPCS3 (PS3), Vita3K (PS Vita), shadPS4 (PS4).
+  - The shadPS4 row now covers the new layout, shadPS4's offer to move old saves into `home/1000`, and joining across
+    layouts.
+  - The Vita3K row now covers a second Vita3K user.
 
-## Verification (final tree, after merging #62 and #63)
+## Tests
 
-- `dotnet test` **397/397** — all green (the `ArcadeSavesTests.Supermodel_…` casing failure that #61 carried is
-  gone once #63 is in)
-- `run-console-security-tests` **364/364** (was 308; +56 are this batch's checks)
-- `run-local-api-tests` **127/127**
-- `run-agent-tests` **47/47** · `run-delta-upload-tests` **33/33** · `run-health-tests` **33/33**
-- Full solution + `web` build/lint clean; `openapi.json` + `web/src/api-types.ts` regenerated (additions only)
+- `dotnet test tests/SaveLocker.Agent.Tests`: **427** passed.
+  - `SonySavesTests`: 25.
+  - `GroupDSyncTests`: 3, run against a real server.
+  - Mutation-checked: the per-game scope, reading every Vita3K user, and states-only detection.
+- `Agent.Linux` builds and `agent-ui` lints clean.
+- The server API is unchanged. The agent's `CandidateDto` gains `statesOnly`, an additive field.
+- testenv `emu-fixture` has Group D saves on Windows and WSL. They include shadPS4 on both layouts, and *Chains of
+  Olympus* on Windows with a state and no save.
 
-Two test-suite fixes rode along:
-- `run-local-api-tests`' candidate-folder check expected the user profile to be *accepted*, which `SavePathGuard`
-  (WA-02) has refused for a while; it now asserts the refusal plus a real folder accepted.
-- `SaveFileTreeTests` (from #62) shares one server and one of its tests locks the console; its registration now
-  carries the admin password the new default requires.
+## Next
 
-## Merges
+1. Merge PR #65.
+2. Run the Group D testenv pass.
+3. Do the real-game checks in Group H when games are at hand.
+4. Group I (states-only games for the other emulators) after Groups A–C are merged.
 
-- `origin/main` had moved after #62, so the branch was rebased onto it. One conflict: an import line in
-  `web/src/api.ts` (both sides' additions kept).
-- `origin/main` moved again to #63; it was merged into the branch (no history rewrite). One conflict:
-  `docs/Backlog.md` — kept this batch's removals plus #63's emulator-progress line.
-- Everything was rebuilt and re-verified after each; the merged tree is the one the counts above describe.
+## Files
 
-## Manual verification, and the bug it found
-
-`testenv` walkthrough (rig: console `:5080`, Windows agent `:5188`, WSL `:5187`; `clean` → `build` → `conflict` →
-`up` for the conflict flows) covering: registration with/without the password; the latch's three pushes, the
-resolve-while-down log line; the dashboard Push → Failed; Sync all's per-machine toast; the sessions table; the
-lockout bell; art removed with its game.
-
-While running it, `up -ConsoleEnv "Security__MaxFailedAttempts=3,Security__LockoutSeconds=120"` made every admin
-route answer **500**. Cause: `Start-Console` passed each `-ConsoleEnv` element as a single `-e`, so the container
-got `Security__MaxFailedAttempts = "3,Security__LockoutSeconds=120"` and `AuthThrottle`'s constructor threw on the
-Int32 conversion. The script's own header advertises `KEY=VALUE[,...]`, so it now splits each entry on commas
-(commit `e948683`) — both spellings work. Not this PR's server code, but it sat directly in the manual-verification
-path.
-
-## Not done / caveats
-
-- **No real-hardware pass yet.** Everything above is dev-machine + stub servers; the PR body carries the manual
-  `testenv` checklist.
-- The registration flip changes how a **new** machine joins a password-protected fleet (`--admin-password`, or an
-  enrollment file) — worth a line in the next release notes.
+`src/Agent.Core/{ParamSfo,TitleFolders,PpssppSaves,Rpcs3Saves,Vita3KSaves,ShadPs4Saves,ConsoleTitles,EmulatorSaves,GameSources,ScanCandidate,AgentApiServer}.cs`,
+`src/Agent.Core/ConsoleTitles/*`, `agent-ui/src/{api-types.ts,components/AddGamesView.tsx}`,
+`tests/SaveLocker.Agent.Tests/{SonySavesTests,GroupDSyncTests,ConsoleSaveFixtures,EmulatorChipTests}.cs`,
+`tests/testenv.ps1`, `web/src/help/emulator-backups.md`, `docs/{CONTEXT,REPO_MAP,Build and Run,progress}.md`,
+`docs/tasks/emulator-saves/{plan,implementation-grouping}.md`, this file.
