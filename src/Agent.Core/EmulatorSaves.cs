@@ -22,5 +22,6 @@ public static class EmulatorSaves
         ("shadPS4 saves", ShadPs4Saves.Scan),
         ("Cemu saves", CemuSaves.Scan),
         ("Azahar saves", AzaharSaves.Scan),
+        ("Xenia saves", XeniaSaves.Scan),
     };
 }

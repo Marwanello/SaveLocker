@@ -22,8 +22,9 @@ public static partial class ConsoleTitles
     /// What Redump calls <paramref name="serial"/>'s disc on <paramref name="system"/> (<c>psx</c>, <c>ps2</c>,
     /// <c>ps3</c>, <c>psp</c>: <c>SLUS-21287</c>, <c>SLUS21287</c> or the disc's <c>SLUS_212.87</c>; <c>gc</c>, <c>wii</c>: the
     /// game ID, of which the four-letter game code counts — <c>GALE01</c>, <c>R3ME</c>; <c>n3ds</c>: the product code a
-    /// ROM's NCCH header carries, <c>CTR-P-AREE</c> or <c>AREE</c>, from No-Intro's 3DS sets), or null for one the table
-    /// has no game of.
+    /// ROM's NCCH header carries, <c>CTR-P-AREE</c> or <c>AREE</c>, from No-Intro's 3DS sets; <c>xbox360</c>: the title ID a
+    /// save is filed under, <c>4D5309C9</c>, from Redump's disc serials and No-Intro's Arcade titles), or null for one the
+    /// table has no game of.
     /// </summary>
     public static ConsoleTitle? For(string system, string? serial) =>
         Key(system, serial) is { } key ? Table.Value.GetValueOrDefault($"{system}\t{key}") : null;
@@ -43,7 +44,7 @@ public static partial class ConsoleTitles
             Region: known?.Region ?? PrefixRegion(system, list.FirstOrDefault()),
             GameIds: list.Length == 0 ? null : list,
             Languages: known is { Languages.Length: > 0 } ? known.Languages : null,
-            NamedBy: known is null ? null : system == "n3ds" ? "No-Intro" : "Redump");
+            NamedBy: known is null ? null : system switch { "n3ds" => "No-Intro", "xbox360" => "Redump and No-Intro", _ => "Redump" });
     }
 
     /// <summary>The console's name as people say it, for the systems this table covers.</summary>
@@ -59,6 +60,7 @@ public static partial class ConsoleTitles
         "wii" => "Wii",
         "wiiu" => "Wii U",
         "n3ds" => "Nintendo 3DS",
+        "xbox360" => "Xbox 360",
         _ => null,
     };
 
@@ -97,6 +99,8 @@ public static partial class ConsoleTitles
     private static string? Key(string system, string? serial)
     {
         if (string.IsNullOrEmpty(serial)) return null;
+        if (system == "xbox360")
+            return serial.Length == 8 && serial.All(char.IsAsciiHexDigit) ? serial.ToUpperInvariant() : null;
         if (system == "n3ds")
             return ProductCode().Match(serial) is { Success: true } p ? p.Groups[1].Value.ToUpperInvariant() : null;
         return system is "gc" or "wii"

@@ -225,4 +225,77 @@ public sealed class TitleIdSavesTests : IDisposable
         Assert.Contains(P("my-roms"), setup.RomDirs);
         Assert.Equal("Super Mario 3D Land", game.Name);
     }
+    // ---- Xenia ----
+
+    // The PC's real profile (2026-10-12): Forza Horizon and Forza Horizon 2 saved under it.
+    private const string Xuid = "E030000033894516";
+
+    [Fact]
+    public void An_xbox_360_game_is_its_saved_game_packages_under_a_profile_named_by_its_title_id()
+    {
+        const string content = "Emulation/saves/xenia/saves";
+        Text($"{content}/{Xuid}/4D5309C9/00000001/ForzaProfile/ForzaProfile", "fh-profile");
+        Text($"{content}/{Xuid}/4D5309C9/Headers/00000001/ForzaProfile.header", "header");
+        Text($"{content}/{Xuid}/4D530AA4/00000001/ForzaProfile/PlayerDatabase", "fh2");
+        Text($"{content}/{Xuid}/584109FF/00000001/save.dat", "arcade");
+        Text($"{content}/{Xuid}/5A000001/00000001/save.dat", "unknown");
+        // Not games' saves: the dashboard's profile data, content no profile owns, and a game with only DLC.
+        Text($"{content}/{Xuid}/FFFE07D1/00010000/{Xuid}/Account", "account");
+        Text($"{content}/0000000000000000/4D5309C9/00000002/ABCDEF/Media/dlc.bin", "dlc");
+        Text($"{content}/{Xuid}/4D5307E6/00000002/ABCDEF/dlc.bin", "dlc");
+
+        var found = XeniaSaves.Scan([new XeniaFolders(P(content), EmuDeck: true)]);
+
+        Assert.Equal(["4D5309C9", "4D530AA4", "584109FF", "5A000001"], found.Select(c => c.EmulatorRom).Order(StringComparer.Ordinal));
+        var fh = found.Single(c => c.EmulatorRom == "4D5309C9");
+        Assert.Equal("Forza Horizon", fh.Name);
+        Assert.Equal("Forza Horizon 2", found.Single(c => c.EmulatorRom == "4D530AA4").Name);
+        // An Arcade title, named from No-Intro; one no table knows, by its title ID.
+        Assert.Equal("Plants vs. Zombies", found.Single(c => c.EmulatorRom == "584109FF").Name);
+        Assert.Equal("Xbox 360 5A000001", found.Single(c => c.EmulatorRom == "5A000001").Name);
+        // The profile's folder; only the saved games and their headers, never the DLC or updates beside them.
+        Assert.Equal(P($"{content}/{Xuid}"), fh.SuggestedSaveDir);
+        Assert.Equal(["4D5309C9/00000001/**", "4D5309C9/Headers/00000001/**"], fh.IncludeGlobs);
+        Assert.Equal("Xbox 360", fh.Release!.Console);
+        Assert.Null(fh.Release.Region);
+        Assert.Equal(XeniaSaves.System, fh.EmulatorSystem);
+    }
+
+    [Fact]
+    public void An_old_layout_xenia_save_is_found_and_a_profiles_save_of_the_same_game_wins()
+    {
+        const string content = "xenia/content";
+        // Older Xenia: content/<title ID>/00000001, no profile. Halo 3 only there; Forza Horizon in both.
+        Text($"{content}/4D5307E6/00000001/Halo3Save/save", "halo");
+        Text($"{content}/4D5309C9/00000001/marketplace/data", "old-forza");
+        Text($"{content}/{Xuid}/4D5309C9/00000001/ForzaProfile/ForzaProfile", "fh");
+        File.SetLastWriteTimeUtc(P($"{content}/{Xuid}/4D5309C9/00000001/ForzaProfile/ForzaProfile"), DateTime.UtcNow.AddDays(-30));
+
+        var found = XeniaSaves.Scan([new XeniaFolders(P(content))]);
+
+        var halo = found.Single(c => c.EmulatorRom == "4D5307E6");
+        Assert.Equal("Halo 3", halo.Name);
+        Assert.Equal(P(content), halo.SuggestedSaveDir);
+        Assert.Equal(P($"{content}/{Xuid}"), found.Single(c => c.EmulatorRom == "4D5309C9").SuggestedSaveDir);
+        Assert.Equal(2, found.Count);
+    }
+
+    [Fact]
+    public void A_standalone_xenias_content_root_comes_from_its_config()
+    {
+        Text($"moved/content/{Xuid}/4D5309C9/00000001/ForzaProfile/ForzaProfile", "fh");
+        Text("Xenia/xenia-canary.config.toml", $"""
+            [Storage]
+            cache_root = ""
+            content_root = '{P("moved/content")}'                 # Root path for guest content storage (saves, etc.)
+            storage_root = ""
+            """);
+        Text($"portable/content/{Xuid}/4D530AA4/00000001/ForzaProfile/PlayerDatabase", "fh2");
+        Text("portable/xenia-canary.config.toml", "content_root = \"\"   # empty: the content folder under the storage root");
+
+        var folders = XeniaSaves.Folders([], [P("Xenia"), P("portable")]);
+
+        Assert.Equal([P("moved/content"), P("portable/content")], folders.Select(f => f.Content));
+        Assert.Equal(2, XeniaSaves.Scan(folders).Count);
+    }
 }

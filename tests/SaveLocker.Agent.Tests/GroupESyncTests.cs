@@ -109,4 +109,34 @@ public sealed class GroupESyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.Equal("win-newer", Read("deck", $"{deckSd}/{Ids}/{low}/data/00000001/save.bin"));
         Assert.False(File.Exists(P("deck", $"{deckSd}/{Ids}/{low}/content/00000000.app")));
     }
+    [Fact]
+    public async Task An_xbox_360_save_moves_between_two_profiles_and_layouts_and_leaves_the_dlc()
+    {
+        // A title ID no table knows; the Deck saved under its profile, Windows under another profile.
+        var title = "5A" + _id.ToUpperInvariant();
+        const string deckContent = "SDCard/Emulation/roms/xbox360/content";
+        const string winContent = "AppData/Roaming/EmuDeck/Emulators/xenia/content";
+        Write("deck", $"{deckContent}/E030000033894516/{title}/00000001/Profile/save.dat", "deck-save");
+        Write("deck", $"{deckContent}/E030000033894516/{title}/Headers/00000001/Profile.header", "deck-header");
+        Write("win", $"{winContent}/E0300000AAAAAAAA/{title}/00000001/Profile/save.dat", "win-old");
+        Write("win", $"{winContent}/E0300000AAAAAAAA/{title}/00000002/DLCPACK/dlc.bin", "win-dlc");
+        Write("win", $"{winContent}/E0300000AAAAAAAA/4D5309C9/00000001/ForzaProfile/ForzaProfile", "win-forza");
+
+        var deck = await Machine("deck");
+        var win = await Machine("win");
+        var deckGame = await Enroll(deck, XeniaSaves.Scan([new XeniaFolders(P("deck", deckContent), EmuDeck: true)]), title);
+        var winGame = await Enroll(win, XeniaSaves.Scan([new XeniaFolders(P("win", winContent))]), title);
+        Assert.Equal(deckGame.GameId, winGame.GameId);
+
+        await using var engineDeck = new SyncEngine(deck, ApiClient.For(deck));
+        await using var engineWin = new SyncEngine(win, ApiClient.For(win));
+        Assert.NotNull(await engineDeck.PushAsync(deckGame, force: true));
+        await engineWin.PullAsync(winGame, force: true);
+
+        // Into Windows' own profile, where its Xenia looks.
+        Assert.Equal("deck-save", Read("win", $"{winContent}/E0300000AAAAAAAA/{title}/00000001/Profile/save.dat"));
+        Assert.Equal("deck-header", Read("win", $"{winContent}/E0300000AAAAAAAA/{title}/Headers/00000001/Profile.header"));
+        Assert.Equal("win-dlc", Read("win", $"{winContent}/E0300000AAAAAAAA/{title}/00000002/DLCPACK/dlc.bin"));
+        Assert.Equal("win-forza", Read("win", $"{winContent}/E0300000AAAAAAAA/4D5309C9/00000001/ForzaProfile/ForzaProfile"));
+    }
 }
