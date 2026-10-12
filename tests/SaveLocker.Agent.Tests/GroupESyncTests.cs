@@ -139,4 +139,30 @@ public sealed class GroupESyncTests : IClassFixture<ServerProcess>, IDisposable
         Assert.Equal("win-dlc", Read("win", $"{winContent}/E0300000AAAAAAAA/{title}/00000002/DLCPACK/dlc.bin"));
         Assert.Equal("win-forza", Read("win", $"{winContent}/E0300000AAAAAAAA/4D5309C9/00000001/ForzaProfile/ForzaProfile"));
     }
+    [Fact]
+    public async Task An_xbox_360_device_save_moves_with_its_game_and_the_dlc_beside_it_stays()
+    {
+        var title = "5B" + _id.ToUpperInvariant();
+        const string deckContent = "SDCard/Emulation/roms/xbox360/content";
+        const string winContent = "AppData/Roaming/EmuDeck/Emulators/xenia/content";
+        Write("deck", $"{deckContent}/E030000033894516/{title}/00000001/Profile/save.dat", "deck-save");
+        Write("deck", $"{deckContent}/0000000000000000/{title}/00000001/globaloptions/options", "deck-calibration");
+        Write("win", $"{winContent}/E0300000AAAAAAAA/{title}/00000001/Profile/save.dat", "win-old");
+        Write("win", $"{winContent}/0000000000000000/{title}/00000002/SONGPACK/song.bin", "win-dlc");
+
+        var deck = await Machine("deck");
+        var win = await Machine("win");
+        var deckGame = await Enroll(deck, XeniaSaves.Scan([new XeniaFolders(P("deck", deckContent), EmuDeck: true)]), title);
+        var winGame = await Enroll(win, XeniaSaves.Scan([new XeniaFolders(P("win", winContent))]), title);
+        Assert.Equal(deckGame.GameId, winGame.GameId);
+
+        await using var engineDeck = new SyncEngine(deck, ApiClient.For(deck));
+        await using var engineWin = new SyncEngine(win, ApiClient.For(win));
+        Assert.NotNull(await engineDeck.PushAsync(deckGame, force: true));
+        await engineWin.PullAsync(winGame, force: true);
+
+        Assert.Equal("deck-save", Read("win", $"{winContent}/E0300000AAAAAAAA/{title}/00000001/Profile/save.dat"));
+        Assert.Equal("deck-calibration", Read("win", $"{winContent}/0000000000000000/{title}/00000001/globaloptions/options"));
+        Assert.Equal("win-dlc", Read("win", $"{winContent}/0000000000000000/{title}/00000002/SONGPACK/song.bin"));
+    }
 }

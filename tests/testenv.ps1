@@ -603,6 +603,10 @@ function New-EmuDeckFixture {
     Write-FixtureFile (Join-Path $x360 '4D5309C9\Headers\00000001\ForzaProfile.header') 'header'
     Write-FixtureFile (Join-Path $x360 '4D5309C9\00000002\13E2064584A4BA7759BA105051C2199ABC5FA5554D\Media\dlc.bin') 'forza dlc - never synced'
     Write-FixtureFile (Join-Path $x360 '4D530AA4\00000001\ForzaProfile\PlayerDatabase') 'forza horizon 2 - must survive every Forza Horizon pull'
+    # A device save no profile owns (Rock Band 3's calibration, xenia-canary#743), and its DLC that never syncs.
+    $x360Device = Join-Path $target 'saves\xenia\saves\0000000000000000'
+    Write-FixtureFile (Join-Path $x360Device '45410914\00000001\globaloptions\options') "rock band 3 calibration $(Get-Date -Format o)"
+    Write-FixtureFile (Join-Path $x360Device '45410914\00000002\SONGPACK\song.bin') 'rock band dlc - never synced'
     Set-Content -NoNewline -Encoding ascii $marker 'written by tests/testenv.ps1 emu-fixture'
     Say "EmuDeck fixture at $target"
     # Supermodel (Phase 9) is kept outside Emulation: EmuDeck for Windows' own folder, under a fixture home.
@@ -709,6 +713,8 @@ function New-EmuDeckFixture {
         $wX360 = Join-Path $wsl 'saves\xenia\saves'
         Write-FixtureFile (Join-Path $wX360 '4D5309C9\00000001\ForzaProfile\ForzaProfile') 'old forza horizon profile on the WSL machine'
         Write-FixtureFile (Join-Path $wX360 '584109FF\00000001\save.dat') 'wsl plants vs. zombies - must survive every Forza pull'
+        # Canary's 2023 named-profile layout (content/User/<title ID>): Halo 3, found and listed like any other.
+        Write-FixtureFile (Join-Path $wX360 'User\4D5307E6\00000001\Halo3Save\save') 'halo 3 save in the named-profile layout'
         Set-Content -NoNewline -Encoding ascii $wslMarker 'written by tests/testenv.ps1 emu-fixture'
         Say "WSL EmuDeck fixture at $wsl"
     }

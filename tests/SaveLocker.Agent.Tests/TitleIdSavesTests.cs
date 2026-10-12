@@ -298,4 +298,47 @@ public sealed class TitleIdSavesTests : IDisposable
         Assert.Equal([P("moved/content"), P("portable/content")], folders.Select(f => f.Content));
         Assert.Equal(2, XeniaSaves.Scan(folders).Count);
     }
+    [Fact]
+    public void A_xenia_games_device_saves_are_its_second_folder_and_a_device_only_game_is_listed()
+    {
+        const string content = "xenia/content";
+        Text($"{content}/{Xuid}/4D5309C9/00000001/ForzaProfile/ForzaProfile", "fh");
+        // Rock Band 3's calibration lives in the device's folder, no profile's; its DLC beside it never syncs.
+        Text($"{content}/0000000000000000/45410914/00000001/globaloptions/options", "calibration");
+        Text($"{content}/0000000000000000/45410914/00000002/SONGPACK/song.bin", "dlc");
+        // A DLC alone is no save.
+        Text($"{content}/0000000000000000/4D530AA4/00000002/PACK/dlc.bin", "dlc");
+
+        var found = XeniaSaves.Scan([new XeniaFolders(P(content))]);
+
+        Assert.Equal(["45410914", "4D5309C9"], found.Select(c => c.EmulatorRom).Order(StringComparer.Ordinal));
+        var rb3 = found.Single(c => c.EmulatorRom == "45410914");
+        // Its profile folder is this machine's profile, declared so a later profile save joins it.
+        Assert.Equal(P($"{content}/{Xuid}"), rb3.SuggestedSaveDir);
+        var device = Assert.Single(rb3.ExtraSaveDirs!);
+        Assert.Equal(XeniaSaves.DeviceKey, device.Key);
+        Assert.Equal(P($"{content}/0000000000000000"), device.Dir);
+        Assert.Equal(["45410914/00000001/**", "45410914/Headers/00000001/**"], device.IncludeGlobs);
+        // Every game declares it, saves there or not.
+        Assert.Equal(XeniaSaves.DeviceKey, Assert.Single(found.Single(c => c.EmulatorRom == "4D5309C9").ExtraSaveDirs!).Key);
+    }
+
+    [Fact]
+    public void A_xenia_profile_named_by_its_folder_is_read_and_an_xuid_profile_wins()
+    {
+        const string content = "xenia/content";
+        // Canary's 2023 layout: content/<profile name>/<title ID>.
+        Text($"{content}/User/415608CB/00000001/save/data", "user-save");
+        Text($"{content}/User/415608CB/profile/User/settings", "not a save");
+        Text($"{content}/User/4D5309C9/00000001/ForzaProfile/ForzaProfile", "old-fh");
+        Text($"{content}/{Xuid}/4D5309C9/00000001/ForzaProfile/ForzaProfile", "fh");
+
+        var found = XeniaSaves.Scan([new XeniaFolders(P(content))]);
+
+        Assert.Equal(P($"{content}/User"), found.Single(c => c.EmulatorRom == "415608CB").SuggestedSaveDir);
+        Assert.Equal(P($"{content}/{Xuid}"), found.Single(c => c.EmulatorRom == "4D5309C9").SuggestedSaveDir);
+        Assert.True(XeniaSaves.IsNamedProfile("User"));
+        Assert.False(XeniaSaves.IsNamedProfile(Xuid));
+        Assert.False(XeniaSaves.IsNamedProfile("4D5309C9"));
+    }
 }

@@ -11,8 +11,14 @@ namespace SaveLocker.Agent;
 /// Xenia Canary keeps each profile's saves in <c>content/&lt;profile XUID&gt;/&lt;title ID&gt;/</c>, so the game's folder is the
 /// profile's; older builds wrote <c>content/&lt;title ID&gt;/</c>, and the folder is <c>content</c> itself. The scope is the same
 /// in both, so a game saved on either joins one server game (D1), whatever the XUID. A profile's save wins over an old-layout
-/// one of the same game. <c>content/0000000000000000/</c> holds content no profile owns (DLC, a game's device data) and
-/// <c>FFFE07D1</c> is the dashboard's profile data: neither is a game's save.
+/// one of the same game; a profile named by its folder (<c>content/User/&lt;title ID&gt;/</c>, Canary builds of 2023) is read too.
+/// <c>FFFE07D1</c> is the dashboard's profile data, no game's save.
+/// </para>
+/// <para>
+/// <c>content/0000000000000000/</c> holds content no profile owns: DLC, and saves some games make for the device rather than
+/// a player (Rock Band's calibration, Bullet Soul's options and high scores — xenia-canary#743). Every Xenia game declares it as
+/// a second folder, key <see cref="DeviceKey"/>, scoped like its profile folder, so those saves sync and DLC never does; a game
+/// with only such saves is listed too.
 /// </para>
 /// <para>
 /// Name: a save's header names the save ("MaroLFC Car Setup Files"), not the game, so the name comes from the title ID
@@ -39,37 +45,74 @@ public static class XeniaSaves
 
     public static IReadOnlyList<ScanCandidate> Scan(IEnumerable<XeniaFolders> folders)
     {
-        var profileGames = new List<(ScanCandidate, DateTime)>();
-        var oldGames = new List<(ScanCandidate, DateTime)>();
+        var found = new List<(ScanCandidate Candidate, DateTime Written, int Rank)>();
         foreach (var setup in folders)
         {
-            foreach (var profile in RomSaves.SafeSubdirs(setup.Content).Order(StringComparer.Ordinal))
-                if (Xuid(Path.GetFileName(profile)) is not null)
-                    profileGames.AddRange(Games(setup, profile));
-            oldGames.AddRange(Games(setup, setup.Content));
+            // Where a profile's saves are, best first: an XUID folder (Canary), a profile named by its folder
+            // (content/User, Canary builds of 2023), then content itself (older builds, no profile).
+            var subdirs = RomSaves.SafeSubdirs(setup.Content).Order(StringComparer.Ordinal).ToList();
+            var homes = subdirs.Where(d => Xuid(Path.GetFileName(d)) is not null).Select(d => (Dir: d, Rank: 0))
+                .Concat(subdirs.Where(d => IsNamedProfile(Path.GetFileName(d))).Select(d => (Dir: d, Rank: 1)))
+                .Append((Dir: setup.Content, Rank: 2))
+                .ToList();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (dir, rank) in homes)
+                foreach (var (id, written) in SavedTitles(dir))
+                {
+                    seen.Add(id);
+                    found.Add((Candidate(setup, dir, id), written, rank));
+                }
+            // A game that saved only into the device's own folder (Rock Band's calibration, Bullet Soul's options) is a
+            // game too. Its saves are its device folder; its profile folder is the newest profile here, declared so a
+            // later profile save joins it.
+            var home = homes.Where(h => h.Rank < 2).OrderByDescending(h => LastWrite(h.Dir)).Select(h => h.Dir).FirstOrDefault() ?? setup.Content;
+            foreach (var (id, written) in SavedTitles(Path.Combine(setup.Content, NoProfile)))
+                if (!seen.Contains(id))
+                    found.Add((Candidate(setup, home, id), written, home == setup.Content ? 2 : 0));
         }
-        // A game this machine saved under a profile is that game; an old-layout copy of it is an earlier one.
-        var profiled = profileGames.Select(g => g.Item1.EmulatorRom!).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return TitleFolders.Newest(profileGames.Concat(oldGames.Where(g => !profiled.Contains(g.Item1.EmulatorRom!))));
+        // A game saved under a profile is that game; an old-layout copy of it is an earlier one.
+        return TitleFolders.Newest(found
+            .GroupBy(f => f.Candidate.EmulatorRom!, StringComparer.OrdinalIgnoreCase)
+            .SelectMany(g => g.Where(f => f.Rank == g.Min(x => x.Rank)))
+            .Select(f => (f.Candidate, f.Written)));
     }
 
-    private static IEnumerable<(ScanCandidate, DateTime)> Games(XeniaFolders setup, string dir)
+    private static ScanCandidate Candidate(XeniaFolders setup, string dir, string id) => new(
+        Name: ConsoleTitles.For(System, id)?.Title ?? $"Xbox 360 {id}",
+        SuggestedSaveDir: EmuDeckRoots.RealPath(dir),
+        Source: ScanSource.Emulator,
+        HasSteamCloud: false,
+        EmulatorName: EmulatorName,
+        EmulatorSystem: System,
+        EmulatorRom: id,
+        ViaEmuDeck: setup.EmuDeck,
+        IncludeGlobs: ScopeFor(id),
+        // Every Xenia game declares the device's folder, even before it exists, so every machine's game has the same
+        // folders and a device save made on one reaches the others.
+        ExtraSaveDirs: [new DeclaredSavePath(DeviceKey, Path.Combine(setup.Content, NoProfile), ScopeFor(id))],
+        Release: ConsoleTitles.Release(System, [id]));
+
+    // The title IDs with a saved game in a folder of title folders, and when each was last written.
+    private static IEnumerable<(string Id, DateTime Written)> SavedTitles(string dir) =>
+        TitleFolders.Find(dir, TitleId)
+            .Select(g => (g.Id, Written: LastSave(g.Dirs[0])))
+            .Where(g => g.Written is not null)
+            .Select(g => (g.Id, g.Written!.Value));
+
+    /// <summary>The key of a Xenia game's second folder: the saves no profile owns, <c>content/0000000000000000</c>.</summary>
+    public const string DeviceKey = "device";
+    /// <summary>The XUID folder of content no profile owns.</summary>
+    public const string NoProfile = "0000000000000000";
+
+    /// <summary>A profile folder named by the profile (<c>content/User</c>, Canary's multiple-profile layout of 2023,
+    /// PR #118) — any folder that is neither an XUID nor a title ID.</summary>
+    public static bool IsNamedProfile(string name) =>
+        name.Length > 0 && !(name.All(char.IsAsciiHexDigit) && name.Length is 8 or 16);
+
+    private static DateTime LastWrite(string dir)
     {
-        foreach (var game in TitleFolders.Find(dir, TitleId))
-        {
-            if (LastSave(game.Dirs[0]) is not { } written) continue;
-            yield return (new ScanCandidate(
-                Name: ConsoleTitles.For(System, game.Id)?.Title ?? $"Xbox 360 {game.Id}",
-                SuggestedSaveDir: EmuDeckRoots.RealPath(dir),
-                Source: ScanSource.Emulator,
-                HasSteamCloud: false,
-                EmulatorName: EmulatorName,
-                EmulatorSystem: System,
-                EmulatorRom: game.Id,
-                ViaEmuDeck: setup.EmuDeck,
-                IncludeGlobs: ScopeFor(game.Id),
-                Release: ConsoleTitles.Release(System, [game.Id])), written);
-        }
+        try { return new DirectoryInfo(dir).LastWriteTimeUtc; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return DateTime.MinValue; }
     }
 
     /// <summary>One game's saves and their headers, nothing else of its content.</summary>
