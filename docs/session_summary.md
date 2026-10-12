@@ -1,54 +1,94 @@
-# Session summary — 2026-10-07 — Emulator saves Group H: real-game checks (no code)
+# Session summary — 2026-10-09 — Quick wins: seven backlog items, one retired (PR #64)
 
 Standalone: the facts below do not need the rest of the vault.
 
-**PR:** #61 on `Marwanello/SaveLocker`, *Emulator saves Group B: melonDS, Supermodel, Model 2, ScummVM, identity by
-folders, linking by hand*. Head branch `emulator-saves-group-b`, base `main`. This change is docs only, commit `f4af2d8`.
+**PR:** #64 on `Marwanello/SaveLocker`, *Quick wins: registration default, conflict latch, exit lease, sessions,
+art cleanup, lockout notice, Sync all detail*. Head branch `fix/backlog-quick-wins` (worktree
+`.claude/worktrees/fix-backlog-quick-wins`), base `main`. Open at the time of writing, mergeable, CI running.
 
 ## What was asked
 
-Add a group at the end of the emulator-saves task with **no implementation, only tests with real games**, for
-every emulator that shipped without one. The maintainer has no games for **melonDS, ScummVM, Supermodel or Model 2**
-yet, and will keep adding each phase's emulator they couldn't test, so the group stays last.
+1. Rank the backlog by which items are quick to implement **and** highest impact.
+2. Implement those on a new kebab-named branch.
+3. Show, step by step, how to verify each with `testenv`.
+4. Mark them done; `unverified-ui-surfaces` was already verified, so retire it too.
+5. Move completed task folders under `docs/tasks/` into a new `docs/tasks/_done/`.
 
 ## What was done
 
-- **`docs/tasks/emulator-saves/implementation-grouping.md`:**
-  - **Status table:** a new row, *H — Real-game checks (no code)*: ⏳ waiting for games.
-  - **Write-up:** Group H is always the last group, so new emulators can keep joining it.
-  - **New rule** under "Every group's checks": an emulator the maintainer has no real game for is added to Group H
-    when its group ships, instead of holding that group back.
-- **`docs/tasks/emulator-saves/plan.md`:**
-  - **Status table:** a new row for **Phase 18**.
-  - **New Phase 18 section** at the end of the groups, covering:
-    - **Back up first:** every save folder listed, because a test agent that adds a game pushes and pulls real files.
-    - **Rig:**
-      - Deck: `.\tests\testenv.ps1 build -Only deck`, then `up -Only deck`. The test daemon scans the Deck's real
-        EmuDeck install.
-      - Windows: point the test tray at a **copy** of `Emulation`, plus `%APPDATA%\EmuDeck\Emulators\{Supermodel,m2emulator}`
-        and `scummvm.ini`. Use `SAVELOCKER_EMULATOR_HOME` and `up -Only windows -EmuDeckPath <copy>`. Edit `savepath` in
-        the copied `scummvm.ini` so it points into the copy.
-    - **Five steps for every emulator:**
-      1. Save on the Deck, add the game there and sync.
-      2. Add it on Windows; the row should read "Joins “…”". Sync, and check the emulator loads the save.
-      3. Play further on Windows, sync, and check the Deck loads the newer save.
-      4. Check the neighbouring saves are untouched on both machines.
-      5. Record the results.
-    - **Checklist table:** one row per emulator, each with how to make a save and a state, where the files are on
-      the Deck and on Windows, what to watch for, and separate ⏳ boxes for the Deck and Windows.
-- **`docs/CONTEXT.md`:** mentions Group H and that later untested emulators are added there.
+Seven fixes, one verification item retired, all in one branch. Nothing here breaks the wire format
+(`openapi.json` / `web/src/api-types.ts` regenerated, additions only).
 
-## The four rows and what each must confirm
+- **Registration now requires the admin password by default.** `Security:RequireAdminPasswordToRegister` flipped
+  to `true`. A machine key is fleet-scoped (it reads and writes every game), so with an admin password set an open
+  first-time registration meant the password guarded the dashboard but not the saves. With no password set the
+  endpoint is unchanged (first-run stays open); `savelocker register --admin-password …` and enrollment files are
+  the two ways in; setting the flag to `false` remains the deliberate opt-out for a trusted network.
+- **The conflict upload latch no longer outlives its conflict.** At the pause threshold (3 rejected uploads) the
+  agent asks the server whether the game still has an open conflict before holding the save back. A resolve that
+  happened while the agent was down used to leave the latch tripped permanently — a plain pull cannot clear it
+  because this machine still has un-pushed changes (WA-02 refuses). Server unreachable keeps the pause. New
+  `ConflictLatchTests` (3, against a stub server; the stale-latch clear is mutation-checked).
+- **A dashboard Push command answered with a conflict now reports Failed** with the reason, instead of Done with a
+  "pushed — latest save …" line over a save that never left the machine (`CommandPoller` ignored the engine's
+  result).
+- **`post-exit-sync` releases the lease even while Sync all holds the gate.** The route still answers 409 (the
+  running sync pushes the game), but now stops that game's renewer and releases the checkout via a new
+  `SyncEngine.ReleaseLaunchLeaseAsync`, so the fleet is not locked out of a game nobody is playing.
+  `run-local-api-tests` holds a real Sync all open and asserts both the 409 and the release.
+- **Signed-in browsers are listable and revocable one by one.** `GET /api/admin/sessions` (current session marked)
+  and `DELETE /api/admin/sessions/{id}` (404 when not live, audited as `admin.session_revoked`), shown as a table
+  under Configuration → Admin password. "Sign out everywhere" stays.
+- **A deleted game takes its cached art with it.** `ArtService.DeleteGameArt`, called by the delete route — cover,
+  icon and thumbnails under `/data/art/{gameId}/` used to outlive the game forever.
+- **Sign-in lockouts surface in the bell.** `GET /api/admin/lockouts` (the in-memory throttle's own view, so a
+  restart forgives) is merged into the notifications menu as a Warning that clears itself when the window ends and
+  cannot be dismissed (there is no record to dismiss).
+- **Console Sync all names every failing machine and its reason**, not the first plus "(+N more)".
 
-| Emulator | What the code had to guess, to confirm with a real game |
-|---|---|
-| melonDS | Which file the Flatpak actually writes (`melonDS.ini` vs `.toml` paths); a save written beside the ROM |
-| ScummVM | The real save file names for each engine (only four fixed-name engines are confirmed); two machines with different target names |
-| Supermodel | That a set never played stays hidden (EmuDeck preinstalls 29 NVRAM files); the title from `Games.xml` |
-| Model 2 | Which key saves a state (slots are the number keys 0–9); whether `NVDATA/<set>.DAT` changes on every exit; `STATES` created on the first save |
+`unverified-ui-surfaces` (Heroic store sub-chips) retired as verified. All eight task folders moved to
+`docs/tasks/_done/`, and `Backlog.md` no longer lists any of them.
 
-## How it's used
+## Verification (final tree, after merging #62 and #63)
 
-When the maintainer gets a game, they test it on both machines and tick its row. A row is ticked only when both
-pass. When a later phase ships an emulator they couldn't test, a row is added to the Phase 18 table. Any problem
-found becomes a fix in that emulator's own group, in a follow-up PR.
+- `dotnet test` **397/397** — all green (the `ArcadeSavesTests.Supermodel_…` casing failure that #61 carried is
+  gone once #63 is in)
+- `run-console-security-tests` **364/364** (was 308; +56 are this batch's checks)
+- `run-local-api-tests` **127/127**
+- `run-agent-tests` **47/47** · `run-delta-upload-tests` **33/33** · `run-health-tests` **33/33**
+- Full solution + `web` build/lint clean; `openapi.json` + `web/src/api-types.ts` regenerated (additions only)
+
+Two test-suite fixes rode along:
+- `run-local-api-tests`' candidate-folder check expected the user profile to be *accepted*, which `SavePathGuard`
+  (WA-02) has refused for a while; it now asserts the refusal plus a real folder accepted.
+- `SaveFileTreeTests` (from #62) shares one server and one of its tests locks the console; its registration now
+  carries the admin password the new default requires.
+
+## Merges
+
+- `origin/main` had moved after #62, so the branch was rebased onto it. One conflict: an import line in
+  `web/src/api.ts` (both sides' additions kept).
+- `origin/main` moved again to #63; it was merged into the branch (no history rewrite). One conflict:
+  `docs/Backlog.md` — kept this batch's removals plus #63's emulator-progress line.
+- Everything was rebuilt and re-verified after each; the merged tree is the one the counts above describe.
+
+## Manual verification, and the bug it found
+
+`testenv` walkthrough (rig: console `:5080`, Windows agent `:5188`, WSL `:5187`; `clean` → `build` → `conflict` →
+`up` for the conflict flows) covering: registration with/without the password; the latch's three pushes, the
+resolve-while-down log line; the dashboard Push → Failed; Sync all's per-machine toast; the sessions table; the
+lockout bell; art removed with its game.
+
+While running it, `up -ConsoleEnv "Security__MaxFailedAttempts=3,Security__LockoutSeconds=120"` made every admin
+route answer **500**. Cause: `Start-Console` passed each `-ConsoleEnv` element as a single `-e`, so the container
+got `Security__MaxFailedAttempts = "3,Security__LockoutSeconds=120"` and `AuthThrottle`'s constructor threw on the
+Int32 conversion. The script's own header advertises `KEY=VALUE[,...]`, so it now splits each entry on commas
+(commit `e948683`) — both spellings work. Not this PR's server code, but it sat directly in the manual-verification
+path.
+
+## Not done / caveats
+
+- **No real-hardware pass yet.** Everything above is dev-machine + stub servers; the PR body carries the manual
+  `testenv` checklist.
+- The registration flip changes how a **new** machine joins a password-protected fleet (`--admin-password`, or an
+  enrollment file) — worth a line in the next release notes.
