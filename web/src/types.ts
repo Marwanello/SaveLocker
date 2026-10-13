@@ -52,6 +52,8 @@ export type BackupRestoreResult = Schemas['BackupRestoreResult'];
 export type SetBackupSettingsRequest = Schemas['SetBackupSettingsRequest'];
 export type BackupDownloadTicket = Schemas['BackupDownloadTicket'];
 export type ArtOption = NonNullable<Schemas['ArtOptionDto']>;
+export type ArtSource = Schemas['ArtSourceDto'];
+export type SgdbGame = NonNullable<Schemas['SgdbGameDto']>;
 export type AdminSession = NonNullable<Schemas['AdminSessionDto']>;
 export type Lockout = NonNullable<Schemas['LockoutDto']>;
 

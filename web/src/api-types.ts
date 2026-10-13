@@ -2565,6 +2565,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/art/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ArtSourceDto"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetArtSourceRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ArtSourceDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/art/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    q?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SgdbGameDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games/{id}/art/{kind}": {
         parameters: {
             query?: never;
@@ -4105,6 +4206,12 @@ export interface components {
             hasMore: boolean;
             options: components["schemas"]["ArtOptionDto"][];
         };
+        ArtSourceDto: {
+            /** Format: int32 */
+            sgdbId: null | number;
+            name: null | string;
+            automatic: boolean;
+        };
         AuditEntryDto: {
             /** Format: uuid */
             id: string;
@@ -4605,6 +4712,10 @@ export interface components {
             /** @default true */
             pushToAgents: boolean;
         };
+        SetArtSourceRequest: {
+            /** Format: int32 */
+            sgdbId: null | number;
+        };
         SetBackupSettingsRequest: {
             enabled: boolean;
             /** Format: int32 */
@@ -4629,6 +4740,12 @@ export interface components {
         };
         SetSteamGridDbKeyRequest: {
             apiKey: null | string;
+        };
+        SgdbGameDto: {
+            /** Format: int32 */
+            id: number;
+            name: string;
+            year: null | string;
         };
         SkippedCommandDto: {
             /** Format: uuid */

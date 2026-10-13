@@ -46,7 +46,11 @@ SaveLocker/
 │   │   │   ├── GlobConfig.cs            # Save-file exclude globs: per-game text + `Sync:DefaultExcludeGlobs`
 │   │   │   ├── ArchiveStore.cs          # {root}/{gameId}/{versionId}.zip on disk
 │   │   │   ├── ArtService.cs            # SteamGridDB fetch + cache to /data/art/; default pick (an OPAQUE
-│   │   │   │                           #   icon preferred), the picker's paged options, "set this one"
+│   │   │   │                           #   icon preferred), the picker's paged options, "set this one", and
+│   │   │   │                           #   WHICH SteamGridDB game the art comes from (`Game.SteamGridDbId`
+│   │   │   │                           #   pinned by hand, else the first name match — the options listing,
+│   │   │   │                           #   Refresh art and the backfill all read it; `art/search` feeds
+│   │   │   │                           #   the picker's search box)
 │   │   │   ├── ArtBackfillService.cs    # Background fill of games with no art, run when a key is saved
 │   │   │   │                           #   AND once after startup (a config-supplied key never "saves").
 │   │   │   │                           #   Missing art only — never replaces a hand-picked cover
@@ -87,7 +91,8 @@ SaveLocker/
 │   │   ├── ServerOrigin.cs              # What counts as "the same server" — what credentials bind to
 │   │   ├── LocalAuth.cs                 # Token + Host/Origin guard for the agent's OWN API. That API
 │   │   │                               #   manages the machine, so loopback alone is not a defence
-│   │   ├── StateDirSecurity.cs          # Locks the state dir's ACL to its creator (WA-03). See Gotchas
+│   │   ├── StateDirSecurity.cs          # Makes the state dir private: a per-account ACL on Windows (WA-03),
+│   │   │                               #   0700/0600 on Unix, tightening files older builds left permissive
 │   │   ├── AtomicFile.cs                # Whole-file writes no reader can catch half-finished
 │   │   ├── AgentStateLock.cs            # Cross-PROCESS state lock — the daemon and the launch wrapper
 │   │   │                               #   are separate processes sharing every state file
@@ -121,7 +126,7 @@ SaveLocker/
 │   │   │                               #   because the Linux launch wrapper is a separate,
 │   │   │                               #   short-lived process from the daemon — held in memory,
 │   │   │                               #   its warnings reached no UI at all. 24 h expiry.
-│   │   ├── AgentLogger.cs               # Rolling agent.log
+│   │   ├── AgentLogger.cs               # Rolling agent.log (0600 from creation on Unix)
 │   │   ├── AgentCli.cs                  # Shared one-shot commands (register/push/pull/status/…)
 │   │   ├── CliArgs.cs                   # Minimal command-line parser
 │   │   ├── Enroller.cs                  # Candidate → server game + tracked game; publishes its progress
@@ -294,7 +299,9 @@ SaveLocker/
 │   │       │                           #   one section per extra folder, include patterns, Latest's files),
 │   │       │                           #   RulesCard, ExcludePatternsCard, RemoteCommandsCard, MachineSelect
 │   │       ├── ArtPicker.tsx            # Inline cover/icon chooser under the game card (the pen over the
-│   │       │                           #   cover opens it): SteamGridDB options, five per page
+│   │       │                           #   cover opens it): SteamGridDB options, five per page, and the
+│   │       │                           #   source row naming/changing/searching which SteamGridDB game
+│   │       │                           #   they come from
 │   │       ├── ConfigView.tsx           # SteamGridDB, Console build card, Machines/API keys,
 │   │       │                           #   Agent Updates (TWO rows since v0.5.5: win-x64 +
 │   │       │                           #   linux-x64). Console card sits ABOVE Machines on

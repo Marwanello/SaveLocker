@@ -1001,6 +1001,30 @@ admin.MapGet("/games/{id:guid}/art/options", async (
     return result is not null ? Results.Ok(result) : Results.BadRequest(new { message = error });
 }).Produces<ArtOptionsPageDto>();
 
+// Which SteamGridDB game this game's artwork comes from (hand-picked, or the automatic name match).
+admin.MapGet("/games/{id:guid}/art/source", async (
+    Guid id, ArtService art, CancellationToken ct) =>
+{
+    var (source, error) = await art.GetSourceAsync(id, ct);
+    return source is not null ? Results.Ok(source) : Results.BadRequest(new { message = error });
+}).Produces<ArtSourceDto>();
+
+// Choose a different SteamGridDB game (sgdbId null: back to the automatic match).
+admin.MapPut("/games/{id:guid}/art/source", async (
+    Guid id, SetArtSourceRequest req, ArtService art, CancellationToken ct) =>
+{
+    var (source, error) = await art.SetSourceAsync(id, req.SgdbId, ct);
+    return source is not null ? Results.Ok(source) : Results.BadRequest(new { message = error });
+}).Produces<ArtSourceDto>();
+
+// Search SteamGridDB by name — the picker's "choose a different game" box.
+admin.MapGet("/games/{id:guid}/art/search", async (
+    Guid id, string? q, ArtService art, CancellationToken ct) =>
+{
+    var (games, error) = await art.SearchGamesAsync(id, q, ct);
+    return games is not null ? Results.Ok(games) : Results.BadRequest(new { message = error });
+}).Produces<SgdbGameDto[]>();
+
 // Use one of those options. `kind` is "grid" (cover) or "icon"; the body carries the option's URL.
 admin.MapPut("/games/{id:guid}/art/{kind}", async (
     Guid id, string kind, SetGameArtRequest req, ArtService art, SyncService sync, CancellationToken ct) =>

@@ -370,6 +370,12 @@ namespace SaveLocker.Server.Migrations
                     b.Property<int?>("RetainVersions")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("SteamGridDbId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SteamGridDbName")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("SuggestedSaveDir")
                         .HasColumnType("TEXT");
 

@@ -5,22 +5,34 @@ using System.Security.Principal;
 namespace SaveLocker.Agent;
 
 /// <summary>
-/// Makes the agent's state directory private on Windows.
+/// Makes the agent's state directory private.
 ///
 /// <para>
-/// <c>%PROGRAMDATA%</c> grants every authenticated user read access, and that inherits. Two of the
-/// files below it are not preferences: <c>config.json</c> holds this machine's <b>server API key</b>,
-/// and <c>api-token</c> grants the local management API — which can rewrite config, re-register the
-/// machine, and enroll games. Any other local user could read both. That is the whole of WA-03.
+/// <b>Windows:</b> <c>%PROGRAMDATA%</c> grants every authenticated user read access, and that
+/// inherits. Two of the files below it are not preferences: <c>config.json</c> holds this machine's
+/// <b>server API key</b>, and <c>api-token</c> grants the local management API — which can rewrite
+/// config, re-register the machine, and enroll games. Any other local user could read both. That is
+/// the whole of WA-03.
 /// </para>
 ///
 /// <para>
-/// The state belongs to <b>one Windows account</b>: whoever enrolled. That follows the shape the
+/// <b>Unix:</b> the same credentials sit in a directory whose mode came from whichever shell happened
+/// to launch the agent — under the usual umask of 022 that is 0755, with files created world-readable
+/// (0644). <see cref="Protect"/> enforces 0700 on the directory and 0600 on the private files this
+/// build knows about, so privacy no longer depends on the launcher. It is applied by every restricted
+/// state write (<see cref="AtomicFile"/>) and by the log's first write, which covers CLI-only entry
+/// paths (<c>register</c>, <c>enroll</c>) that never start the local API. Files an older build left
+/// permissive are tightened in passing, the Unix half of the Windows re-inherit below.
+/// </para>
+///
+/// <para>
+/// The state belongs to <b>one account</b>: whoever enrolled. On Windows that follows the shape the
 /// installer already chose deliberately — it refuses to create this directory while elevated, so the
 /// de-elevated tray user creates it and can rewrite config.json forever after (see
 /// <c>installer/SaveLocker.iss</c>). SYSTEM and Administrators are kept because an administrator can
 /// take ownership regardless, and removing them only breaks backup and repair without adding any
-/// protection. Everyone else is removed, along with the inheritance that let them in.
+/// protection. Everyone else is removed, along with the inheritance that let them in. On Linux the
+/// per-user XDG directory is private to that user by definition; nobody else was ever meant to read it.
 /// </para>
 ///
 /// <para>
@@ -33,18 +45,40 @@ namespace SaveLocker.Agent;
 public static class StateDirSecurity
 {
     /// <summary>
+    /// The outcome of <see cref="Protect"/> per directory already handled in this process. Protecting
+    /// one is a full ACL read on Windows; the writers that ask run constantly (every config save,
+    /// every log line), and the directory only needs it once per process — <see cref="Protect"/> is
+    /// idempotent, this just avoids asking the filesystem to prove it each time. The <i>result</i> is
+    /// cached too, so a failed attempt is not retried and a later caller is told what actually
+    /// happened rather than "already handled" (the callers' contract is best-effort: a loud log
+    /// line, never a fatal error).
+    /// </summary>
+    private static readonly Dictionary<string, bool> ProtectedDirs =
+        new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
+    private static readonly object ProtectGate = new();
+
+    /// <summary>
     /// Lock down the state directory and everything already in it. Idempotent and cheap on the
-    /// common path: an already-protected directory is detected and skipped.
-    /// Returns false if the ACL could not be applied — the caller decides how loudly to say so.
+    /// common path: an already-protected directory (or one this process has already handled) is
+    /// detected and skipped. Returns false if the ACL could not be applied — the caller decides how
+    /// loudly to say so.
     /// </summary>
     public static bool Protect(string stateDir)
     {
-        // Linux has its own model, already applied: 0700 on the directory and 0600 on the token.
-        if (!OperatingSystem.IsWindows()) return true;
+        var key = Path.GetFullPath(stateDir);
+        lock (ProtectGate)
+        {
+            if (ProtectedDirs.TryGetValue(key, out var known)) return known;
+            // Optimistic while the attempt runs, so a concurrent caller during it gets the old
+            // "already being handled" answer; the real outcome replaces it when the attempt ends.
+            ProtectedDirs[key] = true;
+        }
 
+        bool applied;
         try
         {
-            return ProtectWindows(stateDir);
+            applied = OperatingSystem.IsWindows() ? ProtectWindows(stateDir) : ProtectUnix(stateDir);
         }
         catch (Exception ex)
         {
@@ -54,8 +88,53 @@ public static class StateDirSecurity
             AgentLogger.Log($"WARNING: could not restrict permissions on {stateDir}: {ex.Message}. " +
                             "Other local users may be able to read this machine's API key and local " +
                             "API token.");
-            return false;
+            applied = false;
         }
+
+        lock (ProtectGate) ProtectedDirs[key] = applied;
+        return applied;
+    }
+
+    /// <summary>
+    /// The private state files that live directly in the state directory. Everything else the agent
+    /// writes there is either app content (the binary tree, the repainted artwork) or staging (update
+    /// and plugin payloads); those are covered by the directory itself being 0700. This list needs its
+    /// own modes because a file mode survives being copied out, and because older builds wrote every
+    /// one of these through the launching shell's umask.
+    /// </summary>
+    private static readonly string[] PrivateFiles =
+    {
+        "config.json", "api-token", "agent.log", "agent.log.old",
+        "offline-queue.json", "health-events.json", "lease-warnings.json", "sync-activity.json",
+        "manifest.yaml", "desktop-entry-offered", "test-shortcut-art.json",
+    };
+
+    /// <summary>
+    /// Unix: 0700 on the directory, so nothing inside is reachable by another account whatever an
+    /// individual file's mode says, and 0600 on the known private files — including ones an older
+    /// build left permissive.
+    /// </summary>
+    [UnsupportedOSPlatform("windows")]
+    private static bool ProtectUnix(string stateDir)
+    {
+        Directory.CreateDirectory(stateDir);
+        File.SetUnixFileMode(stateDir,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+        foreach (var name in PrivateFiles)
+        {
+            var path = Path.Combine(stateDir, name);
+            try
+            {
+                if (File.Exists(path))
+                    File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+            catch (Exception ex)
+            {
+                AgentLogger.Log($"could not restrict permissions on {path}: {ex.Message}");
+            }
+        }
+        return true;
     }
 
     [SupportedOSPlatform("windows")]
