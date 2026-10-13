@@ -95,7 +95,7 @@ public sealed class DlcHandoverServerTests : IClassFixture<ServerProcess>, IDisp
         Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
 
         var huge = await Assert.ThrowsAsync<HttpRequestException>(() => deck.CreateTransferAsync(new CreateTransferRequest(gameId, pcId,
-            [Rally with { Size = 3L * 1024 * 1024 * 1024 }])));
+            [Rally with { Size = 9L * 1024 * 1024 * 1024 }])));
         Assert.Contains("hand-over limit", huge.Message);
     }
 
