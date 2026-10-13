@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, errorText } from '../api';
 import type { HandoverOverview } from '../types';
 import { ago, fmtSize } from '../format';
 import { toastError } from '../toast';
@@ -23,7 +23,7 @@ export function HandoverCard() {
   if (!data) return null;
 
   async function cancel(id: string) {
-    try { await api.cancelTransfer(id); } catch (err) { toastError(err); }
+    try { await api.cancelTransfer(id); } catch (err) { toastError(errorText(err)); }
     load();
   }
 

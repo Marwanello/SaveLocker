@@ -1883,6 +1883,398 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/dlc": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DlcCheckDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/dlc/pull-anyway": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SyncNowResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/dlc/handover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContentTransferDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dlc/handovers/{id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TransferAnswerRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContentTransferDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dlc/handovers/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SyncNowResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dlc/handovers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContentTransferDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/xbox360": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Xbox360SettingsDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["Xbox360SettingsDto"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Xbox360SettingsDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dlc/holds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DlcHoldDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/games/{id}/state": {
         parameters: {
             query?: never;
@@ -3043,19 +3435,12 @@ export interface components {
         };
         /** @enum {unknown} */
         ConflictStatus: "Open" | "Resolved";
-        DlcCheckDto: {
-            headMachineName?: null | string;
-            headAt?: null | string;
-            packages?: null | components["schemas"]["DlcPackageDto"][];
-            /** Format: int32 */
-            missingCount: number;
+        ContentPackageDto: {
+            kind: string;
+            id: string;
+            name: string;
             /** Format: int64 */
-            missingSize: number;
-            held: boolean;
-            /** Format: uuid */
-            headMachineId?: null | string;
-            handover?: null | components["schemas"]["ContentTransferDto"];
-            asked?: components["schemas"]["ContentTransferDto"][];
+            size: number;
         };
         ContentTransferDto: {
             /** Format: uuid */
@@ -3069,48 +3454,12 @@ export interface components {
             /** Format: uuid */
             toMachineId: string;
             toMachineName: string;
-            /** @enum {string} */
-            status: "Requested" | "Approved" | "Ready" | "Delivered" | "Declined" | "Cancelled" | "Expired";
+            status: components["schemas"]["TransferStatus"];
+            /** Format: date-time */
             createdAt: string;
+            /** Format: date-time */
             expiresAt: string;
             parts: components["schemas"]["TransferPartDto"][];
-        };
-        TransferPartDto: {
-            kind: string;
-            packageId: string;
-            name: string;
-            /** Format: int64 */
-            size: number;
-            /** Format: int64 */
-            zipSize?: null | number;
-            /** Format: int64 */
-            received: number;
-            complete: boolean;
-        };
-        Xbox360SettingsDto: {
-            /** @enum {string} */
-            profileAtLaunch: "Ask" | "Switch" | "Leave";
-            /** @enum {string} */
-            dlcSend: "Ask" | "Auto" | "Never";
-        };
-        DlcHoldDto: {
-            /** Format: uuid */
-            gameId: string;
-            gameName: string;
-            /** Format: int32 */
-            missingCount: number;
-            /** Format: int64 */
-            missingSize: number;
-            summary: string;
-            heldAt: string;
-        };
-        DlcPackageDto: {
-            kind: string;
-            id: string;
-            name: string;
-            /** Format: int64 */
-            size: number;
-            here: boolean;
         };
         DeckyStatusDto: {
             applicable: boolean;
@@ -3122,6 +3471,43 @@ export interface components {
         DismissWarningRequest: {
             gameName: null | string;
         };
+        DlcCheckDto: {
+            headMachineName: null | string;
+            /** Format: date-time */
+            headAt: null | string;
+            packages: null | components["schemas"]["DlcPackageDto"][];
+            /** Format: int32 */
+            missingCount: number;
+            /** Format: int64 */
+            missingSize: number;
+            held: boolean;
+            /** Format: uuid */
+            headMachineId?: null | string;
+            handover?: null | components["schemas"]["ContentTransferDto"];
+            asked?: components["schemas"]["ContentTransferDto"][];
+        };
+        DlcHoldDto: {
+            /** Format: uuid */
+            gameId: string;
+            gameName: string;
+            /** Format: int32 */
+            missingCount: number;
+            /** Format: int64 */
+            missingSize: number;
+            summary: string;
+            /** Format: date-time */
+            heldAt: string;
+        };
+        DlcPackageDto: {
+            kind: string;
+            id: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
+            here: boolean;
+        };
+        /** @enum {unknown} */
+        DlcSendPolicy: "Ask" | "Auto" | "Never";
         EnrollFolderChoice: {
             /** Format: int32 */
             id: number;
@@ -3216,6 +3602,7 @@ export interface components {
             machineSource?: null | components["schemas"]["GameSourceDto"];
             emulators?: null | string[];
             release?: null | components["schemas"]["GameReleaseDto"];
+            emulatorProfile?: null | string;
         };
         GameFilesDto: {
             folders: components["schemas"]["GameFolderFilesDto"][];
@@ -3264,20 +3651,21 @@ export interface components {
         GameSyncRequest: {
             mode: null | string;
         };
-        LaunchCommandDto: {
-            command: null | string;
-            note: null | string;
-        };
-        /** @enum {unknown} */
         LaunchAnswerRequest: {
             questionId: string;
             choice: string;
-            remember?: boolean;
+            /** @default false */
+            remember: boolean;
         };
         LaunchChoice: {
             id: string;
             label: string;
-            primary?: boolean;
+            /** @default false */
+            primary: boolean;
+        };
+        LaunchCommandDto: {
+            command: null | string;
+            note: null | string;
         };
         /** @enum {unknown} */
         LaunchDecision: "Proceed" | "ProceedSyncPaused" | "Blocked" | "Ask";
@@ -3288,17 +3676,6 @@ export interface components {
             conflictId?: null | string;
             holderMachineName?: null | string;
             question?: null | components["schemas"]["LaunchQuestion"];
-        };
-        LaunchQuestion: {
-            id: string;
-            kind: string;
-            title: string;
-            text: string;
-            choices: components["schemas"]["LaunchChoice"][];
-            defaultChoice: string;
-            /** Format: int32 */
-            timeoutSeconds: number;
-            canRemember: boolean;
         };
         LaunchOptionCurrentDto: {
             /** Format: uint32 */
@@ -3321,6 +3698,17 @@ export interface components {
             steamAppId: number;
             applied: boolean;
             error: null | string;
+        };
+        LaunchQuestion: {
+            id: string;
+            kind: string;
+            title: string;
+            text: string;
+            choices: components["schemas"]["LaunchChoice"][];
+            defaultChoice: string;
+            /** Format: int32 */
+            timeoutSeconds: number;
+            canRemember: boolean;
         };
         LeaseDto: {
             /** Format: uuid */
@@ -3412,6 +3800,8 @@ export interface components {
         ProcessNamesRequest: {
             processNames: null | string[];
         };
+        /** @enum {unknown} */
+        ProfileAtLaunch: "Ask" | "Switch" | "Leave";
         PullBeforeLaunchRequest: {
             enabled: null | boolean;
         };
@@ -3467,6 +3857,7 @@ export interface components {
             parentVersionId: null | string;
             /** @default false */
             protected: boolean;
+            content?: null | components["schemas"]["ContentPackageDto"][];
         };
         SetConflictPolicyRequest: {
             policy: components["schemas"]["ConflictPolicy"];
@@ -3547,11 +3938,32 @@ export interface components {
             release?: null | components["schemas"]["GameReleaseDto"];
             saveFiles?: null | string;
         };
+        TransferAnswerRequest: {
+            approve: boolean;
+        };
+        TransferPartDto: {
+            kind: string;
+            packageId: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
+            /** Format: int64 */
+            zipSize: null | number;
+            /** Format: int64 */
+            received: number;
+            complete: boolean;
+        };
+        /** @enum {unknown} */
+        TransferStatus: "Requested" | "Approved" | "Ready" | "Delivered" | "Declined" | "Cancelled" | "Expired";
         VersionStatsDto: {
             /** Format: int32 */
             fileCount: number;
             /** Format: date-time */
             newestFileWriteUtc: null | string;
+        };
+        Xbox360SettingsDto: {
+            profileAtLaunch: components["schemas"]["ProfileAtLaunch"];
+            dlcSend: components["schemas"]["DlcSendPolicy"];
         };
     };
     responses: never;
