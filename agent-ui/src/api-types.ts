@@ -3142,6 +3142,8 @@ export interface components {
              * @default 0
              */
             totalStorageBytes: number;
+            machineIds?: null | string[];
+            sources?: null | components["schemas"]["GameSourceDto"][];
         };
         GameSyncRequest: {
             mode: null | string;

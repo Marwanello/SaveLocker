@@ -205,6 +205,10 @@ jobs:
       # (docs/tasks/checkpoint-ui, Group 5). It needs no build and no server.
       - name: Appearance consistency
         run: pwsh tests/run-appearance-consistency-tests.ps1
+      # The Games tab's arrange logic is pure; compiling it with the web toolchain and running
+      # tests/organize-fixtures.cjs needs the web/node_modules from `npm ci` above, no server.
+      - name: Games tab arrange logic
+        run: pwsh tests/run-organize-tests.ps1
 
   build-agent-ui:
     runs-on: ubuntu-latest

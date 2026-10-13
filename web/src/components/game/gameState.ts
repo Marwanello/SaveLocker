@@ -17,16 +17,33 @@ export function problemGameIds(health: AgentHealth[]): Set<string> {
 export interface GameStanding { tone: DotTone; label: string }
 
 /**
- * One game's standing, by plan.md's colour rule: accent only while a decision waits (a conflict),
- * amber when a machine reported a problem that will retry, olive when server and machines agree,
- * and faint for a game nothing is expected of (disabled, or no save yet).
+ * The five standing buckets, by plan.md's colour rule: accent only while a decision waits (a conflict),
+ * amber when a machine reported a problem that will retry, olive when server and machines agree, and
+ * faint for a game nothing is expected of (disabled, or no save yet).
  */
+export type StandingKey = 'conflict' | 'attention' | 'synced' | 'none' | 'disabled';
+
+const STANDING: Record<StandingKey, GameStanding> = {
+  conflict: { tone: 'crit', label: 'Conflict' },
+  attention: { tone: 'warn', label: 'Needs attention' },
+  synced: { tone: 'ok', label: 'Synced' },
+  none: { tone: 'idle', label: 'No saves yet' },
+  disabled: { tone: 'idle', label: 'Disabled' },
+};
+
+/** The bucket behind a game's standing — the console's Status grouping keys off this, so a group's
+ *  label and the game's own dot can never tell two different stories. */
+export function standingKey(s: GameSummary, problems: Set<string>): StandingKey {
+  if (s.hasOpenConflict) return 'conflict';
+  if (!s.game.enabled) return 'disabled';
+  if (problems.has(s.game.id)) return 'attention';
+  if (!s.head) return 'none';
+  return 'synced';
+}
+
+/** One game's standing — `STANDING[standingKey(s, problems)]`. */
 export function standing(s: GameSummary, problems: Set<string>): GameStanding {
-  if (s.hasOpenConflict) return { tone: 'crit', label: 'Conflict' };
-  if (!s.game.enabled) return { tone: 'idle', label: 'Disabled' };
-  if (problems.has(s.game.id)) return { tone: 'warn', label: 'Needs attention' };
-  if (!s.head) return { tone: 'idle', label: 'No saves yet' };
-  return { tone: 'ok', label: 'Synced' };
+  return STANDING[standingKey(s, problems)];
 }
 
 /**
