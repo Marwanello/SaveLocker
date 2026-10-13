@@ -568,12 +568,19 @@ public record ConflictDto(
 
 // ----- Aggregate state (dashboard + agent sync) -----
 
+/// <param name="MachineIds">Machines that have this game — a stored save folder, a recorded source, or the
+/// head's uploader. Loaded in bulk for the overview so the console can group by device without a request
+/// per game; null when none does.</param>
+/// <param name="Sources">How the machines found the game, distinct by kind and detail, ordered; null when
+/// none has said. The console groups by the first kind it knows; two machines may well disagree.</param>
 public record GameStateDto(
     GameDto Game,
     SaveVersionDto? Head,
     LeaseDto? Lease,
     bool HasOpenConflict,
-    long TotalStorageBytes = 0);
+    long TotalStorageBytes = 0,
+    Guid[]? MachineIds = null,
+    GameSourceDto[]? Sources = null);
 
 // ----- Agent command channel (dashboard → agent) -----
 
