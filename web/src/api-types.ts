@@ -5002,6 +5002,7 @@ export interface components {
             extraPaths?: null | components["schemas"]["SavePathDto"][];
             release?: null | components["schemas"]["GameReleaseDto"];
             emulatorProfile?: null | string;
+            emulatorKey?: null | string;
         };
         CreateSessionRequest: {
             password: null | string;
@@ -5104,6 +5105,7 @@ export interface components {
             emulators?: null | string[];
             release?: null | components["schemas"]["GameReleaseDto"];
             emulatorProfile?: null | string;
+            emulatorKey?: null | string;
         };
         GameReleaseDto: {
             console: string;

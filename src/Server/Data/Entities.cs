@@ -31,6 +31,12 @@ public class Game
     /// (Xenia makes every new profile's XUID at random) can put it under this one instead.
     /// </summary>
     public string? EmulatorProfile { get; set; }
+    /// <summary>
+    /// The emulated title the game is, across emulators whose save folders differ (D2, tasks/emulator-saves Phase 6):
+    /// <c>switch:&lt;title ID&gt;</c>. Ryujinx files a save under an ID it hands out per install, so neither the name nor
+    /// the folder is the same on two machines; this is. Set by the first machine that says, matched before the name.
+    /// </summary>
+    public string? EmulatorKey { get; set; }
     /// <summary>Key into the Ludusavi manifest, if matched.</summary>
     public string? ManifestKey { get; set; }
     /// <summary>JSON array of user-provided override paths.</summary>

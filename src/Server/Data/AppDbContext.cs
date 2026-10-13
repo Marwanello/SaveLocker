@@ -31,6 +31,8 @@ public class AppDbContext : DbContext
         b.Entity<Machine>().HasIndex(m => m.Name).IsUnique();
         // Two releases of one game share a name; one region's release is one game.
         b.Entity<Game>().HasIndex(g => new { g.Name, g.Region }).IsUnique();
+        // D2: one game per emulated title.
+        b.Entity<Game>().HasIndex(g => g.EmulatorKey).IsUnique().HasFilter("\"EmulatorKey\" IS NOT NULL");
 
         // One active lease per game.
         b.Entity<Lease>().HasIndex(l => l.GameId).IsUnique();

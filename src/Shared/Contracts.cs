@@ -52,7 +52,9 @@ public record GameDto(
     // the name: two games may share a name when their regions differ.
     GameReleaseDto? Release = null,
     // The emulator profile the game's saves are under ("xenia:<XUID>"), set by the first machine that said.
-    string? EmulatorProfile = null);
+    string? EmulatorProfile = null,
+    // The emulated title the game is across emulators ("switch:0100F2C0115B6000"), set by the first machine that said.
+    string? EmulatorKey = null);
 
 /// <summary>
 /// Which release of a console game an emulator save belongs to, read from the game ID the save is filed under
@@ -191,7 +193,31 @@ public record CreateGameRequest(
     // yet, which takes it); without one, any game of the name, as before.
     GameReleaseDto? Release = null,
     // The emulator profile the caller's save is under ("xenia:<XUID>"). Recorded only on a game that has none yet.
-    string? EmulatorProfile = null);
+    string? EmulatorProfile = null,
+    // The emulated title the caller's save is ("switch:<title ID>"): a game with this key is joined whatever its name.
+    string? EmulatorKey = null);
+
+/// <summary>
+/// The emulated titles a game can be keyed by (D2, tasks/emulator-saves Phase 6): a title one emulator files under an ID
+/// of its own making, so only the title itself names it on every machine.
+/// </summary>
+public static class EmulatorKeys
+{
+    public const string SwitchPrefix = "switch:";
+
+    /// <summary>The value as stored — <c>switch:</c> and the 16-digit upper-case title ID — or null for anything else.</summary>
+    public static string? Clean(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var v = value.Trim();
+        if (!v.StartsWith(SwitchPrefix, StringComparison.OrdinalIgnoreCase)) return null;
+        var id = v[SwitchPrefix.Length..];
+        return id.Length == 16 && id.All(Uri.IsHexDigit) && id.Any(c => c != '0') ? SwitchPrefix + id.ToUpperInvariant() : null;
+    }
+
+    /// <summary>A Switch title's key.</summary>
+    public static string Switch(string titleId) => SwitchPrefix + titleId.ToUpperInvariant();
+}
 
 /// <summary>The emulator profiles a game can be under (tasks/emulator-saves Phase 5c).</summary>
 public static class EmulatorProfiles

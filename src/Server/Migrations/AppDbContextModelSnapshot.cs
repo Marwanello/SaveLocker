@@ -364,6 +364,9 @@ namespace SaveLocker.Server.Migrations
                     b.Property<string>("CustomPathsJson")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("EmulatorKey")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("EmulatorProfile")
                         .HasColumnType("TEXT");
 
@@ -421,6 +424,10 @@ namespace SaveLocker.Server.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("EmulatorKey")
+                        .IsUnique()
+                        .HasFilter("\"EmulatorKey\" IS NOT NULL");
 
                     b.HasIndex("Name", "Region")
                         .IsUnique();

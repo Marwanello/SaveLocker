@@ -5422,6 +5422,12 @@
               "null",
               "string"
             ]
+          },
+          "emulatorKey": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -5865,6 +5871,12 @@
             ]
           },
           "emulatorProfile": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "emulatorKey": {
             "type": [
               "null",
               "string"

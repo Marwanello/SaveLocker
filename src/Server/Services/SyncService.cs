@@ -598,11 +598,14 @@ public sealed class SyncService
         var region = GameReleaseDto.RegionKey(release?.Region);
         // Two releases of one game share a name: a request that says its region joins only that region's game,
         // or one no release was recorded for yet, which takes this one. One that says none joins any, as before.
+        var key = EmulatorKeys.Clean(req.EmulatorKey);
+        // D2: a title keyed by the emulators is the same game on every machine, whatever each one calls it.
+        var keyed = key is null ? null : await _db.Games.FirstOrDefaultAsync(g => g.EmulatorKey == key);
         var named = await _db.Games.Where(g => g.Name.ToLower() == lowered).ToListAsync();
-        var existing = region.Length == 0
+        var existing = keyed ?? (region.Length == 0
             ? named.OrderBy(g => g.Region.Length == 0 ? 0 : 1).FirstOrDefault()
             : named.FirstOrDefault(g => string.Equals(g.Region, region, StringComparison.OrdinalIgnoreCase)) ??
-              named.FirstOrDefault(g => g.Region.Length == 0);
+              named.FirstOrDefault(g => g.Region.Length == 0));
         var profile = EmulatorProfiles.Clean(req.EmulatorProfile);
         if (existing is not null)
         {
@@ -620,6 +623,11 @@ public sealed class SyncService
                 existing.EmulatorProfile = profile;
                 changed = true;
             }
+            if (key is not null && existing.EmulatorKey is null)
+            {
+                existing.EmulatorKey = key;
+                changed = true;
+            }
             if (changed) await _db.SaveChangesAsync();
             return existing;
         }
@@ -631,6 +639,7 @@ public sealed class SyncService
             Region = region,
             ReleaseJson = release is null ? null : JsonSerializer.Serialize(release, JsonSerializerOptions.Web),
             EmulatorProfile = profile,
+            EmulatorKey = key,
             ManifestKey = req.ManifestKey,
             CustomPathsJson = req.CustomPathsJson,
             SuggestedSaveDir = string.IsNullOrWhiteSpace(req.SuggestedSaveDir) ? null : req.SuggestedSaveDir.Trim(),
