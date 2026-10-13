@@ -20,7 +20,7 @@ A pull merges that one row and recounts the totals, so achievements another game
 
 ## Which profile Xenia starts as
 
-Xenia signs in as the profile named in its config (`logged_profile_slot_0_xuid`). If that is another profile, the game starts without its saves. Before a game starts, SaveLocker checks it. Set what it does in the agent's **Settings → Xbox 360 (Xenia)**:
+Xenia signs in as the profile named in its config (`logged_profile_slot_0_xuid`). If that is another profile, the game starts without its saves. Before a game starts, SaveLocker checks it. Set what it does on the game's page, under **Emulator settings → Xbox 360 profile** (for this game, or for every Xbox 360 game on the machine), or in the agent's **Settings → Xbox 360 (Xenia)**:
 
 - **Switch, and ask where I can (default):**
   - SaveLocker switches Xenia to the game's profile.
@@ -39,13 +39,13 @@ Xenia Manager's per-game config is switched along with the main one. Nothing is 
 
 **Not covered:** a game started from EmulationStation (ES-DE) or Xenia directly, without SaveLocker in the launch path, gets no check. Its saves still sync while the agent runs. To check the profile anyway, add the game to Steam with the launch options above.
 
-The console's game page shows **Xbox 360 profile at launch**: for each machine, what Xenia was set to at the game's last launch and what SaveLocker did. A row in amber means the game started as another profile, without its saves.
+In the console, the game's **Emulator settings → Xbox 360 profile** shows the profile at launch: for each machine, what Xenia was set to at the game's last launch and what SaveLocker did. A row in amber means the game started as another profile, without its saves.
 
 ## DLC and title updates
 
 Every push records which DLC packs and title updates are installed, by name, ID and size only. The packs themselves are never stored.
 
-**If the latest save needs packs this machine doesn't have,** the pull is **held**: your save here stays, and the game's page shows which packs are missing. You can choose:
+**If the latest save needs packs this machine doesn't have,** the pull is **held**: your save here stays, and the game's page points to **Emulator settings → DLC and title updates**, which shows which packs are missing. You can choose:
 
 - **Hand them over from \<machine\>:** the machine that made the save sends the packs through your server.
 - **Pull anyway:** restore the save without them. The game may refuse it, or leave out what came from the packs.
@@ -53,11 +53,11 @@ Every push records which DLC packs and title updates are installed, by name, ID 
 
 An automatic pull (before launch, from the console, or in the background) never asks. It holds the pull and sends a notification.
 
-You don't have to wait for a pull: whenever the game page's DLC list shows packs **Missing**, **Pull missing DLC from \<machine\>** asks for them straight away.
+You don't have to wait for a pull: whenever that list shows packs **Missing**, **Pull missing DLC from \<machine\>** asks for them straight away. In the console, the same section has **Send from \<machine\>** on any machine that lacks some, and **Hand-overs** lists this game's hand-overs, with **Cancel** for an open one.
 
 **What happens to a hand-over:**
 
-1. **The other machine is asked.** It sees the request within about 20 seconds while its agent runs. In **Settings → Xbox 360**, each machine chooses to send automatically (default), ask first, or never send. Set to ask first, it shows a notification and the request on the game's page, with **Send** and **Decline**.
+1. **The other machine is asked.** It sees the request within about 20 seconds while its agent runs. In **Emulator settings → Sharing DLC** (or **Settings → Xbox 360**), each machine chooses to send automatically (default), ask first, or never send. Set to ask first, it shows a notification, and the request waits under **Sharing DLC** with **Send** and **Decline**.
 2. **The packs are uploaded in pieces.** An interrupted upload or download resumes where it stopped.
 3. **They're downloaded, checked and installed.** Only the asking machine can download them. They install while Xenia is closed, where that machine's Xenia reads them. A pack whose size doesn't match what was listed is refused.
 4. **They're deleted from the server** as soon as they are installed, or after the request expires (7 days by default).

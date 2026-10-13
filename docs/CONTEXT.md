@@ -1934,6 +1934,16 @@ Migrations `AddGameEmulatorProfile`, `AddDlcCheckContent`, `AddDlcHandover`. Uni
 agent Settings → Xbox 360, launch reports (`MachineGameContent.LaunchJson`, migration `AddLaunchProfileReport`), console
 profile-at-launch + hand-over cards, help article, `dlc` CLI, testenv DLC fixtures; Decky#5 gained a "Waiting for DLC"
 section. Unit **517**. Gotcha: the hold re-check is a 1-minute poll, not a folder watch.
+<br>**2026-10-13, later:** a sender now **sends DLC automatically by default** (`DlcSend` null = Auto); hand-overs up to
+**8 GB** by default; the agent reads a server refusal sent as a bare JSON string (a conflict resolve used to say only
+"400 Bad Request"). **Emulator settings** built from the approved mockup: a page of its own off each game page, in the agent
+(`EmulatorSettingsView`, sections Xbox 360 profile / DLC and title updates / Sharing DLC; `emulators.ts` says which emulator
+has settings — only Xenia so far) and the console (`EmulatorSettings`, Xbox 360 profile / DLC and title updates /
+Hand-overs). The DLC and profile cards left the game pages; banners there point in. New `POST /api/games/{id}/transfers`
+lets the console send a machine its missing DLC. Unit **523**. Checked by hand against the rig's tray and a copy of its console
+database. Gotcha: a stuck conflict whose two versions are both behind Latest can't be closed from the agent (both choices
+would rewind) — the console's *Set as Latest* on one side closes it; making "keep the cloud's" mean "the current Latest" is
+an open question for the maintainer.
 <br>**Next action for this item:** the testenv pass for Group E and Phase 5c (`Build and Run` → *Testing emulator saves*,
 steps 1–5 of the profile and 1–11 of the DLC hand-over), then Forza Horizon for real between PC and Deck (Group H).
 <br>**Next action for this item:** merge PR #65; the testenv pass of Group D (`Build and Run` → *Testing emulator saves*) and its real-game checks (Group H: PPSSPP, RPCS3, Vita3K, shadPS4) are still to do.
