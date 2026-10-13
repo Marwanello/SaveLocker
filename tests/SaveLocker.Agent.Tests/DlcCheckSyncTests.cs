@@ -222,14 +222,14 @@ public sealed class DlcCheckSyncTests : IClassFixture<ServerProcess>, IDisposabl
         await ApiClient.For(deck).ReportContentAsync(deckGame.GameId, [.. ContentInventory.For(deckGame)], null);
 
         using var admin = Admin();
-        var resp = await admin.PostAsJsonAsync($"/api/admin/games/{deckGame.GameId}/transfers", new ConsoleTransferRequest(deck.MachineId!.Value));
+        var resp = await admin.PostAsJsonAsync($"/api/games/{deckGame.GameId}/transfers", new ConsoleTransferRequest(deck.MachineId!.Value));
         resp.EnsureSuccessStatusCode();
         var asked = (await resp.Content.ReadFromJsonAsync<ContentTransferDto>())!;
         Assert.Equal(pc.MachineId, asked.FromMachineId);
         Assert.Equal(["BBBB"], asked.Parts.Select(p => p.PackageId));
-        var again = await admin.PostAsJsonAsync($"/api/admin/games/{deckGame.GameId}/transfers", new ConsoleTransferRequest(deck.MachineId!.Value));
+        var again = await admin.PostAsJsonAsync($"/api/games/{deckGame.GameId}/transfers", new ConsoleTransferRequest(deck.MachineId!.Value));
         Assert.Equal(asked.Id, (await again.Content.ReadFromJsonAsync<ContentTransferDto>())!.Id);
-        var self = await admin.PostAsJsonAsync($"/api/admin/games/{deckGame.GameId}/transfers", new ConsoleTransferRequest(pc.MachineId!.Value));
+        var self = await admin.PostAsJsonAsync($"/api/games/{deckGame.GameId}/transfers", new ConsoleTransferRequest(pc.MachineId!.Value));
         Assert.Equal(HttpStatusCode.BadRequest, self.StatusCode);
 
         await new DlcHandoverRunner(pc, () => ApiClient.For(pc), () => enginePc, null, _ => { }, () => false).RunAsync();
