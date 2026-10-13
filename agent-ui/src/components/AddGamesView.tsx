@@ -54,6 +54,9 @@ const EMULATORS: { id: string; label: string }[] = [
   { id: 'RPCS3', label: 'RPCS3' },
   { id: 'Vita3K', label: 'Vita3K' },
   { id: 'shadPS4', label: 'shadPS4' },
+  { id: 'Cemu', label: 'Cemu' },
+  { id: 'Azahar', label: 'Azahar' },
+  { id: 'Xenia', label: 'Xenia' },
 ]
 
 /** The Console row's chips: one per EmuDeck system among `found` ("ps2"), labelled as the agent says it ("PS2"),
@@ -310,7 +313,8 @@ export function AddGamesView({ onEnrolled }: Props) {
       setStatus(
         `Added ${result.enrolled} game${result.enrolled === 1 ? '' : 's'}.` +
         (result.skipped > (result.notes?.length ?? 0) ? ` Skipped ${result.skipped - (result.notes?.length ?? 0)} already tracked.` : '') +
-        (result.notes?.length ? ` Not added: ${result.notes.join(' ')}` : '')
+        (result.notes?.length ? ` Not added: ${result.notes.join(' ')}` : '') +
+        (result.info?.length ? ` ${result.info.join(' ')}` : '')
       )
       if (result.enrolled > 0) setEnrolled(true)
       setChecked(new Set())

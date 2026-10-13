@@ -11,9 +11,11 @@ public static class Enroller
     /// <summary>Where an enrollment batch is, for a UI that would otherwise stare at one long request.</summary>
     /// <param name="Notes">Why a game was refused rather than skipped as already set up here, one line each,
     /// for the UI to say once the batch is done — a bare "skipped" count reads as "already tracked".</param>
+    /// <param name="Info">What was added differently from how it was found, one line each — a Xenia game put under
+    /// the profile it is saved under elsewhere (tasks/emulator-saves Phase 5c).</param>
     public sealed record EnrollProgress(
         bool Active, int Index, int Total, string? Game, string Step, int Enrolled, int Skipped,
-        IReadOnlyList<string>? Notes = null);
+        IReadOnlyList<string>? Notes = null, IReadOnlyList<string>? Info = null);
 
     private static readonly object ProgressLock = new();
     private static EnrollProgress _progress = new(false, 0, 0, null, "", 0, 0);
@@ -48,11 +50,12 @@ public static class Enroller
         var total = ids.Count(i => i >= 0 && i < candidates.Count);
         var index = 0;
         var notes = new List<string>();
+        var info = new List<string>();
         // The fleet's games, read once for the batch and kept current as it creates more: an emulator
         // game's name is decided against it (ServerNameFor).
         List<GameDto>? serverGames = null;
         void Step(string? game, string step) =>
-            Report(new EnrollProgress(true, index, total, game, step, enrolled, skipped, notes.ToArray()));
+            Report(new EnrollProgress(true, index, total, game, step, enrolled, skipped, notes.ToArray(), info.ToArray()));
         void Refuse(string game, string why)
         {
             AgentLogger.Log($"Enrollment skipped '{game}': {why}");
@@ -90,9 +93,7 @@ public static class Enroller
                 var check = SavePathGuard.Check(c.SuggestedSaveDir, config.StateDir);
                 if (!check.Ok)
                 {
-                    AgentLogger.Log($"Enrollment skipped '{c.Name}': {check.Reason} " +
-                                    $"(scanner suggested '{c.SuggestedSaveDir}')");
-                    skipped++;
+                    Refuse(c.Name, $"{check.Reason} (scanner suggested '{c.SuggestedSaveDir}')");
                     continue;
                 }
 
@@ -105,9 +106,11 @@ public static class Enroller
 
                 // Folders the scanner declared alongside the primary one. Every refusal happens here,
                 // before the game exists on the server, for the same reason as the check above.
-                if (DeclaredFolders(config, c, check.Canonical!) is not { } extras)
+                // The reason goes back to the person, not only to the log: Add games said "skipped, already
+                // tracked" for a game it had refused, and left it ticked.
+                if (DeclaredFolders(config, c, check.Canonical!, out var refused) is not { } extras)
                 {
-                    skipped++;
+                    Refuse(c.Name, refused!);
                     continue;
                 }
 
@@ -133,7 +136,8 @@ public static class Enroller
                         ExtraPaths: extras.Count == 0
                             ? null
                             : extras.Select(e => new SavePathDto(e.Key, null, e.Template, Scope(e.IncludeGlobs))).ToArray(),
-                        Release: c.Release));
+                        Release: c.Release,
+                        EmulatorProfile: c.EmulatorProfile));
                 }
                 catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
@@ -160,6 +164,21 @@ public static class Enroller
                     var known = serverGames.FindIndex(g => g.Id == game.Id);
                     if (known < 0) serverGames.Add(WithEmulator(game, c));
                     else serverGames[known] = WithEmulator(serverGames[known], c);
+                }
+                // A Xenia game the fleet keeps under another profile goes under that one here too, unless the user kept it
+                // apart (Phase 5c step 7).
+                if (link?.Choice != EnrollLinks.Separate &&
+                    XeniaSaves.AlignToGameProfile(c, game.EmulatorProfile, check.Canonical!, extras) is { } aligned)
+                {
+                    var moved = SavePathGuard.Check(aligned.Dir, config.StateDir);
+                    if (!moved.Ok)
+                    {
+                        Refuse(c.Name, $"its profile's folder here is refused: {moved.Reason}");
+                        continue;
+                    }
+                    check = moved;
+                    extras = [.. aligned.Extras];
+                    info.Add(aligned.Note);
                 }
                 if ((c.IncludeGlobs is { Count: > 0 } || extras.Count > 0) && FolderMismatch(game, c, extras) is { } mismatch)
                 {
@@ -267,7 +286,7 @@ public static class Enroller
         }
         finally
         {
-            Report(new EnrollProgress(false, index, total, null, "Done", enrolled, skipped, notes.ToArray()));
+            Report(new EnrollProgress(false, index, total, null, "Done", enrolled, skipped, notes.ToArray(), info.ToArray()));
         }
 
         return (enrolled, skipped);
@@ -406,32 +425,39 @@ public static class Enroller
     /// folders (nested, or an unscoped shared directory). One bad folder skips the whole candidate:
     /// enrolling the rest would define the game on the server without it, for every machine.
     /// </summary>
-    internal static List<DeclaredSavePath>? DeclaredFolders(AgentConfig config, ScanCandidate c, string primary)
+    internal static List<DeclaredSavePath>? DeclaredFolders(AgentConfig config, ScanCandidate c, string primary, out string? why)
     {
         var result = new List<DeclaredSavePath>();
-        List<DeclaredSavePath>? Skip(string why)
+        string? reason = null;
+        List<DeclaredSavePath>? Skip(string message)
         {
-            AgentLogger.Log($"Enrollment skipped '{c.Name}': {why}");
+            reason = message;
             return null;
         }
+        var folders = Folders();
+        why = reason;
+        return folders;
 
-        foreach (var glob in (c.IncludeGlobs ?? Array.Empty<string>()).Concat(
-                     (c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>()).SelectMany(e => e.IncludeGlobs ?? Array.Empty<string>())))
-            if (SaveArchive.ValidateIncludeGlob(glob) is { } badGlob) return Skip(badGlob);
-
-        foreach (var e in c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>())
+        List<DeclaredSavePath>? Folders()
         {
-            if (SaveRoot.ValidateExtraKey(e.Key) is { } badKey) return Skip(badKey);
-            var check = SavePathGuard.Check(e.Dir, config.StateDir);
-            if (!check.Ok) return Skip($"save folder '{e.Key}': {check.Reason} (scanner suggested '{e.Dir}')");
-            var template = PathResolver.IsTemplate(e.Template) ? e.Template : TemplateFor(c, check.Canonical!);
-            result.Add(e with { Dir = check.Canonical!, Template = template });
-        }
+            foreach (var glob in (c.IncludeGlobs ?? Array.Empty<string>()).Concat(
+                         (c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>()).SelectMany(e => e.IncludeGlobs ?? Array.Empty<string>())))
+                if (SaveArchive.ValidateIncludeGlob(glob) is { } badGlob) return Skip(badGlob);
 
-        var roots = new List<SaveRoot> { SaveRoot.Primary(primary, c.IncludeGlobs) };
-        roots.AddRange(result.Select(e => new SaveRoot(e.Key, e.Dir, e.IncludeGlobs)));
-        if (SaveArchive.FolderRulesError(roots) is { } rules) return Skip(rules);
-        return result;
+            foreach (var e in c.ExtraSaveDirs ?? Array.Empty<DeclaredSavePath>())
+            {
+                if (SaveRoot.ValidateExtraKey(e.Key) is { } badKey) return Skip(badKey);
+                var check = SavePathGuard.Check(e.Dir, config.StateDir);
+                if (!check.Ok) return Skip($"save folder '{e.Key}': {check.Reason} (scanner suggested '{e.Dir}')");
+                var template = PathResolver.IsTemplate(e.Template) ? e.Template : TemplateFor(c, check.Canonical!);
+                result.Add(e with { Dir = check.Canonical!, Template = template });
+            }
+
+            var roots = new List<SaveRoot> { SaveRoot.Primary(primary, c.IncludeGlobs) };
+            roots.AddRange(result.Select(e => new SaveRoot(e.Key, e.Dir, e.IncludeGlobs)));
+            if (SaveArchive.FolderRulesError(roots) is { } rules) return Skip(rules);
+            return result;
+        }
     }
 
     /// <summary>The folder as a template other machines can expand — against the game's own prefix

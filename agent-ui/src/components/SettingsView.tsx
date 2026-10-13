@@ -6,6 +6,7 @@ import { DeckyPluginCard } from './DeckyPluginCard'
 import { PlaynitePluginCard } from './PlaynitePluginCard'
 import { AppearanceCard } from './AppearanceCard'
 import { ControllerCard } from './ControllerCard'
+import { Xbox360SettingsCard } from './Xbox360SettingsCard'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
 import { Chip } from './ui/Chip'
@@ -270,6 +271,7 @@ export function SettingsView({ state, onSaved, appearance, onAppearanceChanged, 
       <AppearanceCard appearance={appearance} onChanged={onAppearanceChanged} />
 
       <ControllerCard />
+      <Xbox360SettingsCard />
 
       <Card title="Sync safety">
         <div className="sl-stack">

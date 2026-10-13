@@ -50,7 +50,9 @@ public record GameDto(
     string[]? Emulators = null,
     // Which release of a console game it is — region, game IDs — when an emulator save said. Kept apart from
     // the name: two games may share a name when their regions differ.
-    GameReleaseDto? Release = null);
+    GameReleaseDto? Release = null,
+    // The emulator profile the game's saves are under ("xenia:<XUID>"), set by the first machine that said.
+    string? EmulatorProfile = null);
 
 /// <summary>
 /// Which release of a console game an emulator save belongs to, read from the game ID the save is filed under
@@ -187,7 +189,30 @@ public record CreateGameRequest(
     SavePathDto[]? ExtraPaths = null,
     // A console game's release. With a region, the request joins only a game of that region (or one with none
     // yet, which takes it); without one, any game of the name, as before.
-    GameReleaseDto? Release = null);
+    GameReleaseDto? Release = null,
+    // The emulator profile the caller's save is under ("xenia:<XUID>"). Recorded only on a game that has none yet.
+    string? EmulatorProfile = null);
+
+/// <summary>The emulator profiles a game can be under (tasks/emulator-saves Phase 5c).</summary>
+public static class EmulatorProfiles
+{
+    public const string XeniaPrefix = "xenia:";
+
+    /// <summary>The value as stored — <c>xenia:</c> and 16 upper-case hex digits — or null for anything else.</summary>
+    public static string? Clean(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var v = value.Trim();
+        if (!v.StartsWith(XeniaPrefix, StringComparison.OrdinalIgnoreCase)) return null;
+        var xuid = v[XeniaPrefix.Length..];
+        return xuid.Length == 16 && xuid.All(Uri.IsHexDigit) && xuid.Any(c => c != '0')
+            ? XeniaPrefix + xuid.ToUpperInvariant()
+            : null;
+    }
+
+    /// <summary>The XUID of a Xenia profile value, or null.</summary>
+    public static string? XeniaXuid(string? value) => Clean(value) is { } v ? v[XeniaPrefix.Length..] : null;
+}
 
 // ----- Server settings (dashboard-managed) -----
 
@@ -353,6 +378,28 @@ public record ArtOptionsPageDto(string Kind, int Page, bool HasMore, List<ArtOpt
 /// <summary>Use this SteamGridDB image (an <see cref="ArtOptionDto.Url"/>) as the game's cover or icon.</summary>
 public record SetGameArtRequest(string Url);
 
+/// <summary>
+/// One SteamGridDB game a search matched — what the picker's "choose a different game" list shows.
+/// <paramref name="Year"/> is the release year when SteamGridDB gives one, so same-named releases can
+/// be told apart.
+/// </summary>
+public record SgdbGameDto(int Id, string Name, string? Year);
+
+/// <summary>
+/// Which SteamGridDB game this game's artwork comes from. <paramref name="SgdbId"/> is the id whose
+/// assets the picker, Refresh art and the backfill use; <paramref name="Name"/> is what SteamGridDB
+/// itself calls it. <paramref name="Automatic"/> is true when nobody chose a game and the id came from
+/// the first match for the game's own name — the state every game starts in, and what "Use automatic
+/// match" restores.
+/// </summary>
+public record ArtSourceDto(int? SgdbId, string? Name, bool Automatic);
+
+/// <summary>
+/// Choose the SteamGridDB game to pull this game's artwork from, or null/absent to go back to the
+/// automatic first-name-match.
+/// </summary>
+public record SetArtSourceRequest(int? SgdbId);
+
 /// <summary>Set (or clear, when null/empty) the admin dashboard password.</summary>
 public record SetAdminPasswordRequest(string? Password);
 
@@ -405,7 +452,93 @@ public record SaveVersionDto(
     string ContentHash,
     long Size,
     Guid? ParentVersionId,
-    bool Protected = false);
+    bool Protected = false,
+    // The DLC and title updates the uploading machine had when it made this version (tasks/emulator-saves Phase 5c);
+    // null when it did not say.
+    ContentPackageDto[]? Content = null);
+
+/// <summary>
+/// One installed package of a game — DLC (<see cref="Dlc"/>) or a title update (<see cref="Update"/>) — as the DLC check
+/// knows it (tasks/emulator-saves Phase 5c): the package's own ID, its display name, its size. Never its data.
+/// </summary>
+public record ContentPackageDto(string Kind, string Id, string Name, long Size)
+{
+    public const string Dlc = "dlc", Update = "update";
+    public const int MaxPackages = 1000;
+
+    /// <summary>
+    /// The packages of <paramref name="needed"/> that <paramref name="here"/> lacks. DLC matches by kind and ID. A title
+    /// update is there when any title update is installed: each one replaces the last, nothing on disk says which is
+    /// newer, and a machine that updated since must not be held against a save made with the update before.
+    /// </summary>
+    public static ContentPackageDto[] Missing(IReadOnlyList<ContentPackageDto>? needed, IReadOnlyList<ContentPackageDto>? here)
+    {
+        if (needed is null || needed.Count == 0) return [];
+        var have = new HashSet<string>((here ?? []).Select(p => p.Kind + "/" + p.Id), StringComparer.OrdinalIgnoreCase);
+        var anyUpdate = (here ?? []).Any(p => p.Kind == Update);
+        return [.. needed.Where(p => !(p.Kind == Update ? anyUpdate : have.Contains(p.Kind + "/" + p.Id)))];
+    }
+
+    /// <summary>Null when a reported list can be stored, else why not.</summary>
+    public static string? Validate(ContentPackageDto[]? packages)
+    {
+        if (packages is null) return null;
+        if (packages.Length > MaxPackages) return $"At most {MaxPackages} packages.";
+        foreach (var p in packages)
+        {
+            if (p is null || p.Kind is not (Dlc or Update)) return "A package's kind is dlc or update.";
+            if (string.IsNullOrWhiteSpace(p.Id) || p.Id.Length > 128) return "A package needs an ID of at most 128 characters.";
+            if ((p.Name?.Length ?? 0) > 256) return "A package name is at most 256 characters.";
+            if (p.Size < 0) return "A package size cannot be negative.";
+        }
+        return null;
+    }
+}
+
+/// <summary>What a machine has for a game; <paramref name="VersionId"/>, when set, is a version this machine just
+/// uploaded, which takes the list as what it was made with.</summary>
+public record ReportContentRequest(ContentPackageDto[] Packages, Guid? VersionId = null);
+
+/// <summary>The console's DLC check for one game: what the latest save was made with, and what each machine has.</summary>
+public record GameContentDto(Guid? HeadVersionId, string? HeadMachineName, ContentPackageDto[]? HeadContent, MachineContentDto[] Machines);
+
+public record MachineContentDto(Guid MachineId, string MachineName, ContentPackageDto[] Packages, DateTime UpdatedAt,
+    LaunchProfileDto? Launch = null);
+
+/// <summary>
+/// What the Xenia profile check did at a game's last launch on one machine (tasks/emulator-saves Phase 5c): the profile the
+/// game's saves are under, the one Xenia was set to, and <see cref="Action"/> — <c>already</c>, <c>switched</c>,
+/// <c>asked</c>, <c>kept</c> (asked, and the other profile was chosen), <c>left</c> (the setting says leave it) or
+/// <c>running</c> (Xenia was already open).
+/// </summary>
+public record LaunchProfileReport(string GameXuid, string? GameTag, string? ConfiguredXuid, string? ConfiguredTag, string Action)
+{
+    public static readonly string[] Actions = ["already", "switched", "asked", "kept", "left", "running"];
+}
+
+public record LaunchProfileDto(string GameXuid, string? GameTag, string? ConfiguredXuid, string? ConfiguredTag, string Action, DateTime At);
+
+/// <summary>Where a DLC hand-over is (tasks/emulator-saves Phase 5c). Appended values only: stored as integers.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<TransferStatus>))]
+public enum TransferStatus { Requested, Approved, Ready, Delivered, Declined, Cancelled, Expired }
+
+/// <summary>A machine asks <paramref name="FromMachineId"/> — the one whose save needs them — for packs it lacks.</summary>
+public record CreateTransferRequest(Guid GameId, Guid FromMachineId, ContentPackageDto[] Packages);
+
+public record TransferAnswerRequest(bool Approve);
+
+/// <summary>The console asks on a machine's behalf: the packs the latest save needs that <paramref name="ToMachineId"/> lacks.</summary>
+public record ConsoleTransferRequest(Guid ToMachineId);
+
+/// <summary>The console's view of DLC hand-overs: the size limit, how long one waits, the bytes held now, the open ones.</summary>
+public record HandoverOverviewDto(long MaxBytes, int ExpiryDays, long BytesInTransit, ContentTransferDto[] Open);
+
+/// <summary>One pack of a hand-over: its declared size, its zip's size once the sender said, and how much has arrived.</summary>
+public record TransferPartDto(string Kind, string PackageId, string Name, long Size, long? ZipSize, long Received, bool Complete);
+
+public record ContentTransferDto(
+    Guid Id, Guid GameId, string GameName, Guid FromMachineId, string FromMachineName, Guid ToMachineId, string ToMachineName,
+    TransferStatus Status, DateTime CreatedAt, DateTime ExpiresAt, TransferPartDto[] Parts);
 
 /// <summary>File count and newest per-file write time inside one version's archive — derived from
 /// the zip on demand (<see cref="SaveLocker.Shared.SaveArchive.GetArchiveStats"/>), not stored on
@@ -546,12 +679,19 @@ public record ConflictDto(
 
 // ----- Aggregate state (dashboard + agent sync) -----
 
+/// <param name="MachineIds">Machines that have this game — a stored save folder, a recorded source, or the
+/// head's uploader. Loaded in bulk for the overview so the console can group by device without a request
+/// per game; null when none does.</param>
+/// <param name="Sources">How the machines found the game, distinct by kind and detail, ordered; null when
+/// none has said. The console groups by the first kind it knows; two machines may well disagree.</param>
 public record GameStateDto(
     GameDto Game,
     SaveVersionDto? Head,
     LeaseDto? Lease,
     bool HasOpenConflict,
-    long TotalStorageBytes = 0);
+    long TotalStorageBytes = 0,
+    Guid[]? MachineIds = null,
+    GameSourceDto[]? Sources = null);
 
 // ----- Agent command channel (dashboard → agent) -----
 

@@ -23,9 +23,11 @@ public sealed record SyncActivitySnapshot(
 /// <param name="Pulled">A newer save was restored from the server.</param>
 /// <param name="Queued">The server was unreachable and the save is in the offline queue.</param>
 /// <param name="Unreachable">The server was unreachable and there was nothing local to queue.</param>
+/// <param name="HeldForDlc">A newer save was not pulled: it was made with DLC this machine lacks (tasks/emulator-saves
+/// Phase 5c). Not current, so the run is not all clear.</param>
 public sealed record SyncRunSummary(
     DateTime FinishedAtUtc, int Games, int Uploaded, int AlreadyCurrent, int Conflicts, int Failed,
-    long BytesSent, bool Cancelled, int Pulled = 0, int Queued = 0, int Unreachable = 0);
+    long BytesSent, bool Cancelled, int Pulled = 0, int Queued = 0, int Unreachable = 0, int HeldForDlc = 0);
 
 public sealed record ActivityLogEntry(DateTime TimestampUtc, string Message);
 

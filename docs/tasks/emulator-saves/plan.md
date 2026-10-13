@@ -31,7 +31,8 @@ point unless explicitly instructed to.
 | 3 — Identity by folders, then `gamelist.xml` names | ✅ Shipped 2026-10-07 (PR #61, branch `emulator-saves-group-b`) — D1 confirmed by the maintainer: `Enroller.ServerNameFor`/`TrackedFor` match a scoped candidate by its folders first (mutation-checked, `IdentityByFoldersTests`, two machines against a real server). `GamelistXml` names **arcade systems only** (maintainer's choice), from `Emulation/storage/es-de/gamelists` (EmuDeck for Windows' link) and `~/ES-DE/gamelists`. Group B — **Revised 2026-10-07:** Phase 1 made the save file's name the game's identity, so a name from a machine-local source could split one game in two; matching a server game by its folders first (D1) makes such a name safe **Review fixes (PR #61):** only the primary folder's patterns decide, ignoring case — a game whose other folders differ (an older agent's, an `add-path`) is joined and the missing folder added, never split into a second game. |
 | 4 — PrimeHack | 🚧 Built 2026-10-07 (branch `emulator-saves-group-c`) — the Dolphin reader against PrimeHack's folders (EmuDeck `saves/primehack`, Flatpak `io.github.shiiion.primehack`, EmuDeck for Windows `Emulators\primehack\User`). **Maintainer's choice:** saves from different emulators are never one game, even with the same files — `GameDto.Emulators` (server, from the sources) + `Enroller.SameEmulator`, mutation-checked. EmuDeck for Windows had created `Emulators\PrimeHack` but never run it (no `User` yet), so where a non-portable PrimeHack keeps its user folder is still to see (Group H) |
 | 5a — RPCS3 | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `Rpcs3Saves`: `dev_hdd0/home/<user>/savedata`, scope `<ID>*/**`, named by Redump's PS3 set, else the save's `PARAM.SFO` `TITLE`; EmuDeck's link, else `vfs.yml`. **Captured 2026-10-11:** the Deck's real save `BCUS98132-GAMEAUTOSAVE` (*Heavenly Sword*) and `vfs.yml` (dev_hdd0 on the SD card); the PC's `RPCS3\config\vfs.yml`. See *Group D — as built* |
-| 5b — Xenia | ⏳ Not started — Group E (split from Phase 5 2026-10-07) |
+| 5b — Xenia | 🚧 Built 2026-10-12 (branch `emulator-saves-group-e`; follow-up the same day: device saves as a second folder, the named-profile layout) — `XeniaSaves`: a game is its `<TID>/00000001` saved games and their `Headers/00000001`, in a profile's `content/<XUID>` (Canary) or `content` itself (older builds); DLC, title updates, XUID 0 and the dashboard's `FFFE07D1` never synced (scope mutation-checked). Named by title ID from the bundled table (Redump disc serials → title IDs, No-Intro Arcade titles), else `Xbox 360 <TID>`. **Captured 2026-10-12:** the PC's real *Forza Horizon* / *Forza Horizon 2* saves (profile layout); the Deck's Proton Canary with both layouts side by side. See *Group E — as built* |
+| 5c — Xenia profile and DLC | 🚧 Built 2026-10-13, testenv and Group H to do (final plan approved; see *Phase 5c — final plan*). **Steps 1–14 built**: formats, launch questions, profile at launch + plugin prompts (Marwanello/SaveLocker-Decky#5, Marwanello/SaveLocker-Playnite#8), the per-game profile slice, the core copied once, the game's profile on the server + alignment, DLC lists, the hold before a pull, the console DLC card + profile chip, the server hand-over, the agents' send/fetch (poller, own task, resumable, installed while Xenia is closed), held pulls re-checked every minute + notices, the console's profile-at-launch table + hand-over card, a Decky "Waiting for DLC" section (Decky#5), help article, `dlc` CLI, testenv fixtures. Unit **517**. Left: the testenv pass (`Build and Run` → *Testing emulator saves*) and Forza Horizon for real between PC and Deck (Group H). Not covered: games started outside SaveLocker's launch path (EmulationStation, Xenia directly) get no profile check or pull before launch — **DLC: the DLC check chosen** (lists only, hand-over through the server, 9-step build plan); **profile: F (checked at launch) with the profile split by game chosen** (10-step build plan). Mockups in this folder. See *Phase 5c* |
 | 6 — Switch: Yuzu, Citron, Eden, Ryujinx | ⏳ Not started — Group F. **Widened 2026-10-07** from Eden only, at the maintainer's request; needs the server title key (D2) |
 | 7 — UI filter | ✅ Shipped 2026-10-07 (same PR), filter by emulator — agent UI *Emulators* chip with an *Emulator* row under it (one chip per emulator, RetroArch today), Deck *Emulators* pill. A per-console sub-breakdown was not built — it comes back with Phase 2, when more than one console has saves. |
 | 7b — Game source per machine, names without "(RetroArch)" | ✅ Shipped 2026-10-07 (same PR) — built 2026-10-07 (maintainer asked; picked variation B of a clickable mockup on all three screens). Unit 280. Console checked in the browser against a seeded dev server; agent UI and Deck need the testenv pass. **Review fixes 2026-10-07** (same PR): server-decided names, the scope-join refusal, source re-send guard, EmuDeck tag, server bounds — unit 291, see `progress.md`. |
@@ -41,11 +42,12 @@ point unless explicitly instructed to.
 | 11 — PPSSPP | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `ParamSfo`, `TitleFolders` (D4 shape 2), `PpssppSaves`: `SAVEDATA/<ID>*`, states `PPSSPP_STATE/<ID>_*`, named by Redump's PSP set (added to the table) else the SFO; `GroupDSyncTests` (two machines, real server, mutation-checked). **Captured 2026-10-11:** Deck Flatpak 1.20.4 (EmuDeck links into `~/.var/app/org.ppsspp.PPSSPP/config/ppsspp/PSP`), PC `memstick\PSP` (the emulator's folders are the junctions); no save on either |
 | 12 — Vita3K (bonus) | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `Vita3KSaves`: `ux0/user/00/savedata/<ID>/**`, named by the save's own `sce_sys/param.sfo`, else the installed game's, region from the ID prefix. **Captured 2026-10-11:** `pref-path` on both machines (Deck: SD card), no save yet — whether a save has its own `param.sfo` is still to see (Group H) |
 | 13 — shadPS4 (bonus) | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `ShadPs4Saves`: both layouts, folder per user, scope `<CUSA>/**`, named by the save's `MAINTITLE`, no region. **Captured 2026-10-11:** Deck AppImage and PC `ShadPS4-qt` both on the old `savedata` layout EmuDeck links, no save yet |
-| 14 — Cemu | ⏳ Not started — Group E (added 2026-10-07) |
-| 15 — Azahar | ⏳ Not started — Group E (added 2026-10-07) |
+| 14 — Cemu | 🚧 Built 2026-10-12 (branch `emulator-saves-group-e`) — `CemuSaves`: `usr/save/00050000/<low>`, scope `<low>/**`; named by Cemu's `title_list_cache.xml`, else `meta.xml`, else `Wii U <low>` (no licensed Wii U table). **Captured 2026-10-12:** Deck AppImage with the MLC on the SD card (only system-app saves), PC portable `mlc01` with EmuDeck's junction; no game save on either |
+| 15 — Azahar | 🚧 Built 2026-10-12 (branch `emulator-saves-group-e`) — `AzaharSaves` + `Ncch`: `title/00040000/<low>/data`, scope `<low>/data/**` (mutation-checked), states `<program ID>.*`; named from a ROM's NCCH product code via No-Intro's 3DS sets (added to the table), else the ROM's file name, else `3DS <low>`. Citra folders are rows of it (maintainer: one game). **Captured 2026-10-12:** the Deck's three real saves, custom SD-card `sdmc`, 11 ROM headers (program IDs match the save folders); the PC's junctions |
 | 16 — Linking by hand, same files (mockup version 2) | ✅ Shipped 2026-10-07 (PR #61, branch `emulator-saves-group-b`, with Group B) — each emulator row on Add games says which server game the save joins, with a **Change** button for that row only: automatic, *Keep it as its own game*, or another server game keeping the same files; a same-titled game with other file names is listed greyed out with the reason. `EnrollLinks` + `GET /api/candidates/links` + `EnrollRequest.Links`; `LinkByHandTests` 5, two of them mutation-checked; checked in the browser against a scratch server **Review fixes (PR #61):** *Keep it as its own game* opts this machine out of the fleet's same-files game, and the poller never maps a second game onto files another syncs here (`SaveFolderClaims`); Add games says when the server could not be asked. |
 | 17 — Each machine's own file names (linking saves with different names) | ⏳ Not started — Group G (added 2026-10-07, maintainer: "keep option 2 in another phase"); open questions below |
-| 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07); Group C added PCSX2, DuckStation, Dolphin and PrimeHack (the Deck already has Trilogy and Other M saves to try); Group D added PPSSPP, RPCS3 (the Deck has a *Heavenly Sword* save), Vita3K and shadPS4. Rows are added as later phases ship untested; see *Phase 18* |
+| 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07); Group C added PCSX2, DuckStation, Dolphin and PrimeHack (the Deck already has Trilogy and Other M saves to try); Group D added PPSSPP, RPCS3 (the Deck has a *Heavenly Sword* save), Vita3K and shadPS4; Group E added Cemu, Azahar (the Deck has three 3DS saves) and Xenia (the PC and the Deck both have *Forza Horizon*). Rows are added as later phases ship untested; see *Phase 18* |
+| 20 — Steam ROM Manager shortcuts are the emulator's game, not a game of their own | ⏳ Not started — Group G (added 2026-10-13, maintainer: the Deck lists Forza Horizon twice). Needs a captured `shortcuts.vdf` and SRM's own records from the Deck first; open questions below |
 | 19 — Games found by their save states alone (every emulator but PPSSPP) | ⏳ Not started — Group I (added 2026-10-12, maintainer: "PPSSPP now, others as a new phase"). PPSSPP's shipped with Group D; see *Phase 19* |
 
 ### Phase 1 — as built (2026-10-04), and where it departs from the plan below
@@ -385,6 +387,275 @@ Known limits:
 - Vita3K reads user `00` only; RPCS3 reads every user, and a game saved under two users there is the copy written last.
 - A PS4 game's EU and US releases have different `CUSA` IDs and the same name with no region: the second one to be
   added is called *… (shadPS4)*.
+
+### Group E — as built (2026-10-12, branch `emulator-saves-group-e`)
+
+Decided with the maintainer at the start of the group:
+- **Captures from both machines plus the research** (read-only SSH to the Deck, the PC's EmuDeck for Windows).
+- **A Citra save and an Azahar save of one game are one game**: Citra's folders are rows of the Azahar reader.
+- **Bundle a title table where the licence allows** (libretro-database, CC BY-SA 4.0, same pinned commit, every existing
+  row unchanged): **Xbox 360** by title ID — a Redump disc serial spells it out (`MS-2505` = `'M' 'S'` + 2505 =
+  `4D5309C9`, *Forza Horizon*, the folder Xenia saved it in on the PC), No-Intro gives Arcade titles' outright;
+  **3DS** by product code (`CTR-P-AREE`) from No-Intro's 3DS sets, read from a ROM's NCCH header. **No Wii U table**: no
+  bundlable source maps a Wii U title ID to a name, and the only 3DS title-ID list found (3dsdb) has no licence.
+
+What the captures showed that the research did not say:
+- **Xenia Canary saves per profile**: `content/<XUID>/<TID>/00000001/<package>/` with `Headers/00000001/<package>.header`;
+  `content/0000000000000000/` holds content no profile owns, and `FFFE07D1` is the dashboard's profile data. The Deck's
+  Proton Canary has the old `content/<TID>/` layout (DLC, updates) beside the profile one. A save's header names the save
+  ("MaroLFC Car Setup Files"), never the game, and Xenia leaves the STFS title-name field empty.
+- **The Deck's Cemu is an AppImage**, MLC on the SD card (`Emulation/roms/wiiu/mlc01`); its `usr/save` holds only system-app
+  saves (`00050010`) and Cemu's `system/` account data, both skipped.
+- **The Deck's Azahar is an AppImage** with `use_custom_storage=true` and `sdmc_directory` on the SD card; states in
+  `~/.local/share/azahar-emu/states` (empty). Its three saves are `title/00040000/{00054000,001bb200,0016e300}/data`; the
+  ROMs' NCSD headers put the first NCCH at 0x4000 and their program IDs match the folders (Super Mario 3D Land, Metroid:
+  Samus Returns; the third has no ROM left).
+
+The readers (`TitleFolders` from Group D, one per emulator):
+
+| Emulator | A game is | Scope | Name | States |
+|---|---|---|---|---|
+| Cemu | `usr/save/00050000/<low>` | `10145d00/**` | Cemu's title cache, else `meta.xml`, else `Wii U <low>` | none |
+| Azahar | `sdmc/Nintendo 3DS/<id0>/<id1>/title/00040000/<low>/data` | `00054000/data/**` | the ROM's product code (No-Intro), else its file name, else `3DS <low>` | `states/<program ID>.*` |
+| Xenia | `content/<XUID>/<TID>` (or `content/<TID>`) saved games | `<TID>/00000001/**`, `<TID>/Headers/00000001/**` | the title ID (Redump, No-Intro), else `Xbox 360 <TID>` | none |
+
+Known limits:
+- A Cemu save made under a different account on another machine is not remapped (*Deferred*); the help article says to use
+  the same account.
+- 3DS extdata is not synced (*Deferred*); a 3DS game played from states only is not listed yet (Group I).
+- Xenia: a game's device data under XUID 0 is not synced; a native Linux Xenia's storage root (`~/.local/share/Xenia`) is
+  from the source, not a capture.
+- Wii U and 3DS names are machine-local: the first machine to add a game picks its name; D1 joins the rest by folder.
+
+Follow-ups on the same branch (2026-10-12, maintainer asked after a user-binding review of every emulator):
+- **Device saves** (built): some games save for the device, not a player, into `content/0000000000000000` (Rock Band's
+  calibration, Bullet Soul's options and high scores — xenia-canary#743). Every Xenia game declares that folder as its second
+  one, key `device`, with the game's save scope (so the DLC Xenia keeps there never syncs), even before it exists. A game with
+  only device saves is listed; its profile folder is the newest profile on the machine.
+- **Named-profile layout** (built): Canary's 2023 `content/<profile name>/<title ID>` (PR #118) is read, ranked between an XUID
+  profile and the no-profile layout.
+- **User binding, researched**: no emulator in this task checks a save's owner when it loads one. Cemu (`user/<account>` folder,
+  first account always `80000001`), RPCS3/shadPS4/Vita3K (user folders; `ACCOUNT_ID` written as zeros, RPCS3 never verifies
+  `PARAM.PFD`) and Xenia (`content/<XUID>`) bind by **folder** only. Xenia makes each new profile's XUID at random
+  (`GenerateXuid`: `0xE03…` + random), and some Xbox 360 games may keep the creator's XUID inside the save — so the safe Xenia
+  setup is **one profile copied to every machine**, which Phase 5c below makes possible.
+
+### Phase 5c — Xenia profile and DLC (designed 2026-10-12, not built — waiting on the maintainer's calls)
+
+The maintainer asked for: copying the **whole Xenia profile** (without any game's saves) to another machine so saves work
+there, and an **option to sync a game's DLC**, because some saves need it. Replaces the first idea of syncing one game's `.gpd`.
+
+**What is on disk** (captured on the PC 2026-10-12):
+- The profile: `content/<XUID>/FFFE07D1/00010000/<XUID>/` — `Account` (404 bytes, **encrypted** like a real console's; holds
+  the gamertag), `FFFE07D1.gpd` (the dashboard's: profile settings, titles played) and one `<title ID>.gpd` per game played
+  (achievements and the three title-specific settings games may write) — plus `content/<XUID>/FFFE07D1/Headers/00010000/<XUID>.header`.
+  About 210 KB on the PC. The header carries no gamertag.
+- DLC: Xenia always files marketplace content under XUID 0 (`ContentManager::ResolvePackagePath`):
+  `content/0000000000000000/<title ID>/00000002/<package>/` and `Headers/00000002/`. **Forza Horizon's 10 packages are 1.0 GB**,
+  twice the server's 500 MB upload cap (`Storage:MaxUploadMb`). Title updates are `000B0000` beside them (seen on the Deck).
+
+**Step 1, first: the profile as its own entry.**
+1. Add games lists each profile on the machine as one row, *Xenia profile — <gamertag>* (decrypted from `Account` with the
+   retail key Xenia itself ships, else the XUID). Its folder is `content/<XUID>`, scope `FFFE07D1/00010000/<XUID>/**` and
+   `FFFE07D1/Headers/00010000/<XUID>.header` — the profile only, never a game's save. The XUID in the scope is its identity, so
+   two profiles are never one entry (D1).
+2. **Copying it to a machine that lacks it:** that machine's Add games lists the server's profiles it does not have
+   (*On the server*), with the folder worked out from its own Xenia `content` folder. Adding one pulls it, and the profile
+   appears in Xenia; sign in to it once (Xenia picks it by itself when it is the only profile). From then on every game saved
+   under it on the first machine lands in the same `content/<XUID>` folder here — the per-game rows need nothing new.
+3. **After enrollment:** a profile can be added from Add games at any time, and each Xenia game's page says which profile its
+   saves are under, with *Sync this profile too* when that profile is not tracked yet.
+4. **A machine with its own different profile:** it keeps it; the copied one is a second profile. Add games says the game's
+   saves only show under the signed-in profile.
+5. **Conflicts:** the profile changes whenever any game unlocks an achievement or writes a setting, so playing on two machines
+   between syncs is a conflict (whole files, no merge).
+
+**Step 2: DLC, optional, per game.**
+1. A *Sync DLC (10 packages, 1.0 GB)* tick on the game's Add games row, and *Add DLC* on its page later. Off by default.
+2. Proposed shape: its own entry per game, *Forza Horizon — DLC*, folder `content/0000000000000000`, scope
+   `<title ID>/00000002/**` and `<title ID>/Headers/00000002/**`, rather than a third folder of the save game. DLC packages do
+   not change, so the entry keeps one version and never conflicts, and the save's own versions stay small.
+3. **Blocker — the upload cap:** a 1.0 GB entry cannot be pushed under the 500 MB cap, and pulling gigabytes over a slow link
+   needs the chunked transfer to cope. Needs a server change: a separate, larger cap for DLC entries (`Storage:MaxDlcUploadMb`).
+
+**Open questions for the maintainer:**
+- Profile: its own entry scoped to the XUID (recommended), or a folder of every Xenia game?
+- DLC: its own entry (recommended) or a third folder of the game; title updates (`000B0000`) included with DLC?
+- The upload cap for DLC: a separate setting, and what default?
+- Gamertag from the decrypted `Account` (Xenia's public retail key), or show the XUID only?
+
+**Maintainer's answers (2026-10-12)** — not the recommended options on the first three, so two consequences are recorded
+here and confirmed with the maintainer before any code:
+- **The profile is a folder of every Xenia game**, key `profile`, folder `content/<XUID>`, scope
+  `FFFE07D1/00010000/<XUID>/**` and `FFFE07D1/Headers/00010000/<XUID>.header`, offered at enrollment and later (*More save
+  folders found*). Consequences:
+  1. Every game on the machine then syncs the *same* files. `SaveFolderClaims` refuses to map a second game onto files another
+     syncs (the Group B fix that stops two games ping-ponging one save), so it needs an exception for this folder.
+  2. **A pull of one game restores the profile as that game last pushed it.** Achievements or settings another game wrote since
+     are overwritten on that machine: play game B, then sync game A, and B's new achievements in the profile are gone (B's own
+     saves are safe). Avoiding it needs a merge of the profile's files — or the profile as its own entry.
+- **DLC is a third folder of the game**, key `dlc`, folder `content/0000000000000000`, scope `<TID>/00000002/**` and
+  `<TID>/Headers/00000002/**`, opt-in. Consequence: the server keeps every version as its own full zip (`ArchiveStore`, 7 kept
+  by default) and a pull downloads the whole archive, so Forza Horizon becomes ~1 GB per version — **~7 GB on the server, and
+  1 GB downloaded on every pull** — while pushes stay small (only changed files are sent).
+- **A separate cap for archives with DLC, 2 GB** (`Storage:MaxDlcUploadMb`, server; the agent's size backstop learns it too).
+- **The gamertag is decrypted from `Account`** with the retail key Xenia ships, to name the profile folder in the UI.
+
+**Mockups, round 1 (2026-10-12):** three ways to show the profile (its own row, a Profiles section, split by owner) and three
+for DLC (a sub-entry, a check with nothing uploaded, a library). Found in Xenia Canary's source while drawing them: a game's
+`<TID>.gpd` is loaded only when `FFFE07D1.gpd` lists the title (`UserProfile::LoadProfileGpds`); otherwise the first launch makes
+an empty one and overwrites it (`UserTracker::AddTitleToPlayedList`). So a profile split by game must carry the game's row of
+`FFFE07D1.gpd` too, merged per row, and an achievements file alone never works.
+
+**Round 2 (same day): the maintainer liked none of the profile options and chose the DLC check.**
+
+*Profile, three new options* — [`phase-5c-profile-mockups.html`](phase-5c-profile-mockups.html), agent (PC, Deck) and console:
+- **D · One setting, every machine.** No entry anywhere: Settings → Emulators → Xenia, “One Xbox profile on every machine”.
+  Turning it on copies the profile, sets Xenia to sign in with it, and each game then carries its own achievements and its
+  row of `FFFE07D1.gpd`; the account once.
+- **E · Gamer card, merged.** The profile shown as an Xbox gamer card (gamerscore, every game's achievements and where each was
+  unlocked). Synced whole but **merged entry by entry**: achievements are unioned (each GPD achievement entry has an unlocked
+  flag and an unlock time — `GpdInfoTitle`), gamerscore recounted, settings newest-wins, so the profile never conflicts.
+- **F · Checked at launch.** Nothing shown until Play: if Xenia would sign in as another profile than the game's saves are
+  under, a sheet asks and SaveLocker switches it. Xenia Canary reads the start-up profile from its config,
+  `logged_profile_slot_0_xuid` under `[Profiles]` (`profile_manager.cc`), so the switch is a config write before launch.
+  Profile files sync per game as in D.
+
+*Profile: F chosen, together with the split by game* — the full journey is in
+[`phase-5c-profile-launch-mockups.html`](phase-5c-profile-launch-mockups.html) (Journey and Build plan tabs). The two halves
+need each other: the split decides **what syncs** (each game's `<TID>.gpd` and its row of `FFFE07D1.gpd`; the account, header and
+settings once), F decides **who Xenia signs in as**, so it loads the profile those files belong to. Three conditions, each a
+build step below:
+- **The same XUID on every machine.** Xenia makes each new profile's XUID at random, so a Deck with the game under its own
+  profile is offered, once, to use the game's profile (copy the core, add the row, pull) or to keep its own as a separate game.
+- **A prompt only where SaveLocker is in the launch path:** the Linux launch command (shown by the Decky plugin over Game
+  Mode) and the Playnite plugin's pre-launch hook (Windows). Elsewhere “Ask” switches without asking, or, with Xenia started
+  directly, the profile is set ahead of time after each sync and a notice follows if Xenia ran as another profile.
+- **Never while Xenia runs:** the config line and the row merge are written only when the game's process is not running.
+
+*Build plan for the profile, one commit each:*
+1. **Capture and confirm, no code:** from PC and Deck, `FFFE07D1.gpd`, two title GPDs, `Account`, the profile header and
+   `xenia-canary.config.toml`. Confirm that `logged_profile_slot_0_xuid` (`[Profiles]`) signs in at boot, whether Xenia rewrites it
+   when signing in from its own menu or on exit, and where the config lives in each setup (EmuDeck Windows, Proton, portable,
+   Documents).
+2. **XDBF reader and writer** (`Agent.Core/Xdbf.cs`): header, entry and free-space tables; achievements (namespace 1),
+   settings (3), title rows (4). Unchanged entries are written back untouched; the captured files round-trip byte for byte.
+3. **The game's part of the profile:** a `profile` folder for every Xenia game under an XUID —
+   `content/<XUID>/FFFE07D1/00010000/<XUID>`, scope `<TID>.gpd`. Its row travels as a small file in a SaveLocker-owned folder
+   (`<state>/xenia/rows/<game>`, key `profile-row`): exported before a push, merged after a pull (insert or replace that one row,
+   recount the gamerscore and achievement totals). A per-emulator hook in `SyncEngine` (before push / after restore), guarded by
+   `GameActivity`. `SaveFolderClaims` is unchanged since no two games share a file. Two-machine test: Halo 3's newer row
+   survives a Forza Horizon pull, and a whole-file copy fails it.
+4. **The core, copied once:** account, header and the main file's settings exported to `<state>/xenia/core/<XUID>` (key
+   `profile-core`, ~100 KB) and restored **only where the profile is missing** — a new restore-if-missing folder mode. Settings
+   changed later are not synced in this phase (newest-wins per setting is a follow-up).
+5. **The game's profile on the server:** `Game.EmulatorProfile` (`xenia:<XUID>`), set by the first enrollment, shown and
+   changeable in the console. Migration; regenerate `openapi.json` and `api-types.ts`.
+6. **Aligning a machine:** Add games offers “Use <profile> here” (folder `content/<game XUID>/<TID>`, declared before it exists)
+   or “Keep <own> as a separate game”; then core → row → pull, in that order (the row before the save, because Xenia ignores a
+   title GPD the main file does not list). A folder under the game's XUID ranks above one under another XUID.
+7. **Xenia config and the decision:** `XeniaConfig` finds the config through the existing Xenia setups and edits
+   `logged_profile_slot_0_xuid` line by line (comments and order kept, `[Profiles]` added if missing, atomic, one backup).
+   `XeniaLaunchProfile.Decide(configured, gameProfile, policy, canPrompt)` → start / switch / ask / leave, pure and unit-tested.
+   Policy: game → machine → console default (Ask). Pre-profile layouts skip the check.
+8. **Into every launch path:** `PrepareLaunchAsync` (Linux launch command, the Playnite route, the agent API) gains a profile
+   step after the pull. Ask raises a pending prompt (`GET /api/launch/prompts`, `POST …/{id}/answer`) and waits up to 30 s,
+   then uses the game's profile. With nothing before the launch, the config is set after each sync while Xenia is closed, and a
+   notice follows an exit that ran as another profile. Activity entries and agent event codes for the console.
+9. **Prompts:** the Decky plugin (its own repo) shows a modal while a launch waits; the Playnite plugin a real dialog; the agent
+   UI too when open. Without Decky in Game Mode, Ask acts as Switch and says so afterwards.
+10. **Console, help, testenv, Group H:** the game's profile line and a “Profile at launch” table from heartbeats, the
+    Configuration default, a help article, testenv with two profiles and a config file, and Forza Horizon between PC (Playnite)
+    and Deck (Game Mode, with and without Decky). The DLC check then reuses the Decky prompt for its own “Ask” in Game Mode.
+
+*DLC: the DLC check* — chosen. The whole journey, every screen on PC, Deck and console, is in
+[`phase-5c-dlc-check-mockups.html`](phase-5c-dlc-check-mockups.html) (Journey and Build plan tabs). Decided by the design:
+- **Stored:** a list per save version only (each package's ID, display name, type, size; about 2 KB). Packs are never stored;
+  a **hand-over** passes them through the server from a machine that has them and deletes them on delivery, or after 7 days.
+- **Policy before a pull** when packs are missing: **Ask** (default) / Pull anyway / Hold; console-wide, a machine may override.
+  An automatic pull (before launch, from the console, the poller) never asks: “Ask” holds it and notifies.
+- **Sending:** per machine, Ask me (default) / Send automatically / Never.
+- **Caps:** hand-over `Storage:MaxHandoverMb`, 2 GB, separate from the 500 MB save cap. This replaces the DLC-as-folder and
+  `MaxDlcUploadMb` calls above.
+- **Covers title updates** (`000B0000`) as well as DLC (`00000002`): a save from a newer update may not load at all.
+
+*Build plan, one commit per step:*
+1. **Inventory:** `ContentInventory` per emulator, Xenia first — each package folder under `content/0000000000000000/<TID>/`
+   `00000002` and `000B0000`, display name and type from its file in `Headers/`, total size; identity = package ID + size, no
+   hashing of package data. Check the header layout against the PC's real Forza Horizon packages before writing the reader.
+   Add games shows the line.
+2. **List with every push:** optional `Content` on `BeginUploadRequest`, stored per version (`SaveVersionContent`, migration),
+   returned with the version. Old agents send nothing. Regenerate `openapi.json` and `api-types.ts`.
+3. **What each machine has:** `POST /agent/games/{id}/content` after every scan, kept per machine per game
+   (`MachineGameContent`), so the console shows the gap before anyone pulls.
+4. **Check before a pull:** in `SyncEngine`'s pull, after the head is known and before the restore; `DlcCheck.Decide(head, here,
+   policy, interactive)` is pure and unit-tested. Agent API `GET /api/games/{id}/dlc`, `POST …/dlc/choice`; agent UI card,
+   dialog, Overview banner.
+5. **Console:** the game page's DLC check card and the Configuration card (policy, hand-over cap, expiry) as server settings that
+   agents learn on poll.
+6. **Hand-over, server:** `ContentTransfer` (game, packs, from, to, status, expiry) and its parts in a temporary store beside
+   the archives: Requested → Approved → Uploading → Ready → Delivered → Deleted, or Declined / Expired / Cancelled. Parts
+   upload through the save upload's begin/chunk/complete pattern and download ranged; only the asking machine may fetch;
+   the lease sweeper deletes expired ones. Audit entries.
+7. **Hand-over, agents:** the 20 s poller lists transfers to send (approve per the setting, upload) and to fetch (download to a
+   temp folder, check against the list, move into place, run the held pull). Never writes into a running game
+   (`GameActivity`). Two-machine test end to end.
+8. **Hold, notifications, launch:** a held pull is durable on disk and re-checked on every scan and when the DLC folder changes;
+   notices through `NoticeCatalog` (needs DLC, asked, received, declined, expired) open the game screen; the launch wrapper
+   never waits on DLC; a Decky line for a held pull.
+9. **Help, CLI, testenv, Group H:** a help article, `dlc status` / `dlc ask`, testenv packages on Windows and missing on WSL,
+   and the real Forza Horizon DLC between PC and Deck. Then further inventories: Cemu (`0005000c`), Azahar (`0004008c`), RPCS3.
+
+### Phase 5c — final plan (approved by the maintainer 2026-10-12)
+
+Both designs above are approved: **the profile checked at launch (F) with the profile split by game**, and **the DLC check**.
+This is the build order; each numbered step is one commit on this PR (`emulator-saves-group-e`, #68), and the plugin parts are
+their own PRs on `Marwanello/SaveLocker-Decky` and `Marwanello/SaveLocker-Playnite`.
+
+**Captured before building (2026-10-12, this PC; the Deck was offline):**
+- Xenia Canary under **Xenia Manager** (`D:\Game Sources\Emulators\Xenia Manager\Emulators\Xenia Canary`, portable). Its root
+  `xenia-canary.config.toml` has `[Profiles] logged_profile_slot_0_xuid = "E030000033894516"`, and Xenia Manager keeps **one config
+  per game** in `config/<game name>.config.toml`, which carry the same line. The launch check writes the root config and the
+  game's own config when there is one.
+- `FFFE07D1.gpd` is XDBF exactly as Free60 documents it: 24-byte header, 18-byte entries (namespace, id, offset, length), 8-byte
+  free entries, data after both tables; the last free entry is `(end, ~end)`. Title rows are namespace 4 keyed by title ID
+  (unlocked at +8, gamerscore earned at +16); settings are namespace 3, 24 bytes, an Int32 value at +16. The three totals —
+  `0x10040006` gamerscore, `0x10040012` games played, `0x10040013` achievements — equal the sums over the rows, so a merge
+  recounts them.
+- `Account` decrypts with Xenia's retail key `0x19` (HMAC-SHA1 of the first 16 bytes → RC4 key); the hash checks out and the
+  gamertag is UTF-16BE at +16 of the decrypted data.
+- A DLC header in `Headers/00000002/<package>.header` is 332 bytes: device, content type (2 = DLC), display name UTF-16BE
+  (`Pre-Order Car Pack`), the package file name, the title ID. Forza Horizon's ten packages are 48 MB–349 MB, 1.0 GB in all.
+
+**Launch questions (shared by the profile and the DLC check).** `LaunchDecision` gains `Ask`, and `LaunchGateResult` gains a
+`Question` (id, kind, title, text, choices, the default choice, a timeout). **The agent applies the default before it answers
+`Ask`,** so a client that does not know `Ask` (today's Decky and Playnite plugins fail open on anything but `Blocked`) still
+launches correctly. A client that shows the question posts a different choice to `POST /api/games/{id}/launch-answer`, which the
+agent applies before the launch continues. The in-process Linux wrapper cannot ask, so for it `Ask` is the default.
+
+**Steps**
+1. **Xenia file formats** — `Xdbf` (read, write, the row merge and recount), `XeniaAccount` (gamertag), `XeniaContentHeader`
+   (DLC and title-update headers), `XeniaConfig` (find the config(s), read and write `logged_profile_slot_0_xuid` line by line).
+   Unit tests on built fixtures; a local-only test reads the captured real files when `SAVELOCKER_XENIA_CAPTURE` points at them
+   (they hold a real gamertag, so they are not committed).
+2. **Launch questions** — the contract above in the agent; the answer route; a question store with expiry.
+3. **The profile at launch** — `XeniaLaunchProfile.Decide` in `PrepareLaunchAsync`: the game's profile is the XUID its save folder
+   is under; policy Ask (default) / Switch / Leave, a machine setting; pre-profile layouts skip it; never while Xenia runs.
+4. **Plugins** — Decky: a modal for `Ask` during a held launch, answer through `main.py`, timeout keeps the default. Playnite: a
+   real dialog in `OnGameStarting`. Both keep failing open.
+5. **The game's part of the profile** — the `profile` folder (`<TID>.gpd`) and its row exported/merged around push and pull.
+6. **The profile core, copied once** — restore-if-missing.
+7. **The game's profile on the server and aligning a machine** — `Game.EmulatorProfile`; Add games' “Use <profile> here”.
+8. **DLC: the list with every push** and **what each machine has** (server tables, migration, API).
+9. **DLC: the check before a pull** — agent UI card and dialog; `Ask` in a launch uses the launch question.
+10. **Console** — the DLC check card, the profile-at-launch table, the Configuration card.
+11. **DLC hand-over, server** — `ContentTransfer`, temporary parts, sweeper, cap, audit.
+12. **DLC hand-over, agents** — send and fetch through the poller.
+13. **Hold and notifications** — durable held pulls, the folder watch, notices.
+14. **Help, CLI, testenv, Group H** — Forza Horizon between PC (Xenia Manager, Playnite) and Deck (Game Mode).
+
+**Verify (when built):** a profile pulled to a machine without it signs in and loads a game's save there; a machine with its own
+profile keeps it; a DLC entry pushed once and pulled; a save game's push never carries DLC; the two-machine tests per entry.
 
 ### The other emulators — researched 2026-10-07
 
@@ -980,6 +1251,9 @@ own group, in a follow-up PR.
 | **RPCS3** (PS3) | Save in-game (the Deck has *Heavenly Sword*'s autosave already) | None | `Emulation/storage/rpcs3/dev_hdd0/home/00000001/savedata` on both | A game with several save folders; the trophy folder stays local | ⏳ | ⏳ |
 | **Vita3K** (PS Vita) | Save in-game | None | `Emulation/storage/Vita3K/ux0/user/<user>/savedata` on both (`00` is the first user, the one EmuDeck links) | **Whether the save has its own `sce_sys/param.sfo`** (else the name comes from the installed game only); a second Vita3K user's save is listed too | ⏳ | ⏳ |
 | **shadPS4** (PS4) | Save in-game | None | Old layout `~/.local/share/shadPS4/savedata/<user>` · `%APPDATA%\EmuDeck\Emulators\ShadPS4-qt\user\savedata\<user>`; new layout `…/home/<user>/savedata` (users `1000`–`1003`) | **Which layout the installed build writes** (both EmuDeck installs link the old one) and, after shadPS4 offers to move old saves to `home/1000`, that the game is still found; the user ID folder's name; `MAINTITLE` in the save; a save on one layout joining a save on the other | ⏳ | ⏳ |
+| **Cemu** (Wii U) | Save in-game (`usr/save/00050000/<low>/user/80000001/…`) | None | `Emulation/roms/wiiu/mlc01/usr/save` (Deck, SD card) · `%APPDATA%\EmuDeck\Emulators\cemu\mlc01\usr\save` | The name: Cemu's `title_list_cache.xml` on each machine (where the AppImage keeps it); both machines on account `80000001`; a disc-format game (`.wud`/`.wux`) with no `meta.xml` | ⏳ | ⏳ |
+| **Azahar** (3DS) | Save in-game (the Deck has Super Mario 3D Land, Samus Returns and one more) | Save state slot 1 (`<program ID>.01.cst`) | `Emulation/storage/azahar/sdmc` + `~/.local/share/azahar-emu/states` · `%APPDATA%\EmuDeck\Emulators\azahar\user\{sdmc,states}` | The name from the ROM on each machine; a CIA-installed game's `content/` never syncs; the third Deck save (`0016e300`, no ROM) | ⏳ | ⏳ |
+| **Xenia** (Xbox 360) | Save in-game (the PC and the Deck both have Forza Horizon) | None | `Emulation/roms/xbox360/content` (Deck, Proton) · `%APPDATA%\EmuDeck\Emulators\xenia\content` | Two profiles' XUIDs (the same one on both machines today); the Deck's old-layout folder; the DLC under `00000002` stays local; a pulled save loads in the other machine's profile | ⏳ | ⏳ |
 | **PrimeHack** | Save in Metroid Prime Trilogy (on the Deck already) | Save state slot 1 (`R3ME01.s01`) | `Emulation/saves/primehack/{GC,Wii}` + `StateSaves` (Deck) · `states` (Windows) | It stays its own game beside Dolphin's Trilogy; where a non-portable Windows PrimeHack keeps its user folder (the PC's EmuDeck install has never run it) | ⏳ | ⏳ |
 
 ### Group I — Games found by their save states alone
@@ -1003,20 +1277,62 @@ refused — one two-machine test per family).
 | PCSX2 | `<serial> (<CRC>).NN.p2s` | which folder card the game's saves would go to |
 | DuckStation | `<serial>_N.sav`, `<serial>_resume.sav` | the per-game card's file name (`<title>_1.mcd`) from a serial alone |
 | Dolphin / PrimeHack | `<game ID>.s01`…`.s10` | GameCube `.gci` vs Wii `title/` scope from the ID's first letter |
+| Azahar | `<program ID>.<NN>.cst` | the program ID gives the `title/00040000/<low>/data` scope directly; added 2026-10-12 with Group E |
 
-No states, so not in this phase: RPCS3, Vita3K, shadPS4, ScummVM, Supermodel, Model 2.
+No states, so not in this phase: RPCS3, Vita3K, shadPS4, ScummVM, Supermodel, Model 2, Cemu, Xenia.
 
 **Verify:** per emulator, a fixture with a state and no save (listed, `StatesOnly`, correct name and scope), a save
 elsewhere winning, and an empty state ignored; the two-machine test per family above; testenv fixture rows.
 
+### Phase 20 — a Steam ROM Manager shortcut is the emulator's game (Group G, not started)
+
+**Why.** EmuDeck's Steam ROM Manager (SRM) adds a non-Steam shortcut to Steam for every ROM, so the game shows in Game
+Mode. SaveLocker reads `shortcuts.vdf` and offers each one as a *Steam shortcut* game, while the emulator's reader
+offers the same game from its save. On the maintainer's Deck *Forza Horizon* is listed twice (2026-10-13): once from
+Xenia's save, once from its SRM shortcut, which launches Xenia with the ROM and has no save folder of its own. Tracking
+both makes two server games for one save, or one that never syncs.
+
+**Detect.** A shortcut is SRM's when any of these hold, strongest first (each to be confirmed on a capture):
+1. SRM's own record of what it added (`~/.config/steam-rom-manager/userData/` — the added items with their app IDs),
+   when SRM is installed on this machine.
+2. Its `Exe` is an EmuDeck launcher (`Emulation/tools/launchers/<emulator>.sh`, or the `.ps1`/`.exe` launchers on
+   EmuDeck for Windows) or an emulator SaveLocker reads, and its `LaunchOptions` name a file under the ROMs folder.
+3. Its tags carry SRM's category for a system (`Xbox 360`, `PlayStation 2`, …).
+The shortcut's ROM path (from `LaunchOptions`) is what ties it to a game: the emulator reader's candidate for that ROM
+(`EmulatorRom`), or for Xenia/Cemu/RPCS3 the title the ROM or its folder names. Only when no ROM path is readable, the
+cleaned name.
+
+**What changes.**
+- **Add games:** an SRM shortcut is not listed as a Steam shortcut game. Its emulator row says it was also found as a
+  Steam shortcut, and the shortcut's app ID is attached to it.
+- **Launch and exit:** the attached app ID lets pull-before-launch and push-after-exit work for the emulator game
+  started from that shortcut (today only the shortcut row could have them). This is the deferred
+  *Recovering ROM identity from an SRM shortcut's `LaunchOptions`*, now built.
+- **Art:** the shortcut's grid and icon can be offered for the emulator game.
+- **Already tracked twice:** a tracked shortcut game whose emulator game is also tracked shows *Same game as
+  \<name\> (\<emulator\>)* with **Stop tracking this copy**. Merging the two server games waits for a server merge
+  (Phase 17's open question; [[Backlog]] → *One game, several real sources*).
+- **Windows:** EmuDeck for Windows and SRM there work the same way; the same rules apply.
+
+**Open questions (decide before building):**
+- **Which signal is enough on its own?** SRM's record alone, or the launcher plus a ROM path too? A hand-made shortcut
+  to an emulator with a ROM is the same thing to SaveLocker, so the launcher plus ROM path may be the rule.
+- **A shortcut with no emulator candidate** (a ROM never played, so no save yet): hidden, or listed as the emulator game
+  waiting for its first save (Phase 19's *states only* gives the precedent)?
+- **Other front ends** that add shortcuts the same way (BoilR, Heroic's emulator entries, RetroDECK): in this phase or
+  later?
+- **Name on the server** when only the shortcut's name differs from the reader's (SRM's titles come from its own
+  fuzzy match): always the reader's, as today.
+
+**Verify:** a captured `shortcuts.vdf` and SRM's records from the Deck (read-only) as fixtures — the Xenia, RetroArch
+and PCSX2 shortcuts each matched to their emulator candidate, a hand-made Steam shortcut to a PC game left alone, a
+shortcut whose ROM has no save; Add games on the Deck lists *Forza Horizon* once; the app ID drives pull-before-launch
+for the emulator game (testenv WSL with a fixture shortcut, then the real Deck under Group H).
+
 ## Deferred, not built in this task
 
-**Recovering ROM identity from a Steam ROM Manager shortcut's `LaunchOptions`** (structurally the
-same problem `SteamShortcuts.MoonDeckAppId` already solves for MoonDeck) — needs a captured
-`shortcuts.vdf` sample from a real SRM-configured, High-integration EmuDeck install first. This only
-ever improves launch/exit lifecycle precision for that subset of installs; every integration level
-and every standalone install is already fully covered for *detection* by the folder-tree scanning in
-Phases 1–6, which never depends on Steam. Flag as a Backlog follow-on once a sample exists.
+**Recovering ROM identity from a Steam ROM Manager shortcut's `LaunchOptions`** moved into Phase 20 (2026-10-13), with
+the duplicate entries it causes on the Deck.
 
 **Save states** and **Ryujinx** were here; both are now in scope (*Save states — decided*, D3; Phase 6).
 

@@ -46,7 +46,11 @@ SaveLocker/
 │   │   │   ├── GlobConfig.cs            # Save-file exclude globs: per-game text + `Sync:DefaultExcludeGlobs`
 │   │   │   ├── ArchiveStore.cs          # {root}/{gameId}/{versionId}.zip on disk
 │   │   │   ├── ArtService.cs            # SteamGridDB fetch + cache to /data/art/; default pick (an OPAQUE
-│   │   │   │                           #   icon preferred), the picker's paged options, "set this one"
+│   │   │   │                           #   icon preferred), the picker's paged options, "set this one", and
+│   │   │   │                           #   WHICH SteamGridDB game the art comes from (`Game.SteamGridDbId`
+│   │   │   │                           #   pinned by hand, else the first name match — the options listing,
+│   │   │   │                           #   Refresh art and the backfill all read it; `art/search` feeds
+│   │   │   │                           #   the picker's search box)
 │   │   │   ├── ArtBackfillService.cs    # Background fill of games with no art, run when a key is saved
 │   │   │   │                           #   AND once after startup (a config-supplied key never "saves").
 │   │   │   │                           #   Missing art only — never replaces a hand-picked cover
@@ -87,7 +91,8 @@ SaveLocker/
 │   │   ├── ServerOrigin.cs              # What counts as "the same server" — what credentials bind to
 │   │   ├── LocalAuth.cs                 # Token + Host/Origin guard for the agent's OWN API. That API
 │   │   │                               #   manages the machine, so loopback alone is not a defence
-│   │   ├── StateDirSecurity.cs          # Locks the state dir's ACL to its creator (WA-03). See Gotchas
+│   │   ├── StateDirSecurity.cs          # Makes the state dir private: a per-account ACL on Windows (WA-03),
+│   │   │                               #   0700/0600 on Unix, tightening files older builds left permissive
 │   │   ├── AtomicFile.cs                # Whole-file writes no reader can catch half-finished
 │   │   ├── AgentStateLock.cs            # Cross-PROCESS state lock — the daemon and the launch wrapper
 │   │   │                               #   are separate processes sharing every state file
@@ -121,7 +126,7 @@ SaveLocker/
 │   │   │                               #   because the Linux launch wrapper is a separate,
 │   │   │                               #   short-lived process from the daemon — held in memory,
 │   │   │                               #   its warnings reached no UI at all. 24 h expiry.
-│   │   ├── AgentLogger.cs               # Rolling agent.log
+│   │   ├── AgentLogger.cs               # Rolling agent.log (0600 from creation on Unix)
 │   │   ├── AgentCli.cs                  # Shared one-shot commands (register/push/pull/status/…)
 │   │   ├── CliArgs.cs                   # Minimal command-line parser
 │   │   ├── Enroller.cs                  # Candidate → server game + tracked game; publishes its progress
@@ -158,7 +163,8 @@ SaveLocker/
 │   │   │                               #   a PS1 card of several games) → a greyed NotSyncable row; PS1 card directory;
 │   │   │                               #   ConsoleText (Shift-JIS/1252, full-width folded by hand — invariant globalization)
 │   │   ├── Pcsx2Saves.cs · DuckStationSaves.cs   # PS2 folder card per product code; PS1 card per game
-│   │   ├── ConsoleTitles.cs             # Serial → title + region + languages (PS1/PS2/PS3/PSP/GC/Wii) and the save's
+│   │   ├── ConsoleTitles.cs             # Serial → title + region + languages (PS1/PS2/PS3/PSP/GC/Wii; 3DS product code,
+│   │   │                               #   Xbox 360 title ID from No-Intro and Redump) and the save's
 │   │   │                               #   GameReleaseDto (region kept out of the name), from the embedded
 │   │   │                               #   ConsoleTitles/console-titles.tsv.gz — Redump via libretro-database, CC BY-SA 4.0
 │   │   │                               #   (NOTICE.md); Update-ConsoleTitles.ps1 rebuilds it
@@ -167,6 +173,9 @@ SaveLocker/
 │   │   ├── TitleFolders.cs              # D4 shape 2: a folder per game ID in a shared folder → games, scopes, Sony IDs
 │   │   ├── PpssppSaves.cs · Rpcs3Saves.cs · Vita3KSaves.cs · ShadPs4Saves.cs   # Group D's readers on it (PSP, PS3,
 │   │   │                               #   Vita, PS4); RPCS3's vfs.yml, Vita3K's config.yml, shadPS4's two layouts
+│   │   ├── CemuSaves.cs · AzaharSaves.cs · XeniaSaves.cs   # Group E's title-ID readers (Wii U, 3DS + Citra, Xbox 360):
+│   │   │                               #   Cemu's title cache/meta.xml; Ncch (a 3DS ROM's program ID + product code);
+│   │   │                               #   Xenia's per-profile and old content layouts
 │   │   ├── EmulatorSaves.cs             # The table of emulator sources both scanners loop — a new emulator is one row
 │   │   ├── EmulatorPaths.cs             # Home/AppData for standalone emulator lookups; SAVELOCKER_EMULATOR_HOME = fixture home
 │   │   ├── GamelistXml.cs               # ES-DE gamelist.xml titles, arcade systems only (safe because of D1)
@@ -300,7 +309,9 @@ SaveLocker/
 │   │       │                           #   one section per extra folder, include patterns, Latest's files),
 │   │       │                           #   RulesCard, ExcludePatternsCard, RemoteCommandsCard, MachineSelect
 │   │       ├── ArtPicker.tsx            # Inline cover/icon chooser under the game card (the pen over the
-│   │       │                           #   cover opens it): SteamGridDB options, five per page
+│   │       │                           #   cover opens it): SteamGridDB options, five per page, and the
+│   │       │                           #   source row naming/changing/searching which SteamGridDB game
+│   │       │                           #   they come from
 │   │       ├── ConfigView.tsx           # SteamGridDB, Console build card, Machines/API keys,
 │   │       │                           #   Agent Updates (TWO rows since v0.5.5: win-x64 +
 │   │       │                           #   linux-x64). Console card sits ABOVE Machines on

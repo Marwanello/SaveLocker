@@ -1,4 +1,4 @@
-import type { ArtKind, ArtOptionsPage, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineGameSource, MachineScanCandidate, SavePath, VersionFolder, VersionChanges, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AdminSession, Lockout, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
+import type { ArtKind, ArtOptionsPage, ArtSource, SgdbGame, Game, GameSummary, Machine, Command, Conflict, Settings, AppearanceSettings, SetAppearanceRequest, Version, VersionStats, ExcludesPreview, BulkEnqueueResponse, CancelCommandsResponse, MachineSavePath, MachineGameSource, GameContent, ContentTransfer, HandoverOverview, MachineScanCandidate, SavePath, VersionFolder, VersionChanges, AuditEntry, AgentInstallerStatus, InstallerHashVerification, AgentPlatform, Enrollment, CreateEnrollmentResponse, EffectiveServerUrl, AgentHealth, AdminStatus, AdminSession, Lockout, AutoFetchSchedule, BackupStatus, BackupResult, BackupRestoreResult, SetBackupSettingsRequest, BackupDownloadTicket } from './types';
 
 // The console holds a revocable SESSION TOKEN, never the admin password. It used to keep the password
 // itself in localStorage and send it on every request, so anything able to read that storage — an XSS,
@@ -196,6 +196,14 @@ export const api = {
   /** Use one of those options (by its `url`) as the game's cover or icon. */
   setArt: (gameId: string, kind: ArtKind, url: string) =>
     request<Game>(`/games/${gameId}/art/${kind}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) }),
+  /** Which SteamGridDB game this game's artwork comes from (hand-picked, or the automatic name match). */
+  artSource: (gameId: string) => request<ArtSource>(`/games/${gameId}/art/source`),
+  /** Choose a different SteamGridDB game to pull from; null goes back to the automatic match. */
+  setArtSource: (gameId: string, sgdbId: number | null) =>
+    request<ArtSource>(`/games/${gameId}/art/source`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sgdbId }) }),
+  /** SteamGridDB games matching a name — the picker's "choose a different game" box. */
+  artSearch: (gameId: string, q: string) =>
+    request<SgdbGame[]>(`/games/${gameId}/art/search?q=${encodeURIComponent(q)}`),
   setEnabled: (gameId: string, value: boolean) => request<void>(`/games/${gameId}/enabled?value=${value}`, { method: 'POST' }),
   deleteGame: (gameId: string) => request<void>(`/games/${gameId}`, { method: 'DELETE' }),
   addGame: (name: string, suggestedSaveDir: string | null) =>
@@ -341,6 +349,17 @@ export const api = {
     request<MachineSavePath[]>(`/games/${gameId}/paths`),
   getGameSources: (gameId: string) =>
     request<MachineGameSource[]>(`/games/${gameId}/sources`),
+  getGameContent: (gameId: string) =>
+    request<GameContent>(`/games/${gameId}/content`),
+  getGameTransfers: (gameId: string) =>
+    request<ContentTransfer[]>(`/games/${gameId}/transfers`),
+  /** Hand a machine the packs the latest save needs that it lacks, from the machine that made the save. */
+  sendMissingDlc: (gameId: string, toMachineId: string) =>
+    request<ContentTransfer>(`/games/${gameId}/transfers`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toMachineId }),
+    }),
+  handoverOverview: () => request<HandoverOverview>('/transfers'),
+  cancelTransfer: (id: string) => request<void>(`/transfers/${id}/cancel`, { method: 'POST' }),
   getGamePathCandidates: (gameId: string) =>
     request<MachineScanCandidate[]>(`/games/${gameId}/path-candidates`),
   setMachinePath: (gameId: string, machineId: string, path: string, key?: string) =>

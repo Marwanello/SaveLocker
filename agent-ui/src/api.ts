@@ -1,4 +1,4 @@
-import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
+import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, ContentTransfer, DlcCheck, DlcHold, Xbox360Settings, XeniaProfile, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -68,7 +68,7 @@ export const api = {
   // `links` names the emulator saves linked by hand (Change); any other is linked automatically.
   enroll: (ids: number[], alsoSync?: { id: number; paths: string[] }[],
     links?: { id: number; choice: string; gameId?: string | null }[]) =>
-    post<{ enrolled: number; skipped: number; notes?: string[] | null }>('/api/enroll', { ids, alsoSync, links }),
+    post<{ enrolled: number; skipped: number; notes?: string[] | null; info?: string[] | null }>('/api/enroll', { ids, alsoSync, links }),
   // Which server game each emulator save would join, and what else it could. One server read per call.
   candidateLinks: () => req<CandidateLinks>('/api/candidates/links'),
   // Asked while enroll() is still open: which game and which step the agent is on.
@@ -172,6 +172,20 @@ export const api = {
   syncGame: (id: string, mode: GameSyncMode) => post<{ message: string }>(`/api/games/${id}/sync`, { mode }),
   // What the server holds for one game: head, lease, open conflict. Cheap; no disk work.
   gameState: (id: string) => req<GameState>(`/api/games/${id}/state`),
+  gameDlc: (id: string) => req<DlcCheck>(`/api/games/${id}/dlc`),
+  dlcPullAnyway: (id: string) => post<{ message: string }>(`/api/games/${id}/dlc/pull-anyway`, {}),
+  dlcHolds: () => req<DlcHold[]>('/api/dlc/holds'),
+  dlcHandover: (id: string) => post<ContentTransfer>(`/api/games/${id}/dlc/handover`, {}),
+  dlcHandovers: () => req<ContentTransfer[]>('/api/dlc/handovers'),
+  dlcHandoverAnswer: (id: string, approve: boolean) => post<ContentTransfer>(`/api/dlc/handovers/${id}/answer`, { approve }),
+  dlcHandoverCancel: (id: string) => post<{ message: string }>(`/api/dlc/handovers/${id}/cancel`, {}),
+  xbox360Settings: () => req<Xbox360Settings>('/api/settings/xbox360'),
+  xeniaProfile: (id: string) => req<XeniaProfile>(`/api/games/${id}/xenia-profile`),
+  setGameProfileAtLaunch: (id: string, profileAtLaunch: XeniaProfile['policy'] | null) =>
+    fetch(`/api/games/${id}/xenia-profile`, {
+      method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ profileAtLaunch }),
+    }).then(r => { if (!r.ok) throw new Error(r.statusText) }),
+  setXbox360Settings: (body: Xbox360Settings) => post<Xbox360Settings>('/api/settings/xbox360', body),
   // Hashes the whole save folder. Only ever on an explicit "Check now", never on a timer or a list.
   syncStatus: (id: string) => req<SyncStatus>(`/api/games/${id}/sync-status`),
   /** Every save file of the game here, each compared with the server's latest. Hashes the save — on demand only. */

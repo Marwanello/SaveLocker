@@ -64,6 +64,19 @@ session can judge an edge case, not to reopen the choice.
   *directory* with inheritable rules and enforced in `AtomicFile` — the one choke point every state
   writer already goes through — so a state file added later cannot quietly miss it. Failure to
   apply is logged loudly and is never fatal: an agent that refuses to start protects nothing.
+  <br>**The same rule on Linux (2026-10-12, tasks/linux-agent-secrets):** the state directory is
+  **0700** and the private state files (`config.json`, `api-token`, `agent.log`/`.old`,
+  `offline-queue.json`, `health-events.json`, `lease-warnings.json`, `sync-activity.json`,
+  `manifest.yaml`) are **0600**, enforced by the code rather than left to the launching shell's
+  umask — under the usual 022 that was a 0755 directory with 0644 files, one of which holds the
+  server API key. It is applied by the same `AtomicFile` choke point (`StateDirSecurity.Protect` now
+  runs on both OSes), by the log's first write and by `LocalAuth`, so CLI-only runs (`register`,
+  `enroll`) that never start the local API are covered, and files an older build left 0644 are
+  tightened in passing. The directory IS the install prefix on Linux; both belong to the same user,
+  so 0700 costs nothing there — it only keeps other accounts out. Deliberately **not** done in the
+  same change: moving mutable state out of the install prefix into XDG config/state dirs — see
+  `tasks/linux-agent-secrets/plan-split.md` for why (upgrade/rollback across the split, and the
+  Decky plugin's hard-coded `api-token` path).
 - **`ApiKey` + `MachineId` + `ServerPin` are one identity, bound to an origin** (WA-04, 2026-07-27).
   Changing `ServerUrl` to a different origin **clears all three**, and the machine must register or
   enroll again. Keeping them meant presenting server A's live machine key to server B — B rejects it,
@@ -385,6 +398,14 @@ session can judge an edge case, not to reopen the choice.
   - **Picker previews are inlined as `data:` URIs by the server.** The console's CSP allows images from
     itself and `data:` only (Decisions → console headers) and a browser fetching from SteamGridDB's CDN
     would also tell it who is browsing. Shrunk first, so a page of five is tens of kilobytes.
+  - **A game's SteamGridDB source is remembered, not re-guessed** (2026-10-12,
+    tasks/art-picker-game-choice). The first autocomplete result used to be the only option — a game
+    whose name matches the wrong entry offered that entry's art with no way out short of renaming it.
+    The picker names its source ("Automatic match: …" or "Chosen: …"), can search
+    (`search/autocomplete`) and pin one id, stored on the game (`Game.SteamGridDbId` plus the name
+    SteamGridDB itself returned — never the caller's text, and the id is validated against
+    `games/id/{id}` before it is stored). The pin is used by the options listing, *Refresh art* and the
+    missing-art backfill; *Use automatic match* clears it back to the first-name-match.
 - **Product name: SaveLocker.** Rename complete 2026-07-10 — config dir, mutex, registry key,
   DB path, namespaces, solution/project files. Existing Docker deployments may still have
   `/data/localgamesync.db`; rename or set `Storage__DbPath`.

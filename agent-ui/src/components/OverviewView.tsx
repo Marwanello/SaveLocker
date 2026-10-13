@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { AgentState, Conflict, LeaseWarning, TrackedGame, View } from '../types'
+import type { AgentState, Conflict, ContentTransfer, DlcHold, LeaseWarning, TrackedGame, View } from '../types'
 import { api } from '../api'
 import { formatBytes } from '../format'
 import { RecentCard } from './RecentCard'
@@ -27,6 +27,13 @@ export function OverviewView({ state, conflicts, games, onWarningDismissed, onNa
   const warnings = state?.leaseWarnings ?? []
   const [rescanning, setRescanning] = useState(false)
   const [rescanNote, setRescanNote] = useState<string | null>(null)
+  // Pulls the DLC check holds (tasks/emulator-saves Phase 5c). Read when the page opens; a hold is a decision that
+  // waits for the person, not something that changes by the second.
+  const [holds, setHolds] = useState<DlcHold[]>([])
+  useEffect(() => { api.dlcHolds().then(setHolds).catch(() => setHolds([])) }, [])
+  // Other machines asking this one for DLC, waiting on an answer.
+  const [requests, setRequests] = useState<ContentTransfer[]>([])
+  useEffect(() => { api.dlcHandovers().then(setRequests).catch(() => setRequests([])) }, [])
 
   async function dismiss(w: LeaseWarning) {
     try { await api.dismissLeaseWarning(w.gameName) } catch { /* ignore */ }
@@ -50,6 +57,26 @@ export function OverviewView({ state, conflicts, games, onWarningDismissed, onNa
   }
 
   const banners: ReactNode[] = []
+  for (const r of requests) {
+    banners.push(
+      <Banner
+        key={`handover-${r.id}`} tone="warn"
+        title={`${r.toMachineName} asks for ${r.parts.length} DLC pack${r.parts.length === 1 ? '' : 's'} of ${r.gameName}`}
+        detail="Open the game to send them through your server, or decline."
+        action={<Button variant="primary" onClick={() => onNavigate('games')}>Open Games</Button>}
+      />,
+    )
+  }
+  for (const h of holds) {
+    banners.push(
+      <Banner
+        key={`dlc-${h.gameId}`} tone="warn"
+        title={`${h.gameName} has a newer save that needs ${h.summary}`}
+        detail="This device's save is kept until you choose. Install them and the pull goes ahead by itself."
+        action={<Button variant="primary" onClick={() => onNavigate('games')}>Open Games</Button>}
+      />,
+    )
+  }
   if (state && !state.connected) {
     banners.push(
       <Banner

@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SaveLocker — Games: sorting &amp; grouping (three options)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<script>
+  // One theme switch drives the whole page (mockup chrome + every console frame); default follows the OS.
+  document.documentElement.dataset.view =
+    matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+</script>
+<style>
+/* ===================== mockup chrome: the page around the frames ===================== */
+:root{
+  --pg-bg:#f4f2ee; --pg-panel:#fbfaf7; --pg-ink:#1b1c1a; --pg-dim:#5d605c; --pg-faint:#8e918c;
+  --pg-line:#dcd9d2; --pg-accent:#c0432c; --pg-win:#4c7b3e; --pg-cost:#8a6212;
+}
+:root[data-view="dark"]{
+  --pg-bg:#101113; --pg-panel:#17181b; --pg-ink:#eceae6; --pg-dim:#a09d97; --pg-faint:#6f6c66;
+  --pg-line:#28282c; --pg-accent:#e0533c; --pg-win:#7fa96a; --pg-cost:#d9a63f;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--pg-bg);color:var(--pg-ink);font:400 15px/1.6 'Archivo',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:0 28px}
+h1,h2,h3,h4{text-wrap:balance}
+a{color:inherit}
+button{font:inherit;cursor:pointer;background:none;border:0;color:inherit}
+button:focus-visible{outline:2px solid var(--pg-accent);outline-offset:2px}
+
+.mast{padding:60px 0 28px;border-bottom:1px solid var(--pg-line)}
+.mast .eyebrow{font:500 11px/1 'JetBrains Mono',monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--pg-faint)}
+.mast h1{font:700 clamp(32px,5vw,54px)/1.02 'Archivo';letter-spacing:-.03em;margin:16px 0 14px;max-width:24ch}
+.mast p{max-width:76ch;color:var(--pg-dim);font-size:15.5px}
+.mast .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px;align-items:center}
+.mast .meta span{font:400 11px/1 'JetBrains Mono',monospace;padding:6px 10px;border:1px solid var(--pg-line);border-radius:3px;color:var(--pg-dim);background:var(--pg-panel)}
+.mast .meta button{margin-left:auto;font-size:12.5px;padding:7px 13px;border:1px solid var(--pg-line);border-radius:8px;background:var(--pg-panel);color:var(--pg-dim)}
+.mast .meta button:hover{color:var(--pg-ink)}
+
+.toc{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));border-bottom:1px solid var(--pg-line)}
+.toc a{display:block;padding:16px;border-right:1px solid var(--pg-line);text-decoration:none;transition:background .15s}
+.toc a:last-child{border-right:0}
+.toc a:hover{background:var(--pg-panel)}
+.toc .n{font:400 10px/1 'JetBrains Mono',monospace;color:var(--pg-faint);letter-spacing:.15em}
+.toc .t{font:600 15.5px/1.2 'Archivo';letter-spacing:-.01em;margin-top:5px}
+.toc .s{font-size:12px;color:var(--pg-dim)}
+
+.opt{padding:54px 0 58px;border-bottom:1px solid var(--pg-line)}
+.opt-head{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:38px;align-items:start;margin-bottom:24px}
+@media (max-width:920px){.opt-head{grid-template-columns:1fr}}
+.opt-num{font:500 11px/1 'JetBrains Mono',monospace;letter-spacing:.18em;text-transform:uppercase;color:var(--pg-faint)}
+.opt-name{font:700 clamp(28px,3.6vw,40px)/1.05 'Archivo';letter-spacing:-.025em;margin:10px 0 8px}
+.opt-line{font-size:15.5px;color:var(--pg-dim);max-width:60ch}
+.try{border:1px solid var(--pg-line);background:var(--pg-panel);border-radius:10px;padding:15px 17px}
+.try h4{font:600 11px/1 'JetBrains Mono',monospace;letter-spacing:.13em;text-transform:uppercase;color:var(--pg-faint);margin-bottom:9px}
+.try ul{list-style:none;display:flex;flex-direction:column;gap:6px}
+.try li{font-size:13px;color:var(--pg-dim);padding-left:16px;position:relative}
+.try li::before{content:"→";position:absolute;left:0;color:var(--pg-faint)}
+.try kbd{font:500 11px/1 'JetBrains Mono',monospace;border:1px solid var(--pg-line);border-bottom-width:2px;border-radius:4px;padding:2px 5px;background:var(--pg-bg)}
+.scroller{overflow-x:auto;padding-bottom:8px;margin-top:22px}
+.frame{min-width:1000px}
+.frame-label{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
+.frame-label b{font:600 12px/1 'Archivo';letter-spacing:.08em;text-transform:uppercase}
+.frame-label span{font-size:12px;color:var(--pg-faint)}
+.verdict{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:20px;max-width:900px}
+@media (max-width:760px){.verdict{grid-template-columns:1fr}}
+.verdict h4{font:600 11px/1 'JetBrains Mono',monospace;letter-spacing:.13em;text-transform:uppercase;margin-bottom:8px}
+.verdict .win h4{color:var(--pg-win)} .verdict .cost h4{color:var(--pg-cost)}
+.verdict ul{list-style:none;display:flex;flex-direction:column;gap:5px}
+.verdict li{font-size:13.5px;color:var(--pg-dim);padding-left:14px;position:relative}
+.verdict li::before{content:"·";position:absolute;left:2px;color:var(--pg-faint)}
+
+.notes{padding:54px 0 78px}
+.notes h2{font:700 clamp(24px,3vw,34px)/1.1 'Archivo';letter-spacing:-.025em;margin-bottom:8px}
+.notes .lede{color:var(--pg-dim);max-width:78ch;margin-bottom:24px}
+.ncols{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:26px 36px;margin-bottom:30px}
+.nblock h3{font:600 11px/1 'JetBrains Mono',monospace;letter-spacing:.13em;text-transform:uppercase;color:var(--pg-faint);margin-bottom:10px}
+.nblock ul{list-style:none;display:flex;flex-direction:column;gap:7px}
+.nblock li{font-size:13.5px;color:var(--pg-dim);padding-left:15px;position:relative}
+.nblock li::before{content:"·";position:absolute;left:2px;color:var(--pg-faint)}
+.nblock b{color:var(--pg-ink);font-weight:600}
+.nblock code{font:500 11.5px/1.4 'JetBrains Mono',monospace;background:var(--pg-panel);border:1px solid var(--pg-line);border-radius:4px;padding:1px 5px}
+.atable{width:100%;border-collapse:collapse;margin-top:6px;font-size:13px}
+.atable th{font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:var(--pg-faint);text-align:left;padding:8px 10px;border-bottom:1px solid var(--pg-line)}
+.atable td{padding:9px 10px;border-bottom:1px solid var(--pg-line);color:var(--pg-dim);vertical-align:top}
+.atable td:first-child{color:var(--pg-ink);font-weight:600;white-space:nowrap}
+footer{border-top:1px solid var(--pg-line);padding:22px 0 40px;font-size:12.5px;color:var(--pg-faint)}
+/* ===================== the console frame (Checkpoint tokens, both themes) =====================
+   Values are the console's own tokens from web/src/index.css; the derived soft/line/ink steps are
+   the precomputed color-mix() results (a plain file cannot read the @theme block). */
+.console{
+  --color-ink:#0f0f10; --color-panel:#141416; --color-raise:#191a1c; --color-tile:#1b1c1f; --color-hover:#202124;
+  --color-fg:#f0eee9; --color-dim:#a09d97; --color-faint:#817e78; --color-line:#242427; --color-row:#1d1d20;
+  --color-safe:#7fa96a; --color-watch:#d9a63f; --color-info:#7b9fd0; --color-accent:#e0533c; --color-on-accent:#160f0e;
+  --color-accent-soft:#311d1b; --color-accent-line:#6a2e26; --color-accent-ink:#e3725f;
+  --color-safe-soft:#232922; --color-safe-line:#3f5038; --color-safe-ink:#9dbc8d;
+  --color-watch-soft:#30281c; --color-watch-line:#634e26; --color-watch-ink:#e3c98a;
+  --color-info-soft:#242a34; --color-info-line:#41547a; --color-info-ink:#a9c2e3;
+  background:var(--color-ink); color:var(--color-fg); font-size:13px; line-height:1.45;
+  height:648px; display:flex; flex-direction:column; overflow:hidden;
+  border:1px solid rgba(0,0,0,.55); border-radius:10px;
+  box-shadow:0 1px 2px rgba(10,14,20,.2), 0 22px 50px -26px rgba(10,14,20,.6);
+}
+html[data-view="light"] .console{
+  --color-ink:#f5f3ef; --color-panel:#fffefc; --color-raise:#f0ede8; --color-tile:#ebe7e0; --color-hover:#e8e3dc;
+  --color-fg:#191719; --color-dim:#57534d; --color-faint:#79756f; --color-line:#e2ddd5; --color-row:#eeeae3;
+  --color-safe:#4c7b3e; --color-watch:#8a6212; --color-info:#3d6aa8; --color-accent:#c0432c; --color-on-accent:#fff8f6;
+  --color-accent-soft:#f6e4df; --color-accent-line:#e5afa5; --color-accent-ink:#9f3a28;
+  --color-safe-soft:#e6ece1; --color-safe-line:#b7cab0; --color-safe-ink:#4c7b3e;
+  --color-watch-soft:#efe8db; --color-watch-line:#d0c09e; --color-watch-ink:#8a6212;
+  --color-info-soft:#e0e6ef; --color-info-line:#b1c3da; --color-info-ink:#3d6aa8;
+  border-color:var(--color-line); box-shadow:0 1px 2px rgba(10,14,20,.08), 0 22px 50px -30px rgba(10,14,20,.35);
+}
+.console *{box-sizing:border-box}
+.console button{font-family:inherit;color:inherit}
+.console button:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
+
+.c-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 18px;min-height:58px;background:var(--color-panel);border-bottom:1px solid var(--color-line);flex-shrink:0}
+.c-brand{display:flex;align-items:center;gap:10px;user-select:none}
+.c-word{font-weight:700;font-size:17px;letter-spacing:-.035em}
+.c-word em{font-style:normal;color:var(--color-accent)}
+.c-ver{font:400 10.5px/1 'JetBrains Mono',monospace;color:var(--color-dim);border:1px solid var(--color-line);background:var(--color-raise);border-radius:99px;padding:4px 9px}
+.c-tabs{display:flex;gap:3px;flex-wrap:wrap}
+.c-tabs button{font-size:13px;font-weight:500;padding:7px 13px;border:1px solid transparent;border-radius:99px;color:var(--color-dim);transition:background .15s,color .15s}
+.c-tabs button:hover{background:var(--color-raise);color:var(--color-fg)}
+.c-tabs button[aria-current="page"]{background:var(--color-accent-soft);border-color:var(--color-accent-line);color:var(--color-accent-ink);font-weight:600}
+.c-right{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;padding:6px 12px;border:1px solid var(--color-line);border-radius:8px;background:transparent;transition:background .15s}
+.btn:hover{background:var(--color-hover)}
+.btn.primary{background:var(--color-accent);border-color:var(--color-accent);color:var(--color-on-accent);font-weight:600}
+.btn.primary:hover{filter:brightness(1.07);background:var(--color-accent)}
+.btn.alert{background:var(--color-accent-soft);border-color:var(--color-accent-line);color:var(--color-accent-ink);font-weight:600}
+.btn.icon{padding:6px 8px}
+.btn.sm{font-size:12px;padding:5px 10px}
+.btn.full{width:100%;justify-content:center}
+
+.seg{display:inline-flex;gap:2px;background:var(--color-raise);border:1px solid var(--color-line);border-radius:99px;padding:2px}
+.seg button{font-size:11.5px;font-weight:500;padding:5px 11px;border-radius:99px;color:var(--color-dim)}
+.seg button:hover{color:var(--color-fg)}
+.seg button[aria-pressed="true"]{background:var(--color-panel);color:var(--color-fg);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+html[data-view="light"] .seg button[aria-pressed="true"]{box-shadow:0 1px 2px rgba(0,0,0,.12)}
+
+.c-page{flex:1;min-height:0;display:flex;flex-direction:column}
+.page-scroll{flex:1;min-height:0;overflow-y:auto;padding:18px 22px 26px}
+.page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.page-head h2{font-size:26px;font-weight:700;letter-spacing:-.035em;line-height:1.05}
+.page-sub{margin-top:6px;font-size:11.5px;color:var(--color-dim)}
+.page-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.games.list{flex:1;min-height:0;display:grid;grid-template-columns:250px minmax(0,1fr)}
+.c-stack{flex:1;min-height:0;display:flex;flex-direction:column}
+
+.side{background:var(--color-panel);border-right:1px solid var(--color-line);display:flex;flex-direction:column;min-height:0;overflow:visible}
+.side-head{border-bottom:1px solid var(--color-line);padding:12px 14px 11px;position:relative;z-index:12}
+.side-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.side-top h4{font:400 10px/1 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--color-faint);white-space:nowrap}
+.rows{flex:1;min-height:0;overflow-y:auto;padding:6px 6px 10px;display:flex;flex-direction:column}
+.side-foot{padding:10px 12px;border-top:1px solid var(--color-line)}
+.side .arrange{margin-top:8px;font-size:10.5px;color:var(--color-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:auto auto;gap:2px 11px;text-align:left;width:100%;
+  padding:8px 10px;border:1px solid transparent;border-radius:11px;transition:background .13s,border-color .13s}
+.row:hover{background:var(--color-raise)}
+.row[aria-current="true"]{background:var(--color-accent-soft);border-color:var(--color-accent-line)}
+.row .r-name{grid-column:2;grid-row:1;align-self:end;font-size:12.5px;font-weight:600;letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .r-meta{grid-column:2;grid-row:2;align-self:start;font-size:10.5px;color:var(--color-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.row .cover{grid-row:span 2;align-self:center}
+.row .r-state{grid-column:3;grid-row:span 2;align-self:center;display:flex;align-items:center}
+
+.cover{width:38px;height:50px;border-radius:7px;flex:0 0 auto;display:grid;place-items:center;
+  background:linear-gradient(150deg,hsl(var(--h) 24% 30%),hsl(var(--h) 28% 15%));
+  color:hsl(var(--h) 48% 84%);font:600 11px/1 'Archivo';letter-spacing:.04em;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.cover.big{width:84px;height:112px;border-radius:10px;font-size:22px}
+
+.dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;display:inline-block}
+.dot.ok{background:var(--color-safe)} .dot.warn{background:var(--color-watch)}
+.dot.crit{background:var(--color-accent)} .dot.idle{background:var(--color-faint)}
+
+/* grouped list headers */
+.ghead{display:flex;align-items:center;gap:7px;width:100%;text-align:left;padding:9px 8px 4px;position:sticky;top:0;z-index:5;background:var(--color-panel)}
+.ghead:hover .g-label{color:var(--color-fg)}
+.chev{flex:0 0 auto;color:var(--color-faint);transition:transform .15s}
+.chev.closed{transform:rotate(-90deg)}
+.g-label{font:400 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--color-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-count{font:400 9.5px/1 'JetBrains Mono',monospace;color:var(--color-faint);background:var(--color-tile);border:1px solid var(--color-line);border-radius:99px;padding:2px 6px;flex-shrink:0}
+.g-facts{margin-left:auto;font-size:10.5px;color:var(--color-dim);white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums}
+.sghead{display:flex;align-items:center;gap:7px;padding:7px 8px 3px 18px}
+.sghead span{font:500 10px/1 'Archivo';color:var(--color-dim)}
+.sghead em{font:400 9.5px/1 'JetBrains Mono',monospace;font-style:normal;color:var(--color-faint)}
+/* detail pane (the right half of the list layout) */
+.detail{flex:1;min-height:0;overflow-y:auto;padding:22px 26px 30px}
+.d-head{display:flex;gap:16px;align-items:flex-start;margin-bottom:16px}
+.d-titles{min-width:0;flex:1}
+.d-titles h2{font-size:25px;font-weight:700;letter-spacing:-.035em;line-height:1.08;margin-bottom:8px}
+.d-chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--color-dim);
+  border:1px solid var(--color-line);background:var(--color-raise);border-radius:99px;padding:4px 10px}
+.chip b{color:var(--color-fg);font-weight:600}
+.chip.ok{color:var(--color-safe-ink);border-color:var(--color-safe-line);background:var(--color-safe-soft)}
+.chip.warn{color:var(--color-watch-ink);border-color:var(--color-watch-line);background:var(--color-watch-soft)}
+.chip.crit{color:var(--color-accent-ink);border-color:var(--color-accent-line);background:var(--color-accent-soft)}
+.d-actions{margin-left:auto;display:flex;gap:8px;flex-shrink:0}
+.banner{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;border:1px solid var(--color-line);background:var(--color-raise);margin-bottom:14px}
+.banner .b-txt{flex:1;min-width:0;font-size:12.5px;color:var(--color-dim)}
+.banner .b-txt b{color:var(--color-fg);font-weight:600}
+.banner.crit{border-color:var(--color-accent-line);background:var(--color-accent-soft)}
+.banner.crit .b-txt b{color:var(--color-accent-ink)}
+.banner.warn{border-color:var(--color-watch-line);background:var(--color-watch-soft)}
+.banner.warn .b-txt b{color:var(--color-watch-ink)}
+.banner .b-actions{display:flex;gap:7px;flex-shrink:0}
+.stats4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:16px}
+.stat{background:var(--color-panel);border:1px solid var(--color-line);border-radius:11px;padding:11px 13px}
+.stat .s-k{font:400 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--color-faint)}
+.stat .s-v{margin-top:7px;font-size:16px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat .s-s{margin-top:3px;font-size:10.5px;color:var(--color-dim)}
+.cards2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:11px}
+.card{background:var(--color-panel);border:1px solid var(--color-line);border-radius:12px;overflow:hidden}
+.card>header{display:flex;align-items:center;justify-content:space-between;padding:9px 13px;border-bottom:1px solid var(--color-line)}
+.card>header h3{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--color-dim)}
+.card .pad{padding:12px 13px;display:flex;flex-direction:column;gap:9px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12px}
+.kv dt{font:400 10px/1.6 'JetBrains Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--color-faint)}
+.kv dd{color:var(--color-fg);text-align:right;font-variant-numeric:tabular-nums}
+.vrow{display:grid;grid-template-columns:44px minmax(0,1fr) 72px auto;gap:10px;align-items:center;padding:7px 13px;border-top:1px solid var(--color-row);font-size:12px}
+.vrow:first-child{border-top:0}
+.vrow .vnum{font:500 11px/1 'JetBrains Mono',monospace;color:var(--color-dim)}
+.vrow .vby{color:var(--color-fg);font-weight:500}
+.vrow .vwhen{color:var(--color-dim);text-align:right;font-variant-numeric:tabular-nums}
+.vrow .vsize{font:400 11px/1 'JetBrains Mono',monospace;color:var(--color-dim);text-align:right}
+.detail-empty{padding:40px;color:var(--color-faint)}
+
+/* menus and controls */
+.ctl-row{display:flex;gap:7px;margin-top:9px}
+.menu-wrap{position:relative;display:inline-flex;flex:1;min-width:0}
+.menu-wrap .ctl{flex:1}
+.ctl{display:inline-flex;align-items:center;gap:6px;min-width:0;font-size:11.5px;padding:6px 9px;border:1px solid var(--color-line);border-radius:8px;background:var(--color-raise);transition:background .15s}
+.ctl:hover{background:var(--color-hover)}
+.ctl .ctl-label{color:var(--color-faint)}
+.ctl .ctl-value{color:var(--color-fg);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctl .caret{margin-left:auto;color:var(--color-faint);flex-shrink:0}
+.menu{position:absolute;top:calc(100% + 6px);left:0;z-index:40;width:230px;padding:6px;
+  background:var(--color-panel);border:1px solid var(--color-line);border-radius:12px;box-shadow:0 18px 40px -12px rgba(0,0,0,.6)}
+html[data-view="light"] .menu{box-shadow:0 18px 40px -14px rgba(10,14,20,.25)}
+.menu.wide{width:308px;left:0;right:auto}
+.page-actions .ctl-row{margin-top:0}
+.page-actions .menu-wrap{flex:0 0 auto;min-width:auto}
+.menu .mi{display:flex;align-items:flex-start;gap:9px;width:100%;text-align:left;padding:7px 8px;border-radius:8px;font-size:12.5px}
+.menu .mi:hover{background:var(--color-raise)}
+.mi .mi-check{width:14px;flex:0 0 auto;color:var(--color-accent);padding-top:2px}
+.mi .mi-text{min-width:0}
+.mi .mi-text small{display:block;font-size:10.5px;color:var(--color-dim);margin-top:1px}
+.mi[aria-checked="true"]{background:var(--color-accent-soft)}
+.mi[aria-checked="true"] .mi-text{color:var(--color-accent-ink);font-weight:600}
+.menu-sep{height:1px;background:var(--color-line);margin:6px 4px}
+.mp-head{font:400 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--color-faint);padding:9px 8px 5px}
+.mp-foot{display:flex;align-items:center;gap:7px;padding:7px 6px 3px;border-top:1px solid var(--color-line);margin-top:6px}
+.mp-foot .btn{margin-left:auto}
+
+/* wall (grid layout) */
+.wall{display:flex;flex-direction:column;gap:22px}
+.band{display:flex;flex-direction:column;gap:11px}
+.band-head{display:flex;align-items:center;gap:9px;text-align:left;padding:6px 2px;position:sticky;top:-18px;z-index:6;
+  background:linear-gradient(var(--color-ink) 78%,transparent)}
+.band-name{font-size:13px;font-weight:600;letter-spacing:-.01em}
+.band-facts{font-size:11px;color:var(--color-dim);font-variant-numeric:tabular-nums}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:16px}
+.sg-band{font:400 10px/1 'JetBrains Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--color-faint);
+  margin-bottom:9px;display:flex;gap:8px;align-items:center}
+.sg-band span{color:var(--color-faint);background:var(--color-tile);border:1px solid var(--color-line);border-radius:99px;padding:2px 6px}
+.sg-wrap{margin-bottom:2px}
+.tile{display:block;width:100%;text-align:left;border:1px solid var(--color-line);background:var(--color-panel);border-radius:14px;overflow:hidden;
+  transition:transform .18s,border-color .18s,box-shadow .18s}
+.tile:hover{transform:translateY(-3px);border-color:var(--color-accent-line);box-shadow:0 16px 30px -18px rgba(0,0,0,.55)}
+.tile .tile-art{position:relative;display:block;padding:8px 8px 0}
+.tile .tile-art .cover{width:100%;height:auto;aspect-ratio:3/4;border-radius:9px;font-size:24px}
+.tile .badge{position:absolute;top:16px;right:16px;font:500 10px/1 'Archivo';padding:4px 8px;border-radius:99px}
+.tile .badge.crit{background:var(--color-accent-soft);border:1px solid var(--color-accent-line);color:var(--color-accent-ink)}
+.tile .badge.warn{background:var(--color-watch-soft);border:1px solid var(--color-watch-line);color:var(--color-watch-ink)}
+.tile .tile-body{display:block;padding:10px 12px 12px}
+.tile .tile-name{display:block;font-size:12.5px;font-weight:600;letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .tile-meta{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:10.5px;color:var(--color-dim);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* shelves */
+.chipbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:18px;position:relative;z-index:10}
+.chipbar .cb-label{font:400 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--color-faint);margin-right:2px}
+.fchip{font-size:11.5px;font-weight:500;padding:5px 11px;border:1px solid var(--color-line);border-radius:99px;color:var(--color-dim);background:transparent;transition:background .14s,color .14s}
+.fchip:hover{background:var(--color-raise);color:var(--color-fg)}
+.fchip[aria-pressed="true"]{background:var(--color-accent-soft);border-color:var(--color-accent-line);color:var(--color-accent-ink);font-weight:600}
+.chipbar .spacer{flex:1}
+.chipbar .menu-wrap{flex:0 0 auto}
+.chipbar .menu{left:auto;right:0}
+.shelves{display:flex;flex-direction:column;gap:26px}
+.shelf-head{display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;margin-bottom:10px}
+.shelf-head h3{font-size:15px;font-weight:600;letter-spacing:-.015em}
+.shelf-facts{font-size:11px;color:var(--color-dim);font-variant-numeric:tabular-nums}
+.shelf-head .chev{align-self:center}
+.shelf-row{display:flex;gap:13px;overflow-x:auto;padding:2px 2px 10px}
+.shelf-row .tile{width:152px;flex:0 0 auto}
+.shelf-sub{display:flex;align-items:center;gap:8px;font:400 10px/1 'JetBrains Mono',monospace;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--color-faint);margin:10px 0 8px}
+.shelf-sub span{background:var(--color-tile);border:1px solid var(--color-line);border-radius:99px;padding:2px 6px}
+
+.console ::-webkit-scrollbar{width:6px;height:6px}
+.console ::-webkit-scrollbar-track{background:transparent}
+.console ::-webkit-scrollbar-thumb{background:var(--color-line);border-radius:3px}
+
+</style>
+</head>
+<body>
+<header class="mast">
+  <div class="wrap">
+    <div class="eyebrow">SaveLocker · console UI · draft for review</div>
+    <h1>Games tab — sorting &amp; grouping, three ways</h1>
+    <p>
+      Today the Games tab shows one flat list (or wall) in upload order, and the only preference is List / Grid.
+      This mockup adds <b>grouping</b> — Device, Platform (with emulator sub-groups), Source, Date added,
+      Date synced, Status — and <b>sorting</b> — Name, Recently synced, Recently added, Size — in three
+      different interaction designs. All three frames are live: click the controls, collapse groups, switch
+      layouts, pick games. Same sample fleet in every frame.
+    </p>
+    <p style="margin-top:10px;font-size:14px">
+      <b>v1 note (2026-10-12):</b> Option A shipped without <i>Date added</i> — the database has no
+      created column yet (<code style="font-family:'JetBrains Mono',monospace">plan.md</code> carries the
+      follow-up); its frame below still shows it as designed. Everything else here is live in the console.
+    </p>
+    <div class="meta">
+      <span>games tab only · web console</span>
+      <span>22 games · 3 machines · 9 platforms</span>
+      <span>checkpoint tokens, dark + light</span>
+      <button id="themeBtn" type="button">Switch theme</button>
+    </div>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Sections">
+  <a href="#a"><div class="n">Option A</div><div class="t">Toolbar</div><div class="s">Dropdowns, always visible</div></a>
+  <a href="#b"><div class="n">Option B</div><div class="t">Organize</div><div class="s">One button, one panel</div></a>
+  <a href="#c"><div class="n">Option C</div><div class="t">Shelves</div><div class="s">Grouping as a view</div></a>
+  <a href="#notes"><div class="n">Shared</div><div class="t">Semantics &amp; build notes</div><div class="s">What each option needs</div></a>
+</nav>
+
+<main>
+<section id="a" class="opt">
+  <div class="wrap">
+    <div class="opt-head">
+      <div>
+        <div class="opt-num">Option A</div>
+        <h2 class="opt-name">Toolbar — the controls live where the list lives</h2>
+        <p class="opt-line">
+          Two compact dropdowns, <b>Group</b> and <b>Sort</b>, sit in the sidebar header (list layout) or the
+          page head (grid layout). Always visible, one click to any arrangement; groups render as sticky
+          section headers with counts.
+        </p>
+      </div>
+      <div class="try">
+        <h4>Try it in the frame</h4>
+        <ul>
+          <li>Open <kbd>Group</kbd> — None, Device, Platform, Source, Date added, Date synced, Status</li>
+          <li>Open <kbd>Sort</kbd>, pick Size, then flip the arrow</li>
+          <li>Collapse a group · switch <kbd>List</kbd>/<kbd>Grid</kbd> · click a game</li>
+        </ul>
+      </div>
+    </div>
+    <div class="scroller"><div class="frame">
+      <div class="frame-label"><b>Option A — Toolbar</b><span>opens in Grid; switch to List for the sidebar controls</span></div>
+      <div class="console" id="console-a" data-opt="a"></div>
+    </div></div>
+    <div class="verdict">
+      <div class="win">
+        <h4>Where it wins</h4>
+        <ul>
+          <li>Nothing is hidden: the arrangement is always on screen and one click away.</li>
+          <li>Reuses the layout switch's own place and pattern — no new concept in the sidebar.</li>
+          <li>Group headers stay sticky and scannable in both list and wall.</li>
+        </ul>
+      </div>
+      <div class="cost">
+        <h4>What it costs</h4>
+        <ul>
+          <li>Two more controls in a 250 px sidebar; on a 5-game library that is noise.</li>
+          <li>Seven group choices behind a small button, with no room to say what any of them mean.</li>
+          <li>Turns the sidebar header into the busiest strip on the page.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="b" class="opt">
+  <div class="wrap">
+    <div class="opt-head">
+      <div>
+        <div class="opt-num">Option B</div>
+        <h2 class="opt-name">Organize — one button, one panel, everything explained</h2>
+        <p class="opt-line">
+          A single <b>Organize</b> button opens the whole arrangement: group choices and sort choices, each
+          with a line saying what it does, plus direction and reset. The active arrangement is stated under
+          the button and on the page, and group headers carry the facts — count, size, last update.
+        </p>
+      </div>
+      <div class="try">
+        <h4>Try it in the frame</h4>
+        <ul>
+          <li>The panel is open — pick Platform, then Date synced, then Status</li>
+          <li>Flip the direction row, try <kbd>Reset</kbd>, close with <kbd>Done</kbd></li>
+          <li>Collapse a rich group header · switch <kbd>List</kbd>/<kbd>Grid</kbd></li>
+        </ul>
+      </div>
+    </div>
+    <div class="scroller"><div class="frame">
+      <div class="frame-label"><b>Option B — Organize</b><span>opens in List with the panel showing; rich group headers</span></div>
+      <div class="console" id="console-b" data-opt="b"></div>
+    </div></div>
+    <div class="verdict">
+      <div class="win">
+        <h4>Where it wins</h4>
+        <ul>
+          <li>Room for every choice and a sentence about each — the only option that can explain itself.</li>
+          <li>Quiet toolbar; one button does not crowd the sidebar or the page head.</li>
+          <li>Easiest to grow later: filters, saved arrangements, per-group actions all have a home.</li>
+        </ul>
+      </div>
+      <div class="cost">
+        <h4>What it costs</h4>
+        <ul>
+          <li>The arrangement is invisible until the button is opened — needs the state line to compensate.</li>
+          <li>Changing groups costs a click more than Option A.</li>
+          <li>One more popover pattern to keep dismissible and keyboard-usable.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<section id="c" class="opt">
+  <div class="wrap">
+    <div class="opt-head">
+      <div>
+        <div class="opt-num">Option C</div>
+        <h2 class="opt-name">Shelves — grouping becomes the view</h2>
+        <p class="opt-line">
+          Group-by chips run across the top; each group is a full-width <b>shelf</b> of covers with a heading
+          and its facts, and the shelf sits beside List and Grid as a third layout. Built for browsing a wall
+          of covers by platform or device; the same grouping also drives the list and wall layouts.
+        </p>
+      </div>
+      <div class="try">
+        <h4>Try it in the frame</h4>
+        <ul>
+          <li>The chip row is the group control — try Device, Source, Date added</li>
+          <li><kbd>Sort</kbd> at the right, then flip direction</li>
+          <li>Collapse a shelf · switch <kbd>List</kbd>/<kbd>Grid</kbd>/<kbd>Shelves</kbd></li>
+        </ul>
+      </div>
+    </div>
+    <div class="scroller"><div class="frame">
+      <div class="frame-label"><b>Option C — Shelves</b><span>opens in the Shelves layout, grouped by Platform</span></div>
+      <div class="console" id="console-c" data-opt="c"></div>
+    </div></div>
+    <div class="verdict">
+      <div class="win">
+        <h4>Where it wins</h4>
+        <ul>
+          <li>Grouping is visible at a glance — no menu to open, no state to remember.</li>
+          <li>Platforms and devices read as collections; the best option for a big library on a big screen.</li>
+          <li>Emulator sub-groups (GameCube → Dolphin / PrimeHack) get a natural home.</li>
+        </ul>
+      </div>
+      <div class="cost">
+        <h4>What it costs</h4>
+        <ul>
+          <li>The most new layout code of the three; a third layout to maintain and test.</li>
+          <li>Horizontal scrolling inside a page that already scrolls vertically.</li>
+          <li>Seven chips plus sort compete for one row; the list layout still needs its grouped form.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<section id="notes" class="notes">
+  <div class="wrap">
+    <h2>Shared semantics, and what the build will need</h2>
+    <p class="lede">
+      All three options use the same grouping and sorting rules — only where the controls live and how the
+      groups are drawn differ. These are the rules the frames actually implement; the questions under them
+      are the calls to make before this is built.
+    </p>
+
+    <table class="atable">
+      <thead><tr><th></th><th>Option A — Toolbar</th><th>Option B — Organize</th><th>Option C — Shelves</th></tr></thead>
+      <tbody>
+        <tr><td>Controls</td><td>Group + Sort dropdowns, always visible</td><td>One Organize button + panel; state line under it</td><td>Group-by chips + Sort dropdown in a strip</td></tr>
+        <tr><td>List layout</td><td>Sticky headers in the 250 px sidebar</td><td>Same, with count · size · updated per header</td><td>Same grouped list, chips above the two panes</td></tr>
+        <tr><td>Grid layout</td><td>Full-width bands, sticky band heading</td><td>Same</td><td>Same</td></tr>
+        <tr><td>Biggest strength</td><td>Always on screen</td><td>Self-explanatory, room to grow</td><td>Grouping as a browse-first view</td></tr>
+        <tr><td>Biggest cost</td><td>Two more controls in a small sidebar</td><td>Hidden until opened</td><td>New layout code, horizontal scroll</td></tr>
+      </tbody>
+    </table>
+
+    <div class="ncols" style="margin-top:30px">
+      <div class="nblock">
+        <h3>Grouping rules in the frames</h3>
+        <ul>
+          <li><b>Device</b> — one group per machine; a game on two machines appears under both, so group
+            counts sum above the library size. The alternative is one group per game, keyed to the machine
+            that last synced — simpler counts, but "what is on my Deck" needs a filter instead.</li>
+          <li><b>Platform</b> — PC first, then each console; when a console's games come through two or more
+            emulators (GameCube here: Dolphin and PrimeHack), the group splits into emulator sub-headers.</li>
+          <li><b>Source</b> — Steam, Heroic, Playnite, Emulator, Save-folder scan, Added by hand. When
+            machines disagree about one game, the row shows the first plus "N sources", like the existing
+            chip on the game page.</li>
+          <li><b>Date added / Date synced</b> — Today, Yesterday, Earlier this week, This month, Earlier;
+            a game with no saves yet lands in "Never synced" last.</li>
+          <li><b>Status</b> — Conflict, Needs attention, Synced, No saves yet, Disabled, using the same
+            standing rule as the dot in the list today.</li>
+        </ul>
+      </div>
+      <div class="nblock">
+        <h3>Sorting rules</h3>
+        <ul>
+          <li>Sorting applies <b>within</b> each group; flipping direction reverses every group at once.</li>
+          <li>Natural defaults: Name A–Z, Recently synced and Recently added newest first, Size largest
+            first. A game with no saves sorts last under date and size, whichever direction is chosen.</li>
+          <li>The chosen grouping, sort and direction persist per browser, next to the existing
+            <code>sl_games_layout</code> preference. Default is <b>no grouping</b> — today's screen.</li>
+          <li>Grouping changes nothing but the view: Sync all, commands, conflicts and counts are untouched.</li>
+        </ul>
+      </div>
+      <div class="nblock">
+        <h3>Data the build needs (server, all additive)</h3>
+        <ul>
+          <li><b>Ready today:</b> name, size (total and head), last synced, conflict/problems status,
+            emulators and the release console of emulator games.</li>
+          <li><b>Date added:</b> <code>Game</code> has no created column. Add <code>Game.CreatedAt</code>
+            (+ migration); backfill existing rows from each game's first version where one exists.</li>
+          <li><b>Device groups:</b> the overview carries no per-game machines. Add one batched field from
+            <code>MachineSavePaths</code> (machines actually syncing it), optionally unioned with
+            <code>MachineGameSources</code> for games found but not set up.</li>
+          <li><b>Source groups:</b> likewise — one batched read of <code>MachineGameSources</code> for the
+            whole overview (not one request per game).</li>
+          <li>Everything else is computed client-side from the existing 15 s overview poll.</li>
+        </ul>
+      </div>
+      <div class="nblock">
+        <h3>Calls to make</h3>
+        <ul>
+          <li>Device model: overlap (game under each machine) or one group per game by last-synced machine?</li>
+          <li>Should the date buckets be calendar-based (Today / Yesterday / This week) or rolling windows?</li>
+          <li>Do collapsed groups stay collapsed across reloads, or reset each visit?</li>
+          <li>Does grouping belong in the sidebar list at all, or only in the wall and shelves?</li>
+          <li>Which option — or a mix (e.g. B's panel with C's shelves)?</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+</main>
+
+<footer>
+  <div class="wrap">
+    SaveLocker mockup — Games tab sorting &amp; grouping. Sample data is invented; covers are placeholder tiles.
+    Open the real console at <b>web/</b> for comparison. Nothing here is shipped code.
+  </div>
+</footer>
+
+<script>
+const NOW = Date.now(), H = 3600e3, D = 24 * H;
+
+const MACHINES = [
+  { id: 'onyx',   name: 'Onyx',   os: 'Windows 11' },
+  { id: 'deck',   name: 'Deck',   os: 'SteamOS 3 · OLED' },
+  { id: 'victus', name: 'Victus', os: 'Windows 11' },
+];
+const machine = id => MACHINES.find(m => m.id === id);
+
+/* One sample game. `o.added` is days ago, `o.synced` hours ago (null = never), `o.size` MB. */
+function G(name, platform, emulator, source, sourceDetail, devices, o) {
+  return {
+    name, platform, emulator, source, sourceDetail, devices,
+    added: NOW - o.added * D,
+    synced: o.synced == null ? null : NOW - o.synced * H,
+    size: Math.round((o.size || 0) * 1048576),
+    versions: o.versions || 0,
+    status: o.status || 'synced',
+    region: o.region || null,
+    tags: o.tags || [],
+    lastBy: o.lastBy || devices[0],
+  };
+}
+
+const GAMES = [
+  G('Cyberpunk 2077', 'PC', null, 'steam', 'Installed game', ['onyx', 'victus'], { added: 62, synced: 2, size: 118, versions: 14, lastBy: 'onyx' }),
+  G('Fallout: New Vegas', 'PC', null, 'steam', 'Installed game', ['onyx', 'deck'], { added: 55, synced: 26, size: 9.4, versions: 22, lastBy: 'deck' }),
+  G('HITMAN 3', 'PC', null, 'steam', 'Installed game', ['onyx'], { added: 48, synced: 72, size: 2.1, versions: 9, status: 'attention' }),
+  G('Stardew Valley', 'PC', null, 'steam', 'Installed game', ['onyx', 'deck', 'victus'], { added: 40, synced: 5, size: 4.8, versions: 31, lastBy: 'victus' }),
+  G("Baldur's Gate 3", 'PC', null, 'steam', 'Installed game', ['onyx'], { added: 12, synced: 1, size: 42.6, versions: 18, status: 'conflict' }),
+  G('Palworld', 'PC', null, 'steam', 'Installed game', ['onyx'], { added: 4, synced: null, size: 0, versions: 0, status: 'none' }),
+  G('Sunset Overdrive', 'PC', null, 'steam', 'Installed game', ['victus'], { added: 70, synced: 960, size: 3.2, versions: 6, status: 'disabled' }),
+  G('Fez', 'PC', null, 'heroic', 'Epic Games', ['deck'], { added: 30, synced: 216, size: 0.9, versions: 6 }),
+  G('The Witcher 3: Wild Hunt', 'PC', null, 'heroic', 'GOG', ['onyx', 'deck'], { added: 33, synced: 30, size: 7.3, versions: 11, lastBy: 'onyx' }),
+  G('Slay the Spire', 'PC', null, 'playnite', 'Playnite library', ['victus'], { added: 21, synced: 48, size: 1.6, versions: 8 }),
+  G('Minecraft (old saves)', 'PC', null, 'manual', 'Added by hand', ['onyx'], { added: 70, synced: 336, size: 88, versions: 3 }),
+  G('Chrono Trigger', 'SNES', 'RetroArch', 'emulator', 'RetroArch', ['deck'], { added: 20, synced: 96, size: 1.2, versions: 4, tags: ['EmuDeck'] }),
+  G('Super Metroid', 'SNES', 'RetroArch', 'emulator', 'RetroArch', ['deck'], { added: 20, synced: 96, size: 0.8, versions: 3, tags: ['EmuDeck'] }),
+  G('Prince of Persia - Warrior Within', 'PlayStation 2', 'PCSX2', 'emulator', 'PCSX2', ['onyx', 'deck'], { added: 6, synced: 1, size: 2.4, versions: 7, status: 'conflict', region: 'Europe', lastBy: 'onyx' }),
+  G('Gregory Horror Show', 'PlayStation 2', 'PCSX2', 'emulator', 'PCSX2', ['deck'], { added: 6, synced: 120, size: 1.1, versions: 2, region: 'Europe' }),
+  G('Kingdom Hearts: Birth by Sleep', 'PSP', 'PPSSPP', 'emulator', 'PPSSPP', ['deck'], { added: 15, synced: 144, size: 3.3, versions: 5, tags: ['Flatpak'] }),
+  G('Heavenly Sword', 'PlayStation 3', 'RPCS3', 'emulator', 'RPCS3', ['deck'], { added: 9, synced: 72, size: 13.7, versions: 4, region: 'Europe' }),
+  G('Metroid Prime', 'GameCube', 'PrimeHack', 'emulator', 'PrimeHack', ['deck'], { added: 11, synced: 168, size: 5.9, versions: 5, region: 'USA' }),
+  G('Soulcalibur II', 'GameCube', 'Dolphin', 'emulator', 'Dolphin', ['deck'], { added: 11, synced: 192, size: 0.6, versions: 3, region: 'USA' }),
+  G('Metroid Prime Trilogy', 'Wii', 'PrimeHack', 'emulator', 'PrimeHack', ['deck'], { added: 11, synced: 168, size: 16.2, versions: 6, region: 'USA' }),
+  G('Pokemon HeartGold', 'Nintendo DS', 'melonDS', 'emulator', 'melonDS', ['victus'], { added: 18, synced: 96, size: 1.0, versions: 5 }),
+  G('Broken Sword: The Shadow of the Templars', 'ScummVM', 'ScummVM', 'emulator', 'ScummVM', ['onyx'], { added: 24, synced: 288, size: 0.3, versions: 2 }),
+];
+const ICON = {
+  mark: '<svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><rect width="32" height="32" rx="9" fill="var(--color-accent)"/><path d="M11 15v-3a5 5 0 0 1 10 0v3" stroke="var(--color-on-accent)" stroke-width="2.4" fill="none"/><rect x="9.5" y="15" width="13" height="10" rx="2.6" fill="var(--color-on-accent)"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>',
+  bell: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
+  sliders: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M4 7h7M15 7h5M4 12h2M10 12h10M4 17h7M15 17h5"/><circle cx="13" cy="7" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="13" cy="17" r="2"/></svg>',
+  caret: '<svg class="caret" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+  check: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  updown: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg>',
+};
+const chev = closed => '<svg class="chev' + (closed ? ' closed' : '') + '" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function ago(ts) {
+  if (ts == null) return 'never';
+  const m = Math.round((NOW - ts) / 60000);
+  if (m < 2) return 'just now';
+  if (m < 60) return m + 'm ago';
+  const h = Math.round(m / 60);
+  if (h < 48) return h + 'h ago';
+  const d = Math.round(h / 24);
+  return d < 14 ? d + 'd ago' : Math.round(d / 7) + 'w ago';
+}
+function fmtSize(b) {
+  if (!b) return '0 KB';
+  if (b < 1048576) return (b / 1024).toFixed(b < 10240 ? 1 : 0) + ' KB';
+  if (b < 1073741824) return (b / 1048576).toFixed(b < 10485760 ? 1 : 0) + ' MB';
+  return (b / 1073741824).toFixed(1) + ' GB';
+}
+function initials(name) {
+  const w = name.replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
+  return (((w[0] || '')[0] || '') + ((w[1] || '')[0] || '')).toUpperCase() || '?';
+}
+function hue(name) { let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
+const cover = (g, cls) => '<span class="cover ' + (cls || '') + '" style="--h:' + hue(g.name) + '" aria-hidden="true">' + esc(initials(g.name)) + '</span>';
+
+const GROUPS = [['none', 'None'], ['device', 'Device'], ['platform', 'Platform'], ['source', 'Source'], ['added', 'Date added'], ['synced', 'Date synced'], ['status', 'Status']];
+const SORTS = [['name', 'Name'], ['synced', 'Recently synced'], ['added', 'Recently added'], ['size', 'Size']];
+const DEFAULT_DIR = { name: 1, synced: -1, added: -1, size: -1 };
+const DIR_LABEL = { name: ['A–Z', 'Z–A'], synced: ['Oldest first', 'Newest first'], added: ['Oldest first', 'Newest first'], size: ['Smallest first', 'Biggest first'] };
+const groupLabel = k => (GROUPS.find(g => g[0] === k) || ['', k])[1];
+const sortLabel = k => (SORTS.find(s => s[0] === k) || ['', k])[1];
+const dirLabel = (k, d) => DIR_LABEL[k][d === 1 ? 0 : 1];
+
+const SOURCE_LABEL = { steam: 'Steam', heroic: 'Heroic', playnite: 'Playnite', emulator: 'Emulator', 'save-folder': 'Save-folder scan', manual: 'Added by hand' };
+const SOURCE_ORDER = ['steam', 'heroic', 'playnite', 'emulator', 'save-folder', 'manual'];
+const STATUS_ORDER = [['conflict', 'Conflict'], ['attention', 'Needs attention'], ['synced', 'Synced'], ['none', 'No saves yet'], ['disabled', 'Disabled']];
+const STATUS = {
+  synced: { cls: 'ok', label: 'Synced' },
+  attention: { cls: 'warn', label: 'Needs attention' },
+  conflict: { cls: 'crit', label: 'Conflict' },
+  none: { cls: 'idle', label: 'No saves yet' },
+  disabled: { cls: 'idle', label: 'Disabled' },
+};
+const dotHTML = st => '<span class="dot ' + STATUS[st].cls + '" title="' + STATUS[st].label + '"></span>';
+
+const BUCKETS = ['Today', 'Yesterday', 'Earlier this week', 'This month', 'Earlier'];
+function bucketOf(ts) {
+  if (ts == null) return 'Never synced';
+  const d = Math.floor((NOW - ts) / D);
+  return d <= 0 ? 'Today' : d === 1 ? 'Yesterday' : d < 7 ? 'Earlier this week' : d < 31 ? 'This month' : 'Earlier';
+}
+const PLATFORM_ORDER = ['PC', 'GameCube', 'Nintendo DS', 'PlayStation 2', 'PlayStation 3', 'PSP', 'SNES', 'ScummVM', 'Wii'];
+
+function compare(a, b, key) {
+  if (key === 'name') return a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+  return a[key] - b[key];
+}
+function sortGames(list, key, dir) {
+  return [...list].sort((a, b) => {
+    if (key !== 'name') {
+      const an = a[key] == null, bn = b[key] == null;
+      if (an || bn) return an && bn ? 0 : an ? 1 : -1; // a game with no saves always sorts last
+    }
+    return compare(a, b, key) * dir;
+  });
+}
+/* [{id, label, items, subgroups:[{id,label,items}]}] — a subgroup label is '' when there is no split. */
+function grouped(list, by) {
+  const one = (id, label, items) => [{ id, label, items, subgroups: [{ id, label: '', items }] }];
+  if (by === 'none') return one('all', '', list);
+  if (by === 'device') {
+    const out = [];
+    for (const m of MACHINES) {
+      const items = list.filter(g => g.devices.includes(m.id));
+      if (items.length) out.push({ id: 'dev:' + m.id, label: m.name, sub: m.os, items, subgroups: [{ id: 'dev:' + m.id, label: '', items }] });
+    }
+    return out;
+  }
+  if (by === 'platform') {
+    const out = [];
+    for (const p of PLATFORM_ORDER) {
+      const items = list.filter(g => g.platform === p);
+      if (!items.length) continue;
+      const emus = [...new Set(items.map(g => g.emulator).filter(Boolean))].sort();
+      const subgroups = emus.length > 1
+        ? emus.map(e => ({ id: 'plat:' + p + ':' + e, label: e, items: items.filter(g => g.emulator === e) }))
+        : [{ id: 'plat:' + p, label: '', items }];
+      out.push({ id: 'plat:' + p, label: p, items, subgroups });
+    }
+    return out;
+  }
+  if (by === 'source') {
+    const out = [];
+    for (const k of SOURCE_ORDER) {
+      const items = list.filter(g => g.source === k);
+      if (items.length) out.push(...one('src:' + k, SOURCE_LABEL[k] || k, items));
+    }
+    return out;
+  }
+  if (by === 'status') {
+    const out = [];
+    for (const [k, label] of STATUS_ORDER) {
+      const items = list.filter(g => g.status === k);
+      if (items.length) out.push(...one('st:' + k, label, items));
+    }
+    return out;
+  }
+  const key = by === 'added' ? 'added' : 'synced';
+  const out = [];
+  for (const b of [...BUCKETS, 'Never synced']) {
+    const items = list.filter(g => bucketOf(g[key]) === b);
+    if (items.length) out.push(...one('d:' + key + ':' + b, b, items));
+  }
+  return out;
+}
+function facts(items) {
+  const size = items.reduce((s, g) => s + g.size, 0);
+  const newest = items.reduce((m, g) => (g.synced && (m == null || g.synced > m) ? g.synced : m), null);
+  return items.length + (items.length === 1 ? ' game' : ' games') + ' · ' + fmtSize(size) + (newest ? ' · updated ' + ago(newest) : '');
+}
+const stat = (k, v, s) => '<div class="stat"><div class="s-k">' + k + '</div><div class="s-v">' + v + '</div>' + (s ? '<div class="s-s">' + s + '</div>' : '') + '</div>';
+const kv = (k, v) => '<dt>' + k + '</dt><dd>' + v + '</dd>';
+const segHTML = (opts, cur) => '<div class="seg" role="group" aria-label="Games layout">' +
+  opts.map(o => '<button data-act="layout" data-v="' + o[0] + '" aria-pressed="' + (o[0] === cur) + '">' + o[1] + '</button>').join('') + '</div>';
+const pageHead = (sub, actions) => '<div class="page-head"><div><h2>Games</h2><div class="page-sub">' + sub + '</div></div><div class="page-actions">' + actions + '</div></div>';
+
+const topbarHTML = () =>
+  '<div class="c-top"><div class="c-brand">' + ICON.mark + '<span class="c-word">Save<em>Locker</em></span><span class="c-ver">v0.7.0</span></div>' +
+  '<nav class="c-tabs"><button aria-current="page">Games</button><button>Configuration</button><button>Audit log</button><button>Backups</button><button>Help</button><button>What’s new</button></nav>' +
+  '<div class="c-right"><button class="btn alert">2 conflicts · 1h</button><button class="btn primary">' + ICON.refresh + ' Sync all</button><button class="btn icon" title="Notifications">' + ICON.bell + '</button></div></div>';
+
+function factsTail(items) {
+  const size = items.reduce((s, g) => s + g.size, 0);
+  const newest = items.reduce((m, g) => (g.synced && (m == null || g.synced > m) ? g.synced : m), null);
+  return fmtSize(size) + (newest ? ' · updated ' + ago(newest) : '');
+}
+
+function rowHTML(g, sel) {
+  return '<button class="row" data-act="select" data-v="' + esc(g.name) + '" aria-current="' + (g.name === sel) + '">' +
+    cover(g) +
+    '<span class="r-name">' + esc(g.name) + '</span>' +
+    '<span class="r-meta">' + (g.region ? esc(g.region) + ' · ' : '') + (g.synced ? ago(g.synced) : 'no saves yet') + ' · ' + fmtSize(g.size) + '</span>' +
+    '<span class="r-state">' + dotHTML(g.status) + '</span></button>';
+}
+function tileHTML(g) {
+  const badge = g.status === 'conflict' ? '<span class="badge crit">Conflict</span>' : g.status === 'attention' ? '<span class="badge warn">Attention</span>' : '';
+  return '<button class="tile" data-act="select" data-v="' + esc(g.name) + '" title="' + esc(g.name) + '">' +
+    '<span class="tile-art">' + cover(g, 'big') + badge + '</span>' +
+    '<span class="tile-body"><span class="tile-name">' + esc(g.name) + '</span>' +
+    '<span class="tile-meta">' + dotHTML(g.status) + (g.region ? esc(g.region) + ' · ' : '') + (g.synced ? ago(g.synced) : 'no saves yet') + '</span></span></button>';
+}
+function gheadHTML(g, st, rich) {
+  const c = st.collapsed.has(g.id);
+  return '<button class="ghead" data-act="collapse" data-g="' + esc(g.id) + '">' + chev(c) +
+    '<span class="g-label">' + esc(g.label || 'All games') + '</span>' +
+    '<span class="g-count">' + g.items.length + '</span>' +
+    (rich ? '<span class="g-facts">' + esc(factsTail(g.items)) + '</span>' : '') + '</button>';
+}
+function listRowsHTML(list, st, rich) {
+  const groups = grouped(sortGames(list, st.sortBy, st.dir), st.groupBy);
+  let out = '';
+  for (const g of groups) {
+    if (st.groupBy !== 'none') out += gheadHTML(g, st, rich);
+    if (st.collapsed.has(g.id)) continue;
+    for (const sg of g.subgroups) {
+      if (sg.label) out += '<div class="sghead"><span>' + esc(sg.label) + '</span><em>' + sg.items.length + '</em></div>';
+      out += sg.items.map(x => rowHTML(x, st.sel)).join('');
+    }
+  }
+  return out;
+}
+function wallHTML(list, st) {
+  const groups = grouped(sortGames(list, st.sortBy, st.dir), st.groupBy);
+  return groups.map(g => {
+    const c = st.collapsed.has(g.id);
+    let inner = '';
+    for (const sg of g.subgroups) {
+      if (sg.label) inner += '<div class="sg-band">' + esc(sg.label) + '<span>' + sg.items.length + '</span></div>';
+      inner += '<div class="tiles">' + sg.items.map(tileHTML).join('') + '</div>';
+    }
+    const head = st.groupBy === 'none' ? '' :
+      '<button class="band-head" data-act="collapse" data-g="' + esc(g.id) + '">' + chev(c) +
+      '<span class="band-name">' + esc(g.label) + '</span><span class="band-facts">' + esc(facts(g.items)) + '</span></button>';
+    return '<section class="band">' + head + (c ? '' : inner) + '</section>';
+  }).join('');
+}
+function shelfHTML(list, st) {
+  const groups = grouped(sortGames(list, st.sortBy, st.dir), st.groupBy);
+  return groups.map(g => {
+    const c = st.collapsed.has(g.id);
+    let inner = '';
+    for (const sg of g.subgroups) {
+      if (sg.label) inner += '<div class="shelf-sub">' + esc(sg.label) + '<span>' + sg.items.length + '</span></div>';
+      inner += '<div class="shelf-row">' + sg.items.map(tileHTML).join('') + '</div>';
+    }
+    return '<section class="shelf"><button class="shelf-head" data-act="collapse" data-g="' + esc(g.id) + '">' + chev(c) +
+      '<h3>' + esc(g.label || 'All games') + '</h3><span class="shelf-facts">' + esc(facts(g.items)) + '</span></button>' + (c ? '' : inner) + '</section>';
+  }).join('');
+}
+
+function detailHTML(g) {
+  if (!g) return '<div class="detail detail-empty">Select a game on the left.</div>';
+  const st = STATUS[g.status], m = machine(g.lastBy);
+  const chips = [];
+  if (g.region) chips.push('<span class="chip"><b>' + esc(g.region) + '</b> release</span>');
+  if (g.emulator) chips.push('<span class="chip"><b>' + esc(g.emulator) + '</b></span>');
+  chips.push('<span class="chip">' + esc(SOURCE_LABEL[g.source] || g.source) + ' › <b>' + esc(g.sourceDetail) + '</b></span>');
+  chips.push('<span class="chip ' + (st.cls === 'crit' ? 'crit' : st.cls === 'warn' ? 'warn' : st.cls === 'ok' ? 'ok' : '') + '">' + dotHTML(g.status) + esc(st.label) + '</span>');
+
+  let banner = '';
+  if (g.status === 'conflict') banner = '<div class="banner crit"><div class="b-txt"><b>Conflict</b> — this device and the cloud both changed since the last sync.</div><div class="b-actions"><button class="btn sm">Keep this device</button><button class="btn sm">Keep the cloud</button></div></div>';
+  else if (g.status === 'attention') banner = '<div class="banner warn"><div class="b-txt"><b>Needs attention</b> — Victus reports the save folder is missing; sync keeps retrying.</div><div class="b-actions"><button class="btn sm">Details</button></div></div>';
+  else if (g.status === 'disabled') banner = '<div class="banner"><div class="b-txt"><b>Disabled</b> — agents keep the existing saves but no longer sync this game.</div><div class="b-actions"><button class="btn sm">Enable</button></div></div>';
+  else if (g.status === 'none') banner = '<div class="banner"><div class="b-txt"><b>No saves yet</b> — nothing has been uploaded for this game.</div></div>';
+
+  let vrows = '';
+  if (g.versions > 0 && g.synced) {
+    const n = Math.min(4, g.versions);
+    for (let i = 0; i < n; i++) {
+      const who = i === 0 ? g.lastBy : g.devices[(g.devices.indexOf(g.lastBy) + i) % g.devices.length];
+      vrows += '<div class="vrow"><span class="vnum">v' + (g.versions - i) + '</span><span class="vby">' + esc(machine(who).name) + '</span>' +
+        '<span class="vwhen">' + (i === 0 ? ago(g.synced) : ago(g.synced + i * 30 * H)) + '</span>' +
+        '<span class="vsize">' + fmtSize(Math.round(g.size * (1 - i * 0.05))) + '</span></div>';
+    }
+  } else {
+    vrows = '<div class="vrow"><span class="vby" style="color:var(--color-dim)">Nothing pushed yet.</span></div>';
+  }
+
+  return '<div class="detail"><div class="d-head">' + cover(g, 'big') +
+    '<div class="d-titles"><h2>' + esc(g.name) + '</h2><div class="d-chips">' + chips.join('') + '</div></div>' +
+    '<div class="d-actions"><button class="btn primary sm">' + ICON.refresh + ' Sync now</button><button class="btn sm">Check now</button></div></div>' +
+    banner +
+    '<div class="stats4">' +
+      stat('Latest save', g.synced ? ago(g.synced) : '—', g.synced ? 'by ' + esc(m.name) : 'nothing yet') +
+      stat('Versions', String(g.versions), g.versions ? 'kept for this game' : '') +
+      stat('Total size', fmtSize(g.size), g.versions ? g.versions + ' versions on the server' : '') +
+      stat('Last uploaded by', g.synced ? esc(m.name) : '—', g.devices.length + ' machine' + (g.devices.length === 1 ? '' : 's') + ' track it') +
+    '</div>' +
+    '<div class="cards2">' +
+      '<div class="card"><header><h3>What this device holds</h3></header><div class="pad">' +
+        '<dl class="kv">' + kv('Machine', esc(m.name)) +
+        kv('Last change', g.synced ? ago(g.synced) : '—') +
+        kv('Stored', fmtSize(g.size)) +
+        kv('On machines', g.devices.map(d => esc(machine(d).name)).join(', ')) + '</dl>' +
+        '<div style="display:flex;gap:7px"><button class="btn sm">Open folder</button><button class="btn sm">Download</button></div>' +
+      '</div></div>' +
+      '<div class="card"><header><h3>Version history</h3></header>' + vrows + '</div>' +
+    '</div></div>';
+}
+function miHTML(act, v, label, on, sub) {
+  return '<button class="mi" data-act="' + act + '" data-v="' + v + '" aria-checked="' + on + '">' +
+    '<span class="mi-check">' + (on ? ICON.check : '') + '</span>' +
+    '<span class="mi-text">' + esc(label) + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span></button>';
+}
+const GROUP_DESC = { none: 'One flat list — today’s screen', device: 'Each machine that has the game', platform: 'PC and consoles; emulators grouped under theirs', source: 'Steam, Heroic, Emulators…', added: 'Today, this week, earlier…', synced: 'When the game last moved', status: 'Conflicts and problems first' };
+const SORT_DESC = { name: 'Alphabetical', synced: 'Newest activity first', added: 'Newest additions first', size: 'Largest save history first' };
+
+function menuHTML(st, kind) {
+  if (kind === 'group') {
+    return '<div class="menu" data-act="noop">' + GROUPS.map(g => miHTML('group', g[0], g[1], st.groupBy === g[0], '')).join('') + '</div>';
+  }
+  if (kind === 'sort') {
+    return '<div class="menu" data-act="noop">' + SORTS.map(s => miHTML('sort', s[0], s[1], st.sortBy === s[0], '')).join('') +
+      '<div class="menu-sep"></div>' +
+      '<button class="mi" data-act="dir"><span class="mi-check">' + ICON.updown + '</span><span class="mi-text">' + dirLabel(st.sortBy, st.dir) + '</span></button></div>';
+  }
+  return '<div class="menu wide" data-act="noop" aria-label="Organize games">' +
+    '<div class="mp-head">Group by</div>' + GROUPS.map(g => miHTML('group', g[0], g[1], st.groupBy === g[0], GROUP_DESC[g[0]])).join('') +
+    '<div class="mp-head">Sort by</div>' + SORTS.map(s => miHTML('sort', s[0], s[1], st.sortBy === s[0], SORT_DESC[s[0]])).join('') +
+    '<div class="mp-foot"><button class="mi" data-act="dir" style="width:auto"><span class="mi-check">' + ICON.updown + '</span><span class="mi-text">' + dirLabel(st.sortBy, st.dir) + '</span></button>' +
+    '<button class="btn sm" data-act="reset">Reset</button><button class="btn primary sm" data-act="done">Done</button></div></div>';
+}
+function aCTL(st) {
+  return '<div class="ctl-row">' +
+    '<span class="menu-wrap"><button class="ctl" data-act="menu" data-v="group"><span class="ctl-label">Group</span><span class="ctl-value">' + groupLabel(st.groupBy) + '</span>' + ICON.caret + '</button>' + (st.open === 'group' ? menuHTML(st, 'group') : '') + '</span>' +
+    '<span class="menu-wrap"><button class="ctl" data-act="menu" data-v="sort"><span class="ctl-label">Sort</span><span class="ctl-value">' + sortLabel(st.sortBy) + '</span>' + ICON.caret + '</button>' + (st.open === 'sort' ? menuHTML(st, 'sort') : '') + '</span></div>';
+}
+function bCTL(st, withLine) {
+  const line = st.groupBy === 'none' ? 'No grouping · ' + sortLabel(st.sortBy) : 'By ' + groupLabel(st.groupBy).toLowerCase() + ' · ' + sortLabel(st.sortBy);
+  return '<div class="ctl-row"><span class="menu-wrap"><button class="ctl" data-act="menu" data-v="organize">' + ICON.sliders +
+    '<span class="ctl-value">Organize</span>' + ICON.caret + '</button>' + (st.open === 'organize' ? menuHTML(st, 'organize') : '') + '</span></div>' +
+    (withLine ? '<div class="arrange">' + esc(line) + '</div>' : '');
+}
+function cChipbar(st) {
+  return '<div class="chipbar"><span class="cb-label">Group</span>' +
+    GROUPS.map(g => '<button class="fchip" data-act="group" data-v="' + g[0] + '" aria-pressed="' + (st.groupBy === g[0]) + '">' + g[1] + '</button>').join('') +
+    '<span class="spacer"></span><span class="menu-wrap"><button class="ctl" data-act="menu" data-v="sort"><span class="ctl-label">Sort</span><span class="ctl-value">' + sortLabel(st.sortBy) + '</span>' + ICON.caret + '</button>' +
+    (st.open === 'sort' ? menuHTML(st, 'sort') : '') + '</span></div>';
+}
+const layoutOpts = opt => opt === 'c' ? [['list', 'List'], ['grid', 'Grid'], ['shelf', 'Shelves']] : [['list', 'List'], ['grid', 'Grid']];
+const sideHTML = (st, lp, controls, rich) =>
+  '<aside class="side"><div class="side-head"><div class="side-top"><h4>Games · ' + GAMES.length + '</h4>' + segHTML(lp, st.layout) + '</div>' + controls + '</div>' +
+  '<div class="rows">' + listRowsHTML(GAMES, st, rich) + '</div>' +
+  '<div class="side-foot"><button class="btn full">+ Add game</button></div></aside>';
+const subLine = (st, extra) => GAMES.length + ' games tracked · ' + (st.groupBy === 'none' ? 'no grouping' : 'grouped by ' + groupLabel(st.groupBy).toLowerCase()) + (extra || '') + ' · sorted by ' + sortLabel(st.sortBy).toLowerCase();
+
+function bodyA(opt, st) {
+  const lp = layoutOpts(opt);
+  if (st.layout === 'list') {
+    return '<div class="games list">' + sideHTML(st, lp, aCTL(st), false) + detailHTML(GAMES.find(g => g.name === st.sel)) + '</div>';
+  }
+  return '<div class="page-scroll">' + pageHead(subLine(st), segHTML(lp, st.layout) + aCTL(st) + '<button class="btn">+ Add game</button>') +
+    '<div class="wall">' + wallHTML(GAMES, st) + '</div></div>';
+}
+function bodyB(opt, st) {
+  const lp = layoutOpts(opt);
+  if (st.layout === 'list') {
+    return '<div class="games list">' + sideHTML(st, lp, bCTL(st, true), true) + detailHTML(GAMES.find(g => g.name === st.sel)) + '</div>';
+  }
+  return '<div class="page-scroll">' + pageHead(subLine(st), segHTML(lp, st.layout) + bCTL(st, false) + '<button class="btn">+ Add game</button>') +
+    '<div class="wall">' + wallHTML(GAMES, st) + '</div></div>';
+}
+function bodyC(opt, st) {
+  const lp = layoutOpts(opt);
+  const head = pageHead(subLine(st), segHTML(lp, st.layout) + '<button class="btn">+ Add game</button>');
+  if (st.layout === 'shelf') return '<div class="page-scroll">' + head + cChipbar(st) + '<div class="shelves">' + shelfHTML(GAMES, st) + '</div></div>';
+  if (st.layout === 'grid') return '<div class="page-scroll">' + head + cChipbar(st) + '<div class="wall">' + wallHTML(GAMES, st) + '</div></div>';
+  return '<div class="c-stack"><div style="padding:14px 18px 0">' + cChipbar(st) + '</div>' +
+    '<div class="games list">' + sideHTML(st, lp, '', true) + detailHTML(GAMES.find(g => g.name === st.sel)) + '</div></div>';
+}
+
+const state = {
+  a: { groupBy: 'platform', sortBy: 'name', dir: 1, layout: 'grid', open: null, sel: 'Fallout: New Vegas', collapsed: new Set() },
+  b: { groupBy: 'device', sortBy: 'synced', dir: -1, layout: 'list', open: 'organize', sel: "Baldur's Gate 3", collapsed: new Set() },
+  c: { groupBy: 'platform', sortBy: 'synced', dir: -1, layout: 'shelf', open: null, sel: 'Chrono Trigger', collapsed: new Set() },
+};
+function render(opt) {
+  const st = state[opt];
+  document.getElementById('console-' + opt).innerHTML = topbarHTML() +
+    (opt === 'a' ? bodyA(opt, st) : opt === 'b' ? bodyB(opt, st) : bodyC(opt, st));
+}
+function renderAll() { render('a'); render('b'); render('c'); }
+
+document.querySelectorAll('.console').forEach(el => {
+  el.addEventListener('click', e => {
+    const opt = el.dataset.opt, st = state[opt];
+    const t = e.target.closest('[data-act]');
+    if (!t) { if (st.open) { st.open = null; render(opt); } return; }
+    const act = t.dataset.act;
+    if (act === 'noop') return;
+    if (act === 'menu') st.open = st.open === t.dataset.v ? null : t.dataset.v;
+    else if (act === 'group') { st.groupBy = t.dataset.v; st.collapsed.clear(); if (opt !== 'b') st.open = null; }
+    else if (act === 'sort') { st.sortBy = t.dataset.v; st.dir = DEFAULT_DIR[t.dataset.v]; if (opt !== 'b') st.open = null; }
+    else if (act === 'dir') st.dir = -st.dir;
+    else if (act === 'reset') { st.groupBy = 'none'; st.sortBy = 'name'; st.dir = 1; }
+    else if (act === 'done') st.open = null;
+    else if (act === 'layout') st.layout = t.dataset.v;
+    else if (act === 'collapse') { const g = t.dataset.g; st.collapsed.has(g) ? st.collapsed.delete(g) : st.collapsed.add(g); }
+    else if (act === 'select') st.sel = t.dataset.v;
+    render(opt);
+  });
+});
+
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const root = document.documentElement;
+  root.dataset.view = root.dataset.view === 'dark' ? 'light' : 'dark';
+});
+
+renderAll();
+</script>
+
+</body>
+</html>

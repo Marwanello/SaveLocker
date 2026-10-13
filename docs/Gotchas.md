@@ -728,6 +728,20 @@ documentation that was found. Read before touching the presenter.
   dominates and write windows never overlap. The discriminating shape is a long-lived process
   holding stale in-memory state vs. a short-lived one; order by waiting on observable state, not
   by hoping for a race.
+- **PowerShell unrolls a single-element array assigned from an `if` statement.** `$items = if (...) {
+  @(@{...}) }` yields the *object*, not a one-element array, so `ConvertTo-Json` sends `"data":{…}`
+  where the API contract says `"data":[…]` — and a stub that only ever serves one item hits this
+  every time. Assign inside the branches (`if (...) { $items = @(...) }`) or keep `$items = @()`
+  and add. Found 2026-10-12 while extending `run-console-security-tests.ps1`'s stub; the server was
+  right and the stub lied.
+- **`run-linux-tests.sh` hardcodes its ports (5179, 5186, 5187, 5196), and a daemon from another
+  worktree's `testenv` clone can hold one.** The root run then aborts in Kestrel's bind with an
+  address-in-use stack and every daemon-driven check fails as a cascade — reproduced 2026-10-12 with
+  a foreign `/home/maro/SaveLocker` daemon on :5187. Don't kill the foreign process; run the suite in
+  a private network namespace instead (`unshare -n`, `ip link set lo up`) — it only talks to
+  localhost. Builds must be pre-warmed *outside* the netns (`NUGET_PACKAGES` pinned), because the
+  suite re-points `HOME` at its fixture tree, which would otherwise move NuGet's cache to an empty
+  folder and force a network restore that cannot happen inside the namespace.
 
 ## Agent UI (`agent-ui/`)
 - **It has no Tailwind, so `tokens.css` is a hand-kept COPY of `web/src/index.css`'s `@theme` block.**

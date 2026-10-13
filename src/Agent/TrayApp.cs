@@ -143,7 +143,9 @@ internal sealed class TrayContext : ApplicationContext
             // for a caller that fires BEFORE the process starts (Playnite's OnGameStarting, once that
             // plugin exists), which is exactly the certainty PrepareLaunchAsync's own doc comment
             // requires. Mirrors Daemon.cs:171's existing Linux wiring.
-            prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct),
+            prepareLaunch: (game, ct) => _engine.PrepareLaunchAsync(game, ct, canAsk: true),
+            answerLaunch: (game, answer) => _engine.AnswerLaunchQuestion(game, answer),
+            pullAnyway: async (game, ct) => SyncEngine.DescribePull(game, await _engine.PullAsync(game, ct: ct, skipDlcCheck: true)),
             // POST /api/games/{id}/post-exit-sync (tasks/playnite-plugin/plan.md, Phase 5) — the
             // Playnite plugin's OnGameStopped equivalent to this route's own OnGameStarting caller.
             postExitSync: (game, ct) => _engine.OnGameExitAsync(game, ct),
@@ -536,7 +538,7 @@ internal sealed class TrayContext : ApplicationContext
                     // nothing is cached; StartUpdateAsync's own origin guard refuses a stale offer
                     // from a server that is no longer configured.
                     var available = LastUpdateResult as UpdateResult.Available;
-                    if (available is null)
+                    if (available is null || !SameVersion(available.Version, command.Version))
                     {
                         await CheckForUpdateAsync(silent: false);
                         available = LastUpdateResult as UpdateResult.Available;
@@ -546,11 +548,25 @@ internal sealed class TrayContext : ApplicationContext
                         Notify("No update is available from this server right now.");
                         return;
                     }
+                    // The click agreed to the version its toast named. A toast can sit in Action Center
+                    // for days; whatever the server offers by then — newer, or a rollback — is a different
+                    // decision, so it is named and left to the menu rather than installed unasked.
+                    if (!SameVersion(available.Version, command.Version))
+                    {
+                        Notify($"That notification offered v{command.Version?.TrimStart('v')}, but this server now " +
+                               $"offers v{available.Version.TrimStart('v')}. Choose \"Update to v{available.Version.TrimStart('v')}\" " +
+                               "in the tray menu to install it.");
+                        return;
+                    }
                     await StartUpdateAsync(available);
                 });
                 break;
         }
     }
+
+    private static bool SameVersion(string? a, string? b) =>
+        a is not null && b is not null &&
+        string.Equals(a.TrimStart('v', 'V'), b.TrimStart('v', 'V'), StringComparison.OrdinalIgnoreCase);
 
     private void OpenDashboard()
     {

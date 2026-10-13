@@ -16,7 +16,7 @@ public static class AgentCli
         "register" or "enroll" or "trust" or "set-server" or "whoami" or "search" or "scan" or
         "resolve" or "add-game" or "remove-game" or "list" or "status" or "push" or "pull" or
         "conflicts" or "resolve-conflict" or "add-path" or "remove-path" or
-        "refresh-manifest" or "log" or "hash" or "check-update";
+        "refresh-manifest" or "log" or "hash" or "check-update" or "dlc";
 
     /// <summary>Run one command. Returns the process exit code.</summary>
     public static async Task<int> RunAsync(
@@ -475,6 +475,9 @@ public static class AgentCli
                     break;
                 }
 
+                case "dlc":
+                    return await DlcAsync(positionals, config, Api());
+
                 case "check-update":
                 {
                     // Ask the configured server what it is offering, and optionally fetch and VERIFY
@@ -862,6 +865,64 @@ public static class AgentCli
             Console.WriteLine("Note: could not tell the server yet; the agent does on its next poll.");
         Console.WriteLine($"'{game.Name}' save folder '{key}' -> {result.Directory}");
         return 0;
+    }
+
+    /// <summary>
+    /// <c>dlc status [game]</c>, <c>dlc ask &lt;game&gt;</c>, <c>dlc send|decline &lt;request id&gt;</c> (tasks/emulator-saves Phase 5c):
+    /// what the latest save needs against what is here, a hand-over request to the machine the save came from, and an
+    /// answer to another machine's request. The daemon does the moving.
+    /// </summary>
+    private static async Task<int> DlcAsync(List<string> positionals, AgentConfig config, ApiClient api)
+    {
+        var verb = positionals.FirstOrDefault() ?? "status";
+        var arg = positionals.Skip(1).FirstOrDefault();
+        switch (verb)
+        {
+            case "status":
+            {
+                var games = arg is null ? config.Games.Where(g => g.IsEnrolledHere) : [config.FindGame(arg) ?? throw new InvalidOperationException($"'{arg}' is not tracked here.")];
+                ContentTransferDto[] transfers = [];
+                try { transfers = await api.ListTransfersAsync(); } catch (HttpRequestException) { }
+                foreach (var g in games)
+                {
+                    if (ContentInventory.For(g) is not { } here) continue;
+                    var head = (await api.GetStateAsync(g.GameId))?.Head;
+                    var missing = DlcCheck.Missing(head?.Content, here);
+                    var held = DlcHoldStore.For(config).For(g.GameId) is not null;
+                    Console.WriteLine($"  {g.Name}: {here.Length} package(s) here; latest save " +
+                        (head?.Content is null ? "lists none" : missing.Count == 0 ? "has every one it needs" : $"needs {DlcCheck.Summary(missing)}") +
+                        (held ? "  *** PULL HELD ***" : ""));
+                    foreach (var t in transfers.Where(t => t.GameId == g.GameId))
+                        Console.WriteLine($"      hand-over {t.Id:N}: {t.FromMachineName} -> {t.ToMachineName}, {t.Status.ToString().ToLowerInvariant()}");
+                }
+                return 0;
+            }
+            case "ask":
+            {
+                var g = config.FindGame(arg ?? throw new ArgumentException("Pass a game name, e.g. dlc ask \"Forza Horizon\""))
+                        ?? throw new InvalidOperationException($"'{arg}' is not tracked here.");
+                var head = (await api.GetStateAsync(g.GameId))?.Head;
+                var missing = DlcCheck.Missing(head?.Content, ContentInventory.For(g));
+                if (head?.MachineId is not { } from || missing.Count == 0 || from == config.MachineId)
+                {
+                    Console.WriteLine($"Nothing to ask for: this machine has every pack the latest save of {g.Name} needs.");
+                    return 0;
+                }
+                var t = await api.CreateTransferAsync(new CreateTransferRequest(g.GameId, from, [.. missing]));
+                Console.WriteLine($"Asked {t.FromMachineName} for {DlcCheck.Summary(missing)} (request {t.Id:N}). " +
+                                  "The agent installs them once sent, and the held pull goes ahead.");
+                return 0;
+            }
+            case "send" or "decline":
+            {
+                if (!Guid.TryParse(arg, out var id)) throw new ArgumentException($"Pass the request id from dlc status, e.g. dlc {verb} <id>");
+                var t = await api.AnswerTransferAsync(id, approve: verb == "send");
+                Console.WriteLine(verb == "send" ? $"Sending to {t.ToMachineName}: the agent uploads it on its next check." : $"Declined {t.ToMachineName}'s request.");
+                return 0;
+            }
+            default:
+                throw new ArgumentException("Usage: dlc status [game] | dlc ask <game> | dlc send <id> | dlc decline <id>");
+        }
     }
 
     private static TrackedGame GameArg(Dictionary<string, string> opts, List<string> positionals, AgentConfig config,

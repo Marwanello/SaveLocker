@@ -91,6 +91,11 @@ public sealed class AgentConfig
     /// but ignored, so turning it back on shows the console's current look at once.
     /// </summary>
     public bool FollowConsoleAppearance { get; set; } = true;
+    /// <summary>What to do before a Xenia game starts when Xenia is set to another profile than the one its saves are
+    /// under (tasks/emulator-saves Phase 5c). Null means <see cref="ProfileAtLaunch.Ask"/>; a game can override it.</summary>
+    public ProfileAtLaunch? XeniaProfileAtLaunch { get; set; }
+    /// <summary>What to do when another machine asks this one for DLC (tasks/emulator-saves Phase 5c). Null means Auto.</summary>
+    public DlcSendPolicy? DlcSend { get; set; }
     /// <summary>The look the console last pushed on a heartbeat; null until one carried a look.</summary>
     public AppearanceDto? ConsoleAppearance { get; set; }
     /// <summary>When <see cref="ConsoleAppearance"/> last <b>changed</b> (UTC) — not when a heartbeat
@@ -247,6 +252,8 @@ public sealed class AgentConfig
             ConsoleAppearance = onDisk.ConsoleAppearance;
             ConsoleAppearanceAt = onDisk.ConsoleAppearanceAt;
             LocalAppearance = onDisk.LocalAppearance;
+            XeniaProfileAtLaunch = onDisk.XeniaProfileAtLaunch;
+            DlcSend = onDisk.DlcSend;
 
             // And the opt-out has to be ENFORCED here, not just carried. A long-lived host loaded
             // its game list at boot and holds it for the process lifetime, so after another process
@@ -349,6 +356,8 @@ public sealed class AgentConfig
         SettleMaxWaitSeconds = fresh.SettleMaxWaitSeconds;
         UiSoundsMuted = fresh.UiSoundsMuted;
         FollowConsoleAppearance = fresh.FollowConsoleAppearance;
+        XeniaProfileAtLaunch = fresh.XeniaProfileAtLaunch;
+        DlcSend = fresh.DlcSend;
         ConsoleAppearance = fresh.ConsoleAppearance;
         ConsoleAppearanceAt = fresh.ConsoleAppearanceAt;
         LocalAppearance = fresh.LocalAppearance;
@@ -734,6 +743,10 @@ public sealed class AgentConfig
     public void SaveGamePushAfterExit(Guid gameId, bool? enabled) =>
         MutateGameUnderLock(gameId, g => g.PushAfterExitEnabled = enabled);
 
+    /// <summary>Persist one game's profile-at-launch override — see <see cref="MutateGameUnderLock"/>.</summary>
+    public void SaveGameProfileAtLaunch(Guid gameId, ProfileAtLaunch? value) =>
+        MutateGameUnderLock(gameId, g => g.XeniaProfileAtLaunch = value);
+
     /// <summary>
     /// Persist a Windows Steam AppID backfill (tasks/playnite-plugin/plan.md, Phase 2) without
     /// clobbering concurrent changes to anything else — see <see cref="MutateGameUnderLock"/>. Unlike
@@ -831,6 +844,8 @@ public sealed class TrackedGame
     /// must run whether or not a push happened.
     /// </summary>
     public bool? PushAfterExitEnabled { get; set; }
+    /// <summary>This game's own answer to <see cref="AgentConfig.XeniaProfileAtLaunch"/> — set by “don’t ask again”.</summary>
+    public ProfileAtLaunch? XeniaProfileAtLaunch { get; set; }
     /// <summary>The local save directory to archive/restore.</summary>
     public string SaveDirectory { get; set; } = "";
     /// <summary>How this machine found the game ("Emulator › RetroArch"), set when it was enrolled here.

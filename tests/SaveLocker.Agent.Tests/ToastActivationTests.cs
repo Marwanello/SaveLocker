@@ -94,6 +94,8 @@ public class ToastIdentityTests
         Assert.NotEqual(product, a);
         Assert.NotEqual(a, b);
         Assert.Equal(a, ToastActivation.ClsidForPort(5188));   // deterministic, not per-process
+        // 0x7085 is the product CLSID's own first two bytes: the port alone would reproduce it.
+        Assert.NotEqual(ToastActivation.ProductClsid, ToastActivation.ClsidForPort(0x7085));
         Assert.Matches(@"^\{[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}\}$", ToastActivation.ClsidText(a));
     }
 }

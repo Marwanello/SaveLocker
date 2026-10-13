@@ -40,6 +40,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 function describeRun(run: SyncRun, waiting: number): Summary {
   const synced = run.uploaded + run.pulled + run.alreadyCurrent
   const offline = run.queued + run.unreachable
+  const held = run.heldForDlc ?? 0
   const parts: string[] = []
   if (run.uploaded > 0) parts.push(`${run.uploaded} uploaded`)
   if (run.pulled > 0) parts.push(`${run.pulled} pulled`)
@@ -47,6 +48,7 @@ function describeRun(run: SyncRun, waiting: number): Summary {
   if (run.conflicts > 0) parts.push(plural(run.conflicts, 'conflict'))
   if (run.queued > 0) parts.push(`${run.queued} queued for upload`)
   if (run.unreachable > 0) parts.push(`${run.unreachable} not checked`)
+  if (held > 0) parts.push(`${held} waiting for DLC`)
   if (run.failed > 0) parts.push(`${run.failed} failed — see Activity`)
   const queue = waiting > 0 ? ` · ${waiting} waiting to upload` : ''
   const detail = `${parts.join(', ') || 'nothing to do'} · ${formatAgo(run.finishedAtUtc)}${queue}`
@@ -58,7 +60,7 @@ function describeRun(run: SyncRun, waiting: number): Summary {
       chip: <Chip tone="warn">Last sync incomplete</Chip>,
     }
   }
-  if (offline > 0 || run.failed > 0) {
+  if (offline > 0 || run.failed > 0 || held > 0) {
     return {
       tone: 'warn', Icon: AlertTriangle, title: `Synced ${synced} of ${plural(run.games, 'game')}${sent}`, detail,
       chip: <Chip tone="warn">Last sync incomplete</Chip>,

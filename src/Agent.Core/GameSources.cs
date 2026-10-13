@@ -91,6 +91,7 @@ public static class GameSources
         ["gb"] = "Game Boy", ["gbc"] = "Game Boy Color", ["gba"] = "GBA", ["nds"] = "DS",
         ["n3ds"] = "3DS", ["3ds"] = "3DS",
         ["psx"] = "PS1", ["ps2"] = "PS2", ["ps3"] = "PS3", ["ps4"] = "PS4", ["psp"] = "PSP", ["psvita"] = "PS Vita",
+        ["xbox360"] = "Xbox 360",
         ["genesis"] = "Genesis", ["megadrive"] = "Mega Drive", ["mastersystem"] = "Master System",
         ["gamegear"] = "Game Gear", ["segacd"] = "Sega CD", ["sega32x"] = "32X", ["saturn"] = "Saturn",
         ["dreamcast"] = "Dreamcast", ["pcengine"] = "PC Engine", ["tg16"] = "TurboGrafx-16",
