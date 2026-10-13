@@ -2240,6 +2240,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/xenia-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["XeniaProfileDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["GameProfileAtLaunchRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dlc/holds": {
         parameters: {
             query?: never;
@@ -3625,6 +3699,9 @@ export interface components {
             /** Format: int32 */
             otherCount: number;
         };
+        GameProfileAtLaunchRequest: {
+            profileAtLaunch: null | components["schemas"]["ProfileAtLaunch"];
+        };
         GameReleaseDto: {
             console: string;
             region?: null | string;
@@ -3966,6 +4043,16 @@ export interface components {
         Xbox360SettingsDto: {
             profileAtLaunch: components["schemas"]["ProfileAtLaunch"];
             dlcSend: components["schemas"]["DlcSendPolicy"];
+        };
+        XeniaProfileDto: {
+            gameXuid: null | string;
+            gameTag: null | string;
+            configuredXuid: null | string;
+            configuredTag: null | string;
+            configs: string[];
+            policy: components["schemas"]["ProfileAtLaunch"];
+            gamePolicy: null | components["schemas"]["ProfileAtLaunch"];
+            legacy: boolean;
         };
     };
     responses: never;

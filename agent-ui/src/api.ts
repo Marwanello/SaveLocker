@@ -1,4 +1,4 @@
-import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, ContentTransfer, DlcCheck, DlcHold, Xbox360Settings, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
+import type { Activity, AddFolderResult, AgentAppearance, AgentState, AgentVersion, BrowseListing, Candidate, CandidateLinks, Conflict, DeckyStatus, ContentTransfer, DlcCheck, DlcHold, Xbox360Settings, XeniaProfile, EnrollProgress, FolderSuggestion, GameState, GameSyncMode, OfflineQueueEntry, OpenPathResult, PlaynitePluginCardStatus, PlaynitePluginStatus, SaveVersion, SyncStatus, GameFiles, TestConnection, TrackedGame, VersionStats } from './types'
 
 // The agent injects the local API token into index.html when it serves the page; the same-origin
 // policy is what keeps any other page from reading it. Left as the literal placeholder under
@@ -180,6 +180,11 @@ export const api = {
   dlcHandoverAnswer: (id: string, approve: boolean) => post<ContentTransfer>(`/api/dlc/handovers/${id}/answer`, { approve }),
   dlcHandoverCancel: (id: string) => post<{ message: string }>(`/api/dlc/handovers/${id}/cancel`, {}),
   xbox360Settings: () => req<Xbox360Settings>('/api/settings/xbox360'),
+  xeniaProfile: (id: string) => req<XeniaProfile>(`/api/games/${id}/xenia-profile`),
+  setGameProfileAtLaunch: (id: string, profileAtLaunch: XeniaProfile['policy'] | null) =>
+    fetch(`/api/games/${id}/xenia-profile`, {
+      method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ profileAtLaunch }),
+    }).then(r => { if (!r.ok) throw new Error(r.statusText) }),
   setXbox360Settings: (body: Xbox360Settings) => post<Xbox360Settings>('/api/settings/xbox360', body),
   // Hashes the whole save folder. Only ever on an explicit "Check now", never on a timer or a list.
   syncStatus: (id: string) => req<SyncStatus>(`/api/games/${id}/sync-status`),

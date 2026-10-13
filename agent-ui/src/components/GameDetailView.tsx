@@ -7,6 +7,7 @@ import { GameArt } from './GameArt'
 import { GameManagement } from './GameManagement'
 import { SaveFilesCard } from './SaveFilesCard'
 import { DlcCheckCard } from './DlcCheckCard'
+import { XeniaProfileCard } from './XeniaProfileCard'
 import { ReleaseChip } from './ReleaseChip'
 import { SourceChip } from './SourceChip'
 import { VersionsCard } from './VersionsCard'
@@ -250,6 +251,8 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
 
       {enrolled && <DlcCheckCard gameId={game.id} gameName={game.name} refreshKey={syncCount} askSignal={dlcAsk}
         onPulled={text => { setToast({ text, failed: false }); setSyncCount(n => n + 1); load(); onSynced() }} />}
+
+      {enrolled && <XeniaProfileCard gameId={game.id} refreshKey={syncCount} />}
 
       {enrolled && <SaveFilesCard gameId={game.id} refreshKey={syncCount} />}
 

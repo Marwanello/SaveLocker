@@ -1229,6 +1229,33 @@ public sealed class AgentApiServer : IDisposable
             new Xbox360SettingsDto(_config.XeniaProfileAtLaunch ?? ProfileAtLaunch.Ask, _config.DlcSend ?? DlcSendPolicy.Ask)))
             .Produces<Xbox360SettingsDto>();
 
+        // A Xenia game's profile on this machine (tasks/emulator-saves Phase 5c): the profile its saves are under, the one
+        // Xenia is set to start as right now (read from its config files), and what the launch check does. Reads two small
+        // files; nothing is changed.
+        app.MapGet("/api/games/{id:guid}/xenia-profile", Results<Ok<XeniaProfileDto>, NotFound> (Guid id) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null || ContentInventory.Home(game) is not { } home) return TypedResults.NotFound();
+            if (XeniaLaunchProfile.GameProfile(game) is not { } profile)
+                return TypedResults.Ok(new XeniaProfileDto(null, null, null, null, [], XeniaLaunchProfile.PolicyFor(_config, game),
+                    game.XeniaProfileAtLaunch, Legacy: true));
+            var configs = XeniaConfig.For(profile.Content, game.Name);
+            var configured = configs.Select(XeniaConfig.Read).FirstOrDefault(v => !string.IsNullOrEmpty(v));
+            return TypedResults.Ok(new XeniaProfileDto(profile.Xuid, XeniaProfile.Gamertag(profile.Content, profile.Xuid),
+                configured, configured is null ? null : XeniaProfile.Gamertag(profile.Content, configured), [.. configs],
+                XeniaLaunchProfile.PolicyFor(_config, game), game.XeniaProfileAtLaunch, Legacy: false));
+        }).Produces<XeniaProfileDto>();
+
+        // This game's own answer to the profile-at-launch setting; null goes back to the machine's.
+        app.MapPost("/api/games/{id:guid}/xenia-profile", Results<Ok, NotFound> (Guid id, GameProfileAtLaunchRequest body) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null || ContentInventory.Home(game) is null) return TypedResults.NotFound();
+            _config.SaveGameProfileAtLaunch(id, body.ProfileAtLaunch);
+            game.XeniaProfileAtLaunch = body.ProfileAtLaunch;
+            return TypedResults.Ok();
+        });
+
         app.MapPost("/api/settings/xbox360", (Xbox360SettingsDto body) =>
         {
             _config.UpdateSettings(c =>
@@ -2317,6 +2344,13 @@ internal static class ServerErrors
         return m.Success ? m.Groups[1].Value.Trim().Trim('"') : ex.Message;
     }
 }
+
+/// <summary>A Xenia game's profile here. <see cref="Legacy"/>: the layout from before profiles, where no profile is involved.</summary>
+public sealed record XeniaProfileDto(
+    string? GameXuid, string? GameTag, string? ConfiguredXuid, string? ConfiguredTag, string[] Configs,
+    ProfileAtLaunch Policy, ProfileAtLaunch? GamePolicy, bool Legacy);
+
+public sealed record GameProfileAtLaunchRequest(ProfileAtLaunch? ProfileAtLaunch);
 
 public sealed record Xbox360SettingsDto(ProfileAtLaunch ProfileAtLaunch, DlcSendPolicy DlcSend);
 

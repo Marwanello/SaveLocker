@@ -34,11 +34,16 @@ export function LaunchProfileCard({ gameId }: Props) {
   }, [gameId]);
 
   const launches = (content?.machines ?? []).filter(m => m.launch);
-  if (launches.length === 0 && transfers.length === 0) return null;
   const tag = (xuid?: string | null, name?: string | null) => xuid ? (name ? `${name} (${xuid})` : xuid) : 'no profile';
 
   return (
     <Card title="Xbox 360 profile at launch" headerRight={<span className="text-[11px] text-dim">the last launch on each machine</span>} flush>
+      {launches.length === 0 && (
+        <div className="px-4 py-3 text-[12.5px] text-dim">
+          No launch checked yet. Each machine reports here when it starts the game through SaveLocker (Steam's
+          launch option, Decky or Playnite): which profile Xenia was set to, and what SaveLocker did about it.
+        </div>
+      )}
       {launches.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-[12.5px]">
