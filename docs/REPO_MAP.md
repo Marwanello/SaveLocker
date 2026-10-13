@@ -229,12 +229,18 @@ SaveLocker/
 │       │                               #   the window is started through `systemd-run --user`, never as its own child
 │       ├── DesktopEntry.cs              # The application-menu entry, offered once by the daemon for installs that
 │       │                               #   updated themselves (install.sh writes it otherwise) — same template
+│       ├── DeckShortcut.cs              # The SHIPPED Steam library entry ("SaveLocker", running `savelocker open`):
+│       │                               #   added/`repaired at daemon start when Steam is installed, closed and the
+│       │                               #   entry was never removed by hand; `savelocker deck-shortcut` for by hand
+│       ├── SteamShortcutWriter.cs       # THE byte-level writer for every SaveLocker Steam shortcut entry —
+│       │                               #   the shipped one above plus the test rig's "Conflict Game" and
+│       │                               #   "SaveLocker Test" (inspect, add, in-place retarget, remove, grid art)
 │       ├── Art/                         # The bundled Steam library art (artwork/*.png) repainted in the look in effect,
 │       │                               #   at start and on every change: SteamArt (which files; one is rewritten only when a
 │       │                               #   fresh render differs), SteamArtRenderer (pure: tints and composites layers/*.png,
 │       │                               #   written by export-art.mjs — no SVG renderer here), SteamArtHost (the folder, the
-│       │                               #   daemon hook). A real install never touches Steam; the test rig's "SaveLocker Test"
-│       │                               #   shortcut (DevSteamShortcut) is the one whose grid art it repaints
+│       │                               #   daemon hook). The artwork folder is repainted everywhere; a shortcut's grid
+│       │                               #   art only where a record says SaveLocker painted it (shipped and test entries)
 │       ├── Doctor.cs                    # Diagnoses the whole chain (the only UI a Deck has)
 │       ├── SystemdAutoStart.cs          # IAutoStart: systemd --user unit
 │       └── Ui/                          # `savelocker ui` — Game Mode surface (SDL + GL + ImGui)
@@ -405,7 +411,7 @@ SaveLocker/
 │   ├── SaveLocker.Agent.Tests/         # The one xUnit project (`dotnet test`; CI's `unit-tests` job): PlayniteLibrary's
 │   │                                   #   LiteDB fixture, the OpenAPI sorter, the notification rules, offline sync, and —
 │   │                                   #   source linked in — SvgPath, AppWindowPlanner, DesktopEntry, the Steam art painter
-│   │                                   #   and the test rig's Steam shortcuts (DevSteamShortcut, on a temp shortcuts.vdf)
+│   │                                   #   and the Steam shortcut writer (SteamShortcutWriter + DeckShortcut, temp vdf)
 │   ├── run-appearance-consistency-tests.ps1 # Source-only drift check (~1 s): the accent table in four places, the id
 │   │                                   #   lists the server validates, mark geometry vs the SVGs AND vs the two C# ports
 │   │                                   #   (MarkIcon.cs, AppMark.cs), the token files AND the Deck's Theme.cs, the
