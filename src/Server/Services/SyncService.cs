@@ -694,17 +694,44 @@ public sealed class SyncService
 
         var extras = await GetExtraSavePathsAsync();
 
+        // Same N+1 reasoning for the console's Device/Source groupings: two flat reads grouped in memory
+        // (a machines × games row count, small) instead of two queries per game.
+        var pathRows = await _db.MachineSavePaths.Select(p => new { p.GameId, p.MachineId }).ToListAsync();
+        var sourceRows = await _db.MachineGameSources
+            .Select(s => new { s.GameId, s.MachineId, s.Kind, s.Detail }).ToListAsync();
+        var machinesByGame = new Dictionary<Guid, HashSet<Guid>>();
+        var sourcesByGame = new Dictionary<Guid, List<GameSourceDto>>();
+        foreach (var p in pathRows) Machines(machinesByGame, p.GameId).Add(p.MachineId);
+        foreach (var s in sourceRows)
+        {
+            Machines(machinesByGame, s.GameId).Add(s.MachineId);
+            Sources(sourcesByGame, s.GameId).Add(new GameSourceDto(s.Kind, s.Detail));
+        }
+
         var result = new List<GameStateDto>(games.Count);
         foreach (var g in games)
         {
-            var state = await GetGameStateAsync(g.Id, storageTotals.GetValueOrDefault(g.Id), extras[g.Id]);
+            var state = await GetGameStateAsync(g.Id, storageTotals.GetValueOrDefault(g.Id), extras[g.Id],
+                machinesByGame, sourcesByGame);
             if (state is not null) result.Add(state);
         }
         return result;
     }
 
+    private static HashSet<Guid> Machines(Dictionary<Guid, HashSet<Guid>> map, Guid gameId) =>
+        map.TryGetValue(gameId, out var set) ? set : map[gameId] = new HashSet<Guid>();
+
+    private static List<GameSourceDto> Sources(Dictionary<Guid, List<GameSourceDto>> map, Guid gameId) =>
+        map.TryGetValue(gameId, out var list) ? list : map[gameId] = new List<GameSourceDto>();
+
+    /// <summary>
+    /// One game's state. <paramref name="machinesByGame"/>/<paramref name="sourcesByGame"/> are the
+    /// overview's bulk-loaded facets; omitted (a single-game route), each is queried for this game alone.
+    /// </summary>
     public async Task<GameStateDto?> GetGameStateAsync(Guid gameId, long? precomputedStorage = null,
-        IEnumerable<GameSavePath>? precomputedExtras = null)
+        IEnumerable<GameSavePath>? precomputedExtras = null,
+        Dictionary<Guid, HashSet<Guid>>? machinesByGame = null,
+        Dictionary<Guid, List<GameSourceDto>>? sourcesByGame = null)
     {
         var game = await _db.Games.FindAsync(gameId);
         if (game is null) return null;
@@ -722,7 +749,58 @@ public sealed class SyncService
             ?? await _db.SaveVersions.Where(v => v.GameId == gameId).SumAsync(v => v.Size);
 
         var extras = precomputedExtras ?? await GetExtraSavePathsAsync(gameId);
-        return new GameStateDto(game.ToDto(extras), head?.ToDto(), lease.ToDto(gameId), hasConflict, totalStorage);
+
+        var machines = machinesByGame is null
+            ? await MachineIdsForGameAsync(gameId)
+            : machinesByGame.TryGetValue(gameId, out var knownMachines) ? knownMachines : new HashSet<Guid>();
+        if (head?.MachineId is { } headMachine) machines.Add(headMachine);
+
+        var sources = sourcesByGame is null
+            ? await SourcesForGameAsync(gameId)
+            : sourcesByGame.TryGetValue(gameId, out var knownSources) ? knownSources : new List<GameSourceDto>();
+
+        return new GameStateDto(game.ToDto(extras), head?.ToDto(), lease.ToDto(gameId), hasConflict, totalStorage,
+            CleanMachines(machines), CleanSources(sources));
+    }
+
+    /// <summary>Machines that have this game: a stored save folder or a recorded source (one small query each).</summary>
+    private async Task<HashSet<Guid>> MachineIdsForGameAsync(Guid gameId)
+    {
+        var ids = await _db.MachineSavePaths.Where(p => p.GameId == gameId)
+            .Select(p => p.MachineId).Distinct().ToListAsync();
+        ids.AddRange(await _db.MachineGameSources.Where(s => s.GameId == gameId)
+            .Select(s => s.MachineId).Distinct().ToListAsync());
+        return ids.ToHashSet();
+    }
+
+    private async Task<List<GameSourceDto>> SourcesForGameAsync(Guid gameId)
+    {
+        var rows = await _db.MachineGameSources.Where(s => s.GameId == gameId)
+            .Select(s => new { s.Kind, s.Detail }).ToListAsync();
+        return rows.Select(s => new GameSourceDto(s.Kind, s.Detail)).ToList();
+    }
+
+    /// <summary>Sorted and deduped for a stable overview payload; null when empty.</summary>
+    private static Guid[]? CleanMachines(HashSet<Guid>? ids)
+    {
+        if (ids is null || ids.Count == 0) return null;
+        var arr = ids.ToArray();
+        Array.Sort(arr);
+        return arr;
+    }
+
+    /// <summary>Distinct by kind+detail (trimmed), ordered; null when empty. Two machines may disagree about
+    /// one game, so the console groups by the first kind it knows and hints at the rest.</summary>
+    private static GameSourceDto[]? CleanSources(IEnumerable<GameSourceDto>? sources)
+    {
+        if (sources is null) return null;
+        var clean = sources
+            .Select(s => new GameSourceDto(s.Kind.Trim(), s.Detail.Trim()))
+            .DistinctBy(s => (s.Kind, s.Detail))
+            .OrderBy(s => s.Kind, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(s => s.Detail, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return clean.Length == 0 ? null : clean;
     }
 
     // ----- Leases -----

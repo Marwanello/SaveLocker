@@ -13,6 +13,9 @@ Any key is accepted, so: start the console with NO key, add some games, then pas
 Configuration -> SteamGridDB and watch the games fill in. See "Testing artwork" in docs/Build and Run.md.
 
 What it serves, for EVERY game name (the id is derived from the name, so it is stable):
+  * search  - three candidates per query: the derived id first (what the automatic match picks), then
+              two alternatives. Choosing one in the picker visibly changes the covers/icons the game
+              is offered - that is what the "choose which SteamGridDB game" box is for.
   * covers  - 12, spread over two API pages of 7 and 5 (deliberately not the console's five per page),
               600x900 with fine diagonal lines and rings, which is what makes browser aliasing visible.
   * icons   - 8 of 256x256; the odd ones have transparent corners, the even ones none, and the FIRST is
@@ -133,7 +136,16 @@ class Handler(BaseHTTPRequestHandler):
         if m := re.fullmatch(r"/api/v2/search/autocomplete/(.+)", path):
             name = unquote(m.group(1))
             gid = int(hashlib.sha1(name.lower().encode()).hexdigest()[:6], 16) % 90000 + 1000
-            return self._json({"success": True, "data": [{"id": gid, "name": name}]})
+            return self._json({"success": True, "data": [
+                {"id": gid, "name": name, "release_date": "2016-05-13"},
+                {"id": gid + 1, "name": f"{name} (alt cover set)", "release_date": "2017-01-01"},
+                {"id": gid + 2, "name": f"{name} (second alt)", "release_date": "2018-02-02"},
+            ]})
+
+        if m := re.fullmatch(r"/api/v2/games/id/(\d+)", path):
+            gid = int(m.group(1))
+            return self._json({"success": True, "data": {
+                "id": gid, "name": f"Stub Game {gid}", "release_date": "2016-05-13"}})
 
         if m := re.fullmatch(r"/api/v2/(grids|heroes|logos|icons)/game/(\d+)", path):
             kind, gid = m.group(1), int(m.group(2))

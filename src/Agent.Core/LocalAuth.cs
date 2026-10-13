@@ -147,17 +147,11 @@ public sealed class LocalAuth
         // access and that inherits, so both credentials under it were readable by any local
         // account (WA-03). The directory ACL carries inheritable rules, which is what covers the
         // token, config.json and every other state file the agent writes later.
-        if (OperatingSystem.IsWindows())
-        {
-            StateDirSecurity.Protect(dir);
-            return;
-        }
-
-        try
-        {
-            File.SetUnixFileMode(dir,
-                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        }
-        catch (Exception ex) { AgentLogger.Log($"could not restrict permissions on {dir}: {ex.Message}"); }
+        //
+        // Unix is handled here too now: 0700 on the state directory and 0600 on the private state
+        // files, including files an older build left at the launching shell's umask. This used to
+        // chmod the directory alone — which never ran for CLI-only entry paths, and never touched
+        // an already-permissive config.json.
+        StateDirSecurity.Protect(dir);
     }
 }

@@ -1139,7 +1139,7 @@ forced-`--user` volumes). **`X-Forwarded-*` is still never read by default**; `S
 is an opt-in for deployments behind a proxy — which the maintainer's own is, despite the LAN-only
 decision ([[Decisions]] amended). **Left for a maintainer decision, not changed:** first-time machine
 registration is still open by default (`Security:RequireAdminPasswordToRegister` exists, off) even
-though a machine key can read/write every game.
+though a machine key can read/write every game. *(Since PR #64 it defaults to on — see the quick-wins entry.)*
 <br>**Not verified here:** the Windows-agent suites, `run-server-bugbounty-tests` (216) and the CI-only
 Linux/cross-OS chain — this session had no agent build; the server, the new suite, the compat guard,
 `web` build/lint and a real container were all run. Release notes for the next release must cover:
@@ -1950,7 +1950,9 @@ commit, so this session did not touch it: run `testenv clean` first.
 
 **Quick-wins batch: seven backlog items closed, one verification item retired (2026-10-09, branch
 `fix/backlog-quick-wins`, no PR yet).** One pass, each with the verification the item named:
-- **Registration default flipped** — `Security:RequireAdminPasswordToRegister` now defaults to `true`:
+- **Registration default flipped** (**release notes must call this out**: a scripted `savelocker
+  register` without `--admin-password` against a server with a password now gets 401) —
+  `Security:RequireAdminPasswordToRegister` now defaults to `true`:
   once an admin password is set, a **new** machine name must present it. A machine key is
   fleet-scoped, so the open door meant the password guarded the dashboard but not the saves. No
   password set is unchanged (first-run stays open); `savelocker register --admin-password` and
@@ -1962,13 +1964,19 @@ commit, so this session did not touch it: run `testenv clean` first.
   pause threshold it asks the server whether the game still has an open conflict before holding the
   save back, so a resolve that landed while the agent was down clears the latch and the push runs.
   Server unreachable keeps the pause. New `ConflictLatchTests` (3, stub server; the stale-latch
-  clear is mutation-checked). **Related, same area:** a dashboard **Push** command answered with a
+  clear is mutation-checked). *(Superseded 2026-10-12, PR #64–67 review: #63's `ConflictClosedAsync` had
+  already fixed this in parallel — the two checks are now one, `ConflictStillOpenAsync`, asking the
+  machine-scoped conflict list; the test stub answers that route instead of 500ing it.)* **Related, same area:** a dashboard **Push** command answered with a
   conflict now reports Failed with the reason instead of "pushed — latest save …" (`CommandPoller`
   had ignored the engine's result).
 - **`post-exit-sync` releases the lease even while Sync all holds the agent-wide gate**: the route
   still answers 409 (the running sync pushes the game) but now stops that game's renewer and releases
   its checkout through a new `SyncEngine.ReleaseLaunchLeaseAsync`, so the fleet is not locked out of
   a game nobody is playing. `run-local-api-tests` holds a real Sync all open and asserts the release.
+  *(Changed 2026-10-12, PR #64–67 review: releasing without the push let another machine launch on an
+  older save — the gate's holder need not push this game. The whole exit, push then release, is now
+  queued behind the gate (`AgentApiServer.QueueDeferredExit`); the test asserts no release while the
+  gate is held and the release once it frees.)*
 - **Signed-in browsers are listable and revocable one by one** (Configuration → Admin password):
   `GET /api/admin/sessions` (current session marked), `DELETE /api/admin/sessions/{id}` (404 when not
   live, audited as `admin.session_revoked`); "Sign out everywhere" stays.
@@ -2034,6 +2042,50 @@ Action Center. Task closed; moved to `tasks/_done/`. **The one manual check is n
 installer once and look at a real toast's header (steps:
 `tasks/_done/notification-follow-ups/verification.md`). Release notes must cover: toast buttons that act
 (Retry now / Install now).
+
+---
+
+**Art picker source choice + Linux agent secret permissions shipped (2026-10-12, branch
+`art-picker-and-linux-agent-secrets`, worktree, PR to the fork pending — two backlog items, one
+branch; full write-up `logs/2026-10-12_art-picker-and-agent-secrets.md`).**
+<br>**Art picker: choose which SteamGridDB game a game pulls from** (`tasks/_done/art-picker-game-choice/`).
+The first autocomplete result used to be the only option, so a game whose name matches the wrong
+entry offered that entry's art with no way out short of renaming it. `Game.SteamGridDbId` +
+`SteamGridDbName` (migration `AddGameSteamGridDbSource`; null = automatic) are honored by the options
+listing, *Refresh art* and the missing-art backfill; new admin routes `GET/PUT /games/{id}/art/source`
+and `GET /games/{id}/art/search`; the picker gained a source row with **Change** (search) and **Use
+automatic match**. A pinned id is validated against `games/id/{id}` and the stored name is
+SteamGridDB's own. `run-console-security-tests` 364 → **376/376** (+12; its stub now serves
+`games/id` and per-id art, and three autocomplete candidates); `tests/sgdb-stub.py` too, for the
+by-hand root. `openapi.json`/`api-types.ts` regenerated (additions only); `web` build + lint clean.
+**Not verified against the real SteamGridDB** (no key — same standing caveat as the artwork work).
+<br>**Linux agent secret permissions** (`tasks/linux-agent-secrets/`). The state dir's mode came from
+the launching shell (0755/0644 under umask 022 — `config.json` holds the server key, `api-token`
+grants the local API); CLI-only runs never reached `LocalAuth`'s one-off chmod, and `agent.log` was
+never tightened. `StateDirSecurity.Protect` now runs on Unix too (0700 dir, 0600 on the known private
+files, retroactively), its once-per-process gate moved out of `AtomicFile` so the logger, atomic
+writes and `LocalAuth` share it, and `AgentLogger` creates its file 0600 and protects on first write.
+Windows untouched. `run-linux-tests` gained 9 checks (4 fail against the pre-change Agent.Core —
+mutation-checked); full WSL suite as root **280 pass / 2 fail** (the documented WSLg-session pair);
+`dotnet test` **450/450**; Windows agent builds clean. Verified in `unshare -n` because a foreign
+daemon from the shared testenv WSL clone held :5187 (both new Gotchas recorded). **The state-layout
+split half is planned, not built** — `tasks/linux-agent-secrets/plan-split.md` carries the upgrade
+migration, the rollback-across-the-split and Decky-plugin compatibility decisions, and the rig
+changes; [[Backlog]] now lists it as its own item.
+<br>**Next action:** merge the PR; the by-hand `testenv` pass (art picker against the stub; WSL
+agent `stat` on the state dir) is the maintainer's manual check — steps were given in this session's
+report. Release notes for the next tag must cover both: artwork can be pointed at the right
+SteamGridDB entry, and the Linux agent's state files are owner-only now.
+<br>**Reviewed 2026-10-12; five findings, all fixed on the branch.** `StateDirSecurity.Protect` caches
+the *outcome* per directory, so a failed first attempt is no longer reported as "already handled" to
+later callers; `ArtService`'s name lookup is remembered once for every reader (including the picker's
+source row, which had been asking every time) and parses defensively (a malformed search body is "no
+match", not a 500); the picker's empty-result message names the query that was actually searched;
+`AgentLogger`'s comment records the Windows consequence of its first-write protection; and the
+missing-art backfill gained a test proving it fills from a **pinned** source, not the automatic name
+match. Re-verified after the fixes: `run-console-security-tests` **378/378** (+2), `dotnet test`
+450/450, `run-agent-tests` 47/47, both agent builds at baseline, `web` build + lint clean, the WSL
+permission checks re-run by hand.
 
 ---
 

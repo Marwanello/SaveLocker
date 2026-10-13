@@ -16,6 +16,18 @@ internal static class ConsoleSaveFixtures
         File.WriteAllBytes(path, bytes);
     }
 
+    /// <summary>A five-digit id whose serial (<paramref name="prefix"/> + id) the bundled Redump table does not
+    /// know, so naming falls back to the save's own title — what the Group C/D tests assert. A plain random id
+    /// eventually collides with a real release: CI rolled SLUS-21640, which is Rugby 08.</summary>
+    public static string UnknownSerial(string system, string prefix, int min = 10000, int max = 99999)
+    {
+        while (true)
+        {
+            var id = Random.Shared.Next(min, max).ToString();
+            if (ConsoleTitles.For(system, prefix + id) is null) return id;
+        }
+    }
+
     /// <summary>A PCSX2 file card: the PS2 superblock's format string, then nothing — enough to be recognised.</summary>
     public static byte[] Ps2FileCard()
     {

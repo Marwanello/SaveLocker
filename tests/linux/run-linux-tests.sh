@@ -13,6 +13,8 @@
 #   * doctor's diagnostics: the right state root under --config, and an unenrolled machine
 #     reported as an enrolment problem rather than a network one
 #   * autostart reporting systemctl's real exit status
+#   * state-file permissions: 0700 directories and 0600 config/token/log, enforced in code
+#     (CLI-only runs included) and tightening what an older, umask-created install left behind
 #
 # MUST be run from a Linux filesystem (~/), never /mnt/c: DrvFs breaks inotify, permissions,
 # case-sensitivity and locking, so a green run there would be a fiction.
@@ -1601,6 +1603,12 @@ for _ in $(seq 1 40); do
   sleep 0.5
 done
 lo_token="$(cat "${lo_dir}/api-token")"
+# api-token grants the local management API, and config.json holds the server key (tasks/linux-agent-secrets).
+# The directory is 0700 and both files 0600 from creation — not "0644 until something chmods it".
+perm_mode() { stat -c %a "$1" 2>/dev/null || echo "missing"; }
+check "permissions: the daemon's state dir is 0700"   "$([ "$(perm_mode "${lo_dir}")" = "700" ] && echo 0 || echo 1)"
+check "permissions: api-token is 0600"                "$([ "$(perm_mode "${lo_dir}/api-token")" = "600" ] && echo 0 || echo 1)"
+check "permissions: config.json is 0600"              "$([ "$(perm_mode "${lo_dir}/config.json")" = "600" ] && echo 0 || echo 1)"
 lo_api="http://localhost:5187/api/launch-options"
 get() { curl -sf -H "X-SaveLocker-Token: ${lo_token}" "$@"; }
 
@@ -1708,6 +1716,36 @@ out="$(agent doctor --config "${lo_cfg}")"
 doctor_err_rc=$?
 check "doctor reports a recorded failure as a problem" "$(contains "${out}" "Steam refused the write")"
 check "a recorded failure makes doctor exit non-zero"  "$([ "${doctor_err_rc}" != "0" ] && echo 0 || echo 1)"
+
+# ── State-file permissions (tasks/linux-agent-secrets) ────────────────────────────────────────
+# On Windows the state directory's ACL carries this. On Linux the mode used to be whatever the
+# launching shell's umask said — under the usual 022 that is a 0755 directory with 0644 files,
+# readable by every other account on the box, and one of those files holds the server API key.
+# A CLI-only run (register, enroll) is the case that never started the local API and so never got
+# the old one-off chmod, and an older install keeps whatever it already wrote.
+echo
+echo "==> State-file permissions"
+
+perm_dir="${scratch}/perms"
+mkdir -p "${perm_dir}"
+# What an older build left behind, and what a bare `mkdir && register` used to produce.
+printf '{"ServerUrl":"%s","Games":[]}\n' "${server_url}" >"${perm_dir}/config.json"
+: >"${perm_dir}/agent.log"
+chmod 755 "${perm_dir}"
+chmod 644 "${perm_dir}/config.json" "${perm_dir}/agent.log"
+
+out="$(agent register --config "${perm_dir}/config.json" --name "Permissions")"
+check "permissions: a CLI-only register works"          "$(contains "${out}" "Registered 'Permissions'")"
+check "permissions: ... and the state dir becomes 0700" "$([ "$(perm_mode "${perm_dir}")" = "700" ] && echo 0 || echo 1)"
+check "permissions: ... config.json 0600"               "$([ "$(perm_mode "${perm_dir}/config.json")" = "600" ] && echo 0 || echo 1)"
+check "permissions: ... a pre-existing 0644 agent.log is tightened to 0600" \
+  "$([ "$(perm_mode "${perm_dir}/agent.log")" = "600" ] && echo 0 || echo 1)"
+
+# The default XDG root every process logs to, kept private as well: the log names games and save
+# paths, and used to be created at the shell's umask. Its content is covered by checks above.
+default_root="${XDG_DATA_HOME}/SaveLocker"
+check "permissions: the default state root is 0700"     "$([ "$(perm_mode "${default_root}")" = "700" ] && echo 0 || echo 1)"
+check "permissions: ... agent.log is 0600"              "$([ "$(perm_mode "${default_root}/agent.log")" = "600" ] && echo 0 || echo 1)"
 
 echo
 echo "==== LINUX AGENT RESULT: ${pass} passed, ${fail} failed ===="

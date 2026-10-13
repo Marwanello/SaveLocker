@@ -378,6 +378,28 @@ public record ArtOptionsPageDto(string Kind, int Page, bool HasMore, List<ArtOpt
 /// <summary>Use this SteamGridDB image (an <see cref="ArtOptionDto.Url"/>) as the game's cover or icon.</summary>
 public record SetGameArtRequest(string Url);
 
+/// <summary>
+/// One SteamGridDB game a search matched — what the picker's "choose a different game" list shows.
+/// <paramref name="Year"/> is the release year when SteamGridDB gives one, so same-named releases can
+/// be told apart.
+/// </summary>
+public record SgdbGameDto(int Id, string Name, string? Year);
+
+/// <summary>
+/// Which SteamGridDB game this game's artwork comes from. <paramref name="SgdbId"/> is the id whose
+/// assets the picker, Refresh art and the backfill use; <paramref name="Name"/> is what SteamGridDB
+/// itself calls it. <paramref name="Automatic"/> is true when nobody chose a game and the id came from
+/// the first match for the game's own name — the state every game starts in, and what "Use automatic
+/// match" restores.
+/// </summary>
+public record ArtSourceDto(int? SgdbId, string? Name, bool Automatic);
+
+/// <summary>
+/// Choose the SteamGridDB game to pull this game's artwork from, or null/absent to go back to the
+/// automatic first-name-match.
+/// </summary>
+public record SetArtSourceRequest(int? SgdbId);
+
 /// <summary>Set (or clear, when null/empty) the admin dashboard password.</summary>
 public record SetAdminPasswordRequest(string? Password);
 
@@ -641,12 +663,19 @@ public record ConflictDto(
 
 // ----- Aggregate state (dashboard + agent sync) -----
 
+/// <param name="MachineIds">Machines that have this game — a stored save folder, a recorded source, or the
+/// head's uploader. Loaded in bulk for the overview so the console can group by device without a request
+/// per game; null when none does.</param>
+/// <param name="Sources">How the machines found the game, distinct by kind and detail, ordered; null when
+/// none has said. The console groups by the first kind it knows; two machines may well disagree.</param>
 public record GameStateDto(
     GameDto Game,
     SaveVersionDto? Head,
     LeaseDto? Lease,
     bool HasOpenConflict,
-    long TotalStorageBytes = 0);
+    long TotalStorageBytes = 0,
+    Guid[]? MachineIds = null,
+    GameSourceDto[]? Sources = null);
 
 // ----- Agent command channel (dashboard → agent) -----
 

@@ -65,8 +65,8 @@ public sealed class AgentApiServer : IDisposable
     // .OnGameExitAsync, resolved the same way _prepareLaunch is: against whichever engine a settings
     // change may have rebuilt since the host wired this up.
     private readonly Func<TrackedGame, CancellationToken, Task> _postExitSync;
-    // SyncEngine.ReleaseLaunchLeaseAsync — the exit bookkeeping that still has to run when
-    // _syncGate is held and post-exit-sync can only answer 409 (see that route).
+    // SyncEngine.ReleaseLaunchLeaseAsync — for a deferred exit (post-exit-sync while _syncGate is
+    // held) whose game was untracked before the gate freed: no push, but the checkout still ends.
     private readonly Func<TrackedGame, CancellationToken, Task> _releaseLease;
     // POST /api/games/{id}/sync — SyncEngine.SyncGameAsync, resolved the same way as the two above.
     private readonly Func<TrackedGame, GameSyncMode, CancellationToken, Task<string>> _syncGame;
@@ -96,6 +96,8 @@ public sealed class AgentApiServer : IDisposable
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     // One manual sync per GAME (POST /api/games/{id}/sync). Deliberately not _syncGate — see that route.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> _gameSyncGates = new();
+    // Games whose post-exit-sync arrived while _syncGate was held, queued to run once it frees.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, byte> _deferredExits = new();
     // A queued game's folder size, measured at most once a minute — see /api/offline-queue.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, (long Bytes, long MeasuredAt)> _queuedSizes = new();
     // The most one art request may hold a browser connection: the UI asks for a grid of them at once,
@@ -1575,12 +1577,12 @@ public sealed class AgentApiServer : IDisposable
 
             if (!await _syncGate.WaitAsync(0))
             {
-                // The running sync pushes this game, so skipping the push here is right — but it
-                // never ends this game's checkout, and the lease renewer keeps it alive on this
-                // machine, locking the rest of the fleet out of a game nobody is playing. The
-                // release runs even though the push does not. CancellationToken.None on purpose:
-                // a caller that gave up on the request must not also cancel the release.
-                await _releaseLease(game, CancellationToken.None);
+                // Whatever holds the gate is not guaranteed to push THIS game: a pre-launch or another
+                // game's exit holds it too, and a Sync all may already be past it. Releasing the lease
+                // without the push would let another machine launch on the older save; keeping it would
+                // lock the fleet out of a game nobody is playing. So the whole exit — push, then release
+                // — is queued behind the gate. Still 409, so the caller knows it has not run yet.
+                QueueDeferredExit(game);
                 return TypedResults.Conflict(new OkResponse());
             }
 
@@ -1886,6 +1888,38 @@ public sealed class AgentApiServer : IDisposable
     /// to stop delays exit instead of preventing it — we are tearing down either way.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Run a game's exit (<see cref="_postExitSync"/>: push, then release its lease) once
+    /// <see cref="_syncGate"/> frees. One queued exit per game: a repeated 409 for the same exit adds
+    /// nothing. A game untracked while it waited only has its lease released — there is nothing to push.
+    /// </summary>
+    private void QueueDeferredExit(TrackedGame game)
+    {
+        if (!_deferredExits.TryAdd(game.GameId, 0)) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _syncGate.WaitAsync();
+                try
+                {
+                    _deferredExits.TryRemove(game.GameId, out _);
+                    // CancellationToken.None: the request that queued this is long gone.
+                    if (_config.Games.Any(g => g.GameId == game.GameId))
+                        await _postExitSync(game, CancellationToken.None);
+                    else
+                        await _releaseLease(game, CancellationToken.None);
+                }
+                finally { _syncGate.Release(); }
+            }
+            catch (Exception ex)
+            {
+                _deferredExits.TryRemove(game.GameId, out _);
+                AgentLogger.LogException("AgentApiServer.post-exit-sync (deferred)", ex);
+            }
+        });
+    }
+
     public void Dispose()
     {
         var app = Interlocked.Exchange(ref _app, null);

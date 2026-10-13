@@ -47,14 +47,17 @@ internal static class ToastActivation
     private const int E_NOINTERFACE = unchecked((int)0x80004002);
 
     /// <summary>The toast identity a click reports, and the CLSID it activates: the product's for
-    /// :5178, a deterministic pair of its own for a rig. The last two bytes of the product CLSID are
-    /// the port — distinct ports are distinct classes, and no rig can collide with the product.</summary>
+    /// :5178, a deterministic pair of its own for a rig. A rig's CLSID is the product's with the port
+    /// in its first two bytes (the low half of Data1) — distinct ports are distinct classes — and the
+    /// last byte's low bit flipped, so no port, not even one whose bytes happen to match the product's
+    /// (0x7085), can come out as the product's class. tests/testenv.ps1's Get-TestToastClsid mirrors it.</summary>
     public static Guid ClsidForPort(int port)
     {
         if (port == ToastPresenter.DefaultPort) return ProductClsid;
         var bytes = ProductClsid.ToByteArray();
         bytes[0] = (byte)(port & 0xFF);
         bytes[1] = (byte)((port >> 8) & 0xFF);
+        bytes[15] ^= 0x01;
         return new Guid(bytes);
     }
 
@@ -74,27 +77,35 @@ internal static class ToastActivation
         var clsid = ClsidForPort(port);
         try
         {
-            // A DCOM launch inherits no environment, so any identity that is NOT the OS-default
-            // install MUST carry its config on the server's command line. Compared against the
-            // env-free default on purpose: comparing with AgentConfig.DefaultConfigPath here would
-            // compare the tray's own SAVELOCKER_STATE_ROOT against itself and omit the argument —
-            // which is exactly how a rig's click once started the INSTALLED agent (measured
-            // 2026-10-11; the host then loaded %PROGRAMDATA%'s config).
-            var serverArgs = "-ToastActivated";
-            var envFreeDefault = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                "SaveLocker", "config.json");
-            if (!string.Equals(Path.GetFullPath(configPath),
-                               Path.GetFullPath(envFreeDefault),
-                               StringComparison.OrdinalIgnoreCase))
-                serverArgs += $" --config \"{configPath}\"";
-
-            Register(aumid, clsid, HostExePath(), serverArgs);
+            Register(aumid, clsid, HostExePath(), ServerArgs(configPath));
             AgentLogger.Log($"toast activation: {aumid} → {ClsidText(clsid)}");
         }
         catch (Exception ex) { AgentLogger.LogException("ToastActivation.Register", ex); }
 
         return Serve(clsid, handler);
+    }
+
+    /// <summary>The <c>LocalServer32</c> arguments for an identity whose tray runs on
+    /// <paramref name="configPath"/>; null config means the default install's.</summary>
+    public static string ServerArgs(string? configPath) =>
+        ConfigArgument(configPath) is { } arg ? "-ToastActivated " + arg : "-ToastActivated";
+
+    /// <summary><c>--config "…"</c> for any config that is not the OS-default install's, else null.</summary>
+    private static string? ConfigArgument(string? configPath)
+    {
+        // A DCOM launch inherits no environment, so any identity that is NOT the OS-default install
+        // MUST carry its config on the server's command line. Compared against the env-free default on
+        // purpose: comparing with AgentConfig.DefaultConfigPath here would compare the tray's own
+        // SAVELOCKER_STATE_ROOT against itself and omit the argument — which is exactly how a rig's
+        // click once started the INSTALLED agent (measured 2026-10-11; the host then loaded
+        // %PROGRAMDATA%'s config).
+        if (configPath is null) return null;
+        var envFreeDefault = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "SaveLocker", "config.json");
+        return string.Equals(Path.GetFullPath(configPath), Path.GetFullPath(envFreeDefault), StringComparison.OrdinalIgnoreCase)
+            ? null
+            : $"--config \"{configPath}\"";
     }
 
     private static void Register(string aumid, Guid clsid, string exePath, string serverArgs)
@@ -109,12 +120,15 @@ internal static class ToastActivation
     }
 
     /// <summary>
-    /// Every identity of ours that is registered to this exe — what a DCOM-launched host serves. The
-    /// launch names no CLSID, so the host registers each one instead: whichever the click was for is
-    /// then answerable, including a rig's beside the product's.
+    /// Every identity of ours registered to this exe AND this config (<paramref name="configPath"/>,
+    /// null for the default install) — what a DCOM-launched host serves. The launch names no CLSID,
+    /// but its command line is exactly one identity's <c>LocalServer32</c>, so matching on both keeps
+    /// a host started for one rig from answering another rig's click from the same build — it would
+    /// leave that click in its own state dir and start the other rig's port on its own config.
     /// </summary>
-    public static IEnumerable<(string Aumid, Guid Clsid)> OwnedClsids(string exePath)
+    public static IEnumerable<(string Aumid, Guid Clsid)> OwnedClsids(string exePath, string? configPath)
     {
+        var configArg = ConfigArgument(configPath);
         using var root = Registry.CurrentUser.OpenSubKey(@"Software\Classes\AppUserModelId");
         if (root is null) yield break;
 
@@ -127,7 +141,10 @@ internal static class ToastActivation
             using var server = Registry.CurrentUser.OpenSubKey(
                 $@"Software\Classes\CLSID\{ClsidText(clsid)}\LocalServer32");
             if (server?.GetValue(null) is string command &&
-                command.Contains(exePath, StringComparison.OrdinalIgnoreCase))
+                command.Contains(exePath, StringComparison.OrdinalIgnoreCase) &&
+                (configArg is null
+                    ? !command.Contains("--config", StringComparison.OrdinalIgnoreCase)
+                    : command.Contains(configArg, StringComparison.OrdinalIgnoreCase)))
                 yield return (aumid, clsid);
         }
     }

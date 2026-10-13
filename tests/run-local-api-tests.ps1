@@ -702,9 +702,10 @@ try {
     Check "the game is free again afterwards"       ($third.Status -ne 409 -and $third.Status -ne 0)
 
     # -- Exit bookkeeping while the AGENT-WIDE gate is held. Sync all (or another launch-gate call)
-    #    owns _syncGate; post-exit-sync must still answer 409 for the push, but something has to end
-    #    the game's checkout or its lease renewer keeps the fleet locked out of a game nobody is
-    #    playing. Held open by the good game's download, retargeted so this is independent of slow.
+    #    owns _syncGate, and is not guaranteed to push THIS game, so post-exit-sync answers 409 and
+    #    queues the whole exit — push, then release — behind the gate. Releasing early would let
+    #    another machine launch on an older save; never releasing locks the fleet out. Held open by
+    #    the good game's download, retargeted so this is independent of slow.
     $script:artHoldId = $artIds["good"]
     $allTask = ArtStart "POST" "/api/sync" $artToken $null
     $t0 = Get-Date
@@ -712,10 +713,18 @@ try {
     $gateHeld = @($artPending).Count -eq 1
     $exit2 = ArtCall "POST" "/api/games/$($artIds['slow'])/post-exit-sync" $artToken $null
     Check "post-exit-sync while Sync all holds the gate is answered 409" ($gateHeld -and $exit2.Status -eq 409)
-    Check "post-exit-sync still released that game's lease (the fleet is not locked out)" `
-        (@($artLog | Where-Object { $_ -eq "DELETE /api/games/$($artIds['slow'])/lease" }).Count -ge 1)
+    $slowRelease = "DELETE /api/games/$($artIds['slow'])/lease"
+    Check "the queued exit does not release the lease while the gate is held (no push yet)" `
+        (@($artLog | Where-Object { $_ -eq $slowRelease }).Count -eq 0)
     $allDone = ArtFinish $allTask
     Check "the Sync all that held the gate completes (200)" ($allDone.Status -eq 200)
+    $t0 = Get-Date
+    # The exit's push settles first (SettleQuietSeconds, 10 by default) wherever the save folder exists -
+    # it does on Linux CI - so the release can land well past 10 s after the gate frees.
+    while (@($artLog | Where-Object { $_ -eq $slowRelease }).Count -eq 0 -and ((Get-Date) - $t0).TotalSeconds -lt 40) { ArtPump 50 }
+    Check "once the gate frees, the queued exit runs and releases the lease (the fleet is not locked out)" `
+        (@($artLog | Where-Object { $_ -eq $slowRelease }).Count -ge 1)
+    ArtPump 300   # the release is the exit's last step; let it hand the gate back before the next Sync all
     $script:artHoldId = $artIds["slow"]
 
     # -- Sync all runs the same per-game step as the game page (SyncEngine.PullThenPushAsync); no other

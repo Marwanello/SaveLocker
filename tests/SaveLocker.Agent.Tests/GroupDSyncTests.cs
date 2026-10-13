@@ -13,8 +13,9 @@ public sealed class GroupDSyncTests : IClassFixture<ServerProcess>, IDisposable
 {
     private readonly ServerProcess _server;
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "savelocker-groupd-" + Guid.NewGuid().ToString("N"));
-    // The class shares one server, so each test's game is its own.
-    private readonly string _id = Random.Shared.Next(10000, 99999).ToString();
+    // The class shares one server, so each test's game is its own. The serial must be one the Redump table
+    // does not know, or the game is named from the table and the PARAM.SFO fallback assertion fails.
+    private readonly string _id = F.UnknownSerial("psp", "NPUH");
 
     public GroupDSyncTests(ServerProcess server)
     {
@@ -154,5 +155,35 @@ public sealed class GroupDSyncTests : IClassFixture<ServerProcess>, IDisposable
         // The server's version has no save; Windows' save was never pushed, so the pull stops rather than empty it.
         Assert.Equal(PullOutcome.Refused, await engineWin.PullAsync(winGame));
         Assert.Equal("win-real-save", Read("win", $"{winPsp}/SAVEDATA/{game}DATA00/DATA.BIN"));
+    }
+
+    [Fact]
+    public async Task A_force_pull_of_a_states_only_version_takes_the_server_save_as_asked()
+    {
+        // The other half of the test above, pinned so it is a decision and not an accident: the guard is
+        // the ordinary un-pushed-changes refusal, so a FORCE pull ("take the server's save, drop mine")
+        // does replace this machine's save with the states-only version — the game's own SAVEDATA
+        // folders go, its neighbours' stay.
+        var game = $"NPUH{_id}";
+        const string deckPsp = ".var/app/org.ppsspp.PPSSPP/config/ppsspp/PSP";
+        const string winPsp = "AppData/Roaming/EmuDeck/Emulators/PPSSPP/memstick/PSP";
+        Write("deck", $"{deckPsp}/PPSSPP_STATE/{game}_1.00_0.ppst", "deck-state");
+        Directory.CreateDirectory(P("deck", $"{deckPsp}/SAVEDATA"));
+        Write("win", $"{winPsp}/SAVEDATA/{game}DATA00/DATA.BIN", "win-real-save");
+        Write("win", $"{winPsp}/SAVEDATA/ULUS10041DATA00/DATA.BIN", "win-lcs");
+
+        var deck = await Machine("deck");
+        var win = await Machine("win");
+        var deckGame = await Enroll(deck, PpssppSaves.Scan(PpssppSaves.Folders([], [P("deck", deckPsp)])), game);
+        await using var engineDeck = new SyncEngine(deck, ApiClient.For(deck));
+        Assert.NotNull(await engineDeck.PushAsync(deckGame, force: true));
+
+        var winGame = await Enroll(win, PpssppSaves.Scan(PpssppSaves.Folders([], [P("win", winPsp)])), game);
+        await using var engineWin = new SyncEngine(win, ApiClient.For(win));
+        await engineWin.PullAsync(winGame, force: true);
+
+        Assert.Equal("deck-state", Read("win", $"{winPsp}/PPSSPP_STATE/{game}_1.00_0.ppst"));
+        Assert.False(File.Exists(P("win", $"{winPsp}/SAVEDATA/{game}DATA00/DATA.BIN")));
+        Assert.Equal("win-lcs", Read("win", $"{winPsp}/SAVEDATA/ULUS10041DATA00/DATA.BIN"));
     }
 }

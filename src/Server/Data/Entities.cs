@@ -51,6 +51,18 @@ public class Game
     public string? LogoUrl { get; set; }
     public string? IconUrl { get; set; }
 
+    /// <summary>
+    /// The SteamGridDB game hand-picked in the console's picker, or null for "match by name". When set,
+    /// every art operation for this game (the picker, Refresh art, the missing-art backfill) reads and
+    /// writes <see cref="SteamGridDbId"/>'s assets instead of the first search hit — a game whose name
+    /// matches the wrong entry used to have no way out short of renaming it.
+    /// </summary>
+    public int? SteamGridDbId { get; set; }
+
+    /// <summary>SteamGridDB's own name for <see cref="SteamGridDbId"/>, stored when the id is chosen so
+    /// the picker can name the source without asking SteamGridDB on every open. Null when automatic.</summary>
+    public string? SteamGridDbName { get; set; }
+
     /// <summary>How many versions to keep for this game. Null = use the server global default.</summary>
     public int? RetainVersions { get; set; }
 
