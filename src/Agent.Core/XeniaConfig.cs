@@ -20,9 +20,9 @@ public static class XeniaConfig
     ];
 
     /// <summary>The configs that decide the profile when <paramref name="gameName"/> starts from this content folder.</summary>
-    public static IReadOnlyList<string> For(string content, string? gameName)
+    public static IReadOnlyList<string> For(string content, string? gameName, IEnumerable<string>? installs = null)
     {
-        var root = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(content));
+        var root = Install(content, installs ?? XeniaSaves.StorageRoots());
         if (root is null) return [];
         var existing = Builds.Select(b => Path.Combine(root, b.Config)).Where(File.Exists).ToList();
         var configs = existing.Where(c => Read(c) is not null).ToList();
@@ -41,6 +41,26 @@ public static class XeniaConfig
             if (File.Exists(own)) configs.Add(own);
         }
         return configs;
+    }
+
+    /// <summary>
+    /// The Xenia folder whose configs go with <paramref name="content"/>. Usually the folder holding it — but a game's saves
+    /// are recorded by their real path, and on EmuDeck for Windows the emulator's <c>content</c> is the link, into
+    /// <c>Emulation/saves/xenia/saves</c>, so the configs are beside the install whose <c>content</c> leads there.
+    /// </summary>
+    private static string? Install(string content, IEnumerable<string> installs)
+    {
+        var parent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(content));
+        if (parent is not null && Builds.Any(b => File.Exists(Path.Combine(parent, b.Config)))) return parent;
+        var real = EmuDeckRoots.RealPath(content);
+        foreach (var install in installs)
+        {
+            var linked = Path.Combine(install, "content");
+            if (!Directory.Exists(linked)) continue;
+            if (string.Equals(EmuDeckRoots.RealPath(linked), real, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                return install;
+        }
+        return parent;
     }
 
     /// <summary>The XUID the config signs in with: "" when the line is empty, null when there is no such line.</summary>

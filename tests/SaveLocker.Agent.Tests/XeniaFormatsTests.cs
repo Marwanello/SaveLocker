@@ -253,6 +253,22 @@ public sealed class XeniaFormatsTests : IDisposable
         Assert.Equal([Path.Combine(dir, "xenia-canary.config.toml")], XeniaConfig.For(Path.Combine(dir, "content"), null));
     }
 
+    [Fact]
+    public void EmuDecks_Windows_configs_are_beside_the_content_link_not_the_saves_it_leads_to()
+    {
+        var install = Path.Combine(_root, "emudeck-windows");
+        Directory.CreateDirectory(install);
+        File.WriteAllText(Path.Combine(install, "xenia-canary.config.toml"), Config);
+        File.WriteAllText(Path.Combine(install, "xenia_canary.exe"), "");
+        var saves = Path.Combine(_root, "Emulation", "saves", "xenia", "saves");
+        Directory.CreateDirectory(saves);
+        try { Directory.CreateSymbolicLink(Path.Combine(install, "content"), saves); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return; } // no symlink right on this Windows box
+
+        Assert.Equal([Path.Combine(install, "xenia-canary.config.toml")],
+            XeniaConfig.For(saves, null, [Path.Combine(_root, "elsewhere"), install]));
+    }
+
     // ---- The real files, when a capture is at hand ----
 
     [Fact]
