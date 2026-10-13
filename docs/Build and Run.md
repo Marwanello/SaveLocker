@@ -385,12 +385,9 @@ http://localhost:5080. Add *Forza Horizon* on both machines first (Windows first
    - WSL's Overview shows a banner for it. The activity feed has a *held the pull* line.
 3. **Ask for a hand-over:**
    - Click **Hand them over from \<Windows\>**. WSL's page now shows *Asked … waiting for it to agree*.
-   - Within 20 seconds, the Windows tray raises the notice *\<WSL\> asks for Forza Horizon's DLC*.
-   - Windows' Overview shows a banner, and its *Forza Horizon* page shows **Send** / **Decline**.
-   - The console's **Configuration → DLC hand-overs** lists it as *asked, not answered*.
-4. **Send it:**
-   - On Windows, click **Send**.
-   - Within about 20 s the console card shows *sending*, then *on the server*. The bytes held go up to about 6 MB.
+   - The console's **Configuration → DLC hand-overs** lists it as *asked, not answered* until Windows' next poll.
+4. **Sent without asking** (the default, *Send it automatically*):
+   - Within about 20 s Windows answers by itself: no notice, no **Send** button. The console card shows *sending*, then *on the server*. The bytes held go up to about 6 MB.
    - Within the next poll, WSL downloads and installs it. Check the folders under
      `<StateRoot>\Emulation-wsl\saves\xenia\saves\4D5309C9\00000002` and `...\000B0000`: they now hold
      `BBBB…0B` and `tu00000002_00000000`, each with its `Headers\…\*.header`.
@@ -401,11 +398,12 @@ http://localhost:5080. Add *Forza Horizon* on both machines first (Windows first
    - The hold, its banner and the Overview banner are gone, and the console's DLC check shows WSL *All 3*.
 6. **Decline, and never send:**
    - On WSL, delete `BBBB…0B` and its header. Then push on Windows again, and pull on WSL: it is held again.
-   - **Hand them over**, then **Decline** on Windows. WSL's page shows *declined*, with **Ask again**, and a
-     notice says so.
-   - On Windows, go to **Settings → Xbox 360 (Xenia)** and set *Never send it*. Ask again: it is declined without a
-     prompt.
-   - Set *Send it automatically*. Ask again: it is sent without a prompt.
+   - On Windows, go to **Settings → Xbox 360 (Xenia)** and set *Ask me first*. **Hand them over** again: within
+     20 s the Windows tray raises *\<WSL\> asks for Forza Horizon's DLC*, Windows' Overview shows a banner, and its
+     *Forza Horizon* page shows **Send** / **Decline**.
+   - Click **Decline**. WSL's page shows *declined*, with **Ask again**, and a notice says so.
+   - Set *Never send it*. Ask again: it is declined without a prompt.
+   - Set *Send it automatically* again. Ask again: it is sent without a prompt.
 7. **Pull anyway:**
    - With a pull held again, choose **Pull the save anyway**. The save is restored without the pack, and the hold
      goes.

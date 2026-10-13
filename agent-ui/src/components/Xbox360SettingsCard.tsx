@@ -42,8 +42,8 @@ export function Xbox360SettingsCard() {
             id="x360-dlc" className="sl-input" style={{ maxWidth: 360 }} value={settings.dlcSend}
             onChange={e => void save({ ...settings, dlcSend: e.target.value as Xbox360Settings['dlcSend'] })}
           >
-            <option value="Ask">Ask me first</option>
             <option value="Auto">Send it automatically</option>
+            <option value="Ask">Ask me first</option>
             <option value="Never">Never send it</option>
           </select>
           <small>Packs pass through your server and are deleted there once delivered, or after the console's time limit.</small>

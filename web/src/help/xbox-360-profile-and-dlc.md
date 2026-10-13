@@ -55,7 +55,7 @@ An automatic pull (before launch, from the console, or in the background) never 
 
 **What happens to a hand-over:**
 
-1. **The other machine is asked.** It sees the request within about 20 seconds while its agent runs. In **Settings → Xbox 360**, each machine chooses to ask first (default), send automatically, or never send. Asked first, it shows a notification and the request on the game's page, with **Send** and **Decline**.
+1. **The other machine is asked.** It sees the request within about 20 seconds while its agent runs. In **Settings → Xbox 360**, each machine chooses to send automatically (default), ask first, or never send. Set to ask first, it shows a notification and the request on the game's page, with **Send** and **Decline**.
 2. **The packs are uploaded in pieces.** An interrupted upload or download resumes where it stopped.
 3. **They're downloaded, checked and installed.** Only the asking machine can download them. They install while Xenia is closed, where that machine's Xenia reads them. A pack whose size doesn't match what was listed is refused.
 4. **They're deleted from the server** as soon as they are installed, or after the request expires (7 days by default).

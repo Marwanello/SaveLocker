@@ -178,7 +178,7 @@ public sealed class DlcCheckSyncTests : IClassFixture<ServerProcess>, IDisposabl
         var missing = DlcCheck.Missing(head.Content, ContentInventory.For(deckGame));
         var asked = await ApiClient.For(deck).CreateTransferAsync(new CreateTransferRequest(deckGame.GameId, head.MachineId!.Value, [.. missing]));
 
-        pc.DlcSend = DlcSendPolicy.Auto;
+        Assert.Null(pc.DlcSend); // the default sends without asking
         var logs = new List<string>();
         var pcRunner = new DlcHandoverRunner(pc, () => ApiClient.For(pc), () => enginePc, null, logs.Add, () => false);
         var deckRunner = new DlcHandoverRunner(deck, () => ApiClient.For(deck), () => engineDeck, null, logs.Add, () => false);

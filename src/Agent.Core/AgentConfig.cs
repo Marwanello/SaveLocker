@@ -94,7 +94,7 @@ public sealed class AgentConfig
     /// <summary>What to do before a Xenia game starts when Xenia is set to another profile than the one its saves are
     /// under (tasks/emulator-saves Phase 5c). Null means <see cref="ProfileAtLaunch.Ask"/>; a game can override it.</summary>
     public ProfileAtLaunch? XeniaProfileAtLaunch { get; set; }
-    /// <summary>What to do when another machine asks this one for DLC (tasks/emulator-saves Phase 5c). Null means Ask.</summary>
+    /// <summary>What to do when another machine asks this one for DLC (tasks/emulator-saves Phase 5c). Null means Auto.</summary>
     public DlcSendPolicy? DlcSend { get; set; }
     /// <summary>The look the console last pushed on a heartbeat; null until one carried a look.</summary>
     public AppearanceDto? ConsoleAppearance { get; set; }

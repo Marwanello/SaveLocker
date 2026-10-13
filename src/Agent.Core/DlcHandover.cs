@@ -184,7 +184,7 @@ public sealed class DlcHandoverRunner
     {
         if (t.Status == TransferStatus.Requested)
         {
-            switch (_config.DlcSend ?? DlcSendPolicy.Ask)
+            switch (_config.DlcSend ?? DlcSendPolicy.Auto)
             {
                 case DlcSendPolicy.Never:
                     await api.AnswerTransferAsync(t.Id, approve: false, ct);

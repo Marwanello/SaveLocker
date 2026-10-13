@@ -1226,7 +1226,7 @@ public sealed class AgentApiServer : IDisposable
 
         // Xbox 360 settings of this machine: the profile at launch, and what to do when another machine asks for DLC.
         app.MapGet("/api/settings/xbox360", () => TypedResults.Ok(
-            new Xbox360SettingsDto(_config.XeniaProfileAtLaunch ?? ProfileAtLaunch.Ask, _config.DlcSend ?? DlcSendPolicy.Ask)))
+            new Xbox360SettingsDto(_config.XeniaProfileAtLaunch ?? ProfileAtLaunch.Ask, _config.DlcSend ?? DlcSendPolicy.Auto)))
             .Produces<Xbox360SettingsDto>();
 
         // A Xenia game's profile on this machine (tasks/emulator-saves Phase 5c): the profile its saves are under, the one
@@ -1263,7 +1263,7 @@ public sealed class AgentApiServer : IDisposable
                 c.XeniaProfileAtLaunch = body.ProfileAtLaunch;
                 c.DlcSend = body.DlcSend;
             });
-            return TypedResults.Ok(new Xbox360SettingsDto(_config.XeniaProfileAtLaunch ?? ProfileAtLaunch.Ask, _config.DlcSend ?? DlcSendPolicy.Ask));
+            return TypedResults.Ok(new Xbox360SettingsDto(_config.XeniaProfileAtLaunch ?? ProfileAtLaunch.Ask, _config.DlcSend ?? DlcSendPolicy.Auto));
         }).Produces<Xbox360SettingsDto>();
 
         // Every pull the DLC check holds on this machine, for the Overview banner.
