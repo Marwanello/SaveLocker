@@ -2314,6 +2314,117 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{id}/switch-copies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SwitchCopyDto"][];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{id}/switch-copies/{emulator}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    emulator: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SwitchCopyActionRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SwitchCopyDto"][];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dlc/holds": {
         parameters: {
             query?: never;
@@ -3434,6 +3545,8 @@ export interface components {
             region?: null | string;
             /** @default false */
             statesOnly: boolean;
+            /** @default false */
+            noSaveYet: boolean;
         };
         CandidateLinksDto: {
             /** Format: int32 */
@@ -3677,6 +3790,7 @@ export interface components {
             emulators?: null | string[];
             release?: null | components["schemas"]["GameReleaseDto"];
             emulatorProfile?: null | string;
+            emulatorKey?: null | string;
         };
         GameFilesDto: {
             folders: components["schemas"]["GameFolderFilesDto"][];
@@ -3945,6 +4059,22 @@ export interface components {
         };
         SuggestedPathDto: {
             path: null | string;
+        };
+        SwitchCopyActionRequest: {
+            action: string;
+        };
+        SwitchCopyDto: {
+            emulator: string;
+            user: null | string;
+            folder: null | string;
+            synced: boolean;
+            state: string;
+            /** Format: date-time */
+            writtenUtc: null | string;
+            keepInSync: boolean;
+            canCopyHere: boolean;
+            canMakeSynced: boolean;
+            note: null | string;
         };
         SyncNowResponse: {
             message: string;

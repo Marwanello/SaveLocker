@@ -1266,6 +1266,43 @@ public sealed class AgentApiServer : IDisposable
             return TypedResults.Ok(new Xbox360SettingsDto(_config.XeniaProfileAtLaunch ?? ProfileAtLaunch.Ask, _config.DlcSend ?? DlcSendPolicy.Auto));
         }).Produces<Xbox360SettingsDto>();
 
+        // A Switch game's copies on this machine (tasks/emulator-saves Phase 6): every Switch emulator here, the one that syncs
+        // first, and what each other one holds next to it. Reads the emulators' folders; nothing is changed.
+        app.MapGet("/api/games/{id:guid}/switch-copies", Results<Ok<SwitchCopyDto[]>, NotFound> (Guid id) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null || SwitchCopies.TitleId(game) is null) return TypedResults.NotFound();
+            return TypedResults.Ok(SwitchCopyRows(game));
+        }).Produces<SwitchCopyDto[]>();
+
+        // One action on one emulator's copy: copy the synced save there, keep it in step (on/off), make it the one that
+        // syncs, or settle a copy where both sides changed. Gated with the game's own sync, so it never races a pull.
+        app.MapPost("/api/games/{id:guid}/switch-copies/{emulator}",
+            async Task<Results<Ok<SwitchCopyDto[]>, BadRequest<ErrorResponse>, Conflict<ErrorResponse>, NotFound>> (Guid id, string emulator, SwitchCopyActionRequest body) =>
+        {
+            var game = _config.Games.FirstOrDefault(g => g.GameId == id);
+            if (game is null || !game.IsEnrolledHere || SwitchCopies.TitleId(game) is null) return TypedResults.NotFound();
+            var gate = _gameSyncGates.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+            if (!await gate.WaitAsync(0))
+                return TypedResults.Conflict(new ErrorResponse("A sync of this game is running. Try again when it is done."));
+            try
+            {
+                string? refusal;
+                switch (body.Action)
+                {
+                    case SwitchCopyActions.CopyHere: refusal = SwitchCopies.CopyHere(_config, game, emulator, AgentLogger.Log); break;
+                    case SwitchCopyActions.KeepInSync: SwitchCopies.SetKeepInSync(_config, game, emulator, true); refusal = null; break;
+                    case SwitchCopyActions.StopKeeping: SwitchCopies.SetKeepInSync(_config, game, emulator, false); refusal = null; break;
+                    case SwitchCopyActions.MakeSynced: refusal = await SwitchCopies.MakeSyncedAsync(_config, game, emulator, ApiClient.For(_config), AgentLogger.Log); break;
+                    case SwitchCopyActions.KeepCopy: refusal = SwitchCopies.Resolve(_config, game, emulator, keepCopy: true, AgentLogger.Log); break;
+                    case SwitchCopyActions.KeepSynced: refusal = SwitchCopies.Resolve(_config, game, emulator, keepCopy: false, AgentLogger.Log); break;
+                    default: return TypedResults.BadRequest(new ErrorResponse($"Unknown action '{body.Action}'."));
+                }
+                return refusal is null ? TypedResults.Ok(SwitchCopyRows(game)) : TypedResults.BadRequest(new ErrorResponse(refusal));
+            }
+            finally { gate.Release(); }
+        }).Produces<SwitchCopyDto[]>().Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
+
         // Every pull the DLC check holds on this machine, for the Overview banner.
         app.MapGet("/api/dlc/holds", () => TypedResults.Ok(DlcHoldStore.For(_config).Read()
             .Select(h => new DlcHoldDto(h.GameId, _config.Games.FirstOrDefault(g => g.GameId == h.GameId)?.Name ?? "",
@@ -1888,7 +1925,12 @@ public sealed class AgentApiServer : IDisposable
             candidate.NotSyncable,
             GameSources.SystemLabel(candidate.EmulatorSystem),
             candidate.Release?.Region,
-            candidate.StatesOnly)).ToArray();
+            candidate.StatesOnly,
+            candidate.NoSaveYet)).ToArray();
+
+    private SwitchCopyDto[] SwitchCopyRows(TrackedGame game) =>
+        SwitchCopies.List(_config, game).Select(r => new SwitchCopyDto(r.Emulator, r.User, r.Folder,
+            r.Synced, r.State, r.WrittenUtc, r.KeepInSync, r.CanCopyHere, r.CanMakeSynced, r.Note)).ToArray();
 
     private static string FormatAgo(TimeSpan ago)
     {
@@ -2034,7 +2076,10 @@ public sealed record CandidateDto(
     string? Region = null,
     /// <summary>Found by its save states alone, before the game's first in-game save here
     /// (<see cref="ScanCandidate.StatesOnly"/>).</summary>
-    bool StatesOnly = false);
+    bool StatesOnly = false,
+    /// <summary>A Switch ROM whose title has no save on this machine yet (<see cref="ScanCandidate.NoSaveYet"/>): adding it
+    /// puts the fleet's save where its emulator will look for it.</summary>
+    bool NoSaveYet = false);
 /// <param name="ProcessNames">
 /// Process names (no extension) that mean this game is running. <b>Empty means the Windows agent
 /// cannot detect it</b> — no lease, no exit push, and no refusal to pull under a live game — so the
@@ -2398,3 +2443,22 @@ public sealed record OpenLogResponse(bool Opened, string Path);
 public sealed record CandidateCountDto(int? Suggested);
 public sealed record LocalSizeDto(long Bytes);
 public sealed record TestConnectionDto(bool Ok, int? Status, long LatencyMs, string? Error);
+
+/// <summary>One Switch emulator's copy of a game on this machine (<see cref="SwitchCopies.Row"/>). <see cref="State"/> is one of
+/// <see cref="SwitchCopies.States"/>.</summary>
+public sealed record SwitchCopyDto(
+    string Emulator, string? User, string? Folder, bool Synced, string State, DateTime? WrittenUtc,
+    bool KeepInSync, bool CanCopyHere, bool CanMakeSynced, string? Note);
+
+/// <summary>What to do with one emulator's copy: one of <see cref="SwitchCopyActions"/>.</summary>
+public sealed record SwitchCopyActionRequest(string Action);
+
+public static class SwitchCopyActions
+{
+    public const string CopyHere = "copy-here";
+    public const string KeepInSync = "keep-in-sync";
+    public const string StopKeeping = "stop-keeping";
+    public const string MakeSynced = "make-synced";
+    public const string KeepCopy = "keep-copy";
+    public const string KeepSynced = "keep-synced";
+}

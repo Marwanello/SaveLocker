@@ -2,6 +2,7 @@ import type { DlcCheck, TrackedGame } from '../types'
 import { EMULATOR_NAME, type EmulatorWithSettings } from '../emulators'
 import { DlcCheckCard } from './DlcCheckCard'
 import { SourceChip } from './SourceChip'
+import { SwitchCopiesCard } from './SwitchCopiesCard'
 import { Xbox360SettingsCard } from './Xbox360SettingsCard'
 import { XeniaProfileCard } from './XeniaProfileCard'
 import { Button } from './ui/Button'
@@ -27,12 +28,27 @@ interface Props {
 
 /**
  * One game's emulator options on this machine, reached from the game's page. Only the emulator the game runs in is shown;
- * Xenia's are the Xbox 360 profile at launch, the DLC the latest save needs, and sharing this machine's DLC. Settings that
- * cover every game of the emulator say so where they appear.
+ * Xenia's are the Xbox 360 profile at launch, the DLC the latest save needs, and sharing this machine's DLC. A Switch game's
+ * are its copies in the other Switch emulators here. Settings that cover every game of the emulator say so where they appear.
  */
 export function EmulatorSettingsView({ game, emulator, machineName, tab, onTab, onBack, dlc, refreshKey, askSignal, onPulled }: Props) {
   const missing = dlc?.packages?.filter(p => !p.here).length ?? 0
   const requests = dlc?.asked?.filter(t => t.status === 'Requested').length ?? 0
+
+  if (emulator === 'switch') {
+    const runs = game.source?.detail ?? EMULATOR_NAME.switch
+    return (
+      <div className="sl-page">
+        <Button size="sm" variant="quiet" className="sl-back" onClick={onBack}>← {game.name}</Button>
+        <PageHead
+          title="Emulator settings"
+          sub={`${game.name} syncs from ${runs} on ${machineName}. These settings apply to this device.`}
+          actions={<SourceChip source={game.source} />}
+        />
+        <SwitchCopiesCard gameId={game.id} gameName={game.name} machineName={machineName} refreshKey={refreshKey} />
+      </div>
+    )
+  }
 
   return (
     <div className="sl-page">

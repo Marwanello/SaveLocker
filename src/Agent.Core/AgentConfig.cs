@@ -747,6 +747,10 @@ public sealed class AgentConfig
     public void SaveGameProfileAtLaunch(Guid gameId, ProfileAtLaunch? value) =>
         MutateGameUnderLock(gameId, g => g.XeniaProfileAtLaunch = value);
 
+    /// <summary>Persist a game's other copies on this machine (<see cref="SwitchCopies"/>) without clobbering anything else.</summary>
+    public void SaveGameEmulatorCopies(Guid gameId, List<EmulatorCopy> copies) =>
+        MutateGameUnderLock(gameId, g => g.EmulatorCopies = copies.Select(c => c with { }).ToList());
+
     /// <summary>
     /// Persist a Windows Steam AppID backfill (tasks/playnite-plugin/plan.md, Phase 2) without
     /// clobbering concurrent changes to anything else — see <see cref="MutateGameUnderLock"/>. Unlike
@@ -854,6 +858,12 @@ public sealed class TrackedGame
     /// <summary>Which release of a console game it is (region, game IDs), as the server keeps it; null for any
     /// other game, or one created before releases were recorded.</summary>
     public GameReleaseDto? Release { get; set; }
+    /// <summary>The emulated title the game is across emulators (<c>switch:&lt;title ID&gt;</c>), as the server keeps it; null for
+    /// every other game.</summary>
+    public string? EmulatorKey { get; set; }
+    /// <summary>This game's other copies on this machine — the same Switch title in another emulator — and whether each is
+    /// kept in step with the one that syncs (<see cref="SwitchCopies"/>). Empty for every other game.</summary>
+    public List<EmulatorCopy> EmulatorCopies { get; set; } = new();
     /// <summary>Process names (without .exe) that, when running, mean the game is in use.</summary>
     public List<string> ProcessNames { get; set; } = new();
     /// <summary>
@@ -1070,4 +1080,18 @@ public sealed class TrackedSavePath
         Key = Key, Label = Label, Template = Template, Directory = Directory,
         IncludeGlobs = IncludeGlobs.ToList(), PathUnreported = PathUnreported,
     };
+}
+
+/// <summary>
+/// One other copy of a game's save on this machine, in another emulator (tasks/emulator-saves Phase 6): <see cref="Emulator"/>
+/// says which, <see cref="KeepInSync"/> whether it follows the copy that syncs, and <see cref="LastHash"/> the content both
+/// had when they were last made the same — so a copy changed since can be told from one that only fell behind.
+/// <see cref="Conflict"/>: both changed since then, and the user is asked which to keep.
+/// </summary>
+public sealed record EmulatorCopy
+{
+    public string Emulator { get; set; } = "";
+    public bool KeepInSync { get; set; }
+    public string? LastHash { get; set; }
+    public bool Conflict { get; set; }
 }

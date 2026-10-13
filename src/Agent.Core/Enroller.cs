@@ -118,7 +118,10 @@ public static class Enroller
                 if (c.Source == ScanSource.Emulator)
                 {
                     serverGames ??= await api.ListGamesAsync();
-                    var (named, refusal) = EnrollLinks.Resolve(serverGames, c, extras, link);
+                    // D2: the server's game of this title, whatever it is called and whichever emulator made it.
+                    var keyed = c.EmulatorKey is { } key
+                        ? serverGames.FirstOrDefault(g => string.Equals(g.EmulatorKey, key, StringComparison.OrdinalIgnoreCase)) : null;
+                    var (named, refusal) = keyed is not null ? (keyed.Name, null) : EnrollLinks.Resolve(serverGames, c, extras, link);
                     if (named is null)
                     {
                         Refuse(c.Name, refusal!);
@@ -137,7 +140,8 @@ public static class Enroller
                             ? null
                             : extras.Select(e => new SavePathDto(e.Key, null, e.Template, Scope(e.IncludeGlobs))).ToArray(),
                         Release: c.Release,
-                        EmulatorProfile: c.EmulatorProfile));
+                        EmulatorProfile: c.EmulatorProfile,
+                        EmulatorKey: c.EmulatorKey));
                 }
                 catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
@@ -157,6 +161,12 @@ public static class Enroller
                 // only one side has is not a difference in files: the server's other folders are the
                 // poller's to map, and one this scan declares that the game lacks (a folder an older
                 // agent did not know, or one removed on another machine) is added to it.
+                // A same-named game of another title (two Switch releases sharing a name): never joined.
+                if (c.EmulatorKey is { } ours && game.EmulatorKey is { } theirs && !string.Equals(ours, theirs, StringComparison.OrdinalIgnoreCase))
+                {
+                    Refuse(c.Name, $"the server's '{game.Name}' is another title ({theirs}).");
+                    continue;
+                }
                 if (serverGames is not null)
                 {
                     // Its source reaches the server only once it is set up here: until then this batch must
@@ -233,6 +243,7 @@ public static class Enroller
                         InstallDir = c.InstallDir,
                         Source = GameSources.From(c),
                         Release = game.Release ?? c.Release,
+                        EmulatorKey = game.EmulatorKey ?? c.EmulatorKey,
                         // Without this the Windows ProcessWatcher excludes the game outright, so lease,
                         // exit-push and the running-game pull refusal never run for anything enrolled
                         // through the UI. Only the CLI's --proc used to populate it. WA-08.
@@ -491,7 +502,9 @@ public static class Enroller
     public static IReadOnlyList<string> NamesFor(ScanCandidate c)
     {
         if (c.Source != ScanSource.Emulator) return [c.Name];
-        var by = c.EmulatorName ?? "Emulator";
+        // A Switch title is one game whichever Switch emulator saved it (D2), so its names say the console, not the emulator.
+        var by = c.EmulatorKey?.StartsWith(EmulatorKeys.SwitchPrefix, StringComparison.OrdinalIgnoreCase) == true
+            ? "Switch" : c.EmulatorName ?? "Emulator";
         var names = new List<string> { c.Name, $"{c.Name} ({by})" };
         if (c.EmulatorRom is { Length: > 0 } rom && !string.Equals(rom, c.Name, StringComparison.OrdinalIgnoreCase))
             names.Add($"{rom} ({by})");
@@ -512,11 +525,20 @@ public static class Enroller
     /// </para>
     public static TrackedGame? TrackedFor(AgentConfig config, ScanCandidate c)
     {
+        // D2: a keyed title is the game with its key, whichever emulator or name this machine knows it by.
+        if (c.EmulatorKey is { } key)
+        {
+            var keyed = config.Games.Where(g => string.Equals(g.EmulatorKey, key, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (keyed.Count > 0) return keyed.FirstOrDefault(g => g.IsEnrolledHere) ?? keyed[0];
+        }
         var byName = NamesFor(c)
             .Select(config.FindGame)
             .Where(g => g is not null && SameScope(g.IncludeGlobs, c.IncludeGlobs) && SameEmulator(g, c) && !OtherRegion(g.Release, c))
             .Select(g => g!);
-        var matches = byName.Concat(ByFiles(config, c)).ToList();
+        // A game keyed to another title is never this one, whatever it is called.
+        var matches = byName.Concat(ByFiles(config, c))
+            .Where(g => c.EmulatorKey is null || g.EmulatorKey is null || string.Equals(g.EmulatorKey, c.EmulatorKey, StringComparison.OrdinalIgnoreCase))
+            .ToList();
         return matches.FirstOrDefault(g => g.IsEnrolledHere) ?? matches.FirstOrDefault();
     }
 
@@ -604,6 +626,7 @@ public static class Enroller
     /// to any.
     /// </summary>
     internal static bool SameEmulator(GameDto game, ScanCandidate c) =>
+        (c.EmulatorKey is not null && string.Equals(game.EmulatorKey, c.EmulatorKey, StringComparison.OrdinalIgnoreCase)) ||
         c.Source != ScanSource.Emulator || c.EmulatorName is null || game.Emulators is not { Length: > 0 } ||
         game.Emulators.Contains(c.EmulatorName, StringComparer.OrdinalIgnoreCase);
 

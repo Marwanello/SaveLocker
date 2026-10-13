@@ -85,6 +85,7 @@ public sealed class CommandPoller : IDisposable
         if (Interlocked.Exchange(ref _busy, 1) == 1) return;
         try
         {
+            KeepSwitchCopies();
             await ReconcileGamesAsync();
             // The first call of the tick is what tells us the server is there. A push that fails
             // reports nothing of the kind on its own — it is queued and retried — so this is the one
@@ -119,6 +120,24 @@ public sealed class CommandPoller : IDisposable
                     onEscalation: _notices is null ? null : e => _notices.RaiseEscalation(e));
 
             Interlocked.Exchange(ref _busy, 0);
+        }
+    }
+
+    /// <summary>
+    /// A Switch game's copies kept in step on this machine (<see cref="SwitchCopies"/>): one played in another emulator is
+    /// taken into the synced folder, whose watcher then pushes it. Before the server is asked, so it works offline too.
+    /// </summary>
+    private void KeepSwitchCopies()
+    {
+        IReadOnlyList<SwitchEmulators.Setup>? setups = null;
+        foreach (var game in _config.Games.Where(g => g.IsEnrolledHere && g.EmulatorCopies.Any(c => c.KeepInSync)).ToList())
+        {
+            try
+            {
+                setups ??= SwitchEmulators.Find();
+                foreach (var line in SwitchCopies.Reconcile(_config, game, AgentLogger.Log, setups)) _notify(line);
+            }
+            catch (Exception ex) { AgentLogger.LogException($"CommandPoller.KeepSwitchCopies '{game.Name}'", ex); }
         }
     }
 
@@ -175,6 +194,11 @@ public sealed class CommandPoller : IDisposable
                 if (!GameReleaseDto.Same(local.Release, sg.Release))
                 {
                     local.Release = sg.Release;
+                    changed = true;
+                }
+                if (sg.EmulatorKey is { } key && local.EmulatorKey != key)
+                {
+                    local.EmulatorKey = key;
                     changed = true;
                 }
 
@@ -264,6 +288,7 @@ public sealed class CommandPoller : IDisposable
                 Name = sg.Name,
                 ManifestKey = sg.ManifestKey,
                 Release = sg.Release,
+                EmulatorKey = sg.EmulatorKey,
                 SaveDirectory = dir ?? "",
                 ExcludeGlobs = (sg.ExcludeGlobs ?? Array.Empty<string>()).ToList()
             };

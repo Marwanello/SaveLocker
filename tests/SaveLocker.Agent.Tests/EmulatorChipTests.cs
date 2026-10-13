@@ -12,12 +12,13 @@ namespace SaveLocker.Agent.Tests;
 public sealed class EmulatorChipTests
 {
     /// <summary>Every emulator name a reader gives its rows: each reader's <c>EmulatorName</c>, plus PrimeHack, which
-    /// is a second name of the Dolphin reader.</summary>
+    /// is a second name of the Dolphin reader, and the Switch emulators, rows of one reader's table.</summary>
     private static IReadOnlyList<string> ReaderEmulators() =>
         typeof(RomSaves).Assembly.GetTypes()
             .SelectMany(t => t.GetFields(BindingFlags.Public | BindingFlags.Static))
             .Where(f => f.IsLiteral && f.FieldType == typeof(string) && f.Name is "EmulatorName" or "PrimeHackName")
             .Select(f => (string)f.GetRawConstantValue()!)
+            .Concat(SwitchEmulators.Names)
             .Distinct()
             .Order(StringComparer.Ordinal)
             .ToList();
@@ -55,6 +56,7 @@ public sealed class EmulatorChipTests
     [InlineData(CemuSaves.System, "Wii U")]
     [InlineData(AzaharSaves.System, "3DS")]
     [InlineData(XeniaSaves.System, "Xbox 360")]
+    [InlineData(SwitchEmulators.System, "Switch")]
     public void Each_emulator_console_has_its_label(string system, string label) =>
         Assert.Equal(label, GameSources.SystemLabel(system));
 }

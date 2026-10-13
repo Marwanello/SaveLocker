@@ -364,6 +364,8 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
 
         // A Xenia game's row of its profile is copied out of the shared dashboard first, so the push carries it.
         XeniaProfileSlice.Export(game, _log, stateDir: _config.StateDir);
+        // A Switch copy kept in step and played last is taken into the synced folder, so this push carries it.
+        SwitchCopies.Reconcile(_config, game, _log);
 
         // One pass over the save folder answers both questions a push asks of it: the aggregate
         // content hash (has anything changed at all?) and the per-file manifest a delta negotiates
@@ -748,6 +750,8 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
 
             var (versionId, headHash) = head.Value;
             AdoptArchiveKeys(game, archive);
+            // A Switch copy kept in step and played since is taken in first, so the check below protects it too.
+            SwitchCopies.Reconcile(_config, game, _log);
             var roots = game.Roots(_config.StateDir);
             var localHash = SaveArchive.HashDirectory(roots, game.ExcludeGlobs);
             if (localHash == headHash)
@@ -802,6 +806,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
                     _log($"[{game.Name}] the server's save holds folder(s) this game no longer has " +
                          $"({string.Join(", ", restored.SkippedKeys)}); left out.");
                 XeniaProfileSlice.AfterPull(game, _log, stateDir: _config.StateDir);
+                SwitchCopies.AfterPull(game, _log);
             }
             catch (SaveArchive.UnsafeArchiveException ex)
             {
@@ -820,6 +825,7 @@ public sealed class SyncEngine : IAsyncDisposable, IDisposable
             _log($"[{game.Name}] restored latest save from server.");
             MarkSynced(game.GameId);
             DlcHoldStore.For(_config).Clear(game.GameId);
+            SwitchCopies.Reconcile(_config, game, _log);
             await ReportContentAsync(game, null);
             if (missingBefore.Any(Directory.Exists)) _onFoldersChanged?.Invoke();
             return PullOutcome.Restored;

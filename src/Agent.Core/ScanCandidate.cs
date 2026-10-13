@@ -158,7 +158,13 @@ public sealed record ScanCandidate(
     bool StatesOnly = false,
     /// <summary>The emulator profile the save is under here, <c>xenia:&lt;XUID&gt;</c>, or null (tasks/emulator-saves Phase 5c):
     /// the first machine's becomes the game's, and another machine's game is put under that one.</summary>
-    string? EmulatorProfile = null)
+    string? EmulatorProfile = null,
+    /// <summary>The emulated title the save is across emulators, <c>switch:&lt;title ID&gt;</c> (D2, tasks/emulator-saves Phase 6):
+    /// a server game with this key is this game whatever it is called, and whichever emulator made it. Null for the rest.</summary>
+    string? EmulatorKey = null,
+    /// <summary>No save here yet: a Switch ROM whose title has never saved on this machine, listed where its emulator will look
+    /// for one, so the first pull puts the fleet's save there.</summary>
+    bool NoSaveYet = false)
 {
     /// <summary>
     /// What a scanner merges duplicates on: the normalised name, so one game found by two sources is one
