@@ -47,6 +47,7 @@ point unless explicitly instructed to.
 | 16 — Linking by hand, same files (mockup version 2) | ✅ Shipped 2026-10-07 (PR #61, branch `emulator-saves-group-b`, with Group B) — each emulator row on Add games says which server game the save joins, with a **Change** button for that row only: automatic, *Keep it as its own game*, or another server game keeping the same files; a same-titled game with other file names is listed greyed out with the reason. `EnrollLinks` + `GET /api/candidates/links` + `EnrollRequest.Links`; `LinkByHandTests` 5, two of them mutation-checked; checked in the browser against a scratch server **Review fixes (PR #61):** *Keep it as its own game* opts this machine out of the fleet's same-files game, and the poller never maps a second game onto files another syncs here (`SaveFolderClaims`); Add games says when the server could not be asked. |
 | 17 — Each machine's own file names (linking saves with different names) | ⏳ Not started — Group G (added 2026-10-07, maintainer: "keep option 2 in another phase"); open questions below |
 | 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07); Group C added PCSX2, DuckStation, Dolphin and PrimeHack (the Deck already has Trilogy and Other M saves to try); Group D added PPSSPP, RPCS3 (the Deck has a *Heavenly Sword* save), Vita3K and shadPS4; Group E added Cemu, Azahar (the Deck has three 3DS saves) and Xenia (the PC and the Deck both have *Forza Horizon*). Rows are added as later phases ship untested; see *Phase 18* |
+| 20 — Steam ROM Manager shortcuts are the emulator's game, not a game of their own | ⏳ Not started — Group G (added 2026-10-13, maintainer: the Deck lists Forza Horizon twice). Needs a captured `shortcuts.vdf` and SRM's own records from the Deck first; open questions below |
 | 19 — Games found by their save states alone (every emulator but PPSSPP) | ⏳ Not started — Group I (added 2026-10-12, maintainer: "PPSSPP now, others as a new phase"). PPSSPP's shipped with Group D; see *Phase 19* |
 
 ### Phase 1 — as built (2026-10-04), and where it departs from the plan below
@@ -1283,14 +1284,55 @@ No states, so not in this phase: RPCS3, Vita3K, shadPS4, ScummVM, Supermodel, Mo
 **Verify:** per emulator, a fixture with a state and no save (listed, `StatesOnly`, correct name and scope), a save
 elsewhere winning, and an empty state ignored; the two-machine test per family above; testenv fixture rows.
 
+### Phase 20 — a Steam ROM Manager shortcut is the emulator's game (Group G, not started)
+
+**Why.** EmuDeck's Steam ROM Manager (SRM) adds a non-Steam shortcut to Steam for every ROM, so the game shows in Game
+Mode. SaveLocker reads `shortcuts.vdf` and offers each one as a *Steam shortcut* game, while the emulator's reader
+offers the same game from its save. On the maintainer's Deck *Forza Horizon* is listed twice (2026-10-13): once from
+Xenia's save, once from its SRM shortcut, which launches Xenia with the ROM and has no save folder of its own. Tracking
+both makes two server games for one save, or one that never syncs.
+
+**Detect.** A shortcut is SRM's when any of these hold, strongest first (each to be confirmed on a capture):
+1. SRM's own record of what it added (`~/.config/steam-rom-manager/userData/` — the added items with their app IDs),
+   when SRM is installed on this machine.
+2. Its `Exe` is an EmuDeck launcher (`Emulation/tools/launchers/<emulator>.sh`, or the `.ps1`/`.exe` launchers on
+   EmuDeck for Windows) or an emulator SaveLocker reads, and its `LaunchOptions` name a file under the ROMs folder.
+3. Its tags carry SRM's category for a system (`Xbox 360`, `PlayStation 2`, …).
+The shortcut's ROM path (from `LaunchOptions`) is what ties it to a game: the emulator reader's candidate for that ROM
+(`EmulatorRom`), or for Xenia/Cemu/RPCS3 the title the ROM or its folder names. Only when no ROM path is readable, the
+cleaned name.
+
+**What changes.**
+- **Add games:** an SRM shortcut is not listed as a Steam shortcut game. Its emulator row says it was also found as a
+  Steam shortcut, and the shortcut's app ID is attached to it.
+- **Launch and exit:** the attached app ID lets pull-before-launch and push-after-exit work for the emulator game
+  started from that shortcut (today only the shortcut row could have them). This is the deferred
+  *Recovering ROM identity from an SRM shortcut's `LaunchOptions`*, now built.
+- **Art:** the shortcut's grid and icon can be offered for the emulator game.
+- **Already tracked twice:** a tracked shortcut game whose emulator game is also tracked shows *Same game as
+  \<name\> (\<emulator\>)* with **Stop tracking this copy**. Merging the two server games waits for a server merge
+  (Phase 17's open question; [[Backlog]] → *One game, several real sources*).
+- **Windows:** EmuDeck for Windows and SRM there work the same way; the same rules apply.
+
+**Open questions (decide before building):**
+- **Which signal is enough on its own?** SRM's record alone, or the launcher plus a ROM path too? A hand-made shortcut
+  to an emulator with a ROM is the same thing to SaveLocker, so the launcher plus ROM path may be the rule.
+- **A shortcut with no emulator candidate** (a ROM never played, so no save yet): hidden, or listed as the emulator game
+  waiting for its first save (Phase 19's *states only* gives the precedent)?
+- **Other front ends** that add shortcuts the same way (BoilR, Heroic's emulator entries, RetroDECK): in this phase or
+  later?
+- **Name on the server** when only the shortcut's name differs from the reader's (SRM's titles come from its own
+  fuzzy match): always the reader's, as today.
+
+**Verify:** a captured `shortcuts.vdf` and SRM's records from the Deck (read-only) as fixtures — the Xenia, RetroArch
+and PCSX2 shortcuts each matched to their emulator candidate, a hand-made Steam shortcut to a PC game left alone, a
+shortcut whose ROM has no save; Add games on the Deck lists *Forza Horizon* once; the app ID drives pull-before-launch
+for the emulator game (testenv WSL with a fixture shortcut, then the real Deck under Group H).
+
 ## Deferred, not built in this task
 
-**Recovering ROM identity from a Steam ROM Manager shortcut's `LaunchOptions`** (structurally the
-same problem `SteamShortcuts.MoonDeckAppId` already solves for MoonDeck) — needs a captured
-`shortcuts.vdf` sample from a real SRM-configured, High-integration EmuDeck install first. This only
-ever improves launch/exit lifecycle precision for that subset of installs; every integration level
-and every standalone install is already fully covered for *detection* by the folder-tree scanning in
-Phases 1–6, which never depends on Steam. Flag as a Backlog follow-on once a sample exists.
+**Recovering ROM identity from a Steam ROM Manager shortcut's `LaunchOptions`** moved into Phase 20 (2026-10-13), with
+the duplicate entries it causes on the Deck.
 
 **Save states** and **Ryujinx** were here; both are now in scope (*Save states — decided*, D3; Phase 6).
 
