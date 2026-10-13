@@ -856,6 +856,13 @@ admin.MapGet("/games/{id:guid}/sources", async (Guid id, SyncService sync) =>
 admin.MapGet("/games/{id:guid}/transfers", async (Guid id, ContentTransferService transfers) =>
     Results.Ok(await transfers.ForGameAsync(id))).Produces<ContentTransferDto[]>();
 
+// Asked from the console's Emulator settings: hand a machine the packs it lacks for the latest save.
+admin.MapPost("/games/{id:guid}/transfers", async (Guid id, ConsoleTransferRequest req, ContentTransferService transfers) =>
+{
+    try { return Results.Ok(await transfers.CreateForMachineAsync(id, req.ToMachineId)); }
+    catch (TransferRefusedException ex) { return Results.BadRequest(ex.Message); }
+}).Produces<ContentTransferDto>().Produces<string>(StatusCodes.Status400BadRequest);
+
 admin.MapGet("/transfers", async (ContentTransferService transfers) =>
     Results.Ok(await transfers.OverviewAsync())).Produces<HandoverOverviewDto>();
 

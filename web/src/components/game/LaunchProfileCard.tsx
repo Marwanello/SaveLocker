@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api';
-import type { ContentTransfer, GameContent } from '../../types';
-import { ago, fmtSize } from '../../format';
+import type { GameContent } from '../../types';
+import { ago } from '../../format';
 import { Card } from '../ui/Card';
 
 interface Props {
@@ -18,18 +18,16 @@ const ACTION: Record<string, string> = {
 };
 
 /**
- * A Xenia game's "Profile at launch" table and its DLC hand-overs on the console's game page (tasks/emulator-saves
- * Phase 5c): per machine, which profile Xenia was set to at the game's last launch and what SaveLocker did about it —
- * reported by the agent each time the launch check runs — and the game's recent hand-overs, newest first.
+ * A Xenia game's "Profile at launch" table, in the console's Emulator settings (tasks/emulator-saves Phase 5c): per
+ * machine, which profile Xenia was set to at the game's last launch and what SaveLocker did about it — reported by the
+ * agent each time the launch check runs.
  */
 export function LaunchProfileCard({ gameId }: Props) {
   const [content, setContent] = useState<GameContent | null>(null);
-  const [transfers, setTransfers] = useState<ContentTransfer[]>([]);
 
   useEffect(() => {
     let live = true;
     api.getGameContent(gameId).then(c => { if (live) setContent(c); }).catch(() => { if (live) setContent(null); });
-    api.getGameTransfers(gameId).then(t => { if (live) setTransfers(t); }).catch(() => { if (live) setTransfers([]); });
     return () => { live = false; };
   }, [gameId]);
 
@@ -72,21 +70,6 @@ export function LaunchProfileCard({ gameId }: Props) {
               })}
             </tbody>
           </table>
-        </div>
-      )}
-      {transfers.length > 0 && (
-        <div className="px-4 py-2.5 border-t border-line text-[12px]">
-          <div className="text-[10px] tracking-[0.12em] uppercase text-faint mb-1.5">DLC hand-overs</div>
-          <ul className="flex flex-col gap-1">
-            {transfers.map(t => (
-              <li key={t.id} className="flex flex-wrap gap-x-3">
-                <span>{t.fromMachineName} → {t.toMachineName}</span>
-                <span className="text-dim">{t.parts.length} pack{t.parts.length === 1 ? '' : 's'}, {fmtSize(t.parts.reduce((n, p) => n + p.size, 0))}</span>
-                <span className={t.status === 'Delivered' ? 'text-safe-ink' : t.status === 'Declined' || t.status === 'Expired' ? 'text-watch-ink' : 'text-dim'}>{t.status.toLowerCase()}</span>
-                <span className="text-faint">{ago(t.createdAt)}</span>
-              </li>
-            ))}
-          </ul>
         </div>
       )}
     </Card>

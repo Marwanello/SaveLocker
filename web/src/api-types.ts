@@ -2419,7 +2419,41 @@ export interface paths {
             };
         };
         put?: never;
-        post?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ConsoleTransferRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContentTransferDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -4913,6 +4947,10 @@ export interface components {
         };
         /** @enum {unknown} */
         ConflictStatus: "Open" | "Resolved";
+        ConsoleTransferRequest: {
+            /** Format: uuid */
+            toMachineId: string;
+        };
         ContentPackageDto: {
             kind: string;
             id: string;

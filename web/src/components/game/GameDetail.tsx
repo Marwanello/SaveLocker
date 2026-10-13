@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, errorText } from '../../api';
 import type {
-  AgentHealth, Command, Conflict, GameIntent, GameSummary, Machine, MachineGameSource, MachineSavePath, MachineScanCandidate, Version,
+  AgentHealth, Command, Conflict, GameContent, GameIntent, GameSummary, Machine, MachineGameSource, MachineSavePath, MachineScanCandidate, Version,
 } from '../../types';
 import { toast, toastError } from '../../toast';
 import { problemGameIds, standing } from './gameState';
@@ -13,8 +13,9 @@ import { ConflictPanel } from './ConflictPanel';
 import { GameStats } from './GameStats';
 import { VersionsCard } from './VersionsCard';
 import { SaveFoldersCard } from './SaveFoldersCard';
-import { DlcCheckCard } from './DlcCheckCard';
-import { LaunchProfileCard } from './LaunchProfileCard';
+import { EmulatorSettings, type EmulatorTab } from './EmulatorSettings';
+import { Button } from '../ui/Button';
+import { Icon } from '../ui/Icon';
 import { RulesCard } from './RulesCard';
 import { ExcludePatternsCard } from './ExcludePatternsCard';
 import { RemoteCommandsCard } from './RemoteCommandsCard';
@@ -45,6 +46,9 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
   const [pathsLoaded, setPathsLoaded] = useState(false);
   const [artOpen, setArtOpen] = useState(false);
   const penRef = useRef<HTMLButtonElement>(null);
+  // Emulator settings, open on one of its sections; null is the game's own page.
+  const [emuTab, setEmuTab] = useState<EmulatorTab | null>(null);
+  const [content, setContent] = useState<GameContent | null>(null);
 
   useEffect(() => {
     setLoadingVersions(true);
@@ -54,7 +58,26 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
     api.getGamePathCandidates(game.id).then(setCandidates).catch(() => {});
     setSources([]);
     api.getGameSources(game.id).then(setSources).catch(() => {});
+    setEmuTab(null);
   }, [game.id]);
+
+  // Only Xenia has emulator settings so far. A game that runs in it either has its profile recorded or a machine found it
+  // through Xenia.
+  const xenia = !!game.emulatorProfile?.startsWith('xenia:')
+    || sources.some(s => s.source.kind === 'emulator' && /xenia/i.test(s.source.detail));
+
+  // For the count on the Emulator settings button: machines missing some of the packs the latest save needs.
+  useEffect(() => {
+    if (!xenia) { setContent(null); return; }
+    let live = true;
+    api.getGameContent(game.id).then(c => { if (live) setContent(c); }).catch(() => { if (live) setContent(null); });
+    return () => { live = false; };
+  }, [game.id, xenia, versions.length]);
+  const headContent = content?.headContent ?? [];
+  const short = (content?.machines ?? []).filter(m => {
+    const have = new Set(m.packages.map(p => `${p.kind}/${p.id}`.toLowerCase()));
+    return headContent.some(p => !have.has(`${p.kind}/${p.id}`.toLowerCase()));
+  }).length;
 
   async function reloadVersions() { setVersions(await api.versions(game.id)); }
 
@@ -109,6 +132,10 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
     setResolveTarget({ seq: intent.seq, conflictId: intent.value.conflictId ?? gameConflicts[0]?.id ?? null });
   }
 
+  if (xenia && emuTab) {
+    return <EmulatorSettings game={game} tab={emuTab} onTab={setEmuTab} onBack={() => setEmuTab(null)} refreshKey={versions.length} />;
+  }
+
   return (
     <>
       <GameHead
@@ -132,6 +159,15 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
           : undefined}
         allMachines={machines}
         health={health}
+        extra={xenia && (
+          <Button onClick={() => setEmuTab(short > 0 ? 'dlc' : 'profile')} title="Xbox 360 profile at launch, DLC and hand-overs">
+            <Icon name="sliders-horizontal" size={13} />Emulator settings
+            {short > 0 && (
+              <span className="min-w-[17px] h-[17px] px-1 rounded-full grid place-items-center text-[10px] font-bold tabular-nums bg-watch text-on-accent"
+                aria-label={`${short} machine${short === 1 ? '' : 's'} missing DLC`}>{short}</span>
+            )}
+          </Button>
+        )}
         artOpen={artOpen}
         onToggleArt={() => setArtOpen(o => !o)}
         penRef={penRef}
@@ -189,10 +225,6 @@ export function GameDetail({ summary, machines, commands, conflicts, health, onR
           <ExcludePatternsCard game={game} onRefresh={onRefresh} />
         </div>
       </div>
-
-      <DlcCheckCard gameId={game.id} refreshKey={versions.length} />
-
-      {game.emulatorProfile?.startsWith('xenia:') && <LaunchProfileCard gameId={game.id} />}
 
       <RemoteCommandsCard commands={gameCmds} />
     </>

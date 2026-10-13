@@ -353,6 +353,11 @@ export const api = {
     request<GameContent>(`/games/${gameId}/content`),
   getGameTransfers: (gameId: string) =>
     request<ContentTransfer[]>(`/games/${gameId}/transfers`),
+  /** Hand a machine the packs the latest save needs that it lacks, from the machine that made the save. */
+  sendMissingDlc: (gameId: string, toMachineId: string) =>
+    request<ContentTransfer>(`/games/${gameId}/transfers`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toMachineId }),
+    }),
   handoverOverview: () => request<HandoverOverview>('/transfers'),
   cancelTransfer: (id: string) => request<void>(`/transfers/${id}/cancel`, { method: 'POST' }),
   getGamePathCandidates: (gameId: string) =>

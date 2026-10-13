@@ -14,6 +14,9 @@ interface Props {
   /** A pull from this page was just held: open the choice. */
   askSignal: number
   onPulled: (message: string) => void
+  /** Emulator settings splits the card: its DLC section shows the packs and this machine's own hand-over, its Sharing
+   *  section the requests from other machines. Left out, both. */
+  show?: 'packs' | 'requests'
 }
 
 const OPEN: ContentTransfer['status'][] = ['Requested', 'Approved', 'Ready']
@@ -26,7 +29,7 @@ const ENDED: ContentTransfer['status'][] = ['Declined', 'Expired', 'Cancelled']
  * they are installed (the pull then goes ahead by itself). Requests from other machines for this game's packs are answered
  * here too.
  */
-export function DlcCheckCard({ gameId, gameName, refreshKey, askSignal, onPulled }: Props) {
+export function DlcCheckCard({ gameId, gameName, refreshKey, askSignal, onPulled, show }: Props) {
   const [check, setCheck] = useState<DlcCheck | null>(null)
   const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -48,11 +51,23 @@ export function DlcCheckCard({ gameId, gameName, refreshKey, askSignal, onPulled
 
   const asked = check?.asked ?? []
   const packages = check?.packages ?? []
-  if (!check || (packages.length === 0 && asked.length === 0)) return null
+  if (!check) return null
+  if (!show && packages.length === 0 && asked.length === 0) return null
   const missing = packages.filter(p => !p.here)
   const handover = check.handover ?? null
   const handoverOpen = !!handover && OPEN.includes(handover.status)
   const canHandOver = !!check.headMachineId && !handoverOpen && missing.length > 0
+  if (show === 'packs' && packages.length === 0 && !handover) {
+    return (
+      <Card title="DLC this save was made with">
+        <p className="sl-empty" style={{ padding: 0 }}>
+          {check.headMachineName
+            ? `The latest save, from ${check.headMachineName}, needs no DLC or title updates.`
+            : 'Nothing is known about DLC yet: no save of this game has said which packs it was made with.'}
+        </p>
+      </Card>
+    )
+  }
 
   async function run(work: () => Promise<string | void>, failed: string) {
     setBusy(true)
@@ -84,9 +99,7 @@ export function DlcCheckCard({ gameId, gameName, refreshKey, askSignal, onPulled
   const cancel = (t: ContentTransfer) =>
     run(async () => (await api.dlcHandoverCancel(t.id)).message, 'The cancel failed.')
 
-  return (
-    <>
-      {asked.map(t => (
+  const requests = asked.map(t => (
         <Banner
           key={t.id} tone={t.status === 'Requested' ? 'warn' : 'ok'}
           title={t.status === 'Requested'
@@ -102,7 +115,21 @@ export function DlcCheckCard({ gameId, gameName, refreshKey, askSignal, onPulled
               </span>
             : <Button disabled={busy} onClick={() => void cancel(t)}>Cancel</Button>}
         />
-      ))}
+      ))
+
+  if (show === 'requests') {
+    return (
+      <Card title={`Requests for ${gameName}'s DLC`}>
+        {asked.length > 0
+          ? <div className="sl-stack">{requests}</div>
+          : <p className="sl-empty" style={{ padding: 0 }}>No other machine is asking for this game's DLC right now.</p>}
+      </Card>
+    )
+  }
+
+  return (
+    <>
+      {show !== 'packs' && requests}
       {handover && (
         <Banner
           tone={ENDED.includes(handover.status) ? 'warn' : 'ok'}

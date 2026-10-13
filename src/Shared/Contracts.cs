@@ -514,6 +514,9 @@ public record CreateTransferRequest(Guid GameId, Guid FromMachineId, ContentPack
 
 public record TransferAnswerRequest(bool Approve);
 
+/// <summary>The console asks on a machine's behalf: the packs the latest save needs that <paramref name="ToMachineId"/> lacks.</summary>
+public record ConsoleTransferRequest(Guid ToMachineId);
+
 /// <summary>The console's view of DLC hand-overs: the size limit, how long one waits, the bytes held now, the open ones.</summary>
 public record HandoverOverviewDto(long MaxBytes, int ExpiryDays, long BytesInTransit, ContentTransferDto[] Open);
 

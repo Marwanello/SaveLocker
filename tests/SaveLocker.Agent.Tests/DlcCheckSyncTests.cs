@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using SaveLocker.Agent;
 using SaveLocker.Shared;
@@ -195,6 +196,45 @@ public sealed class DlcCheckSyncTests : IClassFixture<ServerProcess>, IDisposabl
         Assert.Equal("pc-save", File.ReadAllText(P("deck", $"{deckContent}/{Xuid}/{title}/00000001/Profile/save.dat")));
         Assert.Null(DlcHoldStore.For(deck).For(deckGame.GameId));
         Assert.False(Directory.Exists(Path.Combine(deck.StateDir, "handover", "in", asked.Id.ToString("N"))));
+    }
+
+    [Fact]
+    public async Task The_console_asks_for_a_machine_and_its_agent_installs_what_it_lacked()
+    {
+        // The console's Emulator settings: "Send DeckTest's missing DLC from WinTest". The server works out what the Deck
+        // lacks from what it reported, asks the machine that made the latest save, and the Deck takes it as its own request.
+        var title = "9D" + _id;
+        const string pcContent = "Xenia Canary/content";
+        const string deckContent = "SDCard/Emulation/roms/xbox360/content";
+        Write("pc", $"{pcContent}/{Xuid}/{title}/00000001/Profile/save.dat", "pc-save");
+        Package("pc", pcContent, title, "00000002", "AAAA", "Pre-Order Car Pack", 300);
+        Package("pc", pcContent, title, "00000002", "BBBB", "Rally Expansion Pack", 5000);
+        Write("deck", $"{deckContent}/{Xuid}/{title}/00000001/Profile/save.dat", "deck-old");
+        Package("deck", deckContent, title, "00000002", "AAAA", "Pre-Order Car Pack", 300);
+
+        var pc = await Machine("pc6");
+        var deck = await Machine("deck6");
+        var pcGame = await Enroll(pc, XeniaSaves.Scan([new XeniaFolders(P("pc", pcContent))]), title);
+        var deckGame = await Enroll(deck, XeniaSaves.Scan([new XeniaFolders(P("deck", deckContent), EmuDeck: true)]), title);
+        await using var enginePc = new SyncEngine(pc, ApiClient.For(pc));
+        await using var engineDeck = new SyncEngine(deck, ApiClient.For(deck));
+        Assert.NotNull(await enginePc.PushAsync(pcGame, force: true));
+        await ApiClient.For(deck).ReportContentAsync(deckGame.GameId, [.. ContentInventory.For(deckGame)], null);
+
+        using var admin = Admin();
+        var resp = await admin.PostAsJsonAsync($"/api/admin/games/{deckGame.GameId}/transfers", new ConsoleTransferRequest(deck.MachineId!.Value));
+        resp.EnsureSuccessStatusCode();
+        var asked = (await resp.Content.ReadFromJsonAsync<ContentTransferDto>())!;
+        Assert.Equal(pc.MachineId, asked.FromMachineId);
+        Assert.Equal(["BBBB"], asked.Parts.Select(p => p.PackageId));
+        var again = await admin.PostAsJsonAsync($"/api/admin/games/{deckGame.GameId}/transfers", new ConsoleTransferRequest(deck.MachineId!.Value));
+        Assert.Equal(asked.Id, (await again.Content.ReadFromJsonAsync<ContentTransferDto>())!.Id);
+        var self = await admin.PostAsJsonAsync($"/api/admin/games/{deckGame.GameId}/transfers", new ConsoleTransferRequest(pc.MachineId!.Value));
+        Assert.Equal(HttpStatusCode.BadRequest, self.StatusCode);
+
+        await new DlcHandoverRunner(pc, () => ApiClient.For(pc), () => enginePc, null, _ => { }, () => false).RunAsync();
+        await new DlcHandoverRunner(deck, () => ApiClient.For(deck), () => engineDeck, null, _ => { }, () => false).RunAsync();
+        Assert.Equal(5000, new FileInfo(P("deck", $"{deckContent}/{XeniaSaves.NoProfile}/{title}/00000002/BBBB/data.bin")).Length);
     }
 
     [Fact]

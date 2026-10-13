@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Conflict, GameState, GameSyncMode, SaveVersion, SyncStatus, TrackedGame, View } from '../types'
+import { SlidersHorizontal } from 'lucide-react'
+import type { Conflict, DlcCheck, GameState, GameSyncMode, SaveVersion, SyncStatus, TrackedGame, View } from '../types'
 import { api } from '../api'
 import { formatAgo, formatBytes, formatDateTime } from '../format'
 import { refreshActivity, useActivityBusy } from '../useActivity'
 import { GameArt } from './GameArt'
 import { GameManagement } from './GameManagement'
 import { SaveFilesCard } from './SaveFilesCard'
-import { DlcCheckCard } from './DlcCheckCard'
-import { XeniaProfileCard } from './XeniaProfileCard'
+import { EmulatorSettingsView, type EmulatorTab } from './EmulatorSettingsView'
+import { emulatorSettingsFor } from '../emulators'
 import { ReleaseChip } from './ReleaseChip'
 import { SourceChip } from './SourceChip'
 import { VersionsCard } from './VersionsCard'
@@ -61,6 +62,10 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
   const [toast, setToast] = useState<{ text: string; failed: boolean } | null>(null)
   // Bumped when a pull from this page was held by the DLC check, so the card opens its choice.
   const [dlcAsk, setDlcAsk] = useState(0)
+  // Emulator settings, open on one of its sections; null is the game's own page.
+  const [emuTab, setEmuTab] = useState<EmulatorTab | null>(null)
+  const [dlc, setDlc] = useState<DlcCheck | null>(null)
+  const emulator = emulatorSettingsFor(game)
 
   const load = useCallback(() => {
     api.gameState(game.id)
@@ -68,7 +73,15 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
       .catch(err => setStateError(err instanceof Error ? err.message : 'Could not reach the server.'))
   }, [game.id])
 
-  useEffect(() => { setState(null); setCheck(null); load() }, [load])
+  useEffect(() => { setState(null); setCheck(null); setEmuTab(null); load() }, [load])
+
+  // What the page needs to point at Emulator settings: packs missing here, and other machines asking for this one's.
+  useEffect(() => {
+    if (emulator !== 'xenia' || !game.path) { setDlc(null); return }
+    let live = true
+    api.gameDlc(game.id).then(d => { if (live) setDlc(d) }).catch(() => { if (live) setDlc(null) })
+    return () => { live = false }
+  }, [game.id, game.path, emulator, syncCount])
 
   // A plain directory walk on the agent (no hashing), so asking on open — and after a sync — is fine.
   // Never on a timer: the point is what is here now, not a live gauge.
@@ -92,7 +105,7 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
       setToast({ text: message, failed: false })
       if (mode !== 'push') {
         const dlc = await api.gameDlc(game.id).catch(() => null)
-        if (dlc?.held && dlc.missingCount > 0) setDlcAsk(n => n + 1)
+        if (dlc?.held && dlc.missingCount > 0) { setEmuTab('dlc'); setDlcAsk(n => n + 1) }
       }
     } catch (err) {
       setToast({ text: err instanceof Error ? err.message : 'Sync failed.', failed: true })
@@ -119,6 +132,27 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
   const head = state?.head ?? null
   const holder = state?.lease?.holderMachineName ?? null
   const heldElsewhere = holder !== null && holder !== machineName
+  const dlcMissing = dlc?.packages?.filter(p => !p.here).length ?? 0
+  const dlcAsking = dlc?.asked?.filter(t => t.status === 'Requested') ?? []
+  const emuCount = (dlcMissing > 0 ? 1 : 0) + dlcAsking.length
+
+  const toastView = toast && (
+    <Toast tone={toast.failed ? 'warn' : 'default'} onDismiss={() => setToast(null)}>{toast.text}</Toast>
+  )
+
+  if (emulator && emuTab) {
+    return (
+      <>
+        <EmulatorSettingsView
+          game={game} emulator={emulator} machineName={machineName} tab={emuTab}
+          onTab={t => { setDlcAsk(0); setEmuTab(t) }} onBack={() => { setDlcAsk(0); setEmuTab(null) }}
+          dlc={dlc} refreshKey={syncCount} askSignal={dlcAsk}
+          onPulled={text => { setToast({ text, failed: false }); setSyncCount(n => n + 1); load(); onSynced() }}
+        />
+        {toastView}
+      </>
+    )
+  }
 
   return (
     <div className="sl-page">
@@ -152,6 +186,23 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
         />
       )}
 
+      {dlc?.held && dlcMissing > 0 && (
+        <Banner
+          tone="warn"
+          title={`Pull on hold: the latest save needs ${dlcMissing} DLC pack${dlcMissing === 1 ? '' : 's'} this device doesn't have`}
+          detail={`${formatBytes(dlc.missingSize)}. Get them from ${dlc.headMachineName ?? 'the machine that made it'}, or pull the save anyway, in Emulator settings.`}
+          action={<Button variant="primary" onClick={() => { setEmuTab('dlc'); setDlcAsk(n => n + 1) }}>Choose</Button>}
+        />
+      )}
+      {dlcAsking.length > 0 && (
+        <Banner
+          tone="crit"
+          title={`${dlcAsking[0].toMachineName} asks for ${game.name}'s DLC`}
+          detail="Send or decline it in Emulator settings."
+          action={<Button variant="primary" onClick={() => setEmuTab('sharing')}>Answer</Button>}
+        />
+      )}
+
       {enrolled ? (
         <div className="sl-actions">
           <Button variant="primary" disabled={locked} onClick={() => void run('sync')}>
@@ -159,6 +210,12 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
           </Button>
           <Button disabled={locked} onClick={() => void run('push')}>{pending === 'push' ? 'Pushing…' : 'Push now'}</Button>
           <Button disabled={locked} onClick={() => void run('pull')}>{pending === 'pull' ? 'Pulling…' : 'Pull latest'}</Button>
+          {emulator && (
+            <Button onClick={() => setEmuTab(dlcAsking.length > 0 && dlcMissing === 0 ? 'sharing' : dlcMissing > 0 ? 'dlc' : 'profile')}>
+              <SlidersHorizontal size={14} aria-hidden="true" />Emulator settings
+              {emuCount > 0 && <span className="sl-count" style={{ marginLeft: 4 }}>{emuCount}</span>}
+            </Button>
+          )}
           <Button variant="quiet" disabled={locked} onClick={() => void checkNow()}>
             {pending === 'check' ? 'Checking…' : 'Check now'}
           </Button>
@@ -249,16 +306,9 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
         <GameManagement game={game} platform={platform} onChanged={onChanged} onRemoved={onRemoved} />
       </div>
 
-      {enrolled && <DlcCheckCard gameId={game.id} gameName={game.name} refreshKey={syncCount} askSignal={dlcAsk}
-        onPulled={text => { setToast({ text, failed: false }); setSyncCount(n => n + 1); load(); onSynced() }} />}
-
-      {enrolled && <XeniaProfileCard gameId={game.id} refreshKey={syncCount} />}
-
       {enrolled && <SaveFilesCard gameId={game.id} refreshKey={syncCount} />}
 
-      {toast && (
-        <Toast tone={toast.failed ? 'warn' : 'default'} onDismiss={() => setToast(null)}>{toast.text}</Toast>
-      )}
+      {toastView}
     </div>
   )
 }

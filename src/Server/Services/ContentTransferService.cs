@@ -117,6 +117,24 @@ public sealed partial class ContentTransferService
     }
 
     /// <summary>
+    /// The console asks for <paramref name="toMachineId"/>: every pack the latest save was made with that the machine has not
+    /// reported, from the machine that made the save. The receiving agent fetches and installs it like one it asked for.
+    /// </summary>
+    public async Task<ContentTransferDto> CreateForMachineAsync(Guid gameId, Guid toMachineId)
+    {
+        var game = await _db.Games.FindAsync(gameId) ?? throw new TransferRefusedException("No such game.");
+        if (!await _db.Machines.AnyAsync(m => m.Id == toMachineId)) throw new TransferRefusedException("No such machine.");
+        var head = await _db.SaveVersions.FirstOrDefaultAsync(v => v.Id == game.HeadVersionId)
+            ?? throw new TransferRefusedException("Nothing has been uploaded for this game yet.");
+        if (head.MachineId is not { } from) throw new TransferRefusedException("The machine that made the latest save was removed.");
+        var reported = await _db.MachineGameContents.FindAsync(toMachineId, gameId);
+        var has = new HashSet<string>((Mapping.ReadContent(reported?.ContentJson) ?? []).Select(p => $"{p.Kind}/{p.Id}"), StringComparer.OrdinalIgnoreCase);
+        var missing = (Mapping.ReadContent(head.ContentJson) ?? []).Where(p => !has.Contains($"{p.Kind}/{p.Id}")).ToArray();
+        if (missing.Length == 0) throw new TransferRefusedException("That machine already has every pack the latest save needs.");
+        return await CreateAsync(toMachineId, new CreateTransferRequest(gameId, from, missing));
+    }
+
+    /// <summary>
     /// The open hand-overs this machine sends or receives, and for the machine that asked, the ones that ended without
     /// arriving in the last day, so it can say the request was declined or expired.
     /// </summary>
