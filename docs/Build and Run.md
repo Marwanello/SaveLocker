@@ -332,9 +332,12 @@ Phase 5c adds **the Xenia profile checked at launch** (Windows):
   in as `E03000004A1C77B2` (**Player1**, with its own `Account`).
 - WSL's *Forza Horizon* is in the layout from before profiles, so it is never asked.
 
-Ask the gate the way Decky and Playnite do, against the Windows test agent (after adding *Forza Horizon* there):
+Ask the gate the way Decky and Playnite do, against the Windows test agent (after adding *Forza Horizon* there). Run from the Claude desktop app, put the rig outside `%LOCALAPPDATA%` first: add
+`$env:SAVELOCKER_TEST_ROOT = 'D:\SaveLocker-testenv'` to `tests\testenv.local.ps1` — Windows redirects a packaged app's
+writes there, and WSL then never sees the fixture. The token is then in `D:\SaveLocker-testenv\SaveLocker\api-token`.
+:
 ```powershell
-$t = (Get-Content "$env:LOCALAPPDATA\SaveLocker-test\SaveLocker\api-token" -Raw).Trim()
+$t = (Get-Content "$env:LOCALAPPDATA\SaveLocker-test\SaveLocker\api-token" -Raw).Trim()   # or <SAVELOCKER_TEST_ROOT>\SaveLocker\api-token
 $h = @{ 'X-SaveLocker-Token' = $t }
 $id = ((irm http://localhost:5188/api/games -Headers $h) | ? name -eq 'Forza Horizon').id
 $r = irm -Method Post http://localhost:5188/api/games/$id/pre-launch-sync -Headers $h -ContentType application/json -Body '{}'
@@ -351,12 +354,12 @@ $r | ConvertTo-Json -Depth 5
    irm -Method Post http://localhost:5188/api/games/$id/launch-answer -Headers $h -ContentType application/json -Body (@{ questionId = $r.question.id; choice = 'keep' } | ConvertTo-Json)
    ```
    Both configs go back to `E03000004A1C77B2`. The same answer sent again gets a 404.
-3. Ask again, then answer `profile` with `remember = $true`. Both configs stay on Driver, and the next
+3. Ask again: it asks again (an answer only carries over to the Linux wrapper's check in the same launch). Answer `profile` with `remember = $true`. Both configs stay on Driver, and the next
    `pre-launch-sync` answers `Proceed` with no question. The game's `xeniaProfileAtLaunch` in the test agent's
    `config.json` is `Switch`.
-4. Stop the Windows agent (`.\tests\testenv.ps1 down -Only windows`). Set the game's `xeniaProfileAtLaunch` to `Leave`
-   in its `config.json`, and set either Xenia config back to Player1. Start the agent again (`up -Only windows`).
-   `pre-launch-sync` now answers `Proceed` and leaves the configs alone.
+4. On Windows, open *Forza Horizon*: its **Xbox 360 profile** card shows the saves under Driver and what Xenia starts as.
+   Set *At launch, for this game* to **Leave Xenia as it is**, and set either Xenia config back to Player1.
+   `pre-launch-sync` now answers `Proceed` and leaves the configs alone. Set it back to *This machine's setting* after.
 5. On WSL, `pre-launch-sync` for *Forza Horizon* never asks: there, the saves are not under a profile.
 
 Phase 5c adds **the DLC check and hand-over** (Forza Horizon, title `4D5309C9`):
