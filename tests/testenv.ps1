@@ -109,6 +109,9 @@
 #                                 install (restart it with `up -Only windows`); `clean` deletes it with the rest
 #                                 of the state. -EmuDeckPath (or $env:SAVELOCKER_EMUDECK_PATH) points the agent
 #                                 at any other folder, a copy of a real one included.
+#   .\tests\testenv.ps1 help [command]
+#                                 print this list of commands (or one command's entry) and the
+#                                 options and variables that steer them; touches nothing
 #   .\tests\testenv.ps1 deck-config -DeckHost deck@<ip> [-DeckServerUrl http://<lan-ip>:5080]
 #                                 write/update tests/testenv.local.ps1 (below) instead of hand-
 #                                 editing it; no args just prints what's currently saved
@@ -160,8 +163,12 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'conflict', 'art', 'clean', 'deck-config', 'playnite-import', 'emu-fixture')]
+    [ValidateSet('build', 'up', 'down', 'status', 'test', 'sync', 'logs', 'conflict', 'art', 'clean', 'deck-config', 'playnite-import', 'emu-fixture', 'help')]
     [string]$Command = 'status',
+
+    # `help <command>`: show only that command's entry.
+    [Parameter(Position = 1)]
+    [string]$Topic,
 
     # Never a released version number. A test build stamped with one compares equal to the real
     # release forever, so the update channel can never move it (Gotchas.md). Auto-derived from the
@@ -274,6 +281,54 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+
+# `help` reads this file's own header, so the commands it lists are the ones documented above and
+# cannot drift from them. Handled before anything else: it must not load testenv.local.ps1, touch WSL
+# or SSH to the Deck.
+if ($Command -eq 'help') {
+    $header = @()
+    foreach ($line in Get-Content -LiteralPath $PSCommandPath -Encoding utf8) {
+        if ($line -notmatch '^#') { break }
+        $header += ($line -replace '^# ?', '')
+    }
+    $entryStart = '^  \.\\tests\\testenv\.ps1 (\S+)'
+    $start = 0; while ($header[$start] -notmatch $entryStart) { $start++ }
+    $end = $start; while ($header[$end] -notmatch '^Separation rests on') { $end++ }
+    $commands = $header[$start..($end - 2)]
+    if ($Topic) {
+        $entry = @(); $inside = $false
+        foreach ($l in $commands) {
+            if ($l -match $entryStart) { $inside = $Matches[1] -eq $Topic }
+            if ($inside) { $entry += $l }
+        }
+        if ($entry.Count -eq 0) { Write-Host "No command '$Topic'. Run: .\tests\testenv.ps1 help"; exit 1 }
+        $entry | ForEach-Object { Write-Host $_ }
+        exit 0
+    }
+    Write-Host 'testenv - a throwaway SaveLocker fleet (Windows agent, WSL agent, console, optional Deck and Playnite),'
+    Write-Host 'run beside, never instead of, the installed agent and real saves.'
+    Write-Host ''
+    Write-Host 'Commands (default: status). Each with its first line; help <command> shows the whole entry:'
+    $first = $false
+    foreach ($l in $commands) {
+        if ($l -match $entryStart) { Write-Host $l; $first = $l -notmatch '^  \.\\tests\\testenv\.ps1 \S+ {2,}\S'; continue }
+        if ($first) { Write-Host $l; $first = $false }
+    }
+    Write-Host ''
+    Write-Host 'Common options:'
+    Write-Host '  -Only all|windows|linux|deck|console|playnite   scope build/up to one target'
+    Write-Host '  -DeckHost deck@<ip>  -DeckServerUrl http://<lan-ip>:5080   (or tests\testenv.local.ps1, see deck-config)'
+    Write-Host '  -PlaynitePath <dir>  -EmuDeckPath <dir>'
+    Write-Host ''
+    Write-Host 'Variables read (set in this shell or in tests\testenv.local.ps1):'
+    Write-Host '  SAVELOCKER_DECK_HOST, SAVELOCKER_DECK_SERVER_URL               the Deck target'
+    Write-Host '  SAVELOCKER_PLAYNITE_PATH                                       the Playnite install the plugin goes into'
+    Write-Host '  SAVELOCKER_DECKY_PLUGIN_REPO, SAVELOCKER_PLAYNITE_PLUGIN_REPO   plugin checkouts (default: the sibling folders)'
+    Write-Host '  SAVELOCKER_EMUDECK_PATH                                        the Emulation folder the Windows agent scans'
+    Write-Host ''
+    Write-Host 'More: docs\Build and Run.md -> "Throwaway test rig (testenv)". One command: .\tests\testenv.ps1 help <command>'
+    exit 0
+}
 
 # Machine-specific settings live here, not just in $env: vars set for one shell — a home LAN's DHCP
 # lease can move the Deck's IP at any time, and a Playnite checkout's path doesn't belong in a shell

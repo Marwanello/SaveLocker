@@ -201,7 +201,7 @@ artifact is always `SaveLocker.zip`) or let the GitHub fetch read the tag.
 `.\tests\testenv.ps1 <command>`, run from Windows, drives a whole disposable fleet — a Windows
 agent, a headless WSL agent, a dashboard container and (optionally) a real Steam Deck — all running
 **beside**, never instead of, the installed release agent and any real save data. Commands:
-`build`, `up`, `down`, `status`, `test`, `sync`, `logs`, `clean`. `-Only windows|linux|deck|console`
+`build`, `up`, `down`, `status`, `test`, `sync`, `logs`, `clean`, and `help` (`help <command>` for one command's whole entry). `-Only windows|linux|deck|console`
 scopes `build`/`up` to one target; `down`/`status`/`logs`/`clean` always touch everything that's
 configured. Isolation is `SAVELOCKER_STATE_ROOT`/`SAVELOCKER_TRAY_PORT`/`SAVELOCKER_RUNKEY_SUBPATH`
 on Windows and `XDG_DATA_HOME` on Linux ([[Gotchas]] → *Test-only environment variables*) — never
