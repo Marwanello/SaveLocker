@@ -6,6 +6,7 @@ import { api } from '../api'
 import { formatAgo, formatBytes } from '../format'
 import { refreshActivity, useActivityBusy, useActivityCurrent, useActivityLastRun } from '../useActivity'
 import type { AgentState, Conflict, SyncRun, TrackedGame } from '../types'
+import { PadGlyph } from '../gamepad/PadGlyph'
 import { Button } from './ui/Button'
 import { Chip } from './ui/Chip'
 import { Toast } from './ui/Toast'
@@ -159,6 +160,7 @@ export function StatusHeader({ state, conflicts, games, onSynced }: Props) {
           >
             <RefreshCw size={14} strokeWidth={2} aria-hidden="true" />
             {busy ? 'Syncing…' : 'Sync all'}
+            <PadGlyph id="y" />
           </Button>
         </div>
       </div>

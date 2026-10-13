@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { Conflict, TrackedGame, View } from '../types'
 import { regionLabel } from '../format'
+import { PadGlyph } from '../gamepad/PadGlyph'
 import { GameArt } from './GameArt'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
@@ -122,6 +123,7 @@ export function GamesView({ games, conflicts, onOpen, onNavigate }: Props) {
   return (
     <div className="sl-page">
       <div className="sl-tools">
+        <PadGlyph id="x" />
         <input
           type="search"
           className="sl-search"
@@ -133,7 +135,8 @@ export function GamesView({ games, conflicts, onOpen, onNavigate }: Props) {
         <span style={{ fontSize: 12, color: 'var(--color-dim)' }}>
           {visible.length === games.length ? `${games.length} games` : `${visible.length} of ${games.length}`}
         </span>
-        <div style={{ marginLeft: 'auto' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <PadGlyph id="r3" />
           <Seg<Mode>
             aria-label="Layout"
             value={mode}

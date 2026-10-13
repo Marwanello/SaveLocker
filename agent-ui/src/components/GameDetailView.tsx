@@ -3,6 +3,7 @@ import type { Conflict, GameState, GameSyncMode, SaveVersion, SyncStatus, Tracke
 import { api } from '../api'
 import { formatAgo, formatBytes, formatDateTime } from '../format'
 import { refreshActivity, useActivityBusy } from '../useActivity'
+import { PadGlyph } from '../gamepad/PadGlyph'
 import { GameArt } from './GameArt'
 import { GameManagement } from './GameManagement'
 import { SaveFilesCard } from './SaveFilesCard'
@@ -148,9 +149,16 @@ export function GameDetailView({ game, conflicts, machineName, platform, onBack,
         <div className="sl-actions">
           <Button variant="primary" disabled={locked} onClick={() => void run('sync')}>
             {pending === 'sync' ? 'Syncing…' : 'Sync this game'}
+            <PadGlyph id="x" />
           </Button>
-          <Button disabled={locked} onClick={() => void run('push')}>{pending === 'push' ? 'Pushing…' : 'Push now'}</Button>
-          <Button disabled={locked} onClick={() => void run('pull')}>{pending === 'pull' ? 'Pulling…' : 'Pull latest'}</Button>
+          <Button disabled={locked} onClick={() => void run('push')}>
+            {pending === 'push' ? 'Pushing…' : 'Push now'}
+            <PadGlyph id="lt" />
+          </Button>
+          <Button disabled={locked} onClick={() => void run('pull')}>
+            {pending === 'pull' ? 'Pulling…' : 'Pull latest'}
+            <PadGlyph id="rt" />
+          </Button>
           <Button variant="quiet" disabled={locked} onClick={() => void checkNow()}>
             {pending === 'check' ? 'Checking…' : 'Check now'}
           </Button>

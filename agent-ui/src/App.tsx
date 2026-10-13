@@ -15,6 +15,7 @@ import { ActivityView } from './components/ActivityView'
 import { Chip } from './components/ui/Chip'
 import { Toast } from './components/ui/Toast'
 import { Mark } from './components/ui/Mark'
+import { PadLayer } from './gamepad/PadLayer'
 import { unseenWarnings } from './activitySeen'
 import { inAppWindow } from './appWindow'
 import { isCurrentPoll, looksEpoch, setLook } from './appearance'
@@ -289,6 +290,10 @@ export default function App() {
             onDone={() => setFolderQueue(null)}
           />
         )}
+
+        {/* Controller support: input, spatial navigation, the hint bar and the on-screen keyboard.
+            Inert on a machine with no gamepad — nothing renders and nothing changes. */}
+        <PadLayer />
     </div>
   )
 }
