@@ -18,13 +18,18 @@ public static class AppWindow
     /// Start the window. False — without starting anything — when there is no display to draw it on (a
     /// headless box, an SSH shell with no desktop session behind it), so the caller can say so instead
     /// of launching a program that has nowhere to show itself.
+    /// <para>
+    /// The session that launched this process wins when it has a display of its own — the menu entry
+    /// from Desktop Mode's KDE, or the Steam shortcut from Game Mode's gamescope. The user manager's
+    /// session values are the fallback for a process that has none (an SSH shell), and they can be a
+    /// stale snapshot of the OTHER mode: preferring them unconditionally is what once sent a
+    /// Game-Mode-launched window to a compositor that was not running.
+    /// </para>
     /// </summary>
     public static bool TryOpen(string url, out AppWindowPlan? plan)
     {
         plan = null;
-        // The session's environment, not this process's own: its display variables can be missing or
-        // left over from Game Mode even while a desktop session is running (DesktopEnvironment.ApplySessionEnv).
-        if (DesktopEnvironment.DesktopStartInfo() is not { } psi) return false;
+        if ((DesktopEnvironment.OwnSessionStartInfo() ?? DesktopEnvironment.DesktopStartInfo()) is not { } psi) return false;
 
         plan = Plan(url);
         psi.FileName = plan.FileName;

@@ -65,6 +65,19 @@ public static class DesktopEnvironment
     }
 
     /// <summary>
+    /// A start-info carrying THIS process's own environment, when it names a display. The session
+    /// that LAUNCHED a process is the session that should show what it opens: the KDE menu hands the
+    /// app entry the desktop's own values, and a Steam shortcut in Game Mode hands it gamescope's.
+    /// The user-manager overlay (<see cref="DesktopStartInfo"/>) exists for processes launched from
+    /// somewhere without one of their own — the daemon, an SSH shell.
+    /// </summary>
+    public static System.Diagnostics.ProcessStartInfo? OwnSessionStartInfo()
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo { UseShellExecute = false };
+        return AppWindowPlanner.HasDisplay(psi.Environment) ? psi : null;
+    }
+
+    /// <summary>
     /// Hand a file to the desktop's default handler. False — without trying — when there is no
     /// display to show it on (a headless box, an SSH tunnel into the agent UI), so the caller can
     /// show the path instead.

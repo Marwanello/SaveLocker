@@ -178,26 +178,29 @@ Installed. Next:
       compatibility tool" in its properties so Proton sets up a prefix. Without
       it, Proton never creates a prefix and there is nothing to sync.)
 
-  4. (Steam Deck, recommended) Add SaveLocker to your library so you can add
-     games from Game Mode with the D-pad -- no browser, no Desktop Mode:
+  4. (Steam Deck) SaveLocker puts itself in your Steam library as "SaveLocker" -- the
+     agent UI, controller-ready, opened straight from Game Mode. It appears after
+     the next Steam restart. If you remove it from the library on purpose it stays
+     removed; bring it back any time with:
 
-         Steam -> Add a Non-Steam Game -> Browse ->
-             ${HOME}/.local/share/SaveLocker/savelocker
-         Properties -> Launch Options:  ui
-         Rename it "SaveLocker"
+         savelocker deck-shortcut add
 
-     Launch it from your library to scan for games, set a save folder from inside
-     the game's own Proton prefix, enroll, and copy the launch command from step 3.
-     This is the last Desktop Mode step you need to take.
+     A shortcut from an older version that still carries "ui" in its Launch Options
+     is repointed to the new UI automatically. Manual alternative, if you prefer:
+     Steam -> Add a Non-Steam Game -> SaveLocker (no launch options needed).
 
-  5. (Optional) Library art. The images are bundled at:
+     One Steam setting matters for the controller: the shortcut's controller
+     layout must be a gamepad template. In Game Mode, highlight the shortcut,
+     open its controller layout (the controller icon) and pick "Gamepad" --
+     under "Keyboard & Mouse"/Desktop the browser sees no gamepad at all and
+     the pad does nothing.
+
+  5. (Optional) Library art. The shortcut's four pictures (portrait and wide
+     capsule, hero, logo) are painted for you when it is added, and repainted
+     whenever you change the look in Settings -> Appearance. Steam keeps its own
+     copy of a picture once one is set, so to set them by hand the files are at:
 
          ${HOME}/.local/share/SaveLocker/artwork/
-
-     The SaveLocker agent repaints them in your accent colour and logo (Settings ->
-     Appearance) at start and whenever you change either; `savelocker steam-art`
-     does it on demand. Steam is not touched, and it keeps its own copy of a picture
-     once you set it -- so set them now, and again after changing the look:
 
      In your library, right-click SaveLocker -> Manage -> Set Custom Artwork, and
      pick each of these (they are already sized for Steam):

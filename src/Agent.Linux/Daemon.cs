@@ -120,6 +120,15 @@ public sealed class Daemon : IAsyncDisposable
     {
         AgentLogger.Log($"SaveLocker daemon starting — machine '{_config.MachineName}', server {_config.ServerUrl}");
         DesktopEntry.OfferForInstalledAgent(_config, AgentLogger.Log);
+        // The controller-era way into Game Mode: a Steam library entry ("SaveLocker") running
+        // `savelocker open` — added on first start, or repaired in place from the old `ui` command.
+        // Never while Steam is running (it rewrites its shortcut list on exit); see DeckShortcut.
+        DeckShortcut.EnsureAtStartup(_config, AgentLogger.Log, appId =>
+        {
+            var look = _config.EffectiveAppearance;
+            SteamShortcutWriter.WriteArt(appId, _config.StateDir, look.Accent, look.Mark, Art.SteamArtHost.Layer);
+            return true;
+        });
 
         if (_config.DaemonApiPort != _apiPort)
         {

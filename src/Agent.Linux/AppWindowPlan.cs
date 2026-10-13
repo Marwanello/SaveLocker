@@ -31,6 +31,13 @@ public static class AppWindowPlanner
     ];
 
     /// <summary>
+    /// The window's opening size: the Deck's own panel (1280×800), which is also the size the agent UI
+    /// is designed around. Without it a Chromium window opens at its built-in default — a small, nearly
+    /// 4:3 box that measured exactly that way on a Deck in Game Mode.
+    /// </summary>
+    public const string WindowSizeFlag = "--window-size=1280,800";
+
+    /// <summary>
     /// Adds <c>?app</c> before any <c>#route</c>: the flag agent-ui reads to know it is not inside a
     /// browser's own chrome and should draw its own header. Idempotent.
     /// </summary>
@@ -78,11 +85,16 @@ public static class AppWindowPlanner
 
         foreach (var bin in Binaries)
             if (binaryOnPath(bin))
-                return new AppWindowPlan(bin, [$"--app={appUrl}"], $"in {bin}'s app window", IsAppWindow: true);
+                return new AppWindowPlan(bin, [$"--app={appUrl}", WindowSizeFlag], $"in {bin}'s app window", IsAppWindow: true);
 
         foreach (var id in FlatpakIds)
             if (flatpakInstalled(id))
-                return new AppWindowPlan("flatpak", ["run", id, $"--app={appUrl}"], $"in {id}'s app window", IsAppWindow: true);
+                // --filesystem=/run/udev:ro is a per-run override, not a requirement: Chromium enumerates
+                // gamepads through udev, which the sandbox hides by default. Chrome's own manifest grants
+                // it; Chromium's and Edge's do not — without it their Gamepad API sees no controller.
+                return new AppWindowPlan("flatpak",
+                    ["run", "--filesystem=/run/udev:ro", id, $"--app={appUrl}", WindowSizeFlag],
+                    $"in {id}'s app window", IsAppWindow: true);
 
         // The plain URL, not the app one: in an ordinary tab the browser already draws its own chrome.
         return DefaultBrowser(url);

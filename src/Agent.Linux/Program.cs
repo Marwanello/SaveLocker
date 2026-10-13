@@ -51,6 +51,9 @@ static class Program
             case "open":
                 return await OpenWindowAsync(opts, config);
 
+            case "deck-shortcut":
+                return DeckShortcutCommand(positionals, opts, config);
+
             case "steam-art":
                 return SteamArtCommand(opts, config);
 
@@ -115,7 +118,7 @@ static class Program
             // is what the seeded shortcut's Exe points at, `ui --screen fakegame` opens it by hand —
             // neither is ever written into a real install's Launch Options.
             // Deliberately NOT gated behind SAVELOCKER_ALLOW_TEST_COMMANDS like the dev-shortcut-*
-            // commands below: Steam launches this directly as the shortcut's Exe (DevSteamShortcut
+            // commands below: Steam launches this directly as the shortcut's Exe (SteamShortcutWriter
             // leaves LaunchOptions blank, so there is no wrapper to carry the env var), in Steam's
             // own environment, which never has that variable set. Gating it made the seeded
             // shortcut fail to launch from Steam's own library with no visible error — exactly the
@@ -127,7 +130,7 @@ static class Program
                     startScreen: "fakegame", apiPort: ParsePort(opts));
 
             // Test-only, wired from tests/testenv-deck.sh's cmd_conflict/cmd_clean only. Adds/
-            // removes the one fixed "Conflict Game" shortcut - see DevSteamShortcut's own doc
+            // removes the one fixed "Conflict Game" shortcut - see SteamShortcutWriter's own doc
             // comment for the backup/restore guarantee this makes about the real shortcuts.vdf.
             case "dev-shortcut-add":
             {
@@ -138,35 +141,37 @@ static class Program
                     Console.Error.WriteLine("dev-shortcut-add needs --prefix <dir>");
                     return 2;
                 }
-                if (DevSteamShortcut.KindNamed(opts.GetValueOrDefault("kind")) is not { } addKind)
+                if (SteamShortcutWriter.KindNamed(opts.GetValueOrDefault("kind")) is not { } addKind)
                 {
-                    Console.Error.WriteLine("dev-shortcut-add --kind must be 'conflict' or 'ui'.");
+                    Console.Error.WriteLine("dev-shortcut-add --kind must be 'conflict', 'ui' or 'app'.");
                     return 2;
                 }
                 try
                 {
-                    // The Deck UI entry must open the TEST agent: its daemon port, and its state directory (config, api
-                    // token) via XDG_DATA_HOME — without both, `savelocker ui` reads the real install and talks to :5178.
+                    // The Deck entries must open the TEST agent: its daemon port, and its state directory
+                    // (config, api token) via XDG_DATA_HOME — without both, the launched command reads the
+                    // real install and talks to :5178. `ui` is the SDL Deck UI; `app` is the controller-era
+                    // `open`, the same command a real install's shortcut runs.
                     string? uiArgs = null, uiLaunch = null;
-                    if (addKind == DevSteamShortcut.DeckUi)
+                    if (addKind == SteamShortcutWriter.DeckUi || addKind == SteamShortcutWriter.DeckAppTest)
                     {
                         var state = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
                         // Parsed here rather than with ParsePort, whose fallback is the real agent's own port.
                         if (string.IsNullOrEmpty(state) || state.IndexOf('"') >= 0 ||
                             !int.TryParse(opts.GetValueOrDefault("port"), out var uiPort) || uiPort is < 1 or > 65535)
                         {
-                            Console.Error.WriteLine("dev-shortcut-add --kind ui needs --port <n> and XDG_DATA_HOME set to the test state directory.");
+                            Console.Error.WriteLine("dev-shortcut-add --kind ui|app needs --port <n> and XDG_DATA_HOME set to the test state directory.");
                             return 2;
                         }
                         uiArgs = $"--port {uiPort}";
                         uiLaunch = $"XDG_DATA_HOME=\"{state}\" %command%";
                     }
-                    var appId = DevSteamShortcut.Add(prefix, opts.ContainsKey("with-launch-command"), addKind, uiArgs, uiLaunch);
+                    var appId = SteamShortcutWriter.Add(prefix, opts.ContainsKey("with-launch-command"), addKind, uiArgs, uiLaunch);
                     if (appId is null) return 1;
-                    if (addKind == DevSteamShortcut.DeckUi)
+                    if (addKind == SteamShortcutWriter.DeckUi || addKind == SteamShortcutWriter.DeckAppTest)
                     {
                         var look = config.EffectiveAppearance;
-                        DevSteamShortcut.WriteArt(appId.Value, config.StateDir, look.Accent, look.Mark, Art.SteamArtHost.Layer);
+                        SteamShortcutWriter.WriteArt(appId.Value, config.StateDir, look.Accent, look.Mark, Art.SteamArtHost.Layer);
                     }
                     Console.WriteLine($"APPID={appId}");
                     return 0;
@@ -180,15 +185,16 @@ static class Program
 
             case "dev-shortcut-remove":
                 if (!TestCommandsAllowed(out var removeDenial)) { Console.Error.WriteLine(removeDenial); return 2; }
-                if (DevSteamShortcut.KindNamed(opts.GetValueOrDefault("kind")) is not { } removeKind)
+                if (SteamShortcutWriter.KindNamed(opts.GetValueOrDefault("kind")) is not { } removeKind)
                 {
-                    Console.Error.WriteLine("dev-shortcut-remove --kind must be 'conflict' or 'ui'.");
+                    Console.Error.WriteLine("dev-shortcut-remove --kind must be 'conflict', 'ui' or 'app'.");
                     return 2;
                 }
                 try
                 {
-                    var removed = DevSteamShortcut.Remove(removeKind);
-                    if (removed && removeKind == DevSteamShortcut.DeckUi) DevSteamShortcut.ForgetArtRecord(config.StateDir);
+                    var removed = SteamShortcutWriter.Remove(removeKind);
+                    if (removed && (removeKind == SteamShortcutWriter.DeckUi || removeKind == SteamShortcutWriter.DeckAppTest))
+                        SteamShortcutWriter.ForgetArtRecord(config.StateDir);
                     return removed ? 0 : 1;
                 }
                 catch (Exception ex)
@@ -551,10 +557,117 @@ static class Program
     }
 
     /// <summary>
-    /// `savelocker open [--port n] [--view route]` — the agent UI in its own window, for Desktop Mode. This
-    /// is what the KDE-menu entry install.sh writes runs; Game Mode keeps `savelocker ui`, and the two sit
-    /// side by side over the same daemon. It does not start the daemon (systemd does, at login): a launcher
-    /// that quietly spawned a second one would race the first over the same state, so it says how to start it.
+    /// <c>savelocker deck-shortcut status|add|remove</c> — the Steam library entry "SaveLocker" that
+    /// opens the agent UI in Game Mode (the same window the application-menu entry opens in Desktop
+    /// Mode). The daemon adds or repairs it itself at start (<see cref="DeckShortcut.EnsureAtStartup"/>);
+    /// this is for seeing where things stand, doing it right now, or taking it away. Steam only shows
+    /// a new or changed shortcut after it restarts, so the messages say so.
+    /// </summary>
+    private static int DeckShortcutCommand(List<string> positionals, Dictionary<string, string> opts, AgentConfig config)
+    {
+        var sub = positionals.FirstOrDefault() ?? "status";
+        var vdfPath = SteamShortcutWriter.FindShortcutsVdf();
+        switch (sub)
+        {
+            case "status":
+            {
+                if (vdfPath is null)
+                {
+                    Console.WriteLine("Steam is not installed on this machine (or has never signed in) - nothing to add to.");
+                    return 0;
+                }
+                var presence = SteamShortcutWriter.Inspect(SteamShortcutWriter.DeckApp, out var exe);
+                var marker = File.Exists(Path.Combine(config.StateDir, DeckShortcut.MarkerName));
+                Console.WriteLine(presence switch
+                {
+                    SteamShortcutWriter.ShortcutPresence.Current =>
+                        $"present: '{SteamShortcutWriter.DeckApp.Name}' runs the agent UI ({exe})",
+                    SteamShortcutWriter.ShortcutPresence.Stale =>
+                        $"present, but runs something else ({exe}) - the agent repairs it at the next start, or now with: savelocker deck-shortcut add",
+                    SteamShortcutWriter.ShortcutPresence.Foreign =>
+                        $"a Steam shortcut named '{SteamShortcutWriter.DeckApp.Name}' exists but does not point at savelocker - not ours to change",
+                    _ => marker
+                        ? "not present (it was removed on purpose; 'deck-shortcut add' brings it back)"
+                        : "not present (the agent adds it at the next start with Steam closed)",
+                });
+                return 0;
+            }
+
+            case "add":
+            {
+                if (vdfPath is null)
+                {
+                    Console.Error.WriteLine("Steam is not installed on this machine (or has never signed in) - nothing to add to.");
+                    return 1;
+                }
+                if (DeckShortcut.SteamRunning())
+                    Console.Error.WriteLine(
+                        "warning: Steam is running - it rewrites its shortcut list when it exits, so this change may be lost. " +
+                        "Restart Steam right after (or run this with Steam closed).");
+
+                var presence = SteamShortcutWriter.Inspect(SteamShortcutWriter.DeckApp, out _);
+                if (presence == SteamShortcutWriter.ShortcutPresence.Foreign)
+                {
+                    Console.Error.WriteLine(
+                        $"refusing: a Steam shortcut named '{SteamShortcutWriter.DeckApp.Name}' exists but does not point at savelocker - rename or remove it in Steam first.");
+                    return 1;
+                }
+                if (presence == SteamShortcutWriter.ShortcutPresence.Stale)
+                    return SteamShortcutWriter.RetargetAt(vdfPath, SteamShortcutWriter.DeckApp) ? 0 : 1;
+                if (presence == SteamShortcutWriter.ShortcutPresence.Current)
+                {
+                    Console.WriteLine($"'{SteamShortcutWriter.DeckApp.Name}' is already present - nothing to do.");
+                    return 0;
+                }
+
+                var prefix = opts.GetValueOrDefault("prefix");
+                prefix = Path.TrimEndingDirectorySeparator(string.IsNullOrWhiteSpace(prefix) ? AppContext.BaseDirectory : prefix);
+                var appId = SteamShortcutWriter.AddTo(vdfPath, prefix, false, SteamShortcutWriter.DeckApp, null, null);
+                if (appId is null) return 1;
+                File.WriteAllText(Path.Combine(config.StateDir, DeckShortcut.MarkerName), "");
+                try
+                {
+                    var look = config.EffectiveAppearance;
+                    SteamShortcutWriter.WriteArt(appId.Value, config.StateDir, look.Accent, look.Mark, Art.SteamArtHost.Layer);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Console.WriteLine($"shortcut added; library art not written ({ex.Message}).");
+                }
+                Console.WriteLine($"Added '{SteamShortcutWriter.DeckApp.Name}' - restart Steam to see it in your library.");
+                return 0;
+            }
+
+            case "remove":
+            {
+                if (vdfPath is null)
+                {
+                    Console.WriteLine("Steam is not installed - nothing to remove.");
+                    return 0;
+                }
+                if (DeckShortcut.SteamRunning())
+                    Console.Error.WriteLine(
+                        "warning: Steam is running - it may restore the shortcut when it exits. Restart Steam right after (or run this with Steam closed).");
+                var removed = SteamShortcutWriter.Remove(SteamShortcutWriter.DeckApp);
+                if (removed) SteamShortcutWriter.ForgetArtRecord(config.StateDir);
+                Console.WriteLine(removed
+                    ? "Removed - restart Steam to see it gone from the library."
+                    : "Nothing was removed (see the message above).");
+                return removed ? 0 : 1;
+            }
+
+            default:
+                Console.Error.WriteLine("deck-shortcut takes: status | add | remove");
+                return 2;
+        }
+    }
+
+    /// <summary>
+    /// <c>savelocker open [--port n] [--view route]</c> — the agent UI in its own window. This is what
+    /// the KDE-menu entry install.sh writes runs, and what the Steam "SaveLocker" entry (the same
+    /// window in Game Mode, added by <see cref="DeckShortcut"/>) runs. It does not start the daemon
+    /// (systemd does, at login): a launcher that quietly spawned a second one would race the first
+    /// over the same state, so it says how to start it.
     /// </summary>
     private static async Task<int> OpenWindowAsync(Dictionary<string, string> opts, AgentConfig config)
     {
@@ -629,7 +742,14 @@ static class Program
                                                             if it is behind
 
         Game Mode
-          ui [--size WxH] [--screenshot <file.png>]        Gamepad-native window for Steam Game Mode (Deck)
+          deck-shortcut [status|add|remove]                The Steam library entry "SaveLocker" that
+                                                           opens this agent UI (the daemon adds or
+                                                           repairs it itself at start; this is for
+                                                           now / by hand - restart Steam after)
+          ui [--size WxH] [--screenshot <file.png>]        Legacy gamepad-native window (SDL) for
+                                                           Game Mode - kept while the controller
+                                                           support in the agent UI is verified on
+                                                           hardware
                                                            --size tests the layout off-device (default 1280x800)
                                                            --screenshot captures a PNG and exits
                                                            --nav-debug overlays the live nav cursor state
