@@ -352,6 +352,12 @@ session can judge an edge case, not to reopen the choice.
   reported an emulator for (made before sources, or by hand) is open to any. Add games' *Change* lists such a game
   greyed out as *Another emulator*. **Group F (Switch) planned the opposite** — Eden ↔ Ryujinx as one game through
   a title key (D2) — so confirm with the maintainer when F starts.
+  <br>**Exception, 2026-10-13 (maintainer, Group F): a Switch title is one game across every Switch emulator** (Eden,
+  Citron, Yuzu, Suyu, Sudachi, Ryujinx). A Switch save is the title's own folder of files whichever emulator wrote it,
+  and the documented migration between them is copying that folder. The server keys the game by its title
+  (`Games.EmulatorKey`, `switch:<title ID>`, D2) and matches the key before the name; a same-named game of another
+  title is never joined. On one machine with several Switch emulators, one copy syncs and the others are kept in
+  step on request (the agent's Emulator settings), never silently.
 - **A memory card every game of a console shares is never a game of its own** (2026-10-07, maintainer's choice,
   emulator-saves Group C). Restoring one game's version would restore every game on the card. Add games lists it
   greyed out with how to switch the emulator to a card per game (`ScanCandidate.NotSyncable`), the enroller refuses

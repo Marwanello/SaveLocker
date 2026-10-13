@@ -1956,6 +1956,18 @@ matched on its own spelling of the title, inside `config/` only; Sync all counts
 unanswered hand-over for other packs is replaced; the console ignores machines that no longer keep the game. Decky: an `Ask`
 no longer reuses the conflict freeze (a raced launch runs on; a different choice applies next launch); `.gitattributes` keeps
 LF. Unit **539**.
+<br>**2026-10-13: Group F built (branch `emulator-saves-group-f`, PR on the fork).** Switch: Eden, Citron, Yuzu, Suyu,
+Sudachi (one table, `SwitchEmulators`) and Ryujinx (its `imkvdb.arc` read by `RyujinxSaveIndex`). The maintainer's calls:
+**one game per Switch title across every Switch emulator** (the exception to "different emulators are never one game",
+Decisions.md), D2 built as planned (`Games.EmulatorKey`, migration `AddGameEmulatorKey`), a ROM with no save listed as
+*No save here yet*, captures from both machines (Citron researched), and a **same-machine copies** feature for playing
+one game in two emulators: the agent's Emulator settings page copies the synced save to another emulator, keeps it in
+sync (the one played last wins; asks when both changed; nothing copied while an emulator runs; backups under
+`<state>/emulator-copies`), or makes it the synced copy. Captured read-only: the PC's Eden (*Metroid Prime 4*) and
+Ryujinx index; the Deck's Yuzu and Ryujinx, with *Undertale* saved in both. Also marked Groups C and E (with 5c) shipped.
+Unit **551**. Details: `tasks/emulator-saves/plan.md` → *Group F — as built*.
+<br>**Next action for this item:** the testenv pass for Group F (`Build and Run` → *Testing emulator saves*, Group F
+steps 1–5), then the Switch row of Group H on the Deck (Yuzu ↔ Ryujinx) and the PC (Eden).
 <br>**Next action for this item:** the testenv pass for Group E and Phase 5c (`Build and Run` → *Testing emulator saves*,
 steps 1–5 of the profile and 1–11 of the DLC hand-over), then Forza Horizon for real between PC and Deck (Group H).
 <br>**Next action for this item:** merge PR #65; the testenv pass of Group D (`Build and Run` → *Testing emulator saves*) and its real-game checks (Group H: PPSSPP, RPCS3, Vita3K, shadPS4) are still to do.

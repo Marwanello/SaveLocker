@@ -176,6 +176,10 @@ SaveLocker/
 │   │   ├── CemuSaves.cs · AzaharSaves.cs · XeniaSaves.cs   # Group E's title-ID readers (Wii U, 3DS + Citra, Xbox 360):
 │   │   │                               #   Cemu's title cache/meta.xml; Ncch (a 3DS ROM's program ID + product code);
 │   │   │                               #   Xenia's per-profile and old content layouts
+│   │   ├── SwitchEmulators.cs · RyujinxSaveIndex.cs   # Group F: the Yuzu forks as a table + Ryujinx's imkvdb.arc; one
+│   │   │                               #   game per Switch title across emulators (EmulatorKey, D2), ROMs with no save yet
+│   │   ├── SwitchCopies.cs              # One Switch game in several emulators on one machine: copy, keep in sync, switch
+│   │   │                               #   which copy syncs (Emulator settings); backups under <state>/emulator-copies
 │   │   ├── EmulatorSaves.cs             # The table of emulator sources both scanners loop — a new emulator is one row
 │   │   ├── EmulatorPaths.cs             # Home/AppData for standalone emulator lookups; SAVELOCKER_EMULATOR_HOME = fixture home
 │   │   ├── GamelistXml.cs               # ES-DE gamelist.xml titles, arcade systems only (safe because of D1)

@@ -33,7 +33,7 @@ point unless explicitly instructed to.
 | 5a — RPCS3 | ✅ Shipped 2026-10-12 (PR #65, branch `emulator-saves-group-d`) — `Rpcs3Saves`: `dev_hdd0/home/<user>/savedata`, scope `<ID>*/**`, named by Redump's PS3 set, else the save's `PARAM.SFO` `TITLE`; EmuDeck's link, else `vfs.yml`. **Captured 2026-10-11:** the Deck's real save `BCUS98132-GAMEAUTOSAVE` (*Heavenly Sword*) and `vfs.yml` (dev_hdd0 on the SD card); the PC's `RPCS3\config\vfs.yml`. See *Group D — as built* |
 | 5b — Xenia | ✅ Shipped 2026-10-13 (PR #68, branch `emulator-saves-group-e`; built 2026-10-12; follow-up the same day: device saves as a second folder, the named-profile layout) — `XeniaSaves`: a game is its `<TID>/00000001` saved games and their `Headers/00000001`, in a profile's `content/<XUID>` (Canary) or `content` itself (older builds); DLC, title updates, XUID 0 and the dashboard's `FFFE07D1` never synced (scope mutation-checked). Named by title ID from the bundled table (Redump disc serials → title IDs, No-Intro Arcade titles), else `Xbox 360 <TID>`. **Captured 2026-10-12:** the PC's real *Forza Horizon* / *Forza Horizon 2* saves (profile layout); the Deck's Proton Canary with both layouts side by side. See *Group E — as built* |
 | 5c — Xenia profile and DLC | ✅ Shipped 2026-10-13 (PR #68, with Group E) — testenv and Group H still to do (final plan approved; see *Phase 5c — final plan*). **Steps 1–14 built**: formats, launch questions, profile at launch + plugin prompts (Marwanello/SaveLocker-Decky#5, Marwanello/SaveLocker-Playnite#8), the per-game profile slice, the core copied once, the game's profile on the server + alignment, DLC lists, the hold before a pull, the console DLC card + profile chip, the server hand-over, the agents' send/fetch (poller, own task, resumable, installed while Xenia is closed), held pulls re-checked every minute + notices, the console's profile-at-launch table + hand-over card, a Decky "Waiting for DLC" section (Decky#5), help article, `dlc` CLI, testenv fixtures. Unit **517**. Left: the testenv pass (`Build and Run` → *Testing emulator saves*) and Forza Horizon for real between PC and Deck (Group H). Not covered: games started outside SaveLocker's launch path (EmulationStation, Xenia directly) get no profile check or pull before launch — **DLC: the DLC check chosen** (lists only, hand-over through the server, 9-step build plan); **profile: F (checked at launch) with the profile split by game chosen** (10-step build plan). Mockups in this folder. See *Phase 5c* |
-| 6 — Switch: Yuzu, Citron, Eden, Ryujinx | ⏳ Not started — Group F. **Widened 2026-10-07** from Eden only, at the maintainer's request; needs the server title key (D2) |
+| 6 — Switch: Yuzu, Citron, Eden, Ryujinx | 🚧 Built 2026-10-13 (branch `emulator-saves-group-f`, PR to come) — D2 server key (`Games.EmulatorKey`, migration `AddGameEmulatorKey`), `SwitchEmulators` (the five Yuzu forks as a table) + `RyujinxSaveIndex` (`imkvdb.arc`), one game per title across every Switch emulator (maintainer's call), ROMs with no save yet listed, and **copies in several emulators on one machine** on the agent's Emulator settings page (copy once, keep in sync, make it the synced copy; asks when both changed). Captured read-only on the PC (Eden's MP4 save, Ryujinx's real index) and the Deck (Yuzu + Ryujinx, Undertale saved in both). Unit **551**. The testenv pass and the real-game checks (Group H) are still to do. See *Group F — as built* |
 | 7 — UI filter | ✅ Shipped 2026-10-07 (same PR), filter by emulator — agent UI *Emulators* chip with an *Emulator* row under it (one chip per emulator, RetroArch today), Deck *Emulators* pill. A per-console sub-breakdown was not built — it comes back with Phase 2, when more than one console has saves. |
 | 7b — Game source per machine, names without "(RetroArch)" | ✅ Shipped 2026-10-07 (same PR) — built 2026-10-07 (maintainer asked; picked variation B of a clickable mockup on all three screens). Unit 280. Console checked in the browser against a seeded dev server; agent UI and Deck need the testenv pass. **Review fixes 2026-10-07** (same PR): server-decided names, the scope-join refusal, source re-send guard, EmuDeck tag, server bounds — unit 291, see `progress.md`. |
 | 8 — melonDS (bonus) | ✅ Shipped 2026-10-07 (PR #61, branch `emulator-saves-group-b`) — `RetroArchSaves` generalised into `RomSaves` (D4 shape 1: `RomSaveRules` + `RomSaveFolders`); `MelonDsSaves`: EmuDeck `saves/melonds/{saves,states}`, else `melonDS.toml` `[Instance0] SaveFilePath` (1.0, read first — `Config::Load`), else `melonDS.ini`, else beside the ROM (`LastROMFolder`). Scope `<rom>.sav`, states `<rom>.ml*`. Both scanners now loop `EmulatorSaves.Sources`. **Captured on the Deck 2026-10-07:** Flatpak melonDS 1.1 has only `melonDS.ini` (absolute SD-card paths), no TOML |
@@ -46,7 +46,7 @@ point unless explicitly instructed to.
 | 15 — Azahar | ✅ Shipped 2026-10-13 (PR #68, branch `emulator-saves-group-e`; built 2026-10-12) — `AzaharSaves` + `Ncch`: `title/00040000/<low>/data`, scope `<low>/data/**` (mutation-checked), states `<program ID>.*`; named from a ROM's NCCH product code via No-Intro's 3DS sets (added to the table), else the ROM's file name, else `3DS <low>`. Citra folders are rows of it (maintainer: one game). **Captured 2026-10-12:** the Deck's three real saves, custom SD-card `sdmc`, 11 ROM headers (program IDs match the save folders); the PC's junctions |
 | 16 — Linking by hand, same files (mockup version 2) | ✅ Shipped 2026-10-07 (PR #61, branch `emulator-saves-group-b`, with Group B) — each emulator row on Add games says which server game the save joins, with a **Change** button for that row only: automatic, *Keep it as its own game*, or another server game keeping the same files; a same-titled game with other file names is listed greyed out with the reason. `EnrollLinks` + `GET /api/candidates/links` + `EnrollRequest.Links`; `LinkByHandTests` 5, two of them mutation-checked; checked in the browser against a scratch server **Review fixes (PR #61):** *Keep it as its own game* opts this machine out of the fleet's same-files game, and the poller never maps a second game onto files another syncs here (`SaveFolderClaims`); Add games says when the server could not be asked. |
 | 17 — Each machine's own file names (linking saves with different names) | ⏳ Not started — Group G (added 2026-10-07, maintainer: "keep option 2 in another phase"); open questions below |
-| 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07); Group C added PCSX2, DuckStation, Dolphin and PrimeHack (the Deck already has Trilogy and Other M saves to try); Group D added PPSSPP, RPCS3 (the Deck has a *Heavenly Sword* save), Vita3K and shadPS4; Group E added Cemu, Azahar (the Deck has three 3DS saves) and Xenia (the PC and the Deck both have *Forza Horizon*). Rows are added as later phases ship untested; see *Phase 18* |
+| 18 — Real-game checks (Group H, no code) | ⏳ Waiting for games — melonDS, ScummVM, Supermodel and Model 2 have no real-game test yet (the maintainer has no games for them as of 2026-10-07); Group C added PCSX2, DuckStation, Dolphin and PrimeHack (the Deck already has Trilogy and Other M saves to try); Group D added PPSSPP, RPCS3 (the Deck has a *Heavenly Sword* save), Vita3K and shadPS4; Group E added Cemu, Azahar (the Deck has three 3DS saves) and Xenia (the PC and the Deck both have *Forza Horizon*); Group F added the Switch emulators (the Deck has Undertale in Yuzu and Ryujinx, the PC Metroid Prime 4 in Eden). Rows are added as later phases ship untested; see *Phase 18* |
 | 20 — Steam ROM Manager shortcuts are the emulator's game, not a game of their own | ⏳ Not started — Group G (added 2026-10-13, maintainer: the Deck lists Forza Horizon twice). Needs a captured `shortcuts.vdf` and SRM's own records from the Deck first; open questions below |
 | 19 — Games found by their save states alone (every emulator but PPSSPP) | ⏳ Not started — Group I (added 2026-10-12, maintainer: "PPSSPP now, others as a new phase"). PPSSPP's shipped with Group D; see *Phase 19* |
 
@@ -657,6 +657,63 @@ agent applies before the launch continues. The in-process Linux wrapper cannot a
 **Verify (when built):** a profile pulled to a machine without it signs in and loads a game's save there; a machine with its own
 profile keeps it; a DLC entry pushed once and pulled; a save game's push never carries DLC; the two-machine tests per entry.
 
+### Group F — as built (2026-10-13, branch `emulator-saves-group-f`)
+
+Decided with the maintainer at the start of the group:
+- **One game per Switch title across every Switch emulator** — an exception to *Saves from different emulators are
+  never one game* (Decisions.md), because a Switch save is the title's own folder of files whichever emulator wrote it.
+- **D2 built as planned:** `Games.EmulatorKey` (`switch:<title ID>`, filtered unique index, migration
+  `AddGameEmulatorKey`), on `GameDto` and `CreateGameRequest`; the server and the agent match it before the name.
+- **A ROM with no save yet is listed** ("No save here yet") under a Yuzu fork's current user.
+- **Captures from the PC and the Deck, Citron from research** (EmuDeck's `emuDeckCitron.sh` on the Deck; no Citron
+  install on either machine).
+- **Several emulators on one machine** (the maintainer plays one game in two for performance): the maintainer asked
+  for a way through each agent's Emulator settings page, and picked this design — one copy syncs, every other Switch
+  emulator here can take the synced save once, be **kept in sync** (the one played last wins; nothing copied while a
+  Switch emulator runs; the overwritten side zipped first, five kept; **both changed → ask**), or become the synced copy.
+- **The user binding, researched:** a Switch save's files don't name their user. Yuzu forks file a save under the
+  profile's folder, Ryujinx under its index entry (`ExtraData0` holds the attribute too, which SaveLocker never copies),
+  so no Xenia-style profile copy is needed; a copy goes under the target emulator's current user.
+
+What the captures showed that the research did not say:
+- **The PC** (EmuDeck for Windows): Eden portable with `user\nand\user\save` a junction to `D:\Emulation\saves\eden\saves`
+  (the real folder) and a real *Metroid Prime 4* `save.bin` under `C4D7AB8B…`; Ryujinx portable whose real `imkvdb.arc`
+  (572 bytes, four entries) maps MP4's account save to `0000000000000003` and Animal Crossing's device and BCAT saves —
+  all three folders empty (launched, never saved). Ryujinx's `games/<tid>/gui/metadata.json` names the title.
+- **The Deck:** Yuzu (AppImage, `~/.local/share/yuzu/nand`, not EmuDeck's storage) and Ryujinx (EmuDeck links into
+  `~/.config/Ryujinx`; `games` linked to the SD card's `storage/ryujinx/games`), **Undertale saved in both with different
+  contents** — the same-machine case. Two Ryujinx users; `Profiles.json`'s `last_opened` is the current one. ROMs in
+  `roms/switch/{yuzu,ryujinx}` subfolders.
+- **`profiles.dat`'s UUID is stored byte-reversed** relative to the save folder's name (`ca0ef0a0…c4` →
+  `C4D7AB8B…0ECA`); both machines' yuzu builds leave a mangled folder (`8D745B09…00000000`) holding only
+  `.yuzu_save_size` beside the real one — ignored. A device save (Animal Crossing) is under the all-zero user in a
+  fork, type `Device` with user 0 in Ryujinx's index.
+- **The index layout** (`IMKV`, count, then `IMEN` + 0x40 key + 0x40 value): key = program ID, user (high, low),
+  system save ID, type; value = the save ID first.
+- **Ryujinx's two copies:** `0` committed, `1` working. LibHac's source is no longer on GitHub, so a pulled save is
+  written to `0` and `1` is then made the same — whether Ryujinx would rebuild `1` itself is a Group H check.
+
+The readers (`SwitchEmulators`, `RyujinxSaveIndex`; one game per title, the copy written last):
+
+| Emulator | A game is | Scope | Name | States |
+|---|---|---|---|---|
+| Eden, Citron, Yuzu, Suyu, Sudachi | `nand/user/save/0000000000000000/<user>/<title ID>` (the current user's, else the newest); device save beside it as folder `device` | none (the folder is the game's) | Ryujinx's `metadata.json`, else the ROM's `[title ID]` file name, else `Switch <title ID>` | none |
+| Ryujinx | `bis/user/save/<save ID>/0` from `imkvdb.arc` (the last-opened user's account save, else the newest; else the device save) | none | the same | none |
+
+Same machine, several emulators — `SwitchCopies` (agent only; routes `GET /api/games/{id}/switch-copies`, `POST
+/api/games/{id}/switch-copies/{emulator}` with `copy-here`, `keep-in-sync`, `stop-keeping`, `make-synced`, `keep-copy`,
+`keep-synced`). Kept-in-sync copies are reconciled before a push and a pull (a copy played since is taken in, so a pull
+still refuses to overwrite it), after them, and on the poller's tick; a copy taken into the synced folder is pushed by
+that folder's own watcher. State in `TrackedGame.EmulatorCopies` (`LastHash` = what both held when last the same).
+
+Known limits:
+- Ryujinx has no save slot for a title until the game runs once there: it is never listed as "No save yet", a copy
+  can't go to it, and SaveLocker never writes `imkvdb.arc`.
+- A copy between emulators runs only while the agent is: a game played in the second emulator with the agent stopped
+  is taken in on its next start (or flagged *Both changed* if the synced copy changed meanwhile).
+- BCAT and cache saves are not synced. A title's account saves under two users of one emulator: the current user's wins.
+- Two machines' names can differ (Ryujinx's metadata on one, a ROM name on the other): the first to add it names it.
+
 ### The other emulators — researched 2026-10-07
 
 The maintainer asked to add **Cemu, Azahar, Model 2, PPSSPP and the Switch family (Yuzu, Ryujinx and Citron
@@ -846,7 +903,7 @@ whatever is installed.
 | **C — Memory cards** ✅ | 2 PCSX2 / Dolphin / DuckStation + shared-card warning, 4 PrimeHack, per-console row | cards, file per game, title folders |
 | **D — Sony (`PARAM.SFO`)** ✅ | 11 PPSSPP, 5a RPCS3, 12 Vita3K, 13 shadPS4 | folder per serial |
 | **E — Title-ID folders** ✅ | 14 Cemu, 15 Azahar, 5b Xenia | folder per title ID |
-| **F — Switch** | 6 Yuzu, Citron, Eden, Ryujinx + title key (D2) | folder per title ID + opaque index |
+| **F — Switch** 🚧 | 6 Yuzu, Citron, Eden, Ryujinx + title key (D2) | folder per title ID + opaque index |
 
 ---
 
@@ -1254,6 +1311,7 @@ own group, in a follow-up PR.
 | **Cemu** (Wii U) | Save in-game (`usr/save/00050000/<low>/user/80000001/…`) | None | `Emulation/roms/wiiu/mlc01/usr/save` (Deck, SD card) · `%APPDATA%\EmuDeck\Emulators\cemu\mlc01\usr\save` | The name: Cemu's `title_list_cache.xml` on each machine (where the AppImage keeps it); both machines on account `80000001`; a disc-format game (`.wud`/`.wux`) with no `meta.xml` | ⏳ | ⏳ |
 | **Azahar** (3DS) | Save in-game (the Deck has Super Mario 3D Land, Samus Returns and one more) | Save state slot 1 (`<program ID>.01.cst`) | `Emulation/storage/azahar/sdmc` + `~/.local/share/azahar-emu/states` · `%APPDATA%\EmuDeck\Emulators\azahar\user\{sdmc,states}` | The name from the ROM on each machine; a CIA-installed game's `content/` never syncs; the third Deck save (`0016e300`, no ROM) | ⏳ | ⏳ |
 | **Xenia** (Xbox 360) | Save in-game (the PC and the Deck both have Forza Horizon) | None | `Emulation/roms/xbox360/content` (Deck, Proton) · `%APPDATA%\EmuDeck\Emulators\xenia\content` | Two profiles' XUIDs (the same one on both machines today); the Deck's old-layout folder; the DLC under `00000002` stays local; a pulled save loads in the other machine's profile | ⏳ | ⏳ |
+| **Switch** (Eden/Yuzu ↔ Ryujinx) | Save in-game (the Deck has Undertale in both Yuzu and Ryujinx, the PC Metroid Prime 4 in Eden) | None | `~/.local/share/yuzu/nand/user/save` + `~/.config/Ryujinx/bis/user/save` (Deck) · `Emulation\saves\{eden,ryujinx}\saves` (PC) | One game across Yuzu on the Deck and Ryujinx/Eden on the PC; **a pulled save loads in Ryujinx** (we write `0` and `1`) and Ryujinx keeps it; the Emulator settings copies between Yuzu and Ryujinx on the Deck (Undertale differs in the two today — *Both changed* is expected the first time) | ⏳ | ⏳ |
 | **PrimeHack** | Save in Metroid Prime Trilogy (on the Deck already) | Save state slot 1 (`R3ME01.s01`) | `Emulation/saves/primehack/{GC,Wii}` + `StateSaves` (Deck) · `states` (Windows) | It stays its own game beside Dolphin's Trilogy; where a non-portable Windows PrimeHack keeps its user folder (the PC's EmuDeck install has never run it) | ⏳ | ⏳ |
 
 ### Group I — Games found by their save states alone
