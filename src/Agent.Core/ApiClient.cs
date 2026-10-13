@@ -92,19 +92,26 @@ public sealed class ApiClient
         return (await resp.Content.ReadFromJsonAsync<MachineRegisterResponse>())!;
     }
 
-    /// <summary>Pull a human-readable message out of a failed response's { error } body.</summary>
+    /// <summary>Pull a human-readable message out of a failed response's body: { error }, or the bare JSON
+    /// string most server routes answer a refusal with (<c>Results.BadRequest("…")</c>).</summary>
     private static async Task<string> ReadErrorAsync(HttpResponseMessage resp)
     {
         try
         {
-            var body = await resp.Content.ReadFromJsonAsync<ErrorBody>();
-            if (!string.IsNullOrWhiteSpace(body?.Error)) return body!.Error!;
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            var text = doc.RootElement.ValueKind switch
+            {
+                JsonValueKind.String => doc.RootElement.GetString(),
+                JsonValueKind.Object => doc.RootElement.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String
+                    ? e.GetString() : null,
+                _ => null,
+            };
+            if (!string.IsNullOrWhiteSpace(text)) return text!;
         }
         catch { /* non-JSON or empty body — fall through to a generic message */ }
         return $"Server returned {(int)resp.StatusCode} {resp.ReasonPhrase}.";
     }
 
-    private sealed class ErrorBody { public string? Error { get; set; } }
 
     /// <summary>
     /// The one unauthenticated route. Used as a reachability probe — and, because it completes a
