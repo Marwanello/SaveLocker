@@ -356,6 +356,13 @@ if (Test-Path $localConfig) {
     if (-not $PSBoundParameters.ContainsKey('PlaynitePluginRepo') -and $env:SAVELOCKER_PLAYNITE_PLUGIN_REPO) {
         $PlaynitePluginRepo = $env:SAVELOCKER_PLAYNITE_PLUGIN_REPO
     }
+    # Same for the state root. Worth setting here when the rig is driven from a packaged (MSIX) app, such as
+    # the Claude desktop app's terminal: Windows silently redirects such a process's writes under
+    # %LOCALAPPDATA% into the package's own folder, so the default root exists for it alone - WSL's agent
+    # never sees the fixture, and a plain terminal sees another, empty rig.
+    if (-not $PSBoundParameters.ContainsKey('StateRoot') -and $env:SAVELOCKER_TEST_ROOT) {
+        $StateRoot = $env:SAVELOCKER_TEST_ROOT
+    }
 }
 
 $root      = Split-Path $PSScriptRoot -Parent

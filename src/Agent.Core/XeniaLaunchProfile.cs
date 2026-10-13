@@ -64,9 +64,10 @@ public static partial class XeniaLaunchProfile
             string.IsNullOrEmpty(configured) ? null : XeniaProfile.Gamertag(profile.Content, configured), action));
 
         var target = profile.Xuid;
-        if (store.TakeRecentAnswer(game.GameId, Kind) is { } answered)
+        // Only a check that cannot ask follows an earlier answer: on a Deck, Decky asked a moment ago and this is the same
+        // launch reaching the Linux wrapper. A client that can ask is starting a launch of its own, so it asks afresh.
+        if (!canAsk && store.TakeRecentAnswer(game.GameId, Kind) is { } answered)
         {
-            // Asked a moment ago (on a Deck, by Decky, before this same launch reached the wrapper): keep that answer.
             if (answered.Choice == KeepCurrent) return null;
             target = answered.Applied;
         }

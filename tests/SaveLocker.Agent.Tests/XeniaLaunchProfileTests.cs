@@ -91,6 +91,16 @@ public sealed class XeniaLaunchProfileTests : IDisposable
     }
 
     [Fact]
+    public void A_client_that_can_ask_asks_again_right_after_an_answer()
+    {
+        // Playnite or the agent UI starting the game again: no wrapper in between to take the answer, and no silence either.
+        var q = Check(canAsk: true)!.Question!;
+        Assert.True(XeniaLaunchProfile.Answer(_config, _game, _store, new LaunchAnswerRequest(q.Id, XeniaLaunchProfile.KeepCurrent), _log.Add));
+
+        Assert.Equal(LaunchDecision.Ask, Check(canAsk: true)!.Decision);
+    }
+
+    [Fact]
     public void Dont_ask_again_saves_the_games_own_policy()
     {
         var q = Check(canAsk: true)!.Question!;
