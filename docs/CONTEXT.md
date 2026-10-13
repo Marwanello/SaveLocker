@@ -1929,8 +1929,13 @@ legacy `content/<TID>` DLC and a title update) are in the session scratchpad onl
 <br>**Later the same day:** Phase 5c steps 5–9 and 11 built (profile slice + core seed + alignment with `Game.EmulatorProfile`;
 DLC lists per version/machine, held pulls, the agent DLC card; console DLC card; the server hand-over `ContentTransfer`).
 Migrations `AddGameEmulatorProfile`, `AddDlcCheckContent`, `AddDlcHandover`. Unit **513**.
-<br>**Next action for this item:** Phase 5c step 12 (agents send and fetch hand-overs through the poller, the third choice in the
-DLC dialog), then 13 (hold re-check on scan / folder change, notices), 10's rest, 14. Group E's testenv pass is still open.
+<br>**2026-10-13:** Phase 5c steps 10 (rest), 12, 13 and 14 built — `DlcHandoverRunner` (poller-kicked, its own task),
+`DlcPackageFiles` (zip / checked install, old layout → `content/<TID>`), held pulls re-checked once a minute, notices,
+agent Settings → Xbox 360, launch reports (`MachineGameContent.LaunchJson`, migration `AddLaunchProfileReport`), console
+profile-at-launch + hand-over cards, help article, `dlc` CLI, testenv DLC fixtures; Decky#5 gained a "Waiting for DLC"
+section. Unit **517**. Gotcha: the hold re-check is a 1-minute poll, not a folder watch.
+<br>**Next action for this item:** the testenv pass for Group E and Phase 5c (`Build and Run` → *Testing emulator saves*,
+steps 1–5 of the profile and 1–11 of the DLC hand-over), then Forza Horizon for real between PC and Deck (Group H).
 <br>**Next action for this item:** merge PR #65; the testenv pass of Group D (`Build and Run` → *Testing emulator saves*) and its real-game checks (Group H: PPSSPP, RPCS3, Vita3K, shadPS4) are still to do.
 <br>**Next action for this item:** the testenv pass of Group C (`Build and Run` → *Testing emulator saves*), then merge PR #63.
 On 2026-10-07 the live rig still mapped nine real save folders on its Windows tray and its console was on another
